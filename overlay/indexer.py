@@ -9,8 +9,6 @@ structurally unreachable on this deployment are removed —
   SM121, outside the SM100 family; flattening is decided by next_n alone),
 - compress_ratio == 1 handling (V3.2 / GLM / Kimi style uncompressed indexer
   rows; every V4-Flash indexer cache on this stack is C4A, ratio 4),
-- the upstream-DSpark parallel-drafting threshold doubling (this stack runs
-  the fork DSpark impl without parallel drafting).
 The flatten vs. native decode split stays: SPEC_TOKENS is a launcher knob, so
 next_n is not a constant (next_n in (1, 2) runs the native deepgemm path).
 """
@@ -386,8 +384,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             next_n,
         )
 
-        sm_count = num_compute_units(self.device.index)
-        self.num_sms = sm_count
+        self.num_sms = num_compute_units(self.device.index)
 
         self.offsets_buffer = torch.arange(
             next_n, device=self.device, dtype=torch.int32

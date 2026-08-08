@@ -123,22 +123,9 @@ class DeepseekV4FlashInferMLASparseBackend(DeepseekV4FlashMLABackend):
             )
         return None
 
-    @staticmethod
-    def get_kv_cache_shape(
-        num_blocks: int,
-        block_size: int,
-        num_kv_heads: int,
-        head_size: int,
-        cache_dtype_str: str = "auto",
-    ) -> tuple[int, ...]:
-        # SM12x always uses the FlashMLA fp8_ds_mla paged layout.
-        return DeepseekV4FlashMLABackend.get_kv_cache_shape(
-            num_blocks,
-            block_size,
-            num_kv_heads,
-            head_size,
-            cache_dtype_str,
-        )
+    # get_kv_cache_shape is inherited from DeepseekV4FlashMLABackend: SM12x
+    # always uses the FlashMLA fp8_ds_mla paged layout (the SM10x plain-row
+    # override went away with the SM100 class).
 
 
 class DeepseekV4FlashInferMLAAttention(DeepseekV4Attention):
@@ -266,40 +253,6 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
             self._ckv_view_src = kv_cache
         return self._ckv_view
 
-    def _forward_sparse_impl(
-        self,
-        q: torch.Tensor,
-        output: torch.Tensor,
-        flashmla_metadata: DeepseekV4FlashMLAMetadata | None,
-        swa_metadata: "DeepseekSparseSWAMetadata",
-        self_kv_cache: torch.Tensor | None,
-        swa_kv_cache: torch.Tensor,
-        swa_only: bool,
-    ) -> None:
-        num_decode_tokens = swa_metadata.num_decode_tokens
-        # deneb fork: port of upstream PR #51202. Gate on token counts, not
-        # request counts -- a request can be classified prefill/decode yet
-        # contribute zero tokens to this split, and the empty call then trips
-        # the same zero-element reshape that PR #49059 guards one level down.
-        if swa_metadata.num_prefill_tokens > 0:
-            self._forward_prefill(
-                q=q[num_decode_tokens:],
-                compressed_k_cache=self_kv_cache,
-                swa_k_cache=swa_kv_cache,
-                output=output[num_decode_tokens:],
-                attn_metadata=flashmla_metadata,
-                swa_metadata=swa_metadata,
-            )
-        if num_decode_tokens > 0:
-            self._forward_decode(
-                q=q[:num_decode_tokens],
-                kv_cache=self_kv_cache,
-                swa_metadata=swa_metadata,
-                attn_metadata=flashmla_metadata,
-                swa_only=swa_only,
-                output=output[:num_decode_tokens],
-            )
-
     def forward_mqa(
         self,
         q: torch.Tensor,
@@ -338,17 +291,29 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         swa_only = self.compress_ratio <= 1
         # SWA-only layers don't allocate their own compressed KV cache.
         self_kv_cache = self.kv_cache if not swa_only else None
-        swa_kv_cache = self.swa_cache_layer.kv_cache
 
-        self._forward_sparse_impl(
-            q=q,
-            output=output,
-            flashmla_metadata=flashmla_metadata,
-            swa_metadata=swa_metadata,
-            self_kv_cache=self_kv_cache,
-            swa_kv_cache=swa_kv_cache,
-            swa_only=swa_only,
-        )
+        num_decode_tokens = swa_metadata.num_decode_tokens
+        # deneb fork: port of upstream PR #51202. Gate on token counts, not
+        # request counts -- a request can be classified prefill/decode yet
+        # contribute zero tokens to this split, and the empty call then trips
+        # the same zero-element reshape that PR #49059 guards one level down.
+        if swa_metadata.num_prefill_tokens > 0:
+            self._forward_prefill(
+                q=q[num_decode_tokens:],
+                compressed_k_cache=self_kv_cache,
+                output=output[num_decode_tokens:],
+                attn_metadata=flashmla_metadata,
+                swa_metadata=swa_metadata,
+            )
+        if num_decode_tokens > 0:
+            self._forward_decode(
+                q=q[:num_decode_tokens],
+                kv_cache=self_kv_cache,
+                swa_metadata=swa_metadata,
+                attn_metadata=flashmla_metadata,
+                swa_only=swa_only,
+                output=output[:num_decode_tokens],
+            )
 
     def _prepare_query(self, q: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
         # fp8_ds_mla layout: q arrives bf16 (and already head-padded by the
@@ -467,7 +432,6 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         self,
         q: torch.Tensor,
         compressed_k_cache: torch.Tensor | None,
-        swa_k_cache: torch.Tensor,
         output: torch.Tensor,
         attn_metadata: DeepseekV4FlashMLAMetadata | None,
         swa_metadata: "DeepseekSparseSWAMetadata",

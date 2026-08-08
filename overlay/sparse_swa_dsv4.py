@@ -11,8 +11,10 @@ structurally unreachable on this deployment are removed —
   through b12x, which does not use the FlashMLA tile scheduler (and
   _flashmla_C is not built for sm_121a), so the skip branch was always taken
   on this stack. The tile_sched_* metadata fields stay (always None) for
-  consumers,
-- the upstream-DSpark parallel-drafting threshold doubling (fork impl only).
+  consumers.
+The DSpark parallel-drafting threshold multiplier is env-gated, NOT removed:
+serve.sh runs VLLM_DSPARK_IMPL=upstream and the non-overlaid sparse_mla.py
+doubles the speculative threshold under it (2026-08-09 incident).
 """
 import os
 from dataclasses import dataclass, field

@@ -151,6 +151,19 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   호출마다 2회), SWA 캐시 `view(N,-1)`(fused insert마다), `split` 크기
   리스트, `swa_cache_layer.prefix` 체인 2곳.
 
+### 7차 — 코드 자체 낭비 제거 (동작 불변, 순 −110줄)
+
+- `attention_impl`의 `wq_b_kv_insert` 클로저 중복 정의 2회 + 인라인 반복
+  1회 → 단일 정의 (세 오버랩 토폴로지 공유).
+- SP 경로 단일/다중 구간 병렬 중복 ~30줄 → `_take`/`_emplace` 인수분해
+  (`SPFAST` 킬스위치 게이트 보존).
+- `get_kv_cache_shape`: SM10x 분기 제거 후 부모 호출만 남은 순수
+  pass-through 오버라이드 삭제 · 단일 호출자 경유 메서드
+  `_forward_sparse_impl` 인라인 · `swa_k_cache` 데드 파라미터 체인 제거.
+- `DeepseekV4Indexer` 죽은 저장 4개, 이중 `if prefix`, `sm_count` 경유
+  변수 정리. indexer/sparse_swa 모듈 docstring의 "threshold doubling
+  제거됨" 문구를 인시던트 수정(env 게이트 복원)에 맞게 정정.
+
 ## 인시던트 2026-08-09 — 워밍업 실패, 킬스위치 바이섹트
 
 증상: 워밍업 4분 내 실패, C128A 레이어의 `c128a_prefill_topk_indices`가
@@ -173,6 +186,17 @@ None (원본 오버레이와 구조 동일한 조회 — None을 **만드는 쪽
 재기동 — 실패를 재현하는 노브가 범인. ③ 통과한 노브는 켠 채 유지, 범인은
 OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐의 입증
 전까지 원본 2-step으로 되돌림.
+
+**종결 (`51a1a52`)**: 커밋 바이섹트 결과 실패는 **1차 슬리밍(f734e8e)부터**
+— 위 용의자 랭킹은 반증됐고 킬스위치 3건은 전부 무혐의. 근본 원인은
+슬리밍이 하드코딩한 `_spec_mult=1`: serve.sh가 `VLLM_DSPARK_IMPL=upstream`을
+설정하므로 **미오버레이** 이미지 빌더(sparse_mla.py)는 threshold 1+2N(=11),
+슬림 빌더들은 1+N(=6) — 7토큰 워밍업 행을 이미지=decode / 오버레이=prefill로
+엇갈리게 분류 → C128A prefill 메타데이터 None. env 조건 멀티플라이어 복원으로
+수정 (부팅 200s · 리트리벌 9/9 · 프리필 2,503–2,523 무회귀). **교훈: 오버레이
+하지 않는 이미지 코드와 락스텝인 값은 절대 하드코딩으로 접지 말 것 — 런처가
+안 쓰는 env라도 이미지 내부 스크립트가 쓸 수 있다.** 킬스위치 3종은 무혐의
+확정이므로 하나씩 켜서 실측할 가치가 있다 (KV +10%대의 `TRIMIDX` 우선).
 
 이 이하 남은 개선은 코드가 아니라 측정이다: `profile-step.py`로 미귀속
 ~49%를 쪼갠 결과가 다음 작업(통신 튜닝 / mHC probe)을 정한다.
