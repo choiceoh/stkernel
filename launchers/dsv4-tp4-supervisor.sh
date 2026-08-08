@@ -8,7 +8,13 @@ set -uo pipefail
 LAUNCHER=/home/choiceoh/start-hy4-tp4.sh
 BASE=http://127.0.0.1:8000
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"
-CHAT_TIMEOUT=60
+# Long-context ingests block NEW interactive requests until the prefill ends
+# (NVIDIA forum #378890, 2x Spark: 145-159s blocked at 262K; our 430K at
+# ~2.5k tok/s prefill => ~170s+ worst case). The probe must outlast that or
+# the supervisor relaunches a HEALTHY stack mid-ingest. Cost: a hung-but-
+# listening corpse now takes up to ~FAILS_NEEDED*(CHAT_TIMEOUT+30)s (~16min)
+# to detect — dead ports still fail fast (connection refused).
+CHAT_TIMEOUT=300
 FAILS_NEEDED=3
 BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
                          # overlay-source change) can far exceed 25min; the poll
