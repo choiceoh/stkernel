@@ -17,9 +17,10 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | 디렉터리 | 내용 |
 |---|---|
 | `overlay/` | **프로덕션 오버레이 4파일** (업스트림 PR 5건 포팅 + TP4/GB10 전용 슬리밍) |
-| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 |
+| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + `deploy-overlays.sh`(4노드 배포+md5 검증) |
 | `bench/` | 검증·측정 도구 |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
+| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드 커버리지 |
 
 ## overlay/ — 프로덕션 채택 5건
 
@@ -103,6 +104,27 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   로컬 docker 미기동으로 헛돌 수 있었다 (자가 복구는 됐지만 사이클 낭비).
 - `check-quality.py` 문서 수정: 사실을 심는 실제 깊이는 25/50/75%.
 
+### 4차 최적화 (미실측 — bench-tp4/bench-ctx 프리필로 검증)
+
+- **indexer-SP 단일 구간 zero-copy 고속경로**: `_indexer_sp_owned_ranges`가
+  인접 구간을 병합해 반환하고(소유 행 집합 불변 — `tests/test_logic.py`로
+  검증), 결과가 단일 연속 구간이면 — 순수 프리필 단일 청크는 모든 랭크에서,
+  혼합 배치는 rank 0에서 해당 — arange/cat·index_select×3·index_copy×2-3을
+  전부 dim-0 슬라이스 뷰(zero-copy)와 연속 copy 1회로 대체. 계산되는 행과
+  배치 위치는 동일.
+- sparse_swa 빌드의 `slot_mapping >= 0` **임시 bool 텐서+copy 제거**:
+  `torch.ge(slot_mapping, 0, out=is_valid_token)` 제자리 쓰기 — 매 스텝
+  할당 1 + 커널 1 절감.
+- `profile-step.py` 확장: 커널 구간 **합집합 기반 busy/idle 분해**(launch
+  glue를 스트림 중첩과 구분해 직접 측정) + **스텝당 ms 환산**(probe 트리의
+  429/268/57/40과 같은 단위로 비교).
+- `tests/test_logic.py` 신설: 청커 예산 수학(#51252)·IndexCache F/S 규칙
+  (첫 C4A는 항상 F — 캐시 재사용·spec 제거의 전제)·SP 샤드 커버리지
+  (랭크 합집합=전체, 대형 청크 무중복)를 vllm/GPU 없이 AST 추출로 실행 검증.
+  `deploy-overlays.sh`가 배포 전 자동 실행.
+- `launchers/deploy-overlays.sh` 신설: 리포 → 4노드 `-b12x` 디렉터리 배포 +
+  md5 검증 (preflight 스큐 검사의 쓰기 쪽 반쪽).
+
 주의: 오버레이 소스가 바뀌었으므로 다음 기동에서 torch.compile/AOT 해시가
 갈려 **1회 장시간 재컴파일 워밍업**이 발생한다 (커널 캐시 마운트는 그대로).
 롤백은 기존과 동일 — 해당 `-v ...:ro` 마운트 제거 또는 git으로 이전 오버레이
@@ -129,6 +151,7 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 | `bench-ctx.py` | 장문 TTFT/디코드 분리 (스트리밍) | 비스트리밍이면 프리필이 디코드에 섞여 오측 |
 | `check-quality.py` | 2K/32K/128K에 사실 3개를 25/50/75% 깊이로 심고 리트리벌 | 인덱스 stride 버그가 산문 열화가 아닌 **검색 실패**로 드러남 |
 | `bench-conc.py` | 동시성 스윕 C=1/2/4 | 한 스윕 내 C값들은 상관 표본 — 단독 스윕으로 판정 금지 |
+| `profile-step.py` | **미귀속 잔차 귀속** — torch profiler로 NCCL·융합 커널 포함 전 커널 버킷팅 + top-N 테이블(mHC 커널 식별용). srv2에서 실행 | `VLLM_TORCH_PROFILER_DIR` 반영 재기동 1회 필요 · 캡처 중 오버헤드로 절대값 부풀음(비율로 판단) · 멀티스트림 중첩 시 합계>벽시계 · 서빙 트래픽·supervisor 프로브가 섞일 수 있어 한가할 때 실행 |
 
 ## probes/ — 계측 빌드
 
@@ -136,9 +159,19 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 (`[deneb-prof]`/`[deneb-prep]`/`[deneb-fi]`). 캡처 가드(`is_current_stream_capturing`) 필수 —
 없으면 `cudaErrorStreamCaptureInvalidated`로 기동 실패.
 
-실측 트리 (프리필, 정상상태): 어텐션 전체는 스텝 벽시계의 **~16%**
-(prep 32% — 인덱서 활성 레이어 크리티컬패스 / attn 68% — 그중 FlashInfer 커널 93%,
-q-prep 0.1%). 나머지 ~84%(MoE·mHC·norm·comms)는 미계측 — 다음 표적.
+실측 트리 — 프리필 스텝 예산 최종 (4,096토큰, 벽시계 ~1,552ms @ 2,640 tok/s):
+
+| 구간 | ms/스텝 | 비중 |
+|---|---|---|
+| MoE (라우터+experts+shared) | 429 | 27.6% |
+| attention_impl (prep+FlashInfer 커널) | 268 | 17.3% |
+| 입력 GEMM (wq_a/wkv/인덱서 헤드) | 57 | 3.7% |
+| o_proj einsum | ~40 | 2.6% |
+| **미귀속 잔차** (mHC + TP collectives + launch glue) | ~758 | **~49%** |
+
+미귀속 잔차는 Amdahl f≈0.57 비스케일 비율과 정합 — **다음 표적**. 파이썬
+스팬으로는 못 쪼갠다 (`fuse_gemm_comms`/`fuse_allreduce_rms`가 통신을 컴파일된
+커스텀 op 안으로 융합) → `bench/profile-step.py`로 커널 레벨 귀속.
 
 ## 미채택 포팅 (파일은 제거, 근거 보존 — 복원: git history `e95f82f`)
 

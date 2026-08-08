@@ -37,7 +37,10 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=0.95 -e TOP_P=0.44 \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
--e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0}"
+-e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
+-e VLLM_TORCH_PROFILER_DIR=/prof"
+# VLLM_TORCH_PROFILER_DIR only ENABLES the /start_profile,/stop_profile
+# endpoints (bench/profile-step.py); zero overhead until a capture is started.
 # NOTE: SP/EPFLAG knobs removed — b12x MoE is TP-only, so the enable_sp
 # compilation pass (#46789) and EP/DP are structurally impossible on this stack.
 RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1"
@@ -47,6 +50,7 @@ mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/mode
 -v /home/choiceoh/.cache/huggingface:/root/.cache/huggingface \
 -v /home/choiceoh/.cache/vllm-hybrid:/cache \
 -v /home/choiceoh/.cache/tilelang-hybrid:/root/.tilelang \
+-v /home/choiceoh/vllm-prof:/prof \
 -v ${ov}-b12x/attention.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py:ro \
 -v ${ov}-b12x/flashinfer_sparse.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py:ro \
 -v ${ov}-b12x/indexer.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py:ro \
@@ -67,7 +71,7 @@ for w in $WORKERS; do
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
   WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && md5sum $OVFILES" 2>/dev/null || true)
   [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
-  ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid" \
+  ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
     || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
 echo "preflight OK (${HID:0:19}, overlays in sync x4)"
@@ -119,7 +123,7 @@ SERVEEOF
 chmod +x /tmp/serve-hy4.sh
 
 echo "=== [3/5] create containers ==="
-mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid
+mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof
 docker rm -f hy4 2>/dev/null || true
 docker run -d --name hy4 $COMMON $RDMA_FLAGS $ENVV -e VLLM_HOST_IP=$HEAD_IP \
   $(mounts_for /home/choiceoh/hybrid-stack/overlay) \
