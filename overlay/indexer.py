@@ -328,6 +328,12 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         assert not self.vllm_config.attention_config.use_fp4_indexer_cache, (
             "use_fp4_indexer_cache is not supported on GB10 (SM121)."
         )
+        # Env-gated switches are fixed per container; resolve once instead of
+        # per build() step (build runs in eager Python every scheduler step).
+        self._use_b12x_sparse_indexer = envs.VLLM_USE_B12X_SPARSE_INDEXER
+        self._max_logits_bytes = (
+            envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024
+        )
 
         next_n = self.num_speculative_tokens + 1
         # Match sparse_swa/flashmla_sparse decode split (fork DSpark impl:
@@ -420,7 +426,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         num_decode_tokens: int,
         requires_padding: bool,
     ) -> torch.Tensor | None:
-        if not envs.VLLM_USE_B12X_SPARSE_INDEXER or requires_padding:
+        if not self._use_b12x_sparse_indexer or requires_padding:
             return None
 
         schedule_seq_lens = seq_lens
@@ -648,8 +654,8 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             prefill_query_lens_cpu = query_lens_np[
                 num_decodes : num_decodes + num_prefills
             ]
-            max_logits_bytes = envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024
-            if envs.VLLM_USE_B12X_SPARSE_INDEXER:
+            max_logits_bytes = self._max_logits_bytes
+            if self._use_b12x_sparse_indexer:
                 chunk_specs = []
                 b12x_budget_seq_lens = np.array(
                     [_B12X_PAGED_INDEX_SUPERTILE_K],
@@ -765,7 +771,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             decode_topk_max_seq_len = active_width_tokens
 
             active_width = None
-            if envs.VLLM_USE_B12X_SPARSE_INDEXER:
+            if self._use_b12x_sparse_indexer:
                 # Filled into the persistent buffer the captured kernel reads.
                 self.b12x_active_width_buffer.fill_(active_width_tokens)
                 active_width = self.b12x_active_width_buffer

@@ -229,8 +229,9 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
 
     @staticmethod
     def _as_sparse_cache(kv_cache: torch.Tensor) -> torch.Tensor:
-        if kv_cache.dtype == torch.float8_e4m3fn:
-            kv_cache = kv_cache.view(torch.uint8)
+        # fp8_ds_mla caches are uint8 by construction on this stack; only the
+        # layout dim may differ (the per-tensor-fp8 view belonged to the
+        # removed SM100 path).
         if kv_cache.dim() == 4:
             return kv_cache
         return kv_cache.unsqueeze(-2)

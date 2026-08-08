@@ -52,10 +52,11 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | 런처 `SP`/`EPFLAG` 노브 | b12x MoE TP 전용 → enable_sp(#46789)·EP 계열 구조적 불가 |
 
 최적화: `VLLM_MULTI_STREAM_GEMM_TOKEN_THRESHOLD`·`VLLM_DSV4_INDEXER_SP`·
-`B12X_PAGED_INDEX_SUPERTILE_K` env 조회를 핫패스에서 init/import 시점 1회로
-호이스팅, `_indexer_sp_owned_ranges`의 per-call import/TP 조회 캐싱, 인덱서
-디코드 빌드의 `seq_lens.max().item()` 동기화 폴백 제거(ratio>1 상시라 호스트
-상한으로 대체).
+`B12X_PAGED_INDEX_SUPERTILE_K`·`VLLM_USE_B12X_SPARSE_INDEXER`·
+`VLLM_SPARSE_INDEXER_MAX_LOGITS_MB` env 조회를 핫패스(매 스텝 metadata build
+포함)에서 init/import 시점 1회로 호이스팅, `_indexer_sp_owned_ranges`의
+per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().item()`
+동기화 폴백 제거(ratio>1 상시라 호스트 상한으로 대체).
 
 **유지한 가변 경로** (런처 노브라 상수가 아님): `IDXSP`(indexer SP on/off),
 `IDXFREQ`, `V2RUNNER`(batch_topology 유무), `SPEC_TOKENS`(flatten vs native
