@@ -269,10 +269,43 @@ def test_profile_step() -> None:
     print(f"  profile-step buckets/union .... OK")
 
 
+# ---------------------------------------------------------------------------
+# 6. bench-dec.py spec-decode metrics parsing (stdlib only, importable)
+# ---------------------------------------------------------------------------
+def test_bench_dec_metrics() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "bd", os.path.join(REPO, "bench", "bench-dec.py"))
+    bd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bd)
+    text = (
+        "# HELP vllm:spec_decode_num_accepted_tokens_total help\n"
+        'vllm:spec_decode_num_accepted_tokens_total{engine="0"} 120\n'
+        'vllm:spec_decode_num_accepted_tokens_total{engine="1"} 30\n'
+        'vllm:spec_decode_num_draft_tokens_total{engine="0"} 200\n'
+        'vllm:spec_decode_num_draft_tokens_total{engine="1"} 50\n'
+        "vllm:num_requests_running 5\n"
+    )
+    c = bd._parse_spec_metrics(text)
+    check(c["vllm:spec_decode_num_accepted_tokens_total"] == 150.0,
+          "accepted counters summed over labels")
+    check(c["vllm:spec_decode_num_draft_tokens_total"] == 250.0,
+          "draft counters summed over labels")
+    check("vllm:num_requests_running" not in c, "non-spec metric excluded")
+    before = {k: 0.0 for k in c}
+    s = bd.acceptance_suffix(before, c)
+    check("60.0%" in s, f"acceptance ratio wrong: {s!r}")
+    check(bd.acceptance_suffix(c, c) == "", "zero delta must yield no suffix")
+    check(bd.acceptance_suffix({}, {}) == "", "empty metrics must yield no suffix")
+    print(f"  bench-dec acceptance parser ... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
     test_sp_ranges()
     test_helpers()
     test_profile_step()
+    test_bench_dec_metrics()
     print(f"all OK ({PASS} checks)")

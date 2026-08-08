@@ -94,6 +94,15 @@ docker rm -f vllm-dsv4 2>/dev/null || true
 for w in $WORKERS; do ip=${w%%:*}; ssh $SSHOPT choiceoh@$ip "docker rm -f vllm-dsv4-worker 2>/dev/null; true"; done
 sleep 3
 
+echo "=== [1.5/5] drop reclaimable page cache on all nodes (UMA memory check) ==="
+# GB10 UMA: vLLM's startup free-memory probe treats reclaimable page cache as
+# unavailable, so the KV pool size varies boot-to-boot (4.22->5.34 GiB spreads
+# reported on identical config — NVIDIA forum #378890). Best-effort drop +
+# free log makes KV capacity deterministic and measurable across restarts.
+DROPCMD='sync; if sudo -n true 2>/dev/null; then echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null; echo "caches dropped"; else echo "no passwordless sudo - skipped"; fi; free -g | head -2'
+bash -c "$DROPCMD" 2>&1 | sed 's/^/  head: /'
+for w in $WORKERS; do ip=${w%%:*}; ssh $SSHOPT choiceoh@$ip "$DROPCMD" 2>&1 | sed "s/^/  $ip: /"; done
+
 echo "=== [2/5] write serve script (compose-faithful) ==="
 cat > /tmp/serve-hy4.sh <<'SERVEEOF'
 #!/bin/bash
