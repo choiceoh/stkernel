@@ -796,7 +796,9 @@ def deepseek_v4_attention(
         _ig_end = torch.cuda.Event(enable_timing=True)
         _ig_end.record()
         _b = _deneb_comp_bucket(
-            "in_gemms.prefill" if hidden_states.shape[0] > 64 else "in_gemms.decode"
+            "in_gemms.prefill"
+            if hidden_states.shape[0] > _DENEB_DECODE_MAX_ROWS
+            else "in_gemms.decode"
         )
         _b["pending"].append((_ig_ev, _ig_end))
         if len(_b["pending"]) >= _DENEB_PROF_EVERY:
