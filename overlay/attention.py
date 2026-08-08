@@ -386,9 +386,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
 
         # Register with compilation context for metadata lookup.
         compilation_config = vllm_config.compilation_config
-        if prefix and prefix in compilation_config.static_forward_context:
-            raise ValueError(f"Duplicate layer name: {prefix}")
         if prefix:
+            if prefix in compilation_config.static_forward_context:
+                raise ValueError(f"Duplicate layer name: {prefix}")
             compilation_config.static_forward_context[prefix] = self
         self.kv_cache = torch.tensor([])
 
@@ -536,16 +536,15 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # on the default stream so q stays on its consumer stream (forward_mqa
         # downstream reads q on default). Indexer/compressor go on aux for
         # overlap with default's GEMM + cache write.
+        def wq_b_kv_insert() -> torch.Tensor:
+            q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
+            return self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
+
         if self.indexer is not None and not self.skip_topk:
             indexer = self.indexer
             # Local ref so the closure keeps a non-None type for mypy.
             assert self.compressor is not None
             compressor = self.compressor
-
-            def wq_b_kv_insert() -> torch.Tensor:
-                q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
-                q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
-                return q
 
             # 3-way overlap (matches TRT-LLM PR #14142 Level 1): default runs
             # wq_b+kv_insert; slot [0] runs the full indexer; slot [1] runs the
@@ -571,25 +570,18 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             )
         elif self.compressor is not None:
             # wq_b + kv_insert on default, compressor on aux.
-            aux_stream = self._aux_stream0
             compressor = self.compressor
-
-            def wq_b_kv_insert() -> torch.Tensor:
-                q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
-                q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
-                return q
 
             q, _ = maybe_execute_in_parallel(
                 wq_b_kv_insert,
                 lambda: compressor(kv_score, positions, self.rotary_emb),
                 self.ln_events[0],
                 self.ln_events[1],
-                aux_stream,
+                self._aux_stream0,
             )
         else:
             # SWA-only layer: no compressor, no overlap.
-            q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
-            q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
+            q = wq_b_kv_insert()
 
         # MLA attention writes into the pre-allocated `out` buffer
         # ([num_tokens, padded_heads, head_dim]).
@@ -882,13 +874,9 @@ class DeepseekV4Indexer(nn.Module):
         skip_topk: bool = False,
     ):
         super().__init__()
-        self.vllm_config = vllm_config
-        self.config = config
-        self.quant_config = quant_config
         self.topk_tokens = config.index_topk
         self.n_head = config.index_n_heads  # 64
         self.head_dim = config.index_head_dim  # 128
-        self.rope_dim = config.qk_rope_head_dim  # 64
         self.q_lora_rank = q_lora_rank  # 1536
         self.compress_ratio = compress_ratio
         # FP4 indexer cache requires the SM10x paged-MQA kernels (B200/GB200);
@@ -997,73 +985,61 @@ class DeepseekV4Indexer(nn.Module):
                 # this rank's sharded indexer will read; place them into
                 # full-size buffers (unowned rows stay uninitialized and are
                 # never read by the sliced indexer paths).
+                #
+                # Single contiguous span — the dominant shape (pure-prefill
+                # single chunk on every rank; decode rows fused with rank 0's
+                # first shard) — uses zero-copy dim-0 slices in and one
+                # contiguous copy out (kill-switch gated); multi-span uses
+                # index_select / index_copy_ over a concatenated index.
                 _n = qr.shape[0]
                 if _SP_SINGLE_SPAN and len(_ranges) == 1:
-                    # Single contiguous span — the dominant shape (pure-
-                    # prefill single chunk on every rank; decode rows fused
-                    # with rank 0's first shard). dim-0 slices are zero-copy
-                    # views and the write-back is one contiguous copy: no
-                    # arange/cat, no gather/scatter kernels.
                     _a, _b = _ranges[0]
-                    _q_c, _ = self.wq_b(qr[_a:_b])
-                    _q_c = _q_c.view(-1, self.n_head, self.head_dim)
-                    _qq, _ww = fused_indexer_q_rope_quant(
-                        positions[_a:_b],
-                        _q_c,
-                        rotary_emb.cos_sin_cache,
-                        indexer_weights[_a:_b],
-                        self.softmax_scale,
-                        self.n_head**-0.5,
-                        use_fp4=self.use_fp4_kv,
+                    _idx = None
+
+                    def _take(t: torch.Tensor) -> torch.Tensor:
+                        return t[_a:_b]
+                else:
+                    _idx = torch.cat(
+                        [
+                            torch.arange(a, b, device=qr.device, dtype=torch.long)
+                            for a, b in _ranges
+                        ]
                     )
 
-                    def _place(part):
-                        if isinstance(part, (tuple, list)):
-                            return type(part)(_place(x) for x in part)
-                        full = part.new_empty((_n,) + tuple(part.shape[1:]))
-                        dst = full[_a:_b]
-                        if part.element_size() == 1:
-                            # keep the proven fp8 bit-copy pattern
-                            dst.view(torch.uint8).copy_(
-                                part.contiguous().view(torch.uint8)
-                            )
-                        else:
-                            dst.copy_(part)
-                        return full
+                    def _take(t: torch.Tensor) -> torch.Tensor:
+                        return t.index_select(0, _idx)
 
-                    return _place(_qq), _place(_ww)
-                _idx = torch.cat(
-                    [
-                        torch.arange(a, b, device=qr.device, dtype=torch.long)
-                        for a, b in _ranges
-                    ]
-                )
-                _q_c, _ = self.wq_b(qr.index_select(0, _idx))
+                _q_c, _ = self.wq_b(_take(qr))
                 _q_c = _q_c.view(-1, self.n_head, self.head_dim)
                 _qq, _ww = fused_indexer_q_rope_quant(
-                    positions.index_select(0, _idx),
+                    _take(positions),
                     _q_c,
                     rotary_emb.cos_sin_cache,
-                    indexer_weights.index_select(0, _idx),
+                    _take(indexer_weights),
                     self.softmax_scale,
                     self.n_head**-0.5,
                     use_fp4=self.use_fp4_kv,
                 )
 
-                def _scatter(part):
+                def _emplace(part):
                     if isinstance(part, (tuple, list)):
-                        return type(part)(_scatter(x) for x in part)
+                        return type(part)(_emplace(x) for x in part)
                     full = part.new_empty((_n,) + tuple(part.shape[1:]))
                     if part.element_size() == 1:
                         # index_copy_ lacks fp8 support; bit-copy via uint8
-                        full.view(torch.uint8).index_copy_(
-                            0, _idx, part.contiguous().view(torch.uint8)
-                        )
+                        # (kept for the slice path too — proven pattern).
+                        part8 = part.contiguous().view(torch.uint8)
+                        if _idx is None:
+                            full[_a:_b].view(torch.uint8).copy_(part8)
+                        else:
+                            full.view(torch.uint8).index_copy_(0, _idx, part8)
+                    elif _idx is None:
+                        full[_a:_b].copy_(part)
                     else:
                         full.index_copy_(0, _idx, part)
                     return full
 
-                return _scatter(_qq), _scatter(_ww)
+                return _emplace(_qq), _emplace(_ww)
             # ReplicatedLinear returns (output, bias); bias is None.
             q, _ = self.wq_b(qr)
             q = q.view(-1, self.n_head, self.head_dim)
