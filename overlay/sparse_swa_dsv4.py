@@ -466,9 +466,10 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             token_to_req_indices.copy_(x, non_blocking=True)
 
         is_valid_token = self.is_valid_token[: slot_mapping.shape[0]]
-        # In-place mask write: torch.ge(out=) skips the per-step bool
-        # temporary (slot_mapping >= 0) plus its copy kernel.
-        torch.ge(slot_mapping, 0, out=is_valid_token)
+        # Incident posture (2026-08-09): reverted to the original two-step
+        # mask write until the warmup failure is root-caused; the torch.ge
+        # out= micro-opt returns once prod is clean.
+        is_valid_token.copy_(slot_mapping >= 0)
 
         non_causal = not common_attn_metadata.causal
         decode_swa_width = self.noncausal_index_width if non_causal else self.window_size

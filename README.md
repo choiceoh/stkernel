@@ -151,6 +151,29 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   호출마다 2회), SWA 캐시 `view(N,-1)`(fused insert마다), `split` 크기
   리스트, `swa_cache_layer.prefix` 체인 2곳.
 
+## 인시던트 2026-08-09 — 워밍업 실패, 킬스위치 바이섹트
+
+증상: 워밍업 4분 내 실패, C128A 레이어의 `c128a_prefill_topk_indices`가
+None (원본 오버레이와 구조 동일한 조회 — None을 **만드는 쪽**이 바뀐 것).
+`c128a_*`는 이미지의 FlashMLA 빌더가 KV 그룹 단위로 채우므로, **그룹 구성을
+바꾸는 skip-topk 인덱서 KV 스펙 제거(3차)가 1순위 용의**, C4A 글로벌라이즈
+재사용(2차)이 2순위다.
+
+동작을 바꾸는 최적화 3건을 **기본 OFF 킬스위치**로 전환 — git 바이섹트
+대신 env 플립 + 재기동(4분 실패 창)으로 판정한다:
+
+| 런처 노브 | env | 내용 |
+|---|---|---|
+| `TRIMIDX=1` | `DENEB_TRIM_SKIP_INDEXER_KV` | skip-topk 인덱서 KV 스펙 제거 (KV ~10%대 회수) |
+| `C4AREUSE=1` | `DENEB_C4A_GLOBALIZE_REUSE` | C4A top-k 글로벌라이즈 재사용 |
+| `SPFAST=1` | `DENEB_SP_SINGLE_SPAN` | indexer-SP 단일 구간 zero-copy |
+
+절차: ① 전부 OFF로 기동 → 워밍업+`check-quality.py` 통과 확인(안 되면 1차
+슬리밍 자체가 원인 → `e95f82f` 오버레이로 롤백). ② 노브를 **하나씩** 켜고
+재기동 — 실패를 재현하는 노브가 범인. ③ 통과한 노브는 켠 채 유지, 범인은
+OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐의 입증
+전까지 원본 2-step으로 되돌림.
+
 이 이하 남은 개선은 코드가 아니라 측정이다: `profile-step.py`로 미귀속
 ~49%를 쪼갠 결과가 다음 작업(통신 튜닝 / mHC probe)을 정한다.
 

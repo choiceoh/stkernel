@@ -38,7 +38,12 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=0.95 -e TOP_P=0.44 \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
--e VLLM_TORCH_PROFILER_DIR=/prof"
+-e VLLM_TORCH_PROFILER_DIR=/prof \
+-e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
+# Incident kill-switches (default OFF): TRIMIDX=1 re-enables the skip-topk
+# indexer KV-spec trim, C4AREUSE=1 the C4A globalization reuse, SPFAST=1 the
+# indexer-SP single-span fast path. Flip ONE at a time to bisect the warmup
+# failure (fails <4min), then leave cleared ones enabled.
 # VLLM_TORCH_PROFILER_DIR only ENABLES the /start_profile,/stop_profile
 # endpoints (bench/profile-step.py); zero overhead until a capture is started.
 # NOTE: SP/EPFLAG knobs removed — b12x MoE is TP-only, so the enable_sp
