@@ -73,6 +73,35 @@ torch profiler 32K 프리필 캡처, rank0 (`--profiler-config` CLI로 라우트
    `torch.utils.cpp_extension.load()` + 오버레이 바인딩 심 필요 (~중간 작업).
 3. 그 외는 하드웨어(패브릭 대역폭)·모델(mHC 구조) 영역 — 소프트웨어 밖.
 
+## 업스트림 비교체크 (2026-08-09, PR·이슈 ~25건 vs 이 스택)
+
+로컬 사본(sai/moe/oproj probe·p474 히스토리)·이미지 파일·부팅 로그·포렌식 대조.
+
+### 판정
+
+| 건 | 판정 | 증거 |
+|---|---|---|
+| #49897 인덱서 프리필 NaN→IMA(SM12x) | 포크 자체 해결 — 무사 | 문제 커널 쌍이 이미지에 가드 없이 실존 + `VLLM_USE_B12X_SPARSE_INDEXER=False` 기본 확인 = 프로덕션이 그 deepgemm 경로로 상시 통과 중 |
+| #51467/#50924 구조화출력+dspark 엔진사망 | **무사 — 런타임 시험 통과** | 유휴 상태 `response_format: json_object` 1발 정상 응답 + 직후 api/chat 건강 (08-09) |
+| #49547 그래프 강등 | 변종 확인 — 신규 레버 | `fuse_attn_quant` 비호환 경고로 FULL 강제 → 인덱서 UNIFORM_BATCH 제약으로 **FULL_DECODE_ONLY** (프리필 piecewise 0; 디코드 FULL 1..256 유지). GPU busy 99.6%라 실손실은 작을 것 |
+| #50773 fuse_norm/act_quant GB10 오염 보고 | 워치 | 요청 안 한 두 패스가 resolved에서 자동 True 확인 — 품질 9/9라 포크판 정상 추정 |
+| #48031 엔진 ready 600s | 채택 (보험) | 이미지 `envs.py:27` 기본 600s + supervisor 이력 'boot grace exceeded' → 런처에 `VLLM_ENGINE_READY_TIMEOUT_S=3600` |
+| #49921 라우터 GEMM 게이트 | **기각 — 자체감사로 정정** | 게이트(`gate_linear.py:53 family(100)`)는 실존하나, 이 포크의 생성자는 `force_fp32_compute` 미전달(nvidia/model.py:607) → 현행 폴백이 이미 **bf16 F.linear + [N,256] fp32 캐스트**. (4096,256)은 Tier-1/2 부적격이라 게이트를 열어도 실효는 캐스트 1커널 융합뿐(기대 ~0). 포팅 시도 철회 |
+| #49027 TP 웻지(상한 근접) | 이론 잔존 | 포렌식 전건 grep — NCCL 카운트 불일치 시그니처 무발견. 430K 근접 세션 시 위험, 증상 시그니처는 포렌식 로그로 식별 가능 |
+| #51489/#50774/#48210/#50365/#51106 | 무관/기커버 | C128A 빌더 zero-가드(p474 L286)·tile_sched 소비 무·bmm_fp8 미검출·atomic 미검출·#49059 가드 확인 |
+| #51340/#51009/#50011/#46307 | 워치/기해결 | 워밍업 행 무증상 · 수용률은 bench-dec 열 감시 · sleep 미사용 · UMA는 drop_caches 대응 |
+
+### 구성 해석 드리프트 (요청 vs resolved, 부팅 로그 실증)
+
+- 요청 `FULL_AND_PIECEWISE` → 실효 **FULL_DECODE_ONLY** (`fuse_attn_quant`→splitting_ops=[] → FULL → 인덱서 제약)
+- 요청 `fuse_gemm_comms:true` → resolved **False** (조용히 드랍 — 런처 플래그는 장식)
+- 미요청 `fuse_norm_quant/fuse_act_quant` → resolved **True** (자동 활성)
+
+### 신규 A/B 큐 (재기동 단위, 하나씩)
+
+1. `fuse_attn_quant=false` — 진짜 FULL_AND_PIECEWISE 회복 vs attn-quant 융합 상실
+2. `VLLM_USE_B12X_SPARSE_INDEXER=1` — 미실측 노브 (SM120 전용 요건 충족; 켜면 우리 indexer.py의 b12x 스케줄 분기가 라이브)
+
 ## 인시던트 로그
 
 | 일자 | 증상 | 근본 원인 | 수정 |
