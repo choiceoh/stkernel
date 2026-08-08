@@ -54,6 +54,26 @@ pos1 **78.5%** · pos2 56.4% · pos3 39.6% · pos4 28.6% · pos5 21.5% (기하 �
 낮추면 드래프터 적중↑ = 디코드↑, 단 출력 다양성과의 품질 트레이드라 운영자
 결정 사항 (temp 0.7 A/B는 미실측). 스텝 시간 자체는 하드웨어 영역.
 
+## 디코드 스텝 예산 — 커널 귀속 (2026-08-09, with_stack=false 캡처)
+
+600tok 생성(acc 32.9%, 227스텝 = 41.9ms/step), rank0, GPU busy **97.4%**:
+
+| 버킷 | ms/step | 비중 |
+|---|---|---|
+| GEMM (M=6 극소 행렬곱 — 가중치 스트리밍) | 20.28 | 42.1% |
+| MoE (b12x — expert 가중치 읽기) | 14.85 | 30.9% |
+| comms (AllReduce 2/layer, 회당 68µs) | 6.75 | 14.0% |
+| mHC/기타 | 2.45 | 5.1% |
+| attn (sparse MLA decode) | 2.20 | 4.6% |
+| idle/glue | 1.10 | 2.6% |
+
+**결론: 디코드 스텝의 84%가 가중치 스트리밍** — 토큰당 랭크당 ~9.6GB를 LPDDR
+(273GB/s)에서 읽는 물리적 바닥. 검산: 무스펙 1tok/step → 1000/42 = 23.8 tok/s
+이론치 = 관측된 22.0 outlier와 일치 (스펙 바이패스 서명의 독립 확인).
+실디코드 = 이 바닥 × (1+5×수용률). 클럭·통신·커널 튜닝 여지 거의 없음
+(comms 14%·idle 2.6%). 유일 관찰 항목: 드래프터 GEMM이 cutlass_80_wmma
+(SM80 세대 커널, 3.4ms/step) — 교체 시 최대 ~8% 이론 여지.
+
 ## 판정 원장
 
 ### 채택 (프로덕션)
@@ -132,7 +152,7 @@ pos1 **78.5%** · pos2 56.4% · pos3 39.6% · pos4 28.6% · pos5 21.5% (기하 �
 |---|---|---|---|
 | 08-09 | 워밍업 `c128a_prefill_topk_indices=None` 크래시 | 슬리밍이 `_spec_mult` 하드코딩 — 실환경은 `VLLM_DSPARK_IMPL=upstream`이라 비오버레이 `sparse_mla.py`(threshold 11)와 오버레이(6)가 같은 배치를 다르게 분할 | env-게이트 복원 (51a1a52) + raise에 `[diag]` 자가진단 부착 |
 | 08-09 | `/start_profile` 404 ×3 | 라우트는 `--profiler-config` **CLI 인자**로만 attach — env(`VLLM_TORCH_PROFILER_DIR`/`VLLM_SERVER_DEV_MODE`)는 무관 | 런처 serve 인자에 배선 (454f49f) |
-| 08-09 | 프로파일 캡처 후 엔진 웨지 | `stop_profile`의 트레이스 덤프가 120s+ | 캡처는 전용 부팅에서만; 트레이스는 서버가 마저 쓰므로 **오프라인 파싱** (`load_events`/`bucket_of` 재사용) |
+| 08-09 | 프로파일 캡처 후 엔진 "웨지" | **OOM이 진범**: `with_stack=true`의 파이썬 스택 이벤트 124만 개 직렬화가 램 폭식 → 커널 OOM 킬러가 37GB 워커 사살 (dmesg 실증; 클라이언트 스크립트도 2회 피살) | `torch_profiler_with_stack=false` — 트레이스 87MB→34.6MB, 커널 이벤트만, 덤프 초 단위. 웨지 클래스 소멸 |
 
 ## 방법론 교훈 (체인 운용)
 
