@@ -1005,6 +1005,11 @@ def deepseek_v4_attention(
     forward_context = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
 
+    # deneb probe: input projections (wq_a + wkv + indexer heads) + rmsnorm span.
+    _ig_ev = None
+    if _DENEB_PROF and not torch.cuda.is_current_stream_capturing():
+        _ig_ev = torch.cuda.Event(enable_timing=True)
+        _ig_ev.record()
     qr_kv, kv_score, indexer_kv_score, indexer_weights = (
         self.attn_gemm_parallel_execute(hidden_states)
     )
@@ -1016,6 +1021,23 @@ def deepseek_v4_attention(
         self.kv_norm.weight.data,
         self.eps,
     )
+    if _ig_ev is not None:
+        _ig_end = torch.cuda.Event(enable_timing=True)
+        _ig_end.record()
+        _b = _deneb_comp_bucket(
+            "in_gemms.prefill" if hidden_states.shape[0] > 64 else "in_gemms.decode"
+        )
+        _b["pending"].append((_ig_ev, _ig_end))
+        if len(_b["pending"]) >= _DENEB_PROF_EVERY:
+            torch.cuda.synchronize()
+            for _a, _z in _b["pending"]:
+                _b["ms"] += _a.elapsed_time(_z)
+                _b["n"] += 1
+            _b["pending"].clear()
+            logger.info(
+                "[deneb-prep] %s calls=%d total=%.1fms avg=%.3fms",
+                "in_gemms", _b["n"], _b["ms"], _b["ms"] / _b["n"],
+            )
     self.attention_impl(
         hidden_states,
         qr,
