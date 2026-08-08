@@ -167,6 +167,12 @@ class DeepseekSparseSWAMetadata:
     seq_lens: torch.Tensor | None = None  # [num_seqs]
     query_start_loc: torch.Tensor | None = None  # [num_seqs + 1]
     query_start_loc_cpu: torch.Tensor | None = None  # [num_seqs + 1]
+    # Python-int shadow of query_start_loc_cpu, built once per step when the
+    # batch has prefill tokens. The per-layer prefill chunk loops otherwise
+    # do their offset math via CPU-tensor scalar indexing — each index /
+    # subtract / slice-bound conversion is a full dispatch, and it runs per
+    # chunk per layer (~ms/step aggregate across ~61 layers).
+    query_start_loc_py: list[int] | None = None
 
     is_valid_token: torch.Tensor | None = None  # [num_tokens]
     token_to_req_indices: torch.Tensor | None = None  # [num_tokens]
@@ -382,6 +388,14 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             dtype=torch.bool,
             device=self.device,
         )
+        # Persistent output for the prefill-metadata kernel below — same
+        # stream-ordered buffer discipline as the index/lens buffers above,
+        # instead of a fresh torch.empty per prefill build.
+        self.pfx_gather_lens_buffer = torch.zeros(
+            self.vllm_config.scheduler_config.max_num_seqs,
+            dtype=torch.int32,
+            device=self.device,
+        )
 
         # DSpark draft: the block is non-causal (every query attends to the
         # trailing window of context PLUS all query tokens, including future ones),
@@ -546,6 +560,9 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             seq_lens=seq_lens,
             query_start_loc=query_start_loc,
             query_start_loc_cpu=query_start_loc_cpu,
+            query_start_loc_py=(
+                query_start_loc_cpu.tolist() if num_prefill_tokens > 0 else None
+            ),
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_valid_token=is_valid_token,
@@ -593,9 +610,7 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         # --- Prefill query metadata (single Triton kernel + CPU slicing) ---
         if num_prefills > 0:
             assert seq_lens_cpu is not None
-            pfx_gather_lens = torch.empty(
-                num_prefills, dtype=torch.int32, device=seq_lens.device
-            )
+            pfx_gather_lens = self.pfx_gather_lens_buffer[:num_prefills]
             _compute_prefill_metadata_kernel[(1,)](
                 pfx_gather_lens,
                 seq_lens,

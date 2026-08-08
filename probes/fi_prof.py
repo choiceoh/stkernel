@@ -283,11 +283,32 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
             "TP4 GB10 overlay: SM120 attention requires the fp8_ds_mla "
             f"(uint8) KV layout, got {self.kv_cache_torch_dtype}"
         )
+        # Identity-guarded caches for the _as_sparse_cache dim-fix views. The
+        # KV tensors are bound once at startup, so rebuilding the view on
+        # every per-layer forward call is wasted python; the `is` guard keeps
+        # this correct even if a cache tensor were ever rebound.
+        self._swa_view_src: torch.Tensor | None = None
+        self._swa_view: torch.Tensor | None = None
+        self._ckv_view_src: torch.Tensor | None = None
+        self._ckv_view: torch.Tensor | None = None
 
     def _reserve_empty_forward_workspace(self) -> None:
         self._get_workspace(
             torch.device("cuda", torch.accelerator.current_device_index())
         )
+
+    def _swa_sparse_cache(self) -> torch.Tensor:
+        src = self.swa_cache_layer.kv_cache
+        if self._swa_view_src is not src:
+            self._swa_view = self._as_sparse_cache(src)
+            self._swa_view_src = src
+        return self._swa_view
+
+    def _compressed_sparse_cache(self, kv_cache: torch.Tensor) -> torch.Tensor:
+        if self._ckv_view_src is not kv_cache:
+            self._ckv_view = self._as_sparse_cache(kv_cache)
+            self._ckv_view_src = kv_cache
+        return self._ckv_view
 
     def _forward_sparse_impl(
         self,
@@ -354,7 +375,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         )
         swa_metadata = cast(
             "DeepseekSparseSWAMetadata | None",
-            attn_metadata.get(self.swa_cache_layer.prefix),
+            attn_metadata.get(self._swa_prefix),
         )
         assert swa_metadata is not None
 
@@ -451,8 +472,10 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         assert swa_indices is not None
         assert swa_lens is not None
         q = self._prepare_query(q, output)
-        swa_cache = self._as_sparse_cache(self.swa_cache_layer.kv_cache)
-        extra_cache = self._as_sparse_cache(kv_cache) if kv_cache is not None else None
+        swa_cache = self._swa_sparse_cache()
+        extra_cache = (
+            self._compressed_sparse_cache(kv_cache) if kv_cache is not None else None
+        )
         if extra_cache is not None and extra_sparse_indices is None:
             raise RuntimeError(
                 f"[dspark-debug] layer={getattr(self, 'prefix', '?')} "
@@ -495,9 +518,15 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         num_decode_tokens = swa_metadata.num_decode_tokens
         num_prefill_tokens = swa_metadata.num_prefill_tokens
 
-        query_start_loc_cpu = swa_metadata.query_start_loc_cpu
-        assert query_start_loc_cpu is not None
-        prefill_token_base = query_start_loc_cpu[num_decodes]
+        # Plain-int offsets for the chunk loop below (built once per step by
+        # the SWA builder). getattr fallback covers per-file rollback, where
+        # the image's builder lacks the python shadow.
+        qsl_py = getattr(swa_metadata, "query_start_loc_py", None)
+        if qsl_py is None:
+            query_start_loc_cpu = swa_metadata.query_start_loc_cpu
+            assert query_start_loc_cpu is not None
+            qsl_py = query_start_loc_cpu.tolist()
+        prefill_token_base = qsl_py[num_decodes]
 
         local_topk_indices: torch.Tensor | None
         if swa_only:
@@ -565,7 +594,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         q = self._prepare_query(q, output)
         _ev2 = _deneb_mark()
         _deneb_span("pf.q_prep", _ev1, _ev2)
-        swa_kv_paged = self._as_sparse_cache(swa_k_cache)
+        swa_kv_paged = self._swa_sparse_cache()
         if swa_only:
             extra_kv_paged = None
         else:
@@ -573,7 +602,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
                 raise RuntimeError(
                     "Compressed sparse MLA layers require their compressed KV cache."
                 )
-            extra_kv_paged = self._as_sparse_cache(compressed_k_cache)
+            extra_kv_paged = self._compressed_sparse_cache(compressed_k_cache)
 
         num_chunks = (
             num_prefills + self.PREFILL_CHUNK_SIZE - 1
@@ -581,12 +610,8 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         for chunk_idx in range(num_chunks):
             chunk_start = chunk_idx * self.PREFILL_CHUNK_SIZE
             chunk_end = min(chunk_start + self.PREFILL_CHUNK_SIZE, num_prefills)
-            query_start = (
-                query_start_loc_cpu[num_decodes + chunk_start] - prefill_token_base
-            )
-            query_end = (
-                query_start_loc_cpu[num_decodes + chunk_end] - prefill_token_base
-            )
+            query_start = qsl_py[num_decodes + chunk_start] - prefill_token_base
+            query_end = qsl_py[num_decodes + chunk_end] - prefill_token_base
             # deneb fork: port of upstream PR #49059. FULL_AND_PIECEWISE cudagraph
             # padding can produce a trailing SM120 sparse-MLA prefill chunk with
             # query_start == query_end; FlashInfer then raises "cannot reshape
