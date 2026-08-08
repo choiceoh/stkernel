@@ -82,6 +82,55 @@ launch(){
 }
 
 log "=== dsv4-tp4 supervisor start ==="
+
+# --- engine-wedge watchdog + daily cache hygiene (MEASUREMENTS.md 08-09) ---
+# Morning incident: one engine degraded monotonically (2,528 -> 2,152 over ~40
+# min) and a restart fully recovered it. Prefix-cache churn did NOT reproduce
+# at the same bench counts, so the standing suspect is a wedged request (e.g.
+# a probe orphaned by a supervisor restart) that continuous batching keeps
+# scheduling. Discriminator: requests running but generation_tokens STATIC --
+# a legit long generation always advances the counter.
+WEDGE_CYCLES="${WEDGE_CYCLES:-30}"          # 30 x 30s = 15 min
+CACHE_RESET_HOUR="${CACHE_RESET_HOUR:-04}"  # local hour; empty disables
+_gen_last="-1"; _wedge=0; _reset_day=""
+
+wedge_check(){
+  local m running gen
+  m=$(curl -s -m 5 "$BASE/metrics" 2>/dev/null) || { _wedge=0; return 0; }
+  running=$(printf "%s" "$m" | awk '/^vllm:num_requests_running/ {s+=$2} END {printf "%d", s+0}')
+  gen=$(printf "%s" "$m" | awk '/^vllm:generation_tokens_total/ {s+=$2} END {printf "%.0f", s+0}')
+  if [ "$running" -gt 0 ] && [ "$gen" = "$_gen_last" ]; then
+    _wedge=$((_wedge+1))
+    if [ "$_wedge" -ge "$WEDGE_CYCLES" ]; then
+      log "WEDGE: $running request(s) running, generation static for $((WEDGE_CYCLES*30))s — recycling"
+      forensics
+      launch || log "wedge relaunch failed; health loop will retry"
+      _wedge=0; _gen_last="-1"
+      return 0
+    fi
+  else
+    _wedge=0
+  fi
+  _gen_last="$gen"
+}
+
+maybe_cache_reset(){
+  [ -z "$CACHE_RESET_HOUR" ] && return 0
+  local d h
+  d=$(date +%Y%m%d); h=$(date +%H)
+  [ "$h" = "$CACHE_RESET_HOUR" ] || return 0
+  [ "$_reset_day" = "$d" ] && return 0
+  # idle = nothing running or waiting, checked twice 20s apart
+  _idle(){ curl -s -m 5 "$BASE/metrics" 2>/dev/null | awk '/^vllm:num_requests_running|^vllm:num_requests_waiting/ {s+=$2} END {exit (s>0)}'; }
+  _idle || return 0
+  sleep 20
+  _idle || return 0
+  if curl -s -m 15 -X POST "$BASE/reset_prefix_cache" -o /dev/null; then
+    _reset_day="$d"
+    log "daily idle prefix-cache reset done"
+  fi
+}
+
 wait_for_fleet
 # Adopt an already-healthy stack instead of stomping it (manual launches, restarts).
 if api_up && chat_ok; then log "existing stack healthy — adopting"; else launch || log "initial launch failed; will retry via health loop"; fi
@@ -91,6 +140,8 @@ while :; do
   if api_up && chat_ok; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
+    wedge_check
+    maybe_cache_reset
     continue
   fi
   fails=$((fails+1))
