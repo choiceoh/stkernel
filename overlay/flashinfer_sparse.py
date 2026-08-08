@@ -233,11 +233,32 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
             "TP4 GB10 overlay: SM120 attention requires the fp8_ds_mla "
             f"(uint8) KV layout, got {self.kv_cache_torch_dtype}"
         )
+        # Identity-guarded caches for the _as_sparse_cache dim-fix views. The
+        # KV tensors are bound once at startup, so rebuilding the view on
+        # every per-layer forward call is wasted python; the `is` guard keeps
+        # this correct even if a cache tensor were ever rebound.
+        self._swa_view_src: torch.Tensor | None = None
+        self._swa_view: torch.Tensor | None = None
+        self._ckv_view_src: torch.Tensor | None = None
+        self._ckv_view: torch.Tensor | None = None
 
     def _reserve_empty_forward_workspace(self) -> None:
         self._get_workspace(
             torch.device("cuda", torch.accelerator.current_device_index())
         )
+
+    def _swa_sparse_cache(self) -> torch.Tensor:
+        src = self.swa_cache_layer.kv_cache
+        if self._swa_view_src is not src:
+            self._swa_view = self._as_sparse_cache(src)
+            self._swa_view_src = src
+        return self._swa_view
+
+    def _compressed_sparse_cache(self, kv_cache: torch.Tensor) -> torch.Tensor:
+        if self._ckv_view_src is not kv_cache:
+            self._ckv_view = self._as_sparse_cache(kv_cache)
+            self._ckv_view_src = kv_cache
+        return self._ckv_view
 
     def _forward_sparse_impl(
         self,
@@ -401,8 +422,10 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         assert swa_indices is not None
         assert swa_lens is not None
         q = self._prepare_query(q, output)
-        swa_cache = self._as_sparse_cache(self.swa_cache_layer.kv_cache)
-        extra_cache = self._as_sparse_cache(kv_cache) if kv_cache is not None else None
+        swa_cache = self._swa_sparse_cache()
+        extra_cache = (
+            self._compressed_sparse_cache(kv_cache) if kv_cache is not None else None
+        )
         if extra_cache is not None and extra_sparse_indices is None:
             raise RuntimeError(
                 f"[dspark-debug] layer={getattr(self, 'prefix', '?')} "
@@ -510,7 +533,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         assert swa_metadata.prefill_swa_lens is not None
 
         q = self._prepare_query(q, output)
-        swa_kv_paged = self._as_sparse_cache(swa_k_cache)
+        swa_kv_paged = self._swa_sparse_cache()
         if swa_only:
             extra_kv_paged = None
         else:
@@ -518,7 +541,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
                 raise RuntimeError(
                     "Compressed sparse MLA layers require their compressed KV cache."
                 )
-            extra_kv_paged = self._as_sparse_cache(compressed_k_cache)
+            extra_kv_paged = self._compressed_sparse_cache(compressed_k_cache)
 
         num_chunks = (
             num_prefills + self.PREFILL_CHUNK_SIZE - 1

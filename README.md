@@ -125,6 +125,22 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 - `launchers/deploy-overlays.sh` 신설: 리포 → 4노드 `-b12x` 디렉터리 배포 +
   md5 검증 (preflight 스큐 검사의 쓰기 쪽 반쪽).
 
+### 5차 수제 미세 최적화 (µs급 잡비용 소거 — 합계는 스텝의 1% 미만)
+
+- indexer 빌드: compressed seq_lens(`seq_lens // 4`) 계산을 프리필 브랜치로
+  이동 — 소비처가 프리필 청커뿐인데 **디코드 전용 스텝마다** 커널+할당을
+  내던 것 제거.
+- sparse_swa: 프리필 gather_lens 커널 출력을 매 빌드 `torch.empty` 대신
+  **영속 버퍼**로 (기존 index/lens 버퍼와 같은 스트림-순서 규율).
+- attention: `aux_streams[:3]`/`[:2]`/이벤트 리스트 슬라이싱을 per-call에서
+  init 1회로 — 레이어당 eager 호출마다 만들던 리스트 객체 4개 제거.
+- flashinfer: `_as_sparse_cache` dim-fix 뷰를 **identity 가드 캐싱** — KV
+  텐서는 기동 시 1회 바인딩되므로 레이어당 호출 2-3회의 view 생성이 전부
+  재사용으로 바뀜 (`is` 가드라 리바인딩에도 안전).
+
+이 이하 남은 개선은 코드가 아니라 측정이다: `profile-step.py`로 미귀속
+~49%를 쪼갠 결과가 다음 작업(통신 튜닝 / mHC probe)을 정한다.
+
 주의: 오버레이 소스가 바뀌었으므로 다음 기동에서 torch.compile/AOT 해시가
 갈려 **1회 장시간 재컴파일 워밍업**이 발생한다 (커널 캐시 마운트는 그대로).
 롤백은 기존과 동일 — 해당 `-v ...:ro` 마운트 제거 또는 git으로 이전 오버레이

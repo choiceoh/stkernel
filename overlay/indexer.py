@@ -652,10 +652,13 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             dcp_rank=0,
             cp_kv_cache_interleave_size=1,
         )
-        compressed_seq_lens = seq_lens // self.compress_ratio
 
         prefill_metadata = None
         if num_prefills > 0:
+            # Only the prefill chunk metadata consumes the compressed device
+            # seq_lens; computing it unconditionally cost a kernel + alloc on
+            # every decode-only step.
+            compressed_seq_lens = seq_lens // self.compress_ratio
             # This CPU value is an upper bound for async-spec extend rows.  It
             # is safe for chunking/allocation because CUDA metadata below is
             # built from exact device seq_lens and gather ignores the tail.

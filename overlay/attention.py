@@ -336,6 +336,20 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # [1] doubles as post-GEMM event1. Reuse is safe: GEMM fully joins
         # before post-GEMM starts.
         self.ln_events = [torch.cuda.Event() for _ in range(4)]
+        # Pre-sliced stream/event views for the per-call fan-outs:
+        # attn_gemm_parallel_execute / attention_impl run per layer per eager
+        # step, so their per-call python stays attribute reads only.
+        if aux_stream_list is not None:
+            assert len(aux_stream_list) >= 3
+            self._aux_streams3 = aux_stream_list[:3]
+            self._aux_streams2 = aux_stream_list[:2]
+            self._aux_stream0 = aux_stream_list[0]
+        else:
+            self._aux_streams3 = None
+            self._aux_streams2 = None
+            self._aux_stream0 = None
+        self._ln_done_events = self.ln_events[1:4]
+        self._ln_events12 = self.ln_events[1:3]
 
         assert cache_config is not None, "DeepseekV4 attention requires cache_config"
         # ---- Attention / KV-cache setup ----
@@ -427,10 +441,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         return self._o_proj(o, positions)
 
     def attn_gemm_parallel_execute(self, hidden_states) -> tuple[Any, ...]:
-        aux_streams = self.aux_stream_list
-        if aux_streams is not None:
-            assert len(aux_streams) >= 3
-            aux_streams = aux_streams[:3]
+        aux_streams = self._aux_streams3
 
         # fused_wqa_wkv (heaviest) on default; the three lighter input GEMMs
         # on aux streams 0..2 when their owning module exists. ln_events[0]
@@ -478,7 +489,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             fused_wqa_wkv,
             aux_fns,
             self.ln_events[0],
-            self.ln_events[1:4],
+            self._ln_done_events,
             aux_streams,
             enable=hidden_states.shape[0] <= self._multi_stream_gemm_threshold,
         )
@@ -504,7 +515,6 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # downstream reads q on default). Indexer/compressor go on aux for
         # overlap with default's GEMM + cache write.
         if self.indexer is not None and not self.skip_topk:
-            aux_streams = self.aux_stream_list
             indexer = self.indexer
             # Local ref so the closure keeps a non-None type for mypy.
             assert self.compressor is not None
@@ -533,15 +543,13 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                     lambda: compressor(kv_score, positions, self.rotary_emb),
                 ],
                 self.ln_events[0],
-                [self.ln_events[1], self.ln_events[2]],
-                [aux_streams[0], aux_streams[1]] if aux_streams is not None else None,
-                enable=aux_streams is not None,
+                self._ln_events12,
+                self._aux_streams2,
+                enable=self._aux_streams2 is not None,
             )
         elif self.compressor is not None:
             # wq_b + kv_insert on default, compressor on aux.
-            aux_stream = (
-                self.aux_stream_list[0] if self.aux_stream_list is not None else None
-            )
+            aux_stream = self._aux_stream0
             compressor = self.compressor
 
             def wq_b_kv_insert() -> torch.Tensor:

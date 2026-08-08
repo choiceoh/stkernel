@@ -382,6 +382,14 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             dtype=torch.bool,
             device=self.device,
         )
+        # Persistent output for the prefill-metadata kernel below — same
+        # stream-ordered buffer discipline as the index/lens buffers above,
+        # instead of a fresh torch.empty per prefill build.
+        self.pfx_gather_lens_buffer = torch.zeros(
+            self.vllm_config.scheduler_config.max_num_seqs,
+            dtype=torch.int32,
+            device=self.device,
+        )
 
         # DSpark draft: the block is non-causal (every query attends to the
         # trailing window of context PLUS all query tokens, including future ones),
@@ -593,9 +601,7 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         # --- Prefill query metadata (single Triton kernel + CPU slicing) ---
         if num_prefills > 0:
             assert seq_lens_cpu is not None
-            pfx_gather_lens = torch.empty(
-                num_prefills, dtype=torch.int32, device=seq_lens.device
-            )
+            pfx_gather_lens = self.pfx_gather_lens_buffer[:num_prefills]
             _compute_prefill_metadata_kernel[(1,)](
                 pfx_gather_lens,
                 seq_lens,
