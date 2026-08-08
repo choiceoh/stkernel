@@ -129,7 +129,7 @@ echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
-  --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\"}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-4}}" \
+  --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\", \"torch_profiler_with_stack\": false}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-4}}" \
   --kv-cache-dtype fp8 --block-size 256 --load-format auto \
   --tensor-parallel-size "${TP_SIZE}" \
   --gpu-memory-utilization "${GPU_MEM}" \
