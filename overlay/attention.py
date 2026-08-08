@@ -299,9 +299,12 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         self.indexer_rotary_emb = self.rotary_emb
         self.topk_indices_buffer = topk_indices_buffer
 
-        # deneb fork (PR #51209 port): IndexCache — skipped C4A layers keep their
-        # indexer allocated but never run it, reusing the top-k the previous C4A
-        # layer left in the shared rank-local topk_indices_buffer.
+        # deneb fork (PR #51209 port): IndexCache — skipped C4A layers keep
+        # their indexer modules (checkpoint weights must still load) but never
+        # run them, reusing the top-k the previous C4A layer left in the
+        # shared rank-local topk_indices_buffer. Their indexer k-cache spec is
+        # dropped (spec_enabled=False below) so the never-touched cache costs
+        # no KV pages.
         self.skip_topk = _resolve_skip_topk(config, layer_id)
         if self.skip_topk:
             logger.info_once("IndexCache: some C4A layers reuse the previous top-k.")
@@ -325,6 +328,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 compress_ratio=self.compress_ratio,
                 prefix=f"{prefix}.indexer",
                 aux_stream=indexer_aux_stream,
+                skip_topk=self.skip_topk,
             )
 
         self.aux_stream_list = aux_stream_list
@@ -699,6 +703,7 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         prefix: str,
         cache_config: CacheConfig,
         compress_ratio: int = 1,
+        spec_enabled: bool = True,
     ):
         super().__init__()
         self.kv_cache = torch.tensor([])
@@ -707,12 +712,19 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         self.cache_config = cache_config
         self.dtype = dtype
         self.compress_ratio = compress_ratio
+        self.spec_enabled = spec_enabled
         compilation_config = get_current_vllm_config().compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
 
-    def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+    def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
+        # IndexCache (#51209): a skip-topk layer never runs its indexer, so
+        # its k-cache (and the compressor state packed into the same pages)
+        # is never written or read. Returning None allocates no pages for it
+        # — the same mechanism SWA-only attention layers use above.
+        if not self.spec_enabled:
+            return None
         # head_dim already carries the fp8 scale padding
         # compress_ratio=1 for V3.2, >1 for DeepseekV4. Both use the same
         # per-row indexer cache layout; compressed variants store fewer rows.
@@ -814,6 +826,7 @@ class DeepseekV4Indexer(nn.Module):
         compress_ratio: int = 1,
         prefix: str = "",
         aux_stream: torch.cuda.Stream | None = None,
+        skip_topk: bool = False,
     ):
         super().__init__()
         self.vllm_config = vllm_config
@@ -876,6 +889,9 @@ class DeepseekV4Indexer(nn.Module):
             prefix=f"{prefix}.k_cache",
             cache_config=cache_config,
             compress_ratio=self.compress_ratio,
+            # skip-topk layers never run this indexer; don't spend KV pages
+            # on a cache that is never written or read.
+            spec_enabled=not skip_topk,
         )
         self.compressor = DeepseekCompressor(
             vllm_config=vllm_config,

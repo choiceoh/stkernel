@@ -17,11 +17,14 @@ BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
 fails=0
 log(){ echo "$(date '+%F %T') $*"; }
 
-# --- wait until every worker node is actually reachable AND its docker is up ---
+# --- wait until local docker AND every worker node's docker are up ---
+# (user units cannot order against the system docker.service — the unit's
+#  After=docker.service is a no-op — so poll the local daemon here too)
 wait_for_fleet(){
   local tries=0
   while :; do
     local all=1
+    docker info >/dev/null 2>&1 || all=0
     for w in $WORKERS; do
       ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "choiceoh@$w" \
         'docker info >/dev/null 2>&1' >/dev/null 2>&1 || all=0

@@ -33,7 +33,7 @@ def filler(n_tokens, rng):
 
 def build(ctx_tokens, seed):
     rng = random.Random(seed)
-    # plant the three facts at ~20% / ~50% / ~85% depth
+    # plant the three facts at 25% / 50% / 75% depth (4 equal filler chunks)
     chunks, per = [], ctx_tokens / 4.0
     for i, (sent, _, _) in enumerate(FACTS):
         chunks.append(filler(per, rng))
