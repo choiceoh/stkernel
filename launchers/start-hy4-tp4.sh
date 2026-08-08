@@ -44,6 +44,10 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 # indexer KV-spec trim, C4AREUSE=1 the C4A globalization reuse, SPFAST=1 the
 # indexer-SP single-span fast path. Flip ONE at a time to bisect the warmup
 # failure (fails <4min), then leave cleared ones enabled.
+# The /start_profile,/stop_profile routes are attached ONLY when the serve
+# CLI passes --profiler-config with a non-null profiler (see
+# entrypoints/serve/profile/api_router.py attach_router). Env vars alone
+# (VLLM_TORCH_PROFILER_DIR / VLLM_SERVER_DEV_MODE) do NOT attach them.
 # VLLM_TORCH_PROFILER_DIR arms the worker torch profiler; the HTTP routes
 # themselves live in entrypoints/serve/profile and are gated by
 # VLLM_SERVER_DEV_MODE (fork keeps them dev-only). Both are needed:
@@ -108,7 +112,7 @@ echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
-  --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-4}}" \
+  --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\"}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-4}}" \
   --kv-cache-dtype fp8 --block-size 256 --load-format auto \
   --tensor-parallel-size "${TP_SIZE}" \
   --gpu-memory-utilization "${GPU_MEM}" \
