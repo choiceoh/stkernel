@@ -1,13 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""DeepseekV4 sparse SWA cache + metadata builder.
+
+deneb fork (2026-08-08, slimmed for the TP=4 4x GB10 stack): paths that are
+structurally unreachable on this deployment are removed —
+- ROCm / XPU builder dispatch (all four nodes are CUDA GB10),
+- DCP (decode context parallel) index kernels and branches (the launcher
+  exposes no CP flags),
+- the FlashMLA per-layer-type tile-scheduler plan: SM120 drives DSV4 MLA
+  through b12x, which does not use the FlashMLA tile scheduler (and
+  _flashmla_C is not built for sm_121a), so the skip branch was always taken
+  on this stack. The tile_sched_* metadata fields stay (always None) for
+  consumers,
+- the upstream-DSpark parallel-drafting threshold doubling (fork impl only).
+"""
 from dataclasses import dataclass, field
-from typing import ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import torch
 
 from vllm.config import CacheConfig, VllmConfig, get_current_vllm_config
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
-from vllm.platforms import current_platform
 from vllm.triton_utils import tl, triton
 from vllm.utils.math_utils import cdiv
 from vllm.v1.attention.backend import (
@@ -17,17 +30,18 @@ from vllm.v1.attention.backend import (
     CommonAttentionMetadata,
     MultipleOf,
 )
-from vllm.v1.attention.ops.flashmla import FlashMLASchedMeta, get_mla_metadata
 from vllm.v1.kv_cache_interface import (
     KVCacheSpec,
     MLAAttentionSpec,
     SlidingWindowMLASpec,
 )
 
-# DeepseekV4 decode layer types, keyed by compress_ratio. Each type has a distinct
-# (topk, extra_topk, extra_page_block_size) config, so they cannot share a
-# FlashMLA tile-scheduler plan. Within a type, all ~60 DeepseekV4 layers share one
-# plan per step because b / s_q / h_q / page_block_sizes / topks are identical.
+if TYPE_CHECKING:
+    from vllm.v1.attention.ops.flashmla import FlashMLASchedMeta
+
+# DeepseekV4 decode layer types, keyed by compress_ratio. Kept (with
+# _layer_type_for) for import compatibility even though the FlashMLA
+# tile-scheduler that consumed them is not used on SM120.
 _LAYER_TYPE_SWAONLY = "swaonly"
 _LAYER_TYPE_C4A = "c4a"
 _LAYER_TYPE_C128A = "c128a"
@@ -73,14 +87,15 @@ class DeepseekV4SWACache(torch.nn.Module, AttentionLayerBase):
         # determines the SWA block size of 64 tokens per block.
         # TODO(yifan): make SWA block size automatically determined and configurable.
         self.block_size = 64
-        # uint8: fp8_ds_mla UE8M0 paged layout. bfloat16 / float8_e4m3fn:
-        # contiguous full-cache layout.
-        assert self.dtype in (torch.uint8, torch.bfloat16, torch.float8_e4m3fn)
+        # uint8: fp8_ds_mla UE8M0 paged layout (the only layout on this stack).
+        assert self.dtype == torch.uint8, (
+            "TP4 GB10 overlay: the SWA cache runs the fp8_ds_mla (uint8) "
+            f"layout only, got {self.dtype}"
+        )
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
-        # fp8_ds_mla's UE8M0 paged layout needs 576B alignment; contiguous
-        # bf16/fp8 cache uses the natural element-size page.
-        uses_fp8_ds_mla_layout = self.cache_config.cache_dtype == "fp8_ds_mla"
+        # fp8_ds_mla's UE8M0 paged layout needs 576B alignment.
+        assert self.cache_config.cache_dtype == "fp8_ds_mla"
         return SlidingWindowMLASpec(
             block_size=self.block_size,
             num_kv_heads=1,
@@ -88,7 +103,7 @@ class DeepseekV4SWACache(torch.nn.Module, AttentionLayerBase):
             dtype=self.dtype,
             sliding_window=self.window_size,
             cache_dtype_str=self.cache_config.cache_dtype,
-            alignment=576 if uses_fp8_ds_mla_layout else None,
+            alignment=576,
             model_version="deepseek_v4",
         )
 
@@ -117,12 +132,6 @@ class DeepseekSparseSWABackend(AttentionBackend):
 
     @staticmethod
     def get_builder_cls() -> type["DeepseekSparseSWAMetadataBuilder"]:
-        if current_platform.is_rocm():
-            from vllm.models.deepseek_v4.amd.rocm import (
-                DeepseekV4ROCMAiterSparseSWAMetadataBuilder,
-            )
-
-            return DeepseekV4ROCMAiterSparseSWAMetadataBuilder
         return DeepseekSparseSWAMetadataBuilder
 
     @staticmethod
@@ -187,19 +196,19 @@ class DeepseekSparseSWAMetadata:
     prefill_max_model_len: int = 0
     prefill_max_num_batched_tokens: int = 0
 
-    # Per-layer-type FlashMLA tile-scheduler metadata. One FlashMLASchedMeta
-    # per present DeepseekV4 layer type, shared across all ~60 layers of that type
-    # within a decode step. The first forward call of a given type triggers
-    # the in-kernel planner (which also allocates tile_scheduler_metadata and
-    # num_splits via PyTorch's graph-aware allocator); subsequent same-type
-    # calls skip planning and reuse the plan. Fresh instance per build(), so
-    # have_initialized is always False at the start of a step and the plan
-    # is re-derived from current seq_lens / topk_length on replay.
-    # None for layer types the model does not use (or when num_decode_tokens
-    # is zero).
+    # Per-layer-type FlashMLA tile-scheduler metadata. Always None on this
+    # stack: SM120 drives DSV4 MLA through b12x, which does not use the
+    # FlashMLA tile scheduler (_flashmla_C is not built for sm_121a). The
+    # fields are kept so consumers that probe them keep seeing the same None
+    # they always saw here.
     tile_sched_swaonly: "FlashMLASchedMeta | None" = None
     tile_sched_c4a: "FlashMLASchedMeta | None" = None
     tile_sched_c128a: "FlashMLASchedMeta | None" = None
+    # Cross-layer per-step cache. One metadata instance is shared by every
+    # layer's SWA prefix, so the SM120 attention uses this to reuse the C4A
+    # top-k globalization across skip-topk (IndexCache) layers
+    # ("c4a_decode_global" / "c4a_prefill_global" keys); the image's SM100
+    # path stores its mixed sparse indices here under other keys.
     flashinfer_sparse_index_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] = field(
         default_factory=dict
     )
@@ -300,73 +309,36 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         super().__init__(*args, **kwargs)
         assert isinstance(self.kv_cache_spec, SlidingWindowMLASpec | MLAAttentionSpec)
         mla_spec = cast(SlidingWindowMLASpec | MLAAttentionSpec, self.kv_cache_spec)
-        self.head_size = mla_spec.head_size  # Already considered quantization.
-        self.compress_ratio = mla_spec.compress_ratio
         self.block_size = mla_spec.block_size
         self.max_model_len = self.vllm_config.model_config.max_model_len
         self.max_num_batched_tokens = (
             self.vllm_config.scheduler_config.max_num_batched_tokens
         )
 
+        # TP4 GB10 overlay: context parallelism support removed. Fail fast if
+        # the deployment config ever drifts.
+        parallel_config = self.vllm_config.parallel_config
+        assert (
+            parallel_config.decode_context_parallel_size == 1
+            and parallel_config.prefill_context_parallel_size == 1
+        ), "TP4 GB10 overlay: DCP/PCP support was removed from this builder."
+
         # Handle MTP: adjust decode_threshold like the indexer does
         spec_config = self.vllm_config.speculative_config
         self.num_speculative_tokens = (
             spec_config.num_speculative_tokens if spec_config else 0
         )
-        # Decode can have query_len up to
-        #   1 + (2 if parallel drafting else 1) * num_speculative_tokens.
+        # Decode can have query_len up to 1 + num_speculative_tokens.
         # This MUST match the flashmla_sparse / indexer threshold so that
-        # all backends agree on the decode/prefill split.
-        # The 2x applies only to the upstream (PR#46995) DSpark impl, whose
-        # draft query block flows through this backend. The fork impl keeps
-        # its private draft path, and the fork's other backends
-        # (flashmla_sparse, indexer) use the un-doubled threshold — doubling
-        # here alone would desync the split for query lens in (thr, 2*thr].
-        import os
-
-        spec_mult = (
-            2
-            if (
-                spec_config is not None
-                and spec_config.parallel_drafting
-                and os.environ.get("VLLM_DSPARK_IMPL", "fork") == "upstream"
-            )
-            else 1
-        )
+        # all backends agree on the decode/prefill split. (The upstream-DSpark
+        # parallel-drafting 2x does not apply: this stack runs the fork impl.)
         self.decode_threshold = (
-            self.reorder_batch_threshold + spec_mult * self.num_speculative_tokens
+            self.reorder_batch_threshold + self.num_speculative_tokens
         )
-        self._skip_tile_scheduler_platform = (
-            current_platform.is_rocm()
-            or current_platform.is_xpu()
-            or current_platform.is_device_capability_family(120)
-        )
-        parallel_config = self.vllm_config.parallel_config
-        self.dcp_world_size = parallel_config.decode_context_parallel_size
-        self.pcp_world_size = parallel_config.prefill_context_parallel_size
-        self.cp_kv_cache_interleave_size = (
-            parallel_config.cp_kv_cache_interleave_size
-        )
-        self.dcp_rank = 0
-        if self.dcp_world_size > 1:
-            assert self.pcp_world_size == 1, (
-                "DeepseekSparseSWA metadata supports DCP but not PCP."
-            )
-            from vllm.distributed.parallel_state import get_dcp_group
-
-            self.dcp_rank = get_dcp_group().rank_in_group
 
         hf_config = self.vllm_config.model_config.hf_config
         assert hasattr(hf_config, "sliding_window")
         self.window_size = hf_config.sliding_window
-
-        # Detect which DeepseekV4 layer types this model uses so we only build a
-        # FlashMLA tile-scheduler plan for types that will actually be called.
-        # Models without compress_ratios (pure SWA) fall back to swaonly.
-        compress_ratios = getattr(hf_config, "compress_ratios", None) or [1]
-        self._layer_types: set[str] = set()
-        for ratio in compress_ratios:
-            self._layer_types.add(_layer_type_for(int(ratio)))
 
         max_tokens = self.vllm_config.scheduler_config.max_num_batched_tokens
         self.token_to_req_indices = torch.zeros(
@@ -480,15 +452,7 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             token_to_req_indices.copy_(x, non_blocking=True)
 
         is_valid_token = self.is_valid_token[: slot_mapping.shape[0]]
-        if self.dcp_world_size > 1:
-            # In DCP, slot_mapping is rank-local KV-write ownership. A -1 slot
-            # means this rank does not write the current token, not that the
-            # query row is padding; actual rows still need local KV reads.
-            num_query_tokens = int(token_to_req_indices.shape[0])
-            is_valid_token[:num_query_tokens].fill_(True)
-            is_valid_token[num_query_tokens:].fill_(False)
-        else:
-            is_valid_token.copy_(slot_mapping >= 0)
+        is_valid_token.copy_(slot_mapping >= 0)
 
         non_causal = not common_attn_metadata.causal
         decode_swa_width = self.noncausal_index_width if non_causal else self.window_size
@@ -499,9 +463,6 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
                 assert self.is_dspark, (
                     "Non-causal DeepseekV4 SWA is only supported for the DSpark "
                     "speculation mode, but causal=False was set without DSpark."
-                )
-                assert self.dcp_world_size == 1, (
-                    "Non-causal DSpark SWA indices are not supported with DCP."
                 )
                 if self.decode_swa_indices_noncausal is None:
                     self.decode_swa_indices_noncausal = torch.zeros(
@@ -528,25 +489,6 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
                     token_offset=0,
                     TRITON_BLOCK_SIZE=1024,
                 )
-            elif self.dcp_world_size > 1:
-                _compute_dcp_swa_indices_and_lens_kernel[(num_decode_tokens,)](
-                    self.decode_swa_indices,
-                    self.decode_swa_indices.stride(0),
-                    self.decode_swa_lens,
-                    self.window_size,
-                    query_start_loc,
-                    seq_lens,
-                    token_to_req_indices,
-                    is_valid_token,
-                    block_table,
-                    block_table.stride(0),
-                    self.block_size,
-                    token_offset=0,
-                    DCP_WORLD_SIZE=self.dcp_world_size,
-                    DCP_RANK=self.dcp_rank,
-                    CP_KV_CACHE_INTERLEAVE_SIZE=self.cp_kv_cache_interleave_size,
-                    TRITON_BLOCK_SIZE=1024,
-                )
             else:
                 _compute_swa_indices_and_lens_kernel[(num_decode_tokens,)](
                     self.decode_swa_indices,
@@ -570,41 +512,21 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         if num_prefill_tokens > 0:
             prefill_swa_indices = self.prefill_swa_indices[:num_prefill_tokens]
             prefill_swa_lens = self.prefill_swa_lens[:num_prefill_tokens]
-            if self.dcp_world_size > 1:
-                _compute_dcp_swa_indices_and_lens_kernel[(num_prefill_tokens,)](
-                    prefill_swa_indices,
-                    prefill_swa_indices.stride(0),
-                    prefill_swa_lens,
-                    self.window_size,
-                    query_start_loc,
-                    seq_lens,
-                    token_to_req_indices,
-                    is_valid_token,
-                    block_table,
-                    block_table.stride(0),
-                    self.block_size,
-                    token_offset=num_decode_tokens,
-                    DCP_WORLD_SIZE=self.dcp_world_size,
-                    DCP_RANK=self.dcp_rank,
-                    CP_KV_CACHE_INTERLEAVE_SIZE=self.cp_kv_cache_interleave_size,
-                    TRITON_BLOCK_SIZE=1024,
-                )
-            else:
-                _compute_swa_indices_and_lens_kernel[(num_prefill_tokens,)](
-                    prefill_swa_indices,
-                    prefill_swa_indices.stride(0),
-                    prefill_swa_lens,
-                    self.window_size,
-                    query_start_loc,
-                    seq_lens,
-                    token_to_req_indices,
-                    is_valid_token,
-                    block_table,
-                    block_table.stride(0),
-                    self.block_size,
-                    token_offset=num_decode_tokens,
-                    TRITON_BLOCK_SIZE=1024,
-                )
+            _compute_swa_indices_and_lens_kernel[(num_prefill_tokens,)](
+                prefill_swa_indices,
+                prefill_swa_indices.stride(0),
+                prefill_swa_lens,
+                self.window_size,
+                query_start_loc,
+                seq_lens,
+                token_to_req_indices,
+                is_valid_token,
+                block_table,
+                block_table.stride(0),
+                self.block_size,
+                token_offset=num_decode_tokens,
+                TRITON_BLOCK_SIZE=1024,
+            )
 
         # Pre-compute DeepseekV4 prefill metadata shared across all attention layers.
         deepseek_v4_fields = self._build_deepseek_v4_metadata(
@@ -616,12 +538,8 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             query_start_loc_cpu,
         )
 
-        # Per-layer-type tile-scheduler plan holders. Empty FlashMLASchedMeta
-        # per present DeepseekV4 layer type; the first flash_mla_with_kvcache call of
-        # each type triggers the planner and all same-type layers reuse the
-        # resulting plan for the rest of the step.
-        tile_sched = self.build_tile_scheduler(num_decode_tokens)
-
+        # tile_sched_* stay at their None defaults: the FlashMLA tile scheduler
+        # is not used on SM120 (b12x path).
         return DeepseekSparseSWAMetadata(
             seq_lens=seq_lens,
             query_start_loc=query_start_loc,
@@ -648,43 +566,8 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
             num_prefills=num_prefills,
             num_decode_tokens=num_decode_tokens,
             num_prefill_tokens=num_prefill_tokens,
-            tile_sched_swaonly=tile_sched[_LAYER_TYPE_SWAONLY],
-            tile_sched_c4a=tile_sched[_LAYER_TYPE_C4A],
-            tile_sched_c128a=tile_sched[_LAYER_TYPE_C128A],
             **deepseek_v4_fields,  # type: ignore[arg-type]
         )
-
-    def build_tile_scheduler(
-        self, num_decode_tokens: int
-    ) -> dict[str, FlashMLASchedMeta | None]:
-        """Allocate one empty ``FlashMLASchedMeta`` per present DeepseekV4 layer type.
-
-        Returned instances have ``tile_scheduler_metadata`` / ``num_splits``
-        set to ``None``; the FlashMLA C++ decode path will allocate them and
-        run the tile-scheduler planner on the first ``flash_mla_with_kvcache``
-        call of each type. Subsequent same-type calls reuse the plan because
-        the tensors (and ``have_initialized``) are populated on the struct.
-
-        Returns all-``None`` when there are no decode tokens this step, so
-        ``_forward_decode`` sees a clean sentinel.
-        """
-        out: dict[str, FlashMLASchedMeta | None] = {
-            _LAYER_TYPE_SWAONLY: None,
-            _LAYER_TYPE_C4A: None,
-            _LAYER_TYPE_C128A: None,
-        }
-        # SM120 (consumer Blackwell) drives DSV4 MLA through b12x, which does not
-        # use the FlashMLA tile scheduler; skip the planner (and its _flashmla_C
-        # dependency, which is not built for sm_120a).
-        if num_decode_tokens == 0 or self._skip_tile_scheduler_platform:
-            return out
-        for layer_type in self._layer_types:
-            # get_mla_metadata() is the official FlashMLA entry point that
-            # returns a fresh empty FlashMLASchedMeta; using it keeps this
-            # call site aligned with the rest of the vLLM FlashMLA backends
-            # that already go through the same stub.
-            out[layer_type] = get_mla_metadata()[0]
-        return out
 
     def _build_deepseek_v4_metadata(
         self,
@@ -881,81 +764,6 @@ def _compute_swa_indices_and_lens_kernel(
             slot_ids,
             mask=offset < window_size,
         )
-
-
-@triton.jit(do_not_specialize=["token_offset"])
-def _compute_dcp_swa_indices_and_lens_kernel(
-    swa_indices_ptr,
-    swa_indices_stride,
-    swa_lens_ptr,
-    window_size,
-    query_start_loc_ptr,
-    seq_lens_ptr,
-    token_to_req_indices_ptr,
-    is_valid_token_ptr,
-    block_table_ptr,
-    block_table_stride,
-    block_size,
-    token_offset,
-    DCP_WORLD_SIZE: tl.constexpr,
-    DCP_RANK: tl.constexpr,
-    CP_KV_CACHE_INTERLEAVE_SIZE: tl.constexpr,
-    TRITON_BLOCK_SIZE: tl.constexpr,
-):
-    pid = tl.program_id(0)
-    token_idx = pid + token_offset
-    is_valid_token = tl.load(is_valid_token_ptr + token_idx)
-    if not is_valid_token:
-        tl.store(swa_lens_ptr + pid, 0)
-        return
-
-    req_idx = tl.load(token_to_req_indices_ptr + token_idx)
-
-    query_start = tl.load(query_start_loc_ptr + req_idx)
-    query_end = tl.load(query_start_loc_ptr + req_idx + 1)
-    query_len = query_end - query_start
-
-    seq_len = tl.load(seq_lens_ptr + req_idx)
-    prefix_len = seq_len - query_len
-
-    pos = prefix_len + token_idx - query_start
-    start_pos = tl.maximum(pos - window_size + 1, 0)
-    end_pos = pos + 1
-
-    count = tl.zeros((), dtype=tl.int32)
-    virtual_block_size = block_size * DCP_WORLD_SIZE
-    for i in range(0, window_size, TRITON_BLOCK_SIZE):
-        offset = i + tl.arange(0, TRITON_BLOCK_SIZE)
-        offset_mask = offset < window_size
-
-        pos_offset = start_pos + offset
-        in_window = pos_offset < end_pos
-        block_indices = pos_offset // virtual_block_size
-        block_numbers = tl.load(
-            block_table_ptr + req_idx * block_table_stride + block_indices,
-            mask=offset_mask & in_window,
-        ).to(tl.int64)
-
-        virtual_block_offsets = pos_offset - block_indices * virtual_block_size
-        is_local = (
-            virtual_block_offsets // CP_KV_CACHE_INTERLEAVE_SIZE
-        ) % DCP_WORLD_SIZE == DCP_RANK
-        local_block_offsets = (
-            virtual_block_offsets
-            // (DCP_WORLD_SIZE * CP_KV_CACHE_INTERLEAVE_SIZE)
-        ) * CP_KV_CACHE_INTERLEAVE_SIZE + (
-            virtual_block_offsets % CP_KV_CACHE_INTERLEAVE_SIZE
-        )
-
-        slot_ids = block_numbers * block_size + local_block_offsets
-        valid = offset_mask & in_window & is_local
-        compact_pos = count + tl.cumsum(valid.to(tl.int32), 0) - 1
-        row_base = swa_indices_ptr + pid * swa_indices_stride
-        tl.store(row_base + offset, -1, mask=offset_mask)
-        tl.store(row_base + compact_pos, slot_ids, mask=valid)
-        count += tl.sum(valid.to(tl.int32), axis=0)
-
-    tl.store(swa_lens_ptr + pid, count)
 
 
 # TODO(ben): unify this kernel to reduce duplication

@@ -37,7 +37,9 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=0.95 -e TOP_P=0.44 \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
--e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e SP=${SP:-} -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e EPFLAG=${EPFLAG:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0}"
+-e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0}"
+# NOTE: SP/EPFLAG knobs removed — b12x MoE is TP-only, so the enable_sp
+# compilation pass (#46789) and EP/DP are structurally impossible on this stack.
 RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1"
 COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-stopped"
 
@@ -52,14 +54,23 @@ mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/mode
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+# The stack mounts ${overlay_dir}-b12x/<file> (NOT ${overlay_dir}/) — verify
+# exactly what gets mounted, all four files, and that every node's copies are
+# byte-identical to the head's. Overlay skew across nodes is silent otherwise
+# (the old check tested only attention.py, in the wrong directory).
+OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py"
+HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
+HEAD_OVSUM=$(cd "$HEAD_OV" && md5sum $OVFILES) || { echo "ABORT: overlays missing on head ($HEAD_OV)"; exit 1; }
 for w in $WORKERS; do
   ip=${w%%:*}
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
-  ssh $SSHOPT choiceoh@$ip "test -f $(overlay_dir $ip)/attention.py && test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid" \
-    || { echo "ABORT: overlay/model missing on $ip"; exit 1; }
+  WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && md5sum $OVFILES" 2>/dev/null || true)
+  [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
+  ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid" \
+    || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
-echo "preflight OK (${HID:0:19})"
+echo "preflight OK (${HID:0:19}, overlays in sync x4)"
 
 echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
 docker rm -f vllm-dsv4 2>/dev/null || true
@@ -91,7 +102,7 @@ exec vllm serve "${MODEL_PATH}" \
   --max-model-len "${MAX_MODEL_LEN}" --max-num-seqs "${MAX_NUM_SEQS}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
   --max-cudagraph-capture-size "${GRAPH_CAP}" \
-  --compilation-config "{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_rope_kvcache_cat_mla\":true,\"fuse_attn_quant\":true${SP:+,\"enable_sp\":true,\"sp_min_token_num\":512}}}" \
+  --compilation-config "{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_rope_kvcache_cat_mla\":true,\"fuse_attn_quant\":true}}" \
   ${ASYNC_ARG} --no-scheduler-reserve-full-isl \
   --enable-chunked-prefill --enable-prefix-caching --enable-flashinfer-autotune \
   --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --reasoning-parser deepseek_v4 \
@@ -99,7 +110,7 @@ exec vllm serve "${MODEL_PATH}" \
   --default-chat-template-kwargs.temperature=${TEMPERATURE} \
   --default-chat-template-kwargs.top_p=${TOP_P} \
   --default-chat-template-kwargs.thinking=true --default-chat-template-kwargs.reasoning_effort=high \
-  --attention-backend FLASHINFER_MLA_SPARSE_DSV4 --moe-backend "${MOE:-b12x}" ${EPFLAG:-} \
+  --attention-backend FLASHINFER_MLA_SPARSE_DSV4 --moe-backend "${MOE:-b12x}" \
   --disable-custom-all-reduce \
   --nnodes 4 --node-rank "${NODE_RANK}" --master-addr "${MASTER_ADDR}" --master-port 25000 \
   ${HEADLESS:+--headless} \

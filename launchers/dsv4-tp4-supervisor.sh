@@ -10,15 +10,21 @@ BASE=http://127.0.0.1:8000
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"
 CHAT_TIMEOUT=60
 FAILS_NEEDED=3
-BOOT_GRACE=1500          # kernel recompile on a cold cache can take ~10min; be generous
+BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
+                         # overlay-source change) can far exceed 25min; the poll
+                         # below exits early the moment the API comes up, so a
+                         # long grace only delays declaring a truly hung boot.
 fails=0
 log(){ echo "$(date '+%F %T') $*"; }
 
-# --- wait until every worker node is actually reachable AND its docker is up ---
+# --- wait until local docker AND every worker node's docker are up ---
+# (user units cannot order against the system docker.service — the unit's
+#  After=docker.service is a no-op — so poll the local daemon here too)
 wait_for_fleet(){
   local tries=0
   while :; do
     local all=1
+    docker info >/dev/null 2>&1 || all=0
     for w in $WORKERS; do
       ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no "choiceoh@$w" \
         'docker info >/dev/null 2>&1' >/dev/null 2>&1 || all=0
