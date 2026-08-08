@@ -9,7 +9,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 # Keep OVFILES / overlay_dir / WORKERS in sync with start-hy4-tp4.sh —
 # duplicated on purpose: both scripts are copied standalone to ~ on srv2, so
 # a shared sourced file would add a second thing to forget to copy.
-OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py"
+OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py gate_linear.py"
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"

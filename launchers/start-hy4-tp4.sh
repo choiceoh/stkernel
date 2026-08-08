@@ -39,11 +39,20 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
--e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
-# Incident kill-switches (default OFF): TRIMIDX=1 re-enables the skip-topk
-# indexer KV-spec trim, C4AREUSE=1 the C4A globalization reuse, SPFAST=1 the
-# indexer-SP single-span fast path. Flip ONE at a time to bisect the warmup
-# failure (fails <4min), then leave cleared ones enabled.
+-e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
+-e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-} -e DENEB_ROUTER_SPECIALIZED=${RGEMM:-}"
+# Kill-switch knobs (default OFF, flip ONE at a time): TRIMIDX=1 skip-topk
+# indexer KV-spec trim (measured: rejected), C4AREUSE=1 C4A globalization
+# reuse (neutral), SPFAST=1 SP single-span path (neutral), RGEMM=1 router
+# specialized-GEMM gate extension for SM121 (#49921 port — UNTESTED).
+# VLLM_ENGINE_READY_TIMEOUT_S=3600: the image default is 600s (envs.py:27),
+# below our cold-recompile boot times (supervisor history has
+# 'boot grace exceeded'); dead engines still fail fast via the supervisor.
+# NOTE: pass_config's fuse_gemm_comms:true is DECORATIVE — the fork resolves
+# it to False (boot log evidence); fuse_norm_quant/fuse_act_quant
+# auto-enable, and fuse_attn_quant forces splitting_ops=[] so the effective
+# cudagraph mode is FULL_DECODE_ONLY (no piecewise prefill graphs). A/B
+# candidates in MEASUREMENTS.md.
 # The /start_profile,/stop_profile routes are attached ONLY when the serve
 # CLI passes --profiler-config with a non-null profiler (see
 # entrypoints/serve/profile/api_router.py attach_router). Env vars alone
@@ -67,7 +76,8 @@ mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/mode
 -v ${ov}-b12x/attention.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py:ro \
 -v ${ov}-b12x/flashinfer_sparse.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py:ro \
 -v ${ov}-b12x/indexer.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py:ro \
--v ${ov}-b12x/sparse_swa_dsv4.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py:ro"; }
+-v ${ov}-b12x/sparse_swa_dsv4.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py:ro \
+-v ${ov}-b12x/gate_linear.py:/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/router/gate_linear.py:ro"; }
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
@@ -75,7 +85,7 @@ HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
 # exactly what gets mounted, all four files, and that every node's copies are
 # byte-identical to the head's. Overlay skew across nodes is silent otherwise
 # (the old check tested only attention.py, in the wrong directory).
-OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py"
+OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py gate_linear.py"
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
 HEAD_OVSUM=$(cd "$HEAD_OV" && md5sum $OVFILES) || { echo "ABORT: overlays missing on head ($HEAD_OV)"; exit 1; }
 for w in $WORKERS; do
@@ -87,7 +97,7 @@ for w in $WORKERS; do
   ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
     || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
-echo "preflight OK (${HID:0:19}, overlays in sync x4)"
+echo "preflight OK (${HID:0:19}, overlays in sync x5)"
 
 echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
 docker rm -f vllm-dsv4 2>/dev/null || true
