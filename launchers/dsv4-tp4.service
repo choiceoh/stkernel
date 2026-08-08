@@ -1,0 +1,17 @@
+[Unit]
+Description=dsv4 0731 TP=4 supervisor (4x GB10 via CRS812 · boot-start + crash recovery)
+After=network-online.target docker.service
+Wants=network-online.target
+# Mutually exclusive with the 2-node prod stack — both want :8000 and the whole GPU.
+Conflicts=dsv4-hybrid.service
+
+[Service]
+Type=simple
+ExecStart=/home/choiceoh/dsv4-tp4-supervisor.sh
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/choiceoh/dsv4-tp4-supervisor.log
+StandardError=append:/home/choiceoh/dsv4-tp4-supervisor.log
+
+[Install]
+WantedBy=default.target
