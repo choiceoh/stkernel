@@ -810,7 +810,19 @@ def _indexer_sp_owned_ranges(k_cache_prefix: str):
             ranges.append(
                 (int(chunk.token_start) + off, int(chunk.token_start) + end)
             )
-    return ranges
+    if not ranges:
+        return ranges
+    # Ranges ascend (decode rows first, then chunks in batch order); merging
+    # adjacent spans preserves the owned-row SET exactly and lets the caller
+    # take the zero-copy single-span path (decode rows adjoin rank 0's first
+    # shard, and a pure-prefill single chunk is one span on every rank).
+    merged = [ranges[0]]
+    for a, b in ranges[1:]:
+        if a == merged[-1][1]:
+            merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    return merged
 
 
 class DeepseekV4Indexer(nn.Module):
@@ -939,9 +951,44 @@ class DeepseekV4Indexer(nn.Module):
             _ranges = _indexer_sp_owned_ranges(self.k_cache.prefix)
             if _ranges is not None:
                 # Sequence-parallel: compute q/rope/quant only for the rows
-                # this rank's sharded indexer will read; scatter into
+                # this rank's sharded indexer will read; place them into
                 # full-size buffers (unowned rows stay uninitialized and are
                 # never read by the sliced indexer paths).
+                _n = qr.shape[0]
+                if len(_ranges) == 1:
+                    # Single contiguous span — the dominant shape (pure-
+                    # prefill single chunk on every rank; decode rows fused
+                    # with rank 0's first shard). dim-0 slices are zero-copy
+                    # views and the write-back is one contiguous copy: no
+                    # arange/cat, no gather/scatter kernels.
+                    _a, _b = _ranges[0]
+                    _q_c, _ = self.wq_b(qr[_a:_b])
+                    _q_c = _q_c.view(-1, self.n_head, self.head_dim)
+                    _qq, _ww = fused_indexer_q_rope_quant(
+                        positions[_a:_b],
+                        _q_c,
+                        rotary_emb.cos_sin_cache,
+                        indexer_weights[_a:_b],
+                        self.softmax_scale,
+                        self.n_head**-0.5,
+                        use_fp4=self.use_fp4_kv,
+                    )
+
+                    def _place(part):
+                        if isinstance(part, (tuple, list)):
+                            return type(part)(_place(x) for x in part)
+                        full = part.new_empty((_n,) + tuple(part.shape[1:]))
+                        dst = full[_a:_b]
+                        if part.element_size() == 1:
+                            # keep the proven fp8 bit-copy pattern
+                            dst.view(torch.uint8).copy_(
+                                part.contiguous().view(torch.uint8)
+                            )
+                        else:
+                            dst.copy_(part)
+                        return full
+
+                    return _place(_qq), _place(_ww)
                 _idx = torch.cat(
                     [
                         torch.arange(a, b, device=qr.device, dtype=torch.long)
@@ -959,7 +1006,6 @@ class DeepseekV4Indexer(nn.Module):
                     self.n_head**-0.5,
                     use_fp4=self.use_fp4_kv,
                 )
-                _n = qr.shape[0]
 
                 def _scatter(part):
                     if isinstance(part, (tuple, list)):

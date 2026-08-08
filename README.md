@@ -17,9 +17,10 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | 디렉터리 | 내용 |
 |---|---|
 | `overlay/` | **프로덕션 오버레이 4파일** (업스트림 PR 5건 포팅 + TP4/GB10 전용 슬리밍) |
-| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 |
+| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + `deploy-overlays.sh`(4노드 배포+md5 검증) |
 | `bench/` | 검증·측정 도구 |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
+| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드 커버리지 |
 
 ## overlay/ — 프로덕션 채택 5건
 
@@ -102,6 +103,27 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   `After=docker.service`는 시스템 유닛에 대해 무효라 부팅 직후 첫 launch가
   로컬 docker 미기동으로 헛돌 수 있었다 (자가 복구는 됐지만 사이클 낭비).
 - `check-quality.py` 문서 수정: 사실을 심는 실제 깊이는 25/50/75%.
+
+### 4차 최적화 (미실측 — bench-tp4/bench-ctx 프리필로 검증)
+
+- **indexer-SP 단일 구간 zero-copy 고속경로**: `_indexer_sp_owned_ranges`가
+  인접 구간을 병합해 반환하고(소유 행 집합 불변 — `tests/test_logic.py`로
+  검증), 결과가 단일 연속 구간이면 — 순수 프리필 단일 청크는 모든 랭크에서,
+  혼합 배치는 rank 0에서 해당 — arange/cat·index_select×3·index_copy×2-3을
+  전부 dim-0 슬라이스 뷰(zero-copy)와 연속 copy 1회로 대체. 계산되는 행과
+  배치 위치는 동일.
+- sparse_swa 빌드의 `slot_mapping >= 0` **임시 bool 텐서+copy 제거**:
+  `torch.ge(slot_mapping, 0, out=is_valid_token)` 제자리 쓰기 — 매 스텝
+  할당 1 + 커널 1 절감.
+- `profile-step.py` 확장: 커널 구간 **합집합 기반 busy/idle 분해**(launch
+  glue를 스트림 중첩과 구분해 직접 측정) + **스텝당 ms 환산**(probe 트리의
+  429/268/57/40과 같은 단위로 비교).
+- `tests/test_logic.py` 신설: 청커 예산 수학(#51252)·IndexCache F/S 규칙
+  (첫 C4A는 항상 F — 캐시 재사용·spec 제거의 전제)·SP 샤드 커버리지
+  (랭크 합집합=전체, 대형 청크 무중복)를 vllm/GPU 없이 AST 추출로 실행 검증.
+  `deploy-overlays.sh`가 배포 전 자동 실행.
+- `launchers/deploy-overlays.sh` 신설: 리포 → 4노드 `-b12x` 디렉터리 배포 +
+  md5 검증 (preflight 스큐 검사의 쓰기 쪽 반쪽).
 
 주의: 오버레이 소스가 바뀌었으므로 다음 기동에서 torch.compile/AOT 해시가
 갈려 **1회 장시간 재컴파일 워밍업**이 발생한다 (커널 캐시 마운트는 그대로).

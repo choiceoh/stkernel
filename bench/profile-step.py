@@ -17,7 +17,13 @@ mounted trace dir -> bucket kernel time by name + print a top-kernel table
 Prereq: server launched with VLLM_TORCH_PROFILER_DIR=/prof (start-hy4-tp4.sh
 sets it; traces land in /home/choiceoh/vllm-prof on the head). Run ON srv2.
 
-Usage: profile-step.py [ctx_tokens=32000] [trace_dir=/home/choiceoh/vllm-prof]
+Usage:
+  profile-step.py [ctx_tokens=32000] [trace_dir=/home/choiceoh/vllm-prof]
+                  [batched_tokens=4096]
+The per-step column divides by ceil(prompt_tokens / batched_tokens) so the
+numbers line up with the deneb probe tree (429 / 268 / 57 / ~40 ms per
+4,096-token step). idle = wall minus the union of kernel intervals = launch
+glue + host stalls (comm waits sit INSIDE nccl kernel durations, not here).
 """
 import glob
 import gzip
@@ -117,9 +123,30 @@ def bucket_of(name: str) -> str:
     return "other"
 
 
+def merged_busy_us(intervals: list[tuple[float, float]]) -> float:
+    """Total length of the union of (start, end) intervals, in µs.
+
+    Distinguishes true GPU idle (launch glue / host stalls) from stream
+    overlap: per-bucket sums can exceed wall, the union cannot.
+    """
+    busy = 0.0
+    cur_s = cur_e = None
+    for s, e in sorted(intervals):
+        if cur_e is None or s > cur_e:
+            if cur_e is not None:
+                busy += cur_e - cur_s
+            cur_s, cur_e = s, e
+        else:
+            cur_e = max(cur_e, e)
+    if cur_e is not None:
+        busy += cur_e - cur_s
+    return busy
+
+
 def main() -> None:
     ctx = int(sys.argv[1]) if len(sys.argv) > 1 else 32_000
     trace_dir = sys.argv[2] if len(sys.argv) > 2 else "/home/choiceoh/vllm-prof"
+    batched = int(sys.argv[3]) if len(sys.argv) > 3 else 4_096
 
     post("/start_profile")
     t0 = time.time()
@@ -137,6 +164,7 @@ def main() -> None:
 
     totals: dict[str, float] = {}
     per_kernel: dict[str, list[float]] = {}
+    intervals: list[tuple[float, float]] = []
     t_min, t_max = float("inf"), 0.0
     for ev in events:
         if ev.get("ph") != "X":
@@ -153,6 +181,7 @@ def main() -> None:
             continue
         ts = ev.get("ts", 0.0)
         t_min, t_max = min(t_min, ts), max(t_max, ts + dur)
+        intervals.append((ts, ts + dur))
         totals[label] = totals.get(label, 0.0) + dur
         k = per_kernel.setdefault(ev.get("name", "?"), [0.0, 0])
         k[0] += dur
@@ -164,14 +193,23 @@ def main() -> None:
 
     wall_ms = (t_max - t_min) / 1e3
     total_ms = sum(totals.values()) / 1e3
+    busy_ms = merged_busy_us(intervals) / 1e3
+    idle_ms = max(0.0, wall_ms - busy_ms)
+    steps = max(1, -(-pt // batched))
     print(f"\n=== GPU kernel-time attribution "
-          f"(capture wall {wall_ms:,.0f} ms) ===")
+          f"(wall {wall_ms:,.0f} ms · {steps} steps of <={batched} tok) ===")
     for label, us in sorted(totals.items(), key=lambda kv: -kv[1]):
         ms = us / 1e3
-        print(f"  {label:<16} {ms:>9,.1f} ms  ({100.0 * us / (total_ms * 1e3):>5.1f}%)")
-    print(f"  {'total kernels':<16} {total_ms:>9,.1f} ms  "
-          f"(coverage vs wall {100.0 * total_ms / wall_ms:.0f}% — "
-          ">100% = stream overlap, <100% = idle/launch gaps)")
+        print(f"  {label:<16} {ms:>9,.1f} ms  ({100.0 * ms / total_ms:>5.1f}%)"
+              f"  {ms / steps:>7,.1f} ms/step")
+    print(f"  {'total kernels':<16} {total_ms:>9,.1f} ms   "
+          f"(sum > busy = stream overlap)")
+    print(f"  {'gpu busy':<16} {busy_ms:>9,.1f} ms  "
+          f"({100.0 * busy_ms / wall_ms:>5.1f}% of wall)"
+          f"  {busy_ms / steps:>7,.1f} ms/step")
+    print(f"  {'idle/launch glue':<16} {idle_ms:>9,.1f} ms  "
+          f"({100.0 * idle_ms / wall_ms:>5.1f}% of wall)"
+          f"  {idle_ms / steps:>7,.1f} ms/step")
 
     print("\n=== top kernels (refine BUCKETS with these; find mHC here) ===")
     top = sorted(per_kernel.items(), key=lambda kv: -kv[1][0])[:40]
