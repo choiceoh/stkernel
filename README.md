@@ -16,7 +16,7 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/` | **프로덕션 오버레이 4+1파일** (업스트림 PR 5건 포팅 + TP4/GB10 슬리밍; `gate_linear.py`는 기본 OFF 실험) |
+| `overlay/` | **프로덕션 오버레이 4파일** (업스트림 PR 5건 포팅 + TP4/GB10 전용 슬리밍) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + `deploy-overlays.sh`(4노드 배포+md5 검증) |
 | `bench/` | 검증·측정 도구 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
@@ -32,7 +32,6 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | [#51252](https://github.com/vllm-project/vllm/pull/51252) | `indexer.py` | 프리필 청커 예산을 `compress_ratio`로 나눠 소비 버퍼와 단위 일치 | 정합성 · 프리필 무손실 |
 | [#49059](https://github.com/vllm-project/vllm/pull/49059) | `flashinfer_sparse.py` | 빈 프리필 청크(0-element reshape) 크래시 가드 | 예방 |
 | [#51202](https://github.com/vllm-project/vllm/pull/51202) | `flashinfer_sparse.py` | prefill/decode 게이트를 요청수 대신 토큰수로 | 예방 |
-| [#49921](https://github.com/vllm-project/vllm/issues/49921)-port | `gate_linear.py` | 라우터 specialized-GEMM 게이트를 SM121로 확장 (`RGEMM=1`, **기본 OFF**) | 미실측 |
 
 검증: 프리필 2,437–2,533 tok/s(무회귀) · 장문 리트리벌 9/9(2K/32K/128K) · traceback 0.
 
