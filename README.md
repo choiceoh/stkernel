@@ -129,6 +129,7 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 | `bench-ctx.py` | 장문 TTFT/디코드 분리 (스트리밍) | 비스트리밍이면 프리필이 디코드에 섞여 오측 |
 | `check-quality.py` | 2K/32K/128K에 사실 3개를 25/50/75% 깊이로 심고 리트리벌 | 인덱스 stride 버그가 산문 열화가 아닌 **검색 실패**로 드러남 |
 | `bench-conc.py` | 동시성 스윕 C=1/2/4 | 한 스윕 내 C값들은 상관 표본 — 단독 스윕으로 판정 금지 |
+| `profile-step.py` | **미귀속 잔차 귀속** — torch profiler로 NCCL·융합 커널 포함 전 커널 버킷팅 + top-N 테이블(mHC 커널 식별용). srv2에서 실행 | `VLLM_TORCH_PROFILER_DIR` 반영 재기동 1회 필요 · 캡처 중 오버헤드로 절대값 부풀음(비율로 판단) · 멀티스트림 중첩 시 합계>벽시계 · 서빙 트래픽·supervisor 프로브가 섞일 수 있어 한가할 때 실행 |
 
 ## probes/ — 계측 빌드
 
@@ -136,9 +137,19 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 (`[deneb-prof]`/`[deneb-prep]`/`[deneb-fi]`). 캡처 가드(`is_current_stream_capturing`) 필수 —
 없으면 `cudaErrorStreamCaptureInvalidated`로 기동 실패.
 
-실측 트리 (프리필, 정상상태): 어텐션 전체는 스텝 벽시계의 **~16%**
-(prep 32% — 인덱서 활성 레이어 크리티컬패스 / attn 68% — 그중 FlashInfer 커널 93%,
-q-prep 0.1%). 나머지 ~84%(MoE·mHC·norm·comms)는 미계측 — 다음 표적.
+실측 트리 — 프리필 스텝 예산 최종 (4,096토큰, 벽시계 ~1,552ms @ 2,640 tok/s):
+
+| 구간 | ms/스텝 | 비중 |
+|---|---|---|
+| MoE (라우터+experts+shared) | 429 | 27.6% |
+| attention_impl (prep+FlashInfer 커널) | 268 | 17.3% |
+| 입력 GEMM (wq_a/wkv/인덱서 헤드) | 57 | 3.7% |
+| o_proj einsum | ~40 | 2.6% |
+| **미귀속 잔차** (mHC + TP collectives + launch glue) | ~758 | **~49%** |
+
+미귀속 잔차는 Amdahl f≈0.57 비스케일 비율과 정합 — **다음 표적**. 파이썬
+스팬으로는 못 쪼갠다 (`fuse_gemm_comms`/`fuse_allreduce_rms`가 통신을 컴파일된
+커스텀 op 안으로 융합) → `bench/profile-step.py`로 커널 레벨 귀속.
 
 ## 미채택 포팅 (파일은 제거, 근거 보존 — 복원: git history `e95f82f`)
 

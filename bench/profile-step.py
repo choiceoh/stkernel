@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""One-shot GPU-kernel attribution for the unattributed step residual.
+
+The deneb CUDA-event probes closed the step budget down to MoE 27.6% /
+attention_impl 17.3% / in_gemms 3.7% / o_proj 2.6%, leaving ~49%
+unattributed (mHC + TP collectives + launch glue). Python-level spans
+CANNOT split that residual: fuse_gemm_comms / fuse_allreduce_rms melt the
+collectives into compiled custom ops, so any wrapper around
+tensor_model_parallel_all_reduce structurally under-counts comms. The torch
+profiler sees every GPU kernel — NCCL device kernels included, fused or not.
+
+Flow: POST /start_profile -> one fresh (uncached) long prefill with
+max_tokens=1 -> POST /stop_profile -> parse the newest rank trace in the
+mounted trace dir -> bucket kernel time by name + print a top-kernel table
+(use it to identify mHC kernel names and refine the buckets).
+
+Prereq: server launched with VLLM_TORCH_PROFILER_DIR=/prof (start-hy4-tp4.sh
+sets it; traces land in /home/choiceoh/vllm-prof on the head). Run ON srv2.
+
+Usage: profile-step.py [ctx_tokens=32000] [trace_dir=/home/choiceoh/vllm-prof]
+"""
+import glob
+import gzip
+import json
+import os
+import random
+import re
+import sys
+import time
+import urllib.request
+
+BASE = "http://127.0.0.1:8000"
+MODEL = "deepseek-v4-flash"
+WORDS = [
+    "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
+    "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",
+    "cobalt", "willow", "cascade", "anvil", "nocturne", "vellum",
+]
+
+# First match wins; names are lower-cased before matching. Refine using the
+# top-kernel table this script prints (that is how mHC gets its own bucket).
+BUCKETS = [
+    ("comms", r"nccl|all_reduce|allreduce|reduce_scatter|all_gather|allgather"),
+    ("moe", r"moe|expert|grouped_gemm|group_gemm|router|routing"),
+    ("attn/indexer", r"mla|fmha|flashinfer|attn|sparse|indexer|mqa|paged|topk"),
+    ("gemm", r"gemm|matmul|cutlass|cublas|nvjet|wgmma|einsum|f8f8"),
+    ("norm/rope/quant", r"norm|rope|rotary|quant"),
+]
+_COMPILED = [(label, re.compile(pat)) for label, pat in BUCKETS]
+
+
+def post(path: str, timeout: int = 30) -> None:
+    req = urllib.request.Request(BASE + path, data=b"", method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=timeout).read()
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 405):
+            sys.exit(
+                f"{path} -> HTTP {e.code}: server was not launched with "
+                "VLLM_TORCH_PROFILER_DIR (relaunch via start-hy4-tp4.sh once) "
+                "or this fork lacks the profiler endpoints (fallback: nsys)."
+            )
+        raise
+
+
+def run_prefill(ctx_tokens: int) -> tuple[int, float]:
+    rng = random.Random(os.getpid() * 6067 + int(time.time()) % 100000)
+    text = " ".join(rng.choice(WORDS) for _ in range(int(ctx_tokens / 1.3)))
+    body = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "user", "content": text + " End."}],
+        "max_tokens": 1,
+        "chat_template_kwargs": {"thinking": False},
+    }).encode()
+    req = urllib.request.Request(
+        BASE + "/v1/chat/completions", body,
+        {"Content-Type": "application/json"},
+    )
+    t0 = time.time()
+    out = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    return out["usage"]["prompt_tokens"], time.time() - t0
+
+
+def wait_for_trace(trace_dir: str, after: float, timeout: int = 180) -> str:
+    """Newest trace file written after `after`, waited until its size is
+    stable (the profiler flushes asynchronously after /stop_profile)."""
+    deadline = time.time() + timeout
+    path, last_size = None, -1
+    while time.time() < deadline:
+        cands = [
+            p for p in glob.glob(os.path.join(trace_dir, "**", "*.json*"),
+                                 recursive=True)
+            if os.path.getmtime(p) >= after
+        ]
+        if cands:
+            newest = max(cands, key=os.path.getmtime)
+            size = os.path.getsize(newest)
+            if newest == path and size == last_size and size > 0:
+                return newest
+            path, last_size = newest, size
+        time.sleep(2)
+    sys.exit(f"no stable trace appeared in {trace_dir} within {timeout}s")
+
+
+def load_events(path: str) -> list[dict]:
+    opener = gzip.open if path.endswith(".gz") else open
+    with opener(path, "rt") as f:
+        doc = json.load(f)
+    return doc.get("traceEvents", doc if isinstance(doc, list) else [])
+
+
+def bucket_of(name: str) -> str:
+    low = name.lower()
+    for label, pat in _COMPILED:
+        if pat.search(low):
+            return label
+    return "other"
+
+
+def main() -> None:
+    ctx = int(sys.argv[1]) if len(sys.argv) > 1 else 32_000
+    trace_dir = sys.argv[2] if len(sys.argv) > 2 else "/home/choiceoh/vllm-prof"
+
+    post("/start_profile")
+    t0 = time.time()
+    try:
+        pt, el = run_prefill(ctx)
+    finally:
+        post("/stop_profile", timeout=120)
+    print(f"prefill {pt:,} tok in {el:.1f}s "
+          f"({pt / el:,.0f} tok/s WITH profiler overhead — use ratios, "
+          "not absolutes)")
+
+    path = wait_for_trace(trace_dir, after=t0)
+    print(f"trace: {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
+    events = load_events(path)
+
+    totals: dict[str, float] = {}
+    per_kernel: dict[str, list[float]] = {}
+    t_min, t_max = float("inf"), 0.0
+    for ev in events:
+        if ev.get("ph") != "X":
+            continue
+        cat = ev.get("cat", "")
+        dur = ev.get("dur")
+        if dur is None:
+            continue
+        if cat in ("gpu_memcpy", "gpu_memset"):
+            label = "memops"
+        elif "kernel" in cat:
+            label = bucket_of(ev.get("name", ""))
+        else:
+            continue
+        ts = ev.get("ts", 0.0)
+        t_min, t_max = min(t_min, ts), max(t_max, ts + dur)
+        totals[label] = totals.get(label, 0.0) + dur
+        k = per_kernel.setdefault(ev.get("name", "?"), [0.0, 0])
+        k[0] += dur
+        k[1] += 1
+
+    if not totals:
+        sys.exit("no GPU kernel events in trace — was the request served "
+                 "during the capture window?")
+
+    wall_ms = (t_max - t_min) / 1e3
+    total_ms = sum(totals.values()) / 1e3
+    print(f"\n=== GPU kernel-time attribution "
+          f"(capture wall {wall_ms:,.0f} ms) ===")
+    for label, us in sorted(totals.items(), key=lambda kv: -kv[1]):
+        ms = us / 1e3
+        print(f"  {label:<16} {ms:>9,.1f} ms  ({100.0 * us / (total_ms * 1e3):>5.1f}%)")
+    print(f"  {'total kernels':<16} {total_ms:>9,.1f} ms  "
+          f"(coverage vs wall {100.0 * total_ms / wall_ms:.0f}% — "
+          ">100% = stream overlap, <100% = idle/launch gaps)")
+
+    print("\n=== top kernels (refine BUCKETS with these; find mHC here) ===")
+    top = sorted(per_kernel.items(), key=lambda kv: -kv[1][0])[:40]
+    for name, (us, n) in top:
+        print(f"  {us / 1e3:>9,.1f} ms  x{n:<6} [{bucket_of(name):<15}] "
+              f"{name[:110]}")
+
+
+if __name__ == "__main__":
+    main()
