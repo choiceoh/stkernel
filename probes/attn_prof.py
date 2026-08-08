@@ -96,6 +96,13 @@ import os as _deneb_os  # noqa: E402
 
 _DENEB_PROF = _deneb_os.environ.get("DENEB_ATTN_PROF") == "1"
 _DENEB_PROF_EVERY = int(_deneb_os.environ.get("DENEB_ATTN_PROF_EVERY", "400"))
+# Decode batches carry up to MAX_NUM_SEQS * (1 + SPEC_TOKENS) rows (96 with
+# the production 16 x 6); the old fixed threshold of 64 misclassified decode
+# batches beyond ~10 concurrent requests as prefill. Both envs are already in
+# the container environment (launcher ENVV).
+_DENEB_DECODE_MAX_ROWS = int(_deneb_os.environ.get("MAX_NUM_SEQS", "16")) * (
+    1 + int(_deneb_os.environ.get("SPEC_TOKENS", "5"))
+)
 _DENEB_PROF_STATS: dict[str, dict[str, Any]] = {
     "prefill": {"name": "prefill", "prep": 0.0, "attn": 0.0, "n": 0, "rows": 0,
                 "pending": []},
@@ -666,8 +673,11 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         self.forward_mqa(q, kv, positions, out)
         if _prof_ev is not None:
             _prof_ev[2].record()
-            # decode rows are 1 + num_speculative_tokens; anything wider is prefill
-            _b = _DENEB_PROF_STATS["prefill" if qr.shape[0] > 64 else "decode"]
+            # decode rows are bounded by MAX_NUM_SEQS * (1 + SPEC_TOKENS);
+            # anything wider is prefill
+            _b = _DENEB_PROF_STATS[
+                "prefill" if qr.shape[0] > _DENEB_DECODE_MAX_ROWS else "decode"
+            ]
             _b["pending"].append((_prof_ev, qr.shape[0]))
             if len(_b["pending"]) >= _DENEB_PROF_EVERY:
                 _deneb_prof_flush(_b)

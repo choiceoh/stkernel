@@ -54,14 +54,23 @@ mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/mode
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+# The stack mounts ${overlay_dir}-b12x/<file> (NOT ${overlay_dir}/) — verify
+# exactly what gets mounted, all four files, and that every node's copies are
+# byte-identical to the head's. Overlay skew across nodes is silent otherwise
+# (the old check tested only attention.py, in the wrong directory).
+OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py"
+HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
+HEAD_OVSUM=$(cd "$HEAD_OV" && md5sum $OVFILES) || { echo "ABORT: overlays missing on head ($HEAD_OV)"; exit 1; }
 for w in $WORKERS; do
   ip=${w%%:*}
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
-  ssh $SSHOPT choiceoh@$ip "test -f $(overlay_dir $ip)/attention.py && test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid" \
-    || { echo "ABORT: overlay/model missing on $ip"; exit 1; }
+  WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && md5sum $OVFILES" 2>/dev/null || true)
+  [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
+  ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid" \
+    || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
-echo "preflight OK (${HID:0:19})"
+echo "preflight OK (${HID:0:19}, overlays in sync x4)"
 
 echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
 docker rm -f vllm-dsv4 2>/dev/null || true

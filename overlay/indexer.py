@@ -334,6 +334,28 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         self._max_logits_bytes = (
             envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024
         )
+        # Resolve the schedule-metadata builder once as well: the per-build
+        # module import plus has_deep_gemm() probe otherwise run every decode
+        # step. Keep the b12x import gated so the DeepGEMM path never pulls
+        # b12x in (and vice versa).
+        if self._use_b12x_sparse_indexer:
+            from b12x.attention.indexer import (
+                build_paged_mqa_schedule_metadata,
+                uses_paged_mqa_schedule,
+            )
+
+            self._b12x_build_schedule = build_paged_mqa_schedule_metadata
+            self._b12x_uses_schedule = uses_paged_mqa_schedule
+            self._deep_gemm_schedule = None
+        else:
+            from vllm.utils.deep_gemm import (
+                get_paged_mqa_logits_metadata,
+                has_deep_gemm,
+            )
+
+            self._deep_gemm_schedule = (
+                get_paged_mqa_logits_metadata if has_deep_gemm() else None
+            )
 
         next_n = self.num_speculative_tokens + 1
         # Match sparse_swa/flashmla_sparse decode split (fork DSpark impl:
@@ -438,18 +460,13 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         if schedule_seq_lens.dim() != 1:
             return None
 
-        from b12x.attention.indexer import (
-            build_paged_mqa_schedule_metadata,
-            uses_paged_mqa_schedule,
-        )
-
-        if not uses_paged_mqa_schedule(
+        if not self._b12x_uses_schedule(
             q_rows=int(schedule_seq_lens.shape[0]),
             max_pages=int(block_table.shape[1]),
         ):
             return None
 
-        return build_paged_mqa_schedule_metadata(
+        return self._b12x_build_schedule(
             schedule_seq_lens.contiguous(),
             self.storage_block_size,
             self.num_sms,
@@ -460,13 +477,8 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         self,
         seq_lens: torch.Tensor,
     ) -> torch.Tensor:
-        from vllm.utils.deep_gemm import (
-            get_paged_mqa_logits_metadata,
-            has_deep_gemm,
-        )
-
-        if has_deep_gemm():
-            self.scheduler_metadata_buffer[:] = get_paged_mqa_logits_metadata(
+        if self._deep_gemm_schedule is not None:
+            self.scheduler_metadata_buffer[:] = self._deep_gemm_schedule(
                 seq_lens,
                 self.storage_block_size,
                 self.num_sms,

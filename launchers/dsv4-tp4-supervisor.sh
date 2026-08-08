@@ -10,7 +10,10 @@ BASE=http://127.0.0.1:8000
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"
 CHAT_TIMEOUT=60
 FAILS_NEEDED=3
-BOOT_GRACE=1500          # kernel recompile on a cold cache can take ~10min; be generous
+BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
+                         # overlay-source change) can far exceed 25min; the poll
+                         # below exits early the moment the API comes up, so a
+                         # long grace only delays declaring a truly hung boot.
 fails=0
 log(){ echo "$(date '+%F %T') $*"; }
 

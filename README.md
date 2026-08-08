@@ -63,6 +63,28 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 디코드 — next_n∈{1,2}는 native deepgemm), C128A 레이어 분기, B12X vs DeepGEMM
 인덱서 스케줄 분기.
 
+### 2차 최적화 (미실측 — 다음 배포에서 bench-dec/check-quality로 검증)
+
+- **C4A top-k 글로벌라이즈 재사용**: IndexCache(#51209)로 S 레이어는 F 레이어의
+  top-k 버퍼를 그대로 읽으므로 글로벌라이즈(로컬 top-k → 페이지 슬롯 id) 결과도
+  동일하다. 공유 메타데이터의 `flashinfer_sparse_index_cache`에 스텝당 1회만
+  계산하고 S 레이어는 재사용 (`c4a_decode_global`/`c4a_prefill_global`).
+  F 레이어가 매 스텝 무조건 재계산·갱신하고 첫 C4A 레이어는 항상 F라서 stale
+  불가. freq=4 기준 스텝당 C4A 레이어 ~3/4의 글로벌라이즈 커널 제거
+  (C128A는 F/S 구조가 없어 갱신 보장이 안 되므로 레이어별 유지).
+- 인덱서 스케줄 빌더(deepgemm `has_deep_gemm()` 프로브·b12x import)를 빌더
+  init 1회로 호이스팅 — 매 디코드 스텝 반복 제거.
+- **런처 preflight 버그 수정**: 기존 검사는 `overlay/attention.py`를 봤지만
+  실제 마운트는 `overlay-b12x/` — 잘못된 디렉터리였고 1파일뿐이었다. 이제
+  4파일 전부를 마운트 디렉터리에서 md5로 헤드와 대조해 **노드 간 오버레이
+  스큐를 기동 전에 차단**한다.
+- supervisor `BOOT_GRACE` 1500→3600s: 오버레이 소스 변경 후 재컴파일이
+  25분을 넘기면 부트 중 재기동 루프에 빠지던 것 방지 (API가 뜨면 즉시
+  통과하므로 정상 부팅엔 영향 없음).
+- attn_prof의 decode/prefill 분류 임계값을 하드코딩 64에서
+  `MAX_NUM_SEQS×(1+SPEC_TOKENS)`(프로덕션 96)로 — 동시 10요청 초과 디코드
+  배치가 prefill로 오분류되던 것 수정.
+
 주의: 오버레이 소스가 바뀌었으므로 다음 기동에서 torch.compile/AOT 해시가
 갈려 **1회 장시간 재컴파일 워밍업**이 발생한다 (커널 캐시 마운트는 그대로).
 롤백은 기존과 동일 — 해당 `-v ...:ro` 마운트 제거 또는 git으로 이전 오버레이
