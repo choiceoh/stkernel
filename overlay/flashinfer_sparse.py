@@ -590,8 +590,20 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
             swa_indices_chunk = swa_metadata.prefill_swa_indices[query_start:query_end]
             swa_lens_chunk = swa_metadata.prefill_swa_lens[query_start:query_end]
             if extra_kv_paged is not None and extra_sparse_indices_chunk is None:
+                # deneb incident diag: identify WHICH layer/state produces the
+                # None so the warmup failure can be attributed in one boot.
+                _md = attn_metadata
                 raise RuntimeError(
-                    "Compressed sparse MLA prefill requires compressed sparse indices."
+                    "Compressed sparse MLA prefill requires compressed sparse "
+                    f"indices. [diag] prefix={getattr(self, 'prefix', '?')} "
+                    f"compress_ratio={self.compress_ratio} "
+                    f"local_topk_none={local_topk_indices is None} "
+                    f"md_type={type(_md).__name__ if _md is not None else None} "
+                    f"c128a_pf={getattr(_md, 'c128a_prefill_topk_indices', 'MISSING') is not None} "
+                    f"c128a_dec={getattr(_md, 'c128a_global_decode_topk_indices', 'MISSING') is not None} "
+                    f"num_prefills={num_prefills} num_decodes={num_decodes} "
+                    f"npt={num_prefill_tokens} ndt={num_decode_tokens} "
+                    f"topk_buf={self.topk_indices_buffer is not None}"
                 )
             flashinfer_trtllm_batch_decode_sparse_mla_dsv4(
                 query=q_chunk,

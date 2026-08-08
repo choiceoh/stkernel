@@ -358,9 +358,23 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             )
 
         next_n = self.num_speculative_tokens + 1
-        # Match sparse_swa/flashmla_sparse decode split (fork DSpark impl:
-        # no parallel-drafting threshold doubling on this stack).
-        self.reorder_batch_threshold += self.num_speculative_tokens
+        # Match sparse_swa/flashmla_sparse decode split. INCIDENT FIX
+        # (2026-08-09): serve.sh sets VLLM_DSPARK_IMPL=upstream, so the
+        # non-overlaid image builder (sparse_mla.py) doubles the speculative
+        # part of the threshold; hardcoding mult=1 here desynced the builders
+        # and killed warmup (see sparse_swa_dsv4.py for the full mechanism).
+        _spec_mult = (
+            2
+            if (
+                self.vllm_config.speculative_config is not None
+                and getattr(
+                    self.vllm_config.speculative_config, "parallel_drafting", False
+                )
+                and os.environ.get("VLLM_DSPARK_IMPL", "fork") == "upstream"
+            )
+            else 1
+        )
+        self.reorder_batch_threshold += _spec_mult * self.num_speculative_tokens
         # Outside the SM100 family (GB10 is SM121) the FP8 paged MQA logits
         # kernel only supports next_n in (1, 2)
         # (deepgemm smxx_fp8_fp4_paged_mqa_logits.hpp:233), so flatten

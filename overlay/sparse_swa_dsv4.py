@@ -14,6 +14,7 @@ structurally unreachable on this deployment are removed —
   consumers,
 - the upstream-DSpark parallel-drafting threshold doubling (fork impl only).
 """
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -336,10 +337,27 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         )
         # Decode can have query_len up to 1 + num_speculative_tokens.
         # This MUST match the flashmla_sparse / indexer threshold so that
-        # all backends agree on the decode/prefill split. (The upstream-DSpark
-        # parallel-drafting 2x does not apply: this stack runs the fork impl.)
+        # all backends agree on the decode/prefill split.
+        #
+        # INCIDENT FIX (2026-08-09): the slimming hardcoded _spec_mult=1 on the
+        # assumption that this stack runs the fork DSpark impl. It does not —
+        # serve.sh sets VLLM_DSPARK_IMPL=upstream, and the NON-overlaid image
+        # builder (sparse_mla.py) computes 1 + 2*N under that impl. The two
+        # builders then split a 7-token warmup row differently (ours: prefill,
+        # image: decode), leaving c128a_prefill_topk_indices=None and killing
+        # warmup. The env-gated multiplier is restored; it must stay in lock-
+        # step with the image's sparse_mla.py, which we do not overlay.
+        _spec_mult = (
+            2
+            if (
+                spec_config is not None
+                and getattr(spec_config, "parallel_drafting", False)
+                and os.environ.get("VLLM_DSPARK_IMPL", "fork") == "upstream"
+            )
+            else 1
+        )
         self.decode_threshold = (
-            self.reorder_batch_threshold + self.num_speculative_tokens
+            self.reorder_batch_threshold + _spec_mult * self.num_speculative_tokens
         )
 
         hf_config = self.vllm_config.model_config.hf_config
