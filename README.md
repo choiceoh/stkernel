@@ -19,6 +19,7 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | `overlay/` | **프로덕션 오버레이 4파일** (업스트림 PR 5건 포팅 + TP4/GB10 전용 슬리밍) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + `deploy-overlays.sh`(4노드 배포+md5 검증) |
 | `bench/` | 검증·측정 도구 |
+| `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
 | `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드 커버리지 |
 
@@ -64,7 +65,7 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
 디코드 — next_n∈{1,2}는 native deepgemm), C128A 레이어 분기, B12X vs DeepGEMM
 인덱서 스케줄 분기.
 
-### 2차 최적화 (미실측 — 다음 배포에서 bench-dec/check-quality로 검증)
+### 2차 최적화 — 실측 판정: C4A 재사용 **중립·미채택** (MEASUREMENTS.md)
 
 - **C4A top-k 글로벌라이즈 재사용**: IndexCache(#51209)로 S 레이어는 F 레이어의
   top-k 버퍼를 그대로 읽으므로 글로벌라이즈(로컬 top-k → 페이지 슬롯 id) 결과도
@@ -86,7 +87,7 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   `MAX_NUM_SEQS×(1+SPEC_TOKENS)`(프로덕션 96)로 — 동시 10요청 초과 디코드
   배치가 prefill로 오분류되던 것 수정.
 
-### 3차 최적화 (미실측 — 기동 로그·리트리벌로 검증)
+### 3차 최적화 — 실측 판정: KV 트림 **기각** (프리필 −3.4%, KV +0.3%; MEASUREMENTS.md)
 
 - **skip-topk 레이어의 인덱서 KV 캐시 미할당**: IndexCache(#51209)로 top-k를
   재사용하는 S 레이어는 자기 인덱서를 절대 실행하지 않으므로 그 k-cache
@@ -104,7 +105,7 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   로컬 docker 미기동으로 헛돌 수 있었다 (자가 복구는 됐지만 사이클 낭비).
 - `check-quality.py` 문서 수정: 사실을 심는 실제 깊이는 25/50/75%.
 
-### 4차 최적화 (미실측 — bench-tp4/bench-ctx 프리필로 검증)
+### 4차 최적화 — 실측 판정: SPFAST **중립·미채택** (MEASUREMENTS.md)
 
 - **indexer-SP 단일 구간 zero-copy 고속경로**: `_indexer_sp_owned_ranges`가
   인접 구간을 병합해 반환하고(소유 행 집합 불변 — `tests/test_logic.py`로
@@ -235,19 +236,12 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 (`[deneb-prof]`/`[deneb-prep]`/`[deneb-fi]`). 캡처 가드(`is_current_stream_capturing`) 필수 —
 없으면 `cudaErrorStreamCaptureInvalidated`로 기동 실패.
 
-실측 트리 — 프리필 스텝 예산 최종 (4,096토큰, 벽시계 ~1,552ms @ 2,640 tok/s):
-
-| 구간 | ms/스텝 | 비중 |
-|---|---|---|
-| MoE (라우터+experts+shared) | 429 | 27.6% |
-| attention_impl (prep+FlashInfer 커널) | 268 | 17.3% |
-| 입력 GEMM (wq_a/wkv/인덱서 헤드) | 57 | 3.7% |
-| o_proj einsum | ~40 | 2.6% |
-| **미귀속 잔차** (mHC + TP collectives + launch glue) | ~758 | **~49%** |
-
-미귀속 잔차는 Amdahl f≈0.57 비스케일 비율과 정합 — **다음 표적**. 파이썬
-스팬으로는 못 쪼갠다 (`fuse_gemm_comms`/`fuse_allreduce_rms`가 통신을 컴파일된
-커스텀 op 안으로 융합) → `bench/profile-step.py`로 커널 레벨 귀속.
+프리필 분해는 **완결됐다** — probe 스팬(스텝 예산) + torch profiler 커널 귀속
+(`bench/profile-step.py`, 32K 캡처)의 최종 수치와 전체 판정 원장은
+**[MEASUREMENTS.md](MEASUREMENTS.md)**. 요약: GPU busy 99.6%,
+MoE 24.2 · comms 23.4(대역폭 바닥) · GEMM 18.6 · attn 12.5 · mHC ~16%.
+과거 "미귀속 ~49%"는 comms+mHC+GEMM 일부로 전량 귀속됐고, Amdahl f≈0.57의
+정체는 comms(TP 무관)+mHC(랭크 복제)였다.
 
 ## 미채택 포팅 (파일은 제거, 근거 보존 — 복원: git history `e95f82f`)
 
