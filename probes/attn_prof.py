@@ -930,6 +930,13 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
 _INDEXER_SP_ENABLED = os.environ.get("VLLM_DSV4_INDEXER_SP") == "1"
 _indexer_sp_tp_rank: tuple[int, int] | None = None
 
+# Incident kill-switches (2026-08-09 warmup failure: C128A layers saw
+# c128a_prefill_topk_indices=None). The behavior-bearing optimizations land
+# default-OFF until each is individually cleared in prod; enable via the
+# launcher knobs TRIMIDX / SPFAST (and C4AREUSE in flashinfer_sparse.py).
+_TRIM_SKIP_INDEXER_KV = os.environ.get("DENEB_TRIM_SKIP_INDEXER_KV") == "1"
+_SP_SINGLE_SPAN = os.environ.get("DENEB_SP_SINGLE_SPAN") == "1"
+
 
 def _indexer_sp_owned_ranges(k_cache_prefix: str):
     """Batch row ranges this rank must compute indexer-q for, under
@@ -1081,8 +1088,10 @@ class DeepseekV4Indexer(nn.Module):
             cache_config=cache_config,
             compress_ratio=self.compress_ratio,
             # skip-topk layers never run this indexer; don't spend KV pages
-            # on a cache that is never written or read.
-            spec_enabled=not skip_topk,
+            # on a cache that is never written or read. Gated default-OFF:
+            # trimming specs changes KV-group composition, the prime suspect
+            # for the image FlashMLA builder leaving c128a_* metadata unset.
+            spec_enabled=not (skip_topk and _TRIM_SKIP_INDEXER_KV),
         )
         self.compressor = DeepseekCompressor(
             vllm_config=vllm_config,
@@ -1134,7 +1143,7 @@ class DeepseekV4Indexer(nn.Module):
                 # full-size buffers (unowned rows stay uninitialized and are
                 # never read by the sliced indexer paths).
                 _n = qr.shape[0]
-                if len(_ranges) == 1:
+                if _SP_SINGLE_SPAN and len(_ranges) == 1:
                     # Single contiguous span — the dominant shape (pure-
                     # prefill single chunk on every rank; decode rows fused
                     # with rank 0's first shard). dim-0 slices are zero-copy
