@@ -138,6 +138,19 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   텐서는 기동 시 1회 바인딩되므로 레이어당 호출 2-3회의 view 생성이 전부
   재사용으로 바뀜 (`is` 가드라 리바인딩에도 안전).
 
+### 6차 수제 최적화 — CPU 텐서 스칼라 산술 소거
+
+- **프리필 청크 루프의 오프셋 산술을 파이썬 int로**: `_forward_prefill`이
+  청크마다 `query_start_loc_cpu[i]` 인덱싱→뺄셈→슬라이스 바운드 변환을
+  CPU 텐서 dispatch로 하고 있었다 (레이어 61 × 청크 × 연산 다수 ≈ **ms급/
+  스텝** — 5차 항목들보다 한 자릿수 큼). SWA 빌더가 스텝당 1회
+  `tolist()`로 만든 `query_start_loc_py`(파이썬 int 리스트)를 메타데이터에
+  실어, 레이어 쪽 루프는 순수 int 산술 + int 슬라이싱만 남김. `getattr`
+  폴백으로 파일 단위 롤백(이미지 빌더 + 우리 flashinfer) 호환 유지.
+- per-call 텐서 별칭 생성 소거(identity 가드): norm weight `.data`(레이어당
+  호출마다 2회), SWA 캐시 `view(N,-1)`(fused insert마다), `split` 크기
+  리스트, `swa_cache_layer.prefix` 체인 2곳.
+
 이 이하 남은 개선은 코드가 아니라 측정이다: `profile-step.py`로 미귀속
 ~49%를 쪼갠 결과가 다음 작업(통신 튜닝 / mHC probe)을 정한다.
 

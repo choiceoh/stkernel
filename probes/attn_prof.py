@@ -466,6 +466,18 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             prefix=f"{prefix}.swa_cache",
             cache_config=cache_config,
         )
+        self._swa_prefix = self.swa_cache_layer.prefix
+        # Identity-guarded caches for per-call tensor aliases: `.data` and
+        # `.view()` construct a fresh python Tensor on every access, and both
+        # ran per layer per eager step. The `is` guards keep a hypothetical
+        # weight/cache rebind correct.
+        self._split_sizes = [self.q_lora_rank, self.head_dim]
+        self._q_norm_w_src: torch.Tensor | None = None
+        self._q_norm_w: torch.Tensor | None = None
+        self._kv_norm_w_src: torch.Tensor | None = None
+        self._kv_norm_w: torch.Tensor | None = None
+        self._swa_kv_2d_src: torch.Tensor | None = None
+        self._swa_kv_2d: torch.Tensor | None = None
 
         # Register with compilation context for metadata lookup.
         compilation_config = vllm_config.compilation_config
@@ -496,6 +508,16 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         weight loading.
         """
         return
+
+    def _qkv_norm_weights(self) -> tuple[torch.Tensor, torch.Tensor]:
+        qp, kp = self.q_norm.weight, self.kv_norm.weight
+        if self._q_norm_w_src is not qp:
+            self._q_norm_w = qp.data
+            self._q_norm_w_src = qp
+        if self._kv_norm_w_src is not kp:
+            self._kv_norm_w = kp.data
+            self._kv_norm_w_src = kp
+        return self._q_norm_w, self._kv_norm_w
 
     def forward(
         self,
@@ -716,7 +738,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
 
         swa_metadata = cast(
             "DeepseekSparseSWAMetadata | None",
-            attn_metadata.get(self.swa_cache_layer.prefix),
+            attn_metadata.get(self._swa_prefix),
         )
         assert swa_metadata is not None
 
@@ -733,11 +755,14 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         #            the padding head slots; the kernel allocates and returns
         #            the padded q tensor.
         #   KV side: GPT-J RoPE + UE8M0 FP8 quant + paged cache insert.
-        assert swa_kv_cache.dtype == torch.uint8, (
-            "TP4 GB10 overlay: plain-row KV insert paths were removed; the SWA "
-            f"cache must be fp8_ds_mla/uint8, got {swa_kv_cache.dtype}"
-        )
-        swa_kv_cache_2d = swa_kv_cache.view(swa_kv_cache.shape[0], -1)
+        if self._swa_kv_2d_src is not swa_kv_cache:
+            assert swa_kv_cache.dtype == torch.uint8, (
+                "TP4 GB10 overlay: plain-row KV insert paths were removed; the "
+                f"SWA cache must be fp8_ds_mla/uint8, got {swa_kv_cache.dtype}"
+            )
+            self._swa_kv_2d = swa_kv_cache.view(swa_kv_cache.shape[0], -1)
+            self._swa_kv_2d_src = swa_kv_cache
+        swa_kv_cache_2d = self._swa_kv_2d
         return torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
             q,
             kv,
@@ -792,12 +817,13 @@ def deepseek_v4_attention(
     qr_kv, kv_score, indexer_kv_score, indexer_weights = (
         self.attn_gemm_parallel_execute(hidden_states)
     )
-    qr, kv = qr_kv.split([self.q_lora_rank, self.head_dim], dim=-1)
+    qr, kv = qr_kv.split(self._split_sizes, dim=-1)
+    q_norm_w, kv_norm_w = self._qkv_norm_weights()
     qr, kv = fused_q_kv_rmsnorm(
         qr,
         kv,
-        self.q_norm.weight.data,
-        self.kv_norm.weight.data,
+        q_norm_w,
+        kv_norm_w,
         self.eps,
     )
     if _ig_ev is not None:

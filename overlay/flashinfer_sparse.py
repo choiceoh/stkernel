@@ -325,7 +325,7 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         )
         swa_metadata = cast(
             "DeepseekSparseSWAMetadata | None",
-            attn_metadata.get(self.swa_cache_layer.prefix),
+            attn_metadata.get(self._swa_prefix),
         )
         assert swa_metadata is not None
 
@@ -468,9 +468,15 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         num_decode_tokens = swa_metadata.num_decode_tokens
         num_prefill_tokens = swa_metadata.num_prefill_tokens
 
-        query_start_loc_cpu = swa_metadata.query_start_loc_cpu
-        assert query_start_loc_cpu is not None
-        prefill_token_base = query_start_loc_cpu[num_decodes]
+        # Plain-int offsets for the chunk loop below (built once per step by
+        # the SWA builder). getattr fallback covers per-file rollback, where
+        # the image's builder lacks the python shadow.
+        qsl_py = getattr(swa_metadata, "query_start_loc_py", None)
+        if qsl_py is None:
+            query_start_loc_cpu = swa_metadata.query_start_loc_cpu
+            assert query_start_loc_cpu is not None
+            qsl_py = query_start_loc_cpu.tolist()
+        prefill_token_base = qsl_py[num_decodes]
 
         local_topk_indices: torch.Tensor | None
         if swa_only:
@@ -549,12 +555,8 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
         for chunk_idx in range(num_chunks):
             chunk_start = chunk_idx * self.PREFILL_CHUNK_SIZE
             chunk_end = min(chunk_start + self.PREFILL_CHUNK_SIZE, num_prefills)
-            query_start = (
-                query_start_loc_cpu[num_decodes + chunk_start] - prefill_token_base
-            )
-            query_end = (
-                query_start_loc_cpu[num_decodes + chunk_end] - prefill_token_base
-            )
+            query_start = qsl_py[num_decodes + chunk_start] - prefill_token_base
+            query_end = qsl_py[num_decodes + chunk_end] - prefill_token_base
             # deneb fork: port of upstream PR #49059. FULL_AND_PIECEWISE cudagraph
             # padding can produce a trailing SM120 sparse-MLA prefill chunk with
             # query_start == query_end; FlashInfer then raises "cannot reshape
