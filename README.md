@@ -16,12 +16,28 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/` | **프로덕션 오버레이 4파일** (업스트림 PR 5건 포팅 + TP4/GB10 전용 슬리밍) |
-| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + `deploy-overlays.sh`(4노드 배포+md5 검증) |
+| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 7파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍) |
+| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 |
 | `bench/` | 검증·측정 도구 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
-| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드 커버리지 |
+| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·manifest 불변식 |
+
+## 단일 overlay manifest · 런타임 경계 감사
+
+`overlay/manifest.tsv`가 **파일 목록과 컨테이너 마운트 목적지의 유일한 원본**이다.
+배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,
+런처도 같은 manifest를 읽어 바인드 마운트와 기동 전 스큐 검사를 만든다. 새
+오버레이는 shell 스크립트 두 곳을 수정하지 않고 manifest 한 줄만 추가한다.
+
+베이스 이미지 안의 sampler/hash-MoE/expert-map 접근에 상·하한 보호가 있는지는
+저장소 소스만으로 증명할 수 없어 현재 판정은 **UNKNOWN(안전 판정 아님)** 이다.
+실행 중인 배포물은 다음 명령으로 감사한다. 세부 기준과 조치 규칙은
+[`RUNTIME_GUARD_AUDIT.md`](RUNTIME_GUARD_AUDIT.md)에 있다.
+
+```bash
+python3 launchers/audit-runtime-guards.py --container hy4
+```
 
 ## overlay/ — 프로덕션 채택 5건
 
@@ -78,8 +94,8 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   init 1회로 호이스팅 — 매 디코드 스텝 반복 제거.
 - **런처 preflight 버그 수정**: 기존 검사는 `overlay/attention.py`를 봤지만
   실제 마운트는 `overlay-b12x/` — 잘못된 디렉터리였고 1파일뿐이었다. 이제
-  4파일 전부를 마운트 디렉터리에서 md5로 헤드와 대조해 **노드 간 오버레이
-  스큐를 기동 전에 차단**한다.
+  단일 manifest와 그 안의 모든 파일을 마운트 디렉터리에서 SHA-256으로 헤드와
+  대조해 **노드 간 오버레이·목록 스큐를 기동 전에 차단**한다.
 - supervisor `BOOT_GRACE` 1500→3600s: 오버레이 소스 변경 후 재컴파일이
   25분을 넘기면 부트 중 재기동 루프에 빠지던 것 방지 (API가 뜨면 즉시
   통과하므로 정상 부팅엔 영향 없음).
@@ -123,8 +139,8 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   (첫 C4A는 항상 F — 캐시 재사용·spec 제거의 전제)·SP 샤드 커버리지
   (랭크 합집합=전체, 대형 청크 무중복)를 vllm/GPU 없이 AST 추출로 실행 검증.
   `deploy-overlays.sh`가 배포 전 자동 실행.
-- `launchers/deploy-overlays.sh` 신설: 리포 → 4노드 `-b12x` 디렉터리 배포 +
-  md5 검증 (preflight 스큐 검사의 쓰기 쪽 반쪽).
+- `launchers/deploy-overlays.sh` 신설: 단일 manifest를 기준으로 리포 → 4노드
+  `-b12x` 디렉터리 배포 + SHA-256 검증 (preflight 스큐 검사의 쓰기 쪽 반쪽).
 
 ### 5차 수제 미세 최적화 (µs급 잡비용 소거 — 합계는 스텝의 1% 미만)
 

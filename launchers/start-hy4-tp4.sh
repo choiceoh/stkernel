@@ -75,38 +75,75 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1"
 COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-stopped"
 
-mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/models:ro \
+MANIFEST_NAME=manifest.tsv
+HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
+OVERLAY_MANIFEST="$HEAD_OV/$MANIFEST_NAME"
+
+load_overlay_manifest() {
+  local manifest="$1" source target extra seen
+  [ -f "$manifest" ] || { echo "ABORT: overlay manifest missing ($manifest)"; exit 1; }
+  OVFILES=()
+  OVTARGETS=()
+  while IFS=$'\t' read -r source target extra || [ -n "${source:-}${target:-}${extra:-}" ]; do
+    [[ -z "$source" || "$source" == \#* ]] && continue
+    [ -n "$target" ] && [ -z "${extra:-}" ] \
+      || { echo "ABORT: malformed overlay manifest row: $source $target ${extra:-}"; exit 1; }
+    case "$source" in
+      *[!A-Za-z0-9._-]*|.*)
+        echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
+    esac
+    case "$target" in
+      /opt/venv/lib/python3.12/site-packages/vllm/*) ;;
+      *) echo "ABORT: unsafe overlay target in manifest: $target"; exit 1 ;;
+    esac
+    case "$target" in
+      *[!A-Za-z0-9_./-]*)
+        echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
+    esac
+    for seen in "${OVFILES[@]}"; do
+      [ "$seen" != "$source" ] \
+        || { echo "ABORT: duplicate overlay source in manifest: $source"; exit 1; }
+    done
+    for seen in "${OVTARGETS[@]}"; do
+      [ "$seen" != "$target" ] \
+        || { echo "ABORT: duplicate overlay target in manifest: $target"; exit 1; }
+    done
+    OVFILES+=("$source")
+    OVTARGETS+=("$target")
+  done < "$manifest"
+  ((${#OVFILES[@]} > 0)) || { echo "ABORT: overlay manifest is empty"; exit 1; }
+}
+load_overlay_manifest "$OVERLAY_MANIFEST"
+
+mounts_for() {
+  local ov="$1" i
+  printf '%s' "-v /home/choiceoh/models:/home/choiceoh/models:ro \
 -v /home/choiceoh/.cache/huggingface:/root/.cache/huggingface \
 -v /home/choiceoh/.cache/vllm-hybrid:/cache \
 -v /home/choiceoh/.cache/tilelang-hybrid:/root/.tilelang \
--v /home/choiceoh/vllm-prof:/prof \
--v ${ov}-b12x/attention.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py:ro \
--v ${ov}-b12x/flashinfer_sparse.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py:ro \
--v ${ov}-b12x/indexer.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py:ro \
--v ${ov}-b12x/sparse_swa_dsv4.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py:ro \
--v ${ov}-b12x/eager_scratch.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py:ro \
--v ${ov}-b12x/ops_cache_utils.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py:ro \
--v ${ov}-b12x/ops_fused_indexer_q.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py:ro"; }
+-v /home/choiceoh/vllm-prof:/prof"
+  for i in "${!OVFILES[@]}"; do
+    printf ' -v %s-b12x/%s:%s:ro' "$ov" "${OVFILES[$i]}" "${OVTARGETS[$i]}"
+  done
+  printf '\n'
+}
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
-# The stack mounts ${overlay_dir}-b12x/<file> (NOT ${overlay_dir}/) — verify
-# exactly what gets mounted, all four files, and that every node's copies are
-# byte-identical to the head's. Overlay skew across nodes is silent otherwise
-# (the old check tested only attention.py, in the wrong directory).
-OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py eager_scratch.py ops_cache_utils.py ops_fused_indexer_q.py"
-HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
-HEAD_OVSUM=$(cd "$HEAD_OV" && md5sum $OVFILES) || { echo "ABORT: overlays missing on head ($HEAD_OV)"; exit 1; }
+# The manifest is the only overlay inventory. Hash it together with every
+# listed source so list skew, missing files, and byte skew all fail closed.
+HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
+  || { echo "ABORT: manifest/overlays missing on head ($HEAD_OV)"; exit 1; }
 for w in $WORKERS; do
   ip=${w%%:*}
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
-  WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && md5sum $OVFILES" 2>/dev/null || true)
+  WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && sha256sum $MANIFEST_NAME ${OVFILES[*]}" 2>/dev/null || true)
   [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
   ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
     || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
-echo "preflight OK (${HID:0:19}, overlays in sync x4)"
+echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} overlays + manifest in sync x4)"
 
 echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
 docker rm -f vllm-dsv4 2>/dev/null || true
