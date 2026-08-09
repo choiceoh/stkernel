@@ -7,6 +7,7 @@
 set -euo pipefail
 
 IMAGE="aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6"
+EXPECTED_IMAGE_ID="sha256:b763d81b57f7611378a514fa0faf859c3b0d0ec1010f8c5115bea11a60d49ec3"
 HEAD_IP=10.10.10.2
 WORKERS="10.10.10.3:1 10.10.10.1:2 10.10.10.4:3"
 MODEL_PATH=/home/choiceoh/models/DeepSeek-V4-Flash-0731
@@ -18,6 +19,32 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
 MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"
 GRAPH_CAP=256
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
+MODEL_VOCAB_SIZE=129280
+FP8HEAD="${FP8HEAD:-0}"
+MARKOV_TOPK="${MARKOV_TOPK:-0}"
+V2RUNNER="${V2RUNNER:-1}"
+case "$FP8HEAD" in
+  0|1) ;;
+  *) echo "ABORT: FP8HEAD must be 0 or 1 (got $FP8HEAD)"; exit 2 ;;
+esac
+if [[ ! "$MARKOV_TOPK" =~ ^(0|[1-9][0-9]*)$ ]] \
+   || ((${#MARKOV_TOPK} > ${#MODEL_VOCAB_SIZE})); then
+  echo "ABORT: MARKOV_TOPK must be 0 or an integer in [1,$MODEL_VOCAB_SIZE] (got $MARKOV_TOPK)"
+  exit 2
+fi
+MARKOV_TOPK=$((10#$MARKOV_TOPK))
+if ((MARKOV_TOPK > MODEL_VOCAB_SIZE)); then
+  echo "ABORT: MARKOV_TOPK exceeds model vocab ($MARKOV_TOPK > $MODEL_VOCAB_SIZE)"
+  exit 2
+fi
+case "$V2RUNNER" in
+  0|1) ;;
+  *) echo "ABORT: V2RUNNER must be 0 or 1 (got $V2RUNNER)"; exit 2 ;;
+esac
+if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$V2RUNNER" != "1" ]; then
+  echo "ABORT: DSpark FP8/top-k overlays require V2RUNNER=1"
+  exit 2
+fi
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
 
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
@@ -31,8 +58,10 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_USE_AOT_COMPILE=1 \
 -e VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800 -e VLLM_DISABLE_PERSISTENT_TOPK=1 \
 -e VLLM_DSV4_INDEX_TOPK_FREQ=0 -e VLLM_USE_MEGA_AOT_ARTIFACT=0 -e VLLM_USE_BREAKABLE_CUDAGRAPH=0 \
--e VLLM_USE_V2_MODEL_RUNNER=${V2RUNNER:-1} -e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
+-e VLLM_USE_V2_MODEL_RUNNER=$V2RUNNER -e VLLM_DSPARK_IMPL=upstream \
+-e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 -e VLLM_DSV4_COMPRESSOR_FP8=${COMPRESSOR_FP8:-1} \
+-e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e TOP_P=0.44 \
@@ -41,6 +70,14 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
 -e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
+# The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
+# coexist. Top-k global row gathers require W2 to be full on every TP rank.
+if ((FP8HEAD == 1)); then
+  ENVV+=" -e VLLM_DSPARK_FP8_LM_HEAD=0"
+fi
+if ((MARKOV_TOPK > 0)); then
+  ENVV+=" -e VLLM_DSPARK_REPLICATE_MARKOV_W2=1"
+fi
 # TEMPERATURE (TEMP knob, default 0.8): the SERVING sampling default is set
 # via --override-generation-config below — measured on hard prose: acceptance
 # 15.9->18.9%, decode +7% vs 0.95; 0.7 adds nothing (saturation). The
@@ -80,14 +117,16 @@ HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
 OVERLAY_MANIFEST="$HEAD_OV/$MANIFEST_NAME"
 
 load_overlay_manifest() {
-  local manifest="$1" source target extra seen
+  local manifest="$1" source target base_contract extra seen
   [ -f "$manifest" ] || { echo "ABORT: overlay manifest missing ($manifest)"; exit 1; }
   OVFILES=()
   OVTARGETS=()
-  while IFS=$'\t' read -r source target extra || [ -n "${source:-}${target:-}${extra:-}" ]; do
+  OVBASES=()
+  while IFS=$'\t' read -r source target base_contract extra \
+      || [ -n "${source:-}${target:-}${base_contract:-}${extra:-}" ]; do
     [[ -z "$source" || "$source" == \#* ]] && continue
-    [ -n "$target" ] && [ -z "${extra:-}" ] \
-      || { echo "ABORT: malformed overlay manifest row: $source $target ${extra:-}"; exit 1; }
+    [ -n "$target" ] && [ -n "$base_contract" ] && [ -z "${extra:-}" ] \
+      || { echo "ABORT: malformed overlay manifest row: $source $target $base_contract ${extra:-}"; exit 1; }
     case "$source" in
       *[!A-Za-z0-9._-]*|.*)
         echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
@@ -100,6 +139,11 @@ load_overlay_manifest() {
       *[!A-Za-z0-9_./-]*)
         echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
     esac
+    if [ "$base_contract" != "absent" ] \
+        && [[ ! "$base_contract" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "ABORT: invalid base preimage contract for $source: $base_contract"
+      exit 1
+    fi
     for seen in "${OVFILES[@]}"; do
       [ "$seen" != "$source" ] \
         || { echo "ABORT: duplicate overlay source in manifest: $source"; exit 1; }
@@ -110,6 +154,7 @@ load_overlay_manifest() {
     done
     OVFILES+=("$source")
     OVTARGETS+=("$target")
+    OVBASES+=("$base_contract")
   done < "$manifest"
   ((${#OVFILES[@]} > 0)) || { echo "ABORT: overlay manifest is empty"; exit 1; }
 }
@@ -130,6 +175,46 @@ mounts_for() {
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+[ "$HID" = "$EXPECTED_IMAGE_ID" ] || {
+  echo "ABORT: production-hybrid-1.6 image ID drifted"
+  echo "  expected: $EXPECTED_IMAGE_ID"
+  echo "  actual:   $HID"
+  exit 1
+}
+# The manifest pins the unmounted base preimage for every replaced file and
+# explicitly marks newly-created targets absent. Check before any bind mount
+# can hide the image bytes.
+BASE_SPECS=()
+for i in "${!OVFILES[@]}"; do
+  BASE_SPECS+=("${OVBASES[$i]}:${OVTARGETS[$i]}")
+done
+docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
+  set -eu
+  for spec do
+    contract=${spec%%:*}
+    target=${spec#*:}
+    if [ "$contract" = absent ]; then
+      if [ -e "$target" ] || [ -L "$target" ]; then
+        echo "ABORT: expected absent base target exists: $target" >&2
+        exit 1
+      fi
+      continue
+    fi
+    if [ ! -f "$target" ] || [ -L "$target" ]; then
+      echo "ABORT: base preimage is not a regular non-symlink file: $target" >&2
+      exit 1
+    fi
+    actual=$(sha256sum "$target")
+    actual=${actual%% *}
+    if [ "$actual" != "$contract" ]; then
+      echo "ABORT: base preimage skew: $target" >&2
+      echo "  expected: $contract" >&2
+      echo "  actual:   $actual" >&2
+      exit 1
+    fi
+  done
+' sh "${BASE_SPECS[@]}" \
+  || { echo "ABORT: unmounted base source attestation failed"; exit 1; }
 # The manifest is the only overlay inventory. Hash it together with every
 # listed source so list skew, missing files, and byte skew all fail closed.
 HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
@@ -143,7 +228,7 @@ for w in $WORKERS; do
   ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
     || { echo "ABORT: model/caches missing on $ip"; exit 1; }
 done
-echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} overlays + manifest in sync x4)"
+echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} base-attested overlays + manifest in sync x4)"
 
 echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
 docker rm -f vllm-dsv4 2>/dev/null || true
@@ -174,6 +259,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
   done
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
+echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
