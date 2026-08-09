@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import os
+import subprocess
 import sys
 import types
 
@@ -319,8 +320,8 @@ def test_overlay_manifest() -> None:
             if not line or line.startswith("#"):
                 continue
             fields = line.split("\t")
-            check(len(fields) == 2, f"manifest line {line_no}: need two TSV fields")
-            source, target = fields
+            check(len(fields) == 3, f"manifest line {line_no}: need three TSV fields")
+            source, target, base_contract = fields
             check(source == os.path.basename(source),
                   f"manifest line {line_no}: source must be a basename")
             check(source and not source.startswith(".")
@@ -333,13 +334,43 @@ def test_overlay_manifest() -> None:
                   f"manifest line {line_no}: unsafe target character")
             check(os.path.isfile(os.path.join(REPO, "overlay", source)),
                   f"manifest line {line_no}: missing overlay/{source}")
-            rows.append((source, target))
+            check(
+                base_contract == "absent"
+                or (
+                    len(base_contract) == 64
+                    and all(ch in "0123456789abcdef" for ch in base_contract)
+                ),
+                f"manifest line {line_no}: invalid base preimage contract",
+            )
+            rows.append((source, target, base_contract))
 
     check(bool(rows), "overlay manifest must not be empty")
-    check(len({source for source, _ in rows}) == len(rows),
+    check(len({source for source, _, _ in rows}) == len(rows),
           "overlay manifest has duplicate sources")
-    check(len({target for _, target in rows}) == len(rows),
+    check(len({target for _, target, _ in rows}) == len(rows),
           "overlay manifest has duplicate targets")
+    manifest_sources = {source for source, _, _ in rows}
+    check(
+        {
+            "fp8_draft_head.py",
+            "dspark_v2.py",
+            "dspark_speculator_v2.py",
+            "dspark_utils_v2.py",
+        } <= manifest_sources,
+        "DSpark speed overlays are missing from the canonical manifest",
+    )
+    check(
+        all(
+            contract != "absent"
+            for source, _, contract in rows
+            if source in {
+                "dspark_v2.py",
+                "dspark_speculator_v2.py",
+                "dspark_utils_v2.py",
+            }
+        ),
+        "replaced DSpark files must pin exact production preimages",
+    )
 
     for relpath in ("launchers/start-hy4-tp4.sh",
                     "launchers/deploy-overlays.sh"):
@@ -352,6 +383,120 @@ def test_overlay_manifest() -> None:
     print(f"  overlay manifest ({len(rows)} files) .... OK")
 
 
+# ---------------------------------------------------------------------------
+# 8. DSpark speed experiment — launcher bounds + FP8 helper contract
+# ---------------------------------------------------------------------------
+def test_dspark_speed_guards() -> None:
+    launcher = os.path.join(REPO, "launchers", "start-hy4-tp4.sh")
+    cases = (
+        ({"FP8HEAD": "2", "MARKOV_TOPK": "0"}, "FP8HEAD must be 0 or 1"),
+        ({"FP8HEAD": "0", "MARKOV_TOPK": "-1"}, "MARKOV_TOPK must be"),
+        ({"FP8HEAD": "0", "MARKOV_TOPK": "abc"}, "MARKOV_TOPK must be"),
+        ({"FP8HEAD": "0", "MARKOV_TOPK": "129281"}, "exceeds model vocab"),
+        (
+            {"FP8HEAD": "1", "MARKOV_TOPK": "0", "V2RUNNER": "0"},
+            "require V2RUNNER=1",
+        ),
+    )
+    for extra_env, expected in cases:
+        env = dict(os.environ)
+        env.update(extra_env)
+        proc = subprocess.run(
+            ["bash", launcher],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        output = proc.stdout + proc.stderr
+        check(proc.returncode == 2, f"launcher did not reject {extra_env}: {output}")
+        check(expected in output, f"launcher rejection unclear for {extra_env}: {output}")
+
+    launcher_text = open(launcher, encoding="utf-8").read()
+    check("VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD" in launcher_text,
+          "FP8 draft-head knob not propagated")
+    check("VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK" in launcher_text,
+          "Markov top-k knob not propagated")
+    check("VLLM_DSPARK_IMPL=upstream" in launcher_text,
+          "DSpark v2 selector is not explicit")
+    check("EXPECTED_IMAGE_ID=" in launcher_text and "OVBASES" in launcher_text,
+          "image/source preimage attestation is missing")
+    check('[ -L "$target" ]' in launcher_text,
+          "base preimage attestation must reject symlink targets")
+    check('[ ! -f "$target" ]' in launcher_text,
+          "hashed base preimages must be regular files")
+
+    helper = os.path.join(REPO, "overlay", "fp8_draft_head.py")
+    helper_text = open(helper, encoding="utf-8").read()
+    helper_tree = ast.parse(helper_text)
+    function_names = {
+        node.name for node in helper_tree.body if isinstance(node, ast.FunctionDef)
+    }
+    check(
+        {
+            "fp8_draft_head_supported",
+            "require_fp8_draft_head_support",
+            "quantize_draft_head",
+            "fp8_draft_head_logits",
+        } <= function_names,
+        "FP8 helper is missing support/quantize/GEMM guards",
+    )
+    check("hidden_states.shape[-1] != head.weight_fp8.shape[-1]" in helper_text,
+          "FP8 helper lacks hidden/head dimension guard")
+
+    ns = load_defs(
+        "overlay/dspark_speculator_v2.py",
+        {"_parse_draft_topk"},
+        {},
+    )
+    parse_topk = ns["_parse_draft_topk"]
+    check(parse_topk("", 10) is None, "empty top-k must disable")
+    check(parse_topk("0", 10) is None, "zero top-k must disable")
+    check(parse_topk("1", 10) == 1, "top-k lower bound rejected")
+    check(parse_topk("10", 10) == 10, "top-k upper bound rejected")
+    for raw in ("-1", "11", "x"):
+        try:
+            parse_topk(raw, 10)
+            check(False, f"invalid top-k accepted: {raw}")
+        except ValueError:
+            check(True, "")
+
+    spec_text = open(
+        os.path.join(REPO, "overlay", "dspark_speculator_v2.py"),
+        encoding="utf-8",
+    ).read()
+    model_text = open(
+        os.path.join(REPO, "overlay", "dspark_v2.py"),
+        encoding="utf-8",
+    ).read()
+    utils_text = open(
+        os.path.join(REPO, "overlay", "dspark_utils_v2.py"),
+        encoding="utf-8",
+    ).read()
+    check('base_logits.fill_(-float("inf"))' in spec_text,
+          "top-k proposal is not truncated before Markov scatter")
+    check("output_processed_logits=self.draft_logits" in spec_text,
+          "truncated proposal q is not retained for rejection sampling")
+    check("LogitsProcessor.use_all_gather=True" in spec_text,
+          "TP full-vocabulary all-gather gate is missing")
+    check('not getattr(markov_head, "_replicate_w2", False)' in spec_text,
+          "replicated W2 startup gate is missing")
+    check("def apply_bias_gathered(" in model_text
+          and "weight[token_indices]" in model_text,
+          "gathered Markov W2-row projection is missing")
+    check(
+        model_text.index("fp8_head = self._fp8_draft_head")
+        < model_text.index('getattr(self, "lm_head_fp8_weight", None)'),
+        "rowwise FP8 must take precedence over legacy DeepGEMM FP8",
+    )
+    check("if fp8_draft_head_enabled:" in utils_text
+          and "else:" in utils_text
+          and "maybe_build_fp8_lm_head" in utils_text,
+          "FP8 loader does not select exactly one draft-head implementation")
+    print("  DSpark speed-path guards ...... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -360,4 +505,5 @@ if __name__ == "__main__":
     test_profile_step()
     test_bench_dec_metrics()
     test_overlay_manifest()
+    test_dspark_speed_guards()
     print(f"all OK ({PASS} checks)")
