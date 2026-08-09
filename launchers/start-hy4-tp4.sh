@@ -45,20 +45,16 @@ if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$V2RUNNER" != "1" ]; then
   echo "ABORT: DSpark FP8/top-k overlays require V2RUNNER=1"
   exit 2
 fi
-# The speed knobs live in the upstream (registry-loaded) DSpark impl, but the
-# production default stays the fork impl: flipping IMPL is a wholesale draft
-# implementation change that needs its own quality/perf battery, and a crash
-# relaunch must never switch it silently. Arm the knobs -> upstream (required);
-# otherwise keep fork unless DSPARK_IMPL is set explicitly.
-DSPARK_IMPL="${DSPARK_IMPL:-}"
-if ((FP8HEAD == 1 || MARKOV_TOPK > 0)); then
-  if [ -n "$DSPARK_IMPL" ] && [ "$DSPARK_IMPL" != "upstream" ]; then
-    echo "ABORT: FP8HEAD/MARKOV_TOPK require the upstream DSpark impl (got DSPARK_IMPL=$DSPARK_IMPL)"
-    exit 2
-  fi
-  DSPARK_IMPL=upstream
-else
-  DSPARK_IMPL="${DSPARK_IMPL:-fork}"
+# VLLM_DSPARK_IMPL: the production-hybrid-1.6 IMAGE bakes upstream as its ENV
+# default (docker inspect evidence, 2026-08-10) — production has always run
+# the upstream (registry-loaded) DSpark impl; the "fork" reading of an unset
+# env only applies when the image ENV is absent. Passing it explicitly here
+# documents that reality and pins it against future image drift. The speed
+# knobs require it; forcing fork with a knob armed aborts.
+DSPARK_IMPL="${DSPARK_IMPL:-upstream}"
+if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$DSPARK_IMPL" != "upstream" ]; then
+  echo "ABORT: FP8HEAD/MARKOV_TOPK require the upstream DSpark impl (got DSPARK_IMPL=$DSPARK_IMPL)"
+  exit 2
 fi
 case "$DSPARK_IMPL" in
   fork|upstream) ;;
