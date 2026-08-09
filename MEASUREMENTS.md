@@ -266,8 +266,15 @@ wmma 정체 규명이 원장의 "드래프터 GEMM 교체 여지 ~8%" 가설을 
   BW 포화 칩에선 바이트가 경합한다 → fp8로 절반.
 
 **조치**: `VLLM_DSV4_COMPRESSOR_FP8=1` (기본 on, overlay/attention.py) —
-compressor·indexer.compressor의 `torch.mm(bf16→fp32)`를 fp8 deepgemm(마르코프
-w2와 동일 lazy-quant 패턴)으로. weights_proj는 N=64<128블록이라 제외.
+**attn.compressor(밸류 경로)만** `torch.mm(bf16→fp32)`를 fp8 deepgemm(마르코프
+w2와 동일 lazy-quant 패턴)으로. **인덱서 컴프레서는 운영자 결정으로 bf16 유지**
+(선택 경로 — top-k가 이산적으로 뒤집히는 곳인데 바이트 절감의 ~11%뿐 = 리스크/
+이득 비대칭). weights_proj도 bf16(N=64<128블록). 초기 실험은 인덱서 포함이었고
+위 배터리 수치는 그 구성의 것 — 축소 후 재검증은 9/9 + bench-dec로 갱신.
+
+**축소 구성 재검증 (08-10)**: 9/9 통과 · bench-dec C=1 58.9(acc 47.6% — rep1이
+38.9% 저수용을 굴림; acc 매칭 비교 시 풀 구성과 동급) · C=2 100.9 · C=4 135.5.
+인덱서 몫(이득의 ~11%, ~0.4%p)은 3회 표본의 acc 분산 아래라 비분해 — 예상과 정합.
 
 | 지표 | bf16 | fp8 |
 |---|---|---|
