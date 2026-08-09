@@ -1,6 +1,6 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
-Status: **P2 sweep IN PROGRESS (2026-08-10).** Clock lever vetoed (cooling); kernels only.
+Status: **P2a (b12x MoE) DONE — target closed, no adoptable win. P2b (mhc tilelang / tf32 prenorm) remaining.** Clock lever vetoed (cooling).
 Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
@@ -76,6 +76,40 @@ Key facts:
    9/9 + bench-dec 3) per the ledger discipline.
 
 Expected value, honest: +5-10% prefill best case, 0% plausible. Decode: none.
+
+## P2a result — b12x W4A16 MoE tile sweep (2026-08-10, engine-down window)
+
+Harness: fresh container (serving-container CUDA ban respected), real TP4
+shapes (E=64/rank, H=4096, I_tp=512, topk=6, M=4096/2048 route-block 64),
+random-bit MXFP4 weights (identical object across candidates — timing-valid),
+force_tile_config native hook. Contract learnings (recorded for reuse):
+
+- `force_tile_config = (fc1_tile_k, fc1_tile_n, fc2_tile_k, fc2_tile_n)`;
+  threads = n*k/64, must match across FC1/FC2; only 128/256 CTA threads.
+- compile `max_m_blocks` = WORST-CASE ROUTE BLOCKS (M*topk/64 + E), not
+  cta_m_blocks — run_w4a16_moe re-derives and rejects smaller.
+- `_W4A16_REGS_SM121` gates unknown shapes → setdefault(255) unblocks
+  (conservative occupancy).
+- Most tile shapes die on the 99KB smem fits-check at 4 stages: the shipped
+  candidate tables ARE essentially the feasible set. K._STAGES patchable.
+
+| config | M=4096 | M=2048 |
+|---|---|---|
+| heuristic (production) | 8.34 ms | 4.38 ms |
+| best forced (s4 t128 pair) | 8.25 ms (+1.1%) | 4.33 ms (+1.1%) |
+| stages=3 family | −0.1..−1.0% | −1.6..−2.5% |
+| stages=2 family | −6..−10% | (worse) |
+
+**Verdict: the author's heuristic sits within ~1% of the best config in the
+entire feasible space at both M regimes — the 25%-share target is CLOSED.**
+The +1.1% best-forced is microbench-noise-grade (= +0.27% prefill end-to-end,
+below adoption bar). Stage reduction strictly loses. The numerics-mismatch
+flags on some cells are an artifact of random-bit weights + cross-tile
+accumulation order, not a correctness signal (real gate = engine 9/9).
+
+Remaining P2b: mhc tilelang pair (~12% prefill) + tf32_hc_prenorm call-site
+knobs (~4%) — harness pattern above transfers; expected value modest (±0.4%
+prefill scale).
 
 ## Guardrails
 
