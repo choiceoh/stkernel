@@ -3,12 +3,15 @@
 
 The overlays only run inside the production image, so their trickiest pure
 logic (prefill chunker budgets, IndexCache skip rule, indexer-SP shard
-coverage) was previously verified by review only. This extracts those
+coverage, overlay-manifest invariants) was previously verified by review only.
+This extracts those
 functions from the sources with ast and runs them against stub inputs, so
 the invariants are executable on any machine (dev Mac or srv2, pre-deploy).
 
 Run: python3 tests/test_logic.py
 """
+from __future__ import annotations
+
 import ast
 import os
 import sys
@@ -301,6 +304,50 @@ def test_bench_dec_metrics() -> None:
     print(f"  bench-dec acceptance parser ... OK")
 
 
+# ---------------------------------------------------------------------------
+# 7. overlay/manifest.tsv — the only overlay inventory
+# ---------------------------------------------------------------------------
+def test_overlay_manifest() -> None:
+    manifest = os.path.join(REPO, "overlay", "manifest.tsv")
+    rows = []
+    with open(manifest, encoding="utf-8") as handle:
+        for line_no, raw in enumerate(handle, 1):
+            line = raw.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            check(len(fields) == 2, f"manifest line {line_no}: need two TSV fields")
+            source, target = fields
+            check(source == os.path.basename(source),
+                  f"manifest line {line_no}: source must be a basename")
+            check(source and not any(ch.isspace() for ch in source),
+                  f"manifest line {line_no}: unsafe source")
+            check(target.startswith(
+                "/opt/venv/lib/python3.12/site-packages/vllm/"),
+                f"manifest line {line_no}: target outside vllm package")
+            check(not any(ch.isspace() for ch in target),
+                  f"manifest line {line_no}: whitespace in target")
+            check(os.path.isfile(os.path.join(REPO, "overlay", source)),
+                  f"manifest line {line_no}: missing overlay/{source}")
+            rows.append((source, target))
+
+    check(bool(rows), "overlay manifest must not be empty")
+    check(len({source for source, _ in rows}) == len(rows),
+          "overlay manifest has duplicate sources")
+    check(len({target for _, target in rows}) == len(rows),
+          "overlay manifest has duplicate targets")
+
+    for relpath in ("launchers/start-hy4-tp4.sh",
+                    "launchers/deploy-overlays.sh"):
+        text = open(os.path.join(REPO, relpath), encoding="utf-8").read()
+        check("manifest.tsv" in text, f"{relpath}: manifest not consumed")
+        check('OVFILES="' not in text,
+              f"{relpath}: hard-coded overlay inventory remains")
+        check("md5sum" not in text and "sha256sum" in text,
+              f"{relpath}: manifest/files must use SHA-256 parity")
+    print(f"  overlay manifest ({len(rows)} files) .... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -308,4 +355,5 @@ if __name__ == "__main__":
     test_helpers()
     test_profile_step()
     test_bench_dec_metrics()
+    test_overlay_manifest()
     print(f"all OK ({PASS} checks)")

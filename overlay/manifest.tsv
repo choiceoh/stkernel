@@ -1,0 +1,8 @@
+# source	container_target
+attention.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py
+flashinfer_sparse.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py
+indexer.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py
+sparse_swa_dsv4.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py
+eager_scratch.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py
+ops_cache_utils.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py
+ops_fused_indexer_q.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py
