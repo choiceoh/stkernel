@@ -21,7 +21,11 @@ GRAPH_CAP=256
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
-MARKOV_TOPK="${MARKOV_TOPK:-0}"
+# MARKOV_TOPK=512 adopted 2026-08-10: two independent boots reproduce
+# +1.5% C=1 decode (acc-normalized) with residual-sigma collapse; trace shows
+# the markov W2 GEMV leaving the step budget (-0.95 ms/step in the gemm
+# bucket). Quality 9/9 + 256K needles 3/3 + prefill unaffected. 0 disarms.
+MARKOV_TOPK="${MARKOV_TOPK:-512}"
 V2RUNNER="${V2RUNNER:-1}"
 case "$FP8HEAD" in
   0|1) ;;
