@@ -1,0 +1,53 @@
+# Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
+
+Status: **P1 recon done (2026-08-10) · P2 sweep NOT started.**
+Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
+kernel level. Decode is OFF the table — its dominant kernels measure at the
+273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
+
+## P1 findings
+
+Prefill kernel budget (87MB rank0 trace, morning capture; shares rescaled to
+the 200G fabric era where AllReduce dropped 23.2% → ~9%):
+
+| target | share | source form | tunability |
+|---|---|---|---|
+| b12x `W4A16FusedMoeKernel` | **~25%** | CUTLASS-generated, `b12x` pkg | unknown — check if configs are Python-side |
+| `mhc_post_tilelang_kernel` + `mhc_pre_big_fuse_with_norm` | ~12% | **tilelang Python DSL** (`vllm/model_executor/kernels/mhc/tilelang.py`, 726 lines) | direct — tile/stage params in source |
+| `sparse_mla_prefill_mg_dual_kernel<...,16,128,64,64,1>` | ~11% | CUDA template | hard |
+| `sm120_fp8_fp4_gemm_1d1d_impl<...,128,128,...,64,64,64,128,4,...>` family | ~10% | deep_gemm .so heuristics; template args visible in traces | medium — instantiation choice buried in C++ |
+| `sm120_tf32_hc_prenorm_gemm_impl<24,16384,128,32,64,1,4,256,128>` | ~4% | .so kernel + Python call-site knobs (`block_m=64, block_k=64, n_splits` in mhc/tilelang.py:170) | easy to sweep call-site knobs |
+
+Key facts:
+- `deep_gemm.get_num_sms/set_num_sms` exist; only caller is the (inactive)
+  ubatch wrapper → default = device-detected 48. "Wrong SM count" hypothesis: weak.
+- GB10 = 48 SMs, sm_121 (12,1). deep_gemm ships sm90/sm100/sm120 variants of
+  hc_prenorm; we run the sm120 one on sm_121a.
+- All hc weights are fp32 by design (hc_head_fn etc.) — the tf32 GEMM is a
+  *precision choice*; a bf16 variant is a numerics experiment, not free.
+- Prior: the fork author developed ON GB10 — tilelang kernels are likely
+  already hand-tuned. The generic libraries (deep_gemm heuristics, CUTLASS
+  b12x configs) tuned for datacenter parts are the better-odds targets.
+
+## P2 design (engine-down window, ~30-60 min; cloud fallback covers lightweight roles)
+
+1. Stop dsv4-tp4 (fallbackModel=wormhole/deepseek-v4-flash-api takes over).
+2. Fresh container on srv2 (NEVER docker-exec CUDA in the serving container —
+   see the 08-09 collective-stall incident).
+3. Microbench harness per target, real shapes from the trace:
+   - mhc tilelang: sweep block/threads/stages around current values; bit-exact
+     or ≤1e-6 rel gate vs current kernel.
+   - tf32_hc_prenorm: sweep call-site `block_m/block_k/n_splits`; then a
+     bf16-weights variant behind a numerics gate (rel err + downstream mix).
+   - b12x MoE: first READ the package to find whether tile configs are
+     Python-visible; if compiled-only, drop the target.
+4. Winners → overlay bake → engine restart → bracket A/B (prefill ×3 + quality
+   9/9 + bench-dec 3) per the ledger discipline.
+
+Expected value, honest: +5-10% prefill best case, 0% plausible. Decode: none.
+
+## Guardrails
+
+- One knob per relaunch; bracket (base→cand→base) for anything kernel-level.
+- Quality gate: check-quality 9/9 minimum; numerics gates offline first.
+- Ledger every cell including rejections.
