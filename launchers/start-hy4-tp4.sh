@@ -35,20 +35,19 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
--e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e TOP_P=0.44 \
+-e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.95} -e TOP_P=0.44 \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
 -e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
-# TEMPERATURE (TEMP knob, default 0.8): the SERVING sampling default is set
-# via --override-generation-config below — measured on hard prose: acceptance
-# 15.9->18.9%, decode +7% vs 0.95; 0.7 adds nothing (saturation). The
-# default-chat-template-kwargs temperature/top_p are TEMPLATE kwargs, NOT
-# sampling defaults (battery W0==W1 evidence): without the override, the
-# effective default was generation_config's t1.0/top_p1.0. Explicit client
-# temperature still wins. Effective default top_p stays 1.0 — production has
-# always run 1.0; the 0.44 template kwarg was never a sampling param.
+# TEMPERATURE (TEMP knob, default 0.95 — final live-A/B verdict: temp lever
+# rejected on quality grounds, see ledger "temp 0.95->0.7->0.5"). The
+# --override-generation-config below remains because it is the only way a
+# SERVING sampling default actually applies: default-chat-template-kwargs
+# temperature/top_p are TEMPLATE kwargs, not sampling defaults (battery
+# W0==W1 evidence; without the override the effective default was
+# generation_config's t1.0/top_p1.0). Explicit client params always win.
 # Kill-switch knobs (default OFF, flip ONE at a time): TRIMIDX=1 skip-topk
 # indexer KV-spec trim (measured: rejected), C4AREUSE=1 C4A globalization
 # reuse (neutral), SPFAST=1 SP single-span path (neutral).
