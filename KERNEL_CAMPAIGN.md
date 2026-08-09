@@ -107,6 +107,39 @@ below adoption bar). Stage reduction strictly loses. The numerics-mismatch
 flags on some cells are an artifact of random-bit weights + cross-tile
 accumulation order, not a correctness signal (real gate = engine 9/9).
 
+### ③ Mystery bf16-out wmma — RESOLVED into three populations (2026-08-10)
+
+Grid-level decomposition of the ~2.8 ms/step bf16 wmma family (steady-state,
+topk-confirm trace):
+
+| population | /step | per-call | ms/step | identity |
+|---|---|---|---|---|
+| grid=[8,253,1] | 1.0 | 1,144 µs | 1.16 | **TARGET lm_head verification logits** — 253=⌈129,280/512⌉; bf16 shard 265MB/rank streamed EVERY step (265MB/273GB/s=970µs ✓). The draft lm_head got fp8 (maybe_build_fp8_lm_head) but the TARGET's never did |
+| grid=[8,2,8] | 46.5 | 25 µs | 1.16 | per-layer ×~46, 6.8MB/call — NOT in the bf16 weight inventory → activation/cache-side read; unresolved |
+| grid=[4,1,1] | 6.1 | 77 µs | 0.47 | per-draft-iteration tail |
+
+**New candidate: target-lm_head fp8 → decode +2.7%** (halve the 1.16ms).
+CAUTION unlike every adopted byte-diet so far: verification logits decide
+accept/reject AND the sampled token — OUTSIDE the rejection-sampling
+losslessness that protected the markov/draft-head fp8 moves. Adoption needs a
+greedy-divergence gate (bracket boots, N fixed prompts, exact/near-exact
+match) + the standard 9/9. Precedent for the mechanism: dspark_v2's
+_quantize_fp8_deepgemm/_fp8_gemm pair, wired at the logits_processor for the
+verify path.
+
+### ① Acceptance axis — knob triage (2026-08-10)
+
+- CONFIDENCE_SCHEDULER=threshold: structurally ~0 for C=1 (the fixed draft
+  block still runs; only EMITTED tokens get truncated → same step time, same
+  accepted length). Batched-verify benefit only. Deprioritized.
+- GREEDY_DRAFT: already measured/rejected in the ledger (probabilistic won).
+- **MARKOV_SCALE (default 1.0): the live lever** — scales the markov bias on
+  draft logits; changes draft q ONLY → rejection sampling keeps the target
+  distribution intact = quality-lossless BY CONSTRUCTION; acceptance is the
+  sole metric. Sweep 1.3/0.7/1.6 running.
+- EAGLE3.1 alternative drafter checkpoint exists on disk — larger project,
+  parked.
+
 Remaining P2b: mhc tilelang pair (~12% prefill) + tf32_hc_prenorm call-site
 knobs (~4%) — harness pattern above transfers; expected value modest (±0.4%
 prefill scale).
