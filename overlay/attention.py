@@ -85,6 +85,39 @@ except ImportError:  # pragma: no cover - fork variants without the helper
 
 logger = init_logger(__name__)
 
+# VLLM_DSV4_COMPRESSOR_FP8 (default off): run the compressor / indexer-compressor
+# input GEMMs via fp8 deepgemm instead of bf16 cuBLAS. The bf16 kernels already
+# sit AT the LPDDR bandwidth floor (measured 272-273 GB/s effective), so the only
+# remaining lever is byte reduction: fp8 halves the ~0.8 GB/step these replicated
+# weights stream, on a chip where decode is bandwidth-bound. Same lazy-quant
+# pattern as DSparkMarkovHeadOptimized (VLLM_DSPARK_MARKOV_W2_FP8): first call
+# happens in the eager warmup profile run, so CUDA-graph capture sees the
+# steady-state branch. weights_proj stays bf16 (N=64 < deepgemm 128 block).
+_COMPRESSOR_FP8 = os.getenv(
+    "VLLM_DSV4_COMPRESSOR_FP8", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compressor_fp8_kv_score(
+    owner: nn.Module, hidden_states: torch.Tensor
+) -> torch.Tensor:
+    """fp8-deepgemm replacement for torch.mm(x, fused_wkv_wgate.weight.T,
+    out_dtype=fp32). Keeps the bf16 weight in place (loader/reload safety);
+    the fp8 copy costs +50% memory on these weights (~0.4 GB/rank total)."""
+    if not hasattr(owner, "_dsv4_comp_fp8_w"):
+        from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
+            _quantize_fp8_deepgemm,
+        )
+        dg_w, dg_ws = _quantize_fp8_deepgemm(owner.fused_wkv_wgate.weight)
+        owner._dsv4_comp_fp8_w = dg_w
+        owner._dsv4_comp_fp8_ws = dg_ws
+        logger.info_once("DSV4 compressor kv_score GEMMs on fp8 deepgemm.")
+    from vllm.models.deepseek_v4.nvidia.dspark_v2 import _fp8_gemm
+
+    return _fp8_gemm(
+        hidden_states, owner._dsv4_comp_fp8_w, owner._dsv4_comp_fp8_ws
+    ).to(torch.float32)
+
 
 def _resolve_dsv4_kv_cache_dtype(
     use_fp8_ds_mla_layout: bool,
@@ -492,6 +525,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def compressor_kv_score() -> torch.Tensor:
+                if _COMPRESSOR_FP8:
+                    return _compressor_fp8_kv_score(compressor, hidden_states)
                 return torch.mm(
                     hidden_states,
                     compressor.fused_wkv_wgate.weight.T,
@@ -509,6 +544,10 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 return weights
 
             def indexer_compressor_kv_score() -> torch.Tensor:
+                if _COMPRESSOR_FP8:
+                    return _compressor_fp8_kv_score(
+                        indexer.compressor, hidden_states
+                    )
                 return torch.mm(
                     hidden_states,
                     indexer.compressor.fused_wkv_wgate.weight.T,
