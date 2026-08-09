@@ -418,8 +418,13 @@ def test_dspark_speed_guards() -> None:
           "FP8 draft-head knob not propagated")
     check("VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK" in launcher_text,
           "Markov top-k knob not propagated")
-    check("VLLM_DSPARK_IMPL=upstream" in launcher_text,
+    check("VLLM_DSPARK_IMPL=$DSPARK_IMPL" in launcher_text,
           "DSpark v2 selector is not explicit")
+    check('DSPARK_IMPL="${DSPARK_IMPL:-fork}"' in launcher_text,
+          "DSpark impl must default to the fork path when knobs are off")
+    check("DSPARK_IMPL=upstream" in launcher_text
+          and "FP8HEAD == 1 || MARKOV_TOPK > 0" in launcher_text,
+          "arming a speed knob must force the upstream impl")
     check("EXPECTED_IMAGE_ID=" in launcher_text and "OVBASES" in launcher_text,
           "image/source preimage attestation is missing")
     check('[ -L "$target" ]' in launcher_text,

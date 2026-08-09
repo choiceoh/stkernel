@@ -45,6 +45,25 @@ if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$V2RUNNER" != "1" ]; then
   echo "ABORT: DSpark FP8/top-k overlays require V2RUNNER=1"
   exit 2
 fi
+# The speed knobs live in the upstream (registry-loaded) DSpark impl, but the
+# production default stays the fork impl: flipping IMPL is a wholesale draft
+# implementation change that needs its own quality/perf battery, and a crash
+# relaunch must never switch it silently. Arm the knobs -> upstream (required);
+# otherwise keep fork unless DSPARK_IMPL is set explicitly.
+DSPARK_IMPL="${DSPARK_IMPL:-}"
+if ((FP8HEAD == 1 || MARKOV_TOPK > 0)); then
+  if [ -n "$DSPARK_IMPL" ] && [ "$DSPARK_IMPL" != "upstream" ]; then
+    echo "ABORT: FP8HEAD/MARKOV_TOPK require the upstream DSpark impl (got DSPARK_IMPL=$DSPARK_IMPL)"
+    exit 2
+  fi
+  DSPARK_IMPL=upstream
+else
+  DSPARK_IMPL="${DSPARK_IMPL:-fork}"
+fi
+case "$DSPARK_IMPL" in
+  fork|upstream) ;;
+  *) echo "ABORT: DSPARK_IMPL must be fork or upstream (got $DSPARK_IMPL)"; exit 2 ;;
+esac
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
 
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
@@ -58,7 +77,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_USE_AOT_COMPILE=1 \
 -e VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800 -e VLLM_DISABLE_PERSISTENT_TOPK=1 \
 -e VLLM_DSV4_INDEX_TOPK_FREQ=0 -e VLLM_USE_MEGA_AOT_ARTIFACT=0 -e VLLM_USE_BREAKABLE_CUDAGRAPH=0 \
--e VLLM_USE_V2_MODEL_RUNNER=$V2RUNNER -e VLLM_DSPARK_IMPL=upstream \
+-e VLLM_USE_V2_MODEL_RUNNER=$V2RUNNER -e VLLM_DSPARK_IMPL=$DSPARK_IMPL \
 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 -e VLLM_DSV4_COMPRESSOR_FP8=${COMPRESSOR_FP8:-1} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
