@@ -1,7 +1,6 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
-Status: **P1 recon + architecture dossier done (2026-08-10) · P2 sweep NOT started.**
-Next cheap lever first: the CLOCK sweep (see dossier §3) — then kernels.
+Status: **P2 sweep IN PROGRESS (2026-08-10).** Clock lever vetoed (cooling); kernels only.
 Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
@@ -33,10 +32,9 @@ the optimization question is shape/wave tuning, not instruction upgrades.
    counts to multiples of 48.
 2. **smem stage count** under the 128 KB budget (current traces show 4
    stages) — sweep 2..6.
-3. **NEW LEVER — clock**: default app clock is 2418 MHz; we cap at 2000
-   (heatwave-era protection). Compute-bound prefill could gain up to ~+21%
-   from 2000→2418. Controlled sweep with thermal watch BEFORE kernel work —
-   cheaper and potentially larger. (Ledger: 1800→2000 gave +2.4% at 66°C.)
+3. ~~clock lever~~ — **VETOED by operator (2026-08-10): cooling limits mean
+   raising past 2000 only trades stability. Do NOT re-propose.** Cap stays
+   2000 (gpu-clock-cap.service).
 
 ## P1 findings
 
