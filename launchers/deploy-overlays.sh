@@ -14,14 +14,16 @@ WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
 
 load_overlay_manifest() {
-  local source target extra seen
+  local source target base_contract extra seen
   [ -f "$MANIFEST" ] || { echo "ABORT: overlay manifest missing ($MANIFEST)"; exit 1; }
   OVFILES=()
   OVTARGETS=()
-  while IFS=$'\t' read -r source target extra || [ -n "${source:-}${target:-}${extra:-}" ]; do
+  OVBASES=()
+  while IFS=$'\t' read -r source target base_contract extra \
+      || [ -n "${source:-}${target:-}${base_contract:-}${extra:-}" ]; do
     [[ -z "$source" || "$source" == \#* ]] && continue
-    [ -n "$target" ] && [ -z "${extra:-}" ] \
-      || { echo "ABORT: malformed overlay manifest row: $source $target ${extra:-}"; exit 1; }
+    [ -n "$target" ] && [ -n "$base_contract" ] && [ -z "${extra:-}" ] \
+      || { echo "ABORT: malformed overlay manifest row: $source $target $base_contract ${extra:-}"; exit 1; }
     case "$source" in
       *[!A-Za-z0-9._-]*|.*)
         echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
@@ -34,6 +36,11 @@ load_overlay_manifest() {
       *[!A-Za-z0-9_./-]*)
         echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
     esac
+    if [ "$base_contract" != "absent" ] \
+        && [[ ! "$base_contract" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "ABORT: invalid base preimage contract for $source: $base_contract"
+      exit 1
+    fi
     for seen in "${OVFILES[@]}"; do
       [ "$seen" != "$source" ] \
         || { echo "ABORT: duplicate overlay source in manifest: $source"; exit 1; }
@@ -44,6 +51,7 @@ load_overlay_manifest() {
     done
     OVFILES+=("$source")
     OVTARGETS+=("$target")
+    OVBASES+=("$base_contract")
   done < "$MANIFEST"
   ((${#OVFILES[@]} > 0)) || { echo "ABORT: overlay manifest is empty"; exit 1; }
 }

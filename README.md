@@ -3,7 +3,8 @@
 DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 (4× NVIDIA DGX Spark GB10 · CRS812 스위치드 패브릭 · vLLM eldritch/b12x 포크 이미지)
 
-베이스 이미지 `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6`(2026-06-26 계열)은
+베이스 이미지 `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6`
+(arm64 image ID `sha256:b763d81b57f7...`, 런처에서 고정)는
 서드파티라 소스 트리가 없다. 이 리포는 그 이미지를 **재빌드 없이** 개선하기 위한
 전체 스택이다 — 파이썬 파일을 `site-packages` 위에 read-only 바인드 마운트하는
 오버레이 방식이며, 모든 수정부에 `# deneb fork: port of upstream PR #NNNNN` 마커가 있다.
@@ -16,24 +17,30 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 7파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍) |
+| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 11파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍 + DSpark opt-in 가속) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 |
 | `bench/` | 검증·측정 도구 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
-| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·manifest 불변식 |
+| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식 |
 
 ## 단일 overlay manifest · 런타임 경계 감사
 
-`overlay/manifest.tsv`가 **파일 목록과 컨테이너 마운트 목적지의 유일한 원본**이다.
+`overlay/manifest.tsv`가 **파일 목록·컨테이너 마운트 목적지·베이스 preimage의
+유일한 원본**이다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는
+새 파일의 `absent` 계약이다.
 배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,
-런처도 같은 manifest를 읽어 바인드 마운트와 기동 전 스큐 검사를 만든다. 새
-오버레이는 shell 스크립트 두 곳을 수정하지 않고 manifest 한 줄만 추가한다.
+런처도 같은 manifest를 읽어 바인드 마운트와 기동 전 스큐 검사를 만든다.
+고정된 image ID를 확인한 뒤 **마운트되지 않은 이미지 원본**의 모든 preimage를
+대조하므로, 태그·API·소스가 어긋나면 기존 컨테이너를 내리기 전에 중단한다.
+새 오버레이는 shell 스크립트 두 곳을 수정하지 않고 manifest 한 줄만 추가한다.
 
-베이스 이미지 안의 sampler/hash-MoE/expert-map 접근에 상·하한 보호가 있는지는
-저장소 소스만으로 증명할 수 없어 현재 판정은 **UNKNOWN(안전 판정 아님)** 이다.
-실행 중인 배포물은 다음 명령으로 감사한다. 세부 기준과 조치 규칙은
-[`RUNTIME_GUARD_AUDIT.md`](RUNTIME_GUARD_AUDIT.md)에 있다.
+고정한 베이스 이미지의 registry layer에서 sampler/hash-MoE/expert-map 실제
+소스를 복원해 감사한 결과는 **PASS=0, FAIL=7, UNKNOWN=0**이다. 즉 요청한
+상·하한 보호가 prod1.6에는 없다. 이미지·레이어·파일 SHA-256과 각 실패 항목은
+[`RUNTIME_GUARD_AUDIT.md`](RUNTIME_GUARD_AUDIT.md)에 고정했다. 실행 컨테이너의
+보이는 소스도 다음 명령으로 재검사할 수 있으며, 소스가 생략된 파일은 안전으로
+간주하지 않고 UNKNOWN을 반환한다.
 
 ```bash
 python3 launchers/audit-runtime-guards.py --container hy4
@@ -50,6 +57,50 @@ python3 launchers/audit-runtime-guards.py --container hy4
 | [#51202](https://github.com/vllm-project/vllm/pull/51202) | `flashinfer_sparse.py` | prefill/decode 게이트를 요청수 대신 토큰수로 | 예방 |
 
 검증: 프리필 2,437–2,533 tok/s(무회귀) · 장문 리트리벌 9/9(2K/32K/128K) · traceback 0.
+
+## DSpark 단일스트림 가속 실험: FP8 draft head + top-k Markov
+
+두 최적화는 기본값이 모두 **OFF**다. registry layer에서 추출한
+`production-hybrid-1.6`의 `dspark_v2.py`, `speculator_v2.py`,
+`utils_v2.py`가 공개 복원본과 논리 diff 0임을 확인했고, 그 실제 raw SHA-256을
+manifest에 고정했다. 런처는 원본 hash와 `VLLM_DSPARK_IMPL=upstream` v2 경로를
+확인한 뒤 최소 변경된 세 파일을 read-only 마운트한다. 노브가 0이면 새 분기는
+도달하지 않고 기존 DeepGEMM FP8/밀집 Markov 경로를 그대로 쓴다.
+
+| 런처 노브 | 런타임 env | 변형 | 보호 조건 |
+|---|---|---|---|
+| `FP8HEAD=1` | `VLLM_DSPARK_FP8_DRAFT_HEAD=1` | target과 alias된 draft LM head의 row-wise E4M3 복사 + `_scaled_mm` | SM89+, float8/API, 2-D weight, hidden 차원 일치; 기존 DeepGEMM FP8과 동시 사용 금지 |
+| `MARKOV_TOPK=512` | `VLLM_DSPARK_DRAFT_TOPK=512` | base-logit 상위 K개에만 Markov W2 행을 gather해 `baddbmm_` | `1 <= K <= vocab(129280)`, full replicated W2 `[V,R]`, target/draft vocab 동일, TP all-gather |
+
+top-k는 잘린 proposal `q` 전체를 기존 Gumbel/rejection 버퍼에 그대로 기록한다.
+따라서 target 검증 분포는 바꾸지 않지만 draft proposal과 수용률은 바뀔 수 있어
+반드시 수용률과 품질을 같이 측정한다. 로컬 TP4 실측 전에는 성능 수치를 확정하지
+않는다. 이 이미지에는 기존 DeepGEMM draft-head FP8이 기본 ON이므로
+`FP8HEAD=1`은 BF16 대비가 아니라 **row-wise `_scaled_mm` 대 기존 FP8** A/B다.
+vLLM [#47584](https://github.com/vllm-project/vllm/pull/47584)의 외부 GB10
+단일 디코드 +3–5%를 이 스택의 예상 이득으로 그대로 쓰지 않는다. top-k 설계
+근거는 [#49969](https://github.com/vllm-project/vllm/pull/49969)이지만, 후자는
+Qwen3/다른 동시성 결과이므로 역시 이 스택 수치로 인용하지 않는다.
+
+한 번에 한 축씩 cold restart하여 아래 2×2를 `bench-dec.py` 3회 이상과
+`check-quality.py` 9/9로 비교한다. 마지막 결합 arm은 두 단독 arm이 모두
+통과한 뒤에만 실행한다.
+
+```bash
+# baseline / FP8 only / top-k only / combined
+FP8HEAD=0 MARKOV_TOPK=0   bash launchers/start-hy4-tp4.sh
+FP8HEAD=1 MARKOV_TOPK=0   bash launchers/start-hy4-tp4.sh
+FP8HEAD=0 MARKOV_TOPK=512 bash launchers/start-hy4-tp4.sh
+FP8HEAD=1 MARKOV_TOPK=512 bash launchers/start-hy4-tp4.sh
+
+python3 bench/bench-dec.py
+python3 bench/check-quality.py
+docker exec hy4 grep -E "rowwise FP8|top-k Markov" /tmp/hy4.log
+```
+
+롤백은 두 노브를 0으로 되돌린 뒤 재기동하면 된다. preimage mismatch로 중단하면
+강제 우회하지 말고 `docker run --rm --entrypoint sha256sum "$IMAGE" ...`와
+`docker cp`로 실제 소스를 추출해 manifest pin과 diff를 다시 리뷰한다.
 
 ## TP4/GB10 전용 슬리밍 (2026-08-09)
 
