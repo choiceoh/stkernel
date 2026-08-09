@@ -309,6 +309,9 @@ def test_bench_dec_metrics() -> None:
 # ---------------------------------------------------------------------------
 def test_overlay_manifest() -> None:
     manifest = os.path.join(REPO, "overlay", "manifest.tsv")
+    source_chars = frozenset(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+    target_chars = source_chars | {"/"}
     rows = []
     with open(manifest, encoding="utf-8") as handle:
         for line_no, raw in enumerate(handle, 1):
@@ -320,13 +323,14 @@ def test_overlay_manifest() -> None:
             source, target = fields
             check(source == os.path.basename(source),
                   f"manifest line {line_no}: source must be a basename")
-            check(source and not any(ch.isspace() for ch in source),
+            check(source and not source.startswith(".")
+                  and all(ch in source_chars for ch in source),
                   f"manifest line {line_no}: unsafe source")
             check(target.startswith(
                 "/opt/venv/lib/python3.12/site-packages/vllm/"),
                 f"manifest line {line_no}: target outside vllm package")
-            check(not any(ch.isspace() for ch in target),
-                  f"manifest line {line_no}: whitespace in target")
+            check(all(ch in target_chars for ch in target),
+                  f"manifest line {line_no}: unsafe target character")
             check(os.path.isfile(os.path.join(REPO, "overlay", source)),
                   f"manifest line {line_no}: missing overlay/{source}")
             rows.append((source, target))

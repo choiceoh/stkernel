@@ -222,6 +222,8 @@ print(json.dumps(found))
 
 def load_from_container(container: str) -> dict[str, dict[str, str]]:
     errors: list[str] = []
+    found: dict[str, dict[str, str]] = {}
+    successful_probes = 0
     for python in ("python3", "python", "/opt/venv/bin/python"):
         try:
             proc = subprocess.run(
@@ -232,14 +234,21 @@ def load_from_container(container: str) -> dict[str, dict[str, str]]:
             )
         except FileNotFoundError as exc:
             raise RuntimeError("docker CLI not found") from exc
-        if proc.returncode == 0:
-            try:
-                return json.loads(proc.stdout)
-            except json.JSONDecodeError as exc:
-                raise RuntimeError(
-                    f"container probe returned invalid JSON: {proc.stdout[:200]!r}"
-                ) from exc
-        errors.append(f"{python}: {proc.stderr.strip() or proc.stdout.strip()}")
+        if proc.returncode != 0:
+            errors.append(f"{python}: {proc.stderr.strip() or proc.stdout.strip()}")
+            continue
+        try:
+            current = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            errors.append(f"{python}: invalid JSON: {proc.stdout[:200]!r}")
+            continue
+        successful_probes += 1
+        for relpath, source in current.items():
+            found.setdefault(relpath, source)
+        if len(found) == len(REQUIRED_FILES):
+            break
+    if successful_probes:
+        return found
     raise RuntimeError("; ".join(errors))
 
 

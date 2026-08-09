@@ -30,8 +30,10 @@ load_overlay_manifest() {
       /opt/venv/lib/python3.12/site-packages/vllm/*) ;;
       *) echo "ABORT: unsafe overlay target in manifest: $target"; exit 1 ;;
     esac
-    [[ "$target" != *[[:space:]]* ]] \
-      || { echo "ABORT: whitespace in overlay target: $target"; exit 1; }
+    case "$target" in
+      *[!A-Za-z0-9_./-]*)
+        echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
+    esac
     for seen in "${OVFILES[@]}"; do
       [ "$seen" != "$source" ] \
         || { echo "ABORT: duplicate overlay source in manifest: $source"; exit 1; }
