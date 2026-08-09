@@ -1,9 +1,42 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
-Status: **P1 recon done (2026-08-10) · P2 sweep NOT started.**
+Status: **P1 recon + architecture dossier done (2026-08-10) · P2 sweep NOT started.**
+Next cheap lever first: the CLOCK sweep (see dossier §3) — then kernels.
 Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
+
+## GB10 architecture dossier (2026-08-10 — local evidence + Chips&Cheese + backend.ai)
+
+**What it is**: a consumer Blackwell die of the RTX 5070 class (GB205 lineage,
+48 SMs) integrated on a TSMC N3 2.5D package with a Mediatek S-dielet (CPU +
+LPDDR5X-8533 256-bit controllers, 273 GB/s unified). The GPU reaches memory
+over the package fabric — nvidia-smi's "PCIe Gen1 x1" is a stub.
+
+**ISA (cc 12.1 / sm_121a)** — Ampere-lineage `mma.sync` EXTENDED with
+FP8/FP6/FP4. Missing vs datacenter sm_100: `tcgen05`, TMEM (256KB/SM),
+WGMMA (sm_90), thread-block clusters / DSMEM multicast ("each SM executes
+independently"). Present: TMA (deep_gemm sm120 impls use CUtensorMap loads).
+L1/smem 128 KB/SM (vs 256 datacenter), L2 24 MB (~1 TB/s write), FP64 1:64.
+Local device: 48 SMs @ cap 2000 MHz (default APPLICATION clock 2418, C&C
+measured max 2.55 GHz), 121.6 GB visible unified.
+
+**This explains the ledger's dead ends**: FlashMLA/FA4/TRTLLM (need
+WGMMA/tcgen05), swiglu-clamp SM100 gating, and the `cutlass_80_wmma`
+sightings — same-generation programming model, NOT an accidental fallback;
+the optimization question is shape/wave tuning, not instruction upgrades.
+
+**Campaign implications**:
+1. **Wave quantization for 48 SMs** is the concrete deep_gemm angle: sm120
+   impls were plausibly tuned on RTX 5090 (170 SMs); identical tile configs
+   leave large last-wave idle at 48 SMs. Sweep tile sizes to align tile
+   counts to multiples of 48.
+2. **smem stage count** under the 128 KB budget (current traces show 4
+   stages) — sweep 2..6.
+3. **NEW LEVER — clock**: default app clock is 2418 MHz; we cap at 2000
+   (heatwave-era protection). Compute-bound prefill could gain up to ~+21%
+   from 2000→2418. Controlled sweep with thermal watch BEFORE kernel work —
+   cheaper and potentially larger. (Ledger: 1800→2000 gave +2.4% at 66°C.)
 
 ## P1 findings
 
