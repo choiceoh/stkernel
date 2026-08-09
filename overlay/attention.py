@@ -85,6 +85,41 @@ except ImportError:  # pragma: no cover - fork variants without the helper
 
 logger = init_logger(__name__)
 
+# VLLM_DSV4_COMPRESSOR_FP8 (default off): run the ATTENTION compressor input
+# GEMM via fp8 deepgemm instead of bf16 cuBLAS. The bf16 kernel already sits AT
+# the LPDDR bandwidth floor (measured 273 GB/s effective), so the only remaining
+# lever is byte reduction: fp8 halves the ~0.7 GB/step these replicated weights
+# stream, on a chip where decode is bandwidth-bound. Same lazy-quant pattern as
+# DSparkMarkovHeadOptimized (VLLM_DSPARK_MARKOV_W2_FP8): first call happens in
+# the eager warmup profile run, so CUDA-graph capture sees the steady-state
+# branch. Scope is the VALUE path only: the indexer compressor (selection path
+# — top-k flips instead of averaging; ~11% of the bytes) and weights_proj
+# (N=64 < deepgemm 128 block) stay bf16.
+_COMPRESSOR_FP8 = os.getenv(
+    "VLLM_DSV4_COMPRESSOR_FP8", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compressor_fp8_kv_score(
+    owner: nn.Module, hidden_states: torch.Tensor
+) -> torch.Tensor:
+    """fp8-deepgemm replacement for torch.mm(x, fused_wkv_wgate.weight.T,
+    out_dtype=fp32). Keeps the bf16 weight in place (loader/reload safety);
+    the fp8 copies cost +50% memory on these weights (~0.35 GB/rank)."""
+    if not hasattr(owner, "_dsv4_comp_fp8_w"):
+        from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
+            _quantize_fp8_deepgemm,
+        )
+        dg_w, dg_ws = _quantize_fp8_deepgemm(owner.fused_wkv_wgate.weight)
+        owner._dsv4_comp_fp8_w = dg_w
+        owner._dsv4_comp_fp8_ws = dg_ws
+        logger.info_once("DSV4 compressor kv_score GEMMs on fp8 deepgemm.")
+    from vllm.models.deepseek_v4.nvidia.dspark_v2 import _fp8_gemm
+
+    return _fp8_gemm(
+        hidden_states, owner._dsv4_comp_fp8_w, owner._dsv4_comp_fp8_ws
+    ).to(torch.float32)
+
 
 def _resolve_dsv4_kv_cache_dtype(
     use_fp8_ds_mla_layout: bool,
@@ -492,6 +527,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def compressor_kv_score() -> torch.Tensor:
+                if _COMPRESSOR_FP8:
+                    return _compressor_fp8_kv_score(compressor, hidden_states)
                 return torch.mm(
                     hidden_states,
                     compressor.fused_wkv_wgate.weight.T,
@@ -509,6 +546,10 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 return weights
 
             def indexer_compressor_kv_score() -> torch.Tensor:
+                # Stays bf16 by operator decision (2026-08-10): this is the
+                # SELECTION path — it feeds index top-k, where quantization
+                # error flips discrete choices instead of averaging out — and
+                # it carries only ~11% of the compressor byte savings anyway.
                 return torch.mm(
                     hidden_states,
                     indexer.compressor.fused_wkv_wgate.weight.T,
