@@ -20,6 +20,7 @@ sets it; traces land in /home/choiceoh/vllm-prof on the head). Run ON srv2.
 Usage:
   profile-step.py [ctx_tokens=32000] [trace_dir=/home/choiceoh/vllm-prof]
                   [batched_tokens=4096]
+  profile-step.py decode:600   # decode-shaped step budget instead of prefill
 The per-step column divides by ceil(prompt_tokens / batched_tokens) so the
 numbers line up with the deneb probe tree (429 / 268 / 57 / ~40 ms per
 4,096-token step). idle = wall minus the union of kernel intervals = launch
@@ -87,6 +88,53 @@ def run_prefill(ctx_tokens: int) -> tuple[int, float]:
     return out["usage"]["prompt_tokens"], time.time() - t0
 
 
+def draft_count() -> float:
+    """spec_decode draft batches so far = decode steps taken (one draft set per
+    step). Used instead of dividing tokens by an assumed acceptance rate."""
+    try:
+        text = urllib.request.urlopen(BASE + "/metrics", timeout=10).read().decode()
+    except Exception:
+        return 0.0
+    total = 0.0
+    for line in text.splitlines():
+        if line.startswith("#") or "spec_decode" not in line or "accept" in line:
+            continue
+        m = re.match(r"[A-Za-z0-9_:]*num_drafts[A-Za-z0-9_:]*(?:\{[^}]*\})?\s+"
+                     r"([0-9.eE+-]+)\s*$", line)
+        if m:
+            total += float(m.group(1))
+    return total
+
+
+def run_decode(out_tokens: int) -> tuple[int, float]:
+    """Short prompt, long generation — the step budget here is decode-shaped.
+
+    Returns (decode steps, elapsed). Steps come from the /metrics draft counter
+    so the per-step column stays correct whatever the acceptance rate rolls.
+    """
+    rng = random.Random(os.getpid() * 6067 + int(time.time()) % 100000)
+    topic = rng.choice(WORDS)
+    body = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "user", "content":
+                      f"Write a long technical essay about {topic}."}],
+        "max_tokens": out_tokens,
+        "chat_template_kwargs": {"thinking": False},
+    }).encode()
+    req = urllib.request.Request(
+        BASE + "/v1/chat/completions", body,
+        {"Content-Type": "application/json"},
+    )
+    d0 = draft_count()
+    t0 = time.time()
+    out = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    el = time.time() - t0
+    steps = int(draft_count() - d0) or out["usage"]["completion_tokens"]
+    print(f"decode {out['usage']['completion_tokens']} tok in {el:.1f}s "
+          f"over {steps} steps")
+    return steps, el
+
+
 def wait_for_trace(trace_dir: str, after: float, timeout: int = 180) -> str:
     """Newest trace file written after `after`, waited until its size is
     stable (the profiler flushes asynchronously after /stop_profile)."""
@@ -144,19 +192,32 @@ def merged_busy_us(intervals: list[tuple[float, float]]) -> float:
 
 
 def main() -> None:
-    ctx = int(sys.argv[1]) if len(sys.argv) > 1 else 32_000
+    arg1 = sys.argv[1] if len(sys.argv) > 1 else ""
+    ctx = int(arg1) if arg1.isdigit() else 32_000
     trace_dir = sys.argv[2] if len(sys.argv) > 2 else "/home/choiceoh/vllm-prof"
     batched = int(sys.argv[3]) if len(sys.argv) > 3 else 4_096
+
+    # `decode:600` swaps the prefill for a 600-token generation, so the same
+    # bucketing answers "what does a DECODE step spend on" (the two step shapes
+    # have completely different comms/weight ratios).
+    decode_tokens = 0
+    if len(sys.argv) > 1 and sys.argv[1].startswith("decode:"):
+        decode_tokens = int(sys.argv[1].split(":", 1)[1] or 600)
 
     post("/start_profile")
     t0 = time.time()
     try:
-        pt, el = run_prefill(ctx)
+        if decode_tokens:
+            steps_override, el = run_decode(decode_tokens)
+            pt = 0
+        else:
+            pt, el = run_prefill(ctx)
     finally:
-        post("/stop_profile", timeout=120)
-    print(f"prefill {pt:,} tok in {el:.1f}s "
-          f"({pt / el:,.0f} tok/s WITH profiler overhead — use ratios, "
-          "not absolutes)")
+        post("/stop_profile", timeout=600)
+    if not decode_tokens:
+        print(f"prefill {pt:,} tok in {el:.1f}s "
+              f"({pt / el:,.0f} tok/s WITH profiler overhead — use ratios, "
+              "not absolutes)")
 
     path = wait_for_trace(trace_dir, after=t0)
     print(f"trace: {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
@@ -195,9 +256,10 @@ def main() -> None:
     total_ms = sum(totals.values()) / 1e3
     busy_ms = merged_busy_us(intervals) / 1e3
     idle_ms = max(0.0, wall_ms - busy_ms)
-    steps = max(1, -(-pt // batched))
+    steps = steps_override if decode_tokens else max(1, -(-pt // batched))
     print(f"\n=== GPU kernel-time attribution "
-          f"(wall {wall_ms:,.0f} ms · {steps} steps of <={batched} tok) ===")
+          f"(wall {wall_ms:,.0f} ms · {steps} "
+          f"{'decode' if decode_tokens else f'prefill steps of <={batched} tok'}) ===")
     for label, us in sorted(totals.items(), key=lambda kv: -kv[1]):
         ms = us / 1e3
         print(f"  {label:<16} {ms:>9,.1f} ms  ({100.0 * ms / total_ms:>5.1f}%)"
