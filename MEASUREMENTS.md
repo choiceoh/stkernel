@@ -149,59 +149,75 @@ pos1 **78.5%** · pos2 56.4% · pos3 39.6% · pos4 28.6% · pos5 21.5% (기하 �
 | #51318 / #51395 / #48993 / #50911 / #49302 | 대상 코드경로가 이 빌드에 부재/비활성 | 08-08 |
 | **#47808 적응형 검증 (재실사)** | 상한 +5~10%로 기준선엔 걸치나: 코어 4파일(model_runner 148+·async_utils 94+·input_batch 61+·cudagraph_utils 43+ — 전부 미오버레이 최다분기 파일) + k별 cudagraph 다중캡처 + **init 고정 use_flattening 경계를 런타임 k가 넘나듦** + 업스트림에서도 아직 OPEN(이동 과녁) → 오버레이 비가용 확정. 이미지 세대교체 시 수령 | 08-09 |
 
-## ★패브릭 절반 가동 — comms "대역폭 바닥" 판정 정정 (2026-08-10)
+## ★★패브릭 200G 복구 — 프리필 +9.1% (2026-08-10, 채택)
 
-**원장의 `comms 23.4% = 4랭크 링 이론치 = 대역폭 바닥` 판정은 와이어의 절반 지점을
-바닥으로 오인한 것이었다.** 근거는 `NCCL_PROTO=Simple` 중립(프로토콜 축)뿐이었고,
-데이터패스 축(대역폭)은 측정된 적이 없었다.
+**원장의 `comms 23.4% = 4랭크 링 이론치 = 대역폭 바닥` 판정은 틀렸다.** 근거는
+`NCCL_PROTO=Simple` 중립(**프로토콜 축**)뿐이었고 대역폭 축은 측정된 적이 없었다.
+실제로는 패브릭이 **설계의 절반**으로 돌고 있었다.
 
-### 실측 (무중단, ib_write_bw, srv4↔srv2)
+### 실측 (ib_write_bw, srv4↔srv2, 양쪽 HCA 동시)
 
-| 조건 | 결과 |
+| | 변경 전 | 변경 후 |
+|---|---|---|
+| HCA1 / HCA2 | 49.01 / 49.01 | 84.96 / 84.96 |
+| **합계** | **98.02 Gb/s** | **169.9 Gb/s (1.73×)** |
+| 스위치 링크 | 100Gbps | **200Gbps** |
+
+변경 전엔 두 HCA를 동시 구동해도 합계가 단독(98.01)과 동일하고 정확히 반씩 나눠
+가졌다 = 공유 병목. DGX Spark는 물리 QSFP 하나에 100G MAC 2개(각 PCIe Gen5 x4)를
+실어 200GbE를 내는데, 그 둘이 100G 링크 하나를 공유하고 있었다.
+
+### 원인 = 스위치 포트가 오토네고로 100G에 머무름
+
+**CRS812의 QSFP56/QSFP56-DD 포트는 오토네고를 지원하지 않는다** — 속도를 명시
+지정해야 한다. `auto-negotiation=yes` 상태에선 `advertise=`를 200G만으로 좁혀도
+`no-link`가 되고 100G로 되돌아간다(실측). 정답은:
+
+```
+/interface ethernet set qsfp56-1-1 auto-negotiation=no speed=200G-baseCR4
+/interface ethernet set qsfp56-2-1 auto-negotiation=no speed=200G-baseCR4
+/interface ethernet set qsfp56-dd-1-1 auto-negotiation=no speed=200G-baseCR4
+/interface ethernet set qsfp56-dd-2-1 auto-negotiation=no speed=200G-baseCR4
+```
+
+적용 후 4포트 전부 `link-ok 200Gbps`, `fec: fec91`(RS-FEC 자동 활성), 호스트 양쪽
+인터페이스 `speed=200000`. **케이블(Amphenol NJAAKK-N911)은 문제가 아니었다** —
+운영자 확인대로 직결에서 200G가 나오던 물건이고, 스위치 설정만이 원인이었다.
+
+### 성능 이득 (bench-tp4, 60K 프리필)
+
+| | tok/s |
 |---|---|
-| 단일 HCA 단독 | **98.01 Gb/s** (100G 와이어의 98% — 링크 자체는 완벽) |
-| **양쪽 HCA 동시** | **49.01 + 49.01 = 98.02 Gb/s** |
-| 포럼 동일구성 튜닝 후 [^spark] | **196–198 Gb/s** (NCCL all_reduce 버스 23.76 GB/s) |
+| 기준선 (클럭 2000 적용 후) | 2,589–2,591 |
+| **200G 적용 후 (4회)** | **2,798 / 2,824 / 2,824 / 2,830** |
+| **개선** | **+9.1%** |
 
-두 HCA를 동시 구동해도 합계가 단독과 동일하고 정확히 반씩 나눠 갖는다 =
-**공유 병목**. DGX Spark는 물리 QSFP 하나에 100G MAC 2개(각각 PCIe Gen5 x4)를
-실어 200GbE를 내는 구조인데, 우리는 그 둘이 **100G 링크 하나를 공유**하고 있다.
-
-### 원인 = 케이블 (설정 아님, 실증 완료)
-
-- 스위치: running 포트가 노드당 1개·`rate 100Gbps`, 같은 물리포트의 나머지 레인은
-  slave만 있고 running 없음. FDB엔 그 포트에 노드 MAC 2개가 학습됨.
-- **양단 모두 200G 지원 확인**: 스위치 포트 `advertise`에 200G-baseCR4/400G-baseCR8,
-  호스트 ethtool Supported·Advertised 각각 200000baseCR4 포함.
-- **200G 강제 시도 → `no-link`** (advertise=200G만 → no-link, fec-mode=fec91 추가 →
-  여전히 no-link, 원복하니 즉시 link-ok 100Gbps).
-- 현 케이블 = Amphenol **NJAAKK-N911**, 1m, `sfp-type QSFP28/QSFP56`, encoding PAM4
-  → **2레인 100G급**. 200G-CR4는 4레인 50G PAM4가 필요해 물리적으로 불가.
-
-### 결론
-
-**소프트웨어로 못 고친다. 케이블 교체 건이다.** 포럼 사례는 QSFP-DD 400G DAC를 썼다.
-교체 시 기대: comms 시간 최대 절반 → **프리필 10% 안팎** (comms가 23.4%, 단일 최대
-커널 3,116ms). 원장이 지금까지 채택한 어떤 단일 항목보다 크다.
+**원장 채택 항목 중 최대**(이전 최대는 GPU 클럭 +2.4%). comms가 프리필의 23.4%
+(단일 최대 커널 3,116ms)였다는 귀속과 정합한다.
 
 ### 이 판정이 뒤집는 것
 
-아래 "소프트웨어 개선 경로 종결 선언"의 전제 중 **"③하드웨어"를 향후 이득 원천으로만
-분류한 부분**이 바뀐다 — 하드웨어 이득이 막연한 미래가 아니라 **케이블 1종 교체로
-즉시 회수 가능한 확정 수치**다.
-
-[^spark]: https://forums.developer.nvidia.com/t/connectx-7-200gbe-via-mikrotik-crs812-qsfp-dd-400g-2xqsfp56-200g-breakout/357162
-  (동일 구성: CRS812 + QSFP-DD 400G→2×QSFP56 브레이크아웃, 4노드 GB10)
+"소프트웨어 개선 경로 종결 선언"은 **comms를 바닥으로 오인한 상태에서 내려졌다.**
+종결 자체가 무효는 아니지만(업스트림 역포팅은 실제로 소진), **"③하드웨어" 영역으로
+분류해 손대지 않은 것 중에 설정 한 줄짜리 두 자릿수 이득이 있었다**는 뜻이다.
+하드웨어/패브릭 영역을 "소프트웨어 밖"으로 밀어두는 분류를 재고할 것.
 
 ### 부수 확정 (재조사 불요)
 
 - `VLLM_USE_B12X_MOE=0`인데 프로파일이 b12x 귀속되던 불일치 = 런처의 `--moe-backend b12x`
   CLI가 env보다 우선. **24.2% 귀속은 유효.**
 - GDR(GPUDirect RDMA) **미가동**: `nvidia_peermem` 로드 불가(GB10 통합메모리라 PCIe P2P
-  BAR 모델 부재), dmabuf는 `mlx5dv_reg_dmabuf_mr` 심볼 버전 불일치. 단 병목이 케이블로
-  확정됐으므로 GDR은 후순위.
-- RoCE GID 인덱스가 노드마다 다름(srv1=3, srv2·srv4=4, IPv6 활성). 런처가 노드별
-  자동탐지해 동작엔 문제없으나 포럼이 지목한 취약점 — 케이블 교체 시 같이 정리할 것.
+  BAR 모델 부재), dmabuf는 `mlx5dv_reg_dmabuf_mr` 심볼버전 불일치. 200G 복구 후 남은
+  comms 여지를 볼 때 재검토 대상.
+- RoCE GID 인덱스가 노드마다 다름(srv1=3, srv2·srv4=4, IPv6 활성). 런처가 노드별 자동
+  탐지해 동작엔 문제없으나 포럼[^spark]이 지목한 취약점 — 다음 정비 때 정리.
+- W4A4/W4A8: `swiglu_limit=10.0` → 클램프 지원 백엔드가 FLASHINFER_TRTLLM뿐인데 그건
+  SM100 게이팅(GB10=sm_121) → **b12x에서 A16이 구조적으로 강제됨**. 체크포인트 재양자화도
+  무의미(로드할 백엔드 없음). **재개 조건**: ①swiglu_limit 없는 변종 발행 ②B12X 클램프
+  구현 ③sm_121용 TRTLLM MXFP8 커널.
+
+[^spark]: https://forums.developer.nvidia.com/t/connectx-7-200gbe-via-mikrotik-crs812-qsfp-dd-400g-2xqsfp56-200g-breakout/357162
+  (동일 구성: CRS812 + GB10 4노드. 그들의 튜닝 후 도달치 196–198 Gb/s)
 
 ## 소프트웨어 개선 경로 — 종결 선언 (2026-08-09)
 
