@@ -500,6 +500,9 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
                         attn_metadata.block_table,
                         block_size,
                         swa_metadata.is_valid_token[prefill_token_slice],
+                        output_buffers=self._global_topk_output_buffers(
+                            local_topk_indices
+                        ),
                     )
                 )
                 if is_c4a and _C4A_GLOBALIZE_REUSE:

@@ -83,7 +83,10 @@ mounts_for() { local ov="$1"; echo "-v /home/choiceoh/models:/home/choiceoh/mode
 -v ${ov}-b12x/attention.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py:ro \
 -v ${ov}-b12x/flashinfer_sparse.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py:ro \
 -v ${ov}-b12x/indexer.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py:ro \
--v ${ov}-b12x/sparse_swa_dsv4.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py:ro"; }
+-v ${ov}-b12x/sparse_swa_dsv4.py:/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py:ro \
+-v ${ov}-b12x/eager_scratch.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py:ro \
+-v ${ov}-b12x/ops_cache_utils.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py:ro \
+-v ${ov}-b12x/ops_fused_indexer_q.py:/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py:ro"; }
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
 HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
@@ -91,7 +94,7 @@ HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
 # exactly what gets mounted, all four files, and that every node's copies are
 # byte-identical to the head's. Overlay skew across nodes is silent otherwise
 # (the old check tested only attention.py, in the wrong directory).
-OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py"
+OVFILES="attention.py flashinfer_sparse.py indexer.py sparse_swa_dsv4.py eager_scratch.py ops_cache_utils.py ops_fused_indexer_q.py"
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
 HEAD_OVSUM=$(cd "$HEAD_OV" && md5sum $OVFILES) || { echo "ABORT: overlays missing on head ($HEAD_OV)"; exit 1; }
 for w in $WORKERS; do
