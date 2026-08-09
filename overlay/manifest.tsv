@@ -1,8 +1,12 @@
-# source	container_target
-attention.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py
-flashinfer_sparse.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py
-indexer.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py
-sparse_swa_dsv4.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py
-eager_scratch.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py
-ops_cache_utils.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py
-ops_fused_indexer_q.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py
+# source	container_target	base_preimage_sha256_or_absent
+attention.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py	b5ddad4735ba5ca1ed4d46ca4f71f016b26775353fa83de5c1520f22ccb7b2b4
+flashinfer_sparse.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py	e68610604b08a1ad4bfd4220a8e43189d4b0406afd65d9297bf0f3de16bd816d
+indexer.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py	dc5f7647363813561c6fb0bd2cb64dcae8a715d890bdfe3c8193fc290eb757e9
+sparse_swa_dsv4.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/sparse_swa.py	de1520b4d53719181e74c0449574b0296ea68f1c0b17a7f52c4db0ae27f43086
+eager_scratch.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py	absent
+ops_cache_utils.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py	f778b54009fbf0e422ccc129561b9b715b79af92db1318e90021355844b27bd0
+ops_fused_indexer_q.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py	159f1bc406e835dd07f1a5ef6f88b129ab5b2e3d26fc8bb7389eb0acda4e93e3
+fp8_draft_head.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fp8_draft_head.py	absent
+dspark_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/dspark_v2.py	c3a83b0b683da7281c8c87a7c6cce28ad4934aaf2004e04876215595566953d7
+dspark_speculator_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator_v2.py	e96de3fe04d9ec82363ea3fa751bfc8bf01a838344e3fb8749bd98a3a43ca554
+dspark_utils_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/utils_v2.py	67ceb12b594dad2e603fe841cfd7039904f9af1e336b78a912f80425497d202c
