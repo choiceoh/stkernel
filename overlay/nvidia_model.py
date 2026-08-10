@@ -577,9 +577,13 @@ _GATE_FUSED = os.environ.get("VLLM_DSV4_GATE_FUSED", "0").strip().lower() in (
     "1", "true", "yes", "on",
 )
 _GATE_FUSED_MAX_TOKENS = 32
-_GATE_FUSED_SPLIT_K = 8
+# Tile config from the 2026-08-10 offline cold-cycle sweep (243 configs, 46
+# distinct weights cycled through a CUDA graph to defeat L2): BN32/BK256/SK4/
+# stages3/warps4 = 12.45us/call vs the Tier-4 chain's 15.34 (M=6). SK4xBK256
+# reads 512B-contiguous runs; SK8xBK64 (the first guess) was 14.3.
+_GATE_FUSED_SPLIT_K = 4
 _GATE_FUSED_BLOCK_N = 32
-_GATE_FUSED_BLOCK_K = 64
+_GATE_FUSED_BLOCK_K = 256
 
 if _GATE_FUSED:
     import triton
@@ -645,7 +649,7 @@ if _GATE_FUSED:
             BLOCK_K=_GATE_FUSED_BLOCK_K,
             SPLIT_K=_GATE_FUSED_SPLIT_K,
             num_warps=4,
-            num_stages=2,
+            num_stages=3,
         )
         return part.sum(dim=0)
 
