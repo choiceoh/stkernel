@@ -21,6 +21,27 @@ _SMALLM_TUNED = os.environ.get(
     "VLLM_DSV4_MHC_SMALLM_TUNED", "1"
 ).strip().lower() not in ("", "0", "false", "no", "off")
 
+# Round-2 sweep 2026-08-11 (same harness, engine down; every winner below is
+# BIT-EXACT vs stock — pure launch-config changes):
+#   mhc_post  M=4096 (prefill): (n_thr512, h_blk4096) +3.6% vs stock (128,1024)
+#   mhc_post  M=24/20 (C=4 decode): (256, 2048) +12.7% / +15.3%
+#   mhc_fused M=10 (C=2 draft): (n_thr128, tile_n4, split_k4) +14.3% vs
+#             stock (256,3,4); M=12 (C=2 verify) stock already optimal -> kept.
+# VLLM_DSV4_MHC_TUNED_R2=0 disarms all round-2 choices.
+_TUNED_R2 = os.environ.get(
+    "VLLM_DSV4_MHC_TUNED_R2", "1"
+).strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _mhc_post_kwargs(num_tokens: int) -> dict:
+    """Swept mhc_post launch config by M regime (boundary 64: measured points
+    are 20/24 decode vs 4096 prefill; both sides bit-exact)."""
+    if not _TUNED_R2:
+        return {}
+    if num_tokens <= 64:
+        return {"n_thr": 256, "h_blk": 2048}
+    return {"n_thr": 512, "h_blk": 4096}
+
 
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
@@ -328,14 +349,18 @@ def mhc_post_tilelang(
     )
 
     out = torch.empty_like(residual)
+    hc_mult = residual.shape[-2]
+    hidden_size = residual.shape[-1]
+    num_tokens = residual.numel() // (hc_mult * hidden_size)
     _mhc_post_kernel(
         comb_res_mix,
         residual,
         post_layer_mix.squeeze(-1),
         x,
         out,
-        residual.shape[-2],
-        residual.shape[-1],
+        hc_mult,
+        hidden_size,
+        **_mhc_post_kwargs(num_tokens),
     )
     return out
 
@@ -426,6 +451,7 @@ def mhc_fused_post_pre_tilelang(
 
     use_deep_gemm = is_deep_gemm_supported()
     use_small_fma = num_tokens <= 16
+    fused_extra = {}
     if use_small_fma:
         if _SMALLM_TUNED and num_tokens < 8 and hidden_size <= 4096:
             # Swept optimum for the C=1 decode shapes (M=6 verify / M=5
@@ -433,6 +459,13 @@ def mhc_fused_post_pre_tilelang(
             # restores the stock heuristic below.
             tile_n = 6
             n_splits = 4
+        elif _TUNED_R2 and num_tokens <= 10 and hidden_size <= 4096:
+            # Round-2: M=10 (C=2 draft) winner (128, 4, 4) +14.3%; the M=12
+            # verify shape keeps the stock config (measured already-optimal).
+            # 8..9 unmeasured but adjacent to 10; bit-exact class either way.
+            tile_n = 4
+            n_splits = 4
+            fused_extra = {"n_thr": 128}
         else:
             # TODO(gnovack): investigate autotuning these heuristics
             tile_n = 2 if num_tokens < 8 else 3
@@ -496,6 +529,7 @@ def mhc_fused_post_pre_tilelang(
             hc_mult3,
             tile_n=tile_n,
             n_splits=n_splits,
+            **fused_extra,
         )
     else:
         mhc_post_tilelang(
@@ -506,6 +540,7 @@ def mhc_fused_post_pre_tilelang(
             residual_cur,
             residual.shape[-2],
             residual.shape[-1],
+            **_mhc_post_kwargs(num_tokens),
         )
 
         residual_cur_2d = residual_cur.view(num_tokens, hc_mult * hidden_size)
