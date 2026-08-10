@@ -594,11 +594,20 @@ echo 0 | sudo tee /proc/sys/vm/compaction_proactiveness   # srv3·srv4 적용(08
 - 요청 `fuse_gemm_comms:true` → resolved **False** (조용히 드랍 — 런처 플래그는 장식)
 - 미요청 `fuse_norm_quant/fuse_act_quant` → resolved **True** (자동 활성)
 
-### 신규 A/B 큐 — 종결 (2026-08-11, 두 건 모두 상한 기각)
+### 신규 A/B 큐 (성능 2건은 08-11 상한 기각으로 종결, 인코딩 2건 잔존)
 
 ~~1. `fuse_attn_quant=false`~~ / ~~2. `VLLM_USE_B12X_SPARSE_INDEXER=1`~~ —
-부팅 없이 기각. 근거는 "정찰 일괄 기각" 표 참조 (busy 99.8%에 상한 0.2% /
-스케줄 빌더 교체뿐 상한 <1% + #49897 리스크).
+부팅 없이 기각 (08-11). 근거는 "정찰 일괄 기각" 표 참조 (busy 99.8%에 상한
+0.2% / 스케줄 빌더 교체뿐 상한 <1% + #49897 리스크).
+
+3. `EFFORT=high|max` — 레퍼런스 reasoning-effort 프리앰블 (2026-08-11 dsv4
+   인코딩 오버레이로 노브가 비로소 실동작; 스톡은 high가 무동작이었음).
+   기본은 빈 값(=low=프리앰블 없음, 종전과 바이트 동일). 측정: check-quality
+   9/9 + 실워크로드 thinking 길이/지연 — 품질 이득이 thinking 비용을 넘는지.
+4. **tools 주입 위치 정렬 품질 브래킷** (dsv4 인코딩 오버레이에 포함, 배포 시
+   자동 적용) — 시스템 프롬프트+tools 요청의 프롬프트가 레퍼런스 순서
+   (BOS+system+"## Tools")로 바뀜. 에이전트 실워크로드(garble/tool-call 정확도)
+   전후 비교로 회귀 없음을 확인할 것. 롤백은 tok_* 2행 마운트 제거.
 
 ## 인시던트 로그
 

@@ -11,3 +11,7 @@ dspark_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvid
 dspark_speculator_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator_v2.py	e96de3fe04d9ec82363ea3fa751bfc8bf01a838344e3fb8749bd98a3a43ca554
 dspark_utils_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/utils_v2.py	67ceb12b594dad2e603fe841cfd7039904f9af1e336b78a912f80425497d202c
 nvidia_model.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/model.py	f8fc8bf382b0a7b23e803201c37e83156b19ed05b3c162a689f9a32b0d9f97fe
+tok_deepseek_v4.py	/opt/venv/lib/python3.12/site-packages/vllm/tokenizers/deepseek_v4.py	f1ebaaa58fc7f453ebb38c07234591abe35780641822f872558c964cf702fcf3
+tok_deepseek_v4_encoding.py	/opt/venv/lib/python3.12/site-packages/vllm/tokenizers/deepseek_v4_encoding.py	582f735bf75ad5fbe2b4a8801d8280a65ff0e41175874249bd62433e78c487ff
+reasoning_deepseek_v3.py	/opt/venv/lib/python3.12/site-packages/vllm/reasoning/deepseek_v3_reasoning_parser.py	80d371360ef902f0ab9e3cd5f3fd7c0d11a141194a89c37c492bb4e4b67d1154
+tool_parser_deepseekv32.py	/opt/venv/lib/python3.12/site-packages/vllm/tool_parsers/deepseekv32_tool_parser.py	536510cc455ec5511fbe29263a8d2d8924a43685f2d4a5051cada554bb983e69

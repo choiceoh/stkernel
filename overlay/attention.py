@@ -338,9 +338,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # deneb fork (PR #51209 port): IndexCache — skipped C4A layers keep
         # their indexer modules (checkpoint weights must still load) but never
         # run them, reusing the top-k the previous C4A layer left in the
-        # shared rank-local topk_indices_buffer. Their indexer k-cache spec is
-        # dropped (spec_enabled=False below) so the never-touched cache costs
-        # no KV pages.
+        # shared rank-local topk_indices_buffer. Their indexer k-cache stays
+        # allocated: trimming those specs was measured and rejected
+        # (prefill -3.4%, KV +0.3% — MEASUREMENTS.md 08-09).
         self.skip_topk = _resolve_skip_topk(config, layer_id)
         if self.skip_topk:
             logger.info_once("IndexCache: some C4A layers reuse the previous top-k.")
@@ -378,7 +378,6 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 compress_ratio=self.compress_ratio,
                 prefix=f"{prefix}.indexer",
                 aux_stream=indexer_aux_stream,
-                skip_topk=self.skip_topk,
                 eager_scratch_pool=self.eager_scratch_pool,
             )
 
@@ -795,7 +794,6 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         prefix: str,
         cache_config: CacheConfig,
         compress_ratio: int = 1,
-        spec_enabled: bool = True,
     ):
         super().__init__()
         self.kv_cache = torch.tensor([])
@@ -804,19 +802,12 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         self.cache_config = cache_config
         self.dtype = dtype
         self.compress_ratio = compress_ratio
-        self.spec_enabled = spec_enabled
         compilation_config = get_current_vllm_config().compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
-        # IndexCache (#51209): a skip-topk layer never runs its indexer, so
-        # its k-cache (and the compressor state packed into the same pages)
-        # is never written or read. Returning None allocates no pages for it
-        # — the same mechanism SWA-only attention layers use above.
-        if not self.spec_enabled:
-            return None
         # head_dim already carries the fp8 scale padding
         # compress_ratio=1 for V3.2, >1 for DeepseekV4. Both use the same
         # per-row indexer cache layout; compressed variants store fewer rows.
@@ -842,13 +833,6 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
 # cached on first use (distributed groups exist by the first forward).
 _INDEXER_SP_ENABLED = os.environ.get("VLLM_DSV4_INDEXER_SP") == "1"
 _indexer_sp_tp_rank: tuple[int, int] | None = None
-
-# Incident kill-switches (2026-08-09 warmup failure: C128A layers saw
-# c128a_prefill_topk_indices=None). The behavior-bearing optimizations land
-# default-OFF until each is individually cleared in prod; enable via the
-# launcher knobs TRIMIDX / SPFAST (and C4AREUSE in flashinfer_sparse.py).
-_TRIM_SKIP_INDEXER_KV = os.environ.get("DENEB_TRIM_SKIP_INDEXER_KV") == "1"
-_SP_SINGLE_SPAN = os.environ.get("DENEB_SP_SINGLE_SPAN") == "1"
 
 
 def _indexer_sp_owned_ranges(k_cache_prefix: str):
@@ -912,9 +896,8 @@ def _indexer_sp_owned_ranges(k_cache_prefix: str):
     if not ranges:
         return ranges
     # Ranges ascend (decode rows first, then chunks in batch order); merging
-    # adjacent spans preserves the owned-row SET exactly and lets the caller
-    # take the zero-copy single-span path (decode rows adjoin rank 0's first
-    # shard, and a pure-prefill single chunk is one span on every rank).
+    # adjacent spans preserves the owned-row SET exactly and shortens the
+    # gather-index list the caller concatenates from these spans.
     merged = [ranges[0]]
     for a, b in ranges[1:]:
         if a == merged[-1][1]:
@@ -937,7 +920,6 @@ class DeepseekV4Indexer(nn.Module):
         compress_ratio: int = 1,
         prefix: str = "",
         aux_stream: torch.cuda.Stream | None = None,
-        skip_topk: bool = False,
         eager_scratch_pool=None,
     ):
         super().__init__()
@@ -998,11 +980,6 @@ class DeepseekV4Indexer(nn.Module):
             prefix=f"{prefix}.k_cache",
             cache_config=cache_config,
             compress_ratio=self.compress_ratio,
-            # skip-topk layers never run this indexer; don't spend KV pages
-            # on a cache that is never written or read. Gated default-OFF:
-            # trimming specs changes KV-group composition, the prime suspect
-            # for the image FlashMLA builder leaving c128a_* metadata unset.
-            spec_enabled=not (skip_topk and _TRIM_SKIP_INDEXER_KV),
         )
         self.compressor = DeepseekCompressor(
             vllm_config=vllm_config,
@@ -1052,20 +1029,17 @@ class DeepseekV4Indexer(nn.Module):
                 # Sequence-parallel: compute q/rope/quant only for the rows
                 # this rank's sharded indexer will read; place them into
                 # full-size buffers (unowned rows stay uninitialized and are
-                # never read by the sliced indexer paths).
-                #
-                # Single contiguous span — the dominant shape (pure-prefill
-                # single chunk on every rank; decode rows fused with rank 0's
-                # first shard) — uses zero-copy dim-0 slices in and one
-                # contiguous copy out (kill-switch gated); multi-span uses
+                # never read by the sliced indexer paths). Gather/scatter via
                 # index_select / index_copy_ over a concatenated index.
                 _n = qr.shape[0]
-                if _SP_SINGLE_SPAN and len(_ranges) == 1:
+                if len(_ranges) == 1:
+                    # Dominant shape (pure-prefill single chunk on every rank;
+                    # decode rows merged into rank 0's first shard): build the
+                    # index directly, skipping the one-element cat.
                     _a, _b = _ranges[0]
-                    _idx = None
-
-                    def _take(t: torch.Tensor) -> torch.Tensor:
-                        return t[_a:_b]
+                    _idx = torch.arange(
+                        _a, _b, device=qr.device, dtype=torch.long
+                    )
                 else:
                     _idx = torch.cat(
                         [
@@ -1074,8 +1048,8 @@ class DeepseekV4Indexer(nn.Module):
                         ]
                     )
 
-                    def _take(t: torch.Tensor) -> torch.Tensor:
-                        return t.index_select(0, _idx)
+                def _take(t: torch.Tensor) -> torch.Tensor:
+                    return t.index_select(0, _idx)
 
                 _q_c, _ = self.wq_b(_take(qr))
                 _q_c = _q_c.view(-1, self.n_head, self.head_dim)
@@ -1106,15 +1080,9 @@ class DeepseekV4Indexer(nn.Module):
                     else:
                         full = part.new_empty((_n,) + tuple(part.shape[1:]))
                     if part.element_size() == 1:
-                        # index_copy_ lacks fp8 support; bit-copy via uint8
-                        # (kept for the slice path too — proven pattern).
+                        # index_copy_ lacks fp8 support; bit-copy via uint8.
                         part8 = part.contiguous().view(torch.uint8)
-                        if _idx is None:
-                            full[_a:_b].view(torch.uint8).copy_(part8)
-                        else:
-                            full.view(torch.uint8).index_copy_(0, _idx, part8)
-                    elif _idx is None:
-                        full[_a:_b].copy_(part)
+                        full.view(torch.uint8).index_copy_(0, _idx, part8)
                     else:
                         full.index_copy_(0, _idx, part)
                     return full
