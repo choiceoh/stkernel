@@ -95,8 +95,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
--e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
--e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
+-e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
 if ((FP8HEAD == 1)); then
@@ -123,9 +122,9 @@ fi
 # reasoning-effort preamble at conversation start — A/B (quality gate +
 # decode bracket) before adopting a non-empty default: longer thinking,
 # different prompt prefix bytes.
-# Kill-switch knobs (default OFF, flip ONE at a time): TRIMIDX=1 skip-topk
-# indexer KV-spec trim (measured: rejected), C4AREUSE=1 C4A globalization
-# reuse (neutral), SPFAST=1 SP single-span path (neutral).
+# The 2026-08-09 incident kill-switches (TRIMIDX/C4AREUSE/SPFAST) are gone:
+# all three were measured and not adopted (rejected / neutral / neutral,
+# MEASUREMENTS.md 08-09), and their overlay code paths were removed 08-11.
 # VLLM_ENGINE_READY_TIMEOUT_S=3600: the image default is 600s (envs.py:27),
 # below our cold-recompile boot times (supervisor history has
 # 'boot grace exceeded'); dead engines still fail fast via the supervisor.
