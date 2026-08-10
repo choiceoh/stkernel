@@ -213,11 +213,11 @@ class DeepseekSparseSWAMetadata:
     tile_sched_swaonly: "FlashMLASchedMeta | None" = None
     tile_sched_c4a: "FlashMLASchedMeta | None" = None
     tile_sched_c128a: "FlashMLASchedMeta | None" = None
-    # Cross-layer per-step cache. One metadata instance is shared by every
-    # layer's SWA prefix, so the SM120 attention uses this to reuse the C4A
-    # top-k globalization across skip-topk (IndexCache) layers
-    # ("c4a_decode_global" / "c4a_prefill_global" keys); the image's SM100
-    # path stores its mixed sparse indices here under other keys.
+    # Cross-layer per-step cache, one metadata instance shared by every
+    # layer's SWA prefix. The SM120 overlay no longer writes to it (the C4A
+    # globalize-reuse experiment was measured neutral and removed); the field
+    # stays because the image's SM100 path stores its mixed sparse indices
+    # here under its own keys.
     flashinfer_sparse_index_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] = field(
         default_factory=dict
     )

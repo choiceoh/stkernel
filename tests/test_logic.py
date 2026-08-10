@@ -78,7 +78,8 @@ def test_skip_topk() -> None:
     for lid in (0, 3, 8):
         check(fn(c, lid) is False, f"non-C4A layer {lid} must not skip")
     # the first C4A layer is structurally F for ANY freq (0 % freq == 0) —
-    # the invariant the globalize-reuse cache and spec_enabled rely on
+    # the invariant IndexCache top-k reuse relies on (S layers read the
+    # buffer the previous F layer wrote)
     for freq in (1, 2, 3, 4, 7):
         c2 = cfg(use_index_cache=True, compress_ratios=ratios,
                  num_hidden_layers=10, index_topk_freq=freq)
@@ -188,8 +189,8 @@ def test_sp_ranges() -> None:
         # decode rows and the small chunk are replicated on every rank
         check(set(range(0, ndt)) <= rows, f"rank {r}: decode rows not owned")
         check(set(range(12, 140)) <= rows, f"rank {r}: small chunk not owned")
-    # adjacent spans are merged so the consumer can take the zero-copy
-    # single-span path: rank 0 fuses decode+small+first-shard into one span
+    # adjacent spans are merged (shorter gather-index list for the consumer):
+    # rank 0 fuses decode+small+first-shard into one span
     check(len(per_rank[0]) == 2, f"rank0 spans not merged: {per_rank[0]}")
     check(per_rank[0][0] == (0, 1164), f"rank0 fused span wrong: {per_rank[0]}")
     check(len(per_rank[1]) == 3, f"rank1 spans wrong: {per_rank[1]}")
