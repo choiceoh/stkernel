@@ -473,6 +473,14 @@ preimage가 실이미지와 불일치(오기록) — fail-closed 프리플라이
 
 1. `fuse_attn_quant=false` — 진짜 FULL_AND_PIECEWISE 회복 vs attn-quant 융합 상실
 2. `VLLM_USE_B12X_SPARSE_INDEXER=1` — 미실측 노브 (SM120 전용 요건 충족; 켜면 우리 indexer.py의 b12x 스케줄 분기가 라이브)
+3. `EFFORT=high|max` — 레퍼런스 reasoning-effort 프리앰블 (2026-08-11 dsv4
+   인코딩 오버레이로 노브가 비로소 실동작; 스톡은 high가 무동작이었음).
+   기본은 빈 값(=low=프리앰블 없음, 종전과 바이트 동일). 측정: check-quality
+   9/9 + 실워크로드 thinking 길이/지연 — 품질 이득이 thinking 비용을 넘는지.
+4. **tools 주입 위치 정렬 품질 브래킷** (dsv4 인코딩 오버레이에 포함, 배포 시
+   자동 적용) — 시스템 프롬프트+tools 요청의 프롬프트가 레퍼런스 순서
+   (BOS+system+"## Tools")로 바뀜. 에이전트 실워크로드(garble/tool-call 정확도)
+   전후 비교로 회귀 없음을 확인할 것. 롤백은 tok_* 2행 마운트 제거.
 
 ## 인시던트 로그
 
