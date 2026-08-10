@@ -25,7 +25,10 @@ done
 
 롤백: 파일 삭제 후 `sudo sysctl -w vm.compaction_proactiveness=20`(커널 기본).
 
-### 2. THP defrag 정책 — 운영자 결정 박스
+### 2. THP defrag 정책 — **판정: A안 채택 (2026-08-11 정비 창, 위임 실행)**
+
+현상 유지 + `fleet-audit.sh` 카운터 감시. thp_fault_alloc/compact_stall 증가
+재개 시 B(defrag=never 영구화 + 프리필 무회귀 A/B) 재론. 원 결정 박스:
 
 `defrag=[madvise]`가 살아 있어 direct-compaction 스톨로 재발할 수 있다
 (원장: "thp_fault_alloc 증가 재개 시"). 선택지:
@@ -91,6 +94,9 @@ ssh choiceoh@10.10.10.1 'sudo cp /tmp/gpu-clock-cap.service /etc/systemd/system/
 
 1. 위 1(+2B 선택 시)·3을 먼저 배포 — 재부팅이 곧 적용·검증 기회.
 2. `systemctl --user stop dsv4-tp4` (srv2) — 슈퍼바이저가 재부팅 중 헛돌지 않게.
+   **★함정(08-11 실사고): enabled user unit이라 재부팅이 정지를 무효화한다 —
+   srv2 재부팅 후 자동 재기동돼 기준 스택을 자동 발사, 이후 A/B와 경합.
+   재부팅 직후 반드시 재정지하고, A/B 셀은 컨테이너 env 의도검증을 내장할 것.**
 3. 워커(srv3·srv1·srv4) 재부팅 → srv2 재부팅.
 4. **링크 트레이닝/FEC 정착 2분 이상 대기** 후 감사 (★원장 함정: 40초 뒤
    측정한 169.9는 아티팩트).

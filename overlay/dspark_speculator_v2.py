@@ -19,6 +19,32 @@ Differences from DFlash:
 
 CUDA graphs (FULL, mirroring DFlash) cover the whole draft step: the parallel
 backbone forward AND the sequential Markov sampling.
+
+Opt-in two-pass refinement (``VLLM_DSPARK_REFINE_PASS``, default off):
+the DSpark paper (arXiv:2607.05147) identifies "rapid acceptance decay" as the
+parallel-drafter bottleneck — base logits at noise positions never see the
+tokens actually sampled before them, and only the first-order Markov bias
+injects intra-block dependency. The refinement pass writes the pass-1 draft
+tokens into the noise slots, re-runs the parallel backbone (context KV is
+reused; query KV slots are simply overwritten), and re-runs the sequential
+sampling. Notes:
+
+  * Same Gumbel keys on both passes — REQUIRED, not merely safe. This fork's
+    verifier shares the draft's per-position (seed, pos) Gumbel noise, so a
+    position is accepted iff argmax(log q + g) == argmax(log p + g). The
+    emitted token is always the verifier's own argmax over the TARGET
+    distribution, so q (and therefore this whole feature) cannot change the
+    output distribution — it only moves the match rate. Re-keying pass 2
+    would break the coupling and collapse acceptance.
+  * Jacobi semantics: one refinement iteration; if pass 2 re-samples an
+    earlier position differently, later positions were conditioned on the
+    stale pass-1 token. Still strictly more information than noise inputs.
+  * OOD caveat: the backbone is trained with mask/noise inputs at non-anchor
+    positions (anchor-bounded packing per the paper), so real-token inputs
+    are out of the training distribution — acceptance may not improve.
+    Default-off knob; adopt only on measured bench-dec acceptance + 9/9.
+  * Cost: one extra 3-layer backbone forward + draft-head logits per draft
+    step (roughly doubles the draft segment of the captured graph).
 """
 
 import os
@@ -29,9 +55,12 @@ import torch
 from vllm.config import VllmConfig
 from vllm.config.compilation import CUDAGraphMode
 from vllm.distributed import get_tensor_model_parallel_world_size
+from vllm.logger import init_logger
 from vllm.v1.worker.gpu.sample.gumbel import gumbel_sample
 from vllm.v1.worker.gpu.spec_decode.dflash.speculator import DFlashSpeculator
 from vllm.v1.worker.gpu.spec_decode.dspark.utils_v2 import load_dspark_model
+
+logger = init_logger(__name__)
 
 
 def _parse_draft_topk(raw: str, vocab_size: int) -> int | None:
@@ -54,6 +83,34 @@ def _parse_draft_topk(raw: str, vocab_size: int) -> int | None:
     return topk
 
 
+def _parse_refine_pass(raw: str) -> bool:
+    """Parse the opt-in two-pass refinement knob (fail closed on garbage)."""
+    value = raw.strip().lower()
+    if value in {"", "0", "false", "no", "off"}:
+        return False
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(
+        f"VLLM_DSPARK_REFINE_PASS must be a boolean value, got {raw!r}"
+    )
+
+
+def _refine_feedback_indices(max_num_reqs: int, num_query_per_req: int) -> list[int]:
+    """Flat input-buffer indices that receive pass-1 draft tokens.
+
+    Query offset 0 is the anchor (the last verified token — never rewritten);
+    offset j>=1 is a noise slot whose true autoregressive input is the token
+    drafted AT offset j-1 (offset k predicts position query_pos(k)+1, i.e. the
+    input of offset k+1). Flattening is row-major by request so element m of
+    ``draft_tokens[:num_reqs, :N-1].reshape(-1)`` lands at index m here.
+    """
+    return [
+        r * num_query_per_req + j
+        for r in range(max_num_reqs)
+        for j in range(1, num_query_per_req)
+    ]
+
+
 class DSparkSpeculator(DFlashSpeculator):
     _speculator_name = "DSpark"
 
@@ -66,6 +123,9 @@ class DSparkSpeculator(DFlashSpeculator):
         )
         self._draft_topk = _parse_draft_topk(
             os.getenv("VLLM_DSPARK_DRAFT_TOPK", ""), draft_vocab_size
+        )
+        self._refine_pass = _parse_refine_pass(
+            os.getenv("VLLM_DSPARK_REFINE_PASS", "")
         )
 
         # DFlash initialization loads the draft model through our override, so
@@ -97,6 +157,27 @@ class DSparkSpeculator(DFlashSpeculator):
             torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
             * self.num_query_per_req
         )
+
+        self._refine_input_idx: torch.Tensor | None = None
+        if self._refine_pass:
+            if self.num_speculative_steps < 2:
+                raise RuntimeError(
+                    "VLLM_DSPARK_REFINE_PASS=1 requires num_speculative_tokens"
+                    " >= 2 (there are no noise slots to refine at "
+                    f"{self.num_speculative_steps})"
+                )
+            self._refine_input_idx = torch.tensor(
+                _refine_feedback_indices(
+                    self.max_num_reqs, self.num_query_per_req
+                ),
+                dtype=torch.int64,
+                device=device,
+            )
+            logger.info_once(
+                "DSpark(v2) two-pass draft refinement enabled: pass-1 tokens "
+                "replace the %d noise slots per request, same Gumbel keys.",
+                self.num_query_per_req - 1,
+            )
 
     def load_draft_model(
         self,
@@ -216,6 +297,24 @@ class DSparkSpeculator(DFlashSpeculator):
             self.draft_tokens[:num_reqs, i] = draft_i
             prev = draft_i
 
+    def _feed_back_draft_tokens(self, num_reqs: int) -> None:
+        """Write the pass-1 draft tokens into the per-request noise slots.
+
+        Query offset j >= 1 receives the token drafted at offset j-1 (offset k
+        predicts position query_pos+1 = the input of offset k+1); anchors at
+        offset 0 are never touched. The prepare-inputs kernel rewrites every
+        query slot on the next step, so this in-place, in-graph mutation of
+        the shared input buffer cannot leak across steps. Padded CG-replay
+        requests write junk tokens into their own (PAD-slot-mapped, unsampled)
+        query rows — harmless by the same argument as their pass-1 rows.
+        """
+        assert self._refine_input_idx is not None
+        n_feedback = self.num_query_per_req - 1
+        idx = self._refine_input_idx[: num_reqs * n_feedback]
+        input_ids = self.input_buffers.input_ids
+        src = self.draft_tokens[:num_reqs, :n_feedback].reshape(-1)
+        input_ids.index_copy_(0, idx, src.to(dtype=input_ids.dtype))
+
     def _generate_draft(
         self,
         num_reqs: int,
@@ -227,6 +326,23 @@ class DSparkSpeculator(DFlashSpeculator):
     ) -> None:
         # Full draft step (captured under CUDA graph): parallel backbone forward
         # then sequential Markov sampling over its hidden state outputs.
+        head_hidden = self._run_model(
+            num_tokens_padded,
+            attn_metadata,
+            slot_mappings,
+            num_tokens_across_dp,
+            cudagraph_runtime_mode,
+        )
+        self._sample_sequential(num_reqs, head_hidden)
+        if not self._refine_pass:
+            return
+        # Refinement pass (module docstring): identical metadata and slot
+        # mappings — query KV slots are overwritten with the refined inputs'
+        # KV, context KV is untouched. Re-running _sample_sequential replays
+        # the SAME (seed, pos) Gumbel keys, which the verifier-side coupling
+        # requires, and overwrites draft_tokens plus the recorded proposal q
+        # in draft_logits with the pass-2 values the verifier will consume.
+        self._feed_back_draft_tokens(num_reqs)
         head_hidden = self._run_model(
             num_tokens_padded,
             attn_metadata,

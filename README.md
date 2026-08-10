@@ -102,6 +102,50 @@ docker exec hy4 grep -E "rowwise FP8|top-k Markov" /tmp/hy4.log
 강제 우회하지 말고 `docker run --rm --entrypoint sha256sum "$IMAGE" ...`와
 `docker cp`로 실제 소스를 추출해 manifest pin과 diff를 다시 리뷰한다.
 
+## DSpark 수용률 실험 (2026-08-11): 2-pass 정제 + Markov 사이드로드 — **당일 실측 종결 (기각)**
+
+**결과 (08-11 브래킷, MEASUREMENTS 기각 표)**: `REFINE=1`은 수용률 ×0.55
+붕괴·C=1 −33%로 **기각** (마스크 학습 backbone의 OOD — 재제안 금지), ngram
+하이브리드는 `ngram-ceiling.py` 상한 +3.7%로 **부팅 없이 기각**. 남은 수용률
+경로는 드래프터 재훈련/신규 이미지뿐. 아래는 구현·절차 기록이다.
+
+원장 08-10 판정으로 수용률 **노브 축**은 소진됐다(temp·SPEC_TOKENS·method·
+scale — 재제안 금지). 남은 축은 **제안 분포 q 자체를 바꾸는 구조 레버**이며,
+이 포크의 seeded-Gumbel 커플링 검증(수용 = 동일 (seed,pos) 노이즈에서
+`argmax(log q + g) == argmax(log p + g)`; 방출 토큰은 항상 verifier 쪽
+argmax)이 **q가 무엇이든 타깃 분포를 불변**으로 만들므로, 이 축은 구조적으로
+품질 무손실이고 유일한 지표는 bench-dec 수용률이다. 배경: DSpark 논문
+[arXiv:2607.05147](https://arxiv.org/abs/2607.05147) — 병렬 드래프터의
+"rapid acceptance decay"(우리 실측 per-pos 78.5→21.5%, 감쇠 ~0.72)가 명시된
+병목이고, 블록 내 조건화는 1차 Markov 헤드뿐이다.
+
+| 런처 노브 | 런타임 env | 내용 | 비용/리스크 |
+|---|---|---|---|
+| `REFINE=1` | `VLLM_DSPARK_REFINE_PASS=1` | **2-pass 자기정제**: pass-1 드래프트 토큰을 노이즈 슬롯에 되먹여 backbone+순차 샘플링 재실행 (동일 Gumbel 키 = 커플링 유지 필수). Jacobi 1회 반복 | 드래프트 스텝당 backbone 1패스 추가(3층, 스텝 −5~7% 추정). backbone이 노이즈 입력으로 학습돼 **OOD 리스크** — 수용률이 안 오를 수 있음. 이론상한 net +3~5% = 채택 하드룰 경계선 |
+| `MARKOV_SIDELOAD=<path>` | `VLLM_DSPARK_MARKOV_SIDELOAD` | 서빙 도메인 코퍼스로 재적합한 Markov W1/W2 교체 (`tools/markov_refit.py` 산출물, `/home/choiceoh/models` 하위 필수 — 4노드 preflight 존재 검사) | SCALE 평탄성(원장)이 낮은 상한을 시사 — 기대 낮음. 전량 교체 아닌 블렌드(기본 0.5) + 랭크 재인수분해 |
+
+검증 절차 (한 축씩 cold restart, 브래킷 기준→후보→기준):
+
+```bash
+REFINE=1 bash launchers/start-hy4-tp4.sh
+python3 bench/bench-dec.py          # 수용률 열이 유일 지표 (acc=50 회귀 정규화)
+python3 bench/check-quality.py      # 9/9 위생 게이트
+docker exec hy4 grep -E "refinement enabled|sideloaded" /tmp/hy4.log
+```
+
+**ngram/copy 하이브리드는 코드 전에 상한 실측** (하드룰): `bench/ngram-ceiling.py`가
+실트래픽 형태 텍스트(jsonl prompt/completion)로 prompt-lookup 수용률 상한을
+시뮬레이션한다 — 커플링 덕에 "실현 텍스트와의 일치 = 정확한 수용 시뮬"이
+성립. 상한이 한자리 후반 %를 못 넘기면 엔진 구현(FULL 그래프와 싸움) 착수
+금지. 토크나이저는 노드에서 (`--mode chars`는 배관 스모크 전용).
+
+confidence head(체크포인트 `mtp.*.confidence_head.*`, 현 로더는 드롭)는 논문의
+동시성 스케줄러용이라 C=1 무익 판정 유지 — 신규 이미지 배선 대기.
+`launchers/watch-image-tags.sh` + `dsv4-image-watch.timer`가 Docker Hub
+태그·digest 변경(신규 태그 + 기존 태그 re-push 모두)을 srv2에서 일일 감시
+— **08-11 설치·가동** (09:19 KST, 상태 `~/.local/state/stkernel/`, 변경 시
+`~/hybrid-stack/NEW-IMAGE-TAGS.txt`에 기록).
+
 ## TP4/GB10 전용 슬리밍 (2026-08-09)
 
 오버레이는 업스트림 범용 코드의 포팅이라 이 배포에서 **구조적으로 도달 불가능한**

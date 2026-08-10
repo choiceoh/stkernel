@@ -1,0 +1,16 @@
+[Unit]
+Description=stkernel base-image tag/digest watch (Docker Hub, daily)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/choiceoh/watch-image-tags.sh
+# Exit 10 = changes detected (report already appended to the flag file) —
+# not a failure.
+SuccessExitStatus=10
+StandardOutput=append:/home/choiceoh/dsv4-image-watch.log
+StandardError=append:/home/choiceoh/dsv4-image-watch.log
+
+[Install]
+WantedBy=default.target

@@ -33,11 +33,40 @@ MARKOV_TOPK="${MARKOV_TOPK:-512}"
 # 62.11 / 64.28 / 62.14 = +3.5%; quality 9/9; greedy divergence 93 chars =
 # natural boot-to-boot 96 (indistinguishable); prefill neutral (M>32 path
 # untouched). GATEFUSE=0 disarms.
+# REFINE (VLLM_DSPARK_REFINE_PASS, default 0, UNMEASURED): two-pass draft
+# refinement — pass-1 tokens replace the noise slots and the backbone +
+# sequential sampling re-run with the SAME Gumbel keys (the seeded coupling
+# keeps the target distribution invariant by construction; only acceptance
+# moves). Costs one extra 3-layer backbone pass per draft step. Adopt only
+# on bench-dec acceptance + 9/9 (see MEASUREMENTS A/B queue).
+REFINE="${REFINE:-0}"
+# MARKOV_SIDELOAD (VLLM_DSPARK_MARKOV_SIDELOAD, default empty, UNMEASURED):
+# absolute path (under /home/choiceoh/models, ro-mounted on all nodes) to a
+# tools/markov_refit.py payload replacing the draft Markov W1/W2. Proposal-q
+# only — verification distribution untouched.
+MARKOV_SIDELOAD="${MARKOV_SIDELOAD:-}"
 V2RUNNER="${V2RUNNER:-1}"
 case "$FP8HEAD" in
   0|1) ;;
   *) echo "ABORT: FP8HEAD must be 0 or 1 (got $FP8HEAD)"; exit 2 ;;
 esac
+case "$REFINE" in
+  0|1) ;;
+  *) echo "ABORT: REFINE must be 0 or 1 (got $REFINE)"; exit 2 ;;
+esac
+if [ -n "$MARKOV_SIDELOAD" ]; then
+  case "$MARKOV_SIDELOAD" in
+    /home/choiceoh/models/*) ;;
+    *)
+      echo "ABORT: MARKOV_SIDELOAD must be an absolute path under /home/choiceoh/models (got $MARKOV_SIDELOAD)"
+      exit 2 ;;
+  esac
+  case "$MARKOV_SIDELOAD" in
+    *[!A-Za-z0-9_./-]*|*..*)
+      echo "ABORT: unsafe character in MARKOV_SIDELOAD: $MARKOV_SIDELOAD"
+      exit 2 ;;
+  esac
+fi
 if [[ ! "$MARKOV_TOPK" =~ ^(0|[1-9][0-9]*)$ ]] \
    || ((${#MARKOV_TOPK} > ${#MODEL_VOCAB_SIZE})); then
   echo "ABORT: MARKOV_TOPK must be 0 or an integer in [1,$MODEL_VOCAB_SIZE] (got $MARKOV_TOPK)"
@@ -52,9 +81,12 @@ case "$V2RUNNER" in
   0|1) ;;
   *) echo "ABORT: V2RUNNER must be 0 or 1 (got $V2RUNNER)"; exit 2 ;;
 esac
-if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$V2RUNNER" != "1" ]; then
-  echo "ABORT: DSpark FP8/top-k overlays require V2RUNNER=1"
-  exit 2
+if ((FP8HEAD == 1 || MARKOV_TOPK > 0 || REFINE == 1)) \
+    || [ -n "$MARKOV_SIDELOAD" ]; then
+  if [ "$V2RUNNER" != "1" ]; then
+    echo "ABORT: DSpark FP8/top-k/refine/sideload overlays require V2RUNNER=1"
+    exit 2
+  fi
 fi
 # VLLM_DSPARK_IMPL: the production-hybrid-1.6 IMAGE bakes upstream as its ENV
 # default (docker inspect evidence, 2026-08-10) — production has always run
@@ -63,9 +95,12 @@ fi
 # documents that reality and pins it against future image drift. The speed
 # knobs require it; forcing fork with a knob armed aborts.
 DSPARK_IMPL="${DSPARK_IMPL:-upstream}"
-if ((FP8HEAD == 1 || MARKOV_TOPK > 0)) && [ "$DSPARK_IMPL" != "upstream" ]; then
-  echo "ABORT: FP8HEAD/MARKOV_TOPK require the upstream DSpark impl (got DSPARK_IMPL=$DSPARK_IMPL)"
-  exit 2
+if ((FP8HEAD == 1 || MARKOV_TOPK > 0 || REFINE == 1)) \
+    || [ -n "$MARKOV_SIDELOAD" ]; then
+  if [ "$DSPARK_IMPL" != "upstream" ]; then
+    echo "ABORT: FP8HEAD/MARKOV_TOPK/REFINE/MARKOV_SIDELOAD require the upstream DSpark impl (got DSPARK_IMPL=$DSPARK_IMPL)"
+    exit 2
+  fi
 fi
 case "$DSPARK_IMPL" in
   fork|upstream) ;;
@@ -91,6 +126,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSV4_MHC_SMALLM_TUNED=${MHCTUNE:-1} -e VLLM_DSV4_MHC_TUNED_R2=${MHCTUNE2:-1} -e VLLM_DSV4_MHC_BIGFUSE_TUNED=${MHCTUNE3:-1} \
 -e VLLM_DSV4_FREE_BF16_LM_HEAD=${HEADFREE:-0} -e VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
+-e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
@@ -270,6 +306,10 @@ docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
 # listed source so list skew, missing files, and byte skew all fail closed.
 HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
   || { echo "ABORT: manifest/overlays missing on head ($HEAD_OV)"; exit 1; }
+if [ -n "$MARKOV_SIDELOAD" ] && [ ! -f "$MARKOV_SIDELOAD" ]; then
+  echo "ABORT: MARKOV_SIDELOAD missing on head ($MARKOV_SIDELOAD)"
+  exit 1
+fi
 for w in $WORKERS; do
   ip=${w%%:*}
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
@@ -278,6 +318,10 @@ for w in $WORKERS; do
   [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
   ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
     || { echo "ABORT: model/caches missing on $ip"; exit 1; }
+  if [ -n "$MARKOV_SIDELOAD" ]; then
+    ssh $SSHOPT choiceoh@$ip "test -f $MARKOV_SIDELOAD" \
+      || { echo "ABORT: MARKOV_SIDELOAD missing on $ip ($MARKOV_SIDELOAD)"; exit 1; }
+  fi
 done
 echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} base-attested overlays + manifest in sync x4)"
 
@@ -310,7 +354,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
   done
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
-echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0}"
+echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \

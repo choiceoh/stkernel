@@ -290,6 +290,9 @@ def test_bench_dec_metrics() -> None:
         'vllm:spec_decode_num_accepted_tokens_total{engine="1"} 30\n'
         'vllm:spec_decode_num_draft_tokens_total{engine="0"} 200\n'
         'vllm:spec_decode_num_draft_tokens_total{engine="1"} 50\n'
+        'vllm:spec_decode_num_accepted_tokens_per_pos_total{position="0"} 100\n'
+        'vllm:spec_decode_num_accepted_tokens_per_pos_total{position="1"} 50\n'
+        "vllm:spec_decode_num_drafts_total 50\n"
         "vllm:num_requests_running 5\n"
     )
     c = bd._parse_spec_metrics(text)
@@ -300,7 +303,10 @@ def test_bench_dec_metrics() -> None:
     check("vllm:num_requests_running" not in c, "non-spec metric excluded")
     before = {k: 0.0 for k in c}
     s = bd.acceptance_suffix(before, c)
-    check("60.0%" in s, f"acceptance ratio wrong: {s!r}")
+    # Legacy convention double-counts per_pos + num_drafts: (150+150)/(250+50).
+    check("100.0%" in s, f"legacy acceptance ratio wrong: {s!r}")
+    # Exact-name raw ratio excludes per_pos/num_drafts: 150/250.
+    check("raw" in s and "60.0%" in s, f"raw acceptance ratio wrong: {s!r}")
     check(bd.acceptance_suffix(c, c) == "", "zero delta must yield no suffix")
     check(bd.acceptance_suffix({}, {}) == "", "empty metrics must yield no suffix")
     print(f"  bench-dec acceptance parser ... OK")
@@ -549,6 +555,184 @@ def test_bf16_release_guards() -> None:
     print("  DSpark speed-path guards ...... OK")
 
 
+# ---------------------------------------------------------------------------
+# 9. DSpark acceptance levers — refine pass + Markov sideload contracts
+# ---------------------------------------------------------------------------
+def test_acceptance_lever_guards() -> None:
+    ns = load_defs(
+        "overlay/dspark_speculator_v2.py",
+        {"_parse_refine_pass", "_refine_feedback_indices"},
+        {},
+    )
+    parse_refine = ns["_parse_refine_pass"]
+    for raw in ("", "0", "false", "no", "off", " OFF "):
+        check(parse_refine(raw) is False, f"refine {raw!r} must disable")
+    for raw in ("1", "true", "yes", "on", " ON "):
+        check(parse_refine(raw) is True, f"refine {raw!r} must enable")
+    for raw in ("2", "-1", "maybe"):
+        try:
+            parse_refine(raw)
+            check(False, f"invalid refine value accepted: {raw}")
+        except ValueError:
+            check(True, "")
+
+    # Feedback index math: query offset j>=1 of request r receives the token
+    # drafted at offset j-1; anchors (offset 0) are never rewritten; flat
+    # order matches draft_tokens[:, :N-1].reshape(-1).
+    fn = ns["_refine_feedback_indices"]
+    for max_reqs, n in ((1, 2), (3, 5), (4, 7)):
+        idx = fn(max_reqs, n)
+        check(len(idx) == max_reqs * (n - 1), f"feedback count {max_reqs}x{n}")
+        check(idx == sorted(idx) and len(set(idx)) == len(idx),
+              "feedback indices must be strictly increasing")
+        check(all(0 <= i < max_reqs * n for i in idx), "feedback index range")
+        check(all(i % n != 0 for i in idx), "anchor slot rewritten")
+        for m, i in enumerate(idx):
+            req, off = divmod(i, n)
+            src_req, src_col = divmod(m, n - 1)
+            check(req == src_req and off == src_col + 1,
+                  f"feedback misalignment at flat {m}: idx {i}")
+    check(fn(2, 1) == [], "n_spec=1 must have no feedback slots")
+
+    ns = load_defs(
+        "overlay/dspark_utils_v2.py",
+        {"_validate_markov_sideload"},
+        {},
+    )
+    validate = ns["_validate_markov_sideload"]
+    good = dict(payload_keys={"markov_w1", "markov_w2"},
+                w1_shape=(100, 8), w2_shape=(100, 8),
+                vocab_size=100, markov_rank=8,
+                replicated_w1=True, replicated_w2=True)
+    check(validate(**good) is None, "valid sideload rejected")
+    check("missing keys" in validate(**{**good, "payload_keys": {"markov_w1"}}),
+          "missing key must be reported")
+    check("markov_w1 shape" in validate(**{**good, "w1_shape": (100, 4)}),
+          "w1 shape skew must be reported")
+    check("markov_w2 shape" in validate(**{**good, "w2_shape": (50, 8)}),
+          "w2 shape skew must be reported")
+    check("replicated Markov W1" in validate(**{**good, "replicated_w1": False}),
+          "sharded W1 must be rejected")
+    check("replicated Markov W2" in validate(**{**good, "replicated_w2": False}),
+          "sharded W2 must be rejected")
+
+    # Launcher: bounds + fail-closed combinations (early-abort zone, exit 2).
+    launcher = os.path.join(REPO, "launchers", "start-hy4-tp4.sh")
+    cases = (
+        ({"REFINE": "2"}, "REFINE must be 0 or 1"),
+        ({"REFINE": "1", "V2RUNNER": "0"}, "require V2RUNNER=1"),
+        ({"MARKOV_SIDELOAD": "relative/path.pt"},
+         "must be an absolute path under /home/choiceoh/models"),
+        ({"MARKOV_SIDELOAD": "/etc/passwd"},
+         "must be an absolute path under /home/choiceoh/models"),
+        ({"MARKOV_SIDELOAD": "/home/choiceoh/models/x.pt",
+          "DSPARK_IMPL": "fork"}, "require the upstream DSpark impl"),
+        ({"MARKOV_SIDELOAD": "/home/choiceoh/models/x.pt", "V2RUNNER": "0"},
+         "require V2RUNNER=1"),
+    )
+    for extra_env, expected in cases:
+        env = dict(os.environ)
+        env.update(extra_env)
+        proc = subprocess.run(
+            ["bash", launcher], env=env, text=True, capture_output=True,
+            timeout=5, check=False,
+        )
+        output = proc.stdout + proc.stderr
+        check(proc.returncode == 2, f"launcher did not reject {extra_env}: {output}")
+        check(expected in output,
+              f"launcher rejection unclear for {extra_env}: {output}")
+
+    launcher_text = open(launcher, encoding="utf-8").read()
+    check("VLLM_DSPARK_REFINE_PASS=$REFINE" in launcher_text,
+          "refine knob not propagated")
+    check("VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD" in launcher_text,
+          "sideload knob not propagated")
+    check("MARKOV_SIDELOAD missing on" in launcher_text,
+          "sideload preflight existence check missing")
+
+    # Two-pass structure: feedback between two identical backbone+sampling
+    # rounds, inside the captured _generate_draft.
+    spec_text = open(
+        os.path.join(REPO, "overlay", "dspark_speculator_v2.py"),
+        encoding="utf-8",
+    ).read()
+    draft_body = spec_text.split("def _generate_draft", 1)[1]
+    check(draft_body.count("self._run_model(") == 2,
+          "refine pass must re-run the backbone exactly once more")
+    check(draft_body.count("self._sample_sequential(") == 2,
+          "refine pass must re-run sequential sampling (same Gumbel keys)")
+    check("_feed_back_draft_tokens" in draft_body,
+          "refine pass must feed pass-1 tokens back before the second run")
+    check(draft_body.index("_feed_back_draft_tokens")
+          < draft_body.rindex("self._run_model("),
+          "feedback must precede the second backbone run")
+    check("if not self._refine_pass:" in draft_body,
+          "refine pass must be kill-switch gated")
+
+    # Sideload ordering: applied before the FP8 draft-head selection (and
+    # therefore before warmup / lazy W2 quantization / CUDA graph capture).
+    utils_text = open(
+        os.path.join(REPO, "overlay", "dspark_utils_v2.py"),
+        encoding="utf-8",
+    ).read()
+    check(utils_text.index("_sideload_markov_head(draft_model")
+          < utils_text.index("if fp8_draft_head_enabled:"),
+          "sideload must run before the FP8 draft-head selection")
+    check("_w2_fp8_weight" in utils_text,
+          "sideload must assert it precedes lazy FP8 W2 quantization")
+    print("  acceptance lever guards ....... OK")
+
+
+# ---------------------------------------------------------------------------
+# 10. ngram-ceiling simulator — pure sim math (stdlib only, importable)
+# ---------------------------------------------------------------------------
+def test_ngram_ceiling_sim() -> None:
+    import importlib.util
+    import random
+
+    spec = importlib.util.spec_from_file_location(
+        "nc", os.path.join(REPO, "bench", "ngram-ceiling.py"))
+    nc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(nc)
+
+    curve = nc.parse_curve(nc.DEFAULT_CURVE)
+    check(len(curve) == 5 and abs(curve[0] - 0.785) < 1e-9,
+          "default curve parse")
+    for bad in ("", "50,60", "120", "abc"):
+        try:
+            nc.parse_curve(bad)
+            check(False, f"bad curve accepted: {bad}")
+        except ValueError:
+            check(True, "")
+    pmf = nc.accept_len_pmf(curve)
+    check(abs(sum(pmf) - 1.0) < 1e-9, "accept-length pmf must sum to 1")
+    mean = sum(m * p for m, p in enumerate(pmf))
+    check(abs(mean - sum(curve)) < 1e-9,
+          "pmf mean must equal the cumulative-curve sum")
+    rng = random.Random(0)
+    draws = [nc.sample_accept_len(pmf, rng) for _ in range(20_000)]
+    emp = sum(draws) / len(draws)
+    check(abs(emp - sum(curve)) < 0.05, f"sampler mean off: {emp}")
+
+    check(nc.lcp([1, 2, 3], [1, 2, 4]) == 2, "lcp basic")
+    check(nc.lcp([], [1]) == 0, "lcp empty")
+
+    # Periodic sequence: gram [1,2,3] ending at t=10 matches ending pos=3;
+    # copy source tokens[3:8] vs actual tokens[10:] -> 4 accepted.
+    tokens = [1, 2, 3, 4, 5, 6, 7, 1, 2, 3, 4, 5, 6, 7]
+    idx = nc.SuffixIndex(tokens, nmin=3)
+    idx.extend_to(10)
+    n, pos = idx.best_match(10, nmax=8)
+    check(n == 3 and pos == 3, f"suffix match wrong: n={n} pos={pos}")
+    proposal = tokens[pos:min(pos + 5, 10)]
+    check(nc.lcp(proposal, tokens[10:15]) == 4,
+          "periodic copy must accept 4 of 5")
+    # No future leakage: source window is clipped at t.
+    check(len(proposal) == 5 and proposal == [4, 5, 6, 7, 1],
+          "proposal must come from already-generated tokens only")
+    print("  ngram-ceiling sim math ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -559,4 +743,6 @@ if __name__ == "__main__":
     test_overlay_manifest()
     test_dspark_speed_guards()
     test_bf16_release_guards()
+    test_acceptance_lever_guards()
+    test_ngram_ceiling_sim()
     print(f"all OK ({PASS} checks)")
