@@ -26,6 +26,13 @@ FP8HEAD="${FP8HEAD:-0}"
 # the markov W2 GEMV leaving the step budget (-0.95 ms/step in the gemm
 # bucket). Quality 9/9 + 256K needles 3/3 + prefill unaffected. 0 disarms.
 MARKOV_TOPK="${MARKOV_TOPK:-512}"
+# GATEFUSE (VLLM_DSV4_GATE_FUSED) adopted 2026-08-10, default 1: fused
+# small-M MoE router gate (triton SK=1, fp32-out direct) replaces the Tier-4
+# bf16 F.linear + splitKreduce + fp32-cast chain on GB10 (sm_121 fails every
+# GateLinear specialized-tier device gate). Bracket: C=1 acc50-normalized
+# 62.11 / 64.28 / 62.14 = +3.5%; quality 9/9; greedy divergence 93 chars =
+# natural boot-to-boot 96 (indistinguishable); prefill neutral (M>32 path
+# untouched). GATEFUSE=0 disarms.
 V2RUNNER="${V2RUNNER:-1}"
 case "$FP8HEAD" in
   0|1) ;;
@@ -80,7 +87,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_USE_V2_MODEL_RUNNER=$V2RUNNER -e VLLM_DSPARK_IMPL=$DSPARK_IMPL \
 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 -e VLLM_DSV4_COMPRESSOR_FP8=${COMPRESSOR_FP8:-1} -e VLLM_DSV4_TARGET_LM_HEAD_FP8=${TGT_HEAD_FP8:-1} \
--e VLLM_DSV4_GATE_FUSED=${GATEFUSE:-0} \
+-e VLLM_DSV4_GATE_FUSED=${GATEFUSE:-1} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
