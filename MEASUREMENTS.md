@@ -643,6 +643,18 @@ manifest 17번째 행, 런처 `MHCTUNE`(기본 1). ※이 배포에 인코딩 �
    자동 적용) — 시스템 프롬프트+tools 요청의 프롬프트가 레퍼런스 순서
    (BOS+system+"## Tools")로 바뀜. 에이전트 실워크로드(garble/tool-call 정확도)
    전후 비교로 회귀 없음을 확인할 것. 롤백은 tok_* 2행 마운트 제거.
+5. **`HEADFREE=1`** (`VLLM_DSV4_FREE_BF16_LM_HEAD`, 2026-08-11 구현, 기본 0) —
+   fp8 사본이 로드 시점에 전부 생긴 뒤 bf16 lm_head 샤드(~265MB/rank) 저장소
+   해제. **성능 축이 아니라 KV 용량 축**: 소비자 감사 결과 잔여 소비자는
+   폴백 2곳(env off일 때만)+draft alias뿐이고, 소비자가 남아 있으면 부팅
+   거부(fail-closed, tests/test_logic.py 가드 매트릭스). 측정: 동일 GPU_MEM
+   기동 로그 "GPU KV cache size" 증가(+~265MB/rank 기대) + 9/9 + bench-dec/
+   프리필 무회귀. ★KV 수치는 GPU_MEM 명기 없이 비교 금지 룰 적용.
+6. **`COMPFREE=1`** (`VLLM_DSV4_FREE_BF16_COMPRESSOR`, 동일 구현) — attention
+   컴프레서 bf16 원본(~0.7GB/rank) lazy-quant 직후 해제 (메모리 프로파일
+   패스 중이라 KV 산정에 반영). 런타임 소비자는 kv_score GEMM 2곳뿐
+   (nvidia_model 이름 매핑은 로더 시점 전용) 확인. COMPRESSOR_FP8=1 필수
+   (아니면 import 시점 거부). 측정 동일. 5·6은 한 부팅에 하나씩.
 
 ## 인시던트 로그
 

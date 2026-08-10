@@ -99,13 +99,32 @@ _COMPRESSOR_FP8 = os.getenv(
     "VLLM_DSV4_COMPRESSOR_FP8", "0"
 ).strip().lower() in {"1", "true", "yes", "on"}
 
+# VLLM_DSV4_FREE_BF16_COMPRESSOR (launcher COMPFREE, default off): after the
+# lazy fp8 quant below, drop the attention compressor's bf16 fused_wkv_wgate
+# original (~0.7 GB/rank across the replicated layers). Its only runtime
+# consumers are the two kv_score GEMM sites (the nvidia_model.py name mapping
+# is loader-time only), so with the fp8 path armed the originals are dead
+# weight; the first forward runs in the memory-profile pass, so the freed
+# bytes flow into KV-pool sizing. Fail-fast at import: armed without the fp8
+# path, the bf16 GEMM would read the freed weights — refuse to boot.
+_FREE_BF16_COMPRESSOR = os.getenv(
+    "VLLM_DSV4_FREE_BF16_COMPRESSOR", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+if _FREE_BF16_COMPRESSOR and not _COMPRESSOR_FP8:
+    raise RuntimeError(
+        "VLLM_DSV4_FREE_BF16_COMPRESSOR=1 requires VLLM_DSV4_COMPRESSOR_FP8=1 "
+        "(the bf16 kv_score GEMM path would read the freed weights)"
+    )
+
 
 def _compressor_fp8_kv_score(
     owner: nn.Module, hidden_states: torch.Tensor
 ) -> torch.Tensor:
     """fp8-deepgemm replacement for torch.mm(x, fused_wkv_wgate.weight.T,
-    out_dtype=fp32). Keeps the bf16 weight in place (loader/reload safety);
-    the fp8 copies cost +50% memory on these weights (~0.35 GB/rank)."""
+    out_dtype=fp32). The bf16 weight stays in place by default (loader/
+    reload safety; the fp8 copies cost +50% memory on these weights,
+    ~0.35 GB/rank) — VLLM_DSV4_FREE_BF16_COMPRESSOR=1 drops it right after
+    this one-time quant instead."""
     if not hasattr(owner, "_dsv4_comp_fp8_w"):
         from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
             _quantize_fp8_deepgemm,
@@ -114,6 +133,13 @@ def _compressor_fp8_kv_score(
         owner._dsv4_comp_fp8_w = dg_w
         owner._dsv4_comp_fp8_ws = dg_ws
         logger.info_once("DSV4 compressor kv_score GEMMs on fp8 deepgemm.")
+        if _FREE_BF16_COMPRESSOR:
+            w = owner.fused_wkv_wgate.weight
+            w.data = w.data.new_empty((0,))
+            logger.info_once(
+                "DSV4 compressor bf16 originals released after fp8 quant "
+                "(freed during the memory-profile pass, before KV sizing)."
+            )
     from vllm.models.deepseek_v4.nvidia.dspark_v2 import _fp8_gemm
 
     return _fp8_gemm(
