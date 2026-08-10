@@ -21,7 +21,7 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 |
 | `bench/` | 검증·측정 도구 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
-| `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
+| `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 원본 + 계측 diff만: `attn_prof`/`fi_prof`는 오버레이 현행본 기준(`diff overlay/… probes/…`로 검증 가능), `moe_prof`/`oproj_prof`/`sai_probe`는 이미지 원본 기준 |
 | `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식 |
 
 ## 단일 overlay manifest · 런타임 경계 감사
