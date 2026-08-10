@@ -2073,6 +2073,32 @@ class DeepseekV4MixtureOfExperts(MixtureOfExperts):
             moe.experts.update_expert_map()
 
 
+def _bf16_lm_head_release_blockers(
+    target_fp8_built: bool,
+    draft_aliased: bool,
+    draft_has_fp8_copy: bool,
+) -> list[str]:
+    """Reasons the bf16 lm_head shard must NOT be freed (empty list = safe).
+
+    Pure logic so tests/test_logic.py can exercise the fail-closed matrix
+    GPU-free. Consumers of the bf16 weight after load are exactly: the
+    target verification fallback (when VLLM_DSV4_TARGET_LM_HEAD_FP8 is off)
+    and the aliased draft's bf16 fallback (when neither draft fp8 copy was
+    built)."""
+    blockers = []
+    if not target_fp8_built:
+        blockers.append(
+            "VLLM_DSV4_TARGET_LM_HEAD_FP8 is off — verification logits "
+            "would read the freed bf16 weight"
+        )
+    if draft_aliased and not draft_has_fp8_copy:
+        blockers.append(
+            "the aliased draft lm_head has no fp8 copy "
+            "(VLLM_DSPARK_FP8_LM_HEAD=0 and rowwise FP8HEAD off)"
+        )
+    return blockers
+
+
 class DeepseekV4ForCausalLM(
     nn.Module, SupportsPP, SupportsEagle3, DeepseekV4MixtureOfExperts
 ):
@@ -2151,23 +2177,8 @@ class DeepseekV4ForCausalLM(
         Same lazy-quant pattern as DSparkMarkovHeadOptimized: first call runs
         in the eager warmup, so CUDA-graph capture sees the steady branch.
         """
-        import os as _os
-
-        if _os.getenv("VLLM_DSV4_TARGET_LM_HEAD_FP8", "0").strip().lower() not in (
-            "1", "true", "yes", "on",
-        ):
+        if not self._ensure_tgt_head_fp8_copy():
             return None
-        if not hasattr(self, "_tgt_head_fp8_w"):
-            from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
-                _quantize_fp8_deepgemm,
-            )
-
-            dg_w, dg_ws = _quantize_fp8_deepgemm(self.lm_head.weight)
-            self._tgt_head_fp8_w = dg_w
-            self._tgt_head_fp8_ws = dg_ws
-            logger.info_once(
-                "DSV4 TARGET lm_head verification logits on fp8 deepgemm."
-            )
         from vllm.models.deepseek_v4.nvidia.dspark_v2 import _fp8_gemm
 
         local = _fp8_gemm(
@@ -2180,6 +2191,74 @@ class DeepseekV4ForCausalLM(
             logits = logits[..., : self.config.vocab_size]
             logits = logits.view(*hidden_states.shape[:-1], -1)
         return logits
+
+    def _ensure_tgt_head_fp8_copy(self) -> bool:
+        """True iff VLLM_DSV4_TARGET_LM_HEAD_FP8 is armed; builds the fp8
+        deepgemm copy on first use — normally the first eager-warmup logits
+        call, or eagerly from the load-time bf16 release hook."""
+        import os as _os
+
+        if _os.getenv("VLLM_DSV4_TARGET_LM_HEAD_FP8", "0").strip().lower() not in (
+            "1", "true", "yes", "on",
+        ):
+            return False
+        if not hasattr(self, "_tgt_head_fp8_w"):
+            from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
+                _quantize_fp8_deepgemm,
+            )
+
+            dg_w, dg_ws = _quantize_fp8_deepgemm(self.lm_head.weight)
+            self._tgt_head_fp8_w = dg_w
+            self._tgt_head_fp8_ws = dg_ws
+            logger.info_once(
+                "DSV4 TARGET lm_head verification logits on fp8 deepgemm."
+            )
+        return True
+
+    def maybe_release_bf16_lm_head(self, draft_model=None) -> None:
+        """VLLM_DSV4_FREE_BF16_LM_HEAD (launcher HEADFREE, default off): drop
+        the bf16 lm_head vocab-shard storage (~265MB/rank) once every logits
+        consumer runs on an fp8 copy, so the KV-pool sizing that follows
+        model load reclaims the bytes. Called by load_dspark_model after the
+        draft head copies are built (the draft aliases this lm_head).
+
+        Fails closed: an armed knob with any live bf16 consumer (target fp8
+        off, or an aliased draft without its own fp8 copy) aborts the boot
+        instead of freeing a weight that would later be read.
+        """
+        import os as _os
+
+        if _os.getenv("VLLM_DSV4_FREE_BF16_LM_HEAD", "0").strip().lower() not in (
+            "1", "true", "yes", "on",
+        ):
+            return
+        weight = getattr(self.lm_head, "weight", None)
+        if weight is None or weight.numel() == 0:
+            return  # PP-missing shard, or already released
+        draft_lm_head = getattr(draft_model, "lm_head", None)
+        blockers = _bf16_lm_head_release_blockers(
+            target_fp8_built=self._ensure_tgt_head_fp8_copy(),
+            draft_aliased=(
+                draft_lm_head is not None
+                and getattr(draft_lm_head, "weight", None) is weight
+            ),
+            draft_has_fp8_copy=(
+                getattr(draft_model, "_fp8_draft_head", None) is not None
+                or getattr(draft_model, "lm_head_fp8_weight", None) is not None
+            ),
+        )
+        if blockers:
+            raise RuntimeError(
+                "VLLM_DSV4_FREE_BF16_LM_HEAD=1 refused (a consumer still "
+                "reads the bf16 lm_head): " + "; ".join(blockers)
+            )
+        freed_mib = weight.numel() * weight.element_size() / (1 << 20)
+        weight.data = weight.data.new_empty((0,))
+        torch.cuda.empty_cache()
+        logger.info_once(
+            "DSV4 bf16 lm_head shard released "
+            f"({freed_mib:.0f} MiB/rank returned before KV-pool sizing)."
+        )
 
     def compute_logits(
         self,

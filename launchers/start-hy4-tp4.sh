@@ -88,6 +88,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 -e VLLM_DSV4_COMPRESSOR_FP8=${COMPRESSOR_FP8:-1} -e VLLM_DSV4_TARGET_LM_HEAD_FP8=${TGT_HEAD_FP8:-1} \
 -e VLLM_DSV4_GATE_FUSED=${GATEFUSE:-1} \
+-e VLLM_DSV4_FREE_BF16_LM_HEAD=${HEADFREE:-0} -e VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
@@ -125,6 +126,15 @@ fi
 # The 2026-08-09 incident kill-switches (TRIMIDX/C4AREUSE/SPFAST) are gone:
 # all three were measured and not adopted (rejected / neutral / neutral,
 # MEASUREMENTS.md 08-09), and their overlay code paths were removed 08-11.
+# Memory-reclaim knobs (default OFF, unmeasured — flip ONE per boot):
+# HEADFREE=1 drops the bf16 lm_head shard (~265MB/rank) once the load-time
+# fp8 copies exist; COMPFREE=1 drops the attention-compressor bf16
+# originals (~0.7GB/rank) at their lazy fp8 quant (memory-profile pass).
+# Both fail closed at boot while any bf16 consumer remains (they require
+# TGT_HEAD_FP8=1 / COMPRESSOR_FP8=1 — the current defaults). This is the
+# KV-capacity axis, not speed: verify via boot-log "GPU KV cache size"
+# growth (same GPU_MEM!) + 9/9 + bench-dec/prefill no-regress
+# (MEASUREMENTS.md A/B queue #5/#6).
 # VLLM_ENGINE_READY_TIMEOUT_S=3600: the image default is 600s (envs.py:27),
 # below our cold-recompile boot times (supervisor history has
 # 'boot grace exceeded'); dead engines still fail fast via the supervisor.
