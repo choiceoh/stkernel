@@ -617,6 +617,7 @@ JIT 팩토리로 GPU-less 임포트 안전성 유지). M>64에서만 사용, 게
 | `VLLM_USE_B12X_SPARSE_INDEXER=1` (구 A/B 큐 ②) | **상한 기각** | 실체=스케줄 메타데이터 빌더 교체(indexer.py:331). 인덱서는 프리필 ~1.5%·디코드 <2% 버킷 → 상한 <1%, #49897 NaN 커널 쌍이 바로 이 경로(리스크만 실재) |
 | `fuse_attn_quant=false` (구 A/B 큐 ①) | **상한 기각** | 이득 가설=piecewise 프리필 그래프 회복인데 프리필 GPU busy 실측 99.8% → 상한 0.2% + attn-quant 융합 상실은 확정 손해 |
 | #51323 HiSparse nvcc 포팅 | **대상 무관 확정** | HiSparse는 DeepSeek **V3.2/GLM 5.1**용 sparse attention — V4-Flash는 자체 DSA/C4A 스택. nvcc JIT 경로의 마지막 실타깃 소멸 |
+| `VLLM_DSPARK_CONFIDENCE_SCHEDULER=threshold` (구 "Deprioritized") | **상한 기각 (08-11 코드 정독, 부팅 없이 종결)** | 이미지 speculator.py 구현 = **방출 draft 토큰 truncation만** ("captured forward shape is never changed" — 고정 draft 블록·verify 그래프 전부 그대로 실행). C 불문 스텝 시간 절약 기전 부재, 수용 기회 상실(하방)만 실재 → C>1 "batched-verify benefit" 가설도 이 구현엔 해당 없음. confidence head 가중치는 로더가 드랍 중(신규 이미지 배선 대기)이나 판정과 무관 |
 | 저자 신규 이미지 | 없음 (08-11 확인) | Docker Hub 최신 = production-hybrid-1.6 (07-26) — 감시 유지 |
 
 ## 소프트웨어 개선 경로 — 종결 선언 (2026-08-09)
@@ -653,6 +654,13 @@ JIT 팩토리로 GPU-less 임포트 안전성 유지). M>64에서만 사용, 게
 **호스트 커널이었다** (UMA 컴팩션 스톨). 소프트웨어 노브 축은 이제 정말
 전수 소진 — 감시 2종(저자 이미지 태그·업스트림 차기 이미지)과 호스트
 위생만 남는다.
+
+**대기 항목 (08-11 심야, 엔진 소유권 충돌로 보류 — 다음 유휴 창에서)**:
+①**256K 니들 @IDXFREQ=6 재검** — 채택분의 유일한 품질 미재검 표면. 도구
+리포 등재(`bench/needle-256k.py`, check-quality 3사실 25/50/75% 깊이 패턴의
+256K 확장), 1차 시도는 병행 세션의 부트 사이클(COMPFREE A/B)과 겹쳐 연결
+거부로 무산 ②**IDXFREQ=8 셀** — 4→6 +7~11%의 수확 체감 확인용 (동일시드 128K
+3발 ×2부트 + 니들 게이트).
 
 ## 업스트림 비교체크 (2026-08-09, PR·이슈 ~25건 vs 이 스택)
 
