@@ -136,6 +136,7 @@ pos1 **78.5%** · pos2 56.4% · pos3 39.6% · pos4 28.6% · pos5 21.5% (기하 �
 | **★★`vm.compaction_proactiveness=0`** (srv3·srv4, 런타임 sysctl) | 프리필 간헐 −15% 요동 근절(발별 pgmigrate 1:1 인과) · 60K 기준선 2,798–2,830→**2,866–2,872**(+1.4~1.6%, 스프레드 32→6) · 32K 트레이스 wall −9.2% — ※재부팅 시 증발, 영구화(/etc/sysctl.d) 운영자 결정 대기 | 08-11 |
 | **★mhc small-M 타일 튜닝** (`VLLM_DSV4_MHC_SMALLM_TUNED=1`, 런처 MHCTUNE 기본 1, overlay/mhc_tilelang.py) | P2b 스윕 승자 (256,6,4) vs 스톡 (2,8): 마이크로 M=6 +16.3%/M=5 +19.5% · **인그래프 물리확인 per-call 15.6→13.1µs(−16%), −0.22ms/step** · residual bit-exact·yp rel 1.5e-7 · 9/9 · 브래킷 @acc50 64.18→**64.46**→64.01 = +0.57%(물리 예측 정확 일치). M≥8 스몰fma 영역 무접촉. 롤백 MHCTUNE=0 (env-only) | 08-11 |
 | **★mhc 라운치 구성 R2** (`VLLM_DSV4_MHC_TUNED_R2=1`, 런처 MHCTUNE2 기본 1) | 전 승자 **bit-exact**(rel=0): mhc_post M분기 — 프리필 (512,4096) 마이크로 +3.6%·**인그래프 per-call 1,270→1,187µs(−6.5%)**, C=4 디코드 (256,2048) +12.7~15.3%; mhc_fused M≤10 (128,4,4) +14.3%(C=2 draft, M=12 verify는 스톡 최적 유지). e2e 브래킷은 부트롤 ±1%에 묻힘(프리필 B1 2,860→B2 2,882→B3 2,887) — **채택 근거 = bit-exact + 물리확인 + 무회귀**(C=1 64.3/C=2 104.2/C=4 143.0 정상 대역) | 08-11 |
+| **★mhc big_fuse R3** (`VLLM_DSV4_MHC_BIGFUSE_TUNED=1`, 런처 MHCTUNE3 기본 1, 튜닝 커널 사본 in overlay/mhc_tilelang.py) | h_blk 1024→4096 (M>64만): 마이크로 +5.6%가 **인그래프 실현 +0.1%**(−11ms/32K캡처)로 축소 — 정직 기록. layer_input bf16-1ulp 클래스라 품질 게이트 적용: 9/9 + 디코드 무회귀. tilelang 제약: n_thr {96,160}만 컴파일 가능 | 08-11 |
 
 ### 기각 — 측정으로 (재론 금지, 수치가 근거)
 
@@ -578,6 +579,31 @@ bit-exact 라운치 튜닝은 물리확인(인그래프 per-call) + e2e 무회�
 판정한다** — e2e 증명을 요구하면 이 등급의 개선은 영원히 채택 불가.
 잔여: big_fuse 커널(threads=96 커널내 하드코딩)·quant 에필로그 융합은
 tilelang_kernels.py 소스 수술 급 — 콜사이트 축 소진 선언.
+
+### R3 — big_fuse 소스 수술 (2026-08-11, 채택하되 실현치 정직 기록)
+
+콜사이트 축 소진 후 첫 소스 수술: `mhc_pre_big_fuse_with_norm`의 커널 내
+하드코딩(threads=96, hidden_block=1024)을 파라미터화한 사본을
+overlay/mhc_tilelang.py **안에** 정의 (tilelang_kernels.py 무접촉 — lazy
+JIT 팩토리로 GPU-less 임포트 안전성 유지). M>64에서만 사용, 게이트
+`MHCTUNE3` 기본 1.
+
+- **스윕**: tilelang 레이아웃 제약으로 n_thr∈{96,160}만 컴파일 가능
+  (128/192/256/384 전부 "no available layout" 거부 — 워프0 sinkhorn 분기
+  구조). 승자 **h_blk=4096** (Pipelined 1블록): 마이크로 M=4096 +5.6%
+  (892→842µs). 디코드 M≤6은 스톡 정확히 최적 → M분기.
+- **실현 (인그래프)**: 캡처당 −11ms (+0.1% 프리필) — **마이크로 +5.6%가
+  인그래프에서 크게 축소** (경합 환경에서 파이프라인 제거 이득 소멸).
+  단일부트 프리필 3발 2,926–2,928(+1.5%)은 대부분 부트롤 상방으로 귀속.
+- **수치**: comb_mix bit-exact · layer_input rel 1.2e-3 = bf16-1ulp 리듀스
+  순서 클래스 → **품질 게이트 필수 적용, 9/9 통과** + 디코드 무회귀
+  (C=1 64.9 / C=2 107.5 / C=4 145.2).
+- **사고 1건 (수정됨)**: 커널 사본 추출 시 다음 커널의 데코레이터가 딸려
+  들어가 부트 NameError — ★교훈: **오버레이 파일 변경은 py_compile로
+  부족, 이미지 컨테이너 임포트 스모크 필수** (GPU 불요:
+  `docker run --rm -v <file>:<target>:ro <image> python3 -c "import ..."`).
+- 이로써 mhc 축은 R1+R2+R3로 완전 소진. quant 에필로그 융합은 custom-op
+  시그니처 변경(재컴파일+인터페이스 수술) 대비 +0.4%라 기각 유지.
 
 ## 정찰 일괄 기각 — 잔여 후보 전수 소진 2회차 (2026-08-11)
 
