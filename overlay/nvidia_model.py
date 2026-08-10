@@ -577,13 +577,16 @@ _GATE_FUSED = os.environ.get("VLLM_DSV4_GATE_FUSED", "0").strip().lower() in (
     "1", "true", "yes", "on",
 )
 _GATE_FUSED_MAX_TOKENS = 32
-# Tile config from the 2026-08-10 offline cold-cycle sweep (243 configs, 46
-# distinct weights cycled through a CUDA graph to defeat L2): BN32/BK256/SK4/
-# stages3/warps4 = 12.45us/call vs the Tier-4 chain's 15.34 (M=6). SK4xBK256
-# reads 512B-contiguous runs; SK8xBK64 (the first guess) was 14.3.
-_GATE_FUSED_SPLIT_K = 4
-_GATE_FUSED_BLOCK_N = 32
-_GATE_FUSED_BLOCK_K = 256
+# Tile config from the 2026-08-10 offline cold-cycle sweeps (46 distinct
+# weights cycled through a CUDA graph to defeat L2). SPLIT_K=1 is load-
+# bearing: the first in-engine trace showed the generic torch-sum reduce of
+# the SK=4 variant stretching 2.2us -> 12.4us inside the decode graph
+# (few-CTA latency-bound kernel under contention), eating the win. Single
+# kernel, fp32 out direct: BN16/BK512/SK1/stages4/warps4 = 12.04us cold vs
+# Tier-4 chain 15.27 (M=6), and no second kernel to stretch.
+_GATE_FUSED_SPLIT_K = 1
+_GATE_FUSED_BLOCK_N = 16
+_GATE_FUSED_BLOCK_K = 512
 
 if _GATE_FUSED:
     import triton
@@ -629,29 +632,42 @@ if _GATE_FUSED:
     def _deneb_fused_gate(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         num_tokens = x.shape[0]
         n_out, k_in = weight.shape
-        part = torch.empty(
-            (_GATE_FUSED_SPLIT_K, num_tokens, n_out),
-            dtype=torch.float32,
-            device=x.device,
-        )
+        if _GATE_FUSED_SPLIT_K == 1:
+            # single kernel writes fp32 logits directly — no partials, no
+            # reduce launch (see the SPLIT_K note above)
+            out = torch.empty(
+                (num_tokens, n_out), dtype=torch.float32, device=x.device
+            )
+        else:
+            out = torch.empty(
+                (_GATE_FUSED_SPLIT_K, num_tokens, n_out),
+                dtype=torch.float32,
+                device=x.device,
+            )
+        block_m = 16 if num_tokens <= 16 else 32
         _deneb_gate_partial_kernel[
             (n_out // _GATE_FUSED_BLOCK_N, _GATE_FUSED_SPLIT_K)
         ](
             x,
             weight,
-            part,
+            out,
             num_tokens,
             x.stride(0),
             N=n_out,
             K=k_in,
-            BLOCK_M=16 if num_tokens <= 16 else 32,
+            BLOCK_M=block_m,
             BLOCK_N=_GATE_FUSED_BLOCK_N,
             BLOCK_K=_GATE_FUSED_BLOCK_K,
             SPLIT_K=_GATE_FUSED_SPLIT_K,
             num_warps=4,
-            num_stages=3,
+            # stages are smem-bounded: (BM+BN)*BK*2B*(stages-1) must fit the
+            # 99KB budget — BM16/s4 = 96KB fits, BM32/s4 = 144KB does not.
+            # The sweep ranked BM32 best at s3 anyway (12.21us M=24).
+            num_stages=4 if block_m == 16 else 3,
         )
-        return part.sum(dim=0)
+        if _GATE_FUSED_SPLIT_K == 1:
+            return out
+        return out.sum(dim=0)
 
 
 class DenebGateLinear(GateLinear):
