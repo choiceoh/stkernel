@@ -1032,12 +1032,21 @@ class DeepseekV4Indexer(nn.Module):
                 # never read by the sliced indexer paths). Gather/scatter via
                 # index_select / index_copy_ over a concatenated index.
                 _n = qr.shape[0]
-                _idx = torch.cat(
-                    [
-                        torch.arange(a, b, device=qr.device, dtype=torch.long)
-                        for a, b in _ranges
-                    ]
-                )
+                if len(_ranges) == 1:
+                    # Dominant shape (pure-prefill single chunk on every rank;
+                    # decode rows merged into rank 0's first shard): build the
+                    # index directly, skipping the one-element cat.
+                    _a, _b = _ranges[0]
+                    _idx = torch.arange(
+                        _a, _b, device=qr.device, dtype=torch.long
+                    )
+                else:
+                    _idx = torch.cat(
+                        [
+                            torch.arange(a, b, device=qr.device, dtype=torch.long)
+                            for a, b in _ranges
+                        ]
+                    )
 
                 def _take(t: torch.Tensor) -> torch.Tensor:
                     return t.index_select(0, _idx)
