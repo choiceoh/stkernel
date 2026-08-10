@@ -130,4 +130,25 @@ def load_dspark_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
         if maybe_build_fp8_lm_head is not None:
             maybe_build_fp8_lm_head()
 
+    # Optional load-time release of the bf16 lm_head original (KV headroom).
+    # Must run AFTER the draft fp8 copies above so the fail-closed consumer
+    # check in the target model sees the final state. An armed knob with a
+    # rolled-back nvidia_model.py must abort, not silently no-op.
+    if os.getenv("VLLM_DSV4_FREE_BF16_LM_HEAD", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        release_bf16_lm_head = getattr(
+            target_model, "maybe_release_bf16_lm_head", None
+        )
+        if release_bf16_lm_head is None:
+            raise RuntimeError(
+                "VLLM_DSV4_FREE_BF16_LM_HEAD=1 but the target model does not "
+                "implement maybe_release_bf16_lm_head (nvidia_model.py "
+                "overlay rolled back?)"
+            )
+        release_bf16_lm_head(draft_model)
+
     return draft_model
