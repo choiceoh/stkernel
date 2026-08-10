@@ -21,6 +21,27 @@ _SMALLM_TUNED = os.environ.get(
     "VLLM_DSV4_MHC_SMALLM_TUNED", "1"
 ).strip().lower() not in ("", "0", "false", "no", "off")
 
+# Round-2 sweep 2026-08-11 (same harness, engine down; every winner below is
+# BIT-EXACT vs stock — pure launch-config changes):
+#   mhc_post  M=4096 (prefill): (n_thr512, h_blk4096) +3.6% vs stock (128,1024)
+#   mhc_post  M=24/20 (C=4 decode): (256, 2048) +12.7% / +15.3%
+#   mhc_fused M=10 (C=2 draft): (n_thr128, tile_n4, split_k4) +14.3% vs
+#             stock (256,3,4); M=12 (C=2 verify) stock already optimal -> kept.
+# VLLM_DSV4_MHC_TUNED_R2=0 disarms all round-2 choices.
+_TUNED_R2 = os.environ.get(
+    "VLLM_DSV4_MHC_TUNED_R2", "1"
+).strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _mhc_post_kwargs(num_tokens: int) -> dict:
+    """Swept mhc_post launch config by M regime (boundary 64: measured points
+    are 20/24 decode vs 4096 prefill; both sides bit-exact)."""
+    if not _TUNED_R2:
+        return {}
+    if num_tokens <= 64:
+        return {"n_thr": 256, "h_blk": 2048}
+    return {"n_thr": 512, "h_blk": 4096}
+
 
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
@@ -102,6 +123,206 @@ def _tilelang_hc_prenorm_gemm(
         tile_n,
         n_splits,
     )
+
+
+
+
+# ---- DENEB R3: big_fuse prefill h_blk retune (2026-08-11) ----
+# Sweep on real shapes (engine-down harness, sinkhorn_repeat=20): tilelang
+# accepts only n_thr in {96, 160} here (warp-0 sinkhorn split layout);
+# h_blk=4096 (single pipelined block) wins +5.6% at M=4096
+# (892 -> 842 us/call) while decode M<=6 is exactly stock-optimal, so the
+# tuned kernel is used only for M > 64. Numerics: comb_mix bit-exact,
+# layer_input rel 1.2e-3 = bf16-1ulp reduce-order class -> quality-gated.
+# VLLM_DSV4_MHC_BIGFUSE_TUNED=0 disarms (stock kernel for every M).
+_BIGFUSE_TUNED = os.environ.get(
+    "VLLM_DSV4_MHC_BIGFUSE_TUNED", "1"
+).strip().lower() not in ("", "0", "false", "no", "off")
+
+import math  # noqa: E402
+
+# Filled by _deneb_big_fuse() on first use. Importing tilelang_kernels at
+# module level would break GPU-less imports (its module body dereferences
+# tilelang, which is None without a CUDA driver) — the stock file lazy-imports
+# it inside functions for the same reason, so we JIT-decorate lazily too.
+T = None
+ENABLE_PDL = False
+_DENEB_BIG_FUSE_JIT = None
+
+
+def _deneb_big_fuse():
+    """Return the JIT-wrapped tuned big_fuse kernel (compiled on first call)."""
+    global T, ENABLE_PDL, _DENEB_BIG_FUSE_JIT
+    if _DENEB_BIG_FUSE_JIT is None:
+        from vllm.model_executor.kernels.mhc import tilelang_kernels as _tk
+
+        T = _tk.T
+        ENABLE_PDL = _tk.ENABLE_PDL
+        _DENEB_BIG_FUSE_JIT = _tk.tilelang.jit(pass_configs=_tk.pass_configs)(
+            _deneb_big_fuse_with_norm_tilelang
+        )
+    return _DENEB_BIG_FUSE_JIT
+
+
+def _deneb_big_fuse_with_norm_tilelang(
+    gemm_out_mul,
+    gemm_out_sqrsum,
+    hc_scale,
+    hc_base,
+    residual,
+    post_mix,
+    comb_mix,
+    layer_input,
+    norm_weight,
+    hidden_size: int,
+    rms_eps: float,
+    hc_pre_eps: float,
+    hc_sinkhorn_eps: float,
+    hc_post_mult_value: float,
+    sinkhorn_repeat: int,
+    norm_eps: float,
+    n_splits: int = 16,
+    hc_mult: int = 4,
+    gemm_last_dim: int = -1,
+    n_thr: int = 96,
+    h_blk: int = 1024,
+):
+    num_tokens = T.dynamic("num_tokens")
+    hc_mult3 = hc_mult * (2 + hc_mult)
+    if gemm_last_dim < 0:
+        gemm_last_dim = hc_mult3
+    hidden_block = math.gcd(h_blk, hidden_size)
+
+    gemm_out_mul: T.Tensor[[n_splits, num_tokens, gemm_last_dim], T.float32]  # type: ignore[no-redef, valid-type]
+    gemm_out_sqrsum: T.Tensor[[n_splits, num_tokens], T.float32]  # type: ignore[no-redef, valid-type]
+    hc_scale: T.Tensor[[3], T.float32]  # type: ignore[no-redef, valid-type]
+    hc_base: T.Tensor[[hc_mult3], T.float32]  # type: ignore[no-redef, valid-type]
+    residual: T.Tensor[[num_tokens, hc_mult, hidden_size], T.bfloat16]  # type: ignore[no-redef, valid-type]
+    post_mix: T.Tensor[[num_tokens, hc_mult], T.float32]  # type: ignore[no-redef, valid-type]
+    comb_mix: T.Tensor[[num_tokens, hc_mult * hc_mult], T.float32]  # type: ignore[no-redef, valid-type]
+    layer_input: T.Tensor[[num_tokens, hidden_size], T.bfloat16]  # type: ignore[no-redef, valid-type]
+    norm_weight: T.Tensor[[hidden_size], T.bfloat16]  # type: ignore[no-redef, valid-type]
+
+    with T.Kernel(num_tokens, threads=n_thr) as i:
+        rms = T.alloc_fragment(1, T.float32)
+        mixes = T.alloc_fragment(hc_mult3, T.float32)
+        T.clear(mixes)
+        rms[0] = 0
+
+        if ENABLE_PDL:
+            T.pdl_sync()
+
+        for i_split in T.serial(n_splits):
+            rms[0] += gemm_out_sqrsum[i_split, i]
+        rms[0] = T.rsqrt(rms[0] / (hc_mult * hidden_size) + rms_eps)
+        for j in T.Parallel(hc_mult3):
+            mixes[j] = 0
+            for i_split in T.serial(n_splits):
+                mixes[j] += gemm_out_mul[i_split, i, j]
+            mixes[j] *= rms[0]
+        mixes_shared = T.alloc_shared(hc_mult3, T.float32)
+        T.copy(mixes, mixes_shared)
+
+        if T.get_thread_binding() < 32:
+            cm = T.alloc_fragment((hc_mult, hc_mult), T.float32)
+            for j in T.Parallel(hc_mult):
+                post_mix[i, j] = (
+                    T.sigmoid(
+                        mixes_shared[j + hc_mult] * hc_scale[1] + hc_base[j + hc_mult]
+                    )
+                    * hc_post_mult_value
+                )
+            for j, k in T.Parallel(hc_mult, hc_mult):
+                cm[j, k] = (
+                    mixes_shared[j * hc_mult + k + hc_mult * 2] * hc_scale[2]
+                    + hc_base[j * hc_mult + k + hc_mult * 2]
+                )
+
+            row_sum = T.alloc_fragment(hc_mult, T.float32)
+            col_sum = T.alloc_fragment(hc_mult, T.float32)
+
+            row_max = T.alloc_fragment(hc_mult, T.float32)
+            T.reduce_max(cm, row_max, dim=1)
+            for j, k in T.Parallel(hc_mult, hc_mult):
+                cm[j, k] = T.exp(cm[j, k] - row_max[j])
+            T.reduce_sum(cm, row_sum, dim=1)
+            for j, k in T.Parallel(hc_mult, hc_mult):
+                cm[j, k] = cm[j, k] / row_sum[j] + hc_sinkhorn_eps
+
+            T.reduce_sum(cm, col_sum, dim=0)
+            for j, k in T.Parallel(hc_mult, hc_mult):
+                cm[j, k] = cm[j, k] / (col_sum[k] + hc_sinkhorn_eps)
+
+            for _ in T.serial(sinkhorn_repeat - 1):
+                T.reduce_sum(cm, row_sum, dim=1)
+                for j, k in T.Parallel(hc_mult, hc_mult):
+                    cm[j, k] = cm[j, k] / (row_sum[j] + hc_sinkhorn_eps)
+
+                T.reduce_sum(cm, col_sum, dim=0)
+                for j, k in T.Parallel(hc_mult, hc_mult):
+                    cm[j, k] = cm[j, k] / (col_sum[k] + hc_sinkhorn_eps)
+
+            for j, k in T.Parallel(hc_mult, hc_mult):
+                comb_mix[i, j * hc_mult + k] = cm[j, k]
+        else:
+            pre_mix_shared = T.alloc_shared(hc_mult, T.float32)
+            for j in T.Parallel(hc_mult):
+                pre_mix_shared[j] = (
+                    T.sigmoid(
+                        mixes_shared[j] * hc_scale[0] + hc_base[j],
+                    )
+                    + hc_pre_eps
+                )
+
+            # Pass 1: stash unnormalized weighted-sum output in shared memory
+            # as bf16 (matches the rounding that RMSNorm would see) while
+            # accumulating the per-position squared sum.
+            output_shared = T.alloc_shared(hidden_size, T.bfloat16)
+            sumsq_per_pos = T.alloc_fragment(hidden_block, T.float32)
+            T.clear(sumsq_per_pos)
+
+            for i0_h in T.Pipelined(hidden_size // hidden_block, num_stages=2):
+                xs = T.alloc_shared((hc_mult, hidden_block), T.bfloat16)
+                xl = T.alloc_fragment((hc_mult, hidden_block), T.float32)
+                T.copy(residual[i, 0, i0_h * hidden_block], xs)
+                T.copy(xs, xl)
+
+                ol = T.alloc_fragment(hidden_block, T.float32)
+                T.clear(ol)
+
+                for i_hc in T.serial(hc_mult):
+                    pre = pre_mix_shared[i_hc]
+                    for i1_h in T.Parallel(hidden_block):
+                        ol[i1_h] += pre * xl[i_hc, i1_h]
+
+                for i1_h in T.Parallel(hidden_block):
+                    sumsq_per_pos[i1_h] += ol[i1_h] * ol[i1_h]
+                    output_shared[i0_h * hidden_block + i1_h] = T.bfloat16(ol[i1_h])
+
+            sumsq = T.alloc_fragment(1, T.float32)
+            T.reduce_sum(sumsq_per_pos, sumsq, dim=0)
+            rsqrt_norm = T.alloc_fragment(1, T.float32)
+            rsqrt_norm[0] = T.rsqrt(sumsq[0] / hidden_size + norm_eps)
+
+            # Pass 2: scale by rsqrt * norm_weight and write the result to HBM.
+            for i0_h in T.Pipelined(hidden_size // hidden_block, num_stages=2):
+                w_shared = T.alloc_shared(hidden_block, T.bfloat16)
+                w_local = T.alloc_fragment(hidden_block, T.float32)
+                T.copy(norm_weight[i0_h * hidden_block], w_shared)
+                T.copy(w_shared, w_local)
+
+                ol = T.alloc_fragment(hidden_block, T.float32)
+                for i1_h in T.Parallel(hidden_block):
+                    ol[i1_h] = (
+                        output_shared[i0_h * hidden_block + i1_h]
+                        * rsqrt_norm[0]
+                        * w_local[i1_h]
+                    )
+
+                T.copy(ol, layer_input[i, i0_h * hidden_block])
+
+        if ENABLE_PDL:
+            T.pdl_trigger()
 
 
 def mhc_pre_tilelang(
@@ -245,6 +466,28 @@ def mhc_pre_tilelang(
             n_splits,
             hc_mult,
         )
+    elif _BIGFUSE_TUNED and num_tokens > 64:
+        _deneb_big_fuse()(
+            gemm_out_mul,
+            gemm_out_sqrsum,
+            hc_scale,
+            hc_base,
+            residual_flat,
+            post_mix,
+            comb_mix,
+            layer_input,
+            norm_weight,
+            hidden_size,
+            rms_eps,
+            hc_pre_eps,
+            hc_sinkhorn_eps,
+            hc_post_mult_value,
+            sinkhorn_repeat,
+            norm_eps,
+            n_splits,
+            hc_mult,
+            h_blk=4096,
+        )
     else:
         mhc_pre_big_fuse_with_norm_tilelang(
             gemm_out_mul,
@@ -328,14 +571,18 @@ def mhc_post_tilelang(
     )
 
     out = torch.empty_like(residual)
+    hc_mult = residual.shape[-2]
+    hidden_size = residual.shape[-1]
+    num_tokens = residual.numel() // (hc_mult * hidden_size)
     _mhc_post_kernel(
         comb_res_mix,
         residual,
         post_layer_mix.squeeze(-1),
         x,
         out,
-        residual.shape[-2],
-        residual.shape[-1],
+        hc_mult,
+        hidden_size,
+        **_mhc_post_kwargs(num_tokens),
     )
     return out
 
@@ -426,6 +673,7 @@ def mhc_fused_post_pre_tilelang(
 
     use_deep_gemm = is_deep_gemm_supported()
     use_small_fma = num_tokens <= 16
+    fused_extra = {}
     if use_small_fma:
         if _SMALLM_TUNED and num_tokens < 8 and hidden_size <= 4096:
             # Swept optimum for the C=1 decode shapes (M=6 verify / M=5
@@ -433,6 +681,13 @@ def mhc_fused_post_pre_tilelang(
             # restores the stock heuristic below.
             tile_n = 6
             n_splits = 4
+        elif _TUNED_R2 and num_tokens <= 10 and hidden_size <= 4096:
+            # Round-2: M=10 (C=2 draft) winner (128, 4, 4) +14.3%; the M=12
+            # verify shape keeps the stock config (measured already-optimal).
+            # 8..9 unmeasured but adjacent to 10; bit-exact class either way.
+            tile_n = 4
+            n_splits = 4
+            fused_extra = {"n_thr": 128}
         else:
             # TODO(gnovack): investigate autotuning these heuristics
             tile_n = 2 if num_tokens < 8 else 3
@@ -496,6 +751,7 @@ def mhc_fused_post_pre_tilelang(
             hc_mult3,
             tile_n=tile_n,
             n_splits=n_splits,
+            **fused_extra,
         )
     else:
         mhc_post_tilelang(
@@ -506,6 +762,7 @@ def mhc_fused_post_pre_tilelang(
             residual_cur,
             residual.shape[-2],
             residual.shape[-1],
+            **_mhc_post_kwargs(num_tokens),
         )
 
         residual_cur_2d = residual_cur.view(num_tokens, hc_mult * hidden_size)
@@ -547,6 +804,28 @@ def mhc_fused_post_pre_tilelang(
             sinkhorn_repeat,
             n_splits,
             hc_mult,
+        )
+    elif _BIGFUSE_TUNED and num_tokens > 64:
+        _deneb_big_fuse()(
+            gemm_out_mul,
+            gemm_out_sqrsum,
+            hc_scale,
+            hc_base,
+            residual_cur,
+            post_mix_cur,
+            comb_mix_cur,
+            layer_input_cur,
+            norm_weight,
+            hidden_size,
+            rms_eps,
+            hc_pre_eps,
+            hc_sinkhorn_eps,
+            hc_post_mult_value,
+            sinkhorn_repeat,
+            norm_eps,
+            n_splits,
+            hc_mult,
+            h_blk=4096,
         )
     else:
         mhc_pre_big_fuse_with_norm_tilelang(
