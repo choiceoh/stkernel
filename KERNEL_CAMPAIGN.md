@@ -1,6 +1,9 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
-Status: **P2a (b12x MoE) DONE — target closed, no adoptable win. P2b (mhc tilelang / tf32 prenorm) remaining.** Clock lever vetoed (cooling).
+Status: **P2a (b12x MoE) DONE — closed, no win. Mystery-wmma track DONE —
+all 3 populations resolved; router-gate fused kernel ADOPTED (decode C=1
++3.5%, the largest decode adoption to date). P2b (mhc tilelang / tf32
+prenorm) remaining.** Clock lever vetoed (cooling).
 Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
@@ -115,8 +118,8 @@ topk-confirm trace):
 | population | /step | per-call | ms/step | identity |
 |---|---|---|---|---|
 | grid=[8,253,1] | 1.0 | 1,144 µs | 1.16 | **TARGET lm_head verification logits** — 253=⌈129,280/512⌉; bf16 shard 265MB/rank streamed EVERY step (265MB/273GB/s=970µs ✓). The draft lm_head got fp8 (maybe_build_fp8_lm_head) but the TARGET's never did |
-| grid=[8,2,8] | 46.5 | 25 µs | 1.16 | per-layer ×~46, 6.8MB/call — NOT in the bf16 weight inventory → activation/cache-side read; unresolved |
-| grid=[4,1,1] | 6.1 | 77 µs | 0.47 | per-draft-iteration tail |
+| grid=[8,2,8] | 46.5 | 25 µs | 1.16 | ~~unresolved~~ **RESOLVED 08-10: MoE router gate** (43 layers + 3 mtp, bf16 [256,4096] Tier-4 F.linear; +splitKreduce+fp32-cast = 1.71 ms/step chain) → fused triton gate ADOPTED, **C=1 +3.5%** (ledger) |
+| grid=[4,1,1] | 6.1 | 77 µs | 0.47 | **RESOLVED 08-10: indexer.weights_proj** on the 6 F-layers/step (21 C4A / freq4), aux-stream contention-stretched; real bytes 3MB/step → no action |
 
 **New candidate: target-lm_head fp8 → decode +2.7%** (halve the 1.16ms).
 CAUTION unlike every adopted byte-diet so far: verification logits decide

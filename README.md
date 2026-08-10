@@ -341,6 +341,10 @@ MoE 24.2 · comms 23.4(대역폭 바닥) · GEMM 18.6 · attn 12.5 · mHC ~16%.
 ## 확정 스위치 (재시험 불필요)
 
 - `VLLM_DSV4_INDEXER_SP=1` — 유일하게 켬 (+5.4%, bit-exact)
+- `VLLM_DSV4_GATE_FUSED=1` (런처 `GATEFUSE`, 기본 ON) — 융합 small-M 라우터
+  게이트: GB10은 GateLinear 가속 티어 장치판정 전탈락 → Tier-4 3커널 체인
+  (1.71ms/step)이었던 것을 트리톤 단일 커널(fp32 직출력)로. 디코드 C=1
+  **+3.5%**(브래킷), 프리필 무접촉, 롤백 `GATEFUSE=0` (MEASUREMENTS.md 08-10)
 - `VLLM_USE_BREAKABLE_CUDAGRAPH=0` **고정** — 1이면 장문 디코드 ~5배 저하 + 엔진 사망. 해당 forward 분기는 오버레이에서 제거됨
 - `B12X_INDEXER_STREAM`/`B12X_KV_STREAM` off — 켜면 디코드 반토막
 - b12x MoE는 **TP 전용** — EP/DP 불가 → SP(#46789)·EP 계열 전부 구조적 불가. 런처의 `SP`/`EPFLAG` 노브도 제거됨
