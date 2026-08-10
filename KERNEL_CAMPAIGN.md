@@ -1,9 +1,12 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
-Status: **P2a (b12x MoE) DONE — closed, no win. Mystery-wmma track DONE —
-all 3 populations resolved; router-gate fused kernel ADOPTED (decode C=1
-+3.5%, the largest decode adoption to date). P2b (mhc tilelang / tf32
-prenorm) remaining.** Clock lever vetoed (cooling).
+Status: **CAMPAIGN CLOSED (2026-08-11). P2a (b12x MoE) DONE — no win.
+Mystery-wmma DONE — router-gate fused kernel ADOPTED (+3.5%). P2b DONE —
+mhc small-M tile (256,6,4) ADOPTED (decode −0.22ms/step, bracket +0.57%);
+tf32 prenorm n_splits REJECTED (stock n_splits=1 optimal, splits strictly
+lose).** Clock lever vetoed (cooling). Remaining kernel work requires
+source surgery on image-owned kernels (quant armada) — no overlay-ownable
+targets left.
 Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
