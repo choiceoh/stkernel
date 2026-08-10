@@ -473,6 +473,16 @@ preimage가 실이미지와 불일치(오기록) — fail-closed 프리플라이
 
 1. `fuse_attn_quant=false` — 진짜 FULL_AND_PIECEWISE 회복 vs attn-quant 융합 상실
 2. `VLLM_USE_B12X_SPARSE_INDEXER=1` — 미실측 노브 (SM120 전용 요건 충족; 켜면 우리 indexer.py의 b12x 스케줄 분기가 라이브)
+3. `REFINE=1` (2-pass 드래프트 자기정제, 08-11 구현·미실측) — 수용률 축의
+   "잔여는 모델측뿐" 판정에 대한 **오버레이 범위 반례 시도**: pass-1 토큰을
+   노이즈 슬롯에 되먹여 backbone 재실행, 동일 Gumbel 키(커플링 유지 = 품질
+   구조 무손실). 이론상한 net +3~5%(gross +9~11% − 드래프터 1패스 비용) =
+   하드룰 경계선. 지표는 bench-dec acc 단독; OOD(노이즈 학습) 리스크로
+   무이동/악화 가능 — 그 경우 즉시 기각하고 재제안 금지 목록에 올릴 것
+4. `MARKOV_SIDELOAD=<refit.pt>` (Markov W1/W2 도메인 재적합, 08-11 구현·미실측)
+   — 기대 낮음(SCALE 평탄성 근거), 켜기 전 `tools/markov_refit.py`로 한국어
+   프로즈 코퍼스 재적합 필요. ngram/copy 하이브리드는 코드 착수 전
+   `bench/ngram-ceiling.py` 상한 실측이 선행 조건 (하드룰)
 
 ## 인시던트 로그
 

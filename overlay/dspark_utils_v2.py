@@ -1,14 +1,113 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import hashlib
 import os
 
 import torch.nn as nn
 
 from vllm.config import VllmConfig, replace
 from vllm.distributed.parallel_state import get_pp_group
+from vllm.logger import init_logger
 from vllm.model_executor.model_loader import get_model
 from vllm.v1.worker.gpu.spec_decode.eagle.utils import _should_share
+
+logger = init_logger(__name__)
+
+
+def _validate_markov_sideload(
+    payload_keys,
+    w1_shape,
+    w2_shape,
+    vocab_size: int,
+    markov_rank: int,
+    replicated_w1: bool,
+    replicated_w2: bool,
+) -> str | None:
+    """Pure sideload contract check — returns an error string or None.
+
+    Both Markov tensors must be full [vocab, rank] replicas: the sideload
+    overwrites weights in place, so sharded layouts (VocabParallelEmbedding /
+    ParallelLMHead) would silently mis-slice.
+    """
+    missing = {"markov_w1", "markov_w2"} - set(payload_keys)
+    if missing:
+        return f"sideload payload missing keys: {sorted(missing)}"
+    expected = (vocab_size, markov_rank)
+    if tuple(w1_shape) != expected:
+        return f"markov_w1 shape {tuple(w1_shape)} != expected {expected}"
+    if tuple(w2_shape) != expected:
+        return f"markov_w2 shape {tuple(w2_shape)} != expected {expected}"
+    if not replicated_w1:
+        return (
+            "sideload requires a replicated Markov W1 "
+            "(VLLM_DSPARK_REPLICATE_MARKOV_W1=1)"
+        )
+    if not replicated_w2:
+        return (
+            "sideload requires a replicated Markov W2 "
+            "(VLLM_DSPARK_REPLICATE_MARKOV_W2=1)"
+        )
+    return None
+
+
+def _sideload_markov_head(draft_model: nn.Module, path: str) -> None:
+    """Replace the checkpoint Markov W1/W2 with tensors from ``path``.
+
+    Runs after checkpoint load and before warmup, i.e. before the lazy FP8
+    quantization of W2 and before CUDA graph capture, so every consumer sees
+    the sideloaded weights. Produced by tools/markov_refit.py; an explicitly
+    requested sideload that cannot be applied fails closed.
+    """
+    import torch
+
+    markov_head = getattr(getattr(draft_model, "model", None), "markov_head", None)
+    if markov_head is None:
+        raise RuntimeError(
+            "VLLM_DSPARK_MARKOV_SIDELOAD set but the draft model has no "
+            "markov_head"
+        )
+    if hasattr(markov_head, "_w2_fp8_weight"):
+        raise RuntimeError(
+            "Markov sideload must run before the lazy FP8 W2 quantization"
+        )
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"Markov sideload {path} must be a dict payload, got {type(payload)}"
+        )
+    w1 = payload.get("markov_w1")
+    w2 = payload.get("markov_w2")
+    dst1 = markov_head.markov_w1.weight
+    dst2 = markov_head.markov_w2.weight
+    config = draft_model.config
+    err = _validate_markov_sideload(
+        payload.keys(),
+        tuple(w1.shape) if w1 is not None else (),
+        tuple(w2.shape) if w2 is not None else (),
+        int(config.vocab_size),
+        int(config.dspark_markov_rank),
+        bool(getattr(markov_head, "_replicate_w1", False)),
+        bool(getattr(markov_head, "_replicate_w2", False)),
+    )
+    if err is None and tuple(dst1.shape) != tuple(w1.shape):
+        err = f"model W1 shape {tuple(dst1.shape)} != payload {tuple(w1.shape)}"
+    if err is None and tuple(dst2.shape) != tuple(w2.shape):
+        err = f"model W2 shape {tuple(dst2.shape)} != payload {tuple(w2.shape)}"
+    if err is None and not (
+        bool(torch.isfinite(w1).all()) and bool(torch.isfinite(w2).all())
+    ):
+        err = "sideload tensors contain non-finite values"
+    if err is not None:
+        raise RuntimeError(f"invalid VLLM_DSPARK_MARKOV_SIDELOAD ({path}): {err}")
+    with torch.no_grad():
+        dst1.copy_(w1.to(device=dst1.device, dtype=dst1.dtype))
+        dst2.copy_(w2.to(device=dst2.device, dtype=dst2.dtype))
+    with open(path, "rb") as handle:
+        digest = hashlib.sha256(handle.read()).hexdigest()
+    logger.info_once(
+        "DSpark(v2) Markov head sideloaded from %s (sha256=%s).", path, digest
+    )
 
 
 def load_dspark_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Module:
@@ -58,6 +157,13 @@ def load_dspark_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
 
     if get_pp_group().world_size != 1:
         raise NotImplementedError("DSpark does not support pipeline parallelism.")
+
+    # Opt-in Markov head sideload (domain-refit W1/W2 from tools/markov_refit.py).
+    # Must precede warmup: the FP8 W2 copy quantizes lazily on first use and
+    # CUDA graphs capture whatever weights exist then.
+    sideload_path = os.getenv("VLLM_DSPARK_MARKOV_SIDELOAD", "").strip()
+    if sideload_path:
+        _sideload_markov_head(draft_model, sideload_path)
 
     target_language_model = (
         target_model.get_language_model()
