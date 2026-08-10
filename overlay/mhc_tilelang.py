@@ -141,18 +141,29 @@ _BIGFUSE_TUNED = os.environ.get(
 
 import math  # noqa: E402
 
-from vllm.model_executor.kernels.mhc import (  # noqa: E402
-    tilelang_kernels as _tk,
-)
+# Filled by _deneb_big_fuse() on first use. Importing tilelang_kernels at
+# module level would break GPU-less imports (its module body dereferences
+# tilelang, which is None without a CUDA driver) — the stock file lazy-imports
+# it inside functions for the same reason, so we JIT-decorate lazily too.
+T = None
+ENABLE_PDL = False
+_DENEB_BIG_FUSE_JIT = None
 
-tilelang = _tk.tilelang
-T = _tk.T
-ENABLE_PDL = _tk.ENABLE_PDL
+
+def _deneb_big_fuse():
+    """Return the JIT-wrapped tuned big_fuse kernel (compiled on first call)."""
+    global T, ENABLE_PDL, _DENEB_BIG_FUSE_JIT
+    if _DENEB_BIG_FUSE_JIT is None:
+        from vllm.model_executor.kernels.mhc import tilelang_kernels as _tk
+
+        T = _tk.T
+        ENABLE_PDL = _tk.ENABLE_PDL
+        _DENEB_BIG_FUSE_JIT = _tk.tilelang.jit(pass_configs=_tk.pass_configs)(
+            _deneb_big_fuse_with_norm_tilelang
+        )
+    return _DENEB_BIG_FUSE_JIT
 
 
-@tilelang.jit(
-    pass_configs=_tk.pass_configs,
-)
 def _deneb_big_fuse_with_norm_tilelang(
     gemm_out_mul,
     gemm_out_sqrsum,
@@ -314,11 +325,6 @@ def _deneb_big_fuse_with_norm_tilelang(
             T.pdl_trigger()
 
 
-@tilelang.jit(
-    pass_configs=pass_configs,
-)
-
-
 def mhc_pre_tilelang(
     residual: torch.Tensor,
     fn: torch.Tensor,
@@ -461,7 +467,7 @@ def mhc_pre_tilelang(
             hc_mult,
         )
     elif _BIGFUSE_TUNED and num_tokens > 64:
-        _deneb_big_fuse_with_norm_tilelang(
+        _deneb_big_fuse()(
             gemm_out_mul,
             gemm_out_sqrsum,
             hc_scale,
@@ -800,7 +806,7 @@ def mhc_fused_post_pre_tilelang(
             hc_mult,
         )
     elif _BIGFUSE_TUNED and num_tokens > 64:
-        _deneb_big_fuse_with_norm_tilelang(
+        _deneb_big_fuse()(
             gemm_out_mul,
             gemm_out_sqrsum,
             hc_scale,
