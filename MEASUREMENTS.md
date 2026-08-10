@@ -645,18 +645,16 @@ manifest 17번째 행, 런처 `MHCTUNE`(기본 1). ※이 배포에 인코딩 �
    자동 적용) — 시스템 프롬프트+tools 요청의 프롬프트가 레퍼런스 순서
    (BOS+system+"## Tools")로 바뀜. 에이전트 실워크로드(garble/tool-call 정확도)
    전후 비교로 회귀 없음을 확인할 것. 롤백은 tok_* 2행 마운트 제거.
-5. **`HEADFREE=1`** (`VLLM_DSV4_FREE_BF16_LM_HEAD`, 2026-08-11 구현, 기본 0) —
-   fp8 사본이 로드 시점에 전부 생긴 뒤 bf16 lm_head 샤드(~265MB/rank) 저장소
-   해제. **성능 축이 아니라 KV 용량 축**: 소비자 감사 결과 잔여 소비자는
-   폴백 2곳(env off일 때만)+draft alias뿐이고, 소비자가 남아 있으면 부팅
-   거부(fail-closed, tests/test_logic.py 가드 매트릭스). 측정: 동일 GPU_MEM
-   기동 로그 "GPU KV cache size" 증가(+~265MB/rank 기대) + 9/9 + bench-dec/
-   프리필 무회귀. ★KV 수치는 GPU_MEM 명기 없이 비교 금지 룰 적용.
-6. **`COMPFREE=1`** (`VLLM_DSV4_FREE_BF16_COMPRESSOR`, 동일 구현) — attention
-   컴프레서 bf16 원본(~0.7GB/rank) lazy-quant 직후 해제 (메모리 프로파일
-   패스 중이라 KV 산정에 반영). 런타임 소비자는 kv_score GEMM 2곳뿐
-   (nvidia_model 이름 매핑은 로더 시점 전용) 확인. COMPRESSOR_FP8=1 필수
-   (아니면 import 시점 거부). 측정 동일. 5·6은 한 부팅에 하나씩.
+~~5./6. `HEADFREE=1` / `COMPFREE=1`~~ — **08-11 심야 실측 (안전성 확정, 정량은
+   브래킷 잔여)**: 단독+결합 3부트 전부 ①활성 실증 (기동 로그 "bf16 lm_head
+   shard released (**252 MiB/rank** returned before KV-pool sizing)" +
+   "compressor bf16 originals released"; 러너가 컨테이너 env 의도검증) ②
+   fail-closed 가드 통과 ③디코드 무회귀 (C=1 중앙값 HF2 63.2/CF2 64.9/BOTH
+   65.5 = 기준대역 64.2–64.3 동급) ④BOTH 9/9. **KV 정량은 야간 부트 드리프트
+   (~−100K tokens/부트, 아래 신규 룰)가 기대 신호(+~73K)를 상회해 단부트로
+   분리 불가** — 산술 확정치는 로그 실측 기반 **+~0.6GiB/rank ≈ +72K tokens
+   (+2.7~2.9%)**. 잔여: 전용 창 즉시-연속 브래킷(base→knob→base)으로 정량
+   도장. 켜기 자체는 무해 확인 — 채택은 운영자 결정.
 ~~7. `REFINE=1` (2-pass 드래프트 자기정제)~~ — **08-11 당일 브래킷 기각**
    (수용률 ×0.55·C=1 −33%, 기각 표 참조). 사전 약정대로 재제안 금지 등재.
 8. `MARKOV_SIDELOAD=<refit.pt>` (Markov W1/W2 도메인 재적합, 08-11 구현·미실측)
@@ -670,6 +668,13 @@ manifest 17번째 행, 런처 `MHCTUNE`(기본 1). ※이 배포에 인코딩 �
 **드래프터 재훈련 또는 신규 이미지**(confidence head 배선 — arXiv:2607.05147의
 동시성 스케줄러 — 포함)뿐. 감시는 `dsv4-image-watch.timer`(srv2, 09:19 KST
 일일)가 자동화, 상태 `~/.local/state/stkernel/image-tags.tsv`.
+
+**잔여 큐 (08-11 심야 이후)**:
+9. HEADFREE/COMPFREE **KV 정량 브래킷** — 전용 창에서 base→BOTH→base 즉시-연속
+   3부트 (드리프트 룰 준수). 기대 +72K tokens 도장용.
+10. `MAX_NUM_BATCHED=2048` — **연기** (첫 부팅 신규 셰이프 재컴파일 ~수 시간
+   각오, 8192 전례 3.5h). KV +60%대 주장 vs 프리필 −7.7% — 430K 장문 동시성
+   수요가 생길 때 전용 창에서.
 
 ## ★런북 정비 창 실행 (2026-08-11 심야, 운영자 위임)
 
@@ -688,6 +693,13 @@ RUNBOOK_MAINTENANCE.md 전항목 적용 + 플릿 재부팅. 사후 감사
 **KV 신기준**: 재부팅 후 기준 부트 3회 2,918,776–2,948,142 tokens (구 2,656,602
 대비 **+10~11%**) — 재부팅+컴팩션 영구화의 실효 용량 회수. HEADFREE/COMPFREE
 가 노리던 급의 이득이 재부팅 위생만으로 나온 셈 (두 노브 실측은 별도 진행).
+
+**★KV 드리프트 신규 룰 (08-11 야간 사다리 실측)**: 클린 재부팅 대역(2.92–2.95M)은
+호스트 churn(스윕 컨테이너·연쇄 부팅)으로 **부트당 ~−100K tokens씩 침식**돼
+2시간 만에 2.54M까지 내려갔다 (drop_caches로도 미복구 — proactiveness=0은
+억제일 뿐 치유 아님이 정량 확인됨). 따라서 **KV 비교는 GPU_MEM 명기 + 즉시-연속
+브래킷 필수** (기존 룰의 강화). 용량이 중요한 재기동은 플릿 재부팅을 선행할 것.
+현행 프로덕션(복원 부트)은 2,536,012 tokens.
 
 **신규 함정 2건 (실사고)**:
 - **슈퍼바이저는 재부팅 시 자동 재기동**(enabled user unit + default.target) —
