@@ -102,7 +102,12 @@ docker exec hy4 grep -E "rowwise FP8|top-k Markov" /tmp/hy4.log
 강제 우회하지 말고 `docker run --rm --entrypoint sha256sum "$IMAGE" ...`와
 `docker cp`로 실제 소스를 추출해 manifest pin과 diff를 다시 리뷰한다.
 
-## DSpark 수용률 실험 (2026-08-11): 2-pass 정제 + Markov 사이드로드 — **미실측**
+## DSpark 수용률 실험 (2026-08-11): 2-pass 정제 + Markov 사이드로드 — **당일 실측 종결 (기각)**
+
+**결과 (08-11 브래킷, MEASUREMENTS 기각 표)**: `REFINE=1`은 수용률 ×0.55
+붕괴·C=1 −33%로 **기각** (마스크 학습 backbone의 OOD — 재제안 금지), ngram
+하이브리드는 `ngram-ceiling.py` 상한 +3.7%로 **부팅 없이 기각**. 남은 수용률
+경로는 드래프터 재훈련/신규 이미지뿐. 아래는 구현·절차 기록이다.
 
 원장 08-10 판정으로 수용률 **노브 축**은 소진됐다(temp·SPEC_TOKENS·method·
 scale — 재제안 금지). 남은 축은 **제안 분포 q 자체를 바꾸는 구조 레버**이며,
@@ -135,9 +140,11 @@ docker exec hy4 grep -E "refinement enabled|sideloaded" /tmp/hy4.log
 금지. 토크나이저는 노드에서 (`--mode chars`는 배관 스모크 전용).
 
 confidence head(체크포인트 `mtp.*.confidence_head.*`, 현 로더는 드롭)는 논문의
-동시성 스케줄러용이라 C=1 무익 판정 유지 — 신규 이미지 배선 대기
-(`launchers/watch-image-tags.sh` + `dsv4-image-watch.timer`가 Docker Hub
-태그·digest 변경을 srv2에서 일일 감시, 상태 `~/.local/state/stkernel/`).
+동시성 스케줄러용이라 C=1 무익 판정 유지 — 신규 이미지 배선 대기.
+`launchers/watch-image-tags.sh` + `dsv4-image-watch.timer`가 Docker Hub
+태그·digest 변경(신규 태그 + 기존 태그 re-push 모두)을 srv2에서 일일 감시
+— **08-11 설치·가동** (09:19 KST, 상태 `~/.local/state/stkernel/`, 변경 시
+`~/hybrid-stack/NEW-IMAGE-TAGS.txt`에 기록).
 
 ## TP4/GB10 전용 슬리밍 (2026-08-09)
 
