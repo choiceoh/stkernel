@@ -290,6 +290,9 @@ def test_bench_dec_metrics() -> None:
         'vllm:spec_decode_num_accepted_tokens_total{engine="1"} 30\n'
         'vllm:spec_decode_num_draft_tokens_total{engine="0"} 200\n'
         'vllm:spec_decode_num_draft_tokens_total{engine="1"} 50\n'
+        'vllm:spec_decode_num_accepted_tokens_per_pos_total{position="0"} 100\n'
+        'vllm:spec_decode_num_accepted_tokens_per_pos_total{position="1"} 50\n'
+        "vllm:spec_decode_num_drafts_total 50\n"
         "vllm:num_requests_running 5\n"
     )
     c = bd._parse_spec_metrics(text)
@@ -300,7 +303,10 @@ def test_bench_dec_metrics() -> None:
     check("vllm:num_requests_running" not in c, "non-spec metric excluded")
     before = {k: 0.0 for k in c}
     s = bd.acceptance_suffix(before, c)
-    check("60.0%" in s, f"acceptance ratio wrong: {s!r}")
+    # Legacy convention double-counts per_pos + num_drafts: (150+150)/(250+50).
+    check("100.0%" in s, f"legacy acceptance ratio wrong: {s!r}")
+    # Exact-name raw ratio excludes per_pos/num_drafts: 150/250.
+    check("raw" in s and "60.0%" in s, f"raw acceptance ratio wrong: {s!r}")
     check(bd.acceptance_suffix(c, c) == "", "zero delta must yield no suffix")
     check(bd.acceptance_suffix({}, {}) == "", "empty metrics must yield no suffix")
     print(f"  bench-dec acceptance parser ... OK")

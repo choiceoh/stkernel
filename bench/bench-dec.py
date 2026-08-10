@@ -92,13 +92,31 @@ def acceptance_suffix(before: dict[str, float], after: dict[str, float]) -> str:
     draft sampling at temp 0.95), so printing it beside each sample shows
     whether a rate outlier is acceptance luck or a real effect — and lets
     prefill-batch-size influence on acceptance be tracked (forum #378890).
+
+    Two figures are printed:
+      * ``acc`` — the LEGACY convention every ledger number uses: substring
+        sums, which double-count accepted tokens via the per_pos counters and
+        over-count drafts via num_drafts_total (inflated ~1.6-1.7x, 08-11
+        finding). Kept for continuity — all relative/bracket comparisons and
+        the @accN regression normalization are scale-invariant.
+      * ``raw`` — exact-name ratio num_accepted_tokens_total /
+        num_draft_tokens_total: the true per-draft-token acceptance.
     """
     delta = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in after}
     acc = sum(v for k, v in delta.items() if "accept" in k)
     drafts = sum(v for k, v in delta.items() if "draft" in k and "accept" not in k)
     if drafts <= 0:
         return ""
-    return f" | acc {acc / drafts:6.1%}"
+    out = f" | acc {acc / drafts:6.1%}"
+    acc_exact = sum(
+        v for k, v in delta.items() if k.endswith("num_accepted_tokens_total")
+    )
+    drafts_exact = sum(
+        v for k, v in delta.items() if k.endswith("num_draft_tokens_total")
+    )
+    if drafts_exact > 0:
+        out += f" (raw {acc_exact / drafts_exact:5.1%})"
+    return out
 
 
 if __name__ == "__main__":
