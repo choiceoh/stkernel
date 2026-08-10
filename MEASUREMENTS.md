@@ -137,6 +137,7 @@ pos1 **78.5%** · pos2 56.4% · pos3 39.6% · pos4 28.6% · pos5 21.5% (기하 �
 | **★mhc small-M 타일 튜닝** (`VLLM_DSV4_MHC_SMALLM_TUNED=1`, 런처 MHCTUNE 기본 1, overlay/mhc_tilelang.py) | P2b 스윕 승자 (256,6,4) vs 스톡 (2,8): 마이크로 M=6 +16.3%/M=5 +19.5% · **인그래프 물리확인 per-call 15.6→13.1µs(−16%), −0.22ms/step** · residual bit-exact·yp rel 1.5e-7 · 9/9 · 브래킷 @acc50 64.18→**64.46**→64.01 = +0.57%(물리 예측 정확 일치). M≥8 스몰fma 영역 무접촉. 롤백 MHCTUNE=0 (env-only) | 08-11 |
 | **★mhc 라운치 구성 R2** (`VLLM_DSV4_MHC_TUNED_R2=1`, 런처 MHCTUNE2 기본 1) | 전 승자 **bit-exact**(rel=0): mhc_post M분기 — 프리필 (512,4096) 마이크로 +3.6%·**인그래프 per-call 1,270→1,187µs(−6.5%)**, C=4 디코드 (256,2048) +12.7~15.3%; mhc_fused M≤10 (128,4,4) +14.3%(C=2 draft, M=12 verify는 스톡 최적 유지). e2e 브래킷은 부트롤 ±1%에 묻힘(프리필 B1 2,860→B2 2,882→B3 2,887) — **채택 근거 = bit-exact + 물리확인 + 무회귀**(C=1 64.3/C=2 104.2/C=4 143.0 정상 대역) | 08-11 |
 | **★mhc big_fuse R3** (`VLLM_DSV4_MHC_BIGFUSE_TUNED=1`, 런처 MHCTUNE3 기본 1, 튜닝 커널 사본 in overlay/mhc_tilelang.py) | h_blk 1024→4096 (M>64만): 마이크로 +5.6%가 **인그래프 실현 +0.1%**(−11ms/32K캡처)로 축소 — 정직 기록. layer_input bf16-1ulp 클래스라 품질 게이트 적용: 9/9 + 디코드 무회귀. tilelang 제약: n_thr {96,160}만 컴파일 가능 | 08-11 |
+| **★IDXFREQ 기본 4→6** (serve hf-overrides `index_topk_freq`, IDXFREQ=4로 복원) | **128K 디코드 +7~11%** — 2부트 동일시드 3×3 재현 (기준 65.0/68.8/64.1 → 부트1 73.0/71.7/68.1 → 부트2 69.7/73.6/76.8, 전 표본 우위) · 2K/32K 중립 · TTFT 불변(48.4–49.0s) · 리트리벌 9/9. freq0→4(+13~16%)의 연장 수확. ※256K 니들은 freq=4 시절 3/3만 — 6에서 미재검, freq=8 셀 미실측(후보) | 08-11 |
 
 ### 기각 — 측정으로 (재론 금지, 수치가 근거)
 

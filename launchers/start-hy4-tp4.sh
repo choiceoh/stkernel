@@ -144,6 +144,10 @@ fi
 # auto-enable, and fuse_attn_quant forces splitting_ops=[] so the effective
 # cudagraph mode is FULL_DECODE_ONLY (no piecewise prefill graphs). A/B
 # candidates in MEASUREMENTS.md.
+# IDXFREQ default 4->6 adopted 2026-08-11: 128K decode +7~11% (two boots,
+# matched-seed 3x3 vs freq=4 baseline: 66.0 -> 70.9 / 73.4 avg), 2K/32K
+# neutral, TTFT unchanged, retrieval 9/9 (2K/32K/128K). 256K needles NOT
+# re-verified at 6 (freq=4-era 3/3 only). IDXFREQ=4 restores the old default.
 # The /start_profile,/stop_profile routes are attached ONLY when the serve
 # CLI passes --profiler-config with a non-null profiler (see
 # entrypoints/serve/profile/api_router.py attach_router). Env vars alone
@@ -310,7 +314,7 @@ echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_D
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
-  --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\", \"torch_profiler_with_stack\": false}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-4}}" \
+  --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\", \"torch_profiler_with_stack\": false}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-6}}" \
   --kv-cache-dtype fp8 --block-size 256 --load-format auto \
   --tensor-parallel-size "${TP_SIZE}" \
   --gpu-memory-utilization "${GPU_MEM}" \
