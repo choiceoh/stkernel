@@ -8,7 +8,6 @@ attention class is reduced to an import-safe stub, and with it the plain-row
 bf16 / per-tensor-fp8 KV handling; GB10 always runs the fp8_ds_mla layout.
 """
 
-import os
 from typing import TYPE_CHECKING, ClassVar, cast
 
 import torch
@@ -86,11 +85,6 @@ def _deneb_span(name: str, ev0, ev1) -> None:
 
 _FLASHINFER_DSV4_WORKSPACE_BUFFER_SIZE = 128 * 1024 * 1024
 _flashinfer_dsv4_workspace_by_device: dict[torch.device, torch.Tensor] = {}
-
-# Incident kill-switch (2026-08-09 warmup failure) — C4A globalization reuse
-# lands default-OFF until cleared in prod; enable via launcher knob C4AREUSE.
-# Read locally (no cross-import from attention.py: per-file rollback safety).
-_C4A_GLOBALIZE_REUSE = os.environ.get("DENEB_C4A_GLOBALIZE_REUSE") == "1"
 
 
 def _get_flashinfer_dsv4_workspace(device: torch.device) -> torch.Tensor:
@@ -405,39 +399,16 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
                     raise RuntimeError(
                         "C4A decode requires top-k indices from the indexer."
                     )
-                # IndexCache (#51209) extension: a skip-topk (S) layer reads
-                # the exact buffer contents the previous F layer's indexer
-                # left, so its globalization (local top-k -> paged slot ids)
-                # is identical as well — skip relaunching the kernels. F
-                # layers (skip_topk=False) always recompute and refresh the
-                # entry, and the first C4A layer is always F, so S layers can
-                # never observe a stale step. Under full-cudagraph capture
-                # the reuse simply bakes the F layer's output tensor into the
-                # S layers' kernel arguments.
-                cache = swa_metadata.flashinfer_sparse_index_cache
-                cached = (
-                    cache.get("c4a_decode_global")
-                    if (_C4A_GLOBALIZE_REUSE and self.skip_topk)
-                    else None
-                )
-                if cached is None:
-                    block_size = attn_metadata.block_size // self.compress_ratio
-                    global_indices, extra_sparse_lengths = (
-                        compute_global_topk_indices_and_lens(
-                            self.topk_indices_buffer[:num_decode_tokens],
-                            swa_metadata.token_to_req_indices,
-                            attn_metadata.block_table[:num_decodes],
-                            block_size,
-                            is_valid,
-                        )
+                block_size = attn_metadata.block_size // self.compress_ratio
+                global_indices, extra_sparse_lengths = (
+                    compute_global_topk_indices_and_lens(
+                        self.topk_indices_buffer[:num_decode_tokens],
+                        swa_metadata.token_to_req_indices,
+                        attn_metadata.block_table[:num_decodes],
+                        block_size,
+                        is_valid,
                     )
-                    if _C4A_GLOBALIZE_REUSE:
-                        cache["c4a_decode_global"] = (
-                            global_indices,
-                            extra_sparse_lengths,
-                        )
-                else:
-                    global_indices, extra_sparse_lengths = cached
+                )
                 extra_sparse_indices = global_indices.view(num_decode_tokens, 1, -1)
             else:
                 extra_sparse_indices = attn_metadata.c128a_global_decode_topk_indices
@@ -529,37 +500,22 @@ class DeepseekV4FlashInferSM120Attention(DeepseekV4Attention):
                 raise RuntimeError("C4A prefill request mapping is missing.")
             if swa_metadata.is_valid_token is None:
                 raise RuntimeError("C4A prefill validity metadata is missing.")
-            # Same IndexCache-driven reuse as decode. Only C4A has the F/S
-            # structure that guarantees a fresh recompute each step, so the
-            # C128A globalization stays per-layer.
-            is_c4a = self.compress_ratio == 4
-            cache = swa_metadata.flashinfer_sparse_index_cache
-            cached = (
-                cache.get("c4a_prefill_global")
-                if (_C4A_GLOBALIZE_REUSE and is_c4a and self.skip_topk)
-                else None
+            prefill_token_slice = slice(
+                num_decode_tokens, num_decode_tokens + num_prefill_tokens
             )
-            if cached is None:
-                prefill_token_slice = slice(
-                    num_decode_tokens, num_decode_tokens + num_prefill_tokens
+            block_size = attn_metadata.block_size // self.compress_ratio
+            extra_sparse_indices, extra_sparse_lengths = (
+                compute_global_topk_indices_and_lens(
+                    local_topk_indices,
+                    swa_metadata.token_to_req_indices[prefill_token_slice],
+                    attn_metadata.block_table,
+                    block_size,
+                    swa_metadata.is_valid_token[prefill_token_slice],
+                    output_buffers=self._global_topk_output_buffers(
+                        local_topk_indices
+                    ),
                 )
-                block_size = attn_metadata.block_size // self.compress_ratio
-                extra_sparse_indices, extra_sparse_lengths = (
-                    compute_global_topk_indices_and_lens(
-                        local_topk_indices,
-                        swa_metadata.token_to_req_indices[prefill_token_slice],
-                        attn_metadata.block_table,
-                        block_size,
-                        swa_metadata.is_valid_token[prefill_token_slice],
-                    )
-                )
-                if is_c4a and _C4A_GLOBALIZE_REUSE:
-                    cache["c4a_prefill_global"] = (
-                        extra_sparse_indices,
-                        extra_sparse_lengths,
-                    )
-            else:
-                extra_sparse_indices, extra_sparse_lengths = cached
+            )
 
         assert swa_metadata.prefill_swa_indices is not None
         assert swa_metadata.prefill_swa_lens is not None

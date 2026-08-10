@@ -17,11 +17,11 @@ DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 11파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍 + DSpark opt-in 가속) |
+| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 16파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍 + DSpark opt-in 가속 + 인코딩·파서 정합) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 |
 | `bench/` | 검증·측정 도구 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
-| `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 오버레이와 동일 코드 + 계측 |
+| `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 원본 + 계측 diff만: `attn_prof`/`fi_prof`는 오버레이 현행본 기준(`diff overlay/… probes/…`로 검증 가능), `moe_prof`/`oproj_prof`/`sai_probe`는 이미지 원본 기준 |
 | `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식 |
 
 ## 단일 overlay manifest · 런타임 경계 감사
@@ -256,6 +256,28 @@ per-call import/TP 조회 캐싱, 인덱서 디코드 빌드의 `seq_lens.max().
   호출마다 2회), SWA 캐시 `view(N,-1)`(fused insert마다), `split` 크기
   리스트, `swa_cache_layer.prefix` 체인 2곳.
 
+### 8차 (2026-08-11) — 판정 종결된 킬스위치 3종 코드 제거 (동작 불변, 순 −176줄)
+
+인시던트 바이섹트가 무혐의를 확정한 뒤 개별 실측까지 끝난 세 노브
+(원장 08-09: `TRIMIDX` 기각 — 프리필 −3.4%·KV +0.3%, `C4AREUSE`/`SPFAST`
+완전 중립)는 재론 금지 판정이라 다시 켤 일이 없다. 게이트와 그 뒤의
+도달-불가 경로를 오버레이·probes·런처에서 제거해 기본값 경로만 남겼다:
+
+- `attention.py`: `DeepseekV4IndexerCache.spec_enabled` 체인 제거(전 레이어
+  spec 상시 할당 — 이전과 동일 동작)와 그로써 고아가 된
+  `DeepseekV4Indexer(skip_topk=)` 파라미터 제거(인덱서 실행 게이트는
+  레이어 쪽 `self.skip_topk`가 그대로 담당). indexer-SP 경로의 단일구간
+  슬라이스 팔 제거 — `index_select`/`index_copy_` 단일 경로. 인접 구간
+  병합은 gather 인덱스 단축 효과가 있어 유지(tests 불변식 그대로).
+- `flashinfer_sparse.py`: C4A 글로벌라이즈 재사용 분기 제거.
+  `flashinfer_sparse_index_cache` 메타데이터 필드는 이미지 SM100 경로가
+  자기 키로 쓰므로 보존(우리 쪽 읽기/쓰기만 소멸).
+- 런처 `-e DENEB_*` 3종 제거, probes(attn_prof/fi_prof) 동일 반영.
+
+제거 기준은 **"측정 종결·미채택 + 우리가 심은 코드"**다. 같은 기각이라도
+`FP8HEAD`는 원장이 "실험용 잔존(기본 0)"으로 명시해 유지했고, 이미지 유래
+디버그 경로(`VLLM_DSPARK_REFERENCE_HC` 등)는 env로 도달 가능하므로 남긴다.
+
 ### 7차 — 코드 자체 낭비 제거 (동작 불변, 순 −110줄)
 
 - `attention_impl`의 `wq_b_kv_insert` 클로저 중복 정의 2회 + 인라인 반복
@@ -302,6 +324,8 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 하지 않는 이미지 코드와 락스텝인 값은 절대 하드코딩으로 접지 말 것 — 런처가
 안 쓰는 env라도 이미지 내부 스크립트가 쓸 수 있다.** 킬스위치 3종은 무혐의
 확정이므로 하나씩 켜서 실측할 가치가 있다 (KV +10%대의 `TRIMIDX` 우선).
+→ **후속 종결**: 3종 전부 개별 실측 완료(기각/중립/중립 — 판정 원장 08-09),
+8차(2026-08-11)에서 게이트·코드 자체를 제거했다.
 
 ## 외부 실측 반영 — NVIDIA 포럼 #378890 (2× Spark · 동일 모델·유사 포크)
 

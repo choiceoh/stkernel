@@ -38,6 +38,7 @@ from vllm.models.deepseek_v4.common.ops import (
     fused_indexer_q_rope_quant,
     fused_q_kv_rmsnorm,
 )
+from vllm.models.deepseek_v4.eager_scratch import get_eager_scratch_pool
 
 if TYPE_CHECKING:
     from vllm.v1.attention.backends.mla.sparse_swa import (
@@ -178,6 +179,42 @@ def _deneb_prof_flush(bucket: dict[str, Any]) -> None:
             bucket["prep"], 100.0 * bucket["prep"] / tot,
             bucket["attn"], 100.0 * bucket["attn"] / tot,
         )
+
+
+# VLLM_DSV4_COMPRESSOR_FP8 (default off): run the ATTENTION compressor input
+# GEMM via fp8 deepgemm instead of bf16 cuBLAS. The bf16 kernel already sits AT
+# the LPDDR bandwidth floor (measured 273 GB/s effective), so the only remaining
+# lever is byte reduction: fp8 halves the ~0.7 GB/step these replicated weights
+# stream, on a chip where decode is bandwidth-bound. Same lazy-quant pattern as
+# DSparkMarkovHeadOptimized (VLLM_DSPARK_MARKOV_W2_FP8): first call happens in
+# the eager warmup profile run, so CUDA-graph capture sees the steady-state
+# branch. Scope is the VALUE path only: the indexer compressor (selection path
+# — top-k flips instead of averaging; ~11% of the bytes) and weights_proj
+# (N=64 < deepgemm 128 block) stay bf16.
+_COMPRESSOR_FP8 = os.getenv(
+    "VLLM_DSV4_COMPRESSOR_FP8", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _compressor_fp8_kv_score(
+    owner: nn.Module, hidden_states: torch.Tensor
+) -> torch.Tensor:
+    """fp8-deepgemm replacement for torch.mm(x, fused_wkv_wgate.weight.T,
+    out_dtype=fp32). Keeps the bf16 weight in place (loader/reload safety);
+    the fp8 copies cost +50% memory on these weights (~0.35 GB/rank)."""
+    if not hasattr(owner, "_dsv4_comp_fp8_w"):
+        from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
+            _quantize_fp8_deepgemm,
+        )
+        dg_w, dg_ws = _quantize_fp8_deepgemm(owner.fused_wkv_wgate.weight)
+        owner._dsv4_comp_fp8_w = dg_w
+        owner._dsv4_comp_fp8_ws = dg_ws
+        logger.info_once("DSV4 compressor kv_score GEMMs on fp8 deepgemm.")
+    from vllm.models.deepseek_v4.nvidia.dspark_v2 import _fp8_gemm
+
+    return _fp8_gemm(
+        hidden_states, owner._dsv4_comp_fp8_w, owner._dsv4_comp_fp8_ws
+    ).to(torch.float32)
 
 
 def _resolve_dsv4_kv_cache_dtype(
@@ -397,12 +434,26 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # deneb fork (PR #51209 port): IndexCache — skipped C4A layers keep
         # their indexer modules (checkpoint weights must still load) but never
         # run them, reusing the top-k the previous C4A layer left in the
-        # shared rank-local topk_indices_buffer. Their indexer k-cache spec is
-        # dropped (spec_enabled=False below) so the never-touched cache costs
-        # no KV pages.
+        # shared rank-local topk_indices_buffer. Their indexer k-cache stays
+        # allocated: trimming those specs was measured and rejected
+        # (prefill -3.4%, KV +0.3% — MEASUREMENTS.md 08-09).
         self.skip_topk = _resolve_skip_topk(config, layer_id)
         if self.skip_topk:
             logger.info_once("IndexCache: some C4A layers reuse the previous top-k.")
+
+        # deneb fork: port of upstream PR #49236 (eager-scratch pool), slimmed.
+        # Upstream plumbs the pool through nvidia/model.py; we keep the image
+        # model.py untouched via a per-device singleton. See eager_scratch.py
+        # for what was dropped (padded-q bucket needs a CUDA op this image
+        # lacks; FP4 bucket replaced by the FP8 one this stack uses).
+        self.eager_scratch_pool = get_eager_scratch_pool(
+            vllm_config.scheduler_config.max_num_batched_tokens,
+            self.head_dim,
+            config.index_n_heads,
+            config.index_head_dim,
+            config.index_topk,
+            torch.device("cuda"),
+        )
 
         self.indexer = None
         if self.compress_ratio == 4:
@@ -423,7 +474,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 compress_ratio=self.compress_ratio,
                 prefix=f"{prefix}.indexer",
                 aux_stream=indexer_aux_stream,
-                skip_topk=self.skip_topk,
+                eager_scratch_pool=self.eager_scratch_pool,
             )
 
         self.aux_stream_list = aux_stream_list
@@ -571,6 +622,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def compressor_kv_score() -> torch.Tensor:
+                if _COMPRESSOR_FP8:
+                    return _compressor_fp8_kv_score(compressor, hidden_states)
                 return torch.mm(
                     hidden_states,
                     compressor.fused_wkv_wgate.weight.T,
@@ -588,6 +641,10 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 return weights
 
             def indexer_compressor_kv_score() -> torch.Tensor:
+                # Stays bf16 by operator decision (2026-08-10): this is the
+                # SELECTION path — it feeds index top-k, where quantization
+                # error flips discrete choices instead of averaging out — and
+                # it carries only ~11% of the compressor byte savings anyway.
                 return torch.mm(
                     hidden_states,
                     indexer.compressor.fused_wkv_wgate.weight.T,
@@ -767,6 +824,15 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             swa_metadata.block_size,
         )
 
+    def _global_topk_output_buffers(
+        self, topk_indices: torch.Tensor
+    ) -> "tuple[torch.Tensor, torch.Tensor] | None":
+        # deneb fork: PR #49236. C4A-only: the pool's global bucket is sized
+        # for index_topk; C128A keeps its own per-layer buffers.
+        if self.compress_ratio != 4 or self.eager_scratch_pool is None:
+            return None
+        return self.eager_scratch_pool.global_topk_outputs(topk_indices)
+
     def get_attn_backend(self) -> type[AttentionBackend]:
         return self.backend_cls
 
@@ -874,7 +940,6 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         prefix: str,
         cache_config: CacheConfig,
         compress_ratio: int = 1,
-        spec_enabled: bool = True,
     ):
         super().__init__()
         self.kv_cache = torch.tensor([])
@@ -883,19 +948,12 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
         self.cache_config = cache_config
         self.dtype = dtype
         self.compress_ratio = compress_ratio
-        self.spec_enabled = spec_enabled
         compilation_config = get_current_vllm_config().compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
-        # IndexCache (#51209): a skip-topk layer never runs its indexer, so
-        # its k-cache (and the compressor state packed into the same pages)
-        # is never written or read. Returning None allocates no pages for it
-        # — the same mechanism SWA-only attention layers use above.
-        if not self.spec_enabled:
-            return None
         # head_dim already carries the fp8 scale padding
         # compress_ratio=1 for V3.2, >1 for DeepseekV4. Both use the same
         # per-row indexer cache layout; compressed variants store fewer rows.
@@ -921,13 +979,6 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
 # cached on first use (distributed groups exist by the first forward).
 _INDEXER_SP_ENABLED = os.environ.get("VLLM_DSV4_INDEXER_SP") == "1"
 _indexer_sp_tp_rank: tuple[int, int] | None = None
-
-# Incident kill-switches (2026-08-09 warmup failure: C128A layers saw
-# c128a_prefill_topk_indices=None). The behavior-bearing optimizations land
-# default-OFF until each is individually cleared in prod; enable via the
-# launcher knobs TRIMIDX / SPFAST (and C4AREUSE in flashinfer_sparse.py).
-_TRIM_SKIP_INDEXER_KV = os.environ.get("DENEB_TRIM_SKIP_INDEXER_KV") == "1"
-_SP_SINGLE_SPAN = os.environ.get("DENEB_SP_SINGLE_SPAN") == "1"
 
 
 def _indexer_sp_owned_ranges(k_cache_prefix: str):
@@ -991,9 +1042,8 @@ def _indexer_sp_owned_ranges(k_cache_prefix: str):
     if not ranges:
         return ranges
     # Ranges ascend (decode rows first, then chunks in batch order); merging
-    # adjacent spans preserves the owned-row SET exactly and lets the caller
-    # take the zero-copy single-span path (decode rows adjoin rank 0's first
-    # shard, and a pure-prefill single chunk is one span on every rank).
+    # adjacent spans preserves the owned-row SET exactly and shortens the
+    # gather-index list the caller concatenates from these spans.
     merged = [ranges[0]]
     for a, b in ranges[1:]:
         if a == merged[-1][1]:
@@ -1016,9 +1066,10 @@ class DeepseekV4Indexer(nn.Module):
         compress_ratio: int = 1,
         prefix: str = "",
         aux_stream: torch.cuda.Stream | None = None,
-        skip_topk: bool = False,
+        eager_scratch_pool=None,
     ):
         super().__init__()
+        self.eager_scratch_pool = eager_scratch_pool  # deneb fork: PR #49236
         self.topk_tokens = config.index_topk
         self.n_head = config.index_n_heads  # 64
         self.head_dim = config.index_head_dim  # 128
@@ -1075,11 +1126,6 @@ class DeepseekV4Indexer(nn.Module):
             prefix=f"{prefix}.k_cache",
             cache_config=cache_config,
             compress_ratio=self.compress_ratio,
-            # skip-topk layers never run this indexer; don't spend KV pages
-            # on a cache that is never written or read. Gated default-OFF:
-            # trimming specs changes KV-group composition, the prime suspect
-            # for the image FlashMLA builder leaving c128a_* metadata unset.
-            spec_enabled=not (skip_topk and _TRIM_SKIP_INDEXER_KV),
         )
         self.compressor = DeepseekCompressor(
             vllm_config=vllm_config,
@@ -1129,20 +1175,17 @@ class DeepseekV4Indexer(nn.Module):
                 # Sequence-parallel: compute q/rope/quant only for the rows
                 # this rank's sharded indexer will read; place them into
                 # full-size buffers (unowned rows stay uninitialized and are
-                # never read by the sliced indexer paths).
-                #
-                # Single contiguous span — the dominant shape (pure-prefill
-                # single chunk on every rank; decode rows fused with rank 0's
-                # first shard) — uses zero-copy dim-0 slices in and one
-                # contiguous copy out (kill-switch gated); multi-span uses
+                # never read by the sliced indexer paths). Gather/scatter via
                 # index_select / index_copy_ over a concatenated index.
                 _n = qr.shape[0]
-                if _SP_SINGLE_SPAN and len(_ranges) == 1:
+                if len(_ranges) == 1:
+                    # Dominant shape (pure-prefill single chunk on every rank;
+                    # decode rows merged into rank 0's first shard): build the
+                    # index directly, skipping the one-element cat.
                     _a, _b = _ranges[0]
-                    _idx = None
-
-                    def _take(t: torch.Tensor) -> torch.Tensor:
-                        return t[_a:_b]
+                    _idx = torch.arange(
+                        _a, _b, device=qr.device, dtype=torch.long
+                    )
                 else:
                     _idx = torch.cat(
                         [
@@ -1151,8 +1194,8 @@ class DeepseekV4Indexer(nn.Module):
                         ]
                     )
 
-                    def _take(t: torch.Tensor) -> torch.Tensor:
-                        return t.index_select(0, _idx)
+                def _take(t: torch.Tensor) -> torch.Tensor:
+                    return t.index_select(0, _idx)
 
                 _q_c, _ = self.wq_b(_take(qr))
                 _q_c = _q_c.view(-1, self.n_head, self.head_dim)
@@ -1166,20 +1209,26 @@ class DeepseekV4Indexer(nn.Module):
                     use_fp4=self.use_fp4_kv,
                 )
 
+                # deneb fork: PR #49236 — reuse the pool's full-size buffers
+                # as the scatter targets (index_q_fp8 first, weights second).
+                _pool_targets = (
+                    list(self.eager_scratch_pool.indexer_q_outputs(_n))
+                    if self.eager_scratch_pool is not None and not self.use_fp4_kv
+                    else None
+                )
+
                 def _emplace(part):
                     if isinstance(part, (tuple, list)):
                         return type(part)(_emplace(x) for x in part)
-                    full = part.new_empty((_n,) + tuple(part.shape[1:]))
+                    if _pool_targets:
+                        full = _pool_targets.pop(0)
+                        assert full.shape == (_n,) + tuple(part.shape[1:])
+                    else:
+                        full = part.new_empty((_n,) + tuple(part.shape[1:]))
                     if part.element_size() == 1:
-                        # index_copy_ lacks fp8 support; bit-copy via uint8
-                        # (kept for the slice path too — proven pattern).
+                        # index_copy_ lacks fp8 support; bit-copy via uint8.
                         part8 = part.contiguous().view(torch.uint8)
-                        if _idx is None:
-                            full[_a:_b].view(torch.uint8).copy_(part8)
-                        else:
-                            full.view(torch.uint8).index_copy_(0, _idx, part8)
-                    elif _idx is None:
-                        full[_a:_b].copy_(part)
+                        full.view(torch.uint8).index_copy_(0, _idx, part8)
                     else:
                         full.index_copy_(0, _idx, part)
                     return full
@@ -1188,6 +1237,13 @@ class DeepseekV4Indexer(nn.Module):
             # ReplicatedLinear returns (output, bias); bias is None.
             q, _ = self.wq_b(qr)
             q = q.view(-1, self.n_head, self.head_dim)
+            # deneb fork: PR #49236 — write into the shared eager-scratch
+            # buffers instead of per-call allocations (None keeps old path).
+            _bufs = (
+                self.eager_scratch_pool.indexer_q_outputs(qr.shape[0])
+                if self.eager_scratch_pool is not None and not self.use_fp4_kv
+                else None
+            )
             return fused_indexer_q_rope_quant(
                 positions,
                 q,
@@ -1196,6 +1252,7 @@ class DeepseekV4Indexer(nn.Module):
                 self.softmax_scale,
                 self.n_head**-0.5,
                 use_fp4=self.use_fp4_kv,
+                output_buffers=_bufs,
             )
 
         # compressor returns None and writes K to the indexer KV cache; the

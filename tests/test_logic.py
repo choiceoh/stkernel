@@ -78,7 +78,8 @@ def test_skip_topk() -> None:
     for lid in (0, 3, 8):
         check(fn(c, lid) is False, f"non-C4A layer {lid} must not skip")
     # the first C4A layer is structurally F for ANY freq (0 % freq == 0) —
-    # the invariant the globalize-reuse cache and spec_enabled rely on
+    # the invariant IndexCache top-k reuse relies on (S layers read the
+    # buffer the previous F layer wrote)
     for freq in (1, 2, 3, 4, 7):
         c2 = cfg(use_index_cache=True, compress_ratios=ratios,
                  num_hidden_layers=10, index_topk_freq=freq)
@@ -188,8 +189,8 @@ def test_sp_ranges() -> None:
         # decode rows and the small chunk are replicated on every rank
         check(set(range(0, ndt)) <= rows, f"rank {r}: decode rows not owned")
         check(set(range(12, 140)) <= rows, f"rank {r}: small chunk not owned")
-    # adjacent spans are merged so the consumer can take the zero-copy
-    # single-span path: rank 0 fuses decode+small+first-shard into one span
+    # adjacent spans are merged (shorter gather-index list for the consumer):
+    # rank 0 fuses decode+small+first-shard into one span
     check(len(per_rank[0]) == 2, f"rank0 spans not merged: {per_rank[0]}")
     check(per_rank[0][0] == (0, 1164), f"rank0 fused span wrong: {per_rank[0]}")
     check(len(per_rank[1]) == 3, f"rank1 spans wrong: {per_rank[1]}")
@@ -426,6 +427,51 @@ def test_dspark_speed_guards() -> None:
     check("FP8HEAD == 1 || MARKOV_TOPK > 0" in launcher_text
           and "require the upstream DSpark impl" in launcher_text,
           "arming a speed knob with fork forced must abort")
+
+
+# ---------------------------------------------------------------------------
+# 9. bf16-release fail-closed matrix (nvidia_model.py / attention.py knobs)
+# ---------------------------------------------------------------------------
+def test_bf16_release_guards() -> None:
+    ns = load_defs(
+        "overlay/nvidia_model.py", {"_bf16_lm_head_release_blockers"}, {}
+    )
+    fn = ns["_bf16_lm_head_release_blockers"]
+
+    # production defaults: target fp8 built + aliased draft with a copy
+    check(fn(True, True, True) == [], "safe config must have no blockers")
+    # draft with its OWN head never blocks (release touches only the target)
+    check(fn(True, False, False) == [], "unaliased draft must not block")
+    # target fp8 off -> verification would read the freed weight
+    check(any("TARGET_LM_HEAD_FP8" in b for b in fn(False, True, True)),
+          "target-fp8-off must block")
+    # aliased draft without any fp8 copy -> draft fallback reads bf16
+    check(any("draft" in b for b in fn(True, True, False)),
+          "aliased copyless draft must block")
+    # both broken -> both reasons surface
+    check(len(fn(False, True, False)) == 2, "blockers must accumulate")
+
+    # wiring: launcher propagates both knobs; attention.py refuses COMPFREE
+    # without the fp8 path; dspark_utils aborts on a rolled-back target.
+    launcher_text = open(
+        os.path.join(REPO, "launchers", "start-hy4-tp4.sh"), encoding="utf-8"
+    ).read()
+    check("VLLM_DSV4_FREE_BF16_LM_HEAD=${HEADFREE:-0}" in launcher_text,
+          "HEADFREE knob not propagated")
+    check("VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0}" in launcher_text,
+          "COMPFREE knob not propagated")
+    attn_text = open(
+        os.path.join(REPO, "overlay", "attention.py"), encoding="utf-8"
+    ).read()
+    check("_FREE_BF16_COMPRESSOR and not _COMPRESSOR_FP8" in attn_text,
+          "COMPFREE without COMPRESSOR_FP8 must fail at import")
+    utils_text = open(
+        os.path.join(REPO, "overlay", "dspark_utils_v2.py"), encoding="utf-8"
+    ).read()
+    check("maybe_release_bf16_lm_head" in utils_text
+          and "overlay rolled back" in utils_text,
+          "armed HEADFREE with rolled-back nvidia_model.py must abort")
+    print(f"  bf16-release guards ........... OK")
     check("EXPECTED_IMAGE_ID=" in launcher_text and "OVBASES" in launcher_text,
           "image/source preimage attestation is missing")
     check('[ -L "$target" ]' in launcher_text,
@@ -690,6 +736,7 @@ if __name__ == "__main__":
     test_bench_dec_metrics()
     test_overlay_manifest()
     test_dspark_speed_guards()
+    test_bf16_release_guards()
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
     print(f"all OK ({PASS} checks)")

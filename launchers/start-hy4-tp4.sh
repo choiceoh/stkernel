@@ -123,16 +123,16 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e VLLM_USE_B12X_MOE=0 \
 -e VLLM_DSPARK_REPLICATE_MARKOV_W1=1 -e VLLM_DSV4_COMPRESSOR_FP8=${COMPRESSOR_FP8:-1} -e VLLM_DSV4_TARGET_LM_HEAD_FP8=${TGT_HEAD_FP8:-1} \
 -e VLLM_DSV4_GATE_FUSED=${GATEFUSE:-1} \
+-e VLLM_DSV4_FREE_BF16_LM_HEAD=${HEADFREE:-0} -e VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
 -e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
--e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e TOP_P=0.44 \
+-e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
--e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600 \
--e DENEB_TRIM_SKIP_INDEXER_KV=${TRIMIDX:-} -e DENEB_C4A_GLOBALIZE_REUSE=${C4AREUSE:-} -e DENEB_SP_SINGLE_SPAN=${SPFAST:-}"
+-e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
 if ((FP8HEAD == 1)); then
@@ -143,15 +143,34 @@ if ((MARKOV_TOPK > 0)); then
 fi
 # TEMPERATURE (TEMP knob, default 0.8): the SERVING sampling default is set
 # via --override-generation-config below — measured on hard prose: acceptance
-# 15.9->18.9%, decode +7% vs 0.95; 0.7 adds nothing (saturation). The
-# default-chat-template-kwargs temperature/top_p are TEMPLATE kwargs, NOT
-# sampling defaults (battery W0==W1 evidence): without the override, the
-# effective default was generation_config's t1.0/top_p1.0. Explicit client
-# temperature still wins. Effective default top_p stays 1.0 — production has
-# always run 1.0; the 0.44 template kwarg was never a sampling param.
-# Kill-switch knobs (default OFF, flip ONE at a time): TRIMIDX=1 skip-topk
-# indexer KV-spec trim (measured: rejected), C4AREUSE=1 C4A globalization
-# reuse (neutral), SPFAST=1 SP single-span path (neutral).
+# 15.9->18.9%, decode +7% vs 0.95; 0.7 adds nothing (saturation). Without the
+# override, the effective default was generation_config's t1.0/top_p1.0
+# (battery W0==W1 evidence). Explicit client temperature still wins.
+# Effective default top_p stays 1.0 — production has always run 1.0.
+# The old default-chat-template-kwargs temperature/top_p were REMOVED
+# 2026-08-11: the dsv4 template wrapper reads neither kwarg (encoding audit
+# vs the checkpoint's reference encoding/) — dead config, zero prompt-byte
+# effect, never sampling params.
+# EFFORT knob (REASONING_EFFORT template kwarg, default EMPTY = reference
+# "low" = no effort preamble = byte-identical prompts to before): the stock
+# wrapper silently no-opped "high" (only max/xhigh injected anything, and
+# with the reference *high* text); the tok_deepseek_v4* overlays restore the
+# reference low/high/max levels. EFFORT=high|max now injects the reference
+# reasoning-effort preamble at conversation start — A/B (quality gate +
+# decode bracket) before adopting a non-empty default: longer thinking,
+# different prompt prefix bytes.
+# The 2026-08-09 incident kill-switches (TRIMIDX/C4AREUSE/SPFAST) are gone:
+# all three were measured and not adopted (rejected / neutral / neutral,
+# MEASUREMENTS.md 08-09), and their overlay code paths were removed 08-11.
+# Memory-reclaim knobs (default OFF, unmeasured — flip ONE per boot):
+# HEADFREE=1 drops the bf16 lm_head shard (~265MB/rank) once the load-time
+# fp8 copies exist; COMPFREE=1 drops the attention-compressor bf16
+# originals (~0.7GB/rank) at their lazy fp8 quant (memory-profile pass).
+# Both fail closed at boot while any bf16 consumer remains (they require
+# TGT_HEAD_FP8=1 / COMPRESSOR_FP8=1 — the current defaults). This is the
+# KV-capacity axis, not speed: verify via boot-log "GPU KV cache size"
+# growth (same GPU_MEM!) + 9/9 + bench-dec/prefill no-regress
+# (MEASUREMENTS.md A/B queue #5/#6).
 # VLLM_ENGINE_READY_TIMEOUT_S=3600: the image default is 600s (envs.py:27),
 # below our cold-recompile boot times (supervisor history has
 # 'boot grace exceeded'); dead engines still fail fast via the supervisor.
@@ -346,10 +365,9 @@ exec vllm serve "${MODEL_PATH}" \
   --enable-chunked-prefill --enable-prefix-caching --enable-flashinfer-autotune \
   --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --reasoning-parser deepseek_v4 \
   --enable-auto-tool-choice \
-  --default-chat-template-kwargs.temperature=${TEMPERATURE} \
-  --default-chat-template-kwargs.top_p=${TOP_P} \
   --override-generation-config "{\"temperature\": ${TEMPERATURE}}" \
-  --default-chat-template-kwargs.thinking=true --default-chat-template-kwargs.reasoning_effort=high \
+  --default-chat-template-kwargs.thinking=true \
+  ${REASONING_EFFORT:+--default-chat-template-kwargs.reasoning_effort=${REASONING_EFFORT}} \
   --attention-backend FLASHINFER_MLA_SPARSE_DSV4 --moe-backend "${MOE:-b12x}" \
   --disable-custom-all-reduce \
   --nnodes 4 --node-rank "${NODE_RANK}" --master-addr "${MASTER_ADDR}" --master-port 25000 \
