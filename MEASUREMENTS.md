@@ -453,9 +453,7 @@ preimage가 실이미지와 불일치(오기록) — fail-closed 프리플라이
   구현 ③sm_121용 TRTLLM MXFP8 커널.
 - **플릿 위생 관찰 (08-11)**: ①srv2·srv3의 bluetoothd가 만성 CPU 100% 폭주
   (누적 2~3시간; 코어 낭비일 뿐 GPU 스톨과는 무관 확인 — BT 재시작/비활성
-  후보) ②srv1·srv2에 `vllm-tp2(-worker)` 컨테이너가 ray GCS(10.10.0.2:6379)
-  연결 실패 루프로 좀비 잔존 — GPU 미점유라 무해하나 restart 정책이 살아
-  있어 헤드가 뜨면 dsv4와 메모리 경합 위험, 정리 후보 ③srv4 stkernel의
+  후보) ②~~vllm-tp2 좀비~~ **제거 완료(08-11, srv1·srv2 docker rm -f — 런북 5번 실행)** ③srv4 stkernel의
   stash@{0}은 main에 전량 흡수된 구본(런처 매니페스트 WIP) — drop 안전
   ④서버 리포 배포 정합: 4노드 -b12x 오버레이 SHA = repo main 5356be1 일치
   실사 완료 (srv2 리포 최신·클린, srv4 리포는 5커밋 뒤 — 배포는 -b12x
