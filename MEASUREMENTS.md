@@ -716,6 +716,23 @@ busy-poll(~1µs) + 48KB×3피어 병렬 송신(~9µs) + GPU 폴+리듀스(~4µs)
 NCCL 폴백. 수치: 리듀스 순서 변경이라 bit-exact 아님 → 품질 게이트 필수.
 리스크: 프록시 사망 모드(워치독 필요)·RC QP 풀메시 유지 관리.
 
+**Stage-1 실행 결과 (2026-08-11, 조건부 통과)** — 4노드 실동작 프로토타입
+(`probes/oneshot_ar.cu`, rdma_cm 풀메시 RC + 연결별 기본 PD/MR + 코어핀
+busy-poll 프록시 + GPU 퍼시스턴트 커널, 5000라운드 × 48KB, numerics 검증):
+
+| 모드 | E2E (wall/round) | 해석 |
+|---|---|---|
+| **SIGONLY** (시그널+와이어 코어) | **22.06µs (p99 24.1)** | **게이트 <25µs 통과** — NCCL 65µs 대비 −66% |
+| FULL (순진 데이터패스 포함) | 46.5µs | 차분 24.5µs = GPU가 비캐시 mapped 호스트메모리를 직접 read하며 reduce한 프로토타입 아티팩트 |
+
+**수정 산정**: 통합 시 데이터 이동은 그래프-내 `cudaMemcpyAsync`(4×48KB
+DMA ≈ 3–5µs)로 대체 → **현실 총 ~25–27µs = 콜당 ~40µs 절감 × 94 = 스텝
+−3.7ms (−9~10%) ≈ C=1 +10%.** Stage-2 과제에 **데이터패스 설계**(memcpy
+노드 또는 GB10 ATS 정합-캐시 경로로 pageable 직접 접근) 1건 추가. 개발
+함정 3건 기록: ①rdma_verbs 헬퍼는 교환 버퍼도 MR 안이어야(assert)
+②수동 `rdma_create_qp`는 `qp_type=IBV_QPT_RC` 명시 필수(EINVAL)
+③이미지에 rdma_cma 헤더/librdmacm 부재 — 호스트 마운트로 빌드·실행.
+
 ### co-ingest 디코드 멎음 — 특성화 + 완화 기각 (2026-08-11, 운영자 결정)
 
 저동시성 실사용의 숨은 지배 항목 정량화 (`bench/streamgap.py`): 디코드
