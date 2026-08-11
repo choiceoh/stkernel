@@ -45,8 +45,8 @@ struct Ctrl {
   uint64_t nbytes[RING];                 // payload size per slot (GPU sets)
   volatile uint64_t rxf[RING][NPEER];    // inbound flags (slot-major)
   uint64_t pad[8];
-  bf16 tx[RING][MAXEL];
-  bf16 rx[RING][NPEER][MAXEL];
+  alignas(16) bf16 tx[RING][MAXEL];
+  alignas(16) bf16 rx[RING][NPEER][MAXEL];
 };
 
 struct Info {
@@ -77,7 +77,15 @@ __global__ void k_guard(volatile uint64_t *tx, volatile uint64_t *ack) {
 __global__ void k_copy_in(Ctrl *c, const bf16 *src, int n) {
   uint64_t nxt = c->tx_seq + 1;
   int slot = (int)(nxt % RING);
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+  // vectorized: 8 bf16 = float4 (tx is alignas(16); src is torch-tensor
+  // 256B-aligned). tail loop handles n % 8 for odd sizes.
+  int n4 = n >> 3;
+  const float4 *s4 = reinterpret_cast<const float4 *>(src);
+  float4 *d4 = reinterpret_cast<float4 *>(c->tx[slot]);
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n4;
+       i += gridDim.x * blockDim.x)
+    d4[i] = s4[i];
+  for (int i = (n4 << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x)
     c->tx[slot][i] = src[i];
 }
@@ -104,14 +112,32 @@ __global__ void k_wait(Ctrl *c) {
 __global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
   uint64_t s = c->tx_seq;
   int slot = (int)(s % RING);
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+  // vectorized: 2 bf16 per thread via bfloat162 (rx alignas(16), dst is
+  // torch-aligned). fp32 accumulate preserves bit-identical numerics.
+  int n2 = n >> 1;
+  const __nv_bfloat162 *s2 = reinterpret_cast<const __nv_bfloat162 *>(src);
+  const __nv_bfloat162 *r0 =
+      reinterpret_cast<const __nv_bfloat162 *>(c->rx[slot][0]);
+  const __nv_bfloat162 *r1 =
+      reinterpret_cast<const __nv_bfloat162 *>(c->rx[slot][1]);
+  const __nv_bfloat162 *r2 =
+      reinterpret_cast<const __nv_bfloat162 *>(c->rx[slot][2]);
+  __nv_bfloat162 *d2 = reinterpret_cast<__nv_bfloat162 *>(dst);
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n2;
        i += gridDim.x * blockDim.x) {
-    float acc = __bfloat162float(src[i]) +
-                __bfloat162float(c->rx[slot][0][i]) +
-                __bfloat162float(c->rx[slot][1][i]) +
-                __bfloat162float(c->rx[slot][2][i]);
-    dst[i] = __float2bfloat16(acc);
+    float2 a = __bfloat1622float2(s2[i]);
+    float2 b = __bfloat1622float2(r0[i]);
+    float2 cc = __bfloat1622float2(r1[i]);
+    float2 e = __bfloat1622float2(r2[i]);
+    d2[i] = __float22bfloat162_rn(
+        make_float2(a.x + b.x + cc.x + e.x, a.y + b.y + cc.y + e.y));
   }
+  for (int i = (n2 << 1) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
+       i += gridDim.x * blockDim.x)
+    dst[i] = __float2bfloat16(__bfloat162float(src[i]) +
+                              __bfloat162float(c->rx[slot][0][i]) +
+                              __bfloat162float(c->rx[slot][1][i]) +
+                              __bfloat162float(c->rx[slot][2][i]));
 }
 
 // ---------------- proxy ----------------
