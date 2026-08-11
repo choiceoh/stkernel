@@ -548,6 +548,65 @@ echo 0 | sudo tee /proc/sys/vm/compaction_proactiveness   # srv3·srv4 적용(08
 셋 다 상한 1–3%로 착수 하드 룰 미달 — 다음 세대 오버레이 작업 시 동반
 픽업 후보로만 잔존.
 
+## ★REFINE_PASS A/B — 수용률 레버 실측, 기각 (−38%, 수용률 반토막) (2026-08-12)
+
+"포화≠효율" 통찰의 직접 실현 시도. 통찰이 옳게 가리킨 효율 레버 =
+**수용률**(포화 MoE 대역폭 34-expert 로드 중 실제 쓰이는 비율). 이미지의
+유일한 수용률 소프트웨어 노브 = VLLM_DSPARK_REFINE_PASS. 주석 주장:
+"two-pass draft self-refinement, pass-1 tokens replace noise slots, same
+Gumbel keys → target 분포 구조적 불변, only acceptance moves [up]." 원장
+A/B-queue 등재 항목. **실측으로 판정(선언 아님).**
+
+동일 tg128 하드-프로즈 워크로드, /metrics 카운터 delta + usage.completion_tokens:
+
+| | tok/s(med) | accepted/step | raw accept | per-pos |
+|--|--|--|--|--|
+| REFINE=0 | **58.57** | 1.07 | 21.4% | .62/.29/.12/.04/.01 |
+| REFINE=1 | **36.45(−38%)** | 0.45 | **9.0%** | .33/.09/.03/.01/0 |
+
+**주장과 정반대**: 수용률이 오르긴커녕 21.4→9.0%로 반토막, tok/s −38%
+폭락, 전 position 악화. worker 로그는 기능 활성 확증("DSpark(v2) two-pass
+draft refinement enabled") 하나 APIServer는 `WARNING: Unknown vLLM env
+VLLM_DSPARK_REFINE_PASS` — **이 production-hybrid-1.6 이미지에서 half-wired,
+refinement가 draft를 개선이 아니라 손상**(coupling 불성립 → 제안 분포 열화
+→ 수용률 급락 + 추가 pass 지연 이중 손실). 부팅/osar self-test div=0 정상,
+순수 REFINE 효과.
+
+**판정: 기각, REFINE=0 유지.** 통찰(수용률=포화 대역폭 효율 레버)은
+원리적으로 옳았으나, 이미지의 유일한 수용률 노브는 깨져 있어 실사용 불가.
+드래프터 품질은 그 외엔 고정(딥시크 학습 dspark). → 수용률 레버는 이
+이미지에서 실질적으로 닫힘. UNMEASURED→MEASURED-REJECTED로 원장 갱신.
+저자 신규 이미지에서 REFINE 재구현되면 refine_ab.py로 재검(도구 리포 상주).
+
+## ★MBU 효율 분석 — 포화≠효율, MoE 56%가 speculative 대역폭 (2026-08-12)
+
+"GPU/대역폭 포화여도 활용이 100% 효율적이지 않을 수 있다"는 통찰로 MBU
+분해. **이 세션에서 가장 깊은 재해석 — "물리 바닥"의 실체를 바꿈:**
+
+MoE config: 256 routed expert, topk 6, W4 랭크당 ~3.15MB/expert. 단일 토큰
+활성 = 6×43layer ≈ 810MB/step이어야 하나 **실측 MoE read 4.58GB/step ≈ 34
+expert/layer** (이론 최대 36). 즉 **spec decode 6 position(1 verify + 5
+draft)이 각자 topk 6 활성 → union ~34** (position 간 94% 비겹침).
+
+metrics 정량: draft 12,350 생성 / 6,361 수용(raw 51.5%) → 스텝당 draft 5 중
+**1.56 수용·3.44 reject**. per-pos 84→67%→기하감쇠.
+
+**→ MoE 4.58GB 중 ~56%(2.5GB)가 reject될 draft position의 expert 로드.**
+안 읽으면 스텝 37→28ms(−24%)나, **구조적으로 불가**: spec decode 병렬
+검증은 모든 draft position에서 target(MoE 포함)이 무엇을 예측하는지 알아야
+accept/reject 결정 — reject는 계산 **후** 판명, 예측 skip 불가. 즉 이
+"낭비"는 spec decode가 **대역폭 효율(토큰당 2.2× read)을 희생해
+latency(스텝당 2.56× 토큰)를 사는** 구조적 트레이드.
+
+**판정 — 통찰은 옳고, 소프트웨어 여지는 여전히 수용률(모델)로 귀결**:
+포화의 56%가 speculative지만, 그 speculation이 없으면 1토큰/스텝(2.56×
+느림). 대역폭 효율↑ = 수용률↑ = draft 수용↑ = reject 로드↓ — 결국
+드래프터 품질(모델측, 노브 소진). draft position MoE pruning은 구조 수술 +
+정확도 리스크(confidence scheduler 기각 선례). **"포화=바닥"을
+"포화의 56%가 spec decode 대가"로 정정 — 하지만 소프트웨어 결론 불변
+(수용률=모델).** 디코드 최적화의 본질은 대역폭 효율이 아니라 latency(토큰/
+스텝)이며 spec decode가 그 최적해임을 대역폭 관점에서 재확인.
+
 ## 정밀 관측 — idle 뒤에 여지 없음, 4스트림 포화 확증 (2026-08-12)
 
 "관측창 세분화·정밀화 재측정" 요구로 버킷 합산 뒤를 파봄
