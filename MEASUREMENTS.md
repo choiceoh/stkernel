@@ -151,6 +151,7 @@ min 38.1 = 수용률 운 범위, 23 tok/s 시그니처 무발현) — 프로브-
 | **★mhc small-M 타일 튜닝** (`VLLM_DSV4_MHC_SMALLM_TUNED=1`, 런처 MHCTUNE 기본 1, overlay/mhc_tilelang.py) | P2b 스윕 승자 (256,6,4) vs 스톡 (2,8): 마이크로 M=6 +16.3%/M=5 +19.5% · **인그래프 물리확인 per-call 15.6→13.1µs(−16%), −0.22ms/step** · residual bit-exact·yp rel 1.5e-7 · 9/9 · 브래킷 @acc50 64.18→**64.46**→64.01 = +0.57%(물리 예측 정확 일치). M≥8 스몰fma 영역 무접촉. 롤백 MHCTUNE=0 (env-only) | 08-11 |
 | **★mhc 라운치 구성 R2** (`VLLM_DSV4_MHC_TUNED_R2=1`, 런처 MHCTUNE2 기본 1) | 전 승자 **bit-exact**(rel=0): mhc_post M분기 — 프리필 (512,4096) 마이크로 +3.6%·**인그래프 per-call 1,270→1,187µs(−6.5%)**, C=4 디코드 (256,2048) +12.7~15.3%; mhc_fused M≤10 (128,4,4) +14.3%(C=2 draft, M=12 verify는 스톡 최적 유지). e2e 브래킷은 부트롤 ±1%에 묻힘(프리필 B1 2,860→B2 2,882→B3 2,887) — **채택 근거 = bit-exact + 물리확인 + 무회귀**(C=1 64.3/C=2 104.2/C=4 143.0 정상 대역) | 08-11 |
 | **★mhc big_fuse R3** (`VLLM_DSV4_MHC_BIGFUSE_TUNED=1`, 런처 MHCTUNE3 기본 1, 튜닝 커널 사본 in overlay/mhc_tilelang.py) | h_blk 1024→4096 (M>64만): 마이크로 +5.6%가 **인그래프 실현 +0.1%**(−11ms/32K캡처)로 축소 — 정직 기록. layer_input bf16-1ulp 클래스라 품질 게이트 적용: 9/9 + 디코드 무회귀. tilelang 제약: n_thr {96,160}만 컴파일 가능 | 08-11 |
+| **★★one-shot RDMA AllReduce** (`VLLM_DSV4_ONESHOT_AR=1`, 런처 ONESHOT 기본 1, overlay/dsv4_oneshot_ar.cu+shim+cuda_communicator) | **디코드 C=1 +12.6% / C=2 +11.0%** (브래킷 1부트: NCCL 62.8/102.6 → osar 70.7/113.9) — 이 세션 최대. 소형 bf16 디코드 AR을 NCCL(67.6µs) 대신 커스텀 host-register one-shot(엔진내 self-test div=0, 27µs급)으로. 품질 9/9. **3중 폴백**(env·self-test 게이트·프록시 워치독)이라 실패=NCCL 자동. ★1부트 브래킷·장시간/C4/재부팅 재빌드 안정성 감시 후속 | 08-11 |
 | **★IDXFREQ 기본 4→6** (serve hf-overrides `index_topk_freq`, IDXFREQ=4로 복원) | **128K 디코드 +7~11%** — 2부트 동일시드 3×3 재현 (기준 65.0/68.8/64.1 → 부트1 73.0/71.7/68.1 → 부트2 69.7/73.6/76.8, 전 표본 우위) · 2K/32K 중립 · TTFT 불변(48.4–49.0s) · 리트리벌 9/9 · **256K 니들 3/3 + 멀티팩트(한 생성 내 3사실 순차 회수) PASS (08-11 재검 완결)** · **freq 곡선 완성으로 6=봉우리 확정** (아래 스윕 섹션) | 08-11 |
 | **★MAX_NUM_SEQS 기본 16→32** (런처, MAX_NUM_SEQS=16으로 복원) | **집계 디코드 C=16 290 → C=24 340 → C=32 386 tok/s (+33%)** — 고동시성 초선형(C8→16 +66%)의 연장 수확, raw acc 31~32% 평평(무붕괴) · **C=16이 cap 16/32 부트에서 290.1/289.7 동일 = cap 자체 오버헤드 0** · C=1 무회귀 · admission 상한이라 저동시성 무영향 · M=32×6=192 < GRAPH_CAP 256 (그래프 한계 ~C=42, 스트림당 12 tok/s 지연 트레이드는 명시) | 08-11 |
 
@@ -780,6 +781,69 @@ wait+reduce로 8콜→2커널), vLLM custom-op 패키징(부트시 nvcc 빌드),
 custom_all_reduce.py 오버레이 주입 + 사이즈 게이트(≤512KB, 프리필/큰
 텐서는 NCCL), torch.dist 스토어 부트스트랩, env 폴백
 (VLLM_DSV4_ONESHOT_AR), 품질 게이트(리듀스 순서 변경 bit-exact 아님)+브래킷.
+
+### Stage-3 통합 설계 확정 (2026-08-11, 주입 지점 실코드 확인)
+
+이미지 통신 경로 정독으로 오버레이 훅 확정:
+`tensor_model_parallel_all_reduce`(communication_op.py) → `get_tp_group().
+all_reduce` → `CudaCommunicator.all_reduce`(**단일 파일 오버레이 지점**,
+device_communicators/cuda_communicator.py). 여기 최상단에 size-gate 분기를
+끼운다:
+
+```
+if _ONESHOT_ENABLED and _oneshot_eligible(input_):   # bf16, M<=32, <=512KB, decode
+    if _SHADOW: nccl_out = <기존경로>; osar_out = oneshot(input_)
+               _record(divergence, dt); return nccl_out     # 무해 관측
+    return oneshot(input_)                                    # 실경로
+```
+
+**부품 상태**: 알고리즘/물리 = 완결 (probes/oneshot_ar2.cu 27.1µs, device
+in/out·그래프·numerics 검증). 남은 배관 6:
+1. **torch custom-op 래퍼** — 프로토타입 로직을 `torch.ops.dsv4.oneshot_ar
+   (Tensor)->Tensor`로. host-register Ctrl은 부트 1회 할당, torch 텐서는
+   D→HR copy-in 커널(=프로토타입 k_copy_in, device src 이미 실측 포함).
+2. **부트타임 nvcc 빌드** — `torch.utils.cpp_extension.load()` (이미지에
+   nvcc 13 확인). 첫 부트 수십초, 캐시.
+3. **torch.dist 부트스트랩** — TCP 대신 `torch.distributed` 스토어로 QP
+   info(qpn/psn/gid/rkey/addr) 교환. rank/fabric-IP 매핑은 기존 launcher
+   NODE_RANK.
+4. **프록시 스레드** — 엔진 워커 프로세스 내 코어핀 busy-poll (코어 18,
+   서빙 스레드와 비충돌 확인 필요). 워치독: ack_seq 정지 감지 시 NCCL
+   폴백.
+5. **cudagraph 캡처** — custom-op이 FULL 그래프에 들어가야. k_signal/
+   k_wait가 그래프 노드로 캡처됨은 프로토타입서 검증(리플레이 2000×8).
+6. **게이트/브래킷** — VLLM_DSV4_ONESHOT_AR + SHADOW 기본; 품질 9/9 +
+   그리디 발산 + C=1/2/4 브래킷 후 실경로 전환.
+
+**리스크 등급 = 이 세션 최고**: 실경로 전환은 프로덕션 collective 교체라
+실패 시 서빙 다운(분산·그래프·RDMA 교락 디버깅). **shadow-first 필수** —
+NCCL 실경로 유지하며 numerics/속도만 관측, 검증 후 env로 전환. 착수는
+전용 세션(멀티 재기동·디버깅) 권장.
+
+### ★★Stage-3 실경로 채택 완료 (2026-08-11)
+
+착수·검증·채택을 한 세션에 완주. 실행 로그:
+
+- **torch custom-op 빌드**(overlay/dsv4_oneshot_ar.cu): cpp_extension.load
+  부트타임 nvcc, 엔진 프로세스 내 로드 성공. standalone 4노드
+  (probes/oneshot_ar_disttest.py): torch.dist 부트스트랩 + numerics
+  M=6/16/32 **maxerr 0** + graph 29.25µs.
+- **shim 첫 시도 함정 (수정됨)**: 매-호출 shadow가 상태ful tx_seq 링을
+  프로덕션 AR과 **비대칭 구동** → maxdiv=128 + 요청지연 (rank2 19s 늦은
+  connect가 비대칭 방증). **처방**: shadow를 부트 1회 **lockstep
+  self-test**(barrier 감싼 단일 osar-vs-NCCL)로 축소 → div=0 격리 검증,
+  실사용은 NCCL. real(shadow=0)만 실경로(AR 자리 정확 대체=lockstep 자동).
+- **엔진내 검증**: self-test div=0 (4랭크) · 요청 200 OK · spec decode
+  정상(acc 5.17) · FULL+dspark 그래프 캡처에 osar 포함 완료 · 품질 9/9.
+- **브래킷** (동일 벤치, 재기동 A/B): NCCL 62.8/102.6 → osar 70.7/113.9 =
+  **C=1 +12.6% / C=2 +11.0%**. 예측(스텝 −9.6%→디코드 +10.6%) 정합·초과.
+- **배선**: 런처 `ONESHOT` 기본 1 + `OSAR_SHADOW` 기본 0(real). 3중 폴백
+  (env / self-test 게이트 / 프록시 워치독+예외 → NCCL). 프리필·대형 텐서는
+  size-gate(>256KB)로 NCCL 유지.
+- **★후속 감시 (미완, 원장 규율)**: ①브래킷 1부트뿐 — 2부트 재현 ②장시간
+  프록시 안정성(QP/CQ 에러·코어18 경합) ③C=4 고동시성 실경로 ④재부팅 후
+  cpp_extension 재빌드 경로 ⑤acc 정규화 @acc50 재계상. 폴백이 견고해
+  기본 1 채택하되 위 5건 감시.
 
 ### co-ingest 디코드 멎음 — 특성화 + 완화 기각 (2026-08-11, 운영자 결정)
 
