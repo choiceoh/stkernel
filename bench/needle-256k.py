@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """256K needle probe — check-quality.py pattern extended to ctx=256K.
-Three planted facts at 25/50/75% depth, greedy retrieval, substring match."""
+Three planted facts at 25/50/75% depth, greedy retrieval, substring match.
+
+Also runs a MULTI-FACT question (all three facts enumerated in ONE
+generation). Rationale: single-fact needles answer right after prefill, when
+the sparse-attention index is freshest — the failure mode of a large
+index_topk_freq is MID-GENERATION retrieval shifts, which only the
+enumeration form exercises (the model must pull from 25% -> 50% -> 75%
+depth sequentially inside one decode stream)."""
 import json
 import random
 import sys
@@ -62,9 +69,18 @@ def ask(body_text, question):
         out["usage"]["prompt_tokens"]
 
 
+MULTI_Q = (
+    "List, in order: (1) the calibration constant for the Meridian array, "
+    "(2) who signed the tundra survey and on what date, (3) which valve is "
+    "the quarry's emergency shutoff and where it is. Quote each fact "
+    "exactly, one per line."
+)
+MULTI_KEYS = ["8127", "halvorsen", "14 march 1997", "k-42", "north"]
+
 if __name__ == "__main__":
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 7
-    doc = build(256_000, seed)
+    ctx = int(sys.argv[2]) if len(sys.argv) > 2 else 256_000
+    doc = build(ctx, seed)
     ok = 0
     for i, (_, q, keys) in enumerate(FACTS):
         ans, el, pt = ask(doc, q)
@@ -73,4 +89,11 @@ if __name__ == "__main__":
         print(f"needle {i + 1} (depth {(i + 1) * 25}%): "
               f"{'o' if hit else 'X'}  [{el:.0f}s, {pt:,} tok] {ans[:70]!r}",
               flush=True)
-    print(f"=> {ok}/3 correct at 256K")
+    ans, el, pt = ask(doc, MULTI_Q)
+    low = ans.lower()
+    missing = [k for k in MULTI_KEYS if k not in low]
+    multi = not missing
+    print(f"multi-fact (one generation): {'o' if multi else 'X'} "
+          f"[{el:.0f}s] missing={missing} {ans[:90]!r}", flush=True)
+    print(f"=> {ok}/3 single + {'PASS' if multi else 'FAIL'} multi "
+          f"at {ctx // 1000}K")
