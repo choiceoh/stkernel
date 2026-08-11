@@ -743,12 +743,43 @@ DMA ≈ 3–5µs)로 대체 → **현실 총 ~25–27µs = 콜당 ~40µs 절감 
 | ③데이터패스 | 부분 — 커널복사(비캐시 read)는 210µs로 사망, **slot-major 레이아웃 + 단일 144KB H2D + WC 커널 copy-in = 42.8µs** 도달. 잔여 18µs는 소형 DMA 고정비/copy-in — 커널 병합·배치로 30–35µs 경로 가시 |
 
 **핵심 설계 발견**: `CALLS % RING == 0`이면 콜별 슬롯이 리플레이 불변 →
-고정 주소 memcpy 노드 캡처 가능 (런타임 슬롯 산술 불요). **현 시점 확정
-이득: 42.8µs vs NCCL 65µs = 콜당 −22µs × 94 = 스텝 −2.1ms (−5.2%),
-데이터패스 마무리 시 −7~9%.** 잔여 작업(별도 세션): 커널 병합(guard+copy+
-signal / wait+reduce), vLLM custom-op 패키징(부트시 nvcc 빌드),
-custom_all_reduce.py 오버레이 주입 + 사이즈 게이트(≤512KB), torch.dist
-부트스트랩, env 폴백(VLLM_DSV4_ONESHOT_AR), 품질 게이트+브래킷.
+고정 주소 memcpy 노드 캡처 가능 (런타임 슬롯 산술 불요).
+
+### ★★UMA 제로카피 데이터패스 — 스텝 −9% 확정 (2026-08-11)
+
+"개선폭이 작다"(staged 42.8µs = 스텝 −5.2%)의 진원을 규명: 32µs가 전부
+데이터패스였고, 그 원인은 **버퍼 할당 방식**이었다. 4-way 게이트
+(`probes/uma_datapath.cu`, 48KB reduce 지연):
+
+| 버퍼 | RDMA 등록 | GPU read 48KB |
+|---|---|---|
+| A `cudaHostAlloc(Mapped)` (구 direct) | OK | **22.5µs** (uncached PCIe식) |
+| B/C `cudaMallocManaged` | **불가** | 9.8µs |
+| **D `malloc`+`cudaHostRegister`** | **OK** | **9.8µs** |
+
+**mode-1(direct)이 210µs로 죽은 진짜 원인 = `cudaHostAllocMapped`의 device
+포인터가 GPU를 uncached 경로로 강제**한 것. managed는 캐시되지만 RDMA
+등록 불가. **D만 둘 다 만족** — pageable 버퍼를 host-register하고 GPU가
+host VA를 직접 접근하면 GB10 ATS가 native L2 캐시 경로로 처리. 이걸
+Ctrl 전체에 적용:
+
+| 데이터패스 | E2E/AR | 코어 대비 |
+|---|---|---|
+| 시그널+와이어 코어 (데이터 0) | 24.30µs | 물리 바닥 |
+| **★direct host-register (채택 경로)** | **27.10µs** | **+2.8µs (데이터패스 소멸)** |
+| staged memcpy (구 설계) | 42.72µs | +18.4µs |
+
+**확정 이득: 27.1µs vs NCCL 67.6µs = 콜당 −40.5µs × 94 = 스텝 −3.8ms
+(−9.6%) = C=1 디코드 +10.6% (~65→~72 tok/s 예측).** staged 대비 realize
+폭 거의 2배. 물리 바닥 24.3µs가 comms 완전제거 −14% 중 −5%를 wire 물리로
+남기지만(RC write 완료 대기 = 하드웨어), **−9.6%는 소프트웨어로 realize
+가능한 최대**로 확정.
+
+잔여 작업(별도 세션, 순수 배관): 커널 병합(guard+copy+signal /
+wait+reduce로 8콜→2커널), vLLM custom-op 패키징(부트시 nvcc 빌드),
+custom_all_reduce.py 오버레이 주입 + 사이즈 게이트(≤512KB, 프리필/큰
+텐서는 NCCL), torch.dist 스토어 부트스트랩, env 폴백
+(VLLM_DSV4_ONESHOT_AR), 품질 게이트(리듀스 순서 변경 bit-exact 아님)+브래킷.
 
 ### co-ingest 디코드 멎음 — 특성화 + 완화 기각 (2026-08-11, 운영자 결정)
 

@@ -129,16 +129,13 @@ __global__ void k_reduce_staged(float *dst, const float *src,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < NELEM) dst[i] = src[i] + s0[i] + s1[i] + s2[i];
 }
-__global__ void k_reduce_direct(float *dst, const float *src,
-                                volatile uint64_t *tx_seq, const float *rx0,
-                                const float *rx1, const float *rx2) {
-  // rx pointers are mapped-pinned; slot resolved from the live seq
-  uint64_t s = *tx_seq;
-  int slot = (int)(s % RING);
+__global__ void k_reduce_direct(float *dst, const float *src, Ctrl *c,
+                                int slot) {
+  // host-register rx read directly by the GPU (ATS cached, no staging)
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < NELEM)
-    dst[i] = src[i] + rx0[slot * NELEM + i] + rx1[slot * NELEM + i] +
-             rx2[slot * NELEM + i];
+    dst[i] = src[i] + c->rx[slot][0][i] + c->rx[slot][1][i] +
+             c->rx[slot][2][i];
 }
 
 // ---------------- proxy ----------------
@@ -333,12 +330,20 @@ int main(int argc, char **argv) {
   CHK(rank >= 0 && rank < 4);
 
   CUCHK(cudaSetDevice(0));
-  void *hp;
-  CUCHK(cudaHostAlloc(&hp, sizeof(Ctrl), cudaHostAllocMapped));
+  // GB10 UMA datapath: malloc + cudaHostRegister gives a page-locked,
+  // RDMA-registrable buffer that the GPU reads via ATS at CACHE speed
+  // (2.3x faster than cudaHostAllocMapped's uncached device pointer,
+  // measured 9.8 vs 22.5us for a 48KB reduce). The GPU uses the host
+  // pointer directly (no cudaHostGetDevicePointer), so staging copies
+  // vanish. See probes/uma_datapath.cu for the gate.
+  void *hp = NULL;
+  CUCHK(cudaMallocHost(&hp, 0));  // ensure a CUDA context exists
+  hp = aligned_alloc(4096, sizeof(Ctrl));
+  CHK(hp != NULL);
+  CUCHK(cudaHostRegister(hp, sizeof(Ctrl), cudaHostRegisterDefault));
   memset(hp, 0, sizeof(Ctrl));
   ctrl = (Ctrl *)hp;
-  Ctrl *dctrl;
-  CUCHK(cudaHostGetDevicePointer((void **)&dctrl, hp, 0));
+  Ctrl *dctrl = (Ctrl *)hp;  // GPU accesses the host VA directly
 
   // device-side src/dst/staging
   float *d_src, *d_dst, *d_stage_all;
@@ -475,6 +480,9 @@ int run_capture(cudaStream_t st, Ctrl *h, Ctrl *d, float *d_src, float *d_dst,
                             st));
       k_reduce_staged<<<grid, 256, 0, st>>>(d_dst, d_src, d_stage[0],
                                             d_stage[1], d_stage[2]);
+    } else if (mode == 1) {
+      // direct: GPU reduces straight from host-register rx (ATS cached)
+      k_reduce_direct<<<grid, 256, 0, st>>>(d_dst, d_src, d, slot);
     }  // mode 2: signalling core only
   }
   CUCHK(cudaStreamEndCapture(st, &graph));
