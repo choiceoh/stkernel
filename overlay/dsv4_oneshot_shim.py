@@ -42,8 +42,8 @@ _SHADOW = _flag("VLLM_DSV4_ONESHOT_SHADOW", "1")
 
 _ext = None
 _connected = False
+_selftest_ok = False
 _disabled = not _ENABLED
-_stats = {"n": 0, "maxdiv": 0.0}
 
 
 def _build():
@@ -86,6 +86,40 @@ def _bootstrap(comm):
     except Exception as e:
         _disabled = True
         logger.warning("[osar] bootstrap failed -> NCCL fallback: %r", e)
+        return
+    _self_test(comm, rank)
+
+
+def _self_test(comm, rank):
+    """Lockstep numerics gate: a single barrier-synchronized one-shot AR vs
+    NCCL on a fixed input. This is the ONLY place shadow mode drives the
+    one-shot path — matching NCCL's collective lockstep exactly — so the
+    stateful tx_seq ring can never desync against production AR traffic."""
+    global _selftest_ok, _disabled
+    try:
+        import torch
+        import torch.distributed as dist
+
+        g = comm.cpu_group
+        x = torch.full((6, 4096), float(rank + 1), dtype=torch.bfloat16,
+                       device="cuda")
+        dist.barrier(group=g)
+        ref = comm._all_reduce_impl(x.clone())  # NCCL, collective
+        dist.barrier(group=g)
+        got = _ext.oneshot_ar(x.clone())        # one-shot, lockstep via barrier
+        torch.cuda.synchronize()
+        dist.barrier(group=g)
+        div = (ref.float() - got.float()).abs().max().item()
+        if div <= 0.5:
+            _selftest_ok = True
+            logger.warning("[osar] self-test PASS div=%.4g (real=%s)", div,
+                           not _SHADOW)
+        else:
+            _disabled = True
+            logger.warning("[osar] self-test FAIL div=%.4g -> NCCL", div)
+    except Exception as e:
+        _disabled = True
+        logger.warning("[osar] self-test error -> NCCL: %r", e)
 
 
 def _eligible(t):
@@ -100,16 +134,20 @@ def _eligible(t):
 
 
 def maybe_all_reduce(comm, input_, orig):
-    """Return a reduced tensor if handled here, else None (caller uses NCCL)."""
+    """Return a reduced tensor if handled here, else None (caller uses NCCL).
+
+    One-shot only ever serves in REAL mode (shadow=0), where it replaces NCCL
+    at exactly the AR call sites — 4-rank lockstep is automatic. shadow=1 runs
+    the boot self-test then stays permanently on NCCL (observe-only)."""
     global _disabled
     if _disabled:
         return None
-    import torch
-
     if not _connected:
         _bootstrap(comm)
-        if not _connected:
-            return None
+    if _disabled or not _selftest_ok:
+        return None
+    if _SHADOW:
+        return None  # verified at boot; production traffic stays on NCCL
     if not _eligible(input_):
         return None
     if not _ext.healthy():
@@ -117,24 +155,7 @@ def maybe_all_reduce(comm, input_, orig):
         logger.warning("[osar] proxy unhealthy -> NCCL fallback")
         return None
     try:
-        capturing = torch.cuda.is_current_stream_capturing()
-        if _SHADOW:
-            if capturing:
-                return None  # graph: NCCL only, one-shot stays out of the graph
-            nccl_out = orig(input_)
-            osar_out = _ext.oneshot_ar(input_)
-            torch.cuda.synchronize()
-            div = (nccl_out.float() - osar_out.float()).abs().max().item()
-            _stats["n"] += 1
-            if div > _stats["maxdiv"]:
-                _stats["maxdiv"] = div
-            if _stats["n"] % 500 == 0:
-                logger.warning(
-                    "[osar] shadow n=%d maxdiv=%.4g", _stats["n"],
-                    _stats["maxdiv"])
-            return nccl_out
-        # real path (shadow=0): one-shot serves, incl. inside the decode graph
-        return _ext.oneshot_ar(input_)
+        return _ext.oneshot_ar(input_)  # real path (works in graph + eager)
     except Exception as e:
         _disabled = True
         logger.warning("[osar] runtime failure -> NCCL fallback: %r", e)
