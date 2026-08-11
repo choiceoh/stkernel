@@ -733,6 +733,23 @@ DMA ≈ 3–5µs)로 대체 → **현실 총 ~25–27µs = 콜당 ~40µs 절감 
 ②수동 `rdma_create_qp`는 `qp_type=IBV_QPT_RC` 명시 필수(EINVAL)
 ③이미지에 rdma_cma 헤더/librdmacm 부재 — 호스트 마운트로 빌드·실행.
 
+**Stage-2 코어 실증 (2026-08-11 같은 밤, `probes/oneshot_ar2.cu`)** —
+통합 전 3대 미지수를 전부 4노드 실측으로 해소:
+
+| 미지수 | 결과 |
+|---|---|
+| ①프로덕션 배선 (librdmacm 없는 이미지) | **해소** — 순수 libibverbs 재작성 (수동 RC QP INIT→RTR→RTS, RoCEv2 GID 자동탐지, TCP 부트스트랩→실통합은 torch.distributed 스토어). 컨테이너 자체 빌드·실행 성공 |
+| ②FULL cudagraph 호환 | **해소** — per-call 시퀀스(guard→copy-in→signal→wait→H2D→reduce)를 캡처, 2000리플레이×8콜 seq 정확(16,800)·numerics OK. **그래프 오버헤드 +2.5µs뿐** (코어 22.06→24.61µs) |
+| ③데이터패스 | 부분 — 커널복사(비캐시 read)는 210µs로 사망, **slot-major 레이아웃 + 단일 144KB H2D + WC 커널 copy-in = 42.8µs** 도달. 잔여 18µs는 소형 DMA 고정비/copy-in — 커널 병합·배치로 30–35µs 경로 가시 |
+
+**핵심 설계 발견**: `CALLS % RING == 0`이면 콜별 슬롯이 리플레이 불변 →
+고정 주소 memcpy 노드 캡처 가능 (런타임 슬롯 산술 불요). **현 시점 확정
+이득: 42.8µs vs NCCL 65µs = 콜당 −22µs × 94 = 스텝 −2.1ms (−5.2%),
+데이터패스 마무리 시 −7~9%.** 잔여 작업(별도 세션): 커널 병합(guard+copy+
+signal / wait+reduce), vLLM custom-op 패키징(부트시 nvcc 빌드),
+custom_all_reduce.py 오버레이 주입 + 사이즈 게이트(≤512KB), torch.dist
+부트스트랩, env 폴백(VLLM_DSV4_ONESHOT_AR), 품질 게이트+브래킷.
+
 ### co-ingest 디코드 멎음 — 특성화 + 완화 기각 (2026-08-11, 운영자 결정)
 
 저동시성 실사용의 숨은 지배 항목 정량화 (`bench/streamgap.py`): 디코드
