@@ -548,6 +548,26 @@ echo 0 | sudo tee /proc/sys/vm/compaction_proactiveness   # srv3·srv4 적용(08
 셋 다 상한 1–3%로 착수 하드 룰 미달 — 다음 세대 오버레이 작업 시 동반
 픽업 후보로만 잔존.
 
+## 전 축 재확인 — 프리필·장문·attn/indexer 전수 점검 (2026-08-11, "다른 걸 더")
+
+단일 GEMM 완결 후 리더보드 다른 test type 축까지 전수 확인:
+
+| 축 | 우리 실측 | 판정 |
+|---|---|---|
+| **프리필 pp2048** | ~2,900 tok/s (TTFT 0.75s) | GPU busy 99.8% 물리 바닥 — 패브릭 200G·클럭·컴팩션으로 이미 최적, 여지 0 |
+| **장문 ctx_tg@128K** | ~70 tok/s | IDXFREQ=6 봉우리 (곡선 완성 확정), 최적 |
+| **디코드 tg128 c1** | 65 (리더보드 최고 52.82 초과) | comms one-shot AR·GEMM 이미융합·MoE 대역폭 = 소진 |
+| **attn/indexer** (sparse MLA decode) | 2.2ms/step (4.9%) | **flashinfer 컴파일 CUDA 커널**(.cu/.cuh, template=컴파일타임 tile) — deep_gemm처럼 autotune 블랙박스, 튜닝=재컴파일 큰 작업 + 이득 상한 ~2% = 착수 바 미달 |
+| **norm/rope/quant** | 1.7ms/step | 이미지 소유 커널(per_token_group_quant armada), 오버레이 밖 |
+
+**★소프트웨어 최적화 전 축 완전 종결 (최종)**: 측정 가능한 모든
+축(디코드/프리필/장문/attn/norm)이 물리 바닥이거나 컴파일-커널 튜닝
+불가/이득 미미. 이 하드웨어·이 이미지에서 소프트웨어로 realize 가능한
+것은 전부 realize. 남은 이득은 오직 ①모델(DeepSeek 드래프터=수용률)
+②하드웨어(NVLink급 인터커넥트) ③저자 신규 이미지(감시 가동) — 전부
+우리 통제 밖. **스택은 공개 리더보드(spark-arena) 4노드 dsv4 tg128 1위
+상태로 종결.**
+
 ## 단일 스트림 극한 — 작은 GEMM 융합 여지 조사·이미 소진 판정 (2026-08-11)
 
 리더보드 1위 확인 후 "현재 동시성·클럭에서 소프트웨어로 c1을 더" 요구.
