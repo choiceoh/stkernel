@@ -15,7 +15,12 @@ SERVED_NAME=deepseek-v4-flash
 TP_SIZE=4
 GPU_MEM="${GPU_MEM:-0.60}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-16}"
+# MAX_NUM_SEQS 16->32 adopted 2026-08-11: aggregate decode keeps scaling
+# past the old cap (C=16 290 -> C=24 340 -> C=32 386 tok/s, +33%, raw acc
+# flat ~31-32%, C=16 identical across caps = zero cap overhead). M=32x6=192
+# stays inside GRAPH_CAP=256 (ceiling ~C=42); per-stream latency at C=32 is
+# ~12 tok/s — an admission cap, so low-concurrency behavior is unchanged.
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
 MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"
 GRAPH_CAP=256
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
