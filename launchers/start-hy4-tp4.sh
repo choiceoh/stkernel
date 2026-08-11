@@ -38,12 +38,17 @@ MARKOV_TOPK="${MARKOV_TOPK:-512}"
 # 62.11 / 64.28 / 62.14 = +3.5%; quality 9/9; greedy divergence 93 chars =
 # natural boot-to-boot 96 (indistinguishable); prefill neutral (M>32 path
 # untouched). GATEFUSE=0 disarms.
-# REFINE (VLLM_DSPARK_REFINE_PASS, default 0, UNMEASURED): two-pass draft
-# refinement — pass-1 tokens replace the noise slots and the backbone +
-# sequential sampling re-run with the SAME Gumbel keys (the seeded coupling
-# keeps the target distribution invariant by construction; only acceptance
-# moves). Costs one extra 3-layer backbone pass per draft step. Adopt only
-# on bench-dec acceptance + 9/9 (see MEASUREMENTS A/B queue).
+# REFINE (VLLM_DSPARK_REFINE_PASS, default 0, MEASURED-REJECTED 2026-08-12):
+# two-pass draft refinement — pass-1 tokens replace the noise slots and the
+# backbone + sequential sampling re-run with the SAME Gumbel keys. The comment
+# claimed "target invariant by construction, only acceptance moves [up]" — the
+# A/B measured the OPPOSITE: tg128 median 58.6->36.5 tok/s (-38%), raw accept
+# 21.4%->9.0% (halved), all positions worse. Worker logs confirm the feature
+# activates ("DSpark(v2) two-pass ... enabled") but APIServer warns "Unknown
+# vLLM env VLLM_DSPARK_REFINE_PASS" => half-wired in production-hybrid-1.6; the
+# refinement corrupts drafts (coupling doesn't hold) rather than improving them.
+# DO NOT enable on this image. Re-test with scratchpad refine_ab.py if a future
+# author image reimplements it. (MEASUREMENTS: REFINE_PASS A/B entry.)
 REFINE="${REFINE:-0}"
 # MARKOV_SIDELOAD (VLLM_DSPARK_MARKOV_SIDELOAD, default empty, UNMEASURED):
 # absolute path (under /home/choiceoh/models, ro-mounted on all nodes) to a
