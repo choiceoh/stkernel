@@ -548,6 +548,25 @@ echo 0 | sudo tee /proc/sys/vm/compaction_proactiveness   # srv3·srv4 적용(08
 셋 다 상한 1–3%로 착수 하드 룰 미달 — 다음 세대 오버레이 작업 시 동반
 픽업 후보로만 잔존.
 
+## 미세 이익 라운드 — 실측 종결 (2026-08-11~12, "미세라도 여러개 모으면")
+
+"물리 바닥" 선언이 이 세션 내내 여러 번 뒤집혔으므로(노브소진→컴팩션,
+comms바닥→one-shot AR +12%) 선언 대신 실측으로 미세 후보 전수 점검:
+
+| 후보 | 실측 | 판정 |
+|---|---|---|
+| **osar 커널 벡터화** (k_copy_in float4·k_reduce bfloat162, Ctrl alignas16) | numerics bit-exact(maxerr 0)지만 **k_reduce 75→72.6ms(−3% 노이즈)·copy 무변화** | **무이득 롤백** — 48KB 커널이 이미 grid-stride 대역폭 근처, 벡터화가 처리량 못 올림. ★함정: Ctrl 헤더 248B라 tx 16B 미정렬 → cudaErrorMisalignedAddress(alignas로 해결) |
+| osar 커널 병합 5→2 (앞 섹션) | 29→56µs | 단일블록 병렬성 손실 |
+| 작은 GEMM 융합 (앞 섹션) | 마이크로 +20~40% | 저자가 이미 fused_wqa_wkv로 realize |
+| **one-shot AllGather** (comms 잔여 0.4ms/step) | 미착수 | dspark.py:735 all_gather=**spec decode 경로** → one-shot AR급 통합+shadow 검증+수용률 리스크. 상한 −0.9% |
+| **attn/indexer flashinfer template** | 미착수 | sparse_mla_sm120 = 컴파일 .cu/.cuh, JIT 재컴파일 = one-shot AR급 작업, 상한 −2% |
+
+**판정: 즉시·저리스크 미세 이익 전부 무이득/소진 확정.** 남은 2후보
+(AllGather −0.9%·flashinfer −2%)는 one-shot AR급 통합·재컴파일 + spec
+decode/재컴파일 리스크 = 별도 집중 세션 규모. 이 세션(PR 44+, 15 태스크)에서
+안전 완결 불가로 다음 세션 우선순위 등재. **소프트웨어 realize 가능분은
+전부 소진, 남은 것은 리스크·규모 있는 대작업 2건뿐.**
+
 ## 전 축 재확인 — 프리필·장문·attn/indexer 전수 점검 (2026-08-11, "다른 걸 더")
 
 단일 GEMM 완결 후 리더보드 다른 test type 축까지 전수 확인:
