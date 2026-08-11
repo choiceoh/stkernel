@@ -861,6 +861,35 @@ NCCL 실경로 유지하며 numerics/속도만 관측, 검증 후 env로 전환.
 RC 유지 — 무이득 코드 배포 안 함). **one-shot AR 축 종결** — 추가 comms
 이득은 하드웨어(NVLink급 인터커넥트)뿐.
 
+### one-shot AR 후 디코드 재귀속 — 소프트웨어 축 완전 종결 (2026-08-11)
+
+채택 후 스텝 예산 재분해 (profile-step decode:600, real osar):
+
+| 버킷 | 구(NCCL) | 신(one-shot) |
+|---|---|---|
+| comms (NCCL 커널) | 6.5ms/13.5% | **0.4ms/1.0%** (AllGather 잔여만) |
+| osar 커널 (k_wait 2.7+reduce 0.3+copy 0.2, "other") | — | 3.2ms/step |
+| MoE (W4A16, 대역폭 바닥) | 16.5 | 16.8ms/37.4% |
+| GEMM (M=6 극소, 가중치 스트리밍) | 17.0 | 16.4ms/36.6% |
+| 스텝 총 | 39.6ms | **37.1ms** |
+
+**NCCL AllReduce가 트레이스에서 소멸, osar 커널이 대체 — comms 커널레벨
+6.5→3.2ms 눈으로 확인.** 새 병목 없음: 74%가 MoE+GEMM 대역폭 바닥, k_wait
+2.7ms는 wire 물리(UC 불변 확인), 나머지 규명·처리 완료.
+
+**마지막 미규명 `cutlass_80_wmma` 148ms(0.59ms/step) 규명 — 전량 기존
+기각 항목**: ①wmma_128x1 ×987 (드래프터 mtp head GEMM, `_save_partial_states`
+앞) = **FP8HEAD 기각분**(acc 무이동) ②wmma_128x2 ×754 (인덱서 weights_proj
+[64,4096], `_fused_kv_compress_norm_rope_insert_indexer` 앞) = **N=64<128
+fp8 구조적 부적격**(동결). 새 이득 아닌 재확인.
+
+**★소프트웨어 개선 축 완전 종결 (재확인)**: 디코드 스텝의 모든 버킷이
+물리 바닥(가중치 스트리밍 273GB/s) 또는 규명·기각 완료. one-shot AR이
+comms의 소프트웨어 여지를 소진(−9.6%). 추가 두 자릿수 이득은 오직
+①모델(DeepSeek 차기 드래프터 = 수용률) ②하드웨어(NVLink급 인터커넥트 =
+wire 물리) ③저자 신규 이미지(감시 타이머 가동)뿐. 이 스택은 이제 이
+하드웨어·이 이미지의 소프트웨어 상한에 전 축 도달.
+
 ### co-ingest 디코드 멎음 — 특성화 + 완화 기각 (2026-08-11, 운영자 결정)
 
 저동시성 실사용의 숨은 지배 항목 정량화 (`bench/streamgap.py`): 디코드
