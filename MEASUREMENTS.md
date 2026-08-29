@@ -1246,3 +1246,123 @@ RUNBOOK_MAINTENANCE.md 전항목 적용 + 플릿 재부팅. 사후 감사
   `generation_tokens` 15분 정지(정상 장시간 생성은 카운터가 증가하므로 판별
   가능)면 포렌식 후 재활용 ②일일 04시 유휴 캐시 리셋(무해 보험). A/B 프로토콜
   (프레시 엔진 + 동일 나이 표본)은 유지 — 원인 불문 장수 엔진 상태는 교란변수다.
+
+## 인접 모델 브링업에서 역수입한 항목 (2026-08-29/30)
+
+출처는 **GLM-5.3-Flash·Qwen3.8-Flash-Next 브링업**이지 dsv4 실측이 아니다. dsv4
+스택에 직접 걸리는 것(업스트림 감시·플릿 위생·b12x 미해결 질문)만 추렸다.
+
+### ★★ flashinfer 0.6.18.dev 회귀 — b12x MoE 전면 사망 (업스트림 감시 항목)
+
+0.6.18.dev의 `DenseGemmKernel`에 `_collapse_to_vmk`(MXF4 rank-4 뷰 정규화)가
+추가됐는데, **그 파티셔너를 빌려 쓰는 MoE 커널들에는 미이식**이다. SM12x MoE
+커널은 자기 인스턴스를 `self`로 넘겨 dense 파티셔너를 재사용한다:
+
+```python
+tCrSFA = self._dense_cls._partition_fragment_SFA(self, ...)
+```
+
+그 안에서 `self._collapse_to_vmk(...)`가 불리므로 **모든 b12x MoE 실행이**
+`AttributeError: 'MoE*Kernel' object has no attribute '_collapse_to_vmk'` 로 죽는다.
+차용 클래스는 4개(`MoEDynamicKernel`·`MoEGatedDynamicKernel`·`MoEStaticKernel`·
+`MoEMicroKernel`)이고 **어느 것도 헬퍼가 없다** — 런타임이 토큰 수에 따라 커널을
+갈아타므로 한 클래스만 고치면 크래시가 이동할 뿐이다. 올바른 수정은 빌려주는
+쪽: `_collapse_to_vmk`는 `@staticmethod`라 소유 클래스로 직접 호출하면 `self`가
+무엇이든 해결된다(호출부 2곳).
+
+**우리 프로덕션은 0.6.17이라 무사하다.** 이미지 업그레이드 시 이 지뢰를 먼저
+확인할 것 — `grep -c 'self._collapse_to_vmk(' dense_blockscaled_gemm_sm120_b12x.py`
+가 0이 아니면 해당.
+
+### b12x + EP — **종결(불가)**. 원장의 미해결 질문을 닫는다
+
+flashinfer가 진입점에서 하드 거부한다:
+
+```python
+if num_local_experts != num_experts:
+    raise NotImplementedError("b12x_fused_moe does not yet support Expert Parallelism ...")
+```
+
+워크스페이스 할당이 `state_E=local, weight_E=global`로 둘을 따로 받아 EP를
+지원하는 것처럼 보이지만 **경로가 구현돼 있지 않다**(이 오독으로 한 라운드
+소모). vLLM의 `_supports_parallel_config → not use_ep`는 배선 누락이 아니라
+커널의 거부를 충실히 반영한 것이다. **EP 쓰는 구성에서 b12x는 선택지가 아니다.**
+
+### `swiglu_limit` 클램프 — 재개 조건 ② 구현했으나 W4A4는 안 열린다
+
+원장 "W4A4/W4A8" 항목의 재개 조건 ②(B12X 클램프 구현)를 실제로 구현했다.
+FlashInfer `B12xMoEWrapper`는 처음부터 `swiglu_alpha/beta/limit`을 받고
+`gated_activation_f32`가 `g=min(g,lim); u=clamp(u,±lim); g*sigmoid(alpha*g)*(u+beta)`
+를 계산한다. **alpha=1.0, beta=0.0이면 vLLM의 `_swiglu_limit_torch`와 수학적으로
+동일**하므로, SILU+클램프를 `swigluoai_uninterleave`로 매핑하면 된다(vLLM 래퍼가
+인자를 전달하지 않았을 뿐).
+
+다만 **이것만으로 A4가 열리지는 않는다** — 실측 결과 b12x는 다른 이유로 막힌다
+(위 EP 항목, 아래 패딩 항목). 재개 조건 ①(swiglu_limit 없는 변종)도 이 계열에선
+성립하지 않는다: 우리 체크포인트와 RadixArk 판본 모두 `swiglu_limit=10.0`이고
+제외 목록(`mtp.*`·`*.mlp.shared_expert.*`)까지 동일하다 = 계열 표준 관행.
+
+### ★★ FP4 중간크기 패딩을 CUTLASS 분기로 확장 — **기각(출력 파괴)**
+
+`align_fp4_moe_weights_for_fi`는 TRTLLM 분기에만 배선돼 있고, CUTLASS/B12X
+분기는 같은 상황에서 `NotImplementedError`를 던진다. 랭크당 중간크기가 128
+정렬이 아닐 때(q38 TP4 EP-off: 640/4=160 → gate+up 320행, 384로 올림) 걸린다.
+**헬퍼를 CUTLASS 분기에도 연결하면 부팅은 통과한다 — 그러나 모델이 망가진다.**
+
+실측: `Padding intermediate size from 160 to 192` + `HEALTH-OK` 이후
+
+```
+'안녕하세요'          → '1'
+'Hello, how are you?' → ''
+'1부터 10까지 더하는 코드' → '10196700000000000000...'
+'360과 168의 최대공약수' → '168/360/168/560/360/168/...'   (반복 루프)
+```
+
+marlin의 안전성 근거("패딩 영역은 출력에 도달하지 않는다")는 **marlin 레이아웃
+전제**다. FlashInfer CUTLASS는 블록 스케일 스위즐이 달라 성립하지 않는다.
+**재시도 금지.** 그리고 이 사건의 교훈은 원장의 기존 규율을 다시 확인해준다 —
+**부팅 성공은 정확성의 증거가 아니다.** `HEALTH-OK`와 패딩 로그를 성공으로 읽고
+한 라운드를 잃었다.
+
+### 플릿 위생 — earlyoom이 vLLM을 우선 사살 (원장 미기재, 순손실)
+
+노드별 설정이 갈려 있다:
+
+| 노드 | `EARLYOOM_ARGS` |
+|---|---|
+| srv2·srv3 | `-m 2 -s 2 --avoid '(...\|VLLM\|vllm)'` |
+| **srv1** | `-m 5 -s 10 --prefer '(sglang\|python3)'` |
+| **srv4** | `-m 5 -s 5 --prefer (python3\|vllm\|pt_main_thread\|VLLM)` |
+
+srv4는 vLLM을 **`--prefer`(우선 사살)** 에 넣어두었고 srv1도 `python3`를 지목한다.
+브링업 중 워커 사망 6건이 전부 srv1·srv4에서 났고 srv2·srv3에서는 0건 —
+`--avoid`가 있는 두 노드다. 통합메모리 박스에서 큰 모델이 상주하면 낮은 free는
+**정상**이므로 백분율 임계는 건강한 모델을 쏜다. 4노드 설정 통일이 필요하다
+(절대 하한 + `--avoid`).
+
+### 호스트/UMA 위생 — "운영자 결정 대기" 항목이 실행됨 (2026-08-29)
+
+원장 §남은 검증된 레버 3의 **플릿 재부팅(고차 페이지 재건)** 을 4노드 전부
+수행했다. 재부팅 직후 실측:
+
+| 노드 | order9 | order10 | compact_stall |
+|---|---|---|---|
+| srv1 | 411→693 | 0 → **206→1366** | 3,119,115 → **0** |
+| srv2 | 12→550 | 0 → **146→782** | 62,446 → **0** |
+| srv3 | 635 | **479** | **0** |
+| srv4 | 8 | **3086** | **0** |
+
+재부팅 전 4노드 전부 `order9=0 order10=0`(레포 자체 합격 기준 `order10 > 0`
+불합격)이었고 srv1은 18일 무재부팅에 compaction stall 311만이었다.
+**`drop_caches`·`compact_memory`로는 복구되지 않는다**(원장 기존 기록과 일치).
++1.4~1.6% 유지 여부는 **재측정 필요** — 이 세션은 dsv4 벤치를 돌리지 못했다.
+
+### 반복 비용 — 설정 검증은 `LOAD_FORMAT=dummy`로
+
+브링업 실패의 대부분이 설정 경로(백엔드 거부·패딩 미구현·dynamo 가드·비양자화
+MoE)인데, 매번 가중치 로딩(q38 206샤드 ≈ 6분)을 먼저 기다렸다. `--load-format
+dummy`는 난수 가중치를 채우므로 로딩이 초 단위가 되지만 **백엔드 선택·MoE 구성·
+정렬 경로·컴파일·메모리 프로파일링·그래프 캡처는 전부 그대로 실행**된다 —
+실패하던 표면과 정확히 일치한다. 15분 → 3분. 속도·품질 수치는 당연히 무의미하니
+"뜨는가"와 "얼마인가"를 분리해서 쓸 것. FlashInfer JIT 캐시(`/root/.cache/
+flashinfer`)도 마운트하지 않으면 매 부팅 재컴파일한다.
