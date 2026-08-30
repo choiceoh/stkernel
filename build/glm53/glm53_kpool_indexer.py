@@ -1264,6 +1264,41 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             # capture) and hand down max_decode_len as the scatter lmax.
             write_is_uniform = min_decode_len == max_decode_len
             next_n = 1 + self.num_speculative_tokens
+            # The kpool decode WRITE branches on use_uniform (see
+            # sparse_attn_indexer_kpool): uniform reshapes, non-uniform scatters
+            # into a padded [B, lmax]. That is a host-side branch inside the
+            # model forward, so whichever side ran at capture is frozen into the
+            # graph and replay never reconsiders it. Capture always runs a
+            # uniform decode, so any batch that replays a full graph has to be
+            # uniform here too.
+            #
+            # It is today: the runner's _is_uniform_decode is the stricter
+            # predicate (every request scheduled exactly uniform_decode_query_len
+            # tokens), and these lens are torch.diff(query_start_loc_cpu) -- the
+            # same scheduled counts. So runner-uniform implies write-uniform and
+            # the branch cannot disagree with its capture.
+            #
+            # But that implication lives in two files that are maintained apart,
+            # and upstream has already had to patch one hole in it
+            # (all_reqs_past_prompt, where a prefill chunk shaped like a decode
+            # reached a spec-verify graph). Check it where checking is free:
+            # build() runs eagerly every step, outside any capture. The
+            # condition below is the runner's own uniform signature, so this
+            # cannot fire while the two agree -- which is the point.
+            if (
+                num_decodes
+                and max_decode_len == next_n
+                and num_decode_tokens == num_decodes * max_decode_len
+                and not write_is_uniform
+            ):
+                raise RuntimeError(
+                    "kpool decode-write uniformity disagrees with the runner: "
+                    f"lens min={min_decode_len} max={max_decode_len} "
+                    f"next_n={next_n} num_decodes={num_decodes} "
+                    f"num_decode_tokens={num_decode_tokens}. This batch would "
+                    "dispatch to a cudagraph captured on the uniform branch "
+                    "while the write path needs the scatter branch."
+                )
             use_native = (
                 not (self.use_flattening or self.supports_varlen)
                 and max_decode_len <= next_n
