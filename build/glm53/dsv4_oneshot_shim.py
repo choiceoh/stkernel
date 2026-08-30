@@ -25,7 +25,15 @@ import time
 logger = logging.getLogger("vllm.dsv4.osar")
 
 _MAXEL = 131072  # 256KB bf16 — matches the extension's MAXEL size gate
-IPS = ["10.10.10.2", "10.10.10.3", "10.10.10.1", "10.10.10.4"]
+# No rank->IP table here. Which node holds which rank is the launcher's choice,
+# not a property of the fleet: hy4 orders its workers 10.10.10.3, 10.10.10.1,
+# 10.10.10.4 and the glm53 launcher orders them 10.10.10.1, 10.10.10.3,
+# 10.10.10.4, so a literal list written against one of them binds ranks 1 and 2
+# to each other's NIC on the other. That is what "oneshot verbs failure" was,
+# and it failed on exactly 10.10.10.1 and 10.10.10.3.
+#
+# Every launcher already passes each container its own address as VLLM_HOST_IP,
+# which is right by construction.
 # The .cu is mounted next to this file by the module manifest, so derive the
 # path from here rather than naming an image's layout. It used to be the literal
 # /opt/venv/lib/python3.12/site-packages/... of the dsv4 image; the glm53 image
@@ -78,7 +86,16 @@ def _bootstrap(comm):
         rank = comm.rank_in_group
         os.makedirs("/root/.osar_build", exist_ok=True)
         _ext = _build()
-        _ext.init(rank, comm.world_size, IPS[rank])
+        local_ip = os.environ.get("VLLM_HOST_IP", "").strip()
+        if not local_ip:
+            logger.warning(
+                "[osar] VLLM_HOST_IP is unset -- there is no correct NIC to "
+                "bind to, and guessing is what broke this before. Staying on "
+                "NCCL."
+            )
+            _disabled = True
+            return
+        _ext.init(rank, comm.world_size, local_ip)
         gathered = [None] * comm.world_size
         dist.all_gather_object(gathered, _ext.local_infos(), group=comm.cpu_group)
         _ext.connect(gathered)
