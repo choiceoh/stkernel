@@ -337,6 +337,67 @@ def test_bench_dec_metrics() -> None:
 # ---------------------------------------------------------------------------
 # 7. build/<profile>/manifest.tsv — the composed overlay inventory
 # ---------------------------------------------------------------------------
+def test_overlay_symbol_contracts() -> None:
+    """An overlay importing from a module another overlay owns must find it there.
+
+    glm53_model_wiring rewrote a stock import to take DenebGateLinear from
+    moe_gate_sm121 and carried a second name along that the gate module does not
+    define. `requires` records the dependency but not which symbols it expects,
+    and since the overlays were never mounted, nothing had tried the import --
+    so the boot died on ImportError forty seconds in.
+    """
+    owners = {}          # dotted module path -> (module dir, source path)
+    for manifest in sorted(glob.glob(
+            os.path.join(REPO, "overlay", "modules", "*", "manifest.tsv"))):
+        moddir = os.path.dirname(manifest)
+        for raw in open(manifest, encoding="utf-8"):
+            line = raw.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            source, target = line.split("\t")[:2]
+            if not source.endswith(".py"):
+                continue
+            # Targets are absolute for image-bound overlays and relative to the
+            # package root for portable ones, so anchoring on "/vllm/" silently
+            # skipped every portable module -- including moe_gate_sm121, the one
+            # this check exists for.
+            if target.startswith("vllm/"):
+                rel = target
+            elif "/vllm/" in target:
+                rel = "vllm/" + target.split("/vllm/", 1)[1]
+            else:
+                continue
+            dotted = rel[:-3].replace("/", ".")
+            owners[dotted] = os.path.join(moddir, source)
+
+    checked = 0
+    for dotted, srcpath in sorted(owners.items()):
+        provided = set()
+        tree = ast.parse(open(srcpath, encoding="utf-8").read())
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                provided.add(node.name)
+            elif isinstance(node, ast.Assign):
+                provided.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                provided.add(node.target.id)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                provided.update((a.asname or a.name).split(".")[0] for a in node.names)
+
+        for other in sorted(set(owners.values())):
+            if other == srcpath:
+                continue
+            for node in ast.walk(ast.parse(open(other, encoding="utf-8").read())):
+                if not isinstance(node, ast.ImportFrom) or node.module != dotted:
+                    continue
+                for alias in node.names:
+                    checked += 1
+                    check(alias.name in provided,
+                          f"{os.path.basename(other)} imports {alias.name} from "
+                          f"{dotted}, which {os.path.basename(srcpath)} does not define")
+    print(f"  overlay symbol contracts ({checked}) ... OK")
+
+
 def _composed_manifests() -> list[tuple[str, str, str]]:
     """(profile, target_prefix, manifest path) for every composed profile."""
     out = []
@@ -775,6 +836,7 @@ if __name__ == "__main__":
     test_profile_step()
     test_bench_dec_metrics()
     test_overlay_manifest()
+    test_overlay_symbol_contracts()
     test_dspark_speed_guards()
     test_bf16_release_guards()
     test_acceptance_lever_guards()
