@@ -35,6 +35,9 @@ WORKERS="10.10.10.3:1 10.10.10.1:2 10.10.10.4:3"
 MODEL_PATH="${MODEL_PATH:-/home/choiceoh/models/DeepSeek-V4-Flash-0731}"
 SERVED_NAME="${SERVED_NAME:-deepseek-v4-flash}"
 TP_SIZE=4
+# Whether GPU_MEM was pinned by the caller, recorded before the default below
+# fills it in. The preflight raises it only when it was not.
+_GPU_MEM_PINNED=${GPU_MEM:+1}
 GPU_MEM="${GPU_MEM:-0.60}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
 # MAX_NUM_SEQS 16->32 adopted 2026-08-11: aggregate decode keeps scaling
@@ -372,9 +375,14 @@ for w in $WORKERS; do
 done
 echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} base-attested overlays + manifest in sync x4)"
 
-echo "=== [1/5] retire old vllm-dsv4 containers (free memory) ==="
-docker rm -f vllm-dsv4 2>/dev/null || true
-for w in $WORKERS; do ip=${w%%:*}; ssh $SSHOPT choiceoh@$ip "docker rm -f vllm-dsv4-worker 2>/dev/null; true"; done
+echo "=== [1/5] retire old containers (free memory) ==="
+# Both the previous generation's names and our own. Leaving hy4/hy4-worker for
+# the launch loop meant every memory reading below was taken with the previous
+# run still resident -- on the glm53 lane that made free memory swing by 70 GiB
+# between boots and produced "unexpected tenant" readings that were just the
+# last boot.
+docker rm -f vllm-dsv4 hy4 2>/dev/null || true
+for w in $WORKERS; do ip=${w%%:*}; ssh $SSHOPT choiceoh@$ip "docker rm -f vllm-dsv4-worker hy4-worker 2>/dev/null; true"; done
 sleep 3
 
 echo "=== [1.5/5] drop reclaimable page cache on all nodes (UMA memory check) ==="
@@ -385,6 +393,32 @@ echo "=== [1.5/5] drop reclaimable page cache on all nodes (UMA memory check) ==
 DROPCMD='sync; if sudo -n true 2>/dev/null; then echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null; echo "caches dropped"; else echo "no passwordless sudo - skipped"; fi; free -g | head -2'
 bash -c "$DROPCMD" 2>&1 | sed 's/^/  head: /'
 for w in $WORKERS; do ip=${w%%:*}; ssh $SSHOPT choiceoh@$ip "$DROPCMD" 2>&1 | sed "s/^/  $ip: /"; done
+
+echo "=== [1.6/5] size GPU_MEM against measured free memory ==="
+# The number was a fixed 0.60 with nothing checking it against the fleet. KV is
+# (GPU_MEM x total - weights - activations), so when free memory is larger than
+# 0.60 assumes, the pool is smaller than it needs to be for no reason.
+#
+# Production, so this only ever raises. The preflight reports an upper bound
+# from free memory, not a floor from what the model needs -- adopting a lower
+# one could starve KV, which on the glm53 lane surfaced as "No available memory
+# for the cache blocks". Below the configured value it warns and leaves it.
+PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
+if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ]; then
+  _nodes="$HEAD_IP"; for w in $WORKERS; do _nodes="$_nodes ${w%%:*}"; done
+  if GPU_MEM_SAFE=$("$PREFLIGHT" 3 $_nodes); then
+    if [ "${_GPU_MEM_PINNED:-}" = 1 ]; then
+      echo "  GPU_MEM=$GPU_MEM 은 호출자 지정 — 실측값 $GPU_MEM_SAFE 을 적용하지 않습니다"
+    elif awk "BEGIN{exit !($GPU_MEM_SAFE > $GPU_MEM)}" 2>/dev/null; then
+      echo "  GPU_MEM $GPU_MEM -> $GPU_MEM_SAFE (실측 채택 — KV 가 늘어납니다)"
+      GPU_MEM=$GPU_MEM_SAFE
+    elif awk "BEGIN{exit !($GPU_MEM_SAFE < $GPU_MEM)}" 2>/dev/null; then
+      echo "  ! 실측 상한 $GPU_MEM_SAFE < 설정 $GPU_MEM — OOM 가능. 프로덕션이므로 낮추지 않습니다"
+    fi
+  else
+    echo "  preflight refused (a node was unreachable); GPU_MEM=$GPU_MEM 유지"
+  fi
+fi
 
 echo "=== [2/5] write serve script (compose-faithful) ==="
 cat > /tmp/serve-hy4.sh <<'SERVEEOF'
