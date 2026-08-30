@@ -70,6 +70,12 @@ DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
 # AUDIT=1 mounts overlay/modules/glm53_drop_audit and turns it on. It reports
 # a sampled token discarded past prefill, and a break in the contiguity that
 # three accepted-token counts assume. Diagnostic only.
+# b12x picks static vs dynamic MoE by routed_rows = tokens * top_k against a
+# cutover of 640. A speculative verify step is 8 tokens -> 64 routed rows ->
+# static, while prefill goes dynamic and a non-speculative decode step (8 rows)
+# goes direct_micro. Setting this to 0 sends everything to dynamic, which is
+# how to find out whether static is where the Korean fragments come from.
+MOE_CUTOVER="${MOE_CUTOVER:-}"
 AUDIT="${AUDIT:-0}"
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
@@ -189,6 +195,9 @@ done
 
 # glm53_drop_audit ships in the manifest; this only arms it.
 [ "$AUDIT" = 1 ] && ENVV="$ENVV -e VLLM_DENEB_DROP_AUDIT=1"
+if [ -n "$MOE_CUTOVER" ]; then
+  ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"
+fi
 
 # SPEC=0 serves straight from the target model -- no drafter, no accept path.
 # Only for isolating a defect: it costs the whole speculative speedup.
