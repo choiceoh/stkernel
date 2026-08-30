@@ -9,11 +9,26 @@
 # WORKER-FIRST, head last.
 set -euo pipefail
 
-IMAGE="${IMAGE:-glm53:v10-dflash2}"
+# Defaults come from the profile; compose-overlays.sh reads the same file, so
+# the serving knobs have one home. Caller env wins over it -- a bare source
+# would clobber an explicit override, which is how the diagnostic runs are made.
+PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env}"
+if [ -f "$PROFILE_ENV" ]; then
+  _caller=""
+  for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
+            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED; do
+    [ -n "${!_v:-}" ] && _caller="$_caller $_v=$(printf %q "${!_v}")"
+  done
+  # shellcheck disable=SC1090
+  . "$PROFILE_ENV"
+  [ -n "$_caller" ] && eval "$_caller"
+  IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
+fi
+
+IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
 NAME_WORKER=glm53-worker
 MODEL_HOST_PATH=/home/choiceoh/models/glm-5.3-flash-nvfp4
-INDEXER_PATCH=/home/choiceoh/patches/sparse_attn_indexer_kpool.py
 MODEL_PATH=/models/glm-5.3-flash-nvfp4
 CACHE_HOST_PATH=/home/choiceoh/glm53-cache
 LOG_HOST_DIR=/home/choiceoh/glm53-logs
@@ -21,36 +36,103 @@ HEAD_IP=10.10.10.2
 WORKER_IPS=(10.10.10.1 10.10.10.3 10.10.10.4)
 MPORT=29521
 PORT=8000
-GMU="${GMU:-0.85}"
-MOE_BACKEND="${MOE_BACKEND:-marlin}"
-EAGER="${EAGER:-1}"
-GRAPH_CAP="${GRAPH_CAP:-256}"
+GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
+MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"   # GLM spells b12x this way; marlin is gone
+EAGER="${EAGER:-0}"
+GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
-MAX_SEQS="${MAX_SEQS:-6}"
+MAX_SEQS="${MAX_SEQS:-4}"
 MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
 COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}}"
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
 DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
+# AUDIT=1 mounts overlay/modules/glm53_drop_audit and turns it on. It reports
+# a sampled token discarded past prefill, and a break in the contiguity that
+# three accepted-token counts assume. Diagnostic only.
+AUDIT="${AUDIT:-0}"
+KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 MAX_LEN="${MAX_LEN:-1048576}"
-SPEC_K="${SPEC_K:-4}"
+SPEC_K="${SPEC_K:-7}"             # the comment above is not advisory
 SSHOPT="-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8"
 
-test -f "$MODEL_HOST_PATH/config.json"
-test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
+# Overlays come from the profile's composed manifest, put on every node by
+# launchers/deploy-overlays.sh. This used to be a single hardcoded bind while
+# the profile named eleven modules.
+OVERLAY_DIR="${OVERLAY_DIR:-${PROFILE_OVERLAY_DIR:-/home/choiceoh/overlays/glm53}}"
+OVERLAY_MANIFEST="$OVERLAY_DIR/manifest.tsv"
+OVFILES=(); OVTARGETS=(); OVBASES=()
+
+load_overlay_manifest() {
+  local manifest="$1" source target base extra seen
+  [ -f "$manifest" ] || { echo "ABORT: overlay manifest missing ($manifest) -- run deploy-overlays.sh glm53"; exit 1; }
+  while IFS=$'\t' read -r source target base extra \
+      || [ -n "${source:-}${target:-}${base:-}${extra:-}" ]; do
+    [[ -z "$source" || "$source" == \#* ]] && continue
+    [ -n "$target" ] && [ -n "$base" ] && [ -z "${extra:-}" ] \
+      || { echo "ABORT: malformed overlay manifest row: $source $target $base ${extra:-}"; exit 1; }
+    case "$source" in *[!A-Za-z0-9._-]*|.*) echo "ABORT: unsafe overlay source: $source"; exit 1;; esac
+    case "$target" in
+      "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}"*) ;;
+      *) echo "ABORT: overlay target outside the package root: $target"; exit 1;;
+    esac
+    case "$target" in *[!A-Za-z0-9_./-]*) echo "ABORT: unsafe character in target: $target"; exit 1;; esac
+    [ "$base" = absent ] || [[ "$base" =~ ^[0-9a-f]{64}$ ]] \
+      || { echo "ABORT: invalid base contract for $source: $base"; exit 1; }
+    for seen in ${OVFILES[@]+"${OVFILES[@]}"}; do
+      [ "$seen" != "$source" ] || { echo "ABORT: duplicate overlay source: $source"; exit 1; }
+    done
+    for seen in ${OVTARGETS[@]+"${OVTARGETS[@]}"}; do
+      [ "$seen" != "$target" ] || { echo "ABORT: duplicate overlay target: $target"; exit 1; }
+    done
+    OVFILES+=("$source"); OVTARGETS+=("$target"); OVBASES+=("$base")
+  done < "$manifest"
+  (( ${#OVFILES[@]} > 0 )) || { echo "ABORT: overlay manifest is empty"; exit 1; }
+}
+if [ "${DRY_RUN:-0}" = 1 ] && [ ! -f "$OVERLAY_MANIFEST" ]; then
+  echo "note: no overlay manifest at $OVERLAY_MANIFEST (deploy-overlays.sh glm53)"
+else
+  load_overlay_manifest "$OVERLAY_MANIFEST"
+fi
+
+[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/config.json"
+[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
   echo "ABORT: chat_template_mm.jinja missing in model dir (copy from ~/glm53-4x/)"; exit 1; }
 
-# Refuse to start over a live dsv4/q38 stack.
-for ip in $HEAD_IP "${WORKER_IPS[@]}"; do
+# Refuse to start over a live dsv4/q38 stack. Skipped under DRY_RUN: these ask
+# the machines about themselves, which a config print has no use for.
+for ip in $([ "${DRY_RUN:-0}" = 1 ] || echo "$HEAD_IP ${WORKER_IPS[@]}"); do
   run() { if [ "$ip" = "$HEAD_IP" ]; then bash -c "$1"; else ssh $SSHOPT choiceoh@"$ip" "$1"; fi; }
   if run 'docker ps --format "{{.Names}}"|grep -qE "^(hy4|q38)"'; then
     echo "ABORT: $ip runs hy4/q38 — stop production/experiment first"; exit 1; fi
   run "test -f $MODEL_HOST_PATH/config.json" || { echo "ABORT: $ip missing weights"; exit 1; }
-  run "test -f $INDEXER_PATCH" || { echo "ABORT: $ip missing SM121 indexer patch"; exit 1; }
+  if (( ${#OVFILES[@]} )); then
+    _sum=$(cd "$OVERLAY_DIR" && sha256sum manifest.tsv "${OVFILES[@]}" 2>/dev/null)
+    [ "$(run "cd $OVERLAY_DIR && sha256sum manifest.tsv ${OVFILES[*]} 2>/dev/null")" = "$_sum" ] \
+      || { echo "ABORT: $ip overlays differ from head -- run deploy-overlays.sh glm53"; exit 1; }
+  fi
   run "docker image inspect $IMAGE >/dev/null 2>&1" || { echo "ABORT: $ip missing image"; exit 1; }
 done
+
+# The manifest pins each target's sha256 as the image ships it. A mismatch means
+# the overlay was written against a different build and would replace code it has
+# never seen; "absent" means the overlay adds a file, so the image must NOT have
+# one. One container start covers every row.
+if [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
+  _got=$(docker run --rm --entrypoint sha256sum "$IMAGE" "${OVTARGETS[@]}" 2>/dev/null || true)
+  for _i in "${!OVFILES[@]}"; do
+    _have=$(printf '%s\n' "$_got" | awk -v t="${OVTARGETS[$_i]}" '$2==t{print $1}')
+    if [ "${OVBASES[$_i]}" = absent ]; then
+      [ -z "$_have" ] || { echo "ABORT: ${OVFILES[$_i]} is declared new but the image already has ${OVTARGETS[$_i]}"; exit 1; }
+    else
+      [ "$_have" = "${OVBASES[$_i]}" ] \
+        || { echo "ABORT: base preimage mismatch for ${OVFILES[$_i]} (image ${_have:-missing}, manifest ${OVBASES[$_i]})"; exit 1; }
+    fi
+  done
+  echo "overlays: ${#OVFILES[@]} base contracts verified against $IMAGE"
+fi
 
 # Our proven fabric env (dual HCA), their runtime env.
 ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
@@ -75,15 +157,20 @@ ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
 --memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --cap-add IPC_LOCK \
 --device /dev/infiniband:/dev/infiniband \
--v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs \
--v $INDEXER_PATCH:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py:ro"
+-v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs"
+for _i in ${OVFILES[@]+"${!OVFILES[@]}"}; do
+  COMMON="$COMMON -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
+done
+
+# glm53_drop_audit ships in the manifest; this only arms it.
+[ "$AUDIT" = 1 ] && ENVV="$ENVV -e VLLM_DENEB_DROP_AUDIT=1"
 
 # SPEC=0 serves straight from the target model -- no drafter, no accept path.
 # Only for isolating a defect: it costs the whole speculative speedup.
 if [ "${SPEC:-1}" = 0 ]; then
   SPECCFG_VAL=""
 elif [ "$DFLASH2" = 1 ]; then
-  test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
+  [ "${DRY_RUN:-0}" = 1 ] || test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
   COMMON="$COMMON -v $DRAFT_HOST_PATH:/models/dflash2-draft:ro"
   SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":7}'"
 else
@@ -108,7 +195,7 @@ SERVE_ARGS="$MODEL_PATH \
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
 $SPECCFG_VAL \
---kv-cache-dtype fp8_e4m3 $KV_FLAG \
+--kv-cache-dtype $KV_DTYPE $KV_FLAG \
 $ASYNC_FLAG \
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT' \
@@ -116,6 +203,22 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+
+# DRY_RUN=1 prints what the knobs resolved to and stops -- before the cache
+# reclaim, before any container. A default that points at a deleted image or a
+# deleted backend is otherwise invisible until the boot fails.
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo "profile   : ${PROFILE_ENV:-<none>}"
+  for _k in IMAGE MOE_BACKEND KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
+    printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
+  done
+  echo "overlays  :"
+  printf '%s\n' "${COMMON:-}" | tr ' ' '\n' | grep -A0 "dist-packages" | sed 's/^/    /'
+  echo "spec flag : ${SPECCFG_VAL:-<none>}"
+  echo "graph flag: ${EAGER_FLAG:-<none>}"
+  exit 0
+fi
 
 mkdir -p "$CACHE_HOST_PATH" "$LOG_HOST_DIR"
 
