@@ -1,3 +1,5 @@
 b12x_moe_experts.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py	e613afe5da2742e42c717c1a0a56bd9e1c7e3e0452a828db0013d81063518954
 b12x_oracle_nvfp4.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/oracle/nvfp4.py	e48da1c597f7fcc2992efc5211be4e1d3187b4c4fcd92e49e90029a7a6e48047
 dense_blockscaled_gemm_sm120_b12x.py	/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py	3bef54f14f5b410acc2874d8536990d635662c11fc7d2683bd6c5239381e412a
+moe_gate_sm121.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
+glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1

@@ -18,7 +18,7 @@ ENVFILE="$REPO/profiles/$PROFILE.env"
 # Where this image keeps its packages. Profile-owned: the DSV4 image uses the
 # venv site-packages, GLM's uses dist-packages, and a module may target
 # flashinfer rather than vllm.
-TARGET_PREFIX=${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/vllm/}
+TARGET_PREFIX=${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/}
 
 OUT="$REPO/build/$PROFILE"
 rm -rf "$OUT"
@@ -43,6 +43,13 @@ for mod in $MODULES; do
       || { echo "ABORT: $target bound by ${TGT_OWNER[$target]} and $mod"; exit 1; }
     SRC_OWNER[$source]=$mod
     TGT_OWNER[$target]=$mod
+    # A target may be written relative to the package root, which is what lets
+    # one module serve images that install to different places. Absolute targets
+    # are left alone.
+    case "$target" in
+      /*) ;;
+      *) target="${TARGET_PREFIX}${target}" ;;
+    esac
     case "$target" in
       "$TARGET_PREFIX"*) ;;
       *) echo "ABORT: $mod binds $target, outside $PROFILE's TARGET_PREFIX ($TARGET_PREFIX)"; exit 1 ;;
