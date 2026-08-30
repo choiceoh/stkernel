@@ -26,10 +26,13 @@ logger = logging.getLogger("vllm.dsv4.osar")
 
 _MAXEL = 131072  # 256KB bf16 — matches the extension's MAXEL size gate
 IPS = ["10.10.10.2", "10.10.10.3", "10.10.10.1", "10.10.10.4"]
-_SRC = (
-    "/opt/venv/lib/python3.12/site-packages/vllm/distributed/"
-    "device_communicators/dsv4_oneshot_ar.cu"
-)
+# The .cu is mounted next to this file by the module manifest, so derive the
+# path from here rather than naming an image's layout. It used to be the literal
+# /opt/venv/lib/python3.12/site-packages/... of the dsv4 image; the glm53 image
+# puts vllm under /usr/local/lib/python3.12/dist-packages, so the build raised
+# FileNotFoundError and the shim fell back to NCCL exactly as designed -- which
+# is why nothing looked wrong and this had never run on that image at all.
+_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dsv4_oneshot_ar.cu")
 
 
 def _flag(name, default):
