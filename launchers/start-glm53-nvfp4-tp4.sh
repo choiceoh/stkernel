@@ -9,6 +9,11 @@
 # WORKER-FIRST, head last.
 set -euo pipefail
 
+# Whether GMU was pinned by the caller, recorded before the profile and the
+# default below can fill it in. The preflight adopts its measured value only
+# when it was not.
+_GMU_PINNED=${GMU:+1}
+
 # Defaults come from the profile; compose-overlays.sh reads the same file, so
 # the serving knobs have one home. Caller env wins over it -- a bare source
 # would clobber an explicit override, which is how the diagnostic runs are made.
@@ -257,6 +262,50 @@ KV_FLAG=""; [ "$KV_BYTES" != auto ] && KV_FLAG="--kv-cache-memory $KV_BYTES"
 # ASYNC_SCHED=0 removes the async scheduler while leaving the drafter in
 # place. vLLM registers bools via BooleanOptionalAction, hence --no-.
 ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
+# Reclaim stale containers, then page cache, then size GMU -- in that order,
+# and before SERVE_ARGS bakes the number in.
+#
+# The order is the point. This used to run after SERVE_ARGS was built, so the
+# measured value could not reach --gpu-memory-utilization at all: the preflight
+# printed a recommendation and the boot ignored it. And it ran before the
+# launch loop removes the previous run's workers, so it measured with those
+# still resident -- which is where "an unexpected tenant" readings and free
+# memory that swung by 70 GiB between boots came from.
+#
+# NVRM allocates against MemFree, so cached file pages are memory the engine
+# cannot use. SKIP_PREFLIGHT=1 opts out of the whole step.
+PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
+if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" != 1 ]; then
+  echo "== 이전 부팅 잔여 컨테이너 회수 =="
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    if [ "$_ip" = "$HEAD_IP" ]; then
+      docker rm -f $NAME_HEAD $NAME_WORKER >/dev/null 2>&1 || true
+    else
+      ssh $SSHOPT choiceoh@"$_ip" "docker rm -f $NAME_HEAD $NAME_WORKER >/dev/null 2>&1; true" || true
+    fi
+  done
+
+  echo "== memfree preflight =="
+  # Report goes to stderr (straight to the terminal); the computed GMU is the
+  # only thing on stdout, so $(...) captures it alone.
+  if GMU_SAFE=$("$PREFLIGHT" 3); then
+    if [ "${_GMU_PINNED:-}" = 1 ]; then
+      if awk "BEGIN{exit !($GMU > $GMU_SAFE)}" 2>/dev/null; then
+        echo "  ! GMU=$GMU 를 호출자가 지정했고 실측 상한($GMU_SAFE)을 넘습니다 — 그대로 진행"
+      fi
+    elif awk "BEGIN{exit !($GMU != $GMU_SAFE)}" 2>/dev/null; then
+      # Both directions. Backing GMU off is the intuitive move and the wrong
+      # one: weights and activations come out of the same budget, so KV is
+      # (GMU x total - overhead) and shrinking GMU drives it negative. Four
+      # boots died that way before this adopted the measured value.
+      echo "  GMU $GMU -> $GMU_SAFE (실측 채택)"
+      GMU=$GMU_SAFE
+    fi
+  else
+    echo "  preflight refused (a node was unreachable); continuing with GMU=$GMU"
+  fi
+fi
+
 SERVE_ARGS="$MODEL_PATH \
 --served-model-name $SERVED_NAME \
 --host 0.0.0.0 --port $PORT \
@@ -322,25 +371,6 @@ if [ -f "$OVERLAY_MANIFEST" ]; then
       bash -c "printf '%s' \"$_ov_sha\" > \"$_stamp\""
   fi
 fi
-
-# Reclaim page cache on every node before the engine measures free memory.
-# NVRM allocates against MemFree, so cached file pages are memory the engine
-# cannot use, and pulling this image alone accounts for ~11 GiB of it.
-# SKIP_PREFLIGHT=1 opts out.
-PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
-if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ]; then
-  echo "== memfree preflight =="
-  # Report goes to stderr (straight to the terminal); the computed GMU is the
-  # only thing on stdout, so $(...) captures it alone.
-  if GMU_SAFE=$("$PREFLIGHT" 3); then
-    if awk "BEGIN{exit !($GMU > $GMU_SAFE)}" 2>/dev/null; then
-      echo "  ! GMU=$GMU exceeds what free memory supports ($GMU_SAFE) -- boot may OOM"
-    fi
-  else
-    echo "  preflight refused (a node was unreachable); continuing with GMU=$GMU"
-  fi
-fi
-
 
 # Workers first (rank 1..3), head last — their documented order.
 rank=1
