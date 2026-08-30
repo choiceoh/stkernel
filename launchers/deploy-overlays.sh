@@ -6,7 +6,12 @@
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-MANIFEST="$REPO/overlay/manifest.tsv"
+# Which model this deploys. The profile names its modules; the composer renders
+# them into the flat directory + single manifest this script has always shipped.
+PROFILE=${PROFILE:-${1:-dsv4}}
+bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
+BUILD="$REPO/build/$PROFILE"
+MANIFEST="$BUILD/manifest.tsv"
 MANIFEST_NAME=${MANIFEST##*/}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
@@ -60,7 +65,7 @@ load_overlay_manifest
 PYFILES=()
 SOURCE_PATHS=("$MANIFEST")
 for f in "${OVFILES[@]}"; do
-  source_path="$REPO/overlay/$f"
+  source_path="$BUILD/$f"
   [ -f "$source_path" ] || { echo "ABORT: $source_path missing"; exit 1; }
   SOURCE_PATHS+=("$source_path")
   case "$f" in *.py) PYFILES+=("$source_path");; esac
@@ -69,7 +74,7 @@ if ((${#PYFILES[@]} > 0)); then
   python3 -m py_compile "${PYFILES[@]}" \
     || { echo "ABORT: overlay does not compile"; exit 1; }
 fi
-rm -rf "$REPO/overlay/__pycache__"
+rm -rf "$BUILD/__pycache__"
 bash -n "$REPO/launchers/start-hy4-tp4.sh" "$REPO/launchers/deploy-overlays.sh"
 python3 "$REPO/launchers/audit-runtime-guards.py" --self-test
 if [ -f "$REPO/tests/test_logic.py" ]; then
@@ -80,7 +85,7 @@ echo "=== head ($HEAD_OV) ==="
 mkdir -p "$HEAD_OV"
 install -m 0644 "$MANIFEST" "$HEAD_OV/$MANIFEST_NAME"
 for f in "${OVFILES[@]}"; do
-  install -m 0644 "$REPO/overlay/$f" "$HEAD_OV/$f"
+  install -m 0644 "$BUILD/$f" "$HEAD_OV/$f"
 done
 SUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}")
 echo "$SUM" | sed 's/^/  /'

@@ -1,0 +1,4 @@
+# source	container_target	base_preimage_sha256_or_absent
+dspark_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/dspark_v2.py	c3a83b0b683da7281c8c87a7c6cce28ad4934aaf2004e04876215595566953d7
+dspark_speculator_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator_v2.py	e96de3fe04d9ec82363ea3fa751bfc8bf01a838344e3fb8749bd98a3a43ca554
+dspark_utils_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/utils_v2.py	67ceb12b594dad2e603fe841cfd7039904f9af1e336b78a912f80425497d202c

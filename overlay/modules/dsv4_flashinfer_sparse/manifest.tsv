@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+flashinfer_sparse.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py	e68610604b08a1ad4bfd4220a8e43189d4b0406afd65d9297bf0f3de16bd816d

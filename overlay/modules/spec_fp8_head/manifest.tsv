@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+fp8_draft_head.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fp8_draft_head.py	absent

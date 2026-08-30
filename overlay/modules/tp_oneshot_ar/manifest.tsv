@@ -1,0 +1,4 @@
+# source	container_target	base_preimage_sha256_or_absent
+cuda_communicator.py	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/cuda_communicator.py	cf683d427777d3f247743b070fb3fbdb6e00df6d9c51bbf9a0b4037751d29d50
+dsv4_oneshot_shim.py	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
+dsv4_oneshot_ar.cu	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent

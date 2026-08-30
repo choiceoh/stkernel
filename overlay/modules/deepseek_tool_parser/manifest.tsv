@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+tool_parser_deepseekv32.py	/opt/venv/lib/python3.12/site-packages/vllm/tool_parsers/deepseekv32_tool_parser.py	536510cc455ec5511fbe29263a8d2d8924a43685f2d4a5051cada554bb983e69

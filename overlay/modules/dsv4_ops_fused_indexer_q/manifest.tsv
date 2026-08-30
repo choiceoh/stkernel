@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+ops_fused_indexer_q.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py	159f1bc406e835dd07f1a5ef6f88b129ab5b2e3d26fc8bb7389eb0acda4e93e3

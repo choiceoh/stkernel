@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+attention.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/attention.py	b5ddad4735ba5ca1ed4d46ca4f71f016b26775353fa83de5c1520f22ccb7b2b4
