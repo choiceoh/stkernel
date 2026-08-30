@@ -16,11 +16,14 @@ PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/pro
 if [ -f "$PROFILE_ENV" ]; then
   # The profile's VLLM_* knobs are read from the file rather than a fixed list,
   # so a knob added to a profile reaches the container without editing this.
-  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u)
+  # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
+  # exits 1 -- which under `set -euo pipefail` ends the script silently.
+  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
-            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED $_vllm_keys; do
-    [ -n "${!_v:-}" ] && _caller="$_caller $_v=$(printf %q "${!_v}")"
+            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED \
+            MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV $_vllm_keys; do
+    if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
   . "$PROFILE_ENV"
@@ -31,8 +34,9 @@ fi
 IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
 NAME_WORKER=glm53-worker
-MODEL_HOST_PATH=/home/choiceoh/models/glm-5.3-flash-nvfp4
+MODEL_HOST_PATH="${MODEL_HOST_PATH:-${PROFILE_MODEL_PATH:-/home/choiceoh/models/glm-5.3-flash-nvfp4}}"
 MODEL_PATH=/models/glm-5.3-flash-nvfp4
+SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-glm-5.3-flash}}"
 CACHE_HOST_PATH=/home/choiceoh/glm53-cache
 LOG_HOST_DIR=/home/choiceoh/glm53-logs
 HEAD_IP=10.10.10.2
@@ -160,7 +164,7 @@ ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=
 # Profile-declared VLLM_* knobs. Until now the profile set them and nothing
 # carried them, so every module they gate ran its stock path.
 for _k in ${_vllm_keys:-}; do
-  [ -n "${!_k:-}" ] && ENVV="$ENVV -e $_k=${!_k}"
+  if [ -n "${!_k:-}" ]; then ENVV="$ENVV -e $_k=${!_k}"; fi
 done
 
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
@@ -181,7 +185,14 @@ if [ "${SPEC:-1}" = 0 ]; then
 elif [ "$DFLASH2" = 1 ]; then
   [ "${DRY_RUN:-0}" = 1 ] || test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
   COMMON="$COMMON -v $DRAFT_HOST_PATH:/models/dflash2-draft:ro"
-  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":7}'"
+  # The drafter emits a block of 8 and one of them is the verified token, so
+  # this path only works at 7. It was a literal before, which meant SPEC_K was
+  # silently ignored rather than checked.
+  [ "$SPEC_K" = 7 ] || { echo "ABORT: dflash requires SPEC_K=7 (drafter block 8 minus the verified token), got $SPEC_K"; exit 1; }
+  _spec_extra=""
+  [ -n "${DRAFT_TP:-}" ] && _spec_extra="$_spec_extra,\"draft_tensor_parallel_size\":$DRAFT_TP"
+  [ -n "${DRAFT_KV:-}" ] && [ "${DRAFT_KV}" != auto ] && _spec_extra="$_spec_extra,\"kv_cache_dtype\":\"$DRAFT_KV\""
+  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K$_spec_extra}'"
 else
   SPECCFG_VAL="--speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":$SPEC_K}'"
 fi
@@ -196,7 +207,7 @@ KV_FLAG=""; [ "$KV_BYTES" != auto ] && KV_FLAG="--kv-cache-memory $KV_BYTES"
 # place. vLLM registers bools via BooleanOptionalAction, hence --no-.
 ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 SERVE_ARGS="$MODEL_PATH \
---served-model-name glm-5.3-flash \
+--served-model-name $SERVED_NAME \
 --host 0.0.0.0 --port $PORT \
 --trust-remote-code \
 --tensor-parallel-size 4 \

@@ -6,12 +6,34 @@
 # shapes — expect a LONG warmup; watchdog-disable envs carried over. RUN ON srv2.
 set -euo pipefail
 
-IMAGE="aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6"
+# Identity comes from the profile; compose-overlays.sh and deploy-overlays.sh
+# already read the same file, so this removes the second copy rather than adding
+# one. Behaviour is unchanged today -- the profile's image, model path and
+# served name are character-for-character what was hardcoded here. Caller env
+# still wins, as everywhere else.
+PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env}"
+if [ -f "$PROFILE_ENV" ]; then
+  # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
+  # exits 1 -- which under `set -euo pipefail` ends the script silently.
+  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
+  _caller=""
+  for _v in IMAGE MODEL_PATH SERVED_NAME $_vllm_keys; do
+    if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
+  done
+  # shellcheck disable=SC1090
+  . "$PROFILE_ENV"
+  [ -n "$_caller" ] && eval "$_caller"
+  IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
+  MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
+  SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
+fi
+
+IMAGE="${IMAGE:-aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6}"
 EXPECTED_IMAGE_ID="sha256:b763d81b57f7611378a514fa0faf859c3b0d0ec1010f8c5115bea11a60d49ec3"
 HEAD_IP=10.10.10.2
 WORKERS="10.10.10.3:1 10.10.10.1:2 10.10.10.4:3"
-MODEL_PATH=/home/choiceoh/models/DeepSeek-V4-Flash-0731
-SERVED_NAME=deepseek-v4-flash
+MODEL_PATH="${MODEL_PATH:-/home/choiceoh/models/DeepSeek-V4-Flash-0731}"
+SERVED_NAME="${SERVED_NAME:-deepseek-v4-flash}"
 TP_SIZE=4
 GPU_MEM="${GPU_MEM:-0.60}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
@@ -140,6 +162,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
+$(for _k in ${_vllm_keys:-}; do if [ -n "${!_k:-}" ]; then printf -- "-e %s=%s " "$_k" "${!_k}"; fi; done) \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
 -e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
