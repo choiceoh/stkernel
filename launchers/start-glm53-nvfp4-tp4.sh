@@ -329,13 +329,14 @@ if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" !
   fi
 fi
 
+PROF_CFG="{\"profiler\":\"torch\",\"torch_profiler_dir\":\"/prof\",\"torch_profiler_with_stack\":false}"
 SERVE_ARGS="$MODEL_PATH \
 --served-model-name $SERVED_NAME \
 --host 0.0.0.0 --port $PORT \
 --trust-remote-code \
 --tensor-parallel-size 4 \
 --gpu-memory-utilization $GMU \
---profiler-config '{"profiler":"torch","torch_profiler_dir":"/prof","torch_profiler_with_stack":false}' \
+--profiler-config '$PROF_CFG' \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
