@@ -946,17 +946,23 @@ def test_preflight_precedes_serve_args() -> None:
         # The invocation, not the variable assignment -- the assignment can sit
         # anywhere, and it is the call that does the measuring.
         call = src.index('$("$PREFLIGHT"')
-        args = re.search(r"^SERVE_ARGS=", src, re.M)
-        assert args, f"{name}: no SERVE_ARGS to size"
-        assert call < args.start(), (
-            f"{name}: preflight runs after SERVE_ARGS -- the measured GMU "
-            "cannot reach --gpu-memory-utilization"
+        # Two shapes here: glm53 builds SERVE_ARGS inline, hy4 writes a serve
+        # script whose heredoc carries the flag. The flag itself is where the
+        # number stops being changeable, so anchor on that.
+        # Anchored: the flag as an argument, not the word inside a comment
+        # that explains this very ordering.
+        flag = re.search(r"^\s*--gpu-memory-utilization", src, re.M)
+        assert flag, f"{name}: no --gpu-memory-utilization to size"
+        assert call < flag.start(), (
+            f"{name}: preflight runs after --gpu-memory-utilization is "
+            "assembled -- the measured value cannot reach it"
         )
         reclaim = src.find("docker rm -f")
         assert reclaim != -1 and reclaim < call, (
             f"{name}: preflight measures before stale containers are removed"
         )
-        assert "GMU=$GMU_SAFE" in src, f"{name}: preflight warns but never applies"
+        applied = re.search(r"^\s*(GMU|GPU_MEM)=\$(GMU|GPU_MEM)_SAFE\s*$", src, re.M)
+        assert applied, f"{name}: preflight warns but never applies its value"
         PASS += 1
     print("  preflight applies GMU ......... OK")
 
