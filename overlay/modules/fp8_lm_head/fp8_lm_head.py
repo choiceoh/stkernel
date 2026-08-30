@@ -75,6 +75,24 @@ def _fp8_gemm(
     return out
 
 
+def build_fp8_lm_head_weight(head) -> bool:
+    """Quantize one head module in place. Returns whether it took."""
+    weight = getattr(head, "weight", None)
+    if weight is None or weight.dtype not in (torch.bfloat16, torch.float16):
+        return False
+    try:
+        dg_w, dg_ws = _quantize_fp8_deepgemm(weight)
+    except Exception:
+        logger.warning_once(
+            "fp8 lm_head: quantization failed; staying on bf16."
+        )
+        return False
+    head._deneb_fp8_w = dg_w
+    head._deneb_fp8_ws = dg_ws
+    logger.info_once("fp8 lm_head: quantized %s.", tuple(dg_w.shape))
+    return True
+
+
 def build_fp8_lm_head(model) -> bool:
     """Quantize `model.lm_head` in place. Returns whether it took.
 
@@ -84,32 +102,32 @@ def build_fp8_lm_head(model) -> bool:
     """
     if not _read_bool_env("VLLM_SPEC_FP8_LM_HEAD"):
         return False
-    head = getattr(model, "lm_head", None)
-    weight = getattr(head, "weight", None)
-    if weight is None or weight.dtype not in (torch.bfloat16, torch.float16):
-        return False
-    try:
-        dg_w, dg_ws = _quantize_fp8_deepgemm(weight)
-    except Exception:
-        logger.warning_once(
-            "VLLM_SPEC_FP8_LM_HEAD=1: draft head quantization failed; "
-            "staying on bf16."
-        )
-        return False
-    head._deneb_fp8_w = dg_w
-    head._deneb_fp8_ws = dg_ws
-    logger.info_once(
-        "VLLM_SPEC_FP8_LM_HEAD=1: draft lm_head quantized to fp8 (%s).",
-        tuple(dg_w.shape),
-    )
-    return True
+    return build_fp8_lm_head_weight(getattr(model, "lm_head", None))
 
 
 class Fp8HeadLogitsProcessor(LogitsProcessor):
-    """LogitsProcessor whose head projection uses the fp8 copy when present."""
+    """LogitsProcessor whose head projection uses an fp8 copy of the weight.
+
+    `fp8_env` names the knob that arms it, because the two ends of speculative
+    decoding do not carry the same risk. A badly quantized draft head costs
+    acceptance and nothing else; rejection sampling still reproduces the
+    target's distribution. The target's logits decide the sampled token and the
+    accept/reject, so they are outside that guarantee.
+
+    The copy is built on first use when it was not built at load time, which is
+    how the target head is handled elsewhere in this stack -- the first call is
+    the eager warmup, before capture.
+    """
+
+    def __init__(self, *args, fp8_env: str = "VLLM_SPEC_FP8_LM_HEAD", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._deneb_fp8_env = fp8_env
 
     def _apply_head(self, lm_head, hidden_states, embedding_bias):
         dg_w = getattr(lm_head, "_deneb_fp8_w", None)
+        if dg_w is None and _read_bool_env(self._deneb_fp8_env):
+            if build_fp8_lm_head_weight(lm_head):
+                dg_w = getattr(lm_head, "_deneb_fp8_w", None)
         if (
             dg_w is None
             or embedding_bias is not None

@@ -45,7 +45,7 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
     # capture has not started, which is the same point DSV4's speculator
     # uses. No-op unless VLLM_SPEC_FP8_LM_HEAD=1.
     try:
-        from vllm.model_executor.layers.spec_fp8_lm_head import (
+        from vllm.model_executor.layers.fp8_lm_head import (
             build_fp8_lm_head,
         )
 
