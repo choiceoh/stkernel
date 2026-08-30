@@ -9,6 +9,7 @@ resolve a <10% effect. Prompts are short and unique (no prefix-cache hits, and
 prefill is a negligible share of wall time).
 """
 import json
+import os
 import random
 import re
 import sys
@@ -18,7 +19,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
 METRICS = "http://127.0.0.1:8000/metrics"
-MODEL = "deepseek-v4-flash"
+# Served name of the model under test. Default keeps every existing
+# invocation and every recorded number pointing at the same target.
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 LONG_OUT = 768
 TOPICS = [
     "조력 발전의 원리", "해수 담수화 공정", "지열 발전의 입지 조건",
