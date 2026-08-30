@@ -20,6 +20,7 @@ from vllm.model_executor.layers.activation import SiluAndMul, SiluAndMulWithClam
 from vllm.model_executor.layers.fused_moe import (
     FusedMoEFactory,
     GateLinear,
+    fused_moe_make_expert_params_mapping,
 )
 # deneb fork: fused small-M gate for sm_121 (overlay/modules/moe_gate_sm121).
 from vllm.model_executor.layers.fp8_lm_head import (
@@ -27,7 +28,6 @@ from vllm.model_executor.layers.fp8_lm_head import (
 )
 from vllm.model_executor.layers.fused_moe.router.moe_gate_sm121 import (
     DenebGateLinear,
-    fused_moe_make_expert_params_mapping,
 )
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import (
