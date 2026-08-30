@@ -13,6 +13,7 @@ Run: python3 tests/test_logic.py
 from __future__ import annotations
 
 import ast
+import glob
 import os
 import subprocess
 import sys
@@ -21,9 +22,30 @@ import types
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _overlay_source(relpath: str) -> str:
+    """Find an overlay source under overlay/modules/<module>/.
+
+    The files moved there when the repo split into modules; this test kept the
+    old flat overlay/<name>.py paths and started raising FileNotFoundError.
+    deploy-overlays.sh runs it as a gate, so every profile's deploy aborted.
+    Resolving by filename rather than a fixed path keeps that from recurring the
+    next time a module is renamed.
+    """
+    path = os.path.join(REPO, relpath)
+    if os.path.exists(path):
+        return path
+    name = os.path.basename(relpath)
+    hits = sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "*", name)))
+    if not hits:
+        raise FileNotFoundError(f"no overlay module provides {name}")
+    if len(hits) > 1:
+        raise RuntimeError(f"{name} is provided by {len(hits)} modules: {hits}")
+    return hits[0]
+
+
 def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
     """exec only the named top-level defs/assigns from a source file into ns."""
-    path = os.path.join(REPO, relpath)
+    path = _overlay_source(relpath)
     tree = ast.parse(open(path).read())
     body = []
     for node in tree.body:
@@ -313,73 +335,84 @@ def test_bench_dec_metrics() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. overlay/manifest.tsv — the only overlay inventory
+# 7. build/<profile>/manifest.tsv — the composed overlay inventory
 # ---------------------------------------------------------------------------
+def _composed_manifests() -> list[tuple[str, str, str]]:
+    """(profile, target_prefix, manifest path) for every composed profile."""
+    out = []
+    for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        name = os.path.splitext(os.path.basename(envpath))[0]
+        manifest = os.path.join(REPO, "build", name, "manifest.tsv")
+        if not os.path.isfile(manifest):
+            continue
+        prefix = "/opt/venv/lib/python3.12/site-packages/"
+        for line in open(envpath, encoding="utf-8"):
+            if line.startswith("TARGET_PREFIX="):
+                prefix = line.split("=", 1)[1].strip().strip('"').strip("'")
+        out.append((name, prefix, manifest))
+    return out
+
+
 def test_overlay_manifest() -> None:
-    manifest = os.path.join(REPO, "overlay", "manifest.tsv")
     source_chars = frozenset(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
     target_chars = source_chars | {"/"}
-    rows = []
-    with open(manifest, encoding="utf-8") as handle:
-        for line_no, raw in enumerate(handle, 1):
-            line = raw.rstrip("\n")
-            if not line or line.startswith("#"):
-                continue
-            fields = line.split("\t")
-            check(len(fields) == 3, f"manifest line {line_no}: need three TSV fields")
-            source, target, base_contract = fields
-            check(source == os.path.basename(source),
-                  f"manifest line {line_no}: source must be a basename")
-            check(source and not source.startswith(".")
-                  and all(ch in source_chars for ch in source),
-                  f"manifest line {line_no}: unsafe source")
-            check(target.startswith(
-                "/opt/venv/lib/python3.12/site-packages/vllm/"),
-                f"manifest line {line_no}: target outside vllm package")
-            check(all(ch in target_chars for ch in target),
-                  f"manifest line {line_no}: unsafe target character")
-            check(os.path.isfile(os.path.join(REPO, "overlay", source)),
-                  f"manifest line {line_no}: missing overlay/{source}")
-            check(
-                base_contract == "absent"
-                or (
-                    len(base_contract) == 64
-                    and all(ch in "0123456789abcdef" for ch in base_contract)
-                ),
-                f"manifest line {line_no}: invalid base preimage contract",
-            )
-            rows.append((source, target, base_contract))
+    profiles = _composed_manifests()
+    check(bool(profiles), "no composed profile manifests -- run compose-overlays.sh")
 
-    check(bool(rows), "overlay manifest must not be empty")
-    check(len({source for source, _, _ in rows}) == len(rows),
-          "overlay manifest has duplicate sources")
-    check(len({target for _, target, _ in rows}) == len(rows),
-          "overlay manifest has duplicate targets")
-    manifest_sources = {source for source, _, _ in rows}
-    check(
-        {
-            "fp8_draft_head.py",
-            "dspark_v2.py",
-            "dspark_speculator_v2.py",
-            "dspark_utils_v2.py",
-        } <= manifest_sources,
-        "DSpark speed overlays are missing from the canonical manifest",
-    )
-    check(
-        all(
-            contract != "absent"
-            for source, _, contract in rows
-            if source in {
-                "dspark_v2.py",
-                "dspark_speculator_v2.py",
-                "dspark_utils_v2.py",
-            }
-        ),
-        "replaced DSpark files must pin exact production preimages",
-    )
+    total = 0
+    for profile, prefix, manifest in profiles:
+        build = os.path.dirname(manifest)
+        rows = []
+        with open(manifest, encoding="utf-8") as handle:
+            for line_no, raw in enumerate(handle, 1):
+                line = raw.rstrip("\n")
+                if not line or line.startswith("#"):
+                    continue
+                fields = line.split("\t")
+                check(len(fields) == 3,
+                      f"{profile} line {line_no}: need three TSV fields")
+                source, target, base_contract = fields
+                check(source == os.path.basename(source),
+                      f"{profile} line {line_no}: source must be a basename")
+                check(source and not source.startswith(".")
+                      and all(ch in source_chars for ch in source),
+                      f"{profile} line {line_no}: unsafe source")
+                check(target.startswith(prefix),
+                      f"{profile} line {line_no}: target outside {prefix}")
+                check(all(ch in target_chars for ch in target),
+                      f"{profile} line {line_no}: unsafe target character")
+                check(os.path.isfile(os.path.join(build, source)),
+                      f"{profile} line {line_no}: missing build/{profile}/{source}")
+                check(
+                    base_contract == "absent"
+                    or (
+                        len(base_contract) == 64
+                        and all(ch in "0123456789abcdef" for ch in base_contract)
+                    ),
+                    f"{profile} line {line_no}: invalid base preimage contract",
+                )
+                rows.append((source, target, base_contract))
+
+        check(bool(rows), f"{profile}: manifest must not be empty")
+        check(len({src for src, _, _ in rows}) == len(rows),
+              f"{profile}: duplicate sources")
+        check(len({tgt for _, tgt, _ in rows}) == len(rows),
+              f"{profile}: duplicate targets")
+
+        if profile == "dsv4":
+            sources = {src for src, _, _ in rows}
+            replaced = {"dspark_v2.py", "dspark_speculator_v2.py",
+                        "dspark_utils_v2.py"}
+            check({"fp8_draft_head.py"} | replaced <= sources,
+                  "DSpark speed overlays are missing from the dsv4 manifest")
+            check(all(contract != "absent" for src, _, contract in rows
+                      if src in replaced),
+                  "replaced DSpark files must pin exact production preimages")
+        total += len(rows)
 
     for relpath in ("launchers/start-hy4-tp4.sh",
+                    "launchers/start-glm53-nvfp4-tp4.sh",
                     "launchers/deploy-overlays.sh"):
         text = open(os.path.join(REPO, relpath), encoding="utf-8").read()
         check("manifest.tsv" in text, f"{relpath}: manifest not consumed")
@@ -387,7 +420,8 @@ def test_overlay_manifest() -> None:
               f"{relpath}: hard-coded overlay inventory remains")
         check("md5sum" not in text and "sha256sum" in text,
               f"{relpath}: manifest/files must use SHA-256 parity")
-    print(f"  overlay manifest ({len(rows)} files) .... OK")
+    names = ", ".join(p for p, _, _ in profiles)
+    print(f"  overlay manifests ({total} files across {names}) .... OK")
 
 
 # ---------------------------------------------------------------------------
@@ -467,12 +501,12 @@ def test_bf16_release_guards() -> None:
     check("VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0}" in launcher_text,
           "COMPFREE knob not propagated")
     attn_text = open(
-        os.path.join(REPO, "overlay", "attention.py"), encoding="utf-8"
+        _overlay_source("overlay/attention.py"), encoding="utf-8"
     ).read()
     check("_FREE_BF16_COMPRESSOR and not _COMPRESSOR_FP8" in attn_text,
           "COMPFREE without COMPRESSOR_FP8 must fail at import")
     utils_text = open(
-        os.path.join(REPO, "overlay", "dspark_utils_v2.py"), encoding="utf-8"
+        _overlay_source("overlay/dspark_utils_v2.py"), encoding="utf-8"
     ).read()
     check("maybe_release_bf16_lm_head" in utils_text
           and "overlay rolled back" in utils_text,
@@ -485,7 +519,7 @@ def test_bf16_release_guards() -> None:
     check('[ ! -f "$target" ]' in launcher_text,
           "hashed base preimages must be regular files")
 
-    helper = os.path.join(REPO, "overlay", "fp8_draft_head.py")
+    helper = _overlay_source("overlay/fp8_draft_head.py")
     helper_text = open(helper, encoding="utf-8").read()
     helper_tree = ast.parse(helper_text)
     function_names = {
@@ -521,15 +555,15 @@ def test_bf16_release_guards() -> None:
             check(True, "")
 
     spec_text = open(
-        os.path.join(REPO, "overlay", "dspark_speculator_v2.py"),
+        _overlay_source("overlay/dspark_speculator_v2.py"),
         encoding="utf-8",
     ).read()
     model_text = open(
-        os.path.join(REPO, "overlay", "dspark_v2.py"),
+        _overlay_source("overlay/dspark_v2.py"),
         encoding="utf-8",
     ).read()
     utils_text = open(
-        os.path.join(REPO, "overlay", "dspark_utils_v2.py"),
+        _overlay_source("overlay/dspark_utils_v2.py"),
         encoding="utf-8",
     ).read()
     check('base_logits.fill_(-float("inf"))' in spec_text,
@@ -653,7 +687,7 @@ def test_acceptance_lever_guards() -> None:
     # Two-pass structure: feedback between two identical backbone+sampling
     # rounds, inside the captured _generate_draft.
     spec_text = open(
-        os.path.join(REPO, "overlay", "dspark_speculator_v2.py"),
+        _overlay_source("overlay/dspark_speculator_v2.py"),
         encoding="utf-8",
     ).read()
     draft_body = spec_text.split("def _generate_draft", 1)[1]
@@ -672,7 +706,7 @@ def test_acceptance_lever_guards() -> None:
     # Sideload ordering: applied before the FP8 draft-head selection (and
     # therefore before warmup / lazy W2 quantization / CUDA graph capture).
     utils_text = open(
-        os.path.join(REPO, "overlay", "dspark_utils_v2.py"),
+        _overlay_source("overlay/dspark_utils_v2.py"),
         encoding="utf-8",
     ).read()
     check(utils_text.index("_sideload_markov_head(draft_model")
