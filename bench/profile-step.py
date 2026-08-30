@@ -37,7 +37,11 @@ import time
 import urllib.request
 
 BASE = "http://127.0.0.1:8000"
-MODEL = "deepseek-v4-flash"
+# Served name of the model under test. It was the dsv4 literal, so pointing
+# this tool at any other lane returned 404 from /v1/chat/completions and the
+# capture died after /start_profile had already armed. Same default as
+# bench-dec.py so existing invocations and recorded numbers still line up.
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 WORDS = [
     "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
     "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",
