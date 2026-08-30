@@ -967,6 +967,34 @@ def test_preflight_precedes_serve_args() -> None:
     print("  preflight applies GMU ......... OK")
 
 
+def test_no_hardcoded_image_paths() -> None:
+    """An overlay must not name one image's Python layout.
+
+    tp_oneshot_ar hardcoded /opt/venv/lib/python3.12/site-packages/... -- the
+    dsv4 image's layout. The glm53 image puts vllm under
+    /usr/local/lib/python3.12/dist-packages, so the extension build raised
+    FileNotFoundError and the shim fell back to NCCL exactly as it is designed
+    to. Nothing looked broken, and the module had never once run on that image.
+
+    Overlays are mounted next to the file they patch, so paths belong relative
+    to __file__.
+    """
+    global PASS
+    bad = re.compile(r"/(opt/venv|usr/local)/lib/python3\.\d+/(site|dist)-packages")
+    for path in sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "*", "*.py"))):
+        src = open(path, encoding="utf-8").read()
+        for i, line in enumerate(src.splitlines(), 1):
+            stripped = line.lstrip()
+            if stripped.startswith("#") or not bad.search(line):
+                continue
+            raise AssertionError(
+                f"{os.path.relpath(path, REPO)}:{i}: hardcoded image layout "
+                f"-- derive from __file__ instead: {stripped[:80]}"
+            )
+        PASS += 1
+    print("  no hardcoded image paths ...... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -984,4 +1012,5 @@ if __name__ == "__main__":
     test_ngram_ceiling_sim()
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
+    test_no_hardcoded_image_paths()
     print(f"all OK ({PASS} checks)")
