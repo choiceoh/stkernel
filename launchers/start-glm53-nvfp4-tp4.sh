@@ -50,7 +50,19 @@ GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
 MAX_SEQS="${MAX_SEQS:-4}"
 MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
-COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}}"
+# The old value asked for FULL_AND_PIECEWISE *and* fuse_attn_quant, which vLLM
+# refuses together while use_inductor_graph_partition is off -- it dropped the
+# piecewise half and logged it. FULL is refused anyway by the sparse indexer
+# backend (UNIFORM_BATCH only), so what actually ran was FULL_DECODE_ONLY. This
+# declares that, instead of asking for something and silently getting less.
+#
+# PIECEWISE=1 takes the other branch: drop the attention-quant fusion and get
+# piecewise graphs over prefill. Which is faster here has never been measured.
+if [ "${PIECEWISE:-0}" = 1 ]; then
+  COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true}}}"
+else
+  COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}}"
+fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
@@ -145,7 +157,7 @@ fi
 ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
 -e VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/cache/flashinfer_autotune -e VLLM_CACHE_ROOT=/cache/vllm \
 -e FLASHINFER_WORKSPACE_BASE=/cache -e TRITON_CACHE_DIR=/cache/triton \
--e CUTE_DSL_ARCH=sm_121a -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=0 \
+-e CUTE_DSL_ARCH=sm_121a \
 -e VLLM_USE_AOT_COMPILE=1 -e VLLM_USE_MEGA_AOT_ARTIFACT=0 -e VLLM_USE_BREAKABLE_CUDAGRAPH=0 \
 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e NCCL_P2P_LEVEL=SYS \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
@@ -241,6 +253,21 @@ if [ "${DRY_RUN:-0}" = 1 ]; then
 fi
 
 mkdir -p "$CACHE_HOST_PATH" "$LOG_HOST_DIR"
+
+# torch.compile caches under the mounted /cache and outlives boots, but the
+# overlays that shape the compiled graph are not part of its key -- so after an
+# overlay change a stale entry is still found and then fails to load
+# ("Compiling model again due to a load failure"). Stamp the manifest sha beside
+# the cache and clear it when that moves.
+if [ -f "$OVERLAY_MANIFEST" ]; then
+  _ov_sha=$(sha256sum "$OVERLAY_MANIFEST" | cut -d" " -f1)
+  _stamp="$CACHE_HOST_PATH/.overlay-sha"
+  if [ "$(cat "$_stamp" 2>/dev/null)" != "$_ov_sha" ]; then
+    echo "overlays changed -> clearing torch.compile cache"
+    rm -rf "$CACHE_HOST_PATH/vllm/torch_compile_cache"
+    printf '%s' "$_ov_sha" > "$_stamp"
+  fi
+fi
 
 # Reclaim page cache on every node before the engine measures free memory.
 # NVRM allocates against MemFree, so cached file pages are memory the engine
