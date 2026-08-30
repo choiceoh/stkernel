@@ -84,18 +84,38 @@ def _bootstrap(comm):
             _disabled = True
             return
         rank = comm.rank_in_group
-        os.makedirs("/root/.osar_build", exist_ok=True)
-        _ext = _build()
-        local_ip = os.environ.get("VLLM_HOST_IP", "").strip()
-        if not local_ip:
-            logger.warning(
-                "[osar] VLLM_HOST_IP is unset -- there is no correct NIC to "
-                "bind to, and guessing is what broke this before. Staying on "
-                "NCCL."
-            )
+
+        # Local setup, and it must not return or raise past here: every rank
+        # has to reach the agreement below. Returning early is what hung the
+        # fleet twice -- one rank gave up on its own while the others waited
+        # forever in the all_gather_object that follows.
+        ok = 1
+        try:
+            os.makedirs("/root/.osar_build", exist_ok=True)
+            _ext = _build()
+            local_ip = os.environ.get("VLLM_HOST_IP", "").strip()
+            if not local_ip:
+                raise RuntimeError(
+                    "VLLM_HOST_IP unset -- no correct NIC to bind to, and "
+                    "guessing is what broke this before"
+                )
+            _ext.init(rank, comm.world_size, local_ip)
+        except Exception as e:
+            ok = 0
+            logger.warning("[osar] local setup failed on rank %d: %r", rank, e)
+
+        # Agreement. All ranks or none: a group where some serve from the
+        # one-shot path and others from NCCL calls two different collectives
+        # and deadlocks.
+        votes = torch.tensor([ok], dtype=torch.int32)
+        dist.all_reduce(votes, group=comm.cpu_group)
+        if int(votes.item()) != comm.world_size:
             _disabled = True
+            logger.warning(
+                "[osar] %d/%d ranks ready -> every rank stays on NCCL",
+                int(votes.item()), comm.world_size)
             return
-        _ext.init(rank, comm.world_size, local_ip)
+
         gathered = [None] * comm.world_size
         dist.all_gather_object(gathered, _ext.local_infos(), group=comm.cpu_group)
         _ext.connect(gathered)
@@ -104,8 +124,13 @@ def _bootstrap(comm):
             "[osar] connected rank=%d world=%d shadow=%s", rank,
             comm.world_size, _SHADOW)
     except Exception as e:
+        # Anything past the agreement is a genuine surprise; the group already
+        # decided it was going ahead, so a fallback here is not in lockstep.
+        # Nothing better is available at this point than saying so loudly.
         _disabled = True
-        logger.warning("[osar] bootstrap failed -> NCCL fallback: %r", e)
+        logger.warning(
+            "[osar] bootstrap failed AFTER the group agreed -> this rank falls "
+            "back to NCCL while others may not: %r", e)
         return
     _self_test(comm, rank)
 
