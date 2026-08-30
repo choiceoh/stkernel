@@ -51,6 +51,20 @@ HEAD_IP=10.10.10.2
 WORKER_IPS=(10.10.10.1 10.10.10.3 10.10.10.4)
 MPORT=29521
 PORT=8000
+
+# This launcher only does the right thing on the head node. Every HEAD_IP
+# command runs through `bash -c` (see run() below) and the head container is
+# started with a plain `docker run` here, so from any other node it quietly
+# builds a different cluster: the head lands on the wrong machine carrying
+# VLLM_HOST_IP=$HEAD_IP, the workers rendezvous at an address nobody serves,
+# and the first thing that actually fails is an unrelated-looking ssh error on
+# whichever worker this node happens to lack a key for.
+if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEAD_IP"; then
+  _here=$(ip -4 -o addr show scope global 2>/dev/null | sed 's|.* inet \([0-9.]*\)/.*|\1|' | paste -sd" ")
+  echo "ABORT: 이 런처는 head 노드($HEAD_IP)에서 실행해야 합니다 — 여기는 $(hostname) [${_here}]"
+  echo "       ssh <head> 'bash /home/choiceoh/stkernel/launchers/start-glm53-nvfp4-tp4.sh'"
+  exit 1
+fi
 GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
 MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"   # GLM spells b12x this way; marlin is gone
 EAGER="${EAGER:-0}"
