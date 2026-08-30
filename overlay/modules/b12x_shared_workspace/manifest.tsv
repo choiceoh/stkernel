@@ -1,0 +1,2 @@
+# source	container_target(relative to the profile's TARGET_PREFIX)	base_preimage_sha256
+flashinfer_b12x_moe.py	vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py	86dfe87e1bc69651b3c969477946b348eeebdb8386aab3e51cf5d5253405047b
