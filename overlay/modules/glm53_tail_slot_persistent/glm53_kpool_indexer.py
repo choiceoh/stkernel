@@ -1285,19 +1285,32 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             # build() runs eagerly every step, outside any capture. The
             # condition below is the runner's own uniform signature, so this
             # cannot fire while the two agree -- which is the point.
+            # This warns; it does not raise. The first version raised, on the
+            # argument that the condition was unreachable -- and then took the
+            # server down inside a bench: with SPEC=0 next_n is 1, and a
+            # query_start_loc carrying a zero-length decode entry gives
+            # min=0 max=1, which is a scheduler artifact and not the hazard.
+            # A zero-length entry cannot be the divergence this looks for
+            # either, so it is excluded outright. Whatever is left is worth
+            # knowing about and is not worth killing serving over.
             if (
                 num_decodes
+                and min_decode_len > 0
                 and max_decode_len == next_n
                 and num_decode_tokens == num_decodes * max_decode_len
                 and not write_is_uniform
             ):
-                raise RuntimeError(
+                logger.warning_once(
                     "kpool decode-write uniformity disagrees with the runner: "
-                    f"lens min={min_decode_len} max={max_decode_len} "
-                    f"next_n={next_n} num_decodes={num_decodes} "
-                    f"num_decode_tokens={num_decode_tokens}. This batch would "
-                    "dispatch to a cudagraph captured on the uniform branch "
-                    "while the write path needs the scatter branch."
+                    "lens min=%d max=%d next_n=%d num_decodes=%d "
+                    "num_decode_tokens=%d. A batch dispatched to a cudagraph "
+                    "captured on the uniform branch needs the scatter branch "
+                    "here.",
+                    min_decode_len,
+                    max_decode_len,
+                    next_n,
+                    num_decodes,
+                    num_decode_tokens,
                 )
             use_native = (
                 not (self.use_flattening or self.supports_varlen)
