@@ -6,3 +6,6 @@ glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/n
 dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
 cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
+spec_fp8_lm_head.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/spec_fp8_lm_head.py	absent
+qwen3_dflash2.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py	c141daa4b2059c0098224ac36471c2197b7052c100bef0a4dbc2ca79b627053f
+dflash_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py	41a1f26c72f0f4c6150821a310632a09e0e76b252e24d4e1e0f47f62321f155d
