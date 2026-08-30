@@ -3,18 +3,24 @@
 
 Not a model-specific optimization. The image's `GateLinear` picks its
 accelerated tier from device-family checks that admit only SM90 and SM100
-(`is_blackwell` tests family 100), so GB10 lands on Tier-4 for every MoE it
+(`is_blackwell` tests family 100), so GB10 lands on the last tier for every MoE it
 serves: a bf16 `F.linear` followed by a bf16 round trip and an fp32 cast, three
 kernels where one will do.
 
 Measured on DeepSeek-V4-Flash (43 layers + 3 mtp, bf16 [256, 4096] gate): the
-Tier-4 chain costs 1.71 ms/step and the fused kernel 1.18, worth **C=1 +3.5%**
+stock chain costs 1.71 ms/step and the fused kernel 1.18, worth **C=1 +3.5%**
 end to end. Logit error against the same weights drops 6e-2 -> 1.3e-4 because
 the bf16 round trip is gone, and the result is bitwise deterministic.
 
-Arms only under VLLM_DSV4_GATE_FUSED with M <= 32, so prefill keeps the stock
-Tier-4 path and its numerics unchanged. Warm-up compiles the Triton
-specialization buckets before capture; any failure falls back permanently.
+Arms only under VLLM_DSV4_GATE_FUSED, and only when every accelerated tier
+above the F.linear one is off -- which is the GB10 situation this exists for,
+and is now checked rather than assumed. The M <= 32 decision is made inside a
+custom op, not in forward(): upstream wraps its own num_tokens dispatch because
+"our torch.compile integration does not support runtime dispatching on
+num_tokens", and a plain Python test there is frozen at capture. Prefill and
+any M > 32 keep the stock path and its numerics unchanged. Warm-up compiles the
+Triton specialization buckets before capture; any failure falls back
+permanently.
 """
 
 import os
@@ -24,6 +30,7 @@ import torch.nn as nn
 
 from vllm.logger import init_logger
 from vllm.model_executor.layers.fused_moe.router.gate_linear import GateLinear
+from vllm.utils.torch_utils import direct_register_custom_op
 
 logger = init_logger(__name__)
 
@@ -31,14 +38,14 @@ logger = init_logger(__name__)
 # deneb fork: fused small-M MoE router gate (VLLM_DSV4_GATE_FUSED, default off).
 # GB10 (sm_121) fails every specialized-tier device gate in GateLinear
 # (is_blackwell tests compute-capability family 100), so production routing
-# fell to Tier 4: bf16 F.linear (cublas split-K wmma + splitKreduce) plus a
+# fell to the final tier: bf16 F.linear (cublas split-K wmma + splitKreduce) plus a
 # separate fp32 cast — 3 kernels x 46 gates (43 layers + 3 mtp) = 1.71 ms per
 # decode step, the measured grid=[8,2,8] wmma population. The fused tier
 # computes the same [M,4096]x[4096,256] GEMM in one triton split-K kernel and
-# one deterministic sum-reduce, accumulating fp32 END TO END: Tier 4's bf16
+# one deterministic sum-reduce, accumulating fp32 END TO END: That tier's bf16
 # round-trip of the logits is dropped, so outputs are strictly closer to the
 # fp32 reference but bit-DIFFERENT from baseline — hence the kill-switch.
-# Prefill and any M > 32 keep the exact Tier-4 path and numerics.
+# Prefill and any M > 32 keep the exact stock path and numerics.
 # Armed by either name. The DSV4 one is what production sets; the neutral one
 # is what a module that applies to every MoE on this hardware should answer to.
 _GATE_FUSED = (
@@ -54,7 +61,7 @@ _GATE_FUSED_MAX_TOKENS = 32
 # the SK=4 variant stretching 2.2us -> 12.4us inside the decode graph
 # (few-CTA latency-bound kernel under contention), eating the win. Single
 # kernel, fp32 out direct: BN16/BK512/SK1/stages4/warps4 = 12.04us cold vs
-# Tier-4 chain 15.27 (M=6), and no second kernel to stretch.
+# stock chain 15.27 (M=6), and no second kernel to stretch.
 _GATE_FUSED_SPLIT_K = 1
 _GATE_FUSED_BLOCK_N = 16
 _GATE_FUSED_BLOCK_K = 512
@@ -140,6 +147,45 @@ if _GATE_FUSED:
             return out
         return out.sum(dim=0)
 
+    def _deneb_gate_dispatch_impl(
+        x: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
+        """Pick the tier at run time, from inside a custom op.
+
+        Upstream wraps its own num_tokens dispatch for a stated reason --
+        "This must be wrapped in a custom op because our torch.compile
+        integration does not support runtime dispatching on num_tokens" -- and
+        a plain `if x.shape[0] <= 32` in forward() gives that guarantee up: the
+        branch is evaluated once while tracing or capturing and frozen, and a
+        replay with a larger batch would run the fused kernel with M above
+        BLOCK_M. The kernel indexes rows as `tl.arange(0, BLOCK_M)`, so the
+        rows past the tile would simply never be written and the router would
+        read whatever `torch.empty` handed back for them.
+
+        Today the dispatcher only ever replays a decode graph at the batch it
+        was captured for, so the frozen branch happens to agree. That is a
+        property of the current cudagraph configuration, not of this module.
+
+        The `else` branch has to be exactly what GateLinear would have done,
+        which is why DenebGateLinear refuses to arm unless every tier above
+        Tier 6 is off -- see the arming checks there.
+        """
+        if 0 < x.shape[0] <= _GATE_FUSED_MAX_TOKENS:
+            return _deneb_fused_gate(x, weight)
+        # Tier 6 for a bf16 gate with fp32 out and no bias: F.linear then cast.
+        return torch.nn.functional.linear(x, weight).to(torch.float32)
+
+    def _deneb_gate_dispatch_fake(
+        x: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
+        return x.new_empty((x.shape[0], weight.shape[0]), dtype=torch.float32)
+
+    direct_register_custom_op(
+        op_name="deneb_gate_dispatch",
+        op_func=_deneb_gate_dispatch_impl,
+        fake_impl=_deneb_gate_dispatch_fake,
+    )
+
 
 class DenebGateLinear(GateLinear):
     """GateLinear with the fused small-M tier of `_deneb_fused_gate` above.
@@ -154,6 +200,20 @@ class DenebGateLinear(GateLinear):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Every tier above Tier 6 must be off. This module exists because GB10
+        # fails all of their device gates, and the custom op's fallback branch
+        # reproduces Tier 6 (`F.linear` then cast) and nothing else -- so if a
+        # faster tier were live here, taking it over would silently downgrade
+        # the M > 32 path instead of leaving it alone. Checked rather than
+        # assumed: the premise lives in this module's docstring, and the tier
+        # gates live in a file we do not own.
+        self._deneb_stock_is_tier6 = not (
+            getattr(self, "allow_ll_bf16_gemm", False)
+            or getattr(self, "allow_dsv3_router_gemm", False)
+            or getattr(self, "allow_fp32_router_gemm", False)
+            or getattr(self, "allow_bf16x3_router_gemm", False)
+            or getattr(self, "allow_cublas_router_gemm", False)
+        )
         self._deneb_fused_ok = (
             _GATE_FUSED
             and self.weight.dtype == torch.bfloat16
@@ -164,20 +224,31 @@ class DenebGateLinear(GateLinear):
             % (_GATE_FUSED_SPLIT_K * _GATE_FUSED_BLOCK_K)
             == 0
             and self.weight.is_contiguous()
+            # Tier 6 applies a bias; the fallback in the op does not.
+            and getattr(self, "bias", None) is None
+            and self._deneb_stock_is_tier6
             and _deneb_gate_prewarm(tuple(self.weight.shape))
         )
+        if _GATE_FUSED and not self._deneb_stock_is_tier6:
+            logger.warning_once(
+                "fused router gate disarmed: a faster GateLinear tier is live "
+                "here, so the M > %d fallback would not match it.",
+                _GATE_FUSED_MAX_TOKENS,
+            )
 
     def forward(
         self, x: torch.Tensor
     ) -> torch.Tensor | tuple[torch.Tensor, nn.Parameter | None]:
+        # No num_tokens test here. Everything left is a property of the
+        # weights or the tensor layout, stable across capture and replay; the
+        # batch-size decision belongs inside the custom op (see its docstring).
         if (
             self._deneb_fused_ok
             and x.dim() == 2
             and x.dtype == torch.bfloat16
-            and 0 < x.shape[0] <= _GATE_FUSED_MAX_TOKENS
             and x.stride(-1) == 1
         ):
-            return _deneb_fused_gate(x, self.weight), None
+            return torch.ops.vllm.deneb_gate_dispatch(x, self.weight), None
         return super().forward(x)
 
 
