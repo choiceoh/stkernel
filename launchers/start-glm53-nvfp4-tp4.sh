@@ -13,6 +13,14 @@ set -euo pipefail
 # the serving knobs have one home. Caller env wins over it -- a bare source
 # would clobber an explicit override, which is how the diagnostic runs are made.
 PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env}"
+# Running a copy of this script from somewhere other than the repo resolves
+# PROFILE_ENV to a path that does not exist, and every profile value -- the
+# module list's env knobs included -- silently falls back to the literals below.
+# That is the failure this whole session kept finding, so it says so.
+if [ ! -f "$PROFILE_ENV" ]; then
+  echo "WARNING: profile not found at $PROFILE_ENV -- using built-in defaults."
+  echo "         Run launchers/start-glm53-nvfp4-tp4.sh from the checkout, or set PROFILE_ENV."
+fi
 if [ -f "$PROFILE_ENV" ]; then
   # The profile's VLLM_* knobs are read from the file rather than a fixed list,
   # so a knob added to a profile reaches the container without editing this.
