@@ -616,24 +616,38 @@ class KpoolTailMetadataBuilder(AttentionMetadataBuilder):
         # from inside a captured graph, so its address has to outlive the step
         # that produced it; a per-step clone leaves the graph pointing at the
         # capture-time copy forever.
-        # Allocated on the first build, when the real dtype and length are
-        # known -- converting a pre-made buffer with .to() would hand back a new
-        # tensor and reintroduce the very thing this fixes.
+        # Allocated on the first build, when the real dtype is known --
+        # converting a pre-made buffer with .to() would hand back a new tensor
+        # and reintroduce the very thing this fixes. Sized to the largest batch
+        # the scheduler can produce, so it never has to grow: a reallocation
+        # moves the address, and any graph captured before it would go on
+        # reading the old buffer. "Capture runs the largest descriptors first"
+        # is an ordering argument, not a guarantee -- profiling and prefill also
+        # call build().
+        self._tail_slot_capacity = vllm_config.scheduler_config.max_num_batched_tokens
         self._tail_slot_buf: torch.Tensor | None = None
 
     def _ensure_tail_slot_buf(self, like: torch.Tensor) -> torch.Tensor:
         """One buffer, allocated on first use and kept.
 
-        Grows if a later step needs more room; that reallocation moves the
-        address, so it has to happen before any graph capture -- which it does,
-        since capture runs the largest descriptors first.
+        Sized once to the scheduler's ceiling so it never grows. Growth would
+        move the address, and a graph captured earlier would keep reading the
+        old buffer -- the exact failure this module fixes.
         """
         buf = self._tail_slot_buf
-        if buf is None or buf.numel() < like.shape[0] or buf.dtype != like.dtype:
+        if buf is None or buf.dtype != like.dtype or buf.device != like.device:
             self._tail_slot_buf = torch.empty(
-                max(like.shape[0], buf.numel() if buf is not None else 0),
+                max(self._tail_slot_capacity, like.shape[0]),
                 dtype=like.dtype,
                 device=like.device,
+            )
+        elif buf.numel() < like.shape[0]:
+            # Should be unreachable -- the capacity above is the scheduler's own
+            # ceiling on batched tokens. Say so rather than silently reallocating
+            # under a captured graph, which is the bug this module exists for.
+            raise RuntimeError(
+                f"kpool tail slot buffer too small: {buf.numel()} < {like.shape[0]}; "
+                "growing it here would move the address a cudagraph has captured"
             )
         return self._tail_slot_buf
 

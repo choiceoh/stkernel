@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# Other agent sessions create worktrees here; they are never ours to commit.
+.claude/
