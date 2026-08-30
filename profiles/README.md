@@ -24,9 +24,18 @@ file, the module was never model-agnostic and has to be split, not overridden.
 | profile | model | modules | state |
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 16 | production |
-| `glm53` | GLM-5.3-Flash NVFP4 | 1 | bring-up |
+| `glm53` | GLM-5.3-Flash NVFP4 | 2 | bring-up, blocked |
 | `qwen38` | Qwen3.8-Flash-Next NVFP4 | 1 | bring-up |
 
-The bring-up profiles load `tp_oneshot_ar` and nothing else, which is the honest
-state: those two models were brought up on stock image code. What they produced
-was knowledge, not overlays -- see MEASUREMENTS.md.
+`glm53` carries two modules of its own and can load none of `dsv4`'s: its image
+installs to dist-packages rather than the venv site-packages, and one of its
+modules targets flashinfer rather than vllm at all. That is what `TARGET_PREFIX`
+is for -- the allowlist for container paths describes an image, so it belongs to
+the profile. A module binding outside it aborts the compose.
+
+`qwen38` stays at one module: it ran on stock image code, and its b12x path is
+closed rather than pending (MEASUREMENTS.md).
+
+A profile also carries the serving knobs that are the model's rather than the
+fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
+is blocked, says so and names the one flip that would isolate the cause.

@@ -15,6 +15,10 @@ ENVFILE="$REPO/profiles/$PROFILE.env"
 # shellcheck disable=SC1090
 . "$ENVFILE"
 [ -n "${MODULES:-}" ] || { echo "ABORT: $PROFILE.env names no MODULES"; exit 1; }
+# Where this image keeps its packages. Profile-owned: the DSV4 image uses the
+# venv site-packages, GLM's uses dist-packages, and a module may target
+# flashinfer rather than vllm.
+TARGET_PREFIX=${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/vllm/}
 
 OUT="$REPO/build/$PROFILE"
 rm -rf "$OUT"
@@ -39,6 +43,13 @@ for mod in $MODULES; do
       || { echo "ABORT: $target bound by ${TGT_OWNER[$target]} and $mod"; exit 1; }
     SRC_OWNER[$source]=$mod
     TGT_OWNER[$target]=$mod
+    case "$target" in
+      "$TARGET_PREFIX"*) ;;
+      *) echo "ABORT: $mod binds $target, outside $PROFILE's TARGET_PREFIX ($TARGET_PREFIX)"; exit 1 ;;
+    esac
+    case "$target" in
+      *[!A-Za-z0-9_./-]*) echo "ABORT: unsafe character in target: $target"; exit 1 ;;
+    esac
     src="$REPO/overlay/modules/$mod/$source"
     [ -f "$src" ] || { echo "ABORT: $src missing"; exit 1; }
     install -m 0644 "$src" "$OUT/$source"
