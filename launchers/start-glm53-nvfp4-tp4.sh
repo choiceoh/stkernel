@@ -276,13 +276,28 @@ mkdir -p "$CACHE_HOST_PATH" "$LOG_HOST_DIR"
 # overlay change a stale entry is still found and then fails to load
 # ("Compiling model again due to a load failure"). Stamp the manifest sha beside
 # the cache and clear it when that moves.
+# Maintenance, not a precondition: a stale cache costs time, a launcher that
+# exits costs the boot. Anything in here reports and continues.
+best_effort() {
+  local what="$1"; shift
+  if ! "$@" >/dev/null 2>&1; then
+    echo "  ! $what 실패 — 계속 진행합니다 (부팅을 막을 이유가 아님)"
+    return 0
+  fi
+}
+
 if [ -f "$OVERLAY_MANIFEST" ]; then
   _ov_sha=$(sha256sum "$OVERLAY_MANIFEST" | cut -d" " -f1)
   _stamp="$CACHE_HOST_PATH/.overlay-sha"
   if [ "$(cat "$_stamp" 2>/dev/null)" != "$_ov_sha" ]; then
     echo "overlays changed -> clearing torch.compile cache"
-    rm -rf "$CACHE_HOST_PATH/vllm/torch_compile_cache"
-    printf '%s' "$_ov_sha" > "$_stamp"
+    # The container writes this cache as root, so the host user cannot remove
+    # it. Delete from inside a container instead of reaching for sudo.
+    best_effort "컴파일 캐시 삭제" \
+      docker run --rm -v "$CACHE_HOST_PATH":/cache --entrypoint rm "$IMAGE" \
+        -rf /cache/vllm/torch_compile_cache
+    best_effort "오버레이 sha 기록" \
+      bash -c "printf '%s' \"$_ov_sha\" > \"$_stamp\""
   fi
 fi
 
