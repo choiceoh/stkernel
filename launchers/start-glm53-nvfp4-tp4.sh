@@ -14,9 +14,12 @@ set -euo pipefail
 # would clobber an explicit override, which is how the diagnostic runs are made.
 PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env}"
 if [ -f "$PROFILE_ENV" ]; then
+  # The profile's VLLM_* knobs are read from the file rather than a fixed list,
+  # so a knob added to a profile reaches the container without editing this.
+  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u)
   _caller=""
   for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
-            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED; do
+            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED $_vllm_keys; do
     [ -n "${!_v:-}" ] && _caller="$_caller $_v=$(printf %q "${!_v}")"
   done
   # shellcheck disable=SC1090
@@ -153,6 +156,12 @@ ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=
 -e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
 -e NCCL_NVLS_ENABLE=0 -e NCCL_IGNORE_CPU_AFFINITY=1 -e NCCL_DEBUG=WARN \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1"
+
+# Profile-declared VLLM_* knobs. Until now the profile set them and nothing
+# carried them, so every module they gate ran its stock path.
+for _k in ${_vllm_keys:-}; do
+  [ -n "${!_k:-}" ] && ENVV="$ENVV -e $_k=${!_k}"
+done
 
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
 --memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --cap-add IPC_LOCK \
