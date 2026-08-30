@@ -47,7 +47,13 @@ fi
 IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
 NAME_WORKER=glm53-worker
-MODEL_HOST_PATH="${MODEL_HOST_PATH:-${PROFILE_MODEL_PATH:-/home/choiceoh/models/glm-5.3-flash-nvfp4}}"
+# Last-resort host path, used only when no profile is in play. It named the
+# LibertAIDAI build, which is being removed from the fleet for corrupting
+# Korean (see profiles/glm53.env), so a profile-less run would have aborted on
+# missing weights.
+MODEL_HOST_PATH="${MODEL_HOST_PATH:-${PROFILE_MODEL_PATH:-/home/choiceoh/models/glm53-redhat-nvfp4}}"
+# Mount point inside the container. Deliberately left at the old name: it is
+# bound from whatever MODEL_HOST_PATH points at, and it keys the compile cache.
 MODEL_PATH=/models/glm-5.3-flash-nvfp4
 SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-glm-5.3-flash}}"
 CACHE_HOST_PATH=/home/choiceoh/glm53-cache
