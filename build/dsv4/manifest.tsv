@@ -1,6 +1,6 @@
-cuda_communicator.py	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/cuda_communicator.py	cf683d427777d3f247743b070fb3fbdb6e00df6d9c51bbf9a0b4037751d29d50
 dsv4_oneshot_shim.py	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
+cuda_communicator.py	/opt/venv/lib/python3.12/site-packages/vllm/distributed/device_communicators/cuda_communicator.py	cf683d427777d3f247743b070fb3fbdb6e00df6d9c51bbf9a0b4037751d29d50
 moe_gate_sm121.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
 fp8_draft_head.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fp8_draft_head.py	absent
 indexer.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/mla/indexer.py	dc5f7647363813561c6fb0bd2cb64dcae8a715d890bdfe3c8193fc290eb757e9

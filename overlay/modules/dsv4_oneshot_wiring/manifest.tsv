@@ -1,0 +1,2 @@
+# source	container_target(relative)	base_preimage_sha256
+cuda_communicator.py	vllm/distributed/device_communicators/cuda_communicator.py	cf683d427777d3f247743b070fb3fbdb6e00df6d9c51bbf9a0b4037751d29d50
