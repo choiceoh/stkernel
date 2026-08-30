@@ -41,14 +41,16 @@ agg = defaultdict(lambda: [0.0, 0])
 for g, p, n in gaps:
     def sh(x):
         import re
+
         x = re.sub(r"^void ", "", x)
         if "deep_gemm" in x:
             m = re.search(r"impl<(\d+)u, (\d+)u, (\d+)u", x)
             return f"gemm<{m.group(2)},{m.group(3)}>" if m else "gemm"
-            m = re.match(r"([A-Za-z0-9_:]+)", x)
-        # Kernel names starting with anything else (a symbol, or an empty name
-        # from a truncated trace) used to crash this on None.
+        # A kernel name that does not start with [A-Za-z0-9_:] -- a symbol, or
+        # an empty name from a truncated trace -- used to crash this on None.
+        m = re.match(r"([A-Za-z0-9_:]+)", x)
         return m.group(1)[:30] if m else (x.strip()[:30] or "?")
+
     agg[(sh(p), sh(n))][0] += g
     agg[(sh(p), sh(n))][1] += 1
 for (p, n), (g, c) in sorted(agg.items(), key=lambda kv: -kv[1][0])[:12]:
