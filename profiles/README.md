@@ -24,10 +24,10 @@ file, the module was never model-agnostic and has to be split, not overridden.
 | profile | model | modules | state |
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 16 | production |
-| `glm53` | GLM-5.3-Flash NVFP4 | 2 | bring-up, blocked |
+| `glm53` | GLM-5.3-Flash NVFP4 | 10 | bring-up, blocked |
 | `qwen38` | Qwen3.8-Flash-Next NVFP4 | 1 | bring-up |
 
-`glm53` carries two modules of its own and can load none of `dsv4`'s: its image
+`glm53` carries its own modules and can load none of `dsv4`'s: its image
 installs to dist-packages rather than the venv site-packages, and one of its
 modules targets flashinfer rather than vllm at all. That is what `TARGET_PREFIX`
 is for -- the allowlist for container paths describes an image, so it belongs to
@@ -47,8 +47,8 @@ is blocked, says so and names the one flip that would isolate the cause.
 | 상태 | production | bring-up, Korean-token corruption open | bring-up |
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x` | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
-| 모듈 수 | 17 | 9 | 1 |
-| 오버레이 파일 | 21 | 11 | 2 |
+| 모듈 수 | 17 | 10 | 1 |
+| 오버레이 파일 | 21 | 12 | 2 |
 
 ### 모듈 × 프로필
 
@@ -79,6 +79,7 @@ is blocked, says so and names the one flip that would isolate the cause.
 | `dsv4_tokenizer` | 모델 전용 | 2 | — | ● | · | · |
 | `glm53_dflash2_fp8_head` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_dflash_loader_fp8` | 모델 전용 | 1 | — | · | ● | · |
+| `glm53_kpool_tail_select` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_model_wiring` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_oneshot_wiring` | 모델 전용 | 1 | — | · | ● | · |
 
