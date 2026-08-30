@@ -556,13 +556,28 @@ def compute_kpool_tail_slot_mapping(
     step, on the premise that "the indexer op consumes the tail slot mapping on
     its eager break" -- but ``eager_break_during_capture`` is a no-op when
     ``VLLM_USE_BREAKABLE_CUDAGRAPH`` is off, and steps aside under
-    ``CUDAGraphMode.FULL`` even when it is on. FULL_DECODE_ONLY is what the
-    sparse indexer backend forces (``AttentionCGSupport.UNIFORM_BATCH``), so the
-    op is captured, the graph records the address of the clone that existed at
-    capture, and every later step's clone is written and never read.
+    ``CUDAGraphMode.FULL`` even when it is on. So the op is captured and the
+    graph bakes in the address of whichever clone existed at capture.
 
-    Writing through a caller-owned buffer keeps that address valid and lets the
-    contents move, which is what the decorator asks of any op it wraps.
+    What that address then holds is worse than a stale copy. ``build()`` runs
+    *outside* the capture region -- ``CUDAGraphWrapper`` captures only
+    ``self.runnable(*args)``, with metadata arriving through the forward context
+    -- so the clone is an ordinary caching-allocator tensor, not one of the
+    graph pool's. When the step that produced it drops its reference the block
+    goes back to the allocator, which is free to hand it to anything: a later
+    capture, a KV block, an activation. Every replay afterwards reads whatever
+    now lives there. That is why the damage is arbitrary rather than a fixed
+    wrong-but-consistent mapping.
+
+    Nothing catches it. Replay copies no inputs -- the whole scheme rests on the
+    caller reusing the same buffers -- and the one address check
+    (``is_debugging_mode``) compares positional args only, while attention
+    metadata never appears there.
+
+    Writing through a caller-owned buffer that lives as long as the builder
+    keeps the address valid and lets the contents move, which is the contract
+    ``_cudagraph_support = ALWAYS`` on this builder already claims to honour and
+    which its sibling keeps via ``compressed_slot_mapping_buffer``.
     """
     if out is None:
         out = slot_mapping.clone()
