@@ -210,7 +210,13 @@ if [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
 fi
 
 # Our proven fabric env (dual HCA), their runtime env.
-ENVV="-e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
+# Torch profiler. bench/profile-step.py drives it over /start_profile and
+# /stop_profile; hy4 has had this wired since the dsv4 kernel campaign and
+# glm53 never did, which is why the 33 ms of the decode step that is not memory
+# traffic has stayed unattributed. Zero cost until a capture is started -- the
+# env arms the worker profiler, and the HTTP routes come from --profiler-config
+# below (env alone does not attach them).
+ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
 -e VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/cache/flashinfer_autotune -e VLLM_CACHE_ROOT=/cache/vllm \
 -e FLASHINFER_WORKSPACE_BASE=/cache -e TRITON_CACHE_DIR=/cache/triton \
 -e CUTE_DSL_ARCH=sm_121a \
@@ -238,7 +244,8 @@ done
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
 --memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --cap-add IPC_LOCK \
 --device /dev/infiniband:/dev/infiniband \
--v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs"
+-v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs \
+-v /home/choiceoh/vllm-prof:/prof"
 for _i in ${OVFILES[@]+"${!OVFILES[@]}"}; do
   COMMON="$COMMON -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
 done
@@ -328,6 +335,7 @@ SERVE_ARGS="$MODEL_PATH \
 --trust-remote-code \
 --tensor-parallel-size 4 \
 --gpu-memory-utilization $GMU \
+--profiler-config '{"profiler":"torch","torch_profiler_dir":"/prof","torch_profiler_with_stack":false}' \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
@@ -393,7 +401,7 @@ fi
 rank=1
 for ip in "${WORKER_IPS[@]}"; do
   W_B64=$(printf '%s' "vllm serve $SERVE_ARGS --node-rank $rank --headless > /glmlogs/glm53.log 2>&1" | base64 -w0)
-  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR; docker rm -f $NAME_WORKER 2>/dev/null; \
+  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof; docker rm -f $NAME_WORKER 2>/dev/null; \
     docker run --name $NAME_WORKER ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$ip \
     --entrypoint /bin/bash $IMAGE -c 'echo $W_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh'"
   echo "worker rank=$rank @$ip launched"
