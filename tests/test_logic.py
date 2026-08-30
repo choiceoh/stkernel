@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import glob
 import os
+import re
 import subprocess
 import sys
 import types
@@ -396,6 +397,38 @@ def test_overlay_symbol_contracts() -> None:
                           f"{os.path.basename(other)} imports {alias.name} from "
                           f"{dotted}, which {os.path.basename(srcpath)} does not define")
     print(f"  overlay symbol contracts ({checked}) ... OK")
+
+
+def test_profile_env_carried() -> None:
+    """Every VLLM_* a profile declares has to reach the container.
+
+    glm53.env set three of them and the launcher passed none, so the fused MoE
+    gate, the fp8 lm head and one-shot AllReduce were dead config for as long as
+    they had existed. The launcher reads the names out of the profile now; this
+    checks it still does.
+    """
+    checked = 0
+    for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        keys = {m.group(0) for m in re.finditer(r"^VLLM_[A-Z0-9_]+",
+                                                open(envpath, encoding="utf-8").read(),
+                                                re.M)}
+        if not keys:
+            continue
+        launcher = None
+        for line in open(envpath, encoding="utf-8"):
+            if line.startswith("PROFILE_LAUNCHER="):
+                launcher = line.split("=", 1)[1].strip().strip('"').strip("'")
+        if not launcher:
+            continue
+        path = os.path.join(REPO, "launchers", launcher)
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        check("_vllm_keys" in text and "ENVV=\"$ENVV -e $_k=" in text,
+              f"{launcher} does not carry the profile's VLLM_* knobs "
+              f"({len(keys)} declared in {os.path.basename(envpath)})")
+        checked += len(keys)
+    print(f"  profile env carried ({checked} knobs) ... OK")
 
 
 def _composed_manifests() -> list[tuple[str, str, str]]:
@@ -837,6 +870,7 @@ if __name__ == "__main__":
     test_bench_dec_metrics()
     test_overlay_manifest()
     test_overlay_symbol_contracts()
+    test_profile_env_carried()
     test_dspark_speed_guards()
     test_bf16_release_guards()
     test_acceptance_lever_guards()
