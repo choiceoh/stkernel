@@ -431,6 +431,45 @@ def test_profile_env_carried() -> None:
     print(f"  profile env carried ({checked} knobs) ... OK")
 
 
+# Keys that exist for a reader, not a program. Extending this is a decision:
+# every other unread key so far turned out to be a carrier nobody wrote.
+_PROFILE_DOC_ONLY = {"PROFILE_DESC", "GMU_NOTE"}
+
+_PROFILE_CONSUMER_GLOBS = (
+    "launchers/*.sh", "launchers/*.py", "tools/*.py",
+    "overlay/modules/*/*.py", "bench/*.py", "bench/*.sh",
+)
+
+
+def test_profile_keys_have_readers() -> None:
+    """A profile key nothing reads is either dead config or a missing carrier."""
+    sources = {}
+    for pat in _PROFILE_CONSUMER_GLOBS:
+        for path in glob.glob(os.path.join(REPO, pat)):
+            try:
+                sources[path] = open(path, encoding="utf-8").read()
+            except (OSError, UnicodeDecodeError):
+                pass
+    # A launcher that harvests VLLM_* by pattern reads all of them at once.
+    harvests = any("_vllm_keys" in t for t in sources.values())
+
+    checked = 0
+    for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        profile = os.path.basename(envpath)
+        text = open(envpath, encoding="utf-8").read()
+        for match in re.finditer(r"^([A-Za-z_][A-Za-z0-9_]*)=", text, re.M):
+            key = match.group(1)
+            if key in _PROFILE_DOC_ONLY:
+                continue
+            checked += 1
+            if key.startswith("VLLM_") and harvests:
+                continue
+            check(any(re.search(rf"\b{re.escape(key)}\b", t) for t in sources.values()),
+                  f"{profile} declares {key} and nothing reads it -- "
+                  f"add the carrier, or list it in _PROFILE_DOC_ONLY")
+    print(f"  profile keys have readers ({checked}) ... OK")
+
+
 def _composed_manifests() -> list[tuple[str, str, str]]:
     """(profile, target_prefix, manifest path) for every composed profile."""
     out = []
@@ -871,6 +910,7 @@ if __name__ == "__main__":
     test_overlay_manifest()
     test_overlay_symbol_contracts()
     test_profile_env_carried()
+    test_profile_keys_have_readers()
     test_dspark_speed_guards()
     test_bf16_release_guards()
     test_acceptance_lever_guards()
