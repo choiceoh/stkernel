@@ -3,3 +3,6 @@ b12x_oracle_nvfp4.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor
 dense_blockscaled_gemm_sm120_b12x.py	/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py	3bef54f14f5b410acc2874d8536990d635662c11fc7d2683bd6c5239381e412a
 moe_gate_sm121.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
+dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
+dsv4_oneshot_ar.cu	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
+cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
