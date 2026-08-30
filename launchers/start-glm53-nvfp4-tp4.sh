@@ -84,6 +84,13 @@ DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
 # goes direct_micro. Setting this to 0 sends everything to dynamic, which is
 # how to find out whether static is where the Korean fragments come from.
 MOE_CUTOVER="${MOE_CUTOVER:-}"
+# Both cudagraph wrappers already check that a replay sees the same input
+# tensor addresses it was captured with, and both gate that check on
+# is_debugging_mode = (VLLM_LOGGING_LEVEL == "DEBUG"). Off by default, so a
+# graph reading a stale address is silent. GRAPH_DEBUG=1 turns it into an
+# assertion. Only positional tensor args are covered -- firing is proof,
+# staying quiet is not a clean bill of health. Very verbose; diagnostic only.
+GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
 AUDIT="${AUDIT:-0}"
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
@@ -203,6 +210,7 @@ done
 
 # glm53_drop_audit ships in the manifest; this only arms it.
 [ "$AUDIT" = 1 ] && ENVV="$ENVV -e VLLM_DENEB_DROP_AUDIT=1"
+if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
 if [ -n "$MOE_CUTOVER" ]; then
   ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"
 fi
