@@ -927,6 +927,40 @@ def test_launcher_head_guard() -> None:
     print("  launcher head guard .......... OK")
 
 
+def test_preflight_precedes_serve_args() -> None:
+    """A measured GMU has to reach the flag it sizes.
+
+    memfree-preflight computes what free memory supports, and the launcher used
+    to run it *after* SERVE_ARGS had already baked --gpu-memory-utilization in.
+    The number was printed and then ignored, so four boots in a row died on
+    memory while the terminal showed the right answer. It also ran before the
+    launch loop removes the previous run's workers, so it measured against
+    memory those still held.
+    """
+    global PASS
+    for path in sorted(glob.glob(os.path.join(REPO, "launchers", "start-*.sh"))):
+        src = open(path, encoding="utf-8").read()
+        if "memfree-preflight" not in src:
+            continue
+        name = os.path.basename(path)
+        # The invocation, not the variable assignment -- the assignment can sit
+        # anywhere, and it is the call that does the measuring.
+        call = src.index('$("$PREFLIGHT"')
+        args = re.search(r"^SERVE_ARGS=", src, re.M)
+        assert args, f"{name}: no SERVE_ARGS to size"
+        assert call < args.start(), (
+            f"{name}: preflight runs after SERVE_ARGS -- the measured GMU "
+            "cannot reach --gpu-memory-utilization"
+        )
+        reclaim = src.find("docker rm -f")
+        assert reclaim != -1 and reclaim < call, (
+            f"{name}: preflight measures before stale containers are removed"
+        )
+        assert "GMU=$GMU_SAFE" in src, f"{name}: preflight warns but never applies"
+        PASS += 1
+    print("  preflight applies GMU ......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -943,4 +977,5 @@ if __name__ == "__main__":
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
     test_launcher_head_guard()
+    test_preflight_precedes_serve_args()
     print(f"all OK ({PASS} checks)")
