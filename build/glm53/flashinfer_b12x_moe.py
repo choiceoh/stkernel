@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 from weakref import WeakValueDictionary
+
+from vllm.logger import init_logger
 from typing import Any
 
 import torch
@@ -29,6 +31,9 @@ from vllm.utils.flashinfer import (
     flashinfer_convert_sf_to_mma_layout,
     has_flashinfer_b12x_moe,
 )
+
+
+logger = init_logger(__name__)
 
 
 @dataclass(frozen=True)
