@@ -33,6 +33,7 @@ COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
 DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
+KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 MAX_LEN="${MAX_LEN:-1048576}"
 SPEC_K="${SPEC_K:-4}"
@@ -108,7 +109,7 @@ SERVE_ARGS="$MODEL_PATH \
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
 $SPECCFG_VAL \
---kv-cache-dtype fp8_e4m3 $KV_FLAG \
+--kv-cache-dtype $KV_DTYPE $KV_FLAG \
 $ASYNC_FLAG \
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT' \
