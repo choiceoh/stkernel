@@ -9,7 +9,23 @@
 # WORKER-FIRST, head last.
 set -euo pipefail
 
-IMAGE="${IMAGE:-glm53:v10-dflash2}"
+# Defaults come from the profile; compose-overlays.sh reads the same file, so
+# the serving knobs have one home. Caller env wins over it -- a bare source
+# would clobber an explicit override, which is how the diagnostic runs are made.
+PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env}"
+if [ -f "$PROFILE_ENV" ]; then
+  _caller=""
+  for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
+            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED; do
+    [ -n "${!_v:-}" ] && _caller="$_caller $_v=$(printf %q "${!_v}")"
+  done
+  # shellcheck disable=SC1090
+  . "$PROFILE_ENV"
+  [ -n "$_caller" ] && eval "$_caller"
+  IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
+fi
+
+IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
 NAME_WORKER=glm53-worker
 MODEL_HOST_PATH=/home/choiceoh/models/glm-5.3-flash-nvfp4
@@ -21,12 +37,12 @@ HEAD_IP=10.10.10.2
 WORKER_IPS=(10.10.10.1 10.10.10.3 10.10.10.4)
 MPORT=29521
 PORT=8000
-GMU="${GMU:-0.85}"
-MOE_BACKEND="${MOE_BACKEND:-marlin}"
-EAGER="${EAGER:-1}"
-GRAPH_CAP="${GRAPH_CAP:-256}"
+GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
+MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"   # GLM spells b12x this way; marlin is gone
+EAGER="${EAGER:-0}"
+GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
-MAX_SEQS="${MAX_SEQS:-6}"
+MAX_SEQS="${MAX_SEQS:-4}"
 MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
 COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}}"
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
@@ -36,15 +52,16 @@ DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 MAX_LEN="${MAX_LEN:-1048576}"
-SPEC_K="${SPEC_K:-4}"
+SPEC_K="${SPEC_K:-7}"             # the comment above is not advisory
 SSHOPT="-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8"
 
-test -f "$MODEL_HOST_PATH/config.json"
-test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
+[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/config.json"
+[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
   echo "ABORT: chat_template_mm.jinja missing in model dir (copy from ~/glm53-4x/)"; exit 1; }
 
-# Refuse to start over a live dsv4/q38 stack.
-for ip in $HEAD_IP "${WORKER_IPS[@]}"; do
+# Refuse to start over a live dsv4/q38 stack. Skipped under DRY_RUN: these ask
+# the machines about themselves, which a config print has no use for.
+for ip in $([ "${DRY_RUN:-0}" = 1 ] || echo "$HEAD_IP ${WORKER_IPS[@]}"); do
   run() { if [ "$ip" = "$HEAD_IP" ]; then bash -c "$1"; else ssh $SSHOPT choiceoh@"$ip" "$1"; fi; }
   if run 'docker ps --format "{{.Names}}"|grep -qE "^(hy4|q38)"'; then
     echo "ABORT: $ip runs hy4/q38 — stop production/experiment first"; exit 1; fi
@@ -84,7 +101,7 @@ COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
 if [ "${SPEC:-1}" = 0 ]; then
   SPECCFG_VAL=""
 elif [ "$DFLASH2" = 1 ]; then
-  test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
+  [ "${DRY_RUN:-0}" = 1 ] || test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
   COMMON="$COMMON -v $DRAFT_HOST_PATH:/models/dflash2-draft:ro"
   SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":7}'"
 else
@@ -117,6 +134,20 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+
+# DRY_RUN=1 prints what the knobs resolved to and stops -- before the cache
+# reclaim, before any container. A default that points at a deleted image or a
+# deleted backend is otherwise invisible until the boot fails.
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo "profile   : ${PROFILE_ENV:-<none>}"
+  for _k in IMAGE MOE_BACKEND KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
+    printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
+  done
+  echo "spec flag : ${SPECCFG_VAL:-<none>}"
+  echo "graph flag: ${EAGER_FLAG:-<none>}"
+  exit 0
+fi
 
 mkdir -p "$CACHE_HOST_PATH" "$LOG_HOST_DIR"
 
