@@ -34,7 +34,7 @@ if [ -f "$PROFILE_ENV" ]; then
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
-            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED \
+            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
@@ -77,7 +77,17 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
   exit 1
 fi
 GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
-MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"   # GLM spells b12x this way; marlin is gone
+MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
+# Empty = let vLLM pick. It picks FLASHINFER_MLA_SPARSE_SM90 on GB10, and that
+# is not a fallback -- that backend declares `capability.major in (9, 12)`, so
+# it claims Blackwell deliberately and sits ahead of SM120 in the order.
+#
+# FLASHINFER_MLA_SPARSE_SM120 is nonetheless eligible here: has_flashinfer_
+# sparse_mla_sm120() is True in this image, dtype bf16, kv_cache_dtype fp8_e4m3
+# and index_topk 2048 all pass its supports_combination(). Which of the two is
+# actually faster on sm_121 is unmeasured, so this knob exists to find out
+# rather than to assert an answer.
+ATTN_BACKEND="${ATTN_BACKEND:-}"   # GLM spells b12x this way; marlin is gone
 EAGER="${EAGER:-0}"
 GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
@@ -318,6 +328,7 @@ SERVE_ARGS="$MODEL_PATH \
 --trust-remote-code \
 --tensor-parallel-size 4 \
 --gpu-memory-utilization $GMU \
+${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
 $SPECCFG_VAL \
