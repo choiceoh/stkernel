@@ -1,3 +1,8 @@
 # tp_oneshot_ar
 
-One-shot AllReduce for 4-node TP. Any model, any architecture. The three files are one unit: the communicator is what dispatches into the shim, which is what loads the kernel.
+Host-register RDMA one-shot AllReduce for small decode tensors (27us against
+NCCL's 67us on this fabric). Both files are new, so this half is portable;
+the CUDACommunicator.all_reduce hook is per-image and lives in a
+`*_oneshot_wiring` module.
+
+Armed by `VLLM_DSV4_ONESHOT_AR`. Every failure path falls back to NCCL.

@@ -39,7 +39,12 @@ logger = init_logger(__name__)
 # round-trip of the logits is dropped, so outputs are strictly closer to the
 # fp32 reference but bit-DIFFERENT from baseline — hence the kill-switch.
 # Prefill and any M > 32 keep the exact Tier-4 path and numerics.
-_GATE_FUSED = os.environ.get("VLLM_DSV4_GATE_FUSED", "0").strip().lower() in (
+# Armed by either name. The DSV4 one is what production sets; the neutral one
+# is what a module that applies to every MoE on this hardware should answer to.
+_GATE_FUSED = (
+    os.environ.get("VLLM_MOE_GATE_FUSED")
+    or os.environ.get("VLLM_DSV4_GATE_FUSED", "0")
+).strip().lower() in (
     "1", "true", "yes", "on",
 )
 _GATE_FUSED_MAX_TOKENS = 32
