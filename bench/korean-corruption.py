@@ -47,7 +47,16 @@ JAMO = re.compile(r"[ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]")
 HAN = re.compile(r"[一-鿿㐀-䶿]")
 
 
-def scan(text: str) -> dict:
+def scan(text: str, truncated: bool = False) -> dict:
+    """Count damage. A cut-off tail is not damage.
+
+    Korean syllables are three UTF-8 bytes and the tokenizer splits them across
+    tokens, so a response stopped at max_tokens usually ends inside one and the
+    detokenizer reports that with a single trailing U+FFFD. Counting it put a
+    phantom hit on most truncated responses.
+    """
+    if truncated and text.endswith("\ufffd"):
+        text = text[:-1]
     hits = {"replacement": 0, "lone_jamo": 0, "cjk_mixed": 0, "control": 0}
     hits["replacement"] = text.count("�")
     hits["lone_jamo"] = len(JAMO.findall(text))
@@ -59,7 +68,7 @@ def scan(text: str) -> dict:
     return hits
 
 
-def ask(prompt: str, max_tokens: int) -> str:
+def ask(prompt: str, max_tokens: int) -> tuple[str, str | None]:
     body = json.dumps({
         "model": MODEL,
         "max_tokens": max_tokens,
@@ -75,7 +84,7 @@ def ask(prompt: str, max_tokens: int) -> str:
     # `content` empty until it ends. Both are model output and both can break,
     # so scan whichever arrived rather than reporting a clean zero.
     parts = [m.get(k) or "" for k in ("content", "reasoning", "reasoning_content")]
-    return "\n".join(p for p in parts if p)
+    return "\n".join(p for p in parts if p), d["choices"][0].get("finish_reason")
 
 
 def main() -> int:
@@ -88,10 +97,15 @@ def main() -> int:
     n = 0
     for r in range(rounds):
         for i, p in enumerate(PROMPTS):
-            text = ask(p, max_tokens)
+            text, finish = ask(p, max_tokens)
             n += 1
+            truncated = finish == "length"
+            if truncated and text.endswith("\ufffd"):
+                # Same trim scan() applies, so the char count and the hit count
+                # describe the same string.
+                text = text[:-1]
             chars += len(text)
-            h = scan(text)
+            h = scan(text, truncated)
             for k in total:
                 total[k] += h[k]
             if any(h.values()):
