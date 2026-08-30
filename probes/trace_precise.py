@@ -45,7 +45,10 @@ for g, p, n in gaps:
         if "deep_gemm" in x:
             m = re.search(r"impl<(\d+)u, (\d+)u, (\d+)u", x)
             return f"gemm<{m.group(2)},{m.group(3)}>" if m else "gemm"
-        return re.match(r"([A-Za-z0-9_:]+)", x).group(1)[:30]
+        m = re.match(r"([A-Za-z0-9_:]+)", x)
+    # Kernel names that start with anything else (leading "void ", a symbol,
+    # an empty name from a truncated trace) used to crash this on None.
+    return m.group(1)[:30] if m else (x.strip()[:30] or "?")
     agg[(sh(p), sh(n))][0] += g
     agg[(sh(p), sh(n))][1] += 1
 for (p, n), (g, c) in sorted(agg.items(), key=lambda kv: -kv[1][0])[:12]:
