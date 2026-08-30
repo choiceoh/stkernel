@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+nvidia_model.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/model.py	f8fc8bf382b0a7b23e803201c37e83156b19ed05b3c162a689f9a32b0d9f97fe

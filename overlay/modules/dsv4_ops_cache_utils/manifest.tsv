@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+ops_cache_utils.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py	f778b54009fbf0e422ccc129561b9b715b79af92db1318e90021355844b27bd0

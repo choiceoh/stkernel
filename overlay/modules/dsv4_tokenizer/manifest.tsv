@@ -1,0 +1,3 @@
+# source	container_target	base_preimage_sha256_or_absent
+tok_deepseek_v4.py	/opt/venv/lib/python3.12/site-packages/vllm/tokenizers/deepseek_v4.py	f1ebaaa58fc7f453ebb38c07234591abe35780641822f872558c964cf702fcf3
+tok_deepseek_v4_encoding.py	/opt/venv/lib/python3.12/site-packages/vllm/tokenizers/deepseek_v4_encoding.py	582f735bf75ad5fbe2b4a8801d8280a65ff0e41175874249bd62433e78c487ff

@@ -1,17 +1,54 @@
 # stkernel
 
-DeepSeek-V4-Flash-0731 · **TP=4** 프로덕션 오버레이 스택
-(4× NVIDIA DGX Spark GB10 · CRS812 스위치드 패브릭 · vLLM eldritch/b12x 포크 이미지)
+**TP=4 DGX Spark GB10 MoE 서빙 스택** — 4× NVIDIA DGX Spark (GB10, sm_121a, 48 SM),
+CRS812 스위치드 패브릭, vLLM eldritch/b12x 포크 이미지.
 
-베이스 이미지 `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6`
-(arm64 image ID `sha256:b763d81b57f7...`, 런처에서 고정)는
-서드파티라 소스 트리가 없다. 이 리포는 그 이미지를 **재빌드 없이** 개선하기 위한
-전체 스택이다 — 파이썬 파일을 `site-packages` 위에 read-only 바인드 마운트하는
-오버레이 방식이며, 모든 수정부에 `# deneb fork: port of upstream PR #NNNNN` 마커가 있다.
+베이스 이미지는 서드파티라 소스 트리가 없다. 이 리포는 그 이미지를 **재빌드 없이**
+개선하기 위한 스택이다 — 파이썬 파일을 `site-packages` 위에 read-only 바인드
+마운트하는 오버레이 방식이며, 모든 수정부에 `# deneb fork:` 마커가 있다.
 
 ```
--v <overlay>/attention.py:/opt/venv/.../vllm/models/deepseek_v4/attention.py:ro
+-v <overlay>/nvidia_model.py:/opt/venv/.../vllm/models/deepseek_v4/nvidia/model.py:ro
 ```
+
+## 모듈과 프로필
+
+오버레이는 **모듈 단위**다 (`overlay/modules/<name>/`, 각자 `manifest.tsv` 보유).
+어떤 모듈을 싣는지는 **프로필**이 정한다 (`profiles/<model>.env`의 `MODULES=`).
+모델이 하나였을 때는 단일 매니페스트로 충분했지만, 같은 플릿에서 GLM-5.3-Flash와
+Qwen3.8-Flash-Next를 올려보면서 **모델이 아니라 하드웨어에 속한 발견**이 쌓였고
+그걸 둘 곳이 없었다.
+
+범위가 모델을 넘는 모듈:
+
+| 모듈 | 범위 |
+|---|---|
+| `tp_oneshot_ar` | 4노드 TP one-shot AllReduce — 모델·아키텍처 무관 |
+| `moe_gate_sm121` | 융합 MoE 라우터 게이트 — **GB10의 모든 MoE**. 이미지의 `GateLinear`가 가속 티어를 SM90/SM100 계열로만 판정해 sm_121은 항상 bf16 Tier-4로 떨어진다 (dsv4 실측 C=1 +3.5%) |
+| `spec_fp8_head` | W8A16 fp8 보캡 헤드 — 드래프터 일반 |
+| `mla_indexer` · `mla_sparse_swa` | MLA 인덱서·슬라이딩윈도우 백엔드 — DeepSeek-MLA 계열 |
+
+`launchers/compose-overlays.sh <profile>`가 모듈을 합성해 배포기·런처 프리플라이트·
+4노드 SHA-256 검증이 기대하는 **평평한 디렉터리 + 단일 매니페스트**를 만든다.
+노드가 보는 계약은 그대로다.
+
+## b12x 우선 정책
+
+b12x는 GB10에서 FP4 텐서코어에 닿는 유일한 MoE 경로다 (marlin·bf16 폴백은 먼저
+디퀀트한다). 그래서 **백엔드는 항상 명시**한다 — `--moe-backend b12x`를 주면 후보가
+하나로 좁혀져 불가할 때 `NotImplementedError`로 **크게 실패**하고, `auto`로 두면
+marlin으로 **조용히 떨어진다**.
+
+가능 여부는 부팅 전에 판정할 수 있다:
+
+```bash
+tools/b12x-preflight.py --scan ~/models 4
+```
+
+조건은 둘이고 둘 다 실측으로 확정됐다 — EP를 켜면 flashinfer가 진입점에서 거부하고,
+EP를 끄면 랭크당 gate+up 행이 128의 배수여야 한다 (패딩하면 부팅은 되는데 출력이
+깨진다). 이미지 자신도 같은 말을 한다: `mxfp4_round_up_hidden_size_and_intermediate_size`가
+**B12X에만 크기를 그대로 돌려주고** MARLIN·DEEPGEMM·TRTLLM은 올림한다.
 
 ## 구성
 

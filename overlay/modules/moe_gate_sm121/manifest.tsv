@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256
+moe_gate_sm121.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent

@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+reasoning_deepseek_v3.py	/opt/venv/lib/python3.12/site-packages/vllm/reasoning/deepseek_v3_reasoning_parser.py	80d371360ef902f0ab9e3cd5f3fd7c0d11a141194a89c37c492bb4e4b67d1154

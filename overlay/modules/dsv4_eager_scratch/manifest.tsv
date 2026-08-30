@@ -1,0 +1,2 @@
+# source	container_target	base_preimage_sha256_or_absent
+eager_scratch.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/eager_scratch.py	absent
