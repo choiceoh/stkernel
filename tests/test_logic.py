@@ -900,6 +900,33 @@ def test_ngram_ceiling_sim() -> None:
     print("  ngram-ceiling sim math ........ OK")
 
 
+def test_launcher_head_guard() -> None:
+    """A multi-node launcher must refuse to run anywhere but its head.
+
+    Every HEAD_IP command runs through `bash -c` and the head container is
+    started with a plain `docker run`, so off the head the script builds a
+    different cluster instead of failing: head on the wrong machine carrying
+    VLLM_HOST_IP=$HEAD_IP, workers pointed at a rendezvous nobody serves. What
+    surfaces first is an unrelated-looking ssh failure on whichever worker the
+    invoking node lacks a key for, which is what it looked like from srv4.
+    """
+    global PASS
+    for path in sorted(glob.glob(os.path.join(REPO, "launchers", "start-*.sh"))):
+        src = open(path, encoding="utf-8").read()
+        if not re.search(r"^HEAD_IP=", src, re.M):
+            continue
+        name = os.path.basename(path)
+        assert re.search(r'grep -qw "\$HEAD_IP"', src), \
+            f"{name}: no head-node guard -- running it off the head is silent"
+        guard = src[src.index('grep -qw "$HEAD_IP"'):]
+        assert "exit 1" in guard[:400], f"{name}: head guard does not abort"
+        assert "DRY_RUN" in src[max(0, src.index('grep -qw "$HEAD_IP"') - 200):
+                                src.index('grep -qw "$HEAD_IP"')], \
+            f"{name}: head guard must not block DRY_RUN config prints"
+        PASS += 1
+    print("  launcher head guard .......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -915,4 +942,5 @@ if __name__ == "__main__":
     test_bf16_release_guards()
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
+    test_launcher_head_guard()
     print(f"all OK ({PASS} checks)")

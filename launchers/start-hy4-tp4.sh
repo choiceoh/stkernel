@@ -139,6 +139,19 @@ case "$DSPARK_IMPL" in
   *) echo "ABORT: DSPARK_IMPL must be fork or upstream (got $DSPARK_IMPL)"; exit 2 ;;
 esac
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
+# This launcher only does the right thing on the head node. Every HEAD_IP
+# command runs locally and the head container is started with a plain
+# `docker run` here, so from any other node it quietly builds a different
+# cluster: the head lands on the wrong machine carrying VLLM_HOST_IP=$HEAD_IP,
+# the workers rendezvous at an address nobody serves, and the first thing that
+# actually fails is an unrelated-looking ssh error on whichever worker this
+# node happens to lack a key for.
+if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEAD_IP"; then
+  _here=$(ip -4 -o addr show scope global 2>/dev/null | sed 's|.* inet \([0-9.]*\)/.*|\1|' | paste -sd" ")
+  echo "ABORT: 이 런처는 head 노드($HEAD_IP)에서 실행해야 합니다 — 여기는 $(hostname) [${_here}]"
+  echo "       ssh <head> 'bash $0'"
+  exit 1
+fi
 
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
 
