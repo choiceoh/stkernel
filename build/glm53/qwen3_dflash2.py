@@ -12,8 +12,8 @@ from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 # deneb fork: the drafter's only GEMM into the head goes through
 # _apply_head, so an fp8 copy is swapped in there and the top-k reduction
-# above it is left alone. See overlay/modules/spec_fp8_lm_head.
-from vllm.model_executor.layers.spec_fp8_lm_head import (
+# above it is left alone. See overlay/modules/fp8_lm_head.
+from vllm.model_executor.layers.fp8_lm_head import (
     Fp8HeadLogitsProcessor,
 )
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig

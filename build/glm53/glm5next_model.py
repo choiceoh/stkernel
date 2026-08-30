@@ -22,6 +22,9 @@ from vllm.model_executor.layers.fused_moe import (
     GateLinear,
 )
 # deneb fork: fused small-M gate for sm_121 (overlay/modules/moe_gate_sm121).
+from vllm.model_executor.layers.fp8_lm_head import (
+    Fp8HeadLogitsProcessor,
+)
 from vllm.model_executor.layers.fused_moe.router.moe_gate_sm121 import (
     DenebGateLinear,
     fused_moe_make_expert_params_mapping,
@@ -950,8 +953,12 @@ class Glm5NextForCausalLM(
         else:
             self.lm_head = PPMissingLayer()
         logit_scale = getattr(self.config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            self.config.vocab_size, scale=logit_scale
+        # deneb fork: fp8 target head (VLLM_TARGET_LM_HEAD_FP8, default
+        # off). 154,880 x 4096 bf16 is 0.32 GB per rank read every step.
+        self.logits_processor = Fp8HeadLogitsProcessor(
+            self.config.vocab_size,
+            scale=logit_scale,
+            fp8_env="VLLM_TARGET_LM_HEAD_FP8",
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
