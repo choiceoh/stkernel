@@ -4175,6 +4175,48 @@ def test_ep_compact_shape_align() -> None:
     print("  EP compact shape align ........ OK")
 
 
+def test_ep_compact_warmup_ladder() -> None:
+    """Load-time warmup ladder: opt-in, shape-derived, never fatal."""
+    ns = load_defs(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        {"b12x_ep_compact_warmup_buckets", "b12x_ep_compact_pair_count",
+         "B12X_EP_COMPACT_PAIR_ALIGN"},
+        {},
+    )
+    ladder = ns["b12x_ep_compact_warmup_buckets"]
+    align = ns["B12X_EP_COMPACT_PAIR_ALIGN"]
+
+    got = ladder(8192, 8, 72, 288)
+    check(got == tuple(sorted(got, reverse=True)),
+          "largest bucket first -- it dominates the cost and is what a first "
+          "long prompt hits")
+    check(all(b % align == 0 for b in got), "every rung is a real bucket")
+    check(len(set(got)) == len(got), "no rung repeats")
+    check(len(got) <= 8, "the ladder must stay short; each rung is a compile")
+    check(got[0] == ns["b12x_ep_compact_pair_count"](8192 * 8 * 72 // 288),
+          "the top rung is the largest chunk this engine can schedule, scaled "
+          "to the slots this rank actually owns")
+
+    for args in ((0, 8, 72, 288), (8192, 0, 72, 288), (8192, 8, 0, 288),
+                 (8192, 8, 72, 0), (8192, 8, 288, 72)):
+        check(ladder(*args) == (),
+              f"degenerate geometry must yield no ladder: {args}")
+
+    src = open(_overlay_source(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+    start = src.index("def _warm_compact_shapes")
+    body = src[start:src.index("def _warm_activation_dtype")]
+    check('os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1"'
+          in body and "return" in body,
+          "warmup must be exact opt-in -- it costs load time")
+    check("except Exception as exc:" in body and "warning_once" in body,
+          "a failed warmup must cost a log line, never the boot")
+    check("logger.info_once" in body,
+          "a warmup that ran must say which shapes it covered")
+
+    print("  EP compact warmup ladder ...... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4198,6 +4240,7 @@ if __name__ == "__main__":
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
+    test_ep_compact_warmup_ladder()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()

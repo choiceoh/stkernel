@@ -965,6 +965,41 @@ def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
     return ((n + align - 1) // align) * align
 
 
+def b12x_ep_compact_warmup_buckets(
+    max_num_tokens, top_k, num_local_experts, global_num_experts,
+    align=B12X_EP_COMPACT_PAIR_ALIGN, floors=6,
+):
+    """Bucket sizes worth compiling at load instead of mid-request.
+
+    b12x JITs per launch shape and prefill's shape is the local-pair count, so
+    the first request at a new size stalls the engine for seconds -- the JIT
+    monitor says as much ("consider warmup to cover this shape/config"). #163
+    collapsed those to `align` buckets; this walks the ones a real prefill can
+    reach and pays for them once, at load.
+
+    The ladder halves from the largest chunk this engine can schedule down to
+    one bucket, so a handful of compiles covers every chunked-prefill size the
+    scheduler produces. Ordered largest-first: the big one dominates the cost
+    and is the one a first long prompt hits.
+    """
+    tokens = int(max_num_tokens or 0)
+    k = int(top_k or 0)
+    local = int(num_local_experts or 0)
+    total = int(global_num_experts or 0)
+    if tokens <= 0 or k <= 0 or local <= 0 or total < local:
+        return ()
+    # A rank only materialises the slots its own experts own.
+    peak = b12x_ep_compact_pair_count(max(1, tokens * k * local // total), align)
+    out, size = [], peak
+    while size >= align and len(out) < max(1, int(floors)):
+        out.append(size)
+        size = b12x_ep_compact_pair_count(size // 2, align)
+        if out and size == out[-1]:
+            break
+    return tuple(out)
+
+
+
 class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     """FlashInfer CuteDSL fused MoE expert for SM12x (SM120/SM121,
     RTX Pro 6000 / DGX Spark).
@@ -1175,6 +1210,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             k=k2,
             num_groups=num_experts_w2,
         )
+        if self._use_ep:
+            self._warm_compact_shapes(layer)
+
 
         if self._ep_no_dummy:
             device = layer.w13_weight.device
@@ -1886,6 +1924,76 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         output.zero_()
         output.index_add_(0, token_index, pair_out)
         return output
+
+    def _warm_compact_shapes(self, layer) -> None:
+        """Compile the compact prefill shapes now, not mid-request. Opt-in.
+
+        b12x JITs per launch shape, so the first prefill at a new size stalls
+        the engine for seconds -- vLLM's own JIT monitor says "consider warmup
+        to cover this shape/config". #163 collapsed prefill to `align` buckets;
+        this pays for the ladder of them once, here.
+
+        Off by default: it costs load time, and the gain is only real if
+        compiles actually dominate a first prefill. Arm with
+        VLLM_B12X_EP_WARM_COMPACT=1 and read it off TTFT for a cold long
+        prompt, not off steady-state throughput.
+        """
+        if os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1":
+            return
+        buckets = b12x_ep_compact_warmup_buckets(
+            self.max_num_tokens, self.topk,
+            self.num_local_experts, self.global_num_experts,
+        )
+        if not buckets:
+            return
+        try:
+            from flashinfer.fused_moe import b12x_fused_moe
+
+            w1 = layer.w13_weight
+            w2 = layer.w2_weight
+            device = w1.device
+            hidden = self.hidden_dim
+            dtype = self._warm_activation_dtype()
+            kernel_e = self._kernel_num_experts
+            done = []
+            for rows in buckets:
+                x = torch.zeros((rows, hidden), dtype=dtype, device=device)
+                ids = torch.zeros((rows, 1), dtype=torch.int32, device=device)
+                sc = torch.zeros((rows, 1), dtype=torch.float32, device=device)
+                out = torch.zeros((rows, hidden), dtype=dtype, device=device)
+                b12x_fused_moe(
+                    x=x, w1_weight=w1, w1_weight_sf=self.w1_sf_mma,
+                    w2_weight=w2, w2_weight_sf=self.w2_sf_mma,
+                    token_selected_experts=ids, token_final_scales=sc,
+                    num_experts=kernel_e, top_k=1, num_local_experts=kernel_e,
+                    w1_alpha=self.g1_alphas, w2_alpha=self.g2_alphas,
+                    fc2_input_scale=self._fc2_input_scale, output=out,
+                    activation=self._activation_str,
+                    swiglu_alpha=self._swiglu_alpha,
+                    swiglu_beta=self._swiglu_beta,
+                    swiglu_limit=self._swiglu_limit,
+                )
+                done.append(rows)
+            logger.info_once(
+                "b12x EP: warmed %d compact prefill shapes at load (%s) -- "
+                "a first long prompt no longer compiles mid-request",
+                len(done), done,
+            )
+        except Exception as exc:
+            # A warmup that fails must cost nothing but a line in the log.
+            logger.warning_once(
+                "b12x EP compact warmup skipped (%s: %s); shapes will compile "
+                "on first use as before",
+                type(exc).__name__, exc,
+            )
+
+    def _warm_activation_dtype(self):
+        """Activation dtype for the warmup tensors, bf16 unless told otherwise."""
+        for name in ("_activation_dtype", "activation_dtype", "in_dtype"):
+            got = getattr(self, name, None)
+            if isinstance(got, torch.dtype):
+                return got
+        return torch.bfloat16
 
     def _apply_ep_compact(
         self,
