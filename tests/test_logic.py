@@ -1355,6 +1355,78 @@ def test_b12x_ep_launcher() -> None:
     print("  b12x EP launcher ............... OK")
 
 
+# ---------------------------------------------------------------------------
+# UE8M0 scale repair (fp8_lm_head): the deepgemm packer traps on any scale
+# whose sign or mantissa is set. Enforce the kernel's precondition on the host.
+# ---------------------------------------------------------------------------
+def test_ue8m0_scale_repair() -> None:
+    import torch
+
+    ns = load_defs(
+        "overlay/modules/fp8_lm_head/fp8_lm_head.py",
+        {"_repair_ue8m0_scales", "_ue8m0_violations",
+         "_SF_SIGN_AND_MANTISSA", "_SMALLEST_NORMAL_F32"},
+        {"torch": torch},
+    )
+    repair = ns["_repair_ue8m0_scales"]
+    violations = ns["_ue8m0_violations"]
+
+    # the mask must be exactly the kernel's: sign bit | mantissa
+    check(ns["_SF_SIGN_AND_MANTISSA"] == 0x807FFFFF,
+          "mask must match smxx_layout.cuh:131 (values[j] & 0x807fffffu)")
+    check(ns["_SMALLEST_NORMAL_F32"] == 2.0**-126,
+          "denormal cutoff must be the smallest normal fp32")
+
+    powers = torch.tensor([1.0, 2.0, 0.5, 2.0**-126, 2.0**100])
+    check(int(violations(powers).sum()) == 0,
+          "exact powers of two must not be flagged")
+    kept, n = repair(powers)
+    check(n == 0 and torch.equal(kept, powers),
+          "a clean scale tensor must pass through untouched")
+
+    for name, raw in (
+        ("arbitrary", torch.tensor([0.00223214, 1.3, 0.7, 3.14159])),
+        ("zero/negative", torch.tensor([0.0, -1.0, -2.0])),
+        ("inf/nan", torch.tensor([float("inf"), float("-inf"), float("nan")])),
+        ("denormal", torch.tensor([1e-42, 5e-45, 1.4e-45])),
+        ("under smallest normal", torch.tensor([0.9 * 2.0**-126])),
+    ):
+        fixed, _ = repair(raw)
+        check(int(violations(fixed).sum()) == 0,
+              f"repair must clear every violation ({name})")
+
+    # denormals cannot be rounded onto a power of two -- they must go to zero
+    fixed, _ = repair(torch.tensor([1e-42]))
+    check(float(fixed[0]) == 0.0, "denormal scales must flush to zero")
+
+    # positive normals round UP: safe direction, at most 2x
+    src = torch.tensor([0.00223214, 1.3, 0.7])
+    fixed, _ = repair(src)
+    ratio = (fixed / src)
+    check(bool((ratio >= 1.0).all()) and bool((ratio <= 2.0).all()),
+          "normal scales must round up by at most 2x")
+
+    gen = torch.Generator().manual_seed(7)
+    bulk = torch.cat([
+        torch.rand(50000, generator=gen) * 10,
+        torch.rand(20000, generator=gen) * 1e-40,
+        torch.zeros(500),
+        torch.full((100,), float("nan")),
+    ])
+    fixed, count = repair(bulk)
+    check(int(violations(fixed).sum()) == 0,
+          "bulk repair must leave no violation")
+    check(count > 0, "bulk sample must have had violations to repair")
+
+    # non-fp32 scales are left alone rather than reinterpreted
+    half = torch.tensor([1.3, 0.7], dtype=torch.float16)
+    same, n = repair(half)
+    check(n == 0 and torch.equal(same, half),
+          "non-fp32 scales must pass through untouched")
+
+    print("  UE8M0 scale repair ............. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -1370,6 +1442,7 @@ if __name__ == "__main__":
     test_bf16_release_guards()
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
+    test_ue8m0_scale_repair()
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()
