@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -175,8 +177,18 @@ def _score_edges(
     hidden: torch.Tensor,
     anchor_token_ids: torch.Tensor,
     top_k: int,
+    compute_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    successors = successor_table[candidate_ids]
+    # deneb fork: the decode trace shows this einsum as the only fp32 cuBLAS
+    # GEMV in the step (gemmSN_NN, ~11/step, ~330 us real) -- some operand
+    # arrives fp32 and promotes the whole chain. VLLM_DFLASH2_SELECTOR_BF16
+    # forces the operands to bf16 so the GEMV reads half the bytes. This
+    # scores candidate RANKING, so near-ties may flip and acceptance is the
+    # gate; default off.
+    if compute_dtype is not None:
+        unary_logits = unary_logits.to(compute_dtype)
+        hidden = hidden.to(compute_dtype)
+    successors = successor_table[candidate_ids].to(compute_dtype)
     predecessor_ids = torch.cat(
         (
             anchor_token_ids[:, None, None].expand(-1, 1, top_k),
@@ -184,7 +196,7 @@ def _score_edges(
         ),
         dim=1,
     )
-    predecessors = predecessor_table[predecessor_ids]
+    predecessors = predecessor_table[predecessor_ids].to(compute_dtype)
     return unary_logits[:, :, None] + torch.einsum(
         "blpr,blcr->blpc", predecessors * hidden[:, :, None], successors
     )
@@ -235,6 +247,14 @@ class CandidateSelector(nn.Module):
             hidden,
             anchor_token_ids,
             self.top_k,
+            compute_dtype=(
+                torch.bfloat16
+                if os.environ.get("VLLM_DFLASH2_SELECTOR_BF16", "0")
+                .strip()
+                .lower()
+                in ("1", "true", "yes", "on")
+                else None
+            ),
         )
 
 

@@ -155,3 +155,55 @@ prefill scale).
 - One knob per relaunch; bracket (base→cand→base) for anything kernel-level.
 - Quality gate: check-quality 9/9 minimum; numerics gates offline first.
 - Ledger every cell including rejections.
+
+## Decode campaign II — kernel count & dense byte diet (2026-08-31, REOPENED)
+
+The 08-11 closure ("no overlay-ownable targets left") is obsolete. The GLM-5.3
+DFlash2 bring-up produced a full decode census (srv2 rank-0 trace, 264 steps,
+2,160 kernels/step) and six owned axes; five landed as PRs. Every number below
+is trace- or /metrics-derived unless a PR is linked.
+
+Step model (clean 5-point bench): `step = 42.0 ms fixed + 0.706 ms × distinct
+experts`. The variable part measures at 91% of bandwidth — closed. The fixed
+part splits into dense-weight reads (~17 ms — the byte diet below) and
+kernel-count overhead (~32 ms at the 15.4 µs/kernel *upper bound*; the real
+constant is unmeasured until the pending boot).
+
+### Axis-by-axis disposition
+
+| axis | /step | disposition |
+|---|---|---|
+| osar AR 5-kernel chain | 522 | #89 (5→3), #90 (3→1, reset-free monotonic counter), #93 (idle-block spin/fence skip, pollers 256→16) → ~104 |
+| dense bf16 projections | 15.44 GB reads ≈ 17 ms | #92/#94 fp8 W8A8 blocks (dsv4's proven scheme, ue8m0/[128,128]), #95 extends to the drafter — −8.7 −1.2 ms expected |
+| gate double launch | 84→42 | #96: the MoE runner re-applies the gate it holds (overlapped with the shared-expert aux stream); our explicit call was pure waste |
+| elementwise 3종 | 441.6 | drafter conv already inductor-fused; eager glue 98/step ≈ 0.85 ms GPU (closed); the rest is the KDA cluster below |
+| **KDA per-layer index/mask** | ~300–400 | **the only big count axis left** — needs the image's `kda.py` taken over by an overlay module; invest iff the µs/kernel constant lands high |
+| MoE output write-back | ~100 | two copies/layer (flashinfer `memcpy32_post` out of the static workspace + our `output.copy_`) — contract-bound by the static-buffer+alias design; removing needs a flashinfer `out=` redesign |
+| mhc 2종 | 179 | structural (attention sits between pre and post_pre) + tiles exhausted R1–R3 — closed |
+| cutlass_80_wmma | 354.7 | bandwidth floor; the fp8 byte diet is the lever, not the kernel (split-K at M=1–8 is reasonable) |
+| shared-expert overlap | — | already `MULTI_STREAM_OVERLAPPED` in-image (aux stream, threshold 256 tokens — verified) — closed |
+| gate+topk true fusion | −42 | deferred with reasoning: a single-CTA full-width design makes one CTA read the 2.4 MB gate weight (~2× slower GEMM) to save one launch |
+
+### Acceptance — the multiplier kernel work cannot touch
+
+tok/s = tokens/step ÷ step time, and the whole 2× gap to dsv4 is tokens/step:
+GLM 1.538 (pos-1 63.1%) vs dsv4 2.55 (78.5%) at 47.6 vs 44.5 ms. The "raw
+21%" alarm was a unit artifact — a 63%-accurate drafter at k=7 necessarily
+lands at 22% accepted/drafted. Pre-registered 2-boot ladder lives in
+profiles/glm53.env (SPEC and TARGET head knobs are SEPARATE and both =1;
+dsv4 hit 78.5% with both heads fp8, so precision is the hypothesis to retire).
+
+### Selector GEMV (this change)
+
+The drafter's candidate scoring is the only fp32 cuBLAS GEMV in the trace
+(`gemmSN_NN`, 10.9/step, ~330 µs real) — dtype promotion somewhere in
+`_score_edges`. `VLLM_DFLASH2_SELECTOR_BF16` forces the operands to bf16
+(half the read). It scores candidate RANKING: near-ties may flip, acceptance
+is the gate, default off.
+
+### Verification debt (the boot that scores everything)
+
+#89–#96 are trace/code-derived. One boot measures them all AND calibrates
+µs/kernel (−408 osar kernels = −6.3 ms at 15.4 µs, −0.8 ms at 2 µs), which
+decides the KDA takeover. Boot fingerprints (PR #91): `[osar] kernels=N`,
+`[fp8-dense] N linears …`.
