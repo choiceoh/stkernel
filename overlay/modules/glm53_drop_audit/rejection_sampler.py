@@ -434,7 +434,12 @@ def rejection_sample(
     use_fp64_gumbel: bool = False,
 ) -> torch.Tensor:
     assert draft_token_ids.ndim == 1
-    assert draft_probs is None or draft_probs.ndim == 2
+    # deneb fork (gathered-q): draft_probs may be 1-D -- q at the drafted
+    # token only. The ratio test needs exactly that (it loads one index per
+    # position), acceptance is IDENTICAL to the dense form; the recovery
+    # kernel then takes the target-only law this stack served before
+    # probabilistic mode instead of the exact (p-q)+ residual.
+    assert draft_probs is None or draft_probs.ndim in (1, 2)
     assert cu_num_draft_tokens.ndim == 1
     assert target_logits.ndim == 2
 
@@ -525,6 +530,7 @@ def rejection_sample(
         vocab_size,
         synthetic_conditional_rates,
         NO_DRAFT_PROBS=draft_probs is None,
+        SPARSE_Q=draft_probs is not None and draft_probs.ndim == 1,
         SYNTHETIC_MODE=synthetic_mode,
     )
     return output_token_ids
@@ -728,6 +734,7 @@ def sample_recovered_tokens(
         vocab_size,
         BLOCK_SIZE,
         NO_DRAFT_PROBS=draft_probs is None,
+        SPARSE_Q=draft_probs is not None and draft_probs.ndim == 1,
         USE_FP64_GUMBEL=use_fp64_gumbel,
     )
     return recovered_token_ids
@@ -808,6 +815,7 @@ def rejection_random_sample_kernel(
     vocab_size,
     synthetic_conditional_rates_ptr,  # [num_speculative_tokens] or None
     NO_DRAFT_PROBS: tl.constexpr,
+    SPARSE_Q: tl.constexpr,
     SYNTHETIC_MODE: tl.constexpr,
 ):
     req_idx = tl.program_id(0)
@@ -838,6 +846,8 @@ def rejection_random_sample_kernel(
             else:
                 if NO_DRAFT_PROBS:
                     draft_prob = 1
+                elif SPARSE_Q:
+                    draft_prob = tl.load(draft_probs_ptr + start_idx + pos)
                 else:
                     draft_prob = tl.load(
                         draft_probs_ptr
@@ -903,6 +913,7 @@ def sample_recovered_tokens_kernel(
     vocab_size,
     BLOCK_SIZE: tl.constexpr,
     NO_DRAFT_PROBS: tl.constexpr,
+    SPARSE_Q: tl.constexpr,
     USE_FP64_GUMBEL: tl.constexpr,
 ):
     req_idx = tl.program_id(0)
@@ -921,7 +932,7 @@ def sample_recovered_tokens_kernel(
 
     token_idx = start_idx + pos
 
-    if NO_DRAFT_PROBS:
+    if NO_DRAFT_PROBS or SPARSE_Q:
         draft_token_id = tl.load(draft_token_ids_ptr + token_idx)
 
     if USE_FP64_GUMBEL:
@@ -933,7 +944,11 @@ def sample_recovered_tokens_kernel(
         vocab_offset = v + tl.arange(0, BLOCK_SIZE)
         vocab_mask = vocab_offset < vocab_size
 
-        if NO_DRAFT_PROBS:
+        if NO_DRAFT_PROBS or SPARSE_Q:
+            # Sparse q carries one float per position: exact for the ratio
+            # test, insufficient for the (p-q)+ residual. Recovery falls back
+            # to the target-only law this stack served before probabilistic
+            # mode -- acceptance itself is unchanged and exact.
             prob = tl.load(
                 target_probs_ptr + token_idx * vocab_size + vocab_offset,
                 mask=(vocab_mask & (vocab_offset != draft_token_id)),
