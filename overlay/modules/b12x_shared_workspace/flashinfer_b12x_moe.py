@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
@@ -383,7 +384,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         wrapper = self._wrapper
         assert wrapper is not None
 
-        wrapper_output = wrapper.run(
+        # deneb fork: when the wrapper supports out= (overlay module
+        # glm53_b12x_out takes over flashinfer's b12x_moe.py to add it), make
+        # the caller's buffer the scatter target so the MoE result is written
+        # once. The copy_ this replaces was the second write of the same bytes
+        # per layer, ~42 copy kernels/step on this lane. Rollback:
+        # VLLM_B12X_DIRECT_OUT=0. Capture-safe for the same reason the copy
+        # was: the buffer address replays either way.
+        run_kwargs = dict(
             x=hidden_states,
             w1_weight=w1,
             w1_weight_sf=self.w1_sf_mma,
@@ -395,4 +403,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             token_selected_experts=topk_ids.to(torch.int32),
             token_final_scales=topk_weights,
         )
-        output.copy_(wrapper_output)
+        direct = os.environ.get(
+            "VLLM_B12X_DIRECT_OUT", "1").strip().lower() in (
+            "1", "true", "yes", "on")
+        if direct:
+            wrapper.run(**run_kwargs, out=output)
+            return output
+        output.copy_(wrapper.run(**run_kwargs))
