@@ -136,12 +136,12 @@ fi
 # Compact drops dummy slots when tokens*top_k > 640. That path is eager and
 # data-dependent, so a captured batch must stay at or below the cutover.
 # GRAPH_CAP=32 * top_k=8 = 256 is safe. PIECEWISE graphs prefill, so compact
-# stays off there and dummy remap keeps a fixed shape.
+# stays off there and zero-weight local repeats keep a fixed shape.
 B12X_EP_TOPK="${B12X_EP_TOPK:-8}"
 if [ "$ENABLE_EP" = 1 ]; then
   if [ "${PIECEWISE:-0}" = 1 ]; then
     : "${VLLM_B12X_EP_COMPACT:=0}"
-    echo "ENABLE_EP=1 + PIECEWISE=1: VLLM_B12X_EP_COMPACT=$VLLM_B12X_EP_COMPACT (prefill graphs keep dummy remap)"
+    echo "ENABLE_EP=1 + PIECEWISE=1: VLLM_B12X_EP_COMPACT=$VLLM_B12X_EP_COMPACT (prefill graphs keep fixed-shape repeats)"
   fi
   if [ "${EAGER:-0}" != 1 ] && [ "${VLLM_B12X_EP_COMPACT:-1}" != 0 ]; then
     _ep_routed=$((GRAPH_CAP * B12X_EP_TOPK))
@@ -155,9 +155,12 @@ fi
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
 DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
-# AUDIT=1 mounts overlay/modules/glm53_drop_audit and turns it on. It reports
-# a sampled token discarded past prefill, and a break in the contiguity that
-# three accepted-token counts assume. Diagnostic only.
+# The former AUDIT overlay replaced V1 files, but this image runs V2 Model
+# Runner.  Refuse the old switch instead of claiming an audit that cannot run.
+[ "${AUDIT:-0}" = 0 ] || {
+  echo "ABORT: AUDIT targets the inactive V1 runner and is unsupported on glm53:v13-b12x" >&2
+  exit 2
+}
 # b12x picks static vs dynamic MoE by routed_rows = tokens * top_k against a
 # cutover of 640. A speculative verify step is 8 tokens -> 64 routed rows ->
 # static, while prefill goes dynamic and a non-speculative decode step (8 rows)
@@ -171,7 +174,6 @@ MOE_CUTOVER="${MOE_CUTOVER:-}"
 # assertion. Only positional tensor args are covered -- firing is proof,
 # staying quiet is not a clean bill of health. Very verbose; diagnostic only.
 GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
-AUDIT="${AUDIT:-0}"
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 MAX_LEN="${MAX_LEN:-1048576}"
@@ -310,8 +312,6 @@ for _i in ${OVFILES[@]+"${!OVFILES[@]}"}; do
   COMMON="$COMMON -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
 done
 
-# glm53_drop_audit ships in the manifest; this only arms it.
-[ "$AUDIT" = 1 ] && ENVV="$ENVV -e VLLM_DENEB_DROP_AUDIT=1"
 if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
 if [ -n "$MOE_CUTOVER" ]; then
   ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"

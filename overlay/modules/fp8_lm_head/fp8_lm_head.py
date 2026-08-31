@@ -42,17 +42,46 @@ _SMALLEST_NORMAL_F32 = 2.0**-126
 _DECODABLE_VOCAB_CACHE: dict[tuple[str, str], int] = {}
 
 
+def _contiguous_tokenizer_vocab_size(vocab: dict[str, int]) -> int:
+    """Return the decodable prefix length, rejecting holes and empty vocabs.
+
+    The candidate mask is a suffix mask, so a vocabulary *count* is a valid
+    boundary only when tokenizer IDs are exactly ``[0, count)``.  Silently
+    accepting a hole would keep one non-decodable row reachable and mask one
+    real high ID instead.
+    """
+    ids = {int(token_id) for token_id in vocab.values()}
+    if not ids:
+        raise ValueError("tokenizer vocabulary is empty")
+    if min(ids) != 0 or max(ids) + 1 != len(ids):
+        raise ValueError(
+            "tokenizer ids must form a contiguous prefix starting at zero "
+            f"(unique={len(ids)}, min={min(ids)}, max={max(ids)})"
+        )
+    return len(ids)
+
+
 def decodable_vocab_size(
     model_path: str,
     override_env: str = "VLLM_GLM53_DECODABLE_VOCAB",
-) -> int | None:
-    """Return the number of ids the tokenizer can decode, cached per path."""
+) -> int:
+    """Return the contiguous tokenizer-ID prefix, cached per path.
+
+    This is a correctness boundary for speculative candidates.  A tokenizer
+    that cannot be read or represented by a suffix mask must stop model load;
+    fail-open would make orphan LM-head rows reachable again.
+    """
     override = os.environ.get(override_env, "").strip()
     key = (model_path, override)
     if key in _DECODABLE_VOCAB_CACHE:
-        return _DECODABLE_VOCAB_CACHE[key] or None
+        return _DECODABLE_VOCAB_CACHE[key]
     if override:
-        value = int(override)
+        try:
+            value = int(override)
+        except ValueError as exc:
+            raise ValueError(f"{override_env} must be a positive integer") from exc
+        if value <= 0:
+            raise ValueError(f"{override_env} must be a positive integer")
         _DECODABLE_VOCAB_CACHE[key] = value
         return value
 
@@ -60,18 +89,34 @@ def decodable_vocab_size(
         from tokenizers import Tokenizer
 
         tokenizer = Tokenizer.from_file(os.path.join(model_path, "tokenizer.json"))
-        value = int(tokenizer.get_vocab_size(with_added_tokens=True))
-        del tokenizer
-    except Exception as exc:  # a missing/odd tokenizer must not stop a boot
-        logger.warning(
-            "[vocab-mask] could not read the tokenizer at %s (%r) -- "
-            "orphan LM head rows stay reachable",
-            model_path,
-            exc,
+        value = _contiguous_tokenizer_vocab_size(
+            tokenizer.get_vocab(with_added_tokens=True)
         )
-        value = 0
+        del tokenizer
+    except Exception as exc:
+        raise RuntimeError(
+            f"cannot establish a safe decodable vocabulary for {model_path}"
+        ) from exc
     _DECODABLE_VOCAB_CACHE[key] = value
-    return value or None
+    return value
+
+
+def _validate_decodable_top_k(
+    valid_vocab_size: int | None,
+    selector_top_k: int | None,
+) -> None:
+    """Reject candidate configurations that cannot return ``top_k`` IDs."""
+    if selector_top_k is None:
+        return
+    if selector_top_k <= 0:
+        raise ValueError("selector_top_k must be positive when provided")
+    if valid_vocab_size is None:
+        raise ValueError("selector_top_k requires a decodable vocabulary bound")
+    if valid_vocab_size < selector_top_k:
+        raise ValueError(
+            "decodable vocabulary is smaller than selector_top_k "
+            f"({valid_vocab_size} < {selector_top_k})"
+        )
 
 
 def _local_valid_vocab_end(
@@ -310,6 +355,7 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
         *args,
         fp8_env: str = "VLLM_SPEC_FP8_LM_HEAD",
         valid_vocab_size: int | None = None,
+        selector_top_k: int | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -320,6 +366,7 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
             raise ValueError(
                 "valid_vocab_size cannot exceed the logits processor vocabulary"
             )
+        _validate_decodable_top_k(valid_vocab_size, selector_top_k)
         self._deneb_valid_vocab_size = valid_vocab_size
 
     def _apply_head(self, lm_head, hidden_states, embedding_bias):
