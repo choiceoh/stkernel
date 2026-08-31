@@ -46,6 +46,36 @@ def _ue8m0_violations(scales: "torch.Tensor") -> "torch.Tensor":
     return (scales.view(torch.int32) & _SF_SIGN_AND_MANTISSA) != 0
 
 
+def _flush_pathological_scales(
+    scales: "torch.Tensor",
+) -> tuple["torch.Tensor", int, int]:
+    """Zero the scales no rounding can rescue. Returns (fixed, flushed, left).
+
+    Runs AFTER requant_weight_ue8m0_inplace, which has already matched the fp8
+    weights to these scales. Rounding a *normal* scale here would silently
+    scale that block's weights -- 1.3 -> 2.0 is a 1.54x error -- so normals are
+    reported, never touched.
+
+    Denormals, zeros, negatives, inf and NaN are different: a denormal scale
+    means the block was all but zero, so its fp8 weights are zero too and
+    flushing the scale to 0 changes nothing numerically. Their bit pattern
+    (0x00000000) is also what deepgemm's UE8M0 packer accepts.
+    """
+    if scales.dtype != torch.float32:
+        return scales, 0, -1
+    bad = _ue8m0_violations(scales)
+    if not bool(bad.any()):
+        return scales, 0, 0
+    pathological = bad & ~(
+        torch.isfinite(scales) & (scales >= _SMALLEST_NORMAL_F32)
+    )
+    flushed = int(pathological.sum())
+    left = int(bad.sum()) - flushed
+    if flushed:
+        scales = torch.where(pathological, torch.zeros_like(scales), scales)
+    return scales, flushed, left
+
+
 def _repair_ue8m0_scales(scales: "torch.Tensor") -> tuple["torch.Tensor", int]:
     """Force every scale onto an exact power of two. Returns (fixed, count).
 
@@ -94,32 +124,35 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
-        # Repair AFTER the post-process, not before: with use_e8m0=True it
-        # calls requant_weight_ue8m0_inplace(wq, ws), which recomputes `ws` in
-        # place -- anything we fixed on the way in is overwritten. The tensor
-        # the layout kernel actually reads is the one this returns.
-        dg_w, dg_ws = deepgemm_post_process_fp8_weight_block(
-            torch.cat(chunks_q, dim=0),
-            torch.cat(chunks_s, dim=0),
-            (128, 128),
-            use_e8m0=True,
+        # use_e8m0=True does the requant AND the layout transform in one
+        # call, and the trapping assert lives between them -- neither before
+        # nor after that call can reach it. Do the requant ourselves, clean up
+        # what it leaves behind, then run the transform alone.
+        wq = torch.cat(chunks_q, dim=0)
+        ws = torch.cat(chunks_s, dim=0)
+        try:
+            from vllm.model_executor.layers.quantization.utils.fp8_utils import (
+                requant_weight_ue8m0_inplace,
+            )
+        except ImportError:
+            return deepgemm_post_process_fp8_weight_block(
+                wq, ws, (128, 128), use_e8m0=True
+            )
+        requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
+        ws, flushed, left = _flush_pathological_scales(ws)
+        if flushed or left > 0:
+            logger.warning(
+                "fp8 lm_head: after UE8M0 requant, %d of %d scales were "
+                "denormal/zero/non-finite (flushed to 0) and %d were normal "
+                "but not powers of two (left alone -- rounding them would "
+                "rescale their weights)",
+                flushed,
+                ws.numel(),
+                left,
+            )
+        return deepgemm_post_process_fp8_weight_block(
+            wq, ws, (128, 128), use_e8m0=False
         )
-        fixed, repaired = _repair_ue8m0_scales(dg_ws)
-        if repaired:
-            logger.warning(
-                "fp8 lm_head: %d of %d post-process scale factors were not "
-                "exact powers of two; repaired (deepgemm's UE8M0 packer traps "
-                "the CUDA context on them)",
-                repaired,
-                dg_ws.numel(),
-            )
-        elif fixed.dtype != torch.float32:
-            logger.warning(
-                "fp8 lm_head: post-process scales are %s, not float32 -- "
-                "UE8M0 repair could not run",
-                dg_ws.dtype,
-            )
-        return dg_w, fixed
 
 
 def _fp8_gemm(
