@@ -80,17 +80,6 @@ _GATHER_Q = os.environ.get("VLLM_SPEC_GATHER_Q", "1").strip().lower() in (
 # degrades to the dense pipeline (logged), never to a biased recovery.
 _Q_POOL = int(os.environ.get("VLLM_SPEC_Q_POOL", "32") or 32)
 
-# deneb fork: candidate-restricted draft sampling. When armed (and the drafter
-# exposes compute_candidates), the draft token is sampled from softmax over
-# the candidate head's top-k logits and q IS that k-way categorical -- its
-# support is exactly the k ids, so the (p-q)+ recovery is exact with no leak
-# check and no host sync, and the full-vocab softmax/topk never run. The law
-# differs from the full-softmax path only by renormalization over the support
-# (the old leak check showed top-32 mass within 1e-3 of 1). Default off (#110):
-# a law change rides a bracket, not the default.
-_CAND_SAMPLE = os.environ.get("VLLM_SPEC_CAND_SAMPLE", "0").strip().lower() in (
-    "1", "true", "yes", "on")
-
 
 class SpecDecodeBaseProposer:
     def __init__(
@@ -546,30 +535,6 @@ class SpecDecodeBaseProposer:
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if not self._enable_probabilistic_draft_probs or sampling_metadata.all_greedy:
             return self._greedy_sample(hidden_states), None
-        # deneb fork: candidate-restricted law (VLLM_SPEC_CAND_SAMPLE). Sample
-        # from the candidate head's top-k logits directly -- no full-vocab
-        # softmax, no top-(Q_POOL) over probs, no float(leak) host sync. q's
-        # support is exactly the k candidates, so the sparse (p-q)+ recovery
-        # is exact by construction.
-        if (_CAND_SAMPLE
-                and not self.use_heterogeneous_vocab
-                and hasattr(self.model, "compute_candidates")):
-            cand_ids, cand_vals = self.model.compute_candidates(hidden_states)
-            token_ids, q_at, probs = _candidate_probs_and_sample(
-                cand_ids,
-                cand_vals,
-                sampling_metadata.temperature,
-                sampling_metadata.all_random,
-                self.use_fp64_gumbel,
-            )
-            width = probs.shape[-1]
-            self._last_pool = (
-                cand_ids.view(-1, self.num_speculative_tokens, width)
-                .contiguous(),
-                probs.view(-1, self.num_speculative_tokens, width)
-                .contiguous(),
-            )
-            return token_ids, q_at
         logits = self.model.compute_logits(hidden_states)
         if self.use_heterogeneous_vocab:
             assert self.vocab_mapping is not None
@@ -1976,40 +1941,6 @@ class SpecDecodeBaseProposer:
 # Refer to https://github.com/vllm-project/vllm/pull/16899 for the details.
 # FIXME(woosuk): The logic here is duplicated with the main sampling code.
 # We should refactor this to reuse the same sampling implementation.
-# deneb fork: candidate-restricted twin of compute_probs_and_sample_next_token.
-# Same per-row law -- temperature scaling, greedy rows via argmax, exponential
-# noise Gumbel -- applied to ONLY the candidate head's top-k columns. The
-# returned probs are the reported q: its support is exactly these k columns
-# (sums to 1), so the sparse (p-q)+ recovery needs no tail-leak check.
-def _candidate_probs_and_sample(
-    cand_ids: torch.Tensor,       # [T, S] target-vocab candidate ids
-    cand_vals: torch.Tensor,      # [T, S] post scale/softcap candidate logits
-    temperature: torch.Tensor | None,
-    all_random: bool,
-    use_fp64_gumbel: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    if temperature is not None and temperature.shape[0] != cand_ids.shape[0]:
-        # parallel drafting: K rows per request, temperature per request
-        assert cand_ids.shape[0] % temperature.shape[0] == 0
-        factor = cand_ids.shape[0] // temperature.shape[0]
-        temperature = temperature.repeat_interleave(factor, dim=0)
-    assert temperature is not None
-    if not all_random:
-        is_greedy = temperature < _SAMPLING_EPS
-        temperature = torch.where(is_greedy, 1.0, temperature)
-    scaled = cand_vals.float() / temperature.view(-1, 1)
-    probs = scaled.softmax(dim=-1, dtype=torch.float32)
-    q = empty_exponential_noise_like(probs, use_fp64_gumbel)
-    q.exponential_()
-    idx = sample_with_exponential_noise(probs.clone(), q)
-    if not all_random:
-        greedy_idx = probs.argmax(dim=-1, keepdim=False)
-        idx = torch.where(is_greedy, greedy_idx, idx)
-    token_ids = cand_ids.gather(1, idx.unsqueeze(1)).squeeze(1)
-    q_at = probs.gather(1, idx.unsqueeze(1)).squeeze(1).contiguous()
-    return token_ids, q_at, probs
-
-
 def compute_probs_and_sample_next_token(
     logits: torch.Tensor,
     sampling_metadata: SamplingMetadata,
