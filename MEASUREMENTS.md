@@ -2143,10 +2143,21 @@ dsv4는 4096이고 **다른 값과 비교된 적이 없다.** 원장의 "프리�
 96→192 로 올려 MoE GEMM 을 fp4 텐서코어가 닿는 구간으로 민다(같은 챕터).
 ①과 ③은 **서로 다른 기전**이라 같은 노브가 프리필에서 두 번 작동한다.
 
-**미확립: 그 어느 것도 dsv4 에서 재지 않았다.** 활성화 메모리가 이 값에
-비례하고 그것을 프리플라이트가 정한 GPU_MEM **안에서** 쓰므로, 대가는 KV 풀로
-간다 — 이 스택은 430K 컨텍스트를 서빙한다. 되돌리기는 `MAX_NUM_BATCHED=4096`
-(env-only, 재배포 불요). 사후 브래킷:
+**미확립: 그 어느 것도 dsv4 에서 재지 않았다.** 대가는 프리플라이트가 정한
+GPU_MEM **안에서** 나가므로 KV 풀로 간다 — 이 스택은 430K 컨텍스트를 서빙한다.
+소스를 읽어 확정한 증가분(랭크당):
+
+| 항목 | 4096 | 8192 | 증가 |
+|---|---|---|---|
+| `expanded_block_table_buffer` `[batched, 1680]` int32 | 26.2 MiB | 52.5 MiB | **+26.2 MiB** |
+| 1-D 인덱서 버퍼 6종 | 0.2 | 0.4 | +0.2 |
+| b12x dynamic MoE workspace (rows = batched × top_k 6) | 24,576 행 | 49,152 행 | **2배** |
+
+`max_num_blocks_per_req` = ceil(430000/256) = 1,680. `max_prefill_buffer_size`
+는 `max_model_len` 유래라 **이 변경과 무관하다**(확인함). 정해진 할당 외에
+한 청크를 통과시키는 순간 활성화도 두 배가 되는데 그건 소스로 못 세고 부팅
+로그의 KV 값으로만 읽힌다. 되돌리기는 `MAX_NUM_BATCHED=4096`(env-only, 재배포
+불요). 사후 브래킷:
 
 ```bash
 systemctl --user stop dsv4-tp4                  # 수동 A/B 전 필수
@@ -2187,6 +2198,27 @@ image`/`missing weights`/`overlays differ from head`는 dsv4의 per-node skew
 검사가 덮는다. `#83`(profiler-config JSON)은 **해당 없음** — glm53은 SERVE_ARGS를
 base64로 감싸 따옴표가 벗겨지지만 dsv4는 serve 스크립트를 파일로 `docker cp`
 한다.
+
+### 인덱서 그래프-주소 해저드 — dsv4 는 이미 올바른 관례다 (확인함)
+
+glm53 #62/#63 은 kpool tail 슬롯이 **매 스텝 `slot_mapping.clone()`** 을 돌려주고
+"인덱서 op 가 eager break 에서 소비하므로 영속 버퍼일 필요 없다"는 주석에 기대던
+것을 고쳤다. 그 eager break 는 `VLLM_USE_BREAKABLE_CUDAGRAPH=0` 이거나
+`CUDAGraphMode.FULL` 이면 **일어나지 않는다**. 그리고 **dsv4 런처도 그 env 를
+0 으로 설정한다** — 같은 전제가 깨지는 구성이다. 첫 심사에서 이 모듈들을 SHA
+불일치로만 닫았으므로 다시 봤다.
+
+`build/dsv4/indexer.py` 는 #63 이 "형제 경로가 이미 갖고 있는 관례" 라고 지목한
+바로 그 형태다 — 전 영속 버퍼가 `__init__` 에서 `scheduler_config.max_num_batched_tokens`
+로 잡히고(`offsets`/`decode_lens`/`decode_seq_lens`/`arange`/`expanded_block_table`/
+`scheduler_metadata`/`b12x_active_width`/`compressed_slot_mapping`/`expanded_seq_lens`),
+소비는 `out=` 과 슬라이싱이다. **성장 재할당 경로도, 매 스텝 clone 도 없다.**
+해저드 없음 — 이번에는 SHA 가 아니라 소스로 확인했다.
+
+부수로 그 관례가 위 `MAX_NUM_BATCHED` 항목의 비용을 정확히 계산 가능하게 만들었다
+(버퍼가 그 값으로 잡히므로). 그리고 `GRAPH_DEBUG=1`(이번에 이식)이 이 부류를
+런타임에서 잡는 도구다 — 해저드가 없다는 확인과 별개로, 다음에 누가 이 관례를
+이탈하면 그때 쓸 것.
 
 ### 심사 방법 — 두 번째 패스가 첫 번째를 고쳤다
 
