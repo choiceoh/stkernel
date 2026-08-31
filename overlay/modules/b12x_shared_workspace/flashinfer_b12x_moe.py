@@ -103,12 +103,15 @@ def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
     static -- whose per-expert `token_map` holds a decode batch comfortably
     (256 pairs against 640 rows).
 
-    Set VLLM_B12X_EP_ALLOW_MICRO=1 to leave upstream selection alone.
+    Default is to LEAVE MICRO ON: it is the only decode-tuned path EP
+    qualifies for, and its own docstring says it takes LOCAL expert ids
+    from a pre-pass -- the same contract our EP remap already honours.
+    Set VLLM_B12X_EP_DISABLE_MICRO=1 to fall back to plain static.
     """
-    if env_get("VLLM_B12X_EP_ALLOW_MICRO", "0").strip().lower() in (
+    if env_get("VLLM_B12X_EP_DISABLE_MICRO", "0").strip().lower() not in (
         "1", "true", "yes", "on"
     ):
-        return "left upstream micro selection alone (VLLM_B12X_EP_ALLOW_MICRO=1)"
+        return "micro left on -- EP qualifies for it (no n bound)"
     try:
         from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
     except Exception as exc:

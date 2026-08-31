@@ -94,21 +94,32 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
-        scales, repaired = _repair_ue8m0_scales(torch.cat(chunks_s, dim=0))
-        if repaired:
-            logger.warning(
-                "fp8 lm_head: %d of %d scale factors were not exact powers of "
-                "two; repaired before deepgemm UE8M0 packing (that packer "
-                "traps the CUDA context on them)",
-                repaired,
-                scales.numel(),
-            )
-        return deepgemm_post_process_fp8_weight_block(
+        # Repair AFTER the post-process, not before: with use_e8m0=True it
+        # calls requant_weight_ue8m0_inplace(wq, ws), which recomputes `ws` in
+        # place -- anything we fixed on the way in is overwritten. The tensor
+        # the layout kernel actually reads is the one this returns.
+        dg_w, dg_ws = deepgemm_post_process_fp8_weight_block(
             torch.cat(chunks_q, dim=0),
-            scales,
+            torch.cat(chunks_s, dim=0),
             (128, 128),
             use_e8m0=True,
         )
+        fixed, repaired = _repair_ue8m0_scales(dg_ws)
+        if repaired:
+            logger.warning(
+                "fp8 lm_head: %d of %d post-process scale factors were not "
+                "exact powers of two; repaired (deepgemm's UE8M0 packer traps "
+                "the CUDA context on them)",
+                repaired,
+                dg_ws.numel(),
+            )
+        elif fixed.dtype != torch.float32:
+            logger.warning(
+                "fp8 lm_head: post-process scales are %s, not float32 -- "
+                "UE8M0 repair could not run",
+                dg_ws.dtype,
+            )
+        return dg_w, fixed
 
 
 def _fp8_gemm(
