@@ -35,7 +35,7 @@ exactly-zero contributions from the zero rows. Padding is always < 128, so no
 all-zero block ever forms and no scale degenerates. No loader or checkpoint
 change; the bf16 weight is untouched.
 
-Armed by VLLM_GLM53_FP8_DENSE=1 (default off). Rollback is the env alone.
+Armed by VLLM_GLM53_FP8_DENSE: 0 off, 1/true W8A8, w4a8 the fp4-weight arm (activations stay fp8). Rollback is the env alone.
 """
 
 import os
@@ -46,11 +46,6 @@ import torch
 from vllm.logger import init_logger
 
 logger = init_logger(__name__)
-
-
-def _flag(name: str, default: str = "0") -> bool:
-    return os.environ.get(name, default).strip().lower() in (
-        "1", "true", "yes", "on")
 
 
 # Runtime module names, i.e. what the loader merged the checkpoint tensors
@@ -138,6 +133,58 @@ def _fp8_dense_gemm(
     return out.reshape(x.shape[:-1] + (orig_rows,))
 
 
+def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
+    """Pack a bf16 [N, K] weight to deep_gemm's e2m1 layout, per-row over K.
+
+    per_token_cast_to_fp4 pads K to the 128 scale granularity internally and
+    returns packed [N, K//2] at the ORIGINAL K, so -- unlike the fp8 block
+    path -- no row/column padding or output slicing is needed here: every
+    linear this module touches has an even K that is already a multiple of
+    128 on the activation side.
+
+    The vendored kernel accepts (at least) two scale layouts and its C++
+    checks are not readable from here -- packed ue8m0 int32 vs plain float
+    -- so the caller probes both and keeps whichever passes the value
+    check."""
+    from vllm.utils.deep_gemm import _import_deep_gemm, is_deep_gemm_e8m0_used
+
+    dg = _import_deep_gemm()
+    w = weight.detach()
+    packed, sf = dg.per_token_cast_to_fp4(
+        w.float(),
+        use_ue8m0=is_deep_gemm_e8m0_used(),
+        gran_k=128,
+        use_packed_ue8m0=packed_sf,
+    )
+    return packed, sf
+
+
+def _fp8_fp4_dense_gemm(
+    x: torch.Tensor,
+    wq: torch.Tensor,
+    ws: torch.Tensor,
+) -> torch.Tensor:
+    from vllm.model_executor.layers.quantization.utils.fp8_utils import (
+        per_token_group_quant_fp8_packed_for_deepgemm,
+    )
+    from vllm.utils.deep_gemm import _import_deep_gemm, is_deep_gemm_e8m0_used
+
+    flat = x.reshape(-1, x.shape[-1])
+    xq, xs = per_token_group_quant_fp8_packed_for_deepgemm(
+        flat.to(torch.bfloat16), 128
+    )
+    out = torch.empty(
+        flat.shape[0], wq.shape[0], dtype=torch.bfloat16, device=flat.device
+    )
+    _import_deep_gemm().fp8_fp4_gemm_nt(
+        (xq, xs),
+        (wq, ws),
+        out,
+        disable_ue8m0_cast=not is_deep_gemm_e8m0_used(),
+    )
+    return out.reshape(x.shape[:-1] + (wq.shape[0],))
+
+
 # One opaque boundary per GEMM: compile sees a node, capture sees kernel
 # launches, and the deepgemm/triton interiors are never traced. Falls back to
 # the bare function on re-import (double registration) or an old torch.
@@ -156,6 +203,49 @@ try:
         )
 except Exception:
     _fp8_dense_gemm_op = _fp8_dense_gemm
+
+
+try:
+    _w4_dense_gemm_op = torch.library.custom_op(
+        "glm53_fp8_dense::gemm_w4a8", mutates_args=()
+    )(_fp8_fp4_dense_gemm)
+
+    @_w4_dense_gemm_op.register_fake
+    def _w4_dense_gemm_fake(x, wq, ws) -> torch.Tensor:
+        return torch.empty(
+            x.shape[:-1] + (wq.shape[0],), dtype=torch.bfloat16,
+            device=x.device,
+        )
+except Exception:
+    _w4_dense_gemm_op = _fp8_fp4_dense_gemm
+
+
+class W4A8DenseMethod:
+    """Same contract as Fp8DenseMethod, weights one notch lower.
+
+    Activations stay fp8 -- the axis the literature blesses (QServe et al.:
+    W4A4 loses 20-25 pct, W4A8 is the compromise) -- and the kernel family
+    is the one already carrying the MoE experts (fp8_fp4_gemm_nt, the dense
+    form of sm120_fp8_fp4_gemm_1d1d). The calling convention is probed
+    eagerly at build time, so a probe failure never reaches this class.
+
+    `_base` is the layer's fp8 METHOD, not bf16: a runtime failure drops one
+    notch to W8A8. Memory while armed is triple residency per layer (bf16
+    source + fp8 fallback pair + fp4 pair, ~+1 GB/rank over the W8A8 arm)
+    -- the price of never being able to fail a boot."""
+
+    def __init__(self, base, wq, ws):
+        self._base = base
+        self._wq, self._ws = wq, ws
+
+    def apply(self, layer, x, bias=None):
+        if bias is not None:
+            return self._base.apply(layer, x, bias)
+        try:
+            return _w4_dense_gemm_op(x, self._wq, self._ws)
+        except Exception:
+            layer.quant_method = self._base
+            return self._base.apply(layer, x, bias)
 
 
 class Fp8DenseMethod:
@@ -190,7 +280,7 @@ class Fp8DenseMethod:
 _STALE_RTOL = 0.25
 
 
-def _copy_matches_source(mod, method, weight):
+def _copy_matches_source(mod, method, weight, rtol=None, got_fn=None):
     """True/False when the check ran, None when it could not.
 
     None keeps the layer armed. Refusing to arm because a probe would not
@@ -201,11 +291,19 @@ def _copy_matches_source(mod, method, weight):
             8, weight.shape[1], dtype=weight.dtype, device=weight.device
         )
         ref = method._base.apply(mod, x, None)
-        got = method.apply(mod, x, None)
+        # got_fn MUST be supplied when it matters: calling method.apply()
+        # here routes through its OWN error fallback, which swallows the
+        # failure, silently swaps layer.quant_method mid-build, returns the
+        # fallback's output -- and the copy then "matches" its reference
+        # exactly. A direct GEMM callable makes a broken kernel surface as
+        # an exception (-> None) or garbage (-> False) instead.
+        got = (got_fn(x) if got_fn is not None
+               else method.apply(mod, x, None))
         den = ref.float().norm()
         if not torch.isfinite(den) or den == 0:
             return None
-        return bool(((got.float() - ref.float()).norm() / den) <= _STALE_RTOL)
+        tol = _STALE_RTOL if rtol is None else rtol
+        return bool(((got.float() - ref.float()).norm() / den) <= tol)
     except Exception:
         return None
 
@@ -221,9 +319,15 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     from the current weights, not skipped. Call this again once the checkpoint
     is fully loaded and the last call wins -- an early caller cannot leave a
     stale copy behind."""
-    if not _flag(env):
+    raw = (os.environ.get(env) or "0").strip().lower()
+    if raw in ("", "0", "false", "no", "off"):
         return False
-    quantized, skipped, stale, params = [], [], [], 0
+    # w4a8: weights one notch lower on the same kernel family
+    # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
+    # stay fp8 -- the axis the literature blesses. 1/true keeps W8A8.
+    scheme = "w4a8" if raw in ("w4a8", "w4", "fp4") else "w8a8"
+    quantized, quantized_w4, skipped, stale, params, params_w4 = (
+        [], [], [], [], 0, 0)
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _INCLUDE):
             continue
@@ -231,7 +335,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         base = getattr(mod, "quant_method", None)
         # Re-arming: unwrap a copy already installed so this call quantizes
         # today's weights and replaces it.
-        if isinstance(base, Fp8DenseMethod):
+        if isinstance(base, (Fp8DenseMethod, W4A8DenseMethod)):
             base = base._base
         if (
             weight is None
@@ -247,9 +351,43 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
-            if _copy_matches_source(mod, method, weight) is False:
+            if _copy_matches_source(
+                mod, method, weight,
+                got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
+            ) is False:
                 mod.quant_method = base
                 stale.append(name)
+                continue
+            if scheme == "w4a8" and weight.shape[1] % 2 == 0:
+                # Stricter than the fp8 path on purpose: an EXPERIMENTAL
+                # scheme arms only on a value check that actually RAN and
+                # passed (fp8 arms on "did not fail"). The check runs the
+                # real kernel with a random probe batch, so a wrong scale
+                # layout produces garbage and refuses to arm; 2x the stale
+                # tolerance absorbs e2m1's by-design quantization error
+                # (measured 0.02-0.08 rel on row blocks) while uncorrelated
+                # garbage lands near sqrt(2).
+                for packed_sf in (True, False):
+                    try:
+                        wq, ws = _quantize_w4(weight, packed_sf=packed_sf)
+                        w4_method = W4A8DenseMethod(method, wq, ws)
+                        if _copy_matches_source(
+                                mod, w4_method, weight,
+                                rtol=2 * _STALE_RTOL,
+                                got_fn=lambda xx: _fp8_fp4_dense_gemm(
+                                    xx, wq, ws),
+                        ) is True:
+                            mod.quant_method = w4_method
+                            quantized_w4.append(name)
+                            params_w4 += weight.numel()
+                            break
+                    except Exception:
+                        continue
+                else:
+                    mod.quant_method = method
+                    quantized.append(name)
+                    params += weight.numel()
+                    continue
                 continue
             mod.quant_method = method
             quantized.append(name)
@@ -257,13 +395,13 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         except Exception as e:
             logger.warning("[fp8-dense] %s stayed bf16: %r", name, e)
             skipped.append(name)
-    gb = params * 2 / 1e9
     logger.warning(
-        "[fp8-dense] %s (knob %s): %d linears quantized (%.2f GB bf16 -> fp8 "
-        "blocks), %d kept bf16, %d disarmed by the copy check%s "
-        "-- fingerprint for the boot log",
-        type(model).__name__, env, len(quantized), gb, len(skipped),
-        len(stale),
+        "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
+        "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
+        "copy check%s -- fingerprint for the boot log",
+        type(model).__name__, env, scheme,
+        len(quantized_w4), params_w4 * 2 / 1e9,
+        len(quantized), params * 2 / 1e9, len(skipped), len(stale),
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
     if stale:
@@ -273,4 +411,4 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             "landed",
             type(model).__name__, len(stale), ", ".join(stale[:8]),
         )
-    return bool(quantized)
+    return bool(quantized or quantized_w4)
