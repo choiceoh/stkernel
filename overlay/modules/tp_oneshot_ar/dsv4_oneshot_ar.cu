@@ -87,7 +87,25 @@ static const char *DEVNAME = "rocep1s0f0";
 #define ARGRID 256
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                           int nbytes) {
-  if (threadIdx.x == 0)
+  // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
+  // -- one collective per layer, n = hidden -- most blocks fall entirely past
+  // the end of the payload: with blockDim 256 and n 4096, blocks 16..255 copy
+  // nothing and reduce nothing. They still paid for both spins and the fence.
+  //
+  // The peer wait is the expensive one. 256 blocks polling the same three
+  // volatile flags for the whole RDMA latency window is traffic aimed at the
+  // very cache lines whose update they are waiting to observe.
+  //
+  // A block that owns no element needs neither spin: the guard protects a slot
+  // it never writes, and the peer flags gate data it never reads. Only the
+  // atomicAdd stays unconditional -- the invariant is that every launch adds
+  // exactly ARGRID, and that is what makes the last-block test sound.
+  //
+  // Block 0 owns unconditionally so an n == 0 collective still takes the ring
+  // guard rather than publishing into a slot nobody checked.
+  const bool owns = (blockIdx.x == 0) || (blockIdx.x * blockDim.x < n);
+
+  if (owns && threadIdx.x == 0)
     while ((c->tx_seq + 1) > (c->ack_seq + RING)) {
     }
   __syncthreads();
@@ -97,10 +115,12 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
        i += gridDim.x * blockDim.x)
     c->tx[slot][i] = src[i];
   // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
-  // Every block fences its own copy, and each fence precedes that block's
-  // counter increment, so when the counter wraps this launch's ARGRID all
-  // writes are already visible system-wide.
-  __threadfence_system();
+  // Every WRITING block fences its own copy, and each fence precedes that
+  // block's counter increment, so when the counter wraps this launch's ARGRID
+  // all writes are already visible system-wide. A block that copied nothing
+  // has nothing to order, so its fence is vacuous and is skipped.
+  if (owns)
+    __threadfence_system();
   __shared__ bool last;
   if (threadIdx.x == 0)
     last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
@@ -115,13 +135,14 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // Peer wait: rxf is only ever written by the peers' NICs, never by a block
   // of this kernel -- same independence argument as the guard above. Fence
   // stays where it always was: after the wait, before reading peer data.
-  if (threadIdx.x == 0) {
+  if (owns && threadIdx.x == 0) {
     while (c->rxf[slot][0] < nxt || c->rxf[slot][1] < nxt ||
            c->rxf[slot][2] < nxt) {
     }
   }
   __syncthreads();
-  __threadfence_system();
+  if (owns)
+    __threadfence_system();
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     float acc = __bfloat162float(src[i]) +
