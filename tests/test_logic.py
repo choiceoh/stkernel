@@ -4217,6 +4217,28 @@ def test_ep_compact_warmup_ladder() -> None:
     print("  EP compact warmup ladder ...... OK")
 
 
+def test_launcher_load_format_gate() -> None:
+    """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
+    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
+          "the default must stay auto -- instanttensor is opt-in")
+    check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor"
+          in text,
+          "an unknown format must abort, not reach vLLM as a typo")
+    check("--load-format $LOAD_FORMAT" in text,
+          "the value must actually reach the serve command")
+    check("EXTRA_ENV LOAD_FORMAT $_vllm_keys" in text,
+          "LOAD_FORMAT must be in the caller passthrough list -- a knob the "
+          "launcher never forwards is the failure this lane hit five times")
+    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-auto}"')
+          < text.index("--load-format $LOAD_FORMAT"),
+          "validation must precede use")
+    check("SILENT RANK DEATH" in text,
+          "the multi-node hazard must be written where the knob is, not only "
+          "in a PR body")
+    print("  launcher load-format gate ..... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4241,6 +4263,7 @@ if __name__ == "__main__":
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
     test_ep_compact_warmup_ladder()
+    test_launcher_load_format_gate()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
