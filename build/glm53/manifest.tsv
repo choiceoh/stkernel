@@ -17,3 +17,4 @@ b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_ds
 tilelang.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
 tilelang_kernels.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py	03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24
 flash_attn.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/prefill/flash_attn.py	6eb45bb113d29a1a2728703dcc171bb76929973c00801057481b31dff886b3f1
+spec_decode_rejection_warmup.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py	cd3bce82d185b46fdb92b37292176c7d6ee9488e8bbed4cfde0fe079bf0b6f53
