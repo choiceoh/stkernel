@@ -1124,8 +1124,8 @@ def mhc_onepass_tilelang(
         # ---- mixes: every thread reduces the warp partials (shared reads
         # behind the barrier above), then hands them to shared exactly like
         # big_fuse hands its split-summed gemm_out to shared.
-        rp = T.alloc_local((1,), T.float32)
-        rms = T.alloc_local((1,), T.float32)
+        rp = T.alloc_fragment((1,), T.float32)
+        rms = T.alloc_fragment((1,), T.float32)
         mixes = T.alloc_fragment(n_out, T.float32)
         rp[0] = 0
         rms[0] = 0

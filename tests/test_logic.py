@@ -2013,18 +2013,22 @@ def test_mhc_onepass_math() -> None:
     rms_out = _m.sqrt(sum(v * v for v in sl) / h)
     check(abs(rms_out - 1.0) < 0.3, f"layer_input RMS ~1: {rms_out:.3f}")
 
-    # gate + contract functions from the dispatcher takeover
-    ns = load_defs(
-        "overlay/tilelang.py",
-        {"_ONEPASS_ENV", "_deneb_onepass_enabled", "_deneb_onepass_ok"},
-        {"os": os},
-    )
+    # gate + contract functions from the dispatcher takeover. The gate is
+    # frozen at import like its siblings, so flipping env means re-loading.
+    names = {
+        "_ONEPASS_ENV", "_raw_onepass", "_DENEB_ONEPASS",
+        "_deneb_onepass_enabled", "_deneb_onepass_ok",
+    }
     saved = os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
     try:
-        check(not ns["_deneb_onepass_enabled"](),
-              "ONEPASS default off")
+        os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
+        ns = load_defs("overlay/tilelang.py", names, {"os": os})
+        check(not ns["_deneb_onepass_enabled"](), "ONEPASS default off")
+
         os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"
-        check(ns["_deneb_onepass_enabled"](), "ONEPASS env arms")
+        ns = load_defs("overlay/tilelang.py", names, {"os": os})
+        check(ns["_DENEB_ONEPASS"] is True and ns["_deneb_onepass_enabled"](),
+              "ONEPASS env arms (frozen at import)")
         ok = ns["_deneb_onepass_ok"]
         check(ok(4096, 4), "GLM shapes admit onepass")
         check(not ok(4096, 8),
