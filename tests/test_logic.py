@@ -3515,6 +3515,27 @@ def test_launcher_parity_guards() -> None:
               "arithmetic nobody can see that the static->dynamic switch lands "
               "inside the sweep that adopted MAX_NUM_SEQS=32")
 
+    # 3c -- MoE activation precision: the stack runs W4A4, and the knob that
+    # says otherwise must be opt-in and 0/1 only.
+    check('MOE_W4A16="${MOE_W4A16:-0}"' in src, "no MOE_W4A16 knob")
+    check('if [ "$MOE_W4A16" = 1 ]; then\n  ENVV="$ENVV -e '
+          'FLASHINFER_B12X_FORCE_MOE_W4A16=1"' in src,
+          "MOE_W4A16 must arm flashinfer's own override, and only when 1 -- "
+          "exporting =0 would still be an override, not the image default")
+    w4a16 = src[src.index('MOE_W4A16="${MOE_W4A16:-0}"'):]
+    check("exit 2" in w4a16[:300], "MOE_W4A16 accepts values other than 0/1")
+    # the evidence has to travel with the knob: this contradicts a label the
+    # ledger has carried since 08-09, so the next reader needs the derivation.
+    prec = src[src.index("# MoE activation precision."):
+               src.index('MOE_W4A16="${MOE_W4A16:-0}"')]
+    for token in ("W4A4", "neither activation_precision", 'default applies'):
+        check(token in prec,
+              f"the W4A4 rationale lost {token!r} -- without it this reads as "
+              "a preference rather than what the image actually resolves")
+    check("MICRO" in src and "C=1" in src,
+          "the C=1 micro-kernel boundary is not recorded where the cutover "
+          "arithmetic lives")
+
     # 3 -- GRAPH_DEBUG reaches the container, and only as 0/1
     check('GRAPH_DEBUG="${GRAPH_DEBUG:-0}"' in src, "no GRAPH_DEBUG knob")
     check('if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi'

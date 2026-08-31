@@ -29,7 +29,7 @@ if [ -f "$PROFILE_ENV" ]; then
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
-            EXTRA_ENV MAX_NUM_BATCHED MOE_CUTOVER $_vllm_keys; do
+            EXTRA_ENV MAX_NUM_BATCHED MOE_CUTOVER MOE_W4A16 $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -96,9 +96,14 @@ esac
 # This model is top_k=6, so with SPEC_TOKENS=5 the decode batch is C*6 tokens
 # and the routed rows are C*36:
 #
-#   C=1   36 rows   micro        C=16   576 rows   static
+#   C=1   36 rows   MICRO        C=16   576 rows   static
 #   C=2   72 rows   static       C=24   864 rows   DYNAMIC
 #   C=8  288 rows   static       C=32  1152 rows   DYNAMIC
+#
+# C=1 -- the canonical decode metric -- is the ONLY concurrency that takes the
+# micro kernel (routed_rows <= 40 and fp4 activations). So the ledger's C=1 vs
+# C=2/C=4 comparisons cross a kernel change too, not just the C=16 vs C=24 one
+# below. Neither boundary is mentioned anywhere in the measurement record.
 #
 # The static->dynamic switch lands at C~17.8 -- INSIDE the concurrency sweep
 # that adopted MAX_NUM_SEQS=32 (C=16 290 -> C=24 340 -> C=32 386 tok/s). C=16
@@ -119,6 +124,31 @@ if [ -n "$MOE_CUTOVER" ]; then
     ''|*[!0-9]*) echo "ABORT: MOE_CUTOVER must be a non-negative integer (got '$MOE_CUTOVER')"; exit 2 ;;
   esac
 fi
+
+# MoE activation precision. This stack has been running W4A4 -- fp4 weights AND
+# fp4 activations -- not the "W4A16" the ledger's bucket has been labelled since
+# 08-09. Verified in the image, not inferred:
+#
+#   vLLM's FlashInferB12xExperts.apply() passes neither activation_precision
+#   nor quant_mode          -> flashinfer's default applies
+#   b12x_fused_moe(activation_precision="fp4")            (signature default)
+#   _normalize_activation_precision("fp4") -> "fp4"       (no env override set)
+#
+# The weight-streaming verdicts are unaffected (weights are fp4 either way, and
+# that is what the bandwidth floor is about). What was never asked is the other
+# half: the ACTIVATIONS are quantized to fp4 inside the kernel on every MoE
+# layer, and no quality bracket has ever isolated that.
+#
+# MOE_W4A16=1 keeps the fp4 weights and hands the kernel bf16 activations
+# instead (flashinfer's own FLASHINFER_B12X_FORCE_MOE_W4A16). It is a precision
+# INCREASE behind a kill switch, so it is allowed to be tried -- but it also
+# changes which kernels run (the micro path below requires fp4), so it is a
+# bracket, not a default. Unset = fp4 = every boot so far.
+MOE_W4A16="${MOE_W4A16:-0}"
+case "$MOE_W4A16" in
+  0|1) ;;
+  *) echo "ABORT: MOE_W4A16 must be 0 or 1 (got $MOE_W4A16)"; exit 2 ;;
+esac
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
@@ -289,6 +319,9 @@ $(for _k in ${_vllm_keys:-}; do if [ -n "${!_k:-}" ]; then printf -- "-e %s=%s "
 if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
 if [ -n "$MOE_CUTOVER" ]; then
   ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"
+fi
+if [ "$MOE_W4A16" = 1 ]; then
+  ENVV="$ENVV -e FLASHINFER_B12X_FORCE_MOE_W4A16=1"
 fi
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
@@ -573,7 +606,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
 echo "[hy4] compile-cfg=${COMPILE_CFG}"
-echo "[hy4] moe-cutover=${FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS:-640 (image default)}"
+echo "[hy4] moe cutover=${FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS:-640(image)} w4a16=${FLASHINFER_B12X_FORCE_MOE_W4A16:-0}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
