@@ -219,6 +219,57 @@ def _gather_workspace_shapes(
     )
 
 
+def _pool_topk_scratch_fits(
+    total_rows: int,
+    active_rows: int,
+    output_width: int,
+    num_rows: int,
+    select_k: int,
+) -> bool:
+    """Whether inactive output storage can hold packed pool-level top-k."""
+    return (
+        0 <= active_rows <= total_rows
+        and num_rows >= 0
+        and select_k > 0
+        and num_rows * select_k
+        <= (total_rows - active_rows) * output_width
+    )
+
+
+def _inactive_pool_topk_scratch(
+    topk_indices_buffer: torch.Tensor,
+    active_rows: int,
+    num_rows: int,
+    select_k: int,
+) -> torch.Tensor | None:
+    """Return packed CUDA top-k scratch wholly outside active output rows.
+
+    The CUDA top-k ops index output as ``row * select_k`` and do not accept an
+    output stride, so ``topk_indices_buffer[:, :select_k]`` is not a valid
+    destination when the persistent output is wider. Both CUDA top-k variants
+    write every destination element (including trailing ``-1`` sentinels), so
+    inactive, uninitialised rows are safe scratch. Keeping scratch after the
+    active prefix also prevents padded decode rows from overwriting a mixed
+    batch's already-computed prefill top-k.
+    """
+    if (
+        topk_indices_buffer.ndim != 2
+        or topk_indices_buffer.dtype != torch.int32
+        or not topk_indices_buffer.is_contiguous()
+        or not _pool_topk_scratch_fits(
+            topk_indices_buffer.shape[0],
+            active_rows,
+            topk_indices_buffer.shape[1],
+            num_rows,
+            select_k,
+        )
+    ):
+        return None
+    scratch_elems = num_rows * select_k
+    inactive = topk_indices_buffer[active_rows:].view(-1)
+    return inactive[:scratch_elems].view(num_rows, select_k)
+
+
 def kv_cache_as_quant_view(
     kv_cache: torch.Tensor,
     head_dim: int,
@@ -573,9 +624,23 @@ def sparse_attn_indexer_kpool(
             # expand each pool back to its kpool constituent tokens.
             select_k = topk_tokens // index_kpool if index_kpool > 1 else topk_tokens
             if index_kpool > 1:
-                pool_topk = torch.full(
-                    (num_rows, select_k), -1, dtype=torch.int32, device=logits.device
+                pool_topk = (
+                    _inactive_pool_topk_scratch(
+                        topk_indices_buffer,
+                        hidden_states.shape[0],
+                        num_rows,
+                        select_k,
+                    )
+                    if current_platform.is_cuda()
+                    else None
                 )
+                if pool_topk is None:
+                    pool_topk = torch.full(
+                        (num_rows, select_k),
+                        -1,
+                        dtype=torch.int32,
+                        device=logits.device,
+                    )
                 topk_dst = pool_topk
             else:
                 topk_dst = topk_indices_buffer[
@@ -606,7 +671,11 @@ def sparse_attn_indexer_kpool(
                 )
 
             if index_kpool > 1:
-                pool_ids = pool_topk.to(torch.int64)
+                pool_ids = (
+                    topk_dst
+                    if current_platform.is_cuda()
+                    else topk_dst.to(torch.int64)
+                )
                 if positions is not None:
                     # Fused expand-pools + append-tail into one Triton kernel
                     # (replaces ~25 elementwise ops). seq_len is token-granular
@@ -864,9 +933,23 @@ def sparse_attn_indexer_kpool(
                 # is empty when seq_len % kpool == 0. Pin the last completed pool
                 # so recency never depends on winning the top-k.
                 _force_tail_pool_into_logits(logits, dec_seq, index_kpool)
-            pool_topk = torch.full(
-                (num_rows, select_k), -1, dtype=torch.int32, device=logits.device
+            pool_topk = (
+                _inactive_pool_topk_scratch(
+                    topk_indices_buffer,
+                    hidden_states.shape[0],
+                    num_rows,
+                    select_k,
+                )
+                if current_platform.is_cuda()
+                else None
             )
+            if pool_topk is None:
+                pool_topk = torch.full(
+                    (num_rows, select_k),
+                    -1,
+                    dtype=torch.int32,
+                    device=logits.device,
+                )
             topk_dst = pool_topk
         else:
             topk_dst = topk_indices_buffer[:num_padded_tokens, :topk_tokens]
@@ -917,7 +1000,11 @@ def sparse_attn_indexer_kpool(
 
         # Resolve to token-level indices in the output buffer.
         if index_kpool > 1:
-            pool_ids = pool_topk.to(torch.int64)
+            pool_ids = (
+                topk_dst
+                if current_platform.is_cuda()
+                else topk_dst.to(torch.int64)
+            )
             # NOTE: decode_metadata.seq_lens is POOL-granular (divided by
             # compress_ratio in the indexer metadata builder) because it feeds
             # the paged-MQA logits. The fused kernel needs TOKEN-granular seq_len,

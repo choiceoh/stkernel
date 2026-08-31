@@ -42,4 +42,21 @@ memory against GB10's 99 KB. The stock guard excludes capability family 120,
 which already covers GB10; keying on SM count instead states the actual
 constraint and keeps larger family-120 parts on the fast kernel.
 
+## Reuse inactive top-k storage for packed pool ids
+
+The model owns one persistent `int32` top-k buffer shared by all 11 sparse-MLA
+layers. With `index_topk=2048` and `index_kpool=4`, each layer previously made
+a fresh packed `[rows, 512]` `int32` buffer and then widened it to `int64`
+before expansion. The image's CUDA top-k kernels fully write all 512 outputs,
+and the fused expand kernel accepts any integer input dtype, so neither the
+fresh `-1` fill nor the widening is needed on the GLM CUDA path.
+
+A column slice of the output buffer is deliberately not used: its row stride
+is 2176 while the CUDA top-k ABI assumes packed stride 512. Instead, the code
+uses a packed view over persistent storage after the active output rows. A
+capacity/contiguity/dtype guard falls back to the original temporary buffer.
+Because scratch is wholly outside the active prefix, padded decode rows cannot
+overwrite prefill results in mixed batches, and the rounded output columns keep
+their required `-1` mask.
+
 Base contract from `glm53:v13-b12x`.

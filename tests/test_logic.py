@@ -3141,6 +3141,124 @@ def test_glm53_sm121_mla_prefill_gate() -> None:
     print("  GLM53 SM121 MLA prefill gate .... OK")
 
 
+def test_glm53_kpool_packed_scratch_contract() -> None:
+    """Pool top-k reuses only packed storage outside live output rows."""
+    ns = load_defs(
+        "overlay/sparse_attn_indexer_kpool.py",
+        {"_pool_topk_scratch_fits"},
+        {},
+    )
+    fits = ns["_pool_topk_scratch_fits"]
+
+    # GLM exact geometry: output width rounds 2048+3 up to BLOCK_N=128.
+    output_width = ((2048 + 3 + 127) // 128) * 128
+    select_k = 2048 // 4
+    check(output_width == 2176 and select_k == 512,
+          "GLM kpool scratch fixture matches the deployed shape")
+    check(fits(8192, 32, output_width, 32, select_k),
+          "steady decode fits in inactive persistent rows")
+    check(fits(40, 32, output_width, 32, select_k),
+          "eight inactive output rows cover 32 packed top-k rows")
+    check(not fits(39, 32, output_width, 32, select_k),
+          "seven inactive rows must take the allocation fallback")
+    check(not fits(32, 33, output_width, 1, select_k),
+          "active row count outside storage must fail closed")
+
+    path = _overlay_source("overlay/sparse_attn_indexer_kpool.py")
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    helper = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_inactive_pool_topk_scratch"
+    )
+    helper_source = ast.get_source_segment(source, helper)
+    assert helper_source is not None
+    check(
+        "topk_indices_buffer[active_rows:].view(-1)" in helper_source
+        and ".view(num_rows, select_k)" in helper_source,
+        "scratch must be packed from storage after the active prefix",
+    )
+    check(
+        "topk_indices_buffer.is_contiguous()" in helper_source
+        and "topk_indices_buffer.dtype != torch.int32" in helper_source,
+        "non-contiguous or non-int32 storage must fall back",
+    )
+
+    dispatcher = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "sparse_attn_indexer_kpool"
+    )
+    dispatcher_source = ast.get_source_segment(source, dispatcher)
+    assert dispatcher_source is not None
+
+    def node_text(node):
+        segment = ast.get_source_segment(source, node)
+        assert segment is not None
+        return segment
+
+    scratch_choices = [
+        node for node in ast.walk(dispatcher)
+        if isinstance(node, ast.IfExp)
+        and isinstance(node.body, ast.Call)
+        and isinstance(node.body.func, ast.Name)
+        and node.body.func.id == "_inactive_pool_topk_scratch"
+    ]
+    check(len(scratch_choices) == 2,
+          "prefill and decode both choose the shared packed scratch")
+    expected_args = [
+        "topk_indices_buffer", "hidden_states.shape[0]", "num_rows", "select_k"
+    ]
+    for choice in scratch_choices:
+        check(node_text(choice.test) == "current_platform.is_cuda()"
+              and isinstance(choice.orelse, ast.Constant)
+              and choice.orelse.value is None,
+              "packed scratch must remain CUDA-only with a None fallback")
+        check([node_text(arg) for arg in choice.body.args] == expected_args,
+              "scratch must start after the full active hidden-state prefix")
+
+    active_inits = [
+        node for node in dispatcher.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and node_text(node.targets[0])
+        == "topk_indices_buffer[: hidden_states.shape[0]]"
+        and ast.literal_eval(node.value) == -1
+    ]
+    check(len(active_inits) == 1
+          and active_inits[0].lineno < min(c.lineno for c in scratch_choices),
+          "active output rows and rounded tail must be reset before scratch use")
+
+    fallbacks = [
+        node for node in ast.walk(dispatcher)
+        if isinstance(node, ast.If)
+        and node_text(node.test) == "pool_topk is None"
+    ]
+    check(len(fallbacks) == 2
+          and all("pool_topk = torch.full(" in node_text(node)
+                  for node in fallbacks),
+          "both scratch sites retain the allocation fallback")
+
+    pool_id_assigns = [
+        node for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "pool_ids"
+                for target in node.targets)
+        and isinstance(node.value, ast.IfExp)
+    ]
+    check(len(pool_id_assigns) == 2
+          and all(node_text(node.value.test) == "current_platform.is_cuda()"
+                  and node_text(node.value.body) == "topk_dst"
+                  and node_text(node.value.orelse)
+                  == "topk_dst.to(torch.int64)"
+                  for node in pool_id_assigns),
+          "CUDA passes int32 ids directly while XPU keeps its old widening")
+    check("pool_topk.to(torch.int64)" not in dispatcher_source,
+          "the CUDA pool scratch must not be widened unconditionally")
+    print("  GLM53 kpool packed scratch ...... OK")
+
+
 def test_oneshot_sm121_grid_contract() -> None:
     """The fixed one-shot grid must match both GB10 and GLM capture shapes.
 
@@ -3345,5 +3463,6 @@ if __name__ == "__main__":
     test_census_kda_group()
     test_dflash_warmup_buckets()
     test_glm53_sm121_mla_prefill_gate()
+    test_glm53_kpool_packed_scratch_contract()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
