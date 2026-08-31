@@ -41,6 +41,7 @@ struct Ctrl {
   volatile uint64_t ack_seq;
   volatile uint64_t stop;
   volatile uint64_t proxy_beat;          // watchdog heartbeat
+  volatile unsigned long long done_ctr;  // monotonic block-completion count
   uint64_t flag_src[NPEER];
   uint64_t nbytes[RING];                 // payload size per slot (GPU sets)
   volatile uint64_t rxf[RING][NPEER];    // inbound flags (slot-major)
@@ -69,13 +70,23 @@ static bool g_started = false;
 static const char *DEVNAME = "rocep1s0f0";
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
-// k_guard used to be its own <<<1,32>>> launch. Its condition reads only
-// globals (tx_seq, ack_seq), identical for every block, so each block can spin
-// on it independently -- no cross-block coordination, and nothing here waits on
-// a block of this same kernel, so a block that is not resident yet cannot
-// deadlock us. Folding it in removes one launch per collective; at ~104
-// collectives a decode step that is ~104 kernels of the 2,210 a step runs.
-__global__ void k_copy_in(Ctrl *c, const bf16 *src, int n) {
+// One launch per collective. #89 folded the guard into k_copy_in and the wait
+// into k_reduce (both spin on globals -- tx_seq/ack_seq or the peers' rxf
+// flags -- so every block can poll independently and a not-yet-resident block
+// can never deadlock us) but kept k_signal separate: signalling needs ALL
+// copy blocks done, which "needs" an atomic counter, and a counter would have
+// to be reset somewhere a cudagraph replay cannot see.
+//
+// A counter that is never reset kills that objection. done_ctr is monotonic
+// and every launch adds exactly ARGRID to it (fixed grid, see py_oneshot), so
+// stream ordering keeps it a multiple of ARGRID at every kernel entry: the
+// block whose atomicAdd returns old % ARGRID == ARGRID-1 is the 256th block
+// of THIS launch to finish copying -- meaning every block already read
+// tx_seq, so publishing tx_seq = s0+1 cannot be misread as a later sequence.
+// The counter lives past any replay; nothing to reset.
+#define ARGRID 256
+__global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
+                          int nbytes) {
   if (threadIdx.x == 0)
     while ((c->tx_seq + 1) > (c->ack_seq + RING)) {
     }
@@ -85,26 +96,28 @@ __global__ void k_copy_in(Ctrl *c, const bf16 *src, int n) {
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x)
     c->tx[slot][i] = src[i];
-}
-__global__ void k_signal(Ctrl *c, int nbytes) {
-  if (threadIdx.x == 0) {
-    uint64_t nxt = c->tx_seq + 1;
-    int slot = (int)(nxt % RING);
+  // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
+  // Every block fences its own copy, and each fence precedes that block's
+  // counter increment, so when the counter wraps this launch's ARGRID all
+  // writes are already visible system-wide.
+  __threadfence_system();
+  __shared__ bool last;
+  if (threadIdx.x == 0)
+    last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
+               ARGRID == ARGRID - 1;
+  __syncthreads();
+  if (last && threadIdx.x == 0) {
     c->nbytes[slot] = (uint64_t)nbytes;
     __threadfence_system();
     c->tx_seq = nxt;
     __threadfence_system();
   }
-}
-// k_wait used to be its own <<<1,32>>> launch, for the same reason and with
-// the same argument: it polls the peers' inbound flags, which are globals, so
-// every block can wait on them by itself. The fence stays where it was -- after
-// the wait, before anything reads peer data.
-__global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
-  uint64_t s = c->tx_seq;
-  int slot = (int)(s % RING);
+  // Peer wait: rxf is only ever written by the peers' NICs, never by a block
+  // of this kernel -- same independence argument as the guard above. Fence
+  // stays where it always was: after the wait, before reading peer data.
   if (threadIdx.x == 0) {
-    while (c->rxf[slot][0] < s || c->rxf[slot][1] < s || c->rxf[slot][2] < s) {
+    while (c->rxf[slot][0] < nxt || c->rxf[slot][1] < nxt ||
+           c->rxf[slot][2] < nxt) {
     }
   }
   __syncthreads();
@@ -347,17 +360,11 @@ static torch::Tensor py_oneshot(torch::Tensor input) {
   const bf16 *src = reinterpret_cast<const bf16 *>(input.data_ptr());
   bf16 *dst = reinterpret_cast<bf16 *>(out.data_ptr());
   cudaStream_t st = c10::cuda::getCurrentCUDAStream();
-  int grid = (int)((n + 255) / 256);
-  if (grid > 256) grid = 256;
-  // Three launches, not five: the ring-space guard rides in k_copy_in and the
-  // peer wait rides in k_reduce. k_signal has to stay separate -- it may only
-  // run once every block of k_copy_in has finished, and there is no grid-wide
-  // "all blocks done" inside a kernel without a cooperative launch or an atomic
-  // counter, and a counter would have to be reset somewhere a cudagraph replay
-  // cannot see.
-  k_copy_in<<<grid, 256, 0, st>>>(g_ctrl, src, (int)n);
-  k_signal<<<1, 32, 0, st>>>(g_ctrl, (int)(n * 2));
-  k_reduce<<<grid, 256, 0, st>>>(g_ctrl, src, dst, (int)n);
+  // One launch, and the grid is FIXED at ARGRID however small n is: the
+  // last-block detection in k_oneshot is (done_ctr % ARGRID == ARGRID-1),
+  // which is only sound if every launch contributes exactly ARGRID
+  // increments. Empty blocks cost a guard read, one atomic and a spin.
+  k_oneshot<<<ARGRID, 256, 0, st>>>(g_ctrl, src, dst, (int)n, (int)(n * 2));
   return out;
 }
 static bool py_healthy() {
