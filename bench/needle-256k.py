@@ -9,13 +9,14 @@ index_topk_freq is MID-GENERATION retrieval shifts, which only the
 enumeration form exercises (the model must pull from 25% -> 50% -> 75%
 depth sequentially inside one decode stream)."""
 import json
+import os
 import random
 import sys
 import time
 import urllib.request
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-MODEL = "deepseek-v4-flash"
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 WORDS = [
     "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
     "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",

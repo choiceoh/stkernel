@@ -3,13 +3,14 @@
 fire a ~34K prefill alongside. Records the decode stream's inter-token gaps
 before / during / after the ingest."""
 import json
+import os
 import random
 import threading
 import time
 import urllib.request
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-MODEL = "deepseek-v4-flash"
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 WORDS = ["reactor", "harbor", "lattice", "quarry", "ember", "meridian",
          "syntax", "granite", "voltage", "cirrus", "tundra", "beacon"]
 

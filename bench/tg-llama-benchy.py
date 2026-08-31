@@ -1,9 +1,10 @@
 # tg128 with completion_tokens (all generated tokens incl reasoning), like
 # llama-benchy. Concurrency sweep. tok/s = total completion_tokens across
 # streams / wall (aggregate) — leaderboard ranks the peak over concurrency.
+import os
 import json, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
-URL="http://127.0.0.1:8000/v1/chat/completions"; MODEL="deepseek-v4-flash"
+URL="http://127.0.0.1:8000/v1/chat/completions"; MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 def one(args):
     mt, seed = args
     body=json.dumps({"model":MODEL,"messages":[{"role":"user","content":

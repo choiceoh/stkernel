@@ -3,12 +3,13 @@
 body so a wrong index stride (the class of bug PR #51042 fixes) shows up as a
 retrieval miss rather than as merely-degraded prose. Runs at 2K / 32K / 128K."""
 import json
+import os
 import random
 import sys
 import urllib.request
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-MODEL = "deepseek-v4-flash"
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 WORDS = [
     "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
     "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",
