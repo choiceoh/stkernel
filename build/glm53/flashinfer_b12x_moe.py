@@ -1502,6 +1502,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self._kernel_num_experts,
             enabled=self._ep_zero_weight_micro,
         )
+        if tail is not None and self._ep_tail_padded_micro(
+            output, hidden_states, w1, w2, topk_ids, topk_weights, tail
+        ):
+            return output
         if tail is not None:
             lo, hi = tail
             # The micro calls above wrote output[0:lo] and touched no other
@@ -1517,6 +1521,109 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_weights[lo:hi],
             )
         return output
+
+    def _ep_tail_padded_micro(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights, tail
+    ):
+        """Run the short tail as a FULL chunk, padded. Returns whether it ran.
+
+        The b12x kernel is JIT-compiled per launch shape -- its cache key is
+        `static_m{rows}_k..._n..._r{routed}` -- so a tail whose length is
+        `tokens % chunk` mints a new kernel for every remainder it sees. On a
+        C=4 run that cost 114 compilations mid-bench: the engine reported
+        71-75 tok/s in the gaps and 13.4 tok/s on average, because every new
+        shape stalled it for seconds.
+
+        Padding the tail up to one chunk collapses every launch in this lane
+        onto a single shape. The pad rows carry router weight 0 and repeat the
+        tail's own first row, so they add nothing and cannot move an expert's
+        FC2 amax (the max of a set is unchanged by repeating a member).
+        """
+        lo, hi = tail
+        chunk = b12x_ep_micro_chunk_tokens()
+        rem = hi - lo
+        if rem <= 0 or rem >= chunk:
+            return False
+        buf = self._ep_tail_buffers(chunk, hidden_states, topk_ids, topk_weights)
+        if buf is None:
+            return False
+        pad_x, pad_ids, pad_w, pad_out = buf
+        pad_x[:rem].copy_(hidden_states[lo:hi])
+        pad_ids[:rem].copy_(topk_ids[lo:hi])
+        pad_w[:rem].copy_(topk_weights[lo:hi])
+        # Pad rows repeat the tail's first row at weight 0.
+        pad_x[rem:].copy_(hidden_states[lo:lo + 1].expand(chunk - rem, -1))
+        pad_ids[rem:].copy_(topk_ids[lo:lo + 1].expand(chunk - rem, -1))
+        pad_w[rem:].zero_()
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+            launch_sm120_moe,
+        )
+
+        launch_sm120_moe(
+            a=pad_x,
+            topk_ids=pad_ids,
+            topk_weights=pad_w,
+            w1_weight=w1,
+            w1_weight_sf=self.w1_sf_mma,
+            w1_alpha=self.g1_alphas,
+            fc2_input_scale=self._fc2_input_scale,
+            input_global_scale=None,
+            w2_weight=w2,
+            w2_weight_sf=self.w2_sf_mma,
+            w2_alpha=self.g2_alphas,
+            num_experts=self._kernel_num_experts,
+            top_k=B12X_EP_ZERO_WEIGHT_MICRO_TOPK,
+            num_local_experts=self._kernel_num_experts,
+            scatter_output=pad_out,
+            activation=self._activation_str,
+            swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta,
+            swiglu_limit=self._swiglu_limit,
+            activation_precision="fp4",
+            quant_mode="nvfp4",
+            source_format="modelopt",
+            _workspace=self._ep_zero_weight_workspace,
+        )
+        output[lo:hi].copy_(pad_out[:rem])
+        return True
+
+    def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights):
+        """Lazily pin the one-chunk staging tensors. None if shapes drift."""
+        key = (
+            chunk,
+            hidden_states.size(1),
+            topk_ids.size(1),
+            hidden_states.dtype,
+            topk_ids.dtype,
+            topk_weights.dtype,
+            hidden_states.device,
+        )
+        if getattr(self, "_ep_tail_key", None) != key:
+            try:
+                self._ep_tail_x = torch.zeros(
+                    (chunk, hidden_states.size(1)),
+                    dtype=hidden_states.dtype, device=hidden_states.device)
+                self._ep_tail_ids = torch.zeros(
+                    (chunk, topk_ids.size(1)),
+                    dtype=topk_ids.dtype, device=hidden_states.device)
+                self._ep_tail_w = torch.zeros(
+                    (chunk, topk_weights.size(1)),
+                    dtype=topk_weights.dtype, device=hidden_states.device)
+                self._ep_tail_out = torch.zeros(
+                    (chunk, hidden_states.size(1)),
+                    dtype=hidden_states.dtype, device=hidden_states.device)
+            except Exception as exc:
+                logger.warning_once(
+                    "b12x EP tail padding unavailable (%s: %s); "
+                    "falling back to the variable-length tail",
+                    type(exc).__name__, exc)
+                self._ep_tail_key = None
+                return None
+            self._ep_tail_key = key
+        return (
+            self._ep_tail_x, self._ep_tail_ids,
+            self._ep_tail_w, self._ep_tail_out,
+        )
 
     def _apply_ep_stock_topk_micro(
         self, output, hidden_states, w1, w2, topk_ids, topk_weights
