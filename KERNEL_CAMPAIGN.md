@@ -155,3 +155,33 @@ prefill scale).
 - One knob per relaunch; bracket (base→cand→base) for anything kernel-level.
 - Quality gate: check-quality 9/9 minimum; numerics gates offline first.
 - Ledger every cell including rejections.
+
+## w4a8 dense 첫 부팅 사망 — 프로브 설계의 근본 결함 (#106 → #110 롤백, 2026-08-31)
+
+Campaign II(2026-08-31, GLM-5.3 decode)의 dense byte-diet 2단계. #106이
+스킴 노브(`VLLM_GLM53_FP8_DENSE=w4a8`)를 **프로필 기본**으로 올렸고 그
+기본으로 뜬 첫 부팅이 죽었다.
+
+기전(#110 진단, 정확): 빌드 시점 프로브가 **실제 CUDA 커널을 띄운다** —
+CUDA 런치 실패는 **비동기**로 raise 한다. 프로브 주위의 try/except는
+깨끗이 반환하고 폴백 사다리는 W8A8으로 떨어지며 지문에
+`0 linears w4a8, 180 w8a8, 0 disarmed`가 찍혀 건강해 보이지만 **CUDA
+컨텍스트는 이미 오염**. 부팅은 4분 뒤 `empty_cache()`에서
+`unspecified launch failure`로 사망하고 트레이스백은 fp8-dense를 언급조차
+않는다. **파이썬 레벨 폴백은 비동기 CUDA 실패를 담을 수 없다** — 프로브에
+동기 catch를 넣어도 진단만 좋아질 뿐 컨텍스트 오염은 되돌릴 수 없다.
+#106이 주장한 "최악의 부팅 = 기본 팔과 동일"은 거짓이었다.
+
+과오는 둘: (1) 근본 — 실커널 프로브로는 부팅 안전을 만들 수 없다는 것을
+몰랐다. (2) 프로세스 — 검증 전적 0인 스키�을 **기본**으로 올렸다. #94의
+W8A8 기본화는 dsv4 전례 위에 섰지만 W4A8엔 전례가 없었다. "진행해"는
+"기본화"가 아니다. 참고: vllm 래퍼엔 grouped 형만 노출돼 있어 — dense
+진입점이 vendored 파이썬 API에 존재한다고 이 빌드의 커널이 유효한 건
+아니었다. 180개 전층 프로브 실패가 그 증거.
+
+재개 조건(#110 명시): **자식 프로세스에서 프로브**(죽어도 부모 컨텍스트
+무사) 또는 **런치하지 않는 capability 확인**. 스킴 코드(#106)와 노브는
+main에 남아 opt-in.
+
+같은 부팅의 확정 소식: **W8A8 기본 게이트 5/5 통과** — 9/9 · 한글
+U+FFFD 0 · pos-0 63.3% · −6.9 ms(+10.4%). #92/#94 정식 채택.
