@@ -60,6 +60,28 @@ def _deneb_smallm_pair(num_tokens: int, hidden_size: int, hc_mult: int):
     return tile_n, n_splits
 
 
+# deneb fork: one-launch decode path. VLLM_GLM53_MHC_ONEPASS=1 routes the
+# small-M branch of mhc_fused_post_pre through mhc_onepass_tilelang (in our
+# tilelang_kernels.py takeover) -- the FMA kernel and the big-fuse
+# (mixes/sinkhorn/norm) kernel folded into one launch per layer, with the
+# gemm_out global roundtrip gone. Frozen at import (capture-safe); the
+# per-call validator re-checks the kernel's shape contracts. Default off:
+# unvalidated on GPU until probes/mhc_glm53_bench.py --onepass runs clean.
+_ONEPASS_ENV = "VLLM_GLM53_MHC_ONEPASS"
+
+
+def _deneb_onepass_enabled() -> bool:
+    return (os.environ.get(_ONEPASS_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _deneb_onepass_ok(hidden_size: int, hc_mult: int) -> bool:
+    """Kernel contracts: one tile spans n_out, one warp writes it, and every
+    thread owns exact work of the serial h-loop (h % n_thr == 0)."""
+    n_out = hc_mult * (hc_mult + 2)
+    return n_out <= 32 and hidden_size % 256 == 0
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -582,6 +604,60 @@ def mhc_fused_post_pre_tilelang(
         else:
             tile_n = 2 if num_tokens < 8 else 3
             n_splits = 8 if (num_tokens < 8 and hidden_size <= 4096) else 4
+
+    # deneb fork: ONEPASS -- the whole small-M pair in one launch. Placed
+    # before the gemm_out allocations because the fused kernel has no
+    # gemm_out. Requires the fused norm (the with_norm half of big_fuse is
+    # what it inlines); without norm_weight the stock path below runs.
+    if (
+        use_small_fma
+        and _deneb_onepass_enabled()
+        and norm_weight is not None
+        and _deneb_onepass_ok(hidden_size, hc_mult)
+    ):
+        from vllm.model_executor.kernels.mhc.tilelang_kernels import (
+            mhc_onepass_tilelang,
+        )
+
+        residual_cur = torch.empty_like(residual_flat)
+        post_mix_cur = torch.empty(
+            num_tokens, hc_mult, dtype=torch.float32, device=residual.device
+        )
+        comb_mix_cur = torch.empty(
+            num_tokens, hc_mult2, dtype=torch.float32, device=residual.device
+        )
+        layer_input_cur = torch.empty(
+            num_tokens, hidden_size, dtype=torch.bfloat16, device=residual.device
+        )
+        mhc_onepass_tilelang(
+            comb_res_mix_flat,
+            residual_flat,
+            post_layer_mix_flat,
+            x_flat,
+            fn.view(hc_mult3, hc_mult, hidden_size),
+            hc_scale,
+            hc_base,
+            norm_weight,
+            residual_cur,
+            post_mix_cur,
+            comb_mix_cur,
+            layer_input_cur,
+            hc_mult,
+            hidden_size,
+            hc_mult3,
+            rms_eps,
+            hc_pre_eps,
+            hc_sinkhorn_eps,
+            hc_post_mult_value,
+            sinkhorn_repeat,
+            norm_eps,
+        )
+        return (
+            residual_cur.view(*outer_shape, hc_mult, hidden_size),
+            post_mix_cur.view(*outer_shape, hc_mult, 1),
+            comb_mix_cur.view(*outer_shape, hc_mult, hc_mult),
+            layer_input_cur.view(*outer_shape, hidden_size),
+        )
     else:
         if use_deep_gemm:
             # these number are from deepgemm kernel impl

@@ -112,13 +112,57 @@ def rel_err(a, b):
     return float(d / den) if den > 0 else float("inf")
 
 
+def onepass_check():
+    """Fused single-launch (VLLM_GLM53_MHC_ONEPASS) vs the stock pair.
+
+    Must run with --onepass ALONE: the gate is frozen at the dispatcher's
+    import, so this mode arms it before importing the op module and compares
+    torch.ops.vllm.mhc_fused_post_pre_tilelang (which then routes to
+    mhc_onepass_tilelang) against the direct stock kernel pair."""
+    import os
+    os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"
+    import vllm.model_executor.kernels.mhc.tilelang  # noqa: F401 registers ops
+
+    print("onepass vs stock pair (gate frozen ON for the op path):")
+    for m in (1, 2, 4, 8, 16):
+        tensors = make_inputs(m)
+        comb, residual, post, x, fn, norm_w, scale, base = tensors
+        ref = run_pair(tensors, *STOCK_LT8)
+        torch.cuda.synchronize()
+        out = torch.ops.vllm.mhc_fused_post_pre_tilelang(
+            x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
+            scale, base, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
+            1, 1, norm_w, NORM_EPS,
+        )
+        torch.cuda.synchronize()
+        errs = [rel_err(o, r) for o, r in zip(
+            out, (ref[2], ref[3], ref[4], ref[5]))]
+        t_stock = bench_us(lambda: run_pair(tensors, *STOCK_LT8))
+        t_one = bench_us(lambda: torch.ops.vllm.mhc_fused_post_pre_tilelang(
+            x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
+            scale, base, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
+            1, 1, norm_w, NORM_EPS))
+        flag = "" if max(errs) <= 1e-4 else "  ! MISMATCH"
+        print(f"M={m:<3d} stock={t_stock:7.1f}us onepass={t_one:7.1f}us "
+              f"({100 * (t_stock - t_one) / t_stock:+5.1f}%) "
+              f"rel_err(max)={max(errs):.2e}{flag}", flush=True)
+    print("adopt only if rel_err stays <=1e-4 and the bracket confirms "
+          "end-to-end (C=1 step/s + quality 9/9 + Korean 0/16).")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true",
                     help="stock neighborhood only (fewer JIT compiles)")
     ap.add_argument("--ms", default="1,2,4,6,8,12,16",
                     help="num_tokens values (comma separated)")
+    ap.add_argument("--onepass", action="store_true",
+                    help="verify the fused single-launch path against the "
+                         "stock pair, then time both (VLLM_GLM53_MHC_ONEPASS)")
     args = ap.parse_args()
+    if args.onepass:
+        onepass_check()
+        return
     ms = [int(v) for v in args.ms.split(",")]
 
     tiles = [1, 2, 3, 4, 6, 8, 12] if not args.quick else [1, 2, 3, 4, 6]

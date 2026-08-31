@@ -86,6 +86,43 @@ def remap_b12x_ep_slot(
     return local
 
 
+
+def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
+    """Keep EP off the micro MoE kernels. Returns what it did, for the log.
+
+    `use_direct_micro` already excludes EP by shape -- it requires
+    `n <= _DIRECT_MICRO_MAX_N` (512) and EP leaves the intermediate unsharded
+    at 2048. Plain `micro` has **no n bound**: it only checks
+    `num_tokens <= _MICRO_MAX_TOKENS` (8), and a C=1 decode is exactly 8
+    tokens (one sequence x 1+k positions), so EP decode lands there.
+
+    moe_micro_kernel's phase 0 does not initialise `global_to_local_expert` or
+    `active_expert_count` (its own module docstring says so), and our EP
+    disguise hands the kernel remapped local ids that depend on that table.
+    Pinning the token bound to 0 turns both micro variants off, leaving plain
+    static -- whose per-expert `token_map` holds a decode batch comfortably
+    (256 pairs against 640 rows).
+
+    Default is to LEAVE MICRO ON: it is the only decode-tuned path EP
+    qualifies for, and its own docstring says it takes LOCAL expert ids
+    from a pre-pass -- the same contract our EP remap already honours.
+    Set VLLM_B12X_EP_DISABLE_MICRO=1 to fall back to plain static.
+    """
+    if env_get("VLLM_B12X_EP_DISABLE_MICRO", "0").strip().lower() not in (
+        "1", "true", "yes", "on"
+    ):
+        return "micro left on -- EP qualifies for it (no n bound)"
+    try:
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
+    except Exception as exc:
+        return f"micro bound untouched ({type(exc).__name__}: {exc})"
+    prior = getattr(moe_dispatch, "_MICRO_MAX_TOKENS", None)
+    if prior in (None, 0):
+        return f"micro bound already {prior}"
+    moe_dispatch._MICRO_MAX_TOKENS = 0
+    return f"micro bound {prior} -> 0 (EP uses plain static)"
+
+
 def remap_b12x_ep_routing(
     topk_ids,
     topk_weights,
@@ -137,6 +174,11 @@ def remap_b12x_ep_routing(
 # Decode graphs at GRAPH_CAP=32 * top_k=8 = 256 stay on the dummy remap
 # (fixed shape, alloc-free). Prefill crosses 640 and drops dummy slots.
 B12X_EP_COMPACT_MIN_ROUTED = 640
+
+# The measured fingerprint is worth one device sync per process, not one per
+# MoE layer -- this model has 42 of them and they share a wrapper geometry.
+_EP_CAPACITY_LOGGED = False
+_EP_MICRO_DISABLED = False
 
 
 def b12x_ep_compact_enabled(env_get=os.environ.get) -> bool:
@@ -469,7 +511,6 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_tmp_a: torch.Tensor | None = None
         self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
-        self._ep_capacity_probed = False
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -556,6 +597,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
         if self._use_ep:
             self._pad_dummy_expert(layer)
+            global _EP_MICRO_DISABLED
+            if not _EP_MICRO_DISABLED:
+                _EP_MICRO_DISABLED = True
+                logger.warning("[b12x EP] %s", disable_b12x_micro_for_ep())
 
         # Precompute MMA-layout views of the weight scale factors once here
         # rather than recomputing on every forward pass.
@@ -859,76 +904,65 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
 
     def _ep_capacity_probe(self, wrapper, topk_ids) -> None:
-        """Name the bound the b12x static kernel would overrun. Runs once.
+        """Refuse a routing no workspace can hold, and fingerprint it once.
 
-        The static kernel compacts the distinct experts of a batch into
-        arrival-order slots and writes ``token_map[slot, row]`` where ``row``
-        is an unguarded ``atomicAdd`` on a per-expert counter. One expert
-        receiving more than ``token_map.shape[1]`` rows is an out-of-bounds
-        write, reported later as an ILLEGAL_ADDRESS in whatever kernel syncs
-        next -- we first met it two layers away inside the dense fp8 GEMM.
+        The static kernel writes ``token_map[slot, row]`` where ``row`` is an
+        unguarded ``atomicAdd`` on a per-expert counter, so one expert taking
+        more than ``token_map.shape[1]`` rows is an out-of-bounds write --
+        reported later as an ILLEGAL_ADDRESS in whatever kernel syncs next.
+        Under EP the dummy expert absorbs every remote slot, ~3/4 of all
+        routing on this model, so it is the one that overruns.
 
-        Under EP the dummy expert absorbs every remote slot, which on this
-        model is ~3/4 of all routing, so it is the one that can overrun.
-        One device sync, once per process.
+        The guard uses the analytic worst case (every pair on one expert),
+        which needs only shapes -- no device sync, so it can run on every
+        call. The measured distribution costs a sync and runs once per
+        process. Capacity only: which workspace the runtime *selects* is a
+        separate question (see FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS).
         """
-        if self._ep_capacity_probed:
+        global _EP_CAPACITY_LOGGED
+        pairs = int(topk_ids.numel())
+        fits = []
+        for name in ("_static_workspace", "_dynamic_workspace"):
+            ws = getattr(wrapper, name, None)
+            tm = getattr(ws, "token_map", None) if ws is not None else None
+            if tm is None:
+                continue
+            if tm.dim() >= 2:
+                ok = (
+                    pairs <= int(tm.shape[1])
+                    and self._kernel_num_experts <= int(tm.shape[0])
+                )
+            else:
+                ok = pairs <= int(tm.shape[0])
+            fits.append((name, ok, tuple(tm.shape)))
+        if fits and not any(ok for _, ok, _ in fits):
+            detail = " ".join(f"{n}{shape}" for n, _, shape in fits)
+            raise RuntimeError(
+                f"b12x EP overruns every workspace: {pairs} pairs over "
+                f"{self._kernel_num_experts} experts -- token_map {detail}. "
+                f"Force the dynamic backend "
+                f"(FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=0) or lower "
+                f"MAX_BATCHED."
+            )
+        if _EP_CAPACITY_LOGGED:
             return
-        self._ep_capacity_probed = True
+        _EP_CAPACITY_LOGGED = True
         try:
-            flat = topk_ids.reshape(-1).to(torch.int64)
-            counts = torch.bincount(flat, minlength=self._kernel_num_experts)
+            counts = torch.bincount(
+                topk_ids.reshape(-1).to(torch.int64),
+                minlength=self._kernel_num_experts,
+            )
             worst = int(counts.max())
             worst_id = int(counts.argmax())
-            pairs = int(flat.numel())
-            caps = []
-            for name in ("_static_workspace", "_dynamic_workspace"):
-                ws = getattr(wrapper, name, None)
-                tm = getattr(ws, "token_map", None) if ws is not None else None
-                caps.append(
-                    f"{name.strip('_').split('_')[0]}={tuple(tm.shape)}"
-                    if tm is not None else f"{name.strip('_').split('_')[0]}=none"
-                )
             logger.warning(
-                "[b12x EP capacity] pairs=%d experts=%d worst expert=%d rows=%d "
-                "(dummy=%d) token_map %s",
+                "[b12x EP capacity] pairs=%d experts=%d worst expert=%d "
+                "rows=%d (%.0f%%, dummy=%d) token_map %s",
                 pairs, self._kernel_num_experts, worst_id, worst,
-                self.num_local_experts, " ".join(caps),
+                100.0 * worst / max(pairs, 1), self.num_local_experts,
+                " ".join(f"{n}{shape}" for n, _, shape in fits),
             )
-            # Raise only when NO workspace can hold this routing. The two
-            # layouts differ in kind: static's token_map is
-            # [state_E, max_rows] -- per-expert capacity, so EP's dummy pile-up
-            # is what overruns it -- while dynamic's is a flat compacted plane
-            # sized by total pairs, which the skew cannot reach. A disabled
-            # static workspace (cutover pinned to 0 leaves max_rows=1) must not
-            # be read as a failure while dynamic is the one being selected.
-            fits = []
-            for name in ("_static_workspace", "_dynamic_workspace"):
-                ws = getattr(wrapper, name, None)
-                tm = getattr(ws, "token_map", None) if ws is not None else None
-                if tm is None:
-                    continue
-                if tm.dim() >= 2:
-                    ok = (
-                        worst <= int(tm.shape[1])
-                        and self._kernel_num_experts <= int(tm.shape[0])
-                    )
-                else:
-                    ok = pairs <= int(tm.shape[0])
-                fits.append((name, ok, tuple(tm.shape)))
-            if fits and not any(ok for _, ok, _ in fits):
-                detail = " ".join(f"{n}{shape}" for n, _, shape in fits)
-                raise RuntimeError(
-                    f"b12x EP overruns every workspace: {pairs} pairs, expert "
-                    f"{worst_id} takes {worst} rows, {self._kernel_num_experts} "
-                    f"experts -- token_map {detail}. Force the dynamic backend "
-                    f"(FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=0) or lower "
-                    f"MAX_BATCHED."
-                )
-        except RuntimeError:
-            raise
-        except Exception as exc:  # probe must never be the thing that breaks EP
-            logger.warning("[b12x EP capacity] probe unavailable (%s: %s)",
+        except Exception as exc:  # the fingerprint must never break EP
+            logger.warning("[b12x EP capacity] measurement unavailable (%s: %s)",
                            type(exc).__name__, exc)
 
     def apply(
