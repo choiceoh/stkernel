@@ -45,10 +45,15 @@ marlin으로 **조용히 떨어진다**.
 tools/b12x-preflight.py --scan ~/models 4
 ```
 
-조건은 둘이고 둘 다 실측으로 확정됐다 — EP를 켜면 flashinfer가 진입점에서 거부하고,
-EP를 끄면 랭크당 gate+up 행이 128의 배수여야 한다 (패딩하면 부팅은 되는데 출력이
-깨진다). 이미지 자신도 같은 말을 한다: `mxfp4_round_up_hidden_size_and_intermediate_size`가
-**B12X에만 크기를 그대로 돌려주고** MARLIN·DEEPGEMM·TRTLLM은 올림한다.
+커널 진입점은 여전히 `num_local != num_experts` 를 거부한다 (flashinfer #3383).
+오버레이가 EP를 **로컬 전용 MoE처럼** 보이게 한다 — 전역 top-k 를 로컬 샤드로
+리맵하고, 원격 슬롯은 dummy expert(scale 0)에 두며, vLLM 의 EP all-reduce 가
+랭크를 합친다. `ENABLE_EP=1` 이 `--enable-expert-parallel` 이다. EP 를 끄면
+랭크당 gate+up 행이 128의 배수여야 하고, 켜면 **전체** intermediate 가 그
+정렬을 만족하면 된다 (Qwen3.8 의 640 은 TP=4 에서 깨지고 EP=4 에서 산다).
+패딩하면 부팅은 되는데 출력이 깨진다. 이미지 자신도 같은 말을 한다:
+`mxfp4_round_up_hidden_size_and_intermediate_size`가 **B12X에만 크기를 그대로
+돌려주고** MARLIN·DEEPGEMM·TRTLLM은 올림한다.
 
 ## 구성
 

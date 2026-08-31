@@ -995,6 +995,119 @@ def test_no_hardcoded_image_paths() -> None:
     print("  no hardcoded image paths ...... OK")
 
 
+def test_b12x_ep_routing() -> None:
+    """b12x EP never shows the fused kernel a global id or a polluted expert."""
+    ns = load_defs(
+        "overlay/flashinfer_b12x_moe.py",
+        {"remap_b12x_ep_routing", "b12x_ep_kernel_expert_count"},
+        {},
+    )
+    remap = ns["remap_b12x_ep_routing"]
+    kernel_e = ns["b12x_ep_kernel_expert_count"]
+
+    check(kernel_e(72, False) == 72, "EP-off kernel E is local")
+    check(kernel_e(72, True) == 73, "EP-on kernel E is local + dummy")
+    check(kernel_e(288, False) == 288, "replicated kernel E is global")
+
+    # Rank 1 of 4, 8 experts, 2 local (4,5). Dummy id = 2.
+    ids, weights = remap(
+        [[4, 5, 0, 7], [1, 4, 6, 5]],
+        [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+        num_local_experts=2,
+        local_expert_offset=4,
+    )
+    check(ids == [[0, 1, 2, 2], [2, 0, 2, 1]], f"offset remap ids: {ids}")
+    check(weights == [[0.4, 0.3, 0.0, 0.0], [0.0, 0.25, 0.0, 0.1]],
+          f"offset remap weights: {weights}")
+    check(all(e < 3 for row in ids for e in row), "id exceeded dummy")
+    check(all(w == 0.0 for row_i, row_w in zip(ids, weights)
+              for e, w in zip(row_i, row_w) if e == 2),
+          "dummy slot must carry scale 0")
+
+    # vLLM expert_map: global -> local or -1. Same shard as above.
+    emap = [-1, -1, -1, -1, 0, 1, -1, -1]
+    ids2, weights2 = remap(
+        [[4, 5, 0, 7], [1, 4, 6, 5]],
+        [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+        num_local_experts=2,
+        expert_map=emap,
+    )
+    check(ids2 == ids and weights2 == weights, "expert_map must match offset")
+
+    # All local: dummy unused, scales preserved.
+    ids3, weights3 = remap(
+        [[0, 1]], [[0.7, 0.3]],
+        num_local_experts=2, local_expert_offset=0,
+    )
+    check(ids3 == [[0, 1]] and weights3 == [[0.7, 0.3]], "all-local remap")
+
+    # All remote: every slot is dummy / 0. Never dump onto expert 0.
+    ids4, weights4 = remap(
+        [[6, 7]], [[0.6, 0.4]],
+        num_local_experts=2, local_expert_offset=0,
+    )
+    check(ids4 == [[2, 2]] and weights4 == [[0.0, 0.0]], "all-remote -> dummy")
+    print("  b12x EP routing ................ OK")
+
+
+def test_b12x_ep_preflight() -> None:
+    import importlib.util
+    import tempfile
+
+    spec = importlib.util.spec_from_file_location(
+        "b12x_pf", os.path.join(REPO, "tools", "b12x-preflight.py"))
+    pf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pf)
+
+    check(pf.gate_up_aligned(2048, 4), "GLM-5.3 TP=4 must align")
+    check(pf.gate_up_aligned(2048, 1), "GLM-5.3 full intermediate must align")
+    check(not pf.gate_up_aligned(640, 4), "Qwen3.8 TP=4 must not align")
+    check(640 % pf.ALIGN == 0, "Qwen3.8 full intermediate hits the 128 tile")
+
+    def _inspect(inter, experts, tp=4, ep=4):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"moe_intermediate_size": inter, "n_routed_experts": experts}
+            open(os.path.join(tmp, "config.json"), "w").write(
+                __import__("json").dumps(cfg))
+            return pf.inspect(tmp, tp, ep)
+
+    glm = _inspect(2048, 288)
+    check(glm["b12x"] and glm["b12x_ep"], "GLM-5.3 must pass both paths")
+    qwen = _inspect(640, 256)
+    check(not qwen["b12x"] and qwen["b12x_ep"],
+          "Qwen3.8 must be TP-closed and EP-open")
+    check("320" in qwen["reason"] and "128" in qwen["reason"],
+          f"Qwen3.8 TP reason unclear: {qwen.get('reason')}")
+    odd = _inspect(2048, 100, ep=3)
+    check(odd["b12x"] and not odd["b12x_ep"],
+          "experts not divisible by EP must close the EP path")
+    skinny = _inspect(64, 256, tp=1, ep=4)
+    check(skinny["b12x"] and not skinny["b12x_ep"],
+          "intermediate 64 passes gate+up but fails the wrapper's 128 tile")
+    print("  b12x EP preflight .............. OK")
+
+
+def test_b12x_ep_launcher() -> None:
+    launcher = os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh")
+    text = open(launcher, encoding="utf-8").read()
+    check('ENABLE_EP="${ENABLE_EP:-0}"' in text, "ENABLE_EP default missing")
+    check("--enable-expert-parallel" in text, "EP flag missing from launcher")
+    check("${EP_FLAG:+$EP_FLAG }" in text,
+          "EP flag must be optional in SERVE_ARGS")
+    overlay = open(_overlay_source("overlay/flashinfer_b12x_moe.py"),
+                   encoding="utf-8").read()
+    check("return not getattr(moe_parallel_config, \"enable_eplb\", False)"
+          in overlay,
+          "b12x must accept EP and refuse EPLB")
+    check("def supports_expert_map(self) -> bool:\n        return True"
+          in overlay,
+          "b12x must accept the vLLM expert_map under EP")
+
+    check("ABORT: ENABLE_EP must be 0 or 1" in text,
+          "ENABLE_EP must refuse anything other than 0 or 1")
+    print("  b12x EP launcher ............... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -1013,4 +1126,7 @@ if __name__ == "__main__":
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()
+    test_b12x_ep_routing()
+    test_b12x_ep_preflight()
+    test_b12x_ep_launcher()
     print(f"all OK ({PASS} checks)")

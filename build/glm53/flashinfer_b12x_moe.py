@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
@@ -34,6 +35,96 @@ from vllm.utils.flashinfer import (
 
 
 logger = init_logger(__name__)
+
+
+# Attrs vLLM stashes on expert Parameters. Replacing a Parameter for the EP
+# dummy row has to copy these or a later load_weights / EPLB walk dies.
+_VLLM_WEIGHT_ATTRS = (
+    "weight_loader",
+    "input_dim",
+    "output_dim",
+    "packed_dim",
+    "pack_factor",
+    "load_hint",
+)
+
+
+def b12x_ep_kernel_expert_count(num_local_experts: int, use_ep: bool) -> int:
+    """Experts the b12x wrapper is constructed with.
+
+    EP adds one dummy so remote top-k slots have an isolated expert to land
+    on. The fused kernel is never told ``num_local != num_experts`` — that
+    path is flashinfer #3383 (weight_E vs state_E, then illegal address).
+    """
+    return num_local_experts + 1 if use_ep else num_local_experts
+
+
+def remap_b12x_ep_routing(
+    topk_ids,
+    topk_weights,
+    *,
+    num_local_experts: int,
+    local_expert_offset: int = 0,
+    expert_map=None,
+):
+    """Map global top-k ids onto a local-only b12x kernel.
+
+    The SM12x fused kernel indexes weights and ``virt_route_scratch`` with
+    the ids it is given. Under EP those ids are global and the weights are
+    local — that is flashinfer #3383. We never show the kernel an EP
+    geometry: it sees ``num_local_experts + 1`` experts, the extra one a
+    dummy that receives every remote slot at scale 0.
+
+    ``expert_map``, when given, is the vLLM table (global → local or -1).
+    Without it the linear shard ``[offset, offset+local)`` is assumed.
+
+    Dumping remote slots onto a *real* local expert is forbidden. b12x
+    dynamically quantizes FC2 input per expert batch, so a ghost token in
+    expert 0 would change that expert's real tokens.
+    """
+    dummy = num_local_experts
+    out_ids = []
+    out_w = []
+    for ids, weights in zip(topk_ids, topk_weights):
+        row_ids = []
+        row_w = []
+        for expert, weight in zip(ids, weights):
+            if expert_map is not None:
+                local = expert_map[int(expert)]
+            else:
+                local = int(expert) - local_expert_offset
+                if local < 0 or local >= num_local_experts:
+                    local = -1
+            if local < 0:
+                row_ids.append(dummy)
+                row_w.append(0.0)
+            else:
+                row_ids.append(int(local))
+                row_w.append(float(weight))
+        out_ids.append(row_ids)
+        out_w.append(row_w)
+    return out_ids, out_w
+
+
+def _cat_dummy_row(tensor: "torch.Tensor", fill: float) -> "torch.Tensor":
+    dummy = tensor.new_empty((1, *tensor.shape[1:]))
+    dummy.fill_(fill)
+    return torch.cat([tensor.detach(), dummy], dim=0)
+
+
+def _replace_dim0(module: "torch.nn.Module", name: str, new_tensor: "torch.Tensor"):
+    old = getattr(module, name)
+    saved = {key: getattr(old, key) for key in _VLLM_WEIGHT_ATTRS if hasattr(old, key)}
+    if isinstance(old, torch.nn.Parameter):
+        new_param = torch.nn.Parameter(new_tensor, requires_grad=False)
+        for key, value in saved.items():
+            setattr(new_param, key, value)
+        setattr(module, name, new_param)
+        return new_param
+    for key, value in saved.items():
+        setattr(new_tensor, key, value)
+    setattr(module, name, new_tensor)
+    return new_tensor
 
 
 @dataclass(frozen=True)
@@ -112,6 +203,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     and cached as ``w1_sf_mma`` / ``w2_sf_mma``.
 
     Only NVFP4 (kNvfp4Static/kNvfp4Dynamic) quantization is supported.
+
+    Expert parallelism: the fused kernel rejects ``num_local != num_experts``
+    and indexes weights by the ids it is given (flashinfer #3383). When EP
+    is on we construct the wrapper as a local-only MoE (``E = local + 1``),
+    remap global top-k ids onto that space, and park remote slots on a
+    dummy expert at scale 0. vLLM's EP all-reduce (DP=1) combines ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -147,6 +244,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
         self.max_num_tokens = moe_config.max_num_tokens
         self.local_expert_offset = self.ep_rank * self.num_local_experts
+        self._use_ep = bool(moe_config.moe_parallel_config.use_ep)
+        self._ep_ids: torch.Tensor | None = None
+        self._ep_scales: torch.Tensor | None = None
+        self._ep_dummy_padded = False
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -231,6 +332,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 dtype=torch.float32,
             )
 
+        if self._use_ep:
+            self._pad_dummy_expert(layer)
+
         # Precompute MMA-layout views of the weight scale factors once here
         # rather than recomputing on every forward pass.
         assert self.w1_scale is not None
@@ -293,12 +397,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
-        # B12xMoEWrapper does not yet support expert parallelism: its local
-        # expert count must equal the global expert count.
-        return not moe_parallel_config.use_ep
+        # EP is remapped onto a local-only wrapper in apply(). EPLB would
+        # move experts after the dummy row is padded and is not wired.
+        return not getattr(moe_parallel_config, "enable_eplb", False)
 
     def supports_expert_map(self) -> bool:
-        return False
+        return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
         # b12x_fused_moe applies topk weights internally.
@@ -328,19 +432,116 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         # from pre-quantizing activations.
         return True
 
+    @property
+    def _kernel_num_experts(self) -> int:
+        return b12x_ep_kernel_expert_count(self.num_local_experts, self._use_ep)
+
+    def _pad_dummy_expert(self, layer: torch.nn.Module) -> None:
+        """Append one zero-weight expert so remote top-k slots stay isolated.
+
+        Done once after load. Peak memory is a brief cat; afterwards the
+        extra expert is ~one NVFP4 expert (~8 MiB at 4096/2048).
+        """
+        if self._ep_dummy_padded:
+            return
+        n = self.num_local_experts
+        for name, fill in (
+            ("w13_weight", 0.0),
+            ("w2_weight", 0.0),
+            ("w13_weight_scale", 0.0),
+            ("w2_weight_scale", 0.0),
+            ("w13_weight_scale_2", 1.0),
+            ("w2_weight_scale_2", 1.0),
+        ):
+            tensor = getattr(layer, name, None)
+            if tensor is None or tensor.shape[0] != n:
+                continue
+            _replace_dim0(layer, name, _cat_dummy_row(tensor, fill))
+
+        # Rebind scale views onto the padded layer tensors. The bake-in
+        # left per-expert alphas at 1.0; keep that and extend for dummy.
+        self.w1_scale = layer.w13_weight_scale
+        self.w2_scale = layer.w2_weight_scale
+        ones = torch.ones(
+            n + 1, device=layer.w13_weight.device, dtype=torch.float32
+        )
+        self._fc2_input_scale = ones
+        for name in ("g1_alphas", "g2_alphas", "a2_gscale", "_g1_alphas", "_g2_alphas"):
+            if getattr(self, name, None) is None:
+                continue
+            try:
+                setattr(self, name, ones.clone())
+            except AttributeError:
+                pass
+
+        self._ep_dummy_padded = True
+        logger.info_once(
+            "b12x EP: wrapper sees %d local experts + 1 dummy "
+            "(global %d, rank %d); remote top-k slots map to the dummy",
+            self.num_local_experts, self.global_num_experts, self.ep_rank,
+        )
+
+    def _ensure_ep_scratch(self, device: torch.device, scale_dtype: torch.dtype) -> None:
+        need = (
+            self._ep_ids is None
+            or self._ep_ids.device != device
+            or self._ep_scales is None
+            or self._ep_scales.dtype != scale_dtype
+        )
+        if not need:
+            return
+        rows = max(int(self.max_num_tokens or 0), 1)
+        self._ep_ids = torch.empty(
+            (rows, self.topk), dtype=torch.int32, device=device
+        )
+        self._ep_scales = torch.empty(
+            (rows, self.topk), dtype=scale_dtype, device=device
+        )
+
+    def _remap_ep_tensors(
+        self,
+        topk_ids: torch.Tensor,
+        topk_weights: torch.Tensor,
+        expert_map: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        tokens = topk_ids.size(0)
+        if tokens > self._ep_ids.size(0):
+            raise ValueError(
+                f"b12x EP remap: {tokens} tokens exceeds "
+                f"max_num_tokens={self._ep_ids.size(0)}"
+            )
+        ids = self._ep_ids[:tokens]
+        scales = self._ep_scales[:tokens]
+        if expert_map is not None:
+            mapped = expert_map[topk_ids.to(dtype=torch.long)]
+        else:
+            mapped = topk_ids.to(dtype=torch.int32) - int(self.local_expert_offset)
+            mapped = torch.where(
+                (mapped >= 0) & (mapped < self.num_local_experts),
+                mapped,
+                mapped.new_full(mapped.shape, -1),
+            )
+        remote = mapped < 0
+        ids.copy_(mapped.to(dtype=torch.int32))
+        ids.masked_fill_(remote, self.num_local_experts)
+        scales.copy_(topk_weights)
+        scales.masked_fill_(remote, 0)
+        return ids, scales
+
     def _ensure_wrapper(self) -> None:
         """Lazily create B12xMoEWrapper on first use."""
         if self._wrapper is not None:
             return
 
+        kernel_e = self._kernel_num_experts
         self._wrapper = _shared_wrapper(
             _B12xWrapperKey(
-                num_experts=self.global_num_experts,
+                num_experts=kernel_e,
                 top_k=self.topk,
                 hidden_size=self.hidden_dim,
                 intermediate_size=self.intermediate_size_per_partition,
                 max_num_tokens=self.max_num_tokens,
-                num_local_experts=self.num_local_experts,
+                num_local_experts=kernel_e,
                 activation=self._activation_str,
                 swiglu_alpha=self._swiglu_alpha,
                 swiglu_beta=self._swiglu_beta,
@@ -383,7 +584,32 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         wrapper = self._wrapper
         assert wrapper is not None
 
-        wrapper_output = wrapper.run(
+        if self._use_ep:
+            expect_e = self._kernel_num_experts
+            if w1.size(0) != expect_e:
+                raise RuntimeError(
+                    f"b12x EP dummy pad missing: w1 E={w1.size(0)} "
+                    f"want {expect_e} (local {self.num_local_experts} + dummy)"
+                )
+            if self.g1_alphas.numel() < expect_e or self.g2_alphas.numel() < expect_e:
+                raise RuntimeError(
+                    "b12x EP dummy pad missing on g1/g2 alphas "
+                    f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
+                    f"want {expect_e})"
+                )
+            self._ensure_ep_scratch(topk_ids.device, topk_weights.dtype)
+            topk_ids, topk_weights = self._remap_ep_tensors(
+                topk_ids, topk_weights, expert_map
+            )
+
+        # deneb fork: when the wrapper supports out= (overlay module
+        # glm53_b12x_out takes over flashinfer's b12x_moe.py to add it), make
+        # the caller's buffer the scatter target so the MoE result is written
+        # once. The copy_ this replaces was the second write of the same bytes
+        # per layer, ~42 copy kernels/step on this lane. Rollback:
+        # VLLM_B12X_DIRECT_OUT=0. Capture-safe for the same reason the copy
+        # was: the buffer address replays either way.
+        run_kwargs = dict(
             x=hidden_states,
             w1_weight=w1,
             w1_weight_sf=self.w1_sf_mma,
@@ -395,4 +621,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             token_selected_experts=topk_ids.to(torch.int32),
             token_final_scales=topk_weights,
         )
-        output.copy_(wrapper_output)
+        direct = os.environ.get(
+            "VLLM_B12X_DIRECT_OUT", "1").strip().lower() in (
+            "1", "true", "yes", "on")
+        if direct:
+            wrapper.run(**run_kwargs, out=output)
+            return output
+        output.copy_(wrapper.run(**run_kwargs))

@@ -33,7 +33,7 @@ if [ -f "$PROFILE_ENV" ]; then
   # exits 1 -- which under `set -euo pipefail` ends the script silently.
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
-  for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
+  for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
@@ -78,6 +78,18 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
 fi
 GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
 MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
+# b12x EP: remaps global top-k onto a local-only wrapper (+ dummy expert).
+# Off by default -- the TP-sharded path is the measured one. ENABLE_EP=1
+# sends --enable-expert-parallel (MoE TP becomes 1, experts shard).
+ENABLE_EP="${ENABLE_EP:-0}"
+case "$ENABLE_EP" in
+  0|1) ;;
+  *) echo "ABORT: ENABLE_EP must be 0 or 1 (got $ENABLE_EP)" >&2; exit 2 ;;
+esac
+EP_FLAG=""
+if [ "$ENABLE_EP" = 1 ]; then
+  EP_FLAG="--enable-expert-parallel"
+fi
 # Empty = let vLLM pick. It picks FLASHINFER_MLA_SPARSE_SM90 on GB10, and that
 # is not a fallback -- that backend declares `capability.major in (9, 12)`, so
 # it claims Blackwell deliberately and sits ahead of SM120 in the order.
@@ -382,6 +394,7 @@ SERVE_ARGS="$MODEL_PATH \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
+${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
 $ASYNC_FLAG \
@@ -397,7 +410,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # deleted backend is otherwise invisible until the boot fails.
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
-  for _k in IMAGE MOE_BACKEND KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+  for _k in IMAGE MOE_BACKEND ENABLE_EP KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
             MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done

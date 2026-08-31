@@ -25,3 +25,16 @@ Same idea as vllm-project/vllm#48698, written against the file this image ships.
 (#53081 shares the *workspaces* rather than the wrapper, but needs FlashInfer's
 `shared_static_workspace` from flashinfer-ai/flashinfer#4603, which this build --
 0.6.18.dev20260819 -- does not have.)
+
+## Expert parallelism
+
+The fused kernel still raises at `num_local != num_experts` (flashinfer #3383:
+spec sizes weights by `weight_E`, then illegal-address on local tensors). This
+module does not lift that. When `--enable-expert-parallel` is on it constructs
+the wrapper as a local-only MoE (`E = num_local + 1`), remaps global top-k ids
+onto that space, and parks every remote slot on a dummy expert at scale 0 so
+dynamic FC2 quant cannot bleed into a real expert. vLLM's EP all-reduce
+(DP=1) combines the partial hidden states.
+
+`ENABLE_EP=1` on the glm53 launcher. Off by default — the TP-sharded path is
+the measured one. EPLB is refused (`_supports_parallel_config`).
