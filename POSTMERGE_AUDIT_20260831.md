@@ -5,7 +5,7 @@ Scope: `f63c084`(#119) 이후 오늘 main에 병합된 18개 PR — b12x EP 축(
 fp8 lm-head 축(#129–#132, #135), 캠페인 II 접수(#128), mhc tilelang 축(#133, #136, #137),
 docs(#134). 커널/디스패처/호스트 가드 전부, docs와 런북은 정합성만.
 
-PR #138 후속 검토에서 최신 main의 #139–#141까지 병합해 충돌·재합성을 다시 확인했고,
+PR #138 후속 검토에서 최신 main의 #139–#142까지 병합해 충돌·재합성을 다시 확인했고,
 GPU 프로브가 overlay를 실제로 import하지 않거나 ONEPASS 게이트를 너무 늦게 켜는
 거짓 판정 경로를 추가로 찾아 닫았다.
 
@@ -51,8 +51,9 @@ GPU 프로브가 overlay를 실제로 import하지 않거나 ONEPASS 게이트�
 실배포는 deploy 단계에서 재생성하므로 영향 없음 — 저장소 스냅샷이 배포 산출물과
 다른 코드를 보여주는 정합성 문제.
 
-후속으로 #139–#141을 최신 main에서 병합한 뒤 다시 compose했고, 새 BIGFUSE/V2/EP
-변경과 이 PR의 ONEPASS/FP8 가드를 모두 보존한 상태로 16개 GLM53 build 파일이 각
+후속으로 #139–#142를 최신 main에서 병합한 뒤 다시 compose했고, 새 BIGFUSE/V2/EP/
+candidate-sampling 변경과 이 PR의 ONEPASS/FP8 가드를 모두 보존한 상태로 16개
+GLM53 build 파일이 각
 module source와 byte-identical임을 확인했다. 같은 검사를 DSV4에 적용하자
 `dsv4_oneshot_ar.cu`, `dsv4_oneshot_shim.py`, `moe_gate_sm121.py`도 stale임이 드러나
 재합성했다. `tests/test_logic.py`가 두 profile 현재 37파일의 manifest/inventory/bytes를
