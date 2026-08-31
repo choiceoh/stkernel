@@ -2055,31 +2055,89 @@ def test_ep_fixed_pair_plan() -> None:
         "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
         {
             "B12X_EP_FIXED_MICRO_MAX_PAIRS",
+            "read_b12x_ep_bool",
+            "b12x_ep_mode_from_env",
+            "require_b12x_ep_micro_limit",
             "b12x_ep_fixed_slice_limit",
             "b12x_ep_fixed_pair_plan",
         },
-        {},
+        {"os": os},
     )
     plan = ns["b12x_ep_fixed_pair_plan"]
     slice_limit = ns["b12x_ep_fixed_slice_limit"]
+    read_bool = ns["read_b12x_ep_bool"]
+    mode_from_env = ns["b12x_ep_mode_from_env"]
+    require_micro = ns["require_b12x_ep_micro_limit"]
+
+    check(mode_from_env({}.get) == (True, False),
+          "EP mode defaults to fixed no-dummy with micro enabled")
+    for raw in ("1", " true ", "YES", "on"):
+        check(read_bool("FLAG", False, {"FLAG": raw}.get),
+              f"strict EP bool accepts true spelling {raw!r}")
+    for raw in ("0", " false ", "NO", "off"):
+        check(not read_bool("FLAG", True, {"FLAG": raw}.get),
+              f"strict EP bool accepts false spelling {raw!r}")
+    for name in ("VLLM_B12X_EP_NO_DUMMY", "VLLM_B12X_EP_DISABLE_MICRO"):
+        try:
+            mode_from_env({name: "maybe"}.get)
+            check(False, f"invalid {name} must fail closed")
+        except ValueError as exc:
+            check(name in str(exc) and "must be one of" in str(exc),
+                  f"invalid {name} reports the bad setting")
+    try:
+        mode_from_env({"VLLM_B12X_EP_DISABLE_MICRO": "1"}.get)
+        check(False, "static diagnostic must reject the default no-dummy path")
+    except RuntimeError as exc:
+        msg = str(exc)
+        check("VLLM_B12X_EP_DISABLE_MICRO=1" in msg
+              and "also set VLLM_B12X_EP_NO_DUMMY=0" in msg,
+              "mode conflict must explain how to select the static diagnostic")
+    check(
+        mode_from_env({
+            "VLLM_B12X_EP_DISABLE_MICRO": "1",
+            "VLLM_B12X_EP_NO_DUMMY": "0",
+        }.get) == (False, True),
+        "plain-static diagnostic is allowed only after disabling no-dummy",
+    )
 
     check(ns["B12X_EP_FIXED_MICRO_MAX_PAIRS"] == 8,
           "fixed EP boundary must match FlashInfer _MICRO_MAX_TOKENS")
+    check(require_micro(8) == 8 and require_micro("12") == 12,
+          "fixed EP setup accepts a verified micro boundary of at least eight")
+    for bad_limit in (None, "unknown", 0, 7):
+        try:
+            require_micro(bad_limit)
+            check(False, f"micro boundary {bad_limit!r} must fail closed")
+        except RuntimeError as exc:
+            check("cannot verify" in str(exc) or "requires FlashInfer" in str(exc),
+                  f"micro boundary {bad_limit!r} reports the contract failure")
     check(
         [slice_limit(n) for n in (2048, 8, 4, 0)] == [8, 8, 4, 1],
           "fixed EP calls must honor both micro and workspace bounds")
-    for pairs, launches in ((8, 1), (16, 2), (32, 4), (17, 3)):
+    for concurrency, verify_tokens, launches in (
+        (1, 8, 8),
+        (2, 16, 16),
+        (4, 32, 32),
+    ):
+        pairs = verify_tokens * 8
         limit = slice_limit(32)
         spans = [
             (lo, min(lo + limit, pairs))
             for lo in range(0, pairs, limit)
         ]
         check(len(spans) == launches,
-              f"{pairs} pairs must use {launches} micro calls")
+              f"C={concurrency}: {verify_tokens}x8={pairs} pairs must use "
+              f"{launches} micro calls per layer")
         check(spans[0][0] == 0 and spans[-1][1] == pairs,
               f"micro slices must cover all {pairs} pairs")
         check(all(0 < hi - lo <= 8 for lo, hi in spans),
               f"no {pairs}-pair slice may enter static")
+    odd_spans = [
+        (lo, min(lo + slice_limit(32), 17))
+        for lo in range(0, 17, slice_limit(32))
+    ]
+    check(len(odd_spans) == 3 and odd_spans[-1] == (16, 17),
+          "non-verification shapes must still be fully micro-sliced")
 
     for label, flags in (
         ("typical", [True] * 64 + [False] * 192),
@@ -2131,6 +2189,11 @@ def test_ep_fixed_pair_plan() -> None:
         encoding="utf-8",
     ).read()
     tree = ast.parse(source)
+    micro_setup = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "disable_b12x_micro_for_ep"
+    )
     cls = next(
         node for node in tree.body
         if isinstance(node, ast.ClassDef)
@@ -2141,8 +2204,47 @@ def test_ep_fixed_pair_plan() -> None:
         if isinstance(node, ast.FunctionDef)
         and node.name == "_apply_ep_fixed"
     )
+    init = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "__init__"
+    )
+    process = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "process_weights_after_loading"
+    )
+    apply = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "apply"
+    )
     fixed_source = ast.get_source_segment(source, fixed)
-    assert fixed_source is not None
+    micro_setup_source = ast.get_source_segment(source, micro_setup)
+    init_source = ast.get_source_segment(source, init)
+    process_source = ast.get_source_segment(source, process)
+    apply_source = ast.get_source_segment(source, apply)
+    assert all(part is not None for part in (
+        fixed_source, micro_setup_source, init_source, process_source, apply_source
+    ))
+    check(
+        "require_b12x_ep_micro_limit(prior)" in micro_setup_source,
+        "no-dummy setup must verify the live FlashInfer micro boundary",
+    )
+    check(
+        "b12x_ep_mode_from_env()" in init_source,
+        "EP flags must be parsed and latched during expert construction",
+    )
+    check(
+        "disable_b12x_micro_for_ep(" in process_source
+        and "self._ep_no_dummy, self._ep_disable_micro" in process_source,
+        "weight setup must consume both latched EP mode flags",
+    )
+    check(
+        "if self._ep_no_dummy:" in apply_source
+        and "VLLM_B12X_EP_NO_DUMMY" not in apply_source,
+        "captured apply path must consume the latch without reading its env",
+    )
     check(
         "limit = b12x_ep_fixed_slice_limit(self.max_num_tokens)"
         in fixed_source
