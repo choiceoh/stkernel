@@ -106,9 +106,19 @@ if [ "${PIECEWISE:-0}" = 1 ]; then
   # and the leftover "}}" is appended to whatever the caller passed, so
   # overriding this produced "trailing characters" from the JSON parser and the
   # knob could never be used.
+  # #108's fusion-barrier A/B: elementwise 483/step (25.6%) survive because
+  # custom_ops:["all"] makes every registered op an opaque inductor wall.
+  # CUSTOM_OPS_AXIS="" removes the walls entirely (fusion arm);
+  # the default "all" is the control arm. One boot decides.
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true}}'
+  if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
+    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+  fi
 else
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_attn_quant":true}}'
+  if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
+    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+  fi
 fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
