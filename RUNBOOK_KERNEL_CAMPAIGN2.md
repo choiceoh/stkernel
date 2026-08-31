@@ -136,11 +136,18 @@ EXTRA_ENV="VLLM_GLM53_FP8_DENSE_BPROJ=1" \
 프레임이 안 통한다. 오버레이가 접수 가능한 프리필 커널 축은 (a) mhc BIGFUSE
 (#136, 준비 완료) (b) **KDA 청크 커널 launch-config** (이 항목) 둘.
 
-KDA 프리필 커널은 벤더드 트리톤 패키지
-`vllm/models/kimi_k3/nvidia/ops/third_party/kda/` (chunk/intra/
-chunk_intra_token_parallel/fused_recurrent). autotune 캐시 키에 **T가 없어서**
-(do_not_specialize) 프리필 T=8192와 디코드 T=8이 같은 (warps, stages, BK/BV)를
-공유 — 먼저 오토튠한 레짐이 나머지를 지배한다. 레짐 분리가 레버.
+GLM의 실제 프리필 엔트리는 Kimi-K3 벤더드 포크가 아니라 generic FLA
+`vllm/third_party/flash_linear_attention/ops/kda.py`의
+`chunk_kda_with_fused_gate`다. 이 경로는 kda.py의 KKT inter/intra,
+recompute, GLA output, gate+cumsum과 외부 `ops/chunk_delta_h.py`, 합계 6개
+Autotuner를 실행한다. plain/spec decode는 별도 `fused_recurrent_kda`라 이
+청크 스윕 대상이 아니다.
+
+6개 커널 모두 T가 `do_not_specialize`이고 기존 cache key에 raw T가 없다.
+`glm53_kda_prefill_regime`은 exact GLM/TP4/SM121 계약에서만 한 호출의 packed
+평균 길이가 1024 이상인지 한 번 계산해 동일한 0/1 runtime key를 6개에
+전달한다. raw T별 cache 폭증이나 코드 specialization은 만들지 않는다.
+1024 경계는 아직 미측정 가설이므로 프로필 기본값은 0이다.
 
 1단계 — 캡처 (서빙 중, 엔진이 죽을 수 있으므로 창의 마지막에):
 
@@ -169,10 +176,28 @@ ssh srv4 'docker run --rm --gpus all --entrypoint python3 \
   /repo/probes/kda_prefill_bench.py --T 8192'
 ```
 
-- 좌표하강으로 커널별 config를 하나씩 갈아끼우고 실측 엔트리
-  `chunk_kda_with_fused_gate` 시간을 재고, 스톡 출력과 rel err 게이트(>1e-2 플래그).
+- 좌표하강으로 core-six config를 하나씩 갈아끼우고 실측 엔트리
+  `chunk_kda_with_fused_gate(output_final_state=True)` 시간을 재며, 스톡의
+  출력과 final recurrent state 모두에 rel err 게이트(>1e-2 플래그)를 건다.
+- env=1 첫 long-prefill은 새 bucket을 채우며 KKT inter 24개, GLA output
+  36개 등을 다시 autotune한다. 타이밍/수락률 브래킷 전에 같은 형상을 먼저
+  prewarm하고, env=0은 레짐만 끌 뿐 byte-identical rollback이 아님을 기록한다.
 - 승자 → kda config 테이블 인수(env 게이트) → 프리필 tok/s 브래킷.
 - 승자 없으면 축 기록으로 종료 (FLA 공동 튜닝 선례상 가능성 있음).
+
+3단계 — engine-down bracket arm (헤드 checkout):
+
+```bash
+VLLM_GLM53_KDA_PREFILL_REGIME=1 \
+  launchers/start-glm53-nvfp4-tp4.sh
+```
+
+이 키는 profile-owned라 `EXTRA_ENV`로 넘기지 않는다. launcher 명령의 caller
+env로 주어야 profile 기본 0을 덮은 값이 모든 rank에 전달된다. 별도 fresh-cache
+arm에서 `short -> long`과 `long -> short` 순서를 모두 맞춰 prewarm한다. 첫 long
+요청은 autotune 전용이고 두 번째부터 timed/수락률 bracket을 시작한다. 위
+standalone probe는 base-image config inventory를 스윕할 뿐 full-engine init latch와
+0/1 dispatch 자체를 증명하지 않는다.
 
 ---
 

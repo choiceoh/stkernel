@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """KDA prefill chunk-kernel launch-config sweep (GB10, sm_121a).
 
-The active KDA prefill kernels are the vendored triton package
-``vllm/models/kimi_k3/nvidia/ops/third_party/kda/`` (chunk.py,
-chunk_intra.py, chunk_intra_token_parallel.py, fused_recurrent.py). Their
-``triton.autotune`` cache keys carry H/K/V/BT/BK/BV but explicitly NOT T
-(``do_not_specialize=["T"]``) -- so ONE chosen (warps, stages, BK/BV) serves
-both decode T=8 and prefill T=8192, decided by whichever regime autotuned
-first. This harness re-sweeps each kernel's config list at the PREFILL shape
-by patching the Autotuner configs in-process and timing the real
-``chunk_kda_with_fused_gate`` entry (coordinate descent, one kernel at a
-time, others at stock).
+GLM-5.3 imports its production prefill entry from
+``vllm.third_party.flash_linear_attention.ops.kda``. The chunk path reaches
+five Autotuners there (KKT inter/intra, recompute, output, gate+cumsum) plus
+``ops.chunk_delta_h``. Decode uses the separate fused-recurrent entry and is
+not part of this sweep. This harness patches exactly those six config lists
+in-process and times production ``chunk_kda_with_fused_gate`` with final-state
+writeback enabled (coordinate descent, one kernel at a time, others at stock).
 
 Run in a FRESH GPU container (never docker-exec CUDA in the serving one):
   docker run --rm --gpus all --entrypoint python3 \
@@ -38,27 +35,39 @@ H, K, V = 16, 128, 128
 
 
 def build_pkg():
-    from vllm.models.kimi_k3.nvidia.ops.third_party.kda import (  # noqa: E402
-        chunk,
-        chunk_intra,
-        chunk_intra_token_parallel,
-        fused_recurrent,
+    from vllm.third_party.flash_linear_attention.ops import (  # noqa: E402
+        chunk_delta_h,
+        kda,
     )
-    return {
-        "chunk": chunk,
-        "chunk_intra": chunk_intra,
-        "chunk_intra_token_parallel": chunk_intra_token_parallel,
-        "fused_recurrent": fused_recurrent,
-    }
+    return {"kda": kda, "chunk_delta_h": chunk_delta_h}
 
 
 def collect_autotuners(mods):
+    expected = {
+        "kda.chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter",
+        "kda.chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra",
+        "kda.recompute_w_u_fwd_kernel",
+        "kda.chunk_gla_fwd_kernel_o",
+        "kda.kda_gate_cumsum_fwd_kernel",
+        "chunk_delta_h.chunk_gated_delta_rule_fwd_kernel_h_blockdim64",
+    }
     out = {}
-    for mname, mod in mods.items():
-        for attr in dir(mod):
-            fn = getattr(mod, attr)
-            if isinstance(fn, triton.runtime.Autotuner):
-                out[f"{mname}.{attr}"] = fn
+    for name in sorted(expected):
+        module_name, attr = name.split(".", 1)
+        fn = getattr(mods[module_name], attr)
+        # @triton.heuristics is the outer decorator on all six live kernels;
+        # its public object wraps the Autotuner in .fn.
+        seen = set()
+        while not isinstance(fn, triton.runtime.Autotuner):
+            if id(fn) in seen or not hasattr(fn, "fn"):
+                break
+            seen.add(id(fn))
+            fn = fn.fn
+        if not isinstance(fn, triton.runtime.Autotuner):
+            raise TypeError(f"production kernel is no longer an Autotuner: {name}")
+        out[name] = fn
+    if set(out) != expected:
+        raise AssertionError(f"core-six inventory drift: {sorted(out)}")
     return out
 
 
@@ -76,6 +85,8 @@ def make_inputs(T, device):
     raw_g = r(1, T, H, K, 0.3)          # f_b_proj output (raw gate)
     raw_beta = torch.rand(1, T, H, generator=g, device=device,
                           dtype=torch.float32).to(dt)
+    # Production GLM applies its compiled fp32 sigmoid before generic FLA KDA.
+    beta = raw_beta.float().sigmoid()
     A_log = torch.randn(H, generator=g, device=device,
                         dtype=torch.float32).mul(0.1)
     dt_bias = torch.randn(H * K, generator=g, device=device,
@@ -85,27 +96,31 @@ def make_inputs(T, device):
     cu_seqlens = torch.tensor([0, T], dtype=torch.int32, device=device)
     lower_bound = -5.0
     scale = K ** -0.5
-    return dict(q=q, k=k, v=v, raw_g=raw_g, raw_beta=raw_beta, A_log=A_log,
+    return dict(q=q, k=k, v=v, raw_g=raw_g, beta=beta, A_log=A_log,
                 g_bias=dt_bias, scale=scale, initial_state=initial_state,
                 lower_bound=lower_bound, cu_seqlens=cu_seqlens)
 
 
-def run_entry(pkg, inp, output_final_state=False):
-    o, state = pkg["chunk"].chunk_kda_with_fused_gate(
+def run_entry(pkg, inp):
+    o, state = pkg["kda"].chunk_kda_with_fused_gate(
         inp["q"].clone(),
         inp["k"].clone(),
         inp["v"].clone(),
         raw_g=inp["raw_g"],
-        raw_beta=inp["raw_beta"],
+        beta=inp["beta"],
         A_log=inp["A_log"],
         g_bias=inp["g_bias"],
         scale=inp["scale"],
         initial_state=inp["initial_state"].clone(),
-        output_final_state=output_final_state,
+        output_final_state=True,
         lower_bound=inp["lower_bound"],
+        safe_gate=True,
+        use_qk_l2norm_in_kernel=True,
         cu_seqlens=inp["cu_seqlens"],
     )
-    return o
+    if state is None:
+        raise AssertionError("production prefill must write final recurrent state")
+    return o, state
 
 
 def bench_us(fn, iters):
@@ -128,9 +143,13 @@ def rel_err(a, b):
     return float(d / den) if den > 0 else float("inf")
 
 
+def output_state_rel_err(got, ref):
+    return max(rel_err(got[0], ref[0]), rel_err(got[1], ref[1]))
+
+
 def cfg_repr(cfg):
     kw = dict(cfg.kwargs)
-    return (f"{kw or '{{}}} warps={cfg.num_warps} "
+    return (f"{kw if kw else {}} warps={cfg.num_warps} "
             f"stages={cfg.num_stages}")
 
 
@@ -153,7 +172,7 @@ def main():
         return bench_us(lambda: run_entry(pkg, inp), args.iters)
 
     # ---- stock baseline (autotune picks per its own benchmark) ----
-    ref = run_entry(pkg, inp, output_final_state=False)
+    ref = run_entry(pkg, inp)
     torch.cuda.synchronize()
     base = timed()
     print(f"\nstock(autotune) baseline: {base:.1f}us")
@@ -169,7 +188,7 @@ def main():
             try:
                 out = run_entry(pkg, inp)
                 torch.cuda.synchronize()
-                err = rel_err(out, ref)
+                err = output_state_rel_err(out, ref)
                 t = bench_us(lambda: run_entry(pkg, inp), args.iters)
                 results.append((t, cfg, err))
                 print(f"  {name}: {cfg_repr(cfg):<44} {t:9.1f}us"
@@ -196,7 +215,7 @@ def main():
     try:
         out = run_entry(pkg, inp)
         torch.cuda.synchronize()
-        err = rel_err(out, ref)
+        err = output_state_rel_err(out, ref)
         t = timed()
         print(f"\ncombined winners: {t:.1f}us vs stock {base:.1f}us "
               f"({100 * (base - t) / base:+.1f}%)  rel_err={err:.2e}")

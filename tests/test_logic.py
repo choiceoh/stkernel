@@ -3441,6 +3441,405 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     print("  GLM53 kpool packed scratch ...... OK")
 
 
+def test_glm53_kda_prefill_regime() -> None:
+    """The KDA cache split stays two-bucket, exact-gated and core-six only."""
+    module_rel = "overlay/modules/glm53_kda_prefill_regime/kda.py"
+    delta_rel = "overlay/modules/glm53_kda_prefill_regime/chunk_delta_h.py"
+    ns = load_defs(
+        module_rel,
+        {
+            "_glm53_kda_prefill_regime_gate",
+            "_glm53_kda_prefill_runtime_contract",
+            "_glm53_kda_prefill_capture_runtime_contract",
+            "_glm53_kda_prefill_autotune_regime",
+        },
+        {
+            "_GLM53_KDA_PREFILL_REGIME_ENABLED": True,
+            "_GLM53_KDA_PREFILL_RUNTIME_CONTRACT": None,
+        },
+    )
+    gate = ns["_glm53_kda_prefill_regime_gate"]
+    valid = {
+        "enabled": True,
+        "capability": (12, 1),
+        "model_type": "glm5_next_text",
+        "tensor_parallel_size": 4,
+        "max_num_batched_tokens": 8192,
+        "q_shape": (1, 4096, 16, 128),
+        "k_shape": (1, 4096, 16, 128),
+        "v_shape": (1, 4096, 16, 128),
+        "raw_g_shape": (1, 4096, 16, 128),
+        "beta_shape": (1, 4096, 16),
+        "q_dtype": "torch.bfloat16",
+        "k_dtype": "torch.bfloat16",
+        "v_dtype": "torch.bfloat16",
+        "raw_g_dtype": "torch.bfloat16",
+        "beta_dtype": "torch.float32",
+        "initial_state_shape": (4, 16, 128, 128),
+        "initial_state_dtype": "torch.float32",
+        "output_final_state": True,
+        "safe_gate": True,
+        "lower_bound": -5.0,
+        "is_varlen": True,
+        "num_sequences": 4,
+    }
+    check(gate(**valid), "4x1024 packed GLM prefill admits long regime")
+    short = dict(valid)
+    for field in ("q_shape", "k_shape", "v_shape", "raw_g_shape"):
+        shape = list(short[field])
+        shape[1] = 4095
+        short[field] = tuple(shape)
+    short["beta_shape"] = (1, 4095, 16)
+    check(not gate(**short), "4x<1024 packed average stays stock regime 0")
+
+    rejected = {
+        "enabled": (False, 1),
+        "capability": ((12, 0), (10, 0), None),
+        "model_type": (None, "kimi_k3"),
+        "tensor_parallel_size": (1, 8),
+        "max_num_batched_tokens": (4096, 16384),
+        "q_dtype": ("torch.float16", "torch.float32"),
+        "beta_dtype": ("torch.bfloat16", "torch.float16"),
+        "initial_state_shape": ((1, 16, 128, 128), None),
+        "output_final_state": (False,),
+        "safe_gate": (False,),
+        "lower_bound": (-4.0, -6.0),
+        "is_varlen": (False,),
+    }
+    for field, values in rejected.items():
+        for bad in values:
+            case = dict(valid)
+            case[field] = bad
+            check(not gate(**case), f"KDA regime rejects {field}={bad!r}")
+
+    runtime = ns["_glm53_kda_prefill_runtime_contract"]
+    capability = types.SimpleNamespace(major=12, minor=1)
+    config = types.SimpleNamespace(
+        model_config=types.SimpleNamespace(
+            hf_text_config=types.SimpleNamespace(model_type="glm5_next_text")
+        ),
+        parallel_config=types.SimpleNamespace(tensor_parallel_size=4),
+        scheduler_config=types.SimpleNamespace(max_num_batched_tokens=8192),
+    )
+    check(
+        runtime(capability, config) == ((12, 1), "glm5_next_text", 4, 8192),
+        "runtime contract reads current GLM profile",
+    )
+    check(runtime(None, config) is None, "missing capability fails closed")
+    check(runtime(capability, None) is None, "missing config fails closed")
+    for broken in (
+        types.SimpleNamespace(),
+        types.SimpleNamespace(model_config=None),
+        types.SimpleNamespace(model_config=types.SimpleNamespace()),
+    ):
+        check(
+            runtime(capability, broken) is None,
+            "vLLM config attribute drift fails closed",
+        )
+
+    # vLLM's current-config global exists only during model initialization.
+    # Capture there, then prove forward admission still works after the
+    # accessor would return None.
+    capture = ns["_glm53_kda_prefill_capture_runtime_contract"]
+    autotune_regime = ns["_glm53_kda_prefill_autotune_regime"]
+    fake_vllm = types.ModuleType("vllm")
+    fake_vllm.__path__ = []
+    fake_config = types.ModuleType("vllm.config")
+    fake_config.get_current_vllm_config_or_none = lambda: config
+    fake_vllm.config = fake_config
+    saved_modules = {
+        name: sys.modules.get(name) for name in ("vllm", "vllm.config")
+    }
+    sys.modules["vllm"] = fake_vllm
+    sys.modules["vllm.config"] = fake_config
+    ns["current_platform"] = types.SimpleNamespace(
+        get_device_capability=lambda: capability
+    )
+    try:
+        capture(hidden_size=128, activation="sigmoid")
+        check(
+            ns["_GLM53_KDA_PREFILL_RUNTIME_CONTRACT"]
+            == ((12, 1), "glm5_next_text", 4, 8192),
+            "GLM RMSNorm construction latches the init-only runtime contract",
+        )
+        fake_config.get_current_vllm_config_or_none = lambda: None
+        tensor = lambda shape, dtype: types.SimpleNamespace(  # noqa: E731
+            shape=shape, dtype=dtype
+        )
+        check(
+            autotune_regime(
+                q=tensor((1, 4096, 16, 128), "torch.bfloat16"),
+                k=tensor((1, 4096, 16, 128), "torch.bfloat16"),
+                v=tensor((1, 4096, 16, 128), "torch.bfloat16"),
+                raw_g=tensor((1, 4096, 16, 128), "torch.bfloat16"),
+                beta=tensor((1, 4096, 16), "torch.float32"),
+                initial_state=tensor((4, 16, 128, 128), "torch.float32"),
+                output_final_state=True,
+                cu_seqlens=types.SimpleNamespace(numel=lambda: 5),
+                safe_gate=True,
+                lower_bound=-5.0,
+            )
+            == 1,
+            "forward uses the init latch after current config is restored",
+        )
+
+        ns["_GLM53_KDA_PREFILL_RUNTIME_CONTRACT"] = None
+        bad_config = types.SimpleNamespace(
+            model_config=types.SimpleNamespace(
+                hf_text_config=types.SimpleNamespace(model_type="kimi_k3")
+            ),
+            parallel_config=types.SimpleNamespace(tensor_parallel_size=4),
+            scheduler_config=types.SimpleNamespace(max_num_batched_tokens=8192),
+        )
+        fake_config.get_current_vllm_config_or_none = lambda: bad_config
+        capture(hidden_size=128, activation="sigmoid")
+        check(
+            ns["_GLM53_KDA_PREFILL_RUNTIME_CONTRACT"] is None,
+            "non-GLM init cannot latch the runtime contract",
+        )
+
+        def forbidden_lookup():
+            raise AssertionError("disabled or non-GLM ctor must not query capability")
+
+        ns["current_platform"] = types.SimpleNamespace(
+            get_device_capability=forbidden_lookup
+        )
+        capture(hidden_size=64, activation="sigmoid")
+        ns["_GLM53_KDA_PREFILL_REGIME_ENABLED"] = False
+        capture(hidden_size=128, activation="sigmoid")
+        check(
+            ns["_GLM53_KDA_PREFILL_RUNTIME_CONTRACT"] is None,
+            "disabled and non-GLM constructors remain lookup-free",
+        )
+    finally:
+        for name, old in saved_modules.items():
+            if old is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = old
+        ns["_GLM53_KDA_PREFILL_REGIME_ENABLED"] = True
+
+    sources = {
+        "kda": open(os.path.join(REPO, module_rel), encoding="utf-8").read(),
+        "delta": open(os.path.join(REPO, delta_rel), encoding="utf-8").read(),
+    }
+    trees = {name: ast.parse(source) for name, source in sources.items()}
+    core = {
+        "kda": {
+            "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter",
+            "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra",
+            "recompute_w_u_fwd_kernel",
+            "chunk_gla_fwd_kernel_o",
+            "kda_gate_cumsum_fwd_kernel",
+        },
+        "delta": {"chunk_gated_delta_rule_fwd_kernel_h_blockdim64"},
+    }
+
+    def decorator(node, attr):
+        return next(
+            dec
+            for dec in node.decorator_list
+            if isinstance(dec, ast.Call)
+            and isinstance(dec.func, ast.Attribute)
+            and dec.func.attr == attr
+        )
+
+    checked = 0
+    for owner, names in core.items():
+        defs = {
+            node.name: node
+            for node in trees[owner].body
+            if isinstance(node, ast.FunctionDef)
+        }
+        for name in names:
+            node = defs[name]
+            args = {arg.arg: arg for arg in node.args.args}
+            check("AUTOTUNE_REGIME" in args, f"{name} accepts regime scalar")
+            check(
+                args["AUTOTUNE_REGIME"].annotation is None,
+                f"{name} regime is runtime, not tl.constexpr",
+            )
+            tune = decorator(node, "autotune")
+            key_kw = next(kw for kw in tune.keywords if kw.arg == "key")
+            keys = {elt.value for elt in key_kw.value.elts}
+            check("AUTOTUNE_REGIME" in keys, f"{name} splits config cache")
+            check("T" not in keys, f"{name} never keys on raw T")
+            jit = decorator(node, "jit")
+            dns_kw = next(
+                kw for kw in jit.keywords if kw.arg == "do_not_specialize"
+            )
+            dns = {elt.value for elt in dns_kw.value.elts}
+            check(
+                {"T", "AUTOTUNE_REGIME"} <= dns,
+                f"{name} keeps one code specialization across regimes",
+            )
+            checked += 1
+    check(checked == 6, "exactly the core-six Autotuners own the regime")
+
+    def named_calls(node, name):
+        return [
+            call
+            for call in ast.walk(node)
+            if isinstance(call, ast.Call)
+            and (
+                (isinstance(call.func, ast.Name) and call.func.id == name)
+                or (isinstance(call.func, ast.Subscript)
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == name)
+            )
+        ]
+
+    kda_defs = {
+        node.name: node
+        for node in trees["kda"].body
+        if isinstance(node, ast.FunctionDef)
+    }
+    delta_defs = {
+        node.name: node
+        for node in trees["delta"].body
+        if isinstance(node, ast.FunctionDef)
+    }
+    launch_owners = {
+        "chunk_kda_scaled_dot_kkt_fwd": (
+            "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter",
+            "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra",
+        ),
+        "recompute_w_u_fwd": ("recompute_w_u_fwd_kernel",),
+        "chunk_gla_fwd_o_gk": ("chunk_gla_fwd_kernel_o",),
+        "fused_kda_gate_chunk_cumsum": ("kda_gate_cumsum_fwd_kernel",),
+    }
+    for wrapper_name, kernel_names in launch_owners.items():
+        wrapper = kda_defs[wrapper_name]
+        for kernel_name in kernel_names:
+            calls = named_calls(wrapper, kernel_name)
+            check(len(calls) == 1, f"{wrapper_name} launches {kernel_name} once")
+            kw = next(
+                item for item in calls[0].keywords if item.arg == "AUTOTUNE_REGIME"
+            )
+            check(
+                isinstance(kw.value, ast.Name) and kw.value.id == "autotune_regime",
+                f"{wrapper_name} forwards its unchanged regime to {kernel_name}",
+            )
+    delta_wrapper = delta_defs["chunk_gated_delta_rule_fwd_h"]
+    delta_calls = named_calls(
+        delta_wrapper, "chunk_gated_delta_rule_fwd_kernel_h_blockdim64"
+    )
+    check(len(delta_calls) == 1, "delta-h wrapper launches its core kernel once")
+    delta_kw = next(
+        item for item in delta_calls[0].keywords if item.arg == "AUTOTUNE_REGIME"
+    )
+    check(
+        isinstance(delta_kw.value, ast.Name) and delta_kw.value.id == "autotune_regime",
+        "delta-h wrapper forwards the identical call-level regime",
+    )
+    pipeline = kda_defs["_chunk_kda_fwd_with_cumulative_g"]
+    for callee in (
+        "chunk_kda_scaled_dot_kkt_fwd",
+        "recompute_w_u_fwd",
+        "chunk_gated_delta_rule_fwd_h",
+        "chunk_gla_fwd_o_gk",
+    ):
+        calls = named_calls(pipeline, callee)
+        check(len(calls) == 1, f"chunk pipeline calls {callee} once")
+        kw = next(item for item in calls[0].keywords if item.arg == "autotune_regime")
+        check(
+            isinstance(kw.value, ast.Name) and kw.value.id == "autotune_regime",
+            f"chunk pipeline passes one unchanged regime to {callee}",
+        )
+
+    kda_source = sources["kda"]
+    capture_start = kda_source.index(
+        "def _glm53_kda_prefill_capture_runtime_contract"
+    )
+    helper_start = kda_source.index("def _glm53_kda_prefill_autotune_regime")
+    helper_end = kda_source.index("def fused_recurrent_kda_fwd", helper_start)
+    capture_source = kda_source[capture_start:helper_start]
+    helper_source = kda_source[helper_start:helper_end]
+    check(
+        capture_source.index("if (")
+        < capture_source.index("current_platform.get_device_capability"),
+        "default-off and non-GLM init exit before capability/config lookup",
+    )
+    check(
+        "get_current_vllm_config_or_none" not in helper_source
+        and "get_device_capability" not in helper_source,
+        "forward dispatch reads only the init-time contract latch",
+    )
+    check(
+        'os.environ.get(_GLM53_KDA_PREFILL_REGIME_ENV) == "1"' in kda_source,
+        "the module-import latch accepts exact string 1 only",
+    )
+    fwd_start = kda_source.index("def chunk_kda_with_fused_gate_fwd")
+    fwd_end = kda_source.index("def chunk_kda(", fwd_start)
+    fwd_source = kda_source[fwd_start:fwd_end]
+    check(
+        fwd_source.count("_glm53_kda_prefill_autotune_regime(") == 1,
+        "the public chunk call derives its bucket once",
+    )
+    check(
+        "q.shape[1] < 1024 * num_sequences" in helper_source
+        and "cu_seqlens.numel() - 1" in helper_source,
+        "long bucket is a bounded packed-average threshold",
+    )
+    standalone = next(
+        node
+        for node in trees["kda"].body
+        if isinstance(node, ast.FunctionDef) and node.name == "kda_gate_fwd_kernel"
+    )
+    check(
+        all(arg.arg != "AUTOTUNE_REGIME" for arg in standalone.args.args),
+        "fused-recurrent gate Autotuner remains outside the chunk split",
+    )
+    rms_class = next(
+        node
+        for node in trees["kda"].body
+        if isinstance(node, ast.ClassDef) and node.name == "FusedRMSNormGated"
+    )
+    rms_init = next(
+        node
+        for node in rms_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    capture_calls = named_calls(
+        rms_init, "_glm53_kda_prefill_capture_runtime_contract"
+    )
+    check(
+        len(capture_calls) == 1,
+        "GLM's init-context RMSNorm captures the runtime contract once",
+    )
+
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(
+        "glm53_kda_prefill_regime" in profile
+        and "VLLM_GLM53_KDA_PREFILL_REGIME=0" in profile,
+        "GLM profile mounts the module default-off",
+    )
+    for name in ("kda.py", "chunk_delta_h.py"):
+        source = open(
+            os.path.join(REPO, "overlay", "modules", "glm53_kda_prefill_regime", name),
+            encoding="utf-8",
+        ).read()
+        built = open(os.path.join(REPO, "build", "glm53", name), encoding="utf-8").read()
+        check(source == built, f"{name} module/build parity")
+
+    probe = open(
+        os.path.join(REPO, "probes", "kda_prefill_bench.py"), encoding="utf-8"
+    ).read()
+    check(
+        "vllm.third_party.flash_linear_attention.ops" in probe
+        and "models.kimi_k3" not in probe,
+        "probe imports the actual generic FLA production path",
+    )
+    check(
+        "output_final_state=True" in probe
+        and "safe_gate=True" in probe
+        and "use_qk_l2norm_in_kernel=True" in probe
+        and "beta=inp[\"beta\"]" in probe,
+        "probe matches production final-state, gate, norm and beta contract",
+    )
+    print("  GLM53 KDA prefill regimes ....... OK")
+
+
 def test_oneshot_sm121_grid_contract() -> None:
     """The fixed one-shot grid must match both GB10 and GLM capture shapes.
 
@@ -3646,5 +4045,6 @@ if __name__ == "__main__":
     test_dflash_warmup_buckets()
     test_glm53_sm121_mla_prefill_gate()
     test_glm53_kpool_packed_scratch_contract()
+    test_glm53_kda_prefill_regime()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
