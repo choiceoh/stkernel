@@ -2064,6 +2064,7 @@ def test_mhc_bigfuse_knob() -> None:
                 "_raw_bigfuse",
                 "_DENEB_BIGFUSE",
                 "_deneb_bigfuse_hblk",
+                "_deneb_bigfuse_post",
             },
             {"os": os},
         )
@@ -2076,17 +2077,19 @@ def test_mhc_bigfuse_knob() -> None:
         check(ns["_deneb_bigfuse_hblk"](4096, 4096) is None,
               "env unset: prefill runs stock h_blk")
 
-        check(parse("4096") == 4096, "parse plain")
-        check(parse(" 2048 ") == 2048, "parse whitespace")
-        check(parse("8192") is None, "outside the allowed set")
-        check(parse("abc") is None and parse("4096,96") is None,
-              "rejects junk and multi-field")
+        check(parse("4096") == (4096, None), "parse plain (h_blk only)")
+        check(parse(" 2048 ") == (2048, None), "parse whitespace")
+        check(parse("4096,512") == (4096, 512), "parse h_blk + post_thr")
+        check(parse("8192") is None, "h_blk outside the allowed set")
+        check(parse("4096,96") is None, "post_thr 96 not in the R2 set")
+        check(parse("abc") is None and parse("4096,512,96") is None,
+              "rejects junk and extra fields")
         check(parse("0") is None and parse("-4096") is None,
               "rejects non-positive")
 
-        os.environ[env_name] = "4096"
+        os.environ[env_name] = "4096,512"
         ns = load()
-        check(ns["_DENEB_BIGFUSE"] == 4096, "frozen at import")
+        check(ns["_DENEB_BIGFUSE"] == (4096, 512), "frozen at import")
         hblk = ns["_deneb_bigfuse_hblk"]
         check(hblk(65, 4096) == 4096, "prefill M>64 gets the override")
         check(hblk(8192, 4096) == 4096, "large prefill gets the override")
@@ -2094,6 +2097,13 @@ def test_mhc_bigfuse_knob() -> None:
         check(hblk(16, 4096) is None, "decode M stays stock")
         check(hblk(65, 2048) is None,
               "hidden not divisible by h_blk -> stock (OOB-copy guard)")
+        post = ns["_deneb_bigfuse_post"]
+        check(post(65) == (512, 4096), "post retune follows the second field")
+        check(post(64) is None, "post retune also gated at M>64")
+        os.environ[env_name] = "4096"
+        ns = load()
+        check(ns["_deneb_bigfuse_post"](65) is None,
+              "post_thr omitted -> mhc_post stays stock")
     finally:
         if saved is None:
             os.environ.pop(env_name, None)
