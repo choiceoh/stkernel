@@ -943,6 +943,28 @@ def _shared_ep_fixed_workspace(
         return workspace
 
 
+B12X_EP_COMPACT_PAIR_ALIGN = 64
+
+
+def b12x_ep_compact_pair_count(n_local, align=B12X_EP_COMPACT_PAIR_ALIGN):
+    """Round a compacted pair count up to a launch-shape bucket.
+
+    b12x JIT-compiles per launch shape -- its cache key carries the row count
+    -- and compact's row count is the number of LOCAL pairs, which is data
+    dependent. One bench saw 33 distinct values (48, 83, 102, 103, 104, 119,
+    122, 130, ... 336) and each minted a kernel. Bucketing to 64 collapses
+    those to six.
+
+    The padding is bounded by `align - 1` rows, which at prefill scale
+    (thousands of pairs) is under a percent, and for a small call is a few
+    rows of a call that was already small.
+    """
+    n = int(n_local)
+    if n <= 0:
+        return 0
+    return ((n + align - 1) // align) * align
+
+
 class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     """FlashInfer CuteDSL fused MoE expert for SM12x (SM120/SM121,
     RTX Pro 6000 / DGX Spark).
@@ -1897,14 +1919,32 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             .reshape(-1)
             .index_select(0, sel)
         )
-        pair_ids = topk_ids.reshape(-1).index_select(0, sel).view(n, 1)
-        pair_scales = topk_weights.reshape(-1).index_select(0, sel).view(n, 1)
+        # Pad the pair list up to a launch-shape bucket. Without this the row
+        # count is the local-pair count -- data dependent -- and every value
+        # mints a fresh JIT kernel mid-inference.
+        n_pad = b12x_ep_compact_pair_count(n)
+        if n_pad > n:
+            fill = torch.arange(n_pad, device=sel.device) % n
+            sel = sel.index_select(0, fill)
+            token_index = token_index.index_select(0, fill)
+        keep = torch.arange(n_pad, device=sel.device) < n
+        pair_ids = topk_ids.reshape(-1).index_select(0, sel).view(n_pad, 1)
+        pair_scales = topk_weights.reshape(-1).index_select(0, sel).view(n_pad, 1)
+        # Pad rows repeat pairs already in this list at weight 0: a duplicate
+        # cannot move an expert's FC2 amax, and a zero scale contributes
+        # nothing to the token it points at.
+        pair_scales = torch.where(
+            keep.view(n_pad, 1), pair_scales, torch.zeros_like(pair_scales)
+        )
         pair_x = hidden_states.index_select(0, token_index)
-        pair_out = torch.empty(
-            (n, hidden_states.size(1)),
+        # zeros, not empty: the pad rows carry weight 0 and the kernel may skip
+        # them, and an uninitialised bit pattern can be NaN (see #146).
+        pair_out = torch.zeros(
+            (n_pad, hidden_states.size(1)),
             dtype=output.dtype,
             device=output.device,
         )
+        n = n_pad
 
         from flashinfer.fused_moe import b12x_fused_moe
 
@@ -1936,6 +1976,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 swiglu_beta=self._swiglu_beta,
                 swiglu_limit=self._swiglu_limit,
             )
+        pair_out.mul_(keep.view(-1, 1).to(pair_out.dtype))
         output.zero_()
         output.index_add_(0, token_index, pair_out)
         return output
