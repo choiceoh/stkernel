@@ -24,6 +24,13 @@
 #define RING 4
 #define MAXEL 131072  // 256KB bf16 — size gate keeps callers <= this
 #define PROXY_CORE 18
+// clock64() counts SM cycles. The SM clock is pinned at 1592 MHz on this
+// fleet (nvidia-smi clocks.sm, flat across load), so one constant converts.
+// The absolute us are only as good as that assumption; the RATIO between the
+// four phases does not depend on it at all, and the ratio is the answer we
+// are after.
+#define SM_CLK_MHZ 1592
+#define REPORT_SEC 10
 
 #define CHK(x)                                                            \
   do {                                                                    \
@@ -33,6 +40,8 @@
       throw std::runtime_error("oneshot verbs failure");                  \
     }                                                                     \
   } while (0)
+
+#include <ctime>
 
 typedef __nv_bfloat16 bf16;
 
@@ -45,7 +54,17 @@ struct Ctrl {
   uint64_t flag_src[NPEER];
   uint64_t nbytes[RING];                 // payload size per slot (GPU sets)
   volatile uint64_t rxf[RING][NPEER];    // inbound flags (slot-major)
-  uint64_t pad[8];
+  // Phase timers. These live INSIDE the old pad[8] so every offset after them
+  // -- tx, rx -- is unchanged and the peers' rx_base/rxf_base stay valid.
+  // Monotonic and never reset, for the same reason done_ctr is: a cudagraph
+  // replay cannot see a reset. Written by block 0 thread 0 only, one store
+  // per collective, so the cost is a handful of cycles on one thread.
+  volatile uint64_t t_guard;             // SM cycles spinning for ring space
+  volatile uint64_t t_copy;              // copy + fence + counter + publish
+  volatile uint64_t t_wait;              // SM cycles spinning for peer flags
+  volatile uint64_t t_reduce;            // the summation
+  volatile uint64_t t_calls;             // samples behind the four above
+  uint64_t pad[3];
   bf16 tx[RING][MAXEL];
   bf16 rx[RING][NPEER][MAXEL];
 };
@@ -104,10 +123,14 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // Block 0 owns unconditionally so an n == 0 collective still takes the ring
   // guard rather than publishing into a slot nobody checked.
   const bool owns = (blockIdx.x == 0) || (blockIdx.x * blockDim.x < n);
+  // Block 0 always owns, so it always walks every phase and is the sample.
+  const bool timer = (blockIdx.x == 0) && (threadIdx.x == 0);
+  long long t0 = timer ? clock64() : 0;
 
   if (owns && threadIdx.x == 0)
     while ((c->tx_seq + 1) > (c->ack_seq + RING)) {
     }
+  long long t1 = timer ? clock64() : 0;
   __syncthreads();
   uint64_t nxt = c->tx_seq + 1;
   int slot = (int)(nxt % RING);
@@ -135,11 +158,13 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // Peer wait: rxf is only ever written by the peers' NICs, never by a block
   // of this kernel -- same independence argument as the guard above. Fence
   // stays where it always was: after the wait, before reading peer data.
+  long long t2 = timer ? clock64() : 0;
   if (owns && threadIdx.x == 0) {
     while (c->rxf[slot][0] < nxt || c->rxf[slot][1] < nxt ||
            c->rxf[slot][2] < nxt) {
     }
   }
+  long long t3 = timer ? clock64() : 0;
   __syncthreads();
   if (owns)
     __threadfence_system();
@@ -151,6 +176,14 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                 __bfloat162float(c->rx[slot][2][i]);
     dst[i] = __float2bfloat16(acc);
   }
+  if (timer) {
+    long long t4 = clock64();
+    c->t_guard += (uint64_t)(t1 - t0);
+    c->t_copy += (uint64_t)(t2 - t1);
+    c->t_wait += (uint64_t)(t3 - t2);
+    c->t_reduce += (uint64_t)(t4 - t3);
+    c->t_calls += 1;
+  }
 }
 
 // ---------------- proxy ----------------
@@ -160,6 +193,9 @@ static void *proxy_fn(void *) {
   CPU_SET(PROXY_CORE, &set);
   sched_setaffinity(0, sizeof(set), &set);
   uint64_t sent = 0, done[64] = {0};
+  time_t last_report = 0;
+  uint64_t last_guard = 0, last_copy = 0, last_wait = 0, last_reduce = 0,
+           last_calls = 0;
   while (!g_ctrl->stop) {
     g_ctrl->proxy_beat++;
     uint64_t s = g_ctrl->tx_seq;
@@ -212,6 +248,41 @@ static void *proxy_fn(void *) {
       if (++done[cs % 64] == NPEER) {
         done[cs % 64] = 0;
         if (cs > g_ctrl->ack_seq) g_ctrl->ack_seq = cs;
+      }
+    }
+    // Phase report. The reader has to live here and not in the shim: under a
+    // full-decode cudagraph the Python entry runs once at capture and never
+    // again, while the kernel keeps accumulating on every replay. The proxy
+    // is the only host code that runs per collective for the life of the boot.
+    // Rank 0 only, every REPORT_SEC seconds, deltas since the last report so a
+    // slow warmup does not smear the steady state.
+    if (g_rank == 0) {
+      time_t now = time(nullptr);
+      if (last_report == 0) last_report = now;
+      if (now - last_report >= REPORT_SEC) {
+        uint64_t calls = g_ctrl->t_calls, dn = calls - last_calls;
+        if (dn > 0) {
+          double k = 1.0 / (double)dn / (double)SM_CLK_MHZ;  // cycles -> us
+          fprintf(stderr,
+                  "[osar] phase us/collective (n=%llu): guard=%.1f copy=%.1f "
+                  "wait=%.1f reduce=%.1f | total=%.1f  @%d MHz assumed\n",
+                  (unsigned long long)dn,
+                  (double)(g_ctrl->t_guard - last_guard) * k,
+                  (double)(g_ctrl->t_copy - last_copy) * k,
+                  (double)(g_ctrl->t_wait - last_wait) * k,
+                  (double)(g_ctrl->t_reduce - last_reduce) * k,
+                  (double)(g_ctrl->t_guard - last_guard +
+                           g_ctrl->t_copy - last_copy +
+                           g_ctrl->t_wait - last_wait +
+                           g_ctrl->t_reduce - last_reduce) * k,
+                  SM_CLK_MHZ);
+          last_guard = g_ctrl->t_guard;
+          last_copy = g_ctrl->t_copy;
+          last_wait = g_ctrl->t_wait;
+          last_reduce = g_ctrl->t_reduce;
+          last_calls = calls;
+        }
+        last_report = now;
       }
     }
   }
