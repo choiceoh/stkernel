@@ -45,6 +45,7 @@ GROUPS = [
     ("우리 · MoE 게이트",    r"_deneb_gate"),
     ("MoE b12x",            r"b12x|moe|topk|Moe"),
     ("mhc (MHC 압축)",       r"mhc"),
+    ("KDA/FLA 청크",         r"kda|chunk|recurrent_gated|causal_conv1d|wy_|solve_tril|l2norm|cumsum"),
     ("어텐션 (MLA)",         r"Attention|attn|mla|MLA|flash"),
     ("cutlass/cublas GEMM", r"cutlass|cublas|gemm|Kernel2|splitK"),
     ("elementwise 글루",     r"elementwise|vectorized|unrolled"),

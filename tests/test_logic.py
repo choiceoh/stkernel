@@ -2911,6 +2911,39 @@ def test_oneshot_sm121_grid_contract() -> None:
               f"{profile} wiring must propagate committed-path failures")
     print("  one-shot SM121 grid contract .... OK")
 
+def test_census_kda_group() -> None:
+    """census: KDA/FLA chunk kernels classify out of 기타 and norm groups.
+
+    The 08-31 decode census left fused_recurrent/conv1d in 기타 and l2norm-
+    class kernels destined for norm; prefill analysis needs them grouped.
+    Patterns must not swallow moe/cutlass/elementwise names.
+    """
+    ns = load_defs("census.py", {"GROUPS", "group"}, {"re": re})
+    group = ns["group"]
+    must = {
+        "fused_recurrent_gated_delta_rule_fwd_kernel": "KDA/FLA 청크",
+        "_causal_conv1d_update_kernel": "KDA/FLA 청크",
+        "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter": "KDA/FLA 청크",
+        "chunk_delta_h_fwd": "KDA/FLA 청크",
+        "kda_gate_chunk_cumsum_vector_kernel": "KDA/FLA 청크",
+        "fla_l2norm_fwd_kernel": "KDA/FLA 청크",
+    }
+    for n, want in must.items():
+        check(group(n) == want, f"{n!r} -> {want} (got {group(n)!r})")
+    keep = {
+        "kernel_cutlass_kernel_flashinferfused_moecute_dsl": "MoE b12x",
+        "cutlass_80_wmma_tensorop_bf16": "cutlass/cublas GEMM",
+        "void at::native::elementwise_kernel": "elementwise 글루",
+        "layer_norm_gated_fwd_kernel": "정규화/양자화",
+        "mhc_fused_tilelang_kernel": "mhc (MHC 압축)",
+        "_deneb_gate_partial_kernel": "우리 · MoE 게이트",
+        "k_oneshot": "우리 · osar AR",
+    }
+    for n, want in keep.items():
+        check(group(n) == want, f"{n!r} must stay {want!r} (got {group(n)!r})")
+
+    print("  census KDA group ............... OK")
+
 
 if __name__ == "__main__":
     test_skip_topk()
@@ -2944,6 +2977,7 @@ if __name__ == "__main__":
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_bigfuse_knob()
+    test_census_kda_group()
     test_glm53_sm121_mla_prefill_gate()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
