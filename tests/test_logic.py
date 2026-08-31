@@ -3268,6 +3268,46 @@ def test_census_kda_group() -> None:
     print("  census KDA group ............... OK")
 
 
+
+
+def test_dflash_warmup_buckets() -> None:
+    """The DFlash input-prep warmup sweeps every BLOCK_SIZE bucket, or none.
+
+    BLOCK_SIZE = min(256, next_pow2(max_query_len + num_query_per_req)); the
+    warmup query lengths must land one per power-of-two bucket so no runtime
+    shape can hit a first-use JIT compile. VLLM_DFLASH_PREP_WARMUP=0
+    disarms.
+    """
+    ns = load_defs(
+        "overlay/spec_decode_rejection_warmup.py",
+        {"_DENEB_WARMUP_ENV", "_deneb_warmup_query_lens"},
+        {"os": os},
+    )
+    fn = ns["_deneb_warmup_query_lens"]
+    saved = os.environ.pop("VLLM_DFLASH_PREP_WARMUP", None)
+    try:
+        check(fn(8, 8192) == [8, 24, 56, 120, 248],
+              "GLM nq=8 buckets: 16/32/64/128/256")
+        check(fn(1, 8192) == [7, 15, 31, 63, 127, 255],
+              "nq=1 reaches the 8 bucket too")
+        check(fn(8, 100) == [8, 24, 56],
+              "query lengths cap at max_num_tokens")
+        check(fn(8, 4) == [], "max_num_tokens below first bucket -> none")
+        os.environ["VLLM_DFLASH_PREP_WARMUP"] = "0"
+        ns = load_defs("overlay/spec_decode_rejection_warmup.py",
+                       {"_DENEB_WARMUP_ENV", "_deneb_warmup_query_lens"},
+                       {"os": os})
+        check(ns["_deneb_warmup_query_lens"](8, 8192) == [],
+              "env 0 disarms the warmup")
+    finally:
+        if saved is None:
+            os.environ.pop("VLLM_DFLASH_PREP_WARMUP", None)
+        else:
+            os.environ["VLLM_DFLASH_PREP_WARMUP"] = saved
+
+    print("  dflash warmup buckets .......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -3303,6 +3343,7 @@ if __name__ == "__main__":
     test_mhc_smallm_split_ownership()
     test_mhc_bigfuse_knob()
     test_census_kda_group()
+    test_dflash_warmup_buckets()
     test_glm53_sm121_mla_prefill_gate()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
