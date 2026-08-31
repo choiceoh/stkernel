@@ -59,19 +59,31 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
 # stays inside GRAPH_CAP=256 (ceiling ~C=42); per-stream latency at C=32 is
 # ~12 tok/s — an admission cap, so low-concurrency behavior is unchanged.
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
-# Chunked-prefill budget. 4096 here, never measured against anything else.
-# The adjacent GLM-5.3 lane on this same fleet swept it (#117, 2026-08-31,
-# 75K fresh prompt, three runs each): 2048 = 1,593 tok/s / 4096 = 1,828 /
-# 8192 = 2,110 (+15.4% over 4096), and the run-to-run spread collapsed from
-# 12.0% to 0.9% as the chunk-boundary warmup went away. Decode was flat.
-# That is a different model on a different image, so it is a REASON TO
-# MEASURE, not a number to adopt: the dsv4 "prefill has no room" verdict
-# (MEASUREMENTS: busy 99.8%) was taken at pp2048 = a SINGLE chunk at this
-# budget, so it says nothing about the multi-chunk long-prompt regime the
-# GLM sweep moved. Activation memory scales with this value and GPU_MEM is
-# preflight-chosen, so raising it needs the boot bracket recorded in
-# MEASUREMENTS.md ("GLM-5.3 레인 PR 역수입 심사"), not an edit here.
-MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"
+# Chunked-prefill budget. Raised 4096 -> 8192 on 2026-09-01 by operator
+# direction, on three converging grounds and NO dsv4 measurement:
+#
+#  1. The adjacent GLM-5.3 lane swept it on this same 4x GB10 fleet (#117,
+#     75K fresh prompt, three runs each): 2048 = 1,593 tok/s / 4096 = 1,828 /
+#     8192 = 2,110 (+15.4% over 4096), run-to-run spread 12.0% -> 0.9% as the
+#     chunk-boundary warmup went away. Decode flat.
+#  2. An unrelated team on the same hardware class independently landed on
+#     8192 (Saren-Arterius/qwen3.8-Flash-DGX-AutoRound).
+#  3. Roofline: a MoE GEMM sees rows-per-EXPERT, not chunk tokens. At 256
+#     experts / top_k 6 the chunk sets 96 rows/expert at 4096 and 192 at
+#     8192, against a bf16 crossover of 76 -- so the bigger chunk also pushes
+#     the MoE further into the regime where the fp4 tensor cores are actually
+#     reachable. A second mechanism, independent of (1)'s chunk boundaries.
+#
+# The dsv4 "prefill has no room" verdict (MEASUREMENTS: busy 99.8%) does not
+# contradict this: it was taken at pp2048 = a SINGLE chunk at the old budget,
+# so it never observed the multi-chunk regime these grounds are about.
+#
+# WHAT IS NOT ESTABLISHED: any of it on dsv4. Activation memory scales with
+# this value and it is spent inside the preflight-chosen GPU_MEM, so the cost
+# lands on the KV pool -- watch "GPU KV cache size" in the boot log against
+# the previous boot, and remember this stack serves 430K context. Revert with
+# MAX_NUM_BATCHED=4096 (env-only, no redeploy). Bracket in MEASUREMENTS.md.
+MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-8192}"
 GRAPH_CAP=256
 # Both cudagraph wrappers assert that a replay sees the same input tensor
 # addresses it was captured with, and both gate that assert on

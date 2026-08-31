@@ -3375,12 +3375,18 @@ def test_dsv4_launcher_axes() -> None:
               f"{key} is not preserved across the profile source, so a "
               "caller's A/B value would be silently replaced")
 
-    # 5. the prefill budget default is documented and NOT moved.
-    check(re.search(r'^MAX_NUM_BATCHED="\$\{MAX_NUM_BATCHED:-4096\}"$', src, re.M),
-          "MAX_NUM_BATCHED default moved without a bracket in MEASUREMENTS.md")
-    budget = src[:src.index('MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"')]
-    check("#117" in budget[-1400:],
-          "the chunked-prefill budget carries no evidence for why it is open")
+    # 5. the prefill budget: 8192 adopted 2026-09-01 without a dsv4 bracket,
+    # so the grounds have to travel with it and the gap has to stay named.
+    check(re.search(r'^MAX_NUM_BATCHED="\$\{MAX_NUM_BATCHED:-8192\}"$', src, re.M),
+          "MAX_NUM_BATCHED default moved again -- adopting or reverting this "
+          "is a ledger entry, not a silent edit")
+    budget = src[:src.index('MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-8192}"')][-2400:]
+    for token in ("#117", "rows-per-EXPERT", "NOT ESTABLISHED",
+                  "GPU KV cache size"):
+        check(token in budget,
+              f"the chunked-prefill rationale lost {token!r} -- this value was "
+              "never measured on dsv4, and the comment is the only place that "
+              "says so, along with what it costs and how to revert")
     print("  dsv4 launcher axes ............. OK")
 
 
