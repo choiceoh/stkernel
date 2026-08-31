@@ -60,6 +60,36 @@ def _deneb_smallm_pair(num_tokens: int, hidden_size: int, hc_mult: int):
     return tile_n, n_splits
 
 
+# deneb fork: prefill big_fuse h_blk override. dsv4 R3 precedent: h_blk=4096
+# (single pipelined block) won +5.6% on this kernel family at M=4096 (with
+# n_thr 96/160; GLM's stock 96 is in the winning set) while M<=64 is
+# stock-optimal -- so the override only applies past 64 tokens. Frozen at
+# import (capture-safe); the validator re-checks divisibility per call.
+# VLLM_GLM53_MHC_BIGFUSE="h_blk" e.g. "4096". Unset/invalid = stock.
+_BIGFUSE_ENV = "VLLM_GLM53_MHC_BIGFUSE"
+
+
+def _deneb_parse_bigfuse(raw: str):
+    try:
+        v = int(raw.strip())
+    except Exception:
+        return None
+    return v if v in (1024, 2048, 4096) else None
+
+
+_raw_bigfuse = (os.environ.get(_BIGFUSE_ENV) or "").strip()
+_DENEB_BIGFUSE = _deneb_parse_bigfuse(_raw_bigfuse) if _raw_bigfuse else None
+
+
+def _deneb_bigfuse_hblk(num_tokens: int, hidden_size: int):
+    """h_blk for the prefill big_fuse kernels, or None to run stock."""
+    if _DENEB_BIGFUSE is None or num_tokens <= 64:
+        return None
+    if hidden_size % _DENEB_BIGFUSE:
+        return None
+    return _DENEB_BIGFUSE
+
+
 # deneb fork: one-launch decode path. VLLM_GLM53_MHC_ONEPASS=1 routes the
 # small-M branch of mhc_fused_post_pre through mhc_onepass_tilelang (in our
 # tilelang_kernels.py takeover) -- the FMA kernel and the big-fuse
@@ -286,6 +316,8 @@ def mhc_pre_tilelang(
             hc_mult,
         )
 
+    _bf = _deneb_bigfuse_hblk(num_tokens, hidden_size)
+    _bf_kw = {"h_blk": _bf} if _bf else {}
     if norm_weight is None:
         mhc_pre_big_fuse_tilelang(
             gemm_out_mul,
@@ -304,6 +336,7 @@ def mhc_pre_tilelang(
             sinkhorn_repeat,
             n_splits,
             hc_mult,
+            **_bf_kw,
         )
     else:
         mhc_pre_big_fuse_with_norm_tilelang(
@@ -325,6 +358,7 @@ def mhc_pre_tilelang(
             norm_eps,
             n_splits,
             hc_mult,
+            **_bf_kw,
         )
 
     return (
@@ -750,6 +784,8 @@ def mhc_fused_post_pre_tilelang(
                 hc_mult,
             )
 
+    _bf = _deneb_bigfuse_hblk(num_tokens, hidden_size)
+    _bf_kw = {"h_blk": _bf} if _bf else {}
     if norm_weight is None:
         mhc_pre_big_fuse_tilelang(
             gemm_out_mul,
@@ -768,6 +804,7 @@ def mhc_fused_post_pre_tilelang(
             sinkhorn_repeat,
             n_splits,
             hc_mult,
+            **_bf_kw,
         )
     else:
         mhc_pre_big_fuse_with_norm_tilelang(
@@ -789,6 +826,7 @@ def mhc_fused_post_pre_tilelang(
             norm_eps,
             n_splits,
             hc_mult,
+            **_bf_kw,
         )
 
     return (

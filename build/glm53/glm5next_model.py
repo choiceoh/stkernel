@@ -26,6 +26,7 @@ from vllm.model_executor.layers.fused_moe import (
 # deneb fork: fused small-M gate for sm_121 (overlay/modules/moe_gate_sm121).
 from vllm.model_executor.layers.fp8_lm_head import (
     Fp8HeadLogitsProcessor,
+    decodable_vocab_size,
 )
 from vllm.model_executor.layers.fused_moe.router.moe_gate_sm121 import (
     DenebGateLinear,
@@ -103,60 +104,6 @@ from .multimodal import (
 )
 
 logger = init_logger(__name__)
-
-
-
-_ORPHAN_VOCAB_CACHE: int | None = None
-
-
-def _decodable_vocab_size(model_path: str) -> int | None:
-    """How many of the LM head's rows the tokenizer can actually turn back into text.
-
-    ``config.vocab_size`` sets the head's width (154880 for GLM-5.3) and also
-    vLLM's ``org_vocab_size``, so the ``logits[..., :org_vocab_size]`` slice in
-    LogitsProcessor is a no-op here. The tokenizer knows fewer ids (154856).
-    The rows in between are untrained -- a uniform L2 of 0.4795 each, against a
-    real-token median of 1.223 and a real minimum of 0.4776, so they are the
-    size of the weakest real rows rather than negligible -- and nothing masks
-    them. When argmax lands there the detokenizer has no token to emit: the
-    surrounding text stays correct and a character goes missing where one
-    belonged. On Korean that shows up as U+FFFD because a syllable is three
-    bytes across several tokens; in English the same event just reads as a
-    typo, which is why it looked language-specific.
-
-    The bound is read from the tokenizer, never hardcoded -- a literal goes
-    quietly wrong the day the model changes. ``tokenizers`` (Rust) is used
-    instead of ``AutoTokenizer`` because this runs in every worker and the
-    tokenizer file is 20 MB; the object is released as soon as the count is
-    out.
-    """
-    global _ORPHAN_VOCAB_CACHE
-    if _ORPHAN_VOCAB_CACHE is not None:
-        return _ORPHAN_VOCAB_CACHE or None
-
-    override = os.environ.get("VLLM_GLM53_DECODABLE_VOCAB", "").strip()
-    if override:
-        _ORPHAN_VOCAB_CACHE = int(override)
-        return _ORPHAN_VOCAB_CACHE
-
-    try:
-        from tokenizers import Tokenizer
-
-        tk = Tokenizer.from_file(os.path.join(model_path, "tokenizer.json"))
-        n = int(tk.get_vocab_size(with_added_tokens=True))
-        del tk
-    except Exception as e:  # a missing/odd tokenizer must not stop a boot
-        logger.warning(
-            "[vocab-mask] could not read the tokenizer at %s (%r) -- "
-            "orphan LM head rows stay reachable",
-            model_path,
-            e,
-        )
-        _ORPHAN_VOCAB_CACHE = 0
-        return None
-
-    _ORPHAN_VOCAB_CACHE = n
-    return n
 
 class Glm5NextMLP(nn.Module):
     def __init__(
@@ -1023,7 +970,7 @@ class Glm5NextForCausalLM(
         )
         # LM head rows the tokenizer cannot decode are live argmax candidates
         # (see _decodable_vocab_size). Mask them in compute_logits.
-        self._decodable_vocab = _decodable_vocab_size(
+        self._decodable_vocab = decodable_vocab_size(
             vllm_config.model_config.tokenizer
         )
         self._orphan_hits: torch.Tensor | None = None

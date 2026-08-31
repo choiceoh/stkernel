@@ -150,6 +150,56 @@ def onepass_check():
           "end-to-end (C=1 step/s + quality 9/9 + Korean 0/16).")
 
 
+def prefill_check():
+    """h_blk sweep for the prefill big_fuse (dsv4 R3 precedent: h_blk=4096
+    single pipelined block won +5.6% at M=4096 on this kernel family;
+    GLM candidate value feeds VLLM_GLM53_MHC_BIGFUSE)."""
+    from vllm.model_executor.kernels.mhc.tilelang_kernels import (
+        compute_num_split,
+        mhc_pre_big_fuse_with_norm_tilelang,
+    )
+    from vllm.utils.math_utils import cdiv
+
+    print("prefill big_fuse_with_norm h_blk sweep "
+          "(n_splits from the stock compute_num_split):")
+    for m in (512, 2048, 8192):
+        ns_split = compute_num_split(64, HC * HIDDEN, cdiv(m, 64))
+        g = torch.Generator(device="cuda").manual_seed(0)
+        gemm_mul = torch.randn(ns_split, m, N_OUT, generator=g,
+                               device="cuda", dtype=torch.float32) * 0.1
+        gemm_sqr = torch.rand(ns_split, m, generator=g,
+                              device="cuda", dtype=torch.float32) + 16.0
+        residual = torch.randn(m, HC, HIDDEN, generator=g,
+                               device="cuda", dtype=torch.bfloat16)
+        norm_w = torch.ones(HIDDEN, device="cuda", dtype=torch.bfloat16)
+        scale = torch.tensor([1.0, 1.0, 1.0], device="cuda",
+                             dtype=torch.float32)
+        base = torch.zeros(N_OUT, device="cuda", dtype=torch.float32)
+        ref = None
+        for h_blk in (1024, 2048, 4096):
+            post = torch.empty(m, HC, device="cuda", dtype=torch.float32)
+            comb = torch.empty(m, HC * HC, device="cuda", dtype=torch.float32)
+            layer = torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+            def call():
+                mhc_pre_big_fuse_with_norm_tilelang(
+                    gemm_mul, gemm_sqr, scale, base, residual,
+                    post, comb, layer, norm_w,
+                    HIDDEN, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
+                    NORM_EPS, ns_split, HC, -1, h_blk,
+                )
+            call()
+            torch.cuda.synchronize()
+            err = rel_err(layer, ref[2]) if ref is not None else 0.0
+            us = bench_us(call)
+            print(f"M={m:<5d} h_blk={h_blk:<5d} {us:9.1f}us"
+                  f"{'' if ref is None else f'  rel_err(layer)={err:.2e}'}",
+                  flush=True)
+            if ref is None:
+                ref = (post, comb, layer)
+            del post, comb, layer
+        del gemm_mul, gemm_sqr, residual, ref
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true",
@@ -159,9 +209,15 @@ def main():
     ap.add_argument("--onepass", action="store_true",
                     help="verify the fused single-launch path against the "
                          "stock pair, then time both (VLLM_GLM53_MHC_ONEPASS)")
+    ap.add_argument("--prefill", action="store_true",
+                    help="time the prefill big_fuse_with_norm across h_blk "
+                         "(the VLLM_GLM53_MHC_BIGFUSE candidate set)")
     args = ap.parse_args()
     if args.onepass:
         onepass_check()
+        return
+    if args.prefill:
+        prefill_check()
         return
     ms = [int(v) for v in args.ms.split(",")]
 
