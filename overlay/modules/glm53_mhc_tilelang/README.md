@@ -36,16 +36,30 @@ set only after `probes/mhc_glm53_bench.py` finds a winner on real shapes and
 a bracket boot confirms it (quality 9/9 + Korean 0/16 + C=1 step/s, the
 standard gates).
 
+## One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (default off)
+
+`tilelang_kernels.py` is also taken over now (preimage `03aeb3f7…`): the stock
+kernels are untouched, and one new kernel is appended — `mhc_onepass_tilelang`,
+the small-M pair (`mhc_fused` FMA → `big_fuse_with_norm` mixes/sinkhorn/norm)
+folded into ONE launch. Grid = one CTA per token; the single tile spans all
+`n_out=24` and `split_k=1`, so the `gemm_out_mul/sqrsum` intermediates and
+their global roundtrip disappear — −45 launches/step across the 45 layers
+(the largest single slice of the #108 §4 axis).
+
+The math is a line-by-line transcription of the two stock kernels;
+`tests/test_mhc_onepass_math` proves formula equivalence bitwise in pure
+python, and `probes/mhc_glm53_bench.py --onepass` is the GPU validation
+harness (rel ≤ 1e-4 vs the stock pair, plus timing). The gate stays CLOSED —
+no boot serves through this kernel — until that probe runs clean in an
+engine-down window and a bracket adopts it.
+
 ## Not in this takeover
 
-- The `mhc_pre_big_fuse*` kernel internals live in `tilelang_kernels.py`
-  (stock, not taken over) — only launch configs are touched here.
+- The stock `mhc_pre_big_fuse*` / `mhc_fused` / `mhc_post` kernels are
+  byte-identical to the image; only the appended onepass kernel is new.
 - The tf32 prenorm `compute_num_split` path (prefill, ≤16-token decode never
   reaches it): dsv4's P2b already rejected prenorm n_splits sweeps on this
   hardware family; not re-opened.
-- Fusing `mhc_fused` + `big_fuse_with_norm` into one kernel (−89/step ≈ 1.5%
-  ceiling) means editing TileLang kernel source — a different, larger job,
-  only worth visiting if the launch-config sweep comes back flat.
 
 ## Recovering the preimage
 
