@@ -123,6 +123,48 @@ def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
     return f"micro bound {prior} -> 0 (EP uses plain static)"
 
 
+
+def b12x_ep_fixed_pair_plan(local_flags, num_pairs):
+    """Fixed-shape (index, keep) plan that drops the dummy expert entirely.
+
+    Pure index arithmetic over a boolean mask, expressed so the caller can run
+    it with tensors: no ``nonzero``, no data-dependent shape, no host sync --
+    which is what kept the compact path out of CUDA graphs.
+
+    The plan is ``num_pairs`` long, so it never drops a real local pair: the
+    first ``n_local`` slots are the local pairs in order, and every slot after
+    them REPEATS one of those same pairs, cycling, at router weight 0.
+
+    Why repeats and not a dummy expert. b12x quantizes the FC2 input per
+    expert batch, which is why remote slots may not be dumped onto a real
+    expert -- a foreign token would move that expert's amax. A duplicate of a
+    row already in the batch cannot: the max of a set is unchanged by
+    repeating one of its members. So the padding is free of that hazard while
+    the dummy expert -- and the 12 MiB/layer of zero weights the kernel reads
+    for it every step -- disappears.
+
+    Cycling rather than repeating slot 0 also keeps the padding spread over
+    the experts already present, instead of piling every spare row onto one.
+
+    Returns (src_index, keep) as plain lists for the pure-python path.
+    """
+    flags = [bool(f) for f in local_flags][:num_pairs]
+    local_positions = [i for i, f in enumerate(flags) if f]
+    n_local = len(local_positions)
+    if n_local == 0:
+        # Nothing routes here this step: keep the shape, zero every weight.
+        return [0] * num_pairs, [False] * num_pairs
+    src, keep = [], []
+    for slot in range(num_pairs):
+        if slot < n_local:
+            src.append(local_positions[slot])
+            keep.append(True)
+        else:
+            src.append(local_positions[slot % n_local])
+            keep.append(False)
+    return src, keep
+
+
 def remap_b12x_ep_routing(
     topk_ids,
     topk_weights,
@@ -804,6 +846,98 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             tmp_b=self._ep_tmp_b[:tokens],
         )
 
+    def _apply_ep_fixed(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights
+    ):
+        """Decode path with no dummy expert. Fixed shape, capture-safe.
+
+        Keeps every routed slot -- length stays tokens*top_k -- but rewrites
+        the remote ones into REPEATS of this rank's own local pairs at weight
+        0, cycling so the spares spread over the experts already present.
+
+        What that buys: the kernel never sees expert `num_local_experts`, so
+        it never reads that expert's plane of zero weights. On this model that
+        is 12 MiB per layer per step (2*2048*4096 + 4096*2048 at NVFP4), about
+        2 ms/step of pure waste, and it is a WEIGHT read -- paid once per layer
+        no matter how few rows land on it.
+
+        Safe by construction: no real local pair is dropped (the plan is as
+        long as the input), and a duplicate cannot move an expert's FC2 amax
+        because the max of a set is unchanged by repeating a member. That is
+        precisely the hazard that forbids dumping remote slots onto a real
+        expert.
+
+        No nonzero, no host sync -- every step is index arithmetic on shapes
+        that are fixed once tokens is fixed.
+        """
+        dummy = self.num_local_experts
+        tokens, topk = topk_ids.size(0), topk_ids.size(1)
+        device = topk_ids.device
+        flat_ids = topk_ids.reshape(-1)
+        flat_w = topk_weights.reshape(-1)
+        pairs = flat_ids.numel()
+
+        is_local = flat_ids != dummy
+        # Local pairs first, original order kept; remote ones fall to the tail.
+        order = torch.argsort(is_local.to(torch.int8), descending=True, stable=True)
+        n_local = is_local.sum()
+        pos = torch.arange(pairs, device=device)
+        keep = pos < n_local
+        src = torch.where(pos < n_local, pos, pos % torch.clamp(n_local, min=1))
+        idx = order.index_select(0, src)
+
+        pair_ids = flat_ids.index_select(0, idx)
+        # n_local == 0 leaves the tail pointing at a remote slot; send those to
+        # expert 0 instead. Every one of them carries weight 0.
+        pair_ids = torch.where(
+            pair_ids == dummy, torch.zeros_like(pair_ids), pair_ids
+        )
+        pair_scales = torch.where(
+            keep, flat_w.index_select(0, idx), torch.zeros_like(flat_w)
+        )
+        token_index = (
+            torch.arange(tokens, device=device, dtype=torch.int64)
+            .unsqueeze(1)
+            .expand(tokens, topk)
+            .reshape(-1)
+            .index_select(0, idx)
+        )
+
+        pair_x = hidden_states.index_select(0, token_index)
+        pair_out = torch.empty(
+            (pairs, hidden_states.size(1)),
+            dtype=output.dtype,
+            device=output.device,
+        )
+        from flashinfer.fused_moe import b12x_fused_moe
+
+        limit = max(int(self.max_num_tokens or 0), 1)
+        for lo in range(0, pairs, limit):
+            hi = min(lo + limit, pairs)
+            b12x_fused_moe(
+                x=pair_x[lo:hi],
+                w1_weight=w1,
+                w1_weight_sf=self.w1_sf_mma,
+                w2_weight=w2,
+                w2_weight_sf=self.w2_sf_mma,
+                token_selected_experts=pair_ids[lo:hi].view(-1, 1).to(torch.int32),
+                token_final_scales=pair_scales[lo:hi].view(-1, 1),
+                num_experts=self._kernel_num_experts,
+                top_k=1,
+                num_local_experts=self._kernel_num_experts,
+                w1_alpha=self.g1_alphas,
+                w2_alpha=self.g2_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                output=pair_out[lo:hi],
+                activation=self._activation_str,
+                swiglu_alpha=self._swiglu_alpha,
+                swiglu_beta=self._swiglu_beta,
+                swiglu_limit=self._swiglu_limit,
+            )
+        output.zero_()
+        output.index_add_(0, token_index, pair_out)
+        return output
+
     def _apply_ep_compact(
         self,
         output: torch.Tensor,
@@ -1027,7 +1161,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_ids.size(0) * topk_ids.size(1),
                 enabled=b12x_ep_compact_enabled(),
             ):
+                # Big/eager batches: dropping the remote slots outright is the
+                # cheaper shape, and prefill is not captured.
                 return self._apply_ep_compact(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights
+                )
+            if os.environ.get("VLLM_B12X_EP_NO_DUMMY", "1").strip().lower() in (
+                "1", "true", "yes", "on"
+            ):
+                # Decode: keep the shape fixed for capture, but pay no dummy.
+                return self._apply_ep_fixed(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )
 
