@@ -4,6 +4,7 @@ tg128 workload to get BOTH tok/s and accepted-tokens-per-step for the same
 run — so acceptance gain and latency cost are read on identical work.
 Run once with REFINE=0 (baseline), once with REFINE=1, diff the JSON."""
 import json
+import os
 import re
 import sys
 import time
@@ -11,7 +12,7 @@ import urllib.request
 
 BASE = "http://127.0.0.1:8000"
 URL = BASE + "/v1/chat/completions"
-MODEL = "deepseek-v4-flash"
+MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 
 
 def metrics():

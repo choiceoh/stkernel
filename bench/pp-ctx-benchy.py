@@ -1,6 +1,7 @@
 # llama-benchy pp2048 (prefill tok/s) + ctx_tg@dN (long-context decode)
+import os
 import json, sys, time, urllib.request, random
-URL="http://127.0.0.1:8000/v1/chat/completions"; MODEL="deepseek-v4-flash"
+URL="http://127.0.0.1:8000/v1/chat/completions"; MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
 W="reactor harbor lattice quarry ember meridian syntax granite voltage cirrus tundra beacon ledger prism cobalt willow cascade anvil nocturne vellum".split()
 def prompt(ntok,seed):
     rng=random.Random(seed); return " ".join(rng.choice(W) for _ in range(int(ntok/1.3)))
