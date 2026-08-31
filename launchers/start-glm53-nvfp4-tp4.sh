@@ -36,7 +36,7 @@ if [ -f "$PROFILE_ENV" ]; then
   for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-            $_vllm_keys; do
+            EXTRA_ENV $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -286,11 +286,26 @@ for _k in ${_vllm_keys:-}; do
   if [ -n "${!_k:-}" ]; then ENVV="$ENVV -e $_k=${!_k}"; fi
 done
 
+# Diagnostic env passthrough. EXTRA_ENV="A=1 B=2" becomes -e A=1 -e B=2.
+# For one-shot debugging only -- CUDA_LAUNCH_BLOCKING=1 pins an async kernel
+# failure to its real launch site instead of surfacing at the next sync
+# (this lane has now lost two boots to that signature). Production knobs
+# belong in the profile, not here.
+EXTRA_ENV_FLAGS=""
+for _kv in ${EXTRA_ENV:-}; do
+  case "$_kv" in
+    [A-Za-z_]*=*) EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
+    *) echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"; exit 1 ;;
+  esac
+done
+[ -n "$EXTRA_ENV_FLAGS" ] && echo "extra env:$EXTRA_ENV_FLAGS"
+
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
 --memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --cap-add IPC_LOCK \
 --device /dev/infiniband:/dev/infiniband \
 -v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs \
 -v /home/choiceoh/vllm-prof:/prof"
+COMMON="$COMMON $EXTRA_ENV_FLAGS"
 for _i in ${OVFILES[@]+"${!OVFILES[@]}"}; do
   COMMON="$COMMON -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
 done
