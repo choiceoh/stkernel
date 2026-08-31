@@ -124,7 +124,27 @@ def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
 
 
 
-def b12x_ep_fixed_pair_plan(local_flags, num_pairs):
+# The functional b12x dispatcher keys micro/static on x.shape[0], not on
+# routed rows. EP's fixed path turns each routed slot into a top_k=1 row, so
+# C=2/4 becomes 16/32 rows and would enter the hanging static kernel. Eight
+# is the pinned FlashInfer build's _MICRO_MAX_TOKENS boundary.
+B12X_EP_FIXED_MICRO_MAX_PAIRS = 8
+
+
+def b12x_ep_fixed_slice_limit(
+    max_num_tokens, micro_max_pairs=B12X_EP_FIXED_MICRO_MAX_PAIRS
+):
+    """Rows per fixed EP call, capped so the dispatcher stays on micro."""
+    workspace_limit = max(int(max_num_tokens or 0), 1)
+    micro_limit = max(int(micro_max_pairs or 0), 1)
+    return min(workspace_limit, micro_limit)
+
+
+def b12x_ep_fixed_pair_plan(
+    local_flags,
+    num_pairs,
+    slice_size=B12X_EP_FIXED_MICRO_MAX_PAIRS,
+):
     """Fixed-shape (index, keep) plan that drops the dummy expert entirely.
 
     Pure index arithmetic over a boolean mask, expressed so the caller can run
@@ -143,14 +163,19 @@ def b12x_ep_fixed_pair_plan(local_flags, num_pairs):
     the dummy expert -- and the 12 MiB/layer of zero weights the kernel reads
     for it every step -- disappears.
 
-    Cycling rather than repeating slot 0 also keeps the padding spread over
-    the experts already present, instead of piling every spare row onto one.
+    The runtime submits this plan in ``slice_size``-row micro calls. If a
+    slice mixes real pairs with padding, its padding repeats only the real
+    pairs in that SAME slice. b12x derives the FC2 amax per expert per call;
+    borrowing a row from a different call would no longer be a duplicate and
+    could move the scale of a real row. Slices containing padding only may
+    cycle over the whole local set because they have no real output to perturb.
 
     Returns (src_index, keep) as plain lists for the pure-python path.
     """
     flags = [bool(f) for f in local_flags][:num_pairs]
     local_positions = [i for i, f in enumerate(flags) if f]
     n_local = len(local_positions)
+    slice_size = max(int(slice_size), 1)
     if n_local == 0:
         # Nothing routes here this step: keep the shape, zero every weight.
         return [0] * num_pairs, [False] * num_pairs
@@ -160,7 +185,17 @@ def b12x_ep_fixed_pair_plan(local_flags, num_pairs):
             src.append(local_positions[slot])
             keep.append(True)
         else:
-            src.append(local_positions[slot % n_local])
+            slice_start = (slot // slice_size) * slice_size
+            local_in_slice = max(
+                0, min(n_local - slice_start, slice_size)
+            )
+            if local_in_slice:
+                src_pos = slice_start + (
+                    (slot - slice_start) % local_in_slice
+                )
+            else:
+                src_pos = slot % n_local
+            src.append(local_positions[src_pos])
             keep.append(False)
     return src, keep
 
@@ -213,8 +248,8 @@ def remap_b12x_ep_routing(
 
 
 # b12x static→dynamic cutover is routed_rows = tokens * top_k against 640.
-# Decode graphs at GRAPH_CAP=32 * top_k=8 = 256 stay on the dummy remap
-# (fixed shape, alloc-free). Prefill crosses 640 and drops dummy slots.
+# Decode graphs at GRAPH_CAP=32 * top_k=8 = 256 stay fixed-shape and replace
+# dummy slots with zero-weight repeats. Prefill crosses 640 and drops them.
 B12X_EP_COMPACT_MIN_ROUTED = 640
 
 # The measured fingerprint is worth one device sync per process, not one per
@@ -505,10 +540,11 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     and indexes weights by the ids it is given (flashinfer #3383). When EP
     is on we construct the wrapper as a local-only MoE (``E = local + 1``),
     remap global top-k ids onto that space, and park remote slots on a
-    dummy expert at scale 0. Decode/graph batches stay on that dummy
-    remap (alloc-free scratch). Prefill (routed pairs > 640) drops dummy
-    slots and runs top_k=1 pairs so remote GEMM is not paid. vLLM's EP
-    all-reduce (DP=1) combines ranks.
+    dummy expert at scale 0. Decode/graph batches replace remote slots with
+    zero-weight repeats and submit at most eight top_k=1 pairs per call, so
+    the dispatcher stays on its proven micro kernel instead of static.
+    Prefill (routed pairs > 640) drops dummy slots and runs top_k=1 pairs so
+    remote GEMM is not paid. vLLM's EP all-reduce (DP=1) combines ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -867,8 +903,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         precisely the hazard that forbids dumping remote slots onto a real
         expert.
 
+        Calls are capped at eight pair rows. The functional b12x dispatcher
+        uses x.shape[0] as its micro/static boundary, so flattened C=2/4
+        decode (16/32 rows) otherwise enters the hanging static kernel while
+        C=1 (8 rows) works. The number and shapes of calls are fixed by the
+        captured graph shape.
+
         No nonzero, no host sync -- every step is index arithmetic on shapes
-        that are fixed once tokens is fixed.
+        that are fixed once tokens is fixed. Padding in a mixed call repeats
+        only real pairs from that same call, keeping its per-expert FC2 amax
+        unchanged.
         """
         dummy = self.num_local_experts
         tokens, topk = topk_ids.size(0), topk_ids.size(1)
@@ -876,6 +920,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         flat_ids = topk_ids.reshape(-1)
         flat_w = topk_weights.reshape(-1)
         pairs = flat_ids.numel()
+        limit = b12x_ep_fixed_slice_limit(self.max_num_tokens)
 
         is_local = flat_ids != dummy
         # Local pairs first, original order kept; remote ones fall to the tail.
@@ -883,7 +928,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         n_local = is_local.sum()
         pos = torch.arange(pairs, device=device)
         keep = pos < n_local
-        src = torch.where(pos < n_local, pos, pos % torch.clamp(n_local, min=1))
+        slice_start = (pos // limit) * limit
+        local_in_slice = torch.clamp(
+            n_local - slice_start, min=0, max=limit
+        )
+        slice_src = slice_start + (
+            (pos - slice_start) % torch.clamp(local_in_slice, min=1)
+        )
+        global_src = pos % torch.clamp(n_local, min=1)
+        padding_src = torch.where(local_in_slice > 0, slice_src, global_src)
+        src = torch.where(keep, pos, padding_src)
         idx = order.index_select(0, src)
 
         pair_ids = flat_ids.index_select(0, idx)
@@ -911,7 +965,11 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
         from flashinfer.fused_moe import b12x_fused_moe
 
-        limit = max(int(self.max_num_tokens or 0), 1)
+        logger.info_once(
+            "b12x EP fixed decode: %d pairs -> %d micro-sized calls "
+            "(at most %d pairs each; micro-eligible by shape)",
+            pairs, (pairs + limit - 1) // limit, limit,
+        )
         for lo in range(0, pairs, limit):
             hi = min(lo + limit, pairs)
             b12x_fused_moe(

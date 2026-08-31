@@ -35,11 +35,16 @@ the wrapper as a local-only MoE (`E = num_local + 1`), remaps global top-k ids
 onto that space, and parks every remote slot on a dummy expert at scale 0 so
 dynamic FC2 quant cannot bleed into a real expert. The remap writes into
 preallocated scratch (`out=` / in-place) so decode CUDA graphs stay
-alloc-free. Prefill (`tokens * top_k > 640`) drops dummy slots and runs
-`top_k=1` pairs instead of paying GEMM for ~3/4 remote routes. vLLM's EP
-all-reduce (DP=1) combines the partial hidden states.
+alloc-free. Decode replaces remote slots with zero-weight repeats of local
+pairs and submits at most 8 `top_k=1` rows per call. That keeps C=1/2/4 on
+FlashInfer's micro backend; flattening 16/32 rows into one call selects the
+static backend that hangs on this EP geometry. A mixed call only repeats rows
+already present in that same call so per-call FC2 amax is unchanged. Prefill
+(`tokens * top_k > 640`) drops dummy slots instead of paying GEMM for ~3/4
+remote routes. vLLM's EP all-reduce (DP=1) combines the partial hidden states.
 
 `ENABLE_EP=1` on the glm53 launcher. Off by default — the TP-sharded path is
 the measured one. EPLB is refused (`_supports_parallel_config`).
-`VLLM_B12X_EP_COMPACT=0` keeps the dummy remap on every batch. PIECEWISE
-graphs force that off so prefill capture keeps a fixed shape.
+`VLLM_B12X_EP_COMPACT=0` keeps every batch fixed-shape; with
+`VLLM_B12X_EP_NO_DUMMY=1` (default), remote slots become slice-local repeats.
+PIECEWISE graphs force compaction off so prefill capture keeps a fixed shape.
