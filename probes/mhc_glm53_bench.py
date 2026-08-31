@@ -135,8 +135,12 @@ def onepass_check():
             1, 1, norm_w, NORM_EPS,
         )
         torch.cuda.synchronize()
-        errs = [rel_err(o, r) for o, r in zip(
-            out, (ref[2], ref[3], ref[4], ref[5]))]
+        errs = [
+            rel_err(out[0], ref[2]),                        # residual (m, HC, H)
+            rel_err(out[1].reshape(m, HC), ref[3]),         # post (m, HC, 1) -> (m, HC)
+            rel_err(out[2].reshape(m, HC * HC), ref[4]),    # comb (m, HC, HC) -> (m, HC*HC)
+            rel_err(out[3], ref[5]),                        # layer_input (m, H)
+        ]
         t_stock = bench_us(lambda: run_pair(tensors, *STOCK_LT8))
         t_one = bench_us(lambda: torch.ops.vllm.mhc_fused_post_pre_tilelang(
             x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
