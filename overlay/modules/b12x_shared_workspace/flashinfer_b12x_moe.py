@@ -469,6 +469,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_tmp_a: torch.Tensor | None = None
         self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
+        self._ep_capacity_probed = False
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -857,6 +858,61 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             )
         )
 
+    def _ep_capacity_probe(self, wrapper, topk_ids) -> None:
+        """Name the bound the b12x static kernel would overrun. Runs once.
+
+        The static kernel compacts the distinct experts of a batch into
+        arrival-order slots and writes ``token_map[slot, row]`` where ``row``
+        is an unguarded ``atomicAdd`` on a per-expert counter. One expert
+        receiving more than ``token_map.shape[1]`` rows is an out-of-bounds
+        write, reported later as an ILLEGAL_ADDRESS in whatever kernel syncs
+        next -- we first met it two layers away inside the dense fp8 GEMM.
+
+        Under EP the dummy expert absorbs every remote slot, which on this
+        model is ~3/4 of all routing, so it is the one that can overrun.
+        One device sync, once per process.
+        """
+        if self._ep_capacity_probed:
+            return
+        self._ep_capacity_probed = True
+        try:
+            flat = topk_ids.reshape(-1).to(torch.int64)
+            counts = torch.bincount(flat, minlength=self._kernel_num_experts)
+            worst = int(counts.max())
+            worst_id = int(counts.argmax())
+            pairs = int(flat.numel())
+            caps = []
+            for name in ("_static_workspace", "_dynamic_workspace"):
+                ws = getattr(wrapper, name, None)
+                tm = getattr(ws, "token_map", None) if ws is not None else None
+                caps.append(
+                    f"{name.strip('_').split('_')[0]}={tuple(tm.shape)}"
+                    if tm is not None else f"{name.strip('_').split('_')[0]}=none"
+                )
+            logger.warning(
+                "[b12x EP capacity] pairs=%d experts=%d worst expert=%d rows=%d "
+                "(dummy=%d) token_map %s",
+                pairs, self._kernel_num_experts, worst_id, worst,
+                self.num_local_experts, " ".join(caps),
+            )
+            for name in ("_static_workspace", "_dynamic_workspace"):
+                ws = getattr(wrapper, name, None)
+                tm = getattr(ws, "token_map", None) if ws is not None else None
+                if tm is None:
+                    continue
+                if worst > int(tm.shape[1]) or self._kernel_num_experts > int(tm.shape[0]):
+                    raise RuntimeError(
+                        f"b12x EP would overrun {name}: expert {worst_id} takes "
+                        f"{worst} rows and there are {self._kernel_num_experts} "
+                        f"experts, but token_map is {tuple(tm.shape)} "
+                        f"[state_E, max_rows]"
+                    )
+        except RuntimeError:
+            raise
+        except Exception as exc:  # probe must never be the thing that breaks EP
+            logger.warning("[b12x EP capacity] probe unavailable (%s: %s)",
+                           type(exc).__name__, exc)
+
     def apply(
         self,
         output: torch.Tensor,
@@ -914,6 +970,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
+            self._ep_capacity_probe(wrapper, topk_ids)
             if b12x_ep_should_compact(
                 topk_ids.size(0) * topk_ids.size(1),
                 enabled=b12x_ep_compact_enabled(),
