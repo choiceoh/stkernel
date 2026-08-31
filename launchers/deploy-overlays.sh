@@ -6,6 +6,30 @@
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
+
+require_deployable_checkout() {
+  command -v git >/dev/null 2>&1 \
+    || { echo "ABORT: git is required to attest the deploy source"; exit 1; }
+  git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || { echo "ABORT: deploy source is not a git checkout ($REPO)"; exit 1; }
+  if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=normal)" ]; then
+    echo "ABORT: deploy checkout is dirty; commit or remove local changes first"
+    git -C "$REPO" status --short
+    exit 1
+  fi
+  git -C "$REPO" fetch --quiet origin main \
+    || { echo "ABORT: could not refresh origin/main"; exit 1; }
+  git -C "$REPO" merge-base --is-ancestor origin/main HEAD \
+    || {
+      echo "ABORT: HEAD is not based on current origin/main; refusing a stale overlay rollback"
+      echo "  HEAD        $(git -C "$REPO" rev-parse --short HEAD)"
+      echo "  origin/main $(git -C "$REPO" rev-parse --short origin/main)"
+      exit 1
+    }
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse --verify HEAD)
+}
+
+require_deployable_checkout
 # Which model this deploys. The profile names its modules; the composer renders
 # them into the flat directory + single manifest this script has always shipped.
 PROFILE=${PROFILE:-${1:-dsv4}}
@@ -15,7 +39,16 @@ BUILD="$REPO/build/$PROFILE"
 # directory. dsv4 predates the split and keeps its per-node paths.
 # shellcheck disable=SC1090
 . "$REPO/profiles/$PROFILE.env"
-MANIFEST="$BUILD/manifest.tsv"
+# Deploy a staged manifest so the live artifact records the exact source
+# revision without creating an impossible self-referential hash in the tracked
+# build manifest. Parsers already ignore comment rows.
+DEPLOY_STAGE=$(mktemp -d "${TMPDIR:-/tmp}/stkernel-deploy.XXXXXX")
+trap 'rm -rf "$DEPLOY_STAGE"' EXIT
+MANIFEST="$DEPLOY_STAGE/manifest.tsv"
+{
+  printf '# source_commit=%s\n' "$SOURCE_COMMIT"
+  cat "$BUILD/manifest.tsv"
+} > "$MANIFEST"
 MANIFEST_NAME=${MANIFEST##*/}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"

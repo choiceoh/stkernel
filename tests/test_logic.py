@@ -1653,10 +1653,51 @@ def test_fp8_acceptance_contracts() -> None:
         "tokenizer-orphan draft rows must be masked before local top-k",
     )
 
-    ns = load_defs(
-        "overlay/fp8_lm_head.py", {"_local_valid_vocab_end"}, {}
+    decodable_node = next(
+        node
+        for node in fp8_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "decodable_vocab_size"
     )
+    decodable_source = ast.get_source_segment(fp8_source, decodable_node)
+    assert decodable_source is not None
+    check(
+        "raise RuntimeError" in decodable_source
+        and "orphan LM head rows stay reachable" not in decodable_source,
+        "tokenizer read/shape failure must stop load instead of disabling the mask",
+    )
+
+    ns = load_defs(
+        "overlay/fp8_lm_head.py",
+        {
+            "_contiguous_tokenizer_vocab_size",
+            "_local_valid_vocab_end",
+            "_validate_decodable_top_k",
+        },
+        {},
+    )
+    contiguous_size = ns["_contiguous_tokenizer_vocab_size"]
     local_end = ns["_local_valid_vocab_end"]
+    validate_top_k = ns["_validate_decodable_top_k"]
+    check(
+        contiguous_size({"c": 2, "a": 0, "b": 1}) == 3,
+        "an unordered contiguous tokenizer vocabulary must retain its full prefix",
+    )
+    for bad_vocab in ({}, {"a": 1}, {"a": 0, "c": 2}):
+        try:
+            contiguous_size(bad_vocab)
+        except ValueError:
+            pass
+        else:
+            check(False, f"non-prefix tokenizer vocabulary accepted: {bad_vocab}")
+    validate_top_k(154856, 16)
+    for valid, top_k in ((8, 16), (None, 16), (154856, 0)):
+        try:
+            validate_top_k(valid, top_k)
+        except ValueError:
+            pass
+        else:
+            check(False, f"unsafe decodable/top-k pair accepted: {(valid, top_k)}")
     for valid, start, width, want in (
         (None, 0, 38720, 38720),
         (154856, 0, 38720, 38720),
@@ -1695,8 +1736,111 @@ def test_fp8_acceptance_contracts() -> None:
         "vllm_config.model_config.tokenizer)" in compact_qwen,
         "the DFlash2 candidate processor must receive the tokenizer bound",
     )
+    check(
+        'selector_top_k=int(draft_config["selector_top_k"])' in compact_qwen,
+        "the candidate processor must validate decodable rows against selector top-k",
+    )
 
     print("  fp8 acceptance contracts ....... OK")
+
+
+def test_glm53_v2_overlay_contracts() -> None:
+    """Do not advertise V1-only guards on the production V2 runner."""
+    profile_path = os.path.join(REPO, "profiles", "glm53.env")
+    profile = open(profile_path, encoding="utf-8").read()
+    modules_match = re.search(r'^MODULES="([^"]+)"', profile, re.M)
+    assert modules_match is not None
+    modules = set(modules_match.group(1).split())
+    check(
+        not {"glm53_drop_audit", "glm53_sparse_q"} & modules,
+        "glm53 must not mount V1-only acceptance overlays on V2 Model Runner",
+    )
+    check(
+        {"glm53_v2_hard_constraint_guard", "glm53_v2_sampler_guards"} <= modules,
+        "glm53 must mount its active V2 sampling guards",
+    )
+    check(
+        "VLLM_SPEC_GATHER_Q=" not in profile,
+        "glm53 must not publish an inert V1 sparse-q knob",
+    )
+    launcher = open(
+        os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"),
+        encoding="utf-8",
+    ).read()
+    check(
+        "VLLM_DENEB_DROP_AUDIT=1" not in launcher,
+        "glm53 launcher must not arm an audit on an inactive code path",
+    )
+
+    scheduler_source = open(
+        _overlay_source("overlay/scheduler.py"), encoding="utf-8"
+    ).read()
+    scheduler_tree = ast.parse(scheduler_source)
+    scheduler_cls = next(
+        node
+        for node in scheduler_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Scheduler"
+    )
+    update_drafts = next(
+        node
+        for node in scheduler_cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "update_draft_token_ids"
+    )
+    update_source = ast.get_source_segment(scheduler_source, update_drafts)
+    assert update_source is not None
+    hard_fields = (
+        "allowed_token_ids",
+        "logit_bias",
+        "bad_words",
+        "thinking_token_budget",
+        "min_tokens",
+    )
+    check(
+        all(field in update_source for field in hard_fields)
+        and "request.spec_token_ids = []" in update_source,
+        "V2 scheduler must drop drafts when target-only hard masks are active",
+    )
+    check(
+        all(field not in update_source for field in ("top_k", "top_p", "min_p")),
+        "common soft sampling controls must not disable speculation wholesale",
+    )
+
+    sampler_source = open(
+        _overlay_source("overlay/sampler.py"), encoding="utf-8"
+    ).read()
+    sampler_tree = ast.parse(sampler_source)
+    sampler_cls = next(
+        node
+        for node in sampler_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Sampler"
+    )
+    requires_processing = next(
+        node
+        for node in sampler_cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_requires_logits_processing"
+    )
+    requires_source = ast.get_source_segment(sampler_source, requires_processing)
+    assert requires_source is not None
+    check(
+        "self.thinking_budget_state.enabled" in requires_source
+        and "use_thinking_budget[idx_mapping_np]" in requires_source,
+        "thinking-budget-only requests must not skip logits processing",
+    )
+
+    deploy = open(
+        os.path.join(REPO, "launchers", "deploy-overlays.sh"),
+        encoding="utf-8",
+    ).read()
+    for guard in (
+        "status --porcelain",
+        "fetch --quiet origin main",
+        "merge-base --is-ancestor origin/main HEAD",
+        "source_commit=%s",
+    ):
+        check(guard in deploy, f"deploy provenance guard missing: {guard}")
+    print("  glm53 V2/deploy contracts ...... OK")
 
 
 def test_fp8_dense_bproj() -> None:
@@ -2200,6 +2344,7 @@ if __name__ == "__main__":
     test_ue8m0_scale_repair()
     test_ep_fixed_pair_plan()
     test_fp8_acceptance_contracts()
+    test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()
