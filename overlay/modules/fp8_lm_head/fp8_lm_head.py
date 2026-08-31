@@ -46,35 +46,29 @@ def _ue8m0_violations(scales: "torch.Tensor") -> "torch.Tensor":
     return (scales.view(torch.int32) & _SF_SIGN_AND_MANTISSA) != 0
 
 
-def _flush_pathological_scales(
-    scales: "torch.Tensor",
-) -> tuple["torch.Tensor", int, int]:
-    """Zero the scales no rounding can rescue. Returns (fixed, flushed, left).
-
-    Runs AFTER requant_weight_ue8m0_inplace, which has already matched the fp8
-    weights to these scales. Rounding a *normal* scale here would silently
-    scale that block's weights -- 1.3 -> 2.0 is a 1.54x error -- so normals are
-    reported, never touched.
-
-    Denormals, zeros, negatives, inf and NaN are different: a denormal scale
-    means the block was all but zero, so its fp8 weights are zero too and
-    flushing the scale to 0 changes nothing numerically. Their bit pattern
-    (0x00000000) is also what deepgemm's UE8M0 packer accepts.
-    """
+def _describe_ue8m0_scales(scales: "torch.Tensor") -> None:
+    """Say what the post-requant scales actually are. Never modifies them."""
     if scales.dtype != torch.float32:
-        return scales, 0, -1
+        logger.warning("fp8 lm_head: scales are %s, not float32", scales.dtype)
+        return
     bad = _ue8m0_violations(scales)
-    if not bool(bad.any()):
-        return scales, 0, 0
-    pathological = bad & ~(
-        torch.isfinite(scales) & (scales >= _SMALLEST_NORMAL_F32)
+    n_bad = int(bad.sum())
+    if n_bad == 0:
+        return
+    finite = torch.isfinite(scales)
+    nan = int(torch.isnan(scales).sum())
+    inf = int((~finite & ~torch.isnan(scales)).sum())
+    neg = int((finite & (scales < 0)).sum())
+    denorm = int((finite & (scales > 0) & (scales < _SMALLEST_NORMAL_F32)).sum())
+    normal_bad = n_bad - nan - inf - neg - denorm
+    sample = scales.reshape(-1)[bad.reshape(-1)][:4].tolist()
+    logger.warning(
+        "fp8 lm_head: %d of %d post-requant scales fail deepgemm's UE8M0 "
+        "check (nan=%d inf=%d negative=%d denormal=%d normal-but-not-pow2=%d); "
+        "first offenders %s. Left untouched -- rewriting them would change the "
+        "weights the requant already matched to them.",
+        n_bad, scales.numel(), nan, inf, neg, denorm, normal_bad, sample,
     )
-    flushed = int(pathological.sum())
-    left = int(bad.sum()) - flushed
-    if flushed:
-        scales = torch.where(pathological, torch.zeros_like(scales), scales)
-    return scales, flushed, left
-
 
 def _repair_ue8m0_scales(scales: "torch.Tensor") -> tuple["torch.Tensor", int]:
     """Force every scale onto an exact power of two. Returns (fixed, count).
@@ -139,17 +133,13 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
                 wq, ws, (128, 128), use_e8m0=True
             )
         requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
-        ws, flushed, left = _flush_pathological_scales(ws)
-        if flushed or left > 0:
-            logger.warning(
-                "fp8 lm_head: after UE8M0 requant, %d of %d scales were "
-                "denormal/zero/non-finite (flushed to 0) and %d were normal "
-                "but not powers of two (left alone -- rounding them would "
-                "rescale their weights)",
-                flushed,
-                ws.numel(),
-                left,
-            )
+        # Report, never rewrite. An earlier revision flushed every scale the
+        # packer rejects to zero; on this weight that was 9696 of 9696, which
+        # silenced the assert by zeroing the head. A dead head that boots is
+        # worse than a boot that fails, so the values are only described here
+        # -- if the requant is producing garbage, the fix belongs upstream of
+        # it, not in a mask over its output.
+        _describe_ue8m0_scales(ws)
         return deepgemm_post_process_fp8_weight_block(
             wq, ws, (128, 128), use_e8m0=False
         )
