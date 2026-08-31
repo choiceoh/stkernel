@@ -49,14 +49,18 @@ _VLLM_WEIGHT_ATTRS = (
 )
 
 
-def b12x_ep_kernel_expert_count(num_local_experts: int, use_ep: bool) -> int:
-    """Experts the b12x wrapper is constructed with.
+def b12x_ep_kernel_expert_count(
+    num_local_experts: int, use_ep: bool, no_dummy: bool = False
+) -> int:
+    """Experts visible to the selected b12x kernel path.
 
-    EP adds one dummy so remote top-k slots have an isolated expert to land
-    on. The fused kernel is never told ``num_local != num_experts`` — that
-    path is flashinfer #3383 (weight_E vs state_E, then illegal address).
+    The default EP path removes remote slots before the direct top-k=1
+    call, so its weights stay at exactly ``num_local_experts``. The rollback
+    path keeps the historical extra dummy row for ``wrapper.run``. The fused
+    kernel is never told ``num_local != num_experts`` — that path is
+    flashinfer #3383 (weight_E vs state_E, then illegal address).
     """
-    return num_local_experts + 1 if use_ep else num_local_experts
+    return num_local_experts + int(use_ep and not no_dummy)
 
 
 def remap_b12x_ep_slot(
@@ -221,20 +225,18 @@ def b12x_ep_fixed_pair_plan(
     first ``n_local`` slots are the local pairs in order, and every slot after
     them REPEATS one of those same pairs, cycling, at router weight 0.
 
-    Why repeats and not a dummy expert. b12x quantizes the FC2 input per
-    expert batch, which is why remote slots may not be dumped onto a real
-    expert -- a foreign token would move that expert's amax. A duplicate of a
-    row already in the batch cannot: the max of a set is unchanged by
-    repeating one of its members. So the padding is free of that hazard while
-    the dummy expert -- and the 12 MiB/layer of zero weights the kernel reads
-    for it every step -- disappears.
+    Why repeats and not a dummy expert. The sentinel cannot reach an E-local
+    kernel, while repeating an existing pair guarantees a valid expert id and
+    introduces no new weight plane. The pinned micro kernel quantizes FC2 per
+    routed row, but keeping a repeat inside the same call is also conservative
+    across dispatcher revisions: the call's real-row value set is unchanged.
+    The dummy expert -- and the 12 MiB/layer of zero weights it adds --
+    disappears.
 
     The runtime submits this plan in ``slice_size``-row micro calls. If a
     slice mixes real pairs with padding, its padding repeats only the real
-    pairs in that SAME slice. b12x derives the FC2 amax per expert per call;
-    borrowing a row from a different call would no longer be a duplicate and
-    could move the scale of a real row. Slices containing padding only may
-    cycle over the whole local set because they have no real output to perturb.
+    pairs in that SAME slice. Slices containing padding only may cycle over the
+    whole local set because they have no real output to perturb.
 
     Returns (src_index, keep) as plain lists for the pure-python path.
     """
@@ -278,16 +280,16 @@ def remap_b12x_ep_routing(
 
     The SM12x fused kernel indexes weights and ``virt_route_scratch`` with
     the ids it is given. Under EP those ids are global and the weights are
-    local — that is flashinfer #3383. We never show the kernel an EP
-    geometry: it sees ``num_local_experts + 1`` experts, the extra one a
-    dummy that receives every remote slot at scale 0.
+    local — that is flashinfer #3383. Remote routes become the sentinel
+    ``num_local_experts`` at scale 0. The default direct paths remove or
+    replace that sentinel before an ``E = num_local_experts`` kernel call;
+    the rollback path materializes it as an extra zero-weight expert.
 
     ``expert_map``, when given, is the vLLM table (global → local or -1).
     Without it the linear shard ``[offset, offset+local)`` is assumed.
 
-    Dumping remote slots onto a *real* local expert is forbidden. b12x
-    dynamically quantizes FC2 input per expert batch, so a ghost token in
-    expert 0 would change that expert's real tokens.
+    This helper only remaps; the selected runtime path owns the sentinel's
+    final removal or padded storage.
     """
     dummy = num_local_experts
     out_ids = []
@@ -587,6 +589,63 @@ def _shared_wrapper(key: _B12xWrapperKey):
         return w
 
 
+@dataclass(frozen=True)
+class _B12xEpFixedWorkspaceKey:
+    """Geometry that sizes the pinned direct-EP micro workspace."""
+
+    num_experts: int
+    hidden_size: int
+    intermediate_size: int
+    device: str
+    activation: str
+
+
+# The functional API keeps one replaceable workspace per geometry. A compact
+# prefill can grow that cache after decode CUDA graphs were captured, dropping
+# the last Python reference to the small workspace whose addresses the graphs
+# recorded. Pin one 8-row workspace (~3.4 MiB at E=72, 4096/2048) and pass it
+# explicitly for fixed decode. Compact prefill keeps using the independent
+# functional cache, so it cannot replace the graph's buffers.
+_B12X_EP_FIXED_WORKSPACES: "WeakValueDictionary[_B12xEpFixedWorkspaceKey, Any]" = (
+    WeakValueDictionary()
+)
+_B12X_EP_FIXED_WORKSPACES_LOCK = Lock()
+
+
+def _shared_ep_fixed_workspace(
+    key: _B12xEpFixedWorkspaceKey, device: torch.device
+):
+    with _B12X_EP_FIXED_WORKSPACES_LOCK:
+        workspace = _B12X_EP_FIXED_WORKSPACES.get(key)
+        if workspace is None:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+                allocate_sm120_moe_workspace,
+            )
+
+            workspace = allocate_sm120_moe_workspace(
+                state_E=key.num_experts,
+                weight_E=key.num_experts,
+                k=key.hidden_size,
+                n=key.intermediate_size,
+                num_topk=1,
+                device=device,
+                max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS,
+                quant_mode="nvfp4",
+                backend="static",
+                activation=key.activation,
+            )
+            _B12X_EP_FIXED_WORKSPACES[key] = workspace
+            logger.info_once(
+                "b12x EP fixed workspace pinned across layers "
+                "(%d experts, top_k 1, max_rows %d, %d/%d)",
+                key.num_experts,
+                B12X_EP_FIXED_MICRO_MAX_PAIRS,
+                key.hidden_size,
+                key.intermediate_size,
+            )
+        return workspace
+
+
 class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     """FlashInfer CuteDSL fused MoE expert for SM12x (SM120/SM121,
     RTX Pro 6000 / DGX Spark).
@@ -603,14 +662,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     Only NVFP4 (kNvfp4Static/kNvfp4Dynamic) quantization is supported.
 
     Expert parallelism: the fused kernel rejects ``num_local != num_experts``
-    and indexes weights by the ids it is given (flashinfer #3383). When EP
-    is on we construct the wrapper as a local-only MoE (``E = local + 1``),
-    remap global top-k ids onto that space, and park remote slots on a
-    dummy expert at scale 0. Decode/graph batches replace remote slots with
-    zero-weight repeats and submit at most eight top_k=1 pairs per call, so
-    the dispatcher stays on its proven micro kernel instead of static.
-    Prefill (routed pairs > 640) drops dummy slots and runs top_k=1 pairs so
-    remote GEMM is not paid. vLLM's EP all-reduce (DP=1) combines ranks.
+    and indexes weights by the ids it is given (flashinfer #3383). The default
+    direct path keeps exactly the local weight rows, remaps global top-k ids,
+    then removes every remote sentinel before a direct top-k=1 call.
+    Decode/graph batches replace remote slots with zero-weight repeats and
+    submit at most eight pairs per call, so the dispatcher stays on its proven
+    micro kernel instead of static. Prefill (routed pairs > 640) drops remote
+    slots. ``VLLM_B12X_EP_NO_DUMMY=0`` restores the padded ``E = local + 1``
+    wrapper path. vLLM's EP all-reduce (DP=1) combines ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -662,6 +721,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_tmp_a: torch.Tensor | None = None
         self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
+        # Strong reference for every captured layer. The global map shares the
+        # object by geometry but intentionally holds it weakly.
+        self._ep_fixed_workspace: Any | None = None
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -747,7 +809,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             )
 
         if self._use_ep:
-            self._pad_dummy_expert(layer)
+            if not self._ep_no_dummy:
+                self._pad_dummy_expert(layer)
             global _EP_MICRO_DISABLED
             if not _EP_MICRO_DISABLED:
                 micro_status = disable_b12x_micro_for_ep(
@@ -780,6 +843,19 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             k=k2,
             num_groups=num_experts_w2,
         )
+
+        if self._ep_no_dummy:
+            device = layer.w13_weight.device
+            self._ep_fixed_workspace = _shared_ep_fixed_workspace(
+                _B12xEpFixedWorkspaceKey(
+                    num_experts=self._kernel_num_experts,
+                    hidden_size=self.hidden_dim,
+                    intermediate_size=self.intermediate_size_per_partition,
+                    device=str(device),
+                    activation=self._activation_str,
+                ),
+                device,
+            )
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
@@ -858,7 +934,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
     @property
     def _kernel_num_experts(self) -> int:
-        return b12x_ep_kernel_expert_count(self.num_local_experts, self._use_ep)
+        return b12x_ep_kernel_expert_count(
+            self.num_local_experts, self._use_ep, self._ep_no_dummy
+        )
 
     def _pad_dummy_expert(self, layer: torch.nn.Module) -> None:
         """Append one zero-weight expert so remote top-k slots stay isolated.
@@ -977,10 +1055,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         no matter how few rows land on it.
 
         Safe by construction: no real local pair is dropped (the plan is as
-        long as the input), and a duplicate cannot move an expert's FC2 amax
-        because the max of a set is unchanged by repeating a member. That is
-        precisely the hazard that forbids dumping remote slots onto a real
-        expert.
+        long as the input), every padding id names a real local pair, and every
+        padding weight is zero. Mixed slices repeat only their own real rows,
+        preserving the call's real-row value set as a conservative contract.
 
         Calls are capped at eight pair rows. Stable DFlash verification shapes
         have 8/16/32 tokens at C=1/2/4; top-k=8 flattening produces
@@ -993,7 +1070,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         No nonzero, no host sync -- every step is index arithmetic on shapes
         that are fixed once tokens is fixed. Padding in a mixed call repeats
         only real pairs from that same call, keeping its per-expert FC2 amax
-        unchanged.
+        unchanged across dispatcher revisions.
         """
         dummy = self.num_local_experts
         tokens, topk = topk_ids.size(0), topk_ids.size(1)
@@ -1054,7 +1131,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             dtype=output.dtype,
             device=output.device,
         )
-        from flashinfer.fused_moe import b12x_fused_moe
+        if self._ep_fixed_workspace is None:
+            raise RuntimeError(
+                "b12x EP fixed workspace was not allocated before apply"
+            )
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+            launch_sm120_moe,
+        )
 
         logger.info_once(
             "b12x EP fixed decode: %d pairs -> %d micro-sized calls "
@@ -1063,25 +1146,30 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
         for lo in range(0, pairs, limit):
             hi = min(lo + limit, pairs)
-            b12x_fused_moe(
-                x=pair_x[lo:hi],
+            launch_sm120_moe(
+                a=pair_x[lo:hi],
+                topk_ids=pair_ids[lo:hi].view(-1, 1).to(torch.int32),
+                topk_weights=pair_scales[lo:hi].view(-1, 1),
                 w1_weight=w1,
                 w1_weight_sf=self.w1_sf_mma,
+                w1_alpha=self.g1_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                input_global_scale=None,
                 w2_weight=w2,
                 w2_weight_sf=self.w2_sf_mma,
-                token_selected_experts=pair_ids[lo:hi].view(-1, 1).to(torch.int32),
-                token_final_scales=pair_scales[lo:hi].view(-1, 1),
+                w2_alpha=self.g2_alphas,
                 num_experts=self._kernel_num_experts,
                 top_k=1,
                 num_local_experts=self._kernel_num_experts,
-                w1_alpha=self.g1_alphas,
-                w2_alpha=self.g2_alphas,
-                fc2_input_scale=self._fc2_input_scale,
-                output=pair_out[lo:hi],
+                scatter_output=pair_out[lo:hi],
                 activation=self._activation_str,
                 swiglu_alpha=self._swiglu_alpha,
                 swiglu_beta=self._swiglu_beta,
                 swiglu_limit=self._swiglu_limit,
+                activation_precision="fp4",
+                quant_mode="nvfp4",
+                source_format="modelopt",
+                _workspace=self._ep_fixed_workspace,
             )
         # Second guard, for the other way this breaks: if the kernel writes a
         # zero-weight row WITHOUT applying token_final_scales, that row holds a
@@ -1136,13 +1224,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         from flashinfer.fused_moe import b12x_fused_moe
 
         kernel_e = self._kernel_num_experts
-        # The wrapper's scratch is sized for max_num_tokens ROWS, but a
-        # compacted pair list is up to tokens*top_k long -- 8x over on this
-        # model. Overrunning it is an illegal write whose fault surfaces at
-        # whatever kernel syncs next (we found it as an ILLEGAL_ADDRESS inside
-        # the dense fp8 GEMM two layers later). Walk the pairs in slices the
-        # scratch can hold. Growing max_num_tokens instead would key a second
-        # shared wrapper and double the workspace for all 43 MoE layers.
+        # A compacted pair list is up to tokens*top_k long -- 8x the configured
+        # token capacity on this model. Walk it in bounded slices so the
+        # functional cache never needs a single oversized workspace. That
+        # cache is deliberately separate from fixed decode's pinned workspace.
         limit = max(int(self.max_num_tokens or 0), 1)
         for lo in range(0, n, limit):
             hi = min(lo + limit, n)
@@ -1171,7 +1256,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         return output
 
     def _ensure_wrapper(self) -> None:
-        """Lazily create B12xMoEWrapper on first use."""
+        """Lazily create the non-EP or padded EP fallback wrapper."""
         if self._wrapper is not None:
             return
 
@@ -1192,7 +1277,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
 
     def _ep_capacity_probe(self, wrapper, topk_ids) -> None:
-        """Refuse a routing no workspace can hold, and fingerprint it once.
+        """Guard and fingerprint the padded EP fallback workspace once.
 
         The static kernel writes ``token_map[slot, row]`` where ``row`` is an
         unguarded ``atomicAdd`` on a per-expert counter, so one expert taking
@@ -1284,20 +1369,17 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             "process_weights_after_loading must run before FlashInferB12xExperts.apply"
         )
 
-        self._ensure_wrapper()
-        wrapper = self._wrapper
-        assert wrapper is not None
-
         if self._use_ep:
             expect_e = self._kernel_num_experts
             if w1.size(0) != expect_e:
                 raise RuntimeError(
-                    f"b12x EP dummy pad missing: w1 E={w1.size(0)} "
-                    f"want {expect_e} (local {self.num_local_experts} + dummy)"
+                    f"b12x EP weight shape mismatch: w1 E={w1.size(0)} "
+                    f"want {expect_e} (local {self.num_local_experts}, "
+                    f"no_dummy={int(self._ep_no_dummy)})"
                 )
             if self.g1_alphas.numel() < expect_e or self.g2_alphas.numel() < expect_e:
                 raise RuntimeError(
-                    "b12x EP dummy pad missing on g1/g2 alphas "
+                    "b12x EP g1/g2 alpha shape mismatch "
                     f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
                     f"want {expect_e})"
                 )
@@ -1310,8 +1392,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
-            self._ep_capacity_probe(wrapper, topk_ids)
-            if b12x_ep_should_compact(
+            if self._ep_no_dummy and b12x_ep_should_compact(
                 topk_ids.size(0) * topk_ids.size(1),
                 enabled=b12x_ep_compact_enabled(),
             ):
@@ -1325,6 +1406,15 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 return self._apply_ep_fixed(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )
+
+        # Both direct EP paths return above. Construct the large graph wrapper
+        # only for non-EP or the explicit padded rollback path; neither direct
+        # path consumes its workspace.
+        self._ensure_wrapper()
+        wrapper = self._wrapper
+        assert wrapper is not None
+        if self._use_ep:
+            self._ep_capacity_probe(wrapper, topk_ids)
 
         # deneb fork: when the wrapper supports out= (overlay module
         # glm53_b12x_out takes over flashinfer's b12x_moe.py to add it), make

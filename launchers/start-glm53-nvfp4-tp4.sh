@@ -447,7 +447,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # deleted backend is otherwise invisible until the boot fails.
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
-  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
             MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done

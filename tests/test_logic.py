@@ -1089,7 +1089,10 @@ def test_b12x_ep_routing() -> None:
     pad_dim0 = ns["b12x_ep_pad_dim0"]
 
     check(kernel_e(72, False) == 72, "EP-off kernel E is local")
-    check(kernel_e(72, True) == 73, "EP-on kernel E is local + dummy")
+    check(kernel_e(72, True, True) == 72,
+          "direct EP kernel E has no physical dummy")
+    check(kernel_e(72, True, False) == 73,
+          "rollback EP kernel E is local + dummy")
     check(kernel_e(288, False) == 288, "replicated kernel E is global")
 
     # Rank 1 of 4, 8 experts, 2 local (4,5). Dummy id = 2.
@@ -1416,6 +1419,12 @@ def test_b12x_ep_launcher() -> None:
           "ENABLE_EP=1 must refuse GRAPH_CAP that captures past the compact cutover")
     check("VLLM_B12X_EP_COMPACT=${VLLM_B12X_EP_COMPACT:-1}" in text,
           "compact flag must reach the container")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check("VLLM_B12X_EP_NO_DUMMY=1" in profile,
+          "no-dummy default must be profile-declared for env passthrough")
+    check("VLLM_B12X_EP_NO_DUMMY KV_DTYPE" in text,
+          "dry-run must expose the no-dummy rollback knob")
 
     check("ABORT: ENABLE_EP must be 0 or 1" in text,
           "ENABLE_EP must refuse anything other than 0 or 1")
@@ -2262,6 +2271,11 @@ def test_ep_fixed_pair_plan() -> None:
     assert all(part is not None for part in (
         fixed_source, micro_setup_source, init_source, process_source, apply_source
     ))
+    assert fixed_source is not None
+    assert micro_setup_source is not None
+    assert init_source is not None
+    assert process_source is not None
+    assert apply_source is not None
     check(
         "require_b12x_ep_micro_limit(prior)" in micro_setup_source,
         "no-dummy setup must verify the live FlashInfer micro boundary",
@@ -2281,6 +2295,33 @@ def test_ep_fixed_pair_plan() -> None:
         "captured apply path must consume the latch without reading its env",
     )
     check(
+        "if not self._ep_no_dummy:\n                self._pad_dummy_expert(layer)"
+        in process_source,
+        "direct EP must not allocate the physical dummy weight row",
+    )
+    compact_return = apply_source.index("return self._apply_ep_compact(")
+    fixed_return = apply_source.index("return self._apply_ep_fixed(")
+    ensure_wrapper = apply_source.index("self._ensure_wrapper()")
+    capacity_probe = apply_source.index(
+        "self._ep_capacity_probe(wrapper, topk_ids)"
+    )
+    check(
+        compact_return < ensure_wrapper and fixed_return < ensure_wrapper,
+        "both direct EP paths must return before the large wrapper is built",
+    )
+    check(
+        ensure_wrapper < capacity_probe,
+        "capacity probe belongs only to the padded wrapper fallback",
+    )
+    check(
+        "VLLM_B12X_EP_NO_DUMMY" not in apply_source,
+        "apply must use the frozen mode instead of re-reading the environment",
+    )
+    check(
+        "if self._ep_no_dummy and b12x_ep_should_compact(" in apply_source,
+        "NO_DUMMY=0 must restore the wrapper for decode and prefill",
+    )
+    check(
         "limit = b12x_ep_fixed_slice_limit(self.max_num_tokens)"
         in fixed_source
         and "for lo in range(0, pairs, limit):" in fixed_source,
@@ -2292,10 +2333,25 @@ def test_ep_fixed_pair_plan() -> None:
         "runtime padding must be planned inside each micro slice",
     )
     check(
-        "b12x_fused_moe(" in fixed_source
+        "launch_sm120_moe(" in fixed_source
         and "top_k=1" in fixed_source
-        and "output=pair_out[lo:hi]" in fixed_source,
-        "fixed path must keep bypassing wrapper.run with top_k=1 output slices",
+        and "scatter_output=pair_out[lo:hi]" in fixed_source
+        and "_workspace=self._ep_fixed_workspace" in fixed_source,
+        "fixed path must pin each top_k=1 slice to its graph workspace",
+    )
+
+    workspace = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_shared_ep_fixed_workspace"
+    )
+    workspace_source = ast.get_source_segment(source, workspace)
+    assert workspace_source is not None
+    check(
+        "max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS" in workspace_source
+        and "num_topk=1" in workspace_source
+        and 'backend="static"' in workspace_source,
+        "pinned workspace must stay at the proven 8-row top_k=1 geometry",
     )
 
     print("  EP fixed pair plan ............. OK")
