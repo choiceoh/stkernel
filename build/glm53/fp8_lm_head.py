@@ -42,17 +42,46 @@ _SMALLEST_NORMAL_F32 = 2.0**-126
 _DECODABLE_VOCAB_CACHE: dict[tuple[str, str], int] = {}
 
 
+def _contiguous_tokenizer_vocab_size(vocab: dict[str, int]) -> int:
+    """Return the decodable prefix length, rejecting holes and empty vocabs.
+
+    The candidate mask is a suffix mask, so a vocabulary *count* is a valid
+    boundary only when tokenizer IDs are exactly ``[0, count)``.  Silently
+    accepting a hole would keep one non-decodable row reachable and mask one
+    real high ID instead.
+    """
+    ids = {int(token_id) for token_id in vocab.values()}
+    if not ids:
+        raise ValueError("tokenizer vocabulary is empty")
+    if min(ids) != 0 or max(ids) + 1 != len(ids):
+        raise ValueError(
+            "tokenizer ids must form a contiguous prefix starting at zero "
+            f"(unique={len(ids)}, min={min(ids)}, max={max(ids)})"
+        )
+    return len(ids)
+
+
 def decodable_vocab_size(
     model_path: str,
     override_env: str = "VLLM_GLM53_DECODABLE_VOCAB",
-) -> int | None:
-    """Return the number of ids the tokenizer can decode, cached per path."""
+) -> int:
+    """Return the contiguous tokenizer-ID prefix, cached per path.
+
+    This is a correctness boundary for speculative candidates.  A tokenizer
+    that cannot be read or represented by a suffix mask must stop model load;
+    fail-open would make orphan LM-head rows reachable again.
+    """
     override = os.environ.get(override_env, "").strip()
     key = (model_path, override)
     if key in _DECODABLE_VOCAB_CACHE:
-        return _DECODABLE_VOCAB_CACHE[key] or None
+        return _DECODABLE_VOCAB_CACHE[key]
     if override:
-        value = int(override)
+        try:
+            value = int(override)
+        except ValueError as exc:
+            raise ValueError(f"{override_env} must be a positive integer") from exc
+        if value <= 0:
+            raise ValueError(f"{override_env} must be a positive integer")
         _DECODABLE_VOCAB_CACHE[key] = value
         return value
 
@@ -60,18 +89,34 @@ def decodable_vocab_size(
         from tokenizers import Tokenizer
 
         tokenizer = Tokenizer.from_file(os.path.join(model_path, "tokenizer.json"))
-        value = int(tokenizer.get_vocab_size(with_added_tokens=True))
-        del tokenizer
-    except Exception as exc:  # a missing/odd tokenizer must not stop a boot
-        logger.warning(
-            "[vocab-mask] could not read the tokenizer at %s (%r) -- "
-            "orphan LM head rows stay reachable",
-            model_path,
-            exc,
+        value = _contiguous_tokenizer_vocab_size(
+            tokenizer.get_vocab(with_added_tokens=True)
         )
-        value = 0
+        del tokenizer
+    except Exception as exc:
+        raise RuntimeError(
+            f"cannot establish a safe decodable vocabulary for {model_path}"
+        ) from exc
     _DECODABLE_VOCAB_CACHE[key] = value
-    return value or None
+    return value
+
+
+def _validate_decodable_top_k(
+    valid_vocab_size: int | None,
+    selector_top_k: int | None,
+) -> None:
+    """Reject candidate configurations that cannot return ``top_k`` IDs."""
+    if selector_top_k is None:
+        return
+    if selector_top_k <= 0:
+        raise ValueError("selector_top_k must be positive when provided")
+    if valid_vocab_size is None:
+        raise ValueError("selector_top_k requires a decodable vocabulary bound")
+    if valid_vocab_size < selector_top_k:
+        raise ValueError(
+            "decodable vocabulary is smaller than selector_top_k "
+            f"({valid_vocab_size} < {selector_top_k})"
+        )
 
 
 def _local_valid_vocab_end(
@@ -95,23 +140,50 @@ def _describe_ue8m0_scales(scales: "torch.Tensor") -> int:
     if scales.dtype != torch.float32:
         logger.warning("fp8 lm_head: scales are %s, not float32", scales.dtype)
         return int(scales.numel())
-    bad = _ue8m0_violations(scales)
+    # The packer's bitmask accepts zero and +inf because both have a clear
+    # sign/mantissa.  They are not usable quantization scales, so also enforce
+    # the value-level finite-positive contract before launching the kernel.
+    bit_bad = _ue8m0_violations(scales)
+    finite = torch.isfinite(scales)
+    nan_mask = torch.isnan(scales)
+    inf_mask = torch.isinf(scales)
+    zero_mask = finite & (scales == 0)
+    neg_mask = finite & (scales < 0)
+    denorm_mask = finite & (scales > 0) & (scales < _SMALLEST_NORMAL_F32)
+    normal_bad_mask = finite & (scales >= _SMALLEST_NORMAL_F32) & bit_bad
+    bad = (
+        nan_mask
+        | inf_mask
+        | zero_mask
+        | neg_mask
+        | denorm_mask
+        | normal_bad_mask
+    )
     n_bad = int(bad.sum())
     if n_bad == 0:
         return 0
-    finite = torch.isfinite(scales)
-    nan = int(torch.isnan(scales).sum())
-    inf = int((~finite & ~torch.isnan(scales)).sum())
-    neg = int((finite & (scales < 0)).sum())
-    denorm = int((finite & (scales > 0) & (scales < _SMALLEST_NORMAL_F32)).sum())
-    normal_bad = n_bad - nan - inf - neg - denorm
+    nan = int(nan_mask.sum())
+    inf = int(inf_mask.sum())
+    zero = int(zero_mask.sum())
+    neg = int(neg_mask.sum())
+    denorm = int(denorm_mask.sum())
+    normal_bad = int(normal_bad_mask.sum())
     sample = scales.reshape(-1)[bad.reshape(-1)][:4].tolist()
     logger.warning(
-        "fp8 lm_head: %d of %d post-requant scales fail deepgemm's UE8M0 "
-        "check (nan=%d inf=%d negative=%d denormal=%d normal-but-not-pow2=%d); "
-        "first offenders %s. Left untouched -- rewriting them would change the "
-        "weights the requant already matched to them.",
-        n_bad, scales.numel(), nan, inf, neg, denorm, normal_bad, sample,
+        "fp8 lm_head: %d of %d post-requant scales are unsafe for UE8M0 "
+        "(nan=%d inf=%d zero=%d negative=%d denormal=%d "
+        "normal-but-not-pow2=%d); first offenders %s. Left untouched -- "
+        "rewriting them would change the weights the requant already matched "
+        "to them.",
+        n_bad,
+        scales.numel(),
+        nan,
+        inf,
+        zero,
+        neg,
+        denorm,
+        normal_bad,
+        sample,
     )
     return n_bad
 
@@ -174,10 +246,11 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             from vllm.model_executor.layers.quantization.utils.fp8_utils import (
                 requant_weight_ue8m0_inplace,
             )
-        except ImportError:
-            return deepgemm_post_process_fp8_weight_block(
-                wq, ws, (128, 128), use_e8m0=True
-            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "vLLM lacks requant_weight_ue8m0_inplace; refusing an "
+                "unvalidated DeepGEMM scale pack"
+            ) from exc
         requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
         # Report without rewriting (#131), then fail before the layout kernel
         # can execute its device-side trap. build_fp8_lm_head_weight catches
@@ -211,10 +284,22 @@ def _fp8_gemm(
 
 
 def build_fp8_lm_head_weight(head) -> bool:
-    """Quantize one head module in place. Returns whether it took."""
+    """Quantize one head at most once. Returns whether an fp8 copy exists."""
+    cached = (
+        getattr(head, "_deneb_fp8_w", None) is not None
+        and getattr(head, "_deneb_fp8_ws", None) is not None
+    )
+    if cached:
+        return True
+    if getattr(head, "_deneb_fp8_build_attempted", False):
+        return False
     weight = getattr(head, "weight", None)
     if weight is None or weight.dtype not in (torch.bfloat16, torch.float16):
         return False
+    # A failed online quantization is deterministic for this loaded weight and
+    # runtime. Latch the attempt before allocating so the logits hot path never
+    # retries the full vocabulary head after falling back to bf16.
+    head._deneb_fp8_build_attempted = True
     try:
         dg_w, dg_ws = _quantize_fp8_deepgemm(weight)
     except Exception as exc:
@@ -231,8 +316,10 @@ def build_fp8_lm_head_weight(head) -> bool:
             weight.dtype,
         )
         return False
-    head._deneb_fp8_w = dg_w
+    # Publish the weight last: `_deneb_fp8_w` is the hot-path readiness marker,
+    # so any observer that sees it must also be able to read the scale layout.
     head._deneb_fp8_ws = dg_ws
+    head._deneb_fp8_w = dg_w
     logger.info_once("fp8 lm_head: quantized %s.", tuple(dg_w.shape))
     return True
 
@@ -268,6 +355,7 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
         *args,
         fp8_env: str = "VLLM_SPEC_FP8_LM_HEAD",
         valid_vocab_size: int | None = None,
+        selector_top_k: int | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -278,6 +366,7 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
             raise ValueError(
                 "valid_vocab_size cannot exceed the logits processor vocabulary"
             )
+        _validate_decodable_top_k(valid_vocab_size, selector_top_k)
         self._deneb_valid_vocab_size = valid_vocab_size
 
     def _apply_head(self, lm_head, hidden_states, embedding_bias):
@@ -286,7 +375,8 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
         # an off endpoint must not inherit the other endpoint's FP8 copy.
         use_fp8 = _read_bool_env(self._deneb_fp8_env)
         dg_w = getattr(lm_head, "_deneb_fp8_w", None) if use_fp8 else None
-        if dg_w is None and use_fp8:
+        attempted = getattr(lm_head, "_deneb_fp8_build_attempted", False)
+        if dg_w is None and use_fp8 and not attempted:
             if build_fp8_lm_head_weight(lm_head):
                 dg_w = getattr(lm_head, "_deneb_fp8_w", None)
         if (

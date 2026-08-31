@@ -1,8 +1,8 @@
 flashinfer_b12x_moe.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py	86dfe87e1bc69651b3c969477946b348eeebdb8386aab3e51cf5d5253405047b
 glm53_kpool_indexer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py	fe1b106466008c21d0194a59909b19832e127fad255965611c4c7f7a971422a2
 sparse_attn_indexer_kpool.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py	4772b45eb9b72daab77d8a7581f88508a5e30ed6440e1ed2637722977defaf1b
-rejection_sampler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/sample/rejection_sampler.py	4bb87d7984d967be9c7e5b6a6b489c02571ef2f2913211cb3f1eea74b2e1f32f
-gpu_model_runner.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_model_runner.py	5be64e11d25f9802a1970089e9203ae4b18977b340471a6d0761f0274b54c4b6
+scheduler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/scheduler.py	4c38a32c7405eb95eb9dd3b3d04cbfe5d0cb4ebc0b18efbaa4adc68c7a9bca5a
+sampler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py	76070739447fc9f7563ef164ef80c0777208d1ea07dec3a6f6d2a0755188d7ae
 moe_gate_sm121.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
 dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
@@ -13,6 +13,5 @@ qwen3_dflash2.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/mod
 dflash_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py	41a1f26c72f0f4c6150821a310632a09e0e76b252e24d4e1e0f47f62321f155d
 glm53_fp8_dense.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py	absent
 b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
-llm_base_proposer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/spec_decode/llm_base_proposer.py	b9c26acf8b77cb56f062213aa6b9eebab58dc69980e78430da027493fc757237
 tilelang.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
 tilelang_kernels.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py	03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24

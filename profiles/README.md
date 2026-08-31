@@ -48,7 +48,7 @@ is blocked, says so and names the one flip that would isolate the cause.
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x` | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
 | 모듈 수 | 17 | 15 | 1 |
-| 오버레이 파일 | 21 | 16 | 2 |
+| 오버레이 파일 | 21 | 17 | 2 |
 
 `glm53_drop_audit`와 `glm53_sparse_q`는 V1 Model Runner 파일만 교체한다.
 `glm53:v13-b12x`는 V2 Model Runner를 사용하므로 이 둘과
