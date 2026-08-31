@@ -70,11 +70,27 @@ _BIGFUSE_ENV = "VLLM_GLM53_MHC_BIGFUSE"
 
 
 def _deneb_parse_bigfuse(raw: str):
+    """Parse "h_blk[,post_n_thr]" -> (h_blk, post_thr|None), else None.
+
+    dsv4 R3: big_fuse h_blk=4096 with n_thr 96/160 (GLM stock 96 already in
+    the winning set, so only h_blk is exposed). dsv4 R2: mhc_post prefill
+    (n_thr 512, h_blk 4096) beat its stock (128, 1024) by +3.6% at M=4096 --
+    post_thr is that second field."""
     try:
-        v = int(raw.strip())
+        parts = [int(v.strip()) for v in raw.split(",")]
     except Exception:
         return None
-    return v if v in (1024, 2048, 4096) else None
+    if len(parts) == 1:
+        h_blk, post_thr = parts[0], None
+    elif len(parts) == 2:
+        h_blk, post_thr = parts
+    else:
+        return None
+    if h_blk not in (1024, 2048, 4096):
+        return None
+    if post_thr is not None and post_thr not in (128, 256, 512):
+        return None
+    return h_blk, post_thr
 
 
 _raw_bigfuse = (os.environ.get(_BIGFUSE_ENV) or "").strip()
@@ -85,9 +101,19 @@ def _deneb_bigfuse_hblk(num_tokens: int, hidden_size: int):
     """h_blk for the prefill big_fuse kernels, or None to run stock."""
     if _DENEB_BIGFUSE is None or num_tokens <= 64:
         return None
-    if hidden_size % _DENEB_BIGFUSE:
+    if hidden_size % _DENEB_BIGFUSE[0]:
         return None
-    return _DENEB_BIGFUSE
+    return _DENEB_BIGFUSE[0]
+
+
+def _deneb_bigfuse_post(num_tokens: int):
+    """(n_thr, h_blk) for the prefill mhc_post kernel, or None for stock."""
+    if _DENEB_BIGFUSE is None or num_tokens <= 64:
+        return None
+    post_thr = _DENEB_BIGFUSE[1]
+    if post_thr is None:
+        return None
+    return post_thr, _DENEB_BIGFUSE[0]
 
 
 # deneb fork: one-launch decode path. VLLM_GLM53_MHC_ONEPASS=1 routes the
@@ -529,6 +555,11 @@ def mhc_post_tilelang(
     )
 
     out = torch.empty_like(residual)
+    _post_kw = {}
+    # deneb fork: prefill-only retune (dsv4 R2); decode M never passes the gate
+    _post = _deneb_bigfuse_post(residual.shape[0])
+    if _post is not None:
+        _post_kw = {"n_thr": _post[0], "h_blk": _post[1]}
     _mhc_post_kernel(
         comb_res_mix,
         residual,
@@ -537,6 +568,7 @@ def mhc_post_tilelang(
         out,
         residual.shape[-2],
         residual.shape[-1],
+        **_post_kw,
     )
     return out
 
@@ -753,6 +785,10 @@ def mhc_fused_post_pre_tilelang(
             n_splits=n_splits,
         )
     else:
+        _post_kw = {}
+        _post = _deneb_bigfuse_post(num_tokens)
+        if _post is not None:
+            _post_kw = {"n_thr": _post[0], "h_blk": _post[1]}
         mhc_post_tilelang(
             comb_res_mix_flat,
             residual_flat,
@@ -761,6 +797,7 @@ def mhc_fused_post_pre_tilelang(
             residual_cur,
             residual.shape[-2],
             residual.shape[-1],
+            **_post_kw,
         )
 
         residual_cur_2d = residual_cur.view(num_tokens, hc_mult * hidden_size)
