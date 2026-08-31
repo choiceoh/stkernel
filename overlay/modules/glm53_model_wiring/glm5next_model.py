@@ -981,6 +981,20 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                     )
                     weight_loader(param, loaded_weight, **kwargs)
             loaded_params.add(name)
+
+        # deneb fork: fp8 block copies of the bf16 dense projections, after
+        # every weight landed and before compile/capture. No-op unless
+        # VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer, never the boot.
+        # See overlay/modules/glm53_fp8_dense.
+        try:
+            from vllm.model_executor.layers.glm53_fp8_dense import (
+                maybe_build_fp8_dense,
+            )
+
+            maybe_build_fp8_dense(self)
+        except Exception:
+            pass
+
         return loaded_params
 
 
