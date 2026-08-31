@@ -59,6 +59,33 @@ def b12x_ep_kernel_expert_count(num_local_experts: int, use_ep: bool) -> int:
     return num_local_experts + 1 if use_ep else num_local_experts
 
 
+def remap_b12x_ep_slot(
+    expert,
+    *,
+    num_local_experts: int,
+    local_expert_offset: int = 0,
+    expert_map=None,
+) -> int:
+    """One top-k slot → local expert id, or -1 if remote / padding.
+
+    ``topk_ids`` may carry -1 as a padding sentinel. That must not index
+    ``expert_map``: PyTorch advanced indexing wraps -1 onto the last row,
+    which is a real expert on some ranks, at the original scale. That is
+    the FC2-quant pollution this remap exists to prevent.
+    """
+    expert = int(expert)
+    if expert < 0:
+        return -1
+    if expert_map is not None:
+        if expert >= len(expert_map):
+            return -1
+        return int(expert_map[expert])
+    local = expert - int(local_expert_offset)
+    if local < 0 or local >= num_local_experts:
+        return -1
+    return local
+
+
 def remap_b12x_ep_routing(
     topk_ids,
     topk_weights,
@@ -89,12 +116,12 @@ def remap_b12x_ep_routing(
         row_ids = []
         row_w = []
         for expert, weight in zip(ids, weights):
-            if expert_map is not None:
-                local = expert_map[int(expert)]
-            else:
-                local = int(expert) - local_expert_offset
-                if local < 0 or local >= num_local_experts:
-                    local = -1
+            local = remap_b12x_ep_slot(
+                expert,
+                num_local_experts=num_local_experts,
+                local_expert_offset=local_expert_offset,
+                expert_map=expert_map,
+            )
             if local < 0:
                 row_ids.append(dummy)
                 row_w.append(0.0)
@@ -104,6 +131,87 @@ def remap_b12x_ep_routing(
         out_ids.append(row_ids)
         out_w.append(row_w)
     return out_ids, out_w
+
+
+def remap_b12x_ep_tensors(
+    topk_ids,
+    topk_weights,
+    *,
+    num_local_experts: int,
+    local_expert_offset: int = 0,
+    expert_map=None,
+    out_ids=None,
+    out_scales=None,
+):
+    """Runtime remap. Same slot rule as ``remap_b12x_ep_slot``.
+
+    ``apply`` writes into preallocated ``out_*`` views. Tests call this
+    directly (CPU torch) so the gather path is not a second, untested copy.
+    """
+    if out_ids is None:
+        out_ids = torch.empty(
+            topk_ids.shape, dtype=torch.int32, device=topk_ids.device
+        )
+    if out_scales is None:
+        out_scales = torch.empty_like(topk_weights)
+
+    if expert_map is not None:
+        idx = topk_ids.to(dtype=torch.long)
+        map_len = int(expert_map.size(0))
+        # Clamp is only a safe gather index. Slots outside [0, map_len)
+        # stay remote — including -1, which would otherwise wrap.
+        if map_len <= 0:
+            remote = torch.ones(
+                idx.shape, dtype=torch.bool, device=idx.device
+            )
+            out_ids.fill_(num_local_experts)
+        else:
+            in_range = (idx >= 0) & (idx < map_len)
+            mapped = expert_map[idx.clamp(0, map_len - 1)]
+            remote = (~in_range) | (mapped < 0)
+            out_ids.copy_(mapped.to(dtype=torch.int32))
+    else:
+        mapped = topk_ids.to(dtype=torch.int32) - int(local_expert_offset)
+        remote = (
+            (topk_ids < 0)
+            | (mapped < 0)
+            | (mapped >= num_local_experts)
+        )
+        out_ids.copy_(mapped)
+
+    out_ids.masked_fill_(remote, num_local_experts)
+    out_scales.copy_(topk_weights)
+    out_scales.masked_fill_(remote, 0)
+    return out_ids, out_scales
+
+
+# Weight rows the dummy pad must extend. Optional scale_2 tensors skip
+# when absent; a present tensor with the wrong E is a hard error.
+_B12X_EP_PAD_REQUIRED = (
+    "w13_weight",
+    "w2_weight",
+    "w13_weight_scale",
+    "w2_weight_scale",
+)
+
+
+def b12x_ep_pad_dim0(dim0, num_local_experts, *, required, name):
+    """What to do with one expert-major tensor at dummy-pad time.
+
+    Returns ``pad``, ``already``, or ``skip``. Raises on a required hole
+    or a first-dim that is neither local nor local+1.
+    """
+    if dim0 is None:
+        if required:
+            raise RuntimeError(f"b12x EP dummy pad: {name} missing")
+        return "skip"
+    if dim0 == num_local_experts:
+        return "pad"
+    if dim0 == num_local_experts + 1:
+        return "already"
+    raise RuntimeError(
+        f"b12x EP dummy pad: {name} E={dim0} want {num_local_experts}"
+    )
 
 
 def _cat_dummy_row(tensor: "torch.Tensor", fill: float) -> "torch.Tensor":
@@ -454,7 +562,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             ("w2_weight_scale_2", 1.0),
         ):
             tensor = getattr(layer, name, None)
-            if tensor is None or tensor.shape[0] != n:
+            action = b12x_ep_pad_dim0(
+                None if tensor is None else int(tensor.shape[0]),
+                n,
+                required=name in _B12X_EP_PAD_REQUIRED,
+                name=name,
+            )
+            if action != "pad":
                 continue
             _replace_dim0(layer, name, _cat_dummy_row(tensor, fill))
 
@@ -510,23 +624,15 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 f"b12x EP remap: {tokens} tokens exceeds "
                 f"max_num_tokens={self._ep_ids.size(0)}"
             )
-        ids = self._ep_ids[:tokens]
-        scales = self._ep_scales[:tokens]
-        if expert_map is not None:
-            mapped = expert_map[topk_ids.to(dtype=torch.long)]
-        else:
-            mapped = topk_ids.to(dtype=torch.int32) - int(self.local_expert_offset)
-            mapped = torch.where(
-                (mapped >= 0) & (mapped < self.num_local_experts),
-                mapped,
-                mapped.new_full(mapped.shape, -1),
-            )
-        remote = mapped < 0
-        ids.copy_(mapped.to(dtype=torch.int32))
-        ids.masked_fill_(remote, self.num_local_experts)
-        scales.copy_(topk_weights)
-        scales.masked_fill_(remote, 0)
-        return ids, scales
+        return remap_b12x_ep_tensors(
+            topk_ids,
+            topk_weights,
+            num_local_experts=self.num_local_experts,
+            local_expert_offset=self.local_expert_offset,
+            expert_map=expert_map,
+            out_ids=self._ep_ids[:tokens],
+            out_scales=self._ep_scales[:tokens],
+        )
 
     def _ensure_wrapper(self) -> None:
         """Lazily create B12xMoEWrapper on first use."""

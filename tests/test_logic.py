@@ -999,11 +999,19 @@ def test_b12x_ep_routing() -> None:
     """b12x EP never shows the fused kernel a global id or a polluted expert."""
     ns = load_defs(
         "overlay/flashinfer_b12x_moe.py",
-        {"remap_b12x_ep_routing", "b12x_ep_kernel_expert_count"},
+        {
+            "remap_b12x_ep_slot",
+            "remap_b12x_ep_routing",
+            "remap_b12x_ep_tensors",
+            "b12x_ep_kernel_expert_count",
+            "b12x_ep_pad_dim0",
+        },
         {},
     )
+    slot = ns["remap_b12x_ep_slot"]
     remap = ns["remap_b12x_ep_routing"]
     kernel_e = ns["b12x_ep_kernel_expert_count"]
+    pad_dim0 = ns["b12x_ep_pad_dim0"]
 
     check(kernel_e(72, False) == 72, "EP-off kernel E is local")
     check(kernel_e(72, True) == 73, "EP-on kernel E is local + dummy")
@@ -1024,8 +1032,19 @@ def test_b12x_ep_routing() -> None:
               for e, w in zip(row_i, row_w) if e == 2),
           "dummy slot must carry scale 0")
 
-    # vLLM expert_map: global -> local or -1. Same shard as above.
+    # Same shard as the offset path (last row remote).
     emap = [-1, -1, -1, -1, 0, 1, -1, -1]
+    # Last row is a real local expert. torch expert_map[-1] would wrap here
+    # and dump a padded slot onto expert 0 at the original scale.
+    emap_wrap = [-1, -1, -1, -1, 0, 1, -1, 0]
+    check(emap_wrap[-1] == 0, "fixture must make the wrap land on a real expert")
+    check(slot(-1, num_local_experts=2, expert_map=emap_wrap) == -1,
+          "-1 topk must not wrap through expert_map")
+    check(slot(99, num_local_experts=2, expert_map=emap_wrap) == -1,
+          "OOB topk must not index expert_map")
+    check(slot(-1, num_local_experts=2, local_expert_offset=4) == -1,
+          "-1 topk is remote on the offset path too")
+
     ids2, weights2 = remap(
         [[4, 5, 0, 7], [1, 4, 6, 5]],
         [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
@@ -1033,6 +1052,23 @@ def test_b12x_ep_routing() -> None:
         expert_map=emap,
     )
     check(ids2 == ids and weights2 == weights, "expert_map must match offset")
+
+    ids_pad, weights_pad = remap(
+        [[-1, 4], [5, -1]],
+        [[0.9, 0.1], [0.8, 0.2]],
+        num_local_experts=2,
+        expert_map=emap_wrap,
+    )
+    check(ids_pad == [[2, 0], [1, 2]], f"padded topk ids: {ids_pad}")
+    check(weights_pad == [[0.0, 0.1], [0.8, 0.0]],
+          f"padded topk scales: {weights_pad}")
+
+    ids_off, weights_off = remap(
+        [[-1, 4]], [[0.5, 0.5]],
+        num_local_experts=2, local_expert_offset=4,
+    )
+    check(ids_off == [[2, 0]] and weights_off == [[0.0, 0.5]],
+          "offset path must also park -1 on dummy")
 
     # All local: dummy unused, scales preserved.
     ids3, weights3 = remap(
@@ -1047,6 +1083,81 @@ def test_b12x_ep_routing() -> None:
         num_local_experts=2, local_expert_offset=0,
     )
     check(ids4 == [[2, 2]] and weights4 == [[0.0, 0.0]], "all-remote -> dummy")
+
+    check(pad_dim0(72, 72, required=True, name="w13_weight") == "pad",
+          "local E must pad")
+    check(pad_dim0(73, 72, required=True, name="w13_weight") == "already",
+          "local+1 is already padded")
+    check(pad_dim0(None, 72, required=False, name="w13_weight_scale_2") == "skip",
+          "optional missing tensor skips")
+    try:
+        pad_dim0(None, 72, required=True, name="w13_weight")
+    except RuntimeError as exc:
+        check("missing" in str(exc), f"required missing: {exc}")
+    else:
+        raise AssertionError("required missing tensor must raise")
+    try:
+        pad_dim0(70, 72, required=True, name="w13_weight")
+    except RuntimeError as exc:
+        check("E=70" in str(exc) and "want 72" in str(exc),
+              f"shape mismatch: {exc}")
+    else:
+        raise AssertionError("wrong E must raise, not skip")
+
+    try:
+        import torch
+    except ImportError:
+        print("  b12x EP routing ................ OK (tensor remap skipped)")
+        return
+
+    ns["torch"] = torch
+    tensor_remap = ns["remap_b12x_ep_tensors"]
+    cases = (
+        ([[4, 5, 0, 7], [1, 4, 6, 5]],
+         [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+         emap, 0,
+         [[0, 1, 2, 2], [2, 0, 2, 1]],
+         [[0.4, 0.3, 0.0, 0.0], [0.0, 0.25, 0.0, 0.1]]),
+        ([[-1, 4], [5, -1]],
+         [[0.9, 0.1], [0.8, 0.2]],
+         emap_wrap, 0,
+         [[2, 0], [1, 2]],
+         [[0.0, 0.1], [0.8, 0.0]]),
+        ([[-1, 4]],
+         [[0.5, 0.5]],
+         None, 4,
+         [[2, 0]],
+         [[0.0, 0.5]]),
+        ([[99, 4]],
+         [[0.3, 0.7]],
+         emap_wrap, 0,
+         [[2, 0]],
+         [[0.0, 0.7]]),
+    )
+    for raw_ids, raw_w, list_map, offset, want_ids, want_w in cases:
+        kwargs = dict(local_expert_offset=offset)
+        if list_map is not None:
+            kwargs["expert_map"] = torch.tensor(list_map, dtype=torch.int32)
+        got_ids, got_w = tensor_remap(
+            torch.tensor(raw_ids, dtype=torch.int64),
+            torch.tensor(raw_w, dtype=torch.float32),
+            num_local_experts=2,
+            **kwargs,
+        )
+        check(got_ids.tolist() == want_ids,
+              f"tensor remap ids {got_ids.tolist()} != {want_ids}")
+        check([round(x, 6) for row in got_w.tolist() for x in row]
+              == [round(x, 6) for row in want_w for x in row],
+              f"tensor remap scales {got_w.tolist()} != {want_w}")
+        list_ids, list_w = remap(
+            raw_ids, raw_w, num_local_experts=2,
+            local_expert_offset=offset, expert_map=list_map,
+        )
+        check(got_ids.tolist() == list_ids,
+              "tensor remap must match list remap ids")
+        check([round(x, 6) for row in got_w.tolist() for x in row]
+              == [round(x, 6) for row in list_w for x in row],
+              "tensor remap must match list remap scales")
     print("  b12x EP routing ................ OK")
 
 
@@ -1102,6 +1213,12 @@ def test_b12x_ep_launcher() -> None:
     check("def supports_expert_map(self) -> bool:\n        return True"
           in overlay,
           "b12x must accept the vLLM expert_map under EP")
+    check("return remap_b12x_ep_tensors(" in overlay,
+          "_remap_ep_tensors must call remap_b12x_ep_tensors, not a private copy")
+    check("idx.clamp(0, map_len - 1)" in overlay,
+          "tensor expert_map gather must clamp after the in-range mask")
+    check("b12x_ep_pad_dim0(" in overlay,
+          "_pad_dummy_expert must use b12x_ep_pad_dim0 (no silent continue)")
 
     check("ABORT: ENABLE_EP must be 0 or 1" in text,
           "ENABLE_EP must refuse anything other than 0 or 1")
