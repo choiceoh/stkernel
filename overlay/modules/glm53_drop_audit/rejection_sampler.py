@@ -118,6 +118,10 @@ class RejectionSampler(nn.Module):
         # [num_tokens + batch_size, vocab_size]
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        # [num_tokens, pool] / [num_tokens, pool] or None -- gathered-q's
+        # support, for the exact (p-q)+ recovery law.
+        draft_pool_ids: torch.Tensor | None = None,
+        draft_pool_values: torch.Tensor | None = None,
     ) -> SamplerOutput:
         """
         Args:
@@ -203,6 +207,8 @@ class RejectionSampler(nn.Module):
             synthetic_mode=self.synthetic_mode,
             synthetic_conditional_rates=self.synthetic_conditional_rates,
             use_fp64_gumbel=self.use_fp64_gumbel,
+            draft_pool_ids=draft_pool_ids,
+            draft_pool_values=draft_pool_values,
         )
 
         logprobs_tensors = None
@@ -422,7 +428,10 @@ def rejection_sample(
     max_spec_len: int,
     # [batch_size]
     cu_num_draft_tokens: torch.Tensor,
-    # [num_tokens, vocab_size]
+    # [num_tokens, vocab_size] dense, or [num_tokens] gathered-q -- or,
+    # with draft_pool_ids/values, gathered-q plus its support for EXACT
+    # (p-q)+ recovery (PR #109 review: masking one token is exact only for
+    # one-hot q; probabilistic q spreads over the candidate pool).
     draft_probs: torch.Tensor | None,
     # [num_tokens, vocab_size]
     target_logits: torch.Tensor,
@@ -432,9 +441,17 @@ def rejection_sample(
     synthetic_mode: bool = False,
     synthetic_conditional_rates: torch.Tensor | None = None,
     use_fp64_gumbel: bool = False,
+    # [num_tokens, pool] / [num_tokens, pool] or None
+    draft_pool_ids: torch.Tensor | None = None,
+    draft_pool_values: torch.Tensor | None = None,
 ) -> torch.Tensor:
     assert draft_token_ids.ndim == 1
-    assert draft_probs is None or draft_probs.ndim == 2
+    # deneb fork (gathered-q): draft_probs may be 1-D -- q at the drafted
+    # token only. The ratio test needs exactly that (it loads one index per
+    # position), acceptance is IDENTICAL to the dense form; the recovery
+    # kernel then takes the target-only law this stack served before
+    # probabilistic mode instead of the exact (p-q)+ residual.
+    assert draft_probs is None or draft_probs.ndim in (1, 2)
     assert cu_num_draft_tokens.ndim == 1
     assert target_logits.ndim == 2
 
@@ -507,6 +524,8 @@ def rejection_sample(
         sampling_metadata,
         device,
         use_fp64_gumbel,
+        draft_pool_ids,
+        draft_pool_values,
     )
 
     # Rejection sampling for random sampling requests.
@@ -525,6 +544,7 @@ def rejection_sample(
         vocab_size,
         synthetic_conditional_rates,
         NO_DRAFT_PROBS=draft_probs is None,
+        SPARSE_Q=draft_probs is not None and draft_probs.ndim == 1,
         SYNTHETIC_MODE=synthetic_mode,
     )
     return output_token_ids
@@ -697,6 +717,8 @@ def sample_recovered_tokens(
     sampling_metadata: SamplingMetadata,
     device: torch.device,
     use_fp64_gumbel: bool = False,
+    draft_pool_ids: torch.Tensor | None = None,
+    draft_pool_values: torch.Tensor | None = None,
 ) -> torch.Tensor:
     # NOTE(woosuk): Create only one distribution for each request.
     batch_size = len(num_draft_tokens)
@@ -717,6 +739,20 @@ def sample_recovered_tokens(
     inv_q = q.reciprocal()
 
     recovered_token_ids = torch.empty_like(draft_token_ids)
+    sparse_pool = (
+        draft_probs is not None
+        and draft_probs.ndim == 1
+        and draft_pool_ids is not None
+        and draft_pool_values is not None
+    )
+    if sparse_pool:
+        pool = draft_pool_ids.shape[-1]
+        pool_ids = draft_pool_ids.contiguous()
+        pool_vals = draft_pool_values.contiguous()
+    else:
+        pool = 1
+        pool_ids = draft_token_ids
+        pool_vals = draft_token_ids
     BLOCK_SIZE = 8192
     sample_recovered_tokens_kernel[(batch_size, max_spec_len)](
         recovered_token_ids,
@@ -726,9 +762,14 @@ def sample_recovered_tokens(
         target_probs,
         inv_q,
         vocab_size,
+        pool_ids,
+        pool_vals,
         BLOCK_SIZE,
         NO_DRAFT_PROBS=draft_probs is None,
+        SPARSE_Q=draft_probs is not None and draft_probs.ndim == 1,
         USE_FP64_GUMBEL=use_fp64_gumbel,
+        POOL=sparse_pool,
+        Q_POOL_C=pool,
     )
     return recovered_token_ids
 
@@ -808,6 +849,7 @@ def rejection_random_sample_kernel(
     vocab_size,
     synthetic_conditional_rates_ptr,  # [num_speculative_tokens] or None
     NO_DRAFT_PROBS: tl.constexpr,
+    SPARSE_Q: tl.constexpr,
     SYNTHETIC_MODE: tl.constexpr,
 ):
     req_idx = tl.program_id(0)
@@ -838,6 +880,8 @@ def rejection_random_sample_kernel(
             else:
                 if NO_DRAFT_PROBS:
                     draft_prob = 1
+                elif SPARSE_Q:
+                    draft_prob = tl.load(draft_probs_ptr + start_idx + pos)
                 else:
                     draft_prob = tl.load(
                         draft_probs_ptr
@@ -901,9 +945,14 @@ def sample_recovered_tokens_kernel(
     target_probs_ptr,  # [num_tokens, vocab_size]
     inv_q_ptr,  # [batch_size, vocab_size]
     vocab_size,
+    draft_pool_ids_ptr,  # [num_tokens, Q_POOL_C] when POOL
+    draft_pool_values_ptr,  # [num_tokens, Q_POOL_C] when POOL
     BLOCK_SIZE: tl.constexpr,
     NO_DRAFT_PROBS: tl.constexpr,
+    SPARSE_Q: tl.constexpr,
     USE_FP64_GUMBEL: tl.constexpr,
+    POOL: tl.constexpr,
+    Q_POOL_C: tl.constexpr,
 ):
     req_idx = tl.program_id(0)
     start_idx = (
@@ -933,7 +982,25 @@ def sample_recovered_tokens_kernel(
         vocab_offset = v + tl.arange(0, BLOCK_SIZE)
         vocab_mask = vocab_offset < vocab_size
 
-        if NO_DRAFT_PROBS:
+        if POOL:
+            # Sparse q WITH its support: (p - q)+ evaluated exactly. q has
+            # mass only on the pool (verified at the source; a leak degrades
+            # the whole run to dense), so p minus the pool values IS the
+            # residual -- no full-vocab q sweep, no one-token-mask bias.
+            prob = tl.load(
+                target_probs_ptr + token_idx * vocab_size + vocab_offset,
+                mask=vocab_mask,
+                other=0.0,
+            )
+            for j in tl.static_range(Q_POOL_C):
+                pid = tl.load(draft_pool_ids_ptr + token_idx * Q_POOL_C + j)
+                pv = tl.load(
+                    draft_pool_values_ptr + token_idx * Q_POOL_C + j
+                )
+                prob = tl.where(
+                    vocab_offset == pid, tl.maximum(prob - pv, 0.0), prob
+                )
+        elif NO_DRAFT_PROBS:
             prob = tl.load(
                 target_probs_ptr + token_idx * vocab_size + vocab_offset,
                 mask=(vocab_mask & (vocab_offset != draft_token_id)),

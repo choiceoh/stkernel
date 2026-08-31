@@ -950,6 +950,10 @@ class GPUModelRunner(
         # Cached outputs.
         self._draft_token_ids: list[list[int]] | torch.Tensor | None = None
         self._draft_probs: torch.Tensor | None = None
+        self._draft_pool_ids: torch.Tensor | None = None
+        self._draft_pool_values: torch.Tensor | None = None
+        self._staged_pool_ids: torch.Tensor | None = None
+        self._staged_pool_values: torch.Tensor | None = None
         self._draft_prob_req_ids: list[str] | None = None
         # N-gram GPU path: async D2H buffer/event for per-request valid draft counts.
         self._num_valid_draft_tokens: torch.Tensor | None = None
@@ -3806,11 +3810,18 @@ class GPUModelRunner(
             self.input_batch.update_async_spec_token_ids(draft_token_ids_cpu)
 
         draft_probs = self._get_spec_decode_draft_probs(spec_decode_metadata)
+        pool_ids = getattr(self, "_staged_pool_ids", None)
+        pool_vals = getattr(self, "_staged_pool_values", None)
+        if pool_ids is None or pool_vals is None:
+            pool_ids = None
+            pool_vals = None
         sampler_output = self.rejection_sampler(
             spec_decode_metadata,
             draft_probs,
             logits,
             sampling_metadata,
+            draft_pool_ids=pool_ids,
+            draft_pool_values=pool_vals,
         )
         return sampler_output
 
@@ -5171,7 +5182,34 @@ class GPUModelRunner(
 
         if not draft_probs_rows:
             return None
-        return torch.cat(draft_probs_rows, dim=0).contiguous()
+        staged = torch.cat(draft_probs_rows, dim=0).contiguous()
+        if staged.ndim == 1 and self._draft_pool_ids is not None:
+            # gathered-q: stage the support pool rows the same way so the
+            # recovery kernel can compute the exact (p-q)+ residual.
+            pool_id_rows = []
+            pool_val_rows = []
+            for req_id, num_draft in zip(
+                self.input_batch.req_ids,
+                spec_decode_metadata.num_draft_tokens,
+            ):
+                if num_draft == 0:
+                    continue
+                row_idx = row_by_req_id.get(req_id)
+                if row_idx is None:
+                    self._draft_pool_ids = None
+                    self._draft_pool_values = None
+                    return staged
+                pool_id_rows.append(
+                    self._draft_pool_ids[row_idx, :num_draft])
+                pool_val_rows.append(
+                    self._draft_pool_values[row_idx, :num_draft])
+            self._staged_pool_ids = (
+                torch.cat(pool_id_rows, dim=0).contiguous()
+                if pool_id_rows else None)
+            self._staged_pool_values = (
+                torch.cat(pool_val_rows, dim=0).contiguous()
+                if pool_val_rows else None)
+        return staged
 
     def propose_draft_token_ids(
         self,
@@ -5449,6 +5487,13 @@ class GPUModelRunner(
                 if draft_probs is not None:
                     self._draft_probs = draft_probs
                     self._draft_prob_req_ids = self.input_batch.req_ids.copy()
+                    pool = (
+                        self.drafter.take_last_draft_pool()
+                        if hasattr(self.drafter, "take_last_draft_pool")
+                        else None
+                    )
+                    if pool is not None:
+                        self._draft_pool_ids, self._draft_pool_values = pool
 
         return draft_token_ids
 
