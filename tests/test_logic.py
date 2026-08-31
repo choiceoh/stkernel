@@ -1732,6 +1732,41 @@ def test_fp8_acceptance_contracts() -> None:
         "tokenizer read/shape failure must stop load instead of disabling the mask",
     )
 
+    target_ns = load_defs(
+        "overlay/glm5next_model.py",
+        {"_validate_decodable_vocab_bound"},
+        {},
+    )
+    validate_bound = target_ns["_validate_decodable_vocab_bound"]
+    check(
+        validate_bound(154856, 154880) == 154856,
+        "a decodable prefix below the target vocabulary must remain valid",
+    )
+    check(
+        validate_bound(154880, 154880) == 154880,
+        "a decodable prefix equal to the target vocabulary must remain valid",
+    )
+    try:
+        validate_bound(154881, 154880)
+    except ValueError as exc:
+        check(
+            "154881 > 154880" in str(exc),
+            "an oversized decodable prefix must report both vocabulary bounds",
+        )
+    else:
+        check(False, "an oversized decodable prefix must stop target model load")
+
+    target_source = open(
+        _overlay_source("overlay/glm5next_model.py"), encoding="utf-8"
+    ).read()
+    compact_target = re.sub(r"\s+", "", target_source)
+    check(
+        "self._decodable_vocab=_validate_decodable_vocab_bound("
+        "decodable_vocab_size(vllm_config.model_config.tokenizer),"
+        "self.config.vocab_size,)" in compact_target,
+        "the target model must validate its decodable bound even without a drafter",
+    )
+
     ns = load_defs(
         "overlay/fp8_lm_head.py",
         {
