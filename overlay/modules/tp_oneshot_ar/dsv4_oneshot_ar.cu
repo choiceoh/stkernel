@@ -69,12 +69,17 @@ static bool g_started = false;
 static const char *DEVNAME = "rocep1s0f0";
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
-__global__ void k_guard(volatile uint64_t *tx, volatile uint64_t *ack) {
-  if (threadIdx.x == 0)
-    while ((*tx + 1) > (*ack + RING)) {
-    }
-}
+// k_guard used to be its own <<<1,32>>> launch. Its condition reads only
+// globals (tx_seq, ack_seq), identical for every block, so each block can spin
+// on it independently -- no cross-block coordination, and nothing here waits on
+// a block of this same kernel, so a block that is not resident yet cannot
+// deadlock us. Folding it in removes one launch per collective; at ~104
+// collectives a decode step that is ~104 kernels of the 2,210 a step runs.
 __global__ void k_copy_in(Ctrl *c, const bf16 *src, int n) {
+  if (threadIdx.x == 0)
+    while ((c->tx_seq + 1) > (c->ack_seq + RING)) {
+    }
+  __syncthreads();
   uint64_t nxt = c->tx_seq + 1;
   int slot = (int)(nxt % RING);
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
@@ -91,19 +96,19 @@ __global__ void k_signal(Ctrl *c, int nbytes) {
     __threadfence_system();
   }
 }
-__global__ void k_wait(Ctrl *c) {
+// k_wait used to be its own <<<1,32>>> launch, for the same reason and with
+// the same argument: it polls the peers' inbound flags, which are globals, so
+// every block can wait on them by itself. The fence stays where it was -- after
+// the wait, before anything reads peer data.
+__global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
+  uint64_t s = c->tx_seq;
+  int slot = (int)(s % RING);
   if (threadIdx.x == 0) {
-    uint64_t s = c->tx_seq;
-    int slot = (int)(s % RING);
     while (c->rxf[slot][0] < s || c->rxf[slot][1] < s || c->rxf[slot][2] < s) {
     }
   }
   __syncthreads();
   __threadfence_system();
-}
-__global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
-  uint64_t s = c->tx_seq;
-  int slot = (int)(s % RING);
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     float acc = __bfloat162float(src[i]) +
@@ -344,10 +349,14 @@ static torch::Tensor py_oneshot(torch::Tensor input) {
   cudaStream_t st = c10::cuda::getCurrentCUDAStream();
   int grid = (int)((n + 255) / 256);
   if (grid > 256) grid = 256;
-  k_guard<<<1, 32, 0, st>>>(&g_ctrl->tx_seq, &g_ctrl->ack_seq);
+  // Three launches, not five: the ring-space guard rides in k_copy_in and the
+  // peer wait rides in k_reduce. k_signal has to stay separate -- it may only
+  // run once every block of k_copy_in has finished, and there is no grid-wide
+  // "all blocks done" inside a kernel without a cooperative launch or an atomic
+  // counter, and a counter would have to be reset somewhere a cudagraph replay
+  // cannot see.
   k_copy_in<<<grid, 256, 0, st>>>(g_ctrl, src, (int)n);
   k_signal<<<1, 32, 0, st>>>(g_ctrl, (int)(n * 2));
-  k_wait<<<1, 32, 0, st>>>(g_ctrl);
   k_reduce<<<grid, 256, 0, st>>>(g_ctrl, src, dst, (int)n);
   return out;
 }
