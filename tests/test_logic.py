@@ -2691,8 +2691,131 @@ def test_ep_fixed_pair_out_initialised() -> None:
           "wrote them without applying token_final_scales")
     check("keep.unsqueeze(1)" in body, "the mask must be the keep flags")
     print("  EP fixed pair_out init ......... OK")
+def test_glm53_sm121_mla_prefill_gate() -> None:
+    """The GLM dense-prefill arm must fail closed on contract drift."""
+    ns = load_defs(
+        "overlay/flash_attn.py",
+        {
+            "_glm53_sm121_dense_prefill_gate",
+            "_glm53_sm121_filter_prefill_metadata",
+            "_glm53_sm121_instance_dimensions",
+        },
+        {},
+    )
+    gate = ns["_glm53_sm121_dense_prefill_gate"]
+    valid = {
+        "flag": "1",
+        "capability": (12, 1),
+        "dimensions": (256, 0, 256),
+        "model_type": "glm5_next_text",
+        "kv_lora_rank": 512,
+        "num_attention_heads": 64,
+        "index_topk": 2048,
+        "index_kpool": 4,
+        "kv_cache_dtype": "fp8_e4m3",
+        "outer_backend_name": "FLASHINFER_MLA_SPARSE_SM90",
+        "flash_attn_version": 2,
+    }
+    check(gate(**valid), "exact SM121/GLM/HND contract admits dense prefill")
+    rejected = {
+        "flag": (None, "0", "true", " 1"),
+        "capability": ((12, 0), (10, 0)),
+        "dimensions": ((128, 64, 128), (256, 64, 256)),
+        "model_type": (None, "deepseek_v32"),
+        "kv_lora_rank": (256, 576),
+        "num_attention_heads": (32, 128),
+        "index_topk": (1024, 4096),
+        "index_kpool": (1, 16),
+        "kv_cache_dtype": ("auto", "fp8_ds_mla"),
+        "outer_backend_name": (
+            "FLASHINFER_MLA_SPARSE_SM120",
+            "FLASHMLA_SPARSE",
+        ),
+        "flash_attn_version": (3, 4, None),
+    }
+    for field, values in rejected.items():
+        for bad in values:
+            case = dict(valid)
+            case[field] = bad
+            check(not gate(**case), f"{field}={bad!r} retains top-k MQA")
 
+    dims = ns["_glm53_sm121_instance_dimensions"]
+    check(
+        dims(qk_nope_head_dim=256, qk_rope_head_dim=0, v_head_dim=256),
+        "only the admitted non-stock GLM dimensions latch the request guard",
+    )
+    for stock_dims in ((128, 64, 128), (192, 64, 256), (64, 64, 128)):
+        check(
+            not dims(
+                qk_nope_head_dim=stock_dims[0],
+                qk_rope_head_dim=stock_dims[1],
+                v_head_dim=stock_dims[2],
+            ),
+            f"stock dimensions {stock_dims} do not latch the GLM guard",
+        )
 
+    filter_metadata = ns["_glm53_sm121_filter_prefill_metadata"]
+    fresh = types.SimpleNamespace(chunked_context=None, use_dense_mha=True)
+    filter_metadata(fresh, optin=True)
+    check(fresh.use_dense_mha, "fresh causal GLM prefill remains dense-MHA")
+    cached = types.SimpleNamespace(chunked_context=object(), use_dense_mha=True)
+    filter_metadata(cached, optin=True)
+    check(not cached.use_dense_mha, "cached GLM prefill falls back before FA2")
+    stock = types.SimpleNamespace(chunked_context=object(), use_dense_mha=True)
+    filter_metadata(stock, optin=False)
+    check(stock.use_dense_mha, "stock FlashAttention models remain unchanged")
+
+    source = open(_overlay_source("overlay/flash_attn.py"), encoding="utf-8").read()
+    tree = ast.parse(source)
+    backend = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "FlashAttnPrefillBackend"
+    )
+    prepare = next(
+        node
+        for node in backend.body
+        if isinstance(node, ast.FunctionDef) and node.name == "prepare_metadata"
+    )
+    prepare_source = ast.get_source_segment(source, prepare)
+    assert prepare_source is not None
+    check(
+        prepare_source.index("super().prepare_metadata")
+        < prepare_source.index("_glm53_sm121_filter_prefill_metadata"),
+        "the cached-context guard runs after stock metadata preparation",
+    )
+    enabled = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_glm53_sm121_dense_prefill_enabled"
+    )
+    enabled_source = ast.get_source_segment(source, enabled)
+    assert enabled_source is not None
+    check(
+        "reversed(tuple(static_context.values()))" in enabled_source
+        and 'getattr(layer, "attn_backend", None)' in enabled_source,
+        "admission binds the newest layer's actual outer backend",
+    )
+    check(
+        "stock_supported or _glm53_sm121_dense_prefill_enabled" in source,
+        "stock dimension support remains intact",
+    )
+    build_source = open(
+        os.path.join(REPO, "build", "glm53", "flash_attn.py"),
+        encoding="utf-8",
+    ).read()
+    check(source == build_source, "module and composed build remain byte-identical")
+    profile = open(
+        os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
+    ).read()
+    check(
+        "glm53_sm121_mla_prefill" in profile
+        and "VLLM_GLM53_SM121_MLA_PREFILL=0" in profile,
+        "the mounted module remains default-off",
+    )
+    print("  GLM53 SM121 MLA prefill gate .... OK")
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -2725,4 +2848,5 @@ if __name__ == "__main__":
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_bigfuse_knob()
+    test_glm53_sm121_mla_prefill_gate()
     print(f"all OK ({PASS} checks)")
