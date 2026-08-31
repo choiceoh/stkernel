@@ -87,6 +87,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_dflash2_fp8_head` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_dflash_loader_fp8` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_kpool_tail_select` | 모델 전용 | 1 | — | · | ● | · |
+| `glm53_kda_prefill_regime` | GLM-5.3 KDA prefill autotune buckets (opt-in) | 2 | — | · | ○ | · |
 | `glm53_model_wiring` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_oneshot_wiring` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_v2_sampler_guards` | 모델 전용 | 1 | — | · | ● | · |
@@ -100,5 +101,12 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 `VLLM_GLM53_SM121_MLA_PREFILL=1`과 SM121·GLM 형상·SM90/HND
 `fp8_e4m3` 계약이 모두 맞을 때만 2048 토큰 이하 dense-MHA prefill을
 열고, 나머지는 기존 top-k MQA를 유지한다.
+
+`glm53_kda_prefill_regime`도 마운트만 되고 기본은 꺼져 있다. exact
+`VLLM_GLM53_KDA_PREFILL_REGIME=1`과 현재 GLM/TP4/SM121/bf16 chunk 계약이
+모두 맞을 때만 packed 평균 1024 토큰 이상을 별도 Triton autotune cache로
+분리한다. raw T는 key가 아니며 short/long 두 bucket만 허용한다. 기본 0은
+레짐 분리를 끄지만 오버레이된 Triton ABI가 달라지므로 최초 stock bucket의
+재컴파일·autotune까지 없애는 byte-identical rollback은 아니다.
 
 `qwen38`은 이미지를 고정하지 않았다. 그 브링업은 스톡 이미지에서 돌았고 b12x 경로는 열린 문제가 아니라 닫힌 것이라(MEASUREMENTS.md), 프로필은 기록으로만 있다 — 실제로 합성해 배포한 적은 없다.
