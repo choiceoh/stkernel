@@ -182,6 +182,7 @@ constant is unmeasured until the pending boot).
 | mhc 2종 | 179 | structural (attention sits between pre and post_pre) + tiles exhausted R1–R3 — closed |
 | cutlass_80_wmma | 354.7 | bandwidth floor; the fp8 byte diet is the lever, not the kernel (split-K at M=1–8 is reasonable) |
 | shared-expert overlap | — | already `MULTI_STREAM_OVERLAPPED` in-image (aux stream, threshold 256 tokens — verified) — closed |
+| osar wait phase | P99 89.0 of 101.5 µs/collective (88%) | **CLOSED 2026-08-31, measured**: #100's backoff cut the spin 44% (89.0→50.0 µs) and end-to-end bought **+0.1%** — the wait is network-latency-bound (the release is the flag's arrival, not the spin's cost) and already overlapped (shared-expert aux stream + #93's idle-block skip). The AR axis has no kernel-level headroom left; only structural levers remain (fewer collectives via enable_sp, deeper async) |
 | gate+topk true fusion | −42 | deferred with reasoning: a single-CTA full-width design makes one CTA read the 2.4 MB gate weight (~2× slower GEMM) to save one launch |
 
 ### Acceptance — the multiplier kernel work cannot touch
