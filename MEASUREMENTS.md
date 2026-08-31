@@ -2036,17 +2036,37 @@ osar 의 −9.6% 는 C≤4 에서만 실현된다. 프리필(청크 4096 토큰 
 GLM 은 MAX_SEQS 4 × (1+7) = 32 토큰 = 정확히 131072 elements 라 기본값이 그 스택의
 캡처를 이미 정확히 덮고, 그 런처는 이 env 를 넘기지 않는다.
 
-브래킷(엔진 다운, base→cand→base):
+### 채택 — 미실측, 운영자 지시 (2026-09-01)
+
+운영자 지시("테스트없이 진행")로 **브래킷 없이 `OSAR_MAXEL=786432` 를 dsv4 런처
+기본값으로 채택했다.** 786432 bf16 = 1.5 MB = 192 토큰 = `MAX_NUM_SEQS 32 ×
+(1+5)`, 즉 이 런처가 허용하는 캡처 verify 전 구간이다.
+
+**원장 규율상 이 항목은 "미실측 채택" 으로 분류한다.** 근거가 있는 것과 없는
+것을 갈라 둔다:
+
+| | |
+|---|---|
+| **확립됨** | 게이트가 C=5 에서 끊긴다(산수·소스) · 버퍼 비용 4.0→24.0 MiB/rank(산수) · 두 값 모두 프로덕션 이미지에서 nvcc 컴파일 성공 · shim 이 env 를 반영(임포트 스모크) · 불일치는 self-test 가 fail-closed 로 잡음 |
+| **미확립** | **288 KB~1.5 MB 에서 one-shot 이 링을 이기는지.** one-shot 은 지연 최적화이고 링은 큰 메시지에서 대역폭 최적이므로 그 구간 어딘가에 크로스오버가 있다. 위치를 모른다 |
+
+즉 **이득이 측정된 적 없고, 회귀 가능성도 배제된 적 없다.** 되돌리기는 env
+한 줄이다(`OSAR_MAXEL=131072`, 재배포 불요). 새 값의 첫 부팅은 확장을 자기
+빌드 디렉터리로 재컴파일한다(.cu 하나라 ~1–2 분, torch.compile 재컴파일 아님).
+
+**남은 숙제 — 아직 유효한 브래킷.** 값이 기본으로 들어갔을 뿐 판정은 없다:
 
 ```bash
 systemctl --user stop dsv4-tp4
-OSAR_MAXEL=786432 bash launchers/start-hy4-tp4.sh
+OSAR_MAXEL=131072 bash launchers/start-hy4-tp4.sh   # base (구 동작)
+OSAR_MAXEL=786432 bash launchers/start-hy4-tp4.sh   # cand (현 기본)
+OSAR_MAXEL=131072 bash launchers/start-hy4-tp4.sh   # base
 ```
 
-게이트: 네 노드 `[osar] … maxel=786432` 지문 일치 · self-test PASS div=0
-real=True · **C=8/16/32 집계 tok/s**(C=1 은 이미 one-shot 이라 무변 — 이 축은
-고동시성에서만 나타난다) · 품질 9/9. 회귀면 그것도 답이다: "이 패브릭에서 링의
-크로스오버는 256 KB 아래" 를 원장에 남긴다.
+게이트: 네 노드 `[osar] … maxel=` 지문 일치 · self-test PASS div=0 real=True ·
+**C=8/16/32 집계 tok/s**(C=1 은 이미 one-shot 이라 무변 — 이 축은 고동시성에서만
+나타난다) · 품질 9/9. 회귀면 그것도 답이다: "이 패브릭에서 링의 크로스오버는
+256 KB 아래" 를 원장에 남기고 기본값을 되돌린다.
 
 ### ★열린 축 — b12x MoE 백엔드 컷오버 (dsv4는 노브가 없었다)
 
@@ -2190,7 +2210,8 @@ PR #89~#153이 건드린 overlay/modules/*  ∩  dsv4 프로필의 MODULES
 | **측정 통로가 열림** | COMPILE_CFG · CUSTOM_OPS_AXIS · EXTRA_ENV |
 | **거짓 판정 차단** | custom_ops 융합 암(두 레인 모두) |
 | **부팅 없이 종결** | ONEPASS(상한) · b12x 전량(구조) · #83/#95/#98/#141(구조·기존 판정) |
-| **측정 대기** | **osar MAXEL(C≥6 전 구간)** · **b12x MoE 컷오버(C≥24, 상한 3.5%)** · MAX_NUM_BATCHED 4096→8192 · MOE_W4A16(품질 축) |
+| **미실측 채택** | **osar MAXEL 786432**(운영자 지시, 브래킷 미실행 — 이득도 회귀도 미확인) |
+| **측정 대기** | **b12x MoE 컷오버(C≥24, 상한 3.5%)** · MAX_NUM_BATCHED 4096→8192 · MOE_W4A16(품질 축) · **osar MAXEL 사후 브래킷** |
 | **원장 정정** | MoE 버킷은 W4A16이 아니라 **W4A4** · 커널 경계 둘(C=1 micro, C≈18 static→dynamic) |
 
 커널 축에서 넘어온 것은 여전히 0이고, 그건 dsv4가 08-11에 선언한 **소프트웨어 축

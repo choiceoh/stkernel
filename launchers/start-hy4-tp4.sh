@@ -174,7 +174,20 @@ esac
 # is caught by the boot self-test (peers write at the wrong stride, divergence
 # blows past 0.5) which puts every rank back on NCCL -- the safe direction.
 # The value is in the [osar] source fingerprint line on all four nodes.
-OSAR_MAXEL="${OSAR_MAXEL:-}"
+# ADOPTED 2026-09-01 WITHOUT A BRACKET, by operator direction ("테스트없이 진행").
+# 786432 bf16 = 1.5 MB = 192 tokens = MAX_NUM_SEQS 32 * (1+5), i.e. the whole
+# captured verify range, so one-shot serves every decode concurrency this
+# launcher admits instead of stopping at C=5.
+#
+# What is NOT established: whether one-shot still beats the ring at 288 KB -
+# 1.5 MB. One-shot is a latency play and the ring is bandwidth-optimal for
+# large messages, so a crossover exists somewhere in that span and its location
+# was never measured. The A/B that would settle it is in MEASUREMENTS.md.
+# Revert with OSAR_MAXEL=131072 (env-only, no redeploy).
+#
+# First boot at a new value recompiles the extension into its own build
+# directory (~1-2 min for one .cu -- not the torch.compile recompile).
+OSAR_MAXEL="${OSAR_MAXEL:-786432}"
 if [ -n "$OSAR_MAXEL" ]; then
   case "$OSAR_MAXEL" in
     ''|*[!0-9]*) echo "ABORT: OSAR_MAXEL must be a positive integer (got '$OSAR_MAXEL')"; exit 2 ;;
