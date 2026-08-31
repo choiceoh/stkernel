@@ -1570,6 +1570,55 @@ def test_mhc_smallm_knob() -> None:
             os.environ[env_name] = saved
 
 
+# ---------------------------------------------------------------------------
+# EP fixed pair plan: the decode path that drops the dummy expert entirely.
+# ---------------------------------------------------------------------------
+def test_ep_fixed_pair_plan() -> None:
+    ns = load_defs(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        {"b12x_ep_fixed_pair_plan"},
+        {},
+    )
+    plan = ns["b12x_ep_fixed_pair_plan"]
+
+    for label, flags in (
+        ("typical", [True] * 64 + [False] * 192),
+        ("local last", [False] * 192 + [True] * 64),
+        ("all local", [True] * 256),
+        ("one local", [True] + [False] * 255),
+        ("interleaved", [i % 4 == 0 for i in range(256)]),
+    ):
+        src, keep = plan(flags, len(flags))
+        local = [i for i, f in enumerate(flags) if f]
+        n = len(local)
+        check(len(src) == len(flags) and len(keep) == len(flags),
+              f"plan must keep the input length ({label})")
+        check(sum(keep) == n, f"exactly the local pairs are kept ({label})")
+        check(src[:n] == local,
+              f"every real local pair survives, in order ({label})")
+        check(all(not k for k in keep[n:]),
+              f"padding carries weight 0 ({label})")
+        check(all(i in local for i in src),
+              f"padding may only repeat pairs already present ({label})")
+        if len(flags) > n > 1:
+            check(len(set(src[n:])) > 1,
+                  f"padding spreads instead of piling on one pair ({label})")
+
+    # no local pairs: shape held, nothing kept, no index out of range
+    src, keep = plan([False] * 8, 8)
+    check(len(src) == 8 and not any(keep) and set(src) == {0},
+          "an empty local set must still yield a valid fixed-length plan")
+
+    # the plan never names an expert the caller did not already route to --
+    # that is what removes the dummy expert's 12 MiB/layer weight read
+    flags = [i % 3 == 0 for i in range(60)]
+    src, _ = plan(flags, 60)
+    check(set(src) <= {i for i, f in enumerate(flags) if f},
+          "plan must never introduce a slot outside the local set")
+
+    print("  EP fixed pair plan ............. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -1586,6 +1635,7 @@ if __name__ == "__main__":
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
     test_ue8m0_scale_repair()
+    test_ep_fixed_pair_plan()
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()
