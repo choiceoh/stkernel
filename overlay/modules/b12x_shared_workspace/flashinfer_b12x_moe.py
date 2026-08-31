@@ -1039,7 +1039,17 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         )
 
         pair_x = hidden_states.index_select(0, token_index)
-        pair_out = torch.empty(
+        # zeros, not empty. Three quarters of these rows carry router weight 0
+        # (the repeats that replace remote slots), and we cannot assume the
+        # kernel writes a row it has no work for. index_add_ below sums EVERY
+        # row into the token-major output, so an unwritten row contributes
+        # uninitialised memory -- and an uninitialised bit pattern can be NaN,
+        # which no later multiply can clear.
+        #
+        # _apply_ep_compact gets away with empty because it drops the remote
+        # slots outright, leaving only rows with real weights. This path is the
+        # first to hand the buffer rows the kernel may skip.
+        pair_out = torch.zeros(
             (pairs, hidden_states.size(1)),
             dtype=output.dtype,
             device=output.device,
@@ -1073,6 +1083,11 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 swiglu_beta=self._swiglu_beta,
                 swiglu_limit=self._swiglu_limit,
             )
+        # Second guard, for the other way this breaks: if the kernel writes a
+        # zero-weight row WITHOUT applying token_final_scales, that row holds a
+        # full unscaled expert output and index_add_ would add it to a real
+        # token. Masking makes the sum correct under either kernel behaviour.
+        pair_out.mul_(keep.unsqueeze(1).to(pair_out.dtype))
         output.zero_()
         output.index_add_(0, token_index, pair_out)
         return output
