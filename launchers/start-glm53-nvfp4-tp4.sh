@@ -284,7 +284,7 @@ elif [ "$DFLASH2" = 1 ]; then
   # number this lane has recorded was taken under the degenerate setting.
   # DRAFT_SAMPLE=greedy restores the old behavior for an A/B.
   DRAFT_SAMPLE="${DRAFT_SAMPLE:-probabilistic}"
-  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_spec_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
+  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
 else
   SPECCFG_VAL="--speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":$SPEC_K}'"
 fi
