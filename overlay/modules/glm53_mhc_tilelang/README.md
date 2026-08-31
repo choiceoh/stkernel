@@ -32,9 +32,10 @@ shape contracts and falls back to stock on ANY doubt:
   (default n_thr=256; a non-exact h-loop silently drops elements)
 
 Unset (the profile default) = byte-identical stock behavior. The value gets
-set only after `probes/mhc_glm53_bench.py` finds a winner on real shapes and
-a bracket boot confirms it (quality 9/9 + Korean 0/16 + C=1 step/s, the
-standard gates).
+set only after `probes/run_mhc_glm53_bench.sh` finds a winner on real shapes
+and a bracket boot confirms it (quality 9/9 + Korean 0/16 + C=1 step/s, the
+standard gates). The wrapper mounts the composed sources into a fresh image;
+running the Python file directly is deliberately rejected.
 
 ## Prefill big_fuse retune — `VLLM_GLM53_MHC_BIGFUSE` (default off)
 
@@ -49,7 +50,7 @@ dsv4 precedents ported here (`dsv4_mhc_tilelang` R2+R3):
 
 Format: `VLLM_GLM53_MHC_BIGFUSE="h_blk[,post_thr]"` — e.g. `"4096"` or
 `"4096,512"`. Decode is never touched (the M>64 gate is structural).
-`probes/mhc_glm53_bench.py --prefill` sweeps the big_fuse side on real
+`probes/run_mhc_glm53_bench.sh --prefill` sweeps the big_fuse side on real
 shapes. Adopt via bracket + the standard gates; numerics class is bf16
 reduce-order (R3 measured layer_input rel 1.2e-3).
 
@@ -65,10 +66,11 @@ their global roundtrip disappear — −45 launches/step across the 45 layers
 
 The math is a line-by-line transcription of the two stock kernels;
 `tests/test_mhc_onepass_math` proves formula equivalence bitwise in pure
-python, and `probes/mhc_glm53_bench.py --onepass` is the GPU validation
-harness (rel ≤ 1e-4 vs the stock pair, plus timing). The gate stays CLOSED —
-no boot serves through this kernel — until that probe runs clean in an
-engine-down window and a bracket adopts it.
+python, and `probes/run_mhc_glm53_bench.sh --onepass` is the GPU validation
+harness (rel ≤ 1e-4 vs the stock pair, plus timing). It proves both imported
+source hashes and that ONEPASS was frozen on before the eager MHC package
+import. The gate stays CLOSED — no boot serves through this kernel — until
+that probe runs clean in an engine-down window and a bracket adopts it.
 
 ## Not in this takeover
 
