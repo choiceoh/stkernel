@@ -322,9 +322,15 @@ class Glm5NextMoE(nn.Module):
         if self.is_sequence_parallel and not already_sequence_parallel:
             hidden_states = sequence_parallel_chunk(hidden_states)
 
-        # The router is always external (self.gate); main's MoERunner expects
-        # pre-computed router_logits, so compute them here unconditionally.
-        router_logits, _ = self.gate(hidden_states)
+        # The MoE runner HOLDS this layer's gate (the factory was given it)
+        # and applies it itself, after the shared-expert aux-stream sync, so
+        # the gate GEMM overlaps the aux stream -- and it overwrites whatever
+        # router_logits it is handed. Computing the gate here as well made
+        # every MoE layer launch the router TWICE per forward (trace: gate
+        # kernels exactly 2x the topk kernels, 84 vs 42/step, both eager,
+        # 20us apart, identical grids). Hand it None and let the runner's
+        # overlapped call be the only one.
+        router_logits = None
         final_hidden_states = self.experts(
             hidden_states=hidden_states, router_logits=router_logits
         )
