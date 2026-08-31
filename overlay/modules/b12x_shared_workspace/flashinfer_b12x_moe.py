@@ -86,6 +86,40 @@ def remap_b12x_ep_slot(
     return local
 
 
+
+def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
+    """Keep EP off the micro MoE kernels. Returns what it did, for the log.
+
+    `use_direct_micro` already excludes EP by shape -- it requires
+    `n <= _DIRECT_MICRO_MAX_N` (512) and EP leaves the intermediate unsharded
+    at 2048. Plain `micro` has **no n bound**: it only checks
+    `num_tokens <= _MICRO_MAX_TOKENS` (8), and a C=1 decode is exactly 8
+    tokens (one sequence x 1+k positions), so EP decode lands there.
+
+    moe_micro_kernel's phase 0 does not initialise `global_to_local_expert` or
+    `active_expert_count` (its own module docstring says so), and our EP
+    disguise hands the kernel remapped local ids that depend on that table.
+    Pinning the token bound to 0 turns both micro variants off, leaving plain
+    static -- whose per-expert `token_map` holds a decode batch comfortably
+    (256 pairs against 640 rows).
+
+    Set VLLM_B12X_EP_ALLOW_MICRO=1 to leave upstream selection alone.
+    """
+    if env_get("VLLM_B12X_EP_ALLOW_MICRO", "0").strip().lower() in (
+        "1", "true", "yes", "on"
+    ):
+        return "left upstream micro selection alone (VLLM_B12X_EP_ALLOW_MICRO=1)"
+    try:
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
+    except Exception as exc:
+        return f"micro bound untouched ({type(exc).__name__}: {exc})"
+    prior = getattr(moe_dispatch, "_MICRO_MAX_TOKENS", None)
+    if prior in (None, 0):
+        return f"micro bound already {prior}"
+    moe_dispatch._MICRO_MAX_TOKENS = 0
+    return f"micro bound {prior} -> 0 (EP uses plain static)"
+
+
 def remap_b12x_ep_routing(
     topk_ids,
     topk_weights,
@@ -141,6 +175,7 @@ B12X_EP_COMPACT_MIN_ROUTED = 640
 # The measured fingerprint is worth one device sync per process, not one per
 # MoE layer -- this model has 42 of them and they share a wrapper geometry.
 _EP_CAPACITY_LOGGED = False
+_EP_MICRO_DISABLED = False
 
 
 def b12x_ep_compact_enabled(env_get=os.environ.get) -> bool:
@@ -559,6 +594,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
         if self._use_ep:
             self._pad_dummy_expert(layer)
+            global _EP_MICRO_DISABLED
+            if not _EP_MICRO_DISABLED:
+                _EP_MICRO_DISABLED = True
+                logger.warning("[b12x EP] %s", disable_b12x_micro_for_ep())
 
         # Precompute MMA-layout views of the weight scale factors once here
         # rather than recomputing on every forward pass.
