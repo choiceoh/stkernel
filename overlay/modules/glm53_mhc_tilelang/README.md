@@ -64,6 +64,18 @@ folded into ONE launch. Grid = one CTA per token; the single tile spans all
 their global roundtrip disappear — −45 launches/step across the 45 layers
 (the largest single slice of the #108 §4 axis).
 
+Before spending a window on it, read the occupancy arithmetic: the stock
+small-M grid is `(m, n_out/tile_n, split_k)` -- 576 CTAs at M=6 on the stock
+`(2, 8)` pair -- and ONEPASS's grid is `(m)`, six CTAs on a 48-SM part. None of
+the arithmetic went away (the fold is a transcription), so the same FMA work
+lands on 1/96th of the CTAs. What it buys back is one launch per call site plus
+a 2.4 KB `gemm_out` roundtrip. The DSV4 lane costed the identical trade on its
+own shapes and rejected it pre-boot at an 0.1-0.3% ceiling against that
+occupancy loss (MEASUREMENTS.md, 2026-09-01 back-import review); the census
+metric this kernel was argued from (#108 §4) is a kernel COUNT, and that
+document says in its own header not to read time out of it. The probe below
+already times each M -- look at the timing column before the rel_err one.
+
 The math is a line-by-line transcription of the two stock kernels;
 `tests/test_mhc_onepass_math` proves formula equivalence bitwise in pure
 python, and `probes/run_mhc_glm53_bench.sh --onepass` is the GPU validation

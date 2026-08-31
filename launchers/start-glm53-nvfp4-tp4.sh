@@ -114,6 +114,19 @@ MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
 #
 # PIECEWISE=1 takes the other branch: drop the attention-quant fusion and get
 # piecewise graphs over prefill. Which is faster here has never been measured.
+#
+# vLLM validates every custom_ops entry against {all, none, +op, -op}
+# (config/compilation.py). The empty string this knob used to pass was never
+# the "no walls" arm -- it raises ValueError right there (and IndexError on
+# the DSV4 image's older copy, from op[0] on an empty string), so the fusion
+# arm has never booted, and that failure reads exactly like the profile's
+# documented "barrier necessary" verdict. Spell the arm; refuse the rest here.
+_validate_custom_ops_axis() {
+  case "$CUSTOM_OPS_AXIS" in
+    all|none|[+-]?*) ;;
+    *) echo "ABORT: CUSTOM_OPS_AXIS must be all, none, +op or -op (got '${CUSTOM_OPS_AXIS}')"; exit 2 ;;
+  esac
+}
 if [ "${PIECEWISE:-0}" = 1 ]; then
   # Not ${COMPILE_CFG:-{...}}: the JSON's own braces close the expansion early
   # and the leftover "}}" is appended to whatever the caller passed, so
@@ -121,16 +134,18 @@ if [ "${PIECEWISE:-0}" = 1 ]; then
   # knob could never be used.
   # #108's fusion-barrier A/B: elementwise 483/step (25.6%) survive because
   # custom_ops:["all"] makes every registered op an opaque inductor wall.
-  # CUSTOM_OPS_AXIS="" removes the walls entirely (fusion arm);
-  # the default "all" is the control arm. One boot decides.
+  # CUSTOM_OPS_AXIS=none removes the walls (fusion arm); the default "all"
+  # is the control arm. One boot decides.
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true}}'
   if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
-    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+    _validate_custom_ops_axis
+    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS}\""'/')
   fi
 else
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_attn_quant":true}}'
   if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
-    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+    _validate_custom_ops_axis
+    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS}\""'/')
   fi
 fi
 # Compact drops dummy slots when tokens*top_k > 640. That path is eager and

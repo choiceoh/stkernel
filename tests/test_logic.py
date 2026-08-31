@@ -3234,6 +3234,281 @@ def test_oneshot_sm121_grid_contract() -> None:
               f"{profile} wiring must propagate committed-path failures")
     print("  one-shot SM121 grid contract .... OK")
 
+
+def _launcher_src(name: str) -> str:
+    return open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+
+
+def test_custom_ops_axis_contract() -> None:
+    """The fusion arm has to be spellable, and the empty string is not it.
+
+    vLLM validates every custom_ops entry against {all, none, +op, -op}
+    (config/compilation.py). CUSTOM_OPS_AXIS="" -- the value both the GLM
+    profile and its launcher documented as "the experiment" -- therefore dies
+    in config validation: ValueError on the GLM image, IndexError (op[0] on an
+    empty string) on the older copy the DSV4 image ships. Neither reaches the
+    compiler, so the fusion arm never ran, and the boot failure is
+    indistinguishable from the profile's documented "barrier necessary"
+    verdict -- a false negative that would have closed the axis with evidence
+    pointing the wrong way.
+    """
+    for name in ("start-glm53-nvfp4-tp4.sh", "start-hy4-tp4.sh"):
+        src = _launcher_src(name)
+        check("CUSTOM_OPS_AXIS" in src, f"{name}: no custom_ops axis at all")
+        # every substitution must use the checked value, never the :- default
+        # that turns "unset" into an empty entry.
+        check("${CUSTOM_OPS_AXIS:-}" not in src,
+              f"{name}: an unvalidated ${{CUSTOM_OPS_AXIS:-}} can emit an "
+              'empty custom_ops entry, which vLLM rejects')
+        check("all|none|[+-]?*)" in src,
+              f"{name}: CUSTOM_OPS_AXIS is not validated against the "
+              "{all,none,+op,-op} vocabulary vLLM enforces")
+        guard = src[src.index("all|none|[+-]?*)"):]
+        check("exit 2" in guard[:400],
+              f"{name}: the axis validator does not abort on a bad value")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    axis_doc = profile[profile.index("custom_ops fusion-barrier"):]
+    axis_doc = axis_doc[:axis_doc.index("CUSTOM_OPS_AXIS=")]
+    check('"none"' in axis_doc,
+          "glm53.env documents the fusion arm but not as none")
+    check('#   "" =' not in axis_doc,
+          'glm53.env still offers "" as the fusion arm')
+    print("  custom_ops axis contract ....... OK")
+
+
+def test_dsv4_launcher_axes() -> None:
+    """The GLM lane's launcher axes, ported to DSV4 without moving the default.
+
+    Three knobs the GLM launcher grew and this one never did: an overridable
+    compilation config (#88/#112), the diagnostic env passthrough (#118), and
+    a documented chunked-prefill budget (#117). All three must be inert when
+    unset -- this is the production launcher, and the boot it produces has to
+    stay byte-identical until a bracket says otherwise.
+    """
+    src = _launcher_src("start-hy4-tp4.sh")
+
+    # 1. the default compilation config still says exactly what the serve
+    # script carried inline before it became overridable. This literal is the
+    # production compile config; moving it is a bracket, not an edit, so the
+    # test pins the string rather than deriving it from git history (which
+    # stops being a baseline the moment this lands).
+    inline = (
+        '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],'
+        '"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,'
+        '"fuse_rope_kvcache_cat_mla":true,"fuse_attn_quant":true}}'
+    )
+    now = re.search(r"^\[ -n \"\$\{COMPILE_CFG:-\}\" \] \|\| COMPILE_CFG='(.*)'$",
+                    src, re.M)
+    check(now is not None, "COMPILE_CFG has no single-quoted default")
+    check(now.group(1) == inline,
+          "COMPILE_CFG default drifted from the production compile config:"
+          f"\n  want {inline}\n  got  {now.group(1)}")
+    # ${COMPILE_CFG:-{...}} is the shape that cannot work: the JSON's own
+    # brace closes the expansion and the leftover }} lands on the caller's
+    # value. The GLM lane lost this knob to it once (#88).
+    code = "\n".join(line for line in src.splitlines()
+                      if not line.lstrip().startswith("#"))
+    check("${COMPILE_CFG:-{" not in code,
+          "COMPILE_CFG default uses brace expansion the JSON closes early")
+
+    # 2. it has to reach the container and be read there, not re-inlined.
+    check("-e COMPILE_CFG=$COMPILE_CFG" in src,
+          "COMPILE_CFG never reaches the container")
+    serve = src[src.index("cat > /tmp/serve-hy4.sh"):src.index("SERVEEOF\n", src.index("cat > /tmp/serve-hy4.sh") + 40)]
+    check('--compilation-config "${COMPILE_CFG}"' in serve,
+          "the serve script does not read the carried COMPILE_CFG")
+    check('--compilation-config "{' not in serve,
+          "the serve script still hardcodes a compilation config")
+    # it rides an unquoted $ENVV, so a value with a space would split into
+    # two docker arguments and silently truncate the config.
+    check("must not contain whitespace" in src,
+          "COMPILE_CFG is not checked for the whitespace that would split it")
+
+    # 3. EXTRA_ENV: KEY=VALUE only, and it has to reach BOTH containers.
+    check("EXTRA_ENV_FLAGS" in src, "no EXTRA_ENV passthrough")
+    extra = src[src.index("EXTRA_ENV_FLAGS=\"\""):]
+    check("exit 2" in extra[:600],
+          "EXTRA_ENV accepts entries that are not KEY=VALUE")
+    check('COMMON="$COMMON $EXTRA_ENV_FLAGS"' in src,
+          "EXTRA_ENV never reaches the containers")
+    head = src.index("docker run -d --name hy4 $COMMON")
+    worker = src.index("docker run -d --name hy4-worker $COMMON")
+    check(head > src.index('COMMON="$COMMON $EXTRA_ENV_FLAGS"')
+          and worker > src.index('COMMON="$COMMON $EXTRA_ENV_FLAGS"'),
+          "EXTRA_ENV is appended after the containers are started")
+
+    # 4. the profile source must not eat a caller's value for any of them.
+    preserve = src[src.index("for _v in IMAGE"):]
+    preserve = preserve[:preserve.index("do")]
+    for key in ("COMPILE_CFG", "CUSTOM_OPS_AXIS", "EXTRA_ENV",
+                "MAX_NUM_BATCHED"):
+        check(key in preserve,
+              f"{key} is not preserved across the profile source, so a "
+              "caller's A/B value would be silently replaced")
+
+    # 5. the prefill budget default is documented and NOT moved.
+    check(re.search(r'^MAX_NUM_BATCHED="\$\{MAX_NUM_BATCHED:-4096\}"$', src, re.M),
+          "MAX_NUM_BATCHED default moved without a bracket in MEASUREMENTS.md")
+    budget = src[:src.index('MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"')]
+    check("#117" in budget[-1400:],
+          "the chunked-prefill budget carries no evidence for why it is open")
+    print("  dsv4 launcher axes ............. OK")
+
+
+
+def test_dsv4_ue8m0_host_guard() -> None:
+    """The DSV4 fork of the fp8 quant block must catch what the kernel traps on.
+
+    deepgemm packs only an fp32 scale's exponent and device-asserts that sign
+    and mantissa are clear (smxx_layout.cuh:131). The assert is `asm("trap;")`,
+    which destroys the CUDA context, so the failure surfaces seconds later at
+    an unrelated site -- the GLM lane lost two boots to that signature before
+    reading the assert. DSV4 reaches the same one-call path from four sites
+    that are all armed by default (markov W2, draft lm_head, TARGET lm_head,
+    attention compressor), so the condition is evaluated on the host first.
+
+    The contract is trap-faithful, deliberately NOT the GLM module's stricter
+    value test: everything the kernel traps on must raise, +inf must raise
+    (it packs clean and then produces garbage, which is worse than a trap),
+    and +0.0 must NOT -- an all-zero 128x128 block has no other scale, the
+    kernel consumes it correctly, and rejecting it would abort a healthy boot.
+    """
+    try:
+        import struct
+
+        import torch
+    except ImportError:
+        print("  dsv4 UE8M0 host guard ......... SKIP (no torch)")
+        return
+
+    ns = load_defs(
+        "overlay/modules/dspark_drafter/dspark_v2.py",
+        {"_ue8m0_unsafe", "_SF_SIGN_AND_MANTISSA"},
+        {"torch": torch},
+    )
+    unsafe = ns["_ue8m0_unsafe"]
+    check(ns["_SF_SIGN_AND_MANTISSA"] == 0x807FFFFF,
+          "the host mask is not the kernel's mask (smxx_layout.cuh:131)")
+
+    def kernel_traps(value: float) -> bool:
+        return (struct.unpack("<I", struct.pack("<f", value))[0] & 0x807FFFFF) != 0
+
+    cases = {
+        "+0.0": 0.0, "-0.0": -0.0, "1.0": 1.0, "2.0": 2.0, "0.5": 0.5,
+        "min-normal": 2.0 ** -126, "denormal": 5e-40, "-1.0": -1.0,
+        "1.5": 1.5, "3.0": 3.0, "+inf": float("inf"), "-inf": float("-inf"),
+        "nan": float("nan"), "2^100": 2.0 ** 100,
+    }
+    flags = unsafe(torch.tensor(list(cases.values()),
+                                dtype=torch.float32)).tolist()
+    for (name, value), flagged in zip(cases.items(), flags):
+        if kernel_traps(value):
+            check(flagged,
+                  f"{name} trips the deepgemm assert but the host guard "
+                  "lets it through -- that is a destroyed CUDA context")
+        elif value in (float("inf"), float("-inf")):
+            check(flagged, f"{name} packs clean and computes garbage; "
+                           "it has to be refused, not accepted")
+        else:
+            check(not flagged,
+                  f"{name} is a scale the kernel accepts; refusing it turns "
+                  "a healthy boot into an abort")
+    check(not flags[0],
+          "+0.0 must stay accepted -- zero-filled padding blocks produce it "
+          "and 0x00000000 passes the kernel's mask")
+
+    # The guard must be a superset of the assert on arbitrary bit patterns,
+    # not just on the hand-picked ones above.
+    gen = torch.Generator().manual_seed(0)
+    scales = torch.randn(50000, generator=gen) * torch.exp2(
+        torch.randint(-140, 40, (50000,), generator=gen).float())
+    trapped = (scales.view(torch.int32) & 0x807FFFFF) != 0
+    check(bool((trapped <= unsafe(scales)).all()),
+          "the host guard is not a superset of the device assert")
+
+    # And the seam has to exist at all: a single use_e8m0=True call puts the
+    # trap between the requant and the layout transform, where nothing can
+    # look at it.
+    src = open(_overlay_source("overlay/modules/dspark_drafter/dspark_v2.py"),
+               encoding="utf-8").read()
+    quant = src[src.index("def _quantize_fp8_deepgemm"):]
+    quant = quant[:quant.index("\ndef ", 1)]
+    check("requant_weight_ue8m0_inplace" in quant,
+          "the requant is not run separately, so there is no seam to inspect")
+    check("use_e8m0=False" in quant,
+          "the layout transform still asks for the fused requant")
+    check("use_e8m0=True" in quant,
+          "the ImportError fallback to the original single call is gone -- a "
+          "renamed helper would take the boot with it")
+    print("  dsv4 UE8M0 host guard ......... OK")
+
+
+
+def test_launcher_parity_guards() -> None:
+    """Guards the GLM launcher grew that the production one never got.
+
+    The two launchers drove the same fleet and diverged: DSV4's guard set is
+    the stronger one overall (preimage skew, image-ID drift, unmounted-source
+    attestation), which is exactly why the three holes below went unnoticed --
+    a count of ABORTs says DSV4 is ahead.
+
+    1. A missing profile has to be announced. In production this launcher runs
+       from a COPY outside the checkout, where the relative profile path does
+       not resolve; the profile is then skipped in silence and every VLLM_*
+       it declares stops reaching the container.
+    2. It must refuse to start over a live bring-up stack. The GLM launcher
+       already refuses to start over hy4; nothing enforced the reverse, and
+       this is the one an operator starts reflexively.
+    3. The cudagraph replay address assert must be reachable. vLLM has the
+       check and gates it behind VLLM_LOGGING_LEVEL=DEBUG, so by default a
+       graph reading a stale address is silent.
+    """
+    src = _launcher_src("start-hy4-tp4.sh")
+
+    # 1 -- the warning, and it must come from a real absence test
+    check("profile not found at $PROFILE_ENV" in src,
+          "a missing profile is still silent; the built-in defaults take over "
+          "and the profile's VLLM_* knobs never reach the container")
+    check('if [ ! -f "$PROFILE_ENV" ]; then' in src,
+          "the profile warning is not guarded by an absence test")
+    check(src.index('if [ ! -f "$PROFILE_ENV" ]') < src.index('if [ -f "$PROFILE_ENV" ]'),
+          "the warning must come before the profile is sourced")
+
+    # 2 -- foreign-stack refusal on the head AND every worker
+    check("_foreign_stack" in src, "no refusal to start over a live glm53/q38")
+    check(src.count("runs glm53/q38") == 2,
+          "the foreign-stack refusal must cover the head and the workers "
+          f"(found {src.count('runs glm53/q38')} of 2)")
+    check("^(glm53|q38)" in src,
+          "the foreign-stack pattern must be anchored, or 'my-glm53-notes' "
+          "would match a container name")
+    # anchor on the step itself, not on prose that names it
+    retire = src.index('echo "=== [1/5] retire old containers')
+    for site in [m.start() for m in re.finditer(r"runs glm53/q38", src)]:
+        check(site < retire,
+              "the refusal must run BEFORE containers are retired -- after it, "
+              "the foreign stack is still resident while KV is sized")
+    check(src.count('"${DRY_RUN:-0}" != 1') >= 2,
+          "the foreign-stack checks must be skipped under DRY_RUN like every "
+          "other check that asks a machine about itself")
+
+    # 3 -- GRAPH_DEBUG reaches the container, and only as 0/1
+    check('GRAPH_DEBUG="${GRAPH_DEBUG:-0}"' in src, "no GRAPH_DEBUG knob")
+    check('if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi'
+          in src,
+          "GRAPH_DEBUG does not arm vLLM's replay address assert")
+    graph = src[src.index('GRAPH_DEBUG="${GRAPH_DEBUG:-0}"'):]
+    check("exit 2" in graph[:400], "GRAPH_DEBUG accepts values other than 0/1")
+
+    # and the GLM launcher must keep refusing the reverse, or the pair is
+    # only half a rule.
+    glm = _launcher_src("start-glm53-nvfp4-tp4.sh")
+    check("runs hy4/q38" in glm,
+          "the GLM launcher stopped refusing to start over production")
+    print("  launcher parity guards ......... OK")
+
+
 def test_census_kda_group() -> None:
     """census: KDA/FLA chunk kernels classify out of 기타 and norm groups.
 
@@ -3305,4 +3580,8 @@ if __name__ == "__main__":
     test_census_kda_group()
     test_glm53_sm121_mla_prefill_gate()
     test_oneshot_sm121_grid_contract()
+    test_custom_ops_axis_contract()
+    test_dsv4_launcher_axes()
+    test_dsv4_ue8m0_host_guard()
+    test_launcher_parity_guards()
     print(f"all OK ({PASS} checks)")

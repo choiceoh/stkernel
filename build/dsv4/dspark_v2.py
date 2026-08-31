@@ -62,6 +62,47 @@ def _read_bool_env(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# deneb fork: deepgemm packs only the EXPONENT of an fp32 scale (UE8M0) and
+# device-asserts that sign and mantissa are clear:
+#
+#   deep_gemm/impls/smxx_layout.cuh:131  (values[j] & 0x807fffffu) == 0
+#   #define DG_DEVICE_ASSERT(cond) ... printf(...); asm("trap;");
+#
+# `asm("trap;")` destroys the CUDA context permanently, so the failure does not
+# name this file: the boot keeps going and dies seconds later somewhere else
+# ("CUDA error: unspecified launch failure", typically in the memory profiler's
+# empty_cache). The adjacent GLM lane lost two boots to that signature before
+# it read the assert (its fp8_lm_head module, #119/#123/#129/#131), and the
+# same weight can make requant itself emit unusable scales.
+#
+# Four production call sites reach this function, all armed by default:
+# markov W2, the draft lm_head, the TARGET lm_head, and the attention
+# compressor. So evaluate the kernel's own condition on the HOST first.
+_SF_SIGN_AND_MANTISSA = 0x807FFFFF
+
+
+def _ue8m0_unsafe(scales: "torch.Tensor") -> "torch.Tensor":
+    """The kernel's assert, evaluated on the host, plus the value it accepts
+    but cannot mean.
+
+    The bitmask is exactly what smxx_layout.cuh checks, so anything it flags
+    is a trap this weight would have taken. It admits two values on bits
+    alone: +0.0 (0x00000000) and +inf (0x7f800000). Zero is legal AND
+    expected -- an all-zero 128x128 block (vocab padding, a dead expert row)
+    has no other scale, and the kernel consumes it correctly -- so it is
+    counted, not rejected. +inf is not: it packs cleanly and then produces
+    garbage instead of trapping, which is the worse failure.
+
+    Deliberately NOT the GLM module's stricter value contract, which also
+    rejects zero. Raising on a legal zero would turn a healthy production
+    boot into an abort, and this lane's heads carry zero-filled padding.
+    """
+    import torch as _torch
+
+    bit_bad = (scales.view(_torch.int32) & _SF_SIGN_AND_MANTISSA) != 0
+    return bit_bad | _torch.isinf(scales)
+
+
 def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Block-quantize a bf16/fp32 weight to the deepgemm fp8 layout (chunked
     over rows so the fp32 staging copy never exceeds ~1/8 of the weight)."""
@@ -81,11 +122,65 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
+        wq = torch.cat(chunks_q, dim=0)
+        ws = torch.cat(chunks_s, dim=0)
+
+        # Scales that already arrive in E8M0 (float8_e8m0fnu / raw uint8) are
+        # upcast and never requantized -- post_process's own first branch. Only
+        # the fp32 path requants, so only it needs the seam; anything else goes
+        # through untouched.
+        if ws.dtype != torch.float32:
+            return deepgemm_post_process_fp8_weight_block(
+                wq, ws, (128, 128), use_e8m0=True
+            )
+
+        # use_e8m0=True runs the requant AND the layout transform in one call,
+        # with the trapping assert between them -- there is no seam to inspect
+        # from outside it. Run the requant here so there is one.
+        try:
+            from vllm.model_executor.layers.quantization.utils.fp8_utils import (
+                requant_weight_ue8m0_inplace,
+            )
+        except ImportError:
+            # A future image may rename it. Production must not lose a boot to
+            # a missing guard, so fall back to the original single call -- the
+            # behaviour this function had before the guard existed.
+            logger.warning(
+                "fp8 quant: vLLM lacks requant_weight_ue8m0_inplace; packing "
+                "without the host-side UE8M0 check (a bad scale will trap "
+                "device-side and kill the CUDA context)"
+            )
+            return deepgemm_post_process_fp8_weight_block(
+                wq, ws, (128, 128), use_e8m0=True
+            )
+
+        requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
+        unsafe = _ue8m0_unsafe(ws)
+        n_unsafe = int(unsafe.sum())
+        n_zero = int((ws == 0).sum())
+        if n_zero:
+            logger.info(
+                "fp8 quant: %d of %d UE8M0 scales are zero (all-zero weight "
+                "blocks); the kernel accepts these",
+                n_zero,
+                ws.numel(),
+            )
+        if n_unsafe:
+            # Report without rewriting. The GLM lane flushed offenders to zero
+            # and silently zeroed the whole head instead of fixing anything
+            # (#131); the repair, if one is ever needed, belongs BEFORE the
+            # requant, not on its output.
+            sample = ws.reshape(-1)[unsafe.reshape(-1)][:4].tolist()
+            raise RuntimeError(
+                f"{n_unsafe} of {ws.numel()} post-requant UE8M0 scales would "
+                f"trap deepgemm's device assert or pack as inf (weight "
+                f"{tuple(weight.shape)} {weight.dtype}); first offenders "
+                f"{sample}. Refusing to launch the layout kernel -- its trap "
+                f"destroys the CUDA context and surfaces later as an "
+                f"unrelated launch failure."
+            )
         return deepgemm_post_process_fp8_weight_block(
-            torch.cat(chunks_q, dim=0),
-            torch.cat(chunks_s, dim=0),
-            (128, 128),
-            use_e8m0=True,
+            wq, ws, (128, 128), use_e8m0=False
         )
 
 

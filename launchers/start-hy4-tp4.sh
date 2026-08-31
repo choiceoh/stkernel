@@ -12,12 +12,24 @@ set -euo pipefail
 # served name are character-for-character what was hardcoded here. Caller env
 # still wins, as everywhere else.
 PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env}"
+# Say so when it is not there. This launcher is run in production from a COPY
+# outside the checkout (srv2:~/start-hy4-tp4.sh), where the relative path above
+# resolves to a file that does not exist -- and then the profile is skipped in
+# silence: IMAGE/MODEL_PATH/SERVED_NAME fall back to the literals below (equal
+# today, so nothing shows) and, more importantly, _vllm_keys stays empty, so
+# every VLLM_* the profile declares never reaches the container. The GLM lane
+# lost three knobs to exactly this shape before it printed the warning (#59).
+if [ ! -f "$PROFILE_ENV" ]; then
+  echo "WARNING: profile not found at $PROFILE_ENV -- using built-in defaults."
+  echo "         Run launchers/start-hy4-tp4.sh from the checkout, or set PROFILE_ENV."
+fi
 if [ -f "$PROFILE_ENV" ]; then
   # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
   # exits 1 -- which under `set -euo pipefail` ends the script silently.
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
-  for _v in IMAGE MODEL_PATH SERVED_NAME $_vllm_keys; do
+  for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
+            EXTRA_ENV MAX_NUM_BATCHED $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -46,8 +58,34 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
 # stays inside GRAPH_CAP=256 (ceiling ~C=42); per-stream latency at C=32 is
 # ~12 tok/s — an admission cap, so low-concurrency behavior is unchanged.
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
+# Chunked-prefill budget. 4096 here, never measured against anything else.
+# The adjacent GLM-5.3 lane on this same fleet swept it (#117, 2026-08-31,
+# 75K fresh prompt, three runs each): 2048 = 1,593 tok/s / 4096 = 1,828 /
+# 8192 = 2,110 (+15.4% over 4096), and the run-to-run spread collapsed from
+# 12.0% to 0.9% as the chunk-boundary warmup went away. Decode was flat.
+# That is a different model on a different image, so it is a REASON TO
+# MEASURE, not a number to adopt: the dsv4 "prefill has no room" verdict
+# (MEASUREMENTS: busy 99.8%) was taken at pp2048 = a SINGLE chunk at this
+# budget, so it says nothing about the multi-chunk long-prompt regime the
+# GLM sweep moved. Activation memory scales with this value and GPU_MEM is
+# preflight-chosen, so raising it needs the boot bracket recorded in
+# MEASUREMENTS.md ("GLM-5.3 레인 PR 역수입 심사"), not an edit here.
 MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"
 GRAPH_CAP=256
+# Both cudagraph wrappers assert that a replay sees the same input tensor
+# addresses it was captured with, and both gate that assert on
+# is_debugging_mode = (VLLM_LOGGING_LEVEL == "DEBUG"). Off by default, so a
+# graph reading a stale address is silent -- and this stack captures a lot
+# (FULL_AND_PIECEWISE, GRAPH_CAP=256) over buffers that are deliberately held
+# at their maximum size for exactly that reason (the b12x fixed-decode
+# workspace, the indexer tail slots). GRAPH_DEBUG=1 turns the check into an
+# assertion. Only positional tensor args are covered: firing is proof, staying
+# quiet is not a clean bill of health. Very verbose; diagnostic only.
+GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
+case "$GRAPH_DEBUG" in
+  0|1) ;;
+  *) echo "ABORT: GRAPH_DEBUG must be 0 or 1 (got $GRAPH_DEBUG)"; exit 2 ;;
+esac
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
@@ -156,6 +194,37 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
   exit 1
 fi
 
+# Compilation config, overridable. The serve script used to carry this JSON
+# inline, which made the one axis this launcher's own notes call an open A/B
+# (custom_ops / fuse_attn_quant, see the pass_config note below) reachable only
+# by editing the launcher on four nodes.
+#
+# Not ${COMPILE_CFG:-{...}}: the JSON's own braces close the expansion early and
+# the leftover "}}" lands on whatever the caller passed -- the GLM lane lost a
+# knob to exactly that (#88) before writing it this way.
+[ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_rope_kvcache_cat_mla":true,"fuse_attn_quant":true}}'
+# Fusion-barrier A/B (GLM lane #112, open here too): custom_ops:["all"] makes
+# every registered custom op an opaque inductor wall, so the elementwise glue
+# never fuses across one. CUSTOM_OPS_AXIS=none is the fusion arm; unset keeps
+# "all" (control arm). Single ops work too (-rms_norm keeps the rest walled).
+#
+# NOT the empty string, which is what the GLM lane wired: vLLM validates every
+# entry against {all, none, +op, -op}, so custom_ops:[""] never reaches the
+# compiler -- this image raises IndexError inside that very check
+# (config/compilation.py, op[0] on an empty string; newer builds raise a clean
+# ValueError). The arm has to be spelled, so this refuses anything else here
+# rather than at minute 4 of a boot on four nodes.
+if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
+  case "$CUSTOM_OPS_AXIS" in
+    all|none|[+-]?*) ;;
+    *) echo "ABORT: CUSTOM_OPS_AXIS must be all, none, +op or -op (got '${CUSTOM_OPS_AXIS}')"; exit 2 ;;
+  esac
+  COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS}\""'/')
+fi
+case "$COMPILE_CFG" in
+  *[[:space:]]*) echo "ABORT: COMPILE_CFG must not contain whitespace (it rides an unquoted -e)"; exit 2 ;;
+esac
+
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
 
 ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a \
@@ -181,9 +250,10 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 $(for _k in ${_vllm_keys:-}; do if [ -n "${!_k:-}" ]; then printf -- "-e %s=%s " "$_k" "${!_k}"; fi; done) \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
--e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
+-e GRAPH_CAP=$GRAPH_CAP -e COMPILE_CFG=$COMPILE_CFG -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
+if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
 if ((FP8HEAD == 1)); then
@@ -248,6 +318,21 @@ fi
 # compilation pass (#46789) and EP/DP are structurally impossible on this stack.
 RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1"
 COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-stopped"
+
+# Diagnostic env passthrough (GLM lane #118). EXTRA_ENV="A=1 B=2" becomes
+# -e A=1 -e B=2 on head AND workers. For one-shot debugging only --
+# CUDA_LAUNCH_BLOCKING=1 pins an async kernel failure to its real launch
+# site instead of surfacing at the next sync. Production knobs belong in
+# the profile, which the _vllm_keys harvest above already carries.
+EXTRA_ENV_FLAGS=""
+for _kv in ${EXTRA_ENV:-}; do
+  case "$_kv" in
+    [A-Za-z_]*=*) EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
+    *) echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"; exit 2 ;;
+  esac
+done
+[ -n "$EXTRA_ENV_FLAGS" ] && echo "extra env:$EXTRA_ENV_FLAGS"
+COMMON="$COMMON $EXTRA_ENV_FLAGS"
 
 MANIFEST_NAME=manifest.tsv
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
@@ -356,12 +441,28 @@ docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
 # listed source so list skew, missing files, and byte skew all fail closed.
 HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
   || { echo "ABORT: manifest/overlays missing on head ($HEAD_OV)"; exit 1; }
+# Refuse to start over a live glm53/q38 stack. The GLM launcher already refuses
+# to start over hy4; nothing stopped the reverse, and this is the one operators
+# start reflexively because it is production. "[1/5] retire old containers"
+# below removes hy4/vllm-dsv4 by name only, so a bring-up stack would keep its
+# weights resident on all four nodes while this one sizes its KV pool against
+# what is left -- the 70 GiB free-memory swing the GLM lane chased for a day.
+# Skipped under DRY_RUN: a config print has no use for asking the machines.
+_foreign_stack() { docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)'; }
+if [ "${DRY_RUN:-0}" != 1 ]; then
+  _foreign_stack \
+    && { echo "ABORT: $HEAD_IP runs glm53/q38 — stop the bring-up stack first"; exit 1; }
+fi
 if [ -n "$MARKOV_SIDELOAD" ] && [ ! -f "$MARKOV_SIDELOAD" ]; then
   echo "ABORT: MARKOV_SIDELOAD missing on head ($MARKOV_SIDELOAD)"
   exit 1
 fi
 for w in $WORKERS; do
   ip=${w%%:*}
+  if [ "${DRY_RUN:-0}" != 1 ] && ssh $SSHOPT choiceoh@$ip \
+      "docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)'"; then
+    echo "ABORT: $ip runs glm53/q38 — stop the bring-up stack first"; exit 1
+  fi
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
   WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && sha256sum $MANIFEST_NAME ${OVFILES[*]}" 2>/dev/null || true)
@@ -435,6 +536,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
   done
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
+echo "[hy4] compile-cfg=${COMPILE_CFG}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
@@ -446,7 +548,7 @@ exec vllm serve "${MODEL_PATH}" \
   --max-model-len "${MAX_MODEL_LEN}" --max-num-seqs "${MAX_NUM_SEQS}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
   --max-cudagraph-capture-size "${GRAPH_CAP}" \
-  --compilation-config "{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_rope_kvcache_cat_mla\":true,\"fuse_attn_quant\":true}}" \
+  --compilation-config "${COMPILE_CFG}" \
   ${ASYNC_ARG} --no-scheduler-reserve-full-isl \
   --enable-chunked-prefill --enable-prefix-caching --enable-flashinfer-autotune \
   --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --reasoning-parser deepseek_v4 \

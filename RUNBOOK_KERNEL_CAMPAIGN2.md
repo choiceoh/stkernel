@@ -56,8 +56,13 @@ elementwise 글루 483개/스텝(25.6%)의 원인 검증. `custom_ops`가 인듀
 CUSTOM_OPS_AXIS=none bash launchers/start-glm53-nvfp4-tp4.sh   # cand
 ```
 
-- 주의: 빈 값(`CUSTOM_OPS_AXIS=`)은 caller-env 보존 목록에서 걸러진다(비어있지
-  않은 값만 보존). 융합 암은 `none`으로 보낸다.
+- 주의: 융합 암은 반드시 `none`이다. 빈 값(`CUSTOM_OPS_AXIS=`)은 두 번 죽는다 —
+  caller-env 보존 목록이 비어있지 않은 값만 보존하고(조용히 control 암으로 복귀),
+  설령 통과해도 vLLM이 `custom_ops` 원소를 `{all,none,+op,-op}`로 검증하므로
+  `[""]`는 config 단계에서 죽는다(glm53 이미지 `ValueError`, dsv4 이미지는
+  `op[0]`에서 `IndexError`). 즉 **융합 암은 한 번도 부팅한 적이 없다.** 런처가
+  이제 잘못된 값을 `exit 2`로 즉시 거부한다 — 그 실패가 아래 "장벽 필요" 판정과
+  구분되지 않는 것이 이 함정의 핵심이었다 (2026-09-01 역수입 심사).
 - 부팅 로그에서 engine-confirmed `custom_ops`가 `["none"]`인지 **반드시** 확인
   (#116 실패 모드).
 - 상한: 483 × 5.4µs = 2.6ms = 3.9%. 단 5.4µs는 상치(上치)이고 약화 중 — 실제는
