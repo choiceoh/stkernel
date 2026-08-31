@@ -130,12 +130,59 @@ EXTRA_ENV="VLLM_GLM53_FP8_DENSE_BPROJ=1" \
 
 ---
 
+## EXP-5 — 프리필: 캡처 → KDA 청크 스윕 (2026-09-01 추가)
+
+프리필은 FLOP 바운드(추정 MFU 30~45%, 전문가 FLOP 6할)라 디코드의 런치-절감
+프레임이 안 통한다. 오버레이가 접수 가능한 프리필 커널 축은 (a) mhc BIGFUSE
+(#136, 준비 완료) (b) **KDA 청크 커널 launch-config** (이 항목) 둘.
+
+KDA 프리필 커널은 벤더드 트리톤 패키지
+`vllm/models/kimi_k3/nvidia/ops/third_party/kda/` (chunk/intra/
+chunk_intra_token_parallel/fused_recurrent). autotune 캐시 키에 **T가 없어서**
+(do_not_specialize) 프리필 T=8192와 디코드 T=8이 같은 (warps, stages, BK/BV)를
+공유 — 먼저 오토튠한 레짐이 나머지를 지배한다. 레짐 분리가 레버.
+
+1단계 — 캡처 (서빙 중, 엔진이 죽을 수 있으므로 창의 마지막에):
+
+```bash
+# 헤드에서: 긴 프롬프트(75K 벤치) 진행 중에
+curl -X POST localhost:8000/start_profile; sleep 20; \
+curl -X POST localhost:8000/stop_profile
+# 트레이스는 헤드 ~/vllm-prof/ 에 착지. srv4로 옮겨 인구조사:
+scp <head>:~/vllm-prof/*rank0*.pt.trace.json.gz srv4:/tmp/prefill_trace.gz
+ssh srv4 'docker run --rm --entrypoint python3 \
+  -v /home/choiceoh/stkernel-c2:/repo:ro \
+  -v /tmp/prefill_trace.gz:/tmp/trace.gz:ro glm53:v13-b12x \
+  /repo/census.py /tmp/trace.gz'
+```
+
+- census에 "KDA/FLA 청크" 그룹 추가됨 — chunk/recurrent/conv가 기타와 norm에서
+  분리 집계된다. 합계를 청크 수(T/8192)로 나눠 청크당으로 환산할 것.
+- 주의: glm53 이미지의 docker ENTRYPOINT는 `vllm` CLI — 반드시
+  `--entrypoint python3` 를 명시한다.
+
+2단계 — KDA 청크 스윕 (새 컨테이너, GPU):
+
+```bash
+ssh srv4 'docker run --rm --gpus all --entrypoint python3 \
+  -v /home/choiceoh/stkernel-c2:/repo:ro glm53:v13-b12x \
+  /repo/probes/kda_prefill_bench.py --T 8192'
+```
+
+- 좌표하강으로 커널별 config를 하나씩 갈아끼우고 실측 엔트리
+  `chunk_kda_with_fused_gate` 시간을 재고, 스톡 출력과 rel err 게이트(>1e-2 플래그).
+- 승자 → kda config 테이블 인수(env 게이트) → 프리필 tok/s 브래킷.
+- 승자 없으면 축 기록으로 종료 (FLA 공동 튜닝 선례상 가능성 있음).
+
+---
+
 ## 순서와 근거
 
 1. **EXP-1 (EP)** — 기대값 최대. 실패해도 부팅 하나로 원장에 정리된다.
 2. **EXP-2 (custom_ops)** — 코드 0, 부팅 1회, 축 자체를 닫거나 열어준다.
 3. **EXP-3 (MHC)** — 프로브가 먼저 승자를 가려내 부팅을 아낀다.
 4. **EXP-4 (bproj)** — 천장 0.9%, 최우선순위 아님. 다음 창으로 미뤄도 됨.
+5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
