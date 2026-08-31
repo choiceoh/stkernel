@@ -802,26 +802,36 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         from flashinfer.fused_moe import b12x_fused_moe
 
         kernel_e = self._kernel_num_experts
-        b12x_fused_moe(
-            x=pair_x,
-            w1_weight=w1,
-            w1_weight_sf=self.w1_sf_mma,
-            w2_weight=w2,
-            w2_weight_sf=self.w2_sf_mma,
-            token_selected_experts=pair_ids,
-            token_final_scales=pair_scales,
-            num_experts=kernel_e,
-            top_k=1,
-            num_local_experts=kernel_e,
-            w1_alpha=self.g1_alphas,
-            w2_alpha=self.g2_alphas,
-            fc2_input_scale=self._fc2_input_scale,
-            output=pair_out,
-            activation=self._activation_str,
-            swiglu_alpha=self._swiglu_alpha,
-            swiglu_beta=self._swiglu_beta,
-            swiglu_limit=self._swiglu_limit,
-        )
+        # The wrapper's scratch is sized for max_num_tokens ROWS, but a
+        # compacted pair list is up to tokens*top_k long -- 8x over on this
+        # model. Overrunning it is an illegal write whose fault surfaces at
+        # whatever kernel syncs next (we found it as an ILLEGAL_ADDRESS inside
+        # the dense fp8 GEMM two layers later). Walk the pairs in slices the
+        # scratch can hold. Growing max_num_tokens instead would key a second
+        # shared wrapper and double the workspace for all 43 MoE layers.
+        limit = max(int(self.max_num_tokens or 0), 1)
+        for lo in range(0, n, limit):
+            hi = min(lo + limit, n)
+            b12x_fused_moe(
+                x=pair_x[lo:hi],
+                w1_weight=w1,
+                w1_weight_sf=self.w1_sf_mma,
+                w2_weight=w2,
+                w2_weight_sf=self.w2_sf_mma,
+                token_selected_experts=pair_ids[lo:hi],
+                token_final_scales=pair_scales[lo:hi],
+                num_experts=kernel_e,
+                top_k=1,
+                num_local_experts=kernel_e,
+                w1_alpha=self.g1_alphas,
+                w2_alpha=self.g2_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                output=pair_out[lo:hi],
+                activation=self._activation_str,
+                swiglu_alpha=self._swiglu_alpha,
+                swiglu_beta=self._swiglu_beta,
+                swiglu_limit=self._swiglu_limit,
+            )
         output.zero_()
         output.index_add_(0, token_index, pair_out)
         return output
