@@ -421,14 +421,38 @@ def b12x_ep_zero_weight_micro_chunks(
     chunk = b12x_ep_micro_chunk_tokens()
     if not (
         enabled
-        and tokens > 0
-        and tokens % chunk == 0
+        and tokens >= chunk
         and tokens <= B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS
         and int(top_k) == B12X_EP_ZERO_WEIGHT_MICRO_TOPK
         and int(num_local_experts) == B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS
     ):
         return ()
-    return tuple((lo, lo + chunk) for lo in range(0, tokens, chunk))
+    return tuple(
+        (lo, lo + chunk) for lo in range(0, (tokens // chunk) * chunk, chunk)
+    )
+
+
+def b12x_ep_micro_tail(num_tokens, top_k, num_local_experts, *, enabled):
+    """Token range the chunk plan could not cover, or None.
+
+    Real decode batches are almost never a multiple of the chunk. With chunked
+    prefill in the mix this lane saw 9, 36, 49, 52, 60 tokens and only 8/16/32
+    were admitted -- everything else fell to the pair path at up to 60 calls
+    per layer, which is what collapsed C>=2. Cover the aligned prefix with
+    micro calls and leave only the short tail to that fallback: 49 tokens
+    becomes 6 micro calls plus one tail, not 49 pair calls.
+
+    The split is a function of the token count alone, so a captured graph
+    replays the same launches.
+    """
+    chunks = b12x_ep_zero_weight_micro_chunks(
+        num_tokens, top_k, num_local_experts, enabled=enabled
+    )
+    if not chunks:
+        return None
+    covered = chunks[-1][1]
+    tokens = int(num_tokens)
+    return (covered, tokens) if covered < tokens else None
 
 
 def require_b12x_ep_zero_weight_micro_dispatch(moe_dispatch) -> int:
@@ -1471,6 +1495,26 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 quant_mode="nvfp4",
                 source_format="modelopt",
                 _workspace=self._ep_zero_weight_workspace,
+            )
+        tail = b12x_ep_micro_tail(
+            topk_ids.size(0),
+            topk_ids.size(1),
+            self._kernel_num_experts,
+            enabled=self._ep_zero_weight_micro,
+        )
+        if tail is not None:
+            lo, hi = tail
+            # The micro calls above wrote output[0:lo] and touched no other
+            # row, so the fallback runs on a disjoint view: everything it does
+            # stays inside [lo, hi) and cannot erase them. Fewer than one chunk
+            # of tokens reach it, so the gather it pays is bounded.
+            self._apply_ep_fixed(
+                output[lo:hi],
+                hidden_states[lo:hi],
+                w1,
+                w2,
+                topk_ids[lo:hi],
+                topk_weights[lo:hi],
             )
         return output
 
