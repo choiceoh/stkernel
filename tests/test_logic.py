@@ -13,6 +13,7 @@ Run: python3 tests/test_logic.py
 from __future__ import annotations
 
 import ast
+import builtins
 import glob
 import os
 import random
@@ -1449,6 +1450,83 @@ def test_fp8_acceptance_contracts() -> None:
     )
     quantize_source = ast.get_source_segment(fp8_source, quantize_node)
     assert quantize_source is not None
+    import_guard = quantize_source.index("except ImportError as exc:")
+    requant_call = quantize_source.index(
+        "requant_weight_ue8m0_inplace(wq", import_guard
+    )
+    import_fallback = quantize_source[import_guard:requant_call]
+    check(
+        "raise RuntimeError" in import_fallback
+        and "deepgemm_post_process_fp8_weight_block" not in import_fallback,
+        "a missing UE8M0 requant helper must fall back before the CUDA packer",
+    )
+
+    class DummyTensor:
+        shape = (128, 128)
+
+        def detach(self):
+            return self
+
+        def __getitem__(self, _key):
+            return self
+
+        def float(self):
+            return self
+
+    class NoGrad:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *_args):
+            return False
+
+    pack_calls = []
+
+    def fake_pack(*args, **kwargs):
+        pack_calls.append((args, kwargs))
+        return "must-not-pack"
+
+    fp8_utils_module = types.SimpleNamespace(
+        deepgemm_post_process_fp8_weight_block=fake_pack
+    )
+    deep_gemm_module = types.SimpleNamespace(
+        per_block_cast_to_fp8=lambda *_args, **_kwargs: (
+            DummyTensor(),
+            DummyTensor(),
+        )
+    )
+
+    def import_without_requant(name, globals=None, locals=None,
+                               fromlist=(), level=0):
+        if name.endswith("fp8_utils"):
+            if "requant_weight_ue8m0_inplace" in fromlist:
+                raise ImportError("requant helper missing")
+            return fp8_utils_module
+        if name == "vllm.utils.deep_gemm":
+            return deep_gemm_module
+        return builtins.__import__(name, globals, locals, fromlist, level)
+
+    fake_builtins = dict(vars(builtins))
+    fake_builtins["__import__"] = import_without_requant
+    quantize_ns = load_defs(
+        "overlay/fp8_lm_head.py",
+        {"_quantize_fp8_deepgemm"},
+        {
+            "__builtins__": fake_builtins,
+            "torch": types.SimpleNamespace(
+                Tensor=DummyTensor,
+                no_grad=NoGrad,
+                cat=lambda chunks, dim=0: chunks[0],
+            ),
+        },
+    )
+    import_failed_closed = False
+    try:
+        quantize_ns["_quantize_fp8_deepgemm"](DummyTensor())
+    except RuntimeError as exc:
+        import_failed_closed = "refusing" in str(exc)
+    check(import_failed_closed, "missing requant helper must raise before packing")
+    check(not pack_calls, "missing requant helper must never launch the packer")
     bad_guard = quantize_source.index("if bad_scales:")
     fail_closed = quantize_source.index("raise RuntimeError", bad_guard)
     final_pack = quantize_source.rindex(
@@ -1463,6 +1541,88 @@ def test_fp8_acceptance_contracts() -> None:
         "_flush_pathological_scales" not in quantize_source
         and "torch.where" not in quantize_source,
         "the kernel guard must never rewrite scales to silence the packer",
+    )
+
+    describe_node = next(
+        node
+        for node in fp8_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_describe_ue8m0_scales"
+    )
+    describe_source = ast.get_source_segment(fp8_source, describe_node)
+    assert describe_source is not None
+    safety_at = describe_source.index("finite = torch.isfinite(scales)")
+    early_return_at = describe_source.index("if n_bad == 0:")
+    check(
+        safety_at < early_return_at
+        and "inf_mask = torch.isinf(scales)" in describe_source
+        and "zero_mask = finite & (scales == 0)" in describe_source,
+        "zero and non-finite scales must be unsafe even when their bits pack",
+    )
+
+    fake_bf16 = object()
+    fake_fp16 = object()
+    fake_torch = types.SimpleNamespace(bfloat16=fake_bf16, float16=fake_fp16)
+    fake_logger = types.SimpleNamespace(
+        warning_once=lambda *args, **kwargs: None,
+        info_once=lambda *args, **kwargs: None,
+    )
+
+    failed_calls = []
+
+    def fail_quantize(weight):
+        failed_calls.append(weight)
+        raise RuntimeError("unsafe scales")
+
+    failed_ns = load_defs(
+        "overlay/fp8_lm_head.py",
+        {"build_fp8_lm_head_weight"},
+        {
+            "torch": fake_torch,
+            "logger": fake_logger,
+            "_quantize_fp8_deepgemm": fail_quantize,
+        },
+    )
+    failed_build = failed_ns["build_fp8_lm_head_weight"]
+    failed_head = types.SimpleNamespace(
+        weight=types.SimpleNamespace(dtype=fake_bf16, shape=(38720, 4096))
+    )
+    check(not failed_build(failed_head), "unsafe fp8 build must fall back")
+    check(not failed_build(failed_head), "failed fp8 build must stay disarmed")
+    check(
+        len(failed_calls) == 1
+        and failed_head._deneb_fp8_build_attempted is True,
+        "two logits calls must attempt the full head quantization only once",
+    )
+
+    success_calls = []
+    packed_weight = types.SimpleNamespace(shape=(38720, 4096))
+    packed_scale = object()
+
+    def successful_quantize(weight):
+        success_calls.append(weight)
+        return packed_weight, packed_scale
+
+    success_ns = load_defs(
+        "overlay/fp8_lm_head.py",
+        {"build_fp8_lm_head_weight"},
+        {
+            "torch": fake_torch,
+            "logger": fake_logger,
+            "_quantize_fp8_deepgemm": successful_quantize,
+        },
+    )
+    successful_build = success_ns["build_fp8_lm_head_weight"]
+    success_head = types.SimpleNamespace(
+        weight=types.SimpleNamespace(dtype=fake_fp16, shape=(38720, 4096))
+    )
+    check(successful_build(success_head), "safe fp8 build must attach its cache")
+    check(successful_build(success_head), "an attached fp8 cache must be reusable")
+    check(
+        len(success_calls) == 1
+        and success_head._deneb_fp8_w is packed_weight
+        and success_head._deneb_fp8_ws is packed_scale,
+        "a successful head must also be quantized only once",
     )
 
     processor_cls = next(
@@ -1483,6 +1643,10 @@ def test_fp8_acceptance_contracts() -> None:
     check(
         gate_at < cache_at and "if use_fp8 else None" in apply_source,
         "an env-off endpoint must ignore an fp8 cache shared by the other endpoint",
+    )
+    check(
+        "and not attempted" in apply_source,
+        "a failed shared-head build must stay on bf16 on later logits calls",
     )
     check(
         'out[..., valid_end:] = -float("inf")' in apply_source,
