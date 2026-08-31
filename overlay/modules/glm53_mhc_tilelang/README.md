@@ -72,6 +72,16 @@ source hashes and that ONEPASS was frozen on before the eager MHC package
 import. The gate stays CLOSED — no boot serves through this kernel — until
 that probe runs clean in an engine-down window and a bracket adopts it.
 
+### Small-M split ownership
+
+The optional ONEPASS return must not own the fallback for the dispatcher.
+When ONEPASS is off, `num_tokens <= 16` keeps the small-M kernel's supported
+`n_splits` value (4 or 8); only the non-small path may call DeepGEMM's generic
+`compute_num_split`. On GB10 with GLM's `hc=4, hidden=4096`, that generic
+planner returns 48, which is outside this dispatcher's supported split set and
+leaves zero complete 256-thread hidden iterations. `tests/test_logic.py` locks
+the control-flow ownership and this concrete SM121a shape.
+
 ## Not in this takeover
 
 - The stock `mhc_pre_big_fuse*` / `mhc_fused` / `mhc_post` kernels are

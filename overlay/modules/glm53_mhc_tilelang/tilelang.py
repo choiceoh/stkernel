@@ -727,7 +727,11 @@ def mhc_fused_post_pre_tilelang(
             comb_mix_cur.view(*outer_shape, hc_mult, hc_mult),
             layer_input_cur.view(*outer_shape, hidden_size),
         )
-    else:
+    # ONEPASS is only an optional early return.  The stock small-M path must
+    # keep the 4/8-way split selected above when ONEPASS is disabled; running
+    # the generic DeepGEMM planner here can produce a split outside this
+    # dispatcher's supported set (48 on GB10) for the 256-thread kernel.
+    if not use_small_fma:
         if use_deep_gemm:
             # these number are from deepgemm kernel impl
             block_k = 64

@@ -2605,6 +2605,88 @@ def test_mhc_onepass_math() -> None:
     print("  mhc onepass math ................ OK")
 
 
+def test_mhc_smallm_split_ownership() -> None:
+    """ONEPASS-off must not overwrite the small-M kernel's split contract.
+
+    ONEPASS was inserted between the stock ``if use_small_fma`` and its
+    non-small ``else``. If that else binds to ONEPASS instead, the default-off
+    path calls the generic DeepGEMM split planner even for the small-M kernel.
+    GB10 then picks 48 splits for GLM's hc=4, H=4096 shape, outside the
+    dispatcher's 1/2/4/8 set, and completes no 256-thread hidden iteration.
+    """
+    path = _overlay_source("overlay/tilelang.py")
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    dispatcher = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "mhc_fused_post_pre_tilelang"
+    )
+
+    def node_source(node):
+        segment = ast.get_source_segment(source, node)
+        assert segment is not None
+        return segment
+
+    top_level_ifs = [node for node in dispatcher.body if isinstance(node, ast.If)]
+    onepass_if = next(
+        node for node in top_level_ifs
+        if "_deneb_onepass_enabled()" in node_source(node.test)
+    )
+    check(not onepass_if.orelse,
+          "ONEPASS early return must not own the stock fallback")
+
+    nonsmall_if = next(
+        node for node in top_level_ifs
+        if node_source(node.test).strip() == "not use_small_fma"
+    )
+    check("compute_num_split(" in node_source(nonsmall_if),
+          "generic split planner must be guarded by not use_small_fma")
+    check(onepass_if.end_lineno < nonsmall_if.lineno,
+          "generic non-small planner must follow the ONEPASS early return")
+
+    split_calls = [
+        node for node in ast.walk(dispatcher)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "compute_num_split"
+    ]
+    check(len(split_calls) == 1,
+          "dispatcher must have exactly one generic split-planner call")
+    check(nonsmall_if.lineno <= split_calls[0].lineno <= nonsmall_if.end_lineno,
+          "every generic split-planner call must stay under the non-small guard")
+
+    small_if = next(
+        node for node in top_level_ifs
+        if node_source(node.test).strip() == "use_small_fma"
+    )
+    stock_split = next(
+        node.value for node in ast.walk(small_if)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "n_splits"
+                for target in node.targets)
+        and isinstance(node.value, ast.IfExp)
+    )
+    check(ast.unparse(stock_split.test)
+          == "num_tokens < 8 and hidden_size <= 4096"
+          and ast.literal_eval(stock_split.body) == 8
+          and ast.literal_eval(stock_split.orelse) == 4,
+          "stock small-M dispatcher must retain its 8/4 split heuristic")
+    for split in (4, 8):
+        check((4096 // split) % 256 == 0
+              and (4096 // split) // 256 > 0,
+              f"stock split={split} must cover H=4096 in 256-thread iterations")
+
+    # vLLM compute_num_split(block_k=64, k=hc*hidden, grid_size=1) on GB10.
+    generic_split = min(48, ((4 * 4096 + 63) // 64) // 4)
+    check(generic_split == 48 and generic_split not in (1, 2, 4, 8),
+          f"SM121a regression fixture must expose split=48: {generic_split}")
+    check((4096 // generic_split) // 256 == 0,
+          "split=48 must expose the zero-iteration small-M failure")
+    print("  mhc small-M split ownership ..... OK")
+
+
 
 
 def test_mhc_bigfuse_knob() -> None:
@@ -2976,6 +3058,7 @@ if __name__ == "__main__":
     test_mhc_smallm_knob()
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
+    test_mhc_smallm_split_ownership()
     test_mhc_bigfuse_knob()
     test_census_kda_group()
     test_glm53_sm121_mla_prefill_gate()
