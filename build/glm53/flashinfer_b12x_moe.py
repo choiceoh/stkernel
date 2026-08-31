@@ -469,6 +469,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_tmp_a: torch.Tensor | None = None
         self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
+        self._ep_capacity_probed = False
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -802,26 +803,36 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         from flashinfer.fused_moe import b12x_fused_moe
 
         kernel_e = self._kernel_num_experts
-        b12x_fused_moe(
-            x=pair_x,
-            w1_weight=w1,
-            w1_weight_sf=self.w1_sf_mma,
-            w2_weight=w2,
-            w2_weight_sf=self.w2_sf_mma,
-            token_selected_experts=pair_ids,
-            token_final_scales=pair_scales,
-            num_experts=kernel_e,
-            top_k=1,
-            num_local_experts=kernel_e,
-            w1_alpha=self.g1_alphas,
-            w2_alpha=self.g2_alphas,
-            fc2_input_scale=self._fc2_input_scale,
-            output=pair_out,
-            activation=self._activation_str,
-            swiglu_alpha=self._swiglu_alpha,
-            swiglu_beta=self._swiglu_beta,
-            swiglu_limit=self._swiglu_limit,
-        )
+        # The wrapper's scratch is sized for max_num_tokens ROWS, but a
+        # compacted pair list is up to tokens*top_k long -- 8x over on this
+        # model. Overrunning it is an illegal write whose fault surfaces at
+        # whatever kernel syncs next (we found it as an ILLEGAL_ADDRESS inside
+        # the dense fp8 GEMM two layers later). Walk the pairs in slices the
+        # scratch can hold. Growing max_num_tokens instead would key a second
+        # shared wrapper and double the workspace for all 43 MoE layers.
+        limit = max(int(self.max_num_tokens or 0), 1)
+        for lo in range(0, n, limit):
+            hi = min(lo + limit, n)
+            b12x_fused_moe(
+                x=pair_x[lo:hi],
+                w1_weight=w1,
+                w1_weight_sf=self.w1_sf_mma,
+                w2_weight=w2,
+                w2_weight_sf=self.w2_sf_mma,
+                token_selected_experts=pair_ids[lo:hi],
+                token_final_scales=pair_scales[lo:hi],
+                num_experts=kernel_e,
+                top_k=1,
+                num_local_experts=kernel_e,
+                w1_alpha=self.g1_alphas,
+                w2_alpha=self.g2_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                output=pair_out[lo:hi],
+                activation=self._activation_str,
+                swiglu_alpha=self._swiglu_alpha,
+                swiglu_beta=self._swiglu_beta,
+                swiglu_limit=self._swiglu_limit,
+            )
         output.zero_()
         output.index_add_(0, token_index, pair_out)
         return output
@@ -846,6 +857,79 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 swiglu_limit=self._swiglu_limit,
             )
         )
+
+    def _ep_capacity_probe(self, wrapper, topk_ids) -> None:
+        """Name the bound the b12x static kernel would overrun. Runs once.
+
+        The static kernel compacts the distinct experts of a batch into
+        arrival-order slots and writes ``token_map[slot, row]`` where ``row``
+        is an unguarded ``atomicAdd`` on a per-expert counter. One expert
+        receiving more than ``token_map.shape[1]`` rows is an out-of-bounds
+        write, reported later as an ILLEGAL_ADDRESS in whatever kernel syncs
+        next -- we first met it two layers away inside the dense fp8 GEMM.
+
+        Under EP the dummy expert absorbs every remote slot, which on this
+        model is ~3/4 of all routing, so it is the one that can overrun.
+        One device sync, once per process.
+        """
+        if self._ep_capacity_probed:
+            return
+        self._ep_capacity_probed = True
+        try:
+            flat = topk_ids.reshape(-1).to(torch.int64)
+            counts = torch.bincount(flat, minlength=self._kernel_num_experts)
+            worst = int(counts.max())
+            worst_id = int(counts.argmax())
+            pairs = int(flat.numel())
+            caps = []
+            for name in ("_static_workspace", "_dynamic_workspace"):
+                ws = getattr(wrapper, name, None)
+                tm = getattr(ws, "token_map", None) if ws is not None else None
+                caps.append(
+                    f"{name.strip('_').split('_')[0]}={tuple(tm.shape)}"
+                    if tm is not None else f"{name.strip('_').split('_')[0]}=none"
+                )
+            logger.warning(
+                "[b12x EP capacity] pairs=%d experts=%d worst expert=%d rows=%d "
+                "(dummy=%d) token_map %s",
+                pairs, self._kernel_num_experts, worst_id, worst,
+                self.num_local_experts, " ".join(caps),
+            )
+            # Raise only when NO workspace can hold this routing. The two
+            # layouts differ in kind: static's token_map is
+            # [state_E, max_rows] -- per-expert capacity, so EP's dummy pile-up
+            # is what overruns it -- while dynamic's is a flat compacted plane
+            # sized by total pairs, which the skew cannot reach. A disabled
+            # static workspace (cutover pinned to 0 leaves max_rows=1) must not
+            # be read as a failure while dynamic is the one being selected.
+            fits = []
+            for name in ("_static_workspace", "_dynamic_workspace"):
+                ws = getattr(wrapper, name, None)
+                tm = getattr(ws, "token_map", None) if ws is not None else None
+                if tm is None:
+                    continue
+                if tm.dim() >= 2:
+                    ok = (
+                        worst <= int(tm.shape[1])
+                        and self._kernel_num_experts <= int(tm.shape[0])
+                    )
+                else:
+                    ok = pairs <= int(tm.shape[0])
+                fits.append((name, ok, tuple(tm.shape)))
+            if fits and not any(ok for _, ok, _ in fits):
+                detail = " ".join(f"{n}{shape}" for n, _, shape in fits)
+                raise RuntimeError(
+                    f"b12x EP overruns every workspace: {pairs} pairs, expert "
+                    f"{worst_id} takes {worst} rows, {self._kernel_num_experts} "
+                    f"experts -- token_map {detail}. Force the dynamic backend "
+                    f"(FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=0) or lower "
+                    f"MAX_BATCHED."
+                )
+        except RuntimeError:
+            raise
+        except Exception as exc:  # probe must never be the thing that breaks EP
+            logger.warning("[b12x EP capacity] probe unavailable (%s: %s)",
+                           type(exc).__name__, exc)
 
     def apply(
         self,
@@ -904,6 +988,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
+            self._ep_capacity_probe(wrapper, topk_ids)
             if b12x_ep_should_compact(
                 topk_ids.size(0) * topk_ids.size(1),
                 enabled=b12x_ep_compact_enabled(),

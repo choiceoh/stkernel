@@ -82,9 +82,18 @@ def build_fp8_lm_head_weight(head) -> bool:
         return False
     try:
         dg_w, dg_ws = _quantize_fp8_deepgemm(weight)
-    except Exception:
+    except Exception as exc:
+        # Name the exception. A bare "failed; staying on bf16" reads as a
+        # healthy fallback, but a device-side assert inside deepgemm kills the
+        # CUDA context on the way out -- the boot then dies somewhere else
+        # entirely (empty_cache) with a traceback that never mentions this.
         logger.warning_once(
-            "fp8 lm_head: quantization failed; staying on bf16."
+            "fp8 lm_head: quantization failed (%s: %s) on weight %s %s; "
+            "staying on bf16.",
+            type(exc).__name__,
+            exc,
+            tuple(weight.shape),
+            weight.dtype,
         )
         return False
     head._deneb_fp8_w = dg_w

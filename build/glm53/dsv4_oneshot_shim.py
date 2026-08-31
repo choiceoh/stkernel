@@ -60,6 +60,24 @@ _disabled = not _ENABLED
 def _build():
     from torch.utils.cpp_extension import load
 
+    # Which .cu is this process actually about to compile and serve? The boot
+    # gate used to answer only "osar or NCCL" (self-test PASS + real=True), so
+    # a boot that never received a fused .cu through deploy-overlays.sh passed
+    # review as if it had -- the sixth declared-but-not-applied knob in this
+    # repo. The launcher mounts PROFILE_OVERLAY_DIR, not the repo, and only
+    # deploy-overlays.sh populates it; nothing else distinguishes versions.
+    # This line makes the mounted source's fingerprint part of every boot log,
+    # so "which version ran" is answered by the log alone: kernels=5 is the
+    # pre-#89 chain, 3 is #89, 1 is #90.
+    import hashlib
+
+    with open(_SRC, "rb") as f:
+        _src_md5 = hashlib.md5(f.read()).hexdigest()[:8]
+    with open(_SRC, encoding="utf-8", errors="replace") as f:
+        _n_kernels = sum(1 for line in f if line.lstrip().startswith("__global__"))
+    logger.warning(
+        "[osar] source md5=%s kernels=%d (%s)", _src_md5, _n_kernels, _SRC)
+
     return load(
         name="dsv4_oneshot_ar",
         sources=[_SRC],
