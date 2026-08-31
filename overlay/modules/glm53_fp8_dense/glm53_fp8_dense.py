@@ -48,11 +48,6 @@ from vllm.logger import init_logger
 logger = init_logger(__name__)
 
 
-def _flag(name: str, default: str = "0") -> bool:
-    return os.environ.get(name, default).strip().lower() in (
-        "1", "true", "yes", "on")
-
-
 # Runtime module names, i.e. what the loader merged the checkpoint tensors
 # into -- not the checkpoint tensor names. `mlp.gate_up_proj` matches only the
 # first-k dense layers (MoE layers keep their projections under
@@ -138,14 +133,19 @@ def _fp8_dense_gemm(
     return out.reshape(x.shape[:-1] + (orig_rows,))
 
 
-def _quantize_w4(weight: torch.Tensor):
+def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
     """Pack a bf16 [N, K] weight to deep_gemm's e2m1 layout, per-row over K.
 
     per_token_cast_to_fp4 pads K to the 128 scale granularity internally and
     returns packed [N, K//2] at the ORIGINAL K, so -- unlike the fp8 block
     path -- no row/column padding or output slicing is needed here: every
     linear this module touches has an even K that is already a multiple of
-    128 on the activation side."""
+    128 on the activation side.
+
+    The vendored kernel accepts (at least) two scale layouts and its C++
+    checks are not readable from here -- packed ue8m0 int32 vs plain float
+    -- so the caller probes both and keeps whichever passes the value
+    check."""
     from vllm.utils.deep_gemm import _import_deep_gemm, is_deep_gemm_e8m0_used
 
     dg = _import_deep_gemm()
@@ -154,7 +154,7 @@ def _quantize_w4(weight: torch.Tensor):
         w.float(),
         use_ue8m0=is_deep_gemm_e8m0_used(),
         gran_k=128,
-        use_packed_ue8m0=True,
+        use_packed_ue8m0=packed_sf,
     )
     return packed, sf
 
@@ -185,21 +185,6 @@ def _fp8_fp4_dense_gemm(
     return out.reshape(x.shape[:-1] + (wq.shape[0],))
 
 
-# Build-time probe: the vendored kernel accepts a couple of scale layouts
-# (packed ue8m0 vs plain) and we cannot read its C++ checks from here, so
-# every W4 layer proves its calling convention with one eager 2-row GEMM at
-# load time -- before compile, before capture. A layer whose probe raises
-# falls back to the fp8 pair right there; nothing new can fail mid-capture.
-def _w4_probe_ok(wq, ws, cols: int) -> bool:
-    try:
-        x = torch.ones(2, cols, dtype=torch.bfloat16, device=wq.device)
-        _fp8_fp4_dense_gemm(x, wq, ws)
-        torch.cuda.synchronize()
-        return True
-    except Exception:
-        return False
-
-
 # One opaque boundary per GEMM: compile sees a node, capture sees kernel
 # launches, and the deepgemm/triton interiors are never traced. Falls back to
 # the bare function on re-import (double registration) or an old torch.
@@ -218,10 +203,6 @@ try:
         )
 except Exception:
     _fp8_dense_gemm_op = _fp8_dense_gemm
-
-
-def _w4_dense_gemm_call(x, wq, ws):
-    return _fp8_fp4_dense_gemm(x, wq, ws)
 
 
 try:
@@ -246,7 +227,12 @@ class W4A8DenseMethod:
     W4A4 loses 20-25 pct, W4A8 is the compromise) -- and the kernel family
     is the one already carrying the MoE experts (fp8_fp4_gemm_nt, the dense
     form of sm120_fp8_fp4_gemm_1d1d). The calling convention is probed
-    eagerly at build time, so a probe failure never reaches this class."""
+    eagerly at build time, so a probe failure never reaches this class.
+
+    `_base` is the layer's fp8 METHOD, not bf16: a runtime failure drops one
+    notch to W8A8. Memory while armed is triple residency per layer (bf16
+    source + fp8 fallback pair + fp4 pair, ~+1 GB/rank over the W8A8 arm)
+    -- the price of never being able to fail a boot."""
 
     def __init__(self, base, wq, ws):
         self._base = base
@@ -363,23 +349,33 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 stale.append(name)
                 continue
             if scheme == "w4a8" and weight.shape[1] % 2 == 0:
-                try:
-                    wq, ws = _quantize_w4(weight)
-                    w4_method = W4A8DenseMethod(method, wq, ws)
-                    # e2m1 needs a looser bound than the fp8 copy check: it
-                    # is quantization error by design, not staleness. The
-                    # probe still catches a wrong scale layout outright
-                    # (garbage) and still cannot disarm on a mere refusal.
-                    chk = _copy_matches_source(
-                        mod, w4_method, weight, rtol=4 * _STALE_RTOL)
-                    if chk is not False and _w4_probe_ok(
-                            wq, ws, weight.shape[1]):
-                        mod.quant_method = w4_method
-                        quantized_w4.append(name)
-                        params_w4 += weight.numel()
+                # Stricter than the fp8 path on purpose: an EXPERIMENTAL
+                # scheme arms only on a value check that actually RAN and
+                # passed (fp8 arms on "did not fail"). The check runs the
+                # real kernel with a random probe batch, so a wrong scale
+                # layout produces garbage and refuses to arm; 2x the stale
+                # tolerance absorbs e2m1's by-design quantization error
+                # (measured 0.02-0.08 rel on row blocks) while uncorrelated
+                # garbage lands near sqrt(2).
+                for packed_sf in (True, False):
+                    try:
+                        wq, ws = _quantize_w4(weight, packed_sf=packed_sf)
+                        w4_method = W4A8DenseMethod(method, wq, ws)
+                        if _copy_matches_source(
+                                mod, w4_method, weight,
+                                rtol=2 * _STALE_RTOL) is True:
+                            mod.quant_method = w4_method
+                            quantized_w4.append(name)
+                            params_w4 += weight.numel()
+                            break
+                    except Exception:
                         continue
-                except Exception:
-                    pass
+                else:
+                    mod.quant_method = method
+                    quantized.append(name)
+                    params += weight.numel()
+                    continue
+                continue
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
