@@ -36,15 +36,22 @@ onto that space, and parks every remote slot on a dummy expert at scale 0 so
 dynamic FC2 quant cannot bleed into a real expert. The remap writes into
 preallocated scratch (`out=` / in-place) so decode CUDA graphs stay
 alloc-free. Decode replaces remote slots with zero-weight repeats of local
-pairs and submits at most 8 `top_k=1` rows per call. That keeps C=1/2/4 on
-FlashInfer's micro backend; flattening 16/32 rows into one call selects the
-static backend that hangs on this EP geometry. A mixed call only repeats rows
-already present in that same call so per-call FC2 amax is unchanged. Prefill
-(`tokens * top_k > 640`) drops dummy slots instead of paying GEMM for ~3/4
-remote routes. vLLM's EP all-reduce (DP=1) combines the partial hidden states.
+pairs and submits at most 8 `top_k=1` rows per call. Stable DFlash verification
+shapes use 8/16/32 tokens at C=1/2/4; top-k=8 therefore flattens to
+64/128/256 pair rows and 8/16/32 micro calls per MoE layer. One unsliced fixed
+call selects the static backend observed to hang on this EP geometry. A mixed
+call only repeats rows already present in that same call so per-call FC2 amax
+is unchanged. This establishes a safe dispatch shape; no end-to-end throughput
+win has been established. Prefill (`tokens * top_k > 640`) drops dummy slots
+instead of paying GEMM for ~3/4 remote routes. vLLM's EP all-reduce (DP=1)
+combines the partial hidden states.
 
 `ENABLE_EP=1` on the glm53 launcher. Off by default — the TP-sharded path is
 the measured one. EPLB is refused (`_supports_parallel_config`).
 `VLLM_B12X_EP_COMPACT=0` keeps every batch fixed-shape; with
 `VLLM_B12X_EP_NO_DUMMY=1` (default), remote slots become slice-local repeats.
+`VLLM_B12X_EP_DISABLE_MICRO=1` is a plain-static diagnostic and is rejected
+with the default no-dummy path; also set `VLLM_B12X_EP_NO_DUMMY=0` to use it.
+Setup also verifies the pinned FlashInfer `_MICRO_MAX_TOKENS >= 8`; a missing
+or smaller private boundary fails closed instead of silently selecting static.
 PIECEWISE graphs force compaction off so prefill capture keeps a fixed shape.

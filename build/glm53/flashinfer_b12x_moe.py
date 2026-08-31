@@ -87,7 +87,64 @@ def remap_b12x_ep_slot(
 
 
 
-def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
+def read_b12x_ep_bool(name, default, env_get=os.environ.get) -> bool:
+    """Read one EP boolean once, rejecting ambiguous spellings.
+
+    These flags select kernels and must not silently change meaning because of
+    a typo. Raising during expert construction also keeps the environment read
+    out of CUDA graph capture and replay.
+    """
+    raw = env_get(name)
+    if raw is None:
+        return bool(default)
+    value = str(raw).strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(
+        f"{name} must be one of 0/1, false/true, no/yes, off/on; "
+        f"got {raw!r}"
+    )
+
+
+def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool]:
+    """Return latched (no_dummy, disable_micro) flags or reject the mode."""
+    no_dummy = read_b12x_ep_bool(
+        "VLLM_B12X_EP_NO_DUMMY", True, env_get=env_get
+    )
+    disable_micro = read_b12x_ep_bool(
+        "VLLM_B12X_EP_DISABLE_MICRO", False, env_get=env_get
+    )
+    if no_dummy and disable_micro:
+        raise RuntimeError(
+            "VLLM_B12X_EP_DISABLE_MICRO=1 is incompatible with the fixed "
+            "no-dummy path (VLLM_B12X_EP_NO_DUMMY=1, the default). "
+            "For the plain-static diagnostic, also set "
+            "VLLM_B12X_EP_NO_DUMMY=0."
+        )
+    return no_dummy, disable_micro
+
+
+def require_b12x_ep_micro_limit(micro_max_tokens) -> int:
+    """Verify that an eight-row fixed slice still selects the micro kernel."""
+    try:
+        limit = int(micro_max_tokens)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "the fixed B12x EP no-dummy path cannot verify FlashInfer's "
+            f"_MICRO_MAX_TOKENS={micro_max_tokens!r}"
+        ) from exc
+    if limit < B12X_EP_FIXED_MICRO_MAX_PAIRS:
+        raise RuntimeError(
+            "the fixed B12x EP no-dummy path requires FlashInfer "
+            f"_MICRO_MAX_TOKENS >= {B12X_EP_FIXED_MICRO_MAX_PAIRS}; "
+            f"got {limit}. Refusing a silent static-kernel fallback."
+        )
+    return limit
+
+
+def disable_b12x_micro_for_ep(no_dummy: bool, disable_micro: bool) -> str:
     """Keep EP off the micro MoE kernels. Returns what it did, for the log.
 
     `use_direct_micro` already excludes EP by shape -- it requires
@@ -106,17 +163,25 @@ def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
     Default is to LEAVE MICRO ON: it is the only decode-tuned path EP
     qualifies for, and its own docstring says it takes LOCAL expert ids
     from a pre-pass -- the same contract our EP remap already honours.
-    Set VLLM_B12X_EP_DISABLE_MICRO=1 to fall back to plain static.
+    The flag is parsed and latched during expert construction. The static
+    diagnostic requires both VLLM_B12X_EP_DISABLE_MICRO=1 and
+    VLLM_B12X_EP_NO_DUMMY=0; the no-dummy path must remain micro-sliced.
     """
-    if env_get("VLLM_B12X_EP_DISABLE_MICRO", "0").strip().lower() not in (
-        "1", "true", "yes", "on"
-    ):
+    if not no_dummy and not disable_micro:
         return "micro left on -- EP qualifies for it (no n bound)"
     try:
         from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch
     except Exception as exc:
+        if no_dummy:
+            raise RuntimeError(
+                "the fixed B12x EP no-dummy path cannot import FlashInfer "
+                "moe_dispatch to verify its micro boundary"
+            ) from exc
         return f"micro bound untouched ({type(exc).__name__}: {exc})"
     prior = getattr(moe_dispatch, "_MICRO_MAX_TOKENS", None)
+    if no_dummy:
+        limit = require_b12x_ep_micro_limit(prior)
+        return f"micro left on -- verified token bound {limit}"
     if prior in (None, 0):
         return f"micro bound already {prior}"
     moe_dispatch._MICRO_MAX_TOKENS = 0
@@ -124,10 +189,11 @@ def disable_b12x_micro_for_ep(env_get=os.environ.get) -> str:
 
 
 
-# The functional b12x dispatcher keys micro/static on x.shape[0], not on
-# routed rows. EP's fixed path turns each routed slot into a top_k=1 row, so
-# C=2/4 becomes 16/32 rows and would enter the hanging static kernel. Eight
-# is the pinned FlashInfer build's _MICRO_MAX_TOKENS boundary.
+# The functional b12x dispatcher keys micro/static on x.shape[0]. Stable
+# DFlash verification shapes have 8/16/32 tokens at C=1/2/4; after top-k=8 is
+# flattened into top_k=1 pair rows, those become 64/128/256 rows and therefore
+# 8/16/32 calls. Eight is the pinned FlashInfer build's _MICRO_MAX_TOKENS
+# boundary; an unsliced fixed call selects the static kernel observed to hang.
 B12X_EP_FIXED_MICRO_MAX_PAIRS = 8
 
 
@@ -581,6 +647,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self.max_num_tokens = moe_config.max_num_tokens
         self.local_expert_offset = self.ep_rank * self.num_local_experts
         self._use_ep = bool(moe_config.moe_parallel_config.use_ep)
+        self._ep_no_dummy = False
+        self._ep_disable_micro = False
+        if self._use_ep:
+            (
+                self._ep_no_dummy,
+                self._ep_disable_micro,
+            ) = b12x_ep_mode_from_env()
         self._ep_ids: torch.Tensor | None = None
         self._ep_scales: torch.Tensor | None = None
         self._ep_long: torch.Tensor | None = None
@@ -677,8 +750,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self._pad_dummy_expert(layer)
             global _EP_MICRO_DISABLED
             if not _EP_MICRO_DISABLED:
+                micro_status = disable_b12x_micro_for_ep(
+                    self._ep_no_dummy, self._ep_disable_micro
+                )
                 _EP_MICRO_DISABLED = True
-                logger.warning("[b12x EP] %s", disable_b12x_micro_for_ep())
+                logger.warning(
+                    "[b12x EP] %s",
+                    micro_status,
+                )
 
         # Precompute MMA-layout views of the weight scale factors once here
         # rather than recomputing on every forward pass.
@@ -903,11 +982,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         precisely the hazard that forbids dumping remote slots onto a real
         expert.
 
-        Calls are capped at eight pair rows. The functional b12x dispatcher
-        uses x.shape[0] as its micro/static boundary, so flattened C=2/4
-        decode (16/32 rows) otherwise enters the hanging static kernel while
-        C=1 (8 rows) works. The number and shapes of calls are fixed by the
-        captured graph shape.
+        Calls are capped at eight pair rows. Stable DFlash verification shapes
+        have 8/16/32 tokens at C=1/2/4; top-k=8 flattening produces
+        64/128/256 pair rows and therefore 8/16/32 micro calls per MoE layer.
+        One unsliced fixed call would select the static kernel observed to
+        hang. The number and shapes of calls are fixed by the captured graph
+        shape. This establishes the safe dispatch shape, not an end-to-end
+        throughput win.
 
         No nonzero, no host sync -- every step is index arithmetic on shapes
         that are fixed once tokens is fixed. Padding in a mixed call repeats
@@ -1224,9 +1305,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 return self._apply_ep_compact(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )
-            if os.environ.get("VLLM_B12X_EP_NO_DUMMY", "1").strip().lower() in (
-                "1", "true", "yes", "on"
-            ):
+            if self._ep_no_dummy:
                 # Decode: keep the shape fixed for capture, but pay no dummy.
                 return self._apply_ep_fixed(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
