@@ -2592,7 +2592,7 @@ def test_b12x_zero_weight_micro() -> None:
     check(chunks(24, 8, 72, enabled=True) == ((0, 8), (8, 16), (16, 24)),
           "24 tokens must take the micro lane, not the pair fallback")
     for args in (
-        (1, 8, 72, True), (7, 8, 72, True), (9, 8, 72, True),
+        (1, 8, 72, True), (7, 8, 72, True),
         (88, 8, 72, True), (8, 1, 72, True), (8, 8, 71, True),
         (8, 8, 72, False),
     ):
@@ -2739,9 +2739,24 @@ def test_b12x_zero_weight_micro() -> None:
           and "topk_ids=topk_ids[lo:hi]" in pure_source
           and "_workspace=self._ep_zero_weight_workspace" in pure_source,
           "pure lane must use disjoint token/output slices and its pinned workspace")
+    # The micro loop itself stays free of gather/scatter. A batch that is not
+    # a multiple of the chunk hands only its short tail (< one chunk) to the
+    # #146 fallback -- real decode saw 9/36/49/52/60 tokens, and covering the
+    # aligned prefix turns 49 pair calls into 6 micro calls plus one tail.
+    tail_call = pure_source.find("self._apply_ep_fixed(")
+    loop_source = pure_source if tail_call < 0 else pure_source[:tail_call]
     for banned in ("pair_x", "pair_out", "index_add_", "argsort", "nonzero"):
-        check(banned not in pure_source,
+        check(banned not in loop_source,
               f"pure top-k=8 lane must not retain {banned} overhead")
+    if tail_call >= 0:
+        check("b12x_ep_micro_tail(" in pure_source,
+              "the tail must come from the shape-derived planner, never from a "
+              "data-dependent count")
+        check(pure_source.index("for lo, hi in chunks:") < tail_call,
+              "the tail runs after the aligned prefix, on rows it never wrote")
+        check("output[lo:hi]" in pure_source[tail_call:]
+              and "hidden_states[lo:hi]" in pure_source[tail_call:],
+              "the tail fallback must be handed disjoint slice views")
     zero_return = apply_source.index("return self._apply_ep_zero_weight_micro(")
     stock_return = apply_source.index(
         "return self._apply_ep_stock_topk_micro("
@@ -4021,7 +4036,7 @@ def test_b12x_micro_chunk_width() -> None:
          "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS",
          "B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS",
          "B12X_EP_ZERO_WEIGHT_MICRO_TOPK",
-         "B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS"},
+         "B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS", "b12x_ep_micro_tail"},
         {"os": os},
     )
     width = ns["b12x_ep_micro_chunk_tokens"]
@@ -4049,9 +4064,26 @@ def test_b12x_micro_chunk_width() -> None:
         check(all(plan[i][1] == plan[i + 1][0] for i in range(len(plan) - 1)),
               f"{tokens} tokens: slices are contiguous")
 
-    for tokens in (0, 4, 12, 20, 88, 8192):
-        check(chunks(tokens, 8, 72, enabled=True) == (),
-              f"{tokens} tokens must fail closed (not a multiple, or past the "
+    tail = ns["b12x_ep_micro_tail"]
+    # Real decode batches are rarely a multiple of the chunk -- with chunked
+    # prefill this lane saw 9, 36, 49, 52, 60. Cover the aligned prefix and
+    # leave only the short tail to the pair fallback.
+    for tokens, want_calls in ((9, 2), (36, 5), (49, 7), (52, 7), (60, 8)):
+        plan = chunks(tokens, 8, 72, enabled=True)
+        t = tail(tokens, 8, 72, enabled=True)
+        check(t is not None, f"{tokens} tokens must report a tail")
+        check(len(plan) + 1 == want_calls,
+              f"{tokens} tokens -> {want_calls} calls, not {tokens}")
+        check(plan[0][0] == 0 and t[1] == tokens and plan[-1][1] == t[0],
+              f"{tokens} tokens: prefix and tail must cover exactly, no gap")
+        check(0 < t[1] - t[0] < stock, f"{tokens} tokens: tail is short")
+    for tokens in (8, 16, 24, 32, 80):
+        check(tail(tokens, 8, 72, enabled=True) is None,
+              f"{tokens} tokens is aligned -- no tail")
+    for tokens in (0, 1, 7, 81, 8192):
+        check(chunks(tokens, 8, 72, enabled=True) == ()
+              and tail(tokens, 8, 72, enabled=True) is None,
+              f"{tokens} tokens must fail closed (below one chunk, or past the "
               "compact cutover where dropping remote slots is cheaper)")
     check(chunks(8, 8, 72, enabled=False) == (), "disabled yields no plan")
     check(chunks(8, 4, 72, enabled=True) == (), "top_k must be 8")
