@@ -41,18 +41,6 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
             vllm_config=draft_vllm_config, model_config=draft_model_config
         )
 
-    # deneb fork: quantize the draft head here -- weights are present and
-    # capture has not started, which is the same point DSV4's speculator
-    # uses. No-op unless VLLM_SPEC_FP8_LM_HEAD=1.
-    try:
-        from vllm.model_executor.layers.fp8_lm_head import (
-            build_fp8_lm_head,
-        )
-
-        build_fp8_lm_head(dflash_model)
-    except Exception:
-        pass
-
     # deneb fork: the same fp8 block copies for the drafter's own dense
     # projections. The decode trace shows 32 bf16 cutlass GEMMs/step here
     # (~0.55 GB/rank of weight reads at TP=4, ~2.5 ms) -- the same
@@ -98,5 +86,15 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
         if draft_lm_head is not None:
             del dflash_model.lm_head
         dflash_model.lm_head = target_lm_head
+
+    # DFlash2 checkpoints do not carry an lm_head. get_model() still creates
+    # an empty ParallelLMHead, so quantizing before the sharing block above
+    # reads uninitialized storage and then discards the resulting fp8 copy.
+    # Build only after the target head is attached. The helper itself logs and
+    # falls back to bf16 on a quantization error; an import/integration error
+    # must stay visible instead of being swallowed during boot.
+    from vllm.model_executor.layers.fp8_lm_head import build_fp8_lm_head
+
+    build_fp8_lm_head(dflash_model)
 
     return dflash_model

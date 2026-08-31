@@ -1433,6 +1433,107 @@ def test_ue8m0_scale_repair() -> None:
 
     print("  UE8M0 scale repair ............. OK")
 
+
+def test_fp8_acceptance_contracts() -> None:
+    """Keep the draft-head kernel safe and its candidates decodable."""
+    fp8_path = _overlay_source("overlay/fp8_lm_head.py")
+    fp8_source = open(fp8_path, encoding="utf-8").read()
+    fp8_tree = ast.parse(fp8_source)
+
+    quantize_node = next(
+        node
+        for node in fp8_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_quantize_fp8_deepgemm"
+    )
+    quantize_source = ast.get_source_segment(fp8_source, quantize_node)
+    assert quantize_source is not None
+    bad_guard = quantize_source.index("if bad_scales:")
+    fail_closed = quantize_source.index("raise RuntimeError", bad_guard)
+    final_pack = quantize_source.rindex(
+        "return deepgemm_post_process_fp8_weight_block"
+    )
+    check(
+        "bad_scales = _describe_ue8m0_scales(ws)" in quantize_source
+        and bad_guard < fail_closed < final_pack,
+        "an unsafe UE8M0 scale must fall back before the CUDA packer can trap",
+    )
+    check(
+        "_flush_pathological_scales" not in quantize_source
+        and "torch.where" not in quantize_source,
+        "the kernel guard must never rewrite scales to silence the packer",
+    )
+
+    processor_cls = next(
+        node
+        for node in fp8_tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "Fp8HeadLogitsProcessor"
+    )
+    apply_node = next(
+        node
+        for node in processor_cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_apply_head"
+    )
+    apply_source = ast.get_source_segment(fp8_source, apply_node)
+    assert apply_source is not None
+    gate_at = apply_source.index("use_fp8 = _read_bool_env")
+    cache_at = apply_source.index('getattr(lm_head, "_deneb_fp8_w"')
+    check(
+        gate_at < cache_at and "if use_fp8 else None" in apply_source,
+        "an env-off endpoint must ignore an fp8 cache shared by the other endpoint",
+    )
+    check(
+        'out[..., valid_end:] = -float("inf")' in apply_source,
+        "tokenizer-orphan draft rows must be masked before local top-k",
+    )
+
+    ns = load_defs(
+        "overlay/fp8_lm_head.py", {"_local_valid_vocab_end"}, {}
+    )
+    local_end = ns["_local_valid_vocab_end"]
+    for valid, start, width, want in (
+        (None, 0, 38720, 38720),
+        (154856, 0, 38720, 38720),
+        (154856, 38720, 38720, 38720),
+        (154856, 77440, 38720, 38720),
+        (154856, 116160, 38720, 38696),
+        (154856, 154856, 128, 0),
+        (154856, 154900, 128, 0),
+    ):
+        check(
+            local_end(valid, start, width) == want,
+            f"valid-vocab shard map {(valid, start, width)} must end at {want}",
+        )
+
+    loader_source = open(
+        _overlay_source("overlay/dflash_utils.py"), encoding="utf-8"
+    ).read()
+    alias_at = loader_source.index("dflash_model.lm_head = target_lm_head")
+    build_call = "build_fp8_lm_head(dflash_model)"
+    check(
+        loader_source.count(build_call) == 1
+        and alias_at < loader_source.index(build_call),
+        "DFlash2 must attach the loaded target head before quantizing it",
+    )
+    check(
+        "except Exception" not in loader_source[alias_at:],
+        "draft-head integration failures after sharing must stay visible",
+    )
+
+    qwen_source = open(
+        _overlay_source("overlay/qwen3_dflash2.py"), encoding="utf-8"
+    ).read()
+    compact_qwen = re.sub(r"\s+", "", qwen_source)
+    check(
+        "valid_vocab_size=decodable_vocab_size("
+        "vllm_config.model_config.tokenizer)" in compact_qwen,
+        "the DFlash2 candidate processor must receive the tokenizer bound",
+    )
+
+    print("  fp8 acceptance contracts ....... OK")
+
+
 def test_fp8_dense_bproj() -> None:
     """The b-projection arm matches exactly the rear halves meant for it.
 
@@ -1636,6 +1737,7 @@ if __name__ == "__main__":
     test_ngram_ceiling_sim()
     test_ue8m0_scale_repair()
     test_ep_fixed_pair_plan()
+    test_fp8_acceptance_contracts()
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()

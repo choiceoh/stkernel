@@ -15,6 +15,7 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
 # above it is left alone. See overlay/modules/fp8_lm_head.
 from vllm.model_executor.layers.fp8_lm_head import (
     Fp8HeadLogitsProcessor,
+    decodable_vocab_size,
 )
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 
@@ -283,6 +284,9 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             vllm_config.model_config.get_vocab_size(),
             scale=float(draft_config.get("output_multiplier", 1.0)),
             soft_cap=softcap if softcap > 0 else None,
+            valid_vocab_size=decodable_vocab_size(
+                vllm_config.model_config.tokenizer
+            ),
         )
 
     def compute_candidates(
