@@ -48,9 +48,12 @@ tools/b12x-preflight.py --scan ~/models 4
 커널 진입점은 여전히 `num_local != num_experts` 를 거부한다 (flashinfer #3383).
 오버레이가 EP를 **로컬 전용 MoE처럼** 보이게 한다 — 기본 direct 경로는
 로컬 weight row만 유지하고, 전역 top-k 를 리맵한 뒤 원격 슬롯을 커널 전에
-제거한다. 디코드는 8 row씩 `top_k=1` micro 호출로 나눠 C=1/2/4가
-static으로 떨어지지 않게 하고, 프리필(`tokens * top_k > 640`)은 원격
-슬롯을 빼서 GEMM하지 않는다. fixed decode의 8-row workspace는 강하게
+제거한다. 기본 디코드는 8 row씩 `top_k=1` micro 호출로 나눠 C=1/2/4를
+8/16/32회에 처리한다. `VLLM_B12X_EP_STOCK_TOPK_MICRO=1` 실험은 원격
+슬롯을 같은 토큰의 zero-weight 로컬 ID로 바꾸고 원래 `top_k=8` 모양을
+최대 5토큰/40 routed-row로 나눠 이를 2/4/7회로 줄인다. 실GPU 수치와
+CUDA graph replay가 아직 미검증이라 기본 0이다. 프리필(`tokens * top_k >
+640`)은 원격 슬롯을 빼서 GEMM하지 않는다. 각 fixed workspace는 강하게
 보유해 prefill cache 확장이 CUDA graph 주소를 무효화하지 못하게 한다.
 `VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1` 실험은 E=72를 유지한 채 안정적인
 8/16/32-token shape만 top-k=8의 1/2/4 micro 호출로 줄인다. zero-weight

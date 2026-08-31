@@ -123,8 +123,10 @@ def read_b12x_ep_exact_bool(name, default=False, env_get=os.environ.get) -> bool
     raise ValueError(f"{name} must be exactly 0 or 1; got {raw!r}")
 
 
-def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool, bool]:
-    """Return latched (no_dummy, disable_micro, zero_micro) EP mode."""
+def b12x_ep_mode_from_env(
+    env_get=os.environ.get,
+) -> tuple[bool, bool, bool, bool]:
+    """Return latched EP mode and the two mutually-exclusive experiments."""
     no_dummy = read_b12x_ep_bool(
         "VLLM_B12X_EP_NO_DUMMY", True, env_get=env_get
     )
@@ -134,9 +136,22 @@ def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool, bool]:
     zero_micro = read_b12x_ep_exact_bool(
         "VLLM_B12X_EP_ZERO_WEIGHT_MICRO", False, env_get=env_get
     )
-    if zero_micro and (not no_dummy or disable_micro):
+    stock_topk_micro = read_b12x_ep_exact_bool(
+        "VLLM_B12X_EP_STOCK_TOPK_MICRO", False, env_get=env_get
+    )
+    if zero_micro and stock_topk_micro:
         raise RuntimeError(
-            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 requires the local-only "
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 and "
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO=1 are mutually exclusive."
+        )
+    if (zero_micro or stock_topk_micro) and (not no_dummy or disable_micro):
+        experiment = (
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO"
+            if zero_micro
+            else "VLLM_B12X_EP_STOCK_TOPK_MICRO"
+        )
+        raise RuntimeError(
+            f"{experiment}=1 requires the local-only "
             "VLLM_B12X_EP_NO_DUMMY=1 path and "
             "VLLM_B12X_EP_DISABLE_MICRO=0."
         )
@@ -147,7 +162,7 @@ def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool, bool]:
             "For the plain-static diagnostic, also set "
             "VLLM_B12X_EP_NO_DUMMY=0."
         )
-    return no_dummy, disable_micro, zero_micro
+    return no_dummy, disable_micro, zero_micro, stock_topk_micro
 
 
 def require_b12x_ep_micro_limit(micro_max_tokens) -> int:
@@ -166,6 +181,138 @@ def require_b12x_ep_micro_limit(micro_max_tokens) -> int:
             f"got {limit}. Refusing a silent static-kernel fallback."
         )
     return limit
+
+
+# The opt-in native-top-k lane must remain under both of FlashInfer's stock
+# micro cutovers. GLM top-k=8 makes the 40-routed-row limit the tighter one.
+B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS = 8
+B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS = 40
+B12X_EP_STOCK_TOPK_MICRO_TOKEN_COUNTS = (8, 16, 32)
+B12X_EP_STOCK_TOPK_MICRO_TOPK = 8
+B12X_EP_STOCK_TOPK_MICRO_EXPERTS = 72
+
+
+def require_b12x_ep_micro_limits(
+    micro_max_tokens, micro_max_routed_rows
+) -> tuple[int, int]:
+    """Verify the two private FlashInfer limits this fixed path relies on."""
+    values = (
+        (
+            "_MICRO_MAX_TOKENS",
+            micro_max_tokens,
+            B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS,
+        ),
+        (
+            "_MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK",
+            micro_max_routed_rows,
+            B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS,
+        ),
+    )
+    parsed = []
+    for name, raw, required in values:
+        try:
+            limit = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "the fixed B12x EP no-dummy path cannot verify FlashInfer's "
+                f"{name}={raw!r}"
+            ) from exc
+        if limit < required:
+            raise RuntimeError(
+                "the fixed B12x EP no-dummy path requires FlashInfer "
+                f"{name} >= {required}; got {limit}. Refusing a silent "
+                "static-kernel fallback."
+            )
+        parsed.append(limit)
+    return parsed[0], parsed[1]
+
+
+def b12x_ep_stock_topk_token_limit(
+    max_num_tokens,
+    top_k,
+    micro_max_tokens=B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS,
+    micro_max_routed_rows=B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS,
+) -> int:
+    """Token rows per stock top-k call while both cutovers remain true."""
+    top_k = int(top_k)
+    if top_k <= 0:
+        raise ValueError(f"top_k must be positive, got {top_k}")
+    routed_limit = int(micro_max_routed_rows) // top_k
+    if routed_limit <= 0:
+        raise RuntimeError(
+            f"top_k={top_k} exceeds the micro routed-row capacity "
+            f"{micro_max_routed_rows}"
+        )
+    workspace_limit = max(int(max_num_tokens or 0), 1)
+    token_limit = min(workspace_limit, int(micro_max_tokens), routed_limit)
+    if token_limit <= 0:
+        raise RuntimeError("the fixed B12x EP token limit is not positive")
+    return token_limit
+
+
+def b12x_ep_stock_topk_token_spans(num_tokens, token_limit):
+    """Balanced, shape-only token spans with no one-row tail when avoidable."""
+    num_tokens = int(num_tokens)
+    token_limit = int(token_limit)
+    if num_tokens < 0:
+        raise ValueError(f"num_tokens must be non-negative, got {num_tokens}")
+    if token_limit <= 0:
+        raise ValueError(f"token_limit must be positive, got {token_limit}")
+    if num_tokens == 0:
+        return ()
+    num_calls = (num_tokens + token_limit - 1) // token_limit
+    base, extra = divmod(num_tokens, num_calls)
+    spans = []
+    lo = 0
+    for call_index in range(num_calls):
+        size = base + int(call_index < extra)
+        hi = lo + size
+        spans.append((lo, hi))
+        lo = hi
+    return tuple(spans)
+
+
+def b12x_ep_stock_topk_micro_chunks(
+    num_tokens,
+    top_k,
+    num_local_experts,
+    *,
+    enabled,
+):
+    """Return the exact opt-in stock-micro plan, else fail closed."""
+    tokens = int(num_tokens)
+    top_k = int(top_k)
+    if not (
+        enabled
+        and tokens in B12X_EP_STOCK_TOPK_MICRO_TOKEN_COUNTS
+        and top_k == B12X_EP_STOCK_TOPK_MICRO_TOPK
+        and int(num_local_experts) == B12X_EP_STOCK_TOPK_MICRO_EXPERTS
+    ):
+        return ()
+    limit = b12x_ep_stock_topk_token_limit(tokens, top_k)
+    return b12x_ep_stock_topk_token_spans(tokens, limit)
+
+
+def require_b12x_ep_stock_topk_micro_dispatch(moe_dispatch):
+    """Verify the private stock-dispatch contract before opting in."""
+    if not hasattr(moe_dispatch, "_FORCED_BACKEND"):
+        raise RuntimeError(
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO=1 cannot verify FlashInfer's "
+            "_FORCED_BACKEND contract"
+        )
+    if getattr(moe_dispatch, "_FORCED_BACKEND", None) is not None:
+        raise RuntimeError(
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO=1 requires FlashInfer's "
+            "automatic backend selection (_FORCED_BACKEND must be unset)"
+        )
+    return require_b12x_ep_micro_limits(
+        getattr(moe_dispatch, "_MICRO_MAX_TOKENS", None),
+        getattr(
+            moe_dispatch,
+            "_MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK",
+            None,
+        ),
+    )
 
 
 def disable_b12x_micro_for_ep(no_dummy: bool, disable_micro: bool) -> str:
@@ -219,6 +366,10 @@ def disable_b12x_micro_for_ep(no_dummy: bool, disable_micro: bool) -> str:
 # 8/16/32 calls. Eight is the pinned FlashInfer build's _MICRO_MAX_TOKENS
 # boundary; an unsliced fixed call selects the static kernel observed to hang.
 B12X_EP_FIXED_MICRO_MAX_PAIRS = 8
+
+# The kernel-overlay experiment widens the exact E=72/m=8 shape to 64 routed
+# rows by dropping zero-weight sentinels before row materialisation. The stock
+# experiment above remains inside the dispatcher's ordinary 40-row cutover.
 B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS = (8, 16, 32)
 B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS = 8
 B12X_EP_ZERO_WEIGHT_MICRO_TOPK = 8
@@ -476,6 +627,7 @@ def remap_b12x_ep_tensors(
     if expert_map is not None:
         map_len = int(expert_map.size(0))
         if map_len <= 0:
+            remote.fill_(True)
             out_ids.fill_(dummy)
             out_scales.copy_(topk_weights)
             out_scales.zero_()
@@ -691,8 +843,9 @@ class _B12xEpFixedWorkspaceKey:
 # the last Python reference to the small workspace whose addresses the graphs
 # recorded. Pin shape-specific workspaces and pass them explicitly for direct
 # decode. The default top-k=1 lane uses 8 rows (~3.4 MiB at E=72, 4096/2048);
-# the opt-in top-k=8 lane has its own 64-row object. Compact prefill keeps using
-# the independent functional cache, so it cannot replace graph addresses.
+# the stock top-k=8 experiment uses 40 rows and the kernel-overlay experiment
+# has its own 64-row object. Compact prefill keeps using the
+# independent functional cache, so it cannot replace graph addresses.
 _B12X_EP_FIXED_WORKSPACES: "WeakValueDictionary[_B12xEpFixedWorkspaceKey, Any]" = (
     WeakValueDictionary()
 )
@@ -756,12 +909,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     Decode/graph batches replace remote slots with zero-weight repeats and
     submit at most eight pairs per call, so the dispatcher stays on its proven
     micro kernel instead of static. Prefill (routed pairs > 640) drops remote
-    slots. The default-off ``VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1`` experiment
-    keeps E=72 and admits only stable 8/16/32-token GLM shapes as disjoint
-    eight-token top-k=8 micro calls; the kernel removes exact-zero sentinel
-    pairs before row materialization. ``VLLM_B12X_EP_NO_DUMMY=0`` restores the
-    padded ``E = local + 1`` wrapper path. vLLM's EP all-reduce (DP=1) combines
-    ranks.
+    slots. The default-off ``VLLM_B12X_EP_STOCK_TOPK_MICRO=1`` experiment
+    instead keeps token-major top-k=8 under the stock 40-row cutover, reducing
+    stable 8/16/32-token shapes to 2/4/7 calls. The mutually-exclusive
+    default-off ``VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1`` experiment keeps E=72 and
+    admits those shapes as disjoint eight-token top-k=8 calls; the kernel
+    removes exact-zero sentinel pairs before row materialization.
+    ``VLLM_B12X_EP_NO_DUMMY=0`` restores the padded ``E = local + 1`` wrapper
+    path. vLLM's EP all-reduce (DP=1) combines ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -801,23 +956,27 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_no_dummy = False
         self._ep_disable_micro = False
         self._ep_zero_weight_micro = False
+        self._ep_stock_topk_micro = False
         if self._use_ep:
             (
                 self._ep_no_dummy,
                 self._ep_disable_micro,
                 self._ep_zero_weight_micro,
+                self._ep_stock_topk_micro,
             ) = b12x_ep_mode_from_env()
         self._ep_ids: torch.Tensor | None = None
         self._ep_scales: torch.Tensor | None = None
         self._ep_long: torch.Tensor | None = None
         self._ep_mapped: torch.Tensor | None = None
         self._ep_remote: torch.Tensor | None = None
+        self._ep_fill_ids: torch.Tensor | None = None
         self._ep_tmp_a: torch.Tensor | None = None
         self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
         # Strong reference for every captured layer. The global map shares the
         # object by geometry but intentionally holds it weakly.
         self._ep_fixed_workspace: Any | None = None
+        self._ep_stock_topk_workspace: Any | None = None
         self._ep_zero_weight_workspace: Any | None = None
 
         activation = moe_config.activation
@@ -953,6 +1112,47 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 ),
                 device,
             )
+            if self._ep_stock_topk_micro:
+                geometry = (
+                    self.global_num_experts,
+                    self._kernel_num_experts,
+                    self.topk,
+                    self.hidden_dim,
+                    self.intermediate_size_per_partition,
+                    self._activation_str,
+                    self._swiglu_limit,
+                )
+                expected = (
+                    288,
+                    B12X_EP_STOCK_TOPK_MICRO_EXPERTS,
+                    B12X_EP_STOCK_TOPK_MICRO_TOPK,
+                    4096,
+                    2048,
+                    "swigluoai_uninterleave",
+                    10.0,
+                )
+                if geometry != expected:
+                    raise RuntimeError(
+                        "VLLM_B12X_EP_STOCK_TOPK_MICRO=1 only supports the "
+                        f"pinned GLM EP geometry {expected}; got {geometry}"
+                    )
+                from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import (
+                    moe_dispatch,
+                )
+
+                require_b12x_ep_stock_topk_micro_dispatch(moe_dispatch)
+                self._ep_stock_topk_workspace = _shared_ep_fixed_workspace(
+                    _B12xEpFixedWorkspaceKey(
+                        num_experts=self._kernel_num_experts,
+                        top_k=B12X_EP_STOCK_TOPK_MICRO_TOPK,
+                        max_rows=B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS,
+                        hidden_size=self.hidden_dim,
+                        intermediate_size=self.intermediate_size_per_partition,
+                        device=str(device),
+                        activation=self._activation_str,
+                    ),
+                    device,
+                )
             if self._ep_zero_weight_micro:
                 geometry = (
                     self._kernel_num_experts,
@@ -1135,6 +1335,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             or self._ep_scales.dtype != scale_dtype
             or self._ep_mapped is None
             or self._ep_mapped.dtype != map_dtype
+            or (
+                self._ep_stock_topk_micro and self._ep_fill_ids is None
+            )
         )
         if not need:
             return
@@ -1145,6 +1348,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._ep_long = torch.empty(shape, dtype=torch.int64, device=device)
         self._ep_mapped = torch.empty(shape, dtype=map_dtype, device=device)
         self._ep_remote = torch.empty(shape, dtype=torch.bool, device=device)
+        if self._ep_stock_topk_micro:
+            self._ep_fill_ids = torch.empty(
+                (rows, 1), dtype=torch.int32, device=device
+            )
         self._ep_tmp_a = torch.empty(shape, dtype=torch.bool, device=device)
         self._ep_tmp_b = torch.empty(shape, dtype=torch.bool, device=device)
 
@@ -1233,6 +1440,105 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 source_format="modelopt",
                 _workspace=self._ep_zero_weight_workspace,
             )
+        return output
+
+    def _apply_ep_stock_topk_micro(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights
+    ):
+        """Opt-in stock top-k micro decode for pinned GLM graph shapes.
+
+        Keep the router's native token-major top_k=8 layout. Remote routes
+        already carry weight zero after remap; replace only their sentinel ids
+        with the smallest local id in that token, then let the stock micro
+        kernel do its weighted scatter directly into the token output. This
+        does not introduce a weight plane that token did not already use
+        (except an all-remote token, whose output is sealed back to zero).
+
+        The stock multi-top-k micro cutover is 40 routed rows, so a top_k=8
+        call may contain at most five tokens. Balanced shape-only chunks turn
+        the stable 8/16/32-token graph shapes into 2/4/7 calls, versus the old
+        8/16/32 top_k=1 pair calls. No flatten, sort, gather, pair buffer, mask,
+        or index_add remains in this captured experiment. The separate opt-in
+        kernel-overlay lane still runs first and can use 8-token chunks.
+        """
+        dummy = self.num_local_experts
+        tokens, topk = topk_ids.size(0), topk_ids.size(1)
+        spans = b12x_ep_stock_topk_micro_chunks(
+            tokens,
+            topk,
+            self._kernel_num_experts,
+            enabled=self._ep_stock_topk_micro,
+        )
+        if not spans:
+            raise RuntimeError(
+                "stock top-k micro called outside its exact shape gate"
+            )
+        limit = max(hi - lo for lo, hi in spans)
+        if dummy <= 0:
+            raise RuntimeError("b12x EP fixed decode requires a local expert")
+        if (
+            self._ep_remote is None
+            or self._ep_fill_ids is None
+            or self._ep_tmp_a is None
+        ):
+            raise RuntimeError(
+                "b12x EP fixed routing scratch was not allocated before apply"
+            )
+        if self._ep_stock_topk_workspace is None:
+            raise RuntimeError(
+                "stock top-k micro workspace was not allocated before apply"
+            )
+
+        # amin returns a real local id whenever this token has one because the
+        # remote sentinel is E (larger than every valid id). All-remote rows
+        # clamp E to E-1; their router weights are all zero. Reuse preallocated
+        # scratch and the remap mask so CUDA capture records no tensor allocs.
+        fill_ids = self._ep_fill_ids[:tokens]
+        torch.amin(topk_ids, dim=1, keepdim=True, out=fill_ids)
+        all_remote = self._ep_tmp_a[:tokens, :1]
+        torch.eq(fill_ids, dummy, out=all_remote)
+        fill_ids.clamp_max_(dummy - 1)
+        torch.where(
+            self._ep_remote[:tokens], fill_ids, topk_ids, out=topk_ids
+        )
+
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+            launch_sm120_moe,
+        )
+
+        logger.info_once(
+            "b12x EP stock top-k micro: %d tokens x top_k %d -> %d balanced "
+            "stock micro calls (at most %d tokens / %d routed rows each)",
+            tokens, topk, len(spans), limit, limit * topk,
+        )
+        output.zero_()
+        for lo, hi in spans:
+            launch_sm120_moe(
+                a=hidden_states[lo:hi],
+                topk_ids=topk_ids[lo:hi],
+                topk_weights=topk_weights[lo:hi],
+                w1_weight=w1,
+                w1_weight_sf=self.w1_sf_mma,
+                w1_alpha=self.g1_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                input_global_scale=None,
+                w2_weight=w2,
+                w2_weight_sf=self.w2_sf_mma,
+                w2_alpha=self.g2_alphas,
+                num_experts=self._kernel_num_experts,
+                top_k=topk,
+                num_local_experts=self._kernel_num_experts,
+                scatter_output=output[lo:hi],
+                activation=self._activation_str,
+                swiglu_alpha=self._swiglu_alpha,
+                swiglu_beta=self._swiglu_beta,
+                swiglu_limit=self._swiglu_limit,
+                activation_precision="fp4",
+                quant_mode="nvfp4",
+                source_format="modelopt",
+                _workspace=self._ep_stock_topk_workspace,
+            )
+        output.masked_fill_(all_remote, 0)
         return output
 
     def _apply_ep_fixed(
@@ -1596,6 +1902,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             )
             if zero_micro_chunks:
                 return self._apply_ep_zero_weight_micro(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights
+                )
+            stock_topk_chunks = b12x_ep_stock_topk_micro_chunks(
+                topk_ids.size(0),
+                topk_ids.size(1),
+                self._kernel_num_experts,
+                enabled=self._ep_stock_topk_micro,
+            )
+            if stock_topk_chunks:
+                return self._apply_ep_stock_topk_micro(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )
             if self._ep_no_dummy and b12x_ep_should_compact(

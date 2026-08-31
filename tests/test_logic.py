@@ -2092,30 +2092,46 @@ def test_mhc_smallm_knob() -> None:
 
 
 # ---------------------------------------------------------------------------
-# EP fixed pair plan: the decode path that drops the dummy expert entirely.
+# EP stock top-k token chunks: strict opt-in above the preserved #146 fallback.
 # ---------------------------------------------------------------------------
-def test_ep_fixed_pair_plan() -> None:
+def test_ep_fixed_token_chunks() -> None:
     ns = load_defs(
         "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
         {
             "B12X_EP_FIXED_MICRO_MAX_PAIRS",
+            "B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS",
+            "B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS",
+            "B12X_EP_STOCK_TOPK_MICRO_TOKEN_COUNTS",
+            "B12X_EP_STOCK_TOPK_MICRO_TOPK",
+            "B12X_EP_STOCK_TOPK_MICRO_EXPERTS",
             "read_b12x_ep_bool",
             "read_b12x_ep_exact_bool",
             "b12x_ep_mode_from_env",
             "require_b12x_ep_micro_limit",
+            "require_b12x_ep_micro_limits",
+            "require_b12x_ep_stock_topk_micro_dispatch",
             "b12x_ep_fixed_slice_limit",
             "b12x_ep_fixed_pair_plan",
+            "b12x_ep_stock_topk_token_limit",
+            "b12x_ep_stock_topk_token_spans",
+            "b12x_ep_stock_topk_micro_chunks",
         },
         {"os": os},
     )
-    plan = ns["b12x_ep_fixed_pair_plan"]
-    slice_limit = ns["b12x_ep_fixed_slice_limit"]
+    token_limit = ns["b12x_ep_stock_topk_token_limit"]
+    token_spans = ns["b12x_ep_stock_topk_token_spans"]
+    stock_chunks = ns["b12x_ep_stock_topk_micro_chunks"]
+    pair_plan = ns["b12x_ep_fixed_pair_plan"]
     read_bool = ns["read_b12x_ep_bool"]
     mode_from_env = ns["b12x_ep_mode_from_env"]
-    require_micro = ns["require_b12x_ep_micro_limit"]
+    require_fixed_micro = ns["require_b12x_ep_micro_limit"]
+    require_stock_micro = ns["require_b12x_ep_micro_limits"]
+    require_stock_dispatch = ns[
+        "require_b12x_ep_stock_topk_micro_dispatch"
+    ]
 
-    check(mode_from_env({}.get) == (True, False, False),
-          "EP mode defaults to fixed no-dummy with micro enabled")
+    check(mode_from_env({}.get) == (True, False, False, False),
+          "EP mode defaults to #146 fixed fallback; experiments stay off")
     for raw in ("1", " true ", "YES", "on"):
         check(read_bool("FLAG", False, {"FLAG": raw}.get),
               f"strict EP bool accepts true spelling {raw!r}")
@@ -2141,91 +2157,179 @@ def test_ep_fixed_pair_plan() -> None:
         mode_from_env({
             "VLLM_B12X_EP_DISABLE_MICRO": "1",
             "VLLM_B12X_EP_NO_DUMMY": "0",
-        }.get) == (False, True, False),
+        }.get) == (False, True, False, False),
         "plain-static diagnostic is allowed only after disabling no-dummy",
     )
+    check(
+        mode_from_env({"VLLM_B12X_EP_STOCK_TOPK_MICRO": "1"}.get)
+        == (True, False, False, True),
+        "exact 1 arms only the stock native-top-k experiment",
+    )
+    for flags in (
+        {
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO": "1",
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+        },
+        {
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO": "1",
+            "VLLM_B12X_EP_NO_DUMMY": "0",
+        },
+        {
+            "VLLM_B12X_EP_STOCK_TOPK_MICRO": "1",
+            "VLLM_B12X_EP_DISABLE_MICRO": "1",
+        },
+    ):
+        try:
+            mode_from_env(flags.get)
+            check(False, f"conflicting stock top-k mode must fail: {flags}")
+        except RuntimeError as exc:
+            check("STOCK_TOPK_MICRO" in str(exc),
+                  "stock mode conflict must name the strict experiment")
 
     check(ns["B12X_EP_FIXED_MICRO_MAX_PAIRS"] == 8,
-          "fixed EP boundary must match FlashInfer _MICRO_MAX_TOKENS")
-    check(require_micro(8) == 8 and require_micro("12") == 12,
-          "fixed EP setup accepts a verified micro boundary of at least eight")
-    for bad_limit in (None, "unknown", 0, 7):
+          "default #146 fallback retains its pinned top-k=1 boundary")
+    check(ns["B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS"] == 8,
+          "stock experiment pins FlashInfer's token boundary")
+    check(ns["B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS"] == 40,
+          "stock experiment pins the multi-top-k routed-row boundary")
+    check(require_fixed_micro(8) == 8,
+          "default fallback depends only on the existing token boundary")
+    check(require_stock_micro(8, 40) == (8, 40),
+          "stock experiment accepts the two pinned micro boundaries")
+    check(require_stock_micro("12", "48") == (12, 48),
+          "larger parseable micro boundaries remain compatible")
+    for bad_limits in (
+        (None, 40), ("unknown", 40), (0, 40), (7, 40),
+        (8, None), (8, "unknown"), (8, 0), (8, 39),
+    ):
         try:
-            require_micro(bad_limit)
-            check(False, f"micro boundary {bad_limit!r} must fail closed")
+            require_stock_micro(*bad_limits)
+            check(False, f"micro boundaries {bad_limits!r} must fail closed")
         except RuntimeError as exc:
             check("cannot verify" in str(exc) or "requires FlashInfer" in str(exc),
-                  f"micro boundary {bad_limit!r} reports the contract failure")
+                  f"micro boundaries {bad_limits!r} report the contract failure")
+    dispatch = types.SimpleNamespace(
+        _FORCED_BACKEND=None,
+        _MICRO_MAX_TOKENS=8,
+        _MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK=40,
+    )
+    check(require_stock_dispatch(dispatch) == (8, 40),
+          "stock opt-in accepts the pinned automatic dispatcher")
+    for bad_dispatch in (
+        types.SimpleNamespace(
+            _MICRO_MAX_TOKENS=8,
+            _MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK=40,
+        ),
+        types.SimpleNamespace(
+            _FORCED_BACKEND="micro",
+            _MICRO_MAX_TOKENS=8,
+            _MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK=40,
+        ),
+    ):
+        try:
+            require_stock_dispatch(bad_dispatch)
+            check(False, "missing or forced backend contract must fail closed")
+        except RuntimeError as exc:
+            check("_FORCED_BACKEND" in str(exc) or "automatic" in str(exc),
+                  "dispatcher failure must explain the backend contract")
+
     check(
-        [slice_limit(n) for n in (2048, 8, 4, 0)] == [8, 8, 4, 1],
-          "fixed EP calls must honor both micro and workspace bounds")
+        [token_limit(n, 8) for n in (2048, 8, 4, 0)] == [5, 5, 4, 1],
+        "top-k=8 calls must honor token, routed-row, and workspace bounds",
+    )
+    check(token_limit(32, 1) == 8 and token_limit(32, 40) == 1,
+          "routed-row capacity must scale with top-k")
+    for bad_topk in (0, -1, 41):
+        try:
+            token_limit(32, bad_topk)
+            check(False, f"top_k={bad_topk} must not silently enter static")
+        except (ValueError, RuntimeError):
+            pass
+
     for concurrency, verify_tokens, launches in (
-        (1, 8, 8),
-        (2, 16, 16),
-        (4, 32, 32),
+        (1, 8, 2),
+        (2, 16, 4),
+        (4, 32, 7),
     ):
-        pairs = verify_tokens * 8
-        limit = slice_limit(32)
-        spans = [
-            (lo, min(lo + limit, pairs))
-            for lo in range(0, pairs, limit)
-        ]
+        limit = token_limit(32, 8)
+        spans = stock_chunks(verify_tokens, 8, 72, enabled=True)
         check(len(spans) == launches,
-              f"C={concurrency}: {verify_tokens}x8={pairs} pairs must use "
+              f"C={concurrency}: {verify_tokens} tokens must use "
               f"{launches} micro calls per layer")
-        check(spans[0][0] == 0 and spans[-1][1] == pairs,
-              f"micro slices must cover all {pairs} pairs")
-        check(all(0 < hi - lo <= 8 for lo, hi in spans),
-              f"no {pairs}-pair slice may enter static")
-    odd_spans = [
-        (lo, min(lo + slice_limit(32), 17))
-        for lo in range(0, 17, slice_limit(32))
-    ]
-    check(len(odd_spans) == 3 and odd_spans[-1] == (16, 17),
-          "non-verification shapes must still be fully micro-sliced")
-
-    for label, flags in (
-        ("typical", [True] * 64 + [False] * 192),
-        ("local last", [False] * 192 + [True] * 64),
-        ("all local", [True] * 256),
-        ("one local", [True] + [False] * 255),
-        ("interleaved", [i % 4 == 0 for i in range(256)]),
-        ("mixed final slice", [True] * 10 + [False] * 22),
+        sizes = [hi - lo for lo, hi in spans]
+        check(spans[0][0] == 0 and spans[-1][1] == verify_tokens,
+              f"micro chunks must cover all {verify_tokens} tokens")
+        check(all(0 < size <= 5 and size * 8 <= 40 for size in sizes),
+              "every native-top-k chunk must remain micro-eligible")
+        check(max(sizes) - min(sizes) <= 1,
+              "chunk sizes must be balanced")
+        check(verify_tokens == 1 or min(sizes) > 1,
+              "balanced multi-token shapes must avoid a one-token tail")
+    check([hi - lo for lo, hi in token_spans(17, 5)] == [5, 4, 4, 4],
+          "non-verification shapes must also use balanced full coverage")
+    for tokens in range(1, 81):
+        spans = token_spans(tokens, 5)
+        check(sum(hi - lo for lo, hi in spans) == tokens,
+              f"planner must cover arbitrary M={tokens}")
+        check(all(0 < hi - lo <= 5 for lo, hi in spans),
+              f"planner must keep arbitrary M={tokens} on micro")
+    for args in (
+        (1, 8, 72, True), (7, 8, 72, True), (24, 8, 72, True),
+        (8, 1, 72, True), (8, 8, 71, True), (8, 8, 72, False),
     ):
-        src, keep = plan(flags, len(flags))
-        local = [i for i, f in enumerate(flags) if f]
-        n = len(local)
-        check(len(src) == len(flags) and len(keep) == len(flags),
-              f"plan must keep the input length ({label})")
-        check(sum(keep) == n, f"exactly the local pairs are kept ({label})")
-        check(src[:n] == local,
-              f"every real local pair survives, in order ({label})")
-        check(all(not k for k in keep[n:]),
-              f"padding carries weight 0 ({label})")
-        check(all(i in local for i in src),
-              f"padding may only repeat pairs already present ({label})")
-        if len(flags) > n > 1:
-            check(len(set(src[n:])) > 1,
-                  f"padding spreads instead of piling on one pair ({label})")
-        for lo in range(0, len(flags), 8):
-            hi = min(lo + 8, len(flags))
-            real_src = {src[i] for i in range(lo, hi) if keep[i]}
-            padding_src = {src[i] for i in range(lo, hi) if not keep[i]}
-            if real_src:
-                check(padding_src <= real_src,
-                      f"mixed micro slice may only repeat its own rows ({label})")
+        check(stock_chunks(*args[:3], enabled=args[3]) == (),
+              f"non-exact stock shape must keep #146 fallback: {args}")
 
-    # no local pairs: shape held, nothing kept, no index out of range
-    src, keep = plan([False] * 8, 8)
-    check(len(src) == 8 and not any(keep) and set(src) == {0},
-          "an empty local set must still yield a valid fixed-length plan")
+    # The default pair plan remains intact while this experiment is off.
+    src, keep = pair_plan([True, False, True] + [False] * 5, 8)
+    check(len(src) == 8 and sum(keep) == 2,
+          "#146 fallback must retain every real pair and fixed length")
+    check(set(src) <= {0, 2} and not any(keep[2:]),
+          "#146 fallback padding may only repeat local rows at weight zero")
 
-    # the plan never names an expert the caller did not already route to --
-    # that is what removes the dummy expert's 12 MiB/layer weight read
-    flags = [i % 3 == 0 for i in range(60)]
-    src, _ = plan(flags, 60)
-    check(set(src) <= {i for i, f in enumerate(flags) if f},
-          "plan must never introduce a slot outside the local set")
+    # Pure semantic oracle for the runtime amin/where replacement. Remote
+    # weights are zero from remap, so changing only their IDs cannot change the
+    # local rank's weighted sum. The fill stays inside each token's local set.
+    dummy = 18
+    cases = (
+        ("mixed", [
+            [3, dummy, 7, dummy, dummy, 3, dummy, dummy],
+            [dummy, 5, dummy, 9, dummy, dummy, dummy, 5],
+        ], [
+            [0.4, 0.0, 0.3, 0.0, 0.0, 0.3, 0.0, 0.0],
+            [0.0, 0.6, 0.0, 0.2, 0.0, 0.0, 0.0, 0.2],
+        ]),
+        ("all remote", [[dummy] * 8], [[0.0] * 8]),
+        ("all local", [[0, 1, 2, 3, 4, 5, 6, 7]], [[0.125] * 8]),
+        ("duplicate", [[4, dummy, 4, dummy, 11, dummy, 11, dummy]],
+         [[0.2, 0.0, 0.3, 0.0, 0.1, 0.0, 0.4, 0.0]]),
+    )
+    for label, ids, weights in cases:
+        safe_ids = []
+        for row in ids:
+            local = [expert for expert in row if expert != dummy]
+            fill = min(local) if local else dummy - 1
+            safe_ids.append([fill if expert == dummy else expert for expert in row])
+        check(all(0 <= expert < dummy for row in safe_ids for expert in row),
+              f"kernel may only receive local expert IDs ({label})")
+        for row, safe in zip(ids, safe_ids):
+            local = {expert for expert in row if expert != dummy}
+            if local:
+                check(set(safe) <= local,
+                      f"remote replacement may not add a weight plane ({label})")
+        reference = sum(
+            weight * ((token + 1) * 100 + expert)
+            for token, (row, scales) in enumerate(zip(ids, weights))
+            for expert, weight in zip(row, scales)
+            if expert != dummy
+        )
+        actual = sum(
+            weight * ((token + 1) * 100 + expert)
+            for token, (row, scales) in enumerate(zip(safe_ids, weights))
+            for expert, weight in zip(row, scales)
+        )
+        check(actual == reference,
+              f"zero-weight ID replacement must preserve the EP sum ({label})")
 
     source = open(
         _overlay_source(
@@ -2234,6 +2338,11 @@ def test_ep_fixed_pair_plan() -> None:
         encoding="utf-8",
     ).read()
     tree = ast.parse(source)
+    remap_tensor = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "remap_b12x_ep_tensors"
+    )
     micro_setup = next(
         node for node in tree.body
         if isinstance(node, ast.FunctionDef)
@@ -2248,6 +2357,11 @@ def test_ep_fixed_pair_plan() -> None:
         node for node in cls.body
         if isinstance(node, ast.FunctionDef)
         and node.name == "_apply_ep_fixed"
+    )
+    stock = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_apply_ep_stock_topk_micro"
     )
     init = next(
         node for node in cls.body
@@ -2265,21 +2379,33 @@ def test_ep_fixed_pair_plan() -> None:
         and node.name == "apply"
     )
     fixed_source = ast.get_source_segment(source, fixed)
+    stock_source = ast.get_source_segment(source, stock)
+    remap_source = ast.get_source_segment(source, remap_tensor)
     micro_setup_source = ast.get_source_segment(source, micro_setup)
     init_source = ast.get_source_segment(source, init)
     process_source = ast.get_source_segment(source, process)
     apply_source = ast.get_source_segment(source, apply)
     assert all(part is not None for part in (
-        fixed_source, micro_setup_source, init_source, process_source, apply_source
+        fixed_source, stock_source, remap_source, micro_setup_source, init_source,
+        process_source, apply_source,
     ))
     assert fixed_source is not None
+    assert stock_source is not None
+    assert remap_source is not None
     assert micro_setup_source is not None
     assert init_source is not None
     assert process_source is not None
     assert apply_source is not None
     check(
-        "require_b12x_ep_micro_limit(prior)" in micro_setup_source,
-        "no-dummy setup must verify the live FlashInfer micro boundary",
+        "require_b12x_ep_micro_limit(prior)" in micro_setup_source
+        and "_MICRO_COMPACT_CUTOVER_PAIRS_MULTI_TOPK"
+        not in micro_setup_source,
+        "default #146 setup must depend only on its existing token boundary",
+    )
+    check(
+        "if map_len <= 0:" in remap_source
+        and "remote.fill_(True)" in remap_source,
+        "an empty expert map must initialise every route as remote",
     )
     check(
         "b12x_ep_mode_from_env()" in init_source,
@@ -2302,13 +2428,16 @@ def test_ep_fixed_pair_plan() -> None:
     )
     compact_return = apply_source.index("return self._apply_ep_compact(")
     fixed_return = apply_source.index("return self._apply_ep_fixed(")
+    stock_return = apply_source.index(
+        "return self._apply_ep_stock_topk_micro("
+    )
     ensure_wrapper = apply_source.index("self._ensure_wrapper()")
     capacity_probe = apply_source.index(
         "self._ep_capacity_probe(wrapper, topk_ids)"
     )
     check(
-        compact_return < ensure_wrapper and fixed_return < ensure_wrapper,
-        "both direct EP paths must return before the large wrapper is built",
+        stock_return < compact_return < fixed_return < ensure_wrapper,
+        "opt-in, compact, and #146 fallback must precede the large wrapper",
     )
     check(
         ensure_wrapper < capacity_probe,
@@ -2323,22 +2452,56 @@ def test_ep_fixed_pair_plan() -> None:
         "NO_DUMMY=0 must restore the wrapper for decode and prefill",
     )
     check(
-        "limit = b12x_ep_fixed_slice_limit(self.max_num_tokens)"
-        in fixed_source
-        and "for lo in range(0, pairs, limit):" in fixed_source,
-        "runtime fixed path must use the tested micro slice limit",
+        "b12x_ep_stock_topk_micro_chunks(" in stock_source
+        and "for lo, hi in spans:" in stock_source,
+        "stock runtime must use the exact-gated balanced token chunks",
     )
     check(
-        "local_in_slice" in fixed_source
-        and "padding_src = torch.where" in fixed_source,
-        "runtime padding must be planned inside each micro slice",
+        "torch.amin(topk_ids, dim=1, keepdim=True, out=fill_ids)"
+        in stock_source
+        and "self._ep_remote[:tokens], fill_ids, topk_ids, out=topk_ids"
+        in stock_source,
+        "remote sentinels must become same-token local IDs without allocation",
     )
     check(
-        "launch_sm120_moe(" in fixed_source
-        and "top_k=1" in fixed_source
-        and "scatter_output=pair_out[lo:hi]" in fixed_source
-        and "_workspace=self._ep_fixed_workspace" in fixed_source,
-        "fixed path must pin each top_k=1 slice to its graph workspace",
+        "launch_sm120_moe(" in stock_source
+        and "a=hidden_states[lo:hi]" in stock_source
+        and "topk_ids=topk_ids[lo:hi]" in stock_source
+        and "topk_weights=topk_weights[lo:hi]" in stock_source
+        and "top_k=topk" in stock_source
+        and "scatter_output=output[lo:hi]" in stock_source
+        and "_workspace=self._ep_stock_topk_workspace" in stock_source,
+        "stock path must write each native-top-k chunk directly to output",
+    )
+    check(
+        all(name not in stock_source for name in (
+            "argsort", "index_select", "index_add_", "pair_x", "pair_out",
+        )),
+        "stock experiment must not rematerialise routed pairs",
+    )
+    check(
+        "pair_out = torch.zeros(" in fixed_source
+        and "pair_out.mul_(keep.unsqueeze(1)" in fixed_source
+        and fixed_source.index("pair_out.mul_(")
+        < fixed_source.index("output.index_add_("),
+        "default #146 fallback must retain both zero-init and pre-sum mask",
+    )
+    check(
+        "self._ep_fill_ids: torch.Tensor | None = None" in init_source
+        and "self._ep_stock_topk_workspace: Any | None = None" in init_source
+        and "top_k=1" in process_source
+        and "max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS" in process_source
+        and "top_k=B12X_EP_STOCK_TOPK_MICRO_TOPK" in process_source
+        and "max_rows=B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS"
+        in process_source,
+        "setup must keep separate #146 r8 and opt-in stock r40 workspaces",
+    )
+    check(
+        "require_b12x_ep_stock_topk_micro_dispatch(moe_dispatch)"
+        in process_source
+        and "self.global_num_experts" in process_source
+        and "288," in process_source,
+        "stock opt-in must fail setup on dispatcher or pinned geometry drift",
     )
 
     workspace = next(
@@ -2354,8 +2517,12 @@ def test_ep_fixed_pair_plan() -> None:
         and 'backend="static"' in workspace_source,
         "pinned workspace allocator must consume the shape-specific key",
     )
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check("VLLM_B12X_EP_STOCK_TOPK_MICRO=0" in profile,
+          "stock top-k experiment must remain explicitly default-off")
 
-    print("  EP fixed pair plan ............. OK")
+    print("  EP stock top-k chunks .......... OK")
 
 
 def test_b12x_zero_weight_micro() -> None:
@@ -2378,10 +2545,11 @@ def test_b12x_zero_weight_micro() -> None:
     mode = wns["b12x_ep_mode_from_env"]
     chunks = wns["b12x_ep_zero_weight_micro_chunks"]
 
-    check(mode({}.get) == (True, False, False),
-          "zero-weight micro must be off by default")
+    check(mode({}.get) == (True, False, False, False),
+          "both native-top-k experiments must be off by default")
     check(mode({"VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1"}.get)
-          == (True, False, True), "exact 1 arms the local-only experiment")
+          == (True, False, True, False),
+          "exact 1 arms only the zero-weight kernel experiment")
     check(not exact_bool("Z", False, {}.get), "exact bool defaults off")
     for raw in ("true", "yes", "on", " 1 ", "2", "-1", ""):
         try:
@@ -2569,17 +2737,23 @@ def test_b12x_zero_weight_micro() -> None:
         check(banned not in pure_source,
               f"pure top-k=8 lane must not retain {banned} overhead")
     zero_return = apply_source.index("return self._apply_ep_zero_weight_micro(")
+    stock_return = apply_source.index(
+        "return self._apply_ep_stock_topk_micro("
+    )
     fixed_return = apply_source.index("return self._apply_ep_fixed(")
     ensure_wrapper = apply_source.index("self._ensure_wrapper()")
-    check(zero_return < fixed_return < ensure_wrapper,
-          "exact lane must return before fixed fallback and large wrapper")
+    check(zero_return < stock_return < fixed_return < ensure_wrapper,
+          "kernel experiment must precede stock experiment and #146 fallback")
     check("VLLM_B12X_EP_ZERO_WEIGHT_MICRO" not in apply_source,
           "apply must never re-read the experiment environment")
     check("top_k=1" in process_source
           and "max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS" in process_source
+          and "top_k=B12X_EP_STOCK_TOPK_MICRO_TOPK" in process_source
+          and "max_rows=B12X_EP_STOCK_TOPK_MICRO_MAX_ROUTED_ROWS"
+          in process_source
           and "top_k=B12X_EP_ZERO_WEIGHT_MICRO_TOPK" in process_source
           and "max_rows=B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS" in process_source,
-          "setup must pin distinct top-k=1 and top-k=8 workspaces")
+          "setup must pin distinct #146-r8, stock-r40, and overlay-r64 workspaces")
 
     profile = open(os.path.join(REPO, "profiles", "glm53.env"),
                    encoding="utf-8").read()
@@ -2999,21 +3173,29 @@ def test_mhc_bigfuse_knob() -> None:
 
 
 
-def test_ep_fixed_pair_out_initialised() -> None:
+def test_ep_fixed_output_initialised() -> None:
     src = open(_overlay_source(
         "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
     body = src[src.index("def _apply_ep_fixed"):src.index("def _apply_ep_compact")]
     check("pair_out = torch.zeros(" in body,
-          "fixed decode must allocate pair_out zeroed -- three quarters of its "
-          "rows carry weight 0, the kernel may skip them, and an uninitialised "
-          "bit pattern can be NaN")
+          "#146 fallback must initialise rows the kernel may skip")
     check("torch.empty(" not in body,
-          "no uninitialised buffer may reach index_add_ in the fixed path")
+          "no uninitialised buffer may reach #146 index_add")
     check(body.index("pair_out.mul_(") < body.index("output.index_add_("),
-          "padding rows must be masked BEFORE the sum, in case the kernel "
-          "wrote them without applying token_final_scales")
-    check("keep.unsqueeze(1)" in body, "the mask must be the keep flags")
-    print("  EP fixed pair_out init ......... OK")
+          "#146 padding mask must run before the token sum")
+    check("keep.unsqueeze(1)" in body,
+          "#146 padding mask must use the exact keep flags")
+
+    stock = src[
+        src.index("def _apply_ep_stock_topk_micro"):
+        src.index("def _apply_ep_fixed")
+    ]
+    check(stock.index("output.zero_()") < stock.index("for lo, hi in spans:"),
+          "stock experiment must zero its direct scatter target first")
+    check("torch.eq(fill_ids, dummy, out=all_remote)" in stock
+          and "output.masked_fill_(all_remote, 0)" in stock,
+          "stock experiment must seal all-remote tokens to exact zero")
+    print("  EP fixed/stock output init ..... OK")
 def test_glm53_sm121_mla_prefill_gate() -> None:
     """The GLM dense-prefill arm must fail closed on contract drift."""
     ns = load_defs(
@@ -3443,8 +3625,8 @@ if __name__ == "__main__":
     test_acceptance_lever_guards()
     test_ngram_ceiling_sim()
     test_ue8m0_scale_repair()
-    test_ep_fixed_pair_plan()
-    test_ep_fixed_pair_out_initialised()
+    test_ep_fixed_token_chunks()
+    test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
