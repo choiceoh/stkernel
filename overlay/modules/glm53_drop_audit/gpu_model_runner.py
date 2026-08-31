@@ -4716,10 +4716,24 @@ class GPUModelRunner(
         num_drafter_query_tokens = self.num_spec_tokens + (
             1 if self.speculative_config.use_dflash() else 0
         )
-        return (
+        if not (
             common_attn_metadata.max_seq_len + num_drafter_query_tokens
             <= self.effective_drafter_max_model_len
-        )
+        ):
+            return False
+        # deneb fork: spec decode is a winner only at LOW concurrency. The
+        # verify batch scales with num_reqs x (k+1), and the step's variable
+        # part is 0.706 ms x DISTINCT EXPERTS touched -- routed rows explode,
+        # distinct experts balloon, and the ~1.5x acceptance multiplier stops
+        # covering it. Measured 2026-08-31 (6 reps, 0.3 pct spread): C=1
+        # +17.2 pct, C=2 +23.2 pct, C=4 **-10.9 pct** vs SPEC=0. Above this
+        # many running requests, skip drafting and let the step fall through
+        # the existing zero-out path to plain decode. 0 keeps spec always on
+        # (C=3 unmeasured -- bracket before moving the threshold).
+        max_reqs = int(os.environ.get("VLLM_SPEC_DISABLE_AT_REQS", "0") or 0)
+        if max_reqs and common_attn_metadata.num_reqs > max_reqs:
+            return False
+        return True
 
     @torch.inference_mode
     def sample_tokens(
