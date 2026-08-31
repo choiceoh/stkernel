@@ -966,8 +966,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         from flashinfer.fused_moe import b12x_fused_moe
 
         logger.info_once(
-            "b12x EP fixed decode: %d pairs -> %d micro calls "
-            "(at most %d pairs each); static bypassed",
+            "b12x EP fixed decode: %d pairs -> %d micro-sized calls "
+            "(at most %d pairs each; micro-eligible by shape)",
             pairs, (pairs + limit - 1) // limit, limit,
         )
         for lo in range(0, pairs, limit):
