@@ -1875,6 +1875,67 @@ def test_mhc_onepass_math() -> None:
     print("  mhc onepass math ................ OK")
 
 
+
+
+def test_mhc_bigfuse_knob() -> None:
+    """VLLM_GLM53_MHC_BIGFUSE: strict parse, applies only past 64 tokens.
+
+    dsv4 R3 precedent: h_blk=4096 single pipelined block wins on prefill
+    (+5.6% at M=4096 on this kernel family) while M<=64 is stock-optimal.
+    Unset or invalid -> None -> the kernels run stock gcd defaults.
+    """
+    env_name = "VLLM_GLM53_MHC_BIGFUSE"
+    saved = os.environ.pop(env_name, None)
+
+    def load():
+        return load_defs(
+            "overlay/tilelang.py",
+            {
+                "_BIGFUSE_ENV",
+                "_deneb_parse_bigfuse",
+                "_raw_bigfuse",
+                "_DENEB_BIGFUSE",
+                "_deneb_bigfuse_hblk",
+            },
+            {"os": os},
+        )
+
+    try:
+        os.environ.pop(env_name, None)
+        ns = load()
+        parse = ns["_deneb_parse_bigfuse"]
+        check(ns["_DENEB_BIGFUSE"] is None, "env unset: knob is None (stock)")
+        check(ns["_deneb_bigfuse_hblk"](4096, 4096) is None,
+              "env unset: prefill runs stock h_blk")
+
+        check(parse("4096") == 4096, "parse plain")
+        check(parse(" 2048 ") == 2048, "parse whitespace")
+        check(parse("8192") is None, "outside the allowed set")
+        check(parse("abc") is None and parse("4096,96") is None,
+              "rejects junk and multi-field")
+        check(parse("0") is None and parse("-4096") is None,
+              "rejects non-positive")
+
+        os.environ[env_name] = "4096"
+        ns = load()
+        check(ns["_DENEB_BIGFUSE"] == 4096, "frozen at import")
+        hblk = ns["_deneb_bigfuse_hblk"]
+        check(hblk(65, 4096) == 4096, "prefill M>64 gets the override")
+        check(hblk(8192, 4096) == 4096, "large prefill gets the override")
+        check(hblk(64, 4096) is None, "M=64 stays stock (boundary)")
+        check(hblk(16, 4096) is None, "decode M stays stock")
+        check(hblk(65, 2048) is None,
+              "hidden not divisible by h_blk -> stock (OOB-copy guard)")
+    finally:
+        if saved is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = saved
+
+    print("  mhc bigfuse knob ............... OK")
+
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -1902,4 +1963,5 @@ if __name__ == "__main__":
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
     test_mhc_onepass_math()
+    test_mhc_bigfuse_knob()
     print(f"all OK ({PASS} checks)")

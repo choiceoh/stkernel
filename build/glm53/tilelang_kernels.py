@@ -88,11 +88,12 @@ def mhc_pre_big_fuse_tilelang(
     sinkhorn_repeat: int,
     n_splits: int = 16,
     hc_mult: int = 4,
+    h_blk: int = 512,
 ):
     """Deeply fused kernels, everything other than gemm & sqrsum in mHC pre block."""
     num_tokens = T.dynamic("num_tokens")
     hc_mult3 = hc_mult * (2 + hc_mult)
-    hidden_block = math.gcd(512, hidden_size)
+    hidden_block = math.gcd(h_blk, hidden_size)  # deneb fork: overridable, default 512 = stock gcd
 
     gemm_out_mul: T.Tensor[[n_splits, num_tokens, hc_mult3], T.float32]  # type: ignore[no-redef, valid-type]
     gemm_out_sqrsum: T.Tensor[[n_splits, num_tokens], T.float32]  # type: ignore[no-redef, valid-type]
@@ -233,12 +234,13 @@ def mhc_pre_big_fuse_with_norm_tilelang(
     n_splits: int = 16,
     hc_mult: int = 4,
     gemm_last_dim: int = -1,
+    h_blk: int = 1024,
 ):
     num_tokens = T.dynamic("num_tokens")
     hc_mult3 = hc_mult * (2 + hc_mult)
     if gemm_last_dim < 0:
         gemm_last_dim = hc_mult3
-    hidden_block = math.gcd(1024, hidden_size)
+    hidden_block = math.gcd(h_blk, hidden_size)  # deneb fork: overridable, default 1024 = stock gcd
 
     gemm_out_mul: T.Tensor[[n_splits, num_tokens, gemm_last_dim], T.float32]  # type: ignore[no-redef, valid-type]
     gemm_out_sqrsum: T.Tensor[[n_splits, num_tokens], T.float32]  # type: ignore[no-redef, valid-type]

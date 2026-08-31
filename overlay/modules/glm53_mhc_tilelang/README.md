@@ -36,6 +36,17 @@ set only after `probes/mhc_glm53_bench.py` finds a winner on real shapes and
 a bracket boot confirms it (quality 9/9 + Korean 0/16 + C=1 step/s, the
 standard gates).
 
+## Prefill big_fuse retune — `VLLM_GLM53_MHC_BIGFUSE` (default off)
+
+dsv4 R3 precedent (`dsv4_mhc_tilelang`): on this kernel family, `h_blk=4096`
+(a single pipelined block instead of the stock gcd(1024, hidden)) won +5.6%
+at M=4096, while M≤64 was stock-optimal. Both stock big_fuse kernels here
+now take an optional `h_blk` (default = the stock gcd), and the dispatcher
+passes `VLLM_GLM53_MHC_BIGFUSE="h_blk"` (e.g. `"4096"`) only when
+`num_tokens > 64` — decode is never touched. `probes/mhc_glm53_bench.py
+--prefill` sweeps it on real shapes. Adopt via bracket + the standard gates;
+numerics class is bf16 reduce-order (R3 measured layer_input rel 1.2e-3).
+
 ## One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (default off)
 
 `tilelang_kernels.py` is also taken over now (preimage `03aeb3f7…`): the stock
