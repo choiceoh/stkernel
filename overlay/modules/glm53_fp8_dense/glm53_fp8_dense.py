@@ -14,17 +14,25 @@ configuration the faster lane already runs, it does not explore new precision.
 
 Weights are quantized once, after load and before compile/capture, by swapping
 each selected Linear's `quant_method`; the bf16 originals stay in place (the
-first boot measures speed; freeing the originals is a memory follow-up knob).
-Any layer that fails a guard keeps its bf16 path, and any apply() error drops
-that layer back permanently. The quantize/GEMM pair is the one fp8_lm_head
-already runs under capture on this stack, so the kernel path is proven.
+first boot measures speed; freeing them is a possible follow-up, not a knob
+yet). Any layer that fails a guard keeps its bf16 path, and any apply() error
+drops that layer back permanently.
+
+The GEMM runs behind ONE registered custom op (`glm53_fp8_dense::gemm`), the
+same opacity trick this stack's own `+quant_fp8` ops use: inductor sees an
+opaque node instead of tracing into the deepgemm/triton launches (the raw
+`per_token_group_quant_fp8_packed_for_deepgemm` / `fp8_gemm_nt` pair is what
+fp8_lm_head runs OUTSIDE the compiled region -- calling them bare from decoder
+linears, which are inside it, would graph-break at every projection).
 
 Merged-projection padding: the KDA layers load q/k/v/b/f/g as one
 `in_proj_qkvbfg_a` whose row count is not a multiple of the 128 block (nor is
 its TP shard), and the merged `gate_up_proj` shards land wherever TP puts
 them. The quantized copy zero-pads rows and columns out to the block grid:
-column-parallel matrices slice the extra output rows off, row-parallel ones
-get exactly-zero contributions from the zero rows. No loader or checkpoint
+column-parallel matrices slice the extra output rows off (reshape, not view --
+the sliced stride is not view-compatible when M > 1), row-parallel ones get
+exactly-zero contributions from the zero rows. Padding is always < 128, so no
+all-zero block ever forms and no scale degenerates. No loader or checkpoint
 change; the bf16 weight is untouched.
 
 Armed by VLLM_GLM53_FP8_DENSE=1 (default off). Rollback is the env alone.
@@ -65,15 +73,16 @@ def _quantize_fp8_block_padded(
 ) -> tuple[torch.Tensor, torch.Tensor, int, int]:
     """Block-quantize to the deepgemm ue8m0 layout, zero-padded to 128s.
 
-    Chunked over rows so the fp32 staging copy stays under ~1/8 of the weight,
-    same as fp8_lm_head. Returns (q, scales, orig_rows, orig_cols)."""
+    Pads in the weight's own dtype and only floats each row-chunk, so the
+    fp32 staging copy never exceeds ~1/8 of the weight (same discipline as
+    fp8_lm_head). Returns (q, scales, orig_rows, orig_cols)."""
     from vllm.model_executor.layers.quantization.utils.fp8_utils import (
         deepgemm_post_process_fp8_weight_block,
     )
     from vllm.utils.deep_gemm import per_block_cast_to_fp8
 
     with torch.no_grad():
-        w = weight.detach().float()
+        w = weight.detach()
         rows, cols = w.shape
         rpad, cpad = (-rows) % 128, (-cols) % 128
         if rpad:
@@ -84,7 +93,7 @@ def _quantize_fp8_block_padded(
         step = max(128, (w.shape[0] // 8) // 128 * 128)
         for r0 in range(0, w.shape[0], step):
             cq, cs = per_block_cast_to_fp8(
-                w[r0 : r0 + step], [128, 128], use_ue8m0=True
+                w[r0 : r0 + step].float(), [128, 128], use_ue8m0=True
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
@@ -97,7 +106,7 @@ def _quantize_fp8_block_padded(
         return q, ws, rows, cols
 
 
-def _fp8_gemm_padded(
+def _fp8_dense_gemm(
     x: torch.Tensor,
     q: torch.Tensor,
     ws: torch.Tensor,
@@ -124,7 +133,29 @@ def _fp8_gemm_padded(
     fp8_gemm_nt((xq, xs), (q, ws), out)
     if q.shape[0] != orig_rows:
         out = out[:, :orig_rows]
-    return out.view(*x.shape[:-1], orig_rows)
+    # view-compatible on the unpadded fast path, copies only for the < 2 pct
+    # of linears whose rows needed padding (the KDA merged in_proj).
+    return out.reshape(x.shape[:-1] + (orig_rows,))
+
+
+# One opaque boundary per GEMM: compile sees a node, capture sees kernel
+# launches, and the deepgemm/triton interiors are never traced. Falls back to
+# the bare function on re-import (double registration) or an old torch.
+try:
+    _fp8_dense_gemm_op = torch.library.custom_op(
+        "glm53_fp8_dense::gemm", mutates_args=()
+    )(_fp8_dense_gemm)
+
+    @_fp8_dense_gemm_op.register_fake
+    def _fp8_dense_gemm_fake(
+        x, q, ws, orig_rows: int, orig_cols: int
+    ) -> torch.Tensor:
+        return torch.empty(
+            x.shape[:-1] + (orig_rows,), dtype=torch.bfloat16,
+            device=x.device,
+        )
+except Exception:
+    _fp8_dense_gemm_op = _fp8_dense_gemm
 
 
 class Fp8DenseMethod:
@@ -142,8 +173,9 @@ class Fp8DenseMethod:
         if bias is not None:
             return self._base.apply(layer, x, bias)
         try:
-            return _fp8_gemm_padded(x, self._q, self._ws, self._rows,
-                                    self._cols)
+            return _fp8_dense_gemm_op(
+                x, self._q, self._ws, self._rows, self._cols
+            )
         except Exception:
             layer.quant_method = self._base
             return self._base.apply(layer, x, bias)
@@ -181,7 +213,8 @@ def maybe_build_fp8_dense(model) -> bool:
     gb = params * 2 / 1e9
     logger.warning(
         "[fp8-dense] %d linears quantized (%.2f GB bf16 -> fp8 blocks), "
-        "%d kept bf16 -- fingerprint for the boot log",
+        "%d kept bf16%s -- fingerprint for the boot log",
         len(quantized), gb, len(skipped),
+        "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
     return bool(quantized)
