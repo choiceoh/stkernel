@@ -275,7 +275,16 @@ elif [ "$DFLASH2" = 1 ]; then
   _spec_extra=""
   [ -n "${DRAFT_TP:-}" ] && _spec_extra="$_spec_extra,\"draft_tensor_parallel_size\":$DRAFT_TP"
   [ -n "${DRAFT_KV:-}" ] && [ "${DRAFT_KV}" != auto ] && _spec_extra="$_spec_extra,\"kv_cache_dtype\":\"$DRAFT_KV\""
-  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K$_spec_extra}'"
+  # draft_sample_method: the image default is "greedy", which treats the
+  # drafter's distribution as one-hot in rejection sampling -- accept prob
+  # degenerates to p_target(draft_token), fine at temp 0 and lossy at temp>0
+  # (Capicua25x/glm53-dspark SERVE-SPARKS.md boot-death #9: prose accept
+  # length 1.03 -> ~1.9 from this one field; the DFlash2 reference config
+  # ships probabilistic). Our bench runs at temp 0.95, so every acceptance
+  # number this lane has recorded was taken under the degenerate setting.
+  # DRAFT_SAMPLE=greedy restores the old behavior for an A/B.
+  DRAFT_SAMPLE="${DRAFT_SAMPLE:-probabilistic}"
+  SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_spec_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
 else
   SPECCFG_VAL="--speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":$SPEC_K}'"
 fi
