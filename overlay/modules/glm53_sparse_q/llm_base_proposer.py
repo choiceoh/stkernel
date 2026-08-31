@@ -74,6 +74,12 @@ logger = init_logger(__name__)
 _GATHER_Q = os.environ.get("VLLM_SPEC_GATHER_Q", "1").strip().lower() in (
     "1", "true", "yes", "on")
 
+# Width of the sparse q support carried for exact (p-q)+ recovery. The
+# DFlash2 drafter's support is the candidate pool (selector_top_k = 16);
+# 32 leaves margin for other drafters. A support that exceeds this
+# degrades to the dense pipeline (logged), never to a biased recovery.
+_Q_POOL = int(os.environ.get("VLLM_SPEC_Q_POOL", "32") or 32)
+
 
 class SpecDecodeBaseProposer:
     def __init__(
@@ -261,6 +267,8 @@ class SpecDecodeBaseProposer:
             and self.speculative_config.draft_sample_method == "probabilistic"
         )
         self._last_draft_probs: torch.Tensor | None = None
+        self._gather_q_degraded = False
+        self._last_pool: tuple[torch.Tensor, torch.Tensor] | None = None
 
         self._slot_mapping_buffer = torch.zeros(
             self.max_positions, dtype=torch.int64, device=device
@@ -490,10 +498,34 @@ class SpecDecodeBaseProposer:
         # post-rejection replacement token changes law, from (p-q)+ to a
         # target sample). Rollback to the dense exact-residual pipeline:
         # VLLM_SPEC_GATHER_Q=0.
-        if _GATHER_Q and probs is not None:
-            return token_ids, probs.gather(
+        if (_GATHER_Q and not self._gather_q_degraded
+                and probs is not None):
+            # v2: exact sparse recovery needs q's SUPPORT, not just q(d).
+            # The rejection recovery law is (p - q)+ -- subtracting q at
+            # every column q has mass. Masking only the drafted token (the
+            # NO_DRAFT_PROBS law) is exact ONLY when q is one-hot, which
+            # held under greedy and does NOT hold here: q spreads over the
+            # candidate pool (dflash selector_top_k). So carry the pool
+            # too: top-_Q_POOL columns of q per row. If the support check
+            # below ever sees mass beyond the pool, gather mode degrades
+            # itself to the dense exact pipeline for the rest of the boot.
+            pool_v, pool_i = torch.topk(probs, _Q_POOL, dim=-1)
+            q_at = probs.gather(
                 1, token_ids.unsqueeze(1)
             ).squeeze(1).contiguous()
+            leak = (1.0 - pool_v.sum(dim=-1)).max()
+            if float(leak) > 1e-3:
+                # Support exceeds the pool: sparse recovery would bias the
+                # served distribution toward the drafter's candidates at
+                # rejected positions (PR #109 review). Fall back to dense.
+                logger.warning(
+                    "[gather-q] q support leaks past top-%d (max leak "
+                    "%.4f) -- dense exact-residual pipeline for this boot",
+                    _Q_POOL, float(leak),
+                )
+                self._gather_q_degraded = True
+                return token_ids, probs
+            return token_ids, (q_at, pool_i, pool_v)
         return token_ids, probs
 
     def _sample_draft_tokens(
@@ -510,6 +542,18 @@ class SpecDecodeBaseProposer:
         draft_token_ids, draft_probs = self._sample_from_logits(
             logits, sampling_metadata
         )
+        if isinstance(draft_probs, tuple):
+            # gathered-q v2: (q_at [T], pool_i [T,P], pool_v [T,P]). Stash
+            # the pool for exact (p-q)+ recovery; hand the 1-D q down so the
+            # legacy view sites keep working.
+            q_at, pool_i, pool_v = draft_probs
+            self._last_pool = (
+                pool_i.view(-1, self.num_speculative_tokens, _Q_POOL)
+                .contiguous(),
+                pool_v.view(-1, self.num_speculative_tokens, _Q_POOL)
+                .contiguous(),
+            )
+            draft_probs = q_at
         if self.use_heterogeneous_vocab:
             assert self.vocab_mapping is not None
             draft_token_ids = self.vocab_mapping.map_draft_to_target_ids(
@@ -529,6 +573,12 @@ class SpecDecodeBaseProposer:
 
     def take_last_draft_probs(self) -> torch.Tensor | None:
         return self._last_draft_probs
+
+    def take_last_draft_pool(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """(pool_ids, pool_values), each [batch, K, Q_POOL] or None."""
+        return getattr(self, "_last_pool", None)
 
     def propose(
         self,
