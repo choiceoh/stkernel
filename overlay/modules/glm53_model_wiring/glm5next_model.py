@@ -988,19 +988,6 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                     weight_loader(param, loaded_weight, **kwargs)
             loaded_params.add(name)
 
-        # deneb fork: fp8 block copies of the bf16 dense projections, after
-        # every weight landed and before compile/capture. No-op unless
-        # VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer, never the boot.
-        # See overlay/modules/glm53_fp8_dense.
-        try:
-            from vllm.model_executor.layers.glm53_fp8_dense import (
-                maybe_build_fp8_dense,
-            )
-
-            maybe_build_fp8_dense(self)
-        except Exception:
-            pass
-
         return loaded_params
 
 
@@ -1155,7 +1142,28 @@ class Glm5NextForCausalLM(
             self,
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
-        return loader.load_weights(weights)
+        loaded = loader.load_weights(weights)
+
+        # deneb fork: fp8 block copies of the bf16 dense projections. This has
+        # to sit HERE and not in Glm5NextModel.load_weights: that is a child
+        # hook, AutoWeightsLoader may enter it before the checkpoint is fully
+        # walked, and the copy is a snapshot -- once quant_method is swapped
+        # the bf16 tensor is never read again, so an early copy is served for
+        # the life of the boot. It happened: a copy taken 30 s into a 294 s
+        # load shipped, and the target accepted 0 of 51,786 draft tokens.
+        # This call runs after loader.load_weights returns, and rebuilds any
+        # copy an earlier caller may already have made.
+        # No-op unless VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer.
+        try:
+            from vllm.model_executor.layers.glm53_fp8_dense import (
+                maybe_build_fp8_dense,
+            )
+
+            maybe_build_fp8_dense(self)
+        except Exception:
+            pass
+
+        return loaded
 
 
 @MULTIMODAL_REGISTRY.register_processor(

@@ -181,20 +181,58 @@ class Fp8DenseMethod:
             return self._base.apply(layer, x, bias)
 
 
+# A copy whose source moved under it is served for the life of the boot: once
+# quant_method is swapped, apply() reads q/ws and the bf16 tensor is never
+# touched again. So verify each copy against the tensor it claims to stand for.
+# Block-fp8 (ue8m0, 128x128) lands within a few percent of bf16; a stale copy
+# is a different matrix and misses by far more, so the two are nowhere near
+# each other and the threshold does not need to be tight.
+_STALE_RTOL = 0.25
+
+
+def _copy_matches_source(mod, method, weight):
+    """True/False when the check ran, None when it could not.
+
+    None keeps the layer armed. Refusing to arm because a probe would not
+    execute trades a measured speedup for an unmeasured worry; False is the
+    only outcome that disarms, and it means the copy really did miss."""
+    try:
+        x = torch.randn(
+            8, weight.shape[1], dtype=weight.dtype, device=weight.device
+        )
+        ref = method._base.apply(mod, x, None)
+        got = method.apply(mod, x, None)
+        den = ref.float().norm()
+        if not torch.isfinite(den) or den == 0:
+            return None
+        return bool(((got.float() - ref.float()).norm() / den) <= _STALE_RTOL)
+    except Exception:
+        return None
+
+
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
 
     `env` names the arming knob so the target and the DFlash2 drafter can be
     gated independently: the target changes served output, the drafter changes
-    candidate logits -- acceptance is its quality probe."""
+    candidate logits -- acceptance is its quality probe.
+
+    Safe to call more than once: a copy an earlier call installed is REBUILT
+    from the current weights, not skipped. Call this again once the checkpoint
+    is fully loaded and the last call wins -- an early caller cannot leave a
+    stale copy behind."""
     if not _flag(env):
         return False
-    quantized, skipped, params = [], [], 0
+    quantized, skipped, stale, params = [], [], [], 0
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _INCLUDE):
             continue
         weight = getattr(mod, "weight", None)
         base = getattr(mod, "quant_method", None)
+        # Re-arming: unwrap a copy already installed so this call quantizes
+        # today's weights and replaces it.
+        if isinstance(base, Fp8DenseMethod):
+            base = base._base
         if (
             weight is None
             or not isinstance(weight, torch.Tensor)
@@ -208,7 +246,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             continue
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
-            mod.quant_method = Fp8DenseMethod(base, q, ws, rows, cols)
+            method = Fp8DenseMethod(base, q, ws, rows, cols)
+            if _copy_matches_source(mod, method, weight) is False:
+                mod.quant_method = base
+                stale.append(name)
+                continue
+            mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
         except Exception as e:
@@ -217,8 +260,17 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     gb = params * 2 / 1e9
     logger.warning(
         "[fp8-dense] %s (knob %s): %d linears quantized (%.2f GB bf16 -> fp8 "
-        "blocks), %d kept bf16%s -- fingerprint for the boot log",
+        "blocks), %d kept bf16, %d disarmed by the copy check%s "
+        "-- fingerprint for the boot log",
         type(model).__name__, env, len(quantized), gb, len(skipped),
+        len(stale),
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    if stale:
+        logger.warning(
+            "[fp8-dense] %s: %d copies did not reproduce their bf16 source "
+            "and were reverted: %s -- a copy was taken before the weights "
+            "landed",
+            type(model).__name__, len(stale), ", ".join(stale[:8]),
+        )
     return bool(quantized)
