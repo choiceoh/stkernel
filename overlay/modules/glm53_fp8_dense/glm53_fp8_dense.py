@@ -61,8 +61,8 @@ def _flag(name: str, default: str = "0") -> bool:
 # padded copy covers them.
 _INCLUDE = (
     re.compile(
-        r"\.self_attn\.(in_proj_qkvbfg_a|fused_qkv_a_proj|q_proj|o_proj"
-        r"|out_proj)$"),
+        r"\.self_attn\.(in_proj_qkvbfg_a|fused_qkv_a_proj|q_proj|k_proj"
+        r"|v_proj|o_proj|out_proj)$"),
     re.compile(r"\.mlp\.shared_experts\.(gate_up_proj|down_proj)$"),
     re.compile(r"\.mlp\.(gate_up_proj|down_proj)$"),
 )
@@ -181,9 +181,13 @@ class Fp8DenseMethod:
             return self._base.apply(layer, x, bias)
 
 
-def maybe_build_fp8_dense(model) -> bool:
-    """Quantize the selected dense projections of a loaded model in place."""
-    if not _flag("VLLM_GLM53_FP8_DENSE"):
+def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
+    """Quantize the selected dense projections of a loaded model in place.
+
+    `env` names the arming knob so the target and the DFlash2 drafter can be
+    gated independently: the target changes served output, the drafter changes
+    candidate logits -- acceptance is its quality probe."""
+    if not _flag(env):
         return False
     quantized, skipped, params = [], [], 0
     for name, mod in model.named_modules():
@@ -212,9 +216,9 @@ def maybe_build_fp8_dense(model) -> bool:
             skipped.append(name)
     gb = params * 2 / 1e9
     logger.warning(
-        "[fp8-dense] %d linears quantized (%.2f GB bf16 -> fp8 blocks), "
-        "%d kept bf16%s -- fingerprint for the boot log",
-        len(quantized), gb, len(skipped),
+        "[fp8-dense] %s (knob %s): %d linears quantized (%.2f GB bf16 -> fp8 "
+        "blocks), %d kept bf16%s -- fingerprint for the boot log",
+        type(model).__name__, env, len(quantized), gb, len(skipped),
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
     return bool(quantized)

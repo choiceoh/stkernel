@@ -53,6 +53,22 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
     except Exception:
         pass
 
+    # deneb fork: the same fp8 block copies for the drafter's own dense
+    # projections. The decode trace shows 32 bf16 cutlass GEMMs/step here
+    # (~0.55 GB/rank of weight reads at TP=4, ~2.5 ms) -- the same
+    # read-every-forward property that armed the target in glm53_fp8_dense,
+    # a fifth of the size. No-op unless VLLM_DFLASH2_FP8_DENSE=1; the
+    # drafter's quality probe is ACCEPTANCE, not served output, so it rolls
+    # out on its own knob.
+    try:
+        from vllm.model_executor.layers.glm53_fp8_dense import (
+            maybe_build_fp8_dense,
+        )
+
+        maybe_build_fp8_dense(dflash_model, env="VLLM_DFLASH2_FP8_DENSE")
+    except Exception:
+        pass
+
     target_language_model = (
         target_model.get_language_model()
         if hasattr(target_model, "get_language_model")
