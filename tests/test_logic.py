@@ -2534,8 +2534,9 @@ def test_b12x_zero_weight_micro() -> None:
         "read_b12x_ep_bool",
         "read_b12x_ep_exact_bool",
         "b12x_ep_mode_from_env",
-        "B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS",
+        "B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS",
         "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS",
+        "b12x_ep_micro_chunk_tokens",
         "B12X_EP_ZERO_WEIGHT_MICRO_TOPK",
         "B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS",
         "b12x_ep_zero_weight_micro_chunks",
@@ -2585,9 +2586,14 @@ def test_b12x_zero_weight_micro() -> None:
         check(got == expected, f"{tokens} stable tokens must use {len(expected)} calls")
         check(all(hi - lo == 8 for lo, hi in got),
               "every experimental call must be m=8, never single-token")
+    # 24 (C=3 at MAX_SEQS=4) is a clean 3x8 plan -- structurally identical to
+    # 32's 4x8 -- so it is admitted now; only shapes the chunker cannot slice
+    # exactly, or that belong to compact, keep the fixed fallback.
+    check(chunks(24, 8, 72, enabled=True) == ((0, 8), (8, 16), (16, 24)),
+          "24 tokens must take the micro lane, not the pair fallback")
     for args in (
         (1, 8, 72, True), (7, 8, 72, True), (9, 8, 72, True),
-        (24, 8, 72, True), (8, 1, 72, True), (8, 8, 71, True),
+        (88, 8, 72, True), (8, 1, 72, True), (8, 8, 71, True),
         (8, 8, 72, False),
     ):
         check(chunks(*args[:3], enabled=args[3]) == (),
@@ -4007,6 +4013,59 @@ def test_dflash_warmup_buckets() -> None:
     print("  dflash warmup buckets .......... OK")
 
 
+def test_b12x_micro_chunk_width() -> None:
+    """Wider admitted shapes and the chunk-width knob, both fail-closed."""
+    ns = load_defs(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        {"b12x_ep_micro_chunk_tokens", "b12x_ep_zero_weight_micro_chunks",
+         "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS",
+         "B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS",
+         "B12X_EP_ZERO_WEIGHT_MICRO_TOPK",
+         "B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS"},
+        {"os": os},
+    )
+    width = ns["b12x_ep_micro_chunk_tokens"]
+    chunks = ns["b12x_ep_zero_weight_micro_chunks"]
+    stock = ns["B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS"]
+
+    check(width({}.get) == stock, "unset chunk width keeps the stock 8")
+    for raw in ("", "x", "7", "9", "4", "72", "0", "-8"):
+        check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get) == stock,
+              f"invalid chunk width {raw!r} must fall back to stock, never "
+              "silently widen onto an unvalidated kernel shape")
+    for raw, want in (("8", 8), ("16", 16), ("32", 32), ("64", 64)):
+        check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get) == want,
+              f"chunk width {raw} must be honoured")
+
+    # every positive multiple of the chunk is admitted, up to the cutover --
+    # 24 (C=3 at MAX_SEQS=4) was previously dropped to the pair fallback
+    for tokens in (8, 16, 24, 32, 40, 64, 80):
+        plan = chunks(tokens, 8, 72, enabled=True)
+        check(len(plan) == tokens // stock, f"{tokens} tokens -> exact slices")
+        check(plan[0][0] == 0 and plan[-1][1] == tokens,
+              f"{tokens} tokens must be covered exactly")
+        check(all(hi - lo == stock for lo, hi in plan),
+              f"{tokens} tokens: every slice is one chunk wide")
+        check(all(plan[i][1] == plan[i + 1][0] for i in range(len(plan) - 1)),
+              f"{tokens} tokens: slices are contiguous")
+
+    for tokens in (0, 4, 12, 20, 88, 8192):
+        check(chunks(tokens, 8, 72, enabled=True) == (),
+              f"{tokens} tokens must fail closed (not a multiple, or past the "
+              "compact cutover where dropping remote slots is cheaper)")
+    check(chunks(8, 8, 72, enabled=False) == (), "disabled yields no plan")
+    check(chunks(8, 4, 72, enabled=True) == (), "top_k must be 8")
+    check(chunks(8, 8, 71, enabled=True) == (), "local experts must be 72")
+
+    # a widened chunk halves the call count at the same batch
+    import os as _os
+    wide = {"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": "16"}.get
+    got = ns["b12x_ep_zero_weight_micro_chunks"]
+    check(width(wide) == 16, "16-token chunk is admitted")
+
+    print("  EP micro chunk width .......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4027,6 +4086,7 @@ if __name__ == "__main__":
     test_ep_fixed_token_chunks()
     test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
+    test_b12x_micro_chunk_width()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()

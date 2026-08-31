@@ -370,11 +370,43 @@ B12X_EP_FIXED_MICRO_MAX_PAIRS = 8
 # The kernel-overlay experiment widens the exact E=72/m=8 shape to 64 routed
 # rows by dropping zero-weight sentinels before row materialisation. The stock
 # experiment above remains inside the dispatcher's ordinary 40-row cutover.
-B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS = (8, 16, 32)
+# The chunker slices at CHUNK_TOKENS exactly, so any positive multiple of it
+# is already a valid plan -- the old (8, 16, 32) tuple left C=3 (24 tokens with
+# MAX_SEQS=4, 1+k=8) falling back to the pair path for no reason. Bound the
+# lane at the compact cutover instead: above it `b12x_ep_should_compact` takes
+# over and dropping the remote slots outright is the cheaper shape.
+B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS = 80
 B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS = 8
 B12X_EP_ZERO_WEIGHT_MICRO_TOPK = 8
 B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS = 72
 B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS = 64
+
+
+
+def b12x_ep_micro_chunk_tokens(env_get=os.environ.get) -> int:
+    """Tokens per micro call. Frozen at import; capture-safe.
+
+    Every call carries a fixed cost the token count does not change -- phase-0
+    zeroing, the expert compaction, the resident-grid barrier -- so at a given
+    batch, fewer and wider calls is strictly less overhead. The stock ceiling
+    is FlashInfer's `_MICRO_MAX_TOKENS` (8); raising it only makes sense
+    because this lane already ships its own `moe_dispatch` overlay, and the
+    caller must still prove the live dispatcher admits the wider shape
+    (require_b12x_ep_zero_weight_micro_dispatch does that at setup).
+
+    Invalid or unset leaves the stock 8, so a typo cannot silently widen the
+    call and land on a kernel that was never validated for it.
+    """
+    raw = (env_get("VLLM_B12X_EP_MICRO_CHUNK_TOKENS") or "").strip()
+    if not raw:
+        return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    try:
+        value = int(raw)
+    except ValueError:
+        return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    if value < B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS or value % 8 or value > 64:
+        return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    return value
 
 
 def b12x_ep_zero_weight_micro_chunks(
@@ -386,17 +418,17 @@ def b12x_ep_zero_weight_micro_chunks(
 ):
     """Return exact stable token slices, or an empty fail-closed plan."""
     tokens = int(num_tokens)
+    chunk = b12x_ep_micro_chunk_tokens()
     if not (
         enabled
-        and tokens in B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS
+        and tokens > 0
+        and tokens % chunk == 0
+        and tokens <= B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS
         and int(top_k) == B12X_EP_ZERO_WEIGHT_MICRO_TOPK
         and int(num_local_experts) == B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS
     ):
         return ()
-    return tuple(
-        (lo, lo + B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS)
-        for lo in range(0, tokens, B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS)
-    )
+    return tuple((lo, lo + chunk) for lo in range(0, tokens, chunk))
 
 
 def require_b12x_ep_zero_weight_micro_dispatch(moe_dispatch) -> int:
