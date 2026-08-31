@@ -271,7 +271,26 @@ elif [ "$DFLASH2" = 1 ]; then
   # The drafter emits a block of 8 and one of them is the verified token, so
   # this path only works at 7. It was a literal before, which meant SPEC_K was
   # silently ignored rather than checked.
-  [ "$SPEC_K" = 7 ] || { echo "ABORT: dflash requires SPEC_K=7 (drafter block 8 minus the verified token), got $SPEC_K"; exit 1; }
+  # The drafter's dflash_config.block_size is 8, so it PROPOSES 7. Whether the
+  # target has to VERIFY all 7 is a different question, and it has never been
+  # tested. vLLM does not reject a smaller k for dflash -- dspark raises
+  # explicitly on num_speculative_tokens < dspark_block_size, dflash has no
+  # such branch, and speculator.py sizes every buffer from
+  # num_speculative_tokens with no hardcoded 7.
+  #
+  # The measured reason to want a smaller k: the step's variable part is
+  # 0.706 ms x DISTINCT EXPERTS and the verify batch is (k+1) tokens, so the
+  # expert tax scales with k. SPEC=0 (1 token) is a 31.3 ms step, k=7
+  # (8 tokens) is 66.1 -- k=3 should land near 46.
+  #
+  # The risk is not a crash, it is a distribution shift: the drafter was
+  # trained on blocks of 8 and would see a shorter one. That shows up as
+  # acceptance collapse in the per-position counters, not as an error, so the
+  # experiment is only readable with /metrics beside the throughput.
+  if [ "$SPEC_K" != 7 ] && [ "${SPEC_K_FORCE:-0}" != 1 ]; then
+    echo "ABORT: dflash requires SPEC_K=7 (drafter block 8 minus the verified token), got $SPEC_K -- set SPEC_K_FORCE=1 to open it for an experiment"
+    exit 1
+  fi
   _spec_extra=""
   [ -n "${DRAFT_TP:-}" ] && _spec_extra="$_spec_extra,\"draft_tensor_parallel_size\":$DRAFT_TP"
   [ -n "${DRAFT_KV:-}" ] && [ "${DRAFT_KV}" != auto ] && _spec_extra="$_spec_extra,\"kv_cache_dtype\":\"$DRAFT_KV\""
