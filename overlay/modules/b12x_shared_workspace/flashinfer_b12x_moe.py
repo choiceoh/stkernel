@@ -895,18 +895,36 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 pairs, self._kernel_num_experts, worst_id, worst,
                 self.num_local_experts, " ".join(caps),
             )
+            # Raise only when NO workspace can hold this routing. The two
+            # layouts differ in kind: static's token_map is
+            # [state_E, max_rows] -- per-expert capacity, so EP's dummy pile-up
+            # is what overruns it -- while dynamic's is a flat compacted plane
+            # sized by total pairs, which the skew cannot reach. A disabled
+            # static workspace (cutover pinned to 0 leaves max_rows=1) must not
+            # be read as a failure while dynamic is the one being selected.
+            fits = []
             for name in ("_static_workspace", "_dynamic_workspace"):
                 ws = getattr(wrapper, name, None)
                 tm = getattr(ws, "token_map", None) if ws is not None else None
                 if tm is None:
                     continue
-                if worst > int(tm.shape[1]) or self._kernel_num_experts > int(tm.shape[0]):
-                    raise RuntimeError(
-                        f"b12x EP would overrun {name}: expert {worst_id} takes "
-                        f"{worst} rows and there are {self._kernel_num_experts} "
-                        f"experts, but token_map is {tuple(tm.shape)} "
-                        f"[state_E, max_rows]"
+                if tm.dim() >= 2:
+                    ok = (
+                        worst <= int(tm.shape[1])
+                        and self._kernel_num_experts <= int(tm.shape[0])
                     )
+                else:
+                    ok = pairs <= int(tm.shape[0])
+                fits.append((name, ok, tuple(tm.shape)))
+            if fits and not any(ok for _, ok, _ in fits):
+                detail = " ".join(f"{n}{shape}" for n, _, shape in fits)
+                raise RuntimeError(
+                    f"b12x EP overruns every workspace: {pairs} pairs, expert "
+                    f"{worst_id} takes {worst} rows, {self._kernel_num_experts} "
+                    f"experts -- token_map {detail}. Force the dynamic backend "
+                    f"(FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=0) or lower "
+                    f"MAX_BATCHED."
+                )
         except RuntimeError:
             raise
         except Exception as exc:  # probe must never be the thing that breaks EP
