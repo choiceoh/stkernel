@@ -1810,6 +1810,20 @@ def test_glm53_v2_overlay_contracts() -> None:
         all(field not in update_source for field in ("top_k", "top_p", "min_p")),
         "common soft sampling controls must not disable speculation wholesale",
     )
+    update_async = next(
+        node
+        for node in scheduler_cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "update_draft_token_ids_in_output"
+    )
+    async_source = ast.get_source_segment(scheduler_source, update_async)
+    assert async_source is not None
+    check(
+        "_has_target_hard_mask(request)" in async_source
+        and "spec_token_ids.clear()" in async_source
+        and "spec_token_ids.extend([-1] * num_invalid_tokens)" in async_source,
+        "async scheduling must invalidate hard-mask drafts without changing shape",
+    )
 
     hard_mask = load_defs(
         "overlay/scheduler.py",

@@ -1,8 +1,10 @@
 # glm53_v2_hard_constraint_guard
 
-Disables the next speculative step for requests whose target distribution has
-a hard mask the DFlash2 drafter does not apply. `Scheduler.update_draft_token_ids`
-clears the received draft when any of these conditions is active:
+Disables speculation for requests whose target distribution has a hard mask
+the DFlash2 drafter does not apply. `Scheduler.update_draft_token_ids` clears
+the received draft on the normal path; the overlapping/async output path marks
+the already-reserved speculative slots invalid with its existing `-1` padding
+contract. Both act when any of these conditions is active:
 
 - `allowed_token_ids` is set;
 - `logit_bias` or `bad_words` is non-empty;

@@ -2239,8 +2239,14 @@ class Scheduler(SchedulerInterface):
             # Trim drafts to scheduled number of spec tokens
             # (needed for chunked prefill case for example).
             del spec_token_ids[orig_num_spec_tokens:]
+            # Async scheduling already reserved speculative placeholders for
+            # this step. Mark every hard-mask draft invalid; the existing pad
+            # path below preserves the scheduled shape without verifying a
+            # token whose target probability may be zero.
+            if _has_target_hard_mask(request):
+                spec_token_ids.clear()
             # Filter out spec tokens which do not adhere to the grammar.
-            if self.structured_output_manager.should_advance(request):
+            elif self.structured_output_manager.should_advance(request):
                 metadata = request.structured_output_request
                 spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)  # type: ignore[union-attr]
             # Pad to original number of spec tokens.
