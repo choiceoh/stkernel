@@ -35,7 +35,7 @@ exactly-zero contributions from the zero rows. Padding is always < 128, so no
 all-zero block ever forms and no scale degenerates. No loader or checkpoint
 change; the bf16 weight is untouched.
 
-Armed by VLLM_GLM53_FP8_DENSE=1 (default off). Rollback is the env alone.
+Armed by VLLM_GLM53_FP8_DENSE: 0 off, 1/true W8A8, w4a8 the fp4-weight arm (activations stay fp8). Rollback is the env alone.
 """
 
 import os
@@ -280,7 +280,7 @@ class Fp8DenseMethod:
 _STALE_RTOL = 0.25
 
 
-def _copy_matches_source(mod, method, weight, rtol=None):
+def _copy_matches_source(mod, method, weight, rtol=None, got_fn=None):
     """True/False when the check ran, None when it could not.
 
     None keeps the layer armed. Refusing to arm because a probe would not
@@ -291,7 +291,14 @@ def _copy_matches_source(mod, method, weight, rtol=None):
             8, weight.shape[1], dtype=weight.dtype, device=weight.device
         )
         ref = method._base.apply(mod, x, None)
-        got = method.apply(mod, x, None)
+        # got_fn MUST be supplied when it matters: calling method.apply()
+        # here routes through its OWN error fallback, which swallows the
+        # failure, silently swaps layer.quant_method mid-build, returns the
+        # fallback's output -- and the copy then "matches" its reference
+        # exactly. A direct GEMM callable makes a broken kernel surface as
+        # an exception (-> None) or garbage (-> False) instead.
+        got = (got_fn(x) if got_fn is not None
+               else method.apply(mod, x, None))
         den = ref.float().norm()
         if not torch.isfinite(den) or den == 0:
             return None
@@ -344,7 +351,10 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
-            if _copy_matches_source(mod, method, weight) is False:
+            if _copy_matches_source(
+                mod, method, weight,
+                got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
+            ) is False:
                 mod.quant_method = base
                 stale.append(name)
                 continue
@@ -363,7 +373,10 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                         w4_method = W4A8DenseMethod(method, wq, ws)
                         if _copy_matches_source(
                                 mod, w4_method, weight,
-                                rtol=2 * _STALE_RTOL) is True:
+                                rtol=2 * _STALE_RTOL,
+                                got_fn=lambda xx: _fp8_fp4_dense_gemm(
+                                    xx, wq, ws),
+                        ) is True:
                             mod.quant_method = w4_method
                             quantized_w4.append(name)
                             params_w4 += weight.numel()
