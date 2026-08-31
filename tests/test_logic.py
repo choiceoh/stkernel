@@ -4098,6 +4098,40 @@ def test_b12x_micro_chunk_width() -> None:
     print("  EP micro chunk width .......... OK")
 
 
+def test_ep_tail_fixed_shape() -> None:
+    """The tail must be padded to one chunk: b12x JITs per launch shape."""
+    src = open(_overlay_source(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+    body = src[src.index("def _ep_tail_padded_micro"):
+               src.index("def _ep_tail_buffers")]
+
+    check("if rem <= 0 or rem >= chunk:" in body and "return False" in body,
+          "the padded path only claims a genuine short tail")
+    check("pad_w[rem:].zero_()" in body,
+          "pad rows must carry router weight 0")
+    check("pad_ids[rem:].copy_(topk_ids[lo:lo + 1]" in body
+          and "pad_x[rem:].copy_(hidden_states[lo:lo + 1]" in body,
+          "pad rows must repeat a row already in this call -- a duplicate "
+          "cannot move the expert's FC2 amax, a foreign token can")
+    check("scatter_output=pad_out" in body,
+          "the padded launch must scatter into the staging buffer, never "
+          "straight into the caller's rows")
+    check("output[lo:hi].copy_(pad_out[:rem])" in body,
+          "only the real rows may be copied back")
+    check(body.index("pad_x[:rem].copy_") < body.index("launch_sm120_moe("),
+          "staging is filled before the launch")
+
+    bufs = src[src.index("def _ep_tail_buffers"):
+               src.index("def _apply_ep_stock_topk_micro")]
+    check("self._ep_tail_key" in bufs and "!= key" in bufs,
+          "staging buffers must be rebuilt when the shape or device drifts")
+    check("return None" in bufs and "warning_once" in bufs,
+          "allocation failure must fall back loudly to the variable tail, "
+          "never silently produce wrong rows")
+
+    print("  EP tail fixed shape ........... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4119,6 +4153,7 @@ if __name__ == "__main__":
     test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
     test_b12x_micro_chunk_width()
+    test_ep_tail_fixed_shape()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
