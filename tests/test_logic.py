@@ -4132,6 +4132,49 @@ def test_ep_tail_fixed_shape() -> None:
     print("  EP tail fixed shape ........... OK")
 
 
+def test_ep_compact_shape_align() -> None:
+    """Compact must bucket its pair count: b12x JITs per launch shape."""
+    ns = load_defs(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        {"b12x_ep_compact_pair_count", "B12X_EP_COMPACT_PAIR_ALIGN"},
+        {},
+    )
+    count = ns["b12x_ep_compact_pair_count"]
+    align = ns["B12X_EP_COMPACT_PAIR_ALIGN"]
+
+    check(count(0) == 0, "an empty local set stays empty")
+    for n in (1, 63, 64, 65, 127, 128, 4096):
+        got = count(n)
+        check(got % align == 0, f"{n} must round to a multiple of {align}")
+        check(got >= n, f"{n} must never round DOWN -- that would drop pairs")
+        check(got - n < align, f"{n} must not over-pad past one bucket")
+
+    # the shapes one live bench actually minted kernels for
+    observed = [48, 83, 102, 103, 104, 119, 122, 130, 133, 134, 140, 146,
+                149, 150, 152, 168, 171, 176, 180, 184, 188, 195, 201, 202,
+                203, 233, 249, 268, 270, 275, 284, 304, 336]
+    buckets = {count(n) for n in observed}
+    check(len(buckets) <= 8,
+          f"{len(observed)} observed shapes must collapse to a handful, got "
+          f"{len(buckets)}")
+
+    src = open(_overlay_source(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+    start = src.index("def _apply_ep_compact")
+    nxt = src.find("\n    def ", start)
+    body = src[start:nxt if nxt > 0 else len(src)]
+    check("pair_out = torch.zeros(" in body,
+          "padded compact rows may be skipped by the kernel, so the buffer "
+          "must be zeroed (an uninitialised bit pattern can be NaN)")
+    check("torch.empty(" not in body, "no uninitialised buffer in compact")
+    check(body.index("pair_out.mul_(") < body.index("output.index_add_("),
+          "pad rows must be masked before the token sum")
+    check("% n" in body and "index_select(0, fill)" in body,
+          "padding must cycle pairs already in the list, never invent a slot")
+
+    print("  EP compact shape align ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4154,6 +4197,7 @@ if __name__ == "__main__":
     test_b12x_zero_weight_micro()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
+    test_ep_compact_shape_align()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
