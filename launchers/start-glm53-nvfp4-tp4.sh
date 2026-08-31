@@ -33,7 +33,7 @@ if [ -f "$PROFILE_ENV" ]; then
   # exits 1 -- which under `set -euo pipefail` ends the script silently.
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
-  for _v in IMAGE MOE_BACKEND EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
+  for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
@@ -78,6 +78,18 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
 fi
 GMU="${GMU:-0.73}"                # 0.85 does not boot; weights+act ~78 GiB/rank
 MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
+# b12x EP: remaps global top-k onto a local-only wrapper (+ dummy expert).
+# Off by default -- the TP-sharded path is the measured one. ENABLE_EP=1
+# sends --enable-expert-parallel (MoE TP becomes 1, experts shard).
+ENABLE_EP="${ENABLE_EP:-0}"
+case "$ENABLE_EP" in
+  0|1) ;;
+  *) echo "ABORT: ENABLE_EP must be 0 or 1 (got $ENABLE_EP)" >&2; exit 2 ;;
+esac
+EP_FLAG=""
+if [ "$ENABLE_EP" = 1 ]; then
+  EP_FLAG="--enable-expert-parallel"
+fi
 # Empty = let vLLM pick. It picks FLASHINFER_MLA_SPARSE_SM90 on GB10, and that
 # is not a fallback -- that backend declares `capability.major in (9, 12)`, so
 # it claims Blackwell deliberately and sits ahead of SM120 in the order.
@@ -118,6 +130,24 @@ else
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_attn_quant":true}}'
   if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
     COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+  fi
+fi
+# Compact drops dummy slots when tokens*top_k > 640. That path is eager and
+# data-dependent, so a captured batch must stay at or below the cutover.
+# GRAPH_CAP=32 * top_k=8 = 256 is safe. PIECEWISE graphs prefill, so compact
+# stays off there and dummy remap keeps a fixed shape.
+B12X_EP_TOPK="${B12X_EP_TOPK:-8}"
+if [ "$ENABLE_EP" = 1 ]; then
+  if [ "${PIECEWISE:-0}" = 1 ]; then
+    : "${VLLM_B12X_EP_COMPACT:=0}"
+    echo "ENABLE_EP=1 + PIECEWISE=1: VLLM_B12X_EP_COMPACT=$VLLM_B12X_EP_COMPACT (prefill graphs keep dummy remap)"
+  fi
+  if [ "${EAGER:-0}" != 1 ] && [ "${VLLM_B12X_EP_COMPACT:-1}" != 0 ]; then
+    _ep_routed=$((GRAPH_CAP * B12X_EP_TOPK))
+    if [ "$_ep_routed" -gt 640 ]; then
+      echo "ABORT: ENABLE_EP=1 GRAPH_CAP=$GRAPH_CAP captures $_ep_routed pairs > 640 compact cutover — GRAPH_CAP<=80, EAGER=1, or VLLM_B12X_EP_COMPACT=0" >&2
+      exit 2
+    fi
   fi
 fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
@@ -270,6 +300,9 @@ if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
 if [ -n "$MOE_CUTOVER" ]; then
   ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"
 fi
+if [ "$ENABLE_EP" = 1 ]; then
+  ENVV="$ENVV -e VLLM_B12X_EP_COMPACT=${VLLM_B12X_EP_COMPACT:-1}"
+fi
 
 # SPEC=0 serves straight from the target model -- no drafter, no accept path.
 # Only for isolating a defect: it costs the whole speculative speedup.
@@ -382,6 +415,7 @@ SERVE_ARGS="$MODEL_PATH \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
+${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
 $ASYNC_FLAG \
@@ -397,7 +431,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # deleted backend is otherwise invisible until the boot fails.
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
-  for _k in IMAGE MOE_BACKEND KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
             MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done

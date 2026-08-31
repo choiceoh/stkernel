@@ -995,6 +995,366 @@ def test_no_hardcoded_image_paths() -> None:
     print("  no hardcoded image paths ...... OK")
 
 
+def test_b12x_ep_routing() -> None:
+    """b12x EP never shows the fused kernel a global id or a polluted expert."""
+    ns = load_defs(
+        "overlay/flashinfer_b12x_moe.py",
+        {
+            "remap_b12x_ep_slot",
+            "remap_b12x_ep_routing",
+            "remap_b12x_ep_tensors",
+            "b12x_ep_kernel_expert_count",
+            "b12x_ep_pad_dim0",
+            "b12x_ep_should_compact",
+            "b12x_ep_compact_enabled",
+            "compact_b12x_ep_pairs",
+            "B12X_EP_COMPACT_MIN_ROUTED",
+            "_ep_buf",
+            "b12x_ep_set_scale",
+            "_b12x_ep_set_dotted",
+            "_B12X_EP_SCALE_ALIASES",
+        },
+        {"os": os},
+    )
+    slot = ns["remap_b12x_ep_slot"]
+    remap = ns["remap_b12x_ep_routing"]
+    kernel_e = ns["b12x_ep_kernel_expert_count"]
+    pad_dim0 = ns["b12x_ep_pad_dim0"]
+
+    check(kernel_e(72, False) == 72, "EP-off kernel E is local")
+    check(kernel_e(72, True) == 73, "EP-on kernel E is local + dummy")
+    check(kernel_e(288, False) == 288, "replicated kernel E is global")
+
+    # Rank 1 of 4, 8 experts, 2 local (4,5). Dummy id = 2.
+    ids, weights = remap(
+        [[4, 5, 0, 7], [1, 4, 6, 5]],
+        [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+        num_local_experts=2,
+        local_expert_offset=4,
+    )
+    check(ids == [[0, 1, 2, 2], [2, 0, 2, 1]], f"offset remap ids: {ids}")
+    check(weights == [[0.4, 0.3, 0.0, 0.0], [0.0, 0.25, 0.0, 0.1]],
+          f"offset remap weights: {weights}")
+    check(all(e < 3 for row in ids for e in row), "id exceeded dummy")
+    check(all(w == 0.0 for row_i, row_w in zip(ids, weights)
+              for e, w in zip(row_i, row_w) if e == 2),
+          "dummy slot must carry scale 0")
+
+    # Same shard as the offset path (last row remote).
+    emap = [-1, -1, -1, -1, 0, 1, -1, -1]
+    # Last row is a real local expert. torch expert_map[-1] would wrap here
+    # and dump a padded slot onto expert 0 at the original scale.
+    emap_wrap = [-1, -1, -1, -1, 0, 1, -1, 0]
+    check(emap_wrap[-1] == 0, "fixture must make the wrap land on a real expert")
+    check(slot(-1, num_local_experts=2, expert_map=emap_wrap) == -1,
+          "-1 topk must not wrap through expert_map")
+    check(slot(99, num_local_experts=2, expert_map=emap_wrap) == -1,
+          "OOB topk must not index expert_map")
+    check(slot(-1, num_local_experts=2, local_expert_offset=4) == -1,
+          "-1 topk is remote on the offset path too")
+
+    ids2, weights2 = remap(
+        [[4, 5, 0, 7], [1, 4, 6, 5]],
+        [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+        num_local_experts=2,
+        expert_map=emap,
+    )
+    check(ids2 == ids and weights2 == weights, "expert_map must match offset")
+
+    ids_pad, weights_pad = remap(
+        [[-1, 4], [5, -1]],
+        [[0.9, 0.1], [0.8, 0.2]],
+        num_local_experts=2,
+        expert_map=emap_wrap,
+    )
+    check(ids_pad == [[2, 0], [1, 2]], f"padded topk ids: {ids_pad}")
+    check(weights_pad == [[0.0, 0.1], [0.8, 0.0]],
+          f"padded topk scales: {weights_pad}")
+
+    ids_off, weights_off = remap(
+        [[-1, 4]], [[0.5, 0.5]],
+        num_local_experts=2, local_expert_offset=4,
+    )
+    check(ids_off == [[2, 0]] and weights_off == [[0.0, 0.5]],
+          "offset path must also park -1 on dummy")
+
+    # All local: dummy unused, scales preserved.
+    ids3, weights3 = remap(
+        [[0, 1]], [[0.7, 0.3]],
+        num_local_experts=2, local_expert_offset=0,
+    )
+    check(ids3 == [[0, 1]] and weights3 == [[0.7, 0.3]], "all-local remap")
+
+    # All remote: every slot is dummy / 0. Never dump onto expert 0.
+    ids4, weights4 = remap(
+        [[6, 7]], [[0.6, 0.4]],
+        num_local_experts=2, local_expert_offset=0,
+    )
+    check(ids4 == [[2, 2]] and weights4 == [[0.0, 0.0]], "all-remote -> dummy")
+
+    should = ns["b12x_ep_should_compact"]
+    compact = ns["compact_b12x_ep_pairs"]
+    check(ns["B12X_EP_COMPACT_MIN_ROUTED"] == 640, "compact cutover is kernel 640")
+    check(not should(256), "decode GRAPH_CAP=32 * 8 stays on dummy remap")
+    check(not should(640), "cutover is exclusive")
+    check(should(641), "prefill crosses compact")
+    check(not should(4096, enabled=False), "compact env off")
+    check(ns["b12x_ep_compact_enabled"](lambda _k, _d=None: "1"), "compact default on")
+    check(not ns["b12x_ep_compact_enabled"](lambda _k, _d=None: "0"),
+          "compact env 0")
+    tok, loc, sc = compact(ids, weights, dummy=2)
+    check(tok == [0, 0, 1, 1] and loc == [0, 1, 0, 1],
+          f"compact pairs: {tok} {loc}")
+    check(sc == [0.4, 0.3, 0.25, 0.1], f"compact scales: {sc}")
+    tok4, loc4, sc4 = compact(ids4, weights4, dummy=2)
+    check(tok4 == [] and loc4 == [] and sc4 == [], "all-remote compact is empty")
+
+    check(pad_dim0(72, 72, required=True, name="w13_weight") == "pad",
+          "local E must pad")
+    check(pad_dim0(73, 72, required=True, name="w13_weight") == "already",
+          "local+1 is already padded")
+    check(pad_dim0(None, 72, required=False, name="w13_weight_scale_2") == "skip",
+          "optional missing tensor skips")
+    try:
+        pad_dim0(None, 72, required=True, name="w13_weight")
+    except RuntimeError as exc:
+        check("missing" in str(exc), f"required missing: {exc}")
+    else:
+        raise AssertionError("required missing tensor must raise")
+    try:
+        pad_dim0(70, 72, required=True, name="w13_weight")
+    except RuntimeError as exc:
+        check("E=70" in str(exc) and "want 72" in str(exc),
+              f"shape mismatch: {exc}")
+    else:
+        raise AssertionError("wrong E must raise, not skip")
+
+    class _Desc:
+        def __init__(self):
+            self.scale = "old-w"
+            self.alpha_or_gscale = "old-a"
+
+    class _QC:
+        def __init__(self):
+            self._w1 = _Desc()
+            self._w2 = _Desc()
+            self._a2 = _Desc()
+
+    class _Host:
+        def __init__(self):
+            self.quant_config = _QC()
+
+        @property
+        def w1_scale(self):
+            return self.quant_config._w1.scale
+
+        @property
+        def w2_scale(self):
+            return self.quant_config._w2.scale
+
+        @property
+        def g1_alphas(self):
+            return self.quant_config._w1.alpha_or_gscale
+
+        @property
+        def g2_alphas(self):
+            return self.quant_config._w2.alpha_or_gscale
+
+        @property
+        def a2_gscale(self):
+            return self.quant_config._a2.alpha_or_gscale
+
+    host = _Host()
+    try:
+        host.w1_scale = "padded"
+    except AttributeError as exc:
+        check("no setter" in str(exc) or "can't set" in str(exc).lower()
+              or "has no setter" in str(exc),
+              f"image-shaped property must refuse setattr: {exc}")
+    else:
+        raise AssertionError("w1_scale property must have no setter")
+    set_scale = ns["b12x_ep_set_scale"]
+    check(set_scale(host, "w1_scale", "padded-w1") == "quant_config._w1.scale",
+          "w1_scale must write QuantDesc.scale")
+    check(host.w1_scale == "padded-w1", "w1_scale property must read the pad")
+    check(set_scale(host, "w2_scale", "padded-w2") == "quant_config._w2.scale",
+          "w2_scale must write QuantDesc.scale")
+    check(host.w2_scale == "padded-w2", "w2_scale property must read the pad")
+    check(set_scale(host, "g1_alphas", "padded-g1")
+          == "quant_config._w1.alpha_or_gscale",
+          "g1_alphas must write QuantDesc.alpha_or_gscale")
+    check(host.g1_alphas == "padded-g1", "g1_alphas property must read the pad")
+    check(set_scale(host, "a2_gscale", "padded-a2")
+          == "quant_config._a2.alpha_or_gscale",
+          "a2_gscale must write QuantDesc.alpha_or_gscale")
+    class _Broken:
+        @property
+        def w1_scale(self):
+            return "stuck"
+    try:
+        set_scale(_Broken(), "w1_scale", "x")
+    except RuntimeError as exc:
+        check("cannot bind w1_scale" in str(exc), f"broken alias: {exc}")
+    else:
+        raise AssertionError("set_scale must fail loud when aliases miss")
+
+    try:
+        import torch
+    except ImportError:
+        print("  b12x EP routing ................ OK (tensor remap skipped)")
+        return
+
+    ns["torch"] = torch
+    tensor_remap = ns["remap_b12x_ep_tensors"]
+    cases = (
+        ([[4, 5, 0, 7], [1, 4, 6, 5]],
+         [[0.4, 0.3, 0.2, 0.1], [0.5, 0.25, 0.15, 0.1]],
+         emap, 0,
+         [[0, 1, 2, 2], [2, 0, 2, 1]],
+         [[0.4, 0.3, 0.0, 0.0], [0.0, 0.25, 0.0, 0.1]]),
+        ([[-1, 4], [5, -1]],
+         [[0.9, 0.1], [0.8, 0.2]],
+         emap_wrap, 0,
+         [[2, 0], [1, 2]],
+         [[0.0, 0.1], [0.8, 0.0]]),
+        ([[-1, 4]],
+         [[0.5, 0.5]],
+         None, 4,
+         [[2, 0]],
+         [[0.0, 0.5]]),
+        ([[99, 4]],
+         [[0.3, 0.7]],
+         emap_wrap, 0,
+         [[2, 0]],
+         [[0.0, 0.7]]),
+    )
+    for raw_ids, raw_w, list_map, offset, want_ids, want_w in cases:
+        kwargs = dict(local_expert_offset=offset)
+        if list_map is not None:
+            kwargs["expert_map"] = torch.tensor(list_map, dtype=torch.int32)
+        got_ids, got_w = tensor_remap(
+            torch.tensor(raw_ids, dtype=torch.int64),
+            torch.tensor(raw_w, dtype=torch.float32),
+            num_local_experts=2,
+            **kwargs,
+        )
+        check(got_ids.tolist() == want_ids,
+              f"tensor remap ids {got_ids.tolist()} != {want_ids}")
+        check([round(x, 6) for row in got_w.tolist() for x in row]
+              == [round(x, 6) for row in want_w for x in row],
+              f"tensor remap scales {got_w.tolist()} != {want_w}")
+        list_ids, list_w = remap(
+            raw_ids, raw_w, num_local_experts=2,
+            local_expert_offset=offset, expert_map=list_map,
+        )
+        check(got_ids.tolist() == list_ids,
+              "tensor remap must match list remap ids")
+        check([round(x, 6) for row in got_w.tolist() for x in row]
+              == [round(x, 6) for row in list_w for x in row],
+              "tensor remap must match list remap scales")
+
+    scratch_ids = torch.empty((2, 2), dtype=torch.int32)
+    scratch_scales = torch.empty((2, 2), dtype=torch.float32)
+    got_ids, got_w = tensor_remap(
+        torch.tensor([[-1, 4], [5, -1]], dtype=torch.int64),
+        torch.tensor([[0.9, 0.1], [0.8, 0.2]], dtype=torch.float32),
+        num_local_experts=2,
+        expert_map=torch.tensor(emap_wrap, dtype=torch.int32),
+        out_ids=scratch_ids,
+        out_scales=scratch_scales,
+        long_idx=torch.empty((2, 2), dtype=torch.int64),
+        mapped=torch.empty((2, 2), dtype=torch.int32),
+        remote=torch.empty((2, 2), dtype=torch.bool),
+        tmp_a=torch.empty((2, 2), dtype=torch.bool),
+        tmp_b=torch.empty((2, 2), dtype=torch.bool),
+    )
+    check(got_ids.data_ptr() == scratch_ids.data_ptr(), "scratch ids reused")
+    check(got_w.data_ptr() == scratch_scales.data_ptr(), "scratch scales reused")
+    check(got_ids.tolist() == [[2, 0], [1, 2]], "in-place remap ids")
+    check([round(x, 6) for row in got_w.tolist() for x in row]
+          == [0.0, 0.1, 0.8, 0.0], "in-place remap scales")
+    print("  b12x EP routing ................ OK")
+
+
+def test_b12x_ep_preflight() -> None:
+    import importlib.util
+    import tempfile
+
+    spec = importlib.util.spec_from_file_location(
+        "b12x_pf", os.path.join(REPO, "tools", "b12x-preflight.py"))
+    pf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pf)
+
+    check(pf.gate_up_aligned(2048, 4), "GLM-5.3 TP=4 must align")
+    check(pf.gate_up_aligned(2048, 1), "GLM-5.3 full intermediate must align")
+    check(not pf.gate_up_aligned(640, 4), "Qwen3.8 TP=4 must not align")
+    check(640 % pf.ALIGN == 0, "Qwen3.8 full intermediate hits the 128 tile")
+
+    def _inspect(inter, experts, tp=4, ep=4):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {"moe_intermediate_size": inter, "n_routed_experts": experts}
+            open(os.path.join(tmp, "config.json"), "w").write(
+                __import__("json").dumps(cfg))
+            return pf.inspect(tmp, tp, ep)
+
+    glm = _inspect(2048, 288)
+    check(glm["b12x"] and glm["b12x_ep"], "GLM-5.3 must pass both paths")
+    qwen = _inspect(640, 256)
+    check(not qwen["b12x"] and qwen["b12x_ep"],
+          "Qwen3.8 must be TP-closed and EP-open")
+    check("320" in qwen["reason"] and "128" in qwen["reason"],
+          f"Qwen3.8 TP reason unclear: {qwen.get('reason')}")
+    odd = _inspect(2048, 100, ep=3)
+    check(odd["b12x"] and not odd["b12x_ep"],
+          "experts not divisible by EP must close the EP path")
+    skinny = _inspect(64, 256, tp=1, ep=4)
+    check(skinny["b12x"] and not skinny["b12x_ep"],
+          "intermediate 64 passes gate+up but fails the wrapper's 128 tile")
+    print("  b12x EP preflight .............. OK")
+
+
+def test_b12x_ep_launcher() -> None:
+    launcher = os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh")
+    text = open(launcher, encoding="utf-8").read()
+    check('ENABLE_EP="${ENABLE_EP:-0}"' in text, "ENABLE_EP default missing")
+    check("--enable-expert-parallel" in text, "EP flag missing from launcher")
+    check("${EP_FLAG:+$EP_FLAG }" in text,
+          "EP flag must be optional in SERVE_ARGS")
+    overlay = open(_overlay_source("overlay/flashinfer_b12x_moe.py"),
+                   encoding="utf-8").read()
+    check("return not getattr(moe_parallel_config, \"enable_eplb\", False)"
+          in overlay,
+          "b12x must accept EP and refuse EPLB")
+    check("def supports_expert_map(self) -> bool:\n        return True"
+          in overlay,
+          "b12x must accept the vLLM expert_map under EP")
+    check("return remap_b12x_ep_tensors(" in overlay,
+          "_remap_ep_tensors must call remap_b12x_ep_tensors, not a private copy")
+    check("torch.gather(expert_map, 0, long_idx.reshape(-1), out=mapped.reshape(-1))"
+          in overlay,
+          "tensor expert_map gather must be in-place")
+    check("long_idx.clamp_(0, map_len - 1)" in overlay,
+          "tensor expert_map gather must clamp after the in-range mask")
+    check("b12x_ep_pad_dim0(" in overlay,
+          "_pad_dummy_expert must use b12x_ep_pad_dim0 (no silent continue)")
+    check('b12x_ep_set_scale(self, "w1_scale"' in overlay,
+          "dummy pad must rebind w1_scale through QuantDesc, not the property")
+    check("\n        self.w1_scale =" not in overlay,
+          "self.w1_scale = dies on the image (property has no setter)")
+    check("except AttributeError:\n                pass" not in overlay,
+          "dummy pad must not swallow AttributeError on scale rebind")
+    check("def _apply_ep_compact(" in overlay,
+          "prefill must drop dummy slots instead of GEMMing them")
+    check("ABORT: ENABLE_EP=1 GRAPH_CAP=" in text,
+          "ENABLE_EP=1 must refuse GRAPH_CAP that captures past the compact cutover")
+    check("VLLM_B12X_EP_COMPACT=${VLLM_B12X_EP_COMPACT:-1}" in text,
+          "compact flag must reach the container")
+
+    check("ABORT: ENABLE_EP must be 0 or 1" in text,
+          "ENABLE_EP must refuse anything other than 0 or 1")
+    print("  b12x EP launcher ............... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -1013,4 +1373,7 @@ if __name__ == "__main__":
     test_launcher_head_guard()
     test_preflight_precedes_serve_args()
     test_no_hardcoded_image_paths()
+    test_b12x_ep_routing()
+    test_b12x_ep_preflight()
+    test_b12x_ep_launcher()
     print(f"all OK ({PASS} checks)")
