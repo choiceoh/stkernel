@@ -4239,6 +4239,32 @@ def test_launcher_load_format_gate() -> None:
     print("  launcher load-format gate ..... OK")
 
 
+def test_prefill_ladder_probe() -> None:
+    """The ladder must not let prefix caching masquerade as a warm kernel."""
+    src = open("probes/prefill_ladder.py").read()
+    ns: dict = {}
+    exec(compile(src.replace("raise SystemExit(main(args))", "pass"),
+                 "prefill_ladder", "exec"), ns)
+    prompt = ns["_prompt"]
+    base = 4242
+    heads = {prompt(2048, base + r * 1000)[:16] for r in range(3)}
+    check(len(heads) == 3,
+          "every sample must carry a distinct prefix -- a shared one would "
+          "score a prefix-cache hit and the warm column would measure that "
+          "instead of whether the shape was already compiled")
+    lens = [len(prompt(2048, base + r * 1000)) for r in range(3)]
+    check(max(lens) - min(lens) < 32,
+          "repeats must hold the LENGTH fixed while changing content, so the "
+          "kernel shape is identical across them")
+    check(len(prompt(4096, 1)) > 3 * len(prompt(1024, 1)),
+          "requested length must actually drive prompt size")
+    check('"max_tokens": 1' in src,
+          "the ladder must generate one token: it measures prefill, not decode")
+    check("seed if r else seed" not in src,
+          "the repeat seed must vary (an earlier revision reused it)")
+    print("  prefill ladder probe .......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4264,6 +4290,7 @@ if __name__ == "__main__":
     test_ep_compact_shape_align()
     test_ep_compact_warmup_ladder()
     test_launcher_load_format_gate()
+    test_prefill_ladder_probe()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
