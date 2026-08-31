@@ -1010,6 +1010,9 @@ def test_b12x_ep_routing() -> None:
             "compact_b12x_ep_pairs",
             "B12X_EP_COMPACT_MIN_ROUTED",
             "_ep_buf",
+            "b12x_ep_set_scale",
+            "_b12x_ep_set_dotted",
+            "_B12X_EP_SCALE_ALIASES",
         },
         {"os": os},
     )
@@ -1125,6 +1128,75 @@ def test_b12x_ep_routing() -> None:
               f"shape mismatch: {exc}")
     else:
         raise AssertionError("wrong E must raise, not skip")
+
+    class _Desc:
+        def __init__(self):
+            self.scale = "old-w"
+            self.alpha_or_gscale = "old-a"
+
+    class _QC:
+        def __init__(self):
+            self._w1 = _Desc()
+            self._w2 = _Desc()
+            self._a2 = _Desc()
+
+    class _Host:
+        def __init__(self):
+            self.quant_config = _QC()
+
+        @property
+        def w1_scale(self):
+            return self.quant_config._w1.scale
+
+        @property
+        def w2_scale(self):
+            return self.quant_config._w2.scale
+
+        @property
+        def g1_alphas(self):
+            return self.quant_config._w1.alpha_or_gscale
+
+        @property
+        def g2_alphas(self):
+            return self.quant_config._w2.alpha_or_gscale
+
+        @property
+        def a2_gscale(self):
+            return self.quant_config._a2.alpha_or_gscale
+
+    host = _Host()
+    try:
+        host.w1_scale = "padded"
+    except AttributeError as exc:
+        check("no setter" in str(exc) or "can't set" in str(exc).lower()
+              or "has no setter" in str(exc),
+              f"image-shaped property must refuse setattr: {exc}")
+    else:
+        raise AssertionError("w1_scale property must have no setter")
+    set_scale = ns["b12x_ep_set_scale"]
+    check(set_scale(host, "w1_scale", "padded-w1") == "quant_config._w1.scale",
+          "w1_scale must write QuantDesc.scale")
+    check(host.w1_scale == "padded-w1", "w1_scale property must read the pad")
+    check(set_scale(host, "w2_scale", "padded-w2") == "quant_config._w2.scale",
+          "w2_scale must write QuantDesc.scale")
+    check(host.w2_scale == "padded-w2", "w2_scale property must read the pad")
+    check(set_scale(host, "g1_alphas", "padded-g1")
+          == "quant_config._w1.alpha_or_gscale",
+          "g1_alphas must write QuantDesc.alpha_or_gscale")
+    check(host.g1_alphas == "padded-g1", "g1_alphas property must read the pad")
+    check(set_scale(host, "a2_gscale", "padded-a2")
+          == "quant_config._a2.alpha_or_gscale",
+          "a2_gscale must write QuantDesc.alpha_or_gscale")
+    class _Broken:
+        @property
+        def w1_scale(self):
+            return "stuck"
+    try:
+        set_scale(_Broken(), "w1_scale", "x")
+    except RuntimeError as exc:
+        check("cannot bind w1_scale" in str(exc), f"broken alias: {exc}")
+    else:
+        raise AssertionError("set_scale must fail loud when aliases miss")
 
     try:
         import torch
@@ -1265,6 +1337,12 @@ def test_b12x_ep_launcher() -> None:
           "tensor expert_map gather must clamp after the in-range mask")
     check("b12x_ep_pad_dim0(" in overlay,
           "_pad_dummy_expert must use b12x_ep_pad_dim0 (no silent continue)")
+    check('b12x_ep_set_scale(self, "w1_scale"' in overlay,
+          "dummy pad must rebind w1_scale through QuantDesc, not the property")
+    check("\n        self.w1_scale =" not in overlay,
+          "self.w1_scale = dies on the image (property has no setter)")
+    check("except AttributeError:\n                pass" not in overlay,
+          "dummy pad must not swallow AttributeError on scale rebind")
     check("def _apply_ep_compact(" in overlay,
           "prefill must drop dummy slots instead of GEMMing them")
     check("ABORT: ENABLE_EP=1 GRAPH_CAP=" in text,

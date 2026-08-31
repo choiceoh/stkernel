@@ -266,6 +266,59 @@ def b12x_ep_pad_dim0(dim0, num_local_experts, *, required, name):
     )
 
 
+# FusedMoEExperts.w1_scale (and w2 / g1_alphas / g2_alphas / a2_gscale) are
+# read-only properties over FusedMoEQuantConfig. Assigning self.w1_scale
+# raises AttributeError on the image (glm53:v13-b12x). Write the QuantDesc
+# fields the properties actually return.
+_B12X_EP_SCALE_ALIASES = {
+    "w1_scale": ("quant_config._w1.scale",),
+    "w2_scale": ("quant_config._w2.scale",),
+    "g1_alphas": ("quant_config._w1.alpha_or_gscale", "_g1_alphas"),
+    "g2_alphas": ("quant_config._w2.alpha_or_gscale", "_g2_alphas"),
+    "a2_gscale": ("quant_config._a2.alpha_or_gscale",),
+}
+
+
+def _b12x_ep_set_dotted(obj, path, value) -> bool:
+    cur = obj
+    parts = path.split(".")
+    for part in parts[:-1]:
+        cur = getattr(cur, part, None)
+        if cur is None:
+            return False
+    try:
+        setattr(cur, parts[-1], value)
+    except AttributeError:
+        return False
+    return True
+
+
+def b12x_ep_set_scale(obj, name, value):
+    """Bind a dummy-padded scale so ``obj.name`` reads ``value``.
+
+    Tries a direct setattr first (plain attributes), then the QuantDesc
+    aliases. Raises if the readable value is still not ``value``.
+    """
+    try:
+        setattr(obj, name, value)
+        return name
+    except AttributeError:
+        pass
+    for path in _B12X_EP_SCALE_ALIASES.get(name, ()):
+        if _b12x_ep_set_dotted(obj, path, value):
+            current = getattr(obj, name, None)
+            if current is value:
+                return path
+    current = getattr(obj, name, None)
+    if current is value:
+        return "already"
+    raise RuntimeError(
+        f"b12x EP dummy pad: cannot bind {name} "
+        f"(read-only property; aliases {_B12X_EP_SCALE_ALIASES.get(name, ())} "
+        "did not take the write)"
+    )
+
+
 def _cat_dummy_row(tensor: "torch.Tensor", fill: float) -> "torch.Tensor":
     dummy = tensor.new_empty((1, *tensor.shape[1:]))
     dummy.fill_(fill)
@@ -632,21 +685,18 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 continue
             _replace_dim0(layer, name, _cat_dummy_row(tensor, fill))
 
-        # Rebind scale views onto the padded layer tensors. The bake-in
-        # left per-expert alphas at 1.0; keep that and extend for dummy.
-        self.w1_scale = layer.w13_weight_scale
-        self.w2_scale = layer.w2_weight_scale
+        # Properties: w1_scale / w2_scale / g1_alphas have no setter.
+        # They read FusedMoEQuantConfig QuantDesc fields — write those.
+        b12x_ep_set_scale(self, "w1_scale", layer.w13_weight_scale)
+        b12x_ep_set_scale(self, "w2_scale", layer.w2_weight_scale)
         ones = torch.ones(
             n + 1, device=layer.w13_weight.device, dtype=torch.float32
         )
         self._fc2_input_scale = ones
-        for name in ("g1_alphas", "g2_alphas", "a2_gscale", "_g1_alphas", "_g2_alphas"):
+        for name in ("g1_alphas", "g2_alphas", "a2_gscale"):
             if getattr(self, name, None) is None:
                 continue
-            try:
-                setattr(self, name, ones.clone())
-            except AttributeError:
-                pass
+            b12x_ep_set_scale(self, name, ones.clone())
 
         self._ep_dummy_padded = True
         logger.info_once(
