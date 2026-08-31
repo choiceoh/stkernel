@@ -322,9 +322,15 @@ class Glm5NextMoE(nn.Module):
         if self.is_sequence_parallel and not already_sequence_parallel:
             hidden_states = sequence_parallel_chunk(hidden_states)
 
-        # The router is always external (self.gate); main's MoERunner expects
-        # pre-computed router_logits, so compute them here unconditionally.
-        router_logits, _ = self.gate(hidden_states)
+        # The MoE runner HOLDS this layer's gate (the factory was given it)
+        # and applies it itself, after the shared-expert aux-stream sync, so
+        # the gate GEMM overlaps the aux stream -- and it overwrites whatever
+        # router_logits it is handed. Computing the gate here as well made
+        # every MoE layer launch the router TWICE per forward (trace: gate
+        # kernels exactly 2x the topk kernels, 84 vs 42/step, both eager,
+        # 20us apart, identical grids). Hand it None and let the runner's
+        # overlapped call be the only one.
+        router_logits = None
         final_hidden_states = self.experts(
             hidden_states=hidden_states, router_logits=router_logits
         )
@@ -981,6 +987,7 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                     )
                     weight_loader(param, loaded_weight, **kwargs)
             loaded_params.add(name)
+
         return loaded_params
 
 
@@ -1135,7 +1142,28 @@ class Glm5NextForCausalLM(
             self,
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
-        return loader.load_weights(weights)
+        loaded = loader.load_weights(weights)
+
+        # deneb fork: fp8 block copies of the bf16 dense projections. This has
+        # to sit HERE and not in Glm5NextModel.load_weights: that is a child
+        # hook, AutoWeightsLoader may enter it before the checkpoint is fully
+        # walked, and the copy is a snapshot -- once quant_method is swapped
+        # the bf16 tensor is never read again, so an early copy is served for
+        # the life of the boot. It happened: a copy taken 30 s into a 294 s
+        # load shipped, and the target accepted 0 of 51,786 draft tokens.
+        # This call runs after loader.load_weights returns, and rebuilds any
+        # copy an earlier caller may already have made.
+        # No-op unless VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer.
+        try:
+            from vllm.model_executor.layers.glm53_fp8_dense import (
+                maybe_build_fp8_dense,
+            )
+
+            maybe_build_fp8_dense(self)
+        except Exception:
+            pass
+
+        return loaded
 
 
 @MULTIMODAL_REGISTRY.register_processor(

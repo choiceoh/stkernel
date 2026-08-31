@@ -24,6 +24,13 @@
 #define RING 4
 #define MAXEL 131072  // 256KB bf16 — size gate keeps callers <= this
 #define PROXY_CORE 18
+// clock64() counts SM cycles. The SM clock is pinned at 1592 MHz on this
+// fleet (nvidia-smi clocks.sm, flat across load), so one constant converts.
+// The absolute us are only as good as that assumption; the RATIO between the
+// four phases does not depend on it at all, and the ratio is the answer we
+// are after.
+#define SM_CLK_MHZ 1592
+#define REPORT_SEC 10
 
 #define CHK(x)                                                            \
   do {                                                                    \
@@ -34,6 +41,8 @@
     }                                                                     \
   } while (0)
 
+#include <ctime>
+
 typedef __nv_bfloat16 bf16;
 
 struct Ctrl {
@@ -41,10 +50,21 @@ struct Ctrl {
   volatile uint64_t ack_seq;
   volatile uint64_t stop;
   volatile uint64_t proxy_beat;          // watchdog heartbeat
+  volatile unsigned long long done_ctr;  // monotonic block-completion count
   uint64_t flag_src[NPEER];
   uint64_t nbytes[RING];                 // payload size per slot (GPU sets)
   volatile uint64_t rxf[RING][NPEER];    // inbound flags (slot-major)
-  uint64_t pad[8];
+  // Phase timers. These live INSIDE the old pad[8] so every offset after them
+  // -- tx, rx -- is unchanged and the peers' rx_base/rxf_base stay valid.
+  // Monotonic and never reset, for the same reason done_ctr is: a cudagraph
+  // replay cannot see a reset. Written by block 0 thread 0 only, one store
+  // per collective, so the cost is a handful of cycles on one thread.
+  volatile uint64_t t_guard;             // SM cycles spinning for ring space
+  volatile uint64_t t_copy;              // copy + fence + counter + publish
+  volatile uint64_t t_wait;              // SM cycles spinning for peer flags
+  volatile uint64_t t_reduce;            // the summation
+  volatile uint64_t t_calls;             // samples behind the four above
+  uint64_t pad[3];
   bf16 tx[RING][MAXEL];
   bf16 rx[RING][NPEER][MAXEL];
 };
@@ -69,41 +89,128 @@ static bool g_started = false;
 static const char *DEVNAME = "rocep1s0f0";
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
-__global__ void k_guard(volatile uint64_t *tx, volatile uint64_t *ack) {
-  if (threadIdx.x == 0)
-    while ((*tx + 1) > (*ack + RING)) {
-    }
+// One launch per collective. #89 folded the guard into k_copy_in and the wait
+// into k_reduce (both spin on globals -- tx_seq/ack_seq or the peers' rxf
+// flags -- so every block can poll independently and a not-yet-resident block
+// can never deadlock us) but kept k_signal separate: signalling needs ALL
+// copy blocks done, which "needs" an atomic counter, and a counter would have
+// to be reset somewhere a cudagraph replay cannot see.
+//
+// A counter that is never reset kills that objection. done_ctr is monotonic
+// and every launch adds exactly ARGRID to it (fixed grid, see py_oneshot), so
+// stream ordering keeps it a multiple of ARGRID at every kernel entry: the
+// block whose atomicAdd returns old % ARGRID == ARGRID-1 is the 256th block
+// of THIS launch to finish copying -- meaning every block already read
+// tx_seq, so publishing tx_seq = s0+1 cannot be misread as a later sequence.
+// The counter lives past any replay; nothing to reset.
+// Spin discipline. Both loops below read flags that a PEER writes -- ack_seq
+// through the proxy, rxf through the peer NIC -- into RDMA-registered memory.
+// A thread reading them at full rate puts continuous traffic on the same path
+// the write has to travel to become visible, so hammering the flag competes
+// with the arrival it is waiting for. Stay hot for a few reads (a short wait
+// then pays nothing) and afterwards sleep, doubling to a small cap so a long
+// wait stops competing. The cap bounds the latency this can add: 4 us per
+// collective worst case, against a wait believed to be two orders larger.
+#define SPIN_HOT 8
+#define SPIN_NS0 128u
+#define SPIN_NS_MAX 4096u
+
+__device__ __forceinline__ void osar_backoff(int &n, unsigned &ns) {
+  if (++n <= SPIN_HOT) return;
+#if __CUDA_ARCH__ >= 700
+  __nanosleep(ns);
+  ns = ns < SPIN_NS_MAX ? (ns << 1) : SPIN_NS_MAX;
+#endif
 }
-__global__ void k_copy_in(Ctrl *c, const bf16 *src, int n) {
+
+#define ARGRID 256
+__global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
+                          int nbytes) {
+  // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
+  // -- one collective per layer, n = hidden -- most blocks fall entirely past
+  // the end of the payload: with blockDim 256 and n 4096, blocks 16..255 copy
+  // nothing and reduce nothing. They still paid for both spins and the fence.
+  //
+  // The peer wait is the expensive one. 256 blocks polling the same three
+  // volatile flags for the whole RDMA latency window is traffic aimed at the
+  // very cache lines whose update they are waiting to observe.
+  //
+  // A block that owns no element needs neither spin: the guard protects a slot
+  // it never writes, and the peer flags gate data it never reads. Only the
+  // atomicAdd stays unconditional -- the invariant is that every launch adds
+  // exactly ARGRID, and that is what makes the last-block test sound.
+  //
+  // Block 0 owns unconditionally so an n == 0 collective still takes the ring
+  // guard rather than publishing into a slot nobody checked.
+  const bool owns = (blockIdx.x == 0) || (blockIdx.x * blockDim.x < n);
+  // Block 0 always owns, so it always walks every phase and is the sample.
+  const bool timer = (blockIdx.x == 0) && (threadIdx.x == 0);
+  long long t0 = timer ? clock64() : 0;
+
+  if (owns && threadIdx.x == 0) {
+    // tx_seq cannot move while we spin: this launch has not published yet and
+    // the previous launch on this stream already retired. Reading it once
+    // halves the loop's traffic -- only ack_seq, which the proxy advances,
+    // has to be re-read.
+    const uint64_t want = c->tx_seq + 1;
+    int sp = 0;
+    unsigned ns = SPIN_NS0;
+    while (want > c->ack_seq + RING) osar_backoff(sp, ns);
+  }
+  long long t1 = timer ? clock64() : 0;
+  __syncthreads();
   uint64_t nxt = c->tx_seq + 1;
   int slot = (int)(nxt % RING);
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x)
     c->tx[slot][i] = src[i];
-}
-__global__ void k_signal(Ctrl *c, int nbytes) {
-  if (threadIdx.x == 0) {
-    uint64_t nxt = c->tx_seq + 1;
-    int slot = (int)(nxt % RING);
+  // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
+  // Every WRITING block fences its own copy, and each fence precedes that
+  // block's counter increment, so when the counter wraps this launch's ARGRID
+  // all writes are already visible system-wide. A block that copied nothing
+  // has nothing to order, so its fence is vacuous and is skipped.
+  if (owns)
+    __threadfence_system();
+  __shared__ bool last;
+  if (threadIdx.x == 0)
+    last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
+               ARGRID == ARGRID - 1;
+  __syncthreads();
+  if (last && threadIdx.x == 0) {
     c->nbytes[slot] = (uint64_t)nbytes;
     __threadfence_system();
     c->tx_seq = nxt;
     __threadfence_system();
   }
-}
-__global__ void k_wait(Ctrl *c) {
-  if (threadIdx.x == 0) {
-    uint64_t s = c->tx_seq;
-    int slot = (int)(s % RING);
-    while (c->rxf[slot][0] < s || c->rxf[slot][1] < s || c->rxf[slot][2] < s) {
+  // Peer wait: rxf is only ever written by the peers' NICs, never by a block
+  // of this kernel -- same independence argument as the guard above. Fence
+  // stays where it always was: after the wait, before reading peer data.
+  long long t2 = timer ? clock64() : 0;
+  if (owns && threadIdx.x == 0) {
+    // The old form re-read every peer's flag on every pass, including peers
+    // that had already landed. Remember who arrived and read only the first
+    // one still missing -- same short-circuit shape as before, minus the
+    // repeated reads of flags whose answer cannot change.
+    bool got[NPEER] = {false, false, false};
+    int left = NPEER, sp = 0;
+    unsigned ns = SPIN_NS0;
+    while (left) {
+      for (int q = 0; q < NPEER; q++) {
+        if (got[q]) continue;
+        if (c->rxf[slot][q] >= nxt) {
+          got[q] = true;
+          --left;
+        } else {
+          osar_backoff(sp, ns);
+          break;
+        }
+      }
     }
   }
+  long long t3 = timer ? clock64() : 0;
   __syncthreads();
-  __threadfence_system();
-}
-__global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
-  uint64_t s = c->tx_seq;
-  int slot = (int)(s % RING);
+  if (owns)
+    __threadfence_system();
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     float acc = __bfloat162float(src[i]) +
@@ -111,6 +218,14 @@ __global__ void k_reduce(Ctrl *c, const bf16 *src, bf16 *dst, int n) {
                 __bfloat162float(c->rx[slot][1][i]) +
                 __bfloat162float(c->rx[slot][2][i]);
     dst[i] = __float2bfloat16(acc);
+  }
+  if (timer) {
+    long long t4 = clock64();
+    c->t_guard += (uint64_t)(t1 - t0);
+    c->t_copy += (uint64_t)(t2 - t1);
+    c->t_wait += (uint64_t)(t3 - t2);
+    c->t_reduce += (uint64_t)(t4 - t3);
+    c->t_calls += 1;
   }
 }
 
@@ -121,6 +236,9 @@ static void *proxy_fn(void *) {
   CPU_SET(PROXY_CORE, &set);
   sched_setaffinity(0, sizeof(set), &set);
   uint64_t sent = 0, done[64] = {0};
+  time_t last_report = 0;
+  uint64_t last_guard = 0, last_copy = 0, last_wait = 0, last_reduce = 0,
+           last_calls = 0;
   while (!g_ctrl->stop) {
     g_ctrl->proxy_beat++;
     uint64_t s = g_ctrl->tx_seq;
@@ -173,6 +291,41 @@ static void *proxy_fn(void *) {
       if (++done[cs % 64] == NPEER) {
         done[cs % 64] = 0;
         if (cs > g_ctrl->ack_seq) g_ctrl->ack_seq = cs;
+      }
+    }
+    // Phase report. The reader has to live here and not in the shim: under a
+    // full-decode cudagraph the Python entry runs once at capture and never
+    // again, while the kernel keeps accumulating on every replay. The proxy
+    // is the only host code that runs per collective for the life of the boot.
+    // Rank 0 only, every REPORT_SEC seconds, deltas since the last report so a
+    // slow warmup does not smear the steady state.
+    if (g_rank == 0) {
+      time_t now = time(nullptr);
+      if (last_report == 0) last_report = now;
+      if (now - last_report >= REPORT_SEC) {
+        uint64_t calls = g_ctrl->t_calls, dn = calls - last_calls;
+        if (dn > 0) {
+          double k = 1.0 / (double)dn / (double)SM_CLK_MHZ;  // cycles -> us
+          fprintf(stderr,
+                  "[osar] phase us/collective (n=%llu): guard=%.1f copy=%.1f "
+                  "wait=%.1f reduce=%.1f | total=%.1f  @%d MHz assumed\n",
+                  (unsigned long long)dn,
+                  (double)(g_ctrl->t_guard - last_guard) * k,
+                  (double)(g_ctrl->t_copy - last_copy) * k,
+                  (double)(g_ctrl->t_wait - last_wait) * k,
+                  (double)(g_ctrl->t_reduce - last_reduce) * k,
+                  (double)(g_ctrl->t_guard - last_guard +
+                           g_ctrl->t_copy - last_copy +
+                           g_ctrl->t_wait - last_wait +
+                           g_ctrl->t_reduce - last_reduce) * k,
+                  SM_CLK_MHZ);
+          last_guard = g_ctrl->t_guard;
+          last_copy = g_ctrl->t_copy;
+          last_wait = g_ctrl->t_wait;
+          last_reduce = g_ctrl->t_reduce;
+          last_calls = calls;
+        }
+        last_report = now;
       }
     }
   }
@@ -342,13 +495,11 @@ static torch::Tensor py_oneshot(torch::Tensor input) {
   const bf16 *src = reinterpret_cast<const bf16 *>(input.data_ptr());
   bf16 *dst = reinterpret_cast<bf16 *>(out.data_ptr());
   cudaStream_t st = c10::cuda::getCurrentCUDAStream();
-  int grid = (int)((n + 255) / 256);
-  if (grid > 256) grid = 256;
-  k_guard<<<1, 32, 0, st>>>(&g_ctrl->tx_seq, &g_ctrl->ack_seq);
-  k_copy_in<<<grid, 256, 0, st>>>(g_ctrl, src, (int)n);
-  k_signal<<<1, 32, 0, st>>>(g_ctrl, (int)(n * 2));
-  k_wait<<<1, 32, 0, st>>>(g_ctrl);
-  k_reduce<<<grid, 256, 0, st>>>(g_ctrl, src, dst, (int)n);
+  // One launch, and the grid is FIXED at ARGRID however small n is: the
+  // last-block detection in k_oneshot is (done_ctr % ARGRID == ARGRID-1),
+  // which is only sound if every launch contributes exactly ARGRID
+  // increments. Empty blocks cost a guard read, one atomic and a spin.
+  k_oneshot<<<ARGRID, 256, 0, st>>>(g_ctrl, src, dst, (int)n, (int)(n * 2));
   return out;
 }
 static bool py_healthy() {

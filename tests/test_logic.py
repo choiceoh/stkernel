@@ -1433,6 +1433,142 @@ def test_ue8m0_scale_repair() -> None:
 
     print("  UE8M0 scale repair ............. OK")
 
+def test_fp8_dense_bproj() -> None:
+    """The b-projection arm matches exactly the rear halves meant for it.
+
+    STEP_KERNEL_MAP #108 section 2: after W8A8, 145 bf16 cutlass GEMMs/step
+    remain -- q_b/kv_b (full-attn b halves), indexer wq_b -- while the KDA
+    f_b/g_b halves sit under the min(shape) >= 512 guard and wk_weights_proj
+    is loader-forced bf16 for its fusion. The arm must match the first group
+    only, and must never ride the default (#110: opt-in or nothing).
+    """
+    ns = load_defs(
+        "overlay/glm53_fp8_dense.py",
+        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns"},
+        {"os": os, "re": re},
+    )
+    base = ns["_INCLUDE"]
+    bproj = ns["_BPROJ_INCLUDE"]
+    include = ns["_include_patterns"]
+
+    matches = lambda pats, name: any(p.search(name) for p in pats)
+
+    must_match = [
+        "model.layers.7.self_attn.q_b_proj",
+        "model.layers.43.self_attn.kv_b_proj",
+        "model.layers.3.self_attn.indexer.wq_b",
+    ]
+    must_not = [
+        # the KDA merged a-half and the first-k dense MLPs are the base arm's
+        # business -- the bproj arm must not widen them
+        "model.layers.0.self_attn.in_proj_qkvbfg_a",
+        "model.layers.5.mlp.experts.12.gate_up_proj",
+        "model.layers.5.mlp.shared_experts.down_proj",
+        # KDA b halves: [2048, 128] per rank, under the 512 guard on purpose
+        "model.layers.0.self_attn.f_b_proj",
+        "model.layers.0.self_attn.g_b_proj",
+        # loader upcasts wk to bf16 to keep the wk+weights_proj fusion
+        "model.layers.3.self_attn.indexer.wk_weights_proj",
+        # spec/drafter body must stay untouched
+        "model.layers.5.self_attn.o_proj.impl.not_a_real_suffix",
+    ]
+    for name in must_match:
+        check(matches(bproj, name), f"bproj arm must match {name}")
+    for name in must_not:
+        check(not matches(bproj, name), f"bproj arm must NOT match {name}")
+
+    saved = os.environ.pop("VLLM_GLM53_FP8_DENSE_BPROJ", None)
+    try:
+        check(include() == base, "gate unset: patterns are the base arm")
+        os.environ["VLLM_GLM53_FP8_DENSE_BPROJ"] = "0"
+        check(include() == base, "gate 0: patterns are the base arm")
+        os.environ["VLLM_GLM53_FP8_DENSE_BPROJ"] = "1"
+        extended = include()
+        check(len(extended) == len(base) + len(bproj),
+              "gate 1: base + bproj patterns")
+        check(all(matches(extended, n) for n in must_match),
+              "gate 1: every bproj target matches")
+    finally:
+        if saved is None:
+            os.environ.pop("VLLM_GLM53_FP8_DENSE_BPROJ", None)
+        else:
+            os.environ["VLLM_GLM53_FP8_DENSE_BPROJ"] = saved
+
+
+def test_mhc_smallm_knob() -> None:
+    """VLLM_GLM53_MHC_SMALLM: parse strictly, validate against kernel contracts.
+
+    The override feeds mhc_fused_post_pre's small-M branch; an invalid value
+    must fall back to the stock heuristic (TODO(gnovack)-marked), never crash
+    the dispatcher's assert or silently drop elements in the h-loop.
+    """
+    env_name = "VLLM_GLM53_MHC_SMALLM"
+    saved = os.environ.pop(env_name, None)
+
+    def load():
+        ns = load_defs(
+            "overlay/tilelang.py",
+            {
+                "_SMALLM_ENV",
+                "_deneb_parse_smallm",
+                "_deneb_smallm_pair",
+                "_raw_smallm",
+                "_DENEB_SMALLM",
+            },
+            {"os": os},
+        )
+        return ns
+
+    try:
+        os.environ.pop(env_name, None)
+        ns = load()
+        parse = ns["_deneb_parse_smallm"]
+        check(ns["_DENEB_SMALLM"] is None, "env unset: knob is None (stock)")
+        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
+              "env unset: pair falls back to stock")
+
+        check(parse("6,4") == (6, 4), "parse plain")
+        check(parse(" 6 , 4 ") == (6, 4), "parse whitespace")
+        check(parse("6") is None, "parse missing split")
+        check(parse("6,4,2") is None, "parse extra field")
+        check(parse("a,b") is None, "parse non-numeric")
+        check(parse("0,4") is None and parse("-6,4") is None,
+              "parse rejects non-positive")
+        check(parse("6,4x") is None, "parse rejects trailing junk")
+
+        os.environ[env_name] = "6,4"
+        ns = load()
+        check(ns["_DENEB_SMALLM"] == (6, 4), "env set: knob frozen at import")
+        pair = ns["_deneb_smallm_pair"]
+        check(pair(1, 4096, 4) == (6, 4), "GLM shapes admit (6,4)")
+        check(pair(16, 4096, 4) == (6, 4), "whole small-M branch is overridden")
+
+        os.environ[env_name] = "5,4"
+        ns = load()
+        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
+              "tile_n=5 does not divide n_out=24 -> stock")
+        os.environ[env_name] = "6,3"
+        ns = load()
+        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
+              "n_splits=3 would trip the dispatcher assert -> stock")
+        os.environ[env_name] = "6,16"
+        ns = load()
+        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
+              "n_splits=16 exceeds the dispatcher's set -> stock")
+        os.environ[env_name] = "6,8"
+        ns = load()
+        check(ns["_deneb_smallm_pair"](1, 4096, 4) == (6, 8),
+              "(6,8): h_per_split=512 is n_thr-exact")
+        os.environ[env_name] = "6,4"
+        ns = load()
+        check(ns["_deneb_smallm_pair"](1, 512, 4) is None,
+              "h_per_split=128 leaves 128 threads idle -> stock (silent-drop guard)")
+    finally:
+        if saved is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = saved
+
 
 if __name__ == "__main__":
     test_skip_topk()
@@ -1456,4 +1592,6 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_fp8_dense_bproj()
+    test_mhc_smallm_knob()
     print(f"all OK ({PASS} checks)")
