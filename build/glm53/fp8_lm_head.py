@@ -30,6 +30,81 @@ def _read_bool_env(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# deepgemm packs only the exponent of an fp32 scale (UE8M0) and asserts the
+# sign and mantissa are zero -- smxx_layout.cuh:131,
+# `(values[j] & 0x807fffffu) == 0`. That assert is a printf followed by
+# `asm("trap;")`: it destroys the CUDA context, so the boot dies later at an
+# unrelated sync (empty_cache) with a traceback that never names this file.
+# We hit it on this fleet 768 times in one boot. Enforce the precondition here
+# instead of trusting the upstream rounding to have covered every value.
+_SF_SIGN_AND_MANTISSA = 0x807FFFFF
+_SMALLEST_NORMAL_F32 = 2.0**-126
+
+
+def _ue8m0_violations(scales: "torch.Tensor") -> "torch.Tensor":
+    """The kernel's assert, evaluated on the host."""
+    return (scales.view(torch.int32) & _SF_SIGN_AND_MANTISSA) != 0
+
+
+def _flush_pathological_scales(
+    scales: "torch.Tensor",
+) -> tuple["torch.Tensor", int, int]:
+    """Zero the scales no rounding can rescue. Returns (fixed, flushed, left).
+
+    Runs AFTER requant_weight_ue8m0_inplace, which has already matched the fp8
+    weights to these scales. Rounding a *normal* scale here would silently
+    scale that block's weights -- 1.3 -> 2.0 is a 1.54x error -- so normals are
+    reported, never touched.
+
+    Denormals, zeros, negatives, inf and NaN are different: a denormal scale
+    means the block was all but zero, so its fp8 weights are zero too and
+    flushing the scale to 0 changes nothing numerically. Their bit pattern
+    (0x00000000) is also what deepgemm's UE8M0 packer accepts.
+    """
+    if scales.dtype != torch.float32:
+        return scales, 0, -1
+    bad = _ue8m0_violations(scales)
+    if not bool(bad.any()):
+        return scales, 0, 0
+    pathological = bad & ~(
+        torch.isfinite(scales) & (scales >= _SMALLEST_NORMAL_F32)
+    )
+    flushed = int(pathological.sum())
+    left = int(bad.sum()) - flushed
+    if flushed:
+        scales = torch.where(pathological, torch.zeros_like(scales), scales)
+    return scales, flushed, left
+
+
+def _repair_ue8m0_scales(scales: "torch.Tensor") -> tuple["torch.Tensor", int]:
+    """Force every scale onto an exact power of two. Returns (fixed, count).
+
+    Positive normals round UP to the next power of two -- the safe direction
+    for a quantization scale, and at most 2x.
+
+    Denormals are the case rounding cannot fix: their exponent field is
+    already zero, so exp2(ceil(log2(x))) is still denormal and still trips the
+    assert. They come from a weight block that is all but zero, so flushing
+    them (with 0, negatives, inf and NaN) to zero is both what the kernel
+    accepts -- 0x00000000 passes -- and numerically what that block meant.
+    """
+    if scales.dtype != torch.float32:
+        return scales, 0
+    bad = _ue8m0_violations(scales)
+    count = int(bad.sum())
+    if count == 0:
+        return scales, 0
+    out = torch.zeros_like(scales)
+    keep = torch.isfinite(scales) & (scales >= _SMALLEST_NORMAL_F32)
+    rounded = torch.exp2(torch.ceil(torch.log2(scales[keep])))
+    # log2/exp2 round-off can land just under the smallest normal; drop those.
+    rounded = torch.where(
+        rounded >= _SMALLEST_NORMAL_F32, rounded, torch.zeros_like(rounded)
+    )
+    out[keep] = rounded
+    return out, count
+
+
 def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Block-quantize a bf16/fp32 weight to the deepgemm fp8 layout (chunked
     over rows so the fp32 staging copy never exceeds ~1/8 of the weight)."""
@@ -49,11 +124,34 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
+        # use_e8m0=True does the requant AND the layout transform in one
+        # call, and the trapping assert lives between them -- neither before
+        # nor after that call can reach it. Do the requant ourselves, clean up
+        # what it leaves behind, then run the transform alone.
+        wq = torch.cat(chunks_q, dim=0)
+        ws = torch.cat(chunks_s, dim=0)
+        try:
+            from vllm.model_executor.layers.quantization.utils.fp8_utils import (
+                requant_weight_ue8m0_inplace,
+            )
+        except ImportError:
+            return deepgemm_post_process_fp8_weight_block(
+                wq, ws, (128, 128), use_e8m0=True
+            )
+        requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
+        ws, flushed, left = _flush_pathological_scales(ws)
+        if flushed or left > 0:
+            logger.warning(
+                "fp8 lm_head: after UE8M0 requant, %d of %d scales were "
+                "denormal/zero/non-finite (flushed to 0) and %d were normal "
+                "but not powers of two (left alone -- rounding them would "
+                "rescale their weights)",
+                flushed,
+                ws.numel(),
+                left,
+            )
         return deepgemm_post_process_fp8_weight_block(
-            torch.cat(chunks_q, dim=0),
-            torch.cat(chunks_s, dim=0),
-            (128, 128),
-            use_e8m0=True,
+            wq, ws, (128, 128), use_e8m0=False
         )
 
 

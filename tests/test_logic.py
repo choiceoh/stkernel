@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import glob
 import os
+import random
 import re
 import subprocess
 import sys
@@ -1719,6 +1720,160 @@ def test_ep_fixed_pair_plan() -> None:
 
     print("  EP fixed pair plan ............. OK")
 
+def test_mhc_onepass_math() -> None:
+    """mhc_onepass_tilelang's MATH equals the stock two-kernel pipeline.
+
+    The fused kernel is a transcription of mhc_fused_tilelang (phase 1) +
+    mhc_pre_big_fuse_with_norm_tilelang (mixes/sinkhorn/norm). This sim runs
+    both pipelines in pure python at hc=4, h=64 -- stock materializes the
+    gemm_out intermediates like the two kernels do, onepass follows the fused
+    kernel's single-CTA phase order. Same op order => bitwise-equal floats.
+    A transcription slip (swapped scale index, dropped eps, wrong sinkhorn
+    round count) breaks equality.
+    """
+    import struct
+
+    def bf16(x):
+        """Round fp32 to bf16 and back (the kernels' storage rounding)."""
+        return struct.unpack("f", struct.pack("I",
+            struct.unpack("I", struct.pack("f", x))[0] & 0xFFFF0000))[0]
+
+    import math as _m
+
+    hc, h, n_out = 4, 64, 24
+    rms_eps, pre_eps, sink_eps, post_mult, sinkhorn, norm_eps = (
+        1e-5, 1e-6, 1e-6, 2.0, 20, 1e-5)
+    scale = [1.1, 0.9, 1.05]
+    rng = random.Random(7)
+
+    comb_in = [[rng.uniform(-1, 1) for _ in range(hc)] for _ in range(hc)]
+    post_in = [rng.uniform(0.5, 1.5) for _ in range(hc)]
+    x = [rng.uniform(-1, 1) for _ in range(h)]
+    resid = [[rng.uniform(-1, 1) for _ in range(h)] for _ in range(hc)]
+    fn = [[[rng.uniform(-0.05, 0.05) for _ in range(h)]
+           for _ in range(hc)] for _ in range(n_out)]
+    base = [rng.uniform(-0.5, 0.5) for _ in range(n_out)]
+    norm_w = [1.0 for _ in range(h)]
+
+    def rsqrt(v):
+        return 1.0 / _m.sqrt(v)
+
+    def sigmoid(v):
+        return 1.0 / (1.0 + _m.exp(-v))
+
+    def sinkhorn_rounds(cm):
+        row_max = [max(cm[j]) for j in range(hc)]
+        for j in range(hc):
+            for k in range(hc):
+                cm[j][k] = _m.exp(cm[j][k] - row_max[j])
+        row_sum = [sum(cm[j]) for j in range(hc)]
+        for j in range(hc):
+            for k in range(hc):
+                cm[j][k] = cm[j][k] / row_sum[j] + sink_eps
+        col_sum = [sum(cm[j][k] for j in range(hc)) for k in range(hc)]
+        for j in range(hc):
+            for k in range(hc):
+                cm[j][k] = cm[j][k] / (col_sum[k] + sink_eps)
+        for _ in range(sinkhorn - 1):
+            row_sum = [sum(cm[j]) for j in range(hc)]
+            for j in range(hc):
+                for k in range(hc):
+                    cm[j][k] = cm[j][k] / (row_sum[j] + sink_eps)
+            col_sum = [sum(cm[j][k] for j in range(hc)) for k in range(hc)]
+            for j in range(hc):
+                for k in range(hc):
+                    cm[j][k] = cm[j][k] / (col_sum[k] + sink_eps)
+        return cm
+
+    def gates_and_norm(mixes, resid_cur):
+        post = [bf16(sigmoid(mixes[j + hc] * scale[1] + base[j + hc]))
+                * post_mult for j in range(hc)]
+        cm = [[mixes[j * hc + k + hc * 2] * scale[2]
+               + base[j * hc + k + hc * 2] for k in range(hc)]
+              for j in range(hc)]
+        comb = sinkhorn_rounds(cm)
+        pre = [sigmoid(mixes[j] * scale[0] + base[j]) + pre_eps
+               for j in range(hc)]
+        ol = [sum(pre[j] * resid_cur[j][hh] for j in range(hc))
+              for hh in range(h)]
+        ol = [bf16(v) for v in ol]
+        sumsq = sum(v * v for v in ol)
+        r = rsqrt(sumsq / h + norm_eps)
+        layer = [bf16(ol[hh] * r * norm_w[hh]) for hh in range(h)]
+        return post, comb, layer
+
+    def stock_pipeline():
+        # kernel 1: mhc_fused (split_k=1, full tile) -> materialized outputs
+        resid_cur = [[bf16(post_in[j] * x[hh]
+                           + sum(comb_in[k][j] * resid[k][hh]
+                                 for k in range(hc)))
+                      for hh in range(h)] for j in range(hc)]
+        yp = [sum(fn[n][j][hh] * resid_cur[j][hh]
+                  for j in range(hc) for hh in range(h))
+              for n in range(n_out)]
+        rp = sum(resid_cur[j][hh] ** 2
+                 for j in range(hc) for hh in range(h))
+        # kernel 2: big_fuse_with_norm reads the intermediates back
+        r = rsqrt(rp / (hc * h) + rms_eps)
+        mixes = [yp[n] * r for n in range(n_out)]
+        post, comb, layer = gates_and_norm(mixes, resid_cur)
+        return post, comb, layer
+
+    def onepass_pipeline():
+        # the fused kernel's phase order: same formulas, intermediates stay
+        # in-register; resid_cur goes to global once and is re-read (bf16).
+        resid_cur = [[bf16(post_in[j] * x[hh]
+                           + sum(comb_in[k][j] * resid[k][hh]
+                                 for k in range(hc)))
+                      for hh in range(h)] for j in range(hc)]
+        acc = [sum(fn[n][j][hh] * resid_cur[j][hh]
+                   for j in range(hc) for hh in range(h))
+               for n in range(n_out)]
+        sqr = sum(resid_cur[j][hh] ** 2
+                  for j in range(hc) for hh in range(h))
+        r = rsqrt(sqr / (hc * h) + rms_eps)
+        mixes = [acc[n] * r for n in range(n_out)]
+        post, comb, layer = gates_and_norm(mixes, resid_cur)
+        return post, comb, layer
+
+    sp, sc, sl = stock_pipeline()
+    fp_, fc, fl = onepass_pipeline()
+    check(sp == fp_, "post_mix identical between stock and onepass")
+    check(sc == fc, "comb_mix identical between stock and onepass")
+    check(sl == fl, "layer_input identical between stock and onepass")
+    # semantic anchors: sinkhorn output is ~doubly stochastic; the normed
+    # layer_input has ~unit RMS when norm_weight == 1
+    colsums = [sum(sc[j][k] for j in range(hc)) for k in range(hc)]
+    check(all(abs(v - 1.0) < 1e-3 for v in colsums),
+          f"sinkhorn columns ~1: {sum(colsums) / hc:.4f}")
+    rms_out = _m.sqrt(sum(v * v for v in sl) / h)
+    check(abs(rms_out - 1.0) < 0.3, f"layer_input RMS ~1: {rms_out:.3f}")
+
+    # gate + contract functions from the dispatcher takeover
+    ns = load_defs(
+        "overlay/tilelang.py",
+        {"_ONEPASS_ENV", "_deneb_onepass_enabled", "_deneb_onepass_ok"},
+        {"os": os},
+    )
+    saved = os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
+    try:
+        check(not ns["_deneb_onepass_enabled"](),
+              "ONEPASS default off")
+        os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"
+        check(ns["_deneb_onepass_enabled"](), "ONEPASS env arms")
+        ok = ns["_deneb_onepass_ok"]
+        check(ok(4096, 4), "GLM shapes admit onepass")
+        check(not ok(4096, 8),
+              "n_out=80 exceeds one warp's write span -> refuse")
+        check(not ok(1000, 4), "hidden not n_thr-exact -> refuse")
+    finally:
+        if saved is None:
+            os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
+        else:
+            os.environ["VLLM_GLM53_MHC_ONEPASS"] = saved
+
+    print("  mhc onepass math ................ OK")
+
 
 if __name__ == "__main__":
     test_skip_topk()
@@ -1746,4 +1901,5 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
+    test_mhc_onepass_math()
     print(f"all OK ({PASS} checks)")
