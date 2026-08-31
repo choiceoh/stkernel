@@ -36,7 +36,7 @@ if [ -f "$PROFILE_ENV" ]; then
   for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-            EXTRA_ENV $_vllm_keys; do
+            EXTRA_ENV LOAD_FORMAT $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -82,6 +82,20 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # b12x EP: remaps global top-k onto a local-only wrapper (+ dummy expert).
 # Off by default -- the TP-sharded path is the measured one. ENABLE_EP=1
 # sends --enable-expert-parallel (MoE TP becomes 1, experts shard).
+# Weight loading is the whole boot: 340 s of an 11 min cold start, of which
+# ~161 s is reading 185 GB at 1.15 GB/s and the rest is per-tensor work. vLLM's
+# "instanttensor" does distributed loading with pipelined prefetch and direct
+# I/O; a deploy report on identical hardware measured 15x, which would take the
+# boot under 5 min. That report also says it can cause SILENT RANK DEATH in
+# multi-node, so it stays opt-in and every boot that uses it must clear the
+# generation check before its numbers are read.
+LOAD_FORMAT="${LOAD_FORMAT:-auto}"
+case "$LOAD_FORMAT" in
+  auto|safetensors|instanttensor) ;;
+  *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
+esac
+[ "$LOAD_FORMAT" = auto ] || echo "load-format: $LOAD_FORMAT (default is auto)"
+
 ENABLE_EP="${ENABLE_EP:-0}"
 case "$ENABLE_EP" in
   0|1) ;;
@@ -431,6 +445,7 @@ SERVE_ARGS="$MODEL_PATH \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
+--load-format $LOAD_FORMAT \
 ${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
