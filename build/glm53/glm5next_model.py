@@ -105,6 +105,21 @@ from .multimodal import (
 
 logger = init_logger(__name__)
 
+
+def _validate_decodable_vocab_bound(
+    decodable_vocab: int,
+    model_vocab: int,
+) -> int:
+    """Reject tokenizer bounds that would address past the target head."""
+    if decodable_vocab > model_vocab:
+        raise ValueError(
+            "decodable vocabulary cannot exceed target model vocabulary "
+            f"({decodable_vocab} > {model_vocab}); check "
+            "VLLM_GLM53_DECODABLE_VOCAB and tokenizer.json"
+        )
+    return decodable_vocab
+
+
 class Glm5NextMLP(nn.Module):
     def __init__(
         self,
@@ -970,8 +985,9 @@ class Glm5NextForCausalLM(
         )
         # LM head rows the tokenizer cannot decode are live argmax candidates
         # (see _decodable_vocab_size). Mask them in compute_logits.
-        self._decodable_vocab = decodable_vocab_size(
-            vllm_config.model_config.tokenizer
+        self._decodable_vocab = _validate_decodable_vocab_bound(
+            decodable_vocab_size(vllm_config.model_config.tokenizer),
+            self.config.vocab_size,
         )
         self._orphan_hits: torch.Tensor | None = None
         self._orphan_calls = 0
