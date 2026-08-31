@@ -1005,8 +1005,13 @@ def test_b12x_ep_routing() -> None:
             "remap_b12x_ep_tensors",
             "b12x_ep_kernel_expert_count",
             "b12x_ep_pad_dim0",
+            "b12x_ep_should_compact",
+            "b12x_ep_compact_enabled",
+            "compact_b12x_ep_pairs",
+            "B12X_EP_COMPACT_MIN_ROUTED",
+            "_ep_buf",
         },
-        {},
+        {"os": os},
     )
     slot = ns["remap_b12x_ep_slot"]
     remap = ns["remap_b12x_ep_routing"]
@@ -1084,6 +1089,23 @@ def test_b12x_ep_routing() -> None:
     )
     check(ids4 == [[2, 2]] and weights4 == [[0.0, 0.0]], "all-remote -> dummy")
 
+    should = ns["b12x_ep_should_compact"]
+    compact = ns["compact_b12x_ep_pairs"]
+    check(ns["B12X_EP_COMPACT_MIN_ROUTED"] == 640, "compact cutover is kernel 640")
+    check(not should(256), "decode GRAPH_CAP=32 * 8 stays on dummy remap")
+    check(not should(640), "cutover is exclusive")
+    check(should(641), "prefill crosses compact")
+    check(not should(4096, enabled=False), "compact env off")
+    check(ns["b12x_ep_compact_enabled"](lambda _k, _d=None: "1"), "compact default on")
+    check(not ns["b12x_ep_compact_enabled"](lambda _k, _d=None: "0"),
+          "compact env 0")
+    tok, loc, sc = compact(ids, weights, dummy=2)
+    check(tok == [0, 0, 1, 1] and loc == [0, 1, 0, 1],
+          f"compact pairs: {tok} {loc}")
+    check(sc == [0.4, 0.3, 0.25, 0.1], f"compact scales: {sc}")
+    tok4, loc4, sc4 = compact(ids4, weights4, dummy=2)
+    check(tok4 == [] and loc4 == [] and sc4 == [], "all-remote compact is empty")
+
     check(pad_dim0(72, 72, required=True, name="w13_weight") == "pad",
           "local E must pad")
     check(pad_dim0(73, 72, required=True, name="w13_weight") == "already",
@@ -1158,6 +1180,27 @@ def test_b12x_ep_routing() -> None:
         check([round(x, 6) for row in got_w.tolist() for x in row]
               == [round(x, 6) for row in list_w for x in row],
               "tensor remap must match list remap scales")
+
+    scratch_ids = torch.empty((2, 2), dtype=torch.int32)
+    scratch_scales = torch.empty((2, 2), dtype=torch.float32)
+    got_ids, got_w = tensor_remap(
+        torch.tensor([[-1, 4], [5, -1]], dtype=torch.int64),
+        torch.tensor([[0.9, 0.1], [0.8, 0.2]], dtype=torch.float32),
+        num_local_experts=2,
+        expert_map=torch.tensor(emap_wrap, dtype=torch.int32),
+        out_ids=scratch_ids,
+        out_scales=scratch_scales,
+        long_idx=torch.empty((2, 2), dtype=torch.int64),
+        mapped=torch.empty((2, 2), dtype=torch.int32),
+        remote=torch.empty((2, 2), dtype=torch.bool),
+        tmp_a=torch.empty((2, 2), dtype=torch.bool),
+        tmp_b=torch.empty((2, 2), dtype=torch.bool),
+    )
+    check(got_ids.data_ptr() == scratch_ids.data_ptr(), "scratch ids reused")
+    check(got_w.data_ptr() == scratch_scales.data_ptr(), "scratch scales reused")
+    check(got_ids.tolist() == [[2, 0], [1, 2]], "in-place remap ids")
+    check([round(x, 6) for row in got_w.tolist() for x in row]
+          == [0.0, 0.1, 0.8, 0.0], "in-place remap scales")
     print("  b12x EP routing ................ OK")
 
 
@@ -1215,10 +1258,19 @@ def test_b12x_ep_launcher() -> None:
           "b12x must accept the vLLM expert_map under EP")
     check("return remap_b12x_ep_tensors(" in overlay,
           "_remap_ep_tensors must call remap_b12x_ep_tensors, not a private copy")
-    check("idx.clamp(0, map_len - 1)" in overlay,
+    check("torch.gather(expert_map, 0, long_idx.reshape(-1), out=mapped.reshape(-1))"
+          in overlay,
+          "tensor expert_map gather must be in-place")
+    check("long_idx.clamp_(0, map_len - 1)" in overlay,
           "tensor expert_map gather must clamp after the in-range mask")
     check("b12x_ep_pad_dim0(" in overlay,
           "_pad_dummy_expert must use b12x_ep_pad_dim0 (no silent continue)")
+    check("def _apply_ep_compact(" in overlay,
+          "prefill must drop dummy slots instead of GEMMing them")
+    check("ABORT: ENABLE_EP=1 GRAPH_CAP=" in text,
+          "ENABLE_EP=1 must refuse GRAPH_CAP that captures past the compact cutover")
+    check("VLLM_B12X_EP_COMPACT=${VLLM_B12X_EP_COMPACT:-1}" in text,
+          "compact flag must reach the container")
 
     check("ABORT: ENABLE_EP must be 0 or 1" in text,
           "ENABLE_EP must refuse anything other than 0 or 1")

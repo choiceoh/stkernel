@@ -133,6 +133,45 @@ def remap_b12x_ep_routing(
     return out_ids, out_w
 
 
+# b12x static→dynamic cutover is routed_rows = tokens * top_k against 640.
+# Decode graphs at GRAPH_CAP=32 * top_k=8 = 256 stay on the dummy remap
+# (fixed shape, alloc-free). Prefill crosses 640 and drops dummy slots.
+B12X_EP_COMPACT_MIN_ROUTED = 640
+
+
+def b12x_ep_compact_enabled(env_get=os.environ.get) -> bool:
+    return env_get("VLLM_B12X_EP_COMPACT", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def b12x_ep_should_compact(
+    routed_pairs,
+    *,
+    enabled=True,
+    min_routed=B12X_EP_COMPACT_MIN_ROUTED,
+) -> bool:
+    return bool(enabled) and int(routed_pairs) > int(min_routed)
+
+
+def compact_b12x_ep_pairs(ids, weights, *, dummy):
+    """Keep only local slots. Returns (token_index, local_ids, scales)."""
+    tok, loc, sc = [], [], []
+    for t, (row_i, row_w) in enumerate(zip(ids, weights)):
+        for expert, weight in zip(row_i, row_w):
+            if int(expert) != dummy:
+                tok.append(t)
+                loc.append(int(expert))
+                sc.append(float(weight))
+    return tok, loc, sc
+
+
+def _ep_buf(existing, shape, dtype, device):
+    if existing is not None:
+        return existing
+    return torch.empty(shape, dtype=dtype, device=device)
+
+
 def remap_b12x_ep_tensors(
     topk_ids,
     topk_weights,
@@ -142,44 +181,57 @@ def remap_b12x_ep_tensors(
     expert_map=None,
     out_ids=None,
     out_scales=None,
+    long_idx=None,
+    mapped=None,
+    remote=None,
+    tmp_a=None,
+    tmp_b=None,
 ):
     """Runtime remap. Same slot rule as ``remap_b12x_ep_slot``.
 
-    ``apply`` writes into preallocated ``out_*`` views. Tests call this
-    directly (CPU torch) so the gather path is not a second, untested copy.
+    All intermediates take ``out=`` / in-place ops when scratch buffers
+    are passed. ``apply`` preallocates those once; a call that omits them
+    (tests) allocates for that call only.
     """
-    if out_ids is None:
-        out_ids = torch.empty(
-            topk_ids.shape, dtype=torch.int32, device=topk_ids.device
-        )
-    if out_scales is None:
-        out_scales = torch.empty_like(topk_weights)
+    shape = topk_ids.shape
+    device = topk_ids.device
+    dummy = num_local_experts
+    out_ids = _ep_buf(out_ids, shape, torch.int32, device)
+    out_scales = _ep_buf(out_scales, shape, topk_weights.dtype, device)
+    remote = _ep_buf(remote, shape, torch.bool, device)
+    tmp_a = _ep_buf(tmp_a, shape, torch.bool, device)
+    tmp_b = _ep_buf(tmp_b, shape, torch.bool, device)
 
     if expert_map is not None:
-        idx = topk_ids.to(dtype=torch.long)
         map_len = int(expert_map.size(0))
-        # Clamp is only a safe gather index. Slots outside [0, map_len)
-        # stay remote — including -1, which would otherwise wrap.
         if map_len <= 0:
-            remote = torch.ones(
-                idx.shape, dtype=torch.bool, device=idx.device
-            )
-            out_ids.fill_(num_local_experts)
-        else:
-            in_range = (idx >= 0) & (idx < map_len)
-            mapped = expert_map[idx.clamp(0, map_len - 1)]
-            remote = (~in_range) | (mapped < 0)
-            out_ids.copy_(mapped.to(dtype=torch.int32))
-    else:
-        mapped = topk_ids.to(dtype=torch.int32) - int(local_expert_offset)
-        remote = (
-            (topk_ids < 0)
-            | (mapped < 0)
-            | (mapped >= num_local_experts)
-        )
+            out_ids.fill_(dummy)
+            out_scales.copy_(topk_weights)
+            out_scales.zero_()
+            return out_ids, out_scales
+        long_idx = _ep_buf(long_idx, shape, torch.int64, device)
+        mapped = _ep_buf(mapped, shape, expert_map.dtype, device)
+        long_idx.copy_(topk_ids)
+        torch.ge(long_idx, 0, out=tmp_a)
+        torch.lt(long_idx, map_len, out=tmp_b)
+        torch.logical_and(tmp_a, tmp_b, out=tmp_a)
+        # in_range lives in tmp_a. Clamp is only a safe gather index.
+        long_idx.clamp_(0, map_len - 1)
+        torch.gather(expert_map, 0, long_idx.reshape(-1), out=mapped.reshape(-1))
+        torch.lt(mapped, 0, out=tmp_b)
+        torch.logical_not(tmp_a, out=remote)
+        torch.logical_or(remote, tmp_b, out=remote)
         out_ids.copy_(mapped)
+    else:
+        out_ids.copy_(topk_ids)
+        out_ids.sub_(int(local_expert_offset))
+        torch.lt(topk_ids, 0, out=tmp_a)
+        torch.lt(out_ids, 0, out=tmp_b)
+        torch.logical_or(tmp_a, tmp_b, out=remote)
+        torch.ge(out_ids, num_local_experts, out=tmp_a)
+        torch.logical_or(remote, tmp_a, out=remote)
 
-    out_ids.masked_fill_(remote, num_local_experts)
+    out_ids.masked_fill_(remote, dummy)
     out_scales.copy_(topk_weights)
     out_scales.masked_fill_(remote, 0)
     return out_ids, out_scales
@@ -316,7 +368,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     and indexes weights by the ids it is given (flashinfer #3383). When EP
     is on we construct the wrapper as a local-only MoE (``E = local + 1``),
     remap global top-k ids onto that space, and park remote slots on a
-    dummy expert at scale 0. vLLM's EP all-reduce (DP=1) combines ranks.
+    dummy expert at scale 0. Decode/graph batches stay on that dummy
+    remap (alloc-free scratch). Prefill (routed pairs > 640) drops dummy
+    slots and runs top_k=1 pairs so remote GEMM is not paid. vLLM's EP
+    all-reduce (DP=1) combines ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -355,6 +410,11 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._use_ep = bool(moe_config.moe_parallel_config.use_ep)
         self._ep_ids: torch.Tensor | None = None
         self._ep_scales: torch.Tensor | None = None
+        self._ep_long: torch.Tensor | None = None
+        self._ep_mapped: torch.Tensor | None = None
+        self._ep_remote: torch.Tensor | None = None
+        self._ep_tmp_a: torch.Tensor | None = None
+        self._ep_tmp_b: torch.Tensor | None = None
         self._ep_dummy_padded = False
 
         activation = moe_config.activation
@@ -595,22 +655,31 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self.num_local_experts, self.global_num_experts, self.ep_rank,
         )
 
-    def _ensure_ep_scratch(self, device: torch.device, scale_dtype: torch.dtype) -> None:
+    def _ensure_ep_scratch(
+        self,
+        device: torch.device,
+        scale_dtype: torch.dtype,
+        map_dtype: torch.dtype,
+    ) -> None:
         need = (
             self._ep_ids is None
             or self._ep_ids.device != device
             or self._ep_scales is None
             or self._ep_scales.dtype != scale_dtype
+            or self._ep_mapped is None
+            or self._ep_mapped.dtype != map_dtype
         )
         if not need:
             return
         rows = max(int(self.max_num_tokens or 0), 1)
-        self._ep_ids = torch.empty(
-            (rows, self.topk), dtype=torch.int32, device=device
-        )
-        self._ep_scales = torch.empty(
-            (rows, self.topk), dtype=scale_dtype, device=device
-        )
+        shape = (rows, self.topk)
+        self._ep_ids = torch.empty(shape, dtype=torch.int32, device=device)
+        self._ep_scales = torch.empty(shape, dtype=scale_dtype, device=device)
+        self._ep_long = torch.empty(shape, dtype=torch.int64, device=device)
+        self._ep_mapped = torch.empty(shape, dtype=map_dtype, device=device)
+        self._ep_remote = torch.empty(shape, dtype=torch.bool, device=device)
+        self._ep_tmp_a = torch.empty(shape, dtype=torch.bool, device=device)
+        self._ep_tmp_b = torch.empty(shape, dtype=torch.bool, device=device)
 
     def _remap_ep_tensors(
         self,
@@ -632,7 +701,80 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             expert_map=expert_map,
             out_ids=self._ep_ids[:tokens],
             out_scales=self._ep_scales[:tokens],
+            long_idx=self._ep_long[:tokens],
+            mapped=self._ep_mapped[:tokens],
+            remote=self._ep_remote[:tokens],
+            tmp_a=self._ep_tmp_a[:tokens],
+            tmp_b=self._ep_tmp_b[:tokens],
         )
+
+    def _apply_ep_compact(
+        self,
+        output: torch.Tensor,
+        hidden_states: torch.Tensor,
+        w1: torch.Tensor,
+        w2: torch.Tensor,
+        topk_ids: torch.Tensor,
+        topk_weights: torch.Tensor,
+    ):
+        """Run only local slots as top_k=1 pairs. Eager / prefill only.
+
+        After remap, dummy id = num_local_experts. Dropping those slots
+        is how EP avoids paying GEMM for ~3/4 of routed pairs. Shape is
+        data-dependent, so this path must not run under a CUDA graph.
+        """
+        dummy = self.num_local_experts
+        local = topk_ids != dummy
+        sel = local.reshape(-1).nonzero(as_tuple=False).squeeze(-1)
+        n = int(sel.numel())
+        if n == 0:
+            output.zero_()
+            return output
+
+        tokens = topk_ids.size(0)
+        topk = topk_ids.size(1)
+        token_index = (
+            torch.arange(tokens, device=topk_ids.device, dtype=torch.int64)
+            .unsqueeze(1)
+            .expand(tokens, topk)
+            .reshape(-1)
+            .index_select(0, sel)
+        )
+        pair_ids = topk_ids.reshape(-1).index_select(0, sel).view(n, 1)
+        pair_scales = topk_weights.reshape(-1).index_select(0, sel).view(n, 1)
+        pair_x = hidden_states.index_select(0, token_index)
+        pair_out = torch.empty(
+            (n, hidden_states.size(1)),
+            dtype=output.dtype,
+            device=output.device,
+        )
+
+        from flashinfer.fused_moe import b12x_fused_moe
+
+        kernel_e = self._kernel_num_experts
+        b12x_fused_moe(
+            x=pair_x,
+            w1_weight=w1,
+            w1_weight_sf=self.w1_sf_mma,
+            w2_weight=w2,
+            w2_weight_sf=self.w2_sf_mma,
+            token_selected_experts=pair_ids,
+            token_final_scales=pair_scales,
+            num_experts=kernel_e,
+            top_k=1,
+            num_local_experts=kernel_e,
+            w1_alpha=self.g1_alphas,
+            w2_alpha=self.g2_alphas,
+            fc2_input_scale=self._fc2_input_scale,
+            output=pair_out,
+            activation=self._activation_str,
+            swiglu_alpha=self._swiglu_alpha,
+            swiglu_beta=self._swiglu_beta,
+            swiglu_limit=self._swiglu_limit,
+        )
+        output.zero_()
+        output.index_add_(0, token_index, pair_out)
+        return output
 
     def _ensure_wrapper(self) -> None:
         """Lazily create B12xMoEWrapper on first use."""
@@ -703,10 +845,22 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
                     f"want {expect_e})"
                 )
-            self._ensure_ep_scratch(topk_ids.device, topk_weights.dtype)
+            map_dtype = (
+                expert_map.dtype if expert_map is not None else torch.int32
+            )
+            self._ensure_ep_scratch(
+                topk_ids.device, topk_weights.dtype, map_dtype
+            )
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
+            if b12x_ep_should_compact(
+                topk_ids.size(0) * topk_ids.size(1),
+                enabled=b12x_ep_compact_enabled(),
+            ):
+                return self._apply_ep_compact(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights
+                )
 
         # deneb fork: when the wrapper supports out= (overlay module
         # glm53_b12x_out takes over flashinfer's b12x_moe.py to add it), make
