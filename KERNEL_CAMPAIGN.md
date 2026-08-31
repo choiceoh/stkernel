@@ -177,7 +177,7 @@ constant is unmeasured until the pending boot).
 | dense bf16 projections | 15.44 GB reads ≈ 17 ms | #92/#94 fp8 W8A8 blocks (dsv4's proven scheme, ue8m0/[128,128]), #95 extends to the drafter — −8.7 −1.2 ms expected |
 | gate double launch | 84→42 | #96: the MoE runner re-applies the gate it holds (overlapped with the shared-expert aux stream); our explicit call was pure waste |
 | elementwise 3종 | 441.6 | drafter conv already inductor-fused; eager glue 98/step ≈ 0.85 ms GPU (closed); the rest is the KDA cluster below |
-| **KDA per-layer index/mask** | ~300–400 | **the only big count axis left** — needs the image's `kda.py` taken over by an overlay module; invest iff the µs/kernel constant lands high |
+| **KDA/MLA per-layer index/mask** | 179 (measured subset; the earlier 300–400 estimate included now-fused pieces) | **attributed 2026-08-31**: ~55/step ride the 11 MLA layers' kpool/indexer chain — per-layer custom kernels (inherent) plus a per-step builder (already once, `compute_kpool_tail_slot_mapping` runs in `build()`, not per layer, so no hoist exists); the rest is drafter selector glue around the fp8 head GEMM. No python-hoistable redundancy found — reduction means kernel-level takeover (`kda.py`/indexer), invest iff the µs/kernel constant lands high |
 | MoE output write-back | ~100 | two copies/layer (flashinfer `memcpy32_post` out of the static workspace + our `output.copy_`) — contract-bound by the static-buffer+alias design; removing needs a flashinfer `out=` redesign |
 | mhc 2종 | 179 | structural (attention sits between pre and post_pre) + tiles exhausted R1–R3 — closed |
 | cutlass_80_wmma | 354.7 | bandwidth floor; the fp8 byte diet is the lever, not the kernel (split-K at M=1–8 is reasonable) |
