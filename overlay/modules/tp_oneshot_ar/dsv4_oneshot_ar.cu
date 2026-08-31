@@ -103,6 +103,26 @@ static const char *DEVNAME = "rocep1s0f0";
 // of THIS launch to finish copying -- meaning every block already read
 // tx_seq, so publishing tx_seq = s0+1 cannot be misread as a later sequence.
 // The counter lives past any replay; nothing to reset.
+// Spin discipline. Both loops below read flags that a PEER writes -- ack_seq
+// through the proxy, rxf through the peer NIC -- into RDMA-registered memory.
+// A thread reading them at full rate puts continuous traffic on the same path
+// the write has to travel to become visible, so hammering the flag competes
+// with the arrival it is waiting for. Stay hot for a few reads (a short wait
+// then pays nothing) and afterwards sleep, doubling to a small cap so a long
+// wait stops competing. The cap bounds the latency this can add: 4 us per
+// collective worst case, against a wait believed to be two orders larger.
+#define SPIN_HOT 8
+#define SPIN_NS0 128u
+#define SPIN_NS_MAX 4096u
+
+__device__ __forceinline__ void osar_backoff(int &n, unsigned &ns) {
+  if (++n <= SPIN_HOT) return;
+#if __CUDA_ARCH__ >= 700
+  __nanosleep(ns);
+  ns = ns < SPIN_NS_MAX ? (ns << 1) : SPIN_NS_MAX;
+#endif
+}
+
 #define ARGRID 256
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                           int nbytes) {
@@ -127,9 +147,16 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   const bool timer = (blockIdx.x == 0) && (threadIdx.x == 0);
   long long t0 = timer ? clock64() : 0;
 
-  if (owns && threadIdx.x == 0)
-    while ((c->tx_seq + 1) > (c->ack_seq + RING)) {
-    }
+  if (owns && threadIdx.x == 0) {
+    // tx_seq cannot move while we spin: this launch has not published yet and
+    // the previous launch on this stream already retired. Reading it once
+    // halves the loop's traffic -- only ack_seq, which the proxy advances,
+    // has to be re-read.
+    const uint64_t want = c->tx_seq + 1;
+    int sp = 0;
+    unsigned ns = SPIN_NS0;
+    while (want > c->ack_seq + RING) osar_backoff(sp, ns);
+  }
   long long t1 = timer ? clock64() : 0;
   __syncthreads();
   uint64_t nxt = c->tx_seq + 1;
@@ -160,8 +187,24 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // stays where it always was: after the wait, before reading peer data.
   long long t2 = timer ? clock64() : 0;
   if (owns && threadIdx.x == 0) {
-    while (c->rxf[slot][0] < nxt || c->rxf[slot][1] < nxt ||
-           c->rxf[slot][2] < nxt) {
+    // The old form re-read every peer's flag on every pass, including peers
+    // that had already landed. Remember who arrived and read only the first
+    // one still missing -- same short-circuit shape as before, minus the
+    // repeated reads of flags whose answer cannot change.
+    bool got[NPEER] = {false, false, false};
+    int left = NPEER, sp = 0;
+    unsigned ns = SPIN_NS0;
+    while (left) {
+      for (int q = 0; q < NPEER; q++) {
+        if (got[q]) continue;
+        if (c->rxf[slot][q] >= nxt) {
+          got[q] = true;
+          --left;
+        } else {
+          osar_backoff(sp, ns);
+          break;
+        }
+      }
     }
   }
   long long t3 = timer ? clock64() : 0;
