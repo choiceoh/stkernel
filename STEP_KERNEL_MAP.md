@@ -172,6 +172,43 @@ EP 를 쓸 수 있다면 그 항이 줄어들 여지가 있다. 이 축을 여�
 | 커널 축 PR 6 개 합계 | −1.1 ms (+1.5%) |
 | 스텝의 전문가 읽기 몫 | **41 ms (62%)** — 대역폭 91%, 짤 것 없음 |
 
+## 보충 분해 (2026-09-01 — 기존 트레이스 재분석, 무부팅)
+
+### 기타 150 개의 정체
+
+| 내용 | /스텝 | 비고 |
+|---|---|---|
+| KDA recurrent (`fused_recurrent_gated_delta_rule`) | 34 | SSM 상태 읽·쓰기(~68MB/스텝)가 지배 — 대역폭 하한 |
+| KDA short conv (`_causal_conv1d_update`) | 34 | 상기 recurrent에 붙는 전처리 |
+| kpool 인덱서 갱신 (`_kpool_decode_update*` 등) | 22 | 11 풀어텐션 층 × 2 |
+| 인덕터 글루 오분류 (`triton_poi_fused*`) | ~27 | elementwise 483 의 일부 (그룹 패턴 밖 이름) |
+| `kernel_mha` | 5 | DFlash2 드래프터 5레이어 어텐션으로 판단 (드래프터 축 D≈0 닫힘) |
+| 스펙 메타데이터 prep 1-오프 | ~16 | 각 2-5 us |
+
+전부 0.1~0.6% class — 새 >CV 레버 없음.
+
+### bf16 GEMM 145 개의 grid 귀속
+
+트레이스 grid 차원으로 소유자 특정:
+
+| grid | 개수 | 귀속 |
+|---|---|---|
+| (8,32,1) | 33 | **q_b+kv_b+wq_b (11x3) — bproj fp8 암의 표적과 정확히 일치** (bf16 중 최대 시간 4163us†) |
+| (8,16,1) | 68 | f_b+g_b (34x2) — min(shape)=128 가드 제외 판정 재확인 |
+| (8,48,1) | 5 | 드래프터 QKV 투영 (드래프터 축 닫힘) |
+| (8,2,8) 등 splitK | 44 | wk_weights_proj·기타 소형 |
+
+bproj 암(#131)이 이 리포에서 가장 큰 게이트 자산임이 데이터로 확정.
+
+### KDA 꼬리 — 융합 후보가 소스 접촉으로 소멸
+
+`o_norm` 꼬리(`core_attn_out.copy_(self.o_norm(core_attn_out, g2))`)를 융합
+후보로 스코핑했다가 소스에서 반전: `layer_norm_gated_fwd`는
+`y = x if out_dtype is None` — **norm 이 이미 in-place** (커널이 x에 직접 기록),
+self `copy_`는 ATen 쇼트서킷으로 커널 미발생. conv→recurrent 융합만 남지만
+상태 읽기가 지배라 0.1~0.2% — 채택 바 아래로 확정. 교훈: 인구조사의 그룹 합계는
+**소스를 읽기 전까지는 개선 여지가 아니라 의문점**이다.
+
 ## 재현
 
 ```bash
