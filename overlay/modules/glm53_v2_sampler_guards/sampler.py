@@ -29,6 +29,16 @@ from vllm.v1.worker.gpu.sample.thinking_budget import ThinkingBudgetState
 from vllm.v1.worker.gpu.states import RequestState
 
 
+def _thinking_budget_requires_logits_processing(
+    thinking_budget_state,
+    idx_mapping_np: np.ndarray,
+) -> bool:
+    """Keep the disabled state lazy while testing active request slots."""
+    return thinking_budget_state.enabled and bool(
+        np.any(thinking_budget_state.use_thinking_budget[idx_mapping_np])
+    )
+
+
 class Sampler:
     def __init__(
         self,
@@ -224,8 +234,8 @@ class Sampler:
             return True
         if np.any(self.bad_words_state.num_bad_words.np[idx_mapping_np] > 0):
             return True
-        if self.thinking_budget_state.enabled and np.any(
-            self.thinking_budget_state.use_thinking_budget[idx_mapping_np]
+        if _thinking_budget_requires_logits_processing(
+            self.thinking_budget_state, idx_mapping_np
         ):
             return True
 

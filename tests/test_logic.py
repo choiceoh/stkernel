@@ -1798,12 +1798,51 @@ def test_glm53_v2_overlay_contracts() -> None:
     )
     check(
         all(field in update_source for field in hard_fields)
+        or "_has_target_hard_mask(request)" in update_source,
+        "V2 scheduler must test target-only hard masks before accepting drafts",
+    )
+    check(
+        "_has_target_hard_mask(request)" in update_source
         and "request.spec_token_ids = []" in update_source,
         "V2 scheduler must drop drafts when target-only hard masks are active",
     )
     check(
         all(field not in update_source for field in ("top_k", "top_p", "min_p")),
         "common soft sampling controls must not disable speculation wholesale",
+    )
+
+    hard_mask = load_defs(
+        "overlay/scheduler.py",
+        {"_has_target_hard_mask"},
+        {"Request": object},
+    )["_has_target_hard_mask"]
+
+    def hard_req(num_output_tokens=0, **overrides):
+        params = dict(
+            allowed_token_ids=None,
+            logit_bias=None,
+            bad_words=None,
+            thinking_token_budget=None,
+            min_tokens=0,
+        )
+        params.update(overrides)
+        return types.SimpleNamespace(
+            sampling_params=types.SimpleNamespace(**params),
+            num_output_tokens=num_output_tokens,
+        )
+
+    check(not hard_mask(hard_req()), "default sampling must retain speculation")
+    for request in (
+        hard_req(allowed_token_ids=[1]),
+        hard_req(logit_bias={1: -float("inf")}),
+        hard_req(bad_words=["blocked"]),
+        hard_req(thinking_token_budget=0),
+        hard_req(num_output_tokens=2, min_tokens=3),
+    ):
+        check(hard_mask(request), f"hard target mask not detected: {request}")
+    check(
+        not hard_mask(hard_req(num_output_tokens=3, min_tokens=3)),
+        "min_tokens must stop disabling speculation at its exact boundary",
     )
 
     sampler_source = open(
@@ -1824,9 +1863,44 @@ def test_glm53_v2_overlay_contracts() -> None:
     requires_source = ast.get_source_segment(sampler_source, requires_processing)
     assert requires_source is not None
     check(
-        "self.thinking_budget_state.enabled" in requires_source
-        and "use_thinking_budget[idx_mapping_np]" in requires_source,
+        "_thinking_budget_requires_logits_processing(" in requires_source,
         "thinking-budget-only requests must not skip logits processing",
+    )
+    thinking_required = load_defs(
+        "overlay/sampler.py",
+        {"_thinking_budget_requires_logits_processing"},
+        {
+            "np": types.SimpleNamespace(
+                ndarray=object, any=lambda values: any(values)
+            )
+        },
+    )["_thinking_budget_requires_logits_processing"]
+
+    class Slots:
+        def __init__(self, values):
+            self.values = values
+
+        def __getitem__(self, _indices):
+            return self.values
+
+    disabled = types.SimpleNamespace(enabled=False)
+    active = types.SimpleNamespace(
+        enabled=True, use_thinking_budget=Slots([False, True])
+    )
+    inactive = types.SimpleNamespace(
+        enabled=True, use_thinking_budget=Slots([False, False])
+    )
+    check(
+        not thinking_required(disabled, [0]),
+        "disabled thinking budgets must not touch their lazy request buffer",
+    )
+    check(
+        thinking_required(active, [0, 1]),
+        "an active thinking budget must require logits processing",
+    )
+    check(
+        not thinking_required(inactive, [0, 1]),
+        "inactive request slots must retain the fast path",
     )
 
     deploy = open(

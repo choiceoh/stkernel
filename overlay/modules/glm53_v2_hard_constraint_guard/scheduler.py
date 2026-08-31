@@ -66,6 +66,21 @@ from vllm.v1.utils import record_function_or_nullcontext
 logger = init_logger(__name__)
 
 
+def _has_target_hard_mask(request: Request) -> bool:
+    """Whether the target has a static support mask absent from the draft."""
+    sampling_params = request.sampling_params
+    return sampling_params is not None and (
+        sampling_params.allowed_token_ids is not None
+        or bool(sampling_params.logit_bias)
+        or bool(sampling_params.bad_words)
+        or sampling_params.thinking_token_budget is not None
+        or (
+            sampling_params.min_tokens > 0
+            and request.num_output_tokens < sampling_params.min_tokens
+        )
+    )
+
+
 class Scheduler(SchedulerInterface):
     def __init__(
         self,
@@ -2191,17 +2206,7 @@ class Scheduler(SchedulerInterface):
             # next step instead of paying to verify a proposal that cannot be
             # accepted. Grammar keeps its existing token-by-token validation
             # below because it can preserve a valid prefix.
-            sampling_params = request.sampling_params
-            if sampling_params is not None and (
-                sampling_params.allowed_token_ids is not None
-                or bool(sampling_params.logit_bias)
-                or bool(sampling_params.bad_words)
-                or sampling_params.thinking_token_budget is not None
-                or (
-                    sampling_params.min_tokens > 0
-                    and request.num_output_tokens < sampling_params.min_tokens
-                )
-            ):
+            if _has_target_hard_mask(request):
                 request.spec_token_ids = []
                 continue
 
