@@ -29,7 +29,7 @@ if [ -f "$PROFILE_ENV" ]; then
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
-            EXTRA_ENV MAX_NUM_BATCHED $_vllm_keys; do
+            EXTRA_ENV MAX_NUM_BATCHED MOE_CUTOVER $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -86,6 +86,39 @@ case "$GRAPH_DEBUG" in
   0|1) ;;
   *) echo "ABORT: GRAPH_DEBUG must be 0 or 1 (got $GRAPH_DEBUG)"; exit 2 ;;
 esac
+
+# b12x MoE backend cutover (GLM lane #58 exposed this; the knob was here all
+# along, unreachable). flashinfer picks micro / static / dynamic by ROUTED ROWS
+# = tokens * top_k, and this image's dispatcher reads the threshold from env
+# (moe_dispatch.py _get_static_compact_cutover_pairs, default 640; the micro
+# cutover 20/40 is a hardcoded constant, not this knob).
+#
+# This model is top_k=6, so with SPEC_TOKENS=5 the decode batch is C*6 tokens
+# and the routed rows are C*36:
+#
+#   C=1   36 rows   micro        C=16   576 rows   static
+#   C=2   72 rows   static       C=24   864 rows   DYNAMIC
+#   C=8  288 rows   static       C=32  1152 rows   DYNAMIC
+#
+# The static->dynamic switch lands at C~17.8 -- INSIDE the concurrency sweep
+# that adopted MAX_NUM_SEQS=32 (C=16 290 -> C=24 340 -> C=32 386 tok/s). C=16
+# was measured on the static kernel and C=24/C=32 on the dynamic one, so that
+# curve straddles a kernel change nobody knew was there. Which side is faster
+# at C>=24 has never been asked, and MoE is 30.9% of the decode step (14.85 ms)
+# -- the largest bucket with any software lever left (GEMM 42.1% is weight
+# streaming at the bandwidth floor).
+#
+# Unset = the image's 640, byte-identical to every boot so far. Raising it past
+# C*36 keeps high concurrency on static; the cost is the static workspace,
+# which is sized from this value at init (moe_dispatch sizes static_max_rows by
+# the cutover precisely to avoid paying for rows it will never serve). So this
+# is a boot knob and a memory trade, not a free switch.
+MOE_CUTOVER="${MOE_CUTOVER:-}"
+if [ -n "$MOE_CUTOVER" ]; then
+  case "$MOE_CUTOVER" in
+    ''|*[!0-9]*) echo "ABORT: MOE_CUTOVER must be a non-negative integer (got '$MOE_CUTOVER')"; exit 2 ;;
+  esac
+fi
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
@@ -254,6 +287,9 @@ $(for _k in ${_vllm_keys:-}; do if [ -n "${!_k:-}" ]; then printf -- "-e %s=%s "
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
 if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi
+if [ -n "$MOE_CUTOVER" ]; then
+  ENVV="$ENVV -e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"
+fi
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
 if ((FP8HEAD == 1)); then
@@ -537,6 +573,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
 echo "[hy4] compile-cfg=${COMPILE_CFG}"
+echo "[hy4] moe-cutover=${FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS:-640 (image default)}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \

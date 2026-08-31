@@ -3493,6 +3493,28 @@ def test_launcher_parity_guards() -> None:
           "the foreign-stack checks must be skipped under DRY_RUN like every "
           "other check that asks a machine about itself")
 
+    # 3b -- the b12x MoE cutover has to be reachable and integer-only
+    check('MOE_CUTOVER="${MOE_CUTOVER:-}"' in src, "no MOE_CUTOVER knob")
+    check("-e FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER" in src,
+          "MOE_CUTOVER never reaches the container")
+    moe = src[src.index('MOE_CUTOVER="${MOE_CUTOVER:-}"'):]
+    check("exit 2" in moe[:500], "MOE_CUTOVER accepts a non-integer")
+    check('if [ -n "$MOE_CUTOVER" ]; then\n  ENVV="$ENVV -e '
+          'FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS=$MOE_CUTOVER"' in src,
+          "the cutover must be exported only when set -- an unconditional "
+          "-e ...= passes an EMPTY value, and int('') raises inside "
+          "flashinfer's _get_static_compact_cutover_pairs")
+    # the arithmetic that makes this an axis at all has to stay in the file:
+    # top_k=6 * 6 tokens per seq puts the static->dynamic switch at C~17.8,
+    # inside the sweep that adopted MAX_NUM_SEQS=32.
+    rationale = src[src.index("b12x MoE backend cutover"):
+                    src.index('MOE_CUTOVER="${MOE_CUTOVER:-}"')]
+    for token in ("top_k=6", "C~17.8", "864 rows", "1152 rows"):
+        check(token in rationale,
+              f"the cutover rationale lost {token!r} -- without the routed-row "
+              "arithmetic nobody can see that the static->dynamic switch lands "
+              "inside the sweep that adopted MAX_NUM_SEQS=32")
+
     # 3 -- GRAPH_DEBUG reaches the container, and only as 0/1
     check('GRAPH_DEBUG="${GRAPH_DEBUG:-0}"' in src, "no GRAPH_DEBUG knob")
     check('if [ "$GRAPH_DEBUG" = 1 ]; then ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"; fi'

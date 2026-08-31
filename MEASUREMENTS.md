@@ -1766,6 +1766,8 @@ GLM-5.3-Flash 레인 전량(`#48~#153`, 프로필이 생긴 #48부터)을 dsv4 �
 | **MHC ONEPASS (융합 단일 런치)** | #133 #137 #153 | **★상한 기각** — 아래 |
 | **custom_ops 융합 장벽 A/B** | #112 #116 | **채택(수정 이식)** — 아래. glm53 쪽 결함도 같이 고침 |
 | EXTRA_ENV 진단 통로 | #118 | **채택** — dsv4 런처에 없던 통로 |
+| **b12x MoE static/dynamic 컷오버 노브** | #58 | **★채택(노브) + 열린 축** — 같은 env를 dsv4 이미지도 읽는다. 아래 |
+| 그래프 재생 주소 검사 · 프로필 미발견 · 경쟁 스택 거부 | #61 #59 + glm53 런처 | **채택** — 런처 패리티, 아래 |
 | MAX_BATCHED 프리필 예산 | #117 | **열린 축으로 접수** — 측정 대기 (아래) |
 
 ### b12x 계열 — 두 이미지의 통합 방식 자체가 다르다
@@ -1926,6 +1928,59 @@ opacity가 필요할 수 있다 — 부팅 실패면 '장벽 필요'가 답이�
 `test_dsv4_launcher_axes`가 기본 JSON 리터럴을 고정하고, 변형 주입으로 그 고정이
 실제로 무는 것까지 확인했다.
 
+### ★열린 축 — b12x MoE 백엔드 컷오버 (dsv4는 노브가 없었다)
+
+**이번 심사에서 나온 가장 큰 축이다.** #58이 glm53에 `MOE_CUTOVER`를 열었는데,
+그 노브가 읽는 env는 **dsv4 이미지의 flashinfer도 그대로 읽는다** — 이미지에서
+직접 확인했다:
+
+```
+moe_dispatch.py:197  _get_static_compact_cutover_pairs(activation_precision)
+  cutover_names = ("FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS", ...)
+  _STATIC_COMPACT_CUTOVER_PAIRS_DEFAULT = 640
+  _MICRO_COMPACT_CUTOVER_PAIRS = 20 / _MULTI_TOPK = 40   (하드코딩, 이 노브 아님)
+```
+
+flashinfer는 **routed rows = tokens × top_k** 로 micro / static / dynamic 을
+고른다. dsv4는 `num_experts_per_tok = 6`(체크포인트 config 확인)이고 SPEC_TOKENS=5
+이므로 디코드 배치는 C×6 토큰, routed rows 는 **C×36**:
+
+| C | M(토큰) | routed rows | 커널 |
+|---|---|---|---|
+| 1 | 6 | 36 | **micro** |
+| 2 | 12 | 72 | static |
+| 8 | 48 | 288 | static |
+| 16 | 96 | 576 | static |
+| 24 | 144 | 864 | **dynamic** |
+| 32 | 192 | 1,152 | **dynamic** |
+
+**static→dynamic 전환이 C≈17.8 에 있다.** 그런데 `MAX_NUM_SEQS` 16→32 채택
+근거였던 동시성 스윕이 정확히 그 위를 지나간다 — "C=16 290 → C=24 340 → C=32
+386 tok/s, +33%". **C=16은 static 커널에서, C=24/32는 dynamic 커널에서 잰
+값이다.** 그 곡선은 아무도 몰랐던 커널 교체를 가로지른다. 어느 쪽이 C≥24에서
+빠른지는 물어본 적이 없다.
+
+상한: MoE 는 디코드 스텝의 **30.9%(14.85 ms)** 이고, GEMM 42.1%가 가중치
+스트리밍 물리 바닥인 이 스텝에서 **소프트웨어 레버가 남은 최대 버킷**이다.
+두 커널 차이가 10%만 나도 1.5 ms/step ≈ 3.5% — 1% 바를 크게 넘는다. 방향은
+미지수이고, 그래서 편집이 아니라 노브다.
+
+`MOE_CUTOVER` 를 dsv4 런처에 열었다. 미설정 = 이미지 기본 640 = 지금까지의 모든
+부팅과 동일. **빈 값을 내보내지 않는 것이 계약**이다 — 무조건 `-e ...=` 하면 빈
+문자열이 가고 flashinfer 의 `int(cutover)` 가 죽는다(테스트가 고정).
+
+브래킷(엔진 다운, base→cand→base):
+
+```bash
+systemctl --user stop dsv4-tp4
+MOE_CUTOVER=2048 bash launchers/start-hy4-tp4.sh    # C=32 까지 static 유지
+```
+
+게이트: 부팅 로그의 `[hy4] moe-cutover=` 확인 · **C=24/C=32 집계 tok/s**(이 축은
+고동시성에서만 나타난다 — C=1 은 36 rows 로 micro 라 무변) · C=1 무회귀 ·
+check-quality 9/9. 메모리 대가도 함께 본다: static 워크스페이스가 이 값으로
+사이징되므로(`static_max_rows`) `GPU KV cache size` 감소를 반드시 기록한다.
+
 ### 열린 축 — dsv4 프리필 예산 (`MAX_NUM_BATCHED` 4096 → 8192)
 
 이번 심사에서 **유일하게 측정 가치가 남은 항목**이다. glm53 레인 #117이 같은
@@ -2015,7 +2070,7 @@ PR #89~#153이 건드린 overlay/modules/*  ∩  dsv4 프로필의 MODULES
 | **측정 통로가 열림** | COMPILE_CFG · CUSTOM_OPS_AXIS · EXTRA_ENV |
 | **거짓 판정 차단** | custom_ops 융합 암(두 레인 모두) |
 | **부팅 없이 종결** | ONEPASS(상한) · b12x 전량(구조) · #83/#95/#98/#141(구조·기존 판정) |
-| **측정 대기** | MAX_NUM_BATCHED 4096→8192 |
+| **측정 대기** | **b12x MoE 컷오버(C≥24, 상한 3.5%)** · MAX_NUM_BATCHED 4096→8192 |
 
 커널 축에서 넘어온 것은 여전히 0이고, 그건 dsv4가 08-11에 선언한 **소프트웨어 축
 종결**("모든 버킷이 물리 바닥 또는 규명·기각 완료")과 일치한다. 인접 레인의 65개
