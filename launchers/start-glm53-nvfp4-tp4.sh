@@ -102,9 +102,13 @@ MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
 # PIECEWISE=1 takes the other branch: drop the attention-quant fusion and get
 # piecewise graphs over prefill. Which is faster here has never been measured.
 if [ "${PIECEWISE:-0}" = 1 ]; then
-  COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true}}}"
+  # Not ${COMPILE_CFG:-{...}}: the JSON's own braces close the expansion early
+  # and the leftover "}}" is appended to whatever the caller passed, so
+  # overriding this produced "trailing characters" from the JSON parser and the
+  # knob could never be used.
+  [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true}}'
 else
-  COMPILE_CFG="${COMPILE_CFG:-{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}}"
+  [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_attn_quant":true}}'
 fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
