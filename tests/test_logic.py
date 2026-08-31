@@ -1756,8 +1756,9 @@ def test_glm53_v2_overlay_contracts() -> None:
         "glm53 must not mount V1-only acceptance overlays on V2 Model Runner",
     )
     check(
-        {"glm53_v2_hard_constraint_guard", "glm53_v2_sampler_guards"} <= modules,
-        "glm53 must mount its active V2 sampling guards",
+        "glm53_v2_sampler_guards" in modules
+        and "glm53_v2_hard_constraint_guard" not in modules,
+        "glm53 must mount only the V2 sampling guard with an exact predicate",
     )
     check(
         "VLLM_SPEC_GATHER_Q=" not in profile,
@@ -1770,93 +1771,6 @@ def test_glm53_v2_overlay_contracts() -> None:
     check(
         "VLLM_DENEB_DROP_AUDIT=1" not in launcher,
         "glm53 launcher must not arm an audit on an inactive code path",
-    )
-
-    scheduler_source = open(
-        _overlay_source("overlay/scheduler.py"), encoding="utf-8"
-    ).read()
-    scheduler_tree = ast.parse(scheduler_source)
-    scheduler_cls = next(
-        node
-        for node in scheduler_tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "Scheduler"
-    )
-    update_drafts = next(
-        node
-        for node in scheduler_cls.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "update_draft_token_ids"
-    )
-    update_source = ast.get_source_segment(scheduler_source, update_drafts)
-    assert update_source is not None
-    hard_fields = (
-        "allowed_token_ids",
-        "logit_bias",
-        "bad_words",
-        "thinking_token_budget",
-        "min_tokens",
-    )
-    check(
-        all(field in update_source for field in hard_fields)
-        or "_has_target_hard_mask(request)" in update_source,
-        "V2 scheduler must test target-only hard masks before accepting drafts",
-    )
-    check(
-        "_has_target_hard_mask(request)" in update_source
-        and "request.spec_token_ids = []" in update_source,
-        "V2 scheduler must drop drafts when target-only hard masks are active",
-    )
-    check(
-        all(field not in update_source for field in ("top_k", "top_p", "min_p")),
-        "common soft sampling controls must not disable speculation wholesale",
-    )
-    update_async = next(
-        node
-        for node in scheduler_cls.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "update_draft_token_ids_in_output"
-    )
-    async_source = ast.get_source_segment(scheduler_source, update_async)
-    assert async_source is not None
-    check(
-        "_has_target_hard_mask(request)" in async_source
-        and "spec_token_ids.clear()" in async_source
-        and "spec_token_ids.extend([-1] * num_invalid_tokens)" in async_source,
-        "async scheduling must invalidate hard-mask drafts without changing shape",
-    )
-
-    hard_mask = load_defs(
-        "overlay/scheduler.py",
-        {"_has_target_hard_mask"},
-        {"Request": object},
-    )["_has_target_hard_mask"]
-
-    def hard_req(num_output_tokens=0, **overrides):
-        params = dict(
-            allowed_token_ids=None,
-            logit_bias=None,
-            bad_words=None,
-            thinking_token_budget=None,
-            min_tokens=0,
-        )
-        params.update(overrides)
-        return types.SimpleNamespace(
-            sampling_params=types.SimpleNamespace(**params),
-            num_output_tokens=num_output_tokens,
-        )
-
-    check(not hard_mask(hard_req()), "default sampling must retain speculation")
-    for request in (
-        hard_req(allowed_token_ids=[1]),
-        hard_req(logit_bias={1: -float("inf")}),
-        hard_req(bad_words=["blocked"]),
-        hard_req(thinking_token_budget=0),
-        hard_req(num_output_tokens=2, min_tokens=3),
-    ):
-        check(hard_mask(request), f"hard target mask not detected: {request}")
-    check(
-        not hard_mask(hard_req(num_output_tokens=3, min_tokens=3)),
-        "min_tokens must stop disabling speculation at its exact boundary",
     )
 
     sampler_source = open(

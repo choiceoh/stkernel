@@ -24,7 +24,7 @@ file, the module was never model-agnostic and has to be split, not overridden.
 | profile | model | modules | state |
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 17 | production |
-| `glm53` | GLM-5.3-Flash NVFP4 | 15 | bring-up, blocked |
+| `glm53` | GLM-5.3-Flash NVFP4 | 14 | bring-up, blocked |
 | `qwen38` | Qwen3.8-Flash-Next NVFP4 | 1 | bring-up |
 
 `glm53` carries its own modules and can load none of `dsv4`'s: its image
@@ -47,17 +47,15 @@ is blocked, says so and names the one flip that would isolate the cause.
 | 상태 | production | bring-up, Korean-token corruption open | bring-up |
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x` | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
-| 모듈 수 | 17 | 15 | 1 |
-| 오버레이 파일 | 21 | 17 | 2 |
+| 모듈 수 | 17 | 14 | 1 |
+| 오버레이 파일 | 21 | 16 | 2 |
 
 `glm53_drop_audit`와 `glm53_sparse_q`는 V1 Model Runner 파일만 교체한다.
 `glm53:v13-b12x`는 V2 Model Runner를 사용하므로 이 둘과
 `VLLM_SPEC_GATHER_Q`는 프로필에서 제외한다. 설정이 켜졌지만 실제
 DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 취급하지 않는다.
-대신 `glm53_v2_hard_constraint_guard`가 target의 정적 hard mask를 draft가
-모르는 요청에서 다음 speculative step을 끄고,
-`glm53_v2_sampler_guards`가 thinking budget만 활성인 요청도 logits 처리
-경로를 반드시 통과시킨다.
+대신 `glm53_v2_sampler_guards`가 thinking budget만 활성인 요청도 logits
+처리 경로를 반드시 통과시킨다.
 
 ### 모듈 × 프로필
 
@@ -91,7 +89,6 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_kpool_tail_select` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_model_wiring` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_oneshot_wiring` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_v2_hard_constraint_guard` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_v2_sampler_guards` | 모델 전용 | 1 | — | · | ● | · |
 
 이식 가능한 모듈은 셋뿐이다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_lm_head`. 셋 다 새로 만드는 파일이라 대체할 베이스가 없고, 그래서 이미지가 달라도 계약이 성립한다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
