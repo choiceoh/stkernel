@@ -1097,7 +1097,7 @@ def test_b12x_ep_routing() -> None:
     should = ns["b12x_ep_should_compact"]
     compact = ns["compact_b12x_ep_pairs"]
     check(ns["B12X_EP_COMPACT_MIN_ROUTED"] == 640, "compact cutover is kernel 640")
-    check(not should(256), "decode GRAPH_CAP=32 * 8 stays on dummy remap")
+    check(not should(256), "decode GRAPH_CAP=32 * 8 stays fixed-shape")
     check(not should(640), "cutover is exclusive")
     check(should(641), "prefill crosses compact")
     check(not should(4096, enabled=False), "compact env off")
@@ -1842,10 +1842,33 @@ def test_mhc_smallm_knob() -> None:
 def test_ep_fixed_pair_plan() -> None:
     ns = load_defs(
         "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
-        {"b12x_ep_fixed_pair_plan"},
+        {
+            "B12X_EP_FIXED_MICRO_MAX_PAIRS",
+            "b12x_ep_fixed_slice_limit",
+            "b12x_ep_fixed_pair_plan",
+        },
         {},
     )
     plan = ns["b12x_ep_fixed_pair_plan"]
+    slice_limit = ns["b12x_ep_fixed_slice_limit"]
+
+    check(ns["B12X_EP_FIXED_MICRO_MAX_PAIRS"] == 8,
+          "fixed EP boundary must match FlashInfer _MICRO_MAX_TOKENS")
+    check(
+        [slice_limit(n) for n in (2048, 8, 4, 0)] == [8, 8, 4, 1],
+          "fixed EP calls must honor both micro and workspace bounds")
+    for pairs, launches in ((8, 1), (16, 2), (32, 4), (17, 3)):
+        limit = slice_limit(32)
+        spans = [
+            (lo, min(lo + limit, pairs))
+            for lo in range(0, pairs, limit)
+        ]
+        check(len(spans) == launches,
+              f"{pairs} pairs must use {launches} micro calls")
+        check(spans[0][0] == 0 and spans[-1][1] == pairs,
+              f"micro slices must cover all {pairs} pairs")
+        check(all(0 < hi - lo <= 8 for lo, hi in spans),
+              f"no {pairs}-pair slice may enter static")
 
     for label, flags in (
         ("typical", [True] * 64 + [False] * 192),
@@ -1853,6 +1876,7 @@ def test_ep_fixed_pair_plan() -> None:
         ("all local", [True] * 256),
         ("one local", [True] + [False] * 255),
         ("interleaved", [i % 4 == 0 for i in range(256)]),
+        ("mixed final slice", [True] * 10 + [False] * 22),
     ):
         src, keep = plan(flags, len(flags))
         local = [i for i, f in enumerate(flags) if f]
@@ -1869,6 +1893,13 @@ def test_ep_fixed_pair_plan() -> None:
         if len(flags) > n > 1:
             check(len(set(src[n:])) > 1,
                   f"padding spreads instead of piling on one pair ({label})")
+        for lo in range(0, len(flags), 8):
+            hi = min(lo + 8, len(flags))
+            real_src = {src[i] for i in range(lo, hi) if keep[i]}
+            padding_src = {src[i] for i in range(lo, hi) if not keep[i]}
+            if real_src:
+                check(padding_src <= real_src,
+                      f"mixed micro slice may only repeat its own rows ({label})")
 
     # no local pairs: shape held, nothing kept, no index out of range
     src, keep = plan([False] * 8, 8)
@@ -1881,6 +1912,43 @@ def test_ep_fixed_pair_plan() -> None:
     src, _ = plan(flags, 60)
     check(set(src) <= {i for i, f in enumerate(flags) if f},
           "plan must never introduce a slot outside the local set")
+
+    source = open(
+        _overlay_source(
+            "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+        ),
+        encoding="utf-8",
+    ).read()
+    tree = ast.parse(source)
+    cls = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "FlashInferB12xExperts"
+    )
+    fixed = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_apply_ep_fixed"
+    )
+    fixed_source = ast.get_source_segment(source, fixed)
+    assert fixed_source is not None
+    check(
+        "limit = b12x_ep_fixed_slice_limit(self.max_num_tokens)"
+        in fixed_source
+        and "for lo in range(0, pairs, limit):" in fixed_source,
+        "runtime fixed path must use the tested micro slice limit",
+    )
+    check(
+        "local_in_slice" in fixed_source
+        and "padding_src = torch.where" in fixed_source,
+        "runtime padding must be planned inside each micro slice",
+    )
+    check(
+        "b12x_fused_moe(" in fixed_source
+        and "top_k=1" in fixed_source
+        and "output=pair_out[lo:hi]" in fixed_source,
+        "fixed path must keep bypassing wrapper.run with top_k=1 output slices",
+    )
 
     print("  EP fixed pair plan ............. OK")
 

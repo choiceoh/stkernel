@@ -136,12 +136,12 @@ fi
 # Compact drops dummy slots when tokens*top_k > 640. That path is eager and
 # data-dependent, so a captured batch must stay at or below the cutover.
 # GRAPH_CAP=32 * top_k=8 = 256 is safe. PIECEWISE graphs prefill, so compact
-# stays off there and dummy remap keeps a fixed shape.
+# stays off there and zero-weight local repeats keep a fixed shape.
 B12X_EP_TOPK="${B12X_EP_TOPK:-8}"
 if [ "$ENABLE_EP" = 1 ]; then
   if [ "${PIECEWISE:-0}" = 1 ]; then
     : "${VLLM_B12X_EP_COMPACT:=0}"
-    echo "ENABLE_EP=1 + PIECEWISE=1: VLLM_B12X_EP_COMPACT=$VLLM_B12X_EP_COMPACT (prefill graphs keep dummy remap)"
+    echo "ENABLE_EP=1 + PIECEWISE=1: VLLM_B12X_EP_COMPACT=$VLLM_B12X_EP_COMPACT (prefill graphs keep fixed-shape repeats)"
   fi
   if [ "${EAGER:-0}" != 1 ] && [ "${VLLM_B12X_EP_COMPACT:-1}" != 0 ]; then
     _ep_routed=$((GRAPH_CAP * B12X_EP_TOPK))
