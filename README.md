@@ -52,6 +52,9 @@ tools/b12x-preflight.py --scan ~/models 4
 static으로 떨어지지 않게 하고, 프리필(`tokens * top_k > 640`)은 원격
 슬롯을 빼서 GEMM하지 않는다. fixed decode의 8-row workspace는 강하게
 보유해 prefill cache 확장이 CUDA graph 주소를 무효화하지 못하게 한다.
+`VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1` 실험은 E=72를 유지한 채 안정적인
+8/16/32-token shape만 top-k=8의 1/2/4 micro 호출로 줄인다. zero-weight
+sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미검증이라 기본 0이다.
 `VLLM_B12X_EP_NO_DUMMY=0`은 zero-weight dummy와 wrapper 경로를 복원하는
 롤백이다. vLLM 의 EP all-reduce 가 랭크를 합친다. `ENABLE_EP=1` 이
 `--enable-expert-parallel` 이다. EP 를 끄면

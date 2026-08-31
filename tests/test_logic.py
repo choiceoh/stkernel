@@ -2100,6 +2100,7 @@ def test_ep_fixed_pair_plan() -> None:
         {
             "B12X_EP_FIXED_MICRO_MAX_PAIRS",
             "read_b12x_ep_bool",
+            "read_b12x_ep_exact_bool",
             "b12x_ep_mode_from_env",
             "require_b12x_ep_micro_limit",
             "b12x_ep_fixed_slice_limit",
@@ -2113,7 +2114,7 @@ def test_ep_fixed_pair_plan() -> None:
     mode_from_env = ns["b12x_ep_mode_from_env"]
     require_micro = ns["require_b12x_ep_micro_limit"]
 
-    check(mode_from_env({}.get) == (True, False),
+    check(mode_from_env({}.get) == (True, False, False),
           "EP mode defaults to fixed no-dummy with micro enabled")
     for raw in ("1", " true ", "YES", "on"):
         check(read_bool("FLAG", False, {"FLAG": raw}.get),
@@ -2140,7 +2141,7 @@ def test_ep_fixed_pair_plan() -> None:
         mode_from_env({
             "VLLM_B12X_EP_DISABLE_MICRO": "1",
             "VLLM_B12X_EP_NO_DUMMY": "0",
-        }.get) == (False, True),
+        }.get) == (False, True, False),
         "plain-static diagnostic is allowed only after disabling no-dummy",
     )
 
@@ -2348,13 +2349,253 @@ def test_ep_fixed_pair_plan() -> None:
     workspace_source = ast.get_source_segment(source, workspace)
     assert workspace_source is not None
     check(
-        "max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS" in workspace_source
-        and "num_topk=1" in workspace_source
+        "max_rows=key.max_rows" in workspace_source
+        and "num_topk=key.top_k" in workspace_source
         and 'backend="static"' in workspace_source,
-        "pinned workspace must stay at the proven 8-row top_k=1 geometry",
+        "pinned workspace allocator must consume the shape-specific key",
     )
 
     print("  EP fixed pair plan ............. OK")
+
+
+def test_b12x_zero_weight_micro() -> None:
+    """Default-off E=72 sentinel skip: exact gate, cache, and hot-path order."""
+    wrapper_path = (
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+    )
+    wrapper_names = {
+        "read_b12x_ep_bool",
+        "read_b12x_ep_exact_bool",
+        "b12x_ep_mode_from_env",
+        "B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS",
+        "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS",
+        "B12X_EP_ZERO_WEIGHT_MICRO_TOPK",
+        "B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS",
+        "b12x_ep_zero_weight_micro_chunks",
+    }
+    wns = load_defs(wrapper_path, wrapper_names, {"os": os})
+    exact_bool = wns["read_b12x_ep_exact_bool"]
+    mode = wns["b12x_ep_mode_from_env"]
+    chunks = wns["b12x_ep_zero_weight_micro_chunks"]
+
+    check(mode({}.get) == (True, False, False),
+          "zero-weight micro must be off by default")
+    check(mode({"VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1"}.get)
+          == (True, False, True), "exact 1 arms the local-only experiment")
+    check(not exact_bool("Z", False, {}.get), "exact bool defaults off")
+    for raw in ("true", "yes", "on", " 1 ", "2", "-1", ""):
+        try:
+            exact_bool("Z", False, {"Z": raw}.get)
+            check(False, f"experimental bool must reject {raw!r}")
+        except ValueError as exc:
+            check("exactly 0 or 1" in str(exc),
+                  f"experimental bool must explain {raw!r}")
+    for flags in (
+        {
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+            "VLLM_B12X_EP_NO_DUMMY": "0",
+        },
+        {
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": "1",
+            "VLLM_B12X_EP_DISABLE_MICRO": "1",
+        },
+    ):
+        try:
+            mode(flags.get)
+            check(False, f"conflicting zero-weight mode must fail: {flags}")
+        except RuntimeError as exc:
+            check("ZERO_WEIGHT_MICRO=1 requires" in str(exc),
+                  "mode conflict must name the required local-only contract")
+
+    expected_chunks = {
+        8: ((0, 8),),
+        16: ((0, 8), (8, 16)),
+        32: ((0, 8), (8, 16), (16, 24), (24, 32)),
+    }
+    for tokens, expected in expected_chunks.items():
+        got = chunks(tokens, 8, 72, enabled=True)
+        check(got == expected, f"{tokens} stable tokens must use {len(expected)} calls")
+        check(all(hi - lo == 8 for lo, hi in got),
+              "every experimental call must be m=8, never single-token")
+    for args in (
+        (1, 8, 72, True), (7, 8, 72, True), (9, 8, 72, True),
+        (24, 8, 72, True), (8, 1, 72, True), (8, 8, 71, True),
+        (8, 8, 72, False),
+    ):
+        check(chunks(*args[:3], enabled=args[3]) == (),
+              f"non-exact wrapper shape must keep fixed fallback: {args}")
+
+    dispatch_path = "overlay/modules/b12x_zero_weight_micro/moe_dispatch.py"
+    dispatch_names = {
+        "_B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS",
+        "_B12X_EP_ZERO_WEIGHT_MICRO_TOKENS",
+        "_B12X_EP_ZERO_WEIGHT_MICRO_TOPK",
+        "_B12X_EP_ZERO_WEIGHT_MICRO_K",
+        "_B12X_EP_ZERO_WEIGHT_MICRO_N",
+        "_B12X_EP_ZERO_WEIGHT_MICRO_SWIGLU_LIMIT",
+        "_b12x_ep_zero_weight_micro_expert_id",
+    }
+    dns = load_defs(dispatch_path, dispatch_names, {})
+    gate = dns["_b12x_ep_zero_weight_micro_expert_id"]
+    exact = dict(
+        enabled=True,
+        state_E=72,
+        weight_E=72,
+        num_tokens=8,
+        k=4096,
+        n=2048,
+        num_topk=8,
+        activation_precision="fp4",
+        quant_mode="nvfp4",
+        activation="swigluoai_uninterleave",
+        swiglu_limit=10.0,
+        forced_backend=None,
+    )
+    check(gate(**exact) == 72, "exact dispatch geometry returns sentinel E")
+    mismatches = {
+        "enabled": False,
+        "state_E": 71,
+        "weight_E": 73,
+        "num_tokens": 7,
+        "k": 2048,
+        "n": 512,
+        "num_topk": 1,
+        "activation_precision": "bf16",
+        "quant_mode": "mxfp4",
+        "activation": "silu",
+        "swiglu_limit": None,
+    }
+    for field, value in mismatches.items():
+        case = dict(exact)
+        case[field] = value
+        check(gate(**case) is None, f"dispatch mismatch {field} must stay stock")
+    forced = dict(exact)
+    forced["forced_backend"] = "micro"
+    try:
+        gate(**forced)
+        check(False, "forced micro must not bypass the sentinel compile flag")
+    except RuntimeError as exc:
+        check("cannot run with forced" in str(exc),
+              "forced-backend conflict must fail before launch")
+
+    routed_rows = exact["num_tokens"] * exact["num_topk"]
+    check(routed_rows == 64 and routed_rows <= exact["state_E"],
+          "prepass map proof requires 64 routed rows <= 72 entries")
+    check(routed_rows - 1 < exact["state_E"],
+          "even 64 unique ids write compact indices only 0..63")
+
+    dispatch_source = open(_overlay_source(dispatch_path), encoding="utf-8").read()
+    dispatch_tree = ast.parse(dispatch_source)
+    helper_node = next(n for n in dispatch_tree.body
+                       if isinstance(n, ast.FunctionDef)
+                       and n.name == "_b12x_ep_zero_weight_micro_expert_id")
+    cache_node = next(n for n in dispatch_tree.body
+                      if isinstance(n, ast.FunctionDef)
+                      and n.name == "_micro_kernel_cache_key")
+    get_node = next(n for n in dispatch_tree.body
+                    if isinstance(n, ast.FunctionDef)
+                    and n.name == "_get_micro_kernel")
+    launch_node = next(n for n in dispatch_tree.body
+                       if isinstance(n, ast.FunctionDef)
+                       and n.name == "launch_sm120_static_moe")
+    helper_source = ast.get_source_segment(dispatch_source, helper_node) or ""
+    cache_source = ast.get_source_segment(dispatch_source, cache_node) or ""
+    get_source = ast.get_source_segment(dispatch_source, get_node) or ""
+    launch_source = ast.get_source_segment(dispatch_source, launch_node) or ""
+    check("routed_rows <= int(state_E)" in helper_source,
+          "dispatch source must prove compact-map capacity before arming")
+    check("skip_zero_weight_expert_id" in cache_source,
+          "sentinel variant must be part of the micro cache key")
+    check(get_source.count("skip_zero_weight_expert_id") >= 4,
+          "compile helper must carry sentinel through key and constructor")
+    check(launch_source.index("_b12x_ep_zero_weight_micro_expert_id(")
+          < launch_source.index("use_micro ="),
+          "exact arm must be computed before micro/static selection")
+    check("or skip_zero_weight_expert_id is not None" in launch_source,
+          "exact routed64 arm must widen only the opt-in micro decision")
+    check("skip_zero_weight_expert_id=skip_zero_weight_expert_id" in launch_source,
+          "launch must compile the sentinel-aware variant")
+    check("routed_rows > workspace.weight_expert_ids.numel()" in launch_source,
+          "runtime workspace drift must fail before Triton compaction")
+    check("os.environ" not in launch_source,
+          "captured launch path must consume the import-time latch only")
+
+    kernel_path = "overlay/modules/b12x_zero_weight_micro/moe_micro_kernel.py"
+    kernel_source = open(_overlay_source(kernel_path), encoding="utf-8").read()
+    kernel_tree = ast.parse(kernel_source)
+    kernel_cls = next(n for n in kernel_tree.body
+                      if isinstance(n, ast.ClassDef) and n.name == "MoEMicroKernel")
+    init_node = next(n for n in kernel_cls.body
+                     if isinstance(n, ast.FunctionDef) and n.name == "__init__")
+    call_node = next(n for n in kernel_cls.body
+                     if isinstance(n, ast.FunctionDef) and n.name == "kernel")
+    init_source = ast.get_source_segment(kernel_source, init_node) or ""
+    call_source = ast.get_source_segment(kernel_source, call_node) or ""
+    check("single_token or share_input_across_experts" in init_source,
+          "sentinel variant must reject both unsafe micro specializations")
+    sentinel_pos = call_source.index("row = Int32(-1)")
+    append_pos = call_source.index("row = atomic_add_global_i32", sentinel_pos)
+    map_pos = call_source.index("get_ptr_as_int64(token_map, map_idx)", append_pos)
+    check(sentinel_pos < append_pos < map_pos,
+          "sentinel decision must precede row/token-map materialization")
+    check("weight == cutlass.Float32(0.0)" in call_source
+          and "Int32(self.skip_zero_weight_expert_id)" in call_source,
+          "kernel may skip only exact-zero pairs for the named sentinel")
+    check("row >= Int32(0)" in call_source
+          and "should_quantize" in call_source,
+          "row=-1 must suppress input quantization")
+
+    wrapper_source = open(_overlay_source(wrapper_path), encoding="utf-8").read()
+    wrapper_tree = ast.parse(wrapper_source)
+    wrapper_cls = next(n for n in wrapper_tree.body
+                       if isinstance(n, ast.ClassDef)
+                       and n.name == "FlashInferB12xExperts")
+    pure_node = next(n for n in wrapper_cls.body
+                     if isinstance(n, ast.FunctionDef)
+                     and n.name == "_apply_ep_zero_weight_micro")
+    apply_node = next(n for n in wrapper_cls.body
+                      if isinstance(n, ast.FunctionDef) and n.name == "apply")
+    process_node = next(n for n in wrapper_cls.body
+                        if isinstance(n, ast.FunctionDef)
+                        and n.name == "process_weights_after_loading")
+    pure_source = ast.get_source_segment(wrapper_source, pure_node) or ""
+    apply_source = ast.get_source_segment(wrapper_source, apply_node) or ""
+    process_source = ast.get_source_segment(wrapper_source, process_node) or ""
+    check("scatter_output=output[lo:hi]" in pure_source
+          and "topk_ids=topk_ids[lo:hi]" in pure_source
+          and "_workspace=self._ep_zero_weight_workspace" in pure_source,
+          "pure lane must use disjoint token/output slices and its pinned workspace")
+    for banned in ("pair_x", "pair_out", "index_add_", "argsort", "nonzero"):
+        check(banned not in pure_source,
+              f"pure top-k=8 lane must not retain {banned} overhead")
+    zero_return = apply_source.index("return self._apply_ep_zero_weight_micro(")
+    fixed_return = apply_source.index("return self._apply_ep_fixed(")
+    ensure_wrapper = apply_source.index("self._ensure_wrapper()")
+    check(zero_return < fixed_return < ensure_wrapper,
+          "exact lane must return before fixed fallback and large wrapper")
+    check("VLLM_B12X_EP_ZERO_WEIGHT_MICRO" not in apply_source,
+          "apply must never re-read the experiment environment")
+    check("top_k=1" in process_source
+          and "max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS" in process_source
+          and "top_k=B12X_EP_ZERO_WEIGHT_MICRO_TOPK" in process_source
+          and "max_rows=B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS" in process_source,
+          "setup must pin distinct top-k=1 and top-k=8 workspaces")
+
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check("b12x_zero_weight_micro" in profile,
+          "glm53 composition must mount both FlashInfer source overlays")
+    check("VLLM_B12X_EP_ZERO_WEIGHT_MICRO=0" in profile,
+          "profile must keep the numeric experiment default off")
+    manifest = open(os.path.join(
+        REPO, "overlay", "modules", "b12x_zero_weight_micro", "manifest.tsv"
+    ), encoding="utf-8").read()
+    check("ccb6f65a22314961693493242f78f62ca58f79a319ecd0cb51bf6d7d8e7125c6"
+          in manifest, "micro kernel must pin the live preimage SHA")
+    check("f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362"
+          in manifest, "dispatch must pin the live preimage SHA")
+
+    print("  b12x zero-weight micro ......... OK")
 
 
 def test_mhc_probe_contracts() -> None:
@@ -2964,6 +3205,7 @@ if __name__ == "__main__":
     test_ue8m0_scale_repair()
     test_ep_fixed_pair_plan()
     test_ep_fixed_pair_out_initialised()
+    test_b12x_zero_weight_micro()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()

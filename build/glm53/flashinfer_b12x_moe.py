@@ -112,14 +112,34 @@ def read_b12x_ep_bool(name, default, env_get=os.environ.get) -> bool:
     )
 
 
-def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool]:
-    """Return latched (no_dummy, disable_micro) flags or reject the mode."""
+def read_b12x_ep_exact_bool(name, default=False, env_get=os.environ.get) -> bool:
+    """Read an experimental 0/1 latch; aliases and typos fail at setup."""
+    raw = env_get(name)
+    if raw is None:
+        return bool(default)
+    value = str(raw)
+    if value in ("0", "1"):
+        return value == "1"
+    raise ValueError(f"{name} must be exactly 0 or 1; got {raw!r}")
+
+
+def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool, bool]:
+    """Return latched (no_dummy, disable_micro, zero_micro) EP mode."""
     no_dummy = read_b12x_ep_bool(
         "VLLM_B12X_EP_NO_DUMMY", True, env_get=env_get
     )
     disable_micro = read_b12x_ep_bool(
         "VLLM_B12X_EP_DISABLE_MICRO", False, env_get=env_get
     )
+    zero_micro = read_b12x_ep_exact_bool(
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO", False, env_get=env_get
+    )
+    if zero_micro and (not no_dummy or disable_micro):
+        raise RuntimeError(
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 requires the local-only "
+            "VLLM_B12X_EP_NO_DUMMY=1 path and "
+            "VLLM_B12X_EP_DISABLE_MICRO=0."
+        )
     if no_dummy and disable_micro:
         raise RuntimeError(
             "VLLM_B12X_EP_DISABLE_MICRO=1 is incompatible with the fixed "
@@ -127,7 +147,7 @@ def b12x_ep_mode_from_env(env_get=os.environ.get) -> tuple[bool, bool]:
             "For the plain-static diagnostic, also set "
             "VLLM_B12X_EP_NO_DUMMY=0."
         )
-    return no_dummy, disable_micro
+    return no_dummy, disable_micro, zero_micro
 
 
 def require_b12x_ep_micro_limit(micro_max_tokens) -> int:
@@ -199,6 +219,70 @@ def disable_b12x_micro_for_ep(no_dummy: bool, disable_micro: bool) -> str:
 # 8/16/32 calls. Eight is the pinned FlashInfer build's _MICRO_MAX_TOKENS
 # boundary; an unsliced fixed call selects the static kernel observed to hang.
 B12X_EP_FIXED_MICRO_MAX_PAIRS = 8
+B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS = (8, 16, 32)
+B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS = 8
+B12X_EP_ZERO_WEIGHT_MICRO_TOPK = 8
+B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS = 72
+B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS = 64
+
+
+def b12x_ep_zero_weight_micro_chunks(
+    num_tokens,
+    top_k,
+    num_local_experts,
+    *,
+    enabled,
+):
+    """Return exact stable token slices, or an empty fail-closed plan."""
+    tokens = int(num_tokens)
+    if not (
+        enabled
+        and tokens in B12X_EP_ZERO_WEIGHT_MICRO_TOKEN_COUNTS
+        and int(top_k) == B12X_EP_ZERO_WEIGHT_MICRO_TOPK
+        and int(num_local_experts) == B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS
+    ):
+        return ()
+    return tuple(
+        (lo, lo + B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS)
+        for lo in range(0, tokens, B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS)
+    )
+
+
+def require_b12x_ep_zero_weight_micro_dispatch(moe_dispatch) -> int:
+    """Prove the live FlashInfer overlay admits only the exact E=72 lane."""
+    if getattr(moe_dispatch, "_B12X_EP_ZERO_WEIGHT_MICRO", False) is not True:
+        raise RuntimeError(
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 requires the matching "
+            "FlashInfer moe_dispatch overlay (its process latch is not armed)"
+        )
+    gate = getattr(
+        moe_dispatch, "_b12x_ep_zero_weight_micro_expert_id", None
+    )
+    if not callable(gate):
+        raise RuntimeError(
+            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 requires the matching "
+            "FlashInfer micro dispatch gate"
+        )
+    sentinel = gate(
+        enabled=True,
+        state_E=B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS,
+        weight_E=B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS,
+        num_tokens=B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS,
+        k=4096,
+        n=2048,
+        num_topk=B12X_EP_ZERO_WEIGHT_MICRO_TOPK,
+        activation_precision="fp4",
+        quant_mode="nvfp4",
+        activation="swigluoai_uninterleave",
+        swiglu_limit=10.0,
+        forced_backend=getattr(moe_dispatch, "_FORCED_BACKEND", None),
+    )
+    if sentinel != B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS:
+        raise RuntimeError(
+            "FlashInfer zero-weight micro gate rejected the pinned GLM EP "
+            f"contract (sentinel={sentinel!r})"
+        )
+    return sentinel
 
 
 def b12x_ep_fixed_slice_limit(
@@ -594,6 +678,8 @@ class _B12xEpFixedWorkspaceKey:
     """Geometry that sizes the pinned direct-EP micro workspace."""
 
     num_experts: int
+    top_k: int
+    max_rows: int
     hidden_size: int
     intermediate_size: int
     device: str
@@ -603,9 +689,10 @@ class _B12xEpFixedWorkspaceKey:
 # The functional API keeps one replaceable workspace per geometry. A compact
 # prefill can grow that cache after decode CUDA graphs were captured, dropping
 # the last Python reference to the small workspace whose addresses the graphs
-# recorded. Pin one 8-row workspace (~3.4 MiB at E=72, 4096/2048) and pass it
-# explicitly for fixed decode. Compact prefill keeps using the independent
-# functional cache, so it cannot replace the graph's buffers.
+# recorded. Pin shape-specific workspaces and pass them explicitly for direct
+# decode. The default top-k=1 lane uses 8 rows (~3.4 MiB at E=72, 4096/2048);
+# the opt-in top-k=8 lane has its own 64-row object. Compact prefill keeps using
+# the independent functional cache, so it cannot replace graph addresses.
 _B12X_EP_FIXED_WORKSPACES: "WeakValueDictionary[_B12xEpFixedWorkspaceKey, Any]" = (
     WeakValueDictionary()
 )
@@ -627,9 +714,9 @@ def _shared_ep_fixed_workspace(
                 weight_E=key.num_experts,
                 k=key.hidden_size,
                 n=key.intermediate_size,
-                num_topk=1,
+                num_topk=key.top_k,
                 device=device,
-                max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS,
+                max_rows=key.max_rows,
                 quant_mode="nvfp4",
                 backend="static",
                 activation=key.activation,
@@ -637,9 +724,10 @@ def _shared_ep_fixed_workspace(
             _B12X_EP_FIXED_WORKSPACES[key] = workspace
             logger.info_once(
                 "b12x EP fixed workspace pinned across layers "
-                "(%d experts, top_k 1, max_rows %d, %d/%d)",
+                "(%d experts, top_k %d, max_rows %d, %d/%d)",
                 key.num_experts,
-                B12X_EP_FIXED_MICRO_MAX_PAIRS,
+                key.top_k,
+                key.max_rows,
                 key.hidden_size,
                 key.intermediate_size,
             )
@@ -668,8 +756,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
     Decode/graph batches replace remote slots with zero-weight repeats and
     submit at most eight pairs per call, so the dispatcher stays on its proven
     micro kernel instead of static. Prefill (routed pairs > 640) drops remote
-    slots. ``VLLM_B12X_EP_NO_DUMMY=0`` restores the padded ``E = local + 1``
-    wrapper path. vLLM's EP all-reduce (DP=1) combines ranks.
+    slots. The default-off ``VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1`` experiment
+    keeps E=72 and admits only stable 8/16/32-token GLM shapes as disjoint
+    eight-token top-k=8 micro calls; the kernel removes exact-zero sentinel
+    pairs before row materialization. ``VLLM_B12X_EP_NO_DUMMY=0`` restores the
+    padded ``E = local + 1`` wrapper path. vLLM's EP all-reduce (DP=1) combines
+    ranks.
     """
 
     _ACTIVATION_MAP: dict[MoEActivation, str] = {
@@ -708,10 +800,12 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self._use_ep = bool(moe_config.moe_parallel_config.use_ep)
         self._ep_no_dummy = False
         self._ep_disable_micro = False
+        self._ep_zero_weight_micro = False
         if self._use_ep:
             (
                 self._ep_no_dummy,
                 self._ep_disable_micro,
+                self._ep_zero_weight_micro,
             ) = b12x_ep_mode_from_env()
         self._ep_ids: torch.Tensor | None = None
         self._ep_scales: torch.Tensor | None = None
@@ -724,6 +818,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         # Strong reference for every captured layer. The global map shares the
         # object by geometry but intentionally holds it weakly.
         self._ep_fixed_workspace: Any | None = None
+        self._ep_zero_weight_workspace: Any | None = None
 
         activation = moe_config.activation
         if activation not in self._ACTIVATION_MAP:
@@ -849,6 +944,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self._ep_fixed_workspace = _shared_ep_fixed_workspace(
                 _B12xEpFixedWorkspaceKey(
                     num_experts=self._kernel_num_experts,
+                    top_k=1,
+                    max_rows=B12X_EP_FIXED_MICRO_MAX_PAIRS,
                     hidden_size=self.hidden_dim,
                     intermediate_size=self.intermediate_size_per_partition,
                     device=str(device),
@@ -856,6 +953,45 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 ),
                 device,
             )
+            if self._ep_zero_weight_micro:
+                geometry = (
+                    self._kernel_num_experts,
+                    self.topk,
+                    self.hidden_dim,
+                    self.intermediate_size_per_partition,
+                    self._activation_str,
+                    self._swiglu_limit,
+                )
+                expected = (
+                    B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS,
+                    B12X_EP_ZERO_WEIGHT_MICRO_TOPK,
+                    4096,
+                    2048,
+                    "swigluoai_uninterleave",
+                    10.0,
+                )
+                if geometry != expected:
+                    raise RuntimeError(
+                        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 only supports the "
+                        f"pinned GLM EP geometry {expected}; got {geometry}"
+                    )
+                from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import (
+                    moe_dispatch,
+                )
+
+                require_b12x_ep_zero_weight_micro_dispatch(moe_dispatch)
+                self._ep_zero_weight_workspace = _shared_ep_fixed_workspace(
+                    _B12xEpFixedWorkspaceKey(
+                        num_experts=self._kernel_num_experts,
+                        top_k=B12X_EP_ZERO_WEIGHT_MICRO_TOPK,
+                        max_rows=B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS,
+                        hidden_size=self.hidden_dim,
+                        intermediate_size=self.intermediate_size_per_partition,
+                        device=str(device),
+                        activation=self._activation_str,
+                    ),
+                    device,
+                )
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
@@ -1038,6 +1174,66 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             tmp_a=self._ep_tmp_a[:tokens],
             tmp_b=self._ep_tmp_b[:tokens],
         )
+
+    def _apply_ep_zero_weight_micro(
+        self, output, hidden_states, w1, w2, topk_ids, topk_weights
+    ):
+        """Opt-in local-only top-k=8 micro lane for stable decode shapes.
+
+        Remote routes remain sentinel E at exact weight zero. The matching
+        micro variant removes those pairs before row_counts/token_map append,
+        so the sentinel can never reach alpha or weight-plane addressing. Each
+        launch owns disjoint token/output rows; there is no pair gather or
+        index_add, and all launch shapes are fixed by the captured token shape.
+        """
+        chunks = b12x_ep_zero_weight_micro_chunks(
+            topk_ids.size(0),
+            topk_ids.size(1),
+            self._kernel_num_experts,
+            enabled=self._ep_zero_weight_micro,
+        )
+        if not chunks:
+            raise RuntimeError("zero-weight micro called outside its exact shape gate")
+        if self._ep_zero_weight_workspace is None:
+            raise RuntimeError(
+                "zero-weight micro workspace was not allocated before apply"
+            )
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
+            launch_sm120_moe,
+        )
+
+        logger.info_once(
+            "b12x EP zero-weight micro: %d tokens -> %d top-k=8 calls "
+            "(8 tokens / 64 routed pairs each)",
+            topk_ids.size(0), len(chunks),
+        )
+        for lo, hi in chunks:
+            launch_sm120_moe(
+                a=hidden_states[lo:hi],
+                topk_ids=topk_ids[lo:hi],
+                topk_weights=topk_weights[lo:hi],
+                w1_weight=w1,
+                w1_weight_sf=self.w1_sf_mma,
+                w1_alpha=self.g1_alphas,
+                fc2_input_scale=self._fc2_input_scale,
+                input_global_scale=None,
+                w2_weight=w2,
+                w2_weight_sf=self.w2_sf_mma,
+                w2_alpha=self.g2_alphas,
+                num_experts=self._kernel_num_experts,
+                top_k=B12X_EP_ZERO_WEIGHT_MICRO_TOPK,
+                num_local_experts=self._kernel_num_experts,
+                scatter_output=output[lo:hi],
+                activation=self._activation_str,
+                swiglu_alpha=self._swiglu_alpha,
+                swiglu_beta=self._swiglu_beta,
+                swiglu_limit=self._swiglu_limit,
+                activation_precision="fp4",
+                quant_mode="nvfp4",
+                source_format="modelopt",
+                _workspace=self._ep_zero_weight_workspace,
+            )
+        return output
 
     def _apply_ep_fixed(
         self, output, hidden_states, w1, w2, topk_ids, topk_weights
@@ -1392,6 +1588,16 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             topk_ids, topk_weights = self._remap_ep_tensors(
                 topk_ids, topk_weights, expert_map
             )
+            zero_micro_chunks = b12x_ep_zero_weight_micro_chunks(
+                topk_ids.size(0),
+                topk_ids.size(1),
+                self._kernel_num_experts,
+                enabled=self._ep_zero_weight_micro,
+            )
+            if zero_micro_chunks:
+                return self._apply_ep_zero_weight_micro(
+                    output, hidden_states, w1, w2, topk_ids, topk_weights
+                )
             if self._ep_no_dummy and b12x_ep_should_compact(
                 topk_ids.size(0) * topk_ids.size(1),
                 enabled=b12x_ep_compact_enabled(),

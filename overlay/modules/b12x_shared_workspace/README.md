@@ -42,6 +42,16 @@ established. Prefill (`tokens * top_k > 640`) drops remote slots instead of
 paying GEMM for them. Both direct paths return before the large `top_k=8`
 graph wrapper and its capacity probe are constructed.
 
+An experimental third direct lane is mounted by `b12x_zero_weight_micro` but
+stays off by default. Exact `VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1` requires
+`VLLM_B12X_EP_NO_DUMMY=1` and `VLLM_B12X_EP_DISABLE_MICRO=0`. It preserves the
+same physical E=72 weights and leaves each remote route as sentinel id 72 at
+weight zero for the micro kernel to discard before row materialization. Only
+stable 8/16/32-token GLM decode shapes are admitted, as 1/2/4 disjoint
+eight-token top-k=8 calls; every mismatch uses this module's existing fixed
+top-k=1 fallback. A separate pinned top-k=8/max_rows=64 workspace preserves the
+#147 CUDA-graph lifetime contract. This has no GPU correctness or E2E win yet.
+
 Fixed decode uses one shared, strongly held 8-row workspace. Compact prefill
 continues to use FlashInfer's replaceable functional cache, but growing that
 cache can no longer invalidate addresses captured by decode CUDA graphs.
