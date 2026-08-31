@@ -7,6 +7,11 @@
 set -uo pipefail
 LAUNCHER=/home/choiceoh/start-hy4-tp4.sh
 BASE=http://127.0.0.1:8000
+# Served name this supervisor watches for. Default keeps the dsv4 behaviour
+# byte-identical; the override exists so the file matches start-hy4-tp4.sh,
+# which already takes SERVED_NAME. A supervisor that greps for a name the
+# launcher was told to change would report a healthy engine as dead.
+SERVED_NAME="${SERVED_NAME:-deepseek-v4-flash}"
 WORKERS="10.10.10.3 10.10.10.1 10.10.10.4"
 # Long-context ingests block NEW interactive requests until the prefill ends
 # (NVIDIA forum #378890, 2x Spark: 145-159s blocked at 262K; our 430K at
@@ -42,14 +47,14 @@ wait_for_fleet(){
   done
 }
 
-api_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q deepseek-v4-flash; }
+api_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q "$SERVED_NAME"; }
 
 # Real generation probe — /v1/models stays 200 even when the engine is a corpse
 # (2026-07 "위장 건강" lesson). Only a completed chat proves the TP ring is alive.
 chat_ok(){
   curl -fsS --max-time "$CHAT_TIMEOUT" "$BASE/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"ping"}],"max_tokens":4}' \
+    -d "{\"model\":\"$SERVED_NAME\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4}" \
     2>/dev/null | grep -q '"choices"'
 }
 
