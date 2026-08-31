@@ -22,7 +22,9 @@
 
 #define NPEER 3
 #define RING 4
-#define MAXEL 131072  // 256KB bf16 — size gate keeps callers <= this
+#define MAXEL 131072  // GLM: max captured verify = 32 tokens * hidden 4096
+#define ARGRID 48     // GB10 / SM121a has exactly 48 SMs
+#define ARTHREADS 256
 #define PROXY_CORE 18
 // clock64() counts SM cycles. The SM clock is pinned at 1592 MHz on this
 // fleet (nvidia-smi clocks.sm, flat across load), so one constant converts.
@@ -99,7 +101,7 @@ static const char *DEVNAME = "rocep1s0f0";
 // A counter that is never reset kills that objection. done_ctr is monotonic
 // and every launch adds exactly ARGRID to it (fixed grid, see py_oneshot), so
 // stream ordering keeps it a multiple of ARGRID at every kernel entry: the
-// block whose atomicAdd returns old % ARGRID == ARGRID-1 is the 256th block
+// block whose atomicAdd returns old % ARGRID == ARGRID-1 is the ARGRID-th block
 // of THIS launch to finish copying -- meaning every block already read
 // tx_seq, so publishing tx_seq = s0+1 cannot be misread as a later sequence.
 // The counter lives past any replay; nothing to reset.
@@ -123,17 +125,16 @@ __device__ __forceinline__ void osar_backoff(int &n, unsigned &ns) {
 #endif
 }
 
-#define ARGRID 256
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                           int nbytes) {
   // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
-  // -- one collective per layer, n = hidden -- most blocks fall entirely past
-  // the end of the payload: with blockDim 256 and n 4096, blocks 16..255 copy
-  // nothing and reduce nothing. They still paid for both spins and the fence.
+  // the smallest plain call has n = hidden and many blocks fall entirely past
+  // the payload: with blockDim 256 and n 4096, blocks 16..47 copy nothing and
+  // reduce nothing. They still pay the launch/sync/counter cost.
   //
-  // The peer wait is the expensive one. 256 blocks polling the same three
-  // volatile flags for the whole RDMA latency window is traffic aimed at the
-  // very cache lines whose update they are waiting to observe.
+  // The peer wait is the expensive one. Data-owning blocks polling the same
+  // three volatile flags for the whole RDMA latency window generate traffic
+  // aimed at the very cache lines whose update they are waiting to observe.
   //
   // A block that owns no element needs neither spin: the guard protects a slot
   // it never writes, and the peer flags gate data it never reads. Only the
@@ -171,6 +172,11 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // has nothing to order, so its fence is vacuous and is skipped.
   if (owns)
     __threadfence_system();
+  // A thread fence orders only the calling thread's writes. Thread 0 must not
+  // announce this block complete until every warp has copied and fenced its
+  // own grid-stride elements; otherwise another block can publish tx_seq while
+  // this block still has RDMA-visible payload writes in flight.
+  __syncthreads();
   __shared__ bool last;
   if (threadIdx.x == 0)
     last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
@@ -465,6 +471,23 @@ static int slot_of_me(int peer) {
 
 // ---------------- pybind ----------------
 static void py_init(int rank, int world, const std::string &myip) {
+  // This fixed grid is part of the cudagraph-safe monotonic-counter protocol,
+  // not a generic launch hint. Match one block to each SM on the only device
+  // it was designed for. The Python bootstrap turns any throw here into a
+  // lockstep all-rank vote for the NCCL fallback.
+  int device = -1;
+  cudaError_t err = cudaGetDevice(&device);
+  TORCH_CHECK(err == cudaSuccess, "oneshot: cudaGetDevice failed: ",
+              cudaGetErrorString(err));
+  cudaDeviceProp prop{};
+  err = cudaGetDeviceProperties(&prop, device);
+  TORCH_CHECK(err == cudaSuccess, "oneshot: cudaGetDeviceProperties failed: ",
+              cudaGetErrorString(err));
+  TORCH_CHECK(prop.major == 12 && prop.minor == 1 &&
+                  prop.multiProcessorCount == ARGRID,
+              "oneshot: expected GB10 SM121a with ", ARGRID,
+              " SMs, got sm_", prop.major, prop.minor, " with ",
+              prop.multiProcessorCount, " SMs");
   init_ctx(rank, world, myip);
 }
 static py::bytes py_local_infos() {
@@ -498,8 +521,10 @@ static torch::Tensor py_oneshot(torch::Tensor input) {
   // One launch, and the grid is FIXED at ARGRID however small n is: the
   // last-block detection in k_oneshot is (done_ctr % ARGRID == ARGRID-1),
   // which is only sound if every launch contributes exactly ARGRID
-  // increments. Empty blocks cost a guard read, one atomic and a spin.
-  k_oneshot<<<ARGRID, 256, 0, st>>>(g_ctrl, src, dst, (int)n, (int)(n * 2));
+  // increments. The 48-block grid fills GB10 once and covers MAXEL through
+  // the kernel's grid-stride loops; empty decode blocks only sync/increment.
+  k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
+                                          (int)(n * 2));
   return out;
 }
 static bool py_healthy() {

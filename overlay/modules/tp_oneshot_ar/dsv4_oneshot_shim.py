@@ -5,10 +5,12 @@ Routes small decode bf16 AllReduce through the host-register RDMA one-shot
 kernel (probes/oneshot_ar2.cu, standalone-verified 29us vs NCCL 67us) instead
 of NCCL. Wired from the cuda_communicator.py overlay's all_reduce wrapper.
 
-THREE independent fallbacks keep production safe:
+Safety is collective, never rank-local:
   1. env gate VLLM_DSV4_ONESHOT_AR (default 0 = shim is a no-op)
-  2. any build/bootstrap/runtime exception -> permanent disable, NCCL path
-  3. proxy watchdog: unhealthy -> disable, NCCL path
+  2. local setup, RDMA connect, and the numerics self-test each use an all-rank
+     vote; any failed vote sends every rank back to NCCL together
+  3. after the real one-shot path is committed, a local watchdog/runtime fault
+     is fatal instead of silently mixing one rank's NCCL with its peers' OSAR
 
 Modes (VLLM_DSV4_ONESHOT_SHADOW, default 1):
   shadow=1: NCCL stays the REAL path. In eager (non-capture) calls the
@@ -51,9 +53,15 @@ def _flag(name, default):
 _ENABLED = _flag("VLLM_DSV4_ONESHOT_AR", "0")
 _SHADOW = _flag("VLLM_DSV4_ONESHOT_SHADOW", "1")
 
+
+class OneShotFatal(RuntimeError):
+    """A post-agreement fault where rank-local NCCL fallback would deadlock."""
+
+
 _ext = None
 _connected = False
 _selftest_ok = False
+_boot_agreed = False
 _disabled = not _ENABLED
 
 
@@ -89,7 +97,7 @@ def _build():
 
 
 def _bootstrap(comm):
-    global _ext, _connected, _disabled
+    global _ext, _connected, _boot_agreed, _disabled
     if _disabled or _connected:
         return
     try:
@@ -133,22 +141,53 @@ def _bootstrap(comm):
                 "[osar] %d/%d ranks ready -> every rank stays on NCCL",
                 int(votes.item()), comm.world_size)
             return
+        _boot_agreed = True
 
         gathered = [None] * comm.world_size
         dist.all_gather_object(gathered, _ext.local_infos(), group=comm.cpu_group)
-        _ext.connect(gathered)
+        connect_ok = 1
+        connect_error = None
+        try:
+            _ext.connect(gathered)
+        except Exception as e:
+            connect_ok = 0
+            connect_error = e
+            logger.warning("[osar] connect failed on rank %d: %r", rank, e)
+
+        # QP transition/proxy startup can fail on only one node. Decide again
+        # before any rank runs the one-shot self-test; a local fallback here
+        # would split the next collective into OSAR and NCCL.
+        connect_votes = torch.tensor([connect_ok], dtype=torch.int32)
+        dist.all_reduce(connect_votes, group=comm.cpu_group)
+        connected_ranks = int(connect_votes.item())
+        if connected_ranks != comm.world_size:
+            if connect_ok:
+                try:
+                    _ext.shutdown()
+                except Exception:
+                    logger.exception("[osar] shutdown after failed connect vote")
+            _boot_agreed = False
+            _disabled = True
+            logger.warning(
+                "[osar] %d/%d ranks connected -> every rank stays on NCCL%s",
+                connected_ranks,
+                comm.world_size,
+                "" if connect_error is None else f" ({connect_error!r})",
+            )
+            return
+
         _connected = True
         logger.warning(
             "[osar] connected rank=%d world=%d shadow=%s", rank,
             comm.world_size, _SHADOW)
     except Exception as e:
-        # Anything past the agreement is a genuine surprise; the group already
-        # decided it was going ahead, so a fallback here is not in lockstep.
-        # Nothing better is available at this point than saying so loudly.
+        if _boot_agreed:
+            raise OneShotFatal(
+                "one-shot bootstrap failed after all ranks agreed; refusing "
+                "rank-local NCCL fallback"
+            ) from e
         _disabled = True
-        logger.warning(
-            "[osar] bootstrap failed AFTER the group agreed -> this rank falls "
-            "back to NCCL while others may not: %r", e)
+        logger.warning("[osar] bootstrap failed before agreement -> NCCL: %r", e)
         return
     _self_test(comm, rank)
 
@@ -158,7 +197,10 @@ def _self_test(comm, rank):
     NCCL on a fixed input. This is the ONLY place shadow mode drives the
     one-shot path — matching NCCL's collective lockstep exactly — so the
     stateful tx_seq ring can never desync against production AR traffic."""
-    global _selftest_ok, _disabled
+    global _selftest_ok, _connected, _boot_agreed, _disabled
+    local_ok = 0
+    div = float("inf")
+    error = None
     try:
         import torch
         import torch.distributed as dist
@@ -171,18 +213,45 @@ def _self_test(comm, rank):
         dist.barrier(group=g)
         got = _ext.oneshot_ar(x.clone())        # one-shot, lockstep via barrier
         torch.cuda.synchronize()
-        dist.barrier(group=g)
         div = (ref.float() - got.float()).abs().max().item()
-        if div <= 0.5:
-            _selftest_ok = True
-            logger.warning("[osar] self-test PASS div=%.4g (real=%s)", div,
-                           not _SHADOW)
-        else:
-            _disabled = True
-            logger.warning("[osar] self-test FAIL div=%.4g -> NCCL", div)
+        local_ok = int(div <= 0.5)
     except Exception as e:
-        _disabled = True
-        logger.warning("[osar] self-test error -> NCCL: %r", e)
+        error = e
+        logger.warning("[osar] self-test error on rank %d: %r", rank, e)
+
+    # A numerical mismatch can be rank-specific. No rank may enter real mode
+    # until every rank reports the same successful OSAR result.
+    try:
+        import torch
+        import torch.distributed as dist
+
+        test_votes = torch.tensor([local_ok], dtype=torch.int32)
+        dist.all_reduce(test_votes, group=comm.cpu_group)
+        passed_ranks = int(test_votes.item())
+    except Exception as e:
+        raise OneShotFatal(
+            "one-shot self-test vote failed after RDMA connect"
+        ) from e
+
+    if passed_ranks == comm.world_size:
+        _selftest_ok = True
+        logger.warning("[osar] self-test PASS div=%.4g (real=%s)", div,
+                       not _SHADOW)
+        return
+
+    _disabled = True
+    _connected = False
+    _boot_agreed = False
+    try:
+        _ext.shutdown()
+    except Exception:
+        logger.exception("[osar] shutdown after failed self-test vote")
+    logger.warning(
+        "[osar] self-test passed on %d/%d ranks -> every rank stays on NCCL%s",
+        passed_ranks,
+        comm.world_size,
+        "" if error is None else f" ({error!r})",
+    )
 
 
 def _eligible(t):
@@ -214,12 +283,14 @@ def maybe_all_reduce(comm, input_, orig):
     if not _eligible(input_):
         return None
     if not _ext.healthy():
-        _disabled = True
-        logger.warning("[osar] proxy unhealthy -> NCCL fallback")
-        return None
+        raise OneShotFatal(
+            "one-shot proxy unhealthy after real-mode commit; refusing "
+            "rank-local NCCL fallback"
+        )
     try:
         return _ext.oneshot_ar(input_)  # real path (works in graph + eager)
     except Exception as e:
-        _disabled = True
-        logger.warning("[osar] runtime failure -> NCCL fallback: %r", e)
-        return None
+        raise OneShotFatal(
+            "one-shot runtime failure after real-mode commit; refusing "
+            "rank-local NCCL fallback"
+        ) from e

@@ -255,14 +255,21 @@ class CudaCommunicator(DeviceCommunicatorBase):
     def all_reduce(self, input_):
         # DENEB one-shot cross-node AR (VLLM_DSV4_ONESHOT_AR): small decode
         # bf16 tensors go through the host-register RDMA one-shot path
-        # (27us vs NCCL 67us). Fully fail-safe: any error / unhealthy proxy /
-        # ineligible tensor returns None and falls through to NCCL below.
+        # (27us vs NCCL 67us). Pre-commit failures are voted back to NCCL on
+        # every rank; post-commit faults must propagate because a rank-local
+        # NCCL fallback would split the collective and deadlock.
         try:
-            from .dsv4_oneshot_shim import maybe_all_reduce
+            from .dsv4_oneshot_shim import OneShotFatal, maybe_all_reduce
 
+        except Exception:
+            return self._all_reduce_impl(input_)
+
+        try:
             _out = maybe_all_reduce(self, input_, self._all_reduce_impl)
             if _out is not None:
                 return _out
+        except OneShotFatal:
+            raise
         except Exception:
             pass
         return self._all_reduce_impl(input_)

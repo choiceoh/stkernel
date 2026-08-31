@@ -2816,6 +2816,102 @@ def test_glm53_sm121_mla_prefill_gate() -> None:
         "the mounted module remains default-off",
     )
     print("  GLM53 SM121 MLA prefill gate .... OK")
+
+
+def test_oneshot_sm121_grid_contract() -> None:
+    """The fixed one-shot grid must match both GB10 and GLM capture shapes.
+
+    ``done_ctr`` makes the launch graph-safe only while every replay contributes
+    exactly ARGRID increments. Keep the grid fixed, but pin it to the 48-SM
+    device it serves instead of reviving the old generic 256-block launch.
+    """
+    path = os.path.join(
+        REPO, "overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu"
+    )
+    source = open(path, encoding="utf-8").read()
+
+    def define(name: str) -> int:
+        match = re.search(rf"^#define {name} (\d+)\b", source, re.M)
+        check(match is not None, f"oneshot {name} define exists")
+        return int(match.group(1))
+
+    grid = define("ARGRID")
+    threads = define("ARTHREADS")
+    maxel = define("MAXEL")
+    check(grid == 48, "GB10 has one fixed one-shot block per SM")
+    check(threads == 256, "one-shot block width stays 256 threads")
+    check(maxel == 32 * 4096,
+          "one-shot size gate covers GLM C=4 K=7 verify exactly")
+
+    check("prop.major == 12 && prop.minor == 1" in source,
+          "one-shot init rejects non-SM121 devices")
+    check("prop.multiProcessorCount == ARGRID" in source,
+          "one-shot init rejects a non-48-SM SM121 device")
+    check("k_oneshot<<<ARGRID, ARTHREADS" in source,
+          "kernel launch uses the guarded fixed geometry")
+    check("ARGRID == ARGRID - 1" in source,
+          "completion publication still waits for every fixed-grid block")
+
+    copy_at = source.index("c->tx[slot][i] = src[i];")
+    atomic_at = source.index("last = atomicAdd", copy_at)
+    publish_at = source.index("c->tx_seq = nxt;", atomic_at)
+    completion_window = source[copy_at:atomic_at]
+    check("__threadfence_system();" in completion_window,
+          "every payload writer system-fences before completion")
+    check(completion_window.rfind("__syncthreads();")
+          > completion_window.rfind("__threadfence_system();"),
+          "all warps finish their copy/fence before thread 0 increments")
+    check(atomic_at < publish_at,
+          "the last-block completion decision precedes tx_seq publish")
+
+    # The same fixed grid must cover every graph bucket through grid-stride
+    # iteration; no dynamic launch geometry may be needed for larger verifies.
+    for tokens in (1, 2, 4, 8, 16, 32):
+        n = tokens * 4096
+        visits = [0] * n
+        for block in range(grid):
+            for thread in range(threads):
+                i = block * threads + thread
+                while i < n:
+                    visits[i] += 1
+                    i += grid * threads
+        check(all(v == 1 for v in visits),
+              f"fixed grid covers GLM T={tokens} hidden elements exactly once")
+
+    shim = open(
+        os.path.join(
+            REPO,
+            "overlay/modules/tp_oneshot_ar/dsv4_oneshot_shim.py",
+        ),
+        encoding="utf-8",
+    ).read()
+    check(re.search(r"^_MAXEL = 131072\b", shim, re.M) is not None,
+          "Python eligibility and CUDA MAXEL stay in lockstep")
+    check("class OneShotFatal(RuntimeError):" in shim,
+          "post-commit rank-local fallback has a fatal error type")
+    check("dist.all_reduce(connect_votes, group=comm.cpu_group)" in shim,
+          "RDMA connect success is voted across every rank")
+    check("dist.all_reduce(test_votes, group=comm.cpu_group)" in shim,
+          "self-test success is voted across every rank")
+    check(shim.count("rank-local NCCL fallback") >= 3,
+          "post-agreement failures never silently switch one rank to NCCL")
+
+    for profile in ("dsv4", "glm53"):
+        wiring = open(
+            os.path.join(
+                REPO,
+                f"overlay/modules/{profile}_oneshot_wiring/"
+                "cuda_communicator.py",
+            ),
+            encoding="utf-8",
+        ).read()
+        check("from .dsv4_oneshot_shim import OneShotFatal" in wiring,
+              f"{profile} wiring imports the committed-path fatal type")
+        check("except OneShotFatal:\n            raise" in wiring,
+              f"{profile} wiring must propagate committed-path failures")
+    print("  one-shot SM121 grid contract .... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -2849,4 +2945,5 @@ if __name__ == "__main__":
     test_mhc_onepass_math()
     test_mhc_bigfuse_knob()
     test_glm53_sm121_mla_prefill_gate()
+    test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
