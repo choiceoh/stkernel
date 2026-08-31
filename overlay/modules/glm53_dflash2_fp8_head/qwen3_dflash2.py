@@ -284,6 +284,7 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             vllm_config.model_config.get_vocab_size(),
             scale=float(draft_config.get("output_multiplier", 1.0)),
             soft_cap=softcap if softcap > 0 else None,
+            selector_top_k=int(draft_config["selector_top_k"]),
             valid_vocab_size=decodable_vocab_size(
                 vllm_config.model_config.tokenizer
             ),

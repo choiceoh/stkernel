@@ -120,15 +120,18 @@ def _deneb_bigfuse_post(num_tokens: int):
 # small-M branch of mhc_fused_post_pre through mhc_onepass_tilelang (in our
 # tilelang_kernels.py takeover) -- the FMA kernel and the big-fuse
 # (mixes/sinkhorn/norm) kernel folded into one launch per layer, with the
-# gemm_out global roundtrip gone. Frozen at import (capture-safe); the
-# per-call validator re-checks the kernel's shape contracts. Default off:
-# unvalidated on GPU until probes/mhc_glm53_bench.py --onepass runs clean.
+# gemm_out global roundtrip gone. Frozen at import like its sibling knobs
+# (the serving process sets env before import; capture then bakes the chosen
+# branch). The per-call validator re-checks the kernel's shape contracts.
+# Default off: unvalidated on GPU until probes/mhc_glm53_bench.py --onepass
+# runs clean.
 _ONEPASS_ENV = "VLLM_GLM53_MHC_ONEPASS"
+_raw_onepass = (os.environ.get(_ONEPASS_ENV) or "").strip().lower()
+_DENEB_ONEPASS = _raw_onepass in ("1", "true", "yes", "on")
 
 
 def _deneb_onepass_enabled() -> bool:
-    return (os.environ.get(_ONEPASS_ENV) or "").strip().lower() in (
-        "1", "true", "yes", "on")
+    return _DENEB_ONEPASS
 
 
 def _deneb_onepass_ok(hidden_size: int, hc_mult: int) -> bool:
