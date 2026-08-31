@@ -180,11 +180,16 @@ def _score_edges(
     compute_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     # deneb fork: the decode trace shows this einsum as the only fp32 cuBLAS
-    # GEMV in the step (gemmSN_NN, ~11/step, ~330 us real) -- some operand
-    # arrives fp32 and promotes the whole chain. VLLM_DFLASH2_SELECTOR_BF16
-    # forces the operands to bf16 so the GEMV reads half the bytes. This
-    # scores candidate RANKING, so near-ties may flip and acceptance is the
+    # GEMV in the step (gemmSN_NN, ~11/step) -- some operand arrives fp32 and
+    # promotes the whole chain. VLLM_DFLASH2_SELECTOR_BF16 runs the einsum in
+    # bf16 (the win is latency/traffic on the gathered slices, not the full
+    # codebooks; expect tens of us, not hundreds) and casts the RESULT back
+    # to the caller's dtype, so the downstream top-k kernels keep their
+    # contract and a dtype mismatch cannot fail the boot. This scores
+    # candidate RANKING: near-ties may flip and, with the stable sort
+    # downstream, exact ties break toward lower indices -- acceptance is the
     # gate; default off.
+    out_dtype = unary_logits.dtype
     if compute_dtype is not None:
         unary_logits = unary_logits.to(compute_dtype)
         hidden = hidden.to(compute_dtype)
@@ -197,9 +202,10 @@ def _score_edges(
         dim=1,
     )
     predecessors = predecessor_table[predecessor_ids].to(compute_dtype)
-    return unary_logits[:, :, None] + torch.einsum(
+    scores = unary_logits[:, :, None] + torch.einsum(
         "blpr,blcr->blpc", predecessors * hidden[:, :, None], successors
     )
+    return scores.to(out_dtype)
 
 
 @support_torch_compile
