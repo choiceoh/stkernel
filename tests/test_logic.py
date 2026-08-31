@@ -2483,76 +2483,6 @@ def test_mhc_bigfuse_knob() -> None:
 
 
 
-
-
-def test_candidate_probs_and_sample() -> None:
-    """Candidate-restricted draft law: support = exactly the k candidates.
-
-    The proposer's VLLM_SPEC_CAND_SAMPLE path samples softmax over the k
-    candidate logits and reports those probs as q -- sums to 1 over the
-    support BY CONSTRUCTION (no leak, no host sync), greedy rows take the
-    top candidate (identical to the full-softmax argmax), and the sampled
-    id must be one of the candidate ids.
-    """
-    try:
-        import torch
-    except ImportError:
-        print("  candidate probs/sample ........ SKIP (no torch on this host)")
-        return
-
-    ns = load_defs(
-        "overlay/llm_base_proposer.py",
-        {"_candidate_probs_and_sample"},
-        {
-            "torch": torch,
-            "_SAMPLING_EPS": 1e-5,
-            # deterministic stubs for the RNG helpers (the real ones are
-            # global-generator exponential noise; the law under test is
-            # argmax(probs / noise), so a constant noise reduces it to argmax)
-            "empty_exponential_noise_like": lambda t, flag: torch.ones_like(t),
-            "sample_with_exponential_noise": lambda p, q: (p / q).argmax(dim=-1),
-        },
-    )
-    fn = ns["_candidate_probs_and_sample"]
-
-    cand_ids = torch.tensor([[10, 20, 30, 40],
-                             [11, 21, 31, 41],
-                             [12, 22, 32, 42]])
-    cand_vals = torch.tensor([[2.0, 1.0, 0.5, 0.1],
-                              [0.0, 3.0, 1.0, 0.2],
-                              [1.0, 1.0, 1.0, 1.0]])
-    temp = torch.tensor([0.0, 0.7, 0.7])  # row 0 greedy
-
-    token_ids, q_at, probs = fn(cand_ids, cand_vals, temp, False)
-
-    check(bool(torch.all(probs.sum(dim=-1).sub(1.0).abs() < 1e-6)),
-          "q sums to 1 over the support exactly")
-    check(bool((probs > 0).all()), "support carries no zero-mass columns")
-    check(bool((token_ids.unsqueeze(1) == cand_ids).any(dim=1).all()),
-          "sampled ids are candidate ids")
-    check(int(token_ids[0]) == 10, "greedy row takes the top candidate")
-    ref = torch.softmax(cand_vals[1] / 0.7, dim=-1)
-    check(bool(torch.allclose(probs[1], ref, atol=1e-6)),
-          "random row law == softmax(cand/temp)")
-    check(float(q_at[1]) == float(probs[1][int((cand_vals[1]).argmax())]),
-          "q_at is q at the sampled index")
-    check(bool(torch.allclose(probs[2], torch.full((4,), 0.25))),
-          "uniform logits -> uniform law")
-
-    # per-request temperature must reach every K draft row of that request
-    temp_k = torch.tensor([0.0, 5.0])  # 1 request, K=3 rows? no: 3 rows need 3 temps
-    try:
-        fn(cand_ids, cand_vals, torch.tensor([0.0, 5.0]), False)
-        check(False, "mismatched temperature rows must assert")
-    except AssertionError:
-        check(True, "mismatched temperature rows assert")
-    temp_rep = torch.tensor([0.0, 0.7, 0.7])
-    tok2, _, p2 = fn(cand_ids, cand_vals, temp_rep, False)
-    check(bool(torch.equal(p2, probs)), "per-request temp repeat reproduces")
-
-    print("  candidate probs/sample ........ OK")
-
-
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -2584,5 +2514,4 @@ if __name__ == "__main__":
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_bigfuse_knob()
-    test_candidate_probs_and_sample()
     print(f"all OK ({PASS} checks)")

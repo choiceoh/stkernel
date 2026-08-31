@@ -1714,3 +1714,26 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
   실측 47.6). **개수는 오버헤드와 무관하므로 개수를 정본으로.**
 - 인구조사의 분모는 추정하지 말고 **세라** — 스텝당 1 회 도는 커널
   (`_get_num_sampled_and_rejected`)이 정확한 분모다.
+
+### #142 사후 — V2 경로 추적: 아이디어는 V2가 이미 네이티브로 구현 중 (2026-08-31)
+
+#142(CAND_SAMPLE)는 머지 4분 전 #141이 glm53_sparse_q를 MODULES에서 뺀 상태로
+들어갔으므로 **합성되지 않는 죽은 노브**다. 추적으로 정리한다:
+
+- V2 드래프팅은 `DFlash2Speculator(DFlashSpeculator(DraftModelSpeculator))`
+  (worker/gpu/spec_decode) — `llm_base_proposer.py`의
+  SpecDecodeBaseProposer 계열과 **상속 관계 없음**. #141 판정 확인.
+- V2의 드래프트 law: `_selector_walk_kernel`이 selector_top_k=16 후보 점수 위에서
+  확률적 샘플링(SAMPLE_PROBABILISTIC, gumbel/seed 포함) — **후보 한정 샘플링이
+  이미 네이티브**. q는 `_cache_draft_logits_kernel`이 [R,K,vocab] fp32에 16개만
+  쓰고 이전 후보만 -inf로 증분 유지(외부는 구조적으로 0).
+- V2 스텝 경로에서 호스트 동기화 없음(유일한 .item()은 CPU 텐서).
+  full softmax/topk(32)/float(leak)는 V1 proposer 전유물이었고 V2에 존재하지
+  않는다. #142의 이득 주장은 V1 기준으로만 유효했다 → 리버트.
+- 잔여 여지(기록용): V2 rejection이 dense draft_logits([R,K,vocab] ≈4.3MB @C=1)
+  를 읽는 것을 16-wide pool로 대체하면 ~수십 µs — CV 아래, 수술 가치 없음.
+  이미지 자체 TODO: sampling-param fold-in으로 processed_logits 버퍼 제거(상위
+  레인 과제).
+
+교훈은 #141/#138과 동일: **모듈이 합성 목록에 살아있는지 먼저 확인** — 오늘
+다섯 번째 죽은 노브였고 이번 건은 리버트로 정리했다.
