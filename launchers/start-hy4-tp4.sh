@@ -29,7 +29,8 @@ if [ -f "$PROFILE_ENV" ]; then
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
-            EXTRA_ENV MAX_NUM_BATCHED MOE_CUTOVER MOE_W4A16 $_vllm_keys; do
+            EXTRA_ENV MAX_NUM_BATCHED MOE_CUTOVER MOE_W4A16 OSAR_MAXEL \
+            $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -149,6 +150,39 @@ case "$MOE_W4A16" in
   0|1) ;;
   *) echo "ABORT: MOE_W4A16 must be 0 or 1 (got $MOE_W4A16)"; exit 2 ;;
 esac
+
+# one-shot AllReduce size gate. The extension admits a tensor only when it fits
+# MAXEL elements; above that every AllReduce goes back to the NCCL ring. The
+# built-in 131072 bf16 = 256 KB = 32 tokens at hidden 4096, which is GLM's max
+# captured verify (MAX_SEQS 4 * (1+7)) -- NOT this stack's. Here the captured
+# verify is MAX_NUM_SEQS 32 * (1+5) = 192 tokens, so:
+#
+#   C=1..4   M<=24 tok   <=192 KB   one-shot   (where osar was measured:
+#                                               comms 6.5 -> 3.2 ms, -9.6%)
+#   C>=6     M>=36 tok   >=288 KB   NCCL ring  (silently -- the gate is a size
+#                                               test, not an error)
+#
+# So dsv4's own adopted AllReduce optimization stops at C=5, and the entire
+# high-concurrency regime the MAX_NUM_SEQS=32 sweep measured (C=16/24/32) ran
+# on the ring. Whether one-shot still wins at 288 KB - 1.5 MB is a latency vs
+# bandwidth question that has never been asked -- one-shot is a latency play,
+# and the ring is bandwidth-optimal for large messages, so the crossover is
+# real and its location is unknown. Hence a knob, not a new constant.
+#
+# Cost is buffers: RING + RING*NPEER = 16 copies of MAXEL bf16. 131072 -> 4.0
+# MiB/rank; 786432 (C=32) -> 24.0 MiB/rank. Every rank must agree, and a split
+# is caught by the boot self-test (peers write at the wrong stride, divergence
+# blows past 0.5) which puts every rank back on NCCL -- the safe direction.
+# The value is in the [osar] source fingerprint line on all four nodes.
+OSAR_MAXEL="${OSAR_MAXEL:-}"
+if [ -n "$OSAR_MAXEL" ]; then
+  case "$OSAR_MAXEL" in
+    ''|*[!0-9]*) echo "ABORT: OSAR_MAXEL must be a positive integer (got '$OSAR_MAXEL')"; exit 2 ;;
+  esac
+  if [ "$OSAR_MAXEL" -lt 1024 ] || [ $((OSAR_MAXEL % 1024)) -ne 0 ]; then
+    echo "ABORT: OSAR_MAXEL must be >=1024 and a multiple of 1024 (got $OSAR_MAXEL)"; exit 2
+  fi
+fi
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
@@ -322,6 +356,9 @@ if [ -n "$MOE_CUTOVER" ]; then
 fi
 if [ "$MOE_W4A16" = 1 ]; then
   ENVV="$ENVV -e FLASHINFER_B12X_FORCE_MOE_W4A16=1"
+fi
+if [ -n "$OSAR_MAXEL" ]; then
+  ENVV="$ENVV -e VLLM_DSV4_OSAR_MAXEL=$OSAR_MAXEL"
 fi
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
@@ -606,7 +643,7 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
 echo "[hy4] compile-cfg=${COMPILE_CFG}"
-echo "[hy4] moe cutover=${FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS:-640(image)} w4a16=${FLASHINFER_B12X_FORCE_MOE_W4A16:-0}"
+echo "[hy4] moe cutover=${FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS:-640(image)} w4a16=${FLASHINFER_B12X_FORCE_MOE_W4A16:-0} osar-maxel=${VLLM_DSV4_OSAR_MAXEL:-131072(built-in)}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \

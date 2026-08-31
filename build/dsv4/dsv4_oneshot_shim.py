@@ -26,7 +26,43 @@ import time
 
 logger = logging.getLogger("vllm.dsv4.osar")
 
-_MAXEL = 131072  # 256KB bf16 — matches the extension's MAXEL size gate
+_MAXEL_DEFAULT = 131072  # 256KB bf16 — the extension's built-in MAXEL
+
+
+def _resolve_maxel() -> int:
+    """VLLM_DSV4_OSAR_MAXEL, or the extension's built-in default.
+
+    The default admits 32 tokens at hidden 4096 -- GLM's max captured verify,
+    not this stack's 192 (MAX_NUM_SEQS 32 * (1+5)). So above C=5 one-shot
+    silently stops serving and NCCL takes every AllReduce back. Raising this
+    is a latency-vs-bandwidth question nobody has measured, so it is a knob:
+    unset keeps the exact constant that has always shipped.
+
+    Every rank must agree -- the peers' rx offsets are computed from it. A
+    mismatch is caught by the boot self-test (peers write at the wrong stride,
+    divergence blows past 0.5) and every rank stays on NCCL, which is the safe
+    direction. The value is logged in the source fingerprint so a split is
+    readable from the four boot logs.
+    """
+    raw = (os.environ.get("VLLM_DSV4_OSAR_MAXEL") or "").strip()
+    if not raw:
+        return _MAXEL_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("[osar] VLLM_DSV4_OSAR_MAXEL=%r is not an integer; "
+                       "using %d", raw, _MAXEL_DEFAULT)
+        return _MAXEL_DEFAULT
+    # 1024-element granularity keeps the buffers aligned; the ceiling is a
+    # sanity bound, not a measured limit (16 copies * 2 B = 32 B per element).
+    if value < 1024 or value > 8 << 20 or value % 1024:
+        logger.warning("[osar] VLLM_DSV4_OSAR_MAXEL=%d is out of range or not "
+                       "a multiple of 1024; using %d", value, _MAXEL_DEFAULT)
+        return _MAXEL_DEFAULT
+    return value
+
+
+_MAXEL = _resolve_maxel()
 # No rank->IP table here. Which node holds which rank is the launcher's choice,
 # not a property of the fleet: hy4 orders its workers 10.10.10.3, 10.10.10.1,
 # 10.10.10.4 and the glm53 launcher orders them 10.10.10.1, 10.10.10.3,
@@ -84,14 +120,27 @@ def _build():
     with open(_SRC, encoding="utf-8", errors="replace") as f:
         _n_kernels = sum(1 for line in f if line.lstrip().startswith("__global__"))
     logger.warning(
-        "[osar] source md5=%s kernels=%d (%s)", _src_md5, _n_kernels, _SRC)
+        "[osar] source md5=%s kernels=%d maxel=%d (%s)",
+        _src_md5, _n_kernels, _MAXEL, _SRC)
+
+    cuda_flags = ["-O2", "-arch=sm_121a"]
+    build_dir = "/root/.osar_build"
+    if _MAXEL != _MAXEL_DEFAULT:
+        # A stale object compiled at another MAXEL would put every peer's rx
+        # writes at the wrong stride, so the build gets its own directory
+        # rather than trusting the JIT loader to notice a changed flag.
+        cuda_flags.append(f"-DMAXEL={_MAXEL}")
+        build_dir = f"/root/.osar_build_maxel{_MAXEL}"
+    import os as _os
+
+    _os.makedirs(build_dir, exist_ok=True)
 
     return load(
         name="dsv4_oneshot_ar",
         sources=[_SRC],
-        extra_cuda_cflags=["-O2", "-arch=sm_121a"],
+        extra_cuda_cflags=cuda_flags,
         extra_ldflags=["-libverbs"],
-        build_directory="/root/.osar_build",
+        build_directory=build_dir,
         verbose=False,
     )
 

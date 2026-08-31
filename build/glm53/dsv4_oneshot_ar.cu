@@ -22,7 +22,17 @@
 
 #define NPEER 3
 #define RING 4
-#define MAXEL 131072  // GLM: max captured verify = 32 tokens * hidden 4096
+// Size gate. 131072 bf16 = 256 KB = 32 tokens at hidden 4096, which is GLM's
+// max captured verify (MAX_SEQS 4 * (1+7)). It is NOT dsv4's: that stack
+// captures MAX_NUM_SEQS 32 * (1+5) = 192 tokens, so above C=5 every AllReduce
+// falls out of one-shot and back onto the NCCL ring -- silently, because the
+// gate is a size test, not an error. Overridable at build time so the
+// latency-vs-bandwidth crossover can be swept instead of assumed; the buffers
+// below scale linearly with it (RING + RING*NPEER = 16 copies), so 786432
+// (C=32) costs 24 MiB/rank against 4.
+#ifndef MAXEL
+#define MAXEL 131072
+#endif
 #define ARGRID 48     // GB10 / SM121a has exactly 48 SMs
 #define ARTHREADS 256
 #define PROXY_CORE 18

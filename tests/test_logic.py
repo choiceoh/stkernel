@@ -3208,8 +3208,36 @@ def test_oneshot_sm121_grid_contract() -> None:
         ),
         encoding="utf-8",
     ).read()
-    check(re.search(r"^_MAXEL = 131072\b", shim, re.M) is not None,
-          "Python eligibility and CUDA MAXEL stay in lockstep")
+    # The Python size gate and the CUDA #define have to stay in lockstep: a
+    # tensor the shim admits but the kernel refuses is a TORCH_CHECK abort, and
+    # a MAXEL the peers disagree on puts every rx write at the wrong stride.
+    # The constant is overridable now (VLLM_DSV4_OSAR_MAXEL) because the
+    # built-in 131072 = 32 tokens at hidden 4096 is GLM's captured verify, not
+    # this stack's 192 -- so both sides must read the SAME override, and the
+    # default must remain the exact constant that has always shipped.
+    cu = open(
+        os.path.join(
+            REPO, "overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu"),
+        encoding="utf-8",
+    ).read()
+    check(re.search(r"^_MAXEL_DEFAULT = 131072\b", shim, re.M) is not None,
+          "the Python default drifted from the shipped CUDA constant")
+    check(re.search(r"^#define MAXEL 131072$", cu, re.M) is not None,
+          "the CUDA default drifted from the Python one")
+    check("#ifndef MAXEL" in cu,
+          "the CUDA constant is not overridable, so -DMAXEL would be a "
+          "redefinition rather than the override the shim thinks it passes")
+    check('_MAXEL = _resolve_maxel()' in shim,
+          "the Python gate no longer follows the resolved override")
+    check('f"-DMAXEL={_MAXEL}"' in shim,
+          "the resolved MAXEL never reaches the compiler, so Python would "
+          "admit tensors the kernel TORCH_CHECKs on")
+    check('build_dir = f"/root/.osar_build_maxel{_MAXEL}"' in shim,
+          "an overridden build shares the default build directory -- a stale "
+          "object at the old MAXEL would put peer writes at the wrong stride")
+    check('"[osar] source md5=%s kernels=%d maxel=%d (%s)"' in shim,
+          "MAXEL is not in the boot fingerprint, so a rank-to-rank split is "
+          "unreadable from the logs")
     check("class OneShotFatal(RuntimeError):" in shim,
           "post-commit rank-local fallback has a fatal error type")
     check("dist.all_reduce(connect_votes, group=comm.cpu_group)" in shim,
