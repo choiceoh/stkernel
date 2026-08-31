@@ -75,18 +75,21 @@ MHC TileLang 185 커널/스텝(9.8%)의 디코드 런치 휴리스틱. 이미지
 
 ```bash
 # srv4의 ~/stkernel 체크아웃을 배포 커밋으로 pull한 뒤 (srv4 뒤처진 클론 사례 있음)
-ssh srv4 'docker run --rm --gpus all -v /home/choiceoh/stkernel:/repo:ro \
-  glm53:v13-b12x python3 /repo/probes/mhc_glm53_bench.py --quick'
+ssh srv4 'cd /home/choiceoh/stkernel && \
+  probes/run_mhc_glm53_bench.sh --quick'
 
 # 같은 창에서 함께 돌릴 프로브 두 개:
 #  --onepass : 융합 단일 런치(#133) vs 스톡 쌍 수치(rel<=1e-4)+시간 비교
-ssh srv4 'docker run --rm --gpus all -v /home/choiceoh/stkernel:/repo:ro \
-  glm53:v13-b12x python3 /repo/probes/mhc_glm53_bench.py --onepass'
+ssh srv4 'cd /home/choiceoh/stkernel && \
+  probes/run_mhc_glm53_bench.sh --onepass'
 #  --prefill : 프리필 big_fuse h_blk 1024/2048/4096 스윕(#136, dsv4 R3 선례)
-ssh srv4 'docker run --rm --gpus all -v /home/choiceoh/stkernel:/repo:ro \
-  glm53:v13-b12x python3 /repo/probes/mhc_glm53_bench.py --prefill'
+ssh srv4 'cd /home/choiceoh/stkernel && \
+  probes/run_mhc_glm53_bench.sh --prefill'
 ```
 
+- wrapper는 `compose-overlays.sh glm53`를 먼저 실행하고 `tilelang.py`와
+  `tilelang_kernels.py`를 이미지의 실제 target에 bind한다. 프로브도 import된 두
+  파일의 SHA-256이 합성 산출물과 같은지 확인하므로 stock 이미지 경로면 즉시 중단한다.
 - `--quick`이 JIT 컴파일 10개(≈수 분), 전체 스윕은 20~28개(십수 분).
 - 표의 `!`는 재현 오차 >1e-4 — 그 셀은 시간이 빨라도 채택 후보에서 뺀다.
 - `--onepass`는 채택 전제: rel_err <=1e-4 유지 + 브래킷 종단 확인.

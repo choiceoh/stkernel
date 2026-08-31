@@ -559,6 +559,71 @@ def test_overlay_manifest() -> None:
     print(f"  overlay manifests ({total} files across {names}) .... OK")
 
 
+def test_composed_snapshot_sync() -> None:
+    """Committed profile snapshots must equal a fresh module composition.
+
+    Deploy composes again, but reviewers and probes read the checked-in build
+    tree. A later PR regenerated from an older branch and silently restored
+    stale fp8/MHC files, while every prior logic check stayed green.
+    """
+    total = 0
+    for profile, prefix, build_manifest in _composed_manifests():
+        envpath = os.path.join(REPO, "profiles", f"{profile}.env")
+        env_text = open(envpath, encoding="utf-8").read()
+        modules_match = re.search(r'^MODULES=["\']([^"\']+)["\']$',
+                                  env_text, re.M)
+        check(modules_match is not None,
+              f"{profile}: MODULES must be a one-line quoted value")
+        modules = modules_match.group(1).split()
+
+        expected_rows = []
+        owners = {}
+        for module in modules:
+            module_dir = os.path.join(REPO, "overlay", "modules", module)
+            manifest = os.path.join(module_dir, "manifest.tsv")
+            check(os.path.isfile(manifest),
+                  f"{profile}: missing module manifest for {module}")
+            with open(manifest, encoding="utf-8") as handle:
+                for line_no, raw in enumerate(handle, 1):
+                    line = raw.rstrip("\n")
+                    if not line or line.startswith("#"):
+                        continue
+                    fields = line.split("\t")
+                    check(len(fields) == 3,
+                          f"{module} line {line_no}: need three TSV fields")
+                    source, target, contract = fields
+                    check(source not in owners,
+                          f"{profile}: {source} owned by two modules")
+                    owners[source] = os.path.join(module_dir, source)
+                    if not target.startswith("/"):
+                        target = prefix + target
+                    expected_rows.append((source, target, contract))
+
+        with open(build_manifest, encoding="utf-8") as handle:
+            actual_rows = [tuple(raw.rstrip("\n").split("\t"))
+                           for raw in handle
+                           if raw.strip() and not raw.startswith("#")]
+        check(actual_rows == expected_rows,
+              f"{profile}: committed manifest differs from profile modules")
+
+        build_dir = os.path.dirname(build_manifest)
+        actual_files = sorted(
+            name for name in os.listdir(build_dir) if name != "manifest.tsv"
+            and not name.startswith("__pycache__")
+        )
+        check(actual_files == sorted(owners),
+              f"{profile}: build file inventory differs from its manifest")
+        for source, module_source in owners.items():
+            build_source = os.path.join(build_dir, source)
+            with open(module_source, "rb") as left, open(build_source, "rb") as right:
+                check(left.read() == right.read(),
+                      f"{profile}: build/{source} is stale; re-run compose")
+            total += 1
+
+    check(total > 0, "composed profile snapshots are missing")
+    print(f"  composed snapshot sync ({total} files) . OK")
+
+
 # ---------------------------------------------------------------------------
 # 8. DSpark speed experiment — launcher bounds + FP8 helper contract
 # ---------------------------------------------------------------------------
@@ -2098,6 +2163,96 @@ def test_ep_fixed_pair_plan() -> None:
 
     print("  EP fixed pair plan ............. OK")
 
+
+def test_mhc_probe_contracts() -> None:
+    """The GPU probe must compare final shapes and load the tested overlay."""
+    comparisons = []
+
+    class FakeTensor:
+        def __init__(self, name):
+            self.name = name
+
+        def reshape_as(self, expected):
+            return ("reshape_as", self.name, expected.name)
+
+    def fake_rel_err(actual, expected):
+        comparisons.append((actual, expected))
+        return len(comparisons)
+
+    names = {
+        "STOCK_LT8", "STOCK_GE8", "_stock_config", "_parse_ms",
+        "_onepass_rel_errors", "_pair_rel_errors",
+    }
+    ns = load_defs("probes/mhc_glm53_bench.py", names,
+                   {"rel_err": fake_rel_err})
+    stock_config = ns["_stock_config"]
+    check(stock_config(1) == (2, 8) and stock_config(7) == (2, 8),
+          "probe must use the decode stock pair below M=8")
+    check(stock_config(8) == (3, 4) and stock_config(16) == (3, 4),
+          "probe must use the dispatcher stock pair at M=8..16")
+    parse_ms = ns["_parse_ms"]
+    check(parse_ms("1, 8,16") == [1, 8, 16],
+          "probe must accept small-FMA token counts")
+    for raw in ("", "0", "17", "1,,2", "x"):
+        rejected = False
+        try:
+            parse_ms(raw)
+        except ValueError:
+            rejected = True
+        check(rejected, f"probe must reject out-of-contract --ms={raw!r}")
+
+    ref = [FakeTensor(name) for name in
+           ("gemm", "sqrsum", "residual", "post", "comb", "layer")]
+    out = [FakeTensor(name) for name in
+           ("residual-out", "post-out", "comb-out", "layer-out")]
+    result = ns["_onepass_rel_errors"](out, ref)
+    check(result == [1, 2, 3, 4], "onepass must compare all four outputs")
+    check(comparisons == [
+        (out[0], ref[2]),
+        (("reshape_as", "post-out", "post"), ref[3]),
+        (("reshape_as", "comb-out", "comb"), ref[4]),
+        (out[3], ref[5]),
+    ], "onepass post/comb outputs must match the stock flat-buffer shapes")
+
+    comparisons.clear()
+    pair = [FakeTensor(name) for name in
+            ("candidate-gemm", "candidate-sqrsum", "candidate-residual",
+             "candidate-post", "candidate-comb", "candidate-layer")]
+    ns["_pair_rel_errors"](pair, ref)
+    check(comparisons == list(zip(pair[2:], ref[2:])),
+          "config sweep must ignore n_splits-shaped intermediates")
+
+    probe_path = os.path.join(REPO, "probes", "mhc_glm53_bench.py")
+    probe_source = open(probe_path, encoding="utf-8").read()
+    probe_tree = ast.parse(probe_source)
+    main_node = next(node for node in probe_tree.body
+                     if isinstance(node, ast.FunctionDef)
+                     and node.name == "main")
+    main_source = ast.get_source_segment(probe_source, main_node)
+    assert main_source is not None
+    check(main_source.index('os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"')
+          < main_source.index("_load_mhc_overlay"),
+          "ONEPASS must be set before importing the eager MHC package")
+
+    loader_node = next(node for node in probe_tree.body
+                       if isinstance(node, ast.FunctionDef)
+                       and node.name == "_load_mhc_overlay")
+    loader_source = ast.get_source_segment(probe_source, loader_node)
+    assert loader_source is not None
+    check(loader_source.count("_require_composed_source") == 2
+          and '"_DENEB_ONEPASS"' in loader_source
+          and '"mhc_onepass_tilelang"' in loader_source,
+          "probe must prove both source hashes and the armed onepass path")
+
+    wrapper = os.path.join(REPO, "probes", "run_mhc_glm53_bench.sh")
+    wrapper_source = open(wrapper, encoding="utf-8").read()
+    check(os.access(wrapper, os.X_OK)
+          and "for source in tilelang.py tilelang_kernels.py" in wrapper_source
+          and "STKERNEL_MHC_OVERLAY_BUILD=/repo/build/glm53" in wrapper_source,
+          "probe wrapper must bind and identify both composed MHC sources")
+    print("  mhc probe contracts ............ OK")
+
+
 def test_mhc_onepass_math() -> None:
     """mhc_onepass_tilelang's MATH equals the stock two-kernel pipeline.
 
@@ -2406,6 +2561,7 @@ if __name__ == "__main__":
     test_profile_step()
     test_bench_dec_metrics()
     test_overlay_manifest()
+    test_composed_snapshot_sync()
     test_overlay_symbol_contracts()
     test_profile_env_carried()
     test_profile_keys_have_readers()
@@ -2425,6 +2581,7 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
+    test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_bigfuse_knob()
     test_candidate_probs_and_sample()
