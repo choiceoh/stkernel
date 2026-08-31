@@ -2585,6 +2585,23 @@ def test_mhc_bigfuse_knob() -> None:
 
 
 
+def test_ep_fixed_pair_out_initialised() -> None:
+    src = open(_overlay_source(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+    body = src[src.index("def _apply_ep_fixed"):src.index("def _apply_ep_compact")]
+    check("pair_out = torch.zeros(" in body,
+          "fixed decode must allocate pair_out zeroed -- three quarters of its "
+          "rows carry weight 0, the kernel may skip them, and an uninitialised "
+          "bit pattern can be NaN")
+    check("torch.empty(" not in body,
+          "no uninitialised buffer may reach index_add_ in the fixed path")
+    check(body.index("pair_out.mul_(") < body.index("output.index_add_("),
+          "padding rows must be masked BEFORE the sum, in case the kernel "
+          "wrote them without applying token_final_scales")
+    check("keep.unsqueeze(1)" in body, "the mask must be the keep flags")
+    print("  EP fixed pair_out init ......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -2603,6 +2620,7 @@ if __name__ == "__main__":
     test_ngram_ceiling_sim()
     test_ue8m0_scale_repair()
     test_ep_fixed_pair_plan()
+    test_ep_fixed_pair_out_initialised()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
     test_launcher_head_guard()
