@@ -6242,10 +6242,12 @@ def test_glm53_megakernel_contracts() -> None:
     #    took 3-10 us during which DRAM idled; a fill issued first instead
     #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
     _hoist_at = cu_code.index("stage_w(nt0, kb00,")
-    check(cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)") < _hoist_at
-          < cu_code.index("mk_grid_barrier(bar, c.grid);"),
-          "prologue order: x loads + amax, then the first unit's W fill, "
-          "then scale/convert/store and the publishing barrier")
+    check(cu_code.index("mk_cp_async16(sx + r * 256 + e,") < _hoist_at
+          < cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)")
+          < cu_code.index("mk_grid_barrier(bar, c.grid);")
+          and "mk_cp_wait_upto(n_hoisted);" in cu,
+          "prologue order: x staged by cp.async (one group), then the first "
+          "unit's W fill, then wait for x only, amax/convert/store, barrier")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "

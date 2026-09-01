@@ -149,7 +149,7 @@ constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
                              W4_RAW_NBUF * W4_RAW_BYTES;  // 91,264
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
-static_assert(W4_RAW_NBUF - 2 <= 3, "mk_cp_wait_upto dispatches up to 3");
+static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
 
 #define MK_CHECK_CUDA(x)                                                     \
   do {                                                                       \
@@ -226,7 +226,8 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
     case 0: mk_cp_wait<0>(); break;
     case 1: mk_cp_wait<1>(); break;
     case 2: mk_cp_wait<2>(); break;
-    default: mk_cp_wait<3>(); break;
+    case 3: mk_cp_wait<3>(); break;
+    default: mk_cp_wait<4>(); break;
   }
 }
 
@@ -511,80 +512,62 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   constexpr int DIST = MK_W_NBUF - 1;
   constexpr int RAW_DIST = W4_RAW_NBUF - 1;
 
-  // ---- prologue, part 1: this block's A rows are loaded and amax-reduced
-  // BEFORE the W fill goes out. The fill is 1.5 MB grid-wide; issued first
-  // it queued these 256 B/row loads behind itself and the stamps showed
-  // quant stretching from 2-8 us to 13-18 us -- the hoist gave nothing
-  // back. The reduce consumes the loads, so they are in the DRAM queue
-  // ahead of the fill, and the scale/convert/store half below runs under
-  // it. kblk <= KBLK_MAX = 32 and the grid is at least 48, so this block
-  // owns at most one k-block; the loop after part 2 is for the record.
+  // ---- prologue, part 1: this block's A k-block (m rows x 256 B) goes
+  // out as ONE cp.async group, ahead of the W fill. Register loads here
+  // measured 2 us per row (8 us at m=32, x already in L2) and a 4.4..11 us
+  // spread across blocks that the publishing barrier then turned into an
+  // 8 us wait for everyone: the rows' loads went out one latency after
+  // another and queued behind other warps' and blocks' W fills. 512
+  // independent 16 B copies cannot be serialised, and they are committed
+  // before the fill. The staging buffer is a tile buffer the hoisted fill
+  // leaves free (W8: the one the loop's third stage will take; W4: an
+  // expanded-tile buffer, unused until the first expansion).
   const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
   constexpr int RPW = 32 / MK_WARPS;  // rows per warp at m = 32
   const int kbq = (int)blockIdx.x;
-  float v[RPW][4], mx[RPW];
+  int nt0 = 0, kb00 = 0, kbn0 = 0;
+  const bool has_u0 = (int)blockIdx.x < units;
+  if (has_u0) decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
+  uint8_t* sx = W4 ? swb
+                   : swb + ((kb00 + DIST) % MK_W_NBUF) *
+                             (SMEM_W_ROWS * SMEM_W_PITCH);
   if (kbq < kblk) {
-    // Every row this warp owns is loaded before any is reduced, as ONE
-    // 8 B load per row with no branch around it: the split stamps put
-    // this half at 2 us per row (8 us at m=32, x already in L2), i.e. the
-    // rows' loads were going out one latency after another. Four
-    // unconditional, independent loads go out together. Rows past m
-    // read a clamped (valid) row and are never stored.
-    uint2 raw[RPW];
-#pragma unroll
-    for (int i = 0; i < RPW; ++i) {
-      const int r = min(qw + i * MK_WARPS, c.m - 1);
-      raw[i] = *(const uint2*)(c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4);
-    }
-#pragma unroll
-    for (int i = 0; i < RPW; ++i) {
-      const __nv_bfloat16* pv = (const __nv_bfloat16*)&raw[i];
-#pragma unroll
-      for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(pv[q]);
-    }
-#pragma unroll
-    for (int i = 0; i < RPW; ++i) {
-      mx[i] = fmaxf(fmaxf(fabsf(v[i][0]), fabsf(v[i][1])),
-                    fmaxf(fabsf(v[i][2]), fabsf(v[i][3])));
-#pragma unroll
-      for (int off = 16; off; off >>= 1)
-        mx[i] = fmaxf(mx[i], __shfl_xor_sync(0xffffffffu, mx[i], off));
+    const uint8_t* xsrc = (const uint8_t*)(c.x + kbq * KSTEP);
+    for (int t = (int)threadIdx.x - 1; threadIdx.x != 0 && t < c.m * 16;
+         t += MK_THREADS - 1) {
+      const int r = t >> 4, e = (t & 15) * 16;
+      mk_cp_async16(sx + r * 256 + e, xsrc + (size_t)r * c.k * 2 + e);
     }
   }
+  mk_cp_commit();  // every thread, possibly empty: uniform group counts
+  MK_TS(7);  // x copies issued; the W fill goes out next
 
-  MK_TS(7);  // x loaded and amax-reduced; the W fill goes out next
-
-  // ---- first unit's W fill, issued before the prologue's second half
-  // (W8 path). The stamps said quant + barrier cost 3-10 us (m=8..32) and
-  // the first W tile then took another 8-9 us to land, with DRAM idle for
-  // the first stretch. Nothing in the fill depends on A, so it goes out
-  // here and the rest of the prologue runs under it. cp.async groups
-  // survive the barrier's __syncthreads, and the prologue issues none, so
-  // the wait counts the unit loop relies on are unchanged.
   bool hoisted = false;
-  if ((int)blockIdx.x < units) {
-    int nt0, kb00, kbn0;
-    decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
+  int n_hoisted = 0;  // W groups committed after the x group
+  if (has_u0) {
     if (kb00 < kbn0) {
       if constexpr (W4) {
-        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
+        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF); ++n_hoisted;
 #pragma unroll
         for (int d = 1; d < RAW_DIST; ++d)
-          if (kb00 + d < kbn0)
-            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
+          if (kb00 + d < kbn0) {
+            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF); ++n_hoisted;
+          }
       } else {
-        stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+        stage_w(nt0, kb00, kb00 % MK_W_NBUF); ++n_hoisted;
 #pragma unroll
         for (int d = 1; d < DIST; ++d)
-          if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+          if (kb00 + d < kbn0) {
+            stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF); ++n_hoisted;
+          }
       }
       hoisted = true;
     }
   }
 
-  // ---- prologue, part 2: scale, convert, publish -- once for the WHOLE
-  // grid. The barrier that publishes it is the price; the measurement in
-  // #209 says it is worth paying.
+  // ---- prologue, part 2: x landed -> amax, scale, convert, publish --
+  // once for the WHOLE grid. The barrier that publishes it is the price;
+  // the measurement in #209 says it is worth paying.
   auto quant_store = [&](int kb, const float (&vv)[RPW][4],
                          const float (&mm)[RPW]) {
 #pragma unroll
@@ -603,7 +586,26 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
     }
   };
-  if (kbq < kblk) quant_store(kbq, v, mx);
+  if (kbq < kblk) {
+    mk_cp_wait_upto(n_hoisted);  // x is the group before the W stages
+    __syncthreads();
+    float v[RPW][4], mx[RPW];
+#pragma unroll
+    for (int i = 0; i < RPW; ++i) {
+      const int r = qw + i * MK_WARPS;
+      const uint2 raw = (r < c.m)
+          ? *(const uint2*)(sx + r * 256 + ql * 8) : make_uint2(0u, 0u);
+      const __nv_bfloat16* pv = (const __nv_bfloat16*)&raw;
+#pragma unroll
+      for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(pv[q]);
+      mx[i] = fmaxf(fmaxf(fabsf(v[i][0]), fabsf(v[i][1])),
+                    fmaxf(fabsf(v[i][2]), fabsf(v[i][3])));
+#pragma unroll
+      for (int off = 16; off; off >>= 1)
+        mx[i] = fmaxf(mx[i], __shfl_xor_sync(0xffffffffu, mx[i], off));
+    }
+    quant_store(kbq, v, mx);
+  }
   for (int kb = kbq + c.grid; kb < kblk; kb += c.grid) {  // grid < kblk only
     float v2[RPW][4], mx2[RPW];
 #pragma unroll
@@ -1681,8 +1683,9 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   c.m = (int)x.size(0);
   c.k = (int)x.size(1);
   // the A-quant prologue reads x as 8 B vectors (4 bf16 per lane)
-  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
-              "x must be 8 B aligned and contiguous");
+  // the A-quant prologue stages x with 16 B cp.async
+  TORCH_CHECK(((uintptr_t)x.data_ptr() & 15) == 0 && x.is_contiguous(),
+              "x must be 16 B aligned and contiguous");
   // wq is [n/128, k/128, 128, 128] -- tile-major, see stage_w.
   TORCH_CHECK(wq.dim() == 4 && wq.size(2) == SMEM_W_ROWS
                   && wq.size(3) == KSTEP && wq.is_contiguous(),
@@ -1708,8 +1711,8 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
   c.k = (int)x.size(1);        // k is the ACTIVATION width
-  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
-              "x must be 8 B aligned and contiguous");
+  TORCH_CHECK(((uintptr_t)x.data_ptr() & 15) == 0 && x.is_contiguous(),
+              "x must be 16 B aligned and contiguous");
   // Tile-major packs -- see stage_raw4. The shape is the only thing
   // standing between a stale row-major pack and silently wrong output.
   TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
