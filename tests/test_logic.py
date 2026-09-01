@@ -6208,9 +6208,19 @@ def test_glm53_megakernel_contracts() -> None:
     check(cu.index("mk_grid_barrier(&g_mk_gemm_bar);") < _red,
           "the accumulator is zeroed under a barrier before any atomicAdd, "
           "and reduced under a second one after")
-    check("32 * MK_SPLIT_MAXCOL" in cu and "(MK_GRID - 1) * 128" in cu,
-          "rem < MK_GRID bounds the accumulator; sizing it by n would make "
-          "it 20x larger for no reason")
+    check("32 * 128 * MK_GRID" in cu and "(MK_GRID - 1) * 128" in cu,
+          "ksr * rem <= MK_GRID bounds the accumulator; sizing it by n "
+          "would make it 20x larger for no reason")
+    check("atomicAdd(&g_mk_gemm_partial" not in cu
+          and "fixed order -> reproducible" in cu,
+          "the split reduction must be deterministic: an atomicAdd "
+          "accumulator returns bitwise-different results for back-to-back "
+          "launches of the same call, which the probe's replay-stability "
+          "check flags and this lane cannot ship")
+    check("expand_w4(kb0 % 2)" in cu and "load_w4(kb0);" in cu,
+          "the W4 prologue must fill the buffer the loop reads first: the "
+          "loop starts at kb0, so a hardcoded 0 loads the wrong k-block "
+          "(this broke the W4 exact-grid check when split-K landed)")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
     check("mk_e2m1_to_e4m3[8]" in cu_code
           and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,

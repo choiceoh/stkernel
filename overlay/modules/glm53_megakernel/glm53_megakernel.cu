@@ -212,9 +212,12 @@ __device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
 // The leftovers get their k split instead. rem < MK_GRID by construction, so
 // the accumulator is at most 32 x (47*128) floats; it lives here rather than
 // in the ctx so neither host entry point nor the pybind signature changes.
+// ksr * rem <= MK_GRID by construction, so the per-split accumulator is
+// bounded by m * 128 * MK_GRID floats regardless of n.
 constexpr int MK_SPLIT_MAXCOL = (MK_GRID - 1) * 128;  // 6016
+constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_GRID;    // 196608 = 768 KB
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
-__device__ float g_mk_gemm_partial[32 * MK_SPLIT_MAXCOL];
+__device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int nblk = c.n / 128;
@@ -230,7 +233,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const bool split = (ksr > 1) && (c.m <= 32) &&
                      (rem * 128 <= MK_SPLIT_MAXCOL);
   const int pcols = rem * 128;
-  const size_t pelem = (size_t)c.m * pcols;
+  // One slice per split, summed in a FIXED order below. An atomicAdd
+  // accumulator is order-nondeterministic, so back-to-back launches of the
+  // same call return bitwise-different results -- the probe's replay-
+  // stability check catches exactly that, and this lane cannot afford a
+  // kernel whose output depends on scheduling.
+  const size_t pslice = (size_t)c.m * pcols;
+  const size_t pelem = pslice * ksr;
   if (split) {
     for (size_t i = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
          i < pelem; i += (size_t)MK_GRID * MK_THREADS)
@@ -449,9 +458,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         for (int i = 0; i < 4; ++i) dv[i] = ((uint4*)ob)[i];
       };
 
-      load_w4(0);
-      quant_a(0);
-      expand_w4(0);
+      load_w4(kb0);
+      quant_a(kb0);
+      expand_w4(kb0 % 2);   // the loop reads (kb % 2); kb starts at kb0
       __syncthreads();
       for (int kb = kb0;; ++kb) {
         if (kb + 1 < kbn) load_w4(kb + 1);  // flies during the mma
@@ -501,17 +510,15 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         if (to_partial) {
           // acc already carries the per-k-block scales, so the slices sum.
           const int pc = cbase - full * 128;
+          const int spx = (u - full) % ksr;
+          float* pb = g_mk_gemm_partial + (size_t)spx * pslice;
           if (r0 < c.m) {
-            atomicAdd(&g_mk_gemm_partial[(size_t)r0 * pcols + pc],
-                      acc[i][j][0]);
-            atomicAdd(&g_mk_gemm_partial[(size_t)r0 * pcols + pc + 1],
-                      acc[i][j][1]);
+            pb[(size_t)r0 * pcols + pc] = acc[i][j][0];
+            pb[(size_t)r0 * pcols + pc + 1] = acc[i][j][1];
           }
           if (r1 < c.m) {
-            atomicAdd(&g_mk_gemm_partial[(size_t)r1 * pcols + pc],
-                      acc[i][j][2]);
-            atomicAdd(&g_mk_gemm_partial[(size_t)r1 * pcols + pc + 1],
-                      acc[i][j][3]);
+            pb[(size_t)r1 * pcols + pc] = acc[i][j][2];
+            pb[(size_t)r1 * pcols + pc + 1] = acc[i][j][3];
           }
           continue;
         }
@@ -538,12 +545,14 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   if (split) {  // fold the leftover tiles' slices into the bf16 output
     mk_grid_barrier(&g_mk_gemm_bar);
     for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
-         i2 < pelem; i2 += (size_t)MK_GRID * MK_THREADS) {
+         i2 < pslice; i2 += (size_t)MK_GRID * MK_THREADS) {
       const int r = (int)(i2 / pcols);
       const int col = full * 128 + (int)(i2 % pcols);
-      if (col < c.n_orig)
-        c.out[(size_t)r * c.n_orig + col] =
-            __float2bfloat16(g_mk_gemm_partial[i2]);
+      if (col >= c.n_orig) continue;
+      float v = 0.0f;
+      for (int spx = 0; spx < ksr; ++spx)   // fixed order -> reproducible
+        v += g_mk_gemm_partial[(size_t)spx * pslice + i2];
+      c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
     }
   }
 }
