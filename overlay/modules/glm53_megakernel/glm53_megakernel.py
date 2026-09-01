@@ -522,7 +522,7 @@ def kda_takeover(layer) -> bool:
 
 
 def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
-                delta_variant=0):
+                delta_variant=1):
     import torch
     ws = _ensure_workspace(hidden_states.device)
     n_spec = meta.num_spec_decodes
@@ -801,12 +801,16 @@ class _KdaFixture:
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
-    def mk_run(self, delta_variant=0):
+    def mk_run(self, delta_variant=None):
         """MK arm on cloned states -> dict(out, conv_state, rec_state).
 
         delta_variant sweeps the retrieval/write operand order (see the .cu
         comment): the stock source is not in this repo, so the boot settles
         which variant matches fused_recurrent_kda."""
+        # _KDA_VARIANT is defined below this class, so it cannot be a
+        # default argument: that binds at class-definition time.
+        if delta_variant is None:
+            delta_variant = _KDA_VARIANT
         import torch
 
         la, meta = self._layer_stand_in()
@@ -908,7 +912,16 @@ class _KdaFixture:
         return {"out": out, "conv_state": conv_ref, "rec_state": rec_ref}
 
 
-_KDA_VARIANT = 0  # settled at arm time by the delta sweep
+# Retrieval operand settled from the stock source, not from a sweep.
+# fused_recurrent.py, gated delta rule body:
+#     b_h  *= exp(b_gk)                      # decay
+#     b_v  -= tl.sum(b_h * b_k[None, :], 1)  # error retrieves with k
+#     b_h  += (b_v * b_beta)[:, None] * b_k[None, :]
+#     b_o   = tl.sum(b_h * b_q[None, :], 1)  # readout with q, post-update
+# The .cu picks k for the error only when delta_variant == 1, so 1 is the
+# arm that matches. 0 retrieved with q, which is what left `out` wrong at
+# rel_err ~4 while rec_state was already near the gate.
+_KDA_VARIANT = 1
 
 
 def _selftest_kda() -> bool:
