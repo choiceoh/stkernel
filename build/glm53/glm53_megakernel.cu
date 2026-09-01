@@ -1045,20 +1045,30 @@ __device__ void mk_mhc_p2(const MKMhcArgs& a, int bid) {
   const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
   const int gw = bid * MK_WARPS + warp;   // 96 x 8 = 768 warps >= MAX_TOK
   for (int t = gw; t < a.num_tokens; t += a.grid * MK_WARPS) {
-    float mixes[NOUT], sqr = 0.0f;
-#pragma unroll
-    for (int m = 0; m < NOUT; ++m) {
-      float v = 0.0f;
+    // The 24 chunk reductions are spread over the warp: lanes 0..23 each
+    // sum one output's 16 partials (16 independent loads, one L2 round
+    // trip), lanes 24..31 the sumsq partials. Every lane used to run all
+    // 384 loads itself, in a dependent chain -- the stamps put this phase
+    // at 12.5 us per token-warp while 143 blocks waited at the barrier.
+    float mine = 0.0f;
+    if (lane < NOUT) {
 #pragma unroll
       for (int c = 0; c < NCHUNK; ++c)
-        v += a.yp[((size_t)c * MAX_TOK + t) * NOUT + m];
-      mixes[m] = v;
+        mine += a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane];
+    } else {
+#pragma unroll
+      for (int c = lane - NOUT; c < NCHUNK; c += 32 - NOUT)
+        mine += a.rp[c * MAX_TOK + t];
     }
+    float sqr = (lane >= NOUT) ? mine : 0.0f;
 #pragma unroll
-    for (int c = 0; c < NCHUNK; ++c) sqr += a.rp[c * MAX_TOK + t];
+    for (int off = 16; off; off >>= 1)
+      sqr += __shfl_xor_sync(0xffffffffu, sqr, off);
     const float rms = rsqrtf(sqr / (float)(HC * HIDDEN) + a.rms_eps);
+    const float mixv = mine * rms;
+    float mixes[NOUT];
 #pragma unroll
-    for (int m = 0; m < NOUT; ++m) mixes[m] *= rms;
+    for (int m = 0; m < NOUT; ++m) mixes[m] = __shfl_sync(0xffffffffu, mixv, m);
 
     if (lane == 0) {  // post mixes: hc_scale[1]
 #pragma unroll
