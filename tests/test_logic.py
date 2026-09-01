@@ -5330,54 +5330,37 @@ def test_dflash2_conv_mask_buffer() -> None:
     print("  dflash2 conv mask buffer ....... OK")
 
 
-def test_dflash2_sliding_aot_guard() -> None:
-    """A windowed DFlash builder must not inherit a model-global AOT plan."""
-    source = open(_overlay_source(
-        "overlay/modules/glm53_dflash_aot_guard/dflash_speculator.py"
-    ), encoding="utf-8").read()
-    tree = ast.parse(source)
-    speculator = next(
-        node for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "DFlashSpeculator"
-    )
-    set_attn = next(
-        node for node in speculator.body
-        if isinstance(node, ast.FunctionDef) and node.name == "set_attn"
-    )
-    body = ast.get_source_segment(source, set_attn) or ""
-    super_at = body.index("super().set_attn(")
-    groups_at = body.index("for groups in self.attn_groups:")
-    cache_ids_at = body.index("self.draft_kv_cache_group_ids = [")
-    check(super_at < groups_at < cache_ids_at,
-          "the guard must inspect drafter-owned builders after base wiring")
-    check('getattr(builder, "aot_schedule", False)' in body
-          and 'builder.kv_cache_spec, "sliding_window", None' in body,
-          "only an enabled AOT plan on a sliding-window group may be changed")
-    check("builder.aot_schedule = False" in body,
-          "the invalid FlashAttention split schedule must be disabled")
-    check("logger.info" in body and "logger.warning" in body,
-          "the guard must announce whether it applied -- a boolean flipped on "
-          "a builder is invisible from outside, so 'we shipped it' and 'it "
-          "ran' are otherwise indistinguishable")
-    check(body.index("_windowed += 1") < body.index("aot_schedule = False"),
-          "count the windowed builders before flipping any, so a zero count "
-          "means the guard's premise was unmet rather than that nothing "
-          "needed flipping")
+def test_dflash_aot_guard_stays_removed() -> None:
+    """The FlashAttention AOT split schedule cannot exist on this fleet.
 
-    readme = open(
-        "overlay/modules/glm53_dflash_aot_guard/README.md", encoding="utf-8"
-    ).read()
-    check("DFlash2Speculator(DFlashSpeculator)" in readme
-          and "set_attn" in readme,
-          "the README must record why a patch on DFlashSpeculator reaches a "
-          "DFlash2 boot -- inheritance is the only reason, and an image bump "
-          "that gives DFlash2 its own set_attn silently kills this overlay")
+    #178 ported upstream vllm#54374, which disables `aot_schedule` on a
+    sliding-window draft builder. Instrumented (#180), the guard reported
+    `1 sliding-window draft builder(s), aot_schedule disabled on 0` on two
+    separate boots -- because `flash_attn.py` sets
 
+        self.aot_schedule = get_flash_attn_version() == 3
+
+    and `get_flash_attn_version` returns 3 only for `device_capability.major
+    == 9` (Hopper SM90). GB10 is sm_121, major 12, so it falls through to FA2
+    and `aot_schedule` is False on every builder, always. The upstream
+    "acceptance 1.000 -> 5.542" figure was measured on hardware we are not on.
+
+    Keeping the overlay meant re-syncing a 721-line verbatim copy of the
+    speculator against every image bump for a branch that can never be taken.
+    """
     profile = open("profiles/glm53.env", encoding="utf-8").read()
-    check("glm53_dflash_aot_guard" in profile.split('MODULES="', 1)[1]
-          .split('"', 1)[0].split(),
-          "the production GLM profile must mount the DFlash attention guard")
-    print("  dflash2 sliding AOT guard ...... OK")
+    modules = profile.split('MODULES="', 1)[1].split('"', 1)[0].split()
+    check("glm53_dflash_aot_guard" not in modules,
+          "the guard must not come back without new evidence: re-adding it "
+          "needs FA3 on this fleet, which needs SM90 hardware")
+    check(not os.path.exists("overlay/modules/glm53_dflash_aot_guard"),
+          "the overlay directory must be gone, not merely unmounted -- an "
+          "unmounted 721-line image copy still rots against image bumps")
+    manifest = open("build/glm53/manifest.tsv", encoding="utf-8").read()
+    check("dflash_speculator.py" not in manifest,
+          "the composed manifest must not pin a preimage for a file we no "
+          "longer overlay")
+    print("  dflash AOT guard stays removed  OK")
 
 
 def test_hotpath_env_latches() -> None:
@@ -5638,7 +5621,7 @@ if __name__ == "__main__":
     test_osar_maxel_rank_agreement()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
-    test_dflash2_sliding_aot_guard()
+    test_dflash_aot_guard_stays_removed()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
     test_launcher_reject_method_gate()
