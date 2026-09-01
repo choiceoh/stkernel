@@ -236,6 +236,7 @@ struct MKGemmCtx {
   __nv_bfloat16* out;      // [m, n_orig]
   int m, n, k, n_orig;
   int grid;  // resident blocks; see MK_GRID_CAP
+  int ksr;   // k-split of the leftover tiles, chosen on the host (mk_choose_ksr)
   // W4 path: e2m1 nibbles [n, k/2] + per-16-group scale exponents
   // [n, k/16] (int8, clamped to [-5, 6] at build). The kernel expands each
   // nibble to an EXACT e4m3 byte (1-bit mantissas always fit; the 2^s
@@ -341,22 +342,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // and any exact multiple of c.grid get.
   const int rem = nblk % c.grid;
   const int full = nblk - rem;
-  int ksr = (rem > 0) ? (c.grid / rem) : 1;
-  // c.grid / rem truncates to 1 for nblk in (c.grid/2, c.grid] -- at
-  // c.grid 48 that is n/128 == 32, the 4096-wide projections, which then
-  // ran 32 tiles on 48 blocks with 16 idle. When full == 0 every unit is
-  // the same size, so wall time is exactly ceil(nblk*r / c.grid) / r
-  // tile-times and the best r is worth searching for: r=3 costs 0.667
-  // where r=1 costs 1.0. (Leave the full > 0 case alone -- there the units
-  // are a MIX of whole tiles and k-slices and this model does not hold.)
-  if (full == 0 && rem > 0 && c.m <= 32) {
-    int bn = (nblk + c.grid - 1) / c.grid, bd = 1;
-    for (int r = 2; r <= kblk; ++r) {
-      if ((size_t)c.m * rem * 128 * r > MK_SPLIT_ELEMS) break;
-      const int rounds = (nblk * r + c.grid - 1) / c.grid;
-      if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
-    }
-  }
+  // Chosen on the host (mk_choose_ksr): the cost-model search that used
+  // to run here cost every block a 31-step loop with an integer division
+  // per step, ~3 us at kernel start on all 48 blocks for every full == 0
+  // shape, before the first byte of W moved.
+  const int ksr = c.ksr;
   const int pcols = rem * 128;
   // Guard on the accumulator directly rather than on a column count that
   // only bounds it when ksr * rem <= c.grid -- which no longer holds.
@@ -874,10 +864,20 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           const float* src =
               g_mk_gemm_partial + (size_t)r * pcols + lt * 128 + c4;
           float4 v4 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-          for (int spx = 0; spx < ksr; ++spx) {  // fixed order -> reproducible
-            if ((kblk * (spx + 1)) / ksr <= (kblk * spx) / ksr) continue;
-            const float4 pv = __ldcg((const float4*)(src + (size_t)spx * pslice));
-            v4.x += pv.x; v4.y += pv.y; v4.z += pv.z; v4.w += pv.w;
+          // ksr <= kblk (every production shape): no slice is empty and no
+          // division in the loop -- the two integer divides per slice per
+          // element of the general form put ~10 us on the last tile.
+          if (ksr <= kblk) {
+            for (int spx = 0; spx < ksr; ++spx) {  // fixed order -> reproducible
+              const float4 pv = __ldcg((const float4*)(src + (size_t)spx * pslice));
+              v4.x += pv.x; v4.y += pv.y; v4.z += pv.z; v4.w += pv.w;
+            }
+          } else {
+            for (int spx = 0; spx < ksr; ++spx) {
+              if ((kblk * (spx + 1)) / ksr <= (kblk * spx) / ksr) continue;
+              const float4 pv = __ldcg((const float4*)(src + (size_t)spx * pslice));
+              v4.x += pv.x; v4.y += pv.y; v4.z += pv.z; v4.w += pv.w;
+            }
           }
           const int col = nt * 128 + c4;
           __nv_bfloat16* o = c.out + (size_t)r * c.n_orig + col;
@@ -1252,6 +1252,7 @@ struct MKKdaArgs {
   __nv_bfloat16* attn;  // [MAX_TOK, KDA_OUT]
   unsigned long long* barrier_ctr;
   int grid;          // resident blocks; see MK_GRID_CAP
+  int ksr_in, ksr_out;  // mk_choose_ksr for the in_proj / o_proj phases
   int num_tokens;
   float lower_bound, onorm_eps;
 };
@@ -1270,6 +1271,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.k = HIDDEN;
     c.n_orig = KDA_INPROJ_N;
     c.grid = a.grid;
+    c.ksr = a.ksr_in;
     mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
   mk_grid_barrier(a.barrier_ctr, a.grid);
@@ -1540,6 +1542,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.k = KDA_OUT_PAD;
     c.n_orig = HIDDEN;
     c.grid = a.grid;
+    c.ksr = a.ksr_out;
     mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
 }
@@ -1582,6 +1585,32 @@ int mk_resident_grid(K kernel, int& cache) {
 
 int g_gemm_grid = 0;
 int g_kda_grid = 0;
+
+// Leftover-tile k-split for one launch shape. Every block owns one
+// 128-column tile across all of k, so a tile count that is not a multiple
+// of the grid pays a whole extra round for its leftovers; those get their
+// k split ksr ways instead. grid / rem truncates to 1 for nblk in
+// (grid/2, grid] -- at grid 48 that is n/128 == 32, the 4096-wide
+// projections, which then ran 32 tiles on 48 blocks with 16 idle. When
+// full == 0 every unit is the same size, so wall time is exactly
+// ceil(nblk*r / grid) / r tile-times and the best r is worth searching
+// for: r=3 costs 0.667 where r=1 costs 1.0. (The full > 0 case is left
+// alone -- there the units are a MIX of whole tiles and k-slices and this
+// model does not hold.) Host-side: this used to run in every block.
+int mk_choose_ksr(int m, int n, int k, int grid) {
+  const int nblk = n / 128, kblk = k / KSTEP;
+  const int rem = nblk % grid, full = nblk - rem;
+  int ksr = (rem > 0) ? (grid / rem) : 1;
+  if (full == 0 && rem > 0 && m <= 32) {
+    int bn = (nblk + grid - 1) / grid, bd = 1;
+    for (int r = 2; r <= kblk; ++r) {
+      if ((size_t)m * rem * 128 * r > MK_SPLIT_ELEMS) break;
+      const int rounds = (nblk * r + grid - 1) / grid;
+      if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
+    }
+  }
+  return ksr;
+}
 
 }  // namespace
 
@@ -1639,6 +1668,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
   mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
@@ -1670,6 +1700,7 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
   mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
@@ -1774,6 +1805,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.onorm_eps = (float)scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
   a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid);
+  a.ksr_in = mk_choose_ksr(a.num_tokens, KDA_INPROJ_N_PAD, HIDDEN, a.grid);
+  a.ksr_out = mk_choose_ksr(a.num_tokens, HIDDEN, KDA_OUT_PAD, a.grid);
   mk_kda_kernel<<<a.grid, MK_THREADS, GEMM_SMEM, stream>>>(a);
 }
 

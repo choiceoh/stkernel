@@ -6274,7 +6274,10 @@ def test_glm53_megakernel_contracts() -> None:
     #    slices instead of leaving grid - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.
     check("const int rem = nblk % c.grid;" in cu
-          and "int ksr = (rem > 0) ? (c.grid / rem) : 1;" in cu,
+          and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
+          and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
+          and cu.count("mk_choose_ksr(") == 5
+          and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
           "below does not apply to them")
