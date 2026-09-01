@@ -5567,6 +5567,45 @@ def test_accept_profile_conditional_arithmetic() -> None:
     print("  accept profile arithmetic ..... OK")
 
 
+def test_osar_maxel_rank_agreement() -> None:
+    """MAXEL skew must fall back to NCCL on every rank, not just be logged.
+
+    #185 made MAXEL a per-build override and noted in the source that all
+    peers must agree, but the only evidence was a boot log line. MAXEL is
+    compiled into the kernel, feeds the remote rx stride, and gates
+    ``_eligible`` -- so a rank with a larger value takes the one-shot path for
+    a tensor its peers send through NCCL. The shim already votes this way for
+    readiness and for connect, with the reason written down: a split
+    collective deadlocks. This pins the third vote.
+    """
+    source = open(_overlay_source(
+        "overlay/modules/tp_oneshot_ar/dsv4_oneshot_shim.py"
+    ), encoding="utf-8").read()
+    check("MAXEL differs across ranks" in source,
+          "a MAXEL mismatch must be reported, naming the values")
+    vote_at = source.index("maxel_bounds")
+    connect_at = source.index("_ext.connect(")
+    agreed_at = source.index("_boot_agreed = True")
+    check(vote_at < agreed_at < connect_at,
+          "the vote must run before _boot_agreed and before connect -- peer "
+          "buffers are sized from MAXEL, and after agreement a local fallback "
+          "is fatal by design")
+    tail = source[vote_at:connect_at]
+    check("_disabled = True" in tail and "return" in tail,
+          "a mismatch must put THIS rank on NCCL too; every rank runs the "
+          "same comparison, so they all take this branch together")
+
+    # The min/max trick: one all_reduce(MAX) over [x, -x] yields both bounds.
+    for ranks, agree in (([131072] * 4, True),
+                         ([131072, 131072, 786432, 131072], False),
+                         ([1024, 1024], True)):
+        hi = max(r for r in ranks)
+        lo = -max(-r for r in ranks)
+        check((hi == lo) is agree,
+              f"{ranks} should read as {'agreeing' if agree else 'skewed'}")
+    print("  osar MAXEL rank agreement ..... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -5596,6 +5635,7 @@ if __name__ == "__main__":
     test_dflash2_selector_check()
     test_dflash2_selector_score_precision()
     test_overlay_logger_defined()
+    test_osar_maxel_rank_agreement()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash2_sliding_aot_guard()
