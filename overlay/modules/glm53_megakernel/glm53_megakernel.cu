@@ -926,13 +926,22 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
           const int t = t0 + j;
           if (threadIdx.x < KDA_D) {
             const int d = threadIdx.x;
-            y_s[d] =
+            // The state multiplier is exp(gate), not the gate. Stock
+            // fused_recurrent.py:129-130 computes
+            //   b_gk = LOWER_BOUND / (1 + exp(-(a_log_amp * (g + bias))))
+            //   b_h *= exp(b_gk)
+            // The gate itself is in (lower_bound, 0) = (-5, 0), so using it
+            // raw flips the state's sign every token and grows it by up to
+            // 5x -- which is exactly the observed failure: rel_err 16 at
+            // acc=3 and 1570 at acc=8, i.e. ~2.5x per extra token, with
+            // rec_state the worst component.
+            y_s[d] = expf(
                 a.lower_bound *
                 mk_sigmoid(
                     expf(a.a_log[head]) *
                     (__bfloat162float(a.g1[(size_t)t * KDA_OUT +
                                            head * KDA_D + d]) +
-                     a.dt_bias[head * KDA_D + d]));
+                     a.dt_bias[head * KDA_D + d])));
             q_s[d] = __bfloat162float(
                 a.convq[(size_t)t * KDA_QKV + head * KDA_D + d]);
             k_s[d] = __bfloat162float(a.convq[(size_t)t * KDA_QKV +
