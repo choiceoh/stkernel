@@ -6215,19 +6215,37 @@ def test_glm53_megakernel_contracts() -> None:
     #    slices instead of leaving MK_GRID - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.
     check("const int rem = nblk % MK_GRID;" in cu
-          and "const int ksr = (rem > 0) ? (MK_GRID / rem) : 1;" in cu,
-          "the split is over the REMAINDER tiles: a uniform MK_GRID/nblk "
-          "split is 1 for every shape this kernel actually runs "
-          "(51 and 32 tiles), i.e. dead code")
+          and "int ksr = (rem > 0) ? (MK_GRID / rem) : 1;" in cu,
+          "the split is over the REMAINDER tiles when there are whole tiles "
+          "too -- those units are a mix of sizes and the uniform cost model "
+          "below does not apply to them")
+    # When full == 0 every unit is one k-slice of one tile, so wall time is
+    # ceil(nblk*r / MK_GRID) / r tile-times and the truncating MK_GRID/rem
+    # is simply the wrong pick: it returns 1 for nblk in (MK_GRID/2,
+    # MK_GRID], i.e. the 4096-wide projections, leaving 16 of 48 blocks
+    # idle where r=3 would cost 0.667 tile-times.
+    check("if (full == 0 && rem > 0 && c.m <= 32) {" in cu
+          and "if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }"
+          in cu,
+          "with no whole tiles the k-split is the cost-minimising one, not "
+          "the truncated MK_GRID / rem")
     check("const bool split = (ksr > 1)" in cu,
           "ksr == 1 must fall through to the single-pass path unchanged")
+    # The accumulator no longer follows from ksr * rem <= MK_GRID, so the
+    # size guard has to be on the accumulator itself.
+    check("(size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS" in cu
+          and "MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX" in cu,
+          "the split gate bounds the partial accumulator directly")
     _red = cu.index("fold the leftover tiles' slices")
     check(cu.index("mk_grid_barrier(&g_mk_gemm_bar);") < _red,
           "the accumulator is zeroed under a barrier before any atomicAdd, "
           "and reduced under a second one after")
-    check("32 * 128 * MK_GRID" in cu and "(MK_GRID - 1) * 128" in cu,
-          "ksr * rem <= MK_GRID bounds the accumulator; sizing it by n "
-          "would make it 20x larger for no reason")
+    check("32 * 128 * MK_SPLIT_UNITS_MAX" in cu
+          and "MK_SPLIT_UNITS_MAX = 2 * MK_GRID" in cu
+          and "(MK_GRID - 1) * 128" in cu,
+          "the accumulator is sized by the UNIT cap (rem * ksr), not by n: "
+          "ksr * rem <= MK_GRID stopped holding once ksr could exceed "
+          "MK_GRID / rem, and n-sized would be 20x larger for no reason")
     check("atomicAdd(&g_mk_gemm_partial" not in cu
           and "fixed order -> reproducible" in cu,
           "the split reduction must be deterministic: an atomicAdd "
