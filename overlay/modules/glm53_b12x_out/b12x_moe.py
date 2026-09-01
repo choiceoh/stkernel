@@ -397,6 +397,7 @@ class B12xMoEWrapper:
             allocate_sm120_moe_workspace,
             select_sm120_moe_backend,
             _get_static_compact_cutover_pairs,
+            _effective_glm53_static_cutover,
         )
 
         max_routed_rows = self.max_num_tokens * self.top_k
@@ -411,6 +412,7 @@ class B12xMoEWrapper:
                 device=torch.device(self.device),
                 quant_mode=self.quant_mode,
                 activation=self.activation,
+                swiglu_limit=self.swiglu_limit,
             )
             self._moe_output = torch.empty(
                 (self.max_num_tokens, self.hidden_size),
@@ -430,6 +432,12 @@ class B12xMoEWrapper:
                 num_topk=self.top_k,
                 activation_precision=self.activation_precision,
                 quant_mode=self.quant_mode,
+                num_experts=self.num_experts,
+                num_local_experts=self.num_local_experts,
+                hidden_size=self.hidden_size,
+                intermediate_size=self.intermediate_size,
+                activation=self.activation,
+                swiglu_limit=self.swiglu_limit,
             )
             == "dynamic"
             and self.num_local_experts == self.num_experts
@@ -441,7 +449,17 @@ class B12xMoEWrapper:
         static_max_rows = (
             min(
                 max_routed_rows,
-                _get_static_compact_cutover_pairs(self.activation_precision),
+                _effective_glm53_static_cutover(
+                    _get_static_compact_cutover_pairs(self.activation_precision),
+                    num_experts=self.num_experts,
+                    num_local_experts=self.num_local_experts,
+                    hidden_size=self.hidden_size,
+                    intermediate_size=self.intermediate_size,
+                    num_topk=self.top_k,
+                    quant_mode=self.quant_mode,
+                    activation=self.activation,
+                    swiglu_limit=self.swiglu_limit,
+                ),
             )
             if needs_dynamic
             else max_routed_rows
@@ -457,6 +475,7 @@ class B12xMoEWrapper:
             quant_mode=self.quant_mode,
             backend="static",
             activation=self.activation,
+            swiglu_limit=self.swiglu_limit,
         )
 
         if needs_dynamic:
@@ -471,6 +490,7 @@ class B12xMoEWrapper:
                 quant_mode=self.quant_mode,
                 backend="dynamic",
                 activation=self.activation,
+                swiglu_limit=self.swiglu_limit,
             )
 
         # Allocated after arch-specific buffers to preserve memory layout
@@ -599,6 +619,12 @@ class B12xMoEWrapper:
                     num_topk=self.top_k,
                     activation_precision=self.activation_precision,
                     quant_mode=self.quant_mode,
+                    num_experts=self.num_experts,
+                    num_local_experts=self.num_local_experts,
+                    hidden_size=self.hidden_size,
+                    intermediate_size=self.intermediate_size,
+                    activation=self.activation,
+                    swiglu_limit=self.swiglu_limit,
                 )
                 == "dynamic"
             ):

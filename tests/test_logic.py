@@ -2793,6 +2793,150 @@ def test_b12x_zero_weight_micro() -> None:
     print("  b12x zero-weight micro ......... OK")
 
 
+def test_glm53_b12x_tuning_controls() -> None:
+    """Default-off GLM controls parse strictly and fail closed on shape drift."""
+    dispatch_path = "overlay/modules/b12x_zero_weight_micro/moe_dispatch.py"
+    names = {
+        "_GLM53_B12X_FORCE_BACKEND_ENV",
+        "_GLM53_B12X_STATIC_CUTOVER_ENV",
+        "_parse_glm53_forced_backend",
+        "_parse_glm53_static_cutover",
+        "_parse_glm53_mac_ladder",
+        "_is_glm53_b12x_tp_geometry",
+        "_effective_glm53_static_cutover",
+    }
+    ns = load_defs(dispatch_path, names, {"Tuple": tuple})
+    parse_backend = ns["_parse_glm53_forced_backend"]
+    parse_cutover = ns["_parse_glm53_static_cutover"]
+    parse_ladder = ns["_parse_glm53_mac_ladder"]
+    exact_gate = ns["_is_glm53_b12x_tp_geometry"]
+    effective_cutover = ns["_effective_glm53_static_cutover"]
+
+    for raw in (None, "", "  ", "auto"):
+        check(parse_backend(raw) is None, f"backend {raw!r} must keep automatic")
+    for backend in ("micro", "static", "dynamic"):
+        check(parse_backend(backend) == backend, f"backend {backend} must parse")
+    for raw in ("AUTO", "direct_micro", "static,dynamic", "1"):
+        try:
+            parse_backend(raw)
+            check(False, f"invalid GLM backend must fail: {raw!r}")
+        except ValueError as exc:
+            check("must be auto" in str(exc), "backend error must name its contract")
+
+    for raw, expected in ((None, None), ("", None), ("0", 0), ("640", 640)):
+        check(parse_cutover(raw) == expected, f"cutover {raw!r} must parse")
+    for raw in ("-1", "1.5", "dynamic"):
+        try:
+            parse_cutover(raw)
+            check(False, f"invalid GLM cutover must fail: {raw!r}")
+        except ValueError as exc:
+            check("non-negative" in str(exc), "cutover error must name its contract")
+
+    env_name = "VLLM_GLM53_B12X_STATIC_MAC_LADDER"
+    check(parse_ladder(None, env_name) is None, "unset ladder keeps shipped values")
+    check(
+        parse_ladder("64:48, 128:40,640:32", env_name)
+        == ((64, 48), (128, 40), (640, 32)),
+        "valid routed-row MAC ladder must preserve every cell",
+    )
+    for raw in ("64", "64:x", "0:48", "64:0", "64:48,64:32", "128:48,64:32"):
+        try:
+            parse_ladder(raw, env_name)
+            check(False, f"invalid MAC ladder must fail: {raw!r}")
+        except ValueError as exc:
+            check(env_name in str(exc), "ladder error must name the setting")
+
+    exact = dict(
+        num_experts=288,
+        num_local_experts=288,
+        hidden_size=4096,
+        intermediate_size=2048,
+        num_topk=8,
+        quant_mode="nvfp4",
+        activation="swigluoai_uninterleave",
+        swiglu_limit=10.0,
+    )
+    check(exact_gate(**exact), "deployed GLM TP geometry must admit tuning")
+    mismatches = {
+        "num_experts": 72,
+        "num_local_experts": 72,
+        "hidden_size": 2048,
+        "intermediate_size": 512,
+        "num_topk": 1,
+        "quant_mode": "mxfp4",
+        "activation": "silu",
+        "swiglu_limit": None,
+    }
+    for field, value in mismatches.items():
+        case = dict(exact)
+        case[field] = value
+        check(not exact_gate(**case), f"GLM tuning mismatch {field} must fail closed")
+
+    # The functions extracted above share this namespace as their globals.
+    # A forced decode-micro setting must reserve all 8*top-k routed rows even
+    # when a simultaneous cutover=0 routes every other call to dynamic.
+    ns["_GLM53_B12X_STATIC_CUTOVER_PAIRS"] = 0
+    ns["_GLM53_B12X_FORCE_BACKEND"] = "micro"
+    ns["_MICRO_MAX_TOKENS"] = 8
+    check(effective_cutover(640, **exact) == 64,
+          "forced micro must retain a 64-row static workspace at cutover zero")
+    non_glm = dict(exact)
+    non_glm["num_experts"] = 72
+    non_glm["num_local_experts"] = 72
+    check(effective_cutover(17, **non_glm) == 17,
+          "EP geometry must ignore GLM TP workspace tuning")
+
+    source = open(_overlay_source(dispatch_path), encoding="utf-8").read()
+    tree = ast.parse(source)
+    launch_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "launch_sm120_static_moe"
+    )
+    launch_source = ast.get_source_segment(source, launch_node) or ""
+    dynamic_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_get_dynamic_kernel"
+    )
+    dynamic_source = ast.get_source_segment(source, dynamic_node) or ""
+    check("os.environ" not in launch_source and "os.environ" not in dynamic_source,
+          "captured MoE paths must consume import-time tuning latches")
+    check("forced_backend = _effective_glm53_forced_backend(" in launch_source,
+          "static launcher must use the exact-shape backend latch")
+    check(launch_source.count("_effective_glm53_mac_ladder(") == 2,
+          "static launcher must gate both static and micro MAC ladders")
+    check("_effective_glm53_mac_ladder(" in dynamic_source,
+          "dynamic compiler must gate its MAC ladder")
+
+    wrapper_path = "overlay/modules/glm53_b12x_out/b12x_moe.py"
+    wrapper_source = open(_overlay_source(wrapper_path), encoding="utf-8").read()
+    check("_effective_glm53_static_cutover(" in wrapper_source,
+          "wrapper workspace capacity must use the same exact-shape cutover")
+    for field in (
+        "num_experts=self.num_experts",
+        "num_local_experts=self.num_local_experts",
+        "hidden_size=self.hidden_size",
+        "intermediate_size=self.intermediate_size",
+        "activation=self.activation",
+        "swiglu_limit=self.swiglu_limit",
+    ):
+        check(wrapper_source.count(field) >= 2,
+              f"wrapper backend selection must carry {field}")
+
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    for key in (
+        "VLLM_GLM53_B12X_FORCE_BACKEND",
+        "VLLM_GLM53_B12X_STATIC_CUTOVER_PAIRS",
+        "VLLM_GLM53_B12X_MICRO_MAC_LADDER",
+        "VLLM_GLM53_B12X_STATIC_MAC_LADDER",
+        "VLLM_GLM53_B12X_DYNAMIC_MAC_LADDER",
+    ):
+        check(f'{key}=""' in profile, f"{key} must remain explicitly default-off")
+
+    print("  GLM53 b12x tuning controls ..... OK")
+
+
 def test_mhc_probe_contracts() -> None:
     """The GPU probe must compare final shapes and load the tested overlay."""
     comparisons = []
@@ -5299,6 +5443,7 @@ if __name__ == "__main__":
     test_ep_fixed_token_chunks()
     test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
+    test_glm53_b12x_tuning_controls()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
