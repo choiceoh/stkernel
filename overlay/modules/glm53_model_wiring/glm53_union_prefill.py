@@ -477,12 +477,27 @@ def glm53_union_sparse_prefill(
     return out
 
 
+_UNION_REPORTED: set = set()
+
+
 def _read_group_size() -> int:
+    raw = os.environ.get(_UNION_ENV, "0")
     try:
-        value = int(os.environ.get(_UNION_ENV, "0"))
+        value = int(raw)
     except ValueError:
-        return 0
-    return value if value in (2, 4) else 0
+        value = -1
+    group = value if value in (2, 4) else 0
+    # Only 2 and 4 are real widths. Anything else -- notably 1, the value a
+    # "turn everything on" sweep reaches for -- reads as off, and used to do
+    # so without a word. A knob that silently means its opposite is how this
+    # lane has repeatedly measured a baseline and called it a result.
+    if raw not in ("0", "") and not group and raw not in _UNION_REPORTED:
+        _UNION_REPORTED.add(raw)
+        logger.warning(
+            "%s=%s is not a union width (only 2 or 4); union prefill is OFF",
+            _UNION_ENV, raw,
+        )
+    return group
 
 
 def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
@@ -567,4 +582,9 @@ def install_glm53_union_prefill() -> bool:
     )
     FlashInferMLASparseSM90Impl.forward_mqa = _glm53_union_forward_mqa
     FlashInferMLASparseSM90Impl._glm53_union_installed = True
+    logger.info(
+        "glm53 union prefill: ARMED width=%d dense_prefix=%s",
+        _read_group_size(),
+        os.environ.get(_DENSE_PREFIX_ENV, "0") == "1",
+    )
     return True

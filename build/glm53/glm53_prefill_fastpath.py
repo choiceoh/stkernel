@@ -23,6 +23,7 @@ from vllm.forward_context import get_forward_context
 from vllm.model_executor.layers.sparse_attn_indexer_kpool import (
     _glm53_dense_mha_scoring_unused,
 )
+from vllm.logger import init_logger
 from vllm.platforms import current_platform
 
 from .attention import (
@@ -32,6 +33,8 @@ from .attention import (
     _pad_indexer_heads,
 )
 from .ops.kpool_compress import fwht128_quant_fp8
+
+logger = init_logger(__name__)
 
 _GLM53_SM121_MLA_PREFILL_ENV = "VLLM_GLM53_SM121_MLA_PREFILL"
 _GLM53_FUSED_K_GATE_ENV = "VLLM_GLM53_FUSED_K_GATE"
@@ -434,3 +437,4 @@ def install_glm53_prefill_fastpath() -> None:
     Indexer._glm53_prefill_original_forward = Indexer.forward
     Indexer.forward = _glm53_fused_indexer_forward
     Indexer._glm53_prefill_fastpath_installed = True
+    logger.info("glm53 fused K+gate: ARMED (Indexer.forward replaced)")
