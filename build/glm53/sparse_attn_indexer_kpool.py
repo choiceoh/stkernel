@@ -13,6 +13,9 @@ from vllm.config import CUDAGraphMode, get_current_vllm_config_or_none
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.custom_op import CustomOp
+from vllm.model_executor.layers.glm53_kpool_topk import (
+    glm53_kpool_topk_expand_tail,
+)
 from vllm.models.glm5next.nvidia.ops.kpool_compress import (
     _kpool_softmax_rotate_write_cache_kernel,
     expand_pools_and_append_tail,
@@ -941,6 +944,33 @@ def sparse_attn_indexer_kpool(
                 clean_logits=False,
             )
             num_rows = logits.shape[0]
+
+            # Optional GLM fixed-shape radix path: select 512 pools, expand
+            # them to 2048 token ids, and append the 0..3-token live tail in
+            # one CUDA launch directly into the persistent top-k buffer.
+            # Every mismatch/build/launch failure returns False and leaves the
+            # stock vLLM selection below as the authoritative fallback.
+            if (
+                current_platform.is_cuda()
+                and index_kpool == 4
+                and topk_tokens == 2048
+                and positions is not None
+            ):
+                q_seq = (
+                    positions[chunk.token_start : chunk.token_end].to(torch.int32)
+                    + 1
+                )
+                fused_output = topk_indices_buffer[
+                    chunk.token_start : chunk.token_end, :2051
+                ]
+                if glm53_kpool_topk_expand_tail(
+                    logits,
+                    chunk.cu_seqlen_ks,
+                    chunk.cu_seqlen_ke,
+                    q_seq,
+                    fused_output,
+                ):
+                    continue
 
             # kpool: logits are pool-granular (compress_ratio == index_kpool),
             # so topk selects pools. We pick topk_tokens // kpool pools then

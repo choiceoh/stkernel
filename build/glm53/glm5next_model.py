@@ -99,7 +99,9 @@ from .attention import Glm5NextMLAAttention
 from .glm53_prefill_fastpath import (
     install_glm53_prefill_fastpath,
     prepare_glm53_prefill_fastpath,
+    warm_glm53_prefill_metadata_runtime,
 )
+from .glm53_union_prefill import install_glm53_union_prefill
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -109,6 +111,7 @@ from .multimodal import (
 
 # Install after .attention is fully imported and before any GLM layer is built.
 install_glm53_prefill_fastpath()
+install_glm53_union_prefill()
 
 logger = init_logger(__name__)
 
@@ -1139,6 +1142,24 @@ class Glm5NextForCausalLM(
         # per-projection path.
         try:
             prepare_glm53_prefill_fastpath(self)
+        except Exception:
+            pass
+
+        # Compile the exact pooled-prefill metadata launch signatures before
+        # the first request. Independent rollback from the dense-MLA arm.
+        try:
+            warm_glm53_prefill_metadata_runtime(self)
+        except Exception:
+            pass
+
+        # Build the optional fixed-shape radix KPool extension during startup,
+        # never on the first user prefill. A build failure is fail-closed.
+        try:
+            from vllm.model_executor.layers.glm53_kpool_topk import (
+                prepare_glm53_kpool_topk,
+            )
+
+            prepare_glm53_kpool_topk()
         except Exception:
             pass
 

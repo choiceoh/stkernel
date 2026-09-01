@@ -3915,9 +3915,12 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py",
         {
             "_GLM53_PREFILL_KG_WEIGHT",
+            "_GLM53_FUSED_K_GATE_ENV",
             "_GLM53_SM121_MLA_PREFILL_ENV",
+            "_glm53_fused_k_gate_enabled",
             "_glm53_cache_only_indexer_contract",
             "_glm53_cache_only_indexer_forward",
+            "_glm53_fused_indexer_forward",
             "install_glm53_prefill_fastpath",
             "prepare_glm53_prefill_fastpath",
         },
@@ -3927,6 +3930,14 @@ def test_glm53_cache_only_indexer_prefill() -> None:
             "F": F,
             "Indexer": FakeIndexer,
             "_fused_indexer_k_norm": lambda k, *args: k,
+            "_fused_indexer_weight_scale": (
+                lambda weights, q_scale, scale: weights * scale
+            ),
+            "_pad_indexer_heads": lambda value, pad: value,
+            "fwht128_quant_fp8": lambda q: (
+                q,
+                torch.ones(q.shape[0], 1, dtype=torch.float32),
+            ),
             "_glm53_indexer_scoring_unused": lambda indexer: True,
         },
     )
@@ -4016,6 +4027,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     qr = torch.randn(3, 4, dtype=torch.bfloat16)
     positions = torch.arange(3)
     forward = ns["_glm53_cache_only_indexer_forward"]
+    fused_forward = ns["_glm53_fused_indexer_forward"]
     check(forward(indexer, hidden, qr, positions, None) == "original",
           "missing fused K+gate buffer fails closed to original indexer")
 
@@ -4034,9 +4046,9 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         os.environ[env_name] = "1"
         install()
         check(
-            FakeIndexer.forward is forward
+            FakeIndexer.forward is fused_forward
             and FakeIndexer._glm53_prefill_original_forward is original,
-            "exact dense-MLA opt-in installs cache-only forward once",
+            "exact dense-MLA opt-in installs fused prefill forward once",
         )
         install()
         check(FakeIndexer._glm53_prefill_original_forward is original,
@@ -4081,6 +4093,31 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     )
     check(op.kwargs["compress_ape"] is indexer.index_kpool_compress_ape,
           "cache-only path preserves trained pool bias")
+
+    # The same fused buffer serves normal sparse prefill while preserving the
+    # stock FP32 head-weight projection and query scoring pipeline.
+    indexer.wq_b = lambda value: (
+        torch.randn(value.shape[0], 32 * 128, dtype=torch.bfloat16),
+        None,
+    )
+    indexer._wp_fp32 = None
+    indexer.softmax_scale = 128**-0.5
+    ns["_glm53_indexer_scoring_unused"] = lambda owner: False
+    sparse_out = fused_forward(indexer, hidden, qr, positions, None)
+    check(sparse_out.shape == (3, 32, 128),
+          "normal sparse prefill uses the fused K+gate projection")
+    check(op.args[1].shape == (3, 32, 128),
+          "normal sparse prefill preserves quantized-query head geometry")
+    check(op.args[2].shape == (3, 128) and op.args[3].shape == (3, 32),
+          "normal sparse prefill preserves K and FP32 head weights")
+    check(indexer._wp_fp32.dtype == torch.float32,
+          "fused K+gate path keeps ranking head weights in FP32")
+    check(op.kwargs["gate_score"].stride(0) == 256,
+          "normal sparse gate is still a view of the single projection")
+    indexer.original_called = False
+    decode_out = fused_forward(indexer, hidden, qr, positions, None)
+    check(decode_out.shape == (3, 32, 128) and not indexer.original_called,
+          "decode and mixed batches also use the fused K+gate projection")
 
     indexer.rope_dim = 64
     check(forward(indexer, hidden, qr, positions, None) == "original"
@@ -4557,6 +4594,164 @@ def test_glm53_kda_prefill_regime() -> None:
         "probe matches production final-state, gate, norm and beta contract",
     )
     print("  GLM53 KDA prefill regimes ....... OK")
+
+
+def test_glm53_upstream_prefill_batch() -> None:
+    """Upstream-derived GLM prefill paths stay exact-gated and fail-closed."""
+    indexer_path = _overlay_source(
+        "overlay/modules/glm53_tail_slot_persistent/glm53_kpool_indexer.py"
+    )
+    indexer_source = open(indexer_path, encoding="utf-8").read()
+    indexer_tree = ast.parse(indexer_source)
+    metadata_cls = next(
+        node
+        for node in indexer_tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "BuildPrefillChunkMetadataKernel"
+    )
+    compile_key = next(
+        node
+        for node in metadata_cls.body
+        if isinstance(node, ast.ClassDef) and node.name == "CompileKey"
+    )
+    key_fields = {
+        node.target.id
+        for node in compile_key.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+    }
+    runtime_scalars = {
+        "query_slice_start",
+        "query_slice_stop",
+        "DCP_RANK",
+        "DCP_WORLD",
+        "DCP_INTERLEAVE",
+    }
+    check(key_fields == {"BLOCK_SIZE", "COMPRESS_RATIO", "input_variant"},
+          "metadata compile key excludes request-varying runtime scalars")
+    kernel = next(
+        node for node in metadata_cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "kernel"
+    )
+    jit_call = next(
+        dec for dec in kernel.decorator_list
+        if isinstance(dec, ast.Call)
+        and isinstance(dec.func, ast.Attribute)
+        and dec.func.attr == "jit"
+    )
+    dns = next(kw.value for kw in jit_call.keywords
+               if kw.arg == "do_not_specialize")
+    dns_values = {elt.value for elt in dns.elts}
+    check(runtime_scalars <= dns_values,
+          "metadata runtime scalars are explicitly do_not_specialize")
+    warmup_method = next(
+        node for node in metadata_cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "get_warmup_keys"
+    )
+    warmup_source = ast.get_source_segment(indexer_source, warmup_method) or ""
+    check("index_kpool" in warmup_source and "compress_ratios +" in warmup_source,
+          "metadata compile warmup includes GLM's pooled ratio")
+
+    fastpath_source = open(
+        _overlay_source(
+            "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+        ),
+        encoding="utf-8",
+    ).read()
+    check(
+        "unaligned_storage[1:]" in fastpath_source
+        and "torch.cuda.synchronize(device)" in fastpath_source
+        and 'model_type", None) != "glm5_next_text"' in fastpath_source
+        and 'tensor_parallel_size", None) != 4' in fastpath_source,
+        "runtime warmup executes both pointer alignments under exact GLM TP4",
+    )
+
+    kpool_dir = os.path.join(
+        REPO, "overlay", "modules", "glm53_kpool_tail_select"
+    )
+    kpool_py = open(
+        os.path.join(kpool_dir, "glm53_kpool_topk.py"), encoding="utf-8"
+    ).read()
+    kpool_cu = open(
+        os.path.join(kpool_dir, "glm53_kpool_topk.cu"), encoding="utf-8"
+    ).read()
+    sparse_source = open(
+        os.path.join(kpool_dir, "sparse_attn_indexer_kpool.py"),
+        encoding="utf-8",
+    ).read()
+    check('os.environ.get(_ENV, "0") == "1"' in kpool_py,
+          "radix KPool path is exact opt-in")
+    for contract in (
+        "scores.dtype == torch.float32",
+        "output.shape == (scores.shape[0], 2051)",
+        "row_starts.dtype == torch.int32",
+    ):
+        check(contract in kpool_py, f"radix wrapper pins {contract}")
+    check(
+        sparse_source.index("glm53_kpool_topk_expand_tail(")
+        < sparse_source.index("torch.ops._C.top_k_per_row_prefill("),
+        "single-launch KPool attempt precedes the untouched stock fallback",
+    )
+    for cuda_contract in (
+        "constexpr int kGroupTopK = 512",
+        "constexpr int kPoolSize = 4",
+        "constexpr int kTokenTopK = 2048",
+        "uint64_t topk_key",
+        "sort_selected_indices<kGroupTopK>",
+        "threshold_candidates > kSmemInputSize",
+    ):
+        check(cuda_contract in kpool_cu,
+              f"radix CUDA source carries {cuda_contract}")
+    check(kpool_cu.count("__global__") == 1,
+          "radix selection, expansion and tail share one CUDA kernel")
+
+    union_path = _overlay_source(
+        "overlay/modules/glm53_model_wiring/glm53_union_prefill.py"
+    )
+    union_source = open(union_path, encoding="utf-8").read()
+    union_tree = ast.parse(union_source)
+    union_defs = {
+        node.name for node in union_tree.body if isinstance(node, ast.FunctionDef)
+    }
+    check(
+        {
+            "_union_dense_prefix_prepare_kernel",
+            "_union_mark_kernel",
+            "_union_compact_kernel",
+            "_glm53_union_prefill_kernel",
+            "glm53_union_sparse_prefill",
+            "install_glm53_union_prefill",
+        } <= union_defs,
+        "union path ships preparation, compaction, attention and installer",
+    )
+    for gate in (
+        "q[0].shape[1:] == (16, 512)",
+        'getattr(attn_metadata, "num_decodes", -1) == 0',
+        'getattr(attn_metadata, "num_prefills", 0) > 0',
+        'getattr(self, "qk_rope_head_dim", -1) == 0',
+        "not torch.cuda.is_current_stream_capturing()",
+    ):
+        check(gate in union_source, f"union forward pins {gate}")
+    check(
+        "same_req" in union_source
+        and "value != expected" in union_source
+        and "tl.where(dense, slot, slot + base)" in union_source,
+        "dense-prefix reuse has exact nested-prefix and request guards",
+    )
+    check(
+        "owned =" in union_source
+        and "owned & valid" in union_source
+        and union_source.count("sm_scale * kv_scale") == 2
+        and union_source.count("kv_scale / denom") == 2,
+        "union/base kernels restore ownership and FP8 K/V scaling",
+    )
+    check(
+        'VLLM_GLM53_UNION_PREFILL=0' in open(
+            os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
+        ).read(),
+        "unmeasured union path remains default-off",
+    )
+    print("  GLM53 upstream prefill batch ..... OK")
 
 
 def test_oneshot_sm121_grid_contract() -> None:
@@ -5652,5 +5847,6 @@ if __name__ == "__main__":
     test_glm53_kpool_packed_scratch_contract()
     test_glm53_cache_only_indexer_prefill()
     test_glm53_kda_prefill_regime()
+    test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
