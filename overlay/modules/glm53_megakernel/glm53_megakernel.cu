@@ -518,6 +518,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
   }
 
+  MK_TS(7);  // x loaded and amax-reduced; the W fill goes out next
+
   // ---- first unit's W fill, issued before the prologue's second half
   // (W8 path). The stamps said quant + barrier cost 3-10 us (m=8..32) and
   // the first W tile then took another 8-9 us to land, with DRAM idle for
@@ -557,10 +559,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       if (r >= c.m) break;  // rows ascend with i
       const float sc = mk_pow2_scale(mm[i]);
       if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
+      // sc is a power of two, so the reciprocal is exact and v * rsc is
+      // bit-identical to v / sc -- four IEEE divides become one rcp.
+      const float rsc = 1.0f / sc;
       uint32_t pack = 0;
 #pragma unroll
       for (int q = 0; q < 4; ++q)
-        pack |= (uint32_t)mk_f32_to_e4m3(vv[i][q] / sc) << (8 * q);
+        pack |= (uint32_t)mk_f32_to_e4m3(vv[i][q] * rsc) << (8 * q);
       *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
     }
   };
