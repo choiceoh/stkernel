@@ -3346,7 +3346,13 @@ def test_glm53_sm121_mla_prefill_gate() -> None:
 
 def test_glm53_kpool_packed_scratch_contract() -> None:
     """Pool top-k reuses only packed storage outside live output rows."""
-    import torch
+    # The serving hosts run this suite as the deploy gate and have no
+    # torch. Skip out LOUD, never silently -- a silent pass hides the hole.
+    try:
+        import torch
+    except ImportError:
+        print("  glm53 kpool packed scratch contract ... SKIP (no torch on this host)")
+        return
 
     ns = load_defs(
         "overlay/sparse_attn_indexer_kpool.py",
@@ -4659,6 +4665,33 @@ def test_overlay_logger_defined() -> None:
     print("  overlay logger defined ........ OK")
 
 
+def test_torch_imports_are_guarded() -> None:
+    """No test may import torch unguarded: it is the deploy gate.
+
+    The serving hosts run this suite before every overlay deploy and have no
+    torch. An unguarded import aborts the deploy -- which is not a test
+    failure, it is a deploy outage. This was fixed once in #125 and came back
+    with #157/#173, so it is a contract now.
+    """
+    import ast as _ast
+    src = open("tests/test_logic.py").read()
+    offenders = []
+    for node in _ast.parse(src).body:
+        if not (isinstance(node, _ast.FunctionDef)
+                and node.name.startswith("test_")):
+            continue
+        seg = _ast.get_source_segment(src, node) or ""
+        if "import torch" not in seg:
+            continue
+        if "except ImportError" in seg:
+            continue
+        offenders.append(node.name)
+    check(not offenders,
+          "these tests import torch without an ImportError guard and will "
+          f"abort the deploy on a serving host: {offenders}")
+    print("  torch imports guarded ......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4686,6 +4719,7 @@ if __name__ == "__main__":
     test_once_logger_args_hashable()
     test_dflash2_selector_check()
     test_overlay_logger_defined()
+    test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
