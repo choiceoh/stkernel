@@ -131,7 +131,8 @@ def probe_gemm(iters: int) -> bool:
 
     ok = True
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
-          f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}")
+          f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
+          f"{'st_x2':>7}")
     for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -153,6 +154,12 @@ def probe_gemm(iters: int) -> bool:
         t_x2 = _time(lambda: (mk._gemm_call(x, (mkq, mkws), n),
                               mk._gemm_call(x, (mkq, mkws), n)),
                      iters, hot=(x,)) / 2
+        # the stock pair too: back-to-back launches amortise launch latency
+        # for either arm, so single-launch columns flatter neither and the
+        # x2 pair is the like-for-like comparison.
+        t_sx2 = _time(lambda: (_fp8_dense_gemm(x, sq, sws, srows, scols),
+                               _fp8_dense_gemm(x, sq, sws, srows, scols)),
+                      iters, hot=(x,)) / 2
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
@@ -171,7 +178,7 @@ def probe_gemm(iters: int) -> bool:
         print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}")
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
     return ok
 
 
