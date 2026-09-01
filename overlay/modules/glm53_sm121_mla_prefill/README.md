@@ -16,6 +16,12 @@ prefill with `prefill_max_seq_len <= index_topk` through its FlashAttention 2
 prefills, cached-prefix/multi-turn prefills, and all decode tokens stay on the
 existing top-k MQA path.
 
+The `glm53_kpool_tail_select` module also recognizes this request-level
+decision after completing the index-K/tail-cache writes and skips the unused
+`[tokens, 2048]` top-k buffer fill/mask. Both modules are required for that
+scoring bypass; with this dense-prefill arm disabled, the kpool change is
+inert.
+
 ## Gate and rollback
 
 The arm is enabled only by the exact value

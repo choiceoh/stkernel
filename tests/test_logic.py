@@ -3346,12 +3346,49 @@ def test_glm53_sm121_mla_prefill_gate() -> None:
 
 def test_glm53_kpool_packed_scratch_contract() -> None:
     """Pool top-k reuses only packed storage outside live output rows."""
+    import torch
+
     ns = load_defs(
         "overlay/sparse_attn_indexer_kpool.py",
-        {"_pool_topk_scratch_fits"},
-        {},
+        {
+            "_glm53_dense_mha_layer_name",
+            "_kpool_prefill_windows",
+            "_pool_topk_scratch_fits",
+        },
+        {"torch": torch},
     )
     fits = ns["_pool_topk_scratch_fits"]
+    dense_mha_layer = ns["_glm53_dense_mha_layer_name"]
+    prefill_windows = ns["_kpool_prefill_windows"]
+
+    tokens = torch.arange(7 * 3).view(7, 3)
+    windows = prefill_windows(tokens, 4)
+    expected_windows = torch.stack([tokens[i : i + 4] for i in range(4)])
+    check(windows.shape == (4, 4, 3),
+          "kpool prefill view has [window, pool, dim] layout")
+    check(torch.equal(windows, expected_windows),
+          "zero-copy kpool windows match the old gathered values")
+    check(windows.untyped_storage().data_ptr()
+          == tokens.untyped_storage().data_ptr(),
+          "kpool prefill windows alias the source storage")
+    check(windows.stride() == (3, 3, 1),
+          "kpool window strides retain a contiguous head dimension")
+
+    check(
+        dense_mha_layer("model.layers.7.self_attn.indexer.k_cache")
+        == "model.layers.7.self_attn.attn",
+        "GLM kpool prefix resolves to its sibling MLA metadata key",
+    )
+    for drifted in (
+        "model.layers.7.self_attn.indexer",
+        "model.layers.7.self_attn.k_cache",
+        "model.layers.7.self_attn.indexer.tail_cache",
+        "",
+    ):
+        check(
+            dense_mha_layer(drifted) == "",
+            f"unknown kpool layout {drifted!r} fails closed",
+        )
 
     # GLM exact geometry: output width rounds 2048+3 up to BLOCK_N=128.
     output_width = ((2048 + 3 + 127) // 128) * 128
@@ -3396,6 +3433,68 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     dispatcher_source = ast.get_source_segment(source, dispatcher)
     assert dispatcher_source is not None
 
+    compress_insert = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_kpool_compress_insert"
+    )
+    compress_source = ast.get_source_segment(source, compress_insert)
+    assert compress_source is not None
+    check(
+        "_kpool_prefill_windows(k, kpool)" in compress_source
+        and "_kpool_prefill_windows(gate_score, kpool)" in compress_source,
+        "prefill compressor passes zero-copy K and gate windows",
+    )
+    check(
+        "torch.arange" not in compress_source
+        and "k[idx]" not in compress_source
+        and "gate_score[idx]" not in compress_source,
+        "prefill compressor no longer materializes an index grid or gathers",
+    )
+    strided_launch = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_kpool_compress_strided_write_cache"
+    )
+    strided_source = ast.get_source_segment(source, strided_launch)
+    assert strided_source is not None
+    check(
+        "slot_k.stride(0)" in strided_source
+        and "slot_k.stride(1)" in strided_source
+        and "slot_score.stride(0)" in strided_source
+        and "slot_score.stride(1)" in strided_source,
+        "stock Triton compressor receives the zero-copy window strides",
+    )
+    check(".contiguous()" not in strided_source,
+          "strided prefill launch must not rematerialize its windows")
+
+    short_fill = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_fill_short_prefill_topk"
+    )
+    short_fill_source = ast.get_source_segment(source, short_fill)
+    assert short_fill_source is not None
+    check(
+        "_fill_short_prefill_topk_kernel[grid]" in short_fill_source
+        and "torch.arange" not in short_fill_source
+        and "torch.where" not in short_fill_source,
+        "short-prefill top-k output is one direct Triton write",
+    )
+    short_fill_kernel = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_fill_short_prefill_topk_kernel"
+    )
+    short_fill_kernel_source = ast.get_source_segment(source, short_fill_kernel)
+    assert short_fill_kernel_source is not None
+    check(
+        "values = tl.where(cols <= position, cols, -1)"
+        in short_fill_kernel_source
+        and "tl.store(" in short_fill_kernel_source,
+        "short-prefill kernel writes causal token ids and -1 sentinels",
+    )
+
     def node_text(node):
         segment = ast.get_source_segment(source, node)
         assert segment is not None
@@ -3422,7 +3521,7 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
               "scratch must start after the full active hidden-state prefix")
 
     active_inits = [
-        node for node in dispatcher.body
+        node for node in ast.walk(dispatcher)
         if isinstance(node, ast.Assign)
         and len(node.targets) == 1
         and node_text(node.targets[0])
@@ -3432,6 +3531,61 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     check(len(active_inits) == 1
           and active_inits[0].lineno < min(c.lineno for c in scratch_choices),
           "active output rows and rounded tail must be reset before scratch use")
+    init_guard = next(
+        node for node in ast.walk(dispatcher)
+        if isinstance(node, ast.If)
+        and node_text(node.test) == "not short_prefill_covers_active"
+    )
+    check(active_inits[0] in init_guard.body,
+          "pure short prefill skips the overwritten full-buffer sentinel fill")
+    check(
+        "short_prefill_covers_active = (" in dispatcher_source
+        and "hidden_states.shape[0] == num_tokens" in dispatcher_source,
+        "sentinel fill is skipped only when short prefill covers every active row",
+    )
+    check(
+        "prefill_chunks = ()" in dispatcher_source
+        and "prefill_chunks = prefill_metadata.chunks" in dispatcher_source
+        and "for chunk in prefill_chunks:" in dispatcher_source,
+        "short prefill bypasses sparse-scoring workspace and chunks",
+    )
+    short_branch = dispatcher_source[
+        dispatcher_source.index("if short_prefill:"):
+        dispatcher_source.index("for chunk in prefill_chunks:")
+    ]
+    check(
+        "current_workspace_manager()" not in short_branch.split("else:", 1)[0]
+        and "_fill_short_prefill_topk(" in short_branch.split("else:", 1)[0],
+        "short branch writes indices without touching logits workspace",
+    )
+
+    dense_skip = [
+        node for node in dispatcher.body
+        if isinstance(node, ast.If)
+        and "current_platform.is_cuda()" in node_text(node.test)
+        and "forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL"
+        in node_text(node.test)
+    ]
+    check(len(dense_skip) == 1,
+          "kpool dispatcher has one fail-closed dense-MHA scoring bypass")
+    dense_skip_source = node_text(dense_skip[0])
+    check(
+        'getattr(prefill_metadata, "use_dense_mha", False)' in dense_skip_source
+        and 'getattr(mla_metadata, "num_decode_tokens", -1) == 0'
+        in dense_skip_source
+        and "not torch.cuda.is_current_stream_capturing()" in dense_skip_source,
+        "dense-MHA bypass excludes MQA, mixed batches, and capture",
+    )
+    check(
+        dispatcher_source.index("if not skip_k_cache_insert:")
+        < dispatcher_source.index(
+            "forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL"
+        )
+        < dispatcher_source.index(
+            "topk_indices_buffer[: hidden_states.shape[0]] = -1"
+        ),
+        "dense-MHA bypass preserves cache writes and skips the dead buffer fill",
+    )
 
     fallbacks = [
         node for node in ast.walk(dispatcher)
