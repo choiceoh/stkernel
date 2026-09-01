@@ -6339,10 +6339,25 @@ def test_glm53_megakernel_contracts() -> None:
           "accumulator returns bitwise-different results for back-to-back "
           "launches of the same call, which the probe's replay-stability "
           "check flags and this lane cannot ship")
-    check("expand_w4(kb0 % 2)" in cu and "load_w4(kb0);" in cu,
+    check("expand_w4(kb0 % W4_RAW_NBUF, kb0 % 2)" in cu
+          and "stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the W4 prologue must fill the buffer the loop reads first: the "
           "loop starts at kb0, so a hardcoded 0 loads the wrong k-block "
           "(this broke the W4 exact-grid check when split-K landed)")
+    # -- W4 streams its raw records through cp.async like the W8 tiles:
+    #    tile-major pack (one contiguous 8 KB + 1 KB record per (tile,
+    #    k-block)), one commit group per stage, the exact-wait formula,
+    #    and a smem budget that stays under the sm_121 opt-in.
+    check("wq4.dim() == 4" in cu and "wq4.size(3) == 64" in cu
+          and "ws4.size(3) == 8" in cu
+          and ".permute(0, 2, 1, 3).contiguous())" in pysrc_full
+          and "wq4.view(n_pad // 128, 128, k // 128, 64)" in pysrc_full,
+          "the W4 pack is tile-major and the host refuses any other shape")
+    check("W4_RAW_NBUF * W4_RAW_BYTES" in cu
+          and "static_assert(GEMM_SMEM <= 101376" in cu
+          and "mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));" in cu,
+          "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
+          "the record it needs")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
     check("mk_e2m1_to_e4m3[8]" in cu_code
           and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
@@ -6597,17 +6612,28 @@ def test_megakernel_w4_layout_functional() -> None:
                for _ in range(n)]
     wq4, ws4 = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
                                             lambda r, g: sexps_a[r][g]))
-    check(tuple(wq4.shape) == (128, k // 2), "wq4 is [n_pad, k/2]")
-    check(tuple(ws4.shape) == (128, k // 16), "ws4 is [n_pad, k/16]")
+    check(tuple(wq4.shape) == (1, 1, 128, k // 2),
+          "wq4 is tile-major [n_pad/128, k/128, 128, 64]")
+    check(tuple(ws4.shape) == (1, 1, 128, k // 16),
+          "ws4 is tile-major [n_pad/128, k/128, 128, 8]")
     q, sc = wq4.tolist(), ws4.tolist()
+
+    # the kernel's index math (stage_raw4 / expand_w4): tile = r // 128,
+    # k-block = kk // 128, then row-in-tile and byte / group within it
+    def nib(r, kk):
+        return q[r // 128][kk // 128][r % 128][(kk % 128) // 2]
+
+    def sexp_at(r, kk):
+        return sc[r // 128][kk // 128][r % 128][(kk % 128) // 16]
+
     for r in range(n):
         for kk in range(k):
-            byte = q[r][kk // 2]
+            byte = nib(r, kk)
             code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
             check(code == codes_a[r][kk // 16],
                   f"byte-exact tier: elem {kk} rides byte {kk // 2} "
                   f"half {kk % 2} with the crafted nibble (row {r})")
-            check(sc[r][kk // 16] == sexps_a[r][kk // 16],
+            check(sexp_at(r, kk) == sexps_a[r][kk // 16],
                   "byte-exact tier: scale index follows the 16-group")
 
     # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
@@ -6622,14 +6648,14 @@ def test_megakernel_w4_layout_functional() -> None:
     q, sc = wq4.tolist(), ws4.tolist()
     for r in range(n):
         for kk in range(k):
-            byte = q[r][kk // 2]
+            byte = nib(r, kk)
             code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
-            val = grid[code & 7] * 2.0 ** sc[r][kk // 16]                 * (-1.0 if code & 8 else 1.0)
+            val = grid[code & 7] * 2.0 ** sexp_at(r, kk)                 * (-1.0 if code & 8 else 1.0)
             check(val == wb[r, kk].item(),
                   f"value-exact tier: elem {kk} dequantizes to the original "
                   f"(row {r}: {val} != {wb[r, kk].item()})")
     for r in range(n, 128):  # padded rows are zero nibbles
-        check(all(b == 0 for b in q[r]), f"pad row {r} packed as zeros")
+        check(all(b == 0 for b in q[0][0][r]), f"pad row {r} packed as zeros")
     print("  w4 layout roundtrip ...... OK")
 
 

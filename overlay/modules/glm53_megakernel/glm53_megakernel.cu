@@ -121,9 +121,20 @@ constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 // for exactly the tile it needs (mk_cp_wait_upto). 2 buffers (2 blocks/SM)
 // measured worse on every shape.
 constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
+// W4 raw staging: one (tile, k-block) record is 128 rows x 64 B of e2m1
+// pairs plus 128 x 8 B of group exponents. In smem the nibble rows sit on
+// an 80 B pitch (a warp's 32 rows of uint4 reads then hit distinct banks)
+// and the exponents follow as a flat 1 KB. Three stages, two in flight,
+// like the W8 pipeline; the expanded e4m3 tiles reuse swb[0..1].
+constexpr int W4_RAW_PITCH = 80;
+constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 10240
+constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 11264
+constexpr int W4_RAW_NBUF = 3;
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;
+                          KBLK_MAX * KBLK_MAX * 4 +
+                          W4_RAW_NBUF * W4_RAW_BYTES;  // 97,408 at NBUF 3
+static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");
 
 #define MK_CHECK_CUDA(x)                                                     \
   do {                                                                       \
@@ -230,6 +241,9 @@ struct MKGemmCtx {
   // nibble to an EXACT e4m3 byte (1-bit mantissas always fit; the 2^s
   // product is an exponent-field add) and then runs the same e4m3 mma
   // pipeline -- the DRAM bytes halve and the arithmetic is unchanged.
+  // Tile-major like wq: [n/128][k/128][128][64] nibble bytes and
+  // [n/128][k/128][128][8] exponents, so one (tile, k-block) record is a
+  // contiguous 8 KB + 1 KB run for cp.async (see stage_raw4).
   const uint8_t* wq4 = nullptr;  // non-null selects the W4 path
   const int8_t* ws4 = nullptr;
 };
@@ -358,6 +372,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
   float* sxs =
       (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
+  uint8_t* sraw = (uint8_t*)(sxs + KBLK_MAX * KBLK_MAX);  // W4 raw stages
   __shared__ int s_last;  // "this block completed a leftover tile"
   __shared__ int s_unit;  // next dynamically taken unit, broadcast
 
@@ -400,9 +415,68 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
     mk_cp_commit();
   };
+  // W4: stage one raw (tile, k-block) record -- 512 nibble chunks (two
+  // per thread) onto the 80 B pitch, 64 exponent chunks after them. One
+  // commit group per stage, the same accounting the W8 waits rely on.
+  auto stage_raw4 = [&](int nt, int kb, int buf) {
+    const uint8_t* nsrc =
+        c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);
+    const uint8_t* ssrc = (const uint8_t*)c.ws4 +
+        ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
+    uint8_t* d = sraw + buf * W4_RAW_BYTES;
+    for (int t = threadIdx.x; t < SMEM_W_ROWS * 4; t += MK_THREADS)
+      mk_cp_async16(d + (t >> 2) * W4_RAW_PITCH + (t & 3) * 16,
+                    nsrc + (size_t)t * 16);
+    if (threadIdx.x < SMEM_W_ROWS * 8 / 16)
+      mk_cp_async16(d + W4_RAW_NIB + threadIdx.x * 16,
+                    ssrc + (size_t)threadIdx.x * 16);
+    mk_cp_commit();
+  };
+  // W4: expand one landed raw record into an e4m3 tile buffer. Thread ->
+  // (row, half): 64 elements = 32 B of nibbles + 4 exponents, written as
+  // 64 B on the 144 B tile pitch. Exact: 1-bit mantissas always fit, 2^s
+  // is an exponent-field add.
+  auto expand_w4 = [&](int rawbuf, int expbuf) {
+    const int row4 = threadIdx.x & (SMEM_W_ROWS - 1);
+    const int half4 = threadIdx.x >> 7;
+    const uint8_t* rr = sraw + rawbuf * W4_RAW_BYTES;
+    alignas(16) uint8_t nb[32];
+    ((uint4*)nb)[0] =
+        *(const uint4*)(rr + row4 * W4_RAW_PITCH + half4 * 32);
+    ((uint4*)nb)[1] =
+        *(const uint4*)(rr + row4 * W4_RAW_PITCH + half4 * 32 + 16);
+    const int8_t* rs = (const int8_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
+    int8_t sexp[4];
+#pragma unroll
+    for (int i = 0; i < 4; ++i) sexp[i] = rs[i];
+    alignas(16) uint8_t ob[64];
+#pragma unroll
+    for (int g4 = 0; g4 < 4; ++g4) {
+      const int e = (sexp[g4] << 3);
+#pragma unroll
+      for (int b = 0; b < 8; ++b) {
+        const uint8_t raw = nb[g4 * 8 + b];
+        const uint8_t lo = raw & 0xF, hi = raw >> 4;
+        ob[g4 * 16 + 2 * b] =
+            (lo & 7) ? (uint8_t)(mk_e2m1_to_e4m3[lo & 7] + e +
+                                 ((lo & 0x8) << 4))
+                     : (uint8_t)((lo & 0x8) << 4);
+        ob[g4 * 16 + 2 * b + 1] =
+            (hi & 7) ? (uint8_t)(mk_e2m1_to_e4m3[hi & 7] + e +
+                                 ((hi & 0x8) << 4))
+                     : (uint8_t)((hi & 0x8) << 4);
+      }
+    }
+    uint8_t* d0 = swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
+                  row4 * SMEM_W_PITCH + half4 * 64;
+    uint4* dv = (uint4*)d0;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) dv[i] = ((uint4*)ob)[i];
+  };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
   static_assert(MK_W_NBUF <= 5, "mk_cp_wait_upto dispatches up to 3");
   constexpr int DIST = MK_W_NBUF - 1;
+  constexpr int RAW_DIST = W4_RAW_NBUF - 1;
 
   // ---- prologue, part 1: this block's A rows are loaded and amax-reduced
   // BEFORE the W fill goes out. The fill is 1.5 MB grid-wide; issued first
@@ -452,14 +526,22 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // survive the barrier's __syncthreads, and the prologue issues none, so
   // the wait counts the unit loop relies on are unchanged.
   bool hoisted = false;
-  if (c.wq4 == nullptr && (int)blockIdx.x < units) {
+  if ((int)blockIdx.x < units) {
     int nt0, kb00, kbn0;
     decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
     if (kb00 < kbn0) {
-      stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+      if (c.wq4 != nullptr) {
+        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
 #pragma unroll
-      for (int d = 1; d < DIST; ++d)
-        if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+        for (int d = 1; d < RAW_DIST; ++d)
+          if (kb00 + d < kbn0)
+            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
+      } else {
+        stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+#pragma unroll
+        for (int d = 1; d < DIST; ++d)
+          if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+      }
       hoisted = true;
     }
   }
@@ -622,72 +704,39 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 
     };
 
+    const bool prefilled = hoisted && (u == (int)blockIdx.x);
     if (c.wq4 != nullptr) {
-      // ---- W4 path: register-staged exact expansion. The next
-      // k-block's nibbles load at the top of the iteration and fly
-      // through the current mma; the e2m1 -> e4m3 expansion (exact:
-      // 1-bit mantissas always fit, 2^s is an exponent-field add)
-      // then fills the next tile buffer. Two buffers suffice because
-      // expansion and mma never touch the same one.
-      const int row4 = threadIdx.x & (SMEM_W_ROWS - 1);
-      const int half4 = threadIdx.x >> 7;  // 64 elems per thread
-      const int nib_row = c.k / 2, sc_row = c.k / 16;
-      // alignas(16): both arrays are accessed as uint4 lanes below, and a
-      // plain uint8_t[] carries no alignment guarantee in local memory.
-      alignas(16) uint8_t nb[32];
-      int8_t sexp[4];
-
-      auto load_w4 = [&](int kb) {
-        const uint8_t* r4 = c.wq4 +
-            (size_t)nt * SMEM_W_ROWS * nib_row +
-            (size_t)row4 * nib_row + kb * (KSTEP / 2) + half4 * 32;
-        const uint4* v4 = (const uint4*)r4;
-        ((uint4*)nb)[0] = v4[0];
-        ((uint4*)nb)[1] = v4[1];
-        const int8_t* rs = c.ws4 +
-            (size_t)nt * SMEM_W_ROWS * sc_row +
-            (size_t)row4 * sc_row + kb * (KSTEP / 16) + half4 * 4;
-#pragma unroll
-        for (int i = 0; i < 4; ++i) sexp[i] = rs[i];
-      };
-      auto expand_w4 = [&](int buf) {
-        alignas(16) uint8_t ob[64];
-#pragma unroll
-        for (int g4 = 0; g4 < 4; ++g4) {
-          const int e = (sexp[g4] << 3);
-#pragma unroll
-          for (int b = 0; b < 8; ++b) {
-            const uint8_t raw = nb[g4 * 8 + b];
-            const uint8_t lo = raw & 0xF, hi = raw >> 4;
-            ob[g4 * 16 + 2 * b] =
-                (lo & 7) ? (uint8_t)(mk_e2m1_to_e4m3[lo & 7] + e +
-                                     ((lo & 0x8) << 4))
-                         : (uint8_t)((lo & 0x8) << 4);
-            ob[g4 * 16 + 2 * b + 1] =
-                (hi & 7) ? (uint8_t)(mk_e2m1_to_e4m3[hi & 7] + e +
-                                     ((hi & 0x8) << 4))
-                         : (uint8_t)((hi & 0x8) << 4);
-          }
-        }
-        uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH) +
-                      row4 * SMEM_W_PITCH + half4 * 64;
-        uint4* dv = (uint4*)d0;
-#pragma unroll
-        for (int i = 0; i < 4; ++i) dv[i] = ((uint4*)ob)[i];
-      };
-
-      load_w4(kb0);
+      // ---- W4 path: cp.async-staged raw records, expanded in smem.
+      // The raw (tile, k-block) record streams through the W4_RAW_NBUF
+      // pipeline exactly as W8 tiles do; the expansion then reads the
+      // landed record and fills one of two e4m3 tile buffers (swb[0..1]).
+      // This used to be a row-major pack read with synchronous loads --
+      // one tile in flight and 128 DRAM pages per tile -- and did 37 GB/s
+      // where the W8 arm did 84 at the same shape, on 0.56x the bytes.
+      if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);
       stage_a(kb0);
-      expand_w4(kb0 % 2);   // the loop reads (kb % 2); kb starts at kb0
+      if (!prefilled) {
+#pragma unroll
+        for (int d = 1; d < RAW_DIST; ++d)
+          if (kb0 + d < kbn) stage_raw4(nt, kb0 + d, (kb0 + d) % W4_RAW_NBUF);
+      }
+      mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb0 - 1));
       __syncthreads();
+      expand_w4(kb0 % W4_RAW_NBUF, kb0 % 2);  // the loop reads (kb % 2)
+      __syncthreads();
+      if (u == (int)blockIdx.x) MK_TS(3);
       for (int kb = kb0;; ++kb) {
-        if (kb + 1 < kbn) load_w4(kb + 1);  // flies during the mma
+        if (kb + RAW_DIST < kbn)
+          stage_raw4(nt, kb + RAW_DIST, (kb + RAW_DIST) % W4_RAW_NBUF);
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw4t, kb, 1.0f);  // scales already inside the bytes
         if (kb + 1 >= kbn) break;
-        __syncthreads();  // mma readers of this tile buffer are done
-        expand_w4((kb + 1) % 2);
+        // raw(kb+1) landed: the groups still allowed in flight are the
+        // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
+        mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));
+        __syncthreads();  // raw(kb+1) visible; every mma reader of kb done
+        expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
         stage_a(kb + 1);
         __syncthreads();
       }
@@ -702,7 +751,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // the old hard-coded 2 a depth of 2 would have staged kb+2 into
       // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
       // That made MK_W_NBUF a knob that silently corrupted below 3.
-      const bool prefilled = hoisted && (u == (int)blockIdx.x);
       if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);
       stage_a(kb0);
       if (!prefilled) {
@@ -1571,11 +1619,20 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c.ws4 = (const int8_t*)ws4.data_ptr();
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
-  c.n = (int)wq4.size(0);      // wq4 rows are 128-padded like the fp8 pack
-  c.k = (int)x.size(1);        // k is the ACTIVATION width; wq4 is [n, k/2]
+  c.k = (int)x.size(1);        // k is the ACTIVATION width
+  // Tile-major packs -- see stage_raw4. The shape is the only thing
+  // standing between a stale row-major pack and silently wrong output.
+  TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
+                  && wq4.size(3) == 64 && wq4.is_contiguous(),
+              "wq4 must be a contiguous [n/128, k/128, 128, 64] pack");
+  TORCH_CHECK(ws4.dim() == 4 && ws4.size(0) == wq4.size(0)
+                  && ws4.size(1) == wq4.size(1) && ws4.size(2) == SMEM_W_ROWS
+                  && ws4.size(3) == 8 && ws4.is_contiguous(),
+              "ws4 must be a contiguous [n/128, k/128, 128, 8] pack");
+  c.n = (int)wq4.size(0) * SMEM_W_ROWS;
   c.n_orig = (int)n_orig;
   TORCH_CHECK(c.k % KSTEP == 0 && c.k <= KBLK_MAX * KSTEP, "k out of contract");
-  TORCH_CHECK(c.n % 128 == 0, "wq4 rows must be 128-padded");
+  TORCH_CHECK((int)wq4.size(1) == c.k / KSTEP, "wq4 k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
