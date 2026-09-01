@@ -96,12 +96,16 @@ from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.glm5_next import Glm5NextConfig
 
 from .attention import Glm5NextMLAAttention
+from .glm53_prefill_fastpath import install_glm53_prefill_fastpath
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
     Glm5NextProcessingInfo,
     Glm5NextVisionTransformer,
 )
+
+# Install after .attention is fully imported and before any GLM layer is built.
+install_glm53_prefill_fastpath()
 
 logger = init_logger(__name__)
 

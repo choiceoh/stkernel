@@ -76,6 +76,28 @@ def _glm53_dense_mha_layer_name(k_cache_prefix: str) -> str:
     return f"{k_cache_prefix[: -len(suffix)]}.attn"
 
 
+def _glm53_dense_mha_scoring_unused(
+    *,
+    k_cache_prefix: str,
+    attn_metadata: dict,
+    is_cuda: bool,
+    cudagraph_full: bool,
+    stream_capturing: bool,
+) -> bool:
+    """Whether the sibling MLA will ignore this indexer's scoring output."""
+    if not is_cuda or cudagraph_full or stream_capturing:
+        return False
+    dense_mha_layer = _glm53_dense_mha_layer_name(k_cache_prefix)
+    if not dense_mha_layer:
+        return False
+    mla_metadata = attn_metadata.get(dense_mha_layer)
+    prefill_metadata = getattr(mla_metadata, "prefill", None)
+    return bool(
+        getattr(prefill_metadata, "use_dense_mha", False)
+        and getattr(mla_metadata, "num_decode_tokens", -1) == 0
+    )
+
+
 # kpool write helper: form pools from the current token batch and compress them
 # into the index K cache via the fused Triton kernel.
 
@@ -673,20 +695,19 @@ def sparse_attn_indexer_kpool(
     # cached-context prefill has use_dense_mha=False; a mixed batch has decode
     # tokens; and an unknown module layout resolves to an empty name.  All of
     # those retain the existing kpool top-k path.
-    if (
-        current_platform.is_cuda()
-        and forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL
+    is_cuda = current_platform.is_cuda()
+    if _glm53_dense_mha_scoring_unused(
+        k_cache_prefix=k_cache_prefix,
+        attn_metadata=attn_metadata,
+        is_cuda=is_cuda,
+        cudagraph_full=(
+            forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
+        ),
+        stream_capturing=(
+            torch.cuda.is_current_stream_capturing() if is_cuda else True
+        ),
     ):
-        dense_mha_layer = _glm53_dense_mha_layer_name(k_cache_prefix)
-        if dense_mha_layer:
-            mla_metadata = attn_metadata.get(dense_mha_layer)
-            prefill_metadata = getattr(mla_metadata, "prefill", None)
-            if (
-                getattr(prefill_metadata, "use_dense_mha", False)
-                and getattr(mla_metadata, "num_decode_tokens", -1) == 0
-                and not torch.cuda.is_current_stream_capturing()
-            ):
-                return topk_indices_buffer
+        return topk_indices_buffer
 
     short_prefill = False
     prefill_metadata = None
