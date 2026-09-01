@@ -4333,6 +4333,44 @@ def test_once_logger_args_hashable() -> None:
     print("  *_once args hashable .......... OK")
 
 
+def test_dflash2_selector_check() -> None:
+    """The selector-load check must read the real object and never be silent."""
+    import ast as _ast
+    src = open(_overlay_source(
+        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py")).read()
+    ns = load_defs(
+        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py",
+        {"dflash2_selector_load_verdict"}, {},
+    )
+    verdict = ns["dflash2_selector_load_verdict"]
+
+    ok, why = verdict({"predecessor_codebook": (1.0, 0.42, 0.031),
+                       "successor_codebook": (1.0, 0.38, 0.029)})
+    check(ok and not why, "trained-looking codebooks must pass")
+    for label, stats in (
+        ("non-finite", {"a": (0.9997, 3.1, 0.05)}),
+        ("absurd magnitude", {"a": (1.0, 6.7e30, 2.2e28)}),
+        ("all zero", {"a": (1.0, 0.0, 0.0)}),
+    ):
+        ok, why = verdict(stats)
+        check(not ok and why,
+              f"{label} must be reported -- that is what torch.empty looks "
+              "like, and its only downstream symptom is suffix decay")
+
+    body = src[src.index("def verify_selector_loaded"):
+               src.index("def compute_candidates")]
+    check('getattr(self, "model", None), "candidate_selector"' in body,
+          "the selector hangs off the inner model; reading it off the wrapper "
+          "would find None and report nothing")
+    check(body.count("logger.warning") >= 2,
+          "both a failed verdict AND a missing selector must be loud")
+    call = src[src.index("def compute_candidates"):]
+    check("_deneb_selector_checked" in call
+          and call.index("_deneb_selector_checked") < call.index("return"),
+          "the check runs once, before the first candidate batch")
+    print("  dflash2 selector check ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4358,6 +4396,7 @@ if __name__ == "__main__":
     test_ep_compact_shape_align()
     test_ep_compact_warmup_ladder()
     test_once_logger_args_hashable()
+    test_dflash2_selector_check()
     test_launcher_load_format_gate()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
