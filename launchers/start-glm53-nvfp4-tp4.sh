@@ -325,6 +325,14 @@ done
 EXTRA_ENV_FLAGS=""
 for _kv in ${EXTRA_ENV:-}; do
   case "$_kv" in
+    # A comma-joined list is the natural mistake, and it passes the KEY=VALUE
+    # shape: the whole string lands in ONE -e whose value is
+    # "1,NEXT_KEY=1,..." -- so every knob reads as off and the boot measures
+    # the baseline while the log says the knobs were set. Refuse it here.
+    [A-Za-z_]*=*,[A-Za-z_]*=*)
+      echo "ABORT: EXTRA_ENV is space-separated, not comma-separated: $_kv"
+      echo "       use EXTRA_ENV=\"A=1 B=2\""
+      exit 1 ;;
     [A-Za-z_]*=*) EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
     *) echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"; exit 1 ;;
   esac
