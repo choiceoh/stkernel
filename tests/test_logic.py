@@ -6241,10 +6241,22 @@ def test_glm53_megakernel_contracts() -> None:
     check("(size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS" in cu
           and "MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX" in cu,
           "the split gate bounds the partial accumulator directly")
-    _red = cu.index("fold the leftover tiles' slices")
-    check(cu.index("mk_grid_barrier(bar, c.grid);") < _red,
-          "the accumulator is zeroed under a barrier before any atomicAdd, "
-          "and reduced under a second one after")
+    # The one surviving barrier must stand between the slice writes and the
+    # reads that fold them -- anchor it on the READ, not on the comment: the
+    # zero pass used to sit above the comment and the ordering check passed
+    # by accident of that layout.
+    check(cu.index("mk_grid_barrier(bar, c.grid);")
+          < cu.index("v += g_mk_gemm_partial["),
+          "a barrier separates the slice writes from the reduce")
+    # There is no zero pass: every accumulator element is ASSIGNED by exactly
+    # one unit, so pre-setting them cost a full pass plus a barrier to
+    # publish values that are all overwritten before anyone reads them. The
+    # assignment is what makes that true -- if the epilogue ever goes back to
+    # accumulating, the zero pass has to come back with it.
+    check("g_mk_gemm_partial[i] = 0.0f;" not in cu
+          and "pb[(size_t)r0 * pcols + pc] = acc[i][j][0];" in cu,
+          "the split-K accumulator is assigned, not accumulated, so it "
+          "needs no zero pass")
     check("32 * 128 * MK_SPLIT_UNITS_MAX" in cu
           and "MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP" in cu
           and "(MK_GRID_CAP - 1) * 128" in cu,
