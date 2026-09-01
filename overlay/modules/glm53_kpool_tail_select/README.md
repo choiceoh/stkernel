@@ -2,7 +2,58 @@
 
 GLM-5.3's indexer pools keys four at a time (`index_kpool = 4`) and selects
 pools, not tokens, so the pool-level top-k decides what the model may look at.
-Two changes to that path.
+
+## Skip dead short-prefill scoring under dense MLA
+
+The stock sparse indexer has a request-level bypass for fresh short prefills
+that the selected MLA backend will execute as dense MHA. The kpool fork
+predates that bypass, so even when `glm53_sm121_mla_prefill` admitted dense MHA
+it still filled and causally masked a `[tokens, 2048]` top-k buffer in every
+sparse layer. Dense MLA never reads that buffer.
+
+The kpool path now derives the sibling MLA metadata key from the exact
+`*.indexer.k_cache -> *.attn` GLM module layout. After it writes the pooled
+index-K cache and the persistent tail cache, it returns before the unused
+top-k buffer work when the MLA metadata says `use_dense_mha=True`. Mixed
+prefill/decode batches, CUDA graph capture, cached-context or long MQA
+prefills, and any module-name drift retain the old path. This makes the change
+inert unless the separate SM121 dense-prefill arm is admitted.
+
+The remaining changes to the kpool selection path are below.
+
+## Keep prefill pool windows as views
+
+Every prefill cache write compresses four consecutive raw K and gate rows.
+The old caller built an `[tokens, 4]` index grid and advanced-indexed both
+inputs, materializing two overlapping `[tokens, 4, 128]` tensors before the
+compression kernel. The kernel ABI already accepts independent row and
+pool-slot strides, but its public wrapper immediately called `contiguous()`
+and discarded that capability.
+
+The kpool prefill caller now forms `[window, 4, 128]` with
+`unfold(...).movedim(...)`, which is a zero-copy view with strides
+`[128, 128, 1]`, and invokes the pinned stock Triton kernel with those strides.
+Destination slots are shifted to each window's completion token, preserving
+the previous mask and cache layout. This removes the index grid and both K/gate
+gathers for every prefill size; the last head dimension remains contiguous as
+required by the kernel.
+
+## Make short MQA prefill a one-pass index write
+
+When a fresh context is within `index_topk`, the MQA fallback attends to every
+causal token and does not run sparse logits. The old fast path nevertheless
+performed three full-buffer passes: initialize `[tokens, 2176]` to `-1`,
+broadcast an arange over it, then build/apply a boolean causal mask. It also
+requested the sparse logits gather workspace before iterating an intentionally
+empty chunk list.
+
+A 2-D Triton kernel now writes `column` or `-1` directly from each row's token
+position. Pure short-prefill batches skip the overwritten sentinel fill;
+mixed batches retain it for their decode/padded rows. The shared logits
+workspace is requested only in the non-short branch that actually consumes
+it. This path remains the fallback when the separate dense-MLA arm is off;
+when dense MLA is admitted, the earlier no-consumer return skips the top-k
+buffer completely.
 
 ## Honor `index_kpool_always_select_tail`
 

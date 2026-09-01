@@ -9,18 +9,19 @@ import torch
 import vllm.envs as envs
 from vllm._aiter_ops import rocm_aiter_ops
 from vllm.compilation.breakable_cudagraph import eager_break_during_capture
-from vllm.config import get_current_vllm_config_or_none
+from vllm.config import CUDAGraphMode, get_current_vllm_config_or_none
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.custom_op import CustomOp
 from vllm.models.glm5next.nvidia.ops.kpool_compress import (
+    _kpool_softmax_rotate_write_cache_kernel,
     expand_pools_and_append_tail,
     expand_pools_to_tokens,
-    kpool_compress_and_write_cache,
     kpool_decode_update_and_maybe_write_cache_batched,
     kpool_seed_tail_cache,
 )
 from vllm.platforms import current_platform
+from vllm.triton_utils import tl, triton
 from vllm.utils.deep_gemm import (
     fp8_fp4_mqa_logits,
     fp8_fp4_paged_mqa_logits,
@@ -59,8 +60,143 @@ _KPOOL_DECODE_WRITE_ENABLED = (
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
 MXFP4_BLOCK_SIZE = 32
 
+
+def _glm53_dense_mha_layer_name(k_cache_prefix: str) -> str:
+    """Resolve the sibling MLA metadata key for GLM's kpool indexer.
+
+    ``MultiHeadLatentAttentionWrapper`` can normally bind this name through a
+    field on the stock sparse-indexer op.  The GLM kpool fork predates that
+    field, so its short dense-prefill path kept computing a top-k buffer that
+    attention never reads.  Derive the same name from the exact GLM module
+    layout and fail closed if that layout ever changes.
+    """
+    suffix = ".indexer.k_cache"
+    if not k_cache_prefix.endswith(suffix):
+        return ""
+    return f"{k_cache_prefix[: -len(suffix)]}.attn"
+
+
 # kpool write helper: form pools from the current token batch and compress them
 # into the index K cache via the fused Triton kernel.
+
+
+def _kpool_prefill_windows(x: torch.Tensor, pool_size: int) -> torch.Tensor:
+    """Zero-copy ``[window, pool slot, dim]`` views over token-major input."""
+    # Tensor.unfold appends the window dimension, producing [W, D, P]. Move
+    # that dimension between W and D; both operations are views. The resulting
+    # strides are [D, D, 1], exactly what the compression kernel accepts.
+    return x.unfold(0, pool_size, 1).movedim(-1, 1)
+
+
+def _kpool_compress_strided_write_cache(
+    kv_cache: torch.Tensor,
+    slot_k: torch.Tensor,
+    slot_score: torch.Tensor,
+    ape: torch.Tensor,
+    loc: torch.Tensor,
+    write_mask: torch.Tensor,
+    head_dim: int,
+    round_scale: bool,
+) -> None:
+    """Launch the stock compressor without materializing strided windows.
+
+    The image's public wrapper calls ``contiguous()`` on K and score even
+    though its Triton kernel already receives both row and pool-slot strides.
+    Prefill windows overlap by ``pool_size - 1`` rows, so materializing them
+    copies almost ``pool_size`` times the source. Preserve the zero-copy view
+    and invoke the pinned kernel with the same output/cache contract.
+    """
+    assert slot_k.ndim == 3 and slot_k.stride(-1) == 1
+    assert slot_score.shape == slot_k.shape and slot_score.stride(-1) == 1
+    assert ape.shape == slot_k.shape[1:] and ape.stride(-1) == 1
+    assert slot_k.shape[2] == head_dim
+    assert slot_k.dtype == torch.bfloat16
+    assert ape.dtype == torch.float32
+    assert kv_cache.dtype == torch.uint8
+    assert loc.shape == write_mask.shape == (slot_k.shape[0],)
+    assert loc.dtype == torch.int64 and write_mask.dtype == torch.bool
+    if slot_k.shape[0] == 0:
+        return
+
+    page_size = kv_cache.shape[1]
+    buf_fp8 = kv_cache.view(torch.float8_e4m3fn)
+    buf_fp32 = kv_cache.view(torch.float32)
+    buf_numel_per_page = kv_cache.stride(0)
+    s_offset_nbytes_in_page = page_size * head_dim
+
+    # RETURN_COMPRESSED=False makes both output-only pointers inert. Reuse the
+    # cache views, matching the public wrapper without allocating dummies.
+    _kpool_softmax_rotate_write_cache_kernel[(slot_k.shape[0],)](
+        buf_fp8,
+        buf_fp32,
+        slot_k,
+        slot_score,
+        ape,
+        loc,
+        write_mask,
+        buf_fp8,
+        buf_fp32,
+        slot_k.stride(0),
+        slot_k.stride(1),
+        slot_score.stride(0),
+        slot_score.stride(1),
+        ape.stride(0),
+        PAGE_SIZE=page_size,
+        BUF_NUMEL_PER_PAGE=buf_numel_per_page,
+        POOL_SIZE=slot_k.shape[1],
+        HEAD_DIM=head_dim,
+        S_OFFSET_NBYTES_IN_PAGE=s_offset_nbytes_in_page,
+        ROUND_SCALE=round_scale,
+        HAS_WRITE_MASK=True,
+        RETURN_COMPRESSED=False,
+        WRITE_CACHE=True,
+        BLOCK_D=triton.next_power_of_2(head_dim),
+    )
+
+
+@triton.jit
+def _fill_short_prefill_topk_kernel(
+    out_ptr,
+    positions_ptr,
+    out_stride_0,
+    out_stride_1,
+    positions_stride_0,
+    n_cols,
+    BLOCK_N: tl.constexpr,
+):
+    """Write causal full-attention indices directly into the top-k buffer."""
+    row = tl.program_id(0)
+    cols = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
+    mask = cols < n_cols
+    position = tl.load(positions_ptr + row * positions_stride_0)
+    values = tl.where(cols <= position, cols, -1)
+    tl.store(
+        out_ptr + row * out_stride_0 + cols * out_stride_1,
+        values,
+        mask=mask,
+    )
+
+
+def _fill_short_prefill_topk(
+    out: torch.Tensor, positions: torch.Tensor
+) -> None:
+    """One-pass replacement for fill + broadcast arange + boolean mask."""
+    assert out.ndim == 2 and out.dtype == torch.int32
+    assert positions.ndim == 1 and positions.shape[0] == out.shape[0]
+    if out.shape[0] == 0 or out.shape[1] == 0:
+        return
+    block_n = 256
+    grid = (out.shape[0], triton.cdiv(out.shape[1], block_n))
+    _fill_short_prefill_topk_kernel[grid](
+        out,
+        positions,
+        out.stride(0),
+        out.stride(1),
+        positions.stride(0),
+        out.shape[1],
+        BLOCK_N=block_n,
+        num_warps=4,
+    )
 
 
 def _kpool_compress_insert(
@@ -85,29 +221,25 @@ def _kpool_compress_insert(
     invariant as sglang).
     """
     n = slot_mapping.shape[0]
-    # No pool can complete in a batch smaller than one pool; also keeps the
-    # clamped gather indices below in bounds.
+    # No complete sliding window exists in a batch smaller than one pool.
     if n < kpool:
         return
-    pos = torch.arange(n, device=k.device)
-    valid = slot_mapping >= 0
-    # Drop pools whose start falls before the batch (leading padding); their
-    # gate/k data is undefined anyway.
-    write_mask = valid & (pos >= kpool - 1)
-    offs = torch.arange(kpool, device=k.device)
-    idx = (pos - (kpool - 1)).clamp_min(0)[:, None] + offs[None, :]
-    kpool_compress_and_write_cache(
+    # Row j is the window ending at token j + kpool - 1. Align the destination
+    # and mask to that completion token. Invalid/trailing pool slots remain
+    # no-ops inside the kernel, exactly as before.
+    k_windows = _kpool_prefill_windows(k, kpool)
+    score_windows = _kpool_prefill_windows(gate_score, kpool)
+    loc = slot_mapping[kpool - 1 :].to(torch.int64)
+    write_mask = loc >= 0
+    _kpool_compress_strided_write_cache(
         kv_cache,
-        k[idx],  # [n, kpool, head_dim]
-        gate_score[idx],
+        k_windows,
+        score_windows,
         ape,
-        slot_mapping.to(torch.int64),
-        pool_size=kpool,
-        head_dim=head_dim,
-        write_mask=write_mask,
-        round_scale=round_scale,
-        write_cache=True,
-        return_compressed=False,
+        loc,
+        write_mask,
+        head_dim,
+        round_scale,
     )
 
 
@@ -369,7 +501,8 @@ def sparse_attn_indexer_kpool(
     tail_prefix: str | None = None,
 ) -> torch.Tensor:
     # careful! this will be None in dummy run
-    attn_metadata = get_forward_context().attn_metadata
+    forward_context = get_forward_context()
+    attn_metadata = forward_context.attn_metadata
     fp8_dtype = current_platform.fp8_dtype()
     k_cache_prefix = _resolve_layer_name(k_cache_prefix)
 
@@ -530,7 +663,33 @@ def sparse_attn_indexer_kpool(
                 scale_fmt,
             )
 
-    topk_indices_buffer[: hidden_states.shape[0]] = -1
+    # Fresh short GLM prefills can use dense MLA when the SM121 prefill arm is
+    # admitted.  Dense MLA does not consume top-k indices, but this kpool fork
+    # used to continue below and build/mask a [tokens, 2048] buffer in every
+    # sparse layer.  Keep the index-K and tail-cache writes above -- decode and
+    # future cached turns need them -- then skip only the dead scoring output.
+    #
+    # Match the stock sparse indexer's capture/mixed-batch guards.  A long or
+    # cached-context prefill has use_dense_mha=False; a mixed batch has decode
+    # tokens; and an unknown module layout resolves to an empty name.  All of
+    # those retain the existing kpool top-k path.
+    if (
+        current_platform.is_cuda()
+        and forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL
+    ):
+        dense_mha_layer = _glm53_dense_mha_layer_name(k_cache_prefix)
+        if dense_mha_layer:
+            mla_metadata = attn_metadata.get(dense_mha_layer)
+            prefill_metadata = getattr(mla_metadata, "prefill", None)
+            if (
+                getattr(prefill_metadata, "use_dense_mha", False)
+                and getattr(mla_metadata, "num_decode_tokens", -1) == 0
+                and not torch.cuda.is_current_stream_capturing()
+            ):
+                return topk_indices_buffer
+
+    short_prefill = False
+    prefill_metadata = None
     if has_prefill:
         prefill_metadata = attn_metadata_narrowed.prefill
         assert prefill_metadata is not None
@@ -563,33 +722,48 @@ def sparse_attn_indexer_kpool(
                 and int(positions[num_decode_tokens:num_tokens].max().item()) + 1
                 <= topk_tokens
             )
+
+    # Every non-short path scatters only a subset of columns and therefore
+    # needs the full sentinel initialization. A pure short prefill writes every
+    # active cell below in one pass, so the old fill would be overwritten in
+    # its entirety. Mixed decode+prefill keeps the conservative full fill for
+    # padded/decoded rows that the short-prefill writer does not cover.
+    short_prefill_covers_active = (
+        short_prefill
+        and not has_decode
+        and hidden_states.shape[0] == num_tokens
+    )
+    if not short_prefill_covers_active:
+        topk_indices_buffer[: hidden_states.shape[0]] = -1
+
+    if has_prefill:
+        assert prefill_metadata is not None
         if short_prefill:
             # short_prefill is only True when positions is not None (above),
             # but narrow explicitly for the indexer below.
             assert positions is not None
-            _arange = torch.arange(
-                topk_indices_buffer.shape[1],
-                device=topk_indices_buffer.device,
-                dtype=torch.int32,
-            )
-            _pos = positions[num_decode_tokens:num_tokens].to(torch.int32)
             _buf = topk_indices_buffer[num_decode_tokens:num_tokens]
-            _buf[:] = _arange[None, :]
-            _buf[_arange[None, :] > _pos[:, None]] = -1
+            _fill_short_prefill_topk(
+                _buf, positions[num_decode_tokens:num_tokens]
+            )
+            prefill_chunks = ()
+        else:
+            # Get the full shared workspace buffers only when sparse scoring
+            # consumes them. The short full-attention path used to allocate or
+            # look these up and then iterate an empty chunk tuple.
+            # Layout switches between FP8 (head_dim bytes + 4-byte fp32 scale)
+            # and MXFP4 (head_dim/2 bytes packed + ue8m0 scales).
+            workspace_manager = current_workspace_manager()
+            values_spec, scales_spec = _gather_workspace_shapes(
+                total_seq_lens, head_dim, fp8_dtype, use_fp4_cache
+            )
+            k_quant_full, k_scale_full = workspace_manager.get_simultaneous(
+                values_spec,
+                scales_spec,
+            )
+            prefill_chunks = prefill_metadata.chunks
 
-        # Get the full shared workspace buffers once (will allocate on first use).
-        # Layout switches between FP8 (head_dim bytes + 4-byte fp32 scale) and
-        # MXFP4 (head_dim/2 bytes packed + head_dim/MXFP4_BLOCK_SIZE ue8m0
-        # scales) based on use_fp4_cache.
-        workspace_manager = current_workspace_manager()
-        values_spec, scales_spec = _gather_workspace_shapes(
-            total_seq_lens, head_dim, fp8_dtype, use_fp4_cache
-        )
-        k_quant_full, k_scale_full = workspace_manager.get_simultaneous(
-            values_spec,
-            scales_spec,
-        )
-        for chunk in prefill_metadata.chunks if not short_prefill else ():
+        for chunk in prefill_chunks:
             k_quant = k_quant_full[: chunk.total_seq_lens]
             k_scale = k_scale_full[: chunk.total_seq_lens]
 
