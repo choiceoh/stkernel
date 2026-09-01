@@ -8,7 +8,6 @@ from typing import Any
 from weakref import WeakValueDictionary
 
 from vllm.logger import init_logger
-from typing import Any
 
 import torch
 
@@ -384,28 +383,30 @@ B12X_EP_ZERO_WEIGHT_MICRO_MAX_ROWS = 64
 
 
 def b12x_ep_micro_chunk_tokens(env_get=os.environ.get) -> int:
-    """Tokens per micro call. Frozen at import; capture-safe.
+    """Validate the token width supported by the matching dispatcher.
 
-    Every call carries a fixed cost the token count does not change -- phase-0
-    zeroing, the expert compaction, the resident-grid barrier -- so at a given
-    batch, fewer and wider calls is strictly less overhead. The stock ceiling
-    is FlashInfer's `_MICRO_MAX_TOKENS` (8); raising it only makes sense
-    because this lane already ships its own `moe_dispatch` overlay, and the
-    caller must still prove the live dispatcher admits the wider shape
-    (require_b12x_ep_zero_weight_micro_dispatch does that at setup).
-
-    Invalid or unset leaves the stock 8, so a typo cannot silently widen the
-    call and land on a kernel that was never validated for it.
+    The zero-weight dispatcher gate is deliberately exact: eight tokens at
+    top-k=8, backed by a 64-routed-row workspace. Accepting a wider caller-side
+    chunk would bypass sentinel removal and overrun that workspace. Parse this
+    once while the experts are built; the forward path uses the constant and
+    never reads the environment.
     """
-    raw = (env_get("VLLM_B12X_EP_MICRO_CHUNK_TOKENS") or "").strip()
+    raw = str(env_get("VLLM_B12X_EP_MICRO_CHUNK_TOKENS") or "").strip()
     if not raw:
         return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
     try:
         value = int(raw)
-    except ValueError:
-        return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
-    if value < B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS or value % 8 or value > 64:
-        return B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    except ValueError as exc:
+        raise ValueError(
+            "VLLM_B12X_EP_MICRO_CHUNK_TOKENS must be exactly 8 for the "
+            f"installed zero-weight dispatcher; got {raw!r}"
+        ) from exc
+    if value != B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS:
+        raise ValueError(
+            "VLLM_B12X_EP_MICRO_CHUNK_TOKENS must be exactly 8 for the "
+            "installed zero-weight dispatcher and its 64-row workspace; "
+            f"got {value}"
+        )
     return value
 
 
@@ -418,7 +419,7 @@ def b12x_ep_zero_weight_micro_chunks(
 ):
     """Return exact stable token slices, or an empty fail-closed plan."""
     tokens = int(num_tokens)
-    chunk = b12x_ep_micro_chunk_tokens()
+    chunk = B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
     if not (
         enabled
         and tokens >= chunk
@@ -1077,6 +1078,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 self._ep_zero_weight_micro,
                 self._ep_stock_topk_micro,
             ) = b12x_ep_mode_from_env()
+        if self._ep_zero_weight_micro:
+            # Validate once at construction. The live dispatcher and pinned
+            # workspace only support the exact 8-token / 64-pair shape.
+            b12x_ep_micro_chunk_tokens()
+        self._ep_compact_enabled = b12x_ep_compact_enabled()
+        self._direct_out = os.environ.get(
+            "VLLM_B12X_DIRECT_OUT", "1"
+        ).strip().lower() in ("1", "true", "yes", "on")
         self._ep_ids: torch.Tensor | None = None
         self._ep_scales: torch.Tensor | None = None
         self._ep_long: torch.Tensor | None = None
@@ -1600,7 +1609,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         FC2 amax (the max of a set is unchanged by repeating a member).
         """
         lo, hi = tail
-        chunk = b12x_ep_micro_chunk_tokens()
+        chunk = B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
         rem = hi - lo
         if rem <= 0 or rem >= chunk:
             return False
@@ -2252,7 +2261,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 )
             if self._ep_no_dummy and b12x_ep_should_compact(
                 topk_ids.size(0) * topk_ids.size(1),
-                enabled=b12x_ep_compact_enabled(),
+                enabled=self._ep_compact_enabled,
             ):
                 # Big/eager batches: dropping the remote slots outright is the
                 # cheaper shape, and prefill is not captured.
@@ -2293,10 +2302,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             token_selected_experts=topk_ids.to(torch.int32),
             token_final_scales=topk_weights,
         )
-        direct = os.environ.get(
-            "VLLM_B12X_DIRECT_OUT", "1").strip().lower() in (
-            "1", "true", "yes", "on")
-        if direct:
+        if self._direct_out:
             wrapper.run(**run_kwargs, out=output)
             return output
         output.copy_(wrapper.run(**run_kwargs))
