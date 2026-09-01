@@ -5217,6 +5217,37 @@ def test_launcher_reject_method_gate() -> None:
     print("  launcher reject-method gate ... OK")
 
 
+def test_dflash2_prefix_cache_fail_closed() -> None:
+    """Cache-restored target tokens have no guaranteed DFlash context KV."""
+    launcher = open(
+        "launchers/start-glm53-nvfp4-tp4.sh", encoding="utf-8"
+    ).read()
+    profile = open("profiles/glm53.env", encoding="utf-8").read()
+
+    check("PREFIX_CACHE=0" in profile,
+          "the DFlash2 profile must prefer valid draft KV over prefix TTFT reuse")
+    check('PREFIX_CACHE="${PREFIX_CACHE:-0}"' in launcher,
+          "a profile-less DFlash2 launch must also fail closed")
+    check("ABORT: PREFIX_CACHE must be 0 or 1" in launcher,
+          "an invalid cache-safety value must not reach vLLM")
+    check('0) PREFIX_CACHE_FLAG="--no-enable-prefix-caching"' in launcher
+          and '1) PREFIX_CACHE_FLAG="--enable-prefix-caching"' in launcher,
+          "both explicit vLLM BooleanOptionalAction flags must be wired")
+    serve = launcher[launcher.index('SERVE_ARGS="'):]
+    check("$PREFIX_CACHE_FLAG" in serve,
+          "the validated prefix-cache decision must reach the serve command")
+    names = _launcher_caller_passthrough(launcher)
+    check("PREFIX_CACHE" in names,
+          "a caller must be able to make the documented throughput rollback")
+    dry_run = launcher[launcher.index('if [ "${DRY_RUN:-0}" = 1 ]'):]
+    check("PREFIX_CACHE" in dry_run,
+          "dry-run must expose whether draft-KV safety or prefix reuse won")
+    check(launcher.index('PREFIX_CACHE="${PREFIX_CACHE:-0}"')
+          < launcher.index('SERVE_ARGS="'),
+          "prefix-cache validation must happen before serve args are frozen")
+    print("  dflash2 prefix-cache fail-closed  OK")
+
+
 def test_accept_profile_conditional_arithmetic() -> None:
     """pos[i] is a MARGINAL count; the conditional is pos[i] / pos[i-1].
 
@@ -5282,6 +5313,7 @@ if __name__ == "__main__":
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
     test_launcher_reject_method_gate()
+    test_dflash2_prefix_cache_fail_closed()
     test_accept_profile_conditional_arithmetic()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
