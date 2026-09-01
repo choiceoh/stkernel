@@ -198,7 +198,15 @@ def _score_edges(
     anchor_token_ids: torch.Tensor,
     top_k: int,
 ) -> torch.Tensor:
-    successors = successor_table[candidate_ids]
+    # Keep the selector's final bilinear score in fp32.  The codebooks and
+    # projected hidden state are bf16, but returning the einsum in bf16 rounds
+    # distinct rank-256 path scores onto the same value before the selector
+    # walk sees them.  A tie here can pick the wrong successor even though the
+    # trained codebooks assigned it a lower score.  Cast before the multiply as
+    # well as the reduction so neither the modulation nor the final score loses
+    # that ordering.  This tensor is tiny for DFlash2 (B x 7 x 16 x 16), and
+    # _selector_walk already stores/consumes its scores as fp32.
+    successors = successor_table[candidate_ids].float()
     predecessor_ids = torch.cat(
         (
             anchor_token_ids[:, None, None].expand(-1, 1, top_k),
@@ -206,9 +214,11 @@ def _score_edges(
         ),
         dim=1,
     )
-    predecessors = predecessor_table[predecessor_ids]
-    return unary_logits[:, :, None] + torch.einsum(
-        "blpr,blcr->blpc", predecessors * hidden[:, :, None], successors
+    predecessors = predecessor_table[predecessor_ids].float()
+    return unary_logits.float()[:, :, None] + torch.einsum(
+        "blpr,blcr->blpc",
+        predecessors * hidden.float()[:, :, None],
+        successors,
     )
 
 

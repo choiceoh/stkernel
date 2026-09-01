@@ -4786,6 +4786,54 @@ def test_dflash2_selector_check() -> None:
     print("  dflash2 selector check ........ OK")
 
 
+def test_dflash2_selector_score_precision() -> None:
+    """BF16 codebooks must not force the final path ranking back to BF16."""
+    try:
+        import torch
+    except ImportError:
+        print("  dflash2 selector score precision  SKIP (no torch on this host)")
+        return
+
+    ns = load_defs(
+        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py",
+        {"_score_edges"}, {"torch": torch},
+    )
+    score_edges = ns["_score_edges"]
+
+    # The candidates differ by one BF16 ULP in a codebook coordinate whose
+    # contribution is small. A BF16 output rounds both 1.101... scores to the
+    # same value; FP32 retains the trained ordering for the selector walk.
+    predecessor = torch.tensor(
+        [[1.0, 0.1015625], [1.0, 0.1015625], [1.0, 0.1015625]],
+        dtype=torch.bfloat16,
+    )
+    successor = torch.tensor(
+        [[0.0, 0.0], [1.0, 1.0], [1.0, 1.0078125]],
+        dtype=torch.bfloat16,
+    )
+    candidate_ids = torch.tensor([[[1, 2]]])
+    unary = torch.zeros((1, 1, 2), dtype=torch.bfloat16)
+    hidden = torch.ones((1, 1, 2), dtype=torch.bfloat16)
+    anchor = torch.tensor([0])
+
+    scores = score_edges(
+        predecessor, successor, candidate_ids, unary, hidden, anchor, 2,
+    )
+    legacy = unary[:, :, None] + torch.einsum(
+        "blpr,blcr->blpc",
+        predecessor[anchor[:, None, None].expand(-1, 1, 2)]
+        * hidden[:, :, None],
+        successor[candidate_ids],
+    )
+    check(scores.dtype == torch.float32,
+          "selector edge scores must remain FP32 through path ranking")
+    check(legacy[0, 0, 0, 0].item() == legacy[0, 0, 0, 1].item(),
+          "fixture must reproduce the BF16 ranking tie")
+    check(scores[0, 0, 0, 1].item() > scores[0, 0, 0, 0].item(),
+          "FP32 edge scoring must recover the successor ordering BF16 erased")
+    print("  dflash2 selector score precision  OK")
+
+
 def test_dflash2_conv_mask_buffer() -> None:
     """Grouped conv reuses its deterministic speculative-block tap mask."""
     source = open(_overlay_source(
@@ -5074,6 +5122,7 @@ if __name__ == "__main__":
     test_ep_compact_warmup_ladder()
     test_once_logger_args_hashable()
     test_dflash2_selector_check()
+    test_dflash2_selector_score_precision()
     test_overlay_logger_defined()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
