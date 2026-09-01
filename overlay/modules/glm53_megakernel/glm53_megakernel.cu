@@ -236,8 +236,11 @@ __device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
 // in the ctx so neither host entry point nor the pybind signature changes.
 // ksr * rem <= MK_GRID by construction, so the per-split accumulator is
 // bounded by m * 128 * MK_GRID floats regardless of n.
-constexpr int MK_SPLIT_MAXCOL = (MK_GRID - 1) * 128;  // 6016
-constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_GRID;    // 196608 = 768 KB
+// Units may exceed MK_GRID now (see the ksr choice below), so the
+// accumulator is sized for the unit cap, not for one round.
+constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID;               // 96
+constexpr int MK_SPLIT_MAXCOL = (MK_GRID - 1) * 128;          // 6016
+constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 1.5 MB
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
 __device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 
@@ -251,10 +254,28 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   // and any exact multiple of MK_GRID get.
   const int rem = nblk % MK_GRID;
   const int full = nblk - rem;
-  const int ksr = (rem > 0) ? (MK_GRID / rem) : 1;
-  const bool split = (ksr > 1) && (c.m <= 32) &&
-                     (rem * 128 <= MK_SPLIT_MAXCOL);
+  int ksr = (rem > 0) ? (MK_GRID / rem) : 1;
+  // MK_GRID / rem truncates to 1 for nblk in (MK_GRID/2, MK_GRID] -- at
+  // MK_GRID 48 that is n/128 == 32, the 4096-wide projections, which then
+  // ran 32 tiles on 48 blocks with 16 idle. When full == 0 every unit is
+  // the same size, so wall time is exactly ceil(nblk*r / MK_GRID) / r
+  // tile-times and the best r is worth searching for: r=3 costs 0.667
+  // where r=1 costs 1.0. (Leave the full > 0 case alone -- there the units
+  // are a MIX of whole tiles and k-slices and this model does not hold.)
+  if (full == 0 && rem > 0 && c.m <= 32) {
+    int bn = (nblk + MK_GRID - 1) / MK_GRID, bd = 1;
+    for (int r = 2; r <= kblk; ++r) {
+      if ((size_t)c.m * rem * 128 * r > MK_SPLIT_ELEMS) break;
+      const int rounds = (nblk * r + MK_GRID - 1) / MK_GRID;
+      if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
+    }
+  }
   const int pcols = rem * 128;
+  // Guard on the accumulator directly rather than on a column count that
+  // only bounds it when ksr * rem <= MK_GRID -- which no longer holds.
+  const bool split = (ksr > 1) && (c.m <= 32) &&
+                     (rem * 128 <= MK_SPLIT_MAXCOL) &&
+                     ((size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS);
   // One slice per split, summed in a FIXED order below. An atomicAdd
   // accumulator is order-nondeterministic, so back-to-back launches of the
   // same call return bitwise-different results -- the probe's replay-
