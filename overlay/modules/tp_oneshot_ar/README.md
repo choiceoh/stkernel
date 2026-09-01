@@ -23,9 +23,13 @@ C=1/2/4, or 32,768/65,536/131,072 hidden elements; the old C=1 verify launch
 used 128 data-owning blocks and 128 empty CTAs. Plain T=1 calls were worse:
 only 16 blocks owned data and 240 were empty. Empty CTAs still crossed barriers
 and incremented the completion counter before publish.
-The largest captured verify is `32 * 4096 = 131072` bf16 elements, exactly
-`MAXEL`; 48 blocks cover every C=1/2/4 graph bucket through the existing
-grid-stride loops.
+The shipped `MAXEL=131072` covers GLM's largest captured verify and DSV4
+through DSpark C=5. DSV4 falls back to NCCL above that size. The crossover is
+unmeasured, so `VLLM_DSV4_OSAR_MAXEL` is an opt-in build/eligibility override,
+not a larger default. Every override uses a value-specific extension build
+directory and is included in the boot fingerprint; all ranks must agree
+because `MAXEL` participates in the remote receive-buffer stride. The fixed
+48 blocks cover every admitted size through the existing grid-stride loops.
 
 This is not a portable heuristic. `init()` requires compute capability 12.1
 and exactly 48 SMs before allocating the RDMA state. A mismatch raises inside

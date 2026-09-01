@@ -4626,8 +4626,18 @@ def test_oneshot_sm121_grid_contract() -> None:
         ),
         encoding="utf-8",
     ).read()
-    check(re.search(r"^_MAXEL = 131072\b", shim, re.M) is not None,
-          "Python eligibility and CUDA MAXEL stay in lockstep")
+    check(re.search(r"^_MAXEL_DEFAULT = 131072\b", shim, re.M) is not None,
+          "Python OSAR default must match the shipped CUDA constant")
+    check("#ifndef MAXEL" in source,
+          "CUDA MAXEL must accept the measured-sweep compiler override")
+    check("_MAXEL = _resolve_maxel()" in shim,
+          "Python eligibility must consume the resolved MAXEL")
+    check('f"-DMAXEL={_MAXEL}"' in shim,
+          "the resolved MAXEL must reach the CUDA compiler")
+    check('f"/root/.osar_build_maxel{_MAXEL}"' in shim,
+          "each OSAR stride must use an isolated extension build directory")
+    check("maxel=%d" in shim,
+          "boot fingerprint must expose rank-to-rank MAXEL skew")
     check("class OneShotFatal(RuntimeError):" in shim,
           "post-commit rank-local fallback has a fatal error type")
     check("dist.all_reduce(connect_votes, group=comm.cpu_group)" in shim,
@@ -4724,6 +4734,99 @@ def test_dflash_warmup_buckets() -> None:
             os.environ["VLLM_DFLASH_PREP_WARMUP"] = saved
 
     print("  dflash warmup buckets .......... OK")
+
+
+def test_dsv4_spec_warmup_contract() -> None:
+    """DSpark warms its own anchor-sampling input-prep geometry."""
+    path = "overlay/modules/dspark_drafter/dspark_speculator_v2.py"
+    saved = os.environ.pop("VLLM_DSV4_SPEC_WARMUP", None)
+    try:
+        ns = load_defs(
+            path,
+            {"_SPEC_WARMUP_ENV", "_warmup_query_lens"},
+            {"os": os},
+        )
+        lens = ns["_warmup_query_lens"]
+        check(lens(5, 4096) == [3, 11, 27, 59, 123, 251],
+              "DSpark N=5 must cover input-prep buckets 8..256")
+        check(lens(5, 100) == [3, 11, 27, 59],
+              "input-prep warmup must respect max_num_batched_tokens")
+        os.environ["VLLM_DSV4_SPEC_WARMUP"] = "0"
+        ns = load_defs(
+            path,
+            {"_SPEC_WARMUP_ENV", "_warmup_query_lens"},
+            {"os": os},
+        )
+        check(ns["_warmup_query_lens"](5, 4096) == [],
+              "VLLM_DSV4_SPEC_WARMUP=0 must disarm all added warmup")
+    finally:
+        if saved is None:
+            os.environ.pop("VLLM_DSV4_SPEC_WARMUP", None)
+        else:
+            os.environ["VLLM_DSV4_SPEC_WARMUP"] = saved
+
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    cls = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DSparkSpeculator"
+    )
+    set_attn = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "set_attn"
+    )
+    body = ast.get_source_segment(source, set_attn) or ""
+    check(body.index("super().set_attn") < body.index("_warmup_dspark_spec_decode"),
+          "warmup must wait until DFlash block tables are initialized")
+    check("sample_from_anchor=True" in source,
+          "DSpark input-prep warmup must compile anchor-sampling semantics")
+    check("_warmup_rejection_sampler" in source
+          and "rejection_sample(" in source,
+          "DSpark warmup must include rejection-sampler kernels")
+    check("except Exception:" in source and "Skipping DSpark" in source,
+          "a warmup failure must log and preserve the boot")
+    print("  DSV4 spec warmup contract ...... OK")
+
+
+def test_dsv4_ue8m0_host_guard() -> None:
+    """Every DSV4 DeepGEMM FP8 copy must validate scales before packing."""
+    path = "overlay/modules/dspark_drafter/dspark_v2.py"
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    quant = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_quantize_fp8_deepgemm"
+    )
+    body = ast.get_source_segment(source, quant) or ""
+    requant_at = body.index("requant_weight_ue8m0_inplace")
+    guard_at = body.index("unsafe = _ue8m0_unsafe(ws)")
+    safe_pack_at = body.index("use_e8m0=False")
+    check(requant_at < guard_at < safe_pack_at,
+          "host scale validation must sit between requant and layout packing")
+    check("raise RuntimeError" in body and "except ImportError as exc" in body,
+          "a missing requant seam must fail before the device trap")
+    check("torch.where" not in body,
+          "the safety guard must report bad scales, never rewrite weights")
+
+    try:
+        import torch
+    except ImportError:
+        print("  DSV4 UE8M0 host guard ......... SKIP values (no torch)")
+        return
+    ns = load_defs(
+        path,
+        {"_SF_SIGN_AND_MANTISSA", "_ue8m0_unsafe"},
+        {"torch": torch},
+    )
+    check(ns["_SF_SIGN_AND_MANTISSA"] == 0x807FFFFF,
+          "DSV4 guard must use DeepGEMM's exact sign+mantissa mask")
+    values = torch.tensor([0.0, 0.5, 1.0, 2.0, -1.0,
+                           1.3, float("inf"), float("nan")])
+    got = ns["_ue8m0_unsafe"](values).tolist()
+    check(got == [False, False, False, False, True, True, True, True],
+          "+0/powers of two are valid; negative/arbitrary/inf/nan are unsafe")
+    print("  DSV4 UE8M0 host guard ......... OK")
 
 
 def test_b12x_micro_chunk_width() -> None:
@@ -4979,6 +5082,47 @@ def test_launcher_load_format_gate() -> None:
     print("  launcher load-format gate ..... OK")
 
 
+def test_dsv4_launcher_adoptions() -> None:
+    """DSV4 carries every adopted guard while uncertain speed axes stay opt-in."""
+    text = open("launchers/start-hy4-tp4.sh", encoding="utf-8").read()
+    check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
+          "DSV4 load-format default must remain auto")
+    check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor" in text
+          and '--load-format "${LOAD_FORMAT}"' in text
+          and "-e LOAD_FORMAT=$LOAD_FORMAT" in text,
+          "validated DSV4 LOAD_FORMAT must reach the container and serve CLI")
+    check("silent rank death" in text,
+          "instanttensor's multi-node risk must stay beside its opt-in knob")
+
+    check("WARNING: profile not found" in text,
+          "a copied launcher must not silently lose profile VLLM_* settings")
+    check("_foreign_stack" in text
+          and "'^(glm53|q38)(-|$)'" in text,
+          "DSV4 must refuse live foreign model stacks on every node")
+    check("OVERLAY_DIGEST" in text
+          and "/cache/vllm/torch_compile_cache" in text
+          and "for w in $WORKERS" in text,
+          "overlay changes must invalidate each node's persistent compile cache")
+    check("HEAD_OVSUM" in text[text.index("OVERLAY_DIGEST"):],
+          "cache stamp must include overlay file bytes, not only manifest text")
+
+    check('GRAPH_DEBUG="${GRAPH_DEBUG:-0}"' in text
+          and "VLLM_LOGGING_LEVEL=DEBUG" in text,
+          "graph address assertions must be reachable but default-off")
+    check("CUSTOM_OPS_AXIS" in text and "COMPILE_CFG" in text
+          and "EXTRA_ENV_FLAGS" in text,
+          "DSV4 diagnostic axes must reach all ranks")
+    check("FLASHINFER_B12X_STATIC_COMPACT_CUTOVER_PAIRS" not in text,
+          "the rejected FlashInfer cutoff must not be wired to native b12x")
+    check('MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"' in text,
+          "the measured-rejected 8192 prefill default must not return")
+
+    check('OSAR_MAXEL="${OSAR_MAXEL:-}"' in text
+          and "VLLM_DSV4_OSAR_MAXEL=$OSAR_MAXEL" in text,
+          "OSAR's unknown size crossover must be sweepable without a new default")
+    print("  DSV4 launcher adoptions ....... OK")
+
+
 def test_prefill_ladder_probe() -> None:
     """The ladder must not let prefix caching masquerade as a warm kernel."""
     src = open("probes/prefill_ladder.py").read()
@@ -5007,21 +5151,21 @@ def test_prefill_ladder_probe() -> None:
 
 def test_launcher_nofile_limit() -> None:
     """The container must not run on Docker's 1024-descriptor default."""
-    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
-    check("--ulimit nofile=" in text,
-          "nofile must be raised: NCCL opens a socket per peer and a "
-          "prefetching loader opens many shards at once; 1024 runs out and "
-          "NCCL fails far from the cause")
-    import re
-    m = re.search(r"--ulimit nofile=(\d+):(\d+)", text)
-    check(m is not None, "nofile must be an explicit soft:hard pair")
-    soft, hard = int(m.group(1)), int(m.group(2))
-    check(soft >= 65536 and hard >= soft,
-          f"nofile soft={soft} hard={hard} must clear the default by a wide "
-          "margin and not invert")
-    check("Too many open files" in text,
-          "the symptom must be recorded at the flag, so the next reader does "
-          "not rediscover it from an ncclSystemError")
+    for launcher in (
+        "launchers/start-glm53-nvfp4-tp4.sh",
+        "launchers/start-hy4-tp4.sh",
+    ):
+        text = open(launcher, encoding="utf-8").read()
+        check("--ulimit nofile=" in text,
+              f"{launcher} must not keep Docker's 1024-descriptor default")
+        m = re.search(r"--ulimit nofile=(\d+):(\d+)", text)
+        check(m is not None,
+              f"{launcher} nofile must be an explicit soft:hard pair")
+        soft, hard = int(m.group(1)), int(m.group(2))
+        check(soft >= 65536 and hard >= soft,
+              f"{launcher} nofile {soft}:{hard} must be large and ordered")
+        check("Too many open files" in text,
+              f"{launcher} must document the distant NCCL symptom")
     print("  launcher nofile limit ......... OK")
 
 
@@ -5460,6 +5604,7 @@ if __name__ == "__main__":
     test_launcher_reject_method_gate()
     test_dflash2_prefix_cache_fail_closed()
     test_accept_profile_conditional_arithmetic()
+    test_dsv4_launcher_adoptions()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
     test_fp8_acceptance_contracts()
@@ -5478,6 +5623,8 @@ if __name__ == "__main__":
     test_mhc_bigfuse_knob()
     test_census_kda_group()
     test_dflash_warmup_buckets()
+    test_dsv4_spec_warmup_contract()
+    test_dsv4_ue8m0_host_guard()
     test_glm53_sm121_mla_prefill_gate()
     test_glm53_kpool_packed_scratch_contract()
     test_glm53_cache_only_indexer_prefill()

@@ -12,12 +12,18 @@ set -euo pipefail
 # served name are character-for-character what was hardcoded here. Caller env
 # still wins, as everywhere else.
 PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env}"
+if [ ! -f "$PROFILE_ENV" ]; then
+  echo "WARNING: profile not found at $PROFILE_ENV -- using built-in defaults."
+  echo "         Run this launcher from the checkout, or set PROFILE_ENV explicitly."
+fi
 if [ -f "$PROFILE_ENV" ]; then
   # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
   # exits 1 -- which under `set -euo pipefail` ends the script silently.
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
-  for _v in IMAGE MODEL_PATH SERVED_NAME $_vllm_keys; do
+  for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
+            EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
+            $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -48,6 +54,44 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-430000}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-32}"
 MAX_NUM_BATCHED="${MAX_NUM_BATCHED:-4096}"
 GRAPH_CAP=256
+
+# Diagnostic graph address assertions. DEBUG logging is intentionally opt-in:
+# it is verbose, but it makes vLLM's captured-input address checks active.
+GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
+case "$GRAPH_DEBUG" in
+  0|1) ;;
+  *) echo "ABORT: GRAPH_DEBUG must be 0 or 1 (got $GRAPH_DEBUG)"; exit 2 ;;
+esac
+
+# Weight-loader A/B. instanttensor is installed in the pinned image and can
+# pipeline distributed shard reads, but it has also caused silent rank death
+# on multi-node bring-up. Keep auto as the production default and require the
+# normal generation/rank-liveness gate for any instanttensor result.
+LOAD_FORMAT="${LOAD_FORMAT:-auto}"
+case "$LOAD_FORMAT" in
+  auto|safetensors|instanttensor) ;;
+  *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)"; exit 2 ;;
+esac
+
+# one-shot AllReduce's built-in 131072-element gate covers only 32 hidden-4096
+# tokens (DSpark C<=5). Larger values are an unmeasured latency-vs-bandwidth
+# sweep, so expose the compiler constant without changing its default.
+OSAR_MAXEL="${OSAR_MAXEL:-}"
+if [ -n "$OSAR_MAXEL" ]; then
+  case "$OSAR_MAXEL" in
+    *[!0-9]*|'') echo "ABORT: OSAR_MAXEL must be a positive integer (got '$OSAR_MAXEL')"; exit 2 ;;
+  esac
+  if [ "${#OSAR_MAXEL}" -gt 7 ]; then
+    echo "ABORT: OSAR_MAXEL exceeds the 8388608 safety ceiling (got $OSAR_MAXEL)"
+    exit 2
+  fi
+  OSAR_MAXEL=$((10#$OSAR_MAXEL))
+  if [ "$OSAR_MAXEL" -lt 1024 ] || [ $((OSAR_MAXEL % 1024)) -ne 0 ] \
+      || [ "$OSAR_MAXEL" -gt $((8 << 20)) ]; then
+    echo "ABORT: OSAR_MAXEL must be a multiple of 1024 in [1024,8388608] (got $OSAR_MAXEL)"
+    exit 2
+  fi
+fi
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
@@ -156,6 +200,27 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
   exit 1
 fi
 
+# Compilation/diagnostic axes. Defaults reproduce the previously hard-coded
+# serve argument byte-for-byte. CUSTOM_OPS_AXIS is intentionally not a
+# performance default; it only makes the valid vLLM values reachable without
+# editing four copied launchers.
+[ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_rope_kvcache_cat_mla":true,"fuse_attn_quant":true}}'
+if [ -n "${CUSTOM_OPS_AXIS:-}" ]; then
+  if [[ ! "$CUSTOM_OPS_AXIS" =~ ^(all|none|[+-][A-Za-z_][A-Za-z0-9_]*)$ ]]; then
+    echo "ABORT: CUSTOM_OPS_AXIS must be all, none, +op or -op (got '$CUSTOM_OPS_AXIS')"
+    exit 2
+  fi
+  case "$COMPILE_CFG" in
+    *'"custom_ops":["all"]'*) ;;
+    *) echo "ABORT: CUSTOM_OPS_AXIS requires COMPILE_CFG custom_ops=[\"all\"]"; exit 2 ;;
+  esac
+  COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed \
+    's/"custom_ops":\["all"\]/"custom_ops":["'"$CUSTOM_OPS_AXIS"'"]/')
+fi
+case "$COMPILE_CFG" in
+  *[[:space:]]*) echo "ABORT: COMPILE_CFG must not contain whitespace"; exit 2 ;;
+esac
+
 overlay_dir() { case "$1" in 10.10.10.3) echo /home/choiceoh/hybrid-stack/overlay;; *) echo /home/choiceoh/hybrid-stack-port/overlay;; esac; }
 
 ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH=sm_121a \
@@ -178,12 +243,22 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
-$(for _k in ${_vllm_keys:-}; do if [ -n "${!_k:-}" ]; then printf -- "-e %s=%s " "$_k" "${!_k}"; fi; done) \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
--e GRAPH_CAP=$GRAPH_CAP -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
+-e GRAPH_CAP=$GRAPH_CAP -e COMPILE_CFG=$COMPILE_CFG -e LOAD_FORMAT=$LOAD_FORMAT -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
+for _k in ${_vllm_keys:-}; do
+  if [ -n "${!_k:-}" ]; then
+    ENVV="$ENVV -e $_k=${!_k}"
+  fi
+done
+if [ "$GRAPH_DEBUG" = 1 ]; then
+  ENVV="$ENVV -e VLLM_LOGGING_LEVEL=DEBUG"
+fi
+if [ -n "$OSAR_MAXEL" ]; then
+  ENVV="$ENVV -e VLLM_DSV4_OSAR_MAXEL=$OSAR_MAXEL"
+fi
 # The rowwise FP8 experiment and the image's older DeepGEMM FP8 copy must not
 # coexist. Top-k global row gathers require W2 to be full on every TP rank.
 if ((FP8HEAD == 1)); then
@@ -246,8 +321,27 @@ fi
 # endpoints (bench/profile-step.py); zero overhead until a capture is started.
 # NOTE: SP/EPFLAG knobs removed — b12x MoE is TP-only, so the enable_sp
 # compilation pass (#46789) and EP/DP are structurally impossible on this stack.
-RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1"
+# Docker's 1024 soft nofile limit is too small when NCCL sockets overlap a
+# parallel shard loader; the observed remote symptom is "Too many open files".
+# The pinned image's hard limit is 524288, so raise both limits to it.
+RDMA_FLAGS="--device=/dev/infiniband:/dev/infiniband --cap-add=IPC_LOCK --ulimit memlock=-1:-1 --ulimit nofile=524288:524288"
 COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-stopped"
+
+# One-boot diagnostics, applied identically to head and workers. Values cannot
+# contain spaces because this launcher deliberately renders docker flags as a
+# shell word list.
+EXTRA_ENV_FLAGS=""
+for _kv in ${EXTRA_ENV:-}; do
+  if [[ ! "$_kv" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
+    echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"
+    exit 2
+  fi
+  EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv"
+done
+if [ -n "$EXTRA_ENV_FLAGS" ]; then
+  echo "extra env:$EXTRA_ENV_FLAGS"
+  COMMON="$COMMON $EXTRA_ENV_FLAGS"
+fi
 
 MANIFEST_NAME=manifest.tsv
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
@@ -356,12 +450,27 @@ docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
 # listed source so list skew, missing files, and byte skew all fail closed.
 HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
   || { echo "ABORT: manifest/overlays missing on head ($HEAD_OV)"; exit 1; }
+
+# A GLM/Q38 bring-up stack can retain tens of GiB of weights under different
+# container names. Refuse to size DSV4's UMA/KV pool while one is alive.
+_foreign_stack() {
+  docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)(-|$)'
+}
+if [ "${DRY_RUN:-0}" != 1 ] && _foreign_stack; then
+  echo "ABORT: $HEAD_IP runs a glm53/q38 stack — stop it before starting DSV4"
+  exit 1
+fi
 if [ -n "$MARKOV_SIDELOAD" ] && [ ! -f "$MARKOV_SIDELOAD" ]; then
   echo "ABORT: MARKOV_SIDELOAD missing on head ($MARKOV_SIDELOAD)"
   exit 1
 fi
 for w in $WORKERS; do
   ip=${w%%:*}
+  if [ "${DRY_RUN:-0}" != 1 ] && ssh $SSHOPT choiceoh@$ip \
+      "docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)(-|$)'"; then
+    echo "ABORT: $ip runs a glm53/q38 stack — stop it before starting DSV4"
+    exit 1
+  fi
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
   WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && sha256sum $MANIFEST_NAME ${OVFILES[*]}" 2>/dev/null || true)
@@ -373,6 +482,36 @@ for w in $WORKERS; do
       || { echo "ABORT: MARKOV_SIDELOAD missing on $ip ($MARKOV_SIDELOAD)"; exit 1; }
   fi
 done
+
+# torch.compile's persistent key does not include bind-mounted overlay bytes.
+# Stamp the complete manifest+file digest and drop only its rebuildable cache
+# when an overlay changes. Do this on every node because each has a local cache.
+OVERLAY_DIGEST=$(printf '%s' "$HEAD_OVSUM" | sha256sum | cut -d' ' -f1)
+CACHE_HOST_PATH=/home/choiceoh/.cache/vllm-hybrid
+if [ "${DRY_RUN:-0}" != 1 ]; then
+  _stamp="$CACHE_HOST_PATH/.overlay-sha"
+  if [ "$(cat "$_stamp" 2>/dev/null || true)" != "$OVERLAY_DIGEST" ]; then
+    echo "head overlays changed -> clearing torch.compile cache"
+    if ! docker run --rm -v "$CACHE_HOST_PATH:/cache" --entrypoint /bin/sh \
+        "$IMAGE" -c 'rm -rf /cache/vllm/torch_compile_cache && printf "%s" "$1" > /cache/.overlay-sha' \
+        sh "$OVERLAY_DIGEST"; then
+      echo "  ! head compile-cache maintenance failed; continuing"
+    fi
+  fi
+  _image_q=$(printf '%q' "$IMAGE")
+  for w in $WORKERS; do
+    ip=${w%%:*}
+    _remote_stamp=$(ssh $SSHOPT choiceoh@$ip \
+      "cat $CACHE_HOST_PATH/.overlay-sha 2>/dev/null" || true)
+    if [ "$_remote_stamp" != "$OVERLAY_DIGEST" ]; then
+      echo "$ip overlays changed -> clearing torch.compile cache"
+      if ! ssh $SSHOPT choiceoh@$ip \
+          "docker run --rm -v $CACHE_HOST_PATH:/cache --entrypoint /bin/sh $_image_q -c 'rm -rf /cache/vllm/torch_compile_cache && printf %s $OVERLAY_DIGEST > /cache/.overlay-sha'"; then
+        echo "  ! $ip compile-cache maintenance failed; continuing"
+      fi
+    fi
+  done
+fi
 echo "preflight OK (${HID:0:19}, ${#OVFILES[@]} base-attested overlays + manifest in sync x4)"
 
 echo "=== [1/5] retire old containers (free memory) ==="
@@ -435,18 +574,19 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
   done
 done
 echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
+echo "[hy4] compile-cfg=${COMPILE_CFG} load-format=${LOAD_FORMAT} osar-maxel=${VLLM_DSV4_OSAR_MAXEL:-131072(built-in)}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
 exec vllm serve "${MODEL_PATH}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash}" \
   --profiler-config "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"/prof\", \"torch_profiler_with_stack\": false}" --host 0.0.0.0 --port "${PORT}" --trust-remote-code --hf-overrides "{\"use_index_cache\": true, \"index_topk_freq\": ${IDXFREQ:-6}}" \
-  --kv-cache-dtype fp8 --block-size 256 --load-format auto \
+  --kv-cache-dtype fp8 --block-size 256 --load-format "${LOAD_FORMAT}" \
   --tensor-parallel-size "${TP_SIZE}" \
   --gpu-memory-utilization "${GPU_MEM}" \
   --max-model-len "${MAX_MODEL_LEN}" --max-num-seqs "${MAX_NUM_SEQS}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
   --max-cudagraph-capture-size "${GRAPH_CAP}" \
-  --compilation-config "{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_rope_kvcache_cat_mla\":true,\"fuse_attn_quant\":true}}" \
+  --compilation-config "${COMPILE_CFG}" \
   ${ASYNC_ARG} --no-scheduler-reserve-full-isl \
   --enable-chunked-prefill --enable-prefix-caching --enable-flashinfer-autotune \
   --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --reasoning-parser deepseek_v4 \

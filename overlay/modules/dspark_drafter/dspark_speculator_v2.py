@@ -111,6 +111,209 @@ def _refine_feedback_indices(max_num_reqs: int, num_query_per_req: int) -> list[
     ]
 
 
+_SPEC_WARMUP_ENV = "VLLM_DSV4_SPEC_WARMUP"
+
+
+def _warmup_query_lens(num_query_per_req: int, max_num_tokens: int) -> list[int]:
+    """Return one target-query length for every input-prep JIT bucket."""
+    if os.getenv(_SPEC_WARMUP_ENV, "1").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return []
+    lens = []
+    bucket = 8
+    while bucket <= 256:
+        qlen = bucket - num_query_per_req
+        if 1 <= qlen <= max_num_tokens:
+            lens.append(qlen)
+        bucket *= 2
+    return lens
+
+
+def _warmup_rejection_sampler(speculator: "DSparkSpeculator") -> int:
+    """Compile the rejection-sampler dtype signatures DSpark can serve."""
+    from vllm.v1.worker.gpu.spec_decode.rejection_sampler_utils import (
+        rejection_sample,
+    )
+
+    vocab_size = int(speculator.vllm_config.model_config.get_vocab_size())
+    num_spec = speculator.num_speculative_steps
+    if vocab_size <= 0 or num_spec <= 0:
+        return 0
+
+    model_dtype = speculator.dtype
+    dtype_pairs = list(
+        dict.fromkeys(
+            (
+                (model_dtype, model_dtype),
+                (torch.float32, torch.float32),
+                (torch.float32, model_dtype),
+                (model_dtype, torch.float32),
+            )
+        )
+    )
+    num_logits = num_spec + 1
+    for target_dtype, draft_dtype in dtype_pairs:
+        target_logits = torch.zeros(
+            num_logits,
+            vocab_size,
+            dtype=target_dtype,
+            device=speculator.device,
+        )
+        draft_logits = torch.zeros(
+            1,
+            num_spec,
+            vocab_size,
+            dtype=draft_dtype,
+            device=speculator.device,
+        )
+        rejection_sample(
+            target_logits=target_logits,
+            draft_logits=draft_logits,
+            draft_sampled=torch.zeros(
+                num_logits, dtype=torch.int64, device=speculator.device
+            ),
+            cu_num_logits=torch.tensor(
+                [0, num_logits], dtype=torch.int32, device=speculator.device
+            ),
+            pos=torch.arange(
+                num_logits, dtype=torch.int64, device=speculator.device
+            ),
+            idx_mapping=torch.zeros(
+                1, dtype=torch.int32, device=speculator.device
+            ),
+            expanded_idx_mapping=torch.zeros(
+                num_logits, dtype=torch.int32, device=speculator.device
+            ),
+            expanded_local_pos=torch.arange(
+                num_logits, dtype=torch.int32, device=speculator.device
+            ),
+            temperature=torch.full(
+                (1,), 0.8, dtype=torch.float32, device=speculator.device
+            ),
+            seed=torch.full(
+                (1,), 42, dtype=torch.int64, device=speculator.device
+            ),
+            num_speculative_steps=num_spec,
+        )
+        del target_logits, draft_logits
+    return len(dtype_pairs)
+
+
+def _warmup_input_prep(speculator: "DSparkSpeculator") -> int:
+    """Compile every BLOCK_SIZE specialization of DSpark input preparation."""
+    import types
+
+    from vllm.v1.worker.gpu.spec_decode.dflash.speculator import (
+        prepare_dflash_inputs,
+    )
+
+    lens = _warmup_query_lens(
+        speculator.num_query_per_req, speculator.max_num_tokens
+    )
+    if not lens:
+        return 0
+
+    device = speculator.device
+    max_reqs = speculator.max_num_reqs
+    max_tokens = speculator.max_num_tokens
+    num_spec = speculator.num_speculative_steps
+    block_size = speculator.draft_block_size
+    max_blocks = max(1, speculator.max_model_len // block_size + 1)
+    i64, i32 = torch.int64, torch.int32
+
+    input_buffers = types.SimpleNamespace(
+        input_ids=torch.zeros(max_tokens, dtype=i64, device=device),
+        positions=torch.zeros(max_tokens, dtype=i64, device=device),
+        query_start_loc=torch.zeros(max_reqs + 1, dtype=i32, device=device),
+        seq_lens=torch.zeros(max_reqs, dtype=i32, device=device),
+    )
+    input_batch = types.SimpleNamespace(
+        num_reqs=1,
+        num_scheduled_tokens=torch.zeros(max_reqs, dtype=i64, device=device),
+        positions=torch.zeros(max_tokens, dtype=i64, device=device),
+        query_start_loc=torch.zeros(max_reqs + 1, dtype=i32, device=device),
+        idx_mapping=torch.zeros(max_reqs, dtype=i32, device=device),
+    )
+    query_slot_mapping = torch.zeros(max_tokens, dtype=i64, device=device)
+    context_positions = torch.zeros(max_tokens, dtype=i64, device=device)
+    context_slot_mapping = torch.zeros(max_tokens, dtype=i64, device=device)
+    sample_count = max_reqs * max(num_spec, 1)
+    sample_indices = torch.zeros(sample_count, dtype=i64, device=device)
+    sample_pos = torch.zeros(sample_count, dtype=i64, device=device)
+    sample_idx_mapping = torch.zeros(sample_count, dtype=i32, device=device)
+    block_table = torch.zeros(
+        max_reqs, max_blocks, dtype=i32, device=device
+    )
+    num_sampled = torch.ones(1, dtype=i64, device=device)
+    num_rejected = torch.zeros(1, dtype=i64, device=device)
+    last_sampled = torch.zeros(max_reqs, dtype=i64, device=device)
+    next_prefill_tokens = torch.zeros(max_reqs, dtype=i64, device=device)
+
+    # Keep one valid context position; only num_scheduled_tokens is varied to
+    # select the constexpr bucket. This avoids touching an uninitialised tail.
+    input_batch.query_start_loc[1] = 1
+    for qlen in lens:
+        input_batch.num_scheduled_tokens.fill_(qlen)
+        prepare_dflash_inputs(
+            input_buffers=input_buffers,
+            query_slot_mapping=query_slot_mapping,
+            context_positions=context_positions,
+            context_slot_mapping=context_slot_mapping,
+            sample_indices=sample_indices,
+            sample_pos=sample_pos,
+            sample_idx_mapping=sample_idx_mapping,
+            input_batch=input_batch,
+            num_sampled=num_sampled,
+            num_rejected=num_rejected,
+            last_sampled=last_sampled,
+            next_prefill_tokens=next_prefill_tokens,
+            block_table=block_table,
+            block_size=block_size,
+            parallel_drafting_token_id=speculator.parallel_drafting_token_id,
+            num_query_per_req=speculator.num_query_per_req,
+            num_speculative_steps=num_spec,
+            max_num_reqs=max_reqs,
+            max_num_tokens=max_tokens,
+            max_model_len=speculator.max_model_len,
+            sample_from_anchor=True,
+        )
+    return len(lens)
+
+
+def _warmup_dspark_spec_decode(speculator: "DSparkSpeculator") -> None:
+    """Best-effort JIT warmup after the draft block table is initialised."""
+    if getattr(speculator, "_deneb_spec_warmup_done", False):
+        return
+    speculator._deneb_spec_warmup_done = True
+    if not _warmup_query_lens(
+        speculator.num_query_per_req, speculator.max_num_tokens
+    ):
+        logger.info("DSpark spec-decode JIT warmup disabled by %s.", _SPEC_WARMUP_ENV)
+        return
+
+    rejection_count = 0
+    prep_count = 0
+    try:
+        rejection_count = _warmup_rejection_sampler(speculator)
+    except Exception:
+        logger.warning("Skipping DSpark rejection-sampler warmup.", exc_info=True)
+    try:
+        prep_count = _warmup_input_prep(speculator)
+    except Exception:
+        logger.warning("Skipping DSpark input-prep warmup.", exc_info=True)
+    torch.cuda.synchronize(speculator.device)
+    logger.info(
+        "DSpark spec-decode JIT warmup complete: rejection dtype pairs=%d, "
+        "input-prep buckets=%d.",
+        rejection_count,
+        prep_count,
+    )
+
+
 class DSparkSpeculator(DFlashSpeculator):
     _speculator_name = "DSpark"
 
@@ -178,6 +381,10 @@ class DSparkSpeculator(DFlashSpeculator):
                 "replace the %d noise slots per request, same Gumbel keys.",
                 self.num_query_per_req - 1,
             )
+
+    def set_attn(self, model_state, kv_cache_config, block_tables) -> None:
+        super().set_attn(model_state, kv_cache_config, block_tables)
+        _warmup_dspark_spec_decode(self)
 
     def load_draft_model(
         self,
