@@ -864,11 +864,27 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       for (int ch = blockIdx.x * MK_THREADS + threadIdx.x; ch < KDA_QKV;
            ch += MK_GRID * MK_THREADS) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
+        const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
+                             (size_t)ch * a.conv_width;
+        // The state is conv_width wide (conv_kernel_size - 1 + num_spec, so
+        // 10 here), NOT conv_width == CONV_W - 1. Its NEWEST entry is the
+        // last one, so the convolution's history for pos < 0 comes off the
+        // END of the buffer, not the front. Reading st[pos + CONV_W - 1]
+        // took the three OLDEST entries instead.
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[(size_t)slot * KDA_QKV * a.conv_width +
-                               ch * a.conv_width + i];
+          st[i] = a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i];
+        // The two entries the update keeps, read before anything is written:
+        // stock keeps conv_width - nq old values starting at `acc`.
+        const int nq_tok = t1 - t0;
+        const int keep = a.conv_width - nq_tok;
+        float kept[CONV_W - 1];
+#pragma unroll
+        for (int i = 0; i < CONV_W - 1; ++i)
+          kept[i] = (i < keep && acc + i < a.conv_width)
+                        ? a.conv_state[sbase + acc + i]
+                        : 0.0f;
         auto hist = [&](int pos) -> float {
           return (pos >= 0)
                      ? __bfloat162float(
@@ -883,11 +899,13 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
           a.convq[(size_t)(t0 + j) * KDA_QKV + ch] =
               __float2bfloat16(v / (1.0f + expf(-v)));  // silu
         }
-#pragma unroll
-        for (int i = 0; i < CONV_W - 1; ++i)
-          a.conv_state[(size_t)slot * KDA_QKV * a.conv_width +
-                       ch * a.conv_width + i] =
-              hist(acc - (CONV_W - 1) + i);
+        // Write the WHOLE window, matching causal_conv1d_update:
+        //   [init[acc] .. init[acc + keep - 1], x[0] .. x[nq - 1]]
+        // The old code wrote only CONV_W - 1 slots at the front, which is
+        // both the wrong count and the wrong place once conv_width > 3.
+        for (int i = 0; i < a.conv_width; ++i)
+          a.conv_state[sbase + i] =
+              (i < keep) ? kept[i] : hist(i - keep);
       }
     }
   }

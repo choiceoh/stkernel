@@ -6225,9 +6225,20 @@ def test_glm53_megakernel_contracts() -> None:
     # -- state slot addressing: [slots, ...] buffers need the per-slot
     #    element count in the stride (a slot-0-only self-test once passed
     #    while the conv stride was missing it -- found in review)
-    check(cu.count("slot * KDA_QKV * a.conv_width") == 2,
-          "conv state slot stride is KDA_QKV*conv_width at both sites "
+    check(cu.count("slot * KDA_QKV * a.conv_width") >= 1
+          and "sbase + i" in cu and "sbase + acc + i" in cu,
+          "conv state slot stride is KDA_QKV*conv_width, computed once as "
+          "sbase and used by every read and write "
           "(spec allocates a wider window; runtime width is the stride)")
+    check("a.conv_width - (CONV_W - 1) + i" in cu,
+          "the convolution's pos<0 history is the NEWEST end of the state "
+          "buffer -- reading the front took the oldest entries once the "
+          "width grew past CONV_W - 1")
+    check("for (int i = 0; i < a.conv_width; ++i)" in cu
+          and "(i < keep) ? kept[i] : hist(i - keep)" in cu,
+          "the state update writes the WHOLE window: causal_conv1d_update "
+          "keeps conv_width - nq old values starting at `acc` and appends "
+          "every query token")
     check("slot * KDA_H + head) * KDA_D * KDA_D" in cu,
           "recurrent state slot stride is H*D*D")
 

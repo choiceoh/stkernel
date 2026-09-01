@@ -52,6 +52,13 @@ KDA_H, KDA_D = 16, 128
 KDA_QKV = 3 * KDA_H * KDA_D                 # 6144
 KDA_INPROJ_N = KDA_QKV + KDA_H + 2 * KDA_D  # 6416
 KDA_OUT = KDA_H * KDA_D                     # 2048
+KDA_CONV_W = 4                              # short_conv_kernel_size
+# Production conv_state width (mamba_utils.kda_state_shape:291):
+# conv_kernel_size - 1 + num_spec. The spec headroom is not optional --
+# causal_conv1d_update slides its window across the draft-verify tokens and
+# reads past a width-(conv_kernel_size - 1) buffer.
+KDA_SPEC = 7                                # num_speculative_tokens
+KDA_CONV_STATE_W = KDA_CONV_W - 1 + KDA_SPEC  # 10
 
 
 def _flag(name: str, default: str = "0") -> bool:
@@ -439,7 +446,12 @@ def _kda_layout_ok(layer) -> bool:
             # the kernel uses the runtime width as stride over the active
             # [0, 3) window, so any width >= 3 is admissible (a hard (QKV,3)
             # gate never matched production -- review finding).
-            and conv_state.shape[2] >= 3 and conv_state.is_contiguous()
+            # The width must carry the spec headroom, not just the
+            # kernel history: causal_conv1d_update slides across the
+            # draft-verify tokens and a >= 3 check admitted a buffer
+            # the STOCK arm then read out of bounds.
+            and conv_state.shape[2] == KDA_CONV_STATE_W
+            and conv_state.is_contiguous()
             and rec_state.dtype == torch.float32
             and rec_state.dim() == 4
             and rec_state.shape[1:] == (KDA_H, KDA_D, KDA_D)
@@ -748,7 +760,16 @@ class _KdaFixture:
         self.a_log = mkw(1, 1, KDA_H, 1, dt=torch.float32) * 0.1
         self.dt_bias = torch.zeros(KDA_OUT, dtype=torch.float32,
                                    device="cuda")
-        self.conv_st = mkw(2, KDA_QKV, 3, dt=torch.float32)
+        # Width is conv_kernel_size - 1 + num_spec, not conv_kernel_size - 1.
+        # mamba_utils.kda_state_shape:291 sizes it that way, and
+        # glm5next_kda.get_state_shape says why: causal_conv1d_update with
+        # num_accepted_tokens + max_query_len slides a window across the
+        # draft-verify tokens and "reads past the allocated width" without
+        # the spec headroom. A width-3 fixture made the STOCK arm read and
+        # write out of bounds -- which is why its state held values larger
+        # than any input (1.2 against a 0.24 max) and why ~64% of channels
+        # disagreed even at acc=1. The gate was comparing against garbage.
+        self.conv_st = mkw(2, KDA_QKV, KDA_CONV_STATE_W, dt=torch.float32)
         self.rec_st = (mkw(2, KDA_H, KDA_D, KDA_D, dt=torch.float32) * 0.1)
         self.cu = torch.tensor([0, T], dtype=torch.int32, device="cuda")
         self.sidx = torch.full((1, 8), self.SLOT, dtype=torch.int32,
