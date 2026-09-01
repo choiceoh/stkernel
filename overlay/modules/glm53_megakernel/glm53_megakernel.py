@@ -754,6 +754,14 @@ class _KdaFixture:
         self.sidx = torch.full((1, 8), self.SLOT, dtype=torch.int32,
                                device="cuda")
         self.nacc = torch.tensor([acc], dtype=torch.int32, device="cuda")
+        # KDA_D, not KDA_OUT: the CUDA side declares onorm_w as [KDA_D] and
+        # indexes it by the within-head dim (a.onorm_w[d]), and the stock
+        # FusedRMSNormGated(KDA_D) weight is 128 wide too.
+        # Built in __init__, not in _layer_stand_in: stock_run() needs the
+        # same values, and creating it lazily on the MK side made stock_run()
+        # depend on mk_run() having been called first.
+        self.onorm_w = (torch.rand(KDA_D, device="cuda") * 0.4
+                        + 0.8).to(torch.bfloat16)
         self._mk_cache = None       # (layer stand-in, meta), quantized once
         self._stock_cache = None    # (q, ws, rows, cols) x {in, o}, once
 
@@ -788,13 +796,6 @@ class _KdaFixture:
         # NON-TRIVIAL affine weight: an all-ones o_norm cannot see a missing
         # weight multiply (review finding). The stock arm must use the same
         # values -- FusedRMSNormGated gets them via onorm_w below.
-        # KDA_D, not KDA_OUT. The CUDA side declares onorm_w as [KDA_D] and
-        # indexes it by the within-head dim (a.onorm_w[d]), and the stock
-        # FusedRMSNormGated(KDA_D) weight is 128 wide too. A KDA_OUT-sized
-        # tensor left the MK arm reading its first 128 entries while the
-        # stock arm used a different vector entirely.
-        self.onorm_w = (torch.rand(KDA_D, device="cuda") * 0.4
-                        + 0.8).to(torch.bfloat16)
         la.o_norm = _P()
         la.o_norm.eps = 1e-5
         la.o_norm.weight = torch.nn.Parameter(self.onorm_w)
