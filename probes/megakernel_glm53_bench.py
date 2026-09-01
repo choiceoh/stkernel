@@ -36,6 +36,8 @@ os.environ.setdefault("VLLM_GLM53_MK_MHC", "1")
 os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
 os.environ.setdefault("VLLM_GLM53_MK_KDA", "1")
 os.environ.setdefault("VLLM_GLM53_MK_W4", "1")
+# programmatic launches: the mk_x2 column below is where they show
+os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
 sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
 
@@ -129,7 +131,7 @@ def probe_gemm(iters: int) -> bool:
 
     ok = True
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
-          f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}")
+          f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}")
     for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -144,6 +146,13 @@ def probe_gemm(iters: int) -> bool:
                       iters, hot=(x,))
         t_mk, t_lo, t_hi = _time_stats(
             lambda: mk._gemm_call(x, (mkq, mkws), n), iters, hot=(x,))
+        # two launches back to back, per launch: what a decode step's run
+        # of GEMMs sees. With VLLM_GLM53_MK_PDL=1 the second one starts on
+        # the SMs the first frees and prefetches its W during the first's
+        # tail; a single launch cannot show that.
+        t_x2 = _time(lambda: (mk._gemm_call(x, (mkq, mkws), n),
+                              mk._gemm_call(x, (mkq, mkws), n)),
+                     iters, hot=(x,)) / 2
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
@@ -162,7 +171,7 @@ def probe_gemm(iters: int) -> bool:
         print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%")
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}")
     return ok
 
 

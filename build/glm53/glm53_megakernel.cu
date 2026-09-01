@@ -47,6 +47,7 @@
 #include <cuda_fp8.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 namespace {
@@ -528,6 +529,31 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   int nt0 = 0, kb00 = 0, kbn0 = 0;
   const bool has_u0 = (int)blockIdx.x < units;
   if (has_u0) decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
+  bool hoisted = false;
+  if (has_u0) {
+    if (kb00 < kbn0) {
+      if constexpr (W4) {
+        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
+#pragma unroll
+        for (int d = 1; d < RAW_DIST; ++d)
+          if (kb00 + d < kbn0)
+            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
+      } else {
+        stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+#pragma unroll
+        for (int d = 1; d < DIST; ++d)
+          if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+      }
+      hoisted = true;
+    }
+  }
+
+  // ---- PDL: launched programmatically after the previous kernel, this
+  // grid has been running on the SMs that kernel freed, and its W fill
+  // above went out during that kernel's tail. From here on it reads x (the
+  // previous kernel's output) and touches the shared counters, so it waits
+  // for that grid to complete and flush. A no-op for a plain launch.
+  asm volatile("griddepcontrol.wait;" ::: "memory");
   uint8_t* sx = W4 ? swb
                    : swb + ((kb00 + DIST) % MK_W_NBUF) *
                              (SMEM_W_ROWS * SMEM_W_PITCH);
@@ -540,31 +566,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
   }
   mk_cp_commit();  // every thread, possibly empty: uniform group counts
-  MK_TS(7);  // x copies issued; the W fill goes out next
-
-  bool hoisted = false;
-  int n_hoisted = 0;  // W groups committed after the x group
-  if (has_u0) {
-    if (kb00 < kbn0) {
-      if constexpr (W4) {
-        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF); ++n_hoisted;
-#pragma unroll
-        for (int d = 1; d < RAW_DIST; ++d)
-          if (kb00 + d < kbn0) {
-            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF); ++n_hoisted;
-          }
-      } else {
-        stage_w(nt0, kb00, kb00 % MK_W_NBUF); ++n_hoisted;
-#pragma unroll
-        for (int d = 1; d < DIST; ++d)
-          if (kb00 + d < kbn0) {
-            stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF); ++n_hoisted;
-          }
-      }
-      hoisted = true;
-    }
-  }
-
+  MK_TS(7);  // x copies issued (the most recent group)
   // ---- prologue, part 2: x landed -> amax, scale, convert, publish --
   // once for the WHOLE grid. The barrier that publishes it is the price;
   // the measurement in #209 says it is worth paying.
@@ -587,7 +589,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
   };
   if (kbq < kblk) {
-    mk_cp_wait_upto(n_hoisted);  // x is the group before the W stages
+    // x is the MOST RECENT group, so this also waits for the W fill --
+    // which, under PDL, landed during the previous kernel's tail. On a
+    // plain launch the fill is exposed here instead of at the first tile;
+    // either way every block's prologue then takes the same time and the
+    // publishing barrier stops waiting for a straggler.
+    mk_cp_wait_upto(0);
     __syncthreads();
     float v[RPW][4], mx[RPW];
 #pragma unroll
@@ -919,6 +926,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 template <bool W4>
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   extern __shared__ uint8_t smem[];
+  // PDL: the next launch in the stream may start on the SMs this grid
+  // frees as blocks exit; it prefetches its own weights during this
+  // grid's tail and waits (griddepcontrol.wait) before reading anything
+  // this grid writes. Harmless when the next launch is not programmatic.
+  asm volatile("griddepcontrol.launch_dependents;");
   mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar);
 }
 
@@ -1282,6 +1294,7 @@ struct MKKdaArgs {
 
 __global__ void mk_kda_kernel(const MKKdaArgs a) {
   extern __shared__ uint8_t smem[];
+  asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
 
   {  // phase 0: in_proj GEMM into workspace
     MKGemmCtx c;
@@ -1614,6 +1627,36 @@ int g_gemm_grid = 0;
 int g_gemm4_grid = 0;
 int g_kda_grid = 0;
 
+// VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
+// each MK kernel may begin on the SMs its predecessor frees and prefetch
+// its weights during the predecessor's tail (the kernels trigger at entry
+// and wait before their first dependent read). Default off: the serving
+// profile flips it after its bracket, the probe sets it.
+bool mk_pdl_enabled() {
+  static int v = -1;
+  if (v < 0) {
+    const char* e = getenv("VLLM_GLM53_MK_PDL");
+    v = (e != nullptr && e[0] == '1') ? 1 : 0;
+  }
+  return v == 1;
+}
+
+template <typename K, typename A>
+void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
+               const A& args) {
+  cudaLaunchConfig_t cfg = {};
+  cfg.gridDim = dim3(grid);
+  cfg.blockDim = dim3(MK_THREADS);
+  cfg.dynamicSmemBytes = smem;
+  cfg.stream = stream;
+  cudaLaunchAttribute at[1];
+  at[0].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  at[0].val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = at;
+  cfg.numAttrs = mk_pdl_enabled() ? 1 : 0;
+  MK_CHECK_CUDA(cudaLaunchKernelEx(&cfg, kernel, args));
+}
+
 // Leftover-tile k-split for one launch shape. Every block owns one
 // 128-column tile across all of k, so a tile count that is not a multiple
 // of the grid pays a whole extra round for its leftovers; those get their
@@ -1698,7 +1741,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_gemm_kernel<false><<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
+  mk_launch(mk_gemm_kernel<false>, c.grid, GEMM_SMEM, stream, c);
 }
 
 void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -1730,7 +1773,7 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_gemm_kernel<true><<<c.grid, MK_THREADS, GEMM_SMEM_W4, stream>>>(c);
+  mk_launch(mk_gemm_kernel<true>, c.grid, GEMM_SMEM_W4, stream, c);
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -1836,7 +1879,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM);
   a.ksr_in = mk_choose_ksr(a.num_tokens, KDA_INPROJ_N_PAD, HIDDEN, a.grid);
   a.ksr_out = mk_choose_ksr(a.num_tokens, HIDDEN, KDA_OUT_PAD, a.grid);
-  mk_kda_kernel<<<a.grid, MK_THREADS, GEMM_SMEM, stream>>>(a);
+  mk_launch(mk_kda_kernel, a.grid, GEMM_SMEM, stream, a);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
