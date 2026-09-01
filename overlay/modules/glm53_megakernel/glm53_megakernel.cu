@@ -87,7 +87,14 @@ constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 // Little's law caps this kernel far below the part's bandwidth; 4 buffers
 // with a distance-3 prefetch keep ~3. smem: 4*128*144 = 73728, and
 // 4224 + 73728 + 4096 = 82048 <= the 101376 opt-in this part reports.
-constexpr int MK_W_NBUF = 4;
+// 3 is the occupancy cliff, and the reason to write it down: the SM has
+// 128 KB of shared memory, so 3 buffers (63,616 B) leaves two blocks
+// resident while 4 (82,048 B) leaves one. Deepening to 4 measured EXACTLY
+// zero on this kernel and would have halved the warps per SM -- when a
+// block's 8 warps all sit on the cp.async wait, a second resident block is
+// the only thing that can hide the latency. Do not raise this without
+// re-checking 2 * smem <= 131072.
+constexpr int MK_W_NBUF = 3;
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                           KBLK_MAX * KBLK_MAX * 4;
@@ -420,17 +427,16 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       // Each stage_w commits exactly one cp.async group, so "wait until at
       // most N groups outstanding" is the same as "buffer kb has landed"
       // when N is the number of stages issued after it.
+      // Prefetch distance MK_W_NBUF - 1 = 2: the tile staged while kb is
+      // read must land in a buffer nobody is reading.
       stage_w(0, 0);
       quant_a(0);
       if (kblk > 1) stage_w(1, 1);
-      if (kblk > 2) stage_w(2, 2);
-      if (kblk > 2) mk_cp_wait<2>();
-      else if (kblk > 1) mk_cp_wait<1>();
-      else mk_cp_wait<0>();
+      if (kblk > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
       __syncthreads();
 
       for (int kb = 0;; ++kb) {
-        if (kb + 3 < kblk) stage_w(kb + 3, (kb + 3) % MK_W_NBUF);
+        if (kb + 2 < kblk) stage_w(kb + 2, (kb + 2) % MK_W_NBUF);
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
@@ -438,10 +444,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         if (kb + 1 >= kblk) break;
         __syncthreads();  // every mma reader of saq is done first
         quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
-        // outstanding after W(kb+1): W(kb+2), W(kb+3) when they exist
-        if (kb + 3 < kblk) mk_cp_wait<2>();
-        else if (kb + 2 < kblk) mk_cp_wait<1>();
-        else mk_cp_wait<0>();
+        // outstanding after W(kb+1): W(kb+2) when it exists
+        if (kb + 2 < kblk) mk_cp_wait<1>(); else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }

@@ -6174,8 +6174,17 @@ def test_glm53_megakernel_contracts() -> None:
     # the opt-in this part actually reports (101376 B).
     nbuf = int(re.search(r"constexpr int MK_W_NBUF = (\d+);", cu).group(1))
     check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
-    check(2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4 <= 101376,
+    smem = 2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4
+    check(smem <= 101376,
           f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
+    # The opt-in is per BLOCK; occupancy is set by the SM's 128 KB. Two
+    # resident blocks are what hides the cp.async wait -- with one, all eight
+    # warps stall together and the SM has nothing else to run. Deepening the
+    # pipeline past this cliff measured zero and cost half the warps.
+    check(2 * smem <= 131072,
+          f"W pipeline depth {nbuf} uses {smem} B, so only one block fits "
+          "the SM's 128 KB -- raise it only with a measurement that beats "
+          "the occupancy it costs")
     check("t / MK_W_CHUNKS" in cu,
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
