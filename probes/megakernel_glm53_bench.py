@@ -51,25 +51,46 @@ def _rel(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(d / den) if den > 0 else float(d)
 
 
-# GB10 has 24 MB of L2, and the weights these shapes read are 8-26 MB. A
+# GB10 has 24 MB of L2, and the weights these shapes read are 4-26 MB. A
 # timing loop that re-reads the same weight therefore measures an L2-RESIDENT
 # GEMM, not the DRAM-bound one a serving step does -- and which arm gets that
 # gift depends on allocation order, so the same comparison swung 3-5x between
 # process runs (stock m=16 n=4096 measured 45 us in isolation and 148 us with
 # a 48 MB buffer merely allocated beforehand). Flush L2 between iterations so
 # the number is the one production sees and is reproducible.
+#
+# The flush must be a WRITE pass: a read-only pass over 2x L2 does not evict
+# lines that were re-read (a second sum() over 48 MB left the 8 MB weight
+# resident and the kernel 20% faster than cold). And the write pass must be
+# followed by a SPACER: the fill completes when its stores reach L2, not
+# DRAM, and the write-back of up to 24 MB of dirty lines then drains UNDER
+# the timed kernel -- +15% at n=6416, +25% at n=2048/1024, measured against
+# the same flush followed by a ~300 us compute-bound matmul (which lets the
+# drain finish while the GPU stays busy). zero_ and add_ flushes, with or
+# without an extra 5 ms sleep, all land on that same quiescent number, so the
+# spacer is what matters, not the store flavour. The spacer also keeps the
+# stream busy while Python issues the timed call, so the start event never
+# lands on an idle stream: a synchronize-then-sleep variant exposed the
+# stock arm's launch latency as 200-450 us of pure gap. Never sync here.
 _L2_BYTES = 24 << 20
 _L2_FLUSH = None
+_SPACER = None
 
 
 def _l2_flush() -> None:
-    global _L2_FLUSH
+    global _L2_FLUSH, _SPACER
     if _L2_FLUSH is None:
         _L2_FLUSH = torch.empty(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
+        a = torch.randn(2048, 2048, dtype=torch.bfloat16, device=DEV)
+        b = torch.randn(2048, 2048, dtype=torch.bfloat16, device=DEV)
+        _SPACER = (a, b, torch.empty(2048, 2048, dtype=torch.bfloat16,
+                                     device=DEV))
     _L2_FLUSH.zero_()
+    torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])
 
 
-def _time(fn, iters: int) -> float:
+def _time_stats(fn, iters: int) -> tuple[float, float, float]:
+    """(median, min, max) in us over iters cold-L2 launches."""
     for _ in range(10):
         fn()
     torch.cuda.synchronize()
@@ -84,7 +105,11 @@ def _time(fn, iters: int) -> float:
         torch.cuda.synchronize()
         times.append(s.elapsed_time(e) * 1e3)  # us
     times.sort()
-    return times[len(times) // 2]
+    return times[len(times) // 2], times[0], times[-1]
+
+
+def _time(fn, iters: int) -> float:
+    return _time_stats(fn, iters)[0]
 
 
 def probe_gemm(iters: int) -> bool:
@@ -93,7 +118,7 @@ def probe_gemm(iters: int) -> bool:
 
     ok = True
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
-          f"{'mk_GBps':>9}{'st_GBps':>9}")
+          f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}")
     for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -105,7 +130,8 @@ def probe_gemm(iters: int) -> bool:
         torch.cuda.synchronize()
         r = _rel(got, ref)
         t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols), iters)
-        t_mk = _time(lambda: mk._gemm_call(x, (mkq, mkws), n), iters)
+        t_mk, t_lo, t_hi = _time_stats(
+            lambda: mk._gemm_call(x, (mkq, mkws), n), iters)
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
@@ -118,9 +144,13 @@ def probe_gemm(iters: int) -> bool:
         # the column that prices the cp.async pipeline against deepgemm
         # (GB10 peak ~223 GB/s/rank; the W8A8 dense step floor sits here).
         nbytes = sq.numel() + sws.numel() * 4 + x.numel() * 2 + m * n * 2
+        # spread = (max - min) / median over the timed launches. A bimodal
+        # cell (two clusters inside one process) shows up here where a
+        # median alone would hide it behind a plausible number.
         print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
-              f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}")
+              f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}"
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%")
     return ok
 
 
