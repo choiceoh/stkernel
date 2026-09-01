@@ -177,13 +177,36 @@ class DFlashSpeculator(DraftModelSpeculator):
         # FlashAttention's AOT split schedule is wrong for a windowed drafter,
         # and `_get_sliding_window_configs` leaves it on or off depending on
         # whether the target also runs FlashAttention. Decide it here instead.
+        _windowed = 0
+        _disabled = 0
         for groups in self.attn_groups:
             for group in groups:
                 builder = group.get_metadata_builder()
-                if getattr(builder, "aot_schedule", False) and getattr(
-                    builder.kv_cache_spec, "sliding_window", None
-                ):
+                if not getattr(builder.kv_cache_spec, "sliding_window", None):
+                    continue
+                _windowed += 1
+                if getattr(builder, "aot_schedule", False):
                     builder.aot_schedule = False
+                    _disabled += 1
+        # Say it out loud. This guard is invisible from the outside -- it is a
+        # boolean on a builder -- so without this line "we shipped the fix" and
+        # "the fix ran" are indistinguishable, and this lane has repeatedly
+        # measured knobs that never moved.
+        if _windowed:
+            logger.info(
+                "dflash aot guard: %d sliding-window draft builder(s), "
+                "aot_schedule disabled on %d",
+                _windowed,
+                _disabled,
+            )
+        else:
+            # Not a crash: the guard is simply not applicable. But it is also
+            # not the fix anyone thinks was applied, so warn rather than
+            # letting a silent no-op read as a shipped repair.
+            logger.warning(
+                "dflash aot guard: no sliding-window draft builder -- the "
+                "guard did not apply to this configuration"
+            )
 
         self.draft_kv_cache_group_ids = [
             gid for gid, g in enumerate(self.attn_groups) if g
