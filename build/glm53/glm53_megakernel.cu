@@ -259,12 +259,33 @@ __device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // [KBLK_MAX][32 rows][KSTEP] e4m3 + [32 rows][KBLK_MAX] fp32 scales.
 __device__ uint8_t g_mk_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
 __device__ float g_mk_axs[32 * KBLK_MAX];                   // 4 KB
+// Optional phase timestamps, probe builds only (-DMK_PHASE_TS=1): thread 0
+// of every block stamps %globaltimer at the phase boundaries marked MK_TS()
+// below into g_mk_ts[block][slot]; the host reads (and clears) them with
+// read_ts(). Compiled out otherwise -- the shipped kernel is unchanged.
+#ifdef MK_PHASE_TS
+__device__ unsigned long long g_mk_ts[MK_GRID_CAP * 8];
+__device__ __forceinline__ unsigned long long mk_globaltimer() {
+  unsigned long long t;
+  asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+  return t;
+}
+#define MK_TS(slot)                                                          \
+  do {                                                                       \
+    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
+  } while (0)
+#else
+#define MK_TS(slot) \
+  do {              \
+  } while (0)
+#endif
 
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
                               unsigned long long* bar) {
   const int nblk = c.n / 128;
   const int kblk = c.k / KSTEP;
   const int mtiles = (c.m + 15) / 16;
+  MK_TS(0);  // entry
   // Leftover tiles of the last (partial) round, and how many ways to split
   // their k so those blocks are not idle. ksr == 1 leaves the original
   // single-pass path byte for byte -- which is what n/128 == 32 (o_proj)
@@ -312,46 +333,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   float* sxs =
       (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
 
-  // ---- prologue: quantize A once for the WHOLE grid.
-  // kblk <= KBLK_MAX = 32 and the grid is at least 48, so this is one
-  // k-block per block and no loop in practice. The barrier that publishes
-  // it is the price; the measurement above says it is worth paying.
-  {
-    const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
-    for (int kb = blockIdx.x; kb < kblk; kb += c.grid) {
-      for (int r = qw; r < c.m; r += MK_WARPS) {
-        const __nv_bfloat16* src =
-            c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
-        float v[4];
-#pragma unroll
-        for (int q = 0; q < 4; ++q) v[q] = __bfloat162float(src[q]);
-        float mx = fmaxf(fmaxf(fabsf(v[0]), fabsf(v[1])),
-                         fmaxf(fabsf(v[2]), fabsf(v[3])));
-#pragma unroll
-        for (int off = 16; off; off >>= 1)
-          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
-        const float sc = mk_pow2_scale(mx);
-        if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
-        uint32_t pack = 0;
-#pragma unroll
-        for (int q = 0; q < 4; ++q)
-          pack |= (uint32_t)mk_f32_to_e4m3(v[q] / sc) << (8 * q);
-        *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
-      }
-    }
-  }
-  mk_grid_barrier(bar, c.grid);
-  for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
-    sxs[i] = g_mk_axs[i];
-  __syncthreads();
-
-  const int lane = threadIdx.x & 31;
-  const int g = lane >> 2, t4 = (lane & 3) * 4;
-  const int warp = threadIdx.x >> 5;
-
   const int units = split ? (full + rem * ksr) : nblk;
-  for (int u = blockIdx.x; u < units; u += c.grid) {
-    int nt, kb0, kbn;
+  // unit -> (n-tile, k range). Whole tiles first, then the leftover tiles'
+  // k slices, ksr per tile.
+  auto decode_unit = [&](int u, int& nt, int& kb0, int& kbn) {
     if (!split || u < full) {          // a whole tile, one block, all of k
       nt = u; kb0 = 0; kbn = kblk;
     } else {                           // a leftover tile's k slice
@@ -360,6 +345,115 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       kb0 = (kblk * sp) / ksr;
       kbn = (kblk * (sp + 1)) / ksr;
     }
+  };
+  // stage one k-block of W rows [nt*128, nt*128+128) into a pipeline
+  // buffer (async, 16B copies; both addresses are 16B aligned by
+  // construction: pitch 144 and k in {2048, 4096}).
+  auto stage_w = [&](int nt, int kb, int buf) {
+    // wq is TILE-major: [n/128][k/128][128][128]. Row-major would put the
+    // 128 rows of this tile 4096 B apart, so a warp's 32 copies landed on
+    // four 128 B segments in four different DRAM pages to fetch 16 KB.
+    // Tile-major makes the same tile one contiguous 16 KB run.
+    const uint8_t* wsrc =
+        c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP);
+    uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH);
+    // Flatten (row, 16B chunk) so ALL MK_THREADS issue copies. The row-
+    // strided form left threads >= SMEM_W_ROWS (128 of 256) idle, halving
+    // the bytes in flight -- and this stage is latency-bound, so in-flight
+    // bytes ARE the bandwidth (Little's law).
+    constexpr int MK_W_CHUNKS = KSTEP / 16;
+    for (int t = threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
+         t += MK_THREADS) {
+      const int r = t / MK_W_CHUNKS;
+      const int e = (t % MK_W_CHUNKS) * 16;
+      // r * KSTEP + e == t * 16, so the source walk is now linear across
+      // the whole block; only the destination keeps the padded pitch.
+      mk_cp_async16(d0 + r * SMEM_W_PITCH + e, wsrc + (size_t)t * 16);
+    }
+    mk_cp_commit();
+  };
+  static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
+  constexpr int DIST = MK_W_NBUF - 1;
+
+  // ---- first unit's W fill, issued BEFORE the prologue (W8 path).
+  // The stamps said quant + barrier cost 3-10 us (m=8..32) and the first W
+  // tile then took another 8-9 us to land, with DRAM idle for the first
+  // stretch. Nothing in the fill depends on A, so it goes first and the
+  // prologue runs under it. cp.async groups survive the barrier's
+  // __syncthreads, and the prologue issues none, so the wait counts the
+  // unit loop relies on are unchanged.
+  bool hoisted = false;
+  if (c.wq4 == nullptr && (int)blockIdx.x < units) {
+    int nt0, kb00, kbn0;
+    decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
+    if (kb00 < kbn0) {
+      stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+#pragma unroll
+      for (int d = 1; d < DIST; ++d)
+        if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+      hoisted = true;
+    }
+  }
+
+  // ---- prologue: quantize A once for the WHOLE grid.
+  // kblk <= KBLK_MAX = 32 and the grid is at least 48, so this is one
+  // k-block per block and no loop in practice. The barrier that publishes
+  // it is the price; the measurement above says it is worth paying.
+  {
+    const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
+    constexpr int RPW = 32 / MK_WARPS;  // rows per warp at m = 32
+    for (int kb = blockIdx.x; kb < kblk; kb += c.grid) {
+      // Every row this warp owns is loaded before any is reduced. The
+      // per-row chain (load -> shuffle amax -> scale -> convert -> store)
+      // ran back to back, one global-load latency each: 2 us at m=8,
+      // 8 us at m=32. Independent loads issue together.
+      float v[RPW][4];
+#pragma unroll
+      for (int i = 0; i < RPW; ++i) {
+        const int r = qw + i * MK_WARPS;
+        if (r < c.m) {
+          const __nv_bfloat16* src =
+              c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
+#pragma unroll
+          for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(src[q]);
+        } else {
+#pragma unroll
+          for (int q = 0; q < 4; ++q) v[i][q] = 0.0f;
+        }
+      }
+#pragma unroll
+      for (int i = 0; i < RPW; ++i) {
+        const int r = qw + i * MK_WARPS;
+        if (r >= c.m) break;  // rows ascend with i
+        float mx = fmaxf(fmaxf(fabsf(v[i][0]), fabsf(v[i][1])),
+                         fmaxf(fabsf(v[i][2]), fabsf(v[i][3])));
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
+        const float sc = mk_pow2_scale(mx);
+        if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
+        uint32_t pack = 0;
+#pragma unroll
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[i][q] / sc) << (8 * q);
+        *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
+      }
+    }
+  }
+  MK_TS(1);  // A quantized, before the publishing barrier
+  mk_grid_barrier(bar, c.grid);
+  MK_TS(2);  // barrier released
+  for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
+    sxs[i] = g_mk_axs[i];
+  __syncthreads();
+
+  const int lane = threadIdx.x & 31;
+  const int g = lane >> 2, t4 = (lane & 3) * 4;
+  const int warp = threadIdx.x >> 5;
+
+  for (int u = blockIdx.x; u < units; u += c.grid) {
+    int nt, kb0, kbn;
+    decode_unit(u, nt, kb0, kbn);
     const bool to_partial = split && (u >= full);
     if (kb0 >= kbn) continue;
     float acc[2][2][4];  // [m-tile][n8-half][c-frag]
@@ -370,32 +464,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #pragma unroll
         for (int c = 0; c < 4; ++c) acc[i][j][c] = 0.0f;
 
-    // stage one k-block of W rows [nt*128, nt*128+128) into a pipeline
-    // buffer (async, 16B copies; both addresses are 16B aligned by
-    // construction: pitch 144 and k in {2048, 4096}).
-    auto stage_w = [&](int kb, int buf) {
-      // wq is TILE-major: [n/128][k/128][128][128]. Row-major would put the
-      // 128 rows of this tile 4096 B apart, so a warp's 32 copies landed on
-      // four 128 B segments in four different DRAM pages to fetch 16 KB.
-      // Tile-major makes the same tile one contiguous 16 KB run.
-      const uint8_t* wsrc =
-          c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP);
-      uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH);
-      // Flatten (row, 16B chunk) so ALL MK_THREADS issue copies. The row-
-      // strided form left threads >= SMEM_W_ROWS (128 of 256) idle, halving
-      // the bytes in flight -- and this stage is latency-bound, so in-flight
-      // bytes ARE the bandwidth (Little's law).
-      constexpr int MK_W_CHUNKS = KSTEP / 16;
-      for (int t = threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
-           t += MK_THREADS) {
-        const int r = t / MK_W_CHUNKS;
-        const int e = (t % MK_W_CHUNKS) * 16;
-        // r * KSTEP + e == t * 16, so the source walk is now linear across
-        // the whole block; only the destination keeps the padded pitch.
-        mk_cp_async16(d0 + r * SMEM_W_PITCH + e, wsrc + (size_t)t * 16);
-      }
-      mk_cp_commit();
-    };
     // Copy one k-block of the pre-quantized A into the padded smem tile.
     // This used to BE the quantization, redone by every block for every
     // k-block it touched; the prologue above now does it once per launch.
@@ -564,20 +632,22 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // the old hard-coded 2 a depth of 2 would have staged kb+2 into
       // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
       // That made MK_W_NBUF a knob that silently corrupted below 3.
-      static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
-      constexpr int DIST = MK_W_NBUF - 1;
-      stage_w(kb0, kb0 % MK_W_NBUF);
+      const bool prefilled = hoisted && (u == (int)blockIdx.x);
+      if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);
       stage_a(kb0);
+      if (!prefilled) {
 #pragma unroll
-      for (int d = 1; d < DIST; ++d)
-        if (kb0 + d < kbn) stage_w(kb0 + d, (kb0 + d) % MK_W_NBUF);
+        for (int d = 1; d < DIST; ++d)
+          if (kb0 + d < kbn) stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF);
+      }
       // Conservative above depth 3 (it waits for more than the one tile it
       // needs), exact at 2 and 3, and never unsafe.
       if (DIST > 1 && kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
       __syncthreads();
+      if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
 
       for (int kb = kb0;; ++kb) {
-        if (kb + DIST < kbn) stage_w(kb + DIST, (kb + DIST) % MK_W_NBUF);
+        if (kb + DIST < kbn) stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF);
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
@@ -632,8 +702,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
     __syncthreads();
   }
+  MK_TS(4);  // all units of this block done
   if (split) {  // fold the leftover tiles' slices into the bf16 output
     mk_grid_barrier(bar, c.grid);
+    MK_TS(5);  // fold barrier released
     for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
          i2 < pslice; i2 += (size_t)c.grid * MK_THREADS) {
       const int r = (int)(i2 / pcols);
@@ -645,6 +717,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
     }
   }
+  MK_TS(6);  // exit
 }
 
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
@@ -1351,6 +1424,23 @@ std::vector<int64_t> mk_probe_device() {
           (int64_t)prop.sharedMemPerBlockOptin};
 }
 
+// Phase timestamps of the last gemm launch, [MK_GRID_CAP][8] ns, then
+// cleared. Empty unless built with -DMK_PHASE_TS=1.
+std::vector<int64_t> mk_read_ts() {
+#ifdef MK_PHASE_TS
+  std::vector<unsigned long long> h(MK_GRID_CAP * 8);
+  MK_CHECK_CUDA(cudaDeviceSynchronize());
+  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_ts,
+                                     sizeof(unsigned long long) * h.size()));
+  void* p = nullptr;
+  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_ts));
+  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
+  return std::vector<int64_t>(h.begin(), h.end());
+#else
+  return {};
+#endif
+}
+
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
                  torch::Tensor out, int64_t n_orig) {
   set_kernel_attrs();
@@ -1501,6 +1591,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
+  m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM");
   m.def("run_gemm_w4", &mk_run_gemm_w4, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
