@@ -6243,12 +6243,12 @@ def test_glm53_megakernel_contracts() -> None:
     #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
     _hoist_at = cu_code.index("stage_w(nt0, kb00,")
     check(_hoist_at < cu_code.index('asm volatile("griddepcontrol.wait;"')
-          < cu_code.index("mk_cp_async16(sx + r * 256 + e,")
+          < cu_code.index("raw[i] = *(const uint2*)(c.x +")
           < cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)")
           < cu_code.index("mk_grid_barrier(bar, c.grid);"),
           "prologue order: the first unit's W fill (independent of the "
-          "previous kernel), the PDL wait, x staged by cp.async, amax/"
-          "convert/store, barrier")
+          "previous kernel), the PDL wait, x into registers, amax/convert/"
+          "store, barrier")
     check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
@@ -6423,8 +6423,8 @@ def test_glm53_megakernel_contracts() -> None:
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
+          and cu.count("mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase<false>(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("<<<mhc_grid, MK_THREADS") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
