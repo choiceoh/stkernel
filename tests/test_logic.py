@@ -18,11 +18,21 @@ import glob
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import types
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _bash() -> str:
+    # deneb fork: subprocess with bare "bash" lets CreateProcess resolve to
+    # System32's WSL bash on Windows, which cannot open C:/ paths -- the
+    # launcher guard tests then report "did not reject" for every case.
+    # shutil.which finds the MSYS bash that can; on Linux both are the same
+    # /usr/bin/bash.
+    return shutil.which("bash") or "bash"
 
 
 def _overlay_source(relpath: str) -> str:
@@ -657,7 +667,11 @@ def test_composed_snapshot_sync() -> None:
 # 8. DSpark speed experiment — launcher bounds + FP8 helper contract
 # ---------------------------------------------------------------------------
 def test_dspark_speed_guards() -> None:
-    launcher = os.path.join(REPO, "launchers", "start-hy4-tp4.sh")
+    # deneb fork: MSYS bash strips unescaped backslashes, so a Windows
+    # os.path.join path never reaches the script (suite runs on dev Macs,
+    # srv2 AND Windows checkouts); forward slashes work everywhere.
+    launcher = os.path.join(
+        REPO, "launchers", "start-hy4-tp4.sh").replace(os.sep, "/")
     cases = (
         ({"FP8HEAD": "2", "MARKOV_TOPK": "0"}, "FP8HEAD must be 0 or 1"),
         ({"FP8HEAD": "0", "MARKOV_TOPK": "-1"}, "MARKOV_TOPK must be"),
@@ -672,7 +686,7 @@ def test_dspark_speed_guards() -> None:
         env = dict(os.environ)
         env.update(extra_env)
         proc = subprocess.run(
-            ["bash", launcher],
+            [_bash(), launcher],
             env=env,
             text=True,
             capture_output=True,
@@ -880,7 +894,11 @@ def test_acceptance_lever_guards() -> None:
           "sharded W2 must be rejected")
 
     # Launcher: bounds + fail-closed combinations (early-abort zone, exit 2).
-    launcher = os.path.join(REPO, "launchers", "start-hy4-tp4.sh")
+    # deneb fork: MSYS bash strips unescaped backslashes, so a Windows
+    # os.path.join path never reaches the script (suite runs on dev Macs,
+    # srv2 AND Windows checkouts); forward slashes work everywhere.
+    launcher = os.path.join(
+        REPO, "launchers", "start-hy4-tp4.sh").replace(os.sep, "/")
     cases = (
         ({"REFINE": "2"}, "REFINE must be 0 or 1"),
         ({"REFINE": "1", "V2RUNNER": "0"}, "require V2RUNNER=1"),
@@ -897,7 +915,7 @@ def test_acceptance_lever_guards() -> None:
         env = dict(os.environ)
         env.update(extra_env)
         proc = subprocess.run(
-            ["bash", launcher], env=env, text=True, capture_output=True,
+            [_bash(), launcher], env=env, text=True, capture_output=True,
             timeout=5, check=False,
         )
         output = proc.stdout + proc.stderr
@@ -1413,7 +1431,8 @@ def test_b12x_ep_preflight() -> None:
 
 
 def test_b12x_ep_launcher() -> None:
-    launcher = os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh")
+    launcher = os.path.join(
+        REPO, "launchers", "start-glm53-nvfp4-tp4.sh").replace(os.sep, "/")
     text = open(launcher, encoding="utf-8").read()
     check('ENABLE_EP="${ENABLE_EP:-0}"' in text, "ENABLE_EP default missing")
     check("--enable-expert-parallel" in text, "EP flag missing from launcher")
@@ -6012,6 +6031,412 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
           "prepare() must create the slot where it sets the rest of the "
           "layer's fast-path state")
     print("  fused K+gate lazy slot ........ OK")
+# ---------------------------------------------------------------------------
+# glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
+# contracts, hook placement
+# ---------------------------------------------------------------------------
+def test_glm53_megakernel_contracts() -> None:
+    import math as _math
+
+    mod = "overlay/modules/glm53_megakernel"
+    ns = load_defs(
+        f"{mod}/glm53_megakernel.py",
+        {"_mk_pow2_scale", "_mk_pad128", "_mk_gemm_eligible",
+         "_mk_mhc_eligible", "_mk_w4_scale_exp"},
+        {"math": _math},
+    )
+    pow2, pad128 = ns["_mk_pow2_scale"], ns["_mk_pad128"]
+    gemm_ok, mhc_ok = ns["_mk_gemm_eligible"], ns["_mk_mhc_eligible"]
+    w4_exp = ns["_mk_w4_scale_exp"]
+
+    # -- pow2 scale: exact power of two, covers amax, degenerates to 1.0
+    for amax in (1e-30, 0.5, 1.0, 447.9, 448.0, 1e6, 3.7e37):
+        s = pow2(amax)
+        check(s > 0 and _math.frexp(s)[0] == 0.5,
+              f"pow2 scale must be an exact power of two (amax={amax})")
+        check(s * 448.0 >= amax,
+              f"pow2 scale must cover amax/448 (amax={amax})")
+    for bad in (0.0, -1.0, float("inf"), float("nan")):
+        check(pow2(bad) == 1.0, f"pow2 degenerate amax -> 1.0 (amax={bad})")
+
+    # -- pad128
+    for n, want in ((0, 0), (1, 128), (127, 128), (128, 128),
+                    (6416, 6528), (4096, 4096)):
+        check(pad128(n) == want, f"pad128({n}) == {want}")
+
+    # -- W4 scale exponent: coverage below the 384 saturation ceiling,
+    #    graceful saturation above it, exactness range, pow2 semantics
+    for amax in (1e-30, 0.001, 0.05, 1.0, 6.0, 100.0, 384.0):
+        e = w4_exp(amax)
+        check(-5 <= e <= 6, f"w4 scale exponent in the LUT-exact range "
+              f"(amax={amax}, s={e})")
+        check(6.0 * (2.0 ** e) >= amax,
+              f"w4 scale covers amax below the 384 ceiling (amax={amax})")
+        check(_math.frexp(2.0 ** e)[0] == 0.5,
+              f"w4 scale is an exact power of two (amax={amax})")
+    for amax in (385.0, 447.9, 1e6):  # above the ceiling: saturate at s=6
+        e = w4_exp(amax)
+        check(e == 6, f"w4 saturates at s=6 above 384 (amax={amax})")
+        check(6.0 * 64.0 <= 448.0,
+              "the saturated magnitude stays a finite e4m3 (never NaN)")
+    for bad in (0.0, -1.0, float("inf"), float("nan")):
+        check(w4_exp(bad) == 0, f"w4 degenerate amax -> s=0 (amax={bad})")
+
+    # -- eligibility truth tables
+    check(gemm_ok(8, 4096, 6528), "decode in_proj shape is eligible")
+    check(gemm_ok(32, 2048, 2048), "C=4 o_proj shape is eligible")
+    check(not gemm_ok(33, 4096, 4096), "M=33 falls back (kernel M<=32)")
+    check(not gemm_ok(8, 4000, 4096), "K%128!=0 falls back")
+    check(not gemm_ok(8192, 4096, 4096),
+          "prefill M stays on deepgemm -- the megakernel is decode-only")
+    check(not gemm_ok(0, 4096, 4096), "empty batch falls back")
+    check(mhc_ok(8, 4, 4096) and mhc_ok(32, 4, 4096),
+          "C=1..4 verify token counts are eligible")
+    check(not mhc_ok(33, 4, 4096), "T=33 falls back")
+    check(not mhc_ok(8, 6, 4096), "hc_mult!=4 falls back")
+    check(not mhc_ok(8, 4, 5120), "hidden!=4096 falls back")
+
+    # -- .cu constants evaluated and pinned to the GLM-5.3 per-rank geometry
+    cu = open(os.path.join(REPO, mod, "glm53_megakernel.cu"),
+              encoding="utf-8").read()
+    consts: dict[str, int] = {}
+
+    def ev(expr: str) -> int:
+        import ast as _ast
+
+        expr = " ".join(expr.split())  # multi-line constexprs are legal C++
+        tree = _ast.parse(expr, mode="eval")
+
+        def walk(n):
+            if isinstance(n, _ast.Expression):
+                return walk(n.body)
+            if isinstance(n, _ast.Constant):
+                return n.value
+            if isinstance(n, _ast.Name):
+                return consts[n.id]
+            if isinstance(n, _ast.BinOp):
+                l, r = walk(n.left), walk(n.right)
+                return (l + r if isinstance(n.op, _ast.Add)
+                        else l - r if isinstance(n.op, _ast.Sub)
+                        else l * r if isinstance(n.op, _ast.Mult)
+                        else l // r)
+            if isinstance(n, _ast.UnaryOp) and isinstance(n.op, _ast.USub):
+                return -walk(n.operand)
+            raise AssertionError(f"unsupported const expr: {expr}")
+
+        return walk(tree)
+
+    for m in re.finditer(r"^constexpr int (\w+) = ([^;]+);", cu, re.M):
+        consts[m.group(1)] = ev(m.group(2))
+    for name, want in (("HC", 4), ("HIDDEN", 4096), ("NOUT", 24),
+                       ("MAX_TOK", 32), ("NCHUNK", 16), ("KDA_H", 16),
+                       ("KDA_D", 128), ("KDA_QKV", 6144),
+                       ("KDA_INPROJ_N", 6416), ("KDA_INPROJ_N_PAD", 6528),
+                       ("CONV_W", 4), ("KDA_OUT", 2048), ("MK_GRID", 48),
+                       ("MK_THREADS", 256), ("KSTEP", 128),
+                       ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
+        check(consts.get(name) == want,
+              f".cu constant {name} == {want} (got {consts.get(name)})")
+    check(consts["GEMM_SMEM"] <= 98304,
+          "dynamic smem stays inside the 96 KB discipline of the 128 KB/SM")
+
+    # -- driver geometry must be the same numbers (drift here = silent
+    #    shape-mismatch bugs the boot self-test would hunt blind)
+    pysrc = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
+                 encoding="utf-8").read()
+    for m in re.finditer(r"^(\w+) = ([^\n]+)$", pysrc, re.M):
+        name, expr = m.group(1), m.group(2).strip()
+        if name in consts and re.fullmatch(r"[\d\s()+\-*/\w]*", expr):
+            try:
+                check(ev(expr) == consts[name],
+                      f"driver {name} matches the .cu constant")
+            except (KeyError, AssertionError):
+                pass  # expr references driver-only names; parity is per-name
+
+    pysrc_full = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
+                      encoding="utf-8").read()
+
+    # -- sm_121a static contract (code only: the header COMMENT names the
+    #    forbidden instructions, so strip // and /* */ tails before scanning)
+    cu_code = re.sub(r"/\*.*?\*/", "", cu, flags=re.S)
+    cu_code = re.sub(r"//[^\n]*", "", cu_code)
+    for bad in ("wgmma", "tcgen05", "mbarrier", "cp.async.bulk",
+                "cluster.sync", "setmaxnreg"):
+        check(bad not in cu_code, f"sm_121a contract: {bad} must not appear")
+    check("m16n8k32.row.col.f32.e4m3.e4m3.f32" in cu,
+          "the GEMM uses the e4m3 mma.sync kind available on sm_121a")
+    check("cp.async.cg.shared.global" in cu_code
+          and "MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH" in cu
+          and "cp.async.wait_group" in cu_code,
+          "the W stream is a multi-buffer cp.async pipeline")
+    # Depth is a tuning knob, not a contract -- but it must stay deep enough
+    # to keep more than one tile in flight, and the smem it costs must fit
+    # the opt-in this part actually reports (101376 B).
+    nbuf = int(re.search(r"constexpr int MK_W_NBUF = (\d+);", cu).group(1))
+    check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
+    smem = 2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4
+    check(smem <= 101376,
+          f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
+    # The opt-in is per BLOCK; occupancy is set by the SM's 128 KB. Two
+    # resident blocks are what hides the cp.async wait -- with one, all eight
+    # warps stall together and the SM has nothing else to run. Deepening the
+    # pipeline past this cliff measured zero and cost half the warps.
+    check(2 * smem <= 131072,
+          f"W pipeline depth {nbuf} uses {smem} B, so only one block fits "
+          "the SM's 128 KB -- raise it only with a measurement that beats "
+          "the occupancy it costs")
+    check("t / MK_W_CHUNKS" in cu,
+          "staging must flatten (row, chunk) so every thread issues copies: "
+          "the row-strided form left half of MK_THREADS idle and halved the "
+          "bytes in flight, which is the bandwidth on a latency-bound stage")
+    _w8_at = cu_code.index("stage_w(0, 0);")
+    check(_w8_at < cu_code.index("quant_a(0);", _w8_at),
+          "W(0) starts flying before A(0) quantizes (the W8 pipeline fill; "
+          "the W4 branch above fills its own buffers first by construction)")
+    # -- W4 pack: exact e2m1 -> e4m3 expansion
+    check("mk_e2m1_to_e4m3[8]" in cu_code
+          and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
+          "the e2m1->e4m3 LUT covers {0,.5,1,1.5,2,3,4,6} exactly")
+    check("c.wq4 != nullptr" in cu_code and "run_gemm_w4" in cu,
+          "the W4 path selects on the pack and has its own host entry")
+    check("(sexp[g4] << 3)" in cu_code and "((lo & 0x8) << 4)" in cu_code,
+          "expansion is exponent-field add + sign, never a float multiply")
+    check(pysrc_full.count("_selftest_w4") >= 1
+          and "1e-5" in pysrc_full and "0.15" in pysrc_full,
+          "the W4 self-test gates bit-exact expansion and by-design error")
+    check('".in_proj_qkvbfg_a" not in name' in open(
+        os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
+                            "glm53_fp8_dense.py"), encoding="utf-8").read(),
+          "the W4 attach skips the KDA in_proj unless the knob is 'all'")
+    check(cu.count("<<<MK_GRID, MK_THREADS") == 4,
+          "every host entry (mhc, gemm, gemm_w4, kda) launches with the "
+          "fixed 48-block grid")
+    check("(t / (unsigned long long)MK_GRID + 1ULL) * MK_GRID" in cu,
+          "grid barrier is the never-reset monotonic ticket form, 64-bit "
+          "(32-bit wraps in ~a week of arrivals and releases early)")
+    bar = cu[cu.index("mk_grid_barrier"):cu.index("mk_grid_barrier") + 700]
+    check("__threadfence();" in bar,
+          "barrier fences device scope around the ticket (osar lesson)")
+    check("atomicAdd(ctr, 1ULL)" in bar
+          and "ctr =" not in bar and "ctr=" not in bar,
+          "the barrier counter is never reset inside the kernel "
+          "(monotonic ticket only)")
+
+    # -- state slot addressing: [slots, ...] buffers need the per-slot
+    #    element count in the stride (a slot-0-only self-test once passed
+    #    while the conv stride was missing it -- found in review)
+    check(cu.count("slot * KDA_QKV * a.conv_width") == 2,
+          "conv state slot stride is KDA_QKV*conv_width at both sites "
+          "(spec allocates a wider window; runtime width is the stride)")
+    check("slot * KDA_H + head) * KDA_D * KDA_D" in cu,
+          "recurrent state slot stride is H*D*D")
+
+    # -- driver-side guards from the same review
+    check("SLOT = 1" in pysrc_full
+          and "torch.full((1, 8), self.SLOT" in pysrc_full,
+          "the KDA fixture addresses a NONZERO state slot")
+    arm_fn = pysrc_full[pysrc_full.index("def maybe_arm"):]
+    check("is_current_stream_capturing()" in arm_fn,
+          "maybe_arm never compiles/self-tests inside graph capture")
+    check("_kda_ensure_packs" in pysrc_full
+          and "isinstance(in_m, Fp8DenseMethod)" in pysrc_full,
+          "KDA packs build themselves and only against a W8A8 stock arm")
+
+    # -- kda.py overlay keeps the stock body reachable
+    kda = open(os.path.join(REPO, mod, "glm5next_kda.py"),
+               encoding="utf-8").read()
+    check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
+          "kda.py overlay keeps the stock conv/recurrent path")
+    check("deneb fork (glm53_megakernel)" in kda,
+          "kda.py takeover carries the fork marker")
+    check("kda_block(self, hidden_states, positions)" in kda
+          and "compare(out)" in kda,
+          "kda.py wires both the armed takeover and the shadow epilogue")
+    check(kda.index("torch.cuda.is_current_stream_capturing()")
+          < kda.index("_mk_arm(self, hidden_states)"),
+          "shadow runs eager-only, never inside graph capture")
+
+    # -- hook placement: MK precedes ONEPASS in the mhc wrapper
+    tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
+                                 "tilelang.py"), encoding="utf-8").read()
+    check(tl.index("mhc_fused_post_pre as _mk_mhc")
+          < tl.index("deneb fork: ONEPASS"),
+          "the MK-MHC hook is tried before the ONEPASS experiment")
+
+    # -- fp8_dense hook routes armed decode shapes and falls back otherwise
+    fp8 = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
+                                  "glm53_fp8_dense.py"), encoding="utf-8").read()
+    check("gemm_w8a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
+          "Fp8DenseMethod.apply routes through the megakernel driver")
+    check("build_mk_weight" in fp8 and "build_mk_weight_w4" in fp8
+          and "ENABLE_W4" in fp8,
+          "the build attaches the MK pack (fp8 or W4) next to the deepgemm "
+          "pair")
+    print("  glm53 megakernel contracts .. OK")
+
+
+def test_prefill_warmup_contracts() -> None:
+    """The engine-level prefill warmup must not lie to itself.
+
+    Same discipline the ladder probe already enforces, applied to the
+    warmup: every request needs a DISTINCT prefix (a shared one would
+    prefix-cache-hit and skip the compute the warmup exists to trigger)
+    and an EXACT token count (the shape is the point).
+    """
+    ns = load_defs(
+        "launchers/prefill-warmup.py",
+        {"build_distinct_prompt", "trim_to_exact_tokens", "WORDS"},
+        {"random": random},
+    )
+    build, trim = ns["build_distinct_prompt"], ns["trim_to_exact_tokens"]
+
+    seeds = [n * 1000 + rep
+             for n in (2048, 4096, 8192) for rep in (1, 2)]
+    prompts = {build(seed, seed // 1000) for seed in seeds}
+    check(len(prompts) == 6, "every warmup request carries distinct text")
+    heads = [" ".join(p.split()[:2]) for p in prompts]
+    check(len(set(heads)) == 6,
+          "distinctness lives in the PREFIX (seed word + seed id), not just "
+          "the tail -- a shared header would let the prefix cache serve "
+          "every later request from the first one's blocks")
+    check(build(2048 * 1000 + 1, 2048) == build(2048 * 1000 + 1, 2048),
+          "per-seed prompts are deterministic (log/replay discipline)")
+
+    ids = trim("x", 100, lambda t: list(range(3000)))
+    check(ids == list(range(100)), "long tokenization trims to exactly N")
+    short = trim("x", 300, lambda t: list(range(150)))
+    check(len(short) == 300,
+          "short tokenization tops up before trimming (exact N guaranteed)")
+
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"),
+                    encoding="utf-8").read()
+    check('PREFILL_WARMUP:-0' in launcher,
+          "the warmup hook stays opt-in at the launcher")
+    profile = open(os.path.join(REPO, "profiles/glm53.env"),
+                   encoding="utf-8").read()
+    check("PREFILL_WARMUP=0" in profile
+          and 'PREFILL_WARMUP_LENS="2048,4096,8192"' in profile,
+          "the profile carries the knob, default off, ladder lengths")
+    print("  prefill warmup contracts ... OK")
+
+
+def test_megakernel_w4_layout_functional() -> None:
+    """The W4 packing checked FUNCTIONALLY, not by string contract.
+
+    Review found the packer slicing the wrong dimension: numel broke, the
+    attach's except swallowed the raise into a silently-stock boot, and the
+    self-test exception disarmed every other segment. The string contracts
+    in test_glm53_megakernel_contracts could not see any of that. This test
+    runs two real checks:
+
+    torch-free (always): the .cu LUT bytes decoded as e4m3 must equal the
+    e2m1 grid x 2^s exactly -- the arithmetic the whole W4 arm rests on.
+
+    torch-guarded (runs wherever torch exists; skipped cleanly otherwise,
+    the #176 rule): the REAL build_mk_weight_w4 on crafted grid weights,
+    unpacked with the kernel's own index math and the .cu LUT, must
+    reproduce the weights exactly, byte-level layout included.
+    """
+    import importlib.util
+
+    mod_dir = os.path.join(REPO, "overlay/modules/glm53_megakernel")
+    cu = open(os.path.join(mod_dir, "glm53_megakernel.cu"),
+              encoding="utf-8").read()
+    m = re.search(r"mk_e2m1_to_e4m3\[8\] = \{([^}]*)\};", cu, re.S)
+    check(m is not None, "the e2m1->e4m3 LUT is present in the .cu")
+    lut = [int(x, 16) for x in re.findall(r"0x[0-9A-Fa-f]{2}", m.group(1))]
+    check(lut == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
+          f"LUT decodes the e2m1 grid in order (got {[hex(x) for x in lut]})")
+
+    def e4m3_value(byte: int) -> float:
+        sign = -1.0 if byte & 0x80 else 1.0
+        expf = (byte >> 3) & 0xF
+        man = byte & 0x7
+        if expf == 0:
+            return sign * (man / 8.0) * 2.0 ** -6  # denormal region
+        return sign * (1.0 + man / 8.0) * 2.0 ** (expf - 7)
+
+    grid = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+    for code in range(16):
+        for sexp in (-5, -2, 0, 3, 6):
+            # mirror the kernel's ternary EXACTLY: a zero-magnitude nibble
+            # takes no exponent add (it would wrap the byte); only its sign
+            sig = 0x80 if code & 8 else 0
+            byte = sig if (code & 7) == 0 else                 (lut[code & 7] + (sexp << 3)) | sig
+            want = grid[code & 7] * 2.0 ** sexp * (-1.0 if code & 8 else 1.0)
+            got = e4m3_value(byte)
+            check(abs(got - want) <= 1e-9 * max(1.0, abs(want)),
+                  f"LUT+exp-add is exact: code={code} s={sexp} "
+                  f"{got} == {want}")
+
+    # ---- torch-guarded roundtrip through the REAL packer
+    try:
+        import torch
+    except ImportError:
+        print("  w4 layout (torch-free half) . OK (torch absent: packer "
+              "roundtrip half skipped)")
+        return
+
+    spec = importlib.util.spec_from_file_location(
+        "mk_driver_w4", os.path.join(mod_dir, "glm53_megakernel.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    n, k = 100, 128  # n_pad exercises zero-padded rows too
+    rng = random.Random(7)
+
+    def craft(code_of, sexp_of):
+        w = torch.zeros(n, k, dtype=torch.float32)
+        for r in range(n):
+            for g in range(k // 16):
+                for e in range(16):
+                    c = code_of(r, g)
+                    w[r, g * 16 + e] = grid[c & 7] * 2.0 ** sexp_of(r, g)                         * (-1.0 if c & 8 else 1.0)
+        return w
+
+    # (a) BYTE-EXACT tier: every element of a group at magnitude 4 (the
+    # largest whose amax/6 is NOT an exact pow2) pins the quantizer to the
+    # crafted s, so nibbles AND scale bytes must come back identical.
+    codes_a = [[6 | (0x8 if rng.randrange(2) else 0)
+                for _ in range(k // 16)] for _ in range(n)]
+    sexps_a = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+               for _ in range(n)]
+    wq4, ws4 = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
+                                            lambda r, g: sexps_a[r][g]))
+    check(tuple(wq4.shape) == (128, k // 2), "wq4 is [n_pad, k/2]")
+    check(tuple(ws4.shape) == (128, k // 16), "ws4 is [n_pad, k/16]")
+    q, sc = wq4.tolist(), ws4.tolist()
+    for r in range(n):
+        for kk in range(k):
+            byte = q[r][kk // 2]
+            code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
+            check(code == codes_a[r][kk // 16],
+                  f"byte-exact tier: elem {kk} rides byte {kk // 2} "
+                  f"half {kk % 2} with the crafted nibble (row {r})")
+            check(sc[r][kk // 16] == sexps_a[r][kk // 16],
+                  "byte-exact tier: scale index follows the 16-group")
+
+    # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
+    # renormalize a group to its own (s', code') -- legal, the grid is
+    # closed under x2 up to 6 -- but the dequantized VALUES must return
+    # exactly, unpacked with the KERNEL's index math and the .cu LUT.
+    codes_b = [[rng.randrange(16) for _ in range(k // 16)] for _ in range(n)]
+    sexps_b = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+               for _ in range(n)]
+    wb = craft(lambda r, g: codes_b[r][g], lambda r, g: sexps_b[r][g])
+    wq4, ws4 = mod.build_mk_weight_w4(wb)
+    q, sc = wq4.tolist(), ws4.tolist()
+    for r in range(n):
+        for kk in range(k):
+            byte = q[r][kk // 2]
+            code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
+            val = grid[code & 7] * 2.0 ** sc[r][kk // 16]                 * (-1.0 if code & 8 else 1.0)
+            check(val == wb[r, kk].item(),
+                  f"value-exact tier: elem {kk} dequantizes to the original "
+                  f"(row {r}: {val} != {wb[r, kk].item()})")
+    for r in range(n, 128):  # padded rows are zero nibbles
+        check(all(b == 0 for b in q[r]), f"pad row {r} packed as zeros")
+    print("  w4 layout roundtrip ...... OK")
 
 
 if __name__ == "__main__":
@@ -6083,4 +6508,7 @@ if __name__ == "__main__":
     test_glm53_kda_prefill_regime()
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
+    test_glm53_megakernel_contracts()
+    test_prefill_warmup_contracts()
+    test_megakernel_w4_layout_functional()
     print(f"all OK ({PASS} checks)")

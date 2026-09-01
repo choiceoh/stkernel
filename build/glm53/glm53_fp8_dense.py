@@ -291,10 +291,32 @@ class Fp8DenseMethod:
         self._base = base
         self._q, self._ws = q, ws
         self._rows, self._cols = orig_rows, orig_cols
+        # deneb fork (glm53_megakernel): MK_SEG_GEMM pack (own e4m3 + fp32
+        # pow2-scale layout, never aliased with the deepgemm pair). None
+        # until maybe_build_fp8_dense attaches one; apply() then keeps stock.
+        self._mk = None
 
     def apply(self, layer, x, bias=None):
         if bias is not None:
             return self._base.apply(layer, x, bias)
+        # deneb fork (glm53_megakernel): one persistent 48-block launch for
+        # decode M<=32 (quant fused into the GEMM). Ineligible shapes return
+        # None and run the stock pair below. No try/except around an armed
+        # launch: the boot self-test is the gate, failures stay loud.
+        if self._mk is not None:
+            _mk_gemm = _mk_arm = None
+            try:  # import only: a boot without the megakernel module is stock
+                from vllm.model_executor.layers.glm53_megakernel import (
+                    gemm_w8a8 as _mk_gemm,
+                    maybe_arm as _mk_arm,
+                )
+            except Exception:
+                pass
+            if _mk_gemm is not None:
+                _mk_arm()
+                _out = _mk_gemm(x, self._mk, self._rows)
+                if _out is not None:
+                    return _out
         try:
             return _fp8_dense_gemm_op(
                 x, self._q, self._ws, self._rows, self._cols
@@ -384,6 +406,29 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
+            # deneb fork (glm53_megakernel): build the MK pack alongside the
+            # deepgemm pair. A build failure only means apply() keeps the
+            # stock path; the pair above stays the fallback either way.
+            # VLLM_GLM53_MK_W4=1 REPLACES the fp8 pack with the W4 pack
+            # (e2m1 x per-16 pow2 scale -> exact e4m3 in-kernel; ~0.56x the
+            # fp8 bytes, so the W4 arm is CHEAPER in memory than the W8 one).
+            # The KDA in_proj stays fp8 unless the knob is "all": its output
+            # feeds the recurrence, where quantization error accumulates in
+            # the state instead of washing out per token.
+            try:
+                from vllm.model_executor.layers import (
+                    glm53_megakernel as _mkmod)
+
+                if _mkmod.ENABLE_GEMM and cols % 128 == 0:
+                    if (_mkmod.ENABLE_W4
+                            and (_mkmod.W4_ALL
+                                 or ".in_proj_qkvbfg_a" not in name)):
+                        method._mk = (None, None) + _mkmod.build_mk_weight_w4(
+                            weight)
+                    else:
+                        method._mk = _mkmod.build_mk_weight(weight)
+            except Exception:
+                method._mk = None
             if _copy_matches_source(
                 mod, method, weight,
                 got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
