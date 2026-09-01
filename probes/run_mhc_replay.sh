@@ -43,4 +43,4 @@ exec docker run --rm --gpus all --entrypoint /bin/bash \
   --mount "type=bind,src=$REPO,dst=/repo,readonly" \
   "${envs[@]}" \
   "${mounts[@]}" \
-  "$IMAGE" -lc "python3 /repo/probes/megakernel_glm53_bench.py $*" _ "$@"
+  "$IMAGE" -lc "python3 /repo/probes/mhc_replay.py $*" _ "$@"
