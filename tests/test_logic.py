@@ -5940,6 +5940,28 @@ def test_prefill_knobs_announce_arming() -> None:
     print("  prefill knobs announce arming . OK")
 
 
+def test_extra_env_rejects_comma_list() -> None:
+    """EXTRA_ENV is space-separated; a comma-joined list must abort.
+
+    The comma form passes the KEY=VALUE shape, so the whole string became one
+    -e whose value was "1,NEXT_KEY=1,..." -- every knob read as off while the
+    boot log said they were set. That boot measured the baseline and would
+    have been reported as "knobs on, no effect". A value that merely contains
+    commas (LIST=a,b,c) is legitimate and must still pass.
+    """
+    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    body = text[text.index("for _kv in ${EXTRA_ENV:-}"):]
+    body = body[:body.index("done")]
+    check("space-separated, not comma-separated" in body,
+          "the abort must name the actual mistake, not just 'bad format'")
+    reject = body.index("[A-Za-z_]*=*,[A-Za-z_]*=*)")
+    accept = body.index("[A-Za-z_]*=*) EXTRA_ENV_FLAGS=")
+    check(reject < accept,
+          "the comma pattern must be tested BEFORE the generic KEY=VALUE arm "
+          "-- case takes the first match, so the order is the guard")
+    print("  extra-env comma guard ......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -5972,6 +5994,7 @@ if __name__ == "__main__":
     test_osar_maxel_rank_agreement()
     test_bench_resolves_served_model()
     test_prefill_knobs_announce_arming()
+    test_extra_env_rejects_comma_list()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash_aot_guard_stays_removed()
