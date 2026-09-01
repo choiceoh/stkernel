@@ -863,7 +863,7 @@ class _KdaFixture:
                        {k: "%.2e" % x for k, x in errs.items()})
         return None
 
-    def stock_run(self):
+    def stock_run(self, debug=False):
         """Stock chain (in_proj gemm, conv update, fused_recurrent_kda,
         gated norm, o_proj gemm) -> dict(out, conv_state, rec_state)."""
         import torch
@@ -931,7 +931,17 @@ class _KdaFixture:
         out = _fp8_dense_gemm(core.reshape(T, KDA_OUT), sq_o, sws_o,
                               ro, co)
         torch.cuda.synchronize()
-        return {"out": out, "conv_state": conv_ref, "rec_state": rec_ref}
+        res = {"out": out, "conv_state": conv_ref, "rec_state": rec_ref}
+        if debug:
+            # Split the pipeline for diagnosis: `attn` is the recurrence
+            # readout, `core` is it after the gated RMSNorm. Comparing them
+            # separately says whether an `out` mismatch comes from phase 3
+            # (readout), phase 4 (norm) or phase 5 (o_proj). Kept off the
+            # default dict because pick_variant() gates on every key it
+            # returns.
+            res["attn"] = attn.reshape(T, KDA_OUT)
+            res["core"] = core.reshape(T, KDA_OUT)
+        return res
 
 
 # Retrieval operand settled from the stock source, not from a sweep.

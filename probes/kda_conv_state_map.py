@@ -25,6 +25,21 @@ What it has already established (2026-09-01, srv2 scratch container):
     acquire fence pair, and every phase boundary has one -- so the obvious
     race and OOB candidates are already excluded.
 
+conv_state is now exact (2.2e-06). The remaining `out` gap (~3-4) is
+localised by `stock_run(debug=True)`, which returns the pipeline split:
+
+    attn  -- the recurrence readout (phase 3)
+    core  -- after the gated RMSNorm (phase 4)
+    out   -- after o_proj (phase 5)
+
+Measured 2026-09-01: core already differs by 1.9-2.5 while out differs by
+2.8-3.8, so the error is born at or before phase 4 -- phase 5 only carries
+it. And rec_state passes (1.6e-2 at acc=8), so the recurrence STATE is
+right while its READOUT is not. That points at the readout write or the
+norm, not at the delta rule itself; note attn is written for every query
+token while rec_state is written only at j == acc - 1, so a divergence
+confined to tokens past the accepted boundary would look exactly like this.
+
 Run it in the scratch container that probes/run_megakernel_bench.sh builds.
 """
 import sys
