@@ -31,7 +31,7 @@ def _grouped_conv(
     hidden_states: torch.Tensor,
     delta: torch.Tensor,
     base: torch.Tensor,
-    block_size: int,
+    tap_valid: torch.Tensor,
     num_groups: int,
     group_size: int,
     taps: int,
@@ -39,14 +39,13 @@ def _grouped_conv(
     blocks = hidden_states.unflatten(-1, (num_groups, group_size))
     coefficients = base.view(1, taps, num_groups, group_size) + delta.unsqueeze(-1)
     output = coefficients[:, 0] * blocks
-    position = torch.arange(hidden_states.shape[0], device=hidden_states.device)
-    if block_size & (block_size - 1) == 0:
-        position = position & (block_size - 1)
-    else:
-        position = position % block_size
     for tap in range(1, taps):
         shifted = F.pad(blocks[:-tap], (0, 0, 0, 0, tap, 0))
-        output += coefficients[:, tap] * shifted * (position >= tap).view(-1, 1, 1)
+        output += (
+            coefficients[:, tap]
+            * shifted
+            * tap_valid[:, tap].view(-1, 1, 1)
+        )
     return output.flatten(-2)
 
 
@@ -57,6 +56,7 @@ class DFlashGroupedConv(nn.Module):
         taps: int,
         group_size: int,
         block_size: int,
+        max_num_tokens: int,
         params_dtype: torch.dtype,
         prefix: str,
     ) -> None:
@@ -69,6 +69,22 @@ class DFlashGroupedConv(nn.Module):
         self.taps = taps
         self.group_size = group_size
         self.num_groups = hidden_size // group_size
+        # Row position within a speculative block depends only on the static
+        # flattened row index. Precompute every tap's boundary mask once instead
+        # of allocating arange + compare tensors in all four grouped-conv calls
+        # per layer/step. Non-persistent: this is derived runtime state, not a
+        # checkpoint weight, and register_buffer moves it with the module.
+        position = torch.arange(max_num_tokens, dtype=torch.int32)
+        if block_size & (block_size - 1) == 0:
+            position.bitwise_and_(block_size - 1)
+        else:
+            position.remainder_(block_size)
+        tap_ids = torch.arange(taps, dtype=torch.int32)
+        self.register_buffer(
+            "_tap_valid",
+            position[:, None] >= tap_ids[None, :],
+            persistent=False,
+        )
         self.base_kernel = nn.Parameter(
             torch.empty(2, taps, hidden_size, dtype=params_dtype),
             requires_grad=False,
@@ -90,7 +106,7 @@ class DFlashGroupedConv(nn.Module):
             hidden_states,
             delta,
             self.base_kernel[side],
-            self.block_size,
+            self._tap_valid[: hidden_states.shape[0]],
             self.num_groups,
             self.group_size,
             self.taps,
@@ -136,6 +152,7 @@ class DFlash2Qwen3DecoderLayer(DFlashQwen3DecoderLayer):
             group_size=int(draft_config["conv_group_size"]),
             # Query tokens per request: the bonus token plus the mask tokens.
             block_size=1 + speculative_config.num_speculative_tokens,
+            max_num_tokens=vllm_config.scheduler_config.max_num_batched_tokens,
             params_dtype=vllm_config.model_config.dtype,
         )
         self.attention_conv = DFlashGroupedConv(
