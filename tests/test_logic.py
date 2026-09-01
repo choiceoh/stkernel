@@ -4829,6 +4829,39 @@ def test_dflash2_conv_mask_buffer() -> None:
     print("  dflash2 conv mask buffer ....... OK")
 
 
+def test_dflash2_sliding_aot_guard() -> None:
+    """A windowed DFlash builder must not inherit a model-global AOT plan."""
+    source = open(_overlay_source(
+        "overlay/modules/glm53_dflash_aot_guard/dflash_speculator.py"
+    ), encoding="utf-8").read()
+    tree = ast.parse(source)
+    speculator = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DFlashSpeculator"
+    )
+    set_attn = next(
+        node for node in speculator.body
+        if isinstance(node, ast.FunctionDef) and node.name == "set_attn"
+    )
+    body = ast.get_source_segment(source, set_attn) or ""
+    super_at = body.index("super().set_attn(")
+    groups_at = body.index("for groups in self.attn_groups:")
+    cache_ids_at = body.index("self.draft_kv_cache_group_ids = [")
+    check(super_at < groups_at < cache_ids_at,
+          "the guard must inspect drafter-owned builders after base wiring")
+    check('getattr(builder, "aot_schedule", False)' in body
+          and 'builder.kv_cache_spec, "sliding_window", None' in body,
+          "only an enabled AOT plan on a sliding-window group may be changed")
+    check("builder.aot_schedule = False" in body,
+          "the invalid FlashAttention split schedule must be disabled")
+
+    profile = open("profiles/glm53.env", encoding="utf-8").read()
+    check("glm53_dflash_aot_guard" in profile.split('MODULES="', 1)[1]
+          .split('"', 1)[0].split(),
+          "the production GLM profile must mount the DFlash attention guard")
+    print("  dflash2 sliding AOT guard ...... OK")
+
+
 def test_hotpath_env_latches() -> None:
     """Process switches are read once, never from layer/logits hot paths."""
     kpool_path = _overlay_source("overlay/sparse_attn_indexer_kpool.py")
@@ -4963,6 +4996,7 @@ if __name__ == "__main__":
     test_overlay_logger_defined()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
+    test_dflash2_sliding_aot_guard()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
     test_launcher_nofile_limit()

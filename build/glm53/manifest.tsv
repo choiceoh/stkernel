@@ -13,6 +13,7 @@ cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/de
 fp8_lm_head.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py	absent
 qwen3_dflash2.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py	c141daa4b2059c0098224ac36471c2197b7052c100bef0a4dbc2ca79b627053f
 dflash_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py	41a1f26c72f0f4c6150821a310632a09e0e76b252e24d4e1e0f47f62321f155d
+dflash_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/speculator.py	bd7f4c63d1196cb53bee0a81339aa5651e36938fc38b73c4ce89d978e0176a87
 glm53_fp8_dense.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py	absent
 b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
 tilelang.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
