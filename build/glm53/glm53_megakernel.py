@@ -886,6 +886,16 @@ class _KdaFixture:
             with set_current_vllm_config(VllmConfig()):
                 o_norm = FusedRMSNormGated(KDA_D, eps=1e-5,
                                            activation="sigmoid")
+        # Two fixes the stock arm never got to exercise, because it had never
+        # run: the module is built on CPU (device mismatch against the cuda
+        # activations), and its weight defaults to ones. The MK arm uses
+        # self.onorm_w, and _layer_stand_in's own comment says the stock arm
+        # must use the SAME values -- "an all-ones o_norm cannot see a missing
+        # weight multiply". Comparing ones against onorm_w would have made the
+        # whole KDA diff meaningless.
+        o_norm = o_norm.to(device="cuda")
+        with torch.no_grad():
+            o_norm.weight.copy_(self.onorm_w.to(o_norm.weight.dtype))
         core = o_norm(attn.view(T, KDA_H, KDA_D), g2.view(T, KDA_H, KDA_D))
         out = _fp8_dense_gemm(core.reshape(T, KDA_OUT), sq_o, sws_o,
                               ro, co)
