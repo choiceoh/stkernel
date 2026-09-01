@@ -6189,10 +6189,28 @@ def test_glm53_megakernel_contracts() -> None:
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
           "bytes in flight, which is the bandwidth on a latency-bound stage")
-    _w8_at = cu_code.index("stage_w(0, 0);")
-    check(_w8_at < cu_code.index("quant_a(0);", _w8_at),
-          "W(0) starts flying before A(0) quantizes (the W8 pipeline fill; "
-          "the W4 branch above fills its own buffers first by construction)")
+    _w8_at = cu_code.index("stage_w(kb0,")
+    check(_w8_at < cu_code.index("quant_a(kb0);", _w8_at),
+          "W(kb0) starts flying before A(kb0) quantizes (the W8 pipeline "
+          "fill; the W4 branch above fills its own buffers first by "
+          "construction). kb0, not 0: a block may own a k SLICE of a tile.")
+    # -- remainder split-K: leftovers of the last partial round take k
+    #    slices instead of leaving MK_GRID - rem blocks idle for a whole
+    #    tile-time. ksr == 1 must leave the original path untouched.
+    check("const int rem = nblk % MK_GRID;" in cu
+          and "const int ksr = (rem > 0) ? (MK_GRID / rem) : 1;" in cu,
+          "the split is over the REMAINDER tiles: a uniform MK_GRID/nblk "
+          "split is 1 for every shape this kernel actually runs "
+          "(51 and 32 tiles), i.e. dead code")
+    check("const bool split = (ksr > 1)" in cu,
+          "ksr == 1 must fall through to the single-pass path unchanged")
+    _red = cu.index("fold the leftover tiles' slices")
+    check(cu.index("mk_grid_barrier(&g_mk_gemm_bar);") < _red,
+          "the accumulator is zeroed under a barrier before any atomicAdd, "
+          "and reduced under a second one after")
+    check("32 * MK_SPLIT_MAXCOL" in cu and "(MK_GRID - 1) * 128" in cu,
+          "rem < MK_GRID bounds the accumulator; sizing it by n would make "
+          "it 20x larger for no reason")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
     check("mk_e2m1_to_e4m3[8]" in cu_code
           and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,

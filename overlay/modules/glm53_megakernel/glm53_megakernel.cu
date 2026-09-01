@@ -203,10 +203,40 @@ struct MKGemmCtx {
 __device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
     0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C};
 
+// Remainder split-K state. Every block owns one 128-column tile across the
+// whole k range, so a tile count that is not a multiple of MK_GRID pays a
+// WHOLE extra round for its leftovers: phase 0's 51 tiles take 2 rounds and
+// the second carries 3 tiles while 45 blocks idle -- 2 tile-times for 1.06
+// tiles of work, and phase 0 is ~43% of the KDA segment.
+//
+// The leftovers get their k split instead. rem < MK_GRID by construction, so
+// the accumulator is at most 32 x (47*128) floats; it lives here rather than
+// in the ctx so neither host entry point nor the pybind signature changes.
+constexpr int MK_SPLIT_MAXCOL = (MK_GRID - 1) * 128;  // 6016
+__device__ unsigned long long g_mk_gemm_bar = 0ULL;
+__device__ float g_mk_gemm_partial[32 * MK_SPLIT_MAXCOL];
+
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int nblk = c.n / 128;
   const int kblk = c.k / KSTEP;
   const int mtiles = (c.m + 15) / 16;
+  // Leftover tiles of the last (partial) round, and how many ways to split
+  // their k so those blocks are not idle. ksr == 1 leaves the original
+  // single-pass path byte for byte -- which is what n/128 == 32 (o_proj)
+  // and any exact multiple of MK_GRID get.
+  const int rem = nblk % MK_GRID;
+  const int full = nblk - rem;
+  const int ksr = (rem > 0) ? (MK_GRID / rem) : 1;
+  const bool split = (ksr > 1) && (c.m <= 32) &&
+                     (rem * 128 <= MK_SPLIT_MAXCOL);
+  const int pcols = rem * 128;
+  const size_t pelem = (size_t)c.m * pcols;
+  if (split) {
+    for (size_t i = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
+         i < pelem; i += (size_t)MK_GRID * MK_THREADS)
+      g_mk_gemm_partial[i] = 0.0f;
+    mk_grid_barrier(&g_mk_gemm_bar);
+  }
 
   uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
   uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
@@ -217,7 +247,19 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int g = lane >> 2, t4 = (lane & 3) * 4;
   const int warp = threadIdx.x >> 5;
 
-  for (int nt = blockIdx.x; nt < nblk; nt += MK_GRID) {
+  const int units = split ? (full + rem * ksr) : nblk;
+  for (int u = blockIdx.x; u < units; u += MK_GRID) {
+    int nt, kb0, kbn;
+    if (!split || u < full) {          // a whole tile, one block, all of k
+      nt = u; kb0 = 0; kbn = kblk;
+    } else {                           // a leftover tile's k slice
+      const int t = (u - full) / ksr, sp = (u - full) % ksr;
+      nt = full + t;
+      kb0 = (kblk * sp) / ksr;
+      kbn = (kblk * (sp + 1)) / ksr;
+    }
+    const bool to_partial = split && (u >= full);
+    if (kb0 >= kbn) continue;
     float acc[2][2][4];  // [m-tile][n8-half][c-frag]
 #pragma unroll
     for (int i = 0; i < 2; ++i)
@@ -411,12 +453,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       quant_a(0);
       expand_w4(0);
       __syncthreads();
-      for (int kb = 0;; ++kb) {
-        if (kb + 1 < kblk) load_w4(kb + 1);  // flies during the mma
+      for (int kb = kb0;; ++kb) {
+        if (kb + 1 < kbn) load_w4(kb + 1);  // flies during the mma
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw4t, kb, 1.0f);  // scales already inside the bytes
-        if (kb + 1 >= kblk) break;
+        if (kb + 1 >= kbn) break;
         __syncthreads();  // mma readers of this tile buffer are done
         expand_w4((kb + 1) % 2);
         quant_a(kb + 1);
@@ -429,23 +471,23 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       // when N is the number of stages issued after it.
       // Prefetch distance MK_W_NBUF - 1 = 2: the tile staged while kb is
       // read must land in a buffer nobody is reading.
-      stage_w(0, 0);
-      quant_a(0);
-      if (kblk > 1) stage_w(1, 1);
-      if (kblk > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
+      stage_w(kb0, kb0 % MK_W_NBUF);
+      quant_a(kb0);
+      if (kbn - kb0 > 1) stage_w(kb0 + 1, (kb0 + 1) % MK_W_NBUF);
+      if (kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
       __syncthreads();
 
-      for (int kb = 0;; ++kb) {
-        if (kb + 2 < kblk) stage_w(kb + 2, (kb + 2) % MK_W_NBUF);
+      for (int kb = kb0;; ++kb) {
+        if (kb + 2 < kbn) stage_w(kb + 2, (kb + 2) % MK_W_NBUF);
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
 
-        if (kb + 1 >= kblk) break;
+        if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
         quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
         // outstanding after W(kb+1): W(kb+2) when it exists
-        if (kb + 2 < kblk) mk_cp_wait<1>(); else mk_cp_wait<0>();
+        if (kb + 2 < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }
@@ -456,6 +498,23 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       for (int j = 0; j < 2; ++j) {  // both n8 halves of the warp tile
         const int r0 = i * 16 + g, r1 = r0 + 8;
         const int cbase = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
+        if (to_partial) {
+          // acc already carries the per-k-block scales, so the slices sum.
+          const int pc = cbase - full * 128;
+          if (r0 < c.m) {
+            atomicAdd(&g_mk_gemm_partial[(size_t)r0 * pcols + pc],
+                      acc[i][j][0]);
+            atomicAdd(&g_mk_gemm_partial[(size_t)r0 * pcols + pc + 1],
+                      acc[i][j][1]);
+          }
+          if (r1 < c.m) {
+            atomicAdd(&g_mk_gemm_partial[(size_t)r1 * pcols + pc],
+                      acc[i][j][2]);
+            atomicAdd(&g_mk_gemm_partial[(size_t)r1 * pcols + pc + 1],
+                      acc[i][j][3]);
+          }
+          continue;
+        }
         if (r0 < c.m) {
           if (cbase < c.n_orig)
             c.out[(size_t)r0 * c.n_orig + cbase] =
@@ -475,6 +534,17 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       }
     }
     __syncthreads();
+  }
+  if (split) {  // fold the leftover tiles' slices into the bf16 output
+    mk_grid_barrier(&g_mk_gemm_bar);
+    for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
+         i2 < pelem; i2 += (size_t)MK_GRID * MK_THREADS) {
+      const int r = (int)(i2 / pcols);
+      const int col = full * 128 + (int)(i2 % pcols);
+      if (col < c.n_orig)
+        c.out[(size_t)r * c.n_orig + col] =
+            __float2bfloat16(g_mk_gemm_partial[i2]);
+    }
   }
 }
 
