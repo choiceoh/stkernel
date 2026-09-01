@@ -5961,8 +5961,11 @@ def test_extra_env_rejects_comma_list() -> None:
     check("_vllm_keys_sp" in text and "printf '%s ' ${_vllm_keys:-}" in text,
           "the key list is newline-separated; it must be flattened before the "
           "space-delimited case pattern, or the guard never matches")
+    # Match the case ARMS, not the body that follows them: the accepting arm
+    # has grown a guard between its pattern and its assignment, and pinning
+    # the assignment made this test break the moment that happened.
     reject = body.index("[A-Za-z_]*=*,[A-Za-z_]*=*)")
-    accept = body.index("[A-Za-z_]*=*) EXTRA_ENV_FLAGS=")
+    accept = body.index("[A-Za-z_]*=*)\n", reject + 1)
     check(reject < accept,
           "the comma pattern must be tested BEFORE the generic KEY=VALUE arm "
           "-- case takes the first match, so the order is the guard")
