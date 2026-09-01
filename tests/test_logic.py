@@ -6309,6 +6309,15 @@ def test_glm53_megakernel_contracts() -> None:
     check(cu.count("mk_grid_barrier(bar, c.grid);") == 1,
           "one grid barrier per gemm phase (the A-quant publish) -- the "
           "fold has none")
+    # Units after the first are handed out dynamically; the counter is
+    # re-armed by block 0 BEFORE the A-quant barrier so the barrier orders
+    # the reset ahead of every block's first take.
+    check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
+          < cu.index("mk_grid_barrier(bar, c.grid);")
+          and "for (int u = blockIdx.x; u < units; u = next_unit())" in cu
+          and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
+          "dynamic unit hand-out: first unit static (hoisted fill), the "
+          "rest from a counter re-armed ahead of the publish barrier")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The

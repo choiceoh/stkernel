@@ -269,6 +269,15 @@ __device__ __align__(16) float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // The stamps priced the barrier + cooperative fold at 5-11 us per launch,
 // most of it blocks that had finished waiting for the one that had not.
 __device__ unsigned int g_mk_tile_arrive[MK_GRID_CAP];
+// Dynamic unit hand-out. Static striding (u += grid) gave every block the
+// same count of units, but the stamps showed a 25% spread in the loop
+// (n=4096: 86..110 us) -- DRAM arbitration is not fair and the slow
+// blocks set the wall time. Each block keeps its first unit static (the
+// hoisted W fill needs it before the prologue) and then takes the next
+// unit from this counter, so the blocks that get served faster do more.
+// Block 0 re-arms it ahead of the A-quant barrier, which orders the reset
+// before any block's first take.
+__device__ unsigned int g_mk_unit_next = 0u;
 // A, quantized ONCE per launch. Every n-tile walks all of k, so quantizing
 // inside the tile loop redid the same work nblk times -- 51x at n=6416 --
 // and read bf16, twice the bytes the mma consumes. Measured ceiling for
@@ -350,6 +359,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   float* sxs =
       (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
   __shared__ int s_last;  // "this block completed a leftover tile"
+  __shared__ int s_unit;  // next dynamically taken unit, broadcast
 
   const int units = split ? (full + rem * ksr) : nblk;
   // unit -> (n-tile, k range). Whole tiles first, then the leftover tiles'
@@ -490,6 +500,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
     quant_store(kb, v2, mx2);
   }
+  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
   MK_TS(1);  // A quantized, before the publishing barrier
   mk_grid_barrier(bar, c.grid);
   MK_TS(2);  // barrier released
@@ -501,7 +512,16 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   const int g = lane >> 2, t4 = (lane & 3) * 4;
   const int warp = threadIdx.x >> 5;
 
-  for (int u = blockIdx.x; u < units; u += c.grid) {
+  // Units beyond the first come from the shared counter (see
+  // g_mk_unit_next); the first is static so its W fill could be hoisted.
+  auto next_unit = [&]() -> int {
+    __syncthreads();  // the previous unit is done with s_unit and smem
+    if (threadIdx.x == 0)
+      s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
+    __syncthreads();
+    return s_unit;
+  };
+  for (int u = blockIdx.x; u < units; u = next_unit()) {
     int nt, kb0, kbn;
     decode_unit(u, nt, kb0, kbn);
     const bool to_partial = split && (u >= full);
