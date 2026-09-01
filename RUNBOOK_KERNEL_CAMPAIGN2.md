@@ -201,6 +201,55 @@ standalone probe는 base-image config inventory를 스윕할 뿐 full-engine ini
 
 ---
 
+## EXP-6 — 메가커널 세그먼트 (`glm53_megakernel`, 2026-09-01 추가)
+
+콜렉티브 사이 구간을 **persistent 48블록 런치 하나**로 흡수하는 신규 모듈.
+sm_121a 계약(mma.sync e4m3 · 클러스터/WGMMA 금지 · 48블록 고정)과 그래프
+안전 바리어(단조 티켓, osar done_ctr 방식)를 따른다. 세그먼트:
+
+| 세그먼트 | 흡수 | 스톡→MK (런치/스텝) |
+|---|---|---|
+| MK-MHC | hc post+pre (수학은 소유 TileLang 소스의 비트 충실 포팅) | 179 → 45 |
+| MK-GEMM | per-token quant + W8A8 GEMM, M≤32 | ~360 → ~180 |
+| MK-KDA | KDA 블록 전체(in_proj→conv→recurrent→norm→o_proj) | ~510 → 34 |
+
+천장: 5.4µs/커널(약화 중인 상한) × 약 900개 ≈ **4.9 ms = 스텝의 7.4%**. 실측은
+그 이하일 공산이고, **측정 전까지 어떤 수치도 원장에 들어가지 않는다.**
+
+사다리(순서대로, 건너뛰기 없음):
+
+```bash
+# 1. 순수 논리 (이 리포, GPU 불필요)
+python3 tests/test_logic.py          # test_glm53_megakernel_contracts 포함
+
+# 2. srv4 새 컨테이너(서빙 컨테이너 CUDA 금지): 수치 + 타이밍 프로브
+#    rel 게이트: MHC 1e-3 · GEMM 2e-2 · KDA out+상태 2e-2. '!' 셀 = 실격
+#    (래퍼가 합성 오버레이를 실제 이미지 경로에 바인드한다)
+bash probes/run_megakernel_bench.sh
+
+# 3. KDA 섀도 부팅 (상태-인덱스 계약이 열린 항목 — 섀도 통과 전에 암 금지)
+EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_KDA_SHADOW=1" \
+  bash launchers/start-glm53-nvfp4-tp4.sh
+#    bench-tp4 1회 내내 [megakernel] kda shadow 로그에 DRIFT 0 확인
+
+# 4. 브래킷 — 세그먼트별 개별 암(MHC와 GEMM은 별도 부팅으로 분리)
+EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1" \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand A
+EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand B (MHC 합침은 그 다음)
+```
+
+주의:
+
+- 부팅 로그의 `[megakernel] armed=...` 지문과 `selftest ... -> ARM/DISARM` 이
+  판정 근거다 — 노브가 1이어도 셀프테스트 탈락은 자동 해제(스톡 경로)다.
+- **MK-GEMM 암은 fp8 가중치 바이트 중복(~+4 GB/랭크)**: KV 라인 확인,
+  모자라면 GMU 한 단계 하향(README의 memfree-preflight 계산).
+- 첫 암 부팅은 확장 컴파일(~1분, `/root/.mk_build`)만큼 느려진다.
+- MK-KDA는 3단계 섀도 로그가 깨끗하기 전에 4단계에 올리지 않는다.
+
+---
+
 ## 순서와 근거
 
 1. **EXP-1 (EP)** — 기대값 최대. 실패해도 부팅 하나로 원장에 정리된다.
@@ -208,6 +257,7 @@ standalone probe는 base-image config inventory를 스윕할 뿐 full-engine ini
 3. **EXP-3 (MHC)** — 프로브가 먼저 승자를 가려내 부팅을 아낀다.
 4. **EXP-4 (bproj)** — 천장 0.9%, 최우선순위 아님. 다음 창으로 미뤄도 됨.
 5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
+6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 

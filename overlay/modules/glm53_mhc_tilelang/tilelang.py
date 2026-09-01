@@ -674,6 +674,45 @@ def mhc_fused_post_pre_tilelang(
             tile_n = 2 if num_tokens < 8 else 3
             n_splits = 8 if (num_tokens < 8 and hidden_size <= 4096) else 4
 
+    # deneb fork (glm53_megakernel): MK_SEG_MHC -- the same small-M fusion in
+    # ONE persistent nvcc launch (48 blocks, no TileLang JIT for decode
+    # shapes). Arms only after its boot self-test diffs it against the stock
+    # pair below; every miss (unarmed, shape, dtype) falls through, so a
+    # disarmed boot is byte-identical to today. Takes precedence over ONEPASS
+    # when both are set: it is the same fusion with fewer launches.
+    if use_small_fma and norm_weight is not None:
+        _mk_mhc = _mk_maybe_arm = None
+        try:  # import only: a boot without the megakernel module is stock
+            from vllm.model_executor.layers.glm53_megakernel import (
+                mhc_fused_post_pre as _mk_mhc,
+                maybe_arm as _mk_maybe_arm,
+            )
+        except Exception:
+            pass
+        if _mk_mhc is not None:
+            _mk_maybe_arm()
+            # armed-shape hits launch here and CANNOT be excepted into the
+            # stock path (async CUDA failures are uncontainable); every
+            # eligible miss returns None above and falls through.
+            _mk = _mk_mhc(
+                x_flat,
+                residual_flat,
+                post_layer_mix_flat,
+                comb_res_mix_flat,
+                fn.view(hc_mult3, hc_mult, hidden_size),
+                hc_scale,
+                hc_base,
+                rms_eps,
+                hc_pre_eps,
+                hc_sinkhorn_eps,
+                hc_post_mult_value,
+                sinkhorn_repeat,
+                norm_weight,
+                norm_eps,
+            )
+            if _mk is not None:
+                return _mk
+
     # deneb fork: ONEPASS -- the whole small-M pair in one launch. Placed
     # before the gemm_out allocations because the fused kernel has no
     # gemm_out. Requires the fused norm (the with_norm half of big_fuse is
