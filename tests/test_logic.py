@@ -6249,12 +6249,12 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x staged by cp.async, amax/"
           "convert/store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 2
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "gemm and kda kernels trigger their dependents at entry and are "
-          "launched programmatically behind the MK_PDL knob (default off)")
+          "gemm, kda and mhc kernels trigger their dependents at entry and "
+          "are launched programmatically behind the MK_PDL knob (default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -6295,7 +6295,7 @@ def test_glm53_megakernel_contracts() -> None:
     # simply the wrong pick: it returns 1 for nblk in (grid/2, grid],
     # i.e. the 4096-wide projections, leaving 16 of 48 blocks
     # idle where r=3 would cost 0.667 tile-times.
-    check("if (full == 0 && rem > 0 && c.m <= 32) {" in cu
+    check("if (full == 0 && rem > 0 && m <= 32) {" in cu
           and "if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }"
           in cu,
           "with no whole tiles the k-split is the cost-minimising one, not "
@@ -6413,8 +6413,10 @@ def test_glm53_megakernel_contracts() -> None:
     # gemm and kda are persistent grids too, and their occupancy differs
     # from each other's, so each resolves its own -- clamped, like mhc, so a
     # grid that does not fit degrades instead of refusing to launch.
-    check(cu.count("mk_resident_grid(mk_gemm_kernel, g_gemm_grid)") == 2
-          and cu.count("mk_resident_grid(mk_kda_kernel, g_kda_grid)") == 1
+    check("mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM)" in cu
+          and "mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4)"
+          in cu
+          and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
           and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
           "gemm, gemm_w4 and kda each resolve their persistent grid from "
           "the device rather than assuming MK_GRID_CAP")

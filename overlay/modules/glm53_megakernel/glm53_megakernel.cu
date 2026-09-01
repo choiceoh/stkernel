@@ -1218,6 +1218,11 @@ __device__ void mk_mhc_p4(const MKMhcArgs& a, int bid) {
 }
 
 __global__ void mk_mhc_kernel(const MKMhcArgs a) {
+  // PDL, no prefetch: this kernel takes no dynamic smem to stage weights
+  // into, so it only lets the next launch start on the SMs it frees and
+  // itself waits for its predecessor before p1's first read.
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
   // 3 grid barriers, down from 5, and no prologue. Each surviving one is a
   // real data dependency (partials -> mixes -> pre-mixes -> sumsq). What
   // went: p3 now STORES its sumsq per (chunk, token) instead of accumulating
@@ -1831,7 +1836,7 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
     TORCH_CHECK(mhc_grid > 0, "mhc has no resident blocks");
   }
   a.grid = mhc_grid;
-  mk_mhc_kernel<<<mhc_grid, MK_THREADS, 0, stream>>>(a);
+  mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);
 }
 
 // ptrs: x, in_wq, in_ws, f_b_w, g_b_w, conv_w, conv_state, rec_state,
