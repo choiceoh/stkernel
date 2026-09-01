@@ -6227,10 +6227,28 @@ def test_glm53_megakernel_contracts() -> None:
           "the row-strided form left half of MK_THREADS idle and halved the "
           "bytes in flight, which is the bandwidth on a latency-bound stage")
     _w8_at = cu_code.index("stage_w(kb0,")
-    check(_w8_at < cu_code.index("quant_a(kb0);", _w8_at),
-          "W(kb0) starts flying before A(kb0) quantizes (the W8 pipeline "
+    check(_w8_at < cu_code.index("stage_a(kb0);", _w8_at),
+          "W(kb0) starts flying before A(kb0) is staged (the W8 pipeline "
           "fill; the W4 branch above fills its own buffers first by "
           "construction). kb0, not 0: a block may own a k SLICE of a tile.")
+    # -- A is quantized ONCE per launch, not once per (tile, k-block). Every
+    #    n-tile walks all of k, so the in-loop form redid it nblk times --
+    #    51x at n=6416 -- on bf16 input, twice the bytes the mma consumes.
+    #    Measured ceiling for removing it: -10% at n=6416/4096, -22% at
+    #    n=2048, -14% at n=1024.
+    check("__device__ uint8_t g_mk_aq[" in cu
+          and "for (int kb = blockIdx.x; kb < kblk; kb += c.grid)" in cu
+          and cu.index("g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4")
+              < cu.index("auto stage_a"),
+          "A is quantized once, cooperatively across the grid, before the "
+          "tile loop reads it")
+    check(cu.index("mk_grid_barrier(bar, c.grid);")
+          < cu.index("auto stage_a"),
+          "a barrier publishes the shared A quant before any block stages "
+          "it -- without it a block reads a tile another block has not "
+          "written yet, and only sometimes")
+    check("sxs[i] = g_mk_axs[i];" in cu,
+          "the per-row scales come from the same shared quant")
     # -- remainder split-K: leftovers of the last partial round take k
     #    slices instead of leaving grid - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.

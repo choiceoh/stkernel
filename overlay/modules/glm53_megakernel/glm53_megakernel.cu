@@ -252,6 +252,13 @@ __device__ unsigned long long g_mk_gemm_bar = 0ULL;
 // misalign it and the barrier releases early -- so, two counters.
 __device__ unsigned long long g_mk_kda_bar = 0ULL;
 __device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
+// A, quantized ONCE per launch. Every n-tile walks all of k, so quantizing
+// inside the tile loop redid the same work nblk times -- 51x at n=6416 --
+// and read bf16, twice the bytes the mma consumes. Measured ceiling for
+// removing it: -10% at n=6416/4096, -22% at n=2048, -14% at n=1024.
+// [KBLK_MAX][32 rows][KSTEP] e4m3 + [32 rows][KBLK_MAX] fp32 scales.
+__device__ uint8_t g_mk_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
+__device__ float g_mk_axs[32 * KBLK_MAX];                   // 4 KB
 
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
                               unsigned long long* bar) {
@@ -305,6 +312,39 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   float* sxs =
       (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
 
+  // ---- prologue: quantize A once for the WHOLE grid.
+  // kblk <= KBLK_MAX = 32 and the grid is at least 48, so this is one
+  // k-block per block and no loop in practice. The barrier that publishes
+  // it is the price; the measurement above says it is worth paying.
+  {
+    const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
+    for (int kb = blockIdx.x; kb < kblk; kb += c.grid) {
+      for (int r = qw; r < c.m; r += MK_WARPS) {
+        const __nv_bfloat16* src =
+            c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
+        float v[4];
+#pragma unroll
+        for (int q = 0; q < 4; ++q) v[q] = __bfloat162float(src[q]);
+        float mx = fmaxf(fmaxf(fabsf(v[0]), fabsf(v[1])),
+                         fmaxf(fabsf(v[2]), fabsf(v[3])));
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
+        const float sc = mk_pow2_scale(mx);
+        if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
+        uint32_t pack = 0;
+#pragma unroll
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[q] / sc) << (8 * q);
+        *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
+      }
+    }
+  }
+  mk_grid_barrier(bar, c.grid);
+  for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
+    sxs[i] = g_mk_axs[i];
+  __syncthreads();
+
   const int lane = threadIdx.x & 31;
   const int g = lane >> 2, t4 = (lane & 3) * 4;
   const int warp = threadIdx.x >> 5;
@@ -356,38 +396,20 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       }
       mk_cp_commit();
     };
-    // quantize A rows [0, m) for one k-block into the fp8 m-tiles
-    // One WARP per row, not one thread. The row-per-thread form used only
-    // c.m of MK_THREADS (8 to 32 of 256) and walked KSTEP global elements
-    // TWICE per row -- once for the max, once for the pack -- as dependent
-    // scalar loads. That is 256 latency-bound loads on a handful of threads,
-    // repeated for every k-block, and it dominated this kernel: mk_us stayed
-    // ~700 us whether n was 1024 or 4096, i.e. independent of the actual
-    // GEMM work. Each lane now owns 4 consecutive elements (32 x 4 = KSTEP),
-    // reads them once into registers, and the row max comes from a butterfly
-    // shuffle -- same value, since mk_pow2_scale is a pure function of it.
-    auto quant_a = [&](int kb) {
-      const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
-      for (int r = qw; r < c.m; r += MK_WARPS) {
-        const __nv_bfloat16* src =
-            c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
-        float v[4];
-#pragma unroll
-        for (int q = 0; q < 4; ++q) v[q] = __bfloat162float(src[q]);
-        float mx = fmaxf(fmaxf(fabsf(v[0]), fabsf(v[1])),
-                         fmaxf(fabsf(v[2]), fabsf(v[3])));
-#pragma unroll
-        for (int off = 16; off; off >>= 1)
-          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
-        const float sc = mk_pow2_scale(mx);
-        if (ql == 0) sxs[r * KBLK_MAX + kb] = sc;
+    // Copy one k-block of the pre-quantized A into the padded smem tile.
+    // This used to BE the quantization, redone by every block for every
+    // k-block it touched; the prologue above now does it once per launch.
+    // Plain stores rather than cp.async: the tile is at most m * 128 = 4 KB
+    // and L2-hot, and a cp.async here would land in the same group stream
+    // the W pipeline's wait counts depend on.
+    auto stage_a = [&](int kb) {
+      constexpr int WORDS = KSTEP / 4;
+      for (int t = threadIdx.x; t < c.m * WORDS; t += MK_THREADS) {
+        const int r = t / WORDS, e = (t % WORDS) * 4;
         uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
                        (r & 15) * SMEM_A_PITCH;
-        uint32_t pack = 0;
-#pragma unroll
-        for (int q = 0; q < 4; ++q)
-          pack |= (uint32_t)mk_f32_to_e4m3(v[q] / sc) << (8 * q);
-        *(uint32_t*)(dst + ql * 4) = pack;
+        *(uint32_t*)(dst + e) = *(const uint32_t*)(
+            g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
       }
       // rows >= m keep stale bytes: their output rows are never written and
       // finite e4m3 cannot poison other rows of the same mma.
@@ -517,7 +539,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       };
 
       load_w4(kb0);
-      quant_a(kb0);
+      stage_a(kb0);
       expand_w4(kb0 % 2);   // the loop reads (kb % 2); kb starts at kb0
       __syncthreads();
       for (int kb = kb0;; ++kb) {
@@ -528,7 +550,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         if (kb + 1 >= kbn) break;
         __syncthreads();  // mma readers of this tile buffer are done
         expand_w4((kb + 1) % 2);
-        quant_a(kb + 1);
+        stage_a(kb + 1);
         __syncthreads();
       }
     } else {
@@ -545,7 +567,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
       constexpr int DIST = MK_W_NBUF - 1;
       stage_w(kb0, kb0 % MK_W_NBUF);
-      quant_a(kb0);
+      stage_a(kb0);
 #pragma unroll
       for (int d = 1; d < DIST; ++d)
         if (kb0 + d < kbn) stage_w(kb0 + d, (kb0 + d) % MK_W_NBUF);
@@ -562,7 +584,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
-        quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
+        stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
         // outstanding after W(kb+1): the deeper stages, when they exist
         if (DIST > 1 && kb + DIST < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
