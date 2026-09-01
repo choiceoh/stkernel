@@ -986,8 +986,20 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
               nq += q_s[d] * q_s[d];
               nk += k_s[d] * k_s[d];
             }
-            nq = rsqrtf(nq + 1e-12f);
-            nk = rsqrtf(nk + 1e-12f);
+            // Match the stock kernel exactly (fused_recurrent.py:137-140):
+            //   b_q = b_q / sqrt(sum(b_q*b_q) + 1e-6)
+            //   b_k = b_k / sqrt(sum(b_k*b_k) + 1e-6)
+            //   b_q = b_q * scale
+            // The trailing scale is applied to q ONLY, and kda.py:165
+            // defaults it to k.shape[-1] ** -0.5 = KDA_D^-0.5. This kernel
+            // had neither the 1e-6 epsilon nor the scale, so its readout ran
+            // sqrt(KDA_D) = 11.3x hot. Because only q carries the scale, the
+            // error term (which retrieves with k) was unaffected -- which is
+            // why rec_state matched while attn/core/out did not.
+            constexpr float kda_qk_scale =
+                0.088388347648318447f;  // KDA_D ** -0.5, KDA_D = 128
+            nq = rsqrtf(nq + 1e-6f) * kda_qk_scale;
+            nk = rsqrtf(nk + 1e-6f);
 #pragma unroll 8
             for (int d = 0; d < KDA_D; ++d) {
               q_s[d] *= nq;
