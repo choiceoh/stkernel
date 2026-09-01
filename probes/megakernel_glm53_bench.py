@@ -98,7 +98,7 @@ def probe_gemm(iters: int) -> bool:
         # effective DRAM rate: the bytes each arm must move once. This is
         # the column that prices the cp.async pipeline against deepgemm
         # (GB10 peak ~223 GB/s/rank; the W8A8 dense step floor sits here).
-        nbytes = sq.numel() + x.numel() * 2 + m * n * 2
+        nbytes = sq.numel() + sws.numel() * 4 + x.numel() * 2 + m * n * 2
         print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}")

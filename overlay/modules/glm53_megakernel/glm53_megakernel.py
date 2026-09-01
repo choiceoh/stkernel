@@ -207,14 +207,19 @@ def _mk_w4_scale_exp(amax: float) -> int:
     """Scale exponent s for one 16-group: the smallest 2^s with
     6 * 2^s >= amax, clamped to the kernel LUT's exactness range [-5, 6]
     (exp field 6+s stays in [1, 15); never denormal, never NaN, never the
-    sign bit). The price of exponent-field arithmetic: s=6 caps the
-    representable magnitude at 6*2^6 = 384 < e4m3's 448, so a group with
-    amax > 384 SATURATES at 384 (bucketize clips the code). Real bf16
-    projection weights sit orders of magnitude below; the saturation is
-    the documented ceiling, not an overflow."""
+    sign bit). frexp alone is RIGHT-biased on exact power-of-two
+    boundaries (frexp(8) -> 0.5*2^4), so an on-grid group -- amax = 6*2^e,
+    e.g. the fixture weights -- would pick e+1 and quantize to a
+    renormalized encoding, breaking the on-grid exactness gate. Subtract
+    the boundary case back. The price of exponent-field arithmetic: s=6
+    caps the representable magnitude at 6*2^6 = 384 < e4m3's 448, so a
+    group with amax > 384 SATURATES at 384 (bucketize clips the code);
+    the saturation is the documented ceiling, not an overflow."""
     if amax <= 0.0 or not math.isfinite(amax):
         return 0
-    e = math.frexp(amax / 6.0)[1]  # amax/6 = m * 2^e, m in [0.5, 1) -> 2^e >= it
+    e = math.frexp(amax / 6.0)[1]  # frexp: right-biased on exact pow2
+    if amax / 6.0 == 2.0 ** (e - 1):  # exact boundary -> one less suffices
+        e -= 1
     return max(-5, min(6, e))
 
 
@@ -240,8 +245,13 @@ def build_mk_weight_w4(weight):
     pos = amax > 0
     # vectorized frexp ceil: exponent of the pow2 >= amax/6 (same rule as
     # _mk_w4_scale_exp; the .clamp guard keeps frexp finite)
-    frac, exp = torch.frexp((amax / 6.0).clamp(min=1e-30))
-    s[pos] = exp[pos].float().clamp(-5, 6)
+    ratio = (amax / 6.0).clamp(min=1e-30)
+    frac, exp = torch.frexp(ratio)
+    # exact pow2 boundary -> frexp over-picks by one (mirror of the scalar
+    # _mk_w4_scale_exp rule; keeps on-grid weights bit-identical to their
+    # crafted encoding)
+    onb = (ratio == torch.exp2(exp - 1.0))
+    s[pos] = (exp[pos] - onb[pos].float()).clamp(-5, 6)
     qs = g * torch.exp2(-s).unsqueeze(-1)
     code = torch.bucketize(qs.abs(), torch.tensor(_E2M1_MIDS,
                                                    device=weight.device))
@@ -420,8 +430,13 @@ def _kda_layout_ok(layer) -> bool:
             and layer.A_log.dtype == torch.float32
             and layer.dt_bias.dtype == torch.float32
             and conv_state.dtype == torch.float32
-            and conv_state.dim() == 3 and conv_state.shape[1:] ==
-            (KDA_QKV, 3) and conv_state.is_contiguous()
+            and conv_state.dim() == 3
+            and conv_state.shape[1] == KDA_QKV
+            # spec-decode allocates the sliding window k-1+num_spec wide;
+            # the kernel uses the runtime width as stride over the active
+            # [0, 3) window, so any width >= 3 is admissible (a hard (QKV,3)
+            # gate never matched production -- review finding).
+            and conv_state.shape[2] >= 3 and conv_state.is_contiguous()
             and rec_state.dtype == torch.float32
             and rec_state.dim() == 4
             and rec_state.shape[1:] == (KDA_H, KDA_D, KDA_D)
@@ -474,6 +489,19 @@ def _kda_ensure_packs(layer) -> bool:
         return False
 
 
+def _kda_device_ok() -> bool:
+    """GB10 gate, shared by armed and shadow paths. A pure-shadow boot
+    used to build the extension and launch on ANY device with no self-test
+    -- the same unverified-kernel posture this module exists to refuse
+    (review finding)."""
+    import torch
+
+    if torch.cuda.device_count() == 0:
+        return False
+    major, minor, sms, _ = _build().probe_device()
+    return (major, minor) == (12, 1) and sms == 48
+
+
 def kda_takeover(layer) -> bool:
     """Hot-path gate for the kda.py overlay hook (arms on first call)."""
     if not (ENABLE_KDA or KDA_SHADOW):
@@ -481,14 +509,22 @@ def kda_takeover(layer) -> bool:
     maybe_arm()
     if not (_ARMED["kda"] or KDA_SHADOW):
         return False
+    if _ARMED["kda"]:
+        pass  # arm() already cleared the device gate
+    elif not _kda_device_ok():
+        return False  # shadow-only boot: same GB10 contract, or no launch
     if not _kda_ensure_packs(layer):
         return False
     return _kda_layout_ok(layer) and _kda_eligible(_kda_meta(layer))
 
 
-def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out):
+def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
+                delta_variant=0):
     ws = _ensure_workspace(hidden_states.device)
     n_spec = meta.num_spec_decodes
+    ow = getattr(layer.o_norm, "weight", None)
+    onorm_w = ow if isinstance(ow, torch.Tensor) else torch.ones(
+        KDA_D, dtype=torch.bfloat16, device=hidden_states.device)
     _EXT.run_kda(
         [hidden_states.data_ptr(),
          layer._mk_in_pack[0].data_ptr(),
@@ -506,11 +542,12 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out):
          out.data_ptr(),
          ws["qkv"].data_ptr(), ws["g1"].data_ptr(), ws["g2"].data_ptr(),
          ws["convq"].data_ptr(), ws["attn"].data_ptr(),
-         _barrier_ptr(ws)],
+         _barrier_ptr(ws), onorm_w.data_ptr()],
         [float(layer.kda_lower_bound),
          float(getattr(layer.o_norm, "eps", 1e-5))],
         [int(meta.num_actual_tokens), int(n_spec),
-         int(meta.spec_state_indices_tensor.size(-1))],
+         int(meta.spec_state_indices_tensor.size(-1)),
+         int(delta_variant), int(conv_state.shape[-1])],
     )
 
 
@@ -523,10 +560,12 @@ def kda_block(layer, hidden_states, positions):
                       dtype=torch.bfloat16, device=hidden_states.device)
     conv_state, rec_state = layer.kv_cache
     _kda_launch(layer, hidden_states.contiguous(), meta, conv_state,
-                rec_state, out)
+                rec_state, out, delta_variant=_KDA_VARIANT)
+    # vLLM's all_reduce is OUT-OF-PLACE: the return value carries the
+    # reduced tensor and the input buffer keeps rank-local partial sums.
+    # Discarding the return once served partials to every rank (review).
     from vllm.distributed import tensor_model_parallel_all_reduce
-    tensor_model_parallel_all_reduce(out)
-    return out
+    return tensor_model_parallel_all_reduce(out)
 
 
 class KdaShadowArm:
@@ -552,8 +591,10 @@ class KdaShadowArm:
         self.rec_mk = rec_state.clone()
         _kda_launch(layer, hidden_states.contiguous(), meta, self.conv_mk,
                     self.rec_mk, self.out)
+        # same out-of-place contract: shadow compares against the REDUCED
+        # tensor, not this rank's partial (review finding)
         from vllm.distributed import tensor_model_parallel_all_reduce
-        tensor_model_parallel_all_reduce(self.out)
+        self.out = tensor_model_parallel_all_reduce(self.out)
         self.layer, self.ok = layer, True
 
     _n_calls = 0
@@ -739,22 +780,52 @@ class _KdaFixture:
         la._merged_conv_weight = f.conv_w
         la.A_log, la.dt_bias = f.a_log, f.dt_bias
         la.kda_lower_bound = -5.0
+        # NON-TRIVIAL affine weight: an all-ones o_norm cannot see a missing
+        # weight multiply (review finding). The stock arm must use the same
+        # values -- FusedRMSNormGated gets them via onorm_w below.
+        self.onorm_w = (torch.rand(KDA_OUT, device="cuda") * 0.4
+                        + 0.8).to(torch.bfloat16)
         la.o_norm = _P()
         la.o_norm.eps = 1e-5
+        la.o_norm.weight = torch.nn.Parameter(self.onorm_w)
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
-    def mk_run(self):
-        """MK arm on cloned states -> dict(out, conv_state, rec_state)."""
+    def mk_run(self, delta_variant=0):
+        """MK arm on cloned states -> dict(out, conv_state, rec_state).
+
+        delta_variant sweeps the retrieval/write operand order (see the .cu
+        comment): the stock source is not in this repo, so the boot settles
+        which variant matches fused_recurrent_kda."""
         import torch
 
         la, meta = self._layer_stand_in()
         conv_mk, rec_mk = self.conv_st.clone(), self.rec_st.clone()
         out = torch.empty(self.T, HIDDEN, dtype=torch.bfloat16,
                           device="cuda")
-        _kda_launch(la, self.x, meta, conv_mk, rec_mk, out)
+        _kda_launch(la, self.x, meta, conv_mk, rec_mk, out,
+                    delta_variant=delta_variant)
         torch.cuda.synchronize()
         return {"out": out, "conv_state": conv_mk, "rec_state": rec_mk}
+
+    def pick_variant(self):
+        """First delta variant whose output AND states match the stock op
+        (gate 2e-2, same as the self-test); None if no variant does."""
+        ref = self.stock_run()
+        for v in (0, 1, 2):
+            got = self.mk_run(delta_variant=v)
+            slot = slice(_KdaFixture.SLOT, _KdaFixture.SLOT + 1)
+            errs = {k: _rel_err(got[k][slot] if k != "out" else got[k],
+                                ref[k][slot] if k != "out" else ref[k])
+                    for k in ref}
+            if all(e <= _TOL_KDA for e in errs.values()):
+                logger.warning("[megakernel] kda delta variant %d matches "
+                               "stock (errs=%s)", v,
+                               {k: "%.2e" % x for k, x in errs.items()})
+                return v
+        logger.warning("[megakernel] no delta variant matches stock: %s",
+                       {k: "%.2e" % x for k, x in errs.items()})
+        return None
 
     def stock_run(self):
         """Stock chain (in_proj gemm, conv update, fused_recurrent_kda,
@@ -802,21 +873,23 @@ class _KdaFixture:
         return {"out": out, "conv_state": conv_ref, "rec_state": rec_ref}
 
 
+_KDA_VARIANT = 0  # settled at arm time by the delta sweep
+
+
 def _selftest_kda() -> bool:
     """Diff MK_SEG_KDA against the stock chain on synthetic spec metadata;
     outputs AND the rolled states (at the fixture's NONZERO slot) must
-    agree."""
+    agree. The retrieval/write operand order of fused_recurrent_kda is not
+    readable from this repo's source, so the sweep picks the matching delta
+    variant at boot (none -> DISARM); serving then uses the settled variant
+    (review finding)."""
+    global _KDA_VARIANT
     fx = _KdaFixture(acc=3)
-    got, ref = fx.mk_run(), fx.stock_run()
-    slot = slice(_KdaFixture.SLOT, _KdaFixture.SLOT + 1)
-    errs = {k: _rel_err(got[k][slot] if k != "out" else got[k],
-                        ref[k][slot] if k != "out" else ref[k])
-            for k in ref}
-    ok = all(e <= _TOL_KDA for e in errs.values())
-    logger.warning("[megakernel] selftest kda rel_errs=%s -> %s",
-                   {k: "%.2e" % v for k, v in errs.items()},
-                   "ARM" if ok else "DISARM")
-    return ok
+    v = fx.pick_variant()
+    if v is None:
+        return False
+    _KDA_VARIANT = v
+    return True
 
 
 def _selftest_w4() -> bool:

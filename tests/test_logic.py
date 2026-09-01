@@ -6191,21 +6191,23 @@ def test_glm53_megakernel_contracts() -> None:
     check(cu.count("<<<MK_GRID, MK_THREADS") == 4,
           "every host entry (mhc, gemm, gemm_w4, kda) launches with the "
           "fixed 48-block grid")
-    check("(t / MK_GRID + 1u) * MK_GRID" in cu,
-          "grid barrier is the never-reset monotonic ticket form")
+    check("(t / (unsigned long long)MK_GRID + 1ULL) * MK_GRID" in cu,
+          "grid barrier is the never-reset monotonic ticket form, 64-bit "
+          "(32-bit wraps in ~a week of arrivals and releases early)")
     bar = cu[cu.index("mk_grid_barrier"):cu.index("mk_grid_barrier") + 700]
     check("__threadfence();" in bar,
           "barrier fences device scope around the ticket (osar lesson)")
-    check("atomicAdd(ctr, 1u)" in bar
-          and re.search(r"\bctr\s*=[^=]", bar) is None,
+    check("atomicAdd(ctr, 1ULL)" in bar
+          and "ctr =" not in bar and "ctr=" not in bar,
           "the barrier counter is never reset inside the kernel "
           "(monotonic ticket only)")
 
     # -- state slot addressing: [slots, ...] buffers need the per-slot
     #    element count in the stride (a slot-0-only self-test once passed
     #    while the conv stride was missing it -- found in review)
-    check(cu.count("slot * KDA_QKV * (CONV_W - 1)") == 2,
-          "conv state slot stride is KDA_QKV*(CONV_W-1) at both sites")
+    check(cu.count("slot * KDA_QKV * a.conv_width") == 2,
+          "conv state slot stride is KDA_QKV*conv_width at both sites "
+          "(spec allocates a wider window; runtime width is the stride)")
     check("slot * KDA_H + head) * KDA_D * KDA_D" in cu,
           "recurrent state slot stride is H*D*D")
 

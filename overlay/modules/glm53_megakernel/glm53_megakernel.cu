@@ -97,13 +97,18 @@ constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
 // baked workspace pointers is exact. Device-scope fences make the phases'
 // global writes visible across blocks (the osar barrier lesson).
 // ---------------------------------------------------------------------------
-__device__ __forceinline__ void mk_grid_barrier(uint32_t* ctr) {
+__device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr) {
   __syncthreads();
   if (threadIdx.x == 0) {
     __threadfence();
-    uint32_t t = atomicAdd(ctr, 1u);
-    uint32_t target = (t / MK_GRID + 1u) * MK_GRID;
-    volatile uint32_t* v = (volatile uint32_t*)ctr;
+    // 64-bit monotonic ticket: 450+ arrivals/step wrap a 32-bit counter in
+    // about a week of continuous serving, and the wrapped `<` compare then
+    // releases blocks early. 2^64 does not wrap.
+    unsigned long long t = atomicAdd(ctr, 1ULL);
+    unsigned long long target =
+        (t / (unsigned long long)MK_GRID + 1ULL) * MK_GRID;
+    volatile unsigned long long* v =
+        (volatile unsigned long long*)ctr;
     while (*v < target) __nanosleep(64);
     __threadfence();
   }
@@ -197,11 +202,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int warp = threadIdx.x >> 5;
 
   for (int nt = blockIdx.x; nt < nblk; nt += MK_GRID) {
-    float acc[2][4];
+    float acc[2][2][4];  // [m-tile][n8-half][c-frag]
 #pragma unroll
     for (int i = 0; i < 2; ++i)
 #pragma unroll
-      for (int j = 0; j < 4; ++j) acc[i][j] = 0.0f;
+      for (int j = 0; j < 2; ++j)
+#pragma unroll
+        for (int c = 0; c < 4; ++c) acc[i][j][c] = 0.0f;
 
     // stage one k-block of W rows [nt*128, nt*128+128) into a pipeline
     // buffer (async, 16B copies; both addresses are 16B aligned by
@@ -248,12 +255,16 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
     // mma + per-k-block scale fold, shared by the W8 and W4 pipelines
     // (W4 tiles arrive already scale-multiplied, so their wsc is 1).
     auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
-      // ---- mma: warp covers n-cols [warp*16, warp*16+16) of the tile
-      float kacc[2][4];
+      // ---- mma: warp covers n-cols [warp*16, warp*16+16) of the tile,
+      // two m16n8 mmas per k-slice; each n8 half keeps its own kacc
+      // (a shared accumulator would sum the two halves' products).
+      float kacc[2][2][4];
 #pragma unroll
       for (int i = 0; i < 2; ++i)
 #pragma unroll
-        for (int j = 0; j < 4; ++j) kacc[i][j] = 0.0f;
+        for (int j = 0; j < 2; ++j)
+#pragma unroll
+          for (int c = 0; c < 4; ++c) kacc[i][j][c] = 0.0f;
 
 #pragma unroll 2
       for (int ks = 0; ks < KSTEP / 32; ++ks) {
@@ -300,10 +311,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         const int r1 = r0 + 8;
         const float s0 = (r0 < c.m) ? wsc * sxs[r0 * KBLK_MAX + kb] : 0.0f;
         const float s1 = (r1 < c.m) ? wsc * sxs[r1 * KBLK_MAX + kb] : 0.0f;
-        acc[i][0] += kacc[i][0] * s0;
-        acc[i][1] += kacc[i][1] * s0;
-        acc[i][2] += kacc[i][2] * s1;
-        acc[i][3] += kacc[i][3] * s1;
+#pragma unroll
+        for (int j = 0; j < 2; ++j) {
+          acc[i][j][0] += kacc[i][j][0] * s0;
+          acc[i][j][1] += kacc[i][j][1] * s0;
+          acc[i][j][2] += kacc[i][j][2] * s1;
+          acc[i][j][3] += kacc[i][j][3] * s1;
+        }
       }
 
     };
@@ -400,21 +414,26 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
     // ---- epilogue: real rows/cols only
 #pragma unroll
     for (int i = 0; i < mtiles; ++i) {
-      const int r0 = i * 16 + g, r1 = r0 + 8;
-      const int cbase = nt * 128 + warp * 16 + (lane & 3) * 2;
-      if (r0 < c.m) {
-        if (cbase < c.n_orig)
-          c.out[(size_t)r0 * c.n_orig + cbase] = __float2bfloat16(acc[i][0]);
-        if (cbase + 1 < c.n_orig)
-          c.out[(size_t)r0 * c.n_orig + cbase + 1] =
-              __float2bfloat16(acc[i][1]);
-      }
-      if (r1 < c.m) {
-        if (cbase < c.n_orig)
-          c.out[(size_t)r1 * c.n_orig + cbase] = __float2bfloat16(acc[i][2]);
-        if (cbase + 1 < c.n_orig)
-          c.out[(size_t)r1 * c.n_orig + cbase + 1] =
-              __float2bfloat16(acc[i][3]);
+#pragma unroll
+      for (int j = 0; j < 2; ++j) {  // both n8 halves of the warp tile
+        const int r0 = i * 16 + g, r1 = r0 + 8;
+        const int cbase = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
+        if (r0 < c.m) {
+          if (cbase < c.n_orig)
+            c.out[(size_t)r0 * c.n_orig + cbase] =
+                __float2bfloat16(acc[i][j][0]);
+          if (cbase + 1 < c.n_orig)
+            c.out[(size_t)r0 * c.n_orig + cbase + 1] =
+                __float2bfloat16(acc[i][j][1]);
+        }
+        if (r1 < c.m) {
+          if (cbase < c.n_orig)
+            c.out[(size_t)r1 * c.n_orig + cbase] =
+                __float2bfloat16(acc[i][j][2]);
+          if (cbase + 1 < c.n_orig)
+            c.out[(size_t)r1 * c.n_orig + cbase + 1] =
+                __float2bfloat16(acc[i][j][3]);
+        }
       }
     }
     __syncthreads();
@@ -453,7 +472,7 @@ struct MKMhcArgs {
   float* rsq;                        // ws [MAX_TOK]
   float* pmix;                       // ws [MAX_TOK, HC]
   __nv_bfloat16* ol_stash;           // ws [MAX_TOK, HIDDEN]
-  uint32_t* barrier_ctr;
+  unsigned long long* barrier_ctr;
   int num_tokens;
   float rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps;
   int sinkhorn_repeat;
@@ -725,7 +744,13 @@ struct MKKdaArgs {
   const __nv_bfloat16* f_b_w;  // [KDA_OUT, KDA_D] bf16
   const __nv_bfloat16* g_b_w;  // [KDA_OUT, KDA_D] bf16
   const float* conv_w;         // [KDA_QKV, CONV_W] fp32
-  float* conv_state;           // [slots, KDA_QKV, CONV_W-1] fp32
+  // conv_state is [slots, KDA_QKV, conv_width] with conv_width >= 3: the
+  // engine allocates the spec-decode sliding window (k-1 + num_spec), so a
+  // hard (KDA_QKV, 3) layout gate never matches production and the takeover
+  // would stay dead. The kernel addresses the active [0, 3) window with the
+  // runtime width as stride (review finding).
+  float* conv_state;
+  int conv_width;
   float* rec_state;            // [slots, KDA_H, KDA_D, KDA_D] fp32
   const float* a_log;          // [KDA_H] fp32
   const float* dt_bias;        // [KDA_H*KDA_D] fp32
@@ -733,6 +758,14 @@ struct MKKdaArgs {
   const int* state_idx;        // [n_spec, mql] state slot per query position
   const int* n_accepted;       // [n_spec]
   int n_spec, mql;
+  // Delta-rule operand order. The image's fused_recurrent_kda source is
+  // not in this repo, so the exact order is a BOOT-SETTLED question, not
+  // an assumed one: the self-test sweeps these variants against the stock
+  // op and arms with the first that matches (none matches -> DISARM).
+  int delta_variant;  // 0: err = v - q^T S, write by k, readout q (post)
+                      // 1: err = v - k^T S, write by k, readout q (post)
+                      // 2: variant 0 with PRE-update readout
+  const __nv_bfloat16* onorm_w;  // [KDA_D] affine weight (ones if unused)
   const uint8_t* o_wq;         // [HIDDEN, KDA_OUT_PAD] e4m3
   const float* o_ws;
   __nv_bfloat16* out;          // [T, HIDDEN]
@@ -742,7 +775,7 @@ struct MKKdaArgs {
   __nv_bfloat16* g2;    // [MAX_TOK, KDA_OUT]
   __nv_bfloat16* convq; // [MAX_TOK, KDA_QKV]
   __nv_bfloat16* attn;  // [MAX_TOK, KDA_OUT]
-  uint32_t* barrier_ctr;
+  unsigned long long* barrier_ctr;
   int num_tokens;
   float lower_bound, onorm_eps;
 };
@@ -796,8 +829,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[(size_t)slot * KDA_QKV * (CONV_W - 1) +
-                               ch * (CONV_W - 1) + i];
+          st[i] = a.conv_state[(size_t)slot * KDA_QKV * a.conv_width +
+                               ch * a.conv_width + i];
         auto hist = [&](int pos) -> float {
           return (pos >= 0)
                      ? __bfloat162float(
@@ -814,8 +847,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         }
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          a.conv_state[(size_t)slot * KDA_QKV * (CONV_W - 1) +
-                       ch * (CONV_W - 1) + i] =
+          a.conv_state[(size_t)slot * KDA_QKV * a.conv_width +
+                       ch * a.conv_width + i] =
               hist(acc - (CONV_W - 1) + i);
       }
     }
@@ -892,11 +925,13 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 
           const float beta = mk_sigmoid(__bfloat162float(
               a.qkv[(size_t)t * KDA_INPROJ_N + KDA_QKV + head]));
+          // retrieval operand: q (variants 0/2) or k (variant 1)
+          const float* r_s = (a.delta_variant == 1) ? k_s : q_s;
           float part = 0.0f;
 #pragma unroll 8
           for (int kk = 0; kk < KDA_D / 2; ++kk) {
             S[kk] *= y_s[k0 + kk];
-            part += q_s[k0 + kk] * S[kk];
+            part += r_s[k0 + kk] * S[kk];
           }
           sred[khalf][v] = part;
           __syncthreads();
@@ -906,6 +941,12 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
                                                 head * KDA_D + v]) -
                        (sred[0][v] + sred[1][v]);
           __syncthreads();
+          if (khalf == 0 && a.delta_variant == 2) {
+            // pre-update readout: the output is the retrieval itself
+            a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] =
+                __float2bfloat16(sred[0][v] + sred[1][v]);
+          }
+          __syncthreads();  // sred is rewritten below (variant-2 read done)
 
           float part2 = 0.0f;
 #pragma unroll 8
@@ -915,7 +956,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
           }
           sred[khalf][v] = part2;
           __syncthreads();
-          if (khalf == 0)
+          if (khalf == 0 && a.delta_variant != 2)
             a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] =
                 __float2bfloat16(sred[0][v] + sred[1][v]);
           __syncthreads();
@@ -956,6 +997,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       for (int d = threadIdx.x; d < KDA_D; d += MK_THREADS)
         src[d] = __float2bfloat16(
             __bfloat162float(src[d]) * inv *
+            __bfloat162float(a.onorm_w[d]) *
             mk_sigmoid(__bfloat162float(
                 a.g2[(size_t)t * KDA_OUT + h * KDA_D + d])));
       __syncthreads();
@@ -1074,7 +1116,7 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.rsq = (float*)ptrs[15];
   a.pmix = (float*)ptrs[16];
   a.ol_stash = (__nv_bfloat16*)ptrs[17];
-  a.barrier_ctr = (uint32_t*)ptrs[18];
+  a.barrier_ctr = (unsigned long long*)ptrs[18];
   a.num_tokens = (int)ints[0];
   a.sinkhorn_repeat = (int)ints[1];
   a.rms_eps = (float)scalars[0];
@@ -1082,14 +1124,16 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.sinkhorn_eps = (float)scalars[2];
   a.post_mult = (float)scalars[3];
   a.norm_eps = (float)scalars[4];
+  TORCH_CHECK(ptrs.size() == 19 && ints.size() == 2 && scalars.size() == 5,
+              "run_mhc arg contract");
   auto stream = at::cuda::getCurrentCUDAStream();
   mk_mhc_kernel<<<MK_GRID, MK_THREADS, 0, stream>>>(a);
 }
 
 // ptrs: x, in_wq, in_ws, f_b_w, g_b_w, conv_w, conv_state, rec_state,
 //       a_log, dt_bias, cu, state_idx, n_acc, o_wq, o_ws, out,
-//       qkv, g1, g2, convq, attn, barrier
-// ints: num_tokens, n_spec, mql
+//       qkv, g1, g2, convq, attn, barrier, onorm_w
+// ints: num_tokens, n_spec, mql, delta_variant, conv_width
 // scalars: lower_bound, onorm_eps
 void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
@@ -1116,10 +1160,15 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.g2 = (__nv_bfloat16*)ptrs[18];
   a.convq = (__nv_bfloat16*)ptrs[19];
   a.attn = (__nv_bfloat16*)ptrs[20];
-  a.barrier_ctr = (uint32_t*)ptrs[21];
+  a.barrier_ctr = (unsigned long long*)ptrs[21];
+  a.onorm_w = (const __nv_bfloat16*)ptrs[22];
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 2,
+              "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
   a.mql = (int)ints[2];
+  a.delta_variant = (int)ints[3];
+  a.conv_width = (int)ints[4];
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   auto stream = at::cuda::getCurrentCUDAStream();

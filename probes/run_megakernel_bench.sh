@@ -30,7 +30,9 @@ for source in glm53_megakernel.py glm53_megakernel.cu \
   mounts+=(--mount "type=bind,src=$BUILD/$source,dst=$target,readonly")
 done
 
-exec docker run --rm --gpus all \
+# --entrypoint: the image's default ENTRYPOINT is the vllm server, not a
+# shell (the glm53 image layout bit the osar build the same way)
+exec docker run --rm --gpus all --entrypoint /bin/bash \
   --mount "type=bind,src=$REPO,dst=/repo,readonly" \
   "${mounts[@]}" \
-  "$IMAGE" python3 /repo/probes/megakernel_glm53_bench.py "$@"
+  "$IMAGE" -lc "python3 /repo/probes/megakernel_glm53_bench.py $*" _ "$@"
