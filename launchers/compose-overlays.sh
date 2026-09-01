@@ -34,6 +34,10 @@ for mod in $MODULES; do
   m="$REPO/overlay/modules/$mod/manifest.tsv"
   [ -f "$m" ] || { echo "ABORT: no such module: $mod"; exit 1; }
   while IFS=$'\t' read -r source target contract || [ -n "${source:-}" ]; do
+    # deneb fork: same CRLF checkout hazard as the requires loop -- a \r on
+    # the contract hash would land in the composed manifest and fail the
+    # 4-node SHA-256 verification with a hash that never matches.
+    contract=${contract%$'\r'} target=${target%$'\r'}
     [[ -z "$source" || "$source" == \#* ]] && continue
     [ -n "$target" ] && [ -n "$contract" ] \
       || { echo "ABORT: malformed row in module $mod: $source"; exit 1; }
@@ -72,6 +76,10 @@ for mod in $MODULES; do
   req="$REPO/overlay/modules/$mod/requires"
   [ -f "$req" ] || continue
   while read -r need || [ -n "${need:-}" ]; do
+    # deneb fork: a CRLF checkout (Windows clones) leaves \r on the module
+    # name, which silently fails EVERY requires match and aborts compose
+    # with a false "does not load" -- strip it before matching (#191 class).
+    need=${need%$'\r'}
     [[ -z "$need" || "$need" == \#* ]] && continue
     case " $MODULES " in
       *" $need "*) ;;
