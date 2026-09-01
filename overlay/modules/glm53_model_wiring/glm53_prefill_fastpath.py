@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""GLM-5.3 dense-prefill cache-only indexer path.
+"""GLM-5.3 fused K+gate indexer and dense-prefill cache-only path.
 
 Fresh short prefills admitted by the SM121 dense-MLA backend do not consume
 the sparse indexer's query scores.  The kpool op already stops before top-k,
@@ -25,10 +25,98 @@ from vllm.model_executor.layers.sparse_attn_indexer_kpool import (
 )
 from vllm.platforms import current_platform
 
-from .attention import Indexer, _fused_indexer_k_norm
+from .attention import (
+    Indexer,
+    _fused_indexer_k_norm,
+    _fused_indexer_weight_scale,
+    _pad_indexer_heads,
+)
+from .ops.kpool_compress import fwht128_quant_fp8
 
 _GLM53_SM121_MLA_PREFILL_ENV = "VLLM_GLM53_SM121_MLA_PREFILL"
+_GLM53_FUSED_K_GATE_ENV = "VLLM_GLM53_FUSED_K_GATE"
+_GLM53_PREFILL_METADATA_WARMUP_ENV = "VLLM_GLM53_PREFILL_METADATA_WARMUP"
 _GLM53_PREFILL_KG_WEIGHT = "_glm53_prefill_kg_weight"
+
+
+def _glm53_fused_k_gate_enabled() -> bool:
+    """The dense-prefill arm implies fusion; fusion can also stand alone."""
+    return (
+        os.environ.get(_GLM53_FUSED_K_GATE_ENV) == "1"
+        or os.environ.get(_GLM53_SM121_MLA_PREFILL_ENV) == "1"
+    )
+
+
+def warm_glm53_prefill_metadata_runtime(model: torch.nn.Module) -> int:
+    """Populate Triton's real runtime cache for GLM's pooled metadata key.
+
+    ``VllmJitKernel.warmup`` compiles synthetic pointer variants, but Triton's
+    launch cache still distinguishes aligned and sliced int32 pointers.  Run
+    one valid row for both variants of GLM's pooled compression ratio so
+    the first user prefill cannot become the compilation request.  This is
+    best-effort and independent of the dense-prefill experiment.
+    """
+    if os.environ.get(_GLM53_PREFILL_METADATA_WARMUP_ENV, "1") != "1":
+        return 0
+    if not torch.cuda.is_available():
+        return 0
+
+    vllm_config = getattr(model, "vllm_config", None)
+    hf_config = getattr(getattr(vllm_config, "model_config", None), "hf_config", None)
+    parallel_config = getattr(vllm_config, "parallel_config", None)
+    if (
+        getattr(hf_config, "model_type", None) != "glm5_next_text"
+        or getattr(hf_config, "index_kpool", None) != 4
+        or getattr(parallel_config, "tensor_parallel_size", None) != 4
+    ):
+        return 0
+
+    parameter = next(model.parameters(), None)
+    if parameter is None or parameter.device.type != "cuda":
+        return 0
+
+    # Resolve dynamically because another image profile owns a different
+    # overlay for the same vLLM module; only the GLM profile guarantees this
+    # private kernel symbol.
+    import importlib
+
+    indexer_module = importlib.import_module(
+        "vllm.v1.attention.backends.mla.indexer"
+    )
+    metadata_kernel = getattr(
+        indexer_module, "_BUILD_PREFILL_CHUNK_METADATA_KERNEL"
+    )
+
+    device = parameter.device
+    query_start_loc = torch.tensor([0, 1], dtype=torch.int32, device=device)
+    cu_compressed_seq_lens = torch.tensor([0, 1], dtype=torch.int32, device=device)
+    token_to_seq = torch.empty(1, dtype=torch.int32, device=device)
+    cu_seqlen_ks = torch.empty(1, dtype=torch.int32, device=device)
+    cu_seqlen_ke = torch.empty(1, dtype=torch.int32, device=device)
+    aligned = torch.tensor([4], dtype=torch.int32, device=device)
+    unaligned_storage = torch.tensor([-1, 4], dtype=torch.int32, device=device)
+
+    launches = 0
+    for uncompressed_seq_lens in (aligned, unaligned_storage[1:]):
+        metadata_kernel(
+            query_start_loc,
+            uncompressed_seq_lens,
+            cu_compressed_seq_lens,
+            cu_compressed_seq_lens,
+            token_to_seq,
+            cu_seqlen_ks,
+            cu_seqlen_ke,
+            0,
+            1,
+            0,
+            1,
+            1,
+            num_reqs=1,
+            COMPRESS_RATIO=4,
+        )
+        launches += 1
+    torch.cuda.synchronize(device)
+    return launches
 
 
 def _glm53_cache_only_indexer_contract(
@@ -88,7 +176,7 @@ def prepare_glm53_prefill_fastpath(model: torch.nn.Module) -> int:
     indexer path.
     """
     if (
-        os.environ.get(_GLM53_SM121_MLA_PREFILL_ENV) != "1"
+        not _glm53_fused_k_gate_enabled()
         or not getattr(Indexer, "_glm53_prefill_fastpath_installed", False)
     ):
         return 0
@@ -241,15 +329,108 @@ def _glm53_cache_only_indexer_forward(
     )
 
 
+def _glm53_fused_indexer_forward(
+    self: Indexer,
+    hidden_states: torch.Tensor,
+    qr: torch.Tensor,
+    positions: torch.Tensor,
+    rotary_emb,
+) -> torch.Tensor:
+    """Fuse K+gate for exact GLM prefill, mixed, and decode paths."""
+    original = Indexer._glm53_prefill_original_forward
+    op = self.indexer_op
+    k_weight = self.wk_weights_proj.weight
+    gate = self.index_kpool_compress_gate
+    ape = self.index_kpool_compress_ape
+    fused_weight = getattr(self, _GLM53_PREFILL_KG_WEIGHT, None)
+    if not isinstance(fused_weight, torch.Tensor):
+        return original(self, hidden_states, qr, positions, rotary_emb)
+    if not _glm53_cache_only_indexer_contract(
+        rope_dim=self.rope_dim,
+        head_dim=self.head_dim,
+        quant_block_size=self.quant_block_size,
+        scale_fmt=self.scale_fmt,
+        index_kpool=self.index_kpool,
+        topk_tokens=self.topk_tokens,
+        n_head=self.n_head,
+        op_type=type(op).__name__,
+        use_fp4_cache=bool(getattr(op, "use_fp4_cache", True)),
+        hidden_dtype=hidden_states.dtype,
+        k_weight_dtype=k_weight.dtype,
+        k_weight_shape=tuple(k_weight.shape),
+        hidden_size=hidden_states.shape[-1],
+        gate_dtype=gate.dtype,
+        gate_shape=tuple(gate.shape),
+        ape_shape=tuple(ape.shape),
+        ape_dtype=ape.dtype,
+        fused_weight_dtype=fused_weight.dtype,
+        fused_weight_shape=tuple(fused_weight.shape),
+        fused_weight_contiguous=fused_weight.is_contiguous(),
+    ):
+        return original(self, hidden_states, qr, positions, rotary_emb)
+
+    if positions is not None and _glm53_indexer_scoring_unused(self):
+        return _glm53_cache_only_indexer_forward(
+            self, hidden_states, qr, positions, rotary_emb
+        )
+    q, _ = self.wq_b(qr)
+    q = q.view(-1, self.n_head, self.head_dim)
+
+    # The head-weight rows from wk_weights_proj are intentionally not emitted
+    # in BF16: ranking keeps the stock FP32 projection below. The fused buffer
+    # contains only the K rows and the trained per-token pool gate.
+    kg = F.linear(hidden_states, fused_weight)
+    k, gate_score = kg.split(self.head_dim, dim=-1)
+    if self._wp_fp32 is None:
+        self._wp_fp32 = (
+            k_weight.data[self.head_dim :, :].t().contiguous().float()
+        )
+    weights = torch.mm(hidden_states.float(), self._wp_fp32)
+
+    k = _fused_indexer_k_norm(
+        k,
+        self.k_norm.weight,
+        self.k_norm.bias,
+        self.head_dim,
+        self.k_norm.eps,
+    )
+    # The exact production contract is NoPE. RoPE or a different geometry
+    # failed closed above, so the stock query transform can be preserved
+    # without duplicating its shape-sensitive rotary branch.
+    q = q.view(-1, self.head_dim)
+    q_fp8, q_scale = fwht128_quant_fp8(q)
+    q_fp8 = q_fp8.view(-1, self.n_head, self.head_dim)
+    q_scale = q_scale.view(-1, self.n_head, 1)
+    weights = _fused_indexer_weight_scale(
+        weights,
+        q_scale,
+        self.softmax_scale * self.n_head**-0.5,
+    )
+    if self.n_head < 32:
+        pad = 32 - self.n_head
+        q_fp8 = _pad_indexer_heads(q_fp8, pad)
+        weights = _pad_indexer_heads(weights, pad)
+
+    return op(
+        hidden_states,
+        q_fp8,
+        k,
+        weights,
+        gate_score=gate_score,
+        compress_ape=ape,
+        index_kpool=self.index_kpool,
+        positions=positions,
+    )
+
+
 def install_glm53_prefill_fastpath() -> None:
     """Install once after ``.attention`` has finished defining Indexer."""
-    # GLM's dense-MHA admission is exact-value opt-in. When it is disabled,
-    # leave Indexer.forward byte-for-byte untouched so decode and MQA prefill
-    # do not pay even the request-predicate overhead of this optimization.
-    if os.environ.get(_GLM53_SM121_MLA_PREFILL_ENV) != "1":
+    # Fusion can serve decode independently of the dense-prefill experiment.
+    # With both exact-value knobs disabled, leave Indexer.forward untouched.
+    if not _glm53_fused_k_gate_enabled():
         return
     if getattr(Indexer, "_glm53_prefill_fastpath_installed", False):
         return
     Indexer._glm53_prefill_original_forward = Indexer.forward
-    Indexer.forward = _glm53_cache_only_indexer_forward
+    Indexer.forward = _glm53_fused_indexer_forward
     Indexer._glm53_prefill_fastpath_installed = True

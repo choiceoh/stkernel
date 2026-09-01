@@ -3,10 +3,13 @@ moe_micro_kernel.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe
 moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py	f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362
 glm53_kpool_indexer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py	fe1b106466008c21d0194a59909b19832e127fad255965611c4c7f7a971422a2
 sparse_attn_indexer_kpool.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py	4772b45eb9b72daab77d8a7581f88508a5e30ed6440e1ed2637722977defaf1b
+glm53_kpool_topk.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kpool_topk.py	absent
+glm53_kpool_topk.cu	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kpool_topk.cu	absent
 sampler.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py	76070739447fc9f7563ef164ef80c0777208d1ea07dec3a6f6d2a0755188d7ae
 moe_gate_sm121.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
 glm53_prefill_fastpath.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py	absent
+glm53_union_prefill.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_union_prefill.py	absent
 dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
 cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
