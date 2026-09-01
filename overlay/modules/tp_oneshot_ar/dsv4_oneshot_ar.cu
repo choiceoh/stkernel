@@ -22,7 +22,13 @@
 
 #define NPEER 3
 #define RING 4
-#define MAXEL 131072  // GLM: max captured verify = 32 tokens * hidden 4096
+// 131072 bf16 elements cover 32 hidden-4096 tokens (DSpark C<=5). Keep the
+// shipped value as the default, but allow a per-build override so the unknown
+// one-shot-vs-NCCL crossover can be measured at higher concurrency. All peers
+// must use the same value because it participates in the remote rx stride.
+#ifndef MAXEL
+#define MAXEL 131072
+#endif
 #define ARGRID 48     // GB10 / SM121a has exactly 48 SMs
 #define ARTHREADS 256
 #define PROXY_CORE 18

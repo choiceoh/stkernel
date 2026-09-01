@@ -62,6 +62,21 @@ def _read_bool_env(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+_SF_SIGN_AND_MANTISSA = 0x807FFFFF
+
+
+def _ue8m0_unsafe(scales: "torch.Tensor") -> "torch.Tensor":
+    """Return scales that would trap or corrupt DeepGEMM's UE8M0 packer.
+
+    The layout kernel accepts only positive fp32 values whose sign and
+    mantissa bits are clear. Positive zero is intentionally allowed: padding
+    and all-zero weight blocks legitimately produce it. Positive infinity has
+    clean sign/mantissa bits but is still unusable, so check it separately.
+    """
+    bit_bad = (scales.view(torch.int32) & _SF_SIGN_AND_MANTISSA) != 0
+    return bit_bad | torch.isinf(scales)
+
+
 def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Block-quantize a bf16/fp32 weight to the deepgemm fp8 layout (chunked
     over rows so the fp32 staging copy never exceeds ~1/8 of the weight)."""
@@ -81,9 +96,52 @@ def _quantize_fp8_deepgemm(weight: torch.Tensor) -> tuple[torch.Tensor, torch.Te
             )
             chunks_q.append(cq)
             chunks_s.append(cs)
+        wq = torch.cat(chunks_q, dim=0)
+        ws = torch.cat(chunks_s, dim=0)
+
+        # ``use_e8m0=True`` combines requantization and the layout transform;
+        # a bad post-requant scale therefore reaches a device-side ``trap``
+        # before Python can inspect it, permanently poisoning the CUDA context.
+        # Split the two operations and enforce the exact kernel bit contract on
+        # the host-visible result first. The pinned DSV4 image exports this
+        # helper; fail closed if a future image removes it.
+        if ws.dtype == torch.float32:
+            try:
+                from vllm.model_executor.layers.quantization.utils.fp8_utils import (
+                    requant_weight_ue8m0_inplace,
+                )
+            except ImportError as exc:
+                raise RuntimeError(
+                    "cannot safely pack DeepGEMM FP8 weights: "
+                    "requant_weight_ue8m0_inplace is unavailable"
+                ) from exc
+
+            requant_weight_ue8m0_inplace(wq, ws, block_size=(128, 128))
+            unsafe = _ue8m0_unsafe(ws)
+            n_unsafe = int(unsafe.sum().item())
+            n_zero = int((ws == 0).sum().item())
+            if n_zero:
+                logger.info(
+                    "fp8 quant: %d/%d UE8M0 scales are zero "
+                    "(valid all-zero weight blocks)",
+                    n_zero,
+                    ws.numel(),
+                )
+            if n_unsafe:
+                sample = ws.reshape(-1)[unsafe.reshape(-1)][:4].tolist()
+                raise RuntimeError(
+                    f"{n_unsafe}/{ws.numel()} post-requant UE8M0 scales "
+                    "would trap DeepGEMM or pack as infinity "
+                    f"(weight={tuple(weight.shape)} dtype={weight.dtype}, "
+                    f"first={sample}); refusing to poison the CUDA context"
+                )
+            return deepgemm_post_process_fp8_weight_block(
+                wq, ws, (128, 128), use_e8m0=False
+            )
+
         return deepgemm_post_process_fp8_weight_block(
-            torch.cat(chunks_q, dim=0),
-            torch.cat(chunks_s, dim=0),
+            wq,
+            ws,
             (128, 128),
             use_e8m0=True,
         )

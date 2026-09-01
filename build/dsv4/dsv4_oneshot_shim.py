@@ -26,7 +26,35 @@ import time
 
 logger = logging.getLogger("vllm.dsv4.osar")
 
-_MAXEL = 131072  # 256KB bf16 — matches the extension's MAXEL size gate
+_MAXEL_DEFAULT = 131072  # 256 KiB bf16; matches the CUDA built-in default
+
+
+def _resolve_maxel() -> int:
+    """Resolve the opt-in one-shot size gate without changing its default."""
+    raw = (os.environ.get("VLLM_DSV4_OSAR_MAXEL") or "").strip()
+    if not raw:
+        return _MAXEL_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "[osar] VLLM_DSV4_OSAR_MAXEL=%r is not an integer; using %d",
+            raw,
+            _MAXEL_DEFAULT,
+        )
+        return _MAXEL_DEFAULT
+    if value < 1024 or value > 8 << 20 or value % 1024:
+        logger.warning(
+            "[osar] VLLM_DSV4_OSAR_MAXEL=%d is outside [1024,8388608] "
+            "or not a multiple of 1024; using %d",
+            value,
+            _MAXEL_DEFAULT,
+        )
+        return _MAXEL_DEFAULT
+    return value
+
+
+_MAXEL = _resolve_maxel()
 # No rank->IP table here. Which node holds which rank is the launcher's choice,
 # not a property of the fleet: hy4 orders its workers 10.10.10.3, 10.10.10.1,
 # 10.10.10.4 and the glm53 launcher orders them 10.10.10.1, 10.10.10.3,
@@ -84,14 +112,28 @@ def _build():
     with open(_SRC, encoding="utf-8", errors="replace") as f:
         _n_kernels = sum(1 for line in f if line.lstrip().startswith("__global__"))
     logger.warning(
-        "[osar] source md5=%s kernels=%d (%s)", _src_md5, _n_kernels, _SRC)
+        "[osar] source md5=%s kernels=%d maxel=%d (%s)",
+        _src_md5,
+        _n_kernels,
+        _MAXEL,
+        _SRC,
+    )
+
+    cuda_flags = ["-O2", "-arch=sm_121a"]
+    build_directory = "/root/.osar_build"
+    if _MAXEL != _MAXEL_DEFAULT:
+        cuda_flags.append(f"-DMAXEL={_MAXEL}")
+        # Never reuse an object whose peer-buffer stride was compiled for a
+        # different value, even if torch's extension cache misses the flag.
+        build_directory = f"/root/.osar_build_maxel{_MAXEL}"
+    os.makedirs(build_directory, exist_ok=True)
 
     return load(
         name="dsv4_oneshot_ar",
         sources=[_SRC],
-        extra_cuda_cflags=["-O2", "-arch=sm_121a"],
+        extra_cuda_cflags=cuda_flags,
         extra_ldflags=["-libverbs"],
-        build_directory="/root/.osar_build",
+        build_directory=build_directory,
         verbose=False,
     )
 
