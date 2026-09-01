@@ -51,6 +51,24 @@ def _rel(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(d / den) if den > 0 else float(d)
 
 
+# GB10 has 24 MB of L2, and the weights these shapes read are 8-26 MB. A
+# timing loop that re-reads the same weight therefore measures an L2-RESIDENT
+# GEMM, not the DRAM-bound one a serving step does -- and which arm gets that
+# gift depends on allocation order, so the same comparison swung 3-5x between
+# process runs (stock m=16 n=4096 measured 45 us in isolation and 148 us with
+# a 48 MB buffer merely allocated beforehand). Flush L2 between iterations so
+# the number is the one production sees and is reproducible.
+_L2_BYTES = 24 << 20
+_L2_FLUSH = None
+
+
+def _l2_flush() -> None:
+    global _L2_FLUSH
+    if _L2_FLUSH is None:
+        _L2_FLUSH = torch.empty(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
+    _L2_FLUSH.zero_()
+
+
 def _time(fn, iters: int) -> float:
     for _ in range(10):
         fn()
@@ -59,6 +77,7 @@ def _time(fn, iters: int) -> float:
     e = torch.cuda.Event(enable_timing=True)
     times = []
     for _ in range(iters):
+        _l2_flush()
         s.record()
         fn()
         e.record()
