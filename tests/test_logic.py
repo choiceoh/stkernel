@@ -6207,6 +6207,21 @@ def test_glm53_megakernel_contracts() -> None:
           f"gemm grid ceiling {consts['MK_GRID_CAP']} is more than twice "
           f"what {smem} B of smem allows ({blocks_per_sm} block(s)/SM on 48 "
           "SMs) -- raise the ceiling only alongside a shallower pipeline")
+    # The fp8 W pack is TILE-major and the packer and the kernel are the only
+    # two places that know it -- they must move together or the kernel reads
+    # a correct-looking tensor as garbage. Row-major put the 128 rows of a
+    # tile 4096 B apart, so one 16 KB tile touched 128 DRAM pages.
+    check("c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP)" in cu
+          and "wsrc + (size_t)t * 16" in cu,
+          "stage_w reads a tile as one contiguous run")
+    check("wq.dim() == 4" in cu and "wq.size(3) == KSTEP" in cu
+          and "wq.is_contiguous()" in cu,
+          "run_gemm rejects a wq that is not the tile-major pack -- the "
+          "shape is the only thing standing between a stale row-major "
+          "tensor and silently wrong output")
+    check(".permute(0, 2, 1, 3).contiguous())" in pysrc_full
+          and "q.view(n_pad // 128, 128, k // 128, 128)" in pysrc_full,
+          "build_mk_weight emits [n/128, k/128, 128, 128]")
     check("t / MK_W_CHUNKS" in cu,
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
