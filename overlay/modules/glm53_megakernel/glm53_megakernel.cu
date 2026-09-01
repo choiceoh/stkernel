@@ -259,12 +259,33 @@ __device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // [KBLK_MAX][32 rows][KSTEP] e4m3 + [32 rows][KBLK_MAX] fp32 scales.
 __device__ uint8_t g_mk_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
 __device__ float g_mk_axs[32 * KBLK_MAX];                   // 4 KB
+// Optional phase timestamps, probe builds only (-DMK_PHASE_TS=1): thread 0
+// of every block stamps %globaltimer at the phase boundaries marked MK_TS()
+// below into g_mk_ts[block][slot]; the host reads (and clears) them with
+// read_ts(). Compiled out otherwise -- the shipped kernel is unchanged.
+#ifdef MK_PHASE_TS
+__device__ unsigned long long g_mk_ts[MK_GRID_CAP * 8];
+__device__ __forceinline__ unsigned long long mk_globaltimer() {
+  unsigned long long t;
+  asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+  return t;
+}
+#define MK_TS(slot)                                                          \
+  do {                                                                       \
+    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
+  } while (0)
+#else
+#define MK_TS(slot) \
+  do {              \
+  } while (0)
+#endif
 
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
                               unsigned long long* bar) {
   const int nblk = c.n / 128;
   const int kblk = c.k / KSTEP;
   const int mtiles = (c.m + 15) / 16;
+  MK_TS(0);  // entry
   // Leftover tiles of the last (partial) round, and how many ways to split
   // their k so those blocks are not idle. ksr == 1 leaves the original
   // single-pass path byte for byte -- which is what n/128 == 32 (o_proj)
@@ -340,7 +361,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       }
     }
   }
+  MK_TS(1);  // A quantized, before the publishing barrier
   mk_grid_barrier(bar, c.grid);
+  MK_TS(2);  // barrier released
   for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
     sxs[i] = g_mk_axs[i];
   __syncthreads();
@@ -575,6 +598,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // needs), exact at 2 and 3, and never unsafe.
       if (DIST > 1 && kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
       __syncthreads();
+      if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
 
       for (int kb = kb0;; ++kb) {
         if (kb + DIST < kbn) stage_w(kb + DIST, (kb + DIST) % MK_W_NBUF);
@@ -632,8 +656,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
     __syncthreads();
   }
+  MK_TS(4);  // all units of this block done
   if (split) {  // fold the leftover tiles' slices into the bf16 output
     mk_grid_barrier(bar, c.grid);
+    MK_TS(5);  // fold barrier released
     for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
          i2 < pslice; i2 += (size_t)c.grid * MK_THREADS) {
       const int r = (int)(i2 / pcols);
@@ -645,6 +671,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
     }
   }
+  MK_TS(6);  // exit
 }
 
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
@@ -1351,6 +1378,23 @@ std::vector<int64_t> mk_probe_device() {
           (int64_t)prop.sharedMemPerBlockOptin};
 }
 
+// Phase timestamps of the last gemm launch, [MK_GRID_CAP][8] ns, then
+// cleared. Empty unless built with -DMK_PHASE_TS=1.
+std::vector<int64_t> mk_read_ts() {
+#ifdef MK_PHASE_TS
+  std::vector<unsigned long long> h(MK_GRID_CAP * 8);
+  MK_CHECK_CUDA(cudaDeviceSynchronize());
+  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_ts,
+                                     sizeof(unsigned long long) * h.size()));
+  void* p = nullptr;
+  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_ts));
+  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
+  return std::vector<int64_t>(h.begin(), h.end());
+#else
+  return {};
+#endif
+}
+
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
                  torch::Tensor out, int64_t n_orig) {
   set_kernel_attrs();
@@ -1501,6 +1545,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
+  m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM");
   m.def("run_gemm_w4", &mk_run_gemm_w4, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");

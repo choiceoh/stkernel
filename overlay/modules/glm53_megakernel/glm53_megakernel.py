@@ -143,7 +143,8 @@ def _build():
             f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
             f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
             f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
-        ],
+        ] + (["-DMK_PHASE_TS=1"]
+             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else []),
         build_directory="/root/.mk_build",
         verbose=False,
     )
