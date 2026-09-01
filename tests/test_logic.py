@@ -6362,7 +6362,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "wq4.view(n_pad // 128, 128, k // 128, 64)" in pysrc_full,
           "the W4 pack is tile-major and the host refuses any other shape")
     check("W4_RAW_NBUF * W4_RAW_BYTES" in cu
-          and "static_assert(GEMM_SMEM <= 101376" in cu
+          and "static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376" in cu
           and "mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));" in cu,
           "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
           "the record it needs")
@@ -6380,8 +6380,11 @@ def test_glm53_megakernel_contracts() -> None:
           and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code,
           "the W4 expansion uses the packed LUT immediate (a __constant__ "
           "load serialises over the warp's distinct codes)")
-    check("c.wq4 != nullptr" in cu_code and "run_gemm_w4" in cu,
-          "the W4 path selects on the pack and has its own host entry")
+    check("mk_gemm_kernel<true>" in cu_code and "run_gemm_w4" in cu
+          and "GEMM_SMEM_W4" in cu and "g_mk_gemm4_bar" in cu,
+          "the W4 path is its own kernel instantiation with its own smem "
+          "budget and ticket counter; the W8 kernel keeps the 63,616 B "
+          "budget it had before the W4 pipeline")
     check("(sc4 >> (8 * g4)) & 0xFFu)) << 3" in cu_code
           and "(code & 8u) << 4" in cu_code
           and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,

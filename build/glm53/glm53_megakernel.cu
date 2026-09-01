@@ -126,15 +126,30 @@ constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 // an 80 B pitch (a warp's 32 rows of uint4 reads then hit distinct banks)
 // and the exponents follow as a flat 1 KB. Three stages, two in flight,
 // like the W8 pipeline; the expanded e4m3 tiles reuse swb[0..1].
-constexpr int W4_RAW_PITCH = 80;
-constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 10240
-constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 11264
-constexpr int W4_RAW_NBUF = 3;
+// Raw rows on a 64 B pitch: the two uint4 reads per thread per k-block
+// conflict 16-way, ~100 cycles, where the 80 B padding cost a whole
+// pipeline stage of smem. Five stages, four in flight = 36 KB/block, the
+// W8 pipeline's 32 KB -- with three (two in flight, 18 KB) the W4 loop ran
+// at 86 GB/s against the W8 arm's 150: bytes in flight are the bandwidth.
+constexpr int W4_RAW_PITCH = 64;
+constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 8192
+constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 9216
+constexpr int W4_RAW_NBUF = 5;
+constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
+// Two kernels, two budgets. The W8 kernel is exactly the 63,616 B it was
+// before the W4 pipeline: sharing one budget put the W4 raw stages into the
+// W8 launch too, and that measured 4-7% slower on every W8 shape (the
+// carveout that grew took the L1 the W8 loop was using).
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4 +
-                          W4_RAW_NBUF * W4_RAW_BYTES;  // 97,408 at NBUF 3
-static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");
+                          KBLK_MAX * KBLK_MAX * 4;   // 63,616 at NBUF 3
+constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
+                             W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
+                             KBLK_MAX * KBLK_MAX * 4 +
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 91,264
+static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
+              "over the sm_121 opt-in smem");
+static_assert(W4_RAW_NBUF - 2 <= 3, "mk_cp_wait_upto dispatches up to 3");
 
 #define MK_CHECK_CUDA(x)                                                     \
   do {                                                                       \
@@ -280,6 +295,10 @@ constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP;               // 96
 constexpr int MK_SPLIT_MAXCOL = (MK_GRID_CAP - 1) * 128;          // 6016
 constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 1.5 MB
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
+// The W4 instantiation is a different kernel with its own occupancy, so
+// it gets its own ticket counter (#206: grids that can differ must not
+// share one).
+__device__ unsigned long long g_mk_gemm4_bar = 0ULL;
 // kda inlines mk_gemm_phase twice per launch on ITS grid, which need
 // not equal the standalone gemm grid. Two grids on one ticket counter
 // misalign it and the barrier releases early -- so, two counters.
@@ -330,6 +349,7 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
   } while (0)
 #endif
 
+template <bool W4>
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
                               unsigned long long* bar) {
   const int nblk = c.n / 128;
@@ -367,10 +387,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // against 4 MB of weights at n=1024, i.e. a fifth of the traffic, to
   // pre-set values that are all overwritten before anyone reads them.
 
+  constexpr int NWB = W4 ? W4_EXP_NBUF : MK_W_NBUF;
   uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
-  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
-  float* sxs =
-      (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
+  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [NWB][128][144]
+  float* sxs = (float*)(swb + NWB * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
   uint8_t* sraw = (uint8_t*)(sxs + KBLK_MAX * KBLK_MAX);  // W4 raw stages
   __shared__ int s_last;  // "this block completed a leftover tile"
   __shared__ int s_unit;  // next dynamically taken unit, broadcast
@@ -546,7 +566,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     int nt0, kb00, kbn0;
     decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
     if (kb00 < kbn0) {
-      if (c.wq4 != nullptr) {
+      if constexpr (W4) {
         stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
 #pragma unroll
         for (int d = 1; d < RAW_DIST; ++d)
@@ -724,7 +744,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     };
 
     const bool prefilled = hoisted && (u == (int)blockIdx.x);
-    if (c.wq4 != nullptr) {
+    if constexpr (W4) {
       // ---- W4 path: cp.async-staged raw records, expanded in smem.
       // The raw (tile, k-block) record streams through the W4_RAW_NBUF
       // pipeline exactly as W8 tiles do; the expansion then reads the
@@ -894,9 +914,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   MK_TS(6);  // exit
 }
 
+template <bool W4>
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   extern __shared__ uint8_t smem[];
-  mk_gemm_phase(c, smem, &g_mk_gemm_bar);
+  mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar);
 }
 
 // ===========================================================================
@@ -1272,7 +1293,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n_orig = KDA_INPROJ_N;
     c.grid = a.grid;
     c.ksr = a.ksr_in;
-    mk_gemm_phase(c, smem, &g_mk_kda_bar);
+    mk_gemm_phase<false>(c, smem, &g_mk_kda_bar);
   }
   mk_grid_barrier(a.barrier_ctr, a.grid);
 
@@ -1543,7 +1564,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n_orig = HIDDEN;
     c.grid = a.grid;
     c.ksr = a.ksr_out;
-    mk_gemm_phase(c, smem, &g_mk_kda_bar);
+    mk_gemm_phase<false>(c, smem, &g_mk_kda_bar);
   }
 }
 
@@ -1559,7 +1580,11 @@ bool g_attrs_set = false;
 void set_kernel_attrs() {
   if (g_attrs_set) return;
   MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
+      mk_gemm_kernel<false>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+      GEMM_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm_kernel<true>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+      GEMM_SMEM_W4));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   g_attrs_set = true;
@@ -1569,11 +1594,11 @@ void set_kernel_attrs() {
 // Cached per kernel: the ticket barrier needs the SAME grid on every launch,
 // and the two kernels are asked separately because their occupancy differs.
 template <typename K>
-int mk_resident_grid(K kernel, int& cache) {
+int mk_resident_grid(K kernel, int& cache, int smem) {
   if (cache == 0) {
     int per_sm = 0, sms = 0;
     MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &per_sm, kernel, MK_THREADS, GEMM_SMEM));
+        &per_sm, kernel, MK_THREADS, smem));
     MK_CHECK_CUDA(cudaDeviceGetAttribute(
         &sms, cudaDevAttrMultiProcessorCount, 0));
     cache = per_sm * sms;
@@ -1584,6 +1609,7 @@ int mk_resident_grid(K kernel, int& cache) {
 }
 
 int g_gemm_grid = 0;
+int g_gemm4_grid = 0;
 int g_kda_grid = 0;
 
 // Leftover-tile k-split for one launch shape. Every block owns one
@@ -1667,9 +1693,9 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   TORCH_CHECK((int)wq.size(1) == c.k / KSTEP, "wq k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  c.grid = mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
+  mk_gemm_kernel<false><<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
 void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -1699,9 +1725,9 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK((int)wq4.size(1) == c.k / KSTEP, "wq4 k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  c.grid = mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
+  mk_gemm_kernel<true><<<c.grid, MK_THREADS, GEMM_SMEM_W4, stream>>>(c);
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -1804,7 +1830,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
-  a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid);
+  a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM);
   a.ksr_in = mk_choose_ksr(a.num_tokens, KDA_INPROJ_N_PAD, HIDDEN, a.grid);
   a.ksr_out = mk_choose_ksr(a.num_tokens, HIDDEN, KDA_OUT_PAD, a.grid);
   mk_kda_kernel<<<a.grid, MK_THREADS, GEMM_SMEM, stream>>>(a);
