@@ -316,8 +316,15 @@ for _kv in ${EXTRA_ENV:-}; do
 done
 [ -n "$EXTRA_ENV_FLAGS" ] && echo "extra env:$EXTRA_ENV_FLAGS"
 
+# Docker defaults the soft nofile to 1024 while the host allows 500k and the
+# image permits 524288. NCCL opens a socket per peer connection and a loader
+# that prefetches shards in parallel opens many descriptors at once; together
+# they exhaust 1024 and NCCL then fails far from the cause -- with
+# LOAD_FORMAT=instanttensor three ranks died at once as ncclSystemError
+# "Call to socket failed: Too many open files". Raise it to the image hard
+# limit; nothing here needs the low default.
 COMMON="--gpus all -d --restart no --network host --ipc host --shm-size 32g \
---memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --cap-add IPC_LOCK \
+--memory 112g --memory-swap 112g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
 --device /dev/infiniband:/dev/infiniband \
 -v $MODEL_HOST_PATH:$MODEL_PATH:ro -v CACHEDIR:/cache -v $LOG_HOST_DIR:/glmlogs \
 -v /home/choiceoh/vllm-prof:/prof"
