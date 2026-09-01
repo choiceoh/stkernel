@@ -2,10 +2,37 @@
 """Fresh-prompt prefill+decode bench for the hy4 stack (prefix-cache proof: unique seed each run)."""
 import json, time, urllib.request, random, os, sys
 
-# Served name of the model under test; same env as bench-dec.
-MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
-
 BASE = "http://localhost:8000/v1/chat/completions"
+
+
+def _resolve_model(default: str) -> str:
+    """The served name, asked of the server, not assumed.
+
+    The literal default is the dsv4 lane's name. Pointed at the glm53 server
+    it 404s, which has silently voided prefill and decode runs in this lane
+    more than once -- the harness raised, the boot script's grep found no
+    SUMMARY line, and the section read as "measured nothing" rather than
+    "never ran". Ask; fall back to the literal only if the server cannot say.
+    """
+    named = os.environ.get("BENCH_MODEL")
+    if named:
+        return named
+    try:
+        base = BASE.split("/v1/", 1)[0]
+        with urllib.request.urlopen(f"{base}/v1/models", timeout=5) as r:
+            data = json.loads(r.read().decode())["data"]
+        for entry in data:
+            if entry["id"] == default:
+                return default
+        if data:
+            return data[0]["id"]
+    except Exception:
+        pass
+    return default
+
+
+# Served name of the model under test; same env as bench-dec.
+MODEL = _resolve_model("deepseek-v4-flash")
 W = ["태양광","발전소","인버터","모듈","효율","계통","연계","전압","주파수","모니터링",
      "데이터","분석","예측","유지보수","진단","출력","손실","온도","일사량","가동률"]
 

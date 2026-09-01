@@ -30,7 +30,36 @@ import time
 import urllib.request
 
 URL = os.environ.get("BENCH_URL", "http://localhost:8000/v1/chat/completions")
-MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
+def _resolve_model(default: str) -> str:
+    """The served name, asked of the server, not assumed.
+
+    The literal default is the dsv4 lane's name. Pointed at the glm53 server
+    it 404s, which has silently voided prefill and decode runs in this lane
+    more than once -- the harness raised, the boot script's grep found no
+    SUMMARY line, and the section read as "measured nothing" rather than
+    "never ran". Ask; fall back to the literal only if the server cannot say.
+    """
+    named = os.environ.get("BENCH_MODEL")
+    if named:
+        return named
+    try:
+        import urllib.request as _u
+        base = URL.split("/v1/", 1)[0]
+        with _u.urlopen(f"{base}/v1/models", timeout=5) as r:
+            data = json.loads(r.read().decode())["data"]
+        if len(data) == 1:
+            return data[0]["id"]
+        for entry in data:
+            if entry["id"] == default:
+                return default
+        if data:
+            return data[0]["id"]
+    except Exception:
+        pass
+    return default
+
+
+MODEL = _resolve_model("deepseek-v4-flash")
 REPEATS = int(os.environ.get("PREFILL_REPEATS", "2"))
 DEFAULT_LENGTHS = (512, 1024, 2048, 4096, 8192, 16384)
 
