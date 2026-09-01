@@ -86,6 +86,19 @@ from vllm.v1.worker.workspace import current_workspace_manager
 logger = init_logger(__name__)
 
 
+def _env_enabled(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+# These switches select process-wide model paths. Keeping them immutable also
+# keeps environment access out of model forward/logits hot paths.
+_DSPARK_REFERENCE_HC = os.environ.get("VLLM_DSPARK_REFERENCE_HC") == "1"
+_DSV4_TARGET_LM_HEAD_FP8 = _env_enabled("VLLM_DSV4_TARGET_LM_HEAD_FP8")
+_DSV4_FREE_BF16_LM_HEAD = _env_enabled("VLLM_DSV4_FREE_BF16_LM_HEAD")
+
+
 def _get_virtual_tp_axis_padded_size(config, axis_name: str, default: int) -> int:
     plan = getattr(config, VIRTUAL_TP_PLAN_ATTR, None)
     if not isinstance(plan, dict):
@@ -1573,9 +1586,7 @@ class DeepseekV4Model(nn.Module):
                         assert residual is not None
                         assert post_mix is not None
                         assert res_mix is not None
-                        use_dspark_reference_hc = (
-                            os.getenv("VLLM_DSPARK_REFERENCE_HC") == "1"
-                        )
+                        use_dspark_reference_hc = _DSPARK_REFERENCE_HC
                         if use_dspark_reference_hc:
                             tokens, hc_mult, _ = residual.shape
                             post_ref = post_mix
@@ -2016,11 +2027,7 @@ class DeepseekV4ForCausalLM(
         """True iff VLLM_DSV4_TARGET_LM_HEAD_FP8 is armed; builds the fp8
         deepgemm copy on first use — normally the first eager-warmup logits
         call, or eagerly from the load-time bf16 release hook."""
-        import os as _os
-
-        if _os.getenv("VLLM_DSV4_TARGET_LM_HEAD_FP8", "0").strip().lower() not in (
-            "1", "true", "yes", "on",
-        ):
+        if not _DSV4_TARGET_LM_HEAD_FP8:
             return False
         if not hasattr(self, "_tgt_head_fp8_w"):
             from vllm.models.deepseek_v4.nvidia.dspark_v2 import (
@@ -2046,11 +2053,7 @@ class DeepseekV4ForCausalLM(
         off, or an aliased draft without its own fp8 copy) aborts the boot
         instead of freeing a weight that would later be read.
         """
-        import os as _os
-
-        if _os.getenv("VLLM_DSV4_FREE_BF16_LM_HEAD", "0").strip().lower() not in (
-            "1", "true", "yes", "on",
-        ):
+        if not _DSV4_FREE_BF16_LM_HEAD:
             return
         weight = getattr(self.lm_head, "weight", None)
         if weight is None or weight.numel() == 0:

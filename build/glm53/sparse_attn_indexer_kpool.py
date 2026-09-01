@@ -47,6 +47,15 @@ logger = init_logger(__name__)
 
 RADIX_TOPK_WORKSPACE_SIZE = 1024 * 1024
 
+# Rollback switches are process configuration. Latch them at import instead of
+# reading os.environ in every sparse-indexer layer call.
+_KPOOL_TAIL_CACHE_ENABLED = (
+    os.environ.get("VLLM_KPOOL_SKIP_TAIL_CACHE") != "1"
+)
+_KPOOL_DECODE_WRITE_ENABLED = (
+    os.environ.get("VLLM_KPOOL_SKIP_DECODE_WRITE") != "1"
+)
+
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
 MXFP4_BLOCK_SIZE = 32
 
@@ -487,7 +496,7 @@ def sparse_attn_indexer_kpool(
                 if (
                     tail_kv_cache is not None
                     and tail_prefix is not None
-                    and os.environ.get("VLLM_KPOOL_SKIP_TAIL_CACHE") != "1"
+                    and _KPOOL_TAIL_CACHE_ENABLED
                 ):
                     tail_meta = attn_metadata.get(_resolve_layer_name(tail_prefix))
                     if tail_meta is not None:
@@ -728,7 +737,7 @@ def sparse_attn_indexer_kpool(
             and compress_ape is not None
             and positions is not None
             and not skip_k_cache_insert
-            and os.environ.get("VLLM_KPOOL_SKIP_DECODE_WRITE") != "1"
+            and _KPOOL_DECODE_WRITE_ENABLED
         ):
             num_requests = attn_metadata_narrowed.num_decodes
             # The indexer's flatten decode path rewrites decode_lens to all-1s
