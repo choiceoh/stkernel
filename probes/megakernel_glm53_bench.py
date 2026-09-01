@@ -224,11 +224,18 @@ def probe_mhc(iters: int) -> bool:
             x, res, pm, cm.reshape(T, 16).contiguous(), fn,
             mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
             1.0, 1e-6, 4), iters)
-        got2 = mk._mhc_call(x, res, pm, cm.reshape(T, 16).contiguous(), fn,
-                            mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T,
-                            1e-6, 1e-6, 1e-6, 1.0, 1e-6, 4)
-        torch.cuda.synchronize()
-        rep = max(_rel(g, g0) for g, g0 in zip(got2, got0))
+        # Three replays, not one. A single got0-vs-got2 comparison samples a
+        # random variable once: p3's sumsq used to drift 0 / 4.1e-05 / 0 /
+        # 3.3e-04 call to call, and this gate passed or failed on luck --
+        # it waved the defect through for weeks. probes/mhc_replay.py is the
+        # instrument for diagnosing one of these; this is the gate.
+        rep = 0.0
+        for _ in range(3):
+            got2 = mk._mhc_call(x, res, pm, cm.reshape(T, 16).contiguous(),
+                                fn, mk.hc_scale_ones(), mk.hc_base_zeros(),
+                                nw, T, 1e-6, 1e-6, 1e-6, 1.0, 1e-6, 4)
+            torch.cuda.synchronize()
+            rep = max(rep, max(_rel(g, g0) for g, g0 in zip(got2, got0)))
         mark = "!" if (r > TOL["mhc"] or rep > 1e-6) else " "
         ok &= r <= TOL["mhc"] and rep <= 1e-6
         print(f"{mark}mhc  T={T:<14}{r:>10.2e}{TOL['mhc']:>8.0e}"

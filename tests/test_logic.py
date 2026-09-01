@@ -6126,6 +6126,11 @@ def test_glm53_megakernel_contracts() -> None:
 
         return walk(tree)
 
+    # Seed the #define knobs first -- MK_GRID and friends now read their
+    # shipped defaults from -D-overridable defines, so the constexpr lines
+    # below reference names that only exist as macros.
+    for m in re.finditer(r"^#define (\w+) (\d+)$", cu, re.M):
+        consts[m.group(1)] = int(m.group(2))
     for m in re.finditer(r"^constexpr int (\w+) = ([^;]+);", cu, re.M):
         consts[m.group(1)] = ev(m.group(2))
     for name, want in (("HC", 4), ("HIDDEN", 4096), ("NOUT", 24),
@@ -6172,19 +6177,31 @@ def test_glm53_megakernel_contracts() -> None:
     # Depth is a tuning knob, not a contract -- but it must stay deep enough
     # to keep more than one tile in flight, and the smem it costs must fit
     # the opt-in this part actually reports (101376 B).
-    nbuf = int(re.search(r"constexpr int MK_W_NBUF = (\d+);", cu).group(1))
+    nbuf = consts["MK_W_NBUF"]
     check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
     smem = 2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4
     check(smem <= 101376,
           f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
-    # The opt-in is per BLOCK; occupancy is set by the SM's 128 KB. Two
-    # resident blocks are what hides the cp.async wait -- with one, all eight
-    # warps stall together and the SM has nothing else to run. Deepening the
-    # pipeline past this cliff measured zero and cost half the warps.
-    check(2 * smem <= 131072,
-          f"W pipeline depth {nbuf} uses {smem} B, so only one block fits "
-          "the SM's 128 KB -- raise it only with a measurement that beats "
-          "the occupancy it costs")
+    # The opt-in is per BLOCK; occupancy is set by the SM's shared memory,
+    # which on this part is 102,400 B -- NOT the 131,072 an earlier version
+    # of this check assumed. That wrong number let the check pass while
+    # asserting the opposite of the truth: at nbuf=3 the block takes 63,616 B,
+    # so 2 x 63,616 = 127,232 overruns 102,400 and exactly ONE block is
+    # resident. (It also explains why deepening 3 -> 4 measured zero: both
+    # depths were already at one block/SM, so there was no occupancy left
+    # to lose.) Record the real figure rather than assert a fiction.
+    #
+    # The load-bearing contract is residency, not depth: mk_gemm_kernel is a
+    # PERSISTENT grid with a grid barrier, so a grid that does not fit is a
+    # deadlock, not a slowdown. smem is the binding limit here (registers,
+    # at 59 x 256 = 15,104 of 65,536, would allow four blocks).
+    blocks_per_sm = 102400 // smem
+    check(blocks_per_sm >= 1,
+          f"W pipeline depth {nbuf} uses {smem} B, over the SM's 102400")
+    check(consts["MK_GRID"] <= blocks_per_sm * 48,
+          f"persistent gemm grid {consts['MK_GRID']} is not resident: "
+          f"{smem} B of smem allows {blocks_per_sm} block(s)/SM on 48 SMs, "
+          "and a partly-resident grid hangs on the grid barrier")
     check("t / MK_W_CHUNKS" in cu,
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
@@ -6236,10 +6253,31 @@ def test_glm53_megakernel_contracts() -> None:
         os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
                             "glm53_fp8_dense.py"), encoding="utf-8").read(),
           "the W4 attach skips the KDA in_proj unless the knob is 'all'")
-    check(cu.count("<<<MK_GRID, MK_THREADS") == 4,
-          "every host entry (mhc, gemm, gemm_w4, kda) launches with the "
-          "fixed 48-block grid")
-    check("(t / (unsigned long long)MK_GRID + 1ULL) * MK_GRID" in cu,
+    # gemm, gemm_w4 and kda share MK_GRID because GEMM_SMEM pins them to one
+    # block per SM anyway; mhc takes no dynamic smem, so it runs its own
+    # wider grid. Both are persistent grids and both assert residency at
+    # launch -- that assert is the thing this check exists to protect.
+    check(cu.count("<<<MK_GRID, MK_THREADS") == 3,
+          "gemm, gemm_w4 and kda launch with the shared persistent grid")
+    check(cu.count("<<<mhc_grid, MK_THREADS") == 1
+          and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
+          "mhc launches its own grid, clamped to what the device reports "
+          "resident: a hard constant plus an assert would turn future "
+          "register drift into a refusal to boot")
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 2,
+          "both persistent grids check residency before launching: a grid "
+          "that does not fit deadlocks on the grid barrier, it does not "
+          "merely run slowly")
+    # Two grid sizes must never share a ticket counter. The barrier computes
+    # (t / grid + 1) * grid, so it is only correct when the counter is
+    # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
+    # of 96, and the next 96-block launch then releases at half its blocks.
+    check('ws["barrier_mhc"].data_ptr()' in pysrc_full
+          and pysrc_full.count("_barrier_ptr(ws)")
+          - pysrc_full.count("def _barrier_ptr(ws)") == 1,
+          "mhc runs its own barrier counter, not the one the 48-block "
+          "kernels share")
+    check("(t / (unsigned long long)grid + 1ULL) * grid" in cu,
           "grid barrier is the never-reset monotonic ticket form, 64-bit "
           "(32-bit wraps in ~a week of arrivals and releases early)")
     bar = cu[cu.index("mk_grid_barrier"):cu.index("mk_grid_barrier") + 700]

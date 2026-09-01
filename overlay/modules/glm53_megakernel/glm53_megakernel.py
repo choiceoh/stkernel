@@ -138,7 +138,12 @@ def _build():
     _EXT = load(
         name="glm53_megakernel",
         sources=[_SRC],
-        extra_cuda_cflags=["-O2", "-arch=sm_121a"],
+        extra_cuda_cflags=["-O2", "-arch=sm_121a"] + [
+            # Swept by the probe; the .cu carries the shipped defaults.
+            f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '48')}",
+            f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
+            f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
+        ],
         build_directory="/root/.mk_build",
         verbose=False,
     )
@@ -157,10 +162,18 @@ def _ensure_workspace(device):
         *s, dtype=dt, device=device)
     _WS = {
         "barrier": z(8, dt=torch.int32),
+        # mhc needs its OWN counter: the ticket barrier computes
+        # (t / grid + 1) * grid, which is only correct if the counter
+        # is grid-aligned when the launch starts. Sharing one counter
+        # between a 96-block grid and a 48-block grid misaligns it
+        # (5 x 48 = 240, and 240 % 96 = 48), and a misaligned mhc
+        # launch releases after 48 of its 96 blocks arrive.
+        "barrier_mhc": z(8, dt=torch.int32),
         "yp": z(NCHUNK * MAX_TOK * NOUT),
         "rp": z(NCHUNK * MAX_TOK),
-        "sq": z(MAX_TOK),
-        "rsq": z(MAX_TOK),
+        # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
+        # p4 reduces them in a fixed order -- see the note in mk_mhc_p3.
+        "sq": z(NCHUNK * MAX_TOK),
         "pmix": z(MAX_TOK * HC),
         "ol_stash": z(MAX_TOK * HIDDEN, dt=torch.bfloat16),
         "qkv": z(MAX_TOK * KDA_INPROJ_N, dt=torch.bfloat16),
@@ -354,8 +367,8 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
          residual_cur.data_ptr(), post_mix_cur.data_ptr(),
          comb_mix_cur.data_ptr(), layer_input_cur.data_ptr(),
          ws["yp"].data_ptr(), ws["rp"].data_ptr(), ws["sq"].data_ptr(),
-         ws["rsq"].data_ptr(), ws["pmix"].data_ptr(),
-         ws["ol_stash"].data_ptr(), _barrier_ptr(ws)],
+         ws["pmix"].data_ptr(),
+         ws["ol_stash"].data_ptr(), ws["barrier_mhc"].data_ptr()],
         [float(rms_eps), float(pre_eps), float(sinkhorn_eps),
          float(post_mult), float(norm_eps)],
         [num_tokens, int(sinkhorn_repeat)],

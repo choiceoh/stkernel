@@ -51,7 +51,28 @@
 
 namespace {
 
-constexpr int MK_GRID = 48;       // one block per GB10 SM
+// Three tuning constants come in through -D so the probe can sweep them
+// without editing this file; the defaults here are the shipped values.
+#ifndef MK_GRID_DEF
+#define MK_GRID_DEF 48
+#endif
+#ifndef MK_MHC_GRID_DEF
+#define MK_MHC_GRID_DEF 144
+#endif
+#ifndef MK_W_NBUF_DEF
+#define MK_W_NBUF_DEF 3
+#endif
+constexpr int MK_GRID = MK_GRID_DEF;  // blocks per persistent gemm/kda grid
+// mhc only: it takes no dynamic smem, so its occupancy is bounded by
+// registers (72 x 256 = 18,432 of 65,536 per SM -> 3 blocks). At MK_GRID
+// it ran 8 of a possible 48 warps per SM.
+//
+// This is a CEILING, not the grid. The launch takes the smaller of it and
+// what the device actually has room for, and hands the result down in
+// a.grid. A persistent grid that does not fit deadlocks on the grid
+// barrier, so a hard constant plus an assert would turn any future
+// register-count drift into a refusal to boot; clamping degrades instead.
+constexpr int MK_MHC_GRID_CAP = MK_MHC_GRID_DEF;
 constexpr int MK_THREADS = 256;   // 8 warps
 constexpr int MK_WARPS = MK_THREADS / 32;
 
@@ -94,7 +115,7 @@ constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 // block's 8 warps all sit on the cp.async wait, a second resident block is
 // the only thing that can hide the latency. Do not raise this without
 // re-checking 2 * smem <= 131072.
-constexpr int MK_W_NBUF = 3;
+constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                           KBLK_MAX * KBLK_MAX * 4;
@@ -113,7 +134,8 @@ constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
 // baked workspace pointers is exact. Device-scope fences make the phases'
 // global writes visible across blocks (the osar barrier lesson).
 // ---------------------------------------------------------------------------
-__device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr) {
+__device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr,
+                                               int grid = MK_GRID) {
   __syncthreads();
   if (threadIdx.x == 0) {
     __threadfence();
@@ -122,7 +144,7 @@ __device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr) {
     // releases blocks early. 2^64 does not wrap.
     unsigned long long t = atomicAdd(ctr, 1ULL);
     unsigned long long target =
-        (t / (unsigned long long)MK_GRID + 1ULL) * MK_GRID;
+        (t / (unsigned long long)grid + 1ULL) * grid;
     volatile unsigned long long* v =
         (volatile unsigned long long*)ctr;
     while (*v < target) __nanosleep(64);
@@ -474,20 +496,30 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         __syncthreads();
       }
     } else {
-      // ---- W8 path: MK_W_NBUF-buffer cp.async pipeline, distance 3.
+      // ---- W8 path: MK_W_NBUF-buffer cp.async pipeline.
       // Each stage_w commits exactly one cp.async group, so "wait until at
       // most N groups outstanding" is the same as "buffer kb has landed"
       // when N is the number of stages issued after it.
-      // Prefetch distance MK_W_NBUF - 1 = 2: the tile staged while kb is
-      // read must land in a buffer nobody is reading.
+      //
+      // The distance is MK_W_NBUF - 1, not a literal: the tile staged while
+      // kb is being read must land in a buffer nobody is reading, and with
+      // the old hard-coded 2 a depth of 2 would have staged kb+2 into
+      // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
+      // That made MK_W_NBUF a knob that silently corrupted below 3.
+      static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
+      constexpr int DIST = MK_W_NBUF - 1;
       stage_w(kb0, kb0 % MK_W_NBUF);
       quant_a(kb0);
-      if (kbn - kb0 > 1) stage_w(kb0 + 1, (kb0 + 1) % MK_W_NBUF);
-      if (kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
+#pragma unroll
+      for (int d = 1; d < DIST; ++d)
+        if (kb0 + d < kbn) stage_w(kb0 + d, (kb0 + d) % MK_W_NBUF);
+      // Conservative above depth 3 (it waits for more than the one tile it
+      // needs), exact at 2 and 3, and never unsafe.
+      if (DIST > 1 && kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
       __syncthreads();
 
       for (int kb = kb0;; ++kb) {
-        if (kb + 2 < kbn) stage_w(kb + 2, (kb + 2) % MK_W_NBUF);
+        if (kb + DIST < kbn) stage_w(kb + DIST, (kb + DIST) % MK_W_NBUF);
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
@@ -495,8 +527,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
         quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
-        // outstanding after W(kb+1): W(kb+2) when it exists
-        if (kb + 2 < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
+        // outstanding after W(kb+1): the deeper stages, when they exist
+        if (DIST > 1 && kb + DIST < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }
@@ -590,6 +622,7 @@ struct MKMhcArgs {
   float* pmix;                       // ws [MAX_TOK, HC]
   __nv_bfloat16* ol_stash;           // ws [MAX_TOK, HIDDEN]
   unsigned long long* barrier_ctr;
+  int grid;          // resident blocks; see MK_MHC_GRID_CAP
   int num_tokens;
   float rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps;
   int sinkhorn_repeat;
@@ -603,7 +636,7 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
   // measuring DRAM first.
   __shared__ float red[MK_WARPS][NOUT + 1];
   const int npairs = a.num_tokens * NCHUNK;
-  for (int p = bid; p < npairs; p += MK_GRID) {
+  for (int p = bid; p < npairs; p += a.grid) {
     const int t = p / NCHUNK, c = p % NCHUNK, h0 = c * HCHUNK;
     float cm[HC][HC], pm[HC];
 #pragma unroll
@@ -668,11 +701,16 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
   }
 }
 
-__device__ void mk_mhc_p2(const MKMhcArgs& a) {
-  // block 0 only; one warp per token, lanes 0/1/2 carry the three splits
-  if (blockIdx.x != 0) return;
+__device__ void mk_mhc_p2(const MKMhcArgs& a, int bid) {
+  // One warp per token, lanes 0/1/2 carry the three splits. This used to be
+  // `if (blockIdx.x != 0) return;` -- 8 warps of ONE block for every token,
+  // with 47 blocks idle, so the phase cost scaled with num_tokens while p1,
+  // p3 and p4 all spread over `bid`. Measured: T=8 66.3 us but T=32 145.1
+  // (stock 64.2 -> 79.6), i.e. 4 serial passes instead of 1. The body is
+  // per-token register work with no block-wide sync, so it distributes.
   const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-  for (int t = warp; t < a.num_tokens; t += MK_WARPS) {
+  const int gw = bid * MK_WARPS + warp;   // 96 x 8 = 768 warps >= MAX_TOK
+  for (int t = gw; t < a.num_tokens; t += a.grid * MK_WARPS) {
     float mixes[NOUT], sqr = 0.0f;
 #pragma unroll
     for (int m = 0; m < NOUT; ++m) {
@@ -780,7 +818,7 @@ __device__ void mk_mhc_p3(const MKMhcArgs& a, int bid) {
   // ol = sum_j pre_mix[j] * residual_out[t, j, :]; bf16 stash + sumsq
   __shared__ float sqred[MK_WARPS];
   const int npairs = a.num_tokens * NCHUNK;
-  for (int p = bid; p < npairs; p += MK_GRID) {
+  for (int p = bid; p < npairs; p += a.grid) {
     const int t = p / NCHUNK, c = p % NCHUNK, h0 = c * HCHUNK;
     float pre[HC];
 #pragma unroll
@@ -803,42 +841,57 @@ __device__ void mk_mhc_p3(const MKMhcArgs& a, int bid) {
       float v = 0.0f;
 #pragma unroll
       for (int w = 0; w < MK_WARPS; ++w) v += sqred[w];
-      atomicAdd(&a.sq[t], v);
+      // One slot per (chunk, token), not atomicAdd(&sq[t]): each pair is
+      // owned by exactly one block, so the store is unique, and p4 sums the
+      // NCHUNK slots in a fixed order. atomicAdd made layer_input the only
+      // non-deterministic output of this kernel -- 4.1e-05 to 3.3e-04 of
+      // drift between identical calls at T=32, where 512 pairs over 48
+      // blocks arrive in a different order each launch. (T=8 has 128 pairs
+      // and happened to be stable, which is why this hid.) p1/p2 already
+      // reduce their sumsq this way through rp[]; p3 was the odd one out.
+      a.sq[(size_t)c * MAX_TOK + t] = v;
     }
     __syncthreads();
   }
 }
 
 __device__ void mk_mhc_p4(const MKMhcArgs& a, int bid) {
+  // Every block reduces the same NCHUNK slots in the same order and so gets
+  // bit-identical rsq. This replaced both the old a.rsq[] phase (one thread
+  // looping over tokens, plus a grid barrier) and the atomicAdd feeding it.
+  __shared__ float rsq_s[MAX_TOK];
+  if (threadIdx.x < a.num_tokens) {
+    float sum = 0.0f;
+#pragma unroll
+    for (int c = 0; c < NCHUNK; ++c) sum += a.sq[c * MAX_TOK + threadIdx.x];
+    rsq_s[threadIdx.x] = rsqrtf(sum / (float)HIDDEN + a.norm_eps);
+  }
+  __syncthreads();
   const int total = a.num_tokens * HIDDEN;
   for (int i = bid * MK_THREADS + threadIdx.x; i < total;
-       i += MK_GRID * MK_THREADS) {
+       i += a.grid * MK_THREADS) {
     const int t = i / HIDDEN, h = i % HIDDEN;
     a.layer_input[t * HIDDEN + h] = __float2bfloat16(
-        __bfloat162float(a.ol_stash[t * HIDDEN + h]) * a.rsq[t] *
+        __bfloat162float(a.ol_stash[t * HIDDEN + h]) * rsq_s[t] *
         __bfloat162float(a.norm_weight[h]));
   }
 }
 
 __global__ void mk_mhc_kernel(const MKMhcArgs a) {
-  // 6 grid barriers per launch is a budget, not an accident: each phase
-  // boundary is a real data dependency (partials -> mixes -> pre-mixes ->
-  // sumsq -> rsqrt -> normalize). A last-arriver-computes-rsqrt restructure
-  // could remove two of them for ~0.1 ms/step -- deferred until the probe
-  // prices the barrier overhead as worth it.
-  if (blockIdx.x == 0 && threadIdx.x == 0)
-    for (int t = 0; t < a.num_tokens; ++t) a.sq[t] = 0.0f;
-  mk_grid_barrier(a.barrier_ctr);
+  // 3 grid barriers, down from 5, and no prologue. Each surviving one is a
+  // real data dependency (partials -> mixes -> pre-mixes -> sumsq). What
+  // went: p3 now STORES its sumsq per (chunk, token) instead of accumulating
+  // into sq[t], so there is nothing to zero and no barrier to order the
+  // zeroing against; and p4 reduces those slots itself, which retired the
+  // separate rsqrt phase and its barrier.
   mk_mhc_p1(a, blockIdx.x);
-  mk_grid_barrier(a.barrier_ctr);
-  mk_mhc_p2(a);
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
+  mk_mhc_p2(a, blockIdx.x);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
   mk_mhc_p3(a, blockIdx.x);
-  mk_grid_barrier(a.barrier_ctr);
-  if (blockIdx.x == 0 && threadIdx.x == 0)
-    for (int t = 0; t < a.num_tokens; ++t)
-      a.rsq[t] = rsqrtf(a.sq[t] / (float)HIDDEN + a.norm_eps);
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
+  // p4 does its own rsqrt, so the fourth phase boundary (sumsq -> rsqrt)
+  // and the single-thread loop that used to sit on it are both gone.
   mk_mhc_p4(a, blockIdx.x);
 }
 
@@ -1196,6 +1249,15 @@ void set_kernel_attrs() {
   if (g_attrs_set) return;
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
+  {
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, mk_gemm_kernel, MK_THREADS, GEMM_SMEM));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(
+        &sms, cudaDevAttrMultiProcessorCount, 0));
+    TORCH_CHECK(per_sm * sms >= MK_GRID, "gemm grid ", MK_GRID,
+                " not resident: ", per_sm, " blocks/SM x ", sms, " SMs");
+  }
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   g_attrs_set = true;
@@ -1255,12 +1317,16 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
-//       pm_out, cm_out, layer_in, yp, rp, sq, rsq, pmix, ol_stash, barrier
+//       pm_out, cm_out, layer_in, yp, rp, sq, pmix, ol_stash, barrier
 // ints: num_tokens, sinkhorn_repeat
 // scalars: rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
   set_kernel_attrs();
+  // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
+  // reads, so a short vector was already out of bounds before it fired.
+  TORCH_CHECK(ptrs.size() == 18 && ints.size() == 2 && scalars.size() == 5,
+              "run_mhc arg contract");
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
@@ -1277,10 +1343,9 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.yp = (float*)ptrs[12];
   a.rp = (float*)ptrs[13];
   a.sq = (float*)ptrs[14];
-  a.rsq = (float*)ptrs[15];
-  a.pmix = (float*)ptrs[16];
-  a.ol_stash = (__nv_bfloat16*)ptrs[17];
-  a.barrier_ctr = (unsigned long long*)ptrs[18];
+  a.pmix = (float*)ptrs[15];
+  a.ol_stash = (__nv_bfloat16*)ptrs[16];
+  a.barrier_ctr = (unsigned long long*)ptrs[17];
   a.num_tokens = (int)ints[0];
   a.sinkhorn_repeat = (int)ints[1];
   a.rms_eps = (float)scalars[0];
@@ -1288,10 +1353,25 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.sinkhorn_eps = (float)scalars[2];
   a.post_mult = (float)scalars[3];
   a.norm_eps = (float)scalars[4];
-  TORCH_CHECK(ptrs.size() == 19 && ints.size() == 2 && scalars.size() == 5,
-              "run_mhc arg contract");
+
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_mhc_kernel<<<MK_GRID, MK_THREADS, 0, stream>>>(a);
+  // A persistent grid must be fully resident or the grid barrier deadlocks.
+  // Ask the device rather than assume, and clamp to what it answers. Cached
+  // because the barrier's ticket arithmetic also needs the grid to be the
+  // SAME on every launch.
+  static int mhc_grid = 0;
+  if (mhc_grid == 0) {
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, mk_mhc_kernel, MK_THREADS, 0));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(
+        &sms, cudaDevAttrMultiProcessorCount, 0));
+    mhc_grid = per_sm * sms;
+    if (mhc_grid > MK_MHC_GRID_CAP) mhc_grid = MK_MHC_GRID_CAP;
+    TORCH_CHECK(mhc_grid > 0, "mhc has no resident blocks");
+  }
+  a.grid = mhc_grid;
+  mk_mhc_kernel<<<mhc_grid, MK_THREADS, 0, stream>>>(a);
 }
 
 // ptrs: x, in_wq, in_ws, f_b_w, g_b_w, conv_w, conv_state, rec_state,
