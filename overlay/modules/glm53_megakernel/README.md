@@ -60,11 +60,24 @@ cold tax by the share this module covers.
   pipeline** -- a synchronous load->sync->mma chain leaves ~20% of the
   stream idle, ~1.3 ms/step at the ~2 GB/step W8A8 dense footprint, so
   2-in-flight is the difference between matching deepgemm and losing to it.
+  Depths 4 and 5 measured no gain (bytes in flight are not the limiter
+  once the wait is exact); the W4 arm streams its raw (tile, k-block)
+  records through its own 5-stage pipeline and expands them in registers.
   TMA stays a drop-in for later.
+- **Programmatic dependent launch** (`griddepcontrol`, works on this part
+  with CUDA 13): every MK kernel triggers its dependents at entry and
+  waits before its first read of the previous kernel's output, so the next
+  MK launch starts on the SMs this one frees and pulls its first W tiles
+  during this one's tail. Two launches back to back measure 17-19% less
+  per launch than one alone. Behind `VLLM_GLM53_MK_PDL=1` (default off
+  until the serving bracket; the probe sets it).
 - Fixed 48-block grid everywhere; the never-reset monotonic ticket barrier
   is what keeps CUDA-graph replay with baked pointers exact (the osar
   `done_ctr` trick). A larger grid deadlocked on this part (#150).
-- Dynamic smem <= 63 KB (the 3 W pipeline buffers) against the 128 KB/SM budget.
+- Dynamic smem: W8 kernel 63,616 B (the 3 W pipeline buffers), W4 kernel
+  91,264 B (2 expanded tiles + 5 raw stages) -- separate instantiations
+  with separate budgets, because one shared budget cost the W8 loop 4-7%.
+  Both resolve to 1 block/SM.
 
 ## Integration (all inside files this repo owns)
 
@@ -86,6 +99,7 @@ VLLM_GLM53_MK_MHC=1         # per segment, each default 0
 VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # see the open item below before arming this
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
+VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc
