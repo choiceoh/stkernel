@@ -36,7 +36,7 @@ if [ -f "$PROFILE_ENV" ]; then
   for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-            EXTRA_ENV LOAD_FORMAT $_vllm_keys; do
+            EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -383,6 +383,19 @@ elif [ "$DFLASH2" = 1 ]; then
   # number this lane has recorded was taken under the degenerate setting.
   # DRAFT_SAMPLE=greedy restores the old behavior for an A/B.
   DRAFT_SAMPLE="${DRAFT_SAMPLE:-probabilistic}"
+  # rejection_sample_method: "standard" verifies the draft one token at a
+  # time and stops at the first rejection. "block" is block verification
+  # (Sun et al. 2024, arXiv 2403.10444): it verifies the whole block jointly
+  # and accepts at least as many tokens for the same draft and target
+  # distributions. The kernel only takes that branch when temp > 0 -- our
+  # bench runs at 0.95 -- and it reads the cached draft logits, which exist
+  # because DRAFT_SAMPLE defaults to probabilistic.
+  case "${REJECT_METHOD:-}" in
+    "" ) ;;
+    standard|block )
+      _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\"" ;;
+    * ) echo "ABORT: REJECT_METHOD must be standard or block, got '$REJECT_METHOD'"; exit 1 ;;
+  esac
   SPECCFG_VAL="--speculative-config '{\"method\":\"dflash\",\"model\":\"/models/dflash2-draft\",\"num_speculative_tokens\":$SPEC_K,\"draft_sample_method\":\"$DRAFT_SAMPLE\"$_spec_extra}'"
 else
   SPECCFG_VAL="--speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":$SPEC_K}'"
@@ -470,7 +483,8 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
   for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
-            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED; do
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED \
+            DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done
   echo "overlays  :"
