@@ -241,27 +241,37 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       mk_cp_commit();
     };
     // quantize A rows [0, m) for one k-block into the fp8 m-tiles
+    // One WARP per row, not one thread. The row-per-thread form used only
+    // c.m of MK_THREADS (8 to 32 of 256) and walked KSTEP global elements
+    // TWICE per row -- once for the max, once for the pack -- as dependent
+    // scalar loads. That is 256 latency-bound loads on a handful of threads,
+    // repeated for every k-block, and it dominated this kernel: mk_us stayed
+    // ~700 us whether n was 1024 or 4096, i.e. independent of the actual
+    // GEMM work. Each lane now owns 4 consecutive elements (32 x 4 = KSTEP),
+    // reads them once into registers, and the row max comes from a butterfly
+    // shuffle -- same value, since mk_pow2_scale is a pure function of it.
     auto quant_a = [&](int kb) {
-      for (int r = threadIdx.x; r < c.m; r += MK_THREADS) {
-        const __nv_bfloat16* src = c.x + (size_t)r * c.k + kb * KSTEP;
-        float mx = 0.0f;
-#pragma unroll 8
-        for (int e = 0; e < KSTEP; ++e)
-          mx = fmaxf(mx, fabsf(__bfloat162float(src[e])));
+      const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
+      for (int r = qw; r < c.m; r += MK_WARPS) {
+        const __nv_bfloat16* src =
+            c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
+        float v[4];
+#pragma unroll
+        for (int q = 0; q < 4; ++q) v[q] = __bfloat162float(src[q]);
+        float mx = fmaxf(fmaxf(fabsf(v[0]), fabsf(v[1])),
+                         fmaxf(fabsf(v[2]), fabsf(v[3])));
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
         const float sc = mk_pow2_scale(mx);
-        sxs[r * KBLK_MAX + kb] = sc;
+        if (ql == 0) sxs[r * KBLK_MAX + kb] = sc;
         uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
                        (r & 15) * SMEM_A_PITCH;
-#pragma unroll 8
-        for (int e = 0; e < KSTEP; e += 4) {
-          uint32_t pack = 0;
+        uint32_t pack = 0;
 #pragma unroll
-          for (int q = 0; q < 4; ++q)
-            pack |= (uint32_t)mk_f32_to_e4m3(
-                        __bfloat162float(src[e + q]) / sc)
-                    << (8 * q);
-          *(uint32_t*)(dst + e) = pack;
-        }
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[q] / sc) << (8 * q);
+        *(uint32_t*)(dst + ql * 4) = pack;
       }
       // rows >= m keep stale bytes: their output rows are never written and
       // finite e4m3 cannot poison other rows of the same mma.
