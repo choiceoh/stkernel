@@ -4632,6 +4632,33 @@ def test_hotpath_env_latches() -> None:
     print("  hot-path env latches ........... OK")
 
 
+def test_overlay_logger_defined() -> None:
+    """An overlay that logs must define logger -- NameError kills the boot."""
+    import ast as _ast, glob as _glob
+    checked = 0
+    for path in sorted(_glob.glob("overlay/modules/*/*.py")):
+        src = open(path).read()
+        if "logger." not in src:
+            continue
+        checked += 1
+        tree = _ast.parse(src)
+        assigned = any(
+            isinstance(n, _ast.Assign)
+            and any(getattr(t_, "id", None) == "logger" for t_ in n.targets)
+            for n in tree.body
+        )
+        imported = any(
+            isinstance(n, _ast.ImportFrom)
+            and any(a.name == "logger" or a.asname == "logger" for a in n.names)
+            for n in _ast.walk(tree)
+        )
+        check(assigned or imported,
+              f"{path} calls logger.* without defining it -- this raised "
+              "NameError at model load and took the whole boot down")
+    check(checked > 5, f"expected many logging overlays, scanned {checked}")
+    print("  overlay logger defined ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4658,6 +4685,7 @@ if __name__ == "__main__":
     test_ep_compact_warmup_ladder()
     test_once_logger_args_hashable()
     test_dflash2_selector_check()
+    test_overlay_logger_defined()
     test_dflash2_conv_mask_buffer()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
