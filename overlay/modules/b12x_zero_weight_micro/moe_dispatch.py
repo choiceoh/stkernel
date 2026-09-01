@@ -185,6 +185,99 @@ _DYNAMIC_MAC_LADDER: Tuple[Tuple[int, int], ...] = (
     (1024, 147),
 )
 
+# GLM-specific tuning controls.  These are diagnostic inputs, not production
+# defaults: unset keeps the shipped selections and kernel cache keys. Parse
+# once at import so CUDA graph capture/replay never reads the environment.
+_GLM53_B12X_FORCE_BACKEND_ENV = "VLLM_GLM53_B12X_FORCE_BACKEND"
+_GLM53_B12X_STATIC_CUTOVER_ENV = "VLLM_GLM53_B12X_STATIC_CUTOVER_PAIRS"
+_GLM53_B12X_MICRO_MAC_LADDER_ENV = "VLLM_GLM53_B12X_MICRO_MAC_LADDER"
+_GLM53_B12X_STATIC_MAC_LADDER_ENV = "VLLM_GLM53_B12X_STATIC_MAC_LADDER"
+_GLM53_B12X_DYNAMIC_MAC_LADDER_ENV = "VLLM_GLM53_B12X_DYNAMIC_MAC_LADDER"
+
+
+def _parse_glm53_forced_backend(raw: str | None) -> str | None:
+    """Parse the optional GLM backend diagnostic without permissive aliases."""
+    if raw is None or not raw.strip() or raw.strip() == "auto":
+        return None
+    value = raw.strip()
+    if value not in ("micro", "static", "dynamic"):
+        raise ValueError(
+            f"{_GLM53_B12X_FORCE_BACKEND_ENV} must be auto, micro, static, "
+            f"or dynamic (got {raw!r})"
+        )
+    return value
+
+
+def _parse_glm53_static_cutover(raw: str | None) -> int | None:
+    """Parse an optional routed-pair cutover; zero deliberately forces dynamic."""
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = int(raw.strip())
+    except ValueError as exc:
+        raise ValueError(
+            f"{_GLM53_B12X_STATIC_CUTOVER_ENV} must be a non-negative integer "
+            f"(got {raw!r})"
+        ) from exc
+    if value < 0:
+        raise ValueError(
+            f"{_GLM53_B12X_STATIC_CUTOVER_ENV} must be non-negative "
+            f"(got {raw!r})"
+        )
+    return value
+
+
+def _parse_glm53_mac_ladder(
+    raw: str | None,
+    env_name: str,
+) -> Tuple[Tuple[int, int], ...] | None:
+    """Parse ``max_rows:mac`` cells with strictly increasing row bounds."""
+    if raw is None or not raw.strip():
+        return None
+    cells = []
+    prior_rows = 0
+    for cell in raw.split(","):
+        fields = cell.split(":")
+        if len(fields) != 2:
+            raise ValueError(
+                f"{env_name} must be comma-separated max_rows:mac cells "
+                f"(got {raw!r})"
+            )
+        try:
+            max_rows, mac = (int(field.strip()) for field in fields)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_name} cells must contain integers (got {cell!r})"
+            ) from exc
+        if max_rows <= prior_rows or mac <= 0:
+            raise ValueError(
+                f"{env_name} row bounds must increase strictly and MAC must be "
+                f"positive (got {raw!r})"
+            )
+        cells.append((max_rows, mac))
+        prior_rows = max_rows
+    return tuple(cells)
+
+
+_GLM53_B12X_FORCE_BACKEND = _parse_glm53_forced_backend(
+    os.environ.get(_GLM53_B12X_FORCE_BACKEND_ENV)
+)
+_GLM53_B12X_STATIC_CUTOVER_PAIRS = _parse_glm53_static_cutover(
+    os.environ.get(_GLM53_B12X_STATIC_CUTOVER_ENV)
+)
+_GLM53_B12X_MICRO_MAC_LADDER = _parse_glm53_mac_ladder(
+    os.environ.get(_GLM53_B12X_MICRO_MAC_LADDER_ENV),
+    _GLM53_B12X_MICRO_MAC_LADDER_ENV,
+)
+_GLM53_B12X_STATIC_MAC_LADDER = _parse_glm53_mac_ladder(
+    os.environ.get(_GLM53_B12X_STATIC_MAC_LADDER_ENV),
+    _GLM53_B12X_STATIC_MAC_LADDER_ENV,
+)
+_GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
+    os.environ.get(_GLM53_B12X_DYNAMIC_MAC_LADDER_ENV),
+    _GLM53_B12X_DYNAMIC_MAC_LADDER_ENV,
+)
+
 
 def _lookup_mac_ladder(
     ladder: Tuple[Tuple[int, int], ...], routed_rows: int
@@ -194,6 +287,128 @@ def _lookup_mac_ladder(
         if routed_rows <= end_rows:
             return mac
     return None
+
+
+def _is_glm53_b12x_tp_geometry(
+    *,
+    num_experts: int | None,
+    num_local_experts: int | None,
+    hidden_size: int | None,
+    intermediate_size: int | None,
+    num_topk: int,
+    quant_mode: str,
+    activation: str | None,
+    swiglu_limit: float | None,
+) -> bool:
+    """Admit only the deployed GLM-5.3 TP-sharded NVFP4 MoE geometry."""
+    return (
+        num_experts == 288
+        and num_local_experts == 288
+        and hidden_size == 4096
+        and intermediate_size == 2048
+        and num_topk == 8
+        and quant_mode == "nvfp4"
+        and activation == "swigluoai_uninterleave"
+        and swiglu_limit == 10.0
+    )
+
+
+def _effective_glm53_forced_backend(
+    *,
+    num_tokens: int,
+    num_experts: int,
+    num_local_experts: int,
+    hidden_size: int,
+    intermediate_size: int,
+    num_topk: int,
+    quant_mode: str,
+    activation: str,
+    swiglu_limit: float | None,
+) -> str | None:
+    """Return the monkeypatch hook first, then the exact-shape GLM override."""
+    if _FORCED_BACKEND is not None:
+        return _FORCED_BACKEND
+    if _is_glm53_b12x_tp_geometry(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_topk=num_topk,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+    ):
+        # Micro is a decode-only kernel.  Keep prefill on automatic dispatch
+        # so a diagnostic boot cannot turn an ordinary long call into a
+        # forced-micro correctness failure or a giant static-only workspace.
+        if _GLM53_B12X_FORCE_BACKEND == "micro" and num_tokens > _MICRO_MAX_TOKENS:
+            return None
+        return _GLM53_B12X_FORCE_BACKEND
+    return None
+
+
+def _effective_glm53_static_cutover(
+    default: int,
+    *,
+    num_experts: int | None,
+    num_local_experts: int | None,
+    hidden_size: int | None,
+    intermediate_size: int | None,
+    num_topk: int,
+    quant_mode: str,
+    activation: str | None,
+    swiglu_limit: float | None,
+) -> int:
+    if _is_glm53_b12x_tp_geometry(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_topk=num_topk,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+    ):
+        cutover = (
+            _GLM53_B12X_STATIC_CUTOVER_PAIRS
+            if _GLM53_B12X_STATIC_CUTOVER_PAIRS is not None
+            else default
+        )
+        # A decode-only forced-micro run still allocates its static workspace
+        # from this boundary. Reserve the full m=8/top-k=8 band even when a
+        # simultaneous generic or GLM cutover of zero sends every other call
+        # to dynamic.
+        if _GLM53_B12X_FORCE_BACKEND == "micro":
+            cutover = max(cutover, _MICRO_MAX_TOKENS * num_topk)
+        return cutover
+    return default
+
+
+def _effective_glm53_mac_ladder(
+    default: Tuple[Tuple[int, int], ...],
+    override: Tuple[Tuple[int, int], ...] | None,
+    *,
+    num_experts: int,
+    num_local_experts: int,
+    hidden_size: int,
+    intermediate_size: int,
+    num_topk: int,
+    quant_mode: str,
+    activation: str,
+    swiglu_limit: float | None,
+) -> Tuple[Tuple[int, int], ...]:
+    if override is not None and _is_glm53_b12x_tp_geometry(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_topk=num_topk,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+    ):
+        return override
+    return default
 
 
 def _align_up(value: int, alignment: int) -> int:
@@ -1547,6 +1762,19 @@ def launch_sm120_static_moe(
         raise ValueError(
             "internal routing error: quant_mode='w4a16' reached the NVFP4 static launcher"
         )
+    forced_backend = _FORCED_BACKEND
+    if forced_backend is None and _GLM53_B12X_FORCE_BACKEND is not None:
+        forced_backend = _effective_glm53_forced_backend(
+            num_tokens=num_tokens,
+            num_experts=num_experts,
+            num_local_experts=workspace.state_E,
+            hidden_size=k,
+            intermediate_size=n,
+            num_topk=top_k,
+            quant_mode=quant_mode,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
+        )
 
     # Flatten routing tensors
     flat_ids = topk_ids.view(-1).to(torch.int32)
@@ -1587,8 +1815,8 @@ def launch_sm120_static_moe(
         and n <= _DIRECT_MICRO_MAX_N
         and MoEDirectMicroKernel.is_supported(num_tokens, k, n, top_k, num_experts)
     )
-    if _FORCED_BACKEND is not None:
-        if _FORCED_BACKEND == "direct_micro":
+    if forced_backend is not None:
+        if forced_backend == "direct_micro":
             if quant_mode != "nvfp4":
                 raise ValueError(
                     "forced direct_micro backend only supports quant_mode=nvfp4"
@@ -1627,7 +1855,7 @@ def launch_sm120_static_moe(
             device=a.device,
         )
         if not block_ok:
-            if _FORCED_BACKEND == "direct_micro":
+            if forced_backend == "direct_micro":
                 raise RuntimeError("compiled direct micro MoE kernel cannot launch")
             use_direct_micro = False
     if use_direct_micro:
@@ -1686,15 +1914,15 @@ def launch_sm120_static_moe(
         quant_mode=quant_mode,
         activation=activation,
         swiglu_limit=swiglu_limit,
-        forced_backend=_FORCED_BACKEND,
+        forced_backend=forced_backend,
     )
     use_micro = (
         activation_precision == "fp4"
         and num_tokens <= _MICRO_MAX_TOKENS
         and routed_rows <= micro_cutover
     ) or skip_zero_weight_expert_id is not None
-    if _FORCED_BACKEND is not None:
-        if _FORCED_BACKEND == "micro":
+    if forced_backend is not None:
+        if forced_backend == "micro":
             # Forced mode raises on correctness violations, never falls back.
             if num_tokens > _MICRO_MAX_TOKENS:
                 raise ValueError(
@@ -1713,7 +1941,21 @@ def launch_sm120_static_moe(
 
     sm_count = get_num_sm(torch.device("cuda"))
     base_mac = min(get_max_active_clusters(1), sm_count)
-    tuned_static_mac = _lookup_mac_ladder(_STATIC_MAC_LADDER, routed_rows)
+    static_mac_ladder = _STATIC_MAC_LADDER
+    if _GLM53_B12X_STATIC_MAC_LADDER is not None:
+        static_mac_ladder = _effective_glm53_mac_ladder(
+            static_mac_ladder,
+            _GLM53_B12X_STATIC_MAC_LADDER,
+            num_experts=num_experts,
+            num_local_experts=workspace.state_E,
+            hidden_size=k,
+            intermediate_size=n,
+            num_topk=top_k,
+            quant_mode=quant_mode,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
+        )
+    tuned_static_mac = _lookup_mac_ladder(static_mac_ladder, routed_rows)
     static_mac = min(tuned_static_mac or base_mac, base_mac)
     if activation_precision == "fp4" and not use_micro and routed_rows < 40:
         static_mac = min(static_mac, 64)
@@ -1765,7 +2007,21 @@ def launch_sm120_static_moe(
             launch_ids = compact_ids
         # Select micro MAC: min of tuned ladder, work tiles, and hardware limit.
         micro_work_tiles = max(1, routed_rows * max(1, (n + 128 - 1) // 128))
-        tuned_mac = _lookup_mac_ladder(_MICRO_MAC_LADDER, routed_rows)
+        micro_mac_ladder = _MICRO_MAC_LADDER
+        if _GLM53_B12X_MICRO_MAC_LADDER is not None:
+            micro_mac_ladder = _effective_glm53_mac_ladder(
+                micro_mac_ladder,
+                _GLM53_B12X_MICRO_MAC_LADDER,
+                num_experts=num_experts,
+                num_local_experts=workspace.state_E,
+                hidden_size=k,
+                intermediate_size=n,
+                num_topk=top_k,
+                quant_mode=quant_mode,
+                activation=activation,
+                swiglu_limit=swiglu_limit,
+            )
+        tuned_mac = _lookup_mac_ladder(micro_mac_ladder, routed_rows)
         micro_mac = min(tuned_mac or base_mac, micro_work_tiles, base_mac)
         compiled, mac = _get_micro_kernel(
             workspace.state_E,
@@ -1858,18 +2114,60 @@ def select_sm120_moe_backend(
     num_topk: int,
     activation_precision: str = "fp4",
     quant_mode: str | None = None,
+    num_experts: int | None = None,
+    num_local_experts: int | None = None,
+    hidden_size: int | None = None,
+    intermediate_size: int | None = None,
+    activation: str | None = None,
+    swiglu_limit: float | None = None,
 ) -> str:
     """Pick static or dynamic backend based on routed-pair count."""
     mode = _normalize_quant_mode(quant_mode, activation_precision)
     if mode == "w4a16":
         return "w4a16"
-    if _FORCED_BACKEND == "dynamic":
+    forced_backend = _FORCED_BACKEND
+    if (
+        forced_backend is None
+        and _GLM53_B12X_FORCE_BACKEND is not None
+        and None not in (
+            num_experts,
+            num_local_experts,
+            hidden_size,
+            intermediate_size,
+            activation,
+        )
+    ):
+        forced_backend = _effective_glm53_forced_backend(
+            num_tokens=num_tokens,
+            num_experts=int(num_experts),
+            num_local_experts=int(num_local_experts),
+            hidden_size=int(hidden_size),
+            intermediate_size=int(intermediate_size),
+            num_topk=num_topk,
+            quant_mode=mode,
+            activation=str(activation),
+            swiglu_limit=swiglu_limit,
+        )
+    if forced_backend == "dynamic":
         return "dynamic"
-    if _FORCED_BACKEND in ("static", "micro", "direct_micro"):
+    if forced_backend in ("static", "micro", "direct_micro"):
         # Both micro variants launch through the static workspace path.
         return "static"
     routed_rows = num_tokens * num_topk
-    if routed_rows <= _get_static_compact_cutover_pairs("fp4"):
+    cutover = _get_static_compact_cutover_pairs("fp4")
+    if _GLM53_B12X_STATIC_CUTOVER_PAIRS is not None:
+        cutover = _effective_glm53_static_cutover(
+            cutover,
+            num_experts=num_experts,
+            num_local_experts=num_local_experts,
+            hidden_size=hidden_size,
+            intermediate_size=intermediate_size,
+            num_topk=num_topk,
+            quant_mode=mode,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
+        )
+    if routed_rows <= cutover:
         return "static"
     return "dynamic"
 
@@ -2220,7 +2518,21 @@ def _get_dynamic_kernel(
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
     sm_count = get_num_sm(torch.device("cuda"))
     base_mac = min(get_max_active_clusters(1), sm_count)
-    tuned_mac = _lookup_mac_ladder(_DYNAMIC_MAC_LADDER, m * num_topk)
+    dynamic_mac_ladder = _DYNAMIC_MAC_LADDER
+    if _GLM53_B12X_DYNAMIC_MAC_LADDER is not None:
+        dynamic_mac_ladder = _effective_glm53_mac_ladder(
+            dynamic_mac_ladder,
+            _GLM53_B12X_DYNAMIC_MAC_LADDER,
+            num_experts=E,
+            num_local_experts=E,
+            hidden_size=k,
+            intermediate_size=n,
+            num_topk=num_topk,
+            quant_mode=quant_mode,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
+        )
+    tuned_mac = _lookup_mac_ladder(dynamic_mac_ladder, m * num_topk)
     mac = min(tuned_mac or base_mac, base_mac)
     # tile_m comes from the workspace's shared selection so the kernel's task
     # and scale indexing matches the allocated scratch geometry.
@@ -2964,6 +3276,7 @@ def allocate_sm120_moe_workspace(
     activation_precision: str | None = None,
     backend: str | None = None,
     activation: str = "silu",
+    swiglu_limit: float | None = None,
 ) -> _Sm120Workspace:
     """Allocate the right SM120 MoE workspace from a quantization mode."""
     mode = _normalize_quant_mode(quant_mode, activation_precision)
@@ -2996,6 +3309,12 @@ def allocate_sm120_moe_workspace(
             num_topk=int(num_topk),
             activation_precision=activation_precision,
             quant_mode=mode,
+            num_experts=weight_E,
+            num_local_experts=state_E,
+            hidden_size=k,
+            intermediate_size=n,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
         )
     if backend == "dynamic":
         return allocate_sm120_dynamic_workspace(
@@ -3038,6 +3357,7 @@ def _get_cached_workspace(
     activation_precision: str = "fp4",
     quant_mode: str | None = None,
     activation: str = "silu",
+    swiglu_limit: float | None = None,
 ) -> _Sm120Workspace:
     """Get or allocate a cached workspace for the given problem shape.
 
@@ -3101,6 +3421,7 @@ def _get_cached_workspace(
         activation_precision=activation_precision,
         backend=backend,
         activation=activation,
+        swiglu_limit=swiglu_limit,
     )
 
     _WORKSPACE_CACHE[cache_key] = workspace
@@ -3418,6 +3739,12 @@ def launch_sm120_moe(
             num_topk=top_k,
             activation_precision=activation_precision,
             quant_mode=quant_mode,
+            num_experts=num_experts,
+            num_local_experts=num_local_experts,
+            hidden_size=k,
+            intermediate_size=n,
+            activation=activation,
+            swiglu_limit=swiglu_limit,
         )
         # The dynamic kernel indexes row_counts/expert_write_rows directly with
         # topk_ids but those buffers are sized with num_local_experts. Unless
@@ -3437,6 +3764,7 @@ def launch_sm120_moe(
             activation_precision=activation_precision,
             quant_mode=quant_mode,
             activation=activation,
+            swiglu_limit=swiglu_limit,
         )
 
     if backend == "dynamic":
