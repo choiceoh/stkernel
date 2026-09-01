@@ -110,17 +110,16 @@ constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 //   saq[2][16][132]  fp8 A tiles       2*16*132       = 4224
 //   swb[3][128][144] fp8 W pipeline    3*128*144      = 55296
 //   sxs[32][32]      fp32 group scales 32*32*4        = 4096
-// W pipeline depth. 3 buffers keep ~2 k-blocks in flight = 32 KB, which by
-// Little's law caps this kernel far below the part's bandwidth; 4 buffers
-// with a distance-3 prefetch keep ~3. smem: 4*128*144 = 73728, and
-// 4224 + 73728 + 4096 = 82048 <= the 101376 opt-in this part reports.
-// 3 is the occupancy cliff, and the reason to write it down: the SM has
-// 128 KB of shared memory, so 3 buffers (63,616 B) leaves two blocks
-// resident while 4 (82,048 B) leaves one. Deepening to 4 measured EXACTLY
-// zero on this kernel and would have halved the warps per SM -- when a
-// block's 8 warps all sit on the cp.async wait, a second resident block is
-// the only thing that can hide the latency. Do not raise this without
-// re-checking 2 * smem <= 131072.
+// W pipeline depth. 3 buffers keep ~2 k-blocks in flight = 32 KB/block;
+// 4 keep ~3, 5 keep ~4 (smem 82,048 / 100,480 B, both under the 101,376
+// opt-in). Occupancy is NOT the cliff it was written up as: the device
+// answers 1 block/SM already at 3 (63,616 B against 102,400 B/SM, #206),
+// so 4 and 5 cost nothing there. What made "deepening to 4 measured
+// exactly zero" was the wait: cp.async.wait_group<1> is exact only at
+// depth 3 -- at 4 it waited for two tiles when one was needed, so the
+// extra buffer was never in flight during the wait. The loop now waits
+// for exactly the tile it needs (mk_cp_wait_upto). 2 buffers (2 blocks/SM)
+// measured worse on every shape.
 constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
@@ -193,6 +192,16 @@ __device__ __forceinline__ void mk_cp_wait() {
 }
 __device__ __forceinline__ void mk_cp_commit() {
   asm volatile("cp.async.commit_group;\n");
+}
+// wait_group takes an immediate; this dispatches a runtime "groups that may
+// stay in flight" count (the W pipeline keeps at most MK_W_NBUF - 2 = 3).
+__device__ __forceinline__ void mk_cp_wait_upto(int n) {
+  switch (n) {
+    case 0: mk_cp_wait<0>(); break;
+    case 1: mk_cp_wait<1>(); break;
+    case 2: mk_cp_wait<2>(); break;
+    default: mk_cp_wait<3>(); break;
+  }
 }
 
 // ===========================================================================
@@ -373,6 +382,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     mk_cp_commit();
   };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
+  static_assert(MK_W_NBUF <= 5, "mk_cp_wait_upto dispatches up to 3");
   constexpr int DIST = MK_W_NBUF - 1;
 
   // ---- prologue, part 1: this block's A rows are loaded and amax-reduced
@@ -671,9 +681,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         for (int d = 1; d < DIST; ++d)
           if (kb0 + d < kbn) stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF);
       }
-      // Conservative above depth 3 (it waits for more than the one tile it
-      // needs), exact at 2 and 3, and never unsafe.
-      if (DIST > 1 && kbn - kb0 > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
+      // Wait for exactly W(kb0): the groups allowed to stay in flight are
+      // the ones issued after it, min(DIST - 1, kbn - kb0 - 1).
+      mk_cp_wait_upto(min(DIST - 1, kbn - kb0 - 1));
       __syncthreads();
       if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
 
@@ -686,8 +696,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
         stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
-        // outstanding after W(kb+1): the deeper stages, when they exist
-        if (DIST > 1 && kb + DIST < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
+        // outstanding after W(kb+1): the deeper stages, when they exist --
+        // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
+        mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }
