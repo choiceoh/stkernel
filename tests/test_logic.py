@@ -4648,6 +4648,19 @@ def test_ep_compact_warmup_ladder() -> None:
     print("  EP compact warmup ladder ...... OK")
 
 
+def _launcher_caller_passthrough(text: str) -> set[str]:
+    """The names the launcher restores after sourcing a profile.
+
+    Parsed rather than matched as a literal: the list is line-continued and
+    grows, so an adjacency string ties the contract to today's ordering and
+    breaks the next time a knob is inserted.
+    """
+    start = text.index("for _v in ")
+    body = text[start:text.index("; do", start)]
+    return {w for w in body.replace("\\\n", " ").split()
+            if w.isupper() or w.startswith("$")}
+
+
 def test_launcher_load_format_gate() -> None:
     """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
@@ -4658,7 +4671,7 @@ def test_launcher_load_format_gate() -> None:
           "an unknown format must abort, not reach vLLM as a typo")
     check("--load-format $LOAD_FORMAT" in text,
           "the value must actually reach the serve command")
-    check("EXTRA_ENV LOAD_FORMAT $_vllm_keys" in text,
+    check("LOAD_FORMAT" in _launcher_caller_passthrough(text),
           "LOAD_FORMAT must be in the caller passthrough list -- a knob the "
           "launcher never forwards is the failure this lane hit five times")
     check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-auto}"')
@@ -4934,6 +4947,57 @@ def test_torch_imports_are_guarded() -> None:
     print("  torch imports guarded ......... OK")
 
 
+def test_launcher_reject_method_gate() -> None:
+    """REJECT_METHOD must reach the drafter config and refuse a typo."""
+    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    check('"rejection_sample_method\\":\\"$REJECT_METHOD' in text,
+          "the value must reach the speculative-config JSON")
+    check("ABORT: REJECT_METHOD must be standard or block" in text,
+          "an unknown method must abort here, not reach vLLM as a typo")
+    names = _launcher_caller_passthrough(text)
+    check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
+          "both drafter knobs must be in the caller passthrough list -- a "
+          "knob the launcher never forwards is a knob that reads as a "
+          f"measured no-effect; got {sorted(names)}")
+    body = text[text.index('case "${REJECT_METHOD:-}" in'):]
+    empty = body[body.index('"" )'):body.index("standard|block")]
+    check("_spec_extra" not in empty,
+          "unset must add nothing: the default has to stay byte-identical to "
+          "the config this lane already measured")
+    print("  launcher reject-method gate ... OK")
+
+
+def test_accept_profile_conditional_arithmetic() -> None:
+    """pos[i] is a MARGINAL count; the conditional is pos[i] / pos[i-1].
+
+    Dividing every position by the draft count yields a geometric decay even
+    when the per-position conditional rate is flat, which reads as a broken
+    drafter. This lane made exactly that error, so pin the arithmetic.
+    """
+    src = open("probes/accept_profile.py").read()
+    check("previous = drafts" in src and "cond = count / previous" in src,
+          "the conditional must divide by the previous position's count, "
+          "with the draft count seeding position 0")
+    check("count / drafts" in src,
+          "the marginal must still be printed -- it is what the engine "
+          "exports and what external reports quote")
+    # A flat 80% conditional rate must not look like decay.
+    marginal, drafts, previous, conds = [], 1000.0, 1000.0, []
+    for _ in range(7):
+        previous *= 0.8
+        marginal.append(previous)
+    previous = drafts
+    for count in marginal:
+        conds.append(count / previous)
+        previous = count
+    check(max(conds) - min(conds) < 1e-9,
+          "a constant conditional rate must come back constant")
+    check(marginal[-1] / drafts < 0.3,
+          "...while its marginal decays below 30%, which is the number that "
+          "looks alarming and is not")
+    print("  accept profile arithmetic ..... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4965,6 +5029,8 @@ if __name__ == "__main__":
     test_dflash2_conv_mask_buffer()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
+    test_launcher_reject_method_gate()
+    test_accept_profile_conditional_arithmetic()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
     test_fp8_acceptance_contracts()
