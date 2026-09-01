@@ -37,7 +37,11 @@
 // exact. No PDL is emitted, so same-stream launches never overlap phases.
 
 #include <torch/extension.h>
-#include <ATen/cuda/CUDAContext.h>
+// c10, not ATen/cuda/CUDAContext.h: that header pulls CUDAContextLight.h
+// -> <cusparse.h>, which this image does not ship under /usr/local/cuda
+// (it lives only under the pip nvidia/cu13 tree). The kernel needs the
+// current stream and nothing else from it.
+#include <c10/cuda/CUDAStream.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_fp8.h>
@@ -292,10 +296,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
           for (int i = 0; i < 2; ++i) {
             asm volatile(
                 "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
-                "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};
-"
-                : "+f"(kacc[i][0]), "+f"(kacc[i][1]), "+f"(kacc[i][2]),
-                  "+f"(kacc[i][3])
+                "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+                : "+f"(kacc[i][j][0]), "+f"(kacc[i][j][1]),
+                  "+f"(kacc[i][j][2]), "+f"(kacc[i][j][3])
                 : "r"(a[i][0]), "r"(a[i][1]), "r"(a[i][2]), "r"(a[i][3]),
                   "r"(b0), "r"(b1));
           }
@@ -1067,7 +1070,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   TORCH_CHECK(c.k % KSTEP == 0 && c.k <= KBLK_MAX * KSTEP, "k out of contract");
   TORCH_CHECK(c.n % 128 == 0, "wq rows must be 128-padded");
   TORCH_CHECK(c.m <= 32, "m out of contract");
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   mk_gemm_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
@@ -1086,7 +1089,7 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK(c.k % KSTEP == 0 && c.k <= KBLK_MAX * KSTEP, "k out of contract");
   TORCH_CHECK(c.n % 128 == 0, "wq4 rows must be 128-padded");
   TORCH_CHECK(c.m <= 32, "m out of contract");
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   mk_gemm_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
@@ -1126,7 +1129,7 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.norm_eps = (float)scalars[4];
   TORCH_CHECK(ptrs.size() == 19 && ints.size() == 2 && scalars.size() == 5,
               "run_mhc arg contract");
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   mk_mhc_kernel<<<MK_GRID, MK_THREADS, 0, stream>>>(a);
 }
 
@@ -1171,7 +1174,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.conv_width = (int)ints[4];
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   mk_kda_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(a);
 }
 
