@@ -25,6 +25,73 @@ What it has already established (2026-09-01, srv2 scratch container):
     acquire fence pair, and every phase boundary has one -- so the obvious
     race and OOB candidates are already excluded.
 
+conv_state is now exact (2.2e-06). The remaining `out` gap (~3-4) is
+localised by `stock_run(debug=True)`, which returns the pipeline split:
+
+    attn  -- the recurrence readout (phase 3)
+    core  -- after the gated RMSNorm (phase 4)
+    out   -- after o_proj (phase 5)
+
+Measured 2026-09-01, narrowing the `out` gap phase by phase:
+
+    g1      9.9e-08   phase 1 -- exact
+    g2      0.0e+00   phase 1 -- exact
+    core    1.9-2.5   phase 4 output
+    out     2.8-3.8   phase 5 output
+
+phase 5 only carries the error (core is already wrong), and phase 1 is
+exact, so the gates are not it. `core = norm(attn, g2)` with an exact g2
+and a norm whose formula matches the stock one leaves the recurrence
+READOUT (`attn`, phase 3) as the remaining candidate.
+
+RESOLVED 2026-09-01 -- two readout defects, both found by that narrowing:
+
+  * rec_state was stored TRANSPOSED. Stock writes element (v, k) at
+    v * K + k (fused_recurrent.py, `o_v[:, None] * K + o_k[None, :]`); the
+    kernel used k * KDA_D + v. The recurrence is transpose-equivariant so it
+    stayed self-consistent internally, but the buffer is SHARED with the
+    stock path in production. Measured at acc == T: as-is 1.005 / transposed
+    6.6e-06 before, exactly swapped after.
+  * The readout had no q scale. Stock does
+        b_q = b_q / sqrt(sum(b_q*b_q) + 1e-6);  b_q = b_q * scale
+    and kda.py:165 defaults scale to k.shape[-1] ** -0.5, so the readout ran
+    sqrt(128) = 11.3x hot. The scale lands on q ONLY, which is why rec_state
+    matched while attn/core/out did not -- that asymmetry is what pointed
+    here.
+
+At acc == T every component now passes: conv 2.2e-06, rec 6.6e-06,
+core 1.4e-03, out 3.9e-03 against a 2e-2 gate.
+
+WHAT IS LEFT: acc < T (core ~1.0). This is a SEMANTIC mismatch, not a bug
+to hunt. Three parties disagree about the spec state slots:
+
+  production  gdn_attn.py:266 -- spec_state_indices_tensor is
+              block_table_tensor[mask, : num_spec + 1], i.e. a DISTINCT
+              physical slot per draft position
+  stock       stores b_h at ssm_state_indices[n, t] for EVERY token t whose
+              index is > 0 (NULL_BLOCK_ID = 0 suppresses a store)
+  this kernel stores once, at j == acc - 1
+  the fixture torch.full((1, 8), SLOT) -- one slot for all eight, so every
+              stock store collapses onto it and the last one wins
+
+They coincide only at acc == T, which is exactly where the numbers agree.
+Deciding this needs the consumer's contract (which slot the next step
+gathers from), not another measurement -- and the fixture has to model
+distinct slots before any acc < T number means anything. Note the
+conv_state width was the same shape of trap: the FIXTURE was wrong and the
+kernel was being blamed.
+
+The state is separately fine: rec_state passes at acc=8 (1.6e-2). Note the
+asymmetry -- `attn` is written for EVERY query token while rec_state is
+written only at `j == acc - 1`, and rec_state's error grows as acc shrinks
+(1.6e-2 at acc=8, 1.2e-1 at acc=1). The fixture sets ssm_state_indices to
+the same slot for all 8 positions, so the stock arm stores its state at
+every token and ends with the full-sequence state, while the MK stores once
+at the accepted boundary. Those agree only at acc == T, which is exactly
+what the numbers show -- so the fixture's index tensor is itself worth
+checking against what production passes before reading rec_state at low
+acc as a kernel defect.
+
 Run it in the scratch container that probes/run_megakernel_bench.sh builds.
 """
 import sys

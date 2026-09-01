@@ -939,10 +939,18 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         const int acc = a.n_accepted[r];
         float* Sbase =
             a.rec_state + (((size_t)slot * KDA_H + head) * KDA_D * KDA_D);
+        // Element (v, k) lives at v * KDA_D + k, matching the stock
+        // writer: fused_recurrent.py stores b_h as
+        //   p_ht + o_v[:, None] * K + o_k[None, :]
+        // This kernel had k * KDA_D + v, i.e. the TRANSPOSE. Internally the
+        // recurrence is transpose-equivariant so it stayed self-consistent,
+        // but the buffer it hands back to (and takes from) the stock path is
+        // shared -- measured: as-is 1.005, transposed 6.6e-06 against the
+        // stock final state at acc == T.
         float S[KDA_D / 2];
 #pragma unroll 8
         for (int kk = 0; kk < KDA_D / 2; ++kk)
-          S[kk] = Sbase[(k0 + kk) * KDA_D + v];
+          S[kk] = Sbase[(size_t)v * KDA_D + (k0 + kk)];
 
         for (int j = 0; j < t1 - t0; ++j) {
           const int t = t0 + j;
@@ -978,8 +986,20 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
               nq += q_s[d] * q_s[d];
               nk += k_s[d] * k_s[d];
             }
-            nq = rsqrtf(nq + 1e-12f);
-            nk = rsqrtf(nk + 1e-12f);
+            // Match the stock kernel exactly (fused_recurrent.py:137-140):
+            //   b_q = b_q / sqrt(sum(b_q*b_q) + 1e-6)
+            //   b_k = b_k / sqrt(sum(b_k*b_k) + 1e-6)
+            //   b_q = b_q * scale
+            // The trailing scale is applied to q ONLY, and kda.py:165
+            // defaults it to k.shape[-1] ** -0.5 = KDA_D^-0.5. This kernel
+            // had neither the 1e-6 epsilon nor the scale, so its readout ran
+            // sqrt(KDA_D) = 11.3x hot. Because only q carries the scale, the
+            // error term (which retrieves with k) was unaffected -- which is
+            // why rec_state matched while attn/core/out did not.
+            constexpr float kda_qk_scale =
+                0.088388347648318447f;  // KDA_D ** -0.5, KDA_D = 128
+            nq = rsqrtf(nq + 1e-6f) * kda_qk_scale;
+            nk = rsqrtf(nk + 1e-6f);
 #pragma unroll 8
             for (int d = 0; d < KDA_D; ++d) {
               q_s[d] *= nq;
@@ -1029,7 +1049,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
           if (j == acc - 1) {  // accepted boundary: write the state back
 #pragma unroll 8
             for (int kk = 0; kk < KDA_D / 2; ++kk)
-              Sbase[(k0 + kk) * KDA_D + v] = S[kk];
+              Sbase[(size_t)v * KDA_D + (k0 + kk)] = S[kk];
           }
         }
       }
