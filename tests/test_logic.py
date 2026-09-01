@@ -6294,9 +6294,21 @@ def test_glm53_megakernel_contracts() -> None:
     # reads that fold them -- anchor it on the READ, not on the comment: the
     # zero pass used to sit above the comment and the ordering check passed
     # by accident of that layout.
-    check(cu.index("mk_grid_barrier(bar, c.grid);")
-          < cu.index("v += g_mk_gemm_partial["),
-          "a barrier separates the slice writes from the reduce")
+    # No fold barrier any more: the last slice of a tile folds it. The
+    # writer fences before its arrival is counted, the completing block
+    # fences after seeing the count and reads the other slices through L2
+    # (L1 is not coherent within a launch), and re-arms the counter.
+    _arr = cu.index("atomicAdd(&g_mk_tile_arrive[lt], 1u)")
+    check(cu.rindex("__threadfence();", 0, _arr) < _arr
+          < cu.index("__ldcg((const float4*)(src + (size_t)spx * pslice))"),
+          "last-arriver fold: fence before the arrival, L2 reads after it")
+    check("if (s_last) g_mk_tile_arrive[lt] = 0u;" in cu
+          and "const unsigned expect = (unsigned)min(ksr, kblk);" in cu,
+          "the tile counter is re-armed by its completing slice and expects "
+          "only the non-empty slices (kb0 == kbn never arrives)")
+    check(cu.count("mk_grid_barrier(bar, c.grid);") == 1,
+          "one grid barrier per gemm phase (the A-quant publish) -- the "
+          "fold has none")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The

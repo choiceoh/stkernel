@@ -260,7 +260,15 @@ __device__ unsigned long long g_mk_gemm_bar = 0ULL;
 // not equal the standalone gemm grid. Two grids on one ticket counter
 // misalign it and the barrier releases early -- so, two counters.
 __device__ unsigned long long g_mk_kda_bar = 0ULL;
-__device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
+__device__ __align__(16) float g_mk_gemm_partial[MK_SPLIT_ELEMS];
+// Split-K fold without a grid barrier: every k slice of a leftover tile
+// bumps its tile's counter after publishing its partial, and the slice
+// that finds the count complete folds the tile (fixed slice order, so the
+// sum is bitwise the same whichever block is last) and resets the counter
+// for the next launch. Indexed by leftover tile, rem < grid <= MK_GRID_CAP.
+// The stamps priced the barrier + cooperative fold at 5-11 us per launch,
+// most of it blocks that had finished waiting for the one that had not.
+__device__ unsigned int g_mk_tile_arrive[MK_GRID_CAP];
 // A, quantized ONCE per launch. Every n-tile walks all of k, so quantizing
 // inside the tile loop redid the same work nblk times -- 51x at n=6416 --
 // and read bf16, twice the bytes the mma consumes. Measured ceiling for
@@ -341,6 +349,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
   float* sxs =
       (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
+  __shared__ int s_last;  // "this block completed a leftover tile"
 
   const int units = split ? (full + rem * ksr) : nblk;
   // unit -> (n-tile, k range). Whole tiles first, then the leftover tiles'
@@ -743,22 +752,48 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       }
     }
     __syncthreads();
-  }
-  MK_TS(4);  // all units of this block done
-  if (split) {  // fold the leftover tiles' slices into the bf16 output
-    mk_grid_barrier(bar, c.grid);
-    MK_TS(5);  // fold barrier released
-    for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
-         i2 < pslice; i2 += (size_t)c.grid * MK_THREADS) {
-      const int r = (int)(i2 / pcols);
-      const int col = full * 128 + (int)(i2 % pcols);
-      if (col >= c.n_orig) continue;
-      float v = 0.0f;
-      for (int spx = 0; spx < ksr; ++spx)   // fixed order -> reproducible
-        v += g_mk_gemm_partial[(size_t)spx * pslice + i2];
-      c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
+    if (to_partial) {
+      // release: this block's slice is visible device-wide before its
+      // arrival is counted (the threadFenceReduction pattern).
+      __threadfence();
+      __syncthreads();
+      const int lt = nt - full;
+      if (threadIdx.x == 0) {
+        // slices with kb0 == kbn never arrive; there are min(ksr, kblk)
+        // that do (the floor boundaries take exactly that many steps).
+        const unsigned expect = (unsigned)min(ksr, kblk);
+        const unsigned prev = atomicAdd(&g_mk_tile_arrive[lt], 1u);
+        s_last = (prev + 1u == expect);
+        if (s_last) g_mk_tile_arrive[lt] = 0u;  // all arrived; rearm
+      }
+      __syncthreads();
+      if (s_last) {
+        __threadfence();  // acquire side: the other slices' stores
+        // Fold this tile: rows r < m, 128 columns as 32 float4, every
+        // non-empty slice in index order. __ldcg: the partials were
+        // written by other SMs, and L1 is not coherent within a launch.
+        for (int i2 = threadIdx.x; i2 < c.m * 32; i2 += MK_THREADS) {
+          const int r = i2 >> 5, c4 = (i2 & 31) * 4;
+          const float* src =
+              g_mk_gemm_partial + (size_t)r * pcols + lt * 128 + c4;
+          float4 v4 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          for (int spx = 0; spx < ksr; ++spx) {  // fixed order -> reproducible
+            if ((kblk * (spx + 1)) / ksr <= (kblk * spx) / ksr) continue;
+            const float4 pv = __ldcg((const float4*)(src + (size_t)spx * pslice));
+            v4.x += pv.x; v4.y += pv.y; v4.z += pv.z; v4.w += pv.w;
+          }
+          const int col = nt * 128 + c4;
+          __nv_bfloat16* o = c.out + (size_t)r * c.n_orig + col;
+          if (col < c.n_orig) o[0] = __float2bfloat16(v4.x);
+          if (col + 1 < c.n_orig) o[1] = __float2bfloat16(v4.y);
+          if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
+          if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
+        }
+      }
+      __syncthreads();  // s_last is reused by the next unit
     }
   }
+  MK_TS(4);  // all units of this block done (no fold barrier any more)
   MK_TS(6);  // exit
 }
 
