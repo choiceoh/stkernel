@@ -83,8 +83,13 @@ constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 //   saq[2][16][132]  fp8 A tiles       2*16*132       = 4224
 //   swb[3][128][144] fp8 W pipeline    3*128*144      = 55296
 //   sxs[32][32]      fp32 group scales 32*32*4        = 4096
+// W pipeline depth. 3 buffers keep ~2 k-blocks in flight = 32 KB, which by
+// Little's law caps this kernel far below the part's bandwidth; 4 buffers
+// with a distance-3 prefetch keep ~3. smem: 4*128*144 = 73728, and
+// 4224 + 73728 + 4096 = 82048 <= the 101376 opt-in this part reports.
+constexpr int MK_W_NBUF = 4;
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
-                          3 * SMEM_W_ROWS * SMEM_W_PITCH +
+                          MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                           KBLK_MAX * KBLK_MAX * 4;
 
 #define MK_CHECK_CUDA(x)                                                     \
@@ -197,9 +202,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int mtiles = (c.m + 15) / 16;
 
   uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
-  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [3][128][144] W pipeline
+  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
   float* sxs =
-      (float*)(swb + 3 * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
+      (float*)(swb + MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
 
   const int lane = threadIdx.x & 31;
   const int g = lane >> 2, t4 = (lane & 3) * 4;
@@ -221,11 +226,17 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
       const uint8_t* wsrc =
           c.wq + (size_t)nt * SMEM_W_ROWS * c.k + kb * KSTEP;
       uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH);
-      for (int r = threadIdx.x; r < SMEM_W_ROWS; r += MK_THREADS) {
-        const uint8_t* sp = wsrc + (size_t)r * c.k;
-        uint8_t* dp = d0 + r * SMEM_W_PITCH;
-#pragma unroll
-        for (int e = 0; e < KSTEP; e += 16) mk_cp_async16(dp + e, sp + e);
+      // Flatten (row, 16B chunk) so ALL MK_THREADS issue copies. The row-
+      // strided form left threads >= SMEM_W_ROWS (128 of 256) idle, halving
+      // the bytes in flight -- and this stage is latency-bound, so in-flight
+      // bytes ARE the bandwidth (Little's law).
+      constexpr int MK_W_CHUNKS = KSTEP / 16;
+      for (int t = threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
+           t += MK_THREADS) {
+        const int r = t / MK_W_CHUNKS;
+        const int e = (t % MK_W_CHUNKS) * 16;
+        mk_cp_async16(d0 + r * SMEM_W_PITCH + e,
+                      wsrc + (size_t)r * c.k + e);
       }
       mk_cp_commit();
     };
@@ -395,22 +406,32 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
         __syncthreads();
       }
     } else {
-      // ---- W8 path: 3-buffer cp.async pipeline (2 tiles in flight)
+      // ---- W8 path: MK_W_NBUF-buffer cp.async pipeline, distance 3.
+      // Each stage_w commits exactly one cp.async group, so "wait until at
+      // most N groups outstanding" is the same as "buffer kb has landed"
+      // when N is the number of stages issued after it.
       stage_w(0, 0);
       quant_a(0);
       if (kblk > 1) stage_w(1, 1);
-      if (kblk > 1) mk_cp_wait<1>(); else mk_cp_wait<0>();
+      if (kblk > 2) stage_w(2, 2);
+      if (kblk > 2) mk_cp_wait<2>();
+      else if (kblk > 1) mk_cp_wait<1>();
+      else mk_cp_wait<0>();
       __syncthreads();
 
       for (int kb = 0;; ++kb) {
-        if (kb + 2 < kblk) stage_w(kb + 2, (kb + 2) % 3);
-        const uint8_t* sw = swb + (kb % 3) * (SMEM_W_ROWS * SMEM_W_PITCH);
+        if (kb + 3 < kblk) stage_w(kb + 3, (kb + 3) % MK_W_NBUF);
+        const uint8_t* sw =
+            swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
 
         if (kb + 1 >= kblk) break;
         __syncthreads();  // every mma reader of saq is done first
         quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
-        if (kb + 2 < kblk) mk_cp_wait<1>(); else mk_cp_wait<0>();
+        // outstanding after W(kb+1): W(kb+2), W(kb+3) when they exist
+        if (kb + 3 < kblk) mk_cp_wait<2>();
+        else if (kb + 2 < kblk) mk_cp_wait<1>();
+        else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }

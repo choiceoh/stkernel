@@ -6166,9 +6166,20 @@ def test_glm53_megakernel_contracts() -> None:
     check("m16n8k32.row.col.f32.e4m3.e4m3.f32" in cu,
           "the GEMM uses the e4m3 mma.sync kind available on sm_121a")
     check("cp.async.cg.shared.global" in cu_code
-          and "3 * SMEM_W_ROWS * SMEM_W_PITCH" in cu
+          and "MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH" in cu
           and "cp.async.wait_group" in cu_code,
-          "the W stream is a 3-buffer cp.async pipeline (2 tiles in flight)")
+          "the W stream is a multi-buffer cp.async pipeline")
+    # Depth is a tuning knob, not a contract -- but it must stay deep enough
+    # to keep more than one tile in flight, and the smem it costs must fit
+    # the opt-in this part actually reports (101376 B).
+    nbuf = int(re.search(r"constexpr int MK_W_NBUF = (\d+);", cu).group(1))
+    check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
+    check(2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4 <= 101376,
+          f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
+    check("t / MK_W_CHUNKS" in cu,
+          "staging must flatten (row, chunk) so every thread issues copies: "
+          "the row-strided form left half of MK_THREADS idle and halved the "
+          "bytes in flight, which is the bandwidth on a latency-bound stage")
     _w8_at = cu_code.index("stage_w(0, 0);")
     check(_w8_at < cu_code.index("quant_a(0);", _w8_at),
           "W(0) starts flying before A(0) quantizes (the W8 pipeline fill; "
