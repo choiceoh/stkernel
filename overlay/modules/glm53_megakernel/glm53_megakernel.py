@@ -873,7 +873,8 @@ class _KdaFixture:
             compute_gate=True, lower_bound=-5.0)
         o_norm = FusedRMSNormGated(KDA_D, eps=1e-5, activation="sigmoid")
         core = o_norm(attn.view(T, KDA_H, KDA_D), g2.view(T, KDA_H, KDA_D))
-        out = _fp8_dense_gemm(core.reshape(T, KDA_OUT), sq_o, sws_o)
+        out = _fp8_dense_gemm(core.reshape(T, KDA_OUT), sq_o, sws_o,
+                              ro, co)
         torch.cuda.synchronize()
         return {"out": out, "conv_state": conv_ref, "rec_state": rec_ref}
 
@@ -943,10 +944,10 @@ def _selftest_w4() -> bool:
         return False
     # (b) by-design error vs the stock pair
     w = torch.randn(n, k, dtype=torch.bfloat16, device=dev) * 0.05
-    sq, sws = _stock_fp8_pair(w)
+    sq, sws, srows, scols = _stock_fp8_pair(w)
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
 
-    ref = _fp8_dense_gemm(x, sq, sws)
+    ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
     got = _run((None, None) + build_mk_weight_w4(w))
     torch.cuda.synchronize()
     e = _rel_err(got, ref)
