@@ -6426,7 +6426,7 @@ def test_glm53_megakernel_contracts() -> None:
           and cu.count("mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar)") == 1
           and cu.count("mk_gemm_phase<false>(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
-    check(cu.count("<<<mhc_grid, MK_THREADS") == 1
+    check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
