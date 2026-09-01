@@ -755,7 +755,7 @@ class _KdaFixture:
                                device="cuda")
         self.nacc = torch.tensor([acc], dtype=torch.int32, device="cuda")
         self._mk_cache = None       # (layer stand-in, meta), quantized once
-        self._stock_cache = None    # (sq_in, sws_in, sq_o, sws_o), once
+        self._stock_cache = None    # (q, ws, rows, cols) x {in, o}, once
 
     def _layer_stand_in(self):
         import torch
@@ -848,8 +848,8 @@ class _KdaFixture:
         if self._stock_cache is None:
             self._stock_cache = (_stock_fp8_pair(self.w_in)
                                  + _stock_fp8_pair(self.w_o))
-        sq_in, sws_in, sq_o, sws_o = self._stock_cache
-        proj = _fp8_dense_gemm(self.x, sq_in, sws_in)
+        (sq_in, sws_in, rin, cin, sq_o, sws_o, ro, co) = self._stock_cache
+        proj = _fp8_dense_gemm(self.x, sq_in, sws_in, rin, cin)
         qkv, beta_raw, f_a, g_a = proj.split(
             [KDA_QKV, KDA_H, KDA_D, KDA_D], dim=-1)
         g1 = f_a @ self.f_b.T
