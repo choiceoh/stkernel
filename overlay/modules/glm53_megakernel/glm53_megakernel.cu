@@ -562,7 +562,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
-        quant_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
+        if (0) quant_a(kb + 1);  // MEASUREMENT ONLY
         // outstanding after W(kb+1): the deeper stages, when they exist
         if (DIST > 1 && kb + DIST < kbn) mk_cp_wait<1>(); else mk_cp_wait<0>();
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
