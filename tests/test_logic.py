@@ -4029,7 +4029,7 @@ def test_dflash_warmup_buckets() -> None:
 
 
 def test_b12x_micro_chunk_width() -> None:
-    """Wider admitted shapes and the chunk-width knob, both fail-closed."""
+    """The caller cannot exceed the matching dispatch/workspace contract."""
     ns = load_defs(
         "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
         {"b12x_ep_micro_chunk_tokens", "b12x_ep_zero_weight_micro_chunks",
@@ -4043,14 +4043,20 @@ def test_b12x_micro_chunk_width() -> None:
     chunks = ns["b12x_ep_zero_weight_micro_chunks"]
     stock = ns["B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS"]
 
-    check(width({}.get) == stock, "unset chunk width keeps the stock 8")
-    for raw in ("", "x", "7", "9", "4", "72", "0", "-8"):
-        check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get) == stock,
-              f"invalid chunk width {raw!r} must fall back to stock, never "
-              "silently widen onto an unvalidated kernel shape")
-    for raw, want in (("8", 8), ("16", 16), ("32", 32), ("64", 64)):
-        check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get) == want,
-              f"chunk width {raw} must be honoured")
+    check(width({}.get) == stock, "unset chunk width keeps the exact 8")
+    check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": "8"}.get) == stock,
+          "the installed dispatcher's exact 8-token width is accepted")
+    for raw in ("", "x", "7", "9", "4", "16", "32", "64", "72", "0", "-8"):
+        if raw == "":
+            check(width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get) == stock,
+                  "an empty setting is equivalent to unset")
+            continue
+        try:
+            width({"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": raw}.get)
+            check(False, f"unsupported chunk width {raw!r} must fail setup")
+        except ValueError as exc:
+            check("must be exactly 8" in str(exc) and raw in str(exc),
+                  f"unsupported width {raw!r} must explain the exact contract")
 
     # every positive multiple of the chunk is admitted, up to the cutover --
     # 24 (C=3 at MAX_SEQS=4) was previously dropped to the pair fallback
@@ -4089,11 +4095,34 @@ def test_b12x_micro_chunk_width() -> None:
     check(chunks(8, 4, 72, enabled=True) == (), "top_k must be 8")
     check(chunks(8, 8, 71, enabled=True) == (), "local experts must be 72")
 
-    # a widened chunk halves the call count at the same batch
-    import os as _os
-    wide = {"VLLM_B12X_EP_MICRO_CHUNK_TOKENS": "16"}.get
-    got = ns["b12x_ep_zero_weight_micro_chunks"]
-    check(width(wide) == 16, "16-token chunk is admitted")
+    source = open(_overlay_source(
+        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+    ), encoding="utf-8").read()
+    planner = source[source.index("def b12x_ep_zero_weight_micro_chunks"):
+                     source.index("def b12x_ep_micro_tail")]
+    check("b12x_ep_micro_chunk_tokens()" not in planner
+          and "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS" in planner,
+          "the per-layer forward planner must not re-read the environment")
+
+    tree = ast.parse(source)
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+               and node.name == "FlashInferB12xExperts")
+    init = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                and node.name == "__init__")
+    apply = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                 and node.name == "apply")
+    init_source = ast.get_source_segment(source, init) or ""
+    apply_source = ast.get_source_segment(source, apply) or ""
+    check("b12x_ep_micro_chunk_tokens()" in init_source,
+          "the exact zero-weight width must be validated once at construction")
+    check("self._ep_compact_enabled = b12x_ep_compact_enabled()" in init_source
+          and "enabled=self._ep_compact_enabled" in apply_source
+          and "b12x_ep_compact_enabled()" not in apply_source,
+          "compact selection must consume its construction-time latch")
+    check("self._direct_out = os.environ.get(" in init_source
+          and "if self._direct_out:" in apply_source
+          and "os.environ" not in apply_source,
+          "direct-out selection must not read the environment per layer")
 
     print("  EP micro chunk width .......... OK")
 
