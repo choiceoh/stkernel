@@ -183,6 +183,27 @@ def _bootstrap(comm):
                 "[osar] %d/%d ranks ready -> every rank stays on NCCL",
                 int(votes.item()), comm.world_size)
             return
+        # MAXEL agreement, same all-or-none rule and for the same reason.
+        # MAXEL is compiled into the kernel and participates in the remote rx
+        # stride, and `_eligible` gates on `numel <= _MAXEL` -- so a rank built
+        # with a larger value takes the one-shot path for a tensor its peers
+        # send through NCCL. That is the split collective this vote exists to
+        # prevent, and it cannot be seen locally: every rank boots fine and the
+        # md5 line matches, because the source is identical and only -DMAXEL
+        # differs. Vote before connect: the peer buffers are sized from it.
+        maxel_bounds = torch.tensor([_MAXEL, -_MAXEL], dtype=torch.int64)
+        dist.all_reduce(maxel_bounds, op=dist.ReduceOp.MAX, group=comm.cpu_group)
+        maxel_hi = int(maxel_bounds[0].item())
+        maxel_lo = -int(maxel_bounds[1].item())
+        if maxel_hi != maxel_lo:
+            _disabled = True
+            logger.warning(
+                "[osar] MAXEL differs across ranks (%d..%d; this rank %d) -> "
+                "every rank stays on NCCL. Set VLLM_DSV4_OSAR_MAXEL "
+                "identically on every node, or unset it everywhere.",
+                maxel_lo, maxel_hi, _MAXEL,
+            )
+            return
         _boot_agreed = True
 
         gathered = [None] * comm.world_size
