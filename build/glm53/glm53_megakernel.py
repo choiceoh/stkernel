@@ -871,7 +871,21 @@ class _KdaFixture:
             ssm_state_indices=self.sidx, num_accepted_tokens=self.nacc,
             sigmoid_beta=True, a_log=self.a_log, g_bias=self.dt_bias,
             compute_gate=True, lower_bound=-5.0)
-        o_norm = FusedRMSNormGated(KDA_D, eps=1e-5, activation="sigmoid")
+        # FusedRMSNormGated is a vLLM CustomOp: its __init__ reads the
+        # ambient compilation config, so building one outside a
+        # set_current_vllm_config() context asserts. A serving boot always
+        # has that context; this stand-alone probe has to supply one.
+        from vllm.config import VllmConfig, set_current_vllm_config
+        try:
+            get_current_vllm_config = None
+            from vllm.config import get_current_vllm_config  # noqa: F811
+            get_current_vllm_config()
+            o_norm = FusedRMSNormGated(KDA_D, eps=1e-5,
+                                       activation="sigmoid")
+        except (AssertionError, ImportError):
+            with set_current_vllm_config(VllmConfig()):
+                o_norm = FusedRMSNormGated(KDA_D, eps=1e-5,
+                                           activation="sigmoid")
         core = o_norm(attn.view(T, KDA_H, KDA_D), g2.view(T, KDA_H, KDA_D))
         out = _fp8_dense_gemm(core.reshape(T, KDA_OUT), sq_o, sws_o,
                               ro, co)
