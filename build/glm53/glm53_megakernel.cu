@@ -414,8 +414,15 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // the bytes in flight -- and this stage is latency-bound, so in-flight
     // bytes ARE the bandwidth (Little's law).
     constexpr int MK_W_CHUNKS = KSTEP / 16;
-    for (int t = threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
-         t += MK_THREADS) {
+    // Thread 0 issues NO copies (it still commits an empty group, so the
+    // per-thread wait counts stay uniform). It is the thread that runs
+    // the grid barrier, and the barrier's __threadfence drains that
+    // thread's outstanding cp.async: with the first unit's fill hoisted
+    // above the A-quant barrier, the stamps showed the barrier wait grow
+    // from 1.3 us to 6-12 us -- the fill's latency had simply moved into
+    // the barrier. Threads 1..255 cover the 1024 chunks, 4-5 each.
+    for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
+         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1) {
       const int r = t / MK_W_CHUNKS;
       const int e = (t % MK_W_CHUNKS) * 16;
       // r * KSTEP + e == t * 16, so the source walk is now linear across
@@ -433,12 +440,15 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     const uint8_t* ssrc = (const uint8_t*)c.ws4 +
         ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
     uint8_t* d = sraw + buf * W4_RAW_BYTES;
-    for (int t = threadIdx.x; t < SMEM_W_ROWS * 4; t += MK_THREADS)
+    // thread 0 issues nothing -- see stage_w
+    for (int t = (int)threadIdx.x - 1; threadIdx.x != 0 && t < SMEM_W_ROWS * 4;
+         t += MK_THREADS - 1)
       mk_cp_async16(d + (t >> 2) * W4_RAW_PITCH + (t & 3) * 16,
                     nsrc + (size_t)t * 16);
-    if (threadIdx.x < SMEM_W_ROWS * 8 / 16)
-      mk_cp_async16(d + W4_RAW_NIB + threadIdx.x * 16,
-                    ssrc + (size_t)threadIdx.x * 16);
+    if (threadIdx.x >= 1 && threadIdx.x <= SMEM_W_ROWS * 8 / 16) {
+      const int t = (int)threadIdx.x - 1;
+      mk_cp_async16(d + W4_RAW_NIB + t * 16, ssrc + (size_t)t * 16);
+    }
     mk_cp_commit();
   };
   // W4: expand one landed raw record into an e4m3 tile buffer. Thread ->

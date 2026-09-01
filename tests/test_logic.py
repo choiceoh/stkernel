@@ -6226,6 +6226,11 @@ def test_glm53_megakernel_contracts() -> None:
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
           "bytes in flight, which is the bandwidth on a latency-bound stage")
+    check("threadIdx.x != 0\n         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
+          and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
+          "thread 0 issues no cp.async: it runs the grid barrier, whose "
+          "__threadfence drains its own outstanding copies -- with the "
+          "fill hoisted above the barrier that turned into a 6-12 us wait")
     _w8_at = cu_code.index("stage_w(nt, kb0,")
     check(_w8_at < cu_code.index("stage_a(kb0);", _w8_at),
           "W(kb0) starts flying before A(kb0) is staged (the W8 pipeline "
