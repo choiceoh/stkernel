@@ -36,7 +36,7 @@ if [ -f "$PROFILE_ENV" ]; then
   for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
             GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
             MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-            EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD $_vllm_keys; do
+            EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
@@ -169,6 +169,21 @@ fi
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
 DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
+# DFlash/DSpark synthesize their context KV from target hidden states. Tokens
+# restored by automatic prefix caching do not run through the target, so this
+# image leaves their draft KV slots unwritten while draft attention still
+# reads them. That is upstream vLLM #47926: long shared-prefix workloads can
+# collapse to position-0-only acceptance. Until that draft PR's four-file
+# state/block-table repair lands, fail closed and make every prompt token flow
+# through the target. PREFIX_CACHE=1 is an explicit throughput-first rollback;
+# it may restore TTFT reuse at the cost of DFlash2 acceptance on cache hits.
+PREFIX_CACHE="${PREFIX_CACHE:-0}"
+case "$PREFIX_CACHE" in
+  0) PREFIX_CACHE_FLAG="--no-enable-prefix-caching" ;;
+  1) PREFIX_CACHE_FLAG="--enable-prefix-caching" ;;
+  *) echo "ABORT: PREFIX_CACHE must be 0 or 1 (got $PREFIX_CACHE)" >&2; exit 2 ;;
+esac
+[ "$PREFIX_CACHE" = 1 ] || echo "prefix-cache: disabled for DFlash2 draft-KV safety"
 # The former AUDIT overlay replaced V1 files, but this image runs V2 Model
 # Runner.  Refuse the old switch instead of claiming an audit that cannot run.
 [ "${AUDIT:-0}" = 0 ] || {
@@ -465,6 +480,7 @@ SERVE_ARGS="$MODEL_PATH \
 ${ATTN_BACKEND:+--attention-backend $ATTN_BACKEND }\
 --max-model-len $MAX_LEN \
 --max-num-seqs $MAX_SEQS --max-num-batched-tokens $MAX_BATCHED --block-size 2304 --moe-backend $MOE_BACKEND \
+$PREFIX_CACHE_FLAG \
 --load-format $LOAD_FORMAT \
 ${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \
@@ -483,7 +499,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
   for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
-            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED \
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE \
             DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done
