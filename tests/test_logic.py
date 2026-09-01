@@ -3586,6 +3586,73 @@ def test_launcher_parity_guards() -> None:
     print("  launcher parity guards ......... OK")
 
 
+
+def test_memfree_flusher_contract() -> None:
+    """The boot-window flusher is a memory-safety gate; its false positives OOM.
+
+    NVRM allocates from MemFree, vLLM sizes KV from psutil's "available" which
+    counts reclaimable page cache, and `docker run` parks ~11 GiB of MemFree in
+    page cache during a boot. memfree-preflight.sh has always CONCEDED that as
+    BOOT_COST=11. The flusher reclaims it instead -- but only while it is
+    actually running on every node, so the liveness check is load-bearing: a
+    false "RUNNING" tells the operator to lower BOOT_COST and the next boot
+    dies with NVRM OOM.
+    """
+    path = os.path.join(REPO, "launchers", "memfree-flusher.sh")
+    check(os.path.isfile(path), "memfree-flusher.sh is missing")
+    src = open(path, encoding="utf-8").read()
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+
+    # Liveness must be proven from /proc via a pid file, never by pattern
+    # matching: pgrep -f matches any process whose cmdline merely CONTAINS the
+    # pattern -- a wrapper shell, an editor, this repo's own tooling.
+    check("PIDF=" in code, "the flusher has no pid file")
+    check("/proc/$p" in code and "cmdline" in code,
+          "liveness is not verified against /proc, so a stale pid file reads "
+          "as RUNNING")
+    check("pgrep" not in code,
+          "liveness still uses pgrep pattern matching -- an unrelated process "
+          "carrying the string reports RUNNING and the operator lowers "
+          "BOOT_COST against a node that is not flushing")
+
+    # The window has to be bounded: a forgotten flusher evicts co-tenants
+    # (srv4 carries nemotron and the solarflow stack) indefinitely.
+    check("DURATION_DEFAULT=" in code, "the flush window is unbounded")
+    check("window expired" in src, "the loop never announces its own expiry")
+
+    # Unconditional, not threshold-triggered -- the whole point.
+    check("drop_caches" in code and "sync" in code, "no flush at all")
+    run_fn = code[code.index("do_run()"):code.index("nodes()")]
+    check("sudo -n true" in run_fn and "exit 2" in run_fn,
+          "the flush LOOP does not fail closed without passwordless sudo -- it "
+          "would spin harmlessly forever while status reports RUNNING, which is "
+          "the false positive this whole gate exists to prevent")
+
+    # status must be a gate, not a print: non-zero when any node is not
+    # flushing, so a caller can branch on it.
+    status = code[code.index("do_status()"):]
+    check("return $((1 - all))" in status,
+          "status always succeeds, so it cannot gate a BOOT_COST decision")
+
+    # And it must stay opt-in: no launcher may start it as a side effect,
+    # because dropping caches fleet-wide hits every other tenant.
+    for name in ("start-hy4-tp4.sh", "start-glm53-nvfp4-tp4.sh"):
+        launcher = open(os.path.join(REPO, "launchers", name),
+                        encoding="utf-8").read()
+        check("memfree-flusher" not in launcher,
+              f"{name} starts the flusher on its own -- it evicts every "
+              "co-tenant's page cache and must stay an operator decision")
+
+    # The preflight keeps conceding the boot cost by default; lowering it is
+    # only sound while the flusher is confirmed up.
+    pre = open(os.path.join(REPO, "launchers", "memfree-preflight.sh"),
+               encoding="utf-8").read()
+    check(re.search(r"^BOOT_COST=\$\{BOOT_COST:-11\}", pre, re.M),
+          "the preflight's default BOOT_COST moved -- reclaiming those GiB is "
+          "only real while the flusher runs, so the default must stay 11")
+    print("  memfree flusher contract ....... OK")
+
+
 def test_census_kda_group() -> None:
     """census: KDA/FLA chunk kernels classify out of 기타 and norm groups.
 
@@ -3661,4 +3728,5 @@ if __name__ == "__main__":
     test_dsv4_launcher_axes()
     test_dsv4_ue8m0_host_guard()
     test_launcher_parity_guards()
+    test_memfree_flusher_contract()
     print(f"all OK ({PASS} checks)")

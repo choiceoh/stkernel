@@ -2403,3 +2403,94 @@ TP=1          gate+up rows = 1280   % 128 =  0  -> ALIGNS    (아무도 안 본 
 부수로 `--max-num-batched-tokens 8192` 도 이 리포가 쓴다 — glm53 이 측정(+15.4%)한
 값을 무관한 팀이 같은 하드웨어에서 독립적으로 골랐다. dsv4 의 4096 은 여전히
 비교된 적이 없다.
+
+
+## 외부 4x-Spark GLM 리포 검토 — 두 수치는 비교가 아니고, KV 는 진짜다 (2026-09-01)
+
+`tonyd2wild/GLM-5.3-Flash-NVFP4-1M-KV-4x-DGX-Spark`. **우리 glm53 과 같은 구성**이다
+— 같은 모델·NVFP4·4× DGX Spark·TP4·DFlash2 k=7·`--max-num-batched-tokens 8192`·
+block-size 2304·KV fp8_e4m3. 앞의 Qwen 리포와 달리 직접 비교가 성립한다.
+
+### ① 디코드 54.5 tok/s — 콘텐츠가 다르다
+
+저쪽은 **408 토큰 / 7.5 초**(structured, temp 0, thinking off)다. 벽시계라 **TTFT 가
+포함**돼 있다. 우리 대응 기록은 프로필의 **code 83.1 / ko 26.3**.
+
+우리 스텝(66.0 ms, step/s 15.14, n=6, CV 1.7%)에 수용률을 넣으면:
+
+| acc | tok/s |
+|---|---|
+| 0.33 (prose) | 50.1 |
+| 0.50 | 68.1 |
+| **0.66** | **85.1** (≈ 우리 code 83.1) |
+| 0.74 | 93.6 |
+
+**저쪽 54.5 는 우리 스텝에 acc 0.33~0.42 를 넣은 값과 같다.** 그리고 저쪽 README 가
+스스로 *"acceptance is content-driven... 0.33 on prose to 0.70+ on structured.
+Treat any single throughput measurement as prompt-specific"* 라고 적었다. 콘텐츠를
+맞추지 않으면 비교가 아니고, 맞춰 보면 우리가 낮지 않다.
+
+### ② 프리필 4,141.8 tok/s — warm 대 fresh
+
+저쪽은 명시적으로 `warmed`(prefix cache 적중), 우리 2,110 은 명시적으로 **75K 신선
+프롬프트 3회**(전량 재계산)다. 서로 다른 것을 재고 있다.
+
+### ③ ★★KV 풀 — 이건 진짜고, 우리가 그 GiB 를 이미 재놓고 양보하고 있었다
+
+저쪽 수치: `--kv-cache-memory 25769803776`(24 GiB/rank), 3.89M fp8 토큰,
+GMU 0.85. 우리: KV 16.52 GiB, GMU 0.73.
+
+저쪽이 밝힌 기전은 **우리 원장이 이미 적어둔 것과 같은 것**이다 — vLLM 은
+`psutil.virtual_memory().available`(회수 가능 page cache 포함)로 KV 를 사이징하는데
+**NVRM 은 MemFree 에서 잡는다.** 우리 `memfree-preflight.sh` 주석:
+
+> `docker run` 이 ~31 GB 이미지를 page cache 로 끌어올려 **측정한 것의 ~11 GiB 가
+> 사라진다.** 3회 실측: 101.6→90.19, 102.6→90.49, 113→90.5.
+
+**우리는 그것을 `BOOT_COST=11` 로 예산에서 빼 왔다 — 즉 재고, 양보했다.**
+저쪽은 되찾는다: 부팅 내내 전 노드에서 무조건 `sync; drop_caches`. 임계값 방식은
+*"threshold 가 안 차 있는 채로 allocator 가 굶을 수 있어"* 같은 명령이 타이밍에
+따라 성공/실패한다고 명시한다.
+
+**우리 플릿에서 실측했다** (srv4, `launchers/memfree-flusher.sh --run`):
+
+```
+MemFree 89.1 -> 98.6 GiB  (+9.5 GiB, cached was 9.9)   1회 flush
+이후 3회는 +0.0 (cached 1.8 로 안정)
+```
+
+**한 번의 flush 가 9.5 GiB 를 돌려준다** — `BOOT_COST=11` 이 잡아둔 바로 그 크기다.
+산수도 저쪽 주장과 맞는다: 11 GiB 회수 = GMU +0.092, glm53 KV 16.52 → ~27.5 GiB
+(+67%); 저쪽 주장 16 → 24 GiB (+54.8%).
+
+**배선**: `launchers/memfree-flusher.sh` (`--start`/`--status`/`--stop`/`--run`).
+어느 런처도 자동으로 켜지 않는다 — `drop_caches` 는 전역이라 srv4 의 nemotron·
+solarflow 등 공존 테넌트의 hot page 를 같이 버린다. 창은 시간 제한(기본 90분)이고,
+liveness 는 **pid 파일 + `/proc` 확인**이다(pgrep 패턴 매칭은 무관한 프로세스가
+문자열만 가져도 RUNNING 이 되고, 그 거짓 양성이 곧 `BOOT_COST` 를 내리게 만들어
+다음 부팅을 OOM 으로 보낸다 — 실제로 이 세션에서 한 번 걸렸다).
+
+**아직 채택하지 않았다.** `BOOT_COST` 기본값은 11 그대로다. 브래킷:
+
+```bash
+launchers/memfree-flusher.sh --start 5400      # 전 노드
+launchers/memfree-flusher.sh --status          # 전 노드 RUNNING 확인 (게이트)
+BOOT_COST=2 launchers/memfree-preflight.sh     # 되찾은 예산으로 GMU 재계산
+# ... 부팅 ...
+launchers/memfree-flusher.sh --stop            # 서빙 시작하면 끈다
+```
+
+판정: 부팅 로그의 **`GPU KV cache size`** 를 이전 부팅과 대조. 이 축은 속도가 아니라
+**용량**이다 — 오늘 확인한 대로 dsv4 디코드는 물리 바닥이라 속도 여지가 없고,
+그 스택의 `HEADFREE`/`COMPFREE` 노브는 각각 0.265 GB·0.7 GB 를 쫓고 있었다.
+**11 GiB 앞에서 반올림 오차다.**
+
+### ④ 부수 관찰
+
+- 저쪽은 **`--enforce-eager`** 로 돈다(그래프 없음). 우리 프로필은 `EAGER=0`
+  ("eager was rejected on speed"). 저쪽이 그래프 캡처 메모리를 통째로 포기하고 KV 를
+  샀다는 뜻이다 — 우리와 반대 트레이드. 어느 쪽이 나은지는 측정된 바 없다.
+- 저쪽 MoE 백엔드는 **marlin** 이다. 오늘의 루프라인 분석과 정합한다 — 디코드는
+  대역폭 바운드라 marlin ≈ b12x 이고, b12x 의 이점은 프리필(연산 바운드)에 있다.
+- `--max-num-batched-tokens 8192` 를 독립적으로 골랐다 — 우리 8192 채택의 세 번째
+  근거(본 원장 프리필 예산 항목)가 이것이다.
