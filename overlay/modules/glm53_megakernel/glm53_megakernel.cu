@@ -336,6 +336,7 @@ __device__ float g_mk_axs[32 * KBLK_MAX];                   // 4 KB
 // read_ts(). Compiled out otherwise -- the shipped kernel is unchanged.
 #ifdef MK_PHASE_TS
 __device__ unsigned long long g_mk_ts[MK_GRID_CAP * 8];
+__device__ unsigned long long g_mk_mhc_ts[MK_MHC_GRID_CAP * 8];  // mhc phases
 __device__ __forceinline__ unsigned long long mk_globaltimer() {
   unsigned long long t;
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
@@ -345,9 +346,17 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
   do {                                                                       \
     if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
   } while (0)
+#define MK_MHC_TS(slot)                                                      \
+  do {                                                                       \
+    if (threadIdx.x == 0)                                                    \
+      g_mk_mhc_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer();               \
+  } while (0)
 #else
 #define MK_TS(slot) \
   do {              \
+  } while (0)
+#define MK_MHC_TS(slot) \
+  do {                  \
   } while (0)
 #endif
 
@@ -1208,6 +1217,7 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   // itself waits for its predecessor before p1's first read.
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  MK_MHC_TS(0);
   // 3 grid barriers, down from 5, and no prologue. Each surviving one is a
   // real data dependency (partials -> mixes -> pre-mixes -> sumsq). What
   // went: p3 now STORES its sumsq per (chunk, token) instead of accumulating
@@ -1215,14 +1225,21 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   // zeroing against; and p4 reduces those slots itself, which retired the
   // separate rsqrt phase and its barrier.
   mk_mhc_p1(a, blockIdx.x);
+  MK_MHC_TS(1);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_MHC_TS(2);
   mk_mhc_p2(a, blockIdx.x);
+  MK_MHC_TS(3);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_MHC_TS(4);
   mk_mhc_p3(a, blockIdx.x);
+  MK_MHC_TS(5);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_MHC_TS(6);
   // p4 does its own rsqrt, so the fourth phase boundary (sumsq -> rsqrt)
   // and the single-thread loop that used to sit on it are both gone.
   mk_mhc_p4(a, blockIdx.x);
+  MK_MHC_TS(7);
 }
 
 // ===========================================================================
@@ -1705,6 +1722,23 @@ std::vector<int64_t> mk_read_ts() {
 #endif
 }
 
+// Same for the mhc kernel: [MK_MHC_GRID_CAP][8] -- entry, p1 done, barrier,
+// p2 done, barrier, p3 done, barrier, p4 done.
+std::vector<int64_t> mk_read_mhc_ts() {
+#ifdef MK_PHASE_TS
+  std::vector<unsigned long long> h(MK_MHC_GRID_CAP * 8);
+  MK_CHECK_CUDA(cudaDeviceSynchronize());
+  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_mhc_ts,
+                                     sizeof(unsigned long long) * h.size()));
+  void* p = nullptr;
+  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_mhc_ts));
+  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
+  return std::vector<int64_t>(h.begin(), h.end());
+#else
+  return {};
+#endif
+}
+
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
                  torch::Tensor out, int64_t n_orig) {
   set_kernel_attrs();
@@ -1875,6 +1909,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
+  m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM");
   m.def("run_gemm_w4", &mk_run_gemm_w4, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
