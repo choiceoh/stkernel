@@ -1974,10 +1974,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     swiglu_limit=self._swiglu_limit,
                 )
                 done.append(rows)
+            # info_once hashes its args to dedupe, so every one must be
+            # hashable -- a list here raised TypeError and the whole warmup
+            # was skipped. It said so out loud, which is the only reason this
+            # was caught instead of read as "warmed but no effect".
             logger.info_once(
                 "b12x EP: warmed %d compact prefill shapes at load (%s) -- "
                 "a first long prompt no longer compiles mid-request",
-                len(done), done,
+                len(done), ",".join(str(r) for r in done),
             )
         except Exception as exc:
             # A warmup that fails must cost nothing but a line in the log.

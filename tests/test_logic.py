@@ -4285,6 +4285,25 @@ def test_launcher_nofile_limit() -> None:
     print("  launcher nofile limit ......... OK")
 
 
+def test_once_logger_args_hashable() -> None:
+    """*_once loggers dedupe by hashing their args -- a list raises there."""
+    import ast as _ast
+    for rel in ("overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+                "overlay/modules/fp8_lm_head/fp8_lm_head.py"):
+        src = open(_overlay_source(rel)).read()
+        for node in _ast.walk(_ast.parse(src)):
+            if not (isinstance(node, _ast.Call)
+                    and isinstance(node.func, _ast.Attribute)
+                    and node.func.attr.endswith("_once")):
+                continue
+            for arg in node.args[1:]:
+                check(not isinstance(arg, (_ast.List, _ast.Dict, _ast.Set)),
+                      f"{rel}:{node.lineno} passes an unhashable literal to "
+                      f"{node.func.attr} -- it raises TypeError and skips the "
+                      "whole block (this cost the #164 warmup a boot)")
+    print("  *_once args hashable .......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4309,6 +4328,7 @@ if __name__ == "__main__":
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
     test_ep_compact_warmup_ladder()
+    test_once_logger_args_hashable()
     test_launcher_load_format_gate()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
