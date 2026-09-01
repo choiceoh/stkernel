@@ -4867,6 +4867,23 @@ def test_dflash2_sliding_aot_guard() -> None:
           "only an enabled AOT plan on a sliding-window group may be changed")
     check("builder.aot_schedule = False" in body,
           "the invalid FlashAttention split schedule must be disabled")
+    check("logger.info" in body and "logger.warning" in body,
+          "the guard must announce whether it applied -- a boolean flipped on "
+          "a builder is invisible from outside, so 'we shipped it' and 'it "
+          "ran' are otherwise indistinguishable")
+    check(body.index("_windowed += 1") < body.index("aot_schedule = False"),
+          "count the windowed builders before flipping any, so a zero count "
+          "means the guard's premise was unmet rather than that nothing "
+          "needed flipping")
+
+    readme = open(
+        "overlay/modules/glm53_dflash_aot_guard/README.md", encoding="utf-8"
+    ).read()
+    check("DFlash2Speculator(DFlashSpeculator)" in readme
+          and "set_attn" in readme,
+          "the README must record why a patch on DFlashSpeculator reaches a "
+          "DFlash2 boot -- inheritance is the only reason, and an image bump "
+          "that gives DFlash2 its own set_attn silently kills this overlay")
 
     profile = open("profiles/glm53.env", encoding="utf-8").read()
     check("glm53_dflash_aot_guard" in profile.split('MODULES="', 1)[1]
