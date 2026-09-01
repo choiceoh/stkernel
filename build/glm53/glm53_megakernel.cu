@@ -939,10 +939,18 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         const int acc = a.n_accepted[r];
         float* Sbase =
             a.rec_state + (((size_t)slot * KDA_H + head) * KDA_D * KDA_D);
+        // Element (v, k) lives at v * KDA_D + k, matching the stock
+        // writer: fused_recurrent.py stores b_h as
+        //   p_ht + o_v[:, None] * K + o_k[None, :]
+        // This kernel had k * KDA_D + v, i.e. the TRANSPOSE. Internally the
+        // recurrence is transpose-equivariant so it stayed self-consistent,
+        // but the buffer it hands back to (and takes from) the stock path is
+        // shared -- measured: as-is 1.005, transposed 6.6e-06 against the
+        // stock final state at acc == T.
         float S[KDA_D / 2];
 #pragma unroll 8
         for (int kk = 0; kk < KDA_D / 2; ++kk)
-          S[kk] = Sbase[(k0 + kk) * KDA_D + v];
+          S[kk] = Sbase[(size_t)v * KDA_D + (k0 + kk)];
 
         for (int j = 0; j < t1 - t0; ++j) {
           const int t = t0 + j;
@@ -1029,7 +1037,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
           if (j == acc - 1) {  // accepted boundary: write the state back
 #pragma unroll 8
             for (int kk = 0; kk < KDA_D / 2; ++kk)
-              Sbase[(k0 + kk) * KDA_D + v] = S[kk];
+              Sbase[(size_t)v * KDA_D + (k0 + kk)] = S[kk];
           }
         }
       }
