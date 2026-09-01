@@ -941,6 +941,11 @@ class _KdaFixture:
             # returns.
             res["attn"] = attn.reshape(T, KDA_OUT)
             res["core"] = core.reshape(T, KDA_OUT)
+            # g1 gates the recurrence (phase 3), g2 only the norm (phase 4).
+            # rec_state passing while core fails is exactly what a correct
+            # g1 with a wrong g2 looks like, so both belong in the split.
+            res["g1"] = g1.reshape(T, KDA_OUT)
+            res["g2"] = g2.reshape(T, KDA_OUT)
         return res
 
 

@@ -32,13 +32,28 @@ localised by `stock_run(debug=True)`, which returns the pipeline split:
     core  -- after the gated RMSNorm (phase 4)
     out   -- after o_proj (phase 5)
 
-Measured 2026-09-01: core already differs by 1.9-2.5 while out differs by
-2.8-3.8, so the error is born at or before phase 4 -- phase 5 only carries
-it. And rec_state passes (1.6e-2 at acc=8), so the recurrence STATE is
-right while its READOUT is not. That points at the readout write or the
-norm, not at the delta rule itself; note attn is written for every query
-token while rec_state is written only at j == acc - 1, so a divergence
-confined to tokens past the accepted boundary would look exactly like this.
+Measured 2026-09-01, narrowing the `out` gap phase by phase:
+
+    g1      9.9e-08   phase 1 -- exact
+    g2      0.0e+00   phase 1 -- exact
+    core    1.9-2.5   phase 4 output
+    out     2.8-3.8   phase 5 output
+
+phase 5 only carries the error (core is already wrong), and phase 1 is
+exact, so the gates are not it. `core = norm(attn, g2)` with an exact g2
+and a norm whose formula matches the stock one leaves the recurrence
+READOUT (`attn`, phase 3) as the remaining candidate.
+
+The state is separately fine: rec_state passes at acc=8 (1.6e-2). Note the
+asymmetry -- `attn` is written for EVERY query token while rec_state is
+written only at `j == acc - 1`, and rec_state's error grows as acc shrinks
+(1.6e-2 at acc=8, 1.2e-1 at acc=1). The fixture sets ssm_state_indices to
+the same slot for all 8 positions, so the stock arm stores its state at
+every token and ends with the full-sequence state, while the MK stores once
+at the accepted boundary. Those agree only at acc == T, which is exactly
+what the numbers show -- so the fixture's index tensor is itself worth
+checking against what production passes before reading rec_state at low
+acc as a kernel defect.
 
 Run it in the scratch container that probes/run_megakernel_bench.sh builds.
 """
