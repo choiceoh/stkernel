@@ -292,13 +292,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // stability check catches exactly that, and this lane cannot afford a
   // kernel whose output depends on scheduling.
   const size_t pslice = (size_t)c.m * pcols;
-  const size_t pelem = pslice * ksr;
-  if (split) {
-    for (size_t i = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
-         i < pelem; i += (size_t)c.grid * MK_THREADS)
-      g_mk_gemm_partial[i] = 0.0f;
-    mk_grid_barrier(bar, c.grid);
-  }
+  // No zero pass, and no barrier for one. Every element of the accumulator
+  // is ASSIGNED (not accumulated into) by exactly one unit: the epilogue
+  // below writes all rows r < c.m and all 128 columns of its tile, the rem
+  // tiles cover pcols, and the ksr splits cover the slices. Zeroing first
+  // cost a full pass over pslice * ksr floats plus a grid barrier -- 768 KB
+  // against 4 MB of weights at n=1024, i.e. a fifth of the traffic, to
+  // pre-set values that are all overwritten before anyone reads them.
 
   uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
   uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [MK_W_NBUF][128][144]
