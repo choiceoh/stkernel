@@ -239,6 +239,35 @@ class CandidateSelector(nn.Module):
         )
 
 
+
+def dflash2_selector_load_verdict(stats):
+    """Did the path selector's weights actually load? Pure predicate.
+
+    `stats` is a mapping name -> (finite_fraction, abs_max, abs_mean). The
+    codebooks are declared with `torch.empty`, so a name the loader never
+    matched keeps whatever was in that memory -- and DFlash2's whole claim
+    rests on them: the blog reports ~86 pct conditional acceptance held across
+    ALL draft positions, where an unweighted selector decays hard toward the
+    block end. This fleet measures 78.6 / 57.5 / 35.1 / 22.7 / 16.8 / 10.3 /
+    6.7 pct, i.e. exactly the suffix decay the selector exists to remove, and a
+    mean accept length of 2.4-3.3 against a designed 4.8.
+
+    Returns (ok, reasons). Uninitialised memory shows up as non-finite values
+    or an absurd magnitude; an all-zero tensor means the name matched nothing
+    and something zeroed it.
+    """
+    reasons = []
+    for name, (finite, amax, amean) in sorted(stats.items()):
+        if finite < 1.0:
+            reasons.append(f"{name}: {100 * (1 - finite):.2f}% non-finite")
+        elif amax == 0.0:
+            reasons.append(f"{name}: all zero")
+        elif amax > 1e4 or amean > 1e3:
+            reasons.append(f"{name}: |max|={amax:.3g} |mean|={amean:.3g} "
+                           "-- not a trained magnitude")
+    return (not reasons), tuple(reasons)
+
+
 class DFlash2Qwen3Model(DFlashQwen3Model):
     decoder_layer_cls = DFlash2Qwen3DecoderLayer
 
@@ -290,9 +319,72 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             ),
         )
 
+
+    def verify_selector_loaded(self) -> None:
+        """Say out loud whether the path selector's weights actually arrived.
+
+        The codebooks are declared with `torch.empty`, so a name the loader
+        never matched keeps whatever was in that memory. This lane has now hit
+        that exact failure twice -- the drafter's fp8 lm_head (#132) and the
+        EP pair buffer (#146) -- and both were silent: no error, just wrong
+        numbers downstream.
+
+        Here the downstream symptom would be suffix decay, which is precisely
+        what DFlash2's selector exists to remove. The design reports ~86 pct
+        conditional acceptance held across all draft positions; this fleet
+        measures 78.6 / 57.5 / 35.1 / 22.7 / 16.8 / 10.3 / 6.7 and a mean
+        accept length of 2.4-3.3 against a designed 4.8.
+        """
+        # The selector lives on the inner model (see compute_candidates), not
+        # on this wrapper -- reading it off `self` would silently find None and
+        # report nothing, which is the failure this check exists to catch.
+        selector = getattr(
+            getattr(self, "model", None), "candidate_selector", None
+        )
+        if selector is None:
+            logger.warning(
+                "dflash2 path selector: not found on the model -- cannot "
+                "verify that its codebooks loaded"
+            )
+            return
+        stats = {}
+        for name in ("predecessor_codebook", "successor_codebook"):
+            w = getattr(selector, name, None)
+            if w is None:
+                stats[name] = (0.0, 0.0, 0.0)
+                continue
+            with torch.no_grad():
+                f = w.float()
+                finite = torch.isfinite(f)
+                frac = float(finite.float().mean())
+                clean = f[finite]
+                amax = float(clean.abs().max()) if clean.numel() else 0.0
+                amean = float(clean.abs().mean()) if clean.numel() else 0.0
+            stats[name] = (frac, amax, amean)
+        ok, reasons = dflash2_selector_load_verdict(stats)
+        detail = " ".join(
+            f"{n}(finite={fr:.4f} |max|={mx:.3g} |mean|={mn:.3g})"
+            for n, (fr, mx, mn) in sorted(stats.items())
+        )
+        if ok:
+            logger.info("dflash2 path selector: loaded -- %s", detail)
+        else:
+            logger.warning(
+                "dflash2 path selector looks UNLOADED (%s) -- %s. The selector "
+                "is what holds acceptance flat across draft positions; without "
+                "it the block suffix decays and mean accept length collapses.",
+                "; ".join(reasons), detail,
+            )
+
     def compute_candidates(
         self, hidden_states: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # First call only: the selector is loaded by now, and its codebooks
+        # are declared with torch.empty -- a name the loader never matched
+        # would look like suffix decay, not like an error.
+        if not getattr(self, "_deneb_selector_checked", False):
+            self._deneb_selector_checked = True
+            self.verify_selector_loaded()
         return self.candidate_logits_processor.get_top_k_tokens(
             self.lm_head, hidden_states, self.model.candidate_selector.top_k
         )
