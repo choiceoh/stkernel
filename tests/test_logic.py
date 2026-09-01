@@ -6226,18 +6226,34 @@ def test_glm53_megakernel_contracts() -> None:
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
           "bytes in flight, which is the bandwidth on a latency-bound stage")
-    _w8_at = cu_code.index("stage_w(kb0,")
+    _w8_at = cu_code.index("stage_w(nt, kb0,")
     check(_w8_at < cu_code.index("stage_a(kb0);", _w8_at),
           "W(kb0) starts flying before A(kb0) is staged (the W8 pipeline "
           "fill; the W4 branch above fills its own buffers first by "
           "construction). kb0, not 0: a block may own a k SLICE of a tile.")
+    # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
+    #    its barrier, and the prologue's own x loads (consumed by the amax
+    #    shuffle) go out before that fill. Phase stamps: quant + barrier
+    #    took 3-10 us during which DRAM idled; a fill issued first instead
+    #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
+    _hoist_at = cu_code.index("stage_w(nt0, kb00,")
+    check(cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)") < _hoist_at
+          < cu_code.index("mk_grid_barrier(bar, c.grid);"),
+          "prologue order: x loads + amax, then the first unit's W fill, "
+          "then scale/convert/store and the publishing barrier")
+    check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
+          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);" in cu,
+          "the unit loop must not re-issue the tiles the hoist already "
+          "staged -- a second cp.async group for the same buffer would "
+          "break the one-stage-one-group wait accounting")
     # -- A is quantized ONCE per launch, not once per (tile, k-block). Every
     #    n-tile walks all of k, so the in-loop form redid it nblk times --
     #    51x at n=6416 -- on bf16 input, twice the bytes the mma consumes.
     #    Measured ceiling for removing it: -10% at n=6416/4096, -22% at
     #    n=2048, -14% at n=1024.
     check("__device__ uint8_t g_mk_aq[" in cu
-          and "for (int kb = blockIdx.x; kb < kblk; kb += c.grid)" in cu
+          and "const int kbq = (int)blockIdx.x;" in cu
+          and "for (int kb = kbq + c.grid; kb < kblk; kb += c.grid)" in cu
           and cu.index("g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4")
               < cu.index("auto stage_a"),
           "A is quantized once, cooperatively across the grid, before the "
