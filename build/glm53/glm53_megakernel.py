@@ -246,9 +246,21 @@ def build_mk_weight_w4(weight):
     code = torch.bucketize(qs.abs(), torch.tensor(_E2M1_MIDS,
                                                    device=weight.device))
     sign = (qs < 0).to(torch.uint8)
-    nib = (code.to(torch.uint8) | (sign << 3)).view(n_pad, k // 2, 8)
-    wq4 = (nib[..., 0::2] | (nib[..., 1::2] << 4)).reshape(n_pad, k // 2)
-    return wq4, s.to(torch.int8).contiguous()
+    # Pack PAIRS along k: even k-index -> low nibble, odd -> high. The pair
+    # slice must run on the [.., 16] group view. (Found in review: slicing a
+    # [.., 8] re-view instead picked elements 0,2,4,6 of each octet AND left
+    # numel 4x the target, so reshape raised -- the attach's except then
+    # swallowed it into a silently-stock boot, and the self-test exception
+    # disarmed every OTHER segment with it. Shape asserts below make any
+    # future layout drift fail loudly at build, not silently at serve.)
+    q = (code.to(torch.uint8) | (sign << 3)).view(n_pad, k // 16, 16)
+    wq4 = (q[..., 0::2] | (q[..., 1::2] << 4)).reshape(n_pad, k // 2)
+    ws4 = s.to(torch.int8).contiguous()
+    assert wq4.shape == (n_pad, k // 2), \
+        f"wq4 {tuple(wq4.shape)} != {(n_pad, k // 2)}"
+    assert ws4.shape == (n_pad, k // 16), \
+        f"ws4 {tuple(ws4.shape)} != {(n_pad, k // 16)}"
+    return wq4.contiguous(), ws4
 
 
 def _stock_fp8_pair(w):
@@ -881,17 +893,28 @@ def arm() -> None:
         logger.warning("[megakernel] device cc=%d.%d sms=%d is not GB10 "
                        "(12.1/48); module stays inert", major, minor, sms)
         return
+    def _gate(seg, fn):
+        # One segment's failure is ITS failure: an exception escaping a
+        # self-test used to disarm every other segment with it (the W4
+        # packing bug shipped exactly that blast radius until review).
+        try:
+            return bool(fn())
+        except Exception:
+            logger.exception("[megakernel] selftest %s raised -> DISARM "
+                             "that segment only", seg)
+            return False
+
     if ENABLE_MHC:
-        _ARMED["mhc"] = _selftest_mhc()
+        _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
     if ENABLE_GEMM:
-        _ARMED["gemm"] = _selftest_gemm()
+        _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
         if ENABLE_W4:
             global _W4_ARMED
-            _W4_ARMED = _selftest_w4()
+            _W4_ARMED = _gate("w4", _selftest_w4)
     if ENABLE_KDA:
-        _ARMED["kda"] = _selftest_kda()
-    logger.warning("[megakernel] armed=%s shadow_kda=%s", dict(_ARMED),
-                   KDA_SHADOW)
+        _ARMED["kda"] = _gate("kda", _selftest_kda)
+    logger.warning("[megakernel] armed=%s w4=%s shadow_kda=%s",
+                   dict(_ARMED), _W4_ARMED, KDA_SHADOW)
 
 
 _armed_once = False

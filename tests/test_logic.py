@@ -6253,6 +6253,170 @@ def test_glm53_megakernel_contracts() -> None:
     print("  glm53 megakernel contracts .. OK")
 
 
+def test_prefill_warmup_contracts() -> None:
+    """The engine-level prefill warmup must not lie to itself.
+
+    Same discipline the ladder probe already enforces, applied to the
+    warmup: every request needs a DISTINCT prefix (a shared one would
+    prefix-cache-hit and skip the compute the warmup exists to trigger)
+    and an EXACT token count (the shape is the point).
+    """
+    ns = load_defs(
+        "launchers/prefill-warmup.py",
+        {"build_distinct_prompt", "trim_to_exact_tokens", "WORDS"},
+        {"random": random},
+    )
+    build, trim = ns["build_distinct_prompt"], ns["trim_to_exact_tokens"]
+
+    seeds = [n * 1000 + rep
+             for n in (2048, 4096, 8192) for rep in (1, 2)]
+    prompts = {build(seed, seed // 1000) for seed in seeds}
+    check(len(prompts) == 6, "every warmup request carries distinct text")
+    heads = [" ".join(p.split()[:2]) for p in prompts]
+    check(len(set(heads)) == 6,
+          "distinctness lives in the PREFIX (seed word + seed id), not just "
+          "the tail -- a shared header would let the prefix cache serve "
+          "every later request from the first one's blocks")
+    check(build(2048 * 1000 + 1, 2048) == build(2048 * 1000 + 1, 2048),
+          "per-seed prompts are deterministic (log/replay discipline)")
+
+    ids = trim("x", 100, lambda t: list(range(3000)))
+    check(ids == list(range(100)), "long tokenization trims to exactly N")
+    short = trim("x", 300, lambda t: list(range(150)))
+    check(len(short) == 300,
+          "short tokenization tops up before trimming (exact N guaranteed)")
+
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"),
+                    encoding="utf-8").read()
+    check('PREFILL_WARMUP:-0' in launcher,
+          "the warmup hook stays opt-in at the launcher")
+    profile = open(os.path.join(REPO, "profiles/glm53.env"),
+                   encoding="utf-8").read()
+    check("PREFILL_WARMUP=0" in profile
+          and 'PREFILL_WARMUP_LENS="2048,4096,8192"' in profile,
+          "the profile carries the knob, default off, ladder lengths")
+    print("  prefill warmup contracts ... OK")
+
+
+def test_megakernel_w4_layout_functional() -> None:
+    """The W4 packing checked FUNCTIONALLY, not by string contract.
+
+    Review found the packer slicing the wrong dimension: numel broke, the
+    attach's except swallowed the raise into a silently-stock boot, and the
+    self-test exception disarmed every other segment. The string contracts
+    in test_glm53_megakernel_contracts could not see any of that. This test
+    runs two real checks:
+
+    torch-free (always): the .cu LUT bytes decoded as e4m3 must equal the
+    e2m1 grid x 2^s exactly -- the arithmetic the whole W4 arm rests on.
+
+    torch-guarded (runs wherever torch exists; skipped cleanly otherwise,
+    the #176 rule): the REAL build_mk_weight_w4 on crafted grid weights,
+    unpacked with the kernel's own index math and the .cu LUT, must
+    reproduce the weights exactly, byte-level layout included.
+    """
+    import importlib.util
+
+    mod_dir = os.path.join(REPO, "overlay/modules/glm53_megakernel")
+    cu = open(os.path.join(mod_dir, "glm53_megakernel.cu"),
+              encoding="utf-8").read()
+    m = re.search(r"mk_e2m1_to_e4m3\[8\] = \{([^}]*)\};", cu, re.S)
+    check(m is not None, "the e2m1->e4m3 LUT is present in the .cu")
+    lut = [int(x, 16) for x in re.findall(r"0x[0-9A-Fa-f]{2}", m.group(1))]
+    check(lut == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
+          f"LUT decodes the e2m1 grid in order (got {[hex(x) for x in lut]})")
+
+    def e4m3_value(byte: int) -> float:
+        sign = -1.0 if byte & 0x80 else 1.0
+        expf = (byte >> 3) & 0xF
+        man = byte & 0x7
+        if expf == 0:
+            return sign * (man / 8.0) * 2.0 ** -6  # denormal region
+        return sign * (1.0 + man / 8.0) * 2.0 ** (expf - 7)
+
+    grid = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+    for code in range(16):
+        for sexp in (-5, -2, 0, 3, 6):
+            # mirror the kernel's ternary EXACTLY: a zero-magnitude nibble
+            # takes no exponent add (it would wrap the byte); only its sign
+            sig = 0x80 if code & 8 else 0
+            byte = sig if (code & 7) == 0 else                 (lut[code & 7] + (sexp << 3)) | sig
+            want = grid[code & 7] * 2.0 ** sexp * (-1.0 if code & 8 else 1.0)
+            got = e4m3_value(byte)
+            check(abs(got - want) <= 1e-9 * max(1.0, abs(want)),
+                  f"LUT+exp-add is exact: code={code} s={sexp} "
+                  f"{got} == {want}")
+
+    # ---- torch-guarded roundtrip through the REAL packer
+    try:
+        import torch
+    except ImportError:
+        print("  w4 layout (torch-free half) . OK (torch absent: packer "
+              "roundtrip half skipped)")
+        return
+
+    spec = importlib.util.spec_from_file_location(
+        "mk_driver_w4", os.path.join(mod_dir, "glm53_megakernel.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    n, k = 100, 128  # n_pad exercises zero-padded rows too
+    rng = random.Random(7)
+
+    def craft(code_of, sexp_of):
+        w = torch.zeros(n, k, dtype=torch.float32)
+        for r in range(n):
+            for g in range(k // 16):
+                for e in range(16):
+                    c = code_of(r, g)
+                    w[r, g * 16 + e] = grid[c & 7] * 2.0 ** sexp_of(r, g)                         * (-1.0 if c & 8 else 1.0)
+        return w
+
+    # (a) BYTE-EXACT tier: every element of a group at magnitude 4 (the
+    # largest whose amax/6 is NOT an exact pow2) pins the quantizer to the
+    # crafted s, so nibbles AND scale bytes must come back identical.
+    codes_a = [[6 | (0x8 if rng.randrange(2) else 0)
+                for _ in range(k // 16)] for _ in range(n)]
+    sexps_a = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+               for _ in range(n)]
+    wq4, ws4 = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
+                                            lambda r, g: sexps_a[r][g]))
+    check(tuple(wq4.shape) == (128, k // 2), "wq4 is [n_pad, k/2]")
+    check(tuple(ws4.shape) == (128, k // 16), "ws4 is [n_pad, k/16]")
+    q, sc = wq4.tolist(), ws4.tolist()
+    for r in range(n):
+        for kk in range(k):
+            byte = q[r][kk // 2]
+            code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
+            check(code == codes_a[r][kk // 16],
+                  f"byte-exact tier: elem {kk} rides byte {kk // 2} "
+                  f"half {kk % 2} with the crafted nibble (row {r})")
+            check(sc[r][kk // 16] == sexps_a[r][kk // 16],
+                  "byte-exact tier: scale index follows the 16-group")
+
+    # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
+    # renormalize a group to its own (s', code') -- legal, the grid is
+    # closed under x2 up to 6 -- but the dequantized VALUES must return
+    # exactly, unpacked with the KERNEL's index math and the .cu LUT.
+    codes_b = [[rng.randrange(16) for _ in range(k // 16)] for _ in range(n)]
+    sexps_b = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+               for _ in range(n)]
+    wb = craft(lambda r, g: codes_b[r][g], lambda r, g: sexps_b[r][g])
+    wq4, ws4 = mod.build_mk_weight_w4(wb)
+    q, sc = wq4.tolist(), ws4.tolist()
+    for r in range(n):
+        for kk in range(k):
+            byte = q[r][kk // 2]
+            code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
+            val = grid[code & 7] * 2.0 ** sc[r][kk // 16]                 * (-1.0 if code & 8 else 1.0)
+            check(val == wb[r, kk].item(),
+                  f"value-exact tier: elem {kk} dequantizes to the original "
+                  f"(row {r}: {val} != {wb[r, kk].item()})")
+    for r in range(n, 128):  # padded rows are zero nibbles
+        check(all(b == 0 for b in q[r]), f"pad row {r} packed as zeros")
+    print("  w4 layout roundtrip ...... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -6323,4 +6487,6 @@ if __name__ == "__main__":
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
     test_glm53_megakernel_contracts()
+    test_prefill_warmup_contracts()
+    test_megakernel_w4_layout_functional()
     print(f"all OK ({PASS} checks)")
