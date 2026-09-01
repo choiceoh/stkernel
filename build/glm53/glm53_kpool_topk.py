@@ -60,7 +60,14 @@ def _load_extension():
 
 def prepare_glm53_kpool_topk() -> bool:
     """Compile at boot when explicitly armed, never on the first request."""
-    return _load_extension() is not None
+    armed = _load_extension() is not None
+    # Say it either way. The failure path already warns, but a silent success
+    # is indistinguishable from a knob that never parsed -- and this lane has
+    # measured that mistake more than once.
+    if _enabled():
+        logger.info("glm53 kpool fused top-k: %s",
+                    "ARMED" if armed else "requested but NOT armed")
+    return armed
 
 
 def glm53_kpool_topk_expand_tail(

@@ -46,6 +46,21 @@ def _overlay_source(relpath: str) -> str:
     return hits[0]
 
 
+class _CapturingLogger:
+    """Records what an overlay announced, so a test can assert it announced."""
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def _record(self, fmt, *args):
+        self.lines.append(fmt % args if args else str(fmt))
+
+    info = warning = error = debug = _record
+
+    def __getattr__(self, _name):
+        return self._record
+
+
 def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
     """exec only the named top-level defs/assigns from a source file into ns."""
     path = _overlay_source(relpath)
@@ -58,12 +73,26 @@ def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
             isinstance(t, ast.Name) and t.id in names for t in node.targets
         ):
             body.append(node)
+        elif (
+            # An annotated module global (``x: set = set()``) is an AnnAssign,
+            # not an Assign; without this it reads as "def not found" and the
+            # caller has to strip the annotation from production code to make
+            # a test loadable.
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id in names
+        ):
+            body.append(node)
     got = {n.name for n in body if isinstance(n, ast.FunctionDef)} | {
         t.id
         for n in body
         if isinstance(n, ast.Assign)
         for t in n.targets
         if isinstance(t, ast.Name)
+    } | {
+        n.target.id
+        for n in body
+        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
     }
     missing = names - got
     assert not missing, f"{relpath}: defs not found: {missing}"
@@ -3926,6 +3955,11 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         },
         {
             "os": os,
+            # load_defs execs only the named defs, so the module-level logger
+            # never comes along. Stub it rather than pulling vllm in: the
+            # arming lines are the point of the log, and a test that cannot
+            # run them would hide the next one that is missing.
+            "logger": _CapturingLogger(),
             "torch": torch,
             "F": F,
             "Indexer": FakeIndexer,
@@ -5855,6 +5889,57 @@ def test_bench_resolves_served_model() -> None:
     print("  bench served-model resolve .... OK")
 
 
+def test_prefill_knobs_announce_arming() -> None:
+    """Every opt-in prefill path must say it armed, and 1 must not read as off.
+
+    #188 added four env knobs and none of the new code paths logged anything
+    but failures. That is the shape this lane keeps losing boots to: #178's
+    guard, CUSTOM_OPS_AXIS, the *_once TypeError. A sweep that sets everything
+    to 1 would silently leave union prefill OFF, because only 2 and 4 are
+    widths -- and the run would read as "measured, no effect".
+    """
+    union = open(_overlay_source(
+        "overlay/modules/glm53_model_wiring/glm53_union_prefill.py"
+    ), encoding="utf-8").read()
+    check("union prefill: ARMED" in union,
+          "the union path must announce its width when it installs")
+    check("is not a union width" in union,
+          "a value that is not 2 or 4 must warn, not silently mean off")
+
+    ns: dict = {"os": os, "logger": _CapturingLogger()}
+    load_defs("overlay/modules/glm53_model_wiring/glm53_union_prefill.py",
+              {"_UNION_ENV", "_UNION_REPORTED", "_read_group_size"}, ns)
+    saved = os.environ.get(ns["_UNION_ENV"])
+    try:
+        for raw, want, warns in (("0", 0, False), ("2", 2, False),
+                                 ("4", 4, False), ("1", 0, True),
+                                 ("yes", 0, True)):
+            ns["_UNION_REPORTED"].clear()
+            ns["logger"].lines.clear()
+            os.environ[ns["_UNION_ENV"]] = raw
+            check(ns["_read_group_size"]() == want,
+                  f"union width {raw!r} must resolve to {want}")
+            check(bool(ns["logger"].lines) is warns,
+                  f"union width {raw!r} must {'warn' if warns else 'stay quiet'}")
+    finally:
+        os.environ.pop(ns["_UNION_ENV"], None)
+        if saved is not None:
+            os.environ[ns["_UNION_ENV"]] = saved
+
+    fused = open(_overlay_source(
+        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+    ), encoding="utf-8").read()
+    check("fused K+gate: ARMED" in fused,
+          "replacing Indexer.forward must be visible in the boot log")
+    kpool = open(_overlay_source(
+        "overlay/modules/glm53_kpool_tail_select/glm53_kpool_topk.py"
+    ), encoding="utf-8").read()
+    check("kpool fused top-k" in kpool and "ARMED" in kpool,
+          "a requested-but-not-built extension must be distinguishable from "
+          "a knob that never parsed")
+    print("  prefill knobs announce arming . OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -5886,6 +5971,7 @@ if __name__ == "__main__":
     test_overlay_logger_defined()
     test_osar_maxel_rank_agreement()
     test_bench_resolves_served_model()
+    test_prefill_knobs_announce_arming()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash_aot_guard_stays_removed()
