@@ -3358,6 +3358,7 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
         "overlay/sparse_attn_indexer_kpool.py",
         {
             "_glm53_dense_mha_layer_name",
+            "_glm53_dense_mha_scoring_unused",
             "_kpool_prefill_windows",
             "_pool_topk_scratch_fits",
         },
@@ -3365,6 +3366,7 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     )
     fits = ns["_pool_topk_scratch_fits"]
     dense_mha_layer = ns["_glm53_dense_mha_layer_name"]
+    scoring_unused = ns["_glm53_dense_mha_scoring_unused"]
     prefill_windows = ns["_kpool_prefill_windows"]
 
     tokens = torch.arange(7 * 3).view(7, 3)
@@ -3395,6 +3397,45 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
             dense_mha_layer(drifted) == "",
             f"unknown kpool layout {drifted!r} fails closed",
         )
+
+    k_prefix = "model.layers.7.self_attn.indexer.k_cache"
+    mla_name = dense_mha_layer(k_prefix)
+    dense_meta = {
+        mla_name: types.SimpleNamespace(
+            prefill=types.SimpleNamespace(use_dense_mha=True),
+            num_decode_tokens=0,
+        )
+    }
+    admitted = dict(
+        k_cache_prefix=k_prefix,
+        attn_metadata=dense_meta,
+        is_cuda=True,
+        cudagraph_full=False,
+        stream_capturing=False,
+    )
+    check(scoring_unused(**admitted),
+          "fresh dense MLA proves sparse indexer scoring has no consumer")
+    for field in ("is_cuda", "cudagraph_full", "stream_capturing"):
+        case = dict(admitted)
+        case[field] = not case[field]
+        check(not scoring_unused(**case),
+              f"dense scoring bypass rejects {field} drift")
+    mixed_meta = {
+        mla_name: types.SimpleNamespace(
+            prefill=types.SimpleNamespace(use_dense_mha=True),
+            num_decode_tokens=1,
+        )
+    }
+    case = dict(admitted, attn_metadata=mixed_meta)
+    check(not scoring_unused(**case), "mixed batch retains sparse scoring")
+    mqa_meta = {
+        mla_name: types.SimpleNamespace(
+            prefill=types.SimpleNamespace(use_dense_mha=False),
+            num_decode_tokens=0,
+        )
+    }
+    case = dict(admitted, attn_metadata=mqa_meta)
+    check(not scoring_unused(**case), "MQA prefill retains sparse scoring")
 
     # GLM exact geometry: output width rounds 2048+3 up to BLOCK_N=128.
     output_width = ((2048 + 3 + 127) // 128) * 128
@@ -3568,24 +3609,22 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     dense_skip = [
         node for node in dispatcher.body
         if isinstance(node, ast.If)
-        and "current_platform.is_cuda()" in node_text(node.test)
-        and "forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL"
-        in node_text(node.test)
+        and "_glm53_dense_mha_scoring_unused(" in node_text(node.test)
     ]
     check(len(dense_skip) == 1,
           "kpool dispatcher has one fail-closed dense-MHA scoring bypass")
     dense_skip_source = node_text(dense_skip[0])
     check(
-        'getattr(prefill_metadata, "use_dense_mha", False)' in dense_skip_source
-        and 'getattr(mla_metadata, "num_decode_tokens", -1) == 0'
+        "forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL"
         in dense_skip_source
-        and "not torch.cuda.is_current_stream_capturing()" in dense_skip_source,
-        "dense-MHA bypass excludes MQA, mixed batches, and capture",
+        and "torch.cuda.is_current_stream_capturing() if is_cuda else True"
+        in dense_skip_source,
+        "dense-MHA bypass delegates capture and request checks to shared gate",
     )
     check(
         dispatcher_source.index("if not skip_k_cache_insert:")
         < dispatcher_source.index(
-            "forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL"
+            "if _glm53_dense_mha_scoring_unused("
         )
         < dispatcher_source.index(
             "topk_indices_buffer[: hidden_states.shape[0]] = -1"
@@ -3620,6 +3659,209 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     check("pool_topk.to(torch.int64)" not in dispatcher_source,
           "the CUDA pool scratch must not be widened unconditionally")
     print("  GLM53 kpool packed scratch ...... OK")
+
+
+def test_glm53_cache_only_indexer_prefill() -> None:
+    """Dense MLA builds kpool cache state without dead query scoring."""
+    try:
+        import torch
+    except ImportError:
+        print("  GLM53 cache-only prefill indexer . SKIP (no torch on this host)")
+        return
+    import torch.nn.functional as F
+
+    class FakeIndexer:
+        pass
+
+    def original(self, *args):
+        self.original_called = True
+        return "original"
+
+    FakeIndexer.forward = original
+    FakeIndexer._glm53_prefill_original_forward = original
+    ns = load_defs(
+        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py",
+        {
+            "_GLM53_SM121_MLA_PREFILL_ENV",
+            "_glm53_cache_only_indexer_contract",
+            "_glm53_cache_only_indexer_forward",
+            "install_glm53_prefill_fastpath",
+        },
+        {
+            "os": os,
+            "torch": torch,
+            "F": F,
+            "Indexer": FakeIndexer,
+            "_fused_indexer_k_norm": lambda k, *args: k,
+            "_glm53_indexer_scoring_unused": lambda indexer: True,
+        },
+    )
+    contract = ns["_glm53_cache_only_indexer_contract"]
+    valid = dict(
+        rope_dim=0,
+        head_dim=128,
+        quant_block_size=128,
+        scale_fmt="ue8m0",
+        index_kpool=4,
+        topk_tokens=2048,
+        n_head=32,
+        op_type="SparseAttnIndexerKpool",
+        use_fp4_cache=False,
+        hidden_dtype=torch.bfloat16,
+        k_weight_dtype=torch.bfloat16,
+        k_weight_shape=(160, 8),
+        hidden_size=8,
+        gate_shape=(128, 8),
+        ape_shape=(4, 128),
+        ape_dtype=torch.float32,
+    )
+    check(contract(**valid), "exact GLM dense-prefill indexer contract admits")
+    rejected = {
+        "rope_dim": (64,),
+        "head_dim": (64, 256),
+        "quant_block_size": (64,),
+        "scale_fmt": (None, "float"),
+        "index_kpool": (1, 16),
+        "topk_tokens": (1024, 4096),
+        "n_head": (16, 64),
+        "op_type": ("SparseAttnIndexer",),
+        "use_fp4_cache": (True,),
+        "hidden_dtype": (torch.float16, torch.float32),
+        "k_weight_dtype": (torch.float16,),
+        "k_weight_shape": ((128, 8), (160, 16)),
+        "gate_shape": ((64, 8),),
+        "ape_shape": ((8, 128),),
+        "ape_dtype": (torch.bfloat16,),
+    }
+    for field, values in rejected.items():
+        for bad in values:
+            case = dict(valid)
+            case[field] = bad
+            check(not contract(**case), f"cache-only contract rejects {field}={bad}")
+
+    class SparseAttnIndexerKpool:
+        use_fp4_cache = False
+
+        def __call__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            return args[1]
+
+    op = SparseAttnIndexerKpool()
+    indexer = types.SimpleNamespace(
+        rope_dim=0,
+        head_dim=128,
+        quant_block_size=128,
+        scale_fmt="ue8m0",
+        index_kpool=4,
+        topk_tokens=2048,
+        n_head=32,
+        indexer_op=op,
+        wk_weights_proj=types.SimpleNamespace(
+            weight=torch.randn(160, 8, dtype=torch.bfloat16)
+        ),
+        index_kpool_compress_gate=torch.randn(128, 8, dtype=torch.bfloat16),
+        index_kpool_compress_ape=torch.randn(4, 128, dtype=torch.float32),
+        k_norm=types.SimpleNamespace(
+            weight=torch.ones(128, dtype=torch.bfloat16),
+            bias=torch.zeros(128, dtype=torch.bfloat16),
+            eps=1e-6,
+        ),
+        original_called=False,
+    )
+    hidden = torch.randn(3, 8, dtype=torch.bfloat16)
+    qr = torch.randn(3, 4, dtype=torch.bfloat16)
+    positions = torch.arange(3)
+    forward = ns["_glm53_cache_only_indexer_forward"]
+    out = forward(indexer, hidden, qr, positions, None)
+    check(out.shape == (3, 128), "cache-only path computes K rows only")
+    check(not indexer.original_called, "admitted dense prefill skips original scoring")
+    check(
+        op.args[1].data_ptr() == op.args[2].data_ptr() == op.args[3].data_ptr(),
+        "K aliases both unused custom-op placeholders",
+    )
+    check(op.kwargs["gate_score"].shape == (3, 128),
+          "cache-only path still computes kpool gate state")
+    check(op.kwargs["compress_ape"] is indexer.index_kpool_compress_ape,
+          "cache-only path preserves trained pool bias")
+
+    indexer.rope_dim = 64
+    check(forward(indexer, hidden, qr, positions, None) == "original"
+          and indexer.original_called,
+          "contract drift calls the original indexer unchanged")
+
+    path = _overlay_source(
+        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+    )
+    source = open(path, encoding="utf-8").read()
+    tree = ast.parse(source)
+    forward_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_glm53_cache_only_indexer_forward"
+    )
+    forward_source = ast.get_source_segment(source, forward_node) or ""
+    for dead in (
+        "self.wq_b",
+        "fwht128_quant_fp8",
+        "_fused_indexer_weight_scale",
+        "_pad_indexer_heads",
+        "torch.mm",
+    ):
+        check(dead not in forward_source,
+              f"cache-only path must not execute dead scoring op {dead}")
+    check(
+        forward_source.count("F.linear(") == 2
+        and "k_weight[: self.head_dim]" in forward_source,
+        "cache-only path computes only K and gate projections",
+    )
+    check("_glm53_indexer_scoring_unused(self)" in forward_source,
+          "model fast path shares the custom-op no-consumer predicate")
+
+    env_name = ns["_GLM53_SM121_MLA_PREFILL_ENV"]
+    old_env = os.environ.pop(env_name, None)
+    try:
+        install = ns["install_glm53_prefill_fastpath"]
+        install()
+        check(FakeIndexer.forward is original,
+              "disabled dense-MLA arm leaves Indexer.forward untouched")
+        os.environ[env_name] = "1"
+        install()
+        check(
+            FakeIndexer.forward is forward
+            and FakeIndexer._glm53_prefill_original_forward is original,
+            "exact dense-MLA opt-in installs cache-only forward once",
+        )
+        install()
+        check(FakeIndexer._glm53_prefill_original_forward is original,
+              "prefill fastpath installer is idempotent")
+    finally:
+        if old_env is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = old_env
+
+    model_source = open(
+        _overlay_source("overlay/modules/glm53_model_wiring/glm5next_model.py"),
+        encoding="utf-8",
+    ).read()
+    check(
+        "from .glm53_prefill_fastpath import install_glm53_prefill_fastpath"
+        in model_source
+        and model_source.index("install_glm53_prefill_fastpath()")
+        < model_source.index("class Glm5NextDecoderLayer"),
+        "GLM model installs the indexer path before constructing layers",
+    )
+    module_dir = os.path.join(
+        REPO, "overlay", "modules", "glm53_model_wiring"
+    )
+    manifest = open(os.path.join(module_dir, "manifest.tsv"), encoding="utf-8").read()
+    requires = open(os.path.join(module_dir, "requires"), encoding="utf-8").read()
+    check("glm53_prefill_fastpath.py\t" in manifest and "\tabsent" in manifest,
+          "prefill fastpath ships as an image-new overlay")
+    check("glm53_kpool_tail_select" in requires,
+          "model wiring declares its shared-gate dependency")
+    print("  GLM53 cache-only prefill indexer . OK")
 
 
 def test_glm53_kda_prefill_regime() -> None:
@@ -4743,6 +4985,7 @@ if __name__ == "__main__":
     test_dflash_warmup_buckets()
     test_glm53_sm121_mla_prefill_gate()
     test_glm53_kpool_packed_scratch_contract()
+    test_glm53_cache_only_indexer_prefill()
     test_glm53_kda_prefill_regime()
     test_oneshot_sm121_grid_contract()
     print(f"all OK ({PASS} checks)")
