@@ -279,8 +279,10 @@ def _stock_fp8_pair(w):
     from vllm.model_executor.layers.glm53_fp8_dense import (
         _quantize_fp8_block_padded)
 
-    q, ws, _rows, _cols = _quantize_fp8_block_padded(w)
-    return q, ws
+    # Keep the pre-padding shape: _fp8_dense_gemm needs it to trim the
+    # padded output, and dropping it here is what broke the probe.
+    q, ws, rows, cols = _quantize_fp8_block_padded(w)
+    return q, ws, rows, cols
 
 
 # ---------------------------------------------------------------------------
@@ -689,8 +691,8 @@ def _selftest_gemm() -> bool:
     for m, n in ((8, KDA_INPROJ_N), (16, HIDDEN), (32, 1024)):
         w = torch.randn(n, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.05
         x = torch.randn(m, HIDDEN, dtype=torch.bfloat16, device=dev)
-        sq, sws = _stock_fp8_pair(w)
-        ref = _fp8_dense_gemm(x, sq, sws)
+        sq, sws, srows, scols = _stock_fp8_pair(w)
+        ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = _gemm_call(x, build_mk_weight(w), n)
         torch.cuda.synchronize()
         e = _rel_err(got, ref)

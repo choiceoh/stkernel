@@ -79,13 +79,13 @@ def probe_gemm(iters: int) -> bool:
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
         x = torch.randn(m, 4096, dtype=torch.bfloat16, device=DEV)
-        sq, sws = mk._stock_fp8_pair(w)
+        sq, sws, srows, scols = mk._stock_fp8_pair(w)
         mkq, mkws = mk.build_mk_weight(w)
-        ref = _fp8_dense_gemm(x, sq, sws)
+        ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, (mkq, mkws), n)
         torch.cuda.synchronize()
         r = _rel(got, ref)
-        t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws), iters)
+        t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols), iters)
         t_mk = _time(lambda: mk._gemm_call(x, (mkq, mkws), n), iters)
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
@@ -143,10 +143,10 @@ def probe_w4(iters: int) -> bool:
     # by-design + timing on random weights
     w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
     p4, p8r = mk.build_mk_weight_w4(w), mk.build_mk_weight(w)
-    sq, sws = mk._stock_fp8_pair(w)
+    sq, sws, srows, scols = mk._stock_fp8_pair(w)
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
 
-    ref = _fp8_dense_gemm(x, sq, sws)
+    ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
     got = run4((None, None) + p4, n)
     torch.cuda.synchronize()
     e = _rel(got, ref)
