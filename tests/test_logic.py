@@ -4265,6 +4265,26 @@ def test_prefill_ladder_probe() -> None:
     print("  prefill ladder probe .......... OK")
 
 
+def test_launcher_nofile_limit() -> None:
+    """The container must not run on Docker's 1024-descriptor default."""
+    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    check("--ulimit nofile=" in text,
+          "nofile must be raised: NCCL opens a socket per peer and a "
+          "prefetching loader opens many shards at once; 1024 runs out and "
+          "NCCL fails far from the cause")
+    import re
+    m = re.search(r"--ulimit nofile=(\d+):(\d+)", text)
+    check(m is not None, "nofile must be an explicit soft:hard pair")
+    soft, hard = int(m.group(1)), int(m.group(2))
+    check(soft >= 65536 and hard >= soft,
+          f"nofile soft={soft} hard={hard} must clear the default by a wide "
+          "margin and not invert")
+    check("Too many open files" in text,
+          "the symptom must be recorded at the flag, so the next reader does "
+          "not rediscover it from an ncclSystemError")
+    print("  launcher nofile limit ......... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4290,6 +4310,7 @@ if __name__ == "__main__":
     test_ep_compact_shape_align()
     test_ep_compact_warmup_ladder()
     test_launcher_load_format_gate()
+    test_launcher_nofile_limit()
     test_prefill_ladder_probe()
     test_fp8_acceptance_contracts()
     test_glm53_v2_overlay_contracts()
