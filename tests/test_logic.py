@@ -5589,6 +5589,77 @@ def test_osar_maxel_rank_agreement() -> None:
     print("  osar MAXEL rank agreement ..... OK")
 
 
+def test_bench_resolves_served_model() -> None:
+    """A bench must ask the server its model name, not assume the dsv4 one.
+
+    All three harnesses defaulted to "deepseek-v4-flash". Pointed at the
+    glm53 server every request 404s -- and the failure reads as an empty
+    section in a boot log, not as an error, so a prefill or decode arm can
+    look "measured" when it never ran. This lane lost measurements to it
+    twice on one day.
+    """
+    import io
+    import json as _json
+    import urllib as _urllib
+    import urllib.request as _u
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _served(ids):
+        def _open(url, timeout=None):
+            if ids is None:
+                raise OSError("connection refused")
+            body = {"data": [{"id": i} for i in ids]}
+            return _Resp(_json.dumps(body).encode())
+        return _open
+
+    for path in ("probes/prefill_ladder.py", "bench/bench-dec.py",
+                 "bench/bench-tp4.py"):
+        src = open(path, encoding="utf-8").read()
+        match = re.search(r"^def _resolve_model.*?(?=\n\n\n|\n[^\s#])",
+                          src, re.S | re.M)
+        check(match is not None, f"{path} must define _resolve_model")
+        assert match is not None
+        for base_name in ("URL", "BASE"):
+            if re.search(rf"^{base_name} = ", src, re.M):
+                break
+        # Some harnesses call urllib.request.urlopen through the package and
+        # some import it locally; hand over the package so both resolve.
+        ns: dict = {"os": os, "json": _json, "urllib": _urllib, "re": re,
+                    base_name: "http://localhost:8000/v1/chat/completions"}
+        exec(compile(match.group(0), path, "exec"), ns)
+        resolve = ns["_resolve_model"]
+
+        saved_open, saved_env = _u.urlopen, os.environ.pop("BENCH_MODEL", None)
+        try:
+            _u.urlopen = _served(["glm-5.3-flash"])
+            check(resolve("deepseek-v4-flash") == "glm-5.3-flash",
+                  f"{path}: a server serving one model must win over the "
+                  "hardcoded dsv4 default")
+            _u.urlopen = _served(["deepseek-v4-flash", "other"])
+            check(resolve("deepseek-v4-flash") == "deepseek-v4-flash",
+                  f"{path}: when the default IS served, keep it -- every "
+                  "recorded dsv4 number must stay pointed at the same target")
+            _u.urlopen = _served(None)
+            check(resolve("deepseek-v4-flash") == "deepseek-v4-flash",
+                  f"{path}: an unreachable server must fall back, not raise")
+            os.environ["BENCH_MODEL"] = "explicit"
+            _u.urlopen = _served(["glm-5.3-flash"])
+            check(resolve("deepseek-v4-flash") == "explicit",
+                  f"{path}: an explicit BENCH_MODEL must still win")
+        finally:
+            _u.urlopen = saved_open
+            os.environ.pop("BENCH_MODEL", None)
+            if saved_env is not None:
+                os.environ["BENCH_MODEL"] = saved_env
+    print("  bench served-model resolve .... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -5619,6 +5690,7 @@ if __name__ == "__main__":
     test_dflash2_selector_score_precision()
     test_overlay_logger_defined()
     test_osar_maxel_rank_agreement()
+    test_bench_resolves_served_model()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash_aot_guard_stays_removed()
