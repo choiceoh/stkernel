@@ -334,8 +334,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // buffer (async, 16B copies; both addresses are 16B aligned by
     // construction: pitch 144 and k in {2048, 4096}).
     auto stage_w = [&](int kb, int buf) {
+      // wq is TILE-major: [n/128][k/128][128][128]. Row-major would put the
+      // 128 rows of this tile 4096 B apart, so a warp's 32 copies landed on
+      // four 128 B segments in four different DRAM pages to fetch 16 KB.
+      // Tile-major makes the same tile one contiguous 16 KB run.
       const uint8_t* wsrc =
-          c.wq + (size_t)nt * SMEM_W_ROWS * c.k + kb * KSTEP;
+          c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP);
       uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH);
       // Flatten (row, 16B chunk) so ALL MK_THREADS issue copies. The row-
       // strided form left threads >= SMEM_W_ROWS (128 of 256) idle, halving
@@ -346,8 +350,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
            t += MK_THREADS) {
         const int r = t / MK_W_CHUNKS;
         const int e = (t % MK_W_CHUNKS) * 16;
-        mk_cp_async16(d0 + r * SMEM_W_PITCH + e,
-                      wsrc + (size_t)r * c.k + e);
+        // r * KSTEP + e == t * 16, so the source walk is now linear across
+        // the whole block; only the destination keeps the padded pitch.
+        mk_cp_async16(d0 + r * SMEM_W_PITCH + e, wsrc + (size_t)t * 16);
       }
       mk_cp_commit();
     };
@@ -1333,11 +1338,15 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   c.ws = (const float*)ws.data_ptr();
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
-  c.n = (int)wq.size(0);
   c.k = (int)x.size(1);
+  // wq is [n/128, k/128, 128, 128] -- tile-major, see stage_w.
+  TORCH_CHECK(wq.dim() == 4 && wq.size(2) == SMEM_W_ROWS
+                  && wq.size(3) == KSTEP && wq.is_contiguous(),
+              "wq must be a contiguous [n/128, k/128, 128, 128] pack");
+  c.n = (int)wq.size(0) * SMEM_W_ROWS;
   c.n_orig = (int)n_orig;
   TORCH_CHECK(c.k % KSTEP == 0 && c.k <= KBLK_MAX * KSTEP, "k out of contract");
-  TORCH_CHECK(c.n % 128 == 0, "wq rows must be 128-padded");
+  TORCH_CHECK((int)wq.size(1) == c.k / KSTEP, "wq k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
   c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);

@@ -196,7 +196,12 @@ def _barrier_ptr(ws):
 # fallback and the two never alias.
 # ---------------------------------------------------------------------------
 def build_mk_weight(weight):
-    """(wq uint8 [n_pad, k], ws fp32 [n_pad/128, k/128]) from bf16 [n, k]."""
+    """(wq uint8 [n_pad/128, k/128, 128, 128], ws fp32 [n_pad/128, k/128]).
+
+    The wq pack is TILE-major: one 128x128 tile is one contiguous 16 KB run,
+    which is the unit stage_w copies. Row-major put those 128 rows 4096 B
+    apart, so fetching one tile touched 128 DRAM pages.
+    """
     import torch
 
     n, k = weight.shape
@@ -217,6 +222,9 @@ def build_mk_weight(weight):
                 q[n0:n0 + rows.shape[0], k0:k0 + 128] = (
                     blk / scale).to(torch.float8_e4m3fn).view(torch.uint8)
             s[n0 // 128, k0 // 128] = scale
+    # [n_pad, k] -> [n_pad/128, k/128, 128, 128]
+    q = (q.view(n_pad // 128, 128, k // 128, 128)
+          .permute(0, 2, 1, 3).contiguous())
     return q, s
 
 
