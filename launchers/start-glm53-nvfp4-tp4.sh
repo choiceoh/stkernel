@@ -583,3 +583,15 @@ SERVE_B64=$(printf '%s' "vllm serve $SERVE_ARGS --node-rank 0 > /glmlogs/glm53.l
 docker run --name $NAME_HEAD ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$HEAD_IP \
   --entrypoint /bin/bash $IMAGE -c "echo $SERVE_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh"
 echo "head rank=0 launched — poll :$PORT/v1/models (cold boot ~15min)"
+
+# deneb fork (prefill-warmup): pay the 11-41% cold JIT tax (PR #192 ledger's
+# one open prefill target) at boot instead of on the first user request:
+# one real prefill per production length once the server answers, exact token
+# counts, distinct content per request. Backgrounded on purpose -- cold boot
+# takes ~15min and the launcher must return. rep1-vs-rep2 in the log is the
+# receipt that the tax existed and is now paid.
+if [ "${PREFILL_WARMUP:-0}" = "1" ]; then
+  LAUNCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  nohup python3 "$LAUNCH_DIR/prefill-warmup.py" --port "$PORT"     ${PREFILL_WARMUP_LENS:+--lens "$PREFILL_WARMUP_LENS"}     > "$LOG_HOST_DIR/prefill-warmup.log" 2>&1 &
+  echo "prefill-warmup armed (log: $LOG_HOST_DIR/prefill-warmup.log)"
+fi
