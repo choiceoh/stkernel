@@ -170,3 +170,38 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# GEMM 블록 활용률 -- 측정된 낭비와, split-K 가 왜 답이 아닌지
+# ---------------------------------------------------------------------------
+# mk_gemm_phase gives every block ONE 128-column tile across the whole k
+# range, so the kernel's wall time is one tile-time regardless of n. Measured
+# with L2 flushed (probes/megakernel_glm53_bench.py):
+#
+#     n      tiles  blocks busy   mk_us   stock_us
+#     1024      8       8/48      210.7      60.1
+#     2048     16      16/48      222.9      94.9
+#     4096     32      32/48      222.9     163.6
+#     6416     51      48/48      314.0     201.4
+#
+# The obvious fix -- give idle blocks k-slices (split-K) -- does NOT apply to
+# the shapes this kernel actually runs. ks = MK_GRID / (n / 128):
+#
+#     phase 0 in_proj  n=6528  51 tiles  ks=1   <- 2 rounds, see below
+#     phase 5 o_proj   n=4096  32 tiles  ks=1
+#
+# Only the probe's small-n shapes (1024, 2048) get ks = 6 and 3, and nothing
+# in the model has those. A uniform split-K is dead code here.
+#
+# The REAL waste is phase 0. 51 tiles on 48 blocks takes TWO rounds, and the
+# second round carries only 3 tiles -- 45 blocks idle for a full tile-time.
+# The kernel spends ~2 tile-times doing 1.06 tiles of work, and phase 0 is
+# ~43% of the KDA segment (314 us of 730).
+#
+# The fix that fits is a REMAINDER split, not a uniform one: run tiles
+# 0..47 as today, then split the 3 leftover tiles' k 16 ways so the second
+# round costs 1/16 of a tile instead of a whole one. Expected KDA 730 -> ~580
+# us (2.44x -> ~3.1x vs stock). It needs the atomicAdd reduction path (an
+# fp32 [m, n_orig] accumulator, zeroed under the existing grid barrier) for
+# the remainder tiles only, while the full tiles keep writing bf16 directly.
