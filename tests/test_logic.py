@@ -6368,14 +6368,17 @@ def test_glm53_megakernel_contracts() -> None:
     check([(_lut64 >> (8 * c)) & 0xFF for c in range(8)]
           == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
           and "0x4C484440'3C383000ULL" in cu
-          and "mk_e2m1_byte(lo & 7)" in cu_code
+          and "mk_e2m1_byte((int)c7)" in cu_code
           and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code,
           "the W4 expansion uses the packed LUT immediate (a __constant__ "
           "load serialises over the warp's distinct codes)")
     check("c.wq4 != nullptr" in cu_code and "run_gemm_w4" in cu,
           "the W4 path selects on the pack and has its own host entry")
-    check("(sexp[g4] << 3)" in cu_code and "((lo & 0x8) << 4)" in cu_code,
-          "expansion is exponent-field add + sign, never a float multiply")
+    check("(sc4 >> (8 * g4)) & 0xFFu)) << 3" in cu_code
+          and "(code & 8u) << 4" in cu_code
+          and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,
+          "expansion is exponent-field add + sign in registers, never a "
+          "float multiply and never a local-memory byte array")
     check(pysrc_full.count("_selftest_w4") >= 1
           and "1e-5" in pysrc_full and "0.15" in pysrc_full,
           "the W4 self-test gates bit-exact expansion and by-design error")

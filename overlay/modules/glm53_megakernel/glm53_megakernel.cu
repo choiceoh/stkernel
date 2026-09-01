@@ -449,38 +449,42 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     const int row4 = threadIdx.x & (SMEM_W_ROWS - 1);
     const int half4 = threadIdx.x >> 7;
     const uint8_t* rr = sraw + rawbuf * W4_RAW_BYTES;
-    alignas(16) uint8_t nb[32];
-    ((uint4*)nb)[0] =
-        *(const uint4*)(rr + row4 * W4_RAW_PITCH + half4 * 32);
-    ((uint4*)nb)[1] =
+    // Registers only. The byte-array form (uint8_t nb[32] / ob[64] filled
+    // and drained through uint4 punning) lands in local memory, and its
+    // ~150 byte-wide LDL/STL per k-block were the expansion's real cost --
+    // ~6 us per k-block on the stamps, more than the record's DRAM time.
+    const uint4 n0 = *(const uint4*)(rr + row4 * W4_RAW_PITCH + half4 * 32);
+    const uint4 n1 =
         *(const uint4*)(rr + row4 * W4_RAW_PITCH + half4 * 32 + 16);
-    const int8_t* rs = (const int8_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
-    int8_t sexp[4];
+    const uint32_t sc4 =
+        *(const uint32_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
+    const uint32_t nw[8] = {n0.x, n0.y, n0.z, n0.w, n1.x, n1.y, n1.z, n1.w};
+    uint4* dv = (uint4*)(swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
+                         row4 * SMEM_W_PITCH + half4 * 64);
 #pragma unroll
-    for (int i = 0; i < 4; ++i) sexp[i] = rs[i];
-    alignas(16) uint8_t ob[64];
+    for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 nibble words -> 4 bytes words
+      // exponent-field add; s in [-5, 6] keeps LUT + e inside [8, 124], so
+      // it never carries into the sign bit
+      const int e = ((int)(int8_t)((sc4 >> (8 * g4)) & 0xFFu)) << 3;
+      uint32_t ow[4];
 #pragma unroll
-    for (int g4 = 0; g4 < 4; ++g4) {
-      const int e = (sexp[g4] << 3);
+      for (int j = 0; j < 4; ++j) {  // output word j = elements 4j..4j+3
+        const uint32_t w = nw[2 * g4 + (j >> 1)] >> (16 * (j & 1));
+        uint32_t o = 0u;
 #pragma unroll
-      for (int b = 0; b < 8; ++b) {
-        const uint8_t raw = nb[g4 * 8 + b];
-        const uint8_t lo = raw & 0xF, hi = raw >> 4;
-        ob[g4 * 16 + 2 * b] =
-            (lo & 7) ? (uint8_t)(mk_e2m1_byte(lo & 7) + e +
-                                 ((lo & 0x8) << 4))
-                     : (uint8_t)((lo & 0x8) << 4);
-        ob[g4 * 16 + 2 * b + 1] =
-            (hi & 7) ? (uint8_t)(mk_e2m1_byte(hi & 7) + e +
-                                 ((hi & 0x8) << 4))
-                     : (uint8_t)((hi & 0x8) << 4);
+        for (int q = 0; q < 4; ++q) {
+          const uint32_t code = (w >> (4 * q)) & 0xFu;
+          const uint32_t c7 = code & 7u;
+          uint32_t bt = c7 ? (((uint32_t)mk_e2m1_byte((int)c7) +
+                               (uint32_t)e) & 0xFFu)
+                           : 0u;
+          bt |= (code & 8u) << 4;  // sign
+          o |= bt << (8 * q);
+        }
+        ow[j] = o;
       }
+      dv[g4] = make_uint4(ow[0], ow[1], ow[2], ow[3]);
     }
-    uint8_t* d0 = swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
-                  row4 * SMEM_W_PITCH + half4 * 64;
-    uint4* dv = (uint4*)d0;
-#pragma unroll
-    for (int i = 0; i < 4; ++i) dv[i] = ((uint4*)ob)[i];
   };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
   static_assert(MK_W_NBUF <= 5, "mk_cp_wait_upto dispatches up to 3");
