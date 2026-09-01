@@ -6137,7 +6137,7 @@ def test_glm53_megakernel_contracts() -> None:
                        ("MAX_TOK", 32), ("NCHUNK", 16), ("KDA_H", 16),
                        ("KDA_D", 128), ("KDA_QKV", 6144),
                        ("KDA_INPROJ_N", 6416), ("KDA_INPROJ_N_PAD", 6528),
-                       ("CONV_W", 4), ("KDA_OUT", 2048), ("MK_GRID", 48),
+                       ("CONV_W", 4), ("KDA_OUT", 2048), ("MK_GRID_CAP", 96),
                        ("MK_THREADS", 256), ("KSTEP", 128),
                        ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
         check(consts.get(name) == want,
@@ -6198,10 +6198,15 @@ def test_glm53_megakernel_contracts() -> None:
     blocks_per_sm = 102400 // smem
     check(blocks_per_sm >= 1,
           f"W pipeline depth {nbuf} uses {smem} B, over the SM's 102400")
-    check(consts["MK_GRID"] <= blocks_per_sm * 48,
-          f"persistent gemm grid {consts['MK_GRID']} is not resident: "
-          f"{smem} B of smem allows {blocks_per_sm} block(s)/SM on 48 SMs, "
-          "and a partly-resident grid hangs on the grid barrier")
+    # The grid is now resolved at launch from the device, so the static
+    # contract is on the CEILING: it must not promise more than the smem
+    # could ever deliver, or the clamp is doing all the work and the cap is
+    # decoration. (The clamp is what keeps a bad pair from deadlocking; this
+    # keeps the pair honest.)
+    check(consts["MK_GRID_CAP"] <= 2 * blocks_per_sm * 48,
+          f"gemm grid ceiling {consts['MK_GRID_CAP']} is more than twice "
+          f"what {smem} B of smem allows ({blocks_per_sm} block(s)/SM on 48 "
+          "SMs) -- raise the ceiling only alongside a shallower pipeline")
     check("t / MK_W_CHUNKS" in cu,
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
@@ -6212,40 +6217,40 @@ def test_glm53_megakernel_contracts() -> None:
           "fill; the W4 branch above fills its own buffers first by "
           "construction). kb0, not 0: a block may own a k SLICE of a tile.")
     # -- remainder split-K: leftovers of the last partial round take k
-    #    slices instead of leaving MK_GRID - rem blocks idle for a whole
+    #    slices instead of leaving grid - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.
-    check("const int rem = nblk % MK_GRID;" in cu
-          and "int ksr = (rem > 0) ? (MK_GRID / rem) : 1;" in cu,
+    check("const int rem = nblk % c.grid;" in cu
+          and "int ksr = (rem > 0) ? (c.grid / rem) : 1;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
           "below does not apply to them")
     # When full == 0 every unit is one k-slice of one tile, so wall time is
-    # ceil(nblk*r / MK_GRID) / r tile-times and the truncating MK_GRID/rem
-    # is simply the wrong pick: it returns 1 for nblk in (MK_GRID/2,
-    # MK_GRID], i.e. the 4096-wide projections, leaving 16 of 48 blocks
+    # ceil(nblk*r / grid) / r tile-times and the truncating grid/rem is
+    # simply the wrong pick: it returns 1 for nblk in (grid/2, grid],
+    # i.e. the 4096-wide projections, leaving 16 of 48 blocks
     # idle where r=3 would cost 0.667 tile-times.
     check("if (full == 0 && rem > 0 && c.m <= 32) {" in cu
           and "if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }"
           in cu,
           "with no whole tiles the k-split is the cost-minimising one, not "
-          "the truncated MK_GRID / rem")
+          "the truncated grid / rem")
     check("const bool split = (ksr > 1)" in cu,
           "ksr == 1 must fall through to the single-pass path unchanged")
-    # The accumulator no longer follows from ksr * rem <= MK_GRID, so the
+    # The accumulator no longer follows from ksr * rem <= grid, so the
     # size guard has to be on the accumulator itself.
     check("(size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS" in cu
           and "MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX" in cu,
           "the split gate bounds the partial accumulator directly")
     _red = cu.index("fold the leftover tiles' slices")
-    check(cu.index("mk_grid_barrier(&g_mk_gemm_bar);") < _red,
+    check(cu.index("mk_grid_barrier(bar, c.grid);") < _red,
           "the accumulator is zeroed under a barrier before any atomicAdd, "
           "and reduced under a second one after")
     check("32 * 128 * MK_SPLIT_UNITS_MAX" in cu
-          and "MK_SPLIT_UNITS_MAX = 2 * MK_GRID" in cu
-          and "(MK_GRID - 1) * 128" in cu,
+          and "MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP" in cu
+          and "(MK_GRID_CAP - 1) * 128" in cu,
           "the accumulator is sized by the UNIT cap (rem * ksr), not by n: "
-          "ksr * rem <= MK_GRID stopped holding once ksr could exceed "
-          "MK_GRID / rem, and n-sized would be 20x larger for no reason")
+          "ksr * rem <= grid stopped holding once ksr could exceed "
+          "grid / rem, and n-sized would be 20x larger for no reason")
     check("atomicAdd(&g_mk_gemm_partial" not in cu
           and "fixed order -> reproducible" in cu,
           "the split reduction must be deterministic: an atomicAdd "
@@ -6271,12 +6276,24 @@ def test_glm53_megakernel_contracts() -> None:
         os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
                             "glm53_fp8_dense.py"), encoding="utf-8").read(),
           "the W4 attach skips the KDA in_proj unless the knob is 'all'")
-    # gemm, gemm_w4 and kda share MK_GRID because GEMM_SMEM pins them to one
-    # block per SM anyway; mhc takes no dynamic smem, so it runs its own
-    # wider grid. Both are persistent grids and both assert residency at
-    # launch -- that assert is the thing this check exists to protect.
-    check(cu.count("<<<MK_GRID, MK_THREADS") == 3,
-          "gemm, gemm_w4 and kda launch with the shared persistent grid")
+    # All four launches are persistent grids that resolve their own size
+    # from the device. mhc has its own ceiling because it takes no dynamic
+    # smem; gemm and kda share MK_GRID_CAP but resolve separately, since
+    # kda carries more state and need not fit as often.
+    # gemm and kda are persistent grids too, and their occupancy differs
+    # from each other's, so each resolves its own -- clamped, like mhc, so a
+    # grid that does not fit degrades instead of refusing to launch.
+    check(cu.count("mk_resident_grid(mk_gemm_kernel, g_gemm_grid)") == 2
+          and cu.count("mk_resident_grid(mk_kda_kernel, g_kda_grid)") == 1
+          and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
+          "gemm, gemm_w4 and kda each resolve their persistent grid from "
+          "the device rather than assuming MK_GRID_CAP")
+    # Distinct grids must not share a ticket counter -- the same trap the
+    # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
+    check("g_mk_kda_bar" in cu
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
+          "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("<<<mhc_grid, MK_THREADS") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
           "mhc launches its own grid, clamped to what the device reports "

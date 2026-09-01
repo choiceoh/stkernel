@@ -54,7 +54,7 @@ namespace {
 // Three tuning constants come in through -D so the probe can sweep them
 // without editing this file; the defaults here are the shipped values.
 #ifndef MK_GRID_DEF
-#define MK_GRID_DEF 48
+#define MK_GRID_DEF 96
 #endif
 #ifndef MK_MHC_GRID_DEF
 #define MK_MHC_GRID_DEF 144
@@ -62,9 +62,15 @@ namespace {
 #ifndef MK_W_NBUF_DEF
 #define MK_W_NBUF_DEF 3
 #endif
-constexpr int MK_GRID = MK_GRID_DEF;  // blocks per persistent gemm/kda grid
+// Ceiling for the gemm and kda persistent grids -- each launch takes the
+// smaller of it and what the device reports resident, exactly as mhc
+// does. At MK_W_NBUF 3 the 63,616 B block only fits once in the SM's
+// 102,400 B, so this resolves to 48; a shallower pipeline fits twice and
+// it resolves to 96 with no other change.
+constexpr int MK_GRID_CAP = MK_GRID_DEF;
 // mhc only: it takes no dynamic smem, so its occupancy is bounded by
-// registers (72 x 256 = 18,432 of 65,536 per SM -> 3 blocks). At MK_GRID
+// registers (72 x 256 = 18,432 of 65,536 per SM -> 3 blocks). At the
+// gemm/kda grid
 // it ran 8 of a possible 48 warps per SM.
 //
 // This is a CEILING, not the grid. The launch takes the smaller of it and
@@ -129,13 +135,13 @@ constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
 
 // ---------------------------------------------------------------------------
 // graph-safe grid barrier. Never-reset monotonic ticket counter: every
-// (launch, phase) adds exactly MK_GRID arrivals; a block waits for the next
-// multiple of MK_GRID at or after its own ticket, so CUDA-graph replay with
+// (launch, phase) adds exactly `grid` arrivals; a block waits for the next
+// multiple of `grid` at or after its own ticket, so CUDA-graph replay with
 // baked workspace pointers is exact. Device-scope fences make the phases'
 // global writes visible across blocks (the osar barrier lesson).
 // ---------------------------------------------------------------------------
 __device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr,
-                                               int grid = MK_GRID) {
+                                               int grid) {
   __syncthreads();
   if (threadIdx.x == 0) {
     __threadfence();
@@ -209,6 +215,7 @@ struct MKGemmCtx {
   const float* ws;         // [n/128, k/128] (all-ones tensor on the W4 path)
   __nv_bfloat16* out;      // [m, n_orig]
   int m, n, k, n_orig;
+  int grid;  // resident blocks; see MK_GRID_CAP
   // W4 path: e2m1 nibbles [n, k/2] + per-16-group scale exponents
   // [n, k/16] (int8, clamped to [-5, 6] at build). The kernel expands each
   // nibble to an EXACT e4m3 byte (1-bit mantissas always fit; the 2^s
@@ -226,53 +233,56 @@ __device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
     0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C};
 
 // Remainder split-K state. Every block owns one 128-column tile across the
-// whole k range, so a tile count that is not a multiple of MK_GRID pays a
+// whole k range, so a tile count that is not a multiple of the grid pays a
 // WHOLE extra round for its leftovers: phase 0's 51 tiles take 2 rounds and
 // the second carries 3 tiles while 45 blocks idle -- 2 tile-times for 1.06
 // tiles of work, and phase 0 is ~43% of the KDA segment.
 //
-// The leftovers get their k split instead. rem < MK_GRID by construction, so
+// The leftovers get their k split instead. rem < grid by construction, so
 // the accumulator is at most 32 x (47*128) floats; it lives here rather than
 // in the ctx so neither host entry point nor the pybind signature changes.
-// ksr * rem <= MK_GRID by construction, so the per-split accumulator is
-// bounded by m * 128 * MK_GRID floats regardless of n.
-// Units may exceed MK_GRID now (see the ksr choice below), so the
+// ksr * rem <= grid no longer holds (see the ksr choice below), so the
 // accumulator is sized for the unit cap, not for one round.
-constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID;               // 96
-constexpr int MK_SPLIT_MAXCOL = (MK_GRID - 1) * 128;          // 6016
+constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP;               // 96
+constexpr int MK_SPLIT_MAXCOL = (MK_GRID_CAP - 1) * 128;          // 6016
 constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 1.5 MB
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
+// kda inlines mk_gemm_phase twice per launch on ITS grid, which need
+// not equal the standalone gemm grid. Two grids on one ticket counter
+// misalign it and the barrier releases early -- so, two counters.
+__device__ unsigned long long g_mk_kda_bar = 0ULL;
 __device__ float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 
-__device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
+__device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
+                              unsigned long long* bar) {
   const int nblk = c.n / 128;
   const int kblk = c.k / KSTEP;
   const int mtiles = (c.m + 15) / 16;
   // Leftover tiles of the last (partial) round, and how many ways to split
   // their k so those blocks are not idle. ksr == 1 leaves the original
   // single-pass path byte for byte -- which is what n/128 == 32 (o_proj)
-  // and any exact multiple of MK_GRID get.
-  const int rem = nblk % MK_GRID;
+  // and any exact multiple of c.grid get.
+  const int rem = nblk % c.grid;
   const int full = nblk - rem;
-  int ksr = (rem > 0) ? (MK_GRID / rem) : 1;
-  // MK_GRID / rem truncates to 1 for nblk in (MK_GRID/2, MK_GRID] -- at
-  // MK_GRID 48 that is n/128 == 32, the 4096-wide projections, which then
+  int ksr = (rem > 0) ? (c.grid / rem) : 1;
+  // c.grid / rem truncates to 1 for nblk in (c.grid/2, c.grid] -- at
+  // c.grid 48 that is n/128 == 32, the 4096-wide projections, which then
   // ran 32 tiles on 48 blocks with 16 idle. When full == 0 every unit is
-  // the same size, so wall time is exactly ceil(nblk*r / MK_GRID) / r
+  // the same size, so wall time is exactly ceil(nblk*r / c.grid) / r
   // tile-times and the best r is worth searching for: r=3 costs 0.667
   // where r=1 costs 1.0. (Leave the full > 0 case alone -- there the units
   // are a MIX of whole tiles and k-slices and this model does not hold.)
   if (full == 0 && rem > 0 && c.m <= 32) {
-    int bn = (nblk + MK_GRID - 1) / MK_GRID, bd = 1;
+    int bn = (nblk + c.grid - 1) / c.grid, bd = 1;
     for (int r = 2; r <= kblk; ++r) {
       if ((size_t)c.m * rem * 128 * r > MK_SPLIT_ELEMS) break;
-      const int rounds = (nblk * r + MK_GRID - 1) / MK_GRID;
+      const int rounds = (nblk * r + c.grid - 1) / c.grid;
       if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
     }
   }
   const int pcols = rem * 128;
   // Guard on the accumulator directly rather than on a column count that
-  // only bounds it when ksr * rem <= MK_GRID -- which no longer holds.
+  // only bounds it when ksr * rem <= c.grid -- which no longer holds.
   const bool split = (ksr > 1) && (c.m <= 32) &&
                      (rem * 128 <= MK_SPLIT_MAXCOL) &&
                      ((size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS);
@@ -285,9 +295,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const size_t pelem = pslice * ksr;
   if (split) {
     for (size_t i = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
-         i < pelem; i += (size_t)MK_GRID * MK_THREADS)
+         i < pelem; i += (size_t)c.grid * MK_THREADS)
       g_mk_gemm_partial[i] = 0.0f;
-    mk_grid_barrier(&g_mk_gemm_bar);
+    mk_grid_barrier(bar, c.grid);
   }
 
   uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
@@ -300,7 +310,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
   const int warp = threadIdx.x >> 5;
 
   const int units = split ? (full + rem * ksr) : nblk;
-  for (int u = blockIdx.x; u < units; u += MK_GRID) {
+  for (int u = blockIdx.x; u < units; u += c.grid) {
     int nt, kb0, kbn;
     if (!split || u < full) {          // a whole tile, one block, all of k
       nt = u; kb0 = 0; kbn = kblk;
@@ -596,9 +606,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
     __syncthreads();
   }
   if (split) {  // fold the leftover tiles' slices into the bf16 output
-    mk_grid_barrier(&g_mk_gemm_bar);
+    mk_grid_barrier(bar, c.grid);
     for (size_t i2 = (size_t)blockIdx.x * MK_THREADS + threadIdx.x;
-         i2 < pslice; i2 += (size_t)MK_GRID * MK_THREADS) {
+         i2 < pslice; i2 += (size_t)c.grid * MK_THREADS) {
       const int r = (int)(i2 / pcols);
       const int col = full * 128 + (int)(i2 % pcols);
       if (col >= c.n_orig) continue;
@@ -612,7 +622,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem) {
 
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   extern __shared__ uint8_t smem[];
-  mk_gemm_phase(c, smem);
+  mk_gemm_phase(c, smem, &g_mk_gemm_bar);
 }
 
 // ===========================================================================
@@ -967,6 +977,7 @@ struct MKKdaArgs {
   __nv_bfloat16* convq; // [MAX_TOK, KDA_QKV]
   __nv_bfloat16* attn;  // [MAX_TOK, KDA_OUT]
   unsigned long long* barrier_ctr;
+  int grid;          // resident blocks; see MK_GRID_CAP
   int num_tokens;
   float lower_bound, onorm_eps;
 };
@@ -984,14 +995,15 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n = KDA_INPROJ_N_PAD;
     c.k = HIDDEN;
     c.n_orig = KDA_INPROJ_N;
-    mk_gemm_phase(c, smem);
+    c.grid = a.grid;
+    mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
 
   {  // phase 1: f_b / g_b low-rank gates (K = 128, SIMT dot)
     const int total = a.num_tokens * KDA_OUT;
     for (int i = blockIdx.x * MK_THREADS + threadIdx.x; i < 2 * total;
-         i += MK_GRID * MK_THREADS) {
+         i += a.grid * MK_THREADS) {
       const int which = i / total, rem = i - which * total;
       const int t = rem / KDA_OUT, n = rem % KDA_OUT;
       const __nv_bfloat16* src =
@@ -1004,7 +1016,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       (which ? a.g2 : a.g1)[(size_t)t * KDA_OUT + n] = __float2bfloat16(v);
     }
   }
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
 
   {  // phase 2: merged short conv (k=4, silu) with accepted-window rollback.
     // hist(pos) is the channel's input at in-request position pos (pos < 0
@@ -1015,7 +1027,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       const int slot = a.state_idx[r * a.mql + 0];
       const int acc = a.n_accepted[r];
       for (int ch = blockIdx.x * MK_THREADS + threadIdx.x; ch < KDA_QKV;
-           ch += MK_GRID * MK_THREADS) {
+           ch += a.grid * MK_THREADS) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
         const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
                              (size_t)ch * a.conv_width;
@@ -1062,7 +1074,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       }
     }
   }
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
 
   {  // phase 3: fine-grained gated delta rule. One block per head, two
     // threads per v-column (k split in halves).
@@ -1208,13 +1220,13 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       }
     }
   }
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
 
   {  // phase 4: gated RMSNorm -- rmsnorm(attn) * sigmoid(g2), in place
     __shared__ float wred[MK_WARPS];
     __shared__ float inv;
     const int pairs = a.num_tokens * KDA_H;
-    for (int i = blockIdx.x; i < pairs; i += MK_GRID) {
+    for (int i = blockIdx.x; i < pairs; i += a.grid) {
       const int t = i / KDA_H, h = i % KDA_H;
       __nv_bfloat16* src = a.attn + (size_t)t * KDA_OUT + h * KDA_D;
       float sq = 0.0f;
@@ -1241,7 +1253,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       __syncthreads();
     }
   }
-  mk_grid_barrier(a.barrier_ctr);
+  mk_grid_barrier(a.barrier_ctr, a.grid);
 
   {  // phase 5: o_proj GEMM
     MKGemmCtx c;
@@ -1253,7 +1265,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n = HIDDEN;
     c.k = KDA_OUT_PAD;
     c.n_orig = HIDDEN;
-    mk_gemm_phase(c, smem);
+    c.grid = a.grid;
+    mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
 }
 
@@ -1270,19 +1283,31 @@ void set_kernel_attrs() {
   if (g_attrs_set) return;
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
-  {
-    int per_sm = 0, sms = 0;
-    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &per_sm, mk_gemm_kernel, MK_THREADS, GEMM_SMEM));
-    MK_CHECK_CUDA(cudaDeviceGetAttribute(
-        &sms, cudaDevAttrMultiProcessorCount, 0));
-    TORCH_CHECK(per_sm * sms >= MK_GRID, "gemm grid ", MK_GRID,
-                " not resident: ", per_sm, " blocks/SM x ", sms, " SMs");
-  }
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   g_attrs_set = true;
 }
+
+// Resident block count for a persistent grid, clamped to MK_GRID_CAP.
+// Cached per kernel: the ticket barrier needs the SAME grid on every launch,
+// and the two kernels are asked separately because their occupancy differs.
+template <typename K>
+int mk_resident_grid(K kernel, int& cache) {
+  if (cache == 0) {
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, kernel, MK_THREADS, GEMM_SMEM));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(
+        &sms, cudaDevAttrMultiProcessorCount, 0));
+    cache = per_sm * sms;
+    if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;
+    TORCH_CHECK(cache > 0, "persistent grid has no resident blocks");
+  }
+  return cache;
+}
+
+int g_gemm_grid = 0;
+int g_kda_grid = 0;
 
 }  // namespace
 
@@ -1315,7 +1340,8 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   TORCH_CHECK(c.n % 128 == 0, "wq rows must be 128-padded");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_gemm_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(c);
+  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
 void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -1334,7 +1360,8 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK(c.n % 128 == 0, "wq4 rows must be 128-padded");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_gemm_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(c);
+  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid);
+  mk_gemm_kernel<<<c.grid, MK_THREADS, GEMM_SMEM, stream>>>(c);
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -1437,7 +1464,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_kda_kernel<<<MK_GRID, MK_THREADS, GEMM_SMEM, stream>>>(a);
+  a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid);
+  mk_kda_kernel<<<a.grid, MK_THREADS, GEMM_SMEM, stream>>>(a);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

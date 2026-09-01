@@ -140,7 +140,7 @@ def _build():
         sources=[_SRC],
         extra_cuda_cflags=["-O2", "-arch=sm_121a"] + [
             # Swept by the probe; the .cu carries the shipped defaults.
-            f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '48')}",
+            f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
             f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
             f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
         ],
