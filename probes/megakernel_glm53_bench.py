@@ -77,7 +77,15 @@ _L2_FLUSH = None
 _SPACER = None
 
 
-def _l2_flush() -> None:
+def _l2_flush(hot=()) -> None:
+    """Cold weights, HOT activations: after the flush the kernel's small
+    inputs are touched again (read+write, so they sit in L2 dirty exactly
+    as the previous kernel of a decode step leaves them). Without this the
+    flush also evicted x, and the mk gemm's A-quant prologue -- 8 KB of x per
+    block -- paid a DRAM round trip that production never pays, and paid it
+    unevenly: blocks whose x loads queued behind other blocks' W fill took
+    13 us where the rest took 2, and the publishing barrier then held every
+    block for the slowest (bar1 median 8 us in the phase stamps)."""
     global _L2_FLUSH, _SPACER
     if _L2_FLUSH is None:
         _L2_FLUSH = torch.empty(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
@@ -87,10 +95,13 @@ def _l2_flush() -> None:
                                      device=DEV))
     _L2_FLUSH.zero_()
     torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])
+    for t in hot:
+        t.add_(0)
 
 
-def _time_stats(fn, iters: int) -> tuple[float, float, float]:
-    """(median, min, max) in us over iters cold-L2 launches."""
+def _time_stats(fn, iters: int, hot=()) -> tuple[float, float, float]:
+    """(median, min, max) in us over iters cold-L2 launches; `hot` lists
+    the activation tensors re-touched after each flush (see _l2_flush)."""
     for _ in range(10):
         fn()
     torch.cuda.synchronize()
@@ -98,7 +109,7 @@ def _time_stats(fn, iters: int) -> tuple[float, float, float]:
     e = torch.cuda.Event(enable_timing=True)
     times = []
     for _ in range(iters):
-        _l2_flush()
+        _l2_flush(hot)
         s.record()
         fn()
         e.record()
@@ -108,8 +119,8 @@ def _time_stats(fn, iters: int) -> tuple[float, float, float]:
     return times[len(times) // 2], times[0], times[-1]
 
 
-def _time(fn, iters: int) -> float:
-    return _time_stats(fn, iters)[0]
+def _time(fn, iters: int, hot=()) -> float:
+    return _time_stats(fn, iters, hot)[0]
 
 
 def probe_gemm(iters: int) -> bool:
@@ -129,9 +140,10 @@ def probe_gemm(iters: int) -> bool:
         got = mk._gemm_call(x, (mkq, mkws), n)
         torch.cuda.synchronize()
         r = _rel(got, ref)
-        t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols), iters)
+        t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols),
+                      iters, hot=(x,))
         t_mk, t_lo, t_hi = _time_stats(
-            lambda: mk._gemm_call(x, (mkq, mkws), n), iters)
+            lambda: mk._gemm_call(x, (mkq, mkws), n), iters, hot=(x,))
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
@@ -201,8 +213,9 @@ def probe_w4(iters: int) -> bool:
     e = _rel(got, ref)
     t8 = _time(lambda: mk._EXT.run_gemm(
         x.contiguous(), p8r[0], p8r[1],
-        torch.empty(m, n, dtype=torch.bfloat16, device=DEV), n), iters)
-    t4 = _time(lambda: run4((None, None) + p4, n), iters)
+        torch.empty(m, n, dtype=torch.bfloat16, device=DEV), n), iters,
+        hot=(x,))
+    t4 = _time(lambda: run4((None, None) + p4, n), iters, hot=(x,))
     nbytes4 = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * n * 2
     mark = "!" if e > 0.15 else " "
     ok &= e <= 0.15
@@ -249,11 +262,12 @@ def probe_mhc(iters: int) -> bool:
         torch.cuda.synchronize()
         r = max(_rel(g, rr) for g, rr in zip(got, ref))
         got0 = tuple(g.clone() for g in got)
-        t_ref = _time(lambda: stock(x, res, pm, cm, fn, nw), iters)
+        hot = (x, res, pm, cm)
+        t_ref = _time(lambda: stock(x, res, pm, cm, fn, nw), iters, hot=hot)
         t_mk = _time(lambda: mk._mhc_call(
             x, res, pm, cm.reshape(T, 16).contiguous(), fn,
             mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
-            1.0, 1e-6, 4), iters)
+            1.0, 1e-6, 4), iters, hot=hot)
         # Three replays, not one. A single got0-vs-got2 comparison samples a
         # random variable once: p3's sumsq used to drift 0 / 4.1e-05 / 0 /
         # 3.3e-04 call to call, and this gate passed or failed on luck --
