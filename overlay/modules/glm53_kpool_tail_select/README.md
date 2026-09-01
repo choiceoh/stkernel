@@ -38,6 +38,27 @@ the previous mask and cache layout. This removes the index grid and both K/gate
 gathers for every prefill size; the last head dimension remains contiguous as
 required by the kernel.
 
+The dense cache-only model path now emits K and gate as two views of one fused
+projection, so their row strides differ from their logical width. Pool
+compression already carries explicit row strides; the persistent-tail seeder
+now does the same instead of assuming `row_stride == head_dim`. This keeps the
+fused projection zero-copy through both cache writers.
+
+## Reuse the dense-prefill write plan across sparse layers
+
+All sparse layers in one dense prefill receive the same immutable pool-level
+`slot_mapping`. Previously each layer formed the same completion slice and
+launched the same `loc >= 0` mask construction before compressing its own
+K/gate values. The first layer now stores that destination/mask pair in
+the current `ForwardContext`; the remaining layers reuse it by exact tensor
+pointer, shape, stride, dtype, device, and pool-width key.
+
+This cache exists only after the shared dense-MLA no-consumer predicate admits
+an eager request. Capture, full CUDA graphs, mixed batches, MQA prefill, or a
+different metadata allocation never reuse it, and the context releases all
+entries when the forward ends. Index-K and persistent-tail writes remain in
+their original order.
+
 ## Make short MQA prefill a one-pass index write
 
 When a fresh context is within `index_topk`, the MQA fallback attends to every

@@ -3359,6 +3359,7 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
         {
             "_glm53_dense_mha_layer_name",
             "_glm53_dense_mha_scoring_unused",
+            "_kpool_prefill_write_plan",
             "_kpool_prefill_windows",
             "_pool_topk_scratch_fits",
         },
@@ -3367,6 +3368,7 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     fits = ns["_pool_topk_scratch_fits"]
     dense_mha_layer = ns["_glm53_dense_mha_layer_name"]
     scoring_unused = ns["_glm53_dense_mha_scoring_unused"]
+    write_plan = ns["_kpool_prefill_write_plan"]
     prefill_windows = ns["_kpool_prefill_windows"]
 
     tokens = torch.arange(7 * 3).view(7, 3)
@@ -3381,6 +3383,31 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
           "kpool prefill windows alias the source storage")
     check(windows.stride() == (3, 3, 1),
           "kpool window strides retain a contiguous head dimension")
+
+    slots = torch.tensor(
+        [-1, -1, -1, 12, -1, -1, -1, 20],
+        dtype=torch.int32,
+    )
+    plan_cache = {}
+    loc, write_mask = write_plan(slots, 4, plan_cache)
+    check(
+        torch.equal(loc, torch.tensor([12, -1, -1, -1, 20]))
+        and torch.equal(
+            write_mask,
+            torch.tensor([True, False, False, False, True]),
+        ),
+        "prefill write plan preserves completion destinations and mask",
+    )
+    cached_loc, cached_mask = write_plan(slots, 4, plan_cache)
+    check(cached_loc is loc and cached_mask is write_mask and len(plan_cache) == 1,
+          "identical metadata view reuses its destination and mask tensors")
+    cloned_loc, cloned_mask = write_plan(slots.clone(), 4, plan_cache)
+    check(
+        cloned_loc is not loc
+        and cloned_mask is not write_mask
+        and len(plan_cache) == 2,
+        "different metadata allocation cannot alias a cached write plan",
+    )
 
     check(
         dense_mha_layer("model.layers.7.self_attn.indexer.k_cache")
@@ -3515,6 +3542,32 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     check(".contiguous()" not in strided_source,
           "strided prefill launch must not rematerialize its windows")
 
+    tail_seed_kernel = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_kpool_seed_tail_cache_strided_kernel"
+    )
+    tail_seed_kernel_source = ast.get_source_segment(source, tail_seed_kernel)
+    assert tail_seed_kernel_source is not None
+    check(
+        "i * key_stride_0" in tail_seed_kernel_source
+        and "i * score_stride_0" in tail_seed_kernel_source,
+        "prefill tail seeder addresses split K and gate with explicit strides",
+    )
+    tail_seed = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_kpool_seed_tail_cache_strided"
+    )
+    tail_seed_source = ast.get_source_segment(source, tail_seed)
+    assert tail_seed_source is not None
+    check(
+        "key.stride(0)" in tail_seed_source
+        and "gate_score.stride(0)" in tail_seed_source
+        and ".contiguous()" not in tail_seed_source,
+        "tail-cache launch preserves zero-copy projection views",
+    )
+
     short_fill = next(
         node for node in tree.body
         if isinstance(node, ast.FunctionDef)
@@ -3606,30 +3659,60 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
         "short branch writes indices without touching logits workspace",
     )
 
-    dense_skip = [
+    dense_assigns = [
         node for node in dispatcher.body
-        if isinstance(node, ast.If)
-        and "_glm53_dense_mha_scoring_unused(" in node_text(node.test)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "dense_mha_scoring_unused"
+            for target in node.targets
+        )
     ]
-    check(len(dense_skip) == 1,
-          "kpool dispatcher has one fail-closed dense-MHA scoring bypass")
-    dense_skip_source = node_text(dense_skip[0])
+    check(
+        len(dense_assigns) == 1
+        and "_glm53_dense_mha_scoring_unused(" in node_text(dense_assigns[0]),
+        "kpool dispatcher computes the dense no-consumer predicate once",
+    )
+    dense_assign = dense_assigns[0]
+    dense_assign_source = node_text(dense_assign)
     check(
         "forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL"
-        in dense_skip_source
+        in dense_assign_source
         and "torch.cuda.is_current_stream_capturing() if is_cuda else True"
-        in dense_skip_source,
+        in dense_assign_source,
         "dense-MHA bypass delegates capture and request checks to shared gate",
     )
+    dense_ifs = [
+        node for node in dispatcher.body
+        if isinstance(node, ast.If)
+        and node_text(node.test) == "dense_mha_scoring_unused"
+    ]
+    cache_if = next(
+        node for node in dense_ifs
+        if "additional_kwargs.setdefault(" in node_text(node)
+    )
+    dense_return = next(
+        node for node in dense_ifs
+        if any(isinstance(child, ast.Return) for child in node.body)
+    )
     check(
-        dispatcher_source.index("if not skip_k_cache_insert:")
-        < dispatcher_source.index(
-            "if _glm53_dense_mha_scoring_unused("
+        dense_assign.lineno < cache_if.lineno
+        < next(
+            node.lineno for node in dispatcher.body
+            if isinstance(node, ast.If)
+            and node_text(node.test) == "not skip_k_cache_insert"
         )
-        < dispatcher_source.index(
-            "topk_indices_buffer[: hidden_states.shape[0]] = -1"
-        ),
-        "dense-MHA bypass preserves cache writes and skips the dead buffer fill",
+        < dense_return.lineno < active_inits[0].lineno,
+        "dense write-plan sharing precedes cache writes but return follows them",
+    )
+    check(
+        "_GLM53_PREFILL_WRITE_PLAN_CACHE" in node_text(cache_if)
+        and "write_plan_cache=write_plan_cache" in dispatcher_source,
+        "dense sparse layers share one forward-context-owned write plan",
+    )
+    check(
+        "_kpool_seed_tail_cache_strided(" in dispatcher_source,
+        "prefill cache writes use the stride-aware persistent-tail seeder",
     )
 
     fallbacks = [
@@ -3671,7 +3754,12 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     import torch.nn.functional as F
 
     class FakeIndexer:
-        pass
+        def __init__(self):
+            self._buffers = {}
+
+        def register_buffer(self, name, tensor, persistent=True):
+            self._buffers[name] = tensor
+            setattr(self, name, tensor)
 
     def original(self, *args):
         self.original_called = True
@@ -3682,10 +3770,12 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     ns = load_defs(
         "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py",
         {
+            "_GLM53_PREFILL_KG_WEIGHT",
             "_GLM53_SM121_MLA_PREFILL_ENV",
             "_glm53_cache_only_indexer_contract",
             "_glm53_cache_only_indexer_forward",
             "install_glm53_prefill_fastpath",
+            "prepare_glm53_prefill_fastpath",
         },
         {
             "os": os,
@@ -3711,9 +3801,13 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         k_weight_dtype=torch.bfloat16,
         k_weight_shape=(160, 8),
         hidden_size=8,
+        gate_dtype=torch.bfloat16,
         gate_shape=(128, 8),
         ape_shape=(4, 128),
         ape_dtype=torch.float32,
+        fused_weight_dtype=torch.bfloat16,
+        fused_weight_shape=(256, 8),
+        fused_weight_contiguous=True,
     )
     check(contract(**valid), "exact GLM dense-prefill indexer contract admits")
     rejected = {
@@ -3729,9 +3823,13 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         "hidden_dtype": (torch.float16, torch.float32),
         "k_weight_dtype": (torch.float16,),
         "k_weight_shape": ((128, 8), (160, 16)),
+        "gate_dtype": (torch.float16, torch.float32),
         "gate_shape": ((64, 8),),
         "ape_shape": ((8, 128),),
         "ape_dtype": (torch.bfloat16,),
+        "fused_weight_dtype": (torch.float16,),
+        "fused_weight_shape": ((128, 8), (256, 16)),
+        "fused_weight_contiguous": (False,),
     }
     for field, values in rejected.items():
         for bad in values:
@@ -3748,31 +3846,78 @@ def test_glm53_cache_only_indexer_prefill() -> None:
             return args[1]
 
     op = SparseAttnIndexerKpool()
-    indexer = types.SimpleNamespace(
-        rope_dim=0,
-        head_dim=128,
-        quant_block_size=128,
-        scale_fmt="ue8m0",
-        index_kpool=4,
-        topk_tokens=2048,
-        n_head=32,
-        indexer_op=op,
-        wk_weights_proj=types.SimpleNamespace(
-            weight=torch.randn(160, 8, dtype=torch.bfloat16)
-        ),
-        index_kpool_compress_gate=torch.randn(128, 8, dtype=torch.bfloat16),
-        index_kpool_compress_ape=torch.randn(4, 128, dtype=torch.float32),
-        k_norm=types.SimpleNamespace(
-            weight=torch.ones(128, dtype=torch.bfloat16),
-            bias=torch.zeros(128, dtype=torch.bfloat16),
-            eps=1e-6,
-        ),
-        original_called=False,
+    indexer = FakeIndexer()
+    indexer.rope_dim = 0
+    indexer.head_dim = 128
+    indexer.quant_block_size = 128
+    indexer.scale_fmt = "ue8m0"
+    indexer.index_kpool = 4
+    indexer.topk_tokens = 2048
+    indexer.n_head = 32
+    indexer.indexer_op = op
+    indexer.wk_weights_proj = types.SimpleNamespace(
+        weight=torch.randn(160, 8, dtype=torch.bfloat16)
     )
+    indexer.index_kpool_compress_gate = torch.randn(
+        128, 8, dtype=torch.bfloat16
+    )
+    indexer.index_kpool_compress_ape = torch.randn(4, 128, dtype=torch.float32)
+    indexer.k_norm = types.SimpleNamespace(
+        weight=torch.ones(128, dtype=torch.bfloat16),
+        bias=torch.zeros(128, dtype=torch.bfloat16),
+        eps=1e-6,
+    )
+    indexer.original_called = False
     hidden = torch.randn(3, 8, dtype=torch.bfloat16)
     qr = torch.randn(3, 4, dtype=torch.bfloat16)
     positions = torch.arange(3)
     forward = ns["_glm53_cache_only_indexer_forward"]
+    check(forward(indexer, hidden, qr, positions, None) == "original",
+          "missing fused K+gate buffer fails closed to original indexer")
+
+    env_name = ns["_GLM53_SM121_MLA_PREFILL_ENV"]
+    fused_name = ns["_GLM53_PREFILL_KG_WEIGHT"]
+    prepare = ns["prepare_glm53_prefill_fastpath"]
+    model = types.SimpleNamespace(modules=lambda: (indexer,))
+    old_env = os.environ.pop(env_name, None)
+    try:
+        install = ns["install_glm53_prefill_fastpath"]
+        install()
+        check(FakeIndexer.forward is original,
+              "disabled dense-MLA arm leaves Indexer.forward untouched")
+        check(prepare(model) == 0 and not hasattr(indexer, fused_name),
+              "disabled dense-MLA arm allocates no fused prefill weight")
+        os.environ[env_name] = "1"
+        install()
+        check(
+            FakeIndexer.forward is forward
+            and FakeIndexer._glm53_prefill_original_forward is original,
+            "exact dense-MLA opt-in installs cache-only forward once",
+        )
+        install()
+        check(FakeIndexer._glm53_prefill_original_forward is original,
+              "prefill fastpath installer is idempotent")
+        check(prepare(model) == 1,
+              "post-load preparation builds one exact K+gate buffer")
+        fused_weight = getattr(indexer, fused_name)
+        expected_weight = torch.cat(
+            (
+                indexer.wk_weights_proj.weight[: indexer.head_dim],
+                indexer.index_kpool_compress_gate,
+            ),
+            dim=0,
+        )
+        check(torch.equal(fused_weight, expected_weight),
+              "fused prefill weight preserves K then gate row order")
+        check(fused_name in indexer._buffers,
+              "fused prefill weight is owned as a module buffer")
+    finally:
+        if old_env is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = old_env
+
+    indexer.original_called = False
     out = forward(indexer, hidden, qr, positions, None)
     check(out.shape == (3, 128), "cache-only path computes K rows only")
     check(not indexer.original_called, "admitted dense prefill skips original scoring")
@@ -3782,6 +3927,14 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     )
     check(op.kwargs["gate_score"].shape == (3, 128),
           "cache-only path still computes kpool gate state")
+    check(op.kwargs["gate_score"].stride(0) == 256,
+          "split gate remains a zero-copy view of fused projection output")
+    projected = F.linear(hidden, getattr(indexer, fused_name))
+    check(
+        torch.equal(op.args[1], projected[:, : indexer.head_dim])
+        and torch.equal(op.kwargs["gate_score"], projected[:, indexer.head_dim :]),
+        "single projection preserves exact K and gate row partitions",
+    )
     check(op.kwargs["compress_ape"] is indexer.index_kpool_compress_ape,
           "cache-only path preserves trained pool bias")
 
@@ -3811,46 +3964,45 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         check(dead not in forward_source,
               f"cache-only path must not execute dead scoring op {dead}")
     check(
-        forward_source.count("F.linear(") == 2
-        and "k_weight[: self.head_dim]" in forward_source,
-        "cache-only path computes only K and gate projections",
+        forward_source.count("F.linear(") == 1
+        and "kg.split(self.head_dim, dim=-1)" in forward_source,
+        "cache-only path computes K and gate with one projection",
     )
     check("_glm53_indexer_scoring_unused(self)" in forward_source,
           "model fast path shares the custom-op no-consumer predicate")
-
-    env_name = ns["_GLM53_SM121_MLA_PREFILL_ENV"]
-    old_env = os.environ.pop(env_name, None)
-    try:
-        install = ns["install_glm53_prefill_fastpath"]
-        install()
-        check(FakeIndexer.forward is original,
-              "disabled dense-MLA arm leaves Indexer.forward untouched")
-        os.environ[env_name] = "1"
-        install()
-        check(
-            FakeIndexer.forward is forward
-            and FakeIndexer._glm53_prefill_original_forward is original,
-            "exact dense-MLA opt-in installs cache-only forward once",
-        )
-        install()
-        check(FakeIndexer._glm53_prefill_original_forward is original,
-              "prefill fastpath installer is idempotent")
-    finally:
-        if old_env is None:
-            os.environ.pop(env_name, None)
-        else:
-            os.environ[env_name] = old_env
+    prepare_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "prepare_glm53_prefill_fastpath"
+    )
+    prepare_source = ast.get_source_segment(source, prepare_node) or ""
+    check(
+        "torch.cat(" in prepare_source
+        and "persistent=False" in prepare_source
+        and "with torch.no_grad():" in prepare_source,
+        "K+gate weight is a post-load non-persistent inference buffer",
+    )
 
     model_source = open(
         _overlay_source("overlay/modules/glm53_model_wiring/glm5next_model.py"),
         encoding="utf-8",
     ).read()
     check(
-        "from .glm53_prefill_fastpath import install_glm53_prefill_fastpath"
-        in model_source
+        "install_glm53_prefill_fastpath" in model_source
         and model_source.index("install_glm53_prefill_fastpath()")
         < model_source.index("class Glm5NextDecoderLayer"),
         "GLM model installs the indexer path before constructing layers",
+    )
+    load_start = model_source.index(
+        "def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]])",
+        model_source.index("class Glm5NextForCausalLM"),
+    )
+    load_source = model_source[load_start : model_source.index("\n\n@", load_start)]
+    check(
+        "prepare_glm53_prefill_fastpath(self)" in load_source
+        and load_source.index("loaded = loader.load_weights(weights)")
+        < load_source.index("prepare_glm53_prefill_fastpath(self)"),
+        "fused K+gate buffer is built only after outer checkpoint loading",
     )
     module_dir = os.path.join(
         REPO, "overlay", "modules", "glm53_model_wiring"

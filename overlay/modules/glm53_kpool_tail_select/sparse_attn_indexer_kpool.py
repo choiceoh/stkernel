@@ -18,7 +18,6 @@ from vllm.models.glm5next.nvidia.ops.kpool_compress import (
     expand_pools_and_append_tail,
     expand_pools_to_tokens,
     kpool_decode_update_and_maybe_write_cache_batched,
-    kpool_seed_tail_cache,
 )
 from vllm.platforms import current_platform
 from vllm.triton_utils import tl, triton
@@ -56,6 +55,7 @@ _KPOOL_TAIL_CACHE_ENABLED = (
 _KPOOL_DECODE_WRITE_ENABLED = (
     os.environ.get("VLLM_KPOOL_SKIP_DECODE_WRITE") != "1"
 )
+_GLM53_PREFILL_WRITE_PLAN_CACHE = "glm53_kpool_prefill_write_plans"
 
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
 MXFP4_BLOCK_SIZE = 32
@@ -221,6 +221,40 @@ def _fill_short_prefill_topk(
     )
 
 
+def _kpool_prefill_write_plan(
+    slot_mapping: torch.Tensor,
+    kpool: int,
+    cache: dict | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return pool destinations/mask, optionally shared by this forward.
+
+    Every sparse layer receives the same immutable metadata tensor during a
+    dense prefill. Key on its exact view identity and layout; a different
+    allocation, offset, stride, dtype, device, length, or pool width gets a
+    separate plan. The caller supplies a forward-context-owned cache only for
+    the non-captured dense path, so no tensor address can escape that forward.
+    """
+    key = None
+    if cache is not None:
+        key = (
+            slot_mapping.data_ptr(),
+            slot_mapping.shape[0],
+            slot_mapping.stride(0),
+            slot_mapping.dtype,
+            slot_mapping.device,
+            kpool,
+        )
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+    loc = slot_mapping[kpool - 1 :].to(torch.int64)
+    plan = (loc, loc >= 0)
+    if cache is not None:
+        cache[key] = plan
+    return plan
+
+
 def _kpool_compress_insert(
     k: torch.Tensor,
     gate_score: torch.Tensor,
@@ -230,6 +264,7 @@ def _kpool_compress_insert(
     kpool: int,
     head_dim: int,
     round_scale: bool,
+    write_plan_cache: dict | None = None,
 ) -> None:
     """Pool ``kpool`` consecutive tokens into one fp8 K and write at pool slots.
 
@@ -251,8 +286,11 @@ def _kpool_compress_insert(
     # no-ops inside the kernel, exactly as before.
     k_windows = _kpool_prefill_windows(k, kpool)
     score_windows = _kpool_prefill_windows(gate_score, kpool)
-    loc = slot_mapping[kpool - 1 :].to(torch.int64)
-    write_mask = loc >= 0
+    loc, write_mask = _kpool_prefill_write_plan(
+        slot_mapping,
+        kpool,
+        write_plan_cache,
+    )
     _kpool_compress_strided_write_cache(
         kv_cache,
         k_windows,
@@ -262,6 +300,75 @@ def _kpool_compress_insert(
         write_mask,
         head_dim,
         round_scale,
+    )
+
+
+@triton.jit
+def _kpool_seed_tail_cache_strided_kernel(
+    key_ptr,
+    score_ptr,
+    tslot_ptr,
+    tail_ptr,
+    key_stride_0,
+    score_stride_0,
+    n_tokens,
+    HEAD_DIM: tl.constexpr,
+    KPOOL: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+):
+    """Seed one request tail while preserving split-projection row strides."""
+    i = tl.program_id(0)
+    t = tl.load(tslot_ptr + i).to(tl.int64)
+    if t < 0:
+        return
+    blk = t // KPOOL
+    ahead = tl.load(
+        tslot_ptr + i + KPOOL,
+        mask=i + KPOOL < n_tokens,
+        other=-1,
+    ).to(tl.int64)
+    if ahead >= 0 and ahead // KPOOL == blk:
+        return
+
+    offs = tl.arange(0, BLOCK_D)
+    mask = offs < HEAD_DIM
+    base = (blk * 2 * KPOOL + t % KPOOL) * HEAD_DIM
+    key = tl.load(key_ptr + i * key_stride_0 + offs, mask=mask)
+    score = tl.load(score_ptr + i * score_stride_0 + offs, mask=mask)
+    tl.store(tail_ptr + base + offs, key, mask=mask)
+    tl.store(tail_ptr + base + KPOOL * HEAD_DIM + offs, score, mask=mask)
+
+
+def _kpool_seed_tail_cache_strided(
+    tail_kv_cache: torch.Tensor,
+    key: torch.Tensor,
+    gate_score: torch.Tensor,
+    tail_slot_mapping: torch.Tensor,
+    kpool: int,
+    head_dim: int,
+) -> None:
+    """Stride-aware equivalent of the image's contiguous-only tail seeder."""
+    assert tail_kv_cache.dtype == torch.bfloat16
+    assert key.dtype == gate_score.dtype == torch.bfloat16
+    assert key.shape == gate_score.shape
+    assert key.ndim == 2 and key.shape[1] == head_dim
+    assert key.stride(1) == gate_score.stride(1) == 1
+    assert tail_slot_mapping.ndim == 1
+    assert tail_slot_mapping.shape[0] == key.shape[0]
+    n_tokens = tail_slot_mapping.shape[0]
+    if n_tokens == 0:
+        return
+    _kpool_seed_tail_cache_strided_kernel[(n_tokens,)](
+        key,
+        gate_score,
+        tail_slot_mapping,
+        tail_kv_cache,
+        key.stride(0),
+        gate_score.stride(0),
+        n_tokens,
+        HEAD_DIM=head_dim,
+        KPOOL=kpool,
+        BLOCK_D=triton.next_power_of_2(head_dim),
     )
 
 
@@ -602,6 +709,28 @@ def sparse_attn_indexer_kpool(
     else:
         assert q_scale is None, "q_scale must be None when use_fp4_cache=False"
 
+    # Prove the no-consumer case before cache insertion so all sparse layers in
+    # this forward can share the identical completion slice/write mask.
+    # The return remains after both persistent cache writes below.
+    is_cuda = current_platform.is_cuda()
+    dense_mha_scoring_unused = _glm53_dense_mha_scoring_unused(
+        k_cache_prefix=k_cache_prefix,
+        attn_metadata=attn_metadata,
+        is_cuda=is_cuda,
+        cudagraph_full=(
+            forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
+        ),
+        stream_capturing=(
+            torch.cuda.is_current_stream_capturing() if is_cuda else True
+        ),
+    )
+    write_plan_cache = None
+    if dense_mha_scoring_unused:
+        write_plan_cache = forward_context.additional_kwargs.setdefault(
+            _GLM53_PREFILL_WRITE_PLAN_CACHE,
+            {},
+        )
+
     # During speculative decoding, k may be padded to the CUDA graph batch
     # size while slot_mapping only covers actual tokens. Truncate k to avoid
     # out-of-bounds reads in the kernel.
@@ -631,6 +760,7 @@ def sparse_attn_indexer_kpool(
                     index_kpool,
                     head_dim,
                     round_scale=(scale_fmt is not None),
+                    write_plan_cache=write_plan_cache,
                 )
                 # Persist the prefill tail (trailing incomplete pool's raw K +
                 # gate score) into the paged tail cache, so the decode side can
@@ -666,7 +796,7 @@ def sparse_attn_indexer_kpool(
                         # maps to a different tail block (1 block/req) or is
                         # past the batch. Writes are one-per-token to distinct
                         # pos % kpool offsets, so the result is identical.
-                        kpool_seed_tail_cache(
+                        _kpool_seed_tail_cache_strided(
                             tail_kv_cache,
                             k[prefill_slice],
                             gate_score[prefill_slice],
@@ -695,18 +825,7 @@ def sparse_attn_indexer_kpool(
     # cached-context prefill has use_dense_mha=False; a mixed batch has decode
     # tokens; and an unknown module layout resolves to an empty name.  All of
     # those retain the existing kpool top-k path.
-    is_cuda = current_platform.is_cuda()
-    if _glm53_dense_mha_scoring_unused(
-        k_cache_prefix=k_cache_prefix,
-        attn_metadata=attn_metadata,
-        is_cuda=is_cuda,
-        cudagraph_full=(
-            forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
-        ),
-        stream_capturing=(
-            torch.cuda.is_current_stream_capturing() if is_cuda else True
-        ),
-    ):
+    if dense_mha_scoring_unused:
         return topk_indices_buffer
 
     short_prefill = False

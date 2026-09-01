@@ -96,7 +96,10 @@ from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.glm5_next import Glm5NextConfig
 
 from .attention import Glm5NextMLAAttention
-from .glm53_prefill_fastpath import install_glm53_prefill_fastpath
+from .glm53_prefill_fastpath import (
+    install_glm53_prefill_fastpath,
+    prepare_glm53_prefill_fastpath,
+)
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -1127,6 +1130,15 @@ class Glm5NextForCausalLM(
             )
 
             maybe_build_fp8_dense(self)
+        except Exception:
+            pass
+
+        # Build the dense-prefill indexer's fused K+gate weight only after the
+        # outer loader has populated every source parameter. It is a
+        # non-persistent acceleration buffer; any failure keeps the original
+        # per-projection path.
+        try:
+            prepare_glm53_prefill_fastpath(self)
         except Exception:
             pass
 
