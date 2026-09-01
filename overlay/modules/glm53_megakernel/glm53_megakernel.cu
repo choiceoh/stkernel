@@ -500,22 +500,23 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   const int kbq = (int)blockIdx.x;
   float v[RPW][4], mx[RPW];
   if (kbq < kblk) {
-    // Every row this warp owns is loaded before any is reduced. The
-    // per-row chain (load -> shuffle amax -> scale -> convert -> store)
-    // ran back to back, one global-load latency each: 2 us at m=8,
-    // 8 us at m=32. Independent loads issue together.
+    // Every row this warp owns is loaded before any is reduced, as ONE
+    // 8 B load per row with no branch around it: the split stamps put
+    // this half at 2 us per row (8 us at m=32, x already in L2), i.e. the
+    // rows' loads were going out one latency after another. Four
+    // unconditional, independent loads go out together. Rows past m
+    // read a clamped (valid) row and are never stored.
+    uint2 raw[RPW];
 #pragma unroll
     for (int i = 0; i < RPW; ++i) {
-      const int r = qw + i * MK_WARPS;
-      if (r < c.m) {
-        const __nv_bfloat16* src =
-            c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4;
+      const int r = min(qw + i * MK_WARPS, c.m - 1);
+      raw[i] = *(const uint2*)(c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4);
+    }
 #pragma unroll
-        for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(src[q]);
-      } else {
+    for (int i = 0; i < RPW; ++i) {
+      const __nv_bfloat16* pv = (const __nv_bfloat16*)&raw[i];
 #pragma unroll
-        for (int q = 0; q < 4; ++q) v[i][q] = 0.0f;
-      }
+      for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(pv[q]);
     }
 #pragma unroll
     for (int i = 0; i < RPW; ++i) {
@@ -1610,6 +1611,9 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
   c.k = (int)x.size(1);
+  // the A-quant prologue reads x as 8 B vectors (4 bf16 per lane)
+  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
+              "x must be 8 B aligned and contiguous");
   // wq is [n/128, k/128, 128, 128] -- tile-major, see stage_w.
   TORCH_CHECK(wq.dim() == 4 && wq.size(2) == SMEM_W_ROWS
                   && wq.size(3) == KSTEP && wq.is_contiguous(),
@@ -1634,6 +1638,8 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
   c.k = (int)x.size(1);        // k is the ACTIVATION width
+  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
+              "x must be 8 B aligned and contiguous");
   // Tile-major packs -- see stage_raw4. The shape is the only thing
   // standing between a stale row-major pack and silently wrong output.
   TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
