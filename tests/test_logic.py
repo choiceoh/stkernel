@@ -4525,6 +4525,62 @@ def test_dflash2_selector_check() -> None:
     print("  dflash2 selector check ........ OK")
 
 
+def test_dflash2_conv_mask_buffer() -> None:
+    """Grouped conv reuses its deterministic speculative-block tap mask."""
+    source = open(_overlay_source(
+        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py"
+    ), encoding="utf-8").read()
+    tree = ast.parse(source)
+
+    grouped = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_grouped_conv"
+    )
+    grouped_source = ast.get_source_segment(source, grouped) or ""
+    check("torch.arange" not in grouped_source,
+          "grouped-conv hot path must not allocate a position arange")
+    check("tap_valid[:, tap].view(-1, 1, 1)" in grouped_source,
+          "each shifted tap must retain the old speculative-block boundary mask")
+
+    conv = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DFlashGroupedConv"
+    )
+    init = next(
+        node for node in conv.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    convolve = next(
+        node for node in conv.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_convolve"
+    )
+    init_source = ast.get_source_segment(source, init) or ""
+    convolve_source = ast.get_source_segment(source, convolve) or ""
+    check('self.register_buffer(\n            "_tap_valid"' in init_source
+          and "persistent=False" in init_source,
+          "derived tap masks must move with the module but stay out of checkpoints")
+    check("position.bitwise_and_(block_size - 1)" in init_source
+          and "position.remainder_(block_size)" in init_source,
+          "precompute must preserve both old block-position formulas")
+    check("self._tap_valid[: hidden_states.shape[0]]" in convolve_source,
+          "runtime must take a zero-allocation view sized to the active rows")
+
+    decoder = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "DFlash2Qwen3DecoderLayer"
+    )
+    decoder_init = next(
+        node for node in decoder.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    decoder_source = ast.get_source_segment(source, decoder_init) or ""
+    check("max_num_tokens=vllm_config.scheduler_config.max_num_batched_tokens"
+          in decoder_source,
+          "tap-mask capacity must cover the scheduler's largest flattened batch")
+    print("  dflash2 conv mask buffer ....... OK")
+
+
 def test_hotpath_env_latches() -> None:
     """Process switches are read once, never from layer/logits hot paths."""
     kpool_path = _overlay_source("overlay/sparse_attn_indexer_kpool.py")
@@ -4602,6 +4658,7 @@ if __name__ == "__main__":
     test_ep_compact_warmup_ladder()
     test_once_logger_args_hashable()
     test_dflash2_selector_check()
+    test_dflash2_conv_mask_buffer()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
     test_launcher_nofile_limit()
