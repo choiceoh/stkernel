@@ -114,6 +114,7 @@ _W4_ARMED = False  # set by the W4 self-test; packs exist but stay unused until 
 
 
 def _build():
+    import torch
     global _EXT
     if _EXT is not None:
         return _EXT
@@ -522,6 +523,7 @@ def kda_takeover(layer) -> bool:
 
 def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
                 delta_variant=0):
+    import torch
     ws = _ensure_workspace(hidden_states.device)
     n_spec = meta.num_spec_decodes
     ow = getattr(layer.o_norm, "weight", None)
@@ -756,6 +758,7 @@ class _KdaFixture:
         self._stock_cache = None    # (sq_in, sws_in, sq_o, sws_o), once
 
     def _layer_stand_in(self):
+        import torch
         if self._mk_cache is not None:
             return self._mk_cache
         f = self
