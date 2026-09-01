@@ -254,6 +254,15 @@ struct MKGemmCtx {
 // never the NaN encoding: LUT mantissas are never 111).
 __device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
     0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C};
+// The same table as one 64-bit immediate, byte c at bits [8c, 8c+8): the
+// expansion indexes it with a funnel shift instead of a constant-memory
+// load. A __constant__ load serialises over the distinct addresses in the
+// warp -- up to 8 here, 64 lookups per thread per k-block -- which made
+// the W4 expansion cost more than the DRAM time it was meant to hide.
+constexpr unsigned long long MK_E2M1_LUT64 = 0x4C484440'3C383000ULL;
+__device__ __forceinline__ uint8_t mk_e2m1_byte(int code3) {
+  return (uint8_t)(MK_E2M1_LUT64 >> (code3 * 8));
+}
 
 // Remainder split-K state. Every block owns one 128-column tile across the
 // whole k range, so a tile count that is not a multiple of the grid pays a
@@ -458,11 +467,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         const uint8_t raw = nb[g4 * 8 + b];
         const uint8_t lo = raw & 0xF, hi = raw >> 4;
         ob[g4 * 16 + 2 * b] =
-            (lo & 7) ? (uint8_t)(mk_e2m1_to_e4m3[lo & 7] + e +
+            (lo & 7) ? (uint8_t)(mk_e2m1_byte(lo & 7) + e +
                                  ((lo & 0x8) << 4))
                      : (uint8_t)((lo & 0x8) << 4);
         ob[g4 * 16 + 2 * b + 1] =
-            (hi & 7) ? (uint8_t)(mk_e2m1_to_e4m3[hi & 7] + e +
+            (hi & 7) ? (uint8_t)(mk_e2m1_byte(hi & 7) + e +
                                  ((hi & 0x8) << 4))
                      : (uint8_t)((hi & 0x8) << 4);
       }

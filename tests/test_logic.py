@@ -6362,6 +6362,16 @@ def test_glm53_megakernel_contracts() -> None:
     check("mk_e2m1_to_e4m3[8]" in cu_code
           and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
           "the e2m1->e4m3 LUT covers {0,.5,1,1.5,2,3,4,6} exactly")
+    # the expansion reads the packed immediate, not constant memory, and
+    # the immediate must be the same table byte for byte
+    _lut64 = int("0x4C4844403C383000", 16)
+    check([(_lut64 >> (8 * c)) & 0xFF for c in range(8)]
+          == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
+          and "0x4C484440'3C383000ULL" in cu
+          and "mk_e2m1_byte(lo & 7)" in cu_code
+          and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code,
+          "the W4 expansion uses the packed LUT immediate (a __constant__ "
+          "load serialises over the warp's distinct codes)")
     check("c.wq4 != nullptr" in cu_code and "run_gemm_w4" in cu,
           "the W4 path selects on the pack and has its own host entry")
     check("(sexp[g4] << 3)" in cu_code and "((lo & 0x8) << 4)" in cu_code,
