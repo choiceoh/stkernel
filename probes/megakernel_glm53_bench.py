@@ -63,10 +63,19 @@ _L2_FLUSH = None
 
 
 def _l2_flush() -> None:
+    """Evict the L2 between timed iterations.
+
+    add_ and not zero_: a large zero_() lowers to cudaMemsetAsync, which can
+    stream past the L2 instead of allocating in it, so the weights of a shape
+    that FITS in the 24 MB L2 may survive the flush -- and whether they did
+    decided the number. That showed up as a bimodal n=2048 (~132 us vs ~152)
+    while n=6416, whose 26 MB cannot fit either way, stayed tight to +-2.
+    A read-modify-write pass has to go through the cache.
+    """
     global _L2_FLUSH
     if _L2_FLUSH is None:
-        _L2_FLUSH = torch.empty(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
-    _L2_FLUSH.zero_()
+        _L2_FLUSH = torch.zeros(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
+    _L2_FLUSH.add_(1)
 
 
 def _time(fn, iters: int) -> float:
