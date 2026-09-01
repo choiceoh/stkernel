@@ -375,13 +375,53 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
   constexpr int DIST = MK_W_NBUF - 1;
 
-  // ---- first unit's W fill, issued BEFORE the prologue (W8 path).
-  // The stamps said quant + barrier cost 3-10 us (m=8..32) and the first W
-  // tile then took another 8-9 us to land, with DRAM idle for the first
-  // stretch. Nothing in the fill depends on A, so it goes first and the
-  // prologue runs under it. cp.async groups survive the barrier's
-  // __syncthreads, and the prologue issues none, so the wait counts the
-  // unit loop relies on are unchanged.
+  // ---- prologue, part 1: this block's A rows are loaded and amax-reduced
+  // BEFORE the W fill goes out. The fill is 1.5 MB grid-wide; issued first
+  // it queued these 256 B/row loads behind itself and the stamps showed
+  // quant stretching from 2-8 us to 13-18 us -- the hoist gave nothing
+  // back. The reduce consumes the loads, so they are in the DRAM queue
+  // ahead of the fill, and the scale/convert/store half below runs under
+  // it. kblk <= KBLK_MAX = 32 and the grid is at least 48, so this block
+  // owns at most one k-block; the loop after part 2 is for the record.
+  const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
+  constexpr int RPW = 32 / MK_WARPS;  // rows per warp at m = 32
+  const int kbq = (int)blockIdx.x;
+  float v[RPW][4], mx[RPW];
+  if (kbq < kblk) {
+    // Every row this warp owns is loaded before any is reduced. The
+    // per-row chain (load -> shuffle amax -> scale -> convert -> store)
+    // ran back to back, one global-load latency each: 2 us at m=8,
+    // 8 us at m=32. Independent loads issue together.
+#pragma unroll
+    for (int i = 0; i < RPW; ++i) {
+      const int r = qw + i * MK_WARPS;
+      if (r < c.m) {
+        const __nv_bfloat16* src =
+            c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4;
+#pragma unroll
+        for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(src[q]);
+      } else {
+#pragma unroll
+        for (int q = 0; q < 4; ++q) v[i][q] = 0.0f;
+      }
+    }
+#pragma unroll
+    for (int i = 0; i < RPW; ++i) {
+      mx[i] = fmaxf(fmaxf(fabsf(v[i][0]), fabsf(v[i][1])),
+                    fmaxf(fabsf(v[i][2]), fabsf(v[i][3])));
+#pragma unroll
+      for (int off = 16; off; off >>= 1)
+        mx[i] = fmaxf(mx[i], __shfl_xor_sync(0xffffffffu, mx[i], off));
+    }
+  }
+
+  // ---- first unit's W fill, issued before the prologue's second half
+  // (W8 path). The stamps said quant + barrier cost 3-10 us (m=8..32) and
+  // the first W tile then took another 8-9 us to land, with DRAM idle for
+  // the first stretch. Nothing in the fill depends on A, so it goes out
+  // here and the rest of the prologue runs under it. cp.async groups
+  // survive the barrier's __syncthreads, and the prologue issues none, so
+  // the wait counts the unit loop relies on are unchanged.
   bool hoisted = false;
   if (c.wq4 == nullptr && (int)blockIdx.x < units) {
     int nt0, kb00, kbn0;
@@ -395,50 +435,41 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
   }
 
-  // ---- prologue: quantize A once for the WHOLE grid.
-  // kblk <= KBLK_MAX = 32 and the grid is at least 48, so this is one
-  // k-block per block and no loop in practice. The barrier that publishes
-  // it is the price; the measurement above says it is worth paying.
-  {
-    const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
-    constexpr int RPW = 32 / MK_WARPS;  // rows per warp at m = 32
-    for (int kb = blockIdx.x; kb < kblk; kb += c.grid) {
-      // Every row this warp owns is loaded before any is reduced. The
-      // per-row chain (load -> shuffle amax -> scale -> convert -> store)
-      // ran back to back, one global-load latency each: 2 us at m=8,
-      // 8 us at m=32. Independent loads issue together.
-      float v[RPW][4];
+  // ---- prologue, part 2: scale, convert, publish -- once for the WHOLE
+  // grid. The barrier that publishes it is the price; the measurement in
+  // #209 says it is worth paying.
+  auto quant_store = [&](int kb, const float (&vv)[RPW][4],
+                         const float (&mm)[RPW]) {
 #pragma unroll
-      for (int i = 0; i < RPW; ++i) {
-        const int r = qw + i * MK_WARPS;
-        if (r < c.m) {
-          const __nv_bfloat16* src =
-              c.x + (size_t)r * c.k + kb * KSTEP + ql * 4;
+    for (int i = 0; i < RPW; ++i) {
+      const int r = qw + i * MK_WARPS;
+      if (r >= c.m) break;  // rows ascend with i
+      const float sc = mk_pow2_scale(mm[i]);
+      if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
+      uint32_t pack = 0;
 #pragma unroll
-          for (int q = 0; q < 4; ++q) v[i][q] = __bfloat162float(src[q]);
-        } else {
-#pragma unroll
-          for (int q = 0; q < 4; ++q) v[i][q] = 0.0f;
-        }
-      }
-#pragma unroll
-      for (int i = 0; i < RPW; ++i) {
-        const int r = qw + i * MK_WARPS;
-        if (r >= c.m) break;  // rows ascend with i
-        float mx = fmaxf(fmaxf(fabsf(v[i][0]), fabsf(v[i][1])),
-                         fmaxf(fabsf(v[i][2]), fabsf(v[i][3])));
-#pragma unroll
-        for (int off = 16; off; off >>= 1)
-          mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
-        const float sc = mk_pow2_scale(mx);
-        if (ql == 0) g_mk_axs[r * KBLK_MAX + kb] = sc;
-        uint32_t pack = 0;
-#pragma unroll
-        for (int q = 0; q < 4; ++q)
-          pack |= (uint32_t)mk_f32_to_e4m3(v[i][q] / sc) << (8 * q);
-        *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
-      }
+      for (int q = 0; q < 4; ++q)
+        pack |= (uint32_t)mk_f32_to_e4m3(vv[i][q] / sc) << (8 * q);
+      *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
     }
+  };
+  if (kbq < kblk) quant_store(kbq, v, mx);
+  for (int kb = kbq + c.grid; kb < kblk; kb += c.grid) {  // grid < kblk only
+    float v2[RPW][4], mx2[RPW];
+#pragma unroll
+    for (int i = 0; i < RPW; ++i) {
+      const int r = qw + i * MK_WARPS;
+#pragma unroll
+      for (int q = 0; q < 4; ++q)
+        v2[i][q] = (r < c.m) ? __bfloat162float(
+            c.x[(size_t)r * c.k + kb * KSTEP + ql * 4 + q]) : 0.0f;
+      mx2[i] = fmaxf(fmaxf(fabsf(v2[i][0]), fabsf(v2[i][1])),
+                     fmaxf(fabsf(v2[i][2]), fabsf(v2[i][3])));
+#pragma unroll
+      for (int off = 16; off; off >>= 1)
+        mx2[i] = fmaxf(mx2[i], __shfl_xor_sync(0xffffffffu, mx2[i], off));
+    }
+    quant_store(kb, v2, mx2);
   }
   MK_TS(1);  // A quantized, before the publishing barrier
   mk_grid_barrier(bar, c.grid);
