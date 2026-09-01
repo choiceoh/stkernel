@@ -788,7 +788,12 @@ class _KdaFixture:
         # NON-TRIVIAL affine weight: an all-ones o_norm cannot see a missing
         # weight multiply (review finding). The stock arm must use the same
         # values -- FusedRMSNormGated gets them via onorm_w below.
-        self.onorm_w = (torch.rand(KDA_OUT, device="cuda") * 0.4
+        # KDA_D, not KDA_OUT. The CUDA side declares onorm_w as [KDA_D] and
+        # indexes it by the within-head dim (a.onorm_w[d]), and the stock
+        # FusedRMSNormGated(KDA_D) weight is 128 wide too. A KDA_OUT-sized
+        # tensor left the MK arm reading its first 128 entries while the
+        # stock arm used a different vector entirely.
+        self.onorm_w = (torch.rand(KDA_D, device="cuda") * 0.4
                         + 0.8).to(torch.bfloat16)
         la.o_norm = _P()
         la.o_norm.eps = 1e-5
