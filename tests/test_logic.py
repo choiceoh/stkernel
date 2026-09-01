@@ -5954,6 +5954,13 @@ def test_extra_env_rejects_comma_list() -> None:
     body = body[:body.index("done")]
     check("space-separated, not comma-separated" in body,
           "the abort must name the actual mistake, not just 'bad format'")
+    check("is declared in the profile, so EXTRA_ENV cannot" in body,
+          "a profile-declared VLLM_* key must abort: the profile emits its "
+          "own -e later and docker takes the last one, so EXTRA_ENV loses "
+          "silently for exactly the knobs a sweep wants to move")
+    check("_vllm_keys_sp" in text and "printf '%s ' ${_vllm_keys:-}" in text,
+          "the key list is newline-separated; it must be flattened before the "
+          "space-delimited case pattern, or the guard never matches")
     reject = body.index("[A-Za-z_]*=*,[A-Za-z_]*=*)")
     accept = body.index("[A-Za-z_]*=*) EXTRA_ENV_FLAGS=")
     check(reject < accept,

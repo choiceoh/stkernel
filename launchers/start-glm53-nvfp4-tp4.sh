@@ -323,6 +323,9 @@ done
 # (this lane has now lost two boots to that signature). Production knobs
 # belong in the profile, not here.
 EXTRA_ENV_FLAGS=""
+# _vllm_keys is newline-separated (grep | sort -u); flatten it so the
+# membership test below can use a space-delimited case pattern.
+_vllm_keys_sp=" $(printf '%s ' ${_vllm_keys:-})"
 for _kv in ${EXTRA_ENV:-}; do
   case "$_kv" in
     # A comma-joined list is the natural mistake, and it passes the KEY=VALUE
@@ -333,7 +336,21 @@ for _kv in ${EXTRA_ENV:-}; do
       echo "ABORT: EXTRA_ENV is space-separated, not comma-separated: $_kv"
       echo "       use EXTRA_ENV=\"A=1 B=2\""
       exit 1 ;;
-    [A-Za-z_]*=*) EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
+    [A-Za-z_]*=*)
+      # A profile-declared VLLM_* key is emitted as its own -e further down,
+      # and docker takes the LAST -e for a name. So EXTRA_ENV silently loses
+      # to the profile for exactly the knobs a sweep wants to move, and the
+      # boot measures the profile value while the caller believes otherwise.
+      # Pass those as caller environment variables instead: the _caller
+      # restore above re-applies them after the profile is sourced.
+      case "$_vllm_keys_sp" in
+        *" ${_kv%%=*} "*)
+          echo "ABORT: ${_kv%%=*} is declared in the profile, so EXTRA_ENV cannot"
+          echo "       override it (docker takes the last -e). Pass it directly:"
+          echo "         ${_kv%%=*}=${_kv#*=} bash launchers/start-glm53-nvfp4-tp4.sh"
+          exit 1 ;;
+      esac
+      EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
     *) echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"; exit 1 ;;
   esac
 done
