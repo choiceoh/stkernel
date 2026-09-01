@@ -4371,6 +4371,57 @@ def test_dflash2_selector_check() -> None:
     print("  dflash2 selector check ........ OK")
 
 
+def test_hotpath_env_latches() -> None:
+    """Process switches are read once, never from layer/logits hot paths."""
+    kpool_path = _overlay_source("overlay/sparse_attn_indexer_kpool.py")
+    kpool_source = open(kpool_path, encoding="utf-8").read()
+    kpool_tree = ast.parse(kpool_source)
+    kpool = next(
+        node for node in kpool_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "sparse_attn_indexer_kpool"
+    )
+    kpool_body = ast.get_source_segment(kpool_source, kpool) or ""
+    check("os.environ" not in kpool_body,
+          "kpool custom-op hot path must not read the environment per layer")
+    check("and _KPOOL_TAIL_CACHE_ENABLED" in kpool_body
+          and "and _KPOOL_DECODE_WRITE_ENABLED" in kpool_body,
+          "both kpool rollback switches must consume import-time latches")
+
+    model_path = _overlay_source("overlay/modules/dsv4_model/nvidia_model.py")
+    model_source = open(model_path, encoding="utf-8").read()
+    model_tree = ast.parse(model_source)
+
+    def method_source(name: str, marker: str) -> str:
+        for cls in (node for node in model_tree.body
+                    if isinstance(node, ast.ClassDef)):
+            for node in cls.body:
+                if not isinstance(node, ast.FunctionDef) or node.name != name:
+                    continue
+                body = ast.get_source_segment(model_source, node) or ""
+                if marker in body:
+                    return body
+        raise AssertionError(f"{name} containing {marker!r} not found")
+
+    forward = method_source("forward", "use_dspark_reference_hc")
+    target_head = method_source(
+        "_ensure_tgt_head_fp8_copy", "_DSV4_TARGET_LM_HEAD_FP8"
+    )
+    release_head = method_source(
+        "maybe_release_bf16_lm_head", "_DSV4_FREE_BF16_LM_HEAD"
+    )
+    for name, body in (
+        ("model forward", forward),
+        ("target-head logits", target_head),
+        ("bf16 release", release_head),
+    ):
+        check("getenv(" not in body and "os.environ" not in body,
+              f"{name} must consume a module latch, not read the environment")
+    check("use_dspark_reference_hc = _DSPARK_REFERENCE_HC" in forward,
+          "aux hidden-state capture must use the reference-HC latch")
+    print("  hot-path env latches ........... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -4397,6 +4448,7 @@ if __name__ == "__main__":
     test_ep_compact_warmup_ladder()
     test_once_logger_args_hashable()
     test_dflash2_selector_check()
+    test_hotpath_env_latches()
     test_launcher_load_format_gate()
     test_launcher_nofile_limit()
     test_prefill_ladder_probe()
