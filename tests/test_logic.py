@@ -5972,6 +5972,48 @@ def test_extra_env_rejects_comma_list() -> None:
     print("  extra-env comma guard ......... OK")
 
 
+def test_fused_k_gate_lazy_slot_exists() -> None:
+    """The fused indexer forward must not read a slot nobody creates.
+
+    #188 shipped `if self._wp_fp32 is None:` with nothing ever setting it, so
+    arming VLLM_GLM53_FUSED_K_GATE killed the engine at load:
+
+      RuntimeError: Worker failed with error
+        ''Indexer' object has no attribute '_wp_fp32''
+
+    It had never booted in any configuration -- the same gate also fires for
+    VLLM_GLM53_SM121_MLA_PREFILL=1. install() and prepare() are gated
+    separately, so the forward can be live on a layer prepare() skipped; the
+    read has to tolerate that.
+    """
+    source = open(_overlay_source(
+        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+    ), encoding="utf-8").read()
+    tree = ast.parse(source)
+    fused = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_glm53_fused_indexer_forward"
+    )
+    body = ast.get_source_segment(source, fused) or ""
+    check("self._wp_fp32 is None" not in body,
+          "a bare attribute read of the lazy slot crashes any layer that "
+          "prepare() skipped -- use getattr(self, ..., None)")
+    check('getattr(self, "_wp_fp32", None)' in body,
+          "the lazy fp32 head-weight cache must be read defensively")
+
+    prepare = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "prepare_glm53_prefill_fastpath"
+    )
+    prep_body = ast.get_source_segment(source, prepare) or ""
+    check("_wp_fp32 = None" in prep_body,
+          "prepare() must create the slot where it sets the rest of the "
+          "layer's fast-path state")
+    print("  fused K+gate lazy slot ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -6005,6 +6047,7 @@ if __name__ == "__main__":
     test_bench_resolves_served_model()
     test_prefill_knobs_announce_arming()
     test_extra_env_rejects_comma_list()
+    test_fused_k_gate_lazy_slot_exists()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash_aot_guard_stays_removed()

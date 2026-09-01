@@ -234,6 +234,13 @@ def prepare_glm53_prefill_fastpath(model: torch.nn.Module) -> int:
                     fused_weight,
                     persistent=False,
                 )
+            # The fused forward keeps an fp32 copy of the head-weight rows in
+            # `_wp_fp32`, filled on first use. Nothing created the slot, so
+            # the very first call raised
+            #   AttributeError: 'Indexer' object has no attribute '_wp_fp32'
+            # and the engine died at load. Create it here, where the rest of
+            # this layer's fast-path state is set up.
+            indexer._wp_fp32 = None
             built += 1
     return built
 
@@ -384,7 +391,11 @@ def _glm53_fused_indexer_forward(
     # contains only the K rows and the trained per-token pool gate.
     kg = F.linear(hidden_states, fused_weight)
     k, gate_score = kg.split(self.head_dim, dim=-1)
-    if self._wp_fp32 is None:
+    # getattr, not attribute access: install() and prepare() are gated
+    # separately, so the forward can be live on a layer prepare() skipped
+    # (contract drift, allocation failure). Falling back to computing it
+    # here is correct and cheap; crashing at load is not.
+    if getattr(self, "_wp_fp32", None) is None:
         self._wp_fp32 = (
             k_weight.data[self.head_dim :, :].t().contiguous().float()
         )
