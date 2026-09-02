@@ -66,6 +66,12 @@ namespace {
 #ifndef MK_W4_NBUF_DEF
 #define MK_W4_NBUF_DEF 3
 #endif
+// Probe-only ceiling switch (numerics invalid): 1 = no mma_fold, 2 = no
+// stage_a, 3 = no in-loop stage_w, 4 = no mma_fold and no stage_a. Never
+// set by the driver unless VLLM_GLM53_MK_PROBE_SKIP is.
+#ifndef MK_PROBE_SKIP
+#define MK_PROBE_SKIP 0
+#endif
 // Ceiling for the gemm and kda persistent grids -- each launch takes the
 // smaller of it and what the device reports resident, exactly as mhc
 // does. At MK_W_NBUF 3 the 63,616 B block only fits once in the SM's
@@ -833,14 +839,24 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
 
       for (int kb = kb0;; ++kb) {
+#if MK_PROBE_SKIP != 3
         if (kb + DIST < kbn) stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF);
+#else
+        mk_cp_commit();  // keep the group count
+#endif
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
+#if MK_PROBE_SKIP != 1 && MK_PROBE_SKIP != 4
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
+#else
+        (void)sw;
+#endif
 
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
+#if MK_PROBE_SKIP != 2 && MK_PROBE_SKIP != 4
         stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
+#endif
         // outstanding after W(kb+1): the deeper stages, when they exist --
         // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
         MK_TS_ACC_BEGIN(tw);

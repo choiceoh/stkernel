@@ -145,7 +145,9 @@ def _build():
             f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
             f"-DMK_W4_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_W4_NBUF', '3')}",
         ] + (["-DMK_PHASE_TS=1"]
-             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else []),
+             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
+          + ([f"-DMK_PROBE_SKIP={os.environ['VLLM_GLM53_MK_PROBE_SKIP']}"]
+             if os.environ.get("VLLM_GLM53_MK_PROBE_SKIP") else []),
         build_directory="/root/.mk_build",
         verbose=False,
     )
