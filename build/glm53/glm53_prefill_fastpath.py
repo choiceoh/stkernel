@@ -34,23 +34,6 @@ from .attention import (
 )
 from .ops.kpool_compress import fwht128_quant_fp8
 
-# deneb fork (glm53_indexer_gate_splitk): the split-K helper when that module
-# is mounted, else the stock fp32 torch.mm. Resolved once, on first call, so
-# the fused indexer forward stays loadable without the sibling file.
-_HEAD_GATE = None
-
-
-def _glm53_head_gate(x, w):
-    global _HEAD_GATE
-    if _HEAD_GATE is None:
-        try:
-            from vllm.models.glm5next.nvidia.glm53_indexer_gate import head_gate as fn
-        except ImportError:
-            def fn(x, w):
-                return torch.mm(x.float(), w)
-        _HEAD_GATE = fn
-    return _HEAD_GATE(x, w)
-
 logger = init_logger(__name__)
 
 _GLM53_SM121_MLA_PREFILL_ENV = "VLLM_GLM53_SM121_MLA_PREFILL"
@@ -416,7 +399,7 @@ def _glm53_fused_indexer_forward(
         self._wp_fp32 = (
             k_weight.data[self.head_dim :, :].t().contiguous().float()
         )
-    weights = _glm53_head_gate(hidden_states, self._wp_fp32)  # deneb fork (glm53_indexer_gate_splitk)
+    weights = torch.mm(hidden_states.float(), self._wp_fp32)
 
     k = _fused_indexer_k_norm(
         k,
