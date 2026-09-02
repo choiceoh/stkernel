@@ -604,19 +604,41 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   constexpr int DIST = MK_W_NBUF - 1;
   constexpr int RAW_DIST = W4_RAW_NBUF - 1;
 
-  // ---- prologue. Order: the first unit's W fill (independent of the
-  // previous kernel, so it goes out before the PDL wait and lands during
-  // that kernel's tail), the PDL wait, then this block's A k-block into
-  // registers and the amax reduce. Staging x through cp.async ahead of
-  // the fill was tried: it made every block wait for the whole fill in
-  // the prologue (wait_group cannot skip older groups), which is exactly
-  // the exposure a plain launch should not pay.
+  // ---- prologue. Order: the PDL wait, this block's A k-block into
+  // registers (one 8 B load per row per lane, 2-8 KB per block), THEN the
+  // first unit's W fill, then the amax reduce and convert while the fill
+  // is in flight. The fill used to go out first, before the PDL wait, so
+  // it would land during the previous kernel's tail -- but the x loads
+  // then queued behind it: 48 SMs x 32 KB of cp.async is 1.5 MB, ~6.5 us
+  // at the DRAM rate, and the phase stamps showed "x loaded" at a median
+  // of 8.2 us after entry with a 1.1 us minimum and zero entry skew. The
+  // fill's own exposure after the barrier was 1.9 us; the loads' was 7.
+  // Staging x through cp.async was tried too: every block then waited
+  // for the whole fill in the prologue (wait_group cannot skip older
+  // groups).
   const int qw = threadIdx.x >> 5, ql = threadIdx.x & 31;
   constexpr int RPW = 32 / MK_WARPS;  // rows per warp at m = 32
   const int kbq = (int)blockIdx.x;
   int nt0 = 0, kb00 = 0, kbn0 = 0;
   const bool has_u0 = (int)blockIdx.x < units;
   if (has_u0) decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
+
+  // ---- PDL: launched programmatically after the previous kernel, this
+  // grid has been running on the SMs that kernel freed. From here on it
+  // reads x (the previous kernel's output) and touches the shared
+  // counters, so it waits for that grid to complete and flush. A no-op
+  // for a plain launch.
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  float v[RPW][4], mx[RPW];
+  uint2 raw[RPW];
+  if (kbq < kblk) {
+#pragma unroll
+    for (int i = 0; i < RPW; ++i) {
+      const int r = min(qw + i * MK_WARPS, c.m - 1);
+      raw[i] = *(const uint2*)(c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4);
+    }
+  }
+  // the x loads are in flight; now the first unit's W fill
   bool hoisted = false;
   if (has_u0) {
     if (kb00 < kbn0) {
@@ -636,25 +658,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       hoisted = true;
     }
   }
-
-  // ---- PDL: launched programmatically after the previous kernel, this
-  // grid has been running on the SMs that kernel freed, and its W fill
-  // above went out during that kernel's tail. From here on it reads x (the
-  // previous kernel's output) and touches the shared counters, so it waits
-  // for that grid to complete and flush. A no-op for a plain launch.
-  asm volatile("griddepcontrol.wait;" ::: "memory");
-  // x -> registers, after the wait, one unconditional 8 B load per row
-  // (rows past m read a clamped row and are never stored). With the W
-  // fill already in flight -- or landed, under PDL -- nothing competes
-  // with these four loads.
-  float v[RPW][4], mx[RPW];
   if (kbq < kblk) {
-    uint2 raw[RPW];
-#pragma unroll
-    for (int i = 0; i < RPW; ++i) {
-      const int r = min(qw + i * MK_WARPS, c.m - 1);
-      raw[i] = *(const uint2*)(c.x + (size_t)r * c.k + kbq * KSTEP + ql * 4);
-    }
 #pragma unroll
     for (int i = 0; i < RPW; ++i) {
       const __nv_bfloat16* pv = (const __nv_bfloat16*)&raw[i];

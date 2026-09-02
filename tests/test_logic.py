@@ -6263,17 +6263,19 @@ def test_glm53_megakernel_contracts() -> None:
           "construction). kb0, not 0: a block may own a k SLICE of a tile.")
     # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
     #    its barrier, and the prologue's own x loads (consumed by the amax
-    #    shuffle) go out before that fill. Phase stamps: quant + barrier
-    #    took 3-10 us during which DRAM idled; a fill issued first instead
-    #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
+    #    shuffle) go out BEFORE that fill, right after the PDL wait. Phase
+    #    stamps: quant + barrier took 3-10 us during which DRAM idled; a
+    #    fill issued first (as the PDL commit had it, to land during the
+    #    previous kernel's tail) queued the 256 B/row x loads behind 1.5 MB
+    #    of W: "x loaded" at a median 8.2 us after entry, minimum 1.1.
     _hoist_at = cu_code.index("stage_w(nt0, kb00,")
-    check(_hoist_at < cu_code.index('asm volatile("griddepcontrol.wait;"')
+    check(cu_code.index('asm volatile("griddepcontrol.wait;"')
           < cu_code.index("raw[i] = *(const uint2*)(c.x +")
+          < _hoist_at
           < cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)")
           < cu_code.index("mk_grid_barrier(bar, c.grid);"),
-          "prologue order: the first unit's W fill (independent of the "
-          "previous kernel), the PDL wait, x into registers, amax/convert/"
-          "store, barrier")
+          "prologue order: the PDL wait, x into registers, the first unit's "
+          "W fill, amax/convert/store, barrier")
     check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
