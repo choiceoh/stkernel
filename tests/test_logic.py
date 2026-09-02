@@ -2074,6 +2074,41 @@ def test_glm53_v2_overlay_contracts() -> None:
     print("  glm53 V2/deploy contracts ...... OK")
 
 
+def test_korean_gate_separates_notation_from_damage() -> None:
+    """The Korean gate must not fire on the model writing about Korean.
+
+    It did, for boots on end: a response explaining spacing wrote the correct
+    construction "-(으)ㄹ 수 있다" and the bench reported that ㄹ as corruption.
+    That single false hit is what a 1/8 and a 1/16 in the ledger were, and it
+    nearly cost an arm -- prep-fused was about to be blamed for a regression
+    the detector invented.
+
+    Damage welds a jamo onto a syllable (하ㄹ수). Notation always leads with a
+    delimiter. The character BEFORE the jamo is the whole discriminator."""
+    ns = load_defs(
+        "bench/korean-corruption.py",
+        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "INFORMATIONAL", "scan"},
+        {"re": re, "unicodedata": __import__("unicodedata")},
+    )
+    scan = ns["scan"]
+    notation = [
+        'The construction "-(으)ㄹ 수 있다" requires spacing',
+        "받침 ㄹ 과 ㄴ 은 다르다",
+        "-ㅂ니다 체를 쓴다",
+        "ㄱ부터 ㅎ까지",
+        "조력 발전은 밀물과 썰물의 낙차를 이용한다.",
+    ]
+    for text in notation:
+        check(scan(text)["lone_jamo"] == 0,
+              f"grammar notation is not damage: {text[:34]}")
+    for text in ("하ㄹ수 있다", "할ㅅ우 있다"):
+        check(scan(text)["lone_jamo"] == 1,
+              f"a jamo welded to a syllable is damage: {text}")
+    check("jamo_notation" in ns["INFORMATIONAL"],
+          "the notation count is reported but never gates a response")
+    print("  korean gate notation vs damage .. OK")
+
+
 def test_fp8_dense_free_bf16_contract() -> None:
     """Releasing the bf16 sources is exact-opt-in and drops the base fallbacks.
 
@@ -7601,6 +7636,7 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()

@@ -9,9 +9,21 @@ fixed corpus and report how many characters and how many responses are hit.
 What counts as corruption, in order of how sure we can be:
 
   replacement  U+FFFD. A decoder gave up on a byte sequence. Unambiguous.
-  lone_jamo    Hangul Jamo / Compatibility Jamo outside a syllable block. Korean
-               text renders as precomposed syllables (AC00-D7A3); a bare ㄱ or ᅡ
-               between them means a syllable was assembled from the wrong pieces.
+  lone_jamo    A jamo WELDED to a syllable -- one immediately preceded by a
+               Hangul syllable, as in 하ㄹ수. Korean renders as precomposed
+               syllables (AC00-D7A3), so a jamo growing straight out of one
+               means the syllable was assembled from the wrong pieces.
+
+               Counting every jamo instead does not work, and cost this bench
+               its credibility: the model writes grammar notation. A response
+               explaining spacing produced
+
+                   The construction "-(으)ㄹ 수 있다" requires spacing
+
+               and that correct ㄹ was reported as corruption for boots on end.
+               Notation always leads with a delimiter -- (으)ㄹ, -ㅂ니다, "ㄹ",
+               ㄱ부터 -- and damage never does, so the character BEFORE the jamo
+               separates them. Reported as jamo_notation, not as a hit.
   cjk_mixed    Han characters inside a Korean response. The model was asked to
                answer in Korean, so a stray 漢 is a token id that landed in the
                wrong part of the vocabulary -- the signature of a bad sample,
@@ -44,7 +56,12 @@ PROMPTS = [
 
 SYL = re.compile(r"[가-힣]")
 JAMO = re.compile(r"[ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]")
+# A jamo growing straight out of a syllable, with nothing between them.
+WELDED_JAMO = re.compile(r"[가-힣][ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]")
 HAN = re.compile(r"[一-鿿㐀-䶿]")
+
+# Counted and printed, but never makes a response "broken".
+INFORMATIONAL = ("jamo_notation",)
 
 
 def scan(text: str, truncated: bool = False) -> dict:
@@ -57,9 +74,13 @@ def scan(text: str, truncated: bool = False) -> dict:
     """
     if truncated and text.endswith("\ufffd"):
         text = text[:-1]
-    hits = {"replacement": 0, "lone_jamo": 0, "cjk_mixed": 0, "control": 0}
+    hits = {"replacement": 0, "lone_jamo": 0, "cjk_mixed": 0, "control": 0,
+            "jamo_notation": 0}
     hits["replacement"] = text.count("�")
-    hits["lone_jamo"] = len(JAMO.findall(text))
+    welded = len(WELDED_JAMO.findall(text))
+    hits["lone_jamo"] = welded
+    # every other jamo is the model writing about Korean, not breaking it
+    hits["jamo_notation"] = len(JAMO.findall(text)) - welded
     hits["cjk_mixed"] = len(HAN.findall(text))
     hits["control"] = sum(
         1 for c in text
@@ -108,19 +129,22 @@ def main() -> int:
             h = scan(text, truncated)
             for k in total:
                 total[k] += h[k]
-            if any(h.values()):
-                worst = max(h, key=lambda k: h[k])
+            # jamo_notation is reported, never gated: it is the model writing
+            # about Korean grammar, which several prompts here ask it to do.
+            gated = {k: v for k, v in h.items() if k not in INFORMATIONAL}
+            if any(gated.values()):
+                worst = max(gated, key=lambda k: gated[k])
                 idx = -1
                 if worst == "replacement":
                     idx = text.find("�")
                 elif worst == "lone_jamo":
-                    m = JAMO.search(text)
+                    m = WELDED_JAMO.search(text)
                     idx = m.start() if m else -1
                 elif worst == "cjk_mixed":
                     m = HAN.search(text)
                     idx = m.start() if m else -1
                 ctx = text[max(0, idx - 40):idx + 40].replace("\n", " ") if idx >= 0 else ""
-                dirty.append((r, i, h, ctx))
+                dirty.append((r, i, gated, ctx))
 
     print(f"응답 {n}개 · 문자 {chars:,}")
     if chars == 0:
