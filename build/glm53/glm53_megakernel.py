@@ -1148,7 +1148,7 @@ _armed_once = False
 # ---------------------------------------------------------------------------
 MLA_D = 512          # kv_lora_rank
 MLA_H = 16           # MLA heads per rank at TP4
-MLA_SPLITS_MAX = 16
+MLA_SPLITS_MAX = 64
 _MLA_WS = None
 
 

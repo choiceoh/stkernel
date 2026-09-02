@@ -1967,7 +1967,7 @@ constexpr int MLA_HPW = MLA_H / MLA_WARPS;    // 2 heads per warp (softmax owner
 constexpr int MLA_VD = MLA_D / 32;            // 16 latent elements per lane (phase 1)
 constexpr int MLA_TILE = 16;   // slots per cp.async tile (2 n-groups x 8)
 constexpr int MLA_NSTAGE = 3;  // ring buffers; total smem ~45 KB -> 2 blocks/SM
-constexpr int MLA_SPLITS_MAX = 16;
+constexpr int MLA_SPLITS_MAX = 64;
 
 struct MKMlaArgs {
   const __nv_bfloat16* q;      // [T, H, D] bf16, never quantised
@@ -2276,7 +2276,7 @@ void set_kernel_attrs() {
 // Cached per kernel: the ticket barrier needs the SAME grid on every launch,
 // and the two kernels are asked separately because their occupancy differs.
 template <typename K>
-int mk_resident_grid(K kernel, int& cache, int smem) {
+int mk_resident_grid(K kernel, int& cache, int smem, int cap = MK_GRID_CAP) {
   if (cache == 0) {
     int per_sm = 0, sms = 0;
     MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -2284,7 +2284,7 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
     MK_CHECK_CUDA(cudaDeviceGetAttribute(
         &sms, cudaDevAttrMultiProcessorCount, 0));
     cache = per_sm * sms;
-    if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;
+    if (cache > cap) cache = cap;
     TORCH_CHECK(cache > 0, "persistent grid has no resident blocks");
   }
   return cache;
@@ -2293,6 +2293,13 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
 int g_gemm_grid = 0;
 int g_kda_grid = 0;
 int g_mla_grid = 0;
+// MK_SEG_MLA keeps its own ticket counter, so it is not bound by the shared
+// 96-block contract the gemm/kda/mhc kernels observe. It still measures 96
+// (2 blocks/SM at 45.8 KB smem); the cap is here so a future smem cut is
+// not silently thrown away. Moving q to registers frees the smem for a
+// third block but pushes registers past the limit -- measured 2 either
+// way, and 6-8% SLOWER, so q stays in shared memory.
+constexpr int MLA_GRID_CAP = 192;
 
 // VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
 // each MK kernel may begin on the SMs its predecessor frees and prefetch
@@ -2607,14 +2614,14 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
     a.probe = pv;
   }
   auto stream = c10::cuda::getCurrentCUDAStream();
-  a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM);
+  a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
   mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
 }
 
 // Blocks the caller can fill: the split count this launch would use.
 int64_t mk_mla_grid() {
   set_kernel_attrs();
-  return mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM);
+  return mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

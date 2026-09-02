@@ -6588,9 +6588,10 @@ def test_glm53_megakernel_contracts() -> None:
     # grid that does not fit degrades instead of refusing to launch.
     check("mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM)" in cu
           and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
-          and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
+          and "int cap = MK_GRID_CAP" in cu and "if (cache > cap) cache = cap;" in cu,
           "gemm and kda each resolve their persistent grid from the device "
-          "rather than assuming MK_GRID_CAP")
+          "rather than assuming MK_GRID_CAP (the cap is a defaulted argument so "
+          "MK_SEG_MLA, which owns its ticket counter, can raise its own)")
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
