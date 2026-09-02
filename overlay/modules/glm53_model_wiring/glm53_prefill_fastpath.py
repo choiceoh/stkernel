@@ -36,8 +36,12 @@ from .ops.kpool_compress import fwht128_quant_fp8
 
 # deneb fork (glm53_indexer_gate_splitk): the split-K helper when that module
 # is mounted, else the stock fp32 torch.mm. Resolved once, on first call, so
-# the fused indexer forward stays loadable without the sibling file.
+# the fused indexer forward stays loadable without the sibling file. Only
+# "module not mounted" is tolerated silently; an ImportError raised INSIDE the
+# helper file is logged, and a knob that asks for split-K while the helper is
+# missing is announced rather than quietly served stock.
 _HEAD_GATE = None
+_HEAD_GATE_MODULE = "vllm.models.glm5next.nvidia.glm53_indexer_gate"
 
 
 def _glm53_head_gate(x, w):
@@ -45,7 +49,13 @@ def _glm53_head_gate(x, w):
     if _HEAD_GATE is None:
         try:
             from vllm.models.glm5next.nvidia.glm53_indexer_gate import head_gate as fn
-        except ImportError:
+        except ImportError as e:
+            if not (isinstance(e, ModuleNotFoundError) and e.name == _HEAD_GATE_MODULE):
+                logger.exception("[indexer-gate] helper import failed -> stock torch.mm")
+            elif os.environ.get("VLLM_GLM53_INDEXER_GATE_SPLITK", "").strip() == "1":
+                logger.warning("[indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1 but "
+                               "glm53_indexer_gate_splitk is not mounted -> stock torch.mm")
+
             def fn(x, w):
                 return torch.mm(x.float(), w)
         _HEAD_GATE = fn

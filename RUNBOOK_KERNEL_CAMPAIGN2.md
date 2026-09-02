@@ -345,31 +345,33 @@ VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # cand (프�
   dflash 의 async off 모두 손상, 원인은 LibertAIDAI 가중치). 이 실험은 그 판정을
   재론하지 않는다.
 
-## EXP-9 — 인덱서 fp32 head-gate 를 split-K 로 (`glm53_indexer_gate_splitk`, 2026-09-02 추가)
+## EXP-9 — 인덱서 fp32 head-gate 를 split-K 로 (`glm53_indexer_gate_splitk`, 2026-09-02 추가, 09-03 정정)
 
 `Indexer.forward` 의 `weights = torch.mm(hidden_states.float(), self._wp_fp32)`
-([M,4096]×[4096,16] fp32, 층당 1회 × 11) 을 cuBLAS 가 2블록 `gemmSN` 커널로 답한다:
-유휴 GB10 에서 47 us, 9월 1일 트레이스(CUPTI)에서 86 us. 48 SM 에 블록 2개가 문제의
-전부라 (행, K-슬라이스 512) 마다 프로그램 하나를 띄우고 fp32 atomic 으로 모으는
-split-K Triton 커널이 같은 곱을 10 us 에 낸다. **M<=16(디코드) 만** 이 경로,
-나머지(프리필, C>=3 verify)는 stock `torch.mm` 그대로.
+([M,4096]×[4096,**32**] fp32 — 플릿 체크포인트의 `index_n_heads=32`; 첫 판은 N<=16 만
+받아 플릿에서 한 번도 돌지 않았고 수치도 합성 N=16 이었다, 리뷰 #1 로 정정) 을 cuBLAS 가
+2블록 `gemmSN` 커널로 답한다: 콜드 88 us, 9월 1일 트레이스 88 us, 층당 1회 × 11.
+K 를 32개 프로그램으로 나눠 가중치 슬라이스를 한 번씩만 읽고 부분합을 **고정 순서**로
+더하는 두 커널이 같은 곱을 12.7 us(M=8) 에 낸다 — atomic 없음, 리플레이·랭크 간 비트 동일.
+**M<=16(디코드) 만** 이 경로, 나머지(프리필, C>=3)는 stock `torch.mm`(M=24 부터 17 us).
 
-**수치**: 양쪽 다 fp32 누적, 합산 순서만 다르다 — bit-exact 가 아니다. 오프라인
-300회/2,480행: max|diff| 2.4e-6, 행 최대 대비 6.7e-7, top-1 뒤집힘 0, top-4 집합 변화 0
-(`probes/indexer_gate_check.py`). bf16 게이트가 순위를 뒤집는 오차(1e-2)보다 네 자릿수
-아래지만 품질 브래킷은 필요하다.
+**수치**: 양쪽 다 fp32 누적, 합산 순서만 다르다 — bit-exact 가 아니다(서빙 수치 변경).
+표와 오프라인 검증(순위 뒤집힘 0, 50회 비트 동일, stride·K 불일치·M=0 라우팅)은 모듈
+README 한 곳에만 둔다; `probes/indexer_gate_check.py --config <ckpt>/config.json` 이
+실패 시 비-0 으로 종료한다.
 
-**천장**: 유휴 GPU 기준 11층 × ~40 us ≈ 0.44 ms/스텝 = C=1 의 **~0.65%**; 9월 1일 트레이스
-in-situ 는 gemmSN 88 us 라 ~0.96 ms = **~1.35%**. 어느 쪽이든 단독 부팅은 하지 않는다. EXP-7/EXP-8 과 독립이라 그 부팅에 얹어 같이 재는
-용도. 단독 부팅 금지.
+**천장**: 11 × (89.5 − 12.7) us ≈ 0.84 ms/스텝 = C=1 71 ms 스텝의 **~1.2%**. 단독 부팅은
+하지 않고 **EXP-7 부팅에 얹는다** (EXP-7 은 bit-exact 라 그 부팅의 수치 축은 이것 하나 —
+"부팅당 수치 축 하나" 규칙 유지). EXP-8 에는 얹지 않는다: EXP-8 의 게이트가 "수용률이
+움직이면 안 된다" 라 귀속이 섞인다.
 
 ```bash
-# 프로필 선언 키: caller env. 트레이스에서 gemmSN 11개가 _gate_splitk_kernel 11개로
-# 바뀐 것이 켜진 증거 (부팅 로그 줄은 없다 — 그래프 안에서 층마다 호출).
+# 프로필 선언 키: caller env. 부팅 로그의 "[indexer-gate] ... w(4096, 32) -> split-K" 가
+# 켜진 증거; "shape not admitted" 가 보이면 노브는 켜졌으나 커널이 안 도는 것이다.
 VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
-- 게이트: 품질 9/9, 한국어 0/16, C=1 step/s 브래킷 base→cand→base (얹은 부팅의 것과 공유).
+- 게이트: 품질 9/9, 한국어 0/16, **pos-1 수용률 ±2pct**, C=1 step/s 브래킷 base→cand→base.
 - 롤백 = env 한 줄. 기본 0 = stock 과 동일한 `torch.mm` 호출.
 
 ---
@@ -384,7 +386,7 @@ VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
 7. **EXP-7 (준비 커널 통합)** — bit-exact 프로브 → 섀도 부팅 → 브래킷. 호스트 유휴 4~5 ms 가 표적이라 GPU 커널 축과 독립.
 8. **EXP-8 (dflash async scheduling)** — 부팅 하나, 코드 변경은 허용 목록 한 조건. 천장이 가장 크다(7~12%); EXP-7 보다 먼저 돌려도 된다.
-9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7/8 부팅에 얹는다.
+9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7 부팅에만 얹는다 (EXP-8 은 수용률 게이트 귀속 때문에 제외).
 10. **EXP-7/8 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)

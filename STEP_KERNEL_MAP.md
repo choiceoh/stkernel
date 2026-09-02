@@ -256,8 +256,9 @@ mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`a
 
 **읽다가 나온 것**: (1) 인덱서의 fp32 head-gate `torch.mm(hidden.float(), _wp_fp32)`
 가 cuBLAS gemmSN 2블록 커널로 층당 86 us, 11층 0.95 ms/스텝(CUPTI) — 우리
-`glm53_prefill_fastpath.py:402` 소유, split-K 로 수 us 감 → `glm53_indexer_gate_splitk`
-(EXP-9, opt-in, 오프라인 50 → 10 us, ~0.65%/스텝). (2) 드래프터 fc 투영
+stock `attention.py` `Indexer.forward` 의 것(`FUSED_K_GATE=0` 이라 우리 fastpath 사본은 안 돈다),
+split-K 로 수 us 감 → `glm53_indexer_gate_splitk` (EXP-9, opt-in, N=32 콜드 88 → 12.7 us,
+~1.2%/스텝; 첫 판의 N=16 수치는 리뷰로 정정). (2) 드래프터 fc 투영
 814 us(eager bf16, 5층 hidden cat, 168 MB 읽기, `ReplicatedLinear` 라 fp8 dense
 패턴 밖) 포함 드래프터 커널 합 ~3 ms(CUPTI) — 원장 D≈0 과 긴장, 직접 측정 전
 판단 보류. (3) `KpoolTailMetadataBuilder` 의 원형 tail 슬롯 매핑은 러너가
@@ -266,17 +267,20 @@ mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`a
 
 ## 보충 분해 3 (2026-09-02 밤 — 9월 1일 트레이스, 스텝 구성과 오프라인 레버 소진 판정)
 
-같은 트레이스(rank 0, 223 스텝, 중앙 71.0 ms)를 **범주별 커널 시간**으로 자른 것.
-스트림이 둘(210 = 본 그래프, 17 = 공유 전문가·헤드·드래프터, 239 = 16개)이라 합이
-벽시계−유휴(65.4 ms)보다 ~5 ms 크다 — 그만큼이 두 스트림의 동시 실행분이다.
+같은 트레이스(rank 0, 223 스텝, 중앙 71.0 ms)를 **범주별 커널 시간**으로 자른 것
+(`tools/trace_step_composition.py`). 스트림이 둘(210 = 본 그래프, 17 = 공유 전문가·헤드·
+드래프터, 239 = 16개)이라 유휴는 **스트림 합집합** 기준이다: 합집합 busy 61.8 ms, 유휴
+9.24 ms, 범주 합(65.0 ms)과 합집합의 차 3.2~3.6 ms 가 두 스트림의 동시 실행분. (첫 판은
+단일 스트림 가정으로 유휴를 5.65 ms 로 과소 계산했다 — 리뷰로 정정; 보충 분해 2 의 합집합
+8.9 ms/72.1 ms 와 이제 일치한다.)
 
 | 범주 | ms/스텝 (중앙) | 개/스텝 | 비중 | 레버 |
 |---|---|---|---|---|
 | MoE 전문가 커널 (flashinfer cute-DSL) | 30.18 | 42 | 42.5% | 대역폭 바닥 (원장 273 GB/s 재확인) — 없음 |
 | deep_gemm fp8×fp4 밀집 GEMM | 14.06 | 197 | 19.8% | EXP-6 MK-GEMM W4 (stock 대비 -20~30%/발사) |
-| **GPU 유휴 (gap 합)** | 5.65 | — | 8.0% | **EXP-7/8** |
+| **GPU 유휴 (스트림 합집합 기준)** | 9.24 | — | 13.0% | **EXP-7/8** |
 | `k_oneshot` AR | 5.76 | 102 | 8.1% | p10 30.6 / p50 43.5 / p90 80.4 us — p10 이 고유 지연이면 ~2.5 ms 가 랭크 간 대기. EXP-7/8 이 호스트 편차를 줄여 같이 준다 |
-| bf16/cuBLAS GEMM | 5.17 | 165 | 7.3% | EXP-4 bproj(33개), EXP-9 gemmSN(11개, **in-situ 88 us × 11 = 0.96 ms = 1.35%** — 유휴 GPU 47 us 로 잡은 0.65% 보다 크다), 헤드 794 us |
+| bf16/cuBLAS GEMM | 5.17 | 165 | 7.3% | EXP-4 bproj(33개), EXP-9 gemmSN(11개 × 88 us; N=32 콜드도 88 us, split-K 12.7 → **~1.2%**), 헤드 794 us |
 | MoE 글루 (quant·act·topk·게이트) | 2.71 | 331 | 3.8% | 아래 게이트 항목 참조 — 없음 |
 | MHC (TileLang 2종) | 2.54 | 185 | 3.6% | MHC 스윕(EXP-3) |
 | KDA (recurrent·conv·norm) | 1.27 | 102 | 1.8% | EXP-6 MK-KDA |
@@ -307,8 +311,8 @@ BN∈{8,16,32}×BK∈{256,512,1024}×warps×stages 스윕(가중치 46개 순환
 임계경로가 아니다.
 
 **판정**: 오프라인(무부팅)으로 닫을 수 있는 >1% 레버가 없다. 남은 것은 전부 부팅
-게이트 — EXP-8(7~12%) > EXP-7(4~6%) > EXP-6 MK(W4 GEMM 20~30%/발사 × 14 ms) >
-EXP-9(1.35% in-situ) > EXP-4(0.9%).
+게이트 — EXP-8(7~12%) > EXP-7(4~6%; 유휴가 합집합 기준 13% 라 천장은 더 크다) > EXP-6 MK
+(W4 GEMM 20~30%/발사 × 14 ms) > EXP-9(~1.2%) > EXP-4(0.9%).
 
 ## 재현
 
