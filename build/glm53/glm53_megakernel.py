@@ -367,11 +367,31 @@ def gemm_w8a8(x, mk_pack, n_rows):
 # ---------------------------------------------------------------------------
 # MK_SEG_MHC
 # ---------------------------------------------------------------------------
+_FN_T = {}  # fn.data_ptr() -> [HC][HIDDEN][NOUT] copy (m contiguous)
+
+
+def _fn_transposed(fn):
+    """The kernel's p1 reads the 24 outputs of one (j, h) as six float4,
+    so fn is kept as [HC][HIDDEN][NOUT]. One 1.5 MB copy per layer, built on
+    first use and held for the life of the process (the stock path keeps
+    using the model's own tensor; graph replay bakes this copy's address,
+    which is why it is never rebuilt)."""
+    import torch
+
+    key = (fn.data_ptr(), tuple(fn.shape))
+    ft = _FN_T.get(key)
+    if ft is None:
+        ft = (fn.reshape(NOUT, HC, HIDDEN).permute(1, 2, 0).contiguous())
+        _FN_T[key] = ft
+    return ft
+
+
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
               hc_base, norm_weight, num_tokens, rms_eps, pre_eps,
               sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat):
     import torch
 
+    fn = _fn_transposed(fn)
     hc_mult, hidden = residual_flat.shape[1], residual_flat.shape[2]
     residual_cur = torch.empty_like(residual_flat)
     post_mix_cur = torch.empty(num_tokens, hc_mult, dtype=torch.float32,
