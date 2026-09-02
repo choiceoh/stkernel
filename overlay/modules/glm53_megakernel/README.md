@@ -62,7 +62,7 @@ cold tax by the share this module covers.
   2-in-flight is the difference between matching deepgemm and losing to it.
   Depths 4 and 5 measured no gain (bytes in flight are not the limiter
   once the wait is exact); the W4 arm streams its raw (tile, k-block)
-  records through its own 5-stage pipeline and expands them in registers.
+  records through its own 3-stage pipeline and expands them in registers.
   TMA stays a drop-in for later.
 - **Programmatic dependent launch** (`griddepcontrol`, works on this part
   with CUDA 13): every MK kernel triggers its dependents at entry and
@@ -75,9 +75,9 @@ cold tax by the share this module covers.
   is what keeps CUDA-graph replay with baked pointers exact (the osar
   `done_ctr` trick). A larger grid deadlocked on this part (#150).
 - Dynamic smem: W8 kernel 63,616 B (the 3 W pipeline buffers), W4 kernel
-  91,264 B (2 expanded tiles + 5 raw stages) -- separate instantiations
+  72,832 B (2 expanded tiles + 3 raw stages) -- separate instantiations
   with separate budgets, because one shared budget cost the W8 loop 4-7%.
-  Both resolve to 1 block/SM.
+  Both resolve to 1 block/SM. Deeper W4 staging (4, 5) measured worse.
 
 ## Integration (all inside files this repo owns)
 

@@ -64,7 +64,7 @@ namespace {
 #define MK_W_NBUF_DEF 3
 #endif
 #ifndef MK_W4_NBUF_DEF
-#define MK_W4_NBUF_DEF 5
+#define MK_W4_NBUF_DEF 3
 #endif
 // Ceiling for the gemm and kda persistent grids -- each launch takes the
 // smaller of it and what the device reports resident, exactly as mhc
@@ -131,10 +131,11 @@ constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 // and the exponents follow as a flat 1 KB. Three stages, two in flight,
 // like the W8 pipeline; the expanded e4m3 tiles reuse swb[0..1].
 // Raw rows on a 64 B pitch: the two uint4 reads per thread per k-block
-// conflict 16-way, ~100 cycles, where the 80 B padding cost a whole
-// pipeline stage of smem. Five stages, four in flight = 36 KB/block, the
-// W8 pipeline's 32 KB -- with three (two in flight, 18 KB) the W4 loop ran
-// at 86 GB/s against the W8 arm's 150: bytes in flight are the bandwidth.
+// conflict 16-way, ~100 cycles, cheaper than the 80 B padding's smem.
+// Three stages (two in flight). Deeper measured WORSE at n=1024 m=8, both
+// alone and back to back (srv2, 2 reps: 3/4/5 stages = 45/49/52 us single,
+// 39/41.5/44 us paired): the raw stream is not the W4 arm's limiter once
+// the expansion is register-only, and more records in flight only queue.
 constexpr int W4_RAW_PITCH = 64;
 constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 8192
 constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 9216
@@ -151,7 +152,7 @@ constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
 constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
                              W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                              KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 91,264
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,832 at 3
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
