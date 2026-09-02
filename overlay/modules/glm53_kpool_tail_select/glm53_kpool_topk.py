@@ -45,7 +45,10 @@ def _load_extension():
             _EXT = load(
                 name="glm53_kpool_topk_ext",
                 sources=[_SOURCE],
-                extra_cuda_cflags=["-O3", "--use_fast_math", "-arch=sm_121a"],
+                extra_cuda_cflags=["-O3", "--use_fast_math",
+                                   # see glm53_megakernel.py: -arch=sm_121a
+                                   # loses the "a" suffix under -c
+                                   "-gencode", "arch=compute_121a,code=sm_121a"],
                 build_directory=build_directory,
                 verbose=False,
             )
