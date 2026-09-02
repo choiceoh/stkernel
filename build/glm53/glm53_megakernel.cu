@@ -617,7 +617,15 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   int nt0 = 0, kb00 = 0, kbn0 = 0;
   const bool has_u0 = (int)blockIdx.x < units;
   if (has_u0) decode_unit((int)blockIdx.x, nt0, kb00, kbn0);
-  bool hoisted = false;
+  // W8 ring bookkeeping runs on two block-uniform counters instead of the
+  // k-block index: wsl counts stages issued (slot wsl % MK_W_NBUF, one
+  // cp.async group each), csl the stage being consumed. "W(csl) landed"
+  // is then wait_group(wsl - csl - 1) whatever unit the stages belong to,
+  // which is what lets a unit's last DIST iterations stage the NEXT
+  // unit's first k-blocks into the slots they free (see the loop): the
+  // pipeline no longer drains and refills at every unit boundary.
+  // pre = stages already issued for the unit about to start.
+  int wsl = 0, csl = 0, pre = 0;
   if (has_u0) {
     if (kb00 < kbn0) {
       if constexpr (W4) {
@@ -626,14 +634,17 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         for (int d = 1; d < RAW_DIST; ++d)
           if (kb00 + d < kbn0)
             stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
+        pre = 1;  // the W4 ring is per unit; "prefilled" is all it needs
       } else {
-        stage_w(nt0, kb00, kb00 % MK_W_NBUF, false);
+        stage_w(nt0, kb00, (wsl++) % MK_W_NBUF, false);
+        pre = 1;
 #pragma unroll
         for (int d = 1; d < DIST; ++d)
-          if (kb00 + d < kbn0)
-            stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF, false);
+          if (kb00 + d < kbn0) {
+            stage_w(nt0, kb00 + d, (wsl++) % MK_W_NBUF, false);
+            ++pre;
+          }
       }
-      hoisted = true;
     }
   }
 
@@ -732,10 +743,16 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
   unsigned long long tmma = 0ull, texp = 0ull;  // ns in mma_fold / expand (W4)
 #endif
-  for (int u = blockIdx.x; u < units; u = next_unit()) {
+  int u_pre = -1;  // next unit already taken by the W8 tail prefetch
+  for (int u = blockIdx.x; u < units;
+       u = (u_pre >= 0) ? u_pre : next_unit()) {
     int nt, kb0, kbn;
     decode_unit(u, nt, kb0, kbn);
     const bool to_partial = split && (u >= full);
+    const int pre_u = pre;  // stages of THIS unit already in flight
+    pre = 0;
+    if (u_pre >= 0) __syncthreads();  // next_unit() was skipped: the
+    u_pre = -1;                       // previous unit's smem readers first
     if (kb0 >= kbn) continue;
     float acc[2][2][4];  // [m-tile][n8-half][c-frag]
 #pragma unroll
@@ -862,7 +879,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         mma_fold_t(std::integral_constant<int, 1>{}, sw, kb, wsc);
     };
 
-    const bool prefilled = hoisted && (u == (int)blockIdx.x);
+    const bool prefilled = pre_u > 0;
     if constexpr (W4) {
       // ---- W4 path: cp.async-staged raw records, expanded in smem.
       // The raw (tile, k-block) record streams through the W4_RAW_NBUF
@@ -916,45 +933,64 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // the old hard-coded 2 a depth of 2 would have staged kb+2 into
       // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
       // That made MK_W_NBUF a knob that silently corrupted below 3.
-      if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);
+      // stages of this unit not yet in flight (pre_u were staged by the
+      // hoist or by the previous unit's tail)
+      if (pre_u == 0) stage_w(nt, kb0, (wsl++) % MK_W_NBUF, true);
       stage_a(kb0);
-      if (!prefilled) {
-#pragma unroll
-        for (int d = 1; d < DIST; ++d)
-          if (kb0 + d < kbn)
-            stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF, true);
-      }
-      // Wait for exactly W(kb0): the groups allowed to stay in flight are
-      // the ones issued after it, min(DIST - 1, kbn - kb0 - 1).
-      mk_cp_wait_upto(min(DIST - 1, kbn - kb0 - 1));
+      for (int d = max(pre_u, 1); d < DIST; ++d)
+        if (kb0 + d < kbn) stage_w(nt, kb0 + d, (wsl++) % MK_W_NBUF, true);
+      // Wait for exactly W(kb0) = stage csl: the groups allowed to stay in
+      // flight are the ones issued after it.
+      mk_cp_wait_upto(wsl - csl - 1);
       __syncthreads();
       if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
 
+      // the next unit, taken one iteration before the tail needs it (the
+      // two __syncthreads of that iteration publish s_unit)
+      int nt2 = 0, kb02 = 0, kbn2 = 0;
       for (int kb = kb0;; ++kb) {
+        if (kb + DIST + 1 == kbn && threadIdx.x == 0)
+          s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
 #if MK_PROBE_SKIP != 3
-        if (kb + DIST < kbn)
-          stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF, true);
+        if (kb + DIST < kbn) {
+          stage_w(nt, kb + DIST, (wsl++) % MK_W_NBUF, true);
+        } else if (kb0 + DIST + 1 <= kbn) {
+          // tail: the slot k-block kb-1 freed takes the next unit's k-block
+          // kb0' + (kb + DIST - kbn), so the pipeline stays DIST deep
+          // across the boundary (units too short to have fetched early
+          // fall back to next_unit() at the loop header)
+          const int d = kb + DIST - kbn;
+          if (d == 0) {
+            u_pre = s_unit;
+            if (u_pre < units) decode_unit(u_pre, nt2, kb02, kbn2);
+          }
+          if (u_pre < units && kb02 + d < kbn2) {
+            stage_w(nt2, kb02 + d, (wsl++) % MK_W_NBUF, true);
+            ++pre;
+          }
+        }
 #else
         mk_cp_commit();  // keep the group count
+        ++wsl;
 #endif
         if (kb + 1 < kbn) stage_a_load(kb + 1);  // L2 latency under the mma
         const uint8_t* sw =
-            swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
+            swb + (csl % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
 #if MK_PROBE_SKIP != 1 && MK_PROBE_SKIP != 4
         mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
 #else
         (void)sw;
 #endif
+        ++csl;  // W(kb) consumed by this thread
 
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
 #if MK_PROBE_SKIP != 2 && MK_PROBE_SKIP != 4
         stage_a_store();  // saq(kb+1) from the registers loaded above
 #endif
-        // outstanding after W(kb+1): the deeper stages, when they exist --
-        // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
+        // W(kb+1) is stage csl now; outstanding after it: wsl - csl - 1
         MK_TS_ACC_BEGIN(tw);
-        mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));
+        mk_cp_wait_upto(wsl - csl - 1);
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
         MK_TS_ACC_END(twait, tw);  // thread 0 waits here, not in wait_group
       }
