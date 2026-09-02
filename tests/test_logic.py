@@ -6350,12 +6350,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 4
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "gemm, kda and mhc kernels trigger their dependents at entry and "
-          "are launched programmatically behind the MK_PDL knob (default off)")
+          "every segment kernel (gemm, kda, mhc, mla) triggers its dependents "
+          "at entry and is launched programmatically behind the MK_PDL knob "
+          "(default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -6610,10 +6611,11 @@ def test_glm53_megakernel_contracts() -> None:
     # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
     # of 96, and the next 96-block launch then releases at half its blocks.
     check('ws["barrier_mhc"].data_ptr()' in pysrc_full
+          and 'ws["barrier_mla"].data_ptr()' in pysrc_full
           and pysrc_full.count("_barrier_ptr(ws)")
           - pysrc_full.count("def _barrier_ptr(ws)") == 1,
-          "mhc runs its own barrier counter, not the one the 48-block "
-          "kernels share")
+          "mhc and mla each run their own barrier counter, not the one the "
+          "48-block kernels share (their grids are 96 blocks)")
     check("(t / (unsigned long long)grid + 1ULL) * grid" in cu,
           "grid barrier is the never-reset monotonic ticket form, 64-bit "
           "(32-bit wraps in ~a week of arrivals and releases early)")
@@ -6780,6 +6782,27 @@ def test_glm53_megakernel_contracts() -> None:
           "the bench times the W4 lane as the MK arm, gates it at the e2m1 "
           "by-design class, and keeps the exact-grid gate against the torch "
           "twins")
+    # -- MK_SEG_MLA: correct-but-not-adopted sparse MLA decode. The contract
+    #    that matters is that nothing routes to it and the pipeline keeps a
+    #    fixed in-flight group count (a short row read stale smem without it).
+    check("VLLM_GLM53_MK_MLA=0" in open(os.path.join(REPO, "profiles/glm53.env"),
+                                        encoding="utf-8").read(),
+          "profile ships MK_SEG_MLA off")
+    check("else mk_cp_commit();   // keep the in-flight group count at NSTAGE-1" in cu
+          and "for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {" in cu,
+          "mla: empty commits keep cp.async groups aligned with wait_group, "
+          "including rows whose slot count is under one tile")
+    check("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);" in cu
+          and cu.index("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);")
+              < cu.index("const uint8_t* tile = sc +"),
+          "mla: the next tile is issued BEFORE the current one is consumed "
+          "(issuing after drained the pipeline: stream+dot+softmax was additive)")
+    check("MLA_TILE = 32" in cu and "MLA_NSTAGE = 2" in cu,
+          "mla: 32 KB of ring buffers -- 64 KB drops to one block per SM")
+    check("a.lens = (const int*)ptrs[3];" in cu and "const int len = a.lens[t];" in cu,
+          "mla: per-row lengths are read from DEVICE memory (that is what a "
+          "captured-graph launch needs; the wrapper's host replan is the cost "
+          "this kernel exists to remove)")
     print("  glm53 megakernel contracts .. OK")
 
 

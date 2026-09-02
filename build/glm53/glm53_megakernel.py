@@ -71,6 +71,7 @@ ENABLE_MHC = MASTER and _flag("VLLM_GLM53_MK_MHC")
 ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
+ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
 # in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
@@ -120,7 +121,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "gemm": False, "kda": False}
+_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False}
 
 
 def _build():
@@ -182,6 +183,10 @@ def _ensure_workspace(device):
         # (5 x 48 = 240, and 240 % 96 = 48), and a misaligned mhc
         # launch releases after 48 of its 96 blocks arrive.
         "barrier_mhc": z(8, dt=torch.int32),
+        # and MK_SEG_MLA its own: its grid is 96 blocks where the gemm/kda
+        # kernels run 48, and the ticket barrier only releases correctly
+        # when the counter is aligned to THIS launch's grid.
+        "barrier_mla": z(8, dt=torch.int32),
         "yp": z(NCHUNK * MAX_TOK * NOUT),
         "rp": z(NCHUNK * MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
@@ -1127,6 +1132,8 @@ def arm() -> None:
         _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
     if ENABLE_GEMM:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
+    if ENABLE_MLA:
+        _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
@@ -1134,6 +1141,125 @@ def arm() -> None:
 
 
 _armed_once = False
+
+
+# ---------------------------------------------------------------------------
+# MK_SEG_MLA -- sparse MLA decode (see the kernel comment for the cost model)
+# ---------------------------------------------------------------------------
+MLA_D = 512          # kv_lora_rank
+MLA_H = 16           # MLA heads per rank at TP4
+MLA_SPLITS_MAX = 16
+_MLA_WS = None
+
+
+def _mla_workspace(device, T: int, splits: int):
+    """Split partials + (m, l), grown once and then strongly held: a captured
+    graph bakes these addresses, so they must never be reallocated."""
+    global _MLA_WS
+    import torch
+
+    need = T * splits
+    if _MLA_WS is not None and _MLA_WS["cap"] >= need:
+        return _MLA_WS
+    cap = max(need, MAX_TOK * 2)
+    _MLA_WS = {
+        "cap": cap,
+        "part": torch.zeros(cap * MLA_H * MLA_D, dtype=torch.float32, device=device),
+        "pml": torch.zeros(cap * MLA_H * 2, dtype=torch.float32, device=device),
+    }
+    return _MLA_WS
+
+
+def mla_splits(T: int) -> int:
+    """Slot-axis splits that fill the persistent grid for this row count.
+
+    T is 8 at C=1 and 32 at C=4, against a 48-block grid: without the split
+    the kernel would leave five sixths of the GPU idle at C=1."""
+    if _EXT is None or T <= 0:
+        return 1
+    grid = int(_EXT.mla_grid())
+    return max(1, min(MLA_SPLITS_MAX, grid // T))
+
+
+def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
+               out=None):
+    """Sparse MLA decode over the indexer's top-k slots.
+
+    q_nope [T, H, D] bf16 (never quantised -- the sparse backend forbids it);
+    ckv    e4m3 [num_slots, D] flat latent cache; slots [T, W] int32 global
+    slot ids with the valid prefix first; lens [T] int32 valid counts ON THE
+    DEVICE (that is what keeps this launch inside the captured graph)."""
+    import torch
+
+    T, H, D = q_nope.shape
+    assert (H, D) == (MLA_H, MLA_D), f"mla: shape {(H, D)} != {(MLA_H, MLA_D)}"
+    assert q_nope.is_contiguous() and slots.is_contiguous()
+    assert slots.dtype == torch.int32 and lens.dtype == torch.int32
+    ws = _ensure_workspace(q_nope.device)
+    mw = _mla_workspace(q_nope.device, T, MLA_SPLITS_MAX)
+    splits = mla_splits(T)
+    if out is None:
+        out = torch.empty_like(q_nope)
+    _EXT.run_mla(
+        [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
+         out.data_ptr(), mw["part"].data_ptr(), mw["pml"].data_ptr(),
+         ws["barrier_mla"].data_ptr()],
+        [float(sm_scale), float(ckv_scale)],
+        [int(T), int(slots.shape[1]), int(splits)],
+    )
+    return out
+
+
+def mla_decode_ref(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float):
+    """Pure-torch twin of the kernel, in fp32. Same contract, no pipelining."""
+    import torch
+
+    T, H, D = q_nope.shape
+    out = torch.zeros(T, H, D, dtype=torch.float32, device=q_nope.device)
+    q = q_nope.float()
+    for t in range(T):
+        n = int(lens[t].item())
+        if n <= 0:
+            continue
+        idx = slots[t, :n].long()
+        c = ckv.view(-1, D)[idx].to(torch.float32) * ckv_scale   # [n, D]
+        s = (q[t] @ c.T) * sm_scale                              # [H, n]
+        p = torch.softmax(s, dim=-1)
+        out[t] = p @ c
+    return out.to(q_nope.dtype)
+
+
+def _selftest_mla() -> bool:
+    """Diff the kernel against the torch twin on the serving geometry.
+
+    Gates on the ranking-safe band: the twin sums in fp32 in slot order while
+    the kernel runs an online softmax over split partials, so the two differ
+    in summation order only. bf16 output rounding is 2^-8 relative, which is
+    the floor here."""
+    import torch
+
+    torch.manual_seed(0)
+    dev = "cuda"
+    worst = 0.0
+    for T, W, ragged in ((8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False)):
+        num_slots = 4096
+        q = torch.randn(T, MLA_H, MLA_D, dtype=torch.bfloat16, device=dev) * 0.3
+        cache = (torch.randn(num_slots, MLA_D, device=dev) * 0.5).to(torch.float8_e4m3fn)
+        slots = torch.randint(0, num_slots, (T, W), dtype=torch.int32, device=dev)
+        if ragged:
+            lens = torch.randint(1, W + 1, (T,), dtype=torch.int32, device=dev)
+        else:
+            lens = torch.full((T,), W, dtype=torch.int32, device=dev)
+        sm, ks = MLA_D ** -0.5, 0.7
+        got = mla_decode(q, cache.view(torch.uint8), slots, lens, sm, ks)
+        ref = mla_decode_ref(q, cache, slots, lens, sm, ks)
+        torch.cuda.synchronize()
+        worst = max(worst, _rel_err(got.float(), ref.float()))
+    if worst > 2e-2:
+        logger.warning("[megakernel] selftest mla rel=%.2e -> DISARM", worst)
+        return False
+    logger.warning("[megakernel] selftest mla rel=%.2e -> ARM", worst)
+    return True
 
 
 def maybe_arm() -> None:

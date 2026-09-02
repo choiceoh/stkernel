@@ -1900,6 +1900,271 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 
 }  // namespace
 
+
+// ---------------------------------------------------------------- MK_SEG_MLA
+// Sparse MLA decode for GLM-5-Next's NoPE shape, replacing FlashInfer's
+// BatchMLAPagedAttentionWrapper (the "SM90" FA2 path vLLM picks on sm_12x).
+//
+// Per query row t and head h, over the indexer's top-k slots of that row:
+//     s_j        = sm_scale * dot(q[t,h,:], c[slot_j,:]) * ckv_scale
+//     out[t,h,:] = sum_j softmax(s)_j * c[slot_j,:] * ckv_scale
+// k and v are the SAME compressed latent (D = kv_lora_rank = 512, one fp8
+// scale per layer), so a slot's 512 bytes are read ONCE and serve all H
+// heads. That sharing sets the cost model this kernel is shaped around.
+//
+// GB10 cost model (why it looks like this):
+//   * per (row, slot): 512 B read, 16 heads x 512 x 2 = 32,768 flop
+//     -> 64 flop/byte. The ledger's sustained stream on this part is
+//     135-175 GB/s (225 only on a process's first burst), so the kernel
+//     needs ~11 TFLOP/s to stay memory-bound. FP32 FMA peak here is
+//     ~19.7 TFLOP/s (48 SM x 128 lanes x 2 x ~1.6 GHz), so PLAIN FMA
+//     clears it -- and keeps q in bf16, which the sparse backend requires
+//     (no query quantization). Tensor cores would force q to e4m3 or an
+//     extra bf16 materialisation of C in smem; neither buys anything
+//     against a memory bound.
+//   * 512 B / 32 lanes = 16 B per lane: one cp.async.cg per lane per slot,
+//     perfectly coalesced, L1-bypassing (the latents are read once and
+//     never reused -- keeping them out of L1 leaves it to the q rows).
+//   * per-SM bandwidth share is ~3.6 GB/s, so ~2.2 KB in flight covers the
+//     ~600 ns DRAM latency; TILE=16 slots x NSTAGE=3 = 24 KB is an order of
+//     magnitude past that and still leaves smem for 3 blocks/SM.
+//   * q lives in REGISTERS (2 heads x 16 lanes-worth = 32 values), never
+//     re-read from smem inside the slot loop.
+//   * 48 SMs with T as small as 8 rows: the slot axis is split so
+//     T x splits fills the persistent grid, then combined by log-sum-exp
+//     behind the same monotonic-ticket barrier the other segments use.
+//
+// MEASURED STATE (2026-09-03, srv4, W=2048, 300k-slot cache so every read
+// misses L2). NOT adopted -- the kernel is correct but slower than the
+// wrapper it would replace, and nothing routes to it yet:
+//   T= 8: MK 205 us vs FlashInfer run 124 us   (per layer, per step)
+//   T=16: MK 317 us vs 194
+//   T=32: MK 579 us vs 542
+// Roofline probe (VLLM_GLM53_MK_MLA_PROBE): streaming alone 68-91 us
+// (92-124 GB/s, i.e. the box's real band), + dot/shuffle 68, + softmax and
+// output 52 -- ADDITIVE, so the cross-lane reduction in the score phase is
+// the wall, not memory. The fix is to stop reducing across lanes: give the
+// dot a lane-per-SLOT layout (no shuffles, unlimited ILP), pass p through
+// smem, and keep the lane-per-D layout only for the output accumulation.
+// Tile/stage sweep found 32x2 (32 KB) best; 64 KB drops to 1 block/SM and
+// costs T=32 65%.
+//
+// The host-side plan() this was meant to remove is ~38 us/step, not the
+// 2.4 ms an earlier synthetic measurement suggested (that built a wrapper
+// without reserved buffers). So the whole lever here is ~2% of a step, and
+// the kernel has to beat the wrapper outright to be worth arming.
+//
+// The point of owning this kernel is not the 0.66 ms it spends on the GPU.
+// FlashInfer's wrapper bakes each row's kv_len into a HOST-side schedule at
+// plan() time and never reads the device-side length buffer, so vLLM's
+// builder replans every step outside graph capture -- 2.4 ms of host time
+// per step, measured. This kernel reads the row length from device memory,
+// so it runs inside the captured graph and that replan disappears with it.
+constexpr int MLA_D = 512;                    // kv_lora_rank
+constexpr int MLA_H = 16;                     // MLA heads per rank at TP4
+constexpr int MLA_WARPS = MK_THREADS / 32;    // 8
+constexpr int MLA_HPW = MLA_H / MLA_WARPS;    // 2 heads per warp
+constexpr int MLA_VD = MLA_D / 32;            // 16 latent elements per lane
+constexpr int MLA_TILE = 32;                  // slots staged per cp.async tile
+constexpr int MLA_NSTAGE = 2;                 // ring buffers -- 32 KB keeps
+                                              // 3 blocks/SM; 64 KB drops to 1
+                                              // and T=32 lost 65% to occupancy
+constexpr int MLA_SPLITS_MAX = 16;
+constexpr int MLA_SMEM = MLA_NSTAGE * MLA_TILE * MLA_D;   // 24 KB
+
+struct MKMlaArgs {
+  const __nv_bfloat16* q;      // [T, H, D] bf16, never quantised
+  const uint8_t* ckv;          // e4m3 [num_slots, D]
+  const int* slots;            // [T, W] global slot ids, valid prefix first
+  const int* lens;             // [T] valid count per row -- DEVICE side
+  __nv_bfloat16* out;          // [T, H, D]
+  float* part;                 // [T, splits, H, D] fp32 split partials
+  float* pml;                  // [T, splits, H, 2] running (m, l)
+  unsigned long long* barrier_ctr;
+  float sm_scale;
+  float ckv_scale;
+  int T, W, splits, grid;
+  int probe;   // 0 = full; 1 = stream only; 2 = stream + dot (no softmax/acc)
+};
+
+__global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
+  extern __shared__ __align__(16) char mla_smem[];
+  uint8_t* sc = (uint8_t*)mla_smem;            // [NSTAGE][TILE][D] e4m3
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+  const int slot_of_thread = warp;             // 8 warps -> 8 slots per round
+  // two rounds fill a 16-slot tile; each thread issues one 16 B copy per round
+  asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+
+  const int items = a.T * a.splits;
+  for (int item = blockIdx.x; item < items; item += a.grid) {
+    const int t = item / a.splits;
+    const int sp = item - t * a.splits;
+    const int len = a.lens[t];
+    const int per = (len + a.splits - 1) / a.splits;
+    const int j0 = min(len, sp * per);
+    const int j1 = min(len, j0 + per);
+
+    // q for this warp's heads, straight to registers and kept there
+    float qr[MLA_HPW][MLA_VD];
+#pragma unroll
+    for (int u = 0; u < MLA_HPW; ++u) {
+      const int h = warp * MLA_HPW + u;
+      const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + lane * MLA_VD;
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e) qr[u][e] = __bfloat162float(src[e]);
+    }
+
+    float acc[MLA_HPW][MLA_VD], m[MLA_HPW], l[MLA_HPW];
+#pragma unroll
+    for (int u = 0; u < MLA_HPW; ++u) {
+      m[u] = -INFINITY;
+      l[u] = 0.f;
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e) acc[u][e] = 0.f;
+    }
+
+    const int ntile = (j1 > j0) ? ((j1 - j0 + MLA_TILE - 1) / MLA_TILE) : 0;
+    // issue tile `ti` into ring slot ti % NSTAGE (two rounds of 8 slots)
+    auto issue = [&](int ti) {
+      uint8_t* dst = sc + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_D;
+#pragma unroll
+      for (int r = 0; r < MLA_TILE / MLA_WARPS; ++r) {
+        const int k = r * MLA_WARPS + slot_of_thread;
+        const int j = j0 + ti * MLA_TILE + k;
+        // past the row's valid prefix: re-copy slot j0 (a valid page) so the
+        // pipeline stays uniform; the compute loop masks these out anyway
+        const int sj = (j < j1) ? j : j0;
+        const int slot = a.slots[(size_t)t * a.W + sj];
+        mk_cp_async16(dst + (size_t)k * MLA_D + lane * 16,
+                      a.ckv + (size_t)slot * MLA_D + lane * 16);
+      }
+      mk_cp_commit();
+    };
+
+    // Exactly NSTAGE-1 groups stay committed at every wait, empty ones
+    // included: cp.async.wait_group N drains until at most N groups are
+    // PENDING, so a short row that issued fewer groups than the wait count
+    // would sail past its own copy and read the ring before it landed.
+    // (Found by the self-test: rows with a single tile read stale smem --
+    // which the previous launch's identical data hid on some shapes.)
+#pragma unroll 1
+    for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {
+      if (ti < ntile) issue(ti);
+      else mk_cp_commit();
+    }
+
+#pragma unroll 1
+    for (int ti = 0; ti < ntile; ++ti) {
+      mk_cp_wait<MLA_NSTAGE - 2>();
+      __syncthreads();
+      // Issue the next tile BEFORE consuming this one. Issuing after the
+      // compute drained the pipeline every iteration -- the roofline probe
+      // measured stream 89 us + dot 68 + softmax/acc 52 = 209, exactly
+      // additive, which is what a non-overlapped pipeline looks like. The
+      // ring slot written here ((ti+NSTAGE-1) % NSTAGE) was consumed one
+      // iteration ago and published by that iteration's trailing barrier.
+      if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);
+      else mk_cp_commit();   // keep the in-flight group count at NSTAGE-1
+      const uint8_t* tile = sc + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_D;
+      const int kmax = min(MLA_TILE, j1 - (j0 + ti * MLA_TILE));
+#pragma unroll 1
+      for (int k = 0; k < kmax; ++k) {
+        // one 16 B shared load, then e4m3 -> fp32 in registers
+        uint4 raw = *(const uint4*)(tile + (size_t)k * MLA_D + lane * 16);
+        float cv[MLA_VD];
+        const uint8_t* b = (const uint8_t*)&raw;
+#pragma unroll
+        for (int e = 0; e < MLA_VD; e += 2) {
+          __half2 h2 = __halves2half2(
+              __nv_cvt_fp8_to_halfraw(b[e], __NV_E4M3),
+              __nv_cvt_fp8_to_halfraw(b[e + 1], __NV_E4M3));
+          float2 f2 = __half22float2(h2);
+          cv[e] = f2.x * a.ckv_scale;
+          cv[e + 1] = f2.y * a.ckv_scale;
+        }
+        if (a.probe == 1) {          // streaming floor: consume cv, no math
+          acc[0][0] += cv[0];
+          continue;
+        }
+#pragma unroll
+        for (int u = 0; u < MLA_HPW; ++u) {
+          // four partial sums: the 16-long fmaf chain was one dependency
+          // chain per head per slot, and at this occupancy the SM cannot
+          // hide 16 x ~4 cycles behind anything else
+          float d0 = 0.f, d1 = 0.f, d2 = 0.f, d3 = 0.f;
+#pragma unroll
+          for (int e = 0; e < MLA_VD; e += 4) {
+            d0 = fmaf(qr[u][e], cv[e], d0);
+            d1 = fmaf(qr[u][e + 1], cv[e + 1], d1);
+            d2 = fmaf(qr[u][e + 2], cv[e + 2], d2);
+            d3 = fmaf(qr[u][e + 3], cv[e + 3], d3);
+          }
+          float d = (d0 + d1) + (d2 + d3);
+#pragma unroll
+          for (int off = 16; off; off >>= 1)
+            d += __shfl_xor_sync(0xffffffff, d, off);
+          const float s = d * a.sm_scale;
+          if (a.probe == 2) { acc[u][0] += s; continue; }   // dot only
+          const float mn = fmaxf(m[u], s);
+          const float corr = __expf(m[u] - mn);
+          const float p = __expf(s - mn);
+          l[u] = l[u] * corr + p;
+          m[u] = mn;
+#pragma unroll
+          for (int e = 0; e < MLA_VD; ++e) acc[u][e] = fmaf(p, cv[e], acc[u][e] * corr);
+        }
+      }
+      __syncthreads();     // the ring slot is free only after every warp read it
+    }
+
+#pragma unroll
+    for (int u = 0; u < MLA_HPW; ++u) {
+      const int h = warp * MLA_HPW + u;
+      float* dst = a.part + (((size_t)t * a.splits + sp) * MLA_H + h) * MLA_D;
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e) dst[lane * MLA_VD + e] = acc[u][e];
+      if (lane == 0) {
+        float* ml = a.pml + (((size_t)t * a.splits + sp) * MLA_H + h) * 2;
+        ml[0] = (ntile > 0) ? m[u] : -INFINITY;
+        ml[1] = (ntile > 0) ? l[u] : 0.f;
+      }
+    }
+  }
+
+  mk_grid_barrier(a.barrier_ctr, a.grid);
+
+  // phase 1 -- log-sum-exp combine, one (row, head) per warp
+  const int pairs = a.T * MLA_H;
+#pragma unroll 1
+  for (int p = blockIdx.x * MLA_WARPS + warp; p < pairs; p += a.grid * MLA_WARPS) {
+    const int t = p / MLA_H;
+    const int h = p - t * MLA_H;
+    float mm = -INFINITY;
+    for (int sp = 0; sp < a.splits; ++sp)
+      mm = fmaxf(mm, a.pml[(((size_t)t * a.splits + sp) * MLA_H + h) * 2]);
+    float ltot = 0.f, o[MLA_VD];
+#pragma unroll
+    for (int e = 0; e < MLA_VD; ++e) o[e] = 0.f;
+    for (int sp = 0; sp < a.splits; ++sp) {
+      const float* ml = a.pml + (((size_t)t * a.splits + sp) * MLA_H + h) * 2;
+      const float lsp = ml[1];
+      if (!(lsp > 0.f)) continue;
+      const float w = __expf(ml[0] - mm);
+      ltot = fmaf(lsp, w, ltot);
+      const float* src = a.part + (((size_t)t * a.splits + sp) * MLA_H + h) * MLA_D
+                        + lane * MLA_VD;
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e) o[e] = fmaf(src[e], w, o[e]);
+    }
+    const float inv = (ltot > 0.f) ? __frcp_rn(ltot) : 0.f;
+    __nv_bfloat16* dst = a.out + ((size_t)t * MLA_H + h) * MLA_D + lane * MLA_VD;
+#pragma unroll
+    for (int e = 0; e < MLA_VD; ++e) dst[e] = __float2bfloat16(o[e] * inv);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // host entry points
 // ---------------------------------------------------------------------------
@@ -1914,6 +2179,8 @@ void set_kernel_attrs() {
       GEMM_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
   g_attrs_set = true;
 }
 
@@ -1937,6 +2204,7 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
 
 int g_gemm_grid = 0;
 int g_kda_grid = 0;
+int g_mla_grid = 0;
 
 // VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
 // each MK kernel may begin on the SMs its predecessor frees and prefetch
@@ -2220,6 +2488,47 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   mk_launch(mk_kda_kernel, a.grid, GEMM_SMEM, stream, a);
 }
 
+// MK_SEG_MLA. `splits` is chosen by the caller so T x splits fills the
+// persistent grid; the kernel reads every per-row length from device memory,
+// which is what lets this run inside the captured graph.
+void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                std::vector<int64_t> ints) {
+  set_kernel_attrs();
+  MKMlaArgs a{};
+  TORCH_CHECK(ptrs.size() == 8 && ints.size() == 3 && scalars.size() == 2,
+              "run_mla arg contract");
+  a.q = (const __nv_bfloat16*)ptrs[0];
+  a.ckv = (const uint8_t*)ptrs[1];
+  a.slots = (const int*)ptrs[2];
+  a.lens = (const int*)ptrs[3];
+  a.out = (__nv_bfloat16*)ptrs[4];
+  a.part = (float*)ptrs[5];
+  a.pml = (float*)ptrs[6];
+  a.barrier_ctr = (unsigned long long*)ptrs[7];
+  TORCH_CHECK((ptrs[1] & 15) == 0 && (ptrs[0] & 15) == 0,
+              "mla: q and the latent cache must be 16 B aligned (cp.async)");
+  a.T = (int)ints[0];
+  a.W = (int)ints[1];
+  a.splits = (int)ints[2];
+  TORCH_CHECK(a.splits >= 1 && a.splits <= MLA_SPLITS_MAX, "mla: split count");
+  a.sm_scale = (float)scalars[0];
+  a.ckv_scale = (float)scalars[1];
+  {  // roofline probe knob (never set in serving)
+    static int pv = -1;
+    if (pv < 0) { const char* e = getenv("VLLM_GLM53_MK_MLA_PROBE"); pv = e ? atoi(e) : 0; }
+    a.probe = pv;
+  }
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM);
+  mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
+}
+
+// Blocks the caller can fill: the split count this launch would use.
+int64_t mk_mla_grid() {
+  set_kernel_attrs();
+  return mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
@@ -2228,4 +2537,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
+  m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
+  m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");
 }
