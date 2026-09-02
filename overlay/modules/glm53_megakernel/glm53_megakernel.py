@@ -130,6 +130,22 @@ _ARMED = {"mhc": False, "gemm": False, "kda": False}
 _A_READY = None
 
 
+# Which weight pack the kernel launched right after an mhc call streams,
+# keyed by that mhc call's fn pointer (one per layer): learned from the
+# call order on the eager steps (mhc -> kda / qkv gemm within a layer) and
+# then handed to the mhc kernel as the range to warm in L2. Layers whose
+# consumer is stock never register, so those mhc launches warm nothing.
+_NEXT_PACK = {}
+_LAST_MHC_FN = None
+
+
+def _register_consumer(pack) -> None:
+    global _LAST_MHC_FN
+    if _LAST_MHC_FN is not None and pack is not None and pack[0] is not None:
+        _NEXT_PACK[_LAST_MHC_FN] = (pack[0].data_ptr(), pack[0].numel())
+    _LAST_MHC_FN = None
+
+
 def _a_ready_for(x) -> bool:
     global _A_READY
     rec = _A_READY
@@ -383,7 +399,10 @@ def gemm_w4a8(x, mk_pack, n_rows):
     if not _mk_gemm_eligible(x.shape[0], x.shape[1],
                              mk_pack[0].shape[0] * 128):
         return None
-    return _gemm_call(x, mk_pack, n_rows, _a_ready_for(x))
+    ready = _a_ready_for(x)
+    if ready:
+        _register_consumer(mk_pack)  # this pack follows that mhc call
+    return _gemm_call(x, mk_pack, n_rows, ready)
 
 
 # ---------------------------------------------------------------------------
@@ -399,10 +418,13 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     while this kernel leaves DRAM idle (None = no warming)."""
     import torch
 
-    global _A_READY
+    global _A_READY, _LAST_MHC_FN
     _A_READY = None
     if emit_a is None:
         emit_a = _ARMED["gemm"] or _ARMED["kda"]
+    if warm is None:
+        warm = _NEXT_PACK.get(fn.data_ptr())
+    _LAST_MHC_FN = fn.data_ptr()
     hc_mult, hidden = residual_flat.shape[1], residual_flat.shape[2]
     residual_cur = torch.empty_like(residual_flat)
     post_mix_cur = torch.empty(num_tokens, hc_mult, dtype=torch.float32,
@@ -605,6 +627,8 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
     ws = _ensure_workspace(hidden_states.device)
     if x_ready is None:
         x_ready = _a_ready_for(hidden_states)  # mhc emitted its A tiles
+        if x_ready:
+            _register_consumer(layer._mk_in_pack)
     else:
         global _A_READY
         _A_READY = None
