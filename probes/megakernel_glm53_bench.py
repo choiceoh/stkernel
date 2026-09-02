@@ -35,7 +35,6 @@ os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
 os.environ.setdefault("VLLM_GLM53_MK_MHC", "1")
 os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
 os.environ.setdefault("VLLM_GLM53_MK_KDA", "1")
-os.environ.setdefault("VLLM_GLM53_MK_W4", "1")
 # programmatic launches: the mk_x2 column below is where they show
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
@@ -43,7 +42,7 @@ sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
 
 import torch  # noqa: E402
 
-TOL = {"mhc": 1e-3, "gemm": 2e-2, "kda": 2e-2}
+TOL = {"mhc": 1e-3, "gemm": 0.15, "kda": 2e-2}  # gemm: e2m1 by-design class
 DEV = "cuda"
 
 
@@ -139,47 +138,44 @@ def _time(fn, iters: int, hot=()) -> float:
 
 
 def probe_gemm(iters: int) -> bool:
+    """MK-GEMM (the W4 lane) against the stock quant+deepgemm pair on the
+    decode shapes: by-design error (e2m1, gated at 0.15), single-launch
+    and back-to-back timings, replay stability."""
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     ok = True
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
           f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
-          f"{'st_x2':>7}{'w4_us':>7}{'w4_x2':>7}")
+          f"{'st_x2':>7}")
     for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
         x = torch.randn(m, 4096, dtype=torch.bfloat16, device=DEV)
         sq, sws, srows, scols = mk._stock_fp8_pair(w)
-        mkq, mkws = mk.build_mk_weight(w)
+        p4 = mk.build_mk_weight_w4(w)
         # a SECOND weight for the back-to-back pair: two launches on the
         # same weight leave the second one reading L2 (4 MB at n=1024 is
         # entirely resident after the first), which is not what a decode
         # step's run of different projections sees. Pair = w then w2.
         w2 = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
-        mkq2, mkws2 = mk.build_mk_weight(w2)
-        # the W4 arm on every shape (timing only; its by-design error is
-        # gated in probe_w4): the only arm that reads fewer bytes than
-        # deepgemm, so the only one that can beat the stock pair once the
-        # W8 loop sits on the part's sustained streaming ceiling.
-        p4 = mk.build_mk_weight_w4(w)
         p4b = mk.build_mk_weight_w4(w2)
         del w2
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
-        got = mk._gemm_call(x, (mkq, mkws), n)
+        got = mk._gemm_call(x, p4, n)
         torch.cuda.synchronize()
         r = _rel(got, ref)
         t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols),
                       iters, hot=(x,))
         t_mk, t_lo, t_hi = _time_stats(
-            lambda: mk._gemm_call(x, (mkq, mkws), n), iters, hot=(x,))
+            lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
         # two launches back to back on two DIFFERENT weights, per launch:
         # what a decode step's run of GEMMs sees. With VLLM_GLM53_MK_PDL=1
         # the second one starts on the SMs the first frees and prefetches
         # its W during the first's tail; a single launch cannot show that.
-        t_x2 = _time(lambda: (mk._gemm_call(x, (mkq, mkws), n),
-                              mk._gemm_call(x, (mkq2, mkws2), n)),
+        t_x2 = _time(lambda: (mk._gemm_call(x, p4, n),
+                              mk._gemm_call(x, p4b, n)),
                      iters, hot=(x,)) / 2
         # the stock pair too: back-to-back launches amortise launch latency
         # for either arm, so single-launch columns flatter neither and the
@@ -187,94 +183,61 @@ def probe_gemm(iters: int) -> bool:
         t_sx2 = _time(lambda: (_fp8_dense_gemm(x, sq, sws, srows, scols),
                                _fp8_dense_gemm(x, sq2, sws2, srows2, scols2)),
                       iters, hot=(x,)) / 2
-        o4 = torch.empty(m, n, dtype=torch.bfloat16, device=DEV)
-        t_w4 = _time(lambda: mk._EXT.run_gemm_w4(x, p4[0], p4[1], o4, n),
-                     iters, hot=(x,))
-        t_w4x2 = _time(lambda: (mk._EXT.run_gemm_w4(x, p4[0], p4[1], o4, n),
-                                mk._EXT.run_gemm_w4(x, p4b[0], p4b[1], o4, n)),
-                       iters, hot=(x,)) / 2
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
-        again = mk._gemm_call(x, (mkq, mkws), n)
+        again = mk._gemm_call(x, p4, n)
         torch.cuda.synchronize()
         rep = _rel(got, again)
         mark = "!" if (r > TOL["gemm"] or rep > 1e-6) else " "
         ok &= r <= TOL["gemm"] and rep <= 1e-6
-        # effective DRAM rate: the bytes each arm must move once. This is
-        # the column that prices the cp.async pipeline against deepgemm
-        # (GB10 peak ~223 GB/s/rank; the W8A8 dense step floor sits here).
-        nbytes = sq.numel() + sws.numel() * 4 + x.numel() * 2 + m * n * 2
+        # effective DRAM rate: the bytes each arm must move once (the MK
+        # lane streams nibbles + group exponents, 0.56x the fp8 bytes).
+        nb_mk = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * n * 2
+        nb_st = sq.numel() + sws.numel() * 4 + x.numel() * 2 + m * n * 2
         # spread = (max - min) / median over the timed launches. A bimodal
         # cell (two clusters inside one process) shows up here where a
         # median alone would hide it behind a plausible number.
-        print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
+        print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.2f}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
-              f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}"
-              f"{t_w4:>7.1f}{t_w4x2:>7.1f}")
+              f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
     return ok
 
 
-def probe_w4(iters: int) -> bool:
-    """W4 arm: exact expansion gate + by-design error + timing. The exact
-    gate is the load-bearing one -- it proves nibble/scale/expansion
-    bit-for-bit, the by-design number just confirms e2m1's expected loss."""
+def probe_exact() -> bool:
+    """The load-bearing W4 gate: weights ON the e2m1 grid pack losslessly,
+    so the kernel must reproduce a torch fp32 matmul of the kernel-
+    quantized activations against the dequantized pack to accumulation
+    noise. It proves nibble / exponent / swizzle / expansion bit-for-bit
+    (there is no fp8 MK arm left to diff against; the pure-torch twins
+    mk_w4_dequant and _mk_quant_x_ref are the reference)."""
     from vllm.model_executor.layers import glm53_megakernel as mk
 
-    print(f"{'case':<24}{'rel_err':>10}{'gate':>8}{'w8_us':>8}{'w4_us':>8}"
-          f"{'w4_GBps':>9}{'w4_x2':>8}")
-    ok = True
+    print(f"{'case':<24}{'rel_err':>10}{'gate':>8}")
     torch.manual_seed(0)
     n, k, m = 1024, 4096, 8
-
-    def run4(pack, out_n):
-        out = torch.empty(m, out_n, dtype=torch.bfloat16, device=DEV)
-        mk._EXT.run_gemm_w4(x.contiguous(), pack[2], pack[3], out, out_n)
-        return out
-
-    # exact fixture: weights ON the e2m1 grid
     code = torch.randint(0, 8, (n, k // 16, 16), device=DEV)
     sexp = torch.randint(-5, 7, (n, k // 16, 1), device=DEV)
     grid = torch.tensor(mk._E2M1_GRID, device=DEV)
-    w_exact = (grid[code] * torch.exp2(sexp.float())) *         torch.where(torch.randn_like(code.float()) < 0, -1.0, 1.0)
+    w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+        torch.randn_like(code.float()) < 0, -1.0, 1.0)
     w_exact = w_exact.view(n, k).to(torch.bfloat16)
     x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
-    p8, p4 = mk.build_mk_weight(w_exact), mk.build_mk_weight_w4(w_exact)
-    o8 = torch.empty(m, n, dtype=torch.bfloat16, device=DEV)
-    mk._EXT.run_gemm(x.contiguous(), p8[0], p8[1], o8, n)
-    o4 = run4((None, None) + p4, n)
+    p4 = mk.build_mk_weight_w4(w_exact)
+    w_back = mk.mk_w4_dequant(p4[0], p4[1], n)
+    e_pack = _rel(w_back, w_exact)  # the pack itself must round-trip
+    got = mk._gemm_call(x, p4, n)
+    ref = mk._mk_quant_x_ref(x) @ w_back.float().T
     torch.cuda.synchronize()
-    e_exact = _rel(o4, o8)
-    mark = "!" if e_exact > 1e-5 else " "
-    ok &= e_exact <= 1e-5
-    print(f"{mark}w4 exact grid{e_exact:>13.2e}{1e-5:>8.0e}{'-':>8}{'-':>8}"
-          f"{'-':>9}")
-
-    # by-design + timing on random weights
-    w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
-    p4, p8r = mk.build_mk_weight_w4(w), mk.build_mk_weight(w)
-    sq, sws, srows, scols = mk._stock_fp8_pair(w)
-    from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
-
-    ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
-    got = run4((None, None) + p4, n)
-    torch.cuda.synchronize()
-    e = _rel(got, ref)
-    t8 = _time(lambda: mk._EXT.run_gemm(
-        x.contiguous(), p8r[0], p8r[1],
-        torch.empty(m, n, dtype=torch.bfloat16, device=DEV), n), iters,
-        hot=(x,))
-    t4 = _time(lambda: run4((None, None) + p4, n), iters, hot=(x,))
-    p4b = mk.build_mk_weight_w4(torch.randn(n, k, dtype=torch.bfloat16,
-                                            device=DEV) * 0.05)
-    t4x2 = _time(lambda: (run4((None, None) + p4, n),
-                          run4((None, None) + p4b, n)), iters, hot=(x,)) / 2
-    nbytes4 = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * n * 2
-    mark = "!" if e > 0.15 else " "
-    ok &= e <= 0.15
-    print(f"{mark}w4 by-design{'':<8}{e:>13.2e}{0.15:>8.2f}{t8:>8.1f}"
-          f"{t4:>8.1f}{nbytes4 / t4 / 1e3:>9.0f}{t4x2:>8.1f}")
+    # the kernel writes bf16: judge against the bf16-rounded reference, no
+    # element more than one bf16 ulp off (a different fp32 summation order
+    # flips a few by one ulp; a layout bug moves whole rows)
+    e_exact, n_ulp = mk._exact_gate(got, ref)
+    ok = e_pack == 0.0 and e_exact <= 1e-3 and n_ulp == 0
+    mark = "!" if not ok else " "
+    print(f"{mark}w4 pack roundtrip{e_pack:>17.2e}{0:>8.0e}")
+    print(f"{mark}w4 exact grid{e_exact:>21.2e}{1e-3:>8.0e}  over-ulp={n_ulp}")
     return ok
 
 
@@ -388,8 +351,7 @@ def main() -> int:
 
     ok = True
     ok &= probe_gemm(args.iters)
-    if mk.ENABLE_W4:
-        ok &= probe_w4(args.iters)
+    ok &= probe_exact()
     ok &= probe_mhc(args.iters)
     if not args.skip_kda:
         ok &= probe_kda(args.iters)

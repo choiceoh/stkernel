@@ -4,39 +4,41 @@ The GLM-5.3-Flash decode megakernel for GB10 (sm_121a, 48 SM, TP=4): ONE
 persistent 48-block CUDA launch per inter-collective segment of the decode
 step, compiled AOT by nvcc (`-arch=sm_121a`) instead of JIT.
 
-## The W4 arm: the ledger's last unpulled lever, done exactly
+## MK-GEMM is the W4 lane (the fp8 W8 arm was removed 2026-09-02)
 
-**2026-09-02: it is faster than the stock W8 pair on every decode shape**
-(srv2, two different weights back to back, PDL on): 112/82/52/35 us vs
-151/115/65/40 for n=6416/4096/2048/1024. What got it there was making the
-W4 loop stop being compute-bound -- register-only expansion by byte-permute
-table lookup (the raw nibbles are the `prmt` selector over the LUT's two
-halves, exponent folded in per 16-group; it replaced a byte-lane SIMD
-closed form at ~half the ops), a swizzled A tile, the A staging load
-hoisted out of the sync window and the second m-tile compiled away for
-m <= 16. The arm still changes served numerics, so arming it is the
-quality bracket's call, not this module's.
+Weights are stored as e2m1 nibbles x one pow2 scale per 16 elements
+(0.56x the fp8 bytes), and the kernel expands every nibble to an **exact
+e4m3 byte** -- e2m1's 1-bit mantissas always fit, and the 2^s product is
+an exponent-field add -- then runs the e4m3 `mma.sync` pipeline on fp8
+activations (the W4A4 20-25% loss is the thing the literature warns about;
+QServe's compromise axis). The expansion is a byte-permute table lookup:
+the raw nibbles are the `prmt` selector over the LUT's two halves with the
+group exponent folded in per 16 elements.
 
-PR #192's own closing line names dense W8A8 -> W4 as the only remaining
-sizable lever (est. -3.7 ms/step; the W8A8 dense read floor is ~2 GB/step
-= ~8.7 ms). `VLLM_GLM53_MK_W4=1` arms it WITHOUT new tensor-core PTX:
+**It is faster than the stock quant+deepgemm pair on every decode shape**
+(srv2, PDL on, second launch of a pair of different weights = the decode
+step's steady state): 76/55/34.5/24 us vs 131/93/51/31 for
+n=6416/4096/2048/1024 (MEASUREMENTS.md 5차). The fp8 MK arm that used to
+sit beside it reached 118/76/44/27 -- ahead of stock, but a second arm to
+select, self-test, bracket and maintain for 10-18% where W4 gives 22-42%.
+The operator's call was to remove it: **the lane is W4 or stock**. One
+kernel, one smem budget, one pack builder, one knob (`VLLM_GLM53_MK_GEMM`).
 
-weights are stored as e2m1 nibbles x one pow2 scale per 16 elements
-(0.56x the fp8 bytes -- the W4 arm is *cheaper* in memory than the W8
-MK arm), and the kernel expands every nibble to an **exact e4m3 byte** --
-e2m1's 1-bit mantissas always fit, and the 2^s product is an exponent-field
-add -- then runs the same e4m3 mma pipeline. Activations stay fp8 (the
-W4A4's 20-25% loss is the thing the literature warns about; QServe's
-compromise axis). Two gates at boot: bit-exact expansion (1e-5, against
-weights built ON the e2m1 grid -- anything above is a layout bug) and
-by-design error (<= 0.15 vs the stock pair). The ceiling of the encoding
-is documented: s is clamped to [-5, 6], so |w| > 384 saturates (never
-NaN); real projection weights are orders of magnitude below.
+Two gates at boot: bit-exact expansion (1e-5, the kernel against a torch
+fp32 matmul of the kernel-quantized activations and the dequantized pack,
+on weights built ON the e2m1 grid -- anything above is a layout bug) and
+by-design error (<= 0.15 vs the stock pair on the decode shapes). The
+ceiling of the encoding is documented: s is clamped to [-5, 6], so |w| >
+384 saturates (never NaN); real projection weights are orders of magnitude
+below.
 
-This arm CHANGES SERVED NUMERICS: one numerics axis per boot, bracket with
-quality 9/9 + Korean 0/16 + pos-1 acceptance within 2 pct or it reverts.
-The KDA in_proj stays fp8 (`all` includes it) -- its output feeds the
-recurrence, where error accumulates in the state instead of washing out.
+This lane CHANGES SERVED NUMERICS on every eligible decode linear, the KDA
+in_proj included (there is no fp8 pack to keep it on): one numerics axis
+per boot, bracket with quality 9/9 + Korean 0/16 + pos-1 acceptance within
+2 pct or it reverts. The in-kernel KDA projections (MK-KDA) stream the same
+W4 packs, so the KDA shadow diff against stock is gated at the e2m1
+by-design class (0.15), not the 2e-2 noise class the fixture uses (the
+fixture snaps its weights to the grid so both arms see the same values).
 
 ## What it absorbs (and what it cannot)
 
@@ -67,14 +69,13 @@ cold tax by the share this module covers.
 
 - Ampere lineage + FP4 extension: **no WGMMA / tcgen05 / TMEM / clusters /
   DSMEM**. The GEMM is `mma.sync.m16n8k32.f32.e4m3.e4m3.f32`; the W stream
-  (the only bandwidth-heavy operand) stages through a **3-buffer cp.async
-  pipeline** -- a synchronous load->sync->mma chain leaves ~20% of the
-  stream idle, ~1.3 ms/step at the ~2 GB/step W8A8 dense footprint, so
-  2-in-flight is the difference between matching deepgemm and losing to it.
-  Depths 4 and 5 measured no gain (bytes in flight are not the limiter
-  once the wait is exact); the W4 arm streams its raw (tile, k-block)
-  records through its own 3-stage pipeline and expands them in registers.
-  TMA stays a drop-in for later.
+  (the only bandwidth-heavy operand) streams its raw (tile, k-block)
+  records -- 8 KB of nibbles + 1 KB of group exponents, contiguous -- through
+  a **3-stage cp.async pipeline** (`VLLM_GLM53_MK_NBUF`, 3..5; deeper
+  measured worse) and expands each landed record into one of two dense,
+  swizzled e4m3 tiles in smem. A synchronous load->sync->mma chain leaves
+  ~20% of the stream idle, so 2-in-flight is the difference between
+  matching deepgemm and beating it. TMA stays a drop-in for later.
 - **Programmatic dependent launch** (`griddepcontrol`, works on this part
   with CUDA 13): every MK kernel triggers its dependents at entry and
   waits before its first read of the previous kernel's output, so the next
@@ -85,18 +86,16 @@ cold tax by the share this module covers.
 - Fixed 48-block grid everywhere; the never-reset monotonic ticket barrier
   is what keeps CUDA-graph replay with baked pointers exact (the osar
   `done_ctr` trick). A larger grid deadlocked on this part (#150).
-- Dynamic smem: W8 kernel 58,368 B (3 W pipeline buffers of dense 128 B
-  rows), W4 kernel 69,632 B (2 expanded tiles + 3 raw stages) -- separate
-  instantiations with separate budgets, because one shared budget cost
-  the W8 loop 4-7%. Both resolve to 1 block/SM. Deeper W4 staging (4, 5)
-  measured worse. Both budgets include 1 KB of slack: the phase re-aligns
-  the dynamic base at runtime, because the static `s_last`/`s_unit` push
-  it to +16 and every 128 B tile row then straddles a bank-line boundary
-  (that alone hid 15% of the W stream; MEASUREMENTS.md 4차).
-- W tile rows are dense and pre-swizzled at pack time (chunk c of row r at
-  c ^ (r & 7)): the copy is a straight 16 KB memcpy, the mma fragment loads
-  and the W4 expansion stores go through `mk_swz`. A padded 144 B pitch
-  cost the pure stream 16% (194 vs 230 GB/s, clean regime).
+- Dynamic smem: 69,632 B (2 expanded tiles + 3 raw stages + A tiles +
+  scales), 1 block/SM; the KDA kernel inlines the same phase on the same
+  budget. It includes 1 KB of slack: the phase re-aligns the dynamic base
+  at runtime, because the static `s_last`/`s_unit` push it to +16 and every
+  128 B tile row then straddles a bank-line boundary (that alone hid 15% of
+  the W stream; MEASUREMENTS.md 4차).
+- The expanded e4m3 tile rows are dense 128 B with a 16 B-chunk XOR swizzle
+  (`mk_swz`, keyed by row & 7) on both the expansion stores and the mma
+  fragment loads. A padded 144 B pitch cost a pure stream 16% (194 vs 230
+  GB/s, clean regime).
 
 ## Integration (all inside files this repo owns)
 
@@ -147,8 +146,10 @@ on a bench boot, read the log, then decide the arm.
 Shadow is self-sufficient: the KDA packs build lazily per layer from the
 bf16 source weights (cached, eager-only), so a shadow boot does not need
 MK-GEMM armed. It does require `VLLM_GLM53_FP8_DENSE=1` so the stock arm of
-every comparison runs the same W8A8 axis — against bf16 stock the 2e-2 gate
-could not tell a broken kernel from quantization noise.
+every comparison runs the fp8 axis; the shadow gate is the e2m1 by-design
+class (0.15) because the MK arm streams W4 packs of the same weights --
+against bf16 stock even that could not tell a broken kernel from
+quantization.
 
 ## Review fixes already folded in (2026-09-01)
 
@@ -164,13 +165,12 @@ could not tell a broken kernel from quantization noise.
 
 ## Memory note
 
-MK-GEMM duplicates the fp8 weight bytes per linear in its own layout (the
-deepgemm pair must stay as the M>32 path), i.e. ~the W8A8 footprint again,
-~+4 GB/rank at full coverage. At GMU 0.73 that may not fit; the first
-MK-GEMM boot should watch the KV-cache line and be ready to drop GMU a
-notch (memfree-preflight computes it). If it does not fit, arming MK-GEMM
-only for the KDA in/out projections is the fallback scope (a one-line
-change in the build attach).
+MK-GEMM keeps its W4 pack per linear beside the deepgemm pair (which must
+stay as the M>32 path): 0.56x the fp8 bytes, ~+2.3 GB/rank at full
+coverage. At GMU 0.73 that may not fit; the first MK-GEMM boot should
+watch the KV-cache line and be ready to drop GMU a notch (memfree-preflight
+computes it). If it does not fit, arming MK-GEMM only for the KDA in/out
+projections is the fallback scope (a one-line change in the build attach).
 
 ## Verification ladder (in order, no skips)
 
@@ -178,8 +178,9 @@ change in the build attach).
    manifest invariants (this repo, no GPU).
 2. `bash probes/run_megakernel_bench.sh` in a fresh container (srv4, never
    the serving one; the wrapper binds the composed overlay at its real
-   image paths): numerics vs stock (rel gates 1e-3 MHC / 2e-2 GEMM, KDA
-   outputs and states) + CUDA-event timing per segment + a replay-stability
+   image paths): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
+   by-design + 1e-5 exact-grid, 2e-2 KDA outputs and states on grid-snapped
+   weights) + CUDA-event timing per segment + a replay-stability
    check (re-launch drift <= 1e-6 over the shared workspace -- the
    monotonic-barrier contract). `!` marks any cell over gate; a `!` cell
    disqualifies that shape.

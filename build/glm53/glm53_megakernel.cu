@@ -10,10 +10,14 @@
 //                  sinkhorn, pre-apply, fused RMSNorm. Port of the TileLang
 //                  pair this repo already owns (mhc_fused_tilelang +
 //                  mhc_pre_big_fuse_with_norm) -- 2 launches -> 1.
-//   MK_SEG_GEMM -- W8A8 skinny GEMM, M <= 32: per-token-group fp8 quant
-//                  fused into a mma.sync m16n8k32 e4m3 GEMM with pow2 block
-//                  scales, replacing the per_token_group_quant kernel +
-//                  deepgemm launch pair. 2 launches -> 1.
+//   MK_SEG_GEMM -- W4A8 skinny GEMM, M <= 32: per-token-group fp8 quant
+//                  fused into a mma.sync m16n8k32 e4m3 GEMM whose weights
+//                  stream as e2m1 nibbles + per-16-group pow2 exponents and
+//                  expand to exact e4m3 bytes in smem, replacing the
+//                  per_token_group_quant kernel + deepgemm launch pair.
+//                  2 launches -> 1, 0.56x the weight bytes. (The fp8 W8
+//                  arm was removed: W4 beat the stock pair on every decode
+//                  shape and one lane is one lane to configure.)
 //   MK_SEG_KDA  -- the whole KDA (linear-attention) block in ONE launch:
 //                  in_proj GEMM, f_b/g_b low-rank gates, short conv (k=4,
 //                  silu, accepted-window rollback), fine-grained gated
@@ -61,23 +65,14 @@ namespace {
 #ifndef MK_MHC_GRID_DEF
 #define MK_MHC_GRID_DEF 144
 #endif
-#ifndef MK_W_NBUF_DEF
-#define MK_W_NBUF_DEF 3
-#endif
-#ifndef MK_W4_NBUF_DEF
-#define MK_W4_NBUF_DEF 3
-#endif
-// Probe-only ceiling switch (numerics invalid): 1 = no mma_fold, 2 = no
-// stage_a, 3 = no in-loop stage_w, 4 = no mma_fold and no stage_a. Never
-// set by the driver unless VLLM_GLM53_MK_PROBE_SKIP is.
-#ifndef MK_PROBE_SKIP
-#define MK_PROBE_SKIP 0
+// W raw-record pipeline depth (VLLM_GLM53_MK_NBUF; 3..5, swept by the probe)
+#ifndef MK_NBUF_DEF
+#define MK_NBUF_DEF 3
 #endif
 // Ceiling for the gemm and kda persistent grids -- each launch takes the
 // smaller of it and what the device reports resident, exactly as mhc
-// does. At MK_W_NBUF 3 the 63,616 B block only fits once in the SM's
-// 102,400 B, so this resolves to 48; a shallower pipeline fits twice and
-// it resolves to 96 with no other change.
+// does. The 69,632 B block only fits once in the SM's 102,400 B, so this
+// resolves to 48.
 constexpr int MK_GRID_CAP = MK_GRID_DEF;
 // mhc only: it takes no dynamic smem, so its occupancy is bounded by
 // registers (72 x 256 = 18,432 of 65,536 per SM -> 3 blocks). At the
@@ -131,26 +126,11 @@ constexpr int SMEM_A_PITCH = KSTEP;      // 128, dense + swizzled
 constexpr int SMEM_W_PITCH = KSTEP;      // 128, dense + pre-swizzled
 constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 
-// dynamic smem layout used by the GEMM routine:
-//   saq[2][16][132]  fp8 A tiles       2*16*132       = 4224
-//   swb[3][128][144] fp8 W pipeline    3*128*144      = 55296
-//   sxs[32][32]      fp32 group scales 32*32*4        = 4096
-// W pipeline depth. 3 buffers keep ~2 k-blocks in flight = 32 KB/block;
-// 4 keep ~3, 5 keep ~4 (smem 82,048 / 100,480 B, both under the 101,376
-// opt-in). Occupancy is NOT the cliff it was written up as: the device
-// answers 1 block/SM already at 3 (63,616 B against 102,400 B/SM, #206),
-// so 4 and 5 cost nothing there. What made "deepening to 4 measured
-// exactly zero" was the wait: cp.async.wait_group<1> is exact only at
-// depth 3 -- at 4 it waited for two tiles when one was needed, so the
-// extra buffer was never in flight during the wait. The loop now waits
-// for exactly the tile it needs (mk_cp_wait_upto). 2 buffers (2 blocks/SM)
-// measured worse on every shape.
-constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 // W4 raw staging: one (tile, k-block) record is 128 rows x 64 B of e2m1
 // pairs plus 128 x 8 B of group exponents. In smem the nibble rows sit on
 // an 80 B pitch (a warp's 32 rows of uint4 reads then hit distinct banks)
-// and the exponents follow as a flat 1 KB. Three stages, two in flight,
-// like the W8 pipeline; the expanded e4m3 tiles reuse swb[0..1].
+// and the exponents follow as a flat 1 KB. Three stages, two in flight;
+// the expanded e4m3 tiles are the two swb buffers.
 // Raw rows on a 64 B pitch: the two uint4 reads per thread per k-block
 // conflict 16-way, ~100 cycles, cheaper than the 80 B padding's smem.
 // Three stages (two in flight). Deeper measured WORSE at n=1024 m=8, both
@@ -160,23 +140,18 @@ constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 constexpr int W4_RAW_PITCH = 64;
 constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 8192
 constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 9216
-constexpr int W4_RAW_NBUF = MK_W4_NBUF_DEF;  // 3..5, swept by the probe
+constexpr int W4_RAW_NBUF = MK_NBUF_DEF;  // 3..5, swept by the probe
 static_assert(W4_RAW_NBUF >= 3 && W4_RAW_NBUF <= 5, "W4 raw stages");
 constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
-// Two kernels, two budgets. The W8 kernel is exactly the 63,616 B it was
-// before the W4 pipeline: sharing one budget put the W4 raw stages into the
-// W8 launch too, and that measured 4-7% slower on every W8 shape (the
-// carveout that grew took the L1 the W8 loop was using).
+// One kernel, one budget (the fp8 W8 arm and its second budget were
+// removed once the W4 arm beat the stock pair on every decode shape: the
+// serving lane is W4 or stock, nothing in between to configure).
 constexpr int MK_SMEM_ALIGN = 1024;  // runtime alignment of the dynamic base
 constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +
-                          MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;   // 58,368 at NBUF 3
-constexpr int GEMM_SMEM_W4 = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +
-                             W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                             KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 69,632 at 3
-static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
-              "over the sm_121 opt-in smem");
+                          W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
+                          KBLK_MAX * KBLK_MAX * 4 +
+                          W4_RAW_NBUF * W4_RAW_BYTES;  // 69,632 at 3
+static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
 
 #define MK_CHECK_CUDA(x)                                                     \
@@ -253,7 +228,7 @@ __device__ __forceinline__ void mk_cp_commit() {
   asm volatile("cp.async.commit_group;\n");
 }
 // wait_group takes an immediate; this dispatches a runtime "groups that may
-// stay in flight" count (the W pipeline keeps at most MK_W_NBUF - 2 = 3).
+// stay in flight" count (the raw pipeline keeps at most W4_RAW_NBUF - 1).
 __device__ __forceinline__ void mk_cp_wait_upto(int n) {
   switch (n) {
     case 0: mk_cp_wait<0>(); break;
@@ -280,22 +255,20 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
 // ===========================================================================
 struct MKGemmCtx {
   const __nv_bfloat16* x;  // [m, k]
-  const uint8_t* wq;       // [n, k] e4m3, n % 128 == 0 (W8 path)
-  const float* ws;         // [n/128, k/128] (all-ones tensor on the W4 path)
   __nv_bfloat16* out;      // [m, n_orig]
   int m, n, k, n_orig;
   int grid;  // resident blocks; see MK_GRID_CAP
   int ksr;   // k-split of the leftover tiles, chosen on the host (mk_choose_ksr)
-  // W4 path: e2m1 nibbles [n, k/2] + per-16-group scale exponents
+  // W4 weights: e2m1 nibbles [n, k/2] + per-16-group scale exponents
   // [n, k/16] (int8, clamped to [-5, 6] at build). The kernel expands each
   // nibble to an EXACT e4m3 byte (1-bit mantissas always fit; the 2^s
   // product is an exponent-field add) and then runs the same e4m3 mma
   // pipeline -- the DRAM bytes halve and the arithmetic is unchanged.
-  // Tile-major like wq: [n/128][k/128][128][64] nibble bytes and
+  // Tile-major: [n/128][k/128][128][64] nibble bytes and
   // [n/128][k/128][128][8] exponents, so one (tile, k-block) record is a
   // contiguous 8 KB + 1 KB run for cp.async (see stage_raw4).
-  const uint8_t* wq4 = nullptr;  // non-null selects the W4 path
-  const int8_t* ws4 = nullptr;
+  const uint8_t* wq4;
+  const int8_t* ws4;
 };
 
 // e4m3 encodings of the e2m1 magnitudes {0, .5, 1, 1.5, 2, 3, 4, 6}.
@@ -329,10 +302,6 @@ constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP;               // 96
 constexpr int MK_SPLIT_MAXCOL = (MK_GRID_CAP - 1) * 128;          // 6016
 constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 1.5 MB
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
-// The W4 instantiation is a different kernel with its own occupancy, so
-// it gets its own ticket counter (#206: grids that can differ must not
-// share one).
-__device__ unsigned long long g_mk_gemm4_bar = 0ULL;
 // kda inlines mk_gemm_phase twice per launch on ITS grid, which need
 // not equal the standalone gemm grid. Two grids on one ticket counter
 // misalign it and the barrier releases early -- so, two counters.
@@ -408,7 +377,6 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
   } while (0)
 #endif
 
-template <bool W4>
 __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
                               unsigned long long* bar) {
   const int nblk = c.n / 128;
@@ -446,7 +414,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // against 4 MB of weights at n=1024, i.e. a fifth of the traffic, to
   // pre-set values that are all overwritten before anyone reads them.
 
-  constexpr int NWB = W4 ? W4_EXP_NBUF : MK_W_NBUF;
+  constexpr int NWB = W4_EXP_NBUF;  // expanded e4m3 tiles, ping-pong
   // The dynamic smem region starts right after this kernel's STATIC
   // __shared__ variables (s_last, s_unit below: 8 B -> base at +16), so
   // without this every 128 B tile row straddled a bank-line boundary --
@@ -458,7 +426,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     smem += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);
   }
   uint8_t* saq = smem;  // [2][16][128] fp8 A tiles (single per kb)
-  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [NWB][128][144]
+  uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [NWB][128][128], swizzled
   float* sxs = (float*)(swb + NWB * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
   uint8_t* sraw = (uint8_t*)(sxs + KBLK_MAX * KBLK_MAX);  // W4 raw stages
   __shared__ int s_last;  // "this block completed a leftover tile"
@@ -477,56 +445,19 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       kbn = (kblk * (sp + 1)) / ksr;
     }
   };
-  // stage one k-block of W rows [nt*128, nt*128+128) into a pipeline
-  // buffer (async, 16B copies; both addresses are 16B aligned by
-  // construction: pitch 144 and k in {2048, 4096}).
-  auto stage_w = [&](int nt, int kb, int buf, bool all) {
-    // wq is TILE-major: [n/128][k/128][128][128]. Row-major would put the
-    // 128 rows of this tile 4096 B apart, so a warp's 32 copies landed on
-    // four 128 B segments in four different DRAM pages to fetch 16 KB.
-    // Tile-major makes the same tile one contiguous 16 KB run.
-    const uint8_t* wsrc =
-        c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP);
-    uint8_t* d0 = swb + buf * (SMEM_W_ROWS * SMEM_W_PITCH);
-    // Flatten (row, 16B chunk) so ALL MK_THREADS issue copies. The row-
-    // strided form left threads >= SMEM_W_ROWS (128 of 256) idle, halving
-    // the bytes in flight -- and this stage is latency-bound, so in-flight
-    // bytes ARE the bandwidth (Little's law).
-    constexpr int MK_W_CHUNKS = KSTEP / 16;
-    // all == false (the first unit's fill, hoisted above the A-quant grid
-    // barrier): thread 0 issues NO copies. It runs the barrier, and the
-    // barrier's __threadfence drains that thread's outstanding cp.async
-    // -- the stamps showed the barrier wait grow from 1.3 us to 6-12 us
-    // when it took part, the fill's latency simply moved into the
-    // barrier. Threads 1..255 cover the 1024 chunks, 4-5 each. It still
-    // commits an (empty) group so the per-thread wait counts stay uniform.
-    // all == true (every later fill and the steady-state loop): no barrier
-    // ahead, all 256 threads issue exactly 4 chunks each -- the clean-
-    // regime micro put the exclusion at ~3 us over a 24 MB stream.
-    // chunk t -> byte t * 16 on both sides: the pack is pre-swizzled, so
-    // this straight memcpy lands the swizzled image the fragment loads
-    // expect (a swizzle applied here instead measured slower).
-    if (all) {
-      for (int t = (int)threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
-           t += MK_THREADS)
-        mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
-    } else {
-      for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
-           && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)
-        mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
-    }
-    mk_cp_commit();
-  };
   // W4: stage one raw (tile, k-block) record -- 512 nibble chunks (two
   // per thread) onto the 80 B pitch, 64 exponent chunks after them. One
-  // commit group per stage, the same accounting the W8 waits rely on.
+  // commit group per stage, which is what the wait counts below rely on.
   auto stage_raw4 = [&](int nt, int kb, int buf) {
     const uint8_t* nsrc =
         c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);
     const uint8_t* ssrc = (const uint8_t*)c.ws4 +
         ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
     uint8_t* d = sraw + buf * W4_RAW_BYTES;
-    // thread 0 issues nothing -- see stage_w
+    // thread 0 issues no copies: it runs the grid barrier, and the
+    // barrier's __threadfence drains that thread's outstanding cp.async
+    // (with the first record hoisted above the barrier, the fill's latency
+    // moved into the barrier wait when it took part)
     for (int t = (int)threadIdx.x - 1; threadIdx.x != 0 && t < SMEM_W_ROWS * 4;
          t += MK_THREADS - 1)
       mk_cp_async16(d + (t >> 2) * W4_RAW_PITCH + (t & 3) * 16,
@@ -596,9 +527,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           make_uint4(ow[0], ow[1], ow[2], ow[3]);
     }
   };
-  static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
-  static_assert(MK_W_NBUF <= 5, "mk_cp_wait_upto dispatches up to 3");
-  constexpr int DIST = MK_W_NBUF - 1;
   constexpr int RAW_DIST = W4_RAW_NBUF - 1;
 
   // ---- prologue. Order: the first unit's W fill (independent of the
@@ -617,19 +545,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   bool hoisted = false;
   if (has_u0) {
     if (kb00 < kbn0) {
-      if constexpr (W4) {
-        stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
+      stage_raw4(nt0, kb00, kb00 % W4_RAW_NBUF);
 #pragma unroll
-        for (int d = 1; d < RAW_DIST; ++d)
-          if (kb00 + d < kbn0)
-            stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
-      } else {
-        stage_w(nt0, kb00, kb00 % MK_W_NBUF, false);
-#pragma unroll
-        for (int d = 1; d < DIST; ++d)
-          if (kb00 + d < kbn0)
-            stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF, false);
-      }
+      for (int d = 1; d < RAW_DIST; ++d)
+        if (kb00 + d < kbn0)
+          stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
       hoisted = true;
     }
   }
@@ -780,14 +700,14 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     };
     auto stage_a = [&](int kb) { stage_a_load(kb); stage_a_store(); };
 
-    // mma + per-k-block scale fold, shared by the W8 and W4 pipelines
-    // (W4 tiles arrive already scale-multiplied, so their wsc is 1).
+    // mma + per-k-block activation-scale fold (the weight group scales
+    // are already inside the expanded e4m3 bytes).
     // MT = m-tiles actually present (1 for m <= 16, 2 otherwise), a compile-
     // time constant per instantiation: the loops below fully unroll and the
     // second tile's A loads and mmas simply do not exist for m <= 16 (m=8 is
     // in_proj, the biggest shape). A runtime `break` inside the unrolled
     // loops measured 10% slower -- the compiler gave up on the unroll.
-    auto mma_fold_t = [&](auto MTC, const uint8_t* sw, int kb, float wsc) {
+    auto mma_fold_t = [&](auto MTC, const uint8_t* sw, int kb) {
       constexpr int MT = decltype(MTC)::value;
       // ---- mma: warp covers n-cols [warp*16, warp*16+16) of the tile,
       // two m16n8 mmas per k-slice; each n8 half keeps its own kacc
@@ -840,8 +760,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       for (int i = 0; i < MT; ++i) {
         const int r0 = i * 16 + g;
         const int r1 = r0 + 8;
-        const float s0 = (r0 < c.m) ? wsc * sxs[r0 * KBLK_MAX + kb] : 0.0f;
-        const float s1 = (r1 < c.m) ? wsc * sxs[r1 * KBLK_MAX + kb] : 0.0f;
+        const float s0 = (r0 < c.m) ? sxs[r0 * KBLK_MAX + kb] : 0.0f;
+        const float s1 = (r1 < c.m) ? sxs[r1 * KBLK_MAX + kb] : 0.0f;
 #pragma unroll
         for (int j = 0; j < 2; ++j) {
           acc[i][j][0] += kacc[i][j][0] * s0;
@@ -852,19 +772,19 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       }
 
     };
-    auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
+    auto mma_fold = [&](const uint8_t* sw, int kb) {
       if (mtiles == 2)
-        mma_fold_t(std::integral_constant<int, 2>{}, sw, kb, wsc);
+        mma_fold_t(std::integral_constant<int, 2>{}, sw, kb);
       else
-        mma_fold_t(std::integral_constant<int, 1>{}, sw, kb, wsc);
+        mma_fold_t(std::integral_constant<int, 1>{}, sw, kb);
     };
 
     const bool prefilled = hoisted && (u == (int)blockIdx.x);
-    if constexpr (W4) {
-      // ---- W4 path: cp.async-staged raw records, expanded in smem.
+    {
+      // ---- cp.async-staged raw records, expanded in smem.
       // The raw (tile, k-block) record streams through the W4_RAW_NBUF
-      // pipeline exactly as W8 tiles do; the expansion then reads the
-      // landed record and fills one of two e4m3 tile buffers (swb[0..1]).
+      // cp.async pipeline; the expansion then reads the landed record and
+      // fills one of two e4m3 tile buffers (swb[0..1]).
       // This used to be a row-major pack read with synchronous loads --
       // one tile in flight and 128 DRAM pages per tile -- and did 37 GB/s
       // where the W8 arm did 84 at the same shape, on 0.56x the bytes.
@@ -887,7 +807,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
         MK_TS_ACC_BEGIN(tm);
-        mma_fold(sw4t, kb, 1.0f);  // scales already inside the bytes
+        mma_fold(sw4t, kb);  // the group scales are inside the bytes
         MK_TS_ACC_END(tmma, tm);
         if (kb + 1 >= kbn) break;
         // raw(kb+1) landed: the groups still allowed in flight are the
@@ -901,59 +821,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         MK_TS_ACC_END(texp, te);
         stage_a_store();
         __syncthreads();
-      }
-    } else {
-      // ---- W8 path: MK_W_NBUF-buffer cp.async pipeline.
-      // Each stage_w commits exactly one cp.async group, so "wait until at
-      // most N groups outstanding" is the same as "buffer kb has landed"
-      // when N is the number of stages issued after it.
-      //
-      // The distance is MK_W_NBUF - 1, not a literal: the tile staged while
-      // kb is being read must land in a buffer nobody is reading, and with
-      // the old hard-coded 2 a depth of 2 would have staged kb+2 into
-      // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
-      // That made MK_W_NBUF a knob that silently corrupted below 3.
-      if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);
-      stage_a(kb0);
-      if (!prefilled) {
-#pragma unroll
-        for (int d = 1; d < DIST; ++d)
-          if (kb0 + d < kbn)
-            stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF, true);
-      }
-      // Wait for exactly W(kb0): the groups allowed to stay in flight are
-      // the ones issued after it, min(DIST - 1, kbn - kb0 - 1).
-      mk_cp_wait_upto(min(DIST - 1, kbn - kb0 - 1));
-      __syncthreads();
-      if (u == (int)blockIdx.x) MK_TS(3);  // first unit: W(kb0) landed
-
-      for (int kb = kb0;; ++kb) {
-#if MK_PROBE_SKIP != 3
-        if (kb + DIST < kbn)
-          stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF, true);
-#else
-        mk_cp_commit();  // keep the group count
-#endif
-        if (kb + 1 < kbn) stage_a_load(kb + 1);  // L2 latency under the mma
-        const uint8_t* sw =
-            swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
-#if MK_PROBE_SKIP != 1 && MK_PROBE_SKIP != 4
-        mma_fold(sw, kb, c.ws[(size_t)nt * kblk + kb]);
-#else
-        (void)sw;
-#endif
-
-        if (kb + 1 >= kbn) break;
-        __syncthreads();  // every mma reader of saq is done first
-#if MK_PROBE_SKIP != 2 && MK_PROBE_SKIP != 4
-        stage_a_store();  // saq(kb+1) from the registers loaded above
-#endif
-        // outstanding after W(kb+1): the deeper stages, when they exist --
-        // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
-        MK_TS_ACC_BEGIN(tw);
-        mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));
-        __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
-        MK_TS_ACC_END(twait, tw);  // thread 0 waits here, not in wait_group
       }
     }
     // ---- epilogue: real rows/cols only
@@ -1052,11 +919,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   MK_TS(4);  // all units of this block done (no fold barrier any more)
 #ifdef MK_PHASE_TS
   MK_TS_STORE(5, twait);
-  if (W4) { MK_TS_STORE(3, tmma); MK_TS_STORE(7, texp); }
+  MK_TS_STORE(3, tmma);
+  MK_TS_STORE(7, texp);
 #endif
 }
 
-template <bool W4>
 __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   extern __shared__ uint8_t smem[];
   // PDL: the next launch in the stream may start on the SMs this grid
@@ -1064,7 +931,7 @@ __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   // grid's tail and waits (griddepcontrol.wait) before reading anything
   // this grid writes. Harmless when the next launch is not programmatic.
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar);
+  mk_gemm_phase(c, smem, &g_mk_gemm_bar);
 }
 
 // ===========================================================================
@@ -1375,8 +1242,8 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
 // ===========================================================================
 struct MKKdaArgs {
   const __nv_bfloat16* x;  // [T, HIDDEN] normed layer input
-  const uint8_t* in_wq;    // [KDA_INPROJ_N_PAD, HIDDEN] e4m3
-  const float* in_ws;      // [KDA_INPROJ_N_PAD/128, HIDDEN/128]
+  const uint8_t* in_wq4;   // W4 pack of in_proj (see MKGemmCtx)
+  const int8_t* in_ws4;
   const __nv_bfloat16* f_b_w;  // [KDA_OUT, KDA_D] bf16
   const __nv_bfloat16* g_b_w;  // [KDA_OUT, KDA_D] bf16
   const float* conv_w;         // [KDA_QKV, CONV_W] fp32
@@ -1402,8 +1269,8 @@ struct MKKdaArgs {
                       // 1: err = v - k^T S, write by k, readout q (post)
                       // 2: variant 0 with PRE-update readout
   const __nv_bfloat16* onorm_w;  // [KDA_D] affine weight (ones if unused)
-  const uint8_t* o_wq;         // [HIDDEN, KDA_OUT_PAD] e4m3
-  const float* o_ws;
+  const uint8_t* o_wq4;        // W4 pack of o_proj
+  const int8_t* o_ws4;
   __nv_bfloat16* out;          // [T, HIDDEN]
   // workspace
   __nv_bfloat16* qkv;   // [MAX_TOK, KDA_INPROJ_N]
@@ -1425,8 +1292,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   {  // phase 0: in_proj GEMM into workspace
     MKGemmCtx c;
     c.x = a.x;
-    c.wq = a.in_wq;
-    c.ws = a.in_ws;
+    c.wq4 = a.in_wq4;
+    c.ws4 = a.in_ws4;
     c.out = a.qkv;
     c.m = a.num_tokens;
     c.n = KDA_INPROJ_N_PAD;
@@ -1434,7 +1301,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n_orig = KDA_INPROJ_N;
     c.grid = a.grid;
     c.ksr = a.ksr_in;
-    mk_gemm_phase<false>(c, smem, &g_mk_kda_bar);
+    mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
   mk_grid_barrier(a.barrier_ctr, a.grid);
 
@@ -1696,8 +1563,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   {  // phase 5: o_proj GEMM
     MKGemmCtx c;
     c.x = a.attn;
-    c.wq = a.o_wq;
-    c.ws = a.o_ws;
+    c.wq4 = a.o_wq4;
+    c.ws4 = a.o_ws4;
     c.out = a.out;
     c.m = a.num_tokens;
     c.n = HIDDEN;
@@ -1705,7 +1572,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.n_orig = HIDDEN;
     c.grid = a.grid;
     c.ksr = a.ksr_out;
-    mk_gemm_phase<false>(c, smem, &g_mk_kda_bar);
+    mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
 }
 
@@ -1721,11 +1588,8 @@ bool g_attrs_set = false;
 void set_kernel_attrs() {
   if (g_attrs_set) return;
   MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm_kernel<false>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+      mk_gemm_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
       GEMM_SMEM));
-  MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm_kernel<true>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-      GEMM_SMEM_W4));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   g_attrs_set = true;
@@ -1750,7 +1614,6 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
 }
 
 int g_gemm_grid = 0;
-int g_gemm4_grid = 0;
 int g_kda_grid = 0;
 
 // VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
@@ -1858,37 +1721,8 @@ std::vector<int64_t> mk_read_mhc_ts() {
 #endif
 }
 
-void mk_run_gemm(torch::Tensor x, torch::Tensor wq, torch::Tensor ws,
+void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig) {
-  set_kernel_attrs();
-  MKGemmCtx c;
-  c.x = (const __nv_bfloat16*)x.data_ptr();
-  c.wq = (const uint8_t*)wq.data_ptr();
-  c.ws = (const float*)ws.data_ptr();
-  c.out = (__nv_bfloat16*)out.data_ptr();
-  c.m = (int)x.size(0);
-  c.k = (int)x.size(1);
-  // the A-quant prologue reads x as 8 B vectors (4 bf16 per lane)
-  // the A-quant prologue reads x as 8 B vectors (4 bf16 per lane)
-  TORCH_CHECK(((uintptr_t)x.data_ptr() & 7) == 0 && x.is_contiguous(),
-              "x must be 8 B aligned and contiguous");
-  // wq is [n/128, k/128, 128, 128] -- tile-major, see stage_w.
-  TORCH_CHECK(wq.dim() == 4 && wq.size(2) == SMEM_W_ROWS
-                  && wq.size(3) == KSTEP && wq.is_contiguous(),
-              "wq must be a contiguous [n/128, k/128, 128, 128] pack");
-  c.n = (int)wq.size(0) * SMEM_W_ROWS;
-  c.n_orig = (int)n_orig;
-  TORCH_CHECK(c.k % KSTEP == 0 && c.k <= KBLK_MAX * KSTEP, "k out of contract");
-  TORCH_CHECK((int)wq.size(1) == c.k / KSTEP, "wq k-tiles disagree with x");
-  TORCH_CHECK(c.m <= 32, "m out of contract");
-  auto stream = c10::cuda::getCurrentCUDAStream();
-  c.grid = mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM);
-  c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_launch(mk_gemm_kernel<false>, c.grid, GEMM_SMEM, stream, c);
-}
-
-void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
-                    torch::Tensor out, int64_t n_orig) {
   set_kernel_attrs();
   MKGemmCtx c{};
   c.x = (const __nv_bfloat16*)x.data_ptr();
@@ -1914,9 +1748,9 @@ void mk_run_gemm_w4(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK((int)wq4.size(1) == c.k / KSTEP, "wq4 k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  c.grid = mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4);
+  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  mk_launch(mk_gemm_kernel<true>, c.grid, GEMM_SMEM_W4, stream, c);
+  mk_launch(mk_gemm_kernel, c.grid, GEMM_SMEM, stream, c);
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -1977,8 +1811,8 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);
 }
 
-// ptrs: x, in_wq, in_ws, f_b_w, g_b_w, conv_w, conv_state, rec_state,
-//       a_log, dt_bias, cu, state_idx, n_acc, o_wq, o_ws, out,
+// ptrs: x, in_wq4, in_ws4, f_b_w, g_b_w, conv_w, conv_state, rec_state,
+//       a_log, dt_bias, cu, state_idx, n_acc, o_wq4, o_ws4, out,
 //       qkv, g1, g2, convq, attn, barrier, onorm_w
 // ints: num_tokens, n_spec, mql, delta_variant, conv_width
 // scalars: lower_bound, onorm_eps
@@ -1987,8 +1821,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   set_kernel_attrs();
   MKKdaArgs a{};
   a.x = (const __nv_bfloat16*)ptrs[0];
-  a.in_wq = (const uint8_t*)ptrs[1];
-  a.in_ws = (const float*)ptrs[2];
+  a.in_wq4 = (const uint8_t*)ptrs[1];
+  a.in_ws4 = (const int8_t*)ptrs[2];
   a.f_b_w = (const __nv_bfloat16*)ptrs[3];
   a.g_b_w = (const __nv_bfloat16*)ptrs[4];
   a.conv_w = (const float*)ptrs[5];
@@ -1999,8 +1833,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.cu_seqlens = (const int*)ptrs[10];
   a.state_idx = (const int*)ptrs[11];
   a.n_accepted = (const int*)ptrs[12];
-  a.o_wq = (const uint8_t*)ptrs[13];
-  a.o_ws = (const float*)ptrs[14];
+  a.o_wq4 = (const uint8_t*)ptrs[13];
+  a.o_ws4 = (const int8_t*)ptrs[14];
   a.out = (__nv_bfloat16*)ptrs[15];
   a.qkv = (__nv_bfloat16*)ptrs[16];
   a.g1 = (__nv_bfloat16*)ptrs[17];
@@ -2029,8 +1863,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
-  m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM");
-  m.def("run_gemm_w4", &mk_run_gemm_w4, "MK_SEG_GEMM (W4 pack)");
+  m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
 }
