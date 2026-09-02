@@ -2009,3 +2009,59 @@ W4 루프의 누적 스탬프(srv2): n=6416 루프 127 µs = mma_fold 41 + expan
 **먹힌 것(순서대로, W4 x2 n=6416)**: A 타일 밀집 128 B + XOR 스위즐(4-way 충돌 제거) 145→141; 확장의 바이트-레인 SIMD(LUT 닫힌 식, `__vcmpeq4/__vadd4/__byte_perm`, 비트 동일) →128; mma k 스텝 완전 언롤 →122; stage_a L2 로드 선발행 →118; m ≤ 16 에서 두 번째 m 타일 제거(`mma_fold<MT>`, 제네릭 람다) →112. W8 도 같은 절감으로 6416 +10%·4096 동률·2048 +4%·1024 +8% 까지.
 **지속 스트림 한계**: srv2 마이크로벤치에서 cp.async·TMA 1D·TMA 2D(텐서맵 128 B 스위즐)·레이아웃(타일 우선/행 우선 128~2 KB 런)·깊이 3~8 모두 ~135~150 GB/s. 프로세스의 **첫 커널 배치만 225 GB/s**(부스트) — 마이크로벤치는 워밍업 뒤 값만 믿을 것. W8 이 deepgemm 에 지는 남은 10% 는 스트림이 아니라 고정비.
 **W4 채택은 운영자 결정**(서빙 수치 변경, by-design 1.24e-01): README 의 품질 브래킷(9/9 + 한국어 0/16 + pos-1 수용률 2%p) 뒤에만.
+
+## ★★준비 커널 통합 (`glm53_prep_fused`) — 스텝의 12% 가 GPU 유휴, 그 자리에 발사 하나 (2026-09-02, srv4 오프라인)
+
+**발견 (9월 1일 트레이스 재분석, rank 3, 229 스텝, 스트림 합집합)**: 프로파일된 72.1 ms
+스텝에서 GPU 가 비는 시간 8.9 ms(12%)가 한 곳에 몰려 있다 — 드래프터 그래프와
+타깃 그래프 사이의 eager 입력 준비 5.7 ms(aten 1,028 호출·memcpy 45·1~3 us 커널
+~100개, 커널 간 공백 50~430 us = 호스트가 발사를 못 따라감), 타깃 그래프 제출
+`cudaGraphLaunch` 1.43 ms(1,640 노드, 50스텝 중앙, p10 1.34 p90 1.59), 드래프터 앞
+DtoH 대기 0.6, 스텝 전환 0.8. 프로파일러가 호스트를 부풀리므로 프로파일러 없는
+앵커는 기존 원장의 "디코드 중 GPU 93%" (같은 정의) → 실제 유휴 4~5 ms/66 ms. dflash
+가 async scheduling 을 끈다는 기록(위 표)과 일치한다. 준비 구간이 그 대부분이다.
+**천장 = 준비 구간 자체, 스텝의 4~6%**; 읽는 바이트 0.
+
+같은 트레이스에서 그래프 안 elementwise 글루 605개의 정체도 잡았다(STEP_KERNEL_MAP
+보충 분해 2): 풀어텐션 인덱서 275(우리 kpool 파일), KDA 의 split-뷰 복사 136(MK-KDA
+가 흡수), MoE shared 덧셈 42, 나머지 ~150 — 커널당 CUPTI 2.0 us + 간격 0.2 us,
+전부 합쳐 2.7 ms(부풀린 값)라 호스트 유휴가 그래프 안 글루 전체보다 크다.
+
+**구현**: `overlay/modules/glm53_prep_fused` — 균일 spec-verify 스텝(전 요청 드래프트
+7개, FULL 그래프, 요청 패딩 없음)에서 `prepare_inputs` + `prepare_attn` + KV 그룹 7개
+빌더가 쓰는 **모든 persistent 버퍼**를 pinned H2D 1회 + Triton 발사 1회 + deep_gemm
+스케줄 1회로 쓴다. 메타데이터 dict 는 형상별 캐시(FULL 리플레이는 버퍼만 읽고,
+dict 는 드래프터에 넘어가 무시된다). 설치는 러너/빌더 파일 17개의 preimage 를
+고정(드리프트 → DISARM), plan 은 캡처 직후 live 러너에서 만들고 커널을 미리
+컴파일한다. 러너 파일은 덮지 않는다(메서드 패치).
+
+**오프라인 게이트 (srv4 새 컨테이너 `glm53:sm121-fi618`, 마운트 오버레이 30개,
+`probes/run_prep_fused_check.sh`)**: stock 빌딩블록(input_batch Triton 3종·
+BlockTables gather/slot·GDN FULL 복사·MLA req_id·indexer uniform-decode +
+compressed slot + deep_gemm 스케줄) vs fused 커널, 프로덕션 기하(그룹 7, MLA 폭
+2052, indexer 256토큰 페이지/factor 4/storage 64, kpool 4, mamba 폭 8), 무작위
+배치 C=1~4 **60/60 회 46개 텐서 bit-exact**.
+
+| C=1 스텝당 | stock 빌딩블록 | fused |
+|---|---|---|
+| 발사 | 커널 ~30 + memcpy ~8 | 커널 3 + memcpy 1 |
+| 벽시계(호스트+GPU) | 2,556 us | 201 us |
+| GPU 이벤트 | (호스트 대기 포함 2,562) | 200 = 커널 88.5 + deep_gemm 스케줄 64.4 + 복사 |
+
+stock 열은 빌딩블록만이라 러너의 aten ~1,000 호출은 빠져 있다 — 실제 절감은 이보다
+크고, 상한은 트레이스의 준비 구간(프로파일러 없이 3~5 ms). fused 의 GPU 200 us 는
+임계경로에 새로 올라오는 비용이다(그중 64 us 는 stock 도 내는 deep_gemm 스케줄).
+커널 88 us 는 요청당 직렬 루프(그룹 7 gather + 토큰 8 × 폭 2052 행 복사)라 더 줄일
+수 있으나, 절감 규모(ms) 대비 작아 섀도 부팅 뒤로 미룬다.
+
+**미측정 (서빙)**: 섀도 부팅(`VLLM_GLM53_PREP_FUSED=shadow`, drift=0 확인) → EXP-7
+브래킷(C=1 step/s). 물리 기전 확인 = 켠 부팅 트레이스에서 준비 구간의 memcpy·
+`at::native::*` 가 사라지고 `_glm53_prep_fused_kernel` 하나가 남는 것. 기본값 0.
+
+**부수 발견(미조치)**: (1) kpool tail 의 원형 슬롯 매핑은 러너가 빌더에 `positions`
+를 안 넘겨 이 이미지에서 잠들어 있다 — `glm53_tail_slot_persistent` 의 고정 버퍼도
+그래서 무효이고, tail 그룹은 generic 매핑(문서 자체가 "pos >= kpool 이면 블록 0 으로
+붕괴"라 적은 것)을 쓴다. C>=2 수치 축이라 별도 브래킷. (2) 인덱서 fp32 head-gate
+`torch.mm` 이 cuBLAS gemmSN 2블록 커널로 층당 86 us × 11(CUPTI) — 우리
+`glm53_prefill_fastpath.py:402` 소유. (3) 드래프터 커널 합 ~3 ms(CUPTI; fc 투영
+814 us eager bf16 168 MB 포함) — 원장 D≈0 과 긴장, 직접 측정 전 판단 보류.

@@ -27,3 +27,4 @@ spec_decode_rejection_warmup.py	/usr/local/lib/python3.12/dist-packages/vllm/mod
 glm53_megakernel.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py	absent
 glm53_megakernel.cu	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu	absent
 glm5next_kda.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py	ec090aabecc1a63dacc9694ea677b195e95ce0c63648c418a6daaf34b8196125
+glm53_prep_fused.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py	absent
