@@ -363,6 +363,41 @@ VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 
 ---
 
+## EXP-10 — 드래프터 fc GEMM (`probes/drafter_fc_check.py`, 2026-09-02 추가 — 프로브 먼저, 커널은 숫자가 나온 뒤)
+
+보충 분해 3 이 "split-K 후보"로 지명한 자리: 드래프터 fc 투영 `[M, K=5×4096] × [K, 4096]`,
+스텝당 1회, 현재 부팅에선 deep_gemm fp8×fp4 로 809 us — fp4 42 MB 를 52~104 GB/s 로
+읽는 것(W4 스트림 하한 ~190 GB/s 의 1/4~1/2). 지금은 호스트 유휴 뒤에 숨어 임계경로가
+아니지만, EXP-7 이 은신처를 없애는 순간 드래프터 ~6% 천장의 주성분이 된다.
+
+1단계는 부팅 없는 오프라인 프로브. 이미지에 존재하는 모든 팔을 실형상(K=20480)에서
+잰다 — stock(`_fp8_fp4_dense_gemm`), bf16 mm(168 MB eager 경로), F.linear, 그리고
+mk_w4 베스트 에포트(K=4096 전용이면 SKIP 이 답이다). 콜드 웨이트는 6개 순환 그래프
+(252 MB ≫ L2 24 MB). #231 의 교훈대로 `--config` 로 플릿 실형상을 확인할 것.
+
+```bash
+docker run --rm --gpus all --entrypoint python3 \
+  --mount type=bind,src=$REPO,dst=/repo,readonly glm53:v13-b12x \
+  /repo/probes/drafter_fc_check.py --config /models/glm53.../config.json
+```
+
+- 승자 판정: stock 이 W4 바운드(42 MB ÷ 190 GB/s ≈ 220 us)에서 멀수록 새 split-K
+  커널의 몫. 베스트 팔이 이미 바운드에 닿으면 이 축은 프로브 한 번으로 닫힌다.
+- 부팅 귀속은 숫자가 나온 뒤 정한다: 수치 변경 축(e2m1)이라 EXP-9 를 얹은
+  EXP-7 부팅에 또 얹을 수는 없다(부팅당 수치 축 하나).
+- 기대값(정직): 지금 스텝 기준 상한 ~0.6 ms = ~0.8%. 은신처가 사라진 뒤엔
+  드래프터 노출분의 주성분이라 가치가 커진다.
+
+## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
+
+`leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로
+박은 것: 판정 채널 C=1 step/s (`tok/s ÷ (1 + k×raw_acc)`), 유의 문턱은 **base 두
+다리의 드리프트**(같은 설정 재부팅 차이). 재기동은 여전히 사람이 한다 — 이 도구는
+읽기 전용이고 다리 사이 env 스냅샷을 기록해 #116 부류(노브 미전달 부팅)를 judge 가
+보게 한다. C≠1 기록은 참고용으로만 남긴다.
+
+---
+
 ## 순서와 근거
 
 1. **EXP-1 (EP)** — 기대값 최대. 실패해도 부팅 하나로 원장에 정리된다.
@@ -375,6 +410,7 @@ VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 8. ~~EXP-8 (dflash async scheduling)~~ — **기각**: 이미 켜져 있었다(`dflash` ∈ `EagleModelTypes`). 모듈 제거, 천장 주장 철회.
 9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7 부팅에 얹는다.
 10. **EXP-7 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
+11. **EXP-10 (드래프터 fc)** — 부팅 없는 프로브가 먼저: stock 이 W4 바운드에서 얼마나 먼 지가 커널 제작의 전부. 베스트 기존 팔이 바운드에 닿으면 축은 프로브로 닫힌다. 판정이 필요해지면 `bench/bracket.py` 로 브래킷을 돌린다.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
