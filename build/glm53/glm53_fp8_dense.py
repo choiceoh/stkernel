@@ -369,7 +369,7 @@ _FREE_BF16_ENV = "VLLM_GLM53_FP8_DENSE_FREE_BF16"
 
 
 def _free_bf16_enabled() -> bool:
-    """Exact opt-in: release the bf16 source of every quantised linear.
+    """Exact opt-in for `maybe_free_fp8_dense_bf16`.
 
     After `quant_method` is swapped, apply() reads only the fp8 copy (and the
     megakernel's W4 pack), so the bf16 tensor is dead weight -- 2.94 GB per
@@ -385,6 +385,53 @@ def _free_bf16_enabled() -> bool:
     default OFF and knob-gated, because it is not recoverable at runtime.
     """
     return os.environ.get(_FREE_BF16_ENV, "").strip() == "1"
+
+
+def maybe_free_fp8_dense_bf16(model) -> int:
+    """Release the bf16 sources. Call ONLY when weight loading is finished.
+
+    This cannot live inside `maybe_build_fp8_dense`. That function is written
+    to tolerate being called early -- `AutoWeightsLoader` enters a child
+    `load_weights` before the checkpoint is walked, and the comment at its
+    call site says so -- and a later call rebuilds any premature copy. A
+    rebuild repairs a stale copy; it cannot repair a deleted source. Freeing
+    from inside the build made the early call destructive and killed a boot:
+
+        parameter.py:221 in load_row_parallel_weight
+          shard_size = self.data.shape[self.input_dim]
+        IndexError: tuple index out of range
+
+    -- the loader still had rows to place and found a 1-D empty tensor where
+    a [N, K] weight had been. So the release is its own pass, driven from
+    `GPUModelRunner.load_model` after both the model and the drafter have
+    loaded, inside the `DeviceMemoryProfiler` block so the weight figure it
+    reports is the one KV sizing then works from.
+
+    Returns the bytes released (0 when the knob is off)."""
+    if not _free_bf16_enabled():
+        return 0
+    freed = 0
+    kept_bias = 0
+    for mod in model.modules():
+        method = getattr(mod, "quant_method", None)
+        if not isinstance(method, (Fp8DenseMethod, W4A8DenseMethod)):
+            continue
+        weight = getattr(mod, "weight", None)
+        if weight is None or weight.numel() == 0:
+            continue
+        if getattr(mod, "bias", None) is not None:
+            # bias still routes to _base.apply, which reads this tensor
+            kept_bias += 1
+            continue
+        freed += weight.numel() * weight.element_size()
+        mod.weight.data = torch.empty(
+            0, dtype=weight.dtype, device=weight.device)
+    logger.warning(
+        "[fp8-dense] %s=1: released %.2f GB of bf16 sources (%d linears kept "
+        "theirs for a bias); the bias and error fallbacks through the base "
+        "method are gone with them",
+        _FREE_BF16_ENV, freed / 1e9, kept_bias)
+    return freed
 
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
@@ -406,8 +453,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     scheme = "w4a8" if raw in ("w4a8", "w4", "fp4") else "w8a8"
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
-    free_bf16 = _free_bf16_enabled()
-    freed_bytes = 0
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _include_patterns()):
             continue
@@ -488,12 +533,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
-            if free_bf16 and getattr(mod, "bias", None) is None:
-                # the copy check above already ran against this tensor
-                freed_bytes += weight.numel() * weight.element_size()
-                mod.weight.data = torch.empty(
-                    0, dtype=weight.dtype, device=weight.device)
-                weight = None
         except Exception as e:
             logger.warning("[fp8-dense] %s stayed bf16: %r", name, e)
             skipped.append(name)
@@ -506,11 +545,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         len(quantized), params * 2 / 1e9, len(skipped), len(stale),
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
-    if free_bf16:
-        logger.warning(
-            "[fp8-dense] %s=1: released %.2f GB of bf16 sources; the bias and "
-            "error fallbacks through the base method are gone with them",
-            _FREE_BF16_ENV, freed_bytes / 1e9)
     if stale:
         logger.warning(
             "[fp8-dense] %s: %d copies did not reproduce their bf16 source "

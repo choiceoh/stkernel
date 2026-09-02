@@ -2089,12 +2089,36 @@ def test_fp8_dense_free_bf16_contract() -> None:
           "profile ships the bf16 release off")
     check('os.environ.get(_FREE_BF16_ENV, "").strip() == "1"' in src,
           "exact opt-in: only the string 1 releases the bf16 sources")
-    check('if free_bf16 and getattr(mod, "bias", None) is None:' in src,
+    check('if getattr(mod, "bias", None) is not None:' in src,
           "a linear with a bias keeps its bf16 source (the bias path needs it)")
-    idx_swap = src.index("mod.quant_method = method")
-    idx_free = src.index("mod.weight.data = torch.empty(")
-    check(idx_swap < idx_free,
-          "the release happens after the copy check and the quant_method swap")
+
+    # The release must NOT run from maybe_build_fp8_dense. That function is
+    # written to tolerate an early call -- AutoWeightsLoader enters a child
+    # load_weights before the checkpoint is walked, and a later call rebuilds
+    # the copy -- but a rebuild cannot restore a deleted source. Freeing from
+    # inside it killed a boot at parameter.py:221, where the loader read
+    # shape[input_dim] of a 1-D empty tensor.
+    build = src[src.index("def maybe_build_fp8_dense"):]
+    build = build[:build.index("\ndef ")] if "\ndef " in build else build
+    check("mod.weight.data = torch.empty(" not in build,
+          "maybe_build_fp8_dense never frees: it may run before the load ends")
+    free = src[src.index("def maybe_free_fp8_dense_bf16"):]
+    check("mod.weight.data = torch.empty(" in free,
+          "the release lives in its own pass")
+
+    # ... and that pass is driven from the one point where both the model and
+    # the drafter have finished loading, inside the memory profiler so the
+    # weight figure KV sizing uses is the reduced one.
+    runner = open(os.path.join(
+        REPO, "overlay/modules/glm53_drop_audit/gpu_model_runner.py"),
+        encoding="utf-8").read()
+    body = runner[runner.index("def load_model(self, load_dummy_weights"):]
+    body = body[:body.index("self.model_memory_usage = m.consumed_memory")]
+    check("maybe_free_fp8_dense_bf16(self.model)" in body,
+          "the release runs inside load_model's DeviceMemoryProfiler block")
+    check(body.index("self.drafter.load_model(self.model)")
+          < body.index("maybe_free_fp8_dense_bf16(self.model)"),
+          "the release runs after the drafter has loaded too")
     print("  fp8-dense bf16 release contract .. OK")
 
 

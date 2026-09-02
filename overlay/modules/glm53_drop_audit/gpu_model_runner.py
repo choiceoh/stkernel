@@ -5599,6 +5599,28 @@ class GPUModelRunner(
                     )
                     eplb_models += 1
 
+                # deneb fork: the bf16 sources of the fp8 dense copies are
+                # dead once quant_method is swapped, but they cannot be
+                # released from inside the build -- AutoWeightsLoader calls
+                # that early and a freed source breaks the loader's own
+                # shape read. HERE is the first point where both the model
+                # and the drafter have finished loading. Still inside the
+                # profiler, so model_memory_usage (and the KV sizing that
+                # follows) sees the smaller footprint. No-op unless
+                # VLLM_GLM53_FP8_DENSE_FREE_BF16=1.
+                try:
+                    from vllm.model_executor.layers.glm53_fp8_dense import (
+                        maybe_free_fp8_dense_bf16,
+                    )
+
+                    maybe_free_fp8_dense_bf16(self.model)
+                    if hasattr(self, "drafter") and hasattr(
+                        self.drafter, "model"
+                    ):
+                        maybe_free_fp8_dense_bf16(self.drafter.model)
+                except Exception:
+                    logger.exception("[fp8-dense] bf16 release skipped")
+
                 time_after_load = time.perf_counter()
             self.model_memory_usage = m.consumed_memory
         except torch.cuda.OutOfMemoryError as e:
