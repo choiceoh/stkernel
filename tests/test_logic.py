@@ -6108,6 +6108,30 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_cuda_builds_keep_the_arch_specific_target() -> None:
+    """-arch=sm_121a silently drops the 'a' suffix under -c (cpp_extension's mode).
+
+    Verified 2026-09-03 on nvcc 13.0 with a flag/mode matrix: -cubin and -ptx
+    accept -arch=sm_121a, but -c emits a plain sm_121 target and ptxas then
+    refuses every architecture-specific instruction -- the fp4 mma
+    (kind::f8f6f4) and the 2:4 sparse mma (mma.sp::ordered_metadata). Both are
+    real on this part (measured 155 and 309 TFLOP/s), so the flag is what
+    stands between the kernels and them."""
+    for rel in ("overlay/modules/glm53_megakernel/glm53_megakernel.py",
+                "overlay/modules/glm53_kpool_tail_select/glm53_kpool_topk.py"):
+        src = open(os.path.join(REPO, rel), encoding="utf-8").read()
+        i = src.find("extra_cuda_cflags=")
+        while i != -1:
+            flags = src[i: src.index("]", i) + 1]
+            check('"-arch=sm_121a"' not in flags,
+                  f"{os.path.basename(rel)}: -arch=sm_121a loses the 'a' suffix under -c; "
+                  f"use -gencode arch=compute_121a,code=sm_121a")
+            check('"arch=compute_121a,code=sm_121a"' in flags,
+                  f"{os.path.basename(rel)}: the CUDA build must pin compute_121a/sm_121a")
+            i = src.find("extra_cuda_cflags=", i + 1)
+    print("  cuda builds keep the sm_121a-specific target .. OK")
+
+
 def test_glm53_megakernel_contracts() -> None:
     import math as _math
 
@@ -7461,6 +7485,7 @@ if __name__ == "__main__":
     test_glm53_kda_prefill_regime()
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
+    test_cuda_builds_keep_the_arch_specific_target()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()

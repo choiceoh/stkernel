@@ -141,7 +141,16 @@ def _build():
     _EXT = load(
         name="glm53_megakernel",
         sources=[_SRC],
-        extra_cuda_cflags=["-O2", "-arch=sm_121a"] + [
+    # -arch=sm_121a is NOT enough here. nvcc accepts it for -cubin and -ptx, but
+    # with -c (what cpp_extension uses to build the objects) it emits a plain
+    # sm_121 target and ptxas then rejects every ARCHITECTURE-SPECIFIC
+    # instruction: the fp4 mma (kind::f8f6f4) and the 2:4 sparse mma
+    # (mma.sp::ordered_metadata) both fail with "not supported on .target
+    # 'sm_121'". -gencode arch=compute_121a,code=sm_121a keeps the 'a' suffix
+    # through -c. Nothing in the kernels needs those two today (e4m3/bf16 mma
+    # exist on plain sm_121), so this changes no generated code -- it is what
+    # lets the file USE them. Verified 2026-09-03 with a 2x3 flag/mode matrix.
+        extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"] + [
             # Swept by the probe; the .cu carries the shipped defaults.
             f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
             f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
