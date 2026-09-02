@@ -115,20 +115,6 @@ install_glm53_union_prefill()
 
 logger = init_logger(__name__)
 
-# deneb fork (glm53_prep_fused): fused decode input preparation. Import only
-# -- a boot without the module mounted is stock -- and the installer is inert
-# unless VLLM_GLM53_PREP_FUSED is set; it pins the runner preimages and any
-# failure is loud in the boot log, never fatal.
-try:
-    from .glm53_prep_fused import install_glm53_prep_fused
-except ImportError:
-    install_glm53_prep_fused = None
-if install_glm53_prep_fused is not None:
-    try:
-        install_glm53_prep_fused()
-    except Exception:
-        logger.exception("[prep-fused] install failed -> stock path")
-
 
 def _validate_decodable_vocab_bound(
     decodable_vocab: int,

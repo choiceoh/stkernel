@@ -160,6 +160,27 @@ both arms run, outputs AND the states the next step reads are diffed every
 replay stays stock. Run shadow on a bench boot, read the log, then decide
 the arm.
 
+## MK-MHC structure (2026-09-02)
+
+No grid barrier. p1 runs one block per (chunk of 256 hidden dims, token
+group): the chunk's `fn` slice -- 24 outputs x 4 streams for the thread's
+dim -- sits in 96 registers and the group's tokens stream through it (the
+old (token, chunk)-pair mapping re-read `fn` per token: 12 MB through L2 at
+T=8 in one round, the L2 rate, not DRAM). The next token's inputs and mix
+coefficients are prefetched, the 25 per-token partials reduce through a
+transposed smem tile with 8-lane groups, and each chunk's completion is
+counted per token. Blocks that finish their tokens take **tail tickets**:
+wait on a token's 16 arrivals, rearm its counter, and run that token's p2
+(one warp: rms, mixes, sinkhorn) and fused p3+p4 (registers, no ol_stash /
+sq round trips). The last block out rearms the ticket counter, so graph
+replay needs no reset. Things that measured worse on the way (MEASUREMENTS
+9차): `fn` in smem (fill latency-bound, 1 block/SM), the tail on each
+token's last arriver (tails serialize on one block), a 24-value shuffle
+broadcast in the tail (spills under the p1 register pressure).
+
+Bench (srv2, PDL on): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
+(MEASUREMENTS.md 9차 has the eight experiments that got here).
+
 ## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
 
 in_proj 77 | gates 14-18 | conv 8 | delta 35 | norm 0.5 | o_proj 39 |
