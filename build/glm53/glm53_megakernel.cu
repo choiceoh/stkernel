@@ -272,6 +272,13 @@ struct MKGemmCtx {
   // contiguous 8 KB + 1 KB run for cp.async (see stage_raw4).
   const uint8_t* wq4;
   const int8_t* ws4;
+  // true: the A tiles (g_mk_aq) and their scales (g_mk_axs) were written
+  // by the caller's previous phase and published by ITS grid barrier, so
+  // the prologue skips the x load / quant / publishing barrier (the caller
+  // also resets g_mk_unit_next before that barrier). kda's o_proj: p4
+  // emits the normalized attn straight as fp8 k-groups (one head = one
+  // 128-group), which retired ~8 us of prologue from the phase.
+  bool a_ready = false;
 };
 
 // e4m3 encodings of the e2m1 magnitudes {0, .5, 1, 1.5, 2, 3, 4, 6}.
@@ -341,6 +348,8 @@ __device__ float g_mk_axs[32 * KBLK_MAX];                   // 4 KB
 #ifdef MK_PHASE_TS
 __device__ unsigned long long g_mk_ts[MK_GRID_CAP * 8];
 __device__ unsigned long long g_mk_mhc_ts[MK_MHC_GRID_CAP * 8];  // mhc phases
+// kda: [block][16] -- 0 entry, then (phase k end, barrier k exit) pairs
+__device__ unsigned long long g_mk_kda_ts[MK_GRID_CAP * 16];
 __device__ __forceinline__ unsigned long long mk_globaltimer() {
   unsigned long long t;
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
@@ -351,6 +360,11 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
     if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
   } while (0)
 // accumulated durations (ns), e.g. time spent inside the W pipeline wait
+#define MK_KDA_TS(slot)                                                     \
+  do {                                                                       \
+    if (threadIdx.x == 0)                                                    \
+      g_mk_kda_ts[blockIdx.x * 16 + (slot)] = mk_globaltimer();             \
+  } while (0)
 #define MK_TS_ACC_BEGIN(v) const unsigned long long v = mk_globaltimer()
 #define MK_TS_ACC_END(acc, v) acc += mk_globaltimer() - (v)
 #define MK_TS_STORE(slot, acc)                                               \
@@ -365,6 +379,9 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
 #else
 #define MK_TS(slot) \
   do {              \
+  } while (0)
+#define MK_KDA_TS(slot) \
+  do {                  \
   } while (0)
 #define MK_TS_ACC_BEGIN(v) \
   do {                     \
@@ -568,7 +585,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // fill already in flight -- or landed, under PDL -- nothing competes
   // with these four loads.
   float v[RPW][4], mx[RPW];
-  if (kbq < kblk) {
+  if (!c.a_ready && kbq < kblk) {
     uint2 raw[RPW];
 #pragma unroll
     for (int i = 0; i < RPW; ++i) {
@@ -609,8 +626,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4) = pack;
     }
   };
-  if (kbq < kblk) quant_store(kbq, v, mx);
-  for (int kb = kbq + c.grid; kb < kblk; kb += c.grid) {  // grid < kblk only
+  if (!c.a_ready && kbq < kblk) quant_store(kbq, v, mx);
+  for (int kb = c.a_ready ? kblk : kbq + c.grid; kb < kblk;
+       kb += c.grid) {  // grid < kblk only
     float v2[RPW][4], mx2[RPW];
 #pragma unroll
     for (int i = 0; i < RPW; ++i) {
@@ -627,10 +645,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
     quant_store(kb, v2, mx2);
   }
-  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
-  MK_TS(1);  // A quantized, before the publishing barrier
-  mk_grid_barrier(bar, c.grid);
-  MK_TS(2);  // barrier released
+  if (!c.a_ready) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
+    MK_TS(1);  // A quantized, before the publishing barrier
+    mk_grid_barrier(bar, c.grid);
+  }
+  MK_TS(2);  // barrier released (or, a_ready: the caller's)
   for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
     sxs[i] = g_mk_axs[i];
   __syncthreads();
@@ -1291,6 +1311,7 @@ struct MKKdaArgs {
 __global__ void mk_kda_kernel(const MKKdaArgs a) {
   extern __shared__ uint8_t smem[];
   asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
+  MK_KDA_TS(0);
 
   {  // phase 0: in_proj GEMM into workspace
     MKGemmCtx c;
@@ -1306,25 +1327,76 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.ksr = a.ksr_in;
     mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
+  MK_KDA_TS(1);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_KDA_TS(2);
 
-  {  // phase 1: f_b / g_b low-rank gates (K = 128, SIMT dot)
-    const int total = a.num_tokens * KDA_OUT;
-    for (int i = blockIdx.x * MK_THREADS + threadIdx.x; i < 2 * total;
-         i += a.grid * MK_THREADS) {
-      const int which = i / total, rem = i - which * total;
-      const int t = rem / KDA_OUT, n = rem % KDA_OUT;
-      const __nv_bfloat16* src =
-          a.qkv + (size_t)t * KDA_INPROJ_N + (KDA_QKV + KDA_H + which * KDA_D);
-      const __nv_bfloat16* w = (which ? a.g_b_w : a.f_b_w) + (size_t)n * KDA_D;
-      float v = 0.0f;
-#pragma unroll 16
-      for (int r = 0; r < KDA_D; ++r)
-        v += __bfloat162float(src[r]) * __bfloat162float(w[r]);
-      (which ? a.g2 : a.g1)[(size_t)t * KDA_OUT + n] = __float2bfloat16(v);
+  {  // phase 1: f_b / g_b low-rank gates (K = 128), one warp per dot.
+    // Lane l reads elements 4l..4l+3 of the 256 B weight row (and of the
+    // token's 128-wide activation), so the warp pulls the row in ONE
+    // coalesced instruction and reduces with five shuffles. The old form
+    // gave each thread a whole row read 2 B at a time: adjacent lanes 256 B
+    // apart, every load its own 32 B sector -- 68 us for 4M MACs on the
+    // phase stamps (16% of the kernel); this is ~3 us.
+    // One weight ROW per warp step, every token against it: the row (256 B,
+    // 8 B per lane, one coalesced load) is read from DRAM exactly once and
+    // the T activation rows are L1-hot; the previous order (dots in (t, n)
+    // order, 8 per step) re-read each row per token through L2 and left
+    // each step waiting on its own DRAM round trip (25 us on the stamps).
+    // Tokens run in groups of 8 so the in-flight loads stay bounded.
+    const int lane = threadIdx.x & 31;
+    const int nwarps = a.grid * MK_WARPS;
+    const int T = a.num_tokens;
+    constexpr int RPI = 2;  // rows per step: two DRAM loads in flight
+                            // (14.4 us on the stamps; 4 measured 18.2)
+    for (int r0 = (blockIdx.x * MK_WARPS + (threadIdx.x >> 5)) * RPI;
+         r0 < 2 * KDA_OUT; r0 += nwarps * RPI) {
+      uint2 wr[RPI];
+      int which[RPI], n[RPI];
+#pragma unroll
+      for (int u = 0; u < RPI; ++u) {
+        const int rr = min(r0 + u, 2 * KDA_OUT - 1);  // clamp: dup, not OOB
+        which[u] = rr / KDA_OUT;
+        n[u] = rr - which[u] * KDA_OUT;
+        wr[u] = *(const uint2*)((which[u] ? a.g_b_w : a.f_b_w) +
+                                (size_t)n[u] * KDA_D + lane * 4);
+      }
+      for (int tg = 0; tg < T; tg += 8) {
+        uint2 xr[RPI][8];
+#pragma unroll
+        for (int u = 0; u < RPI; ++u)
+#pragma unroll
+          for (int q = 0; q < 8; ++q) {
+            const int t = min(tg + q, T - 1);
+            xr[u][q] = *(const uint2*)(a.qkv + (size_t)t * KDA_INPROJ_N +
+                                       (KDA_QKV + KDA_H + which[u] * KDA_D) +
+                                       lane * 4);
+          }
+#pragma unroll
+        for (int u = 0; u < RPI; ++u) {
+          const __nv_bfloat16* wp = (const __nv_bfloat16*)&wr[u];
+#pragma unroll
+          for (int q = 0; q < 8; ++q) {
+            const __nv_bfloat16* xp = (const __nv_bfloat16*)&xr[u][q];
+            float v = 0.0f;
+#pragma unroll
+            for (int e = 0; e < 4; ++e)
+              v += __bfloat162float(xp[e]) * __bfloat162float(wp[e]);
+#pragma unroll
+            for (int off = 16; off; off >>= 1)
+              v += __shfl_xor_sync(0xffffffffu, v, off);
+            const int t = tg + q;
+            if (lane == 0 && t < T && r0 + u < 2 * KDA_OUT)
+              (which[u] ? a.g2 : a.g1)[(size_t)t * KDA_OUT + n[u]] =
+                  __float2bfloat16(v);
+          }
+        }
+      }
     }
   }
+  MK_KDA_TS(3);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_KDA_TS(4);
 
   {  // phase 2: merged short conv (k=4, silu) with accepted-window rollback.
     // hist(pos) is the channel's input at in-request position pos (pos < 0
@@ -1335,8 +1407,12 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       const int t0 = a.cu_seqlens[r], t1 = a.cu_seqlens[r + 1];
       const int slot = a.state_idx[r * a.mql + 0];
       const int acc = a.n_accepted[r];
-      for (int ch = blockIdx.x * MK_THREADS + threadIdx.x; ch < KDA_QKV;
-           ch += a.grid * MK_THREADS) {
+      // 6144 channels over grid x 256 threads: with 256 per block only 24
+      // blocks had channels and the other 24 waited ~9.5 us at the next
+      // barrier; 128 per block gives every block half a tile of work.
+      constexpr int CPB = KDA_QKV / 48;  // 128 channels per block at grid 48
+      for (int ch = blockIdx.x * CPB + threadIdx.x;
+           ch < KDA_QKV && threadIdx.x < CPB; ch += a.grid * CPB) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
         const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
                              (size_t)ch * a.conv_width;
@@ -1389,29 +1465,75 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       }
     }
   }
+  MK_KDA_TS(5);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_KDA_TS(6);
 
-  {  // phase 3: fine-grained gated delta rule. One block per head, two
-    // threads per v-column (k split in halves).
-    //
-    // Deliberately 16 of 48 blocks: the phase is DRAM-bound on the state
-    // (2 MB read+write per layer, the census's ~68 MB/step), and 16 blocks
-    // x 256 threads with the S rows register-resident issue enough
-    // loads to saturate BW; the FLOP tail is ~0.4 us. Splitting heads
-    // across 32 blocks adds no bandwidth -- measured, not assumed, before
-    // this is "fixed".
-    __shared__ float sh[4 * KDA_D];  // y, q, k, err
-    __shared__ float sred[2][KDA_D];
+  {  // phase 3: fine-grained gated delta rule. TWO blocks per head, each
+    // owning 64 of the 128 state rows (v) with all of k: the update
+    // S[v,k] += beta k[k] err[v], the error err[v] = v_in[v] - sum_k r[k]
+    // S[v,k] and the readout out[v] = sum_k q[k] S[v,k] are all row-local,
+    // so the rows split across blocks with no cross-block traffic; only
+    // the 128-wide q, k, gate inputs are loaded by both. 4 threads per
+    // row (k quarters, S[32] register-resident); the per-token chain is 5
+    // syncs, shuffle-reduced norms, and the state store staged through
+    // smem so it lands as coalesced 128 B rows (a store per token is the
+    // stock contract: 8 MB per layer, ~35 us of DRAM at the floor).
+    // History: one block per head with S[64] in LOCAL memory (partial
+    // unroll) ran ~18 us/token; register-resident S ~8.5; this ~6.
+    constexpr int RB = KDA_D / 2;   // rows per block
+    constexpr int KQ = 4;           // k quarters per row
+    constexpr int KW = KDA_D / KQ;  // 32 k per thread
+    __shared__ float sh[3 * KDA_D + RB];  // y, q, k (128 each), err (RB)
+    __shared__ float sred[KQ][RB];        // pre-update retrieval parts
+    __shared__ float sred2[KQ][RB];       // post-update readout parts
+    __shared__ float wsum[MK_WARPS][2];   // per-warp partial |q|^2, |k|^2
     float* y_s = sh;
     float* q_s = sh + KDA_D;
     float* k_s = sh + 2 * KDA_D;
     float* err_s = sh + 3 * KDA_D;
 
-    const int head = blockIdx.x;
-    if (head < KDA_H) {
-      const int v = threadIdx.x & (KDA_D - 1);  // 0..127
-      const int khalf = threadIdx.x >> 7;       // 0..1
-      const int k0 = khalf * (KDA_D / 2);
+    const int head = blockIdx.x >> 1, rowhalf = blockIdx.x & 1;
+    if (blockIdx.x < 2 * KDA_H) {
+      const int vl = threadIdx.x & (RB - 1);     // local row 0..63
+      const int v = rowhalf * RB + vl;           // state row
+      const int kq = threadIdx.x >> 6;           // 0..3
+      const int k0 = kq * KW;
+      const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+      const bool dth = threadIdx.x < KDA_D;  // "d thread": owns dim d
+      const int d = threadIdx.x;             // (valid when dth)
+      const bool rth = kq == 0;              // "row thread": owns row v
+      // The state multiplier is exp(gate), not the gate. Stock
+      // fused_recurrent.py:129-130 computes
+      //   b_gk = LOWER_BOUND / (1 + exp(-(a_log_amp * (g + bias))))
+      //   b_h *= exp(b_gk)
+      // The gate itself is in (lower_bound, 0) = (-5, 0), so using it raw
+      // flipped the state's sign every token (rel_err 16 at acc=3, 1570 at
+      // acc=8). Per-dim constants hoisted out of the token loop.
+      const float alog = expf(a.a_log[head]);
+      const float dtb = dth ? a.dt_bias[head * KDA_D + d] : 0.0f;
+      // Match the stock kernel exactly (fused_recurrent.py:137-140):
+      //   b_q = b_q / sqrt(sum(b_q*b_q) + 1e-6); b_k likewise; b_q *= scale
+      // with scale = KDA_D ** -0.5 on q ONLY (kda.py:165). Without the
+      // epsilon and the scale the readout ran sqrt(KDA_D) = 11.3x hot.
+      constexpr float kda_qk_scale = 0.088388347648318447f;  // 128 ** -0.5
+
+      // One token's inputs straight from global into registers (dims for
+      // the d threads, the row's value input for the row threads); the
+      // NEXT token's loads are issued at the top of each iteration so
+      // their latency hides under this token's sync chain.
+      auto load_tok = [&](int t, float& qd, float& kd, float& vd, float& gd,
+                          float& bt) {
+        const size_t cb = (size_t)t * KDA_QKV + head * KDA_D;
+        if (dth) {
+          qd = __bfloat162float(a.convq[cb + d]);
+          kd = __bfloat162float(a.convq[cb + KDA_H * KDA_D + d]);
+          gd = __bfloat162float(a.g1[(size_t)t * KDA_OUT + head * KDA_D + d]);
+        }
+        if (rth) vd = __bfloat162float(a.convq[cb + 2 * KDA_H * KDA_D + v]);
+        bt = __bfloat162float(
+            a.qkv[(size_t)t * KDA_INPROJ_N + KDA_QKV + head]);
+      };
 
       for (int r = 0; r < a.n_spec; ++r) {
         const int t0 = a.cu_seqlens[r], t1 = a.cu_seqlens[r + 1];
@@ -1428,180 +1550,183 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         // position) hid the per-position part and showed the rest as the
         // rec_state mismatch at acc < nq.
         const int slot0 = a.state_idx[r * a.mql + (acc - 1)];
-        if (slot0 <= 0) continue;
-        float* Sbase =
+        if (slot0 <= 0 || t1 <= t0) continue;
+        float qd = 0.0f, kd = 0.0f, vd = 0.0f, gd = 0.0f, bt = 0.0f;
+        load_tok(t0, qd, kd, vd, gd, bt);
+        const float* Sbase =
             a.rec_state + (((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D);
         // Element (v, k) lives at v * KDA_D + k, matching the stock
         // writer: fused_recurrent.py stores b_h as
         //   p_ht + o_v[:, None] * K + o_k[None, :]
-        // This kernel had k * KDA_D + v, i.e. the TRANSPOSE. Internally the
-        // recurrence is transpose-equivariant so it stayed self-consistent,
-        // but the buffer it hands back to (and takes from) the stock path is
-        // shared -- measured: as-is 1.005, transposed 6.6e-06 against the
-        // stock final state at acc == T.
-        float S[KDA_D / 2];
-#pragma unroll 8
-        for (int kk = 0; kk < KDA_D / 2; ++kk)
+        // (this kernel once held the transpose; the buffer is shared with
+        // the stock path, so the layout is a contract.)
+        // S must be REGISTER-resident: with a partial `unroll 8` the index
+        // stayed dynamic and the array went to local memory (a 336 B stack
+        // frame on the resource dump) -- ~190 L1 round trips per token per
+        // thread. Full unrolls, no dynamic indexing anywhere below.
+        float S[KW];
+#pragma unroll
+        for (int kk = 0; kk < KW; ++kk)
           S[kk] = Sbase[(size_t)v * KDA_D + (k0 + kk)];
 
         for (int j = 0; j < t1 - t0; ++j) {
           const int t = t0 + j;
-          if (threadIdx.x < KDA_D) {
-            const int d = threadIdx.x;
-            // The state multiplier is exp(gate), not the gate. Stock
-            // fused_recurrent.py:129-130 computes
-            //   b_gk = LOWER_BOUND / (1 + exp(-(a_log_amp * (g + bias))))
-            //   b_h *= exp(b_gk)
-            // The gate itself is in (lower_bound, 0) = (-5, 0), so using it
-            // raw flips the state's sign every token and grows it by up to
-            // 5x -- which is exactly the observed failure: rel_err 16 at
-            // acc=3 and 1570 at acc=8, i.e. ~2.5x per extra token, with
-            // rec_state the worst component.
-            y_s[d] = expf(
-                a.lower_bound *
-                mk_sigmoid(
-                    expf(a.a_log[head]) *
-                    (__bfloat162float(a.g1[(size_t)t * KDA_OUT +
-                                           head * KDA_D + d]) +
-                     a.dt_bias[head * KDA_D + d])));
-            q_s[d] = __bfloat162float(
-                a.convq[(size_t)t * KDA_QKV + head * KDA_D + d]);
-            k_s[d] = __bfloat162float(a.convq[(size_t)t * KDA_QKV +
-                                              KDA_H * KDA_D + head * KDA_D +
-                                              d]);
+          float nqd = 0.0f, nkd = 0.0f, nvd = 0.0f, ngd = 0.0f, nbt = 0.0f;
+          if (j + 1 < t1 - t0) load_tok(t + 1, nqd, nkd, nvd, ngd, nbt);
+          // (A) gate, and |q|^2 / |k|^2 by warp shuffle (warps 4..7 add 0)
+          float q2 = 0.0f, k2 = 0.0f;
+          if (dth) {
+            y_s[d] = expf(a.lower_bound * mk_sigmoid(alog * (gd + dtb)));
+            q2 = qd * qd;
+            k2 = kd * kd;
           }
-          __syncthreads();
-          if (threadIdx.x == 0) {  // l2 normalize q, k (fp32)
-            float nq = 0.0f, nk = 0.0f;
-#pragma unroll 8
-            for (int d = 0; d < KDA_D; ++d) {
-              nq += q_s[d] * q_s[d];
-              nk += k_s[d] * k_s[d];
-            }
-            // Match the stock kernel exactly (fused_recurrent.py:137-140):
-            //   b_q = b_q / sqrt(sum(b_q*b_q) + 1e-6)
-            //   b_k = b_k / sqrt(sum(b_k*b_k) + 1e-6)
-            //   b_q = b_q * scale
-            // The trailing scale is applied to q ONLY, and kda.py:165
-            // defaults it to k.shape[-1] ** -0.5 = KDA_D^-0.5. This kernel
-            // had neither the 1e-6 epsilon nor the scale, so its readout ran
-            // sqrt(KDA_D) = 11.3x hot. Because only q carries the scale, the
-            // error term (which retrieves with k) was unaffected -- which is
-            // why rec_state matched while attn/core/out did not.
-            constexpr float kda_qk_scale =
-                0.088388347648318447f;  // KDA_D ** -0.5, KDA_D = 128
-            nq = rsqrtf(nq + 1e-6f) * kda_qk_scale;
-            nk = rsqrtf(nk + 1e-6f);
-#pragma unroll 8
-            for (int d = 0; d < KDA_D; ++d) {
-              q_s[d] *= nq;
-              k_s[d] *= nk;
-            }
+#pragma unroll
+          for (int off = 16; off; off >>= 1) {
+            q2 += __shfl_xor_sync(0xffffffffu, q2, off);
+            k2 += __shfl_xor_sync(0xffffffffu, k2, off);
           }
-          __syncthreads();
+          if (lane == 0) {
+            wsum[warp][0] = q2;
+            wsum[warp][1] = k2;
+          }
+          __syncthreads();  // (1) y_s, wsum
+          const float nq = rsqrtf(wsum[0][0] + wsum[1][0] + wsum[2][0] +
+                                  wsum[3][0] + 1e-6f) * kda_qk_scale;
+          const float nk = rsqrtf(wsum[0][1] + wsum[1][1] + wsum[2][1] +
+                                  wsum[3][1] + 1e-6f);
+          if (dth) {
+            q_s[d] = qd * nq;
+            k_s[d] = kd * nk;
+          }
+          __syncthreads();  // (2) q_s, k_s
 
-          const float beta = mk_sigmoid(__bfloat162float(
-              a.qkv[(size_t)t * KDA_INPROJ_N + KDA_QKV + head]));
+          const float beta = mk_sigmoid(bt);
           // retrieval operand: q (variants 0/2) or k (variant 1)
           const float* r_s = (a.delta_variant == 1) ? k_s : q_s;
           float part = 0.0f;
-#pragma unroll 8
-          for (int kk = 0; kk < KDA_D / 2; ++kk) {
+#pragma unroll
+          for (int kk = 0; kk < KW; ++kk) {
             S[kk] *= y_s[k0 + kk];
             part += r_s[k0 + kk] * S[kk];
           }
-          sred[khalf][v] = part;
-          __syncthreads();
-          if (khalf == 0)
-            err_s[v] = __bfloat162float(a.convq[(size_t)t * KDA_QKV +
-                                                2 * KDA_H * KDA_D +
-                                                head * KDA_D + v]) -
-                       (sred[0][v] + sred[1][v]);
-          __syncthreads();
-          if (khalf == 0 && a.delta_variant == 2) {
-            // pre-update readout: the output is the retrieval itself
-            a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] =
-                __float2bfloat16(sred[0][v] + sred[1][v]);
+          sred[kq][vl] = part;
+          __syncthreads();  // (3) sred
+          const float ret = sred[0][vl] + sred[1][vl] + sred[2][vl] +
+                            sred[3][vl];
+          if (rth) {
+            err_s[vl] = vd - ret;
+            if (a.delta_variant == 2)  // pre-update readout: the retrieval
+              a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] =
+                  __float2bfloat16(ret);
           }
-          __syncthreads();  // sred is rewritten below (variant-2 read done)
+          __syncthreads();  // (4) err_s
 
           float part2 = 0.0f;
-#pragma unroll 8
-          for (int kk = 0; kk < KDA_D / 2; ++kk) {
-            S[kk] += beta * k_s[k0 + kk] * err_s[v];
+          const float e = err_s[vl];
+#pragma unroll
+          for (int kk = 0; kk < KW; ++kk) {
+            S[kk] += beta * k_s[k0 + kk] * e;
             part2 += q_s[k0 + kk] * S[kk];
           }
-          sred[khalf][v] = part2;
-          __syncthreads();
-          if (khalf == 0 && a.delta_variant != 2)
-            a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] =
-                __float2bfloat16(sred[0][v] + sred[1][v]);
-          __syncthreads();
-
-          {  // this position's slot takes the state after token j
-            const int sj = a.state_idx[r * a.mql + j];  // block-uniform
-            if (sj > 0) {
-              // Staged through the (idle here) dynamic smem so the 64 KB
-              // lands as coalesced 128 B rows: written straight from the
-              // registers, thread v's 64 floats sit 512 B apart across the
-              // warp, every 4 B store its own 32 B sector -- 8x the
-              // traffic, and with a store per token instead of one per
-              // request that measured 445 -> 978 us per launch.
-              float* stg = (float*)smem;  // [KDA_D][KDA_D + 1]
-#pragma unroll 8
-              for (int kk = 0; kk < KDA_D / 2; ++kk)
-                stg[v * (KDA_D + 1) + (k0 + kk)] = S[kk];
-              __syncthreads();
-              float* Sj = a.rec_state +
-                          (((size_t)sj * KDA_H + head) * KDA_D * KDA_D);
-              for (int idx = threadIdx.x; idx < KDA_D * KDA_D;
-                   idx += MK_THREADS)
-                Sj[idx] = stg[(idx >> 7) * (KDA_D + 1) + (idx & (KDA_D - 1))];
-              __syncthreads();  // stg is rewritten by the next token
-            }
+          sred2[kq][vl] = part2;
+          // this position's slot takes the state after token j: staged
+          // through the (idle here) dynamic smem so the block's 32 KB
+          // lands as coalesced 128 B rows (straight from the registers the
+          // stores sit 512 B apart across a warp: 8x the sectors)
+          const int sj = a.state_idx[r * a.mql + j];  // block-uniform
+          float* stg = (float*)smem;  // [RB][KDA_D + 1]
+          if (sj > 0) {
+#pragma unroll
+            for (int kk = 0; kk < KW; ++kk)
+              stg[vl * (KDA_D + 1) + (k0 + kk)] = S[kk];
           }
+          __syncthreads();  // (5) sred2, stg
+          if (rth && a.delta_variant != 2)
+            a.attn[(size_t)t * KDA_OUT + head * KDA_D + v] = __float2bfloat16(
+                sred2[0][vl] + sred2[1][vl] + sred2[2][vl] + sred2[3][vl]);
+          if (sj > 0) {
+            float* Sj = a.rec_state +
+                        (((size_t)sj * KDA_H + head) * KDA_D * KDA_D) +
+                        (size_t)rowhalf * RB * KDA_D;
+            for (int idx = threadIdx.x; idx < RB * KDA_D; idx += MK_THREADS)
+              Sj[idx] = stg[(idx >> 7) * (KDA_D + 1) + (idx & (KDA_D - 1))];
+          }
+          // No trailing sync: every buffer the next token writes (y_s,
+          // wsum, q_s, k_s, sred, err_s, sred2, stg) is written only after
+          // a sync that follows this token's last read of it.
+          qd = nqd; kd = nkd; vd = nvd; gd = ngd; bt = nbt;
         }
       }
     }
   }
+  MK_KDA_TS(7);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_KDA_TS(8);
 
-  {  // phase 4: gated RMSNorm -- rmsnorm(attn) * sigmoid(g2), in place
-    __shared__ float wred[MK_WARPS];
-    __shared__ float inv;
+  {  // phase 4: gated RMSNorm -- rmsnorm(attn) * sigmoid(g2) -- emitted
+    // straight as the o_proj GEMM's fp8 A tiles. One WARP per (token,
+    // head): lane l holds dims 4l..4l+3, the sum of squares and the group
+    // amax are shuffle reductions, and a head's 128 dims are exactly one
+    // 128-wide k-group of the o_proj (KDA_OUT = 16 x 128), so the warp
+    // writes g_mk_aq[(kb = head) * 32 + t] and the pow2 scale directly --
+    // the same bytes the GEMM prologue would have produced from a bf16
+    // attn, minus that prologue (x load, quant, publishing barrier).
+    // Was: a whole block per pair, two syncs, half the threads idle.
     const int pairs = a.num_tokens * KDA_H;
-    for (int i = blockIdx.x; i < pairs; i += a.grid) {
-      const int t = i / KDA_H, h = i % KDA_H;
-      __nv_bfloat16* src = a.attn + (size_t)t * KDA_OUT + h * KDA_D;
-      float sq = 0.0f;
-      for (int d = threadIdx.x; d < KDA_D; d += MK_THREADS) {
-        const float v = __bfloat162float(src[d]);
-        sq += v * v;
-      }
-      for (int off = 16; off; off >>= 1) sq += __shfl_xor_sync(~0u, sq, off);
-      if ((threadIdx.x & 31) == 0) wred[threadIdx.x >> 5] = sq;
-      __syncthreads();
-      if (threadIdx.x == 0) {
-        float v = 0.0f;
+    const int lane = threadIdx.x & 31;
+    for (int i = blockIdx.x * MK_WARPS + (threadIdx.x >> 5); i < pairs;
+         i += a.grid * MK_WARPS) {
+      const int t = i / KDA_H, h = i - t * KDA_H;
+      const size_t base = (size_t)t * KDA_OUT + h * KDA_D + lane * 4;
+      const uint2 ar = *(const uint2*)(a.attn + base);
+      const uint2 gr = *(const uint2*)(a.g2 + base);
+      const uint2 wr = *(const uint2*)(a.onorm_w + lane * 4);
+      const __nv_bfloat16* ap = (const __nv_bfloat16*)&ar;
+      const __nv_bfloat16* gp = (const __nv_bfloat16*)&gr;
+      const __nv_bfloat16* wp = (const __nv_bfloat16*)&wr;
+      float x[4], sq = 0.0f;
 #pragma unroll
-        for (int w = 0; w < MK_WARPS; ++w) v += wred[w];
-        inv = rsqrtf(v / (float)KDA_D + a.onorm_eps);
+      for (int q = 0; q < 4; ++q) {
+        x[q] = __bfloat162float(ap[q]);
+        sq += x[q] * x[q];
       }
-      __syncthreads();
-      for (int d = threadIdx.x; d < KDA_D; d += MK_THREADS)
-        src[d] = __float2bfloat16(
-            __bfloat162float(src[d]) * inv *
-            __bfloat162float(a.onorm_w[d]) *
-            mk_sigmoid(__bfloat162float(
-                a.g2[(size_t)t * KDA_OUT + h * KDA_D + d])));
-      __syncthreads();
+#pragma unroll
+      for (int off = 16; off; off >>= 1) sq += __shfl_xor_sync(~0u, sq, off);
+      const float inv = rsqrtf(sq / (float)KDA_D + a.onorm_eps);
+      float amax = 0.0f;
+#pragma unroll
+      for (int q = 0; q < 4; ++q) {
+        // bf16 round first: the GEMM prologue quantized the bf16 attn the
+        // old p4 stored, so the fp8 bytes stay what they were
+        x[q] = __bfloat162float(__float2bfloat16(
+            x[q] * inv * __bfloat162float(wp[q]) *
+            mk_sigmoid(__bfloat162float(gp[q]))));
+        amax = fmaxf(amax, fabsf(x[q]));
+      }
+#pragma unroll
+      for (int off = 16; off; off >>= 1)
+        amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
+      const float sc = mk_pow2_scale(amax);
+      const float rsc = 1.0f / sc;  // exact: sc is a power of two
+      uint32_t pack = 0;
+#pragma unroll
+      for (int q = 0; q < 4; ++q)
+        pack |= (uint32_t)mk_f32_to_e4m3(x[q] * rsc) << (8 * q);
+      *(uint32_t*)(g_mk_aq + ((size_t)h * 32 + t) * KSTEP + lane * 4) = pack;
+      if (lane == 0) g_mk_axs[t * KBLK_MAX + h] = sc;
     }
   }
+  // p5's dynamic unit hand-out starts from 0; the prologue that used to
+  // reset the counter is skipped (a_ready), so reset it under THIS barrier
+  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
+  MK_KDA_TS(9);
   mk_grid_barrier(a.barrier_ctr, a.grid);
+  MK_KDA_TS(10);
 
-  {  // phase 5: o_proj GEMM
+  {  // phase 5: o_proj GEMM on the A tiles p4 emitted
     MKGemmCtx c;
-    c.x = a.attn;
+    c.x = a.attn;  // unused on the a_ready path (documentation only)
+    c.a_ready = true;
     c.wq4 = a.o_wq4;
     c.ws4 = a.o_ws4;
     c.out = a.out;
@@ -1613,6 +1738,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.ksr = a.ksr_out;
     mk_gemm_phase(c, smem, &g_mk_kda_bar);
   }
+  MK_KDA_TS(11);
 }
 
 }  // namespace
@@ -1745,6 +1871,20 @@ std::vector<int64_t> mk_read_ts() {
 
 // Same for the mhc kernel: [MK_MHC_GRID_CAP][8] -- entry, p1 done, barrier,
 // p2 done, barrier, p3 done, barrier, p4 done.
+std::vector<int64_t> mk_read_kda_ts() {
+#ifdef MK_PHASE_TS
+  std::vector<unsigned long long> h(MK_GRID_CAP * 16);
+  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_kda_ts,
+                                     sizeof(unsigned long long) * h.size()));
+  void* p = nullptr;
+  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_kda_ts));
+  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
+  return std::vector<int64_t>(h.begin(), h.end());
+#else
+  return {};
+#endif
+}
+
 std::vector<int64_t> mk_read_mhc_ts() {
 #ifdef MK_PHASE_TS
   std::vector<unsigned long long> h(MK_MHC_GRID_CAP * 8);
@@ -1864,6 +2004,10 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.in_ws4 = (const int8_t*)ptrs[2];
   a.f_b_w = (const __nv_bfloat16*)ptrs[3];
   a.g_b_w = (const __nv_bfloat16*)ptrs[4];
+  // phase 1 reads the gate weight rows and the token's activation as 8 B
+  // vectors per lane (row bases are multiples of 256 B / 8 B by layout)
+  TORCH_CHECK((ptrs[3] & 7) == 0 && (ptrs[4] & 7) == 0 && (ptrs[16] & 7) == 0,
+              "gate weights and the qkv workspace must be 8 B aligned");
   a.conv_w = (const float*)ptrs[5];
   a.conv_state = (float*)ptrs[6];
   a.rec_state = (float*)ptrs[7];
@@ -1902,6 +2046,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
+  m.def("read_kda_ts", &mk_read_kda_ts, "kda phase timestamps");
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");

@@ -6271,7 +6271,7 @@ def test_glm53_megakernel_contracts() -> None:
     #    n=2048, -14% at n=1024.
     check("__device__ uint8_t g_mk_aq[" in cu
           and "const int kbq = (int)blockIdx.x;" in cu
-          and "for (int kb = kbq + c.grid; kb < kblk; kb += c.grid)" in cu
+          and "for (int kb = c.a_ready ? kblk : kbq + c.grid; kb < kblk;" in cu
           and cu.index("g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4")
               < cu.index("auto stage_a"),
           "A is quantized once, cooperatively across the grid, before the "
@@ -6425,6 +6425,22 @@ def test_glm53_megakernel_contracts() -> None:
           "eligibility derives n_pad from the tile-major pack's first dim x "
           "128 (the tile count itself failed n_pad % 128 on every real shape "
           "and the lane silently stayed stock)")
+    # -- kda p4 emits the o_proj GEMM's fp8 A tiles + pow2 scales itself
+    #    (a head's 128 dims = one k-group), and p5 runs with a_ready: no
+    #    x load / quant / publishing barrier in its prologue. The unit
+    #    counter reset moves under the kernel's own p4->p5 barrier.
+    check("bool a_ready = false;" in cu
+          and "if (!c.a_ready && kbq < kblk) quant_store(kbq, v, mx);" in cu
+          and "if (!c.a_ready) {\n    if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;"
+          in cu
+          and "*(uint32_t*)(g_mk_aq + ((size_t)h * 32 + t) * KSTEP + lane * 4) = pack;"
+          in cu and "if (lane == 0) g_mk_axs[t * KBLK_MAX + h] = sc;" in cu
+          and "c.a_ready = true;" in cu
+          and cu.index("if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;\n  MK_KDA_TS(9);")
+              < cu.index("c.a_ready = true;"),
+          "kda p4 writes the o_proj A tiles and scales in the GEMM's layout; "
+          "p5 skips its prologue (a_ready) and the unit counter is reset under "
+          "the p4->p5 barrier")
     check("_TOL_KDA_SHADOW = 0.15" in pysrc_full
           and "not (v <= _TOL_KDA_SHADOW)" in pysrc_full
           and "_TOL_KDA = 2e-2" in pysrc_full,
@@ -6532,7 +6548,9 @@ def test_glm53_megakernel_contracts() -> None:
           "keeps conv_width - nq old values starting at `acc` and appends "
           "every query token")
     check("(((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D)" in cu
-          and "(((size_t)sj * KDA_H + head) * KDA_D * KDA_D)" in cu,
+          and "(((size_t)sj * KDA_H + head) * KDA_D * KDA_D)" in cu
+          and "const int head = blockIdx.x >> 1, rowhalf = blockIdx.x & 1;" in cu
+          and "(size_t)rowhalf * RB * KDA_D;" in cu,
           "recurrent state slot stride is H*D*D for both the resume slot "
           "and the per-position store slots")
 
@@ -6548,7 +6566,7 @@ def test_glm53_megakernel_contracts() -> None:
     #    from slot [r, acc - 1] and stores after every token into [r, j]
     check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
           and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
-          and "if (slot0 <= 0) continue;" in cu
+          and "if (slot0 <= 0 || t1 <= t0) continue;" in cu
           and "const int sj = a.state_idx[r * a.mql + j];" in cu
           and "if (sj > 0) {" in cu
           and "if (j == acc - 1)" not in cu
