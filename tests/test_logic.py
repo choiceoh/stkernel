@@ -7180,6 +7180,164 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
     print("  glm53 indexer gate split-K contracts .. OK")
 
 
+def test_bracket_runner_contracts() -> None:
+    """bench/bracket.py: the bracket discipline as code -- C=1 step/s channel,
+    base-pair drift as the significance floor, env snapshots per leg."""
+    import importlib.util
+    import json
+
+    spec = importlib.util.spec_from_file_location(
+        "bracket", os.path.join(REPO, "bench", "bracket.py"))
+    br = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(br)
+
+    def recs(med_base1, med_cand, med_base2, env='{"A": "1"}', conc=1, n=6):
+        # one jsonl line = one leg holding its reps (cmd_leg's output shape)
+        def leg(tag, med):
+            return {"name": "T", "tag": tag, "conc": conc,
+                    "env": json.loads(env),
+                    "reps": [{"tok_s": med,
+                              "step_s": med + (0 if conc == 1 else 5),
+                              "acc_raw": None, "rep": i + 1}
+                             for i in range(n)]}
+        return [leg("base", med_base1), leg("cand", med_cand),
+                leg("base", med_base2)]
+
+    def medians(vals):
+        vals = sorted(vals)
+        n = len(vals)
+        return vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+
+    # adopt: +3.8% against a ~0.4% drift
+    rep = br.judge(recs(100.0, 103.8, 100.4))
+    check(rep["ok"], "a proper bracket judges")
+    check(abs(rep["base_drift"] - round(0.4 / 100.2, 4)) < 1e-9,
+          "drift is the base-pair relative difference")
+    check(rep["cands"][0]["verdict"].startswith("채택"),
+          f"an effect above drift adopts (got {rep['cands'][0]['verdict']!r})")
+    # indeterminate: effect inside the drift
+    rep = br.judge(recs(100.0, 100.3, 100.4))
+    check(rep["cands"][0]["verdict"].startswith("CV 이하"),
+          "an effect inside the drift refuses to judge")
+    # reject: negative beyond the drift
+    rep = br.judge(recs(100.0, 96.0, 100.4))
+    check(rep["cands"][0]["verdict"].startswith("기각"),
+          "a negative effect beyond the drift rejects")
+    # not a bracket: missing trailing base
+    rep = br.judge(recs(100.0, 103.8, 100.4)[:-1])
+    check(not rep["ok"] and any("브래킷" in p for p in rep["problems"]),
+          "base->cand without the trailing base is not a bracket")
+    # env fingerprint differences surface as a problem (#116: knob not delivered)
+    rec_env = recs(100.0, 103.8, 100.4)
+    for r in rec_env:
+        if r["tag"] == "cand":
+            r["env"] = {"A": "0"}
+    rep = br.judge(rec_env)
+    check(any("env" in p for p in rep["problems"]),
+          "an env snapshot differing between legs is flagged")
+    # C!=1 records stay out of the judgment channel
+    rec_all = recs(100.0, 103.8, 100.4) + recs(90.0, 93.0, 90.2, conc=4)
+    rep = br.judge(rec_all)
+    check(rep["other_conc"] == 18 and rep["ok"],
+          "C=4 records are recorded but excluded from the C=1 judgment")
+    # the ledger formula: step/s = tok/s / (1 + k x raw_acc)
+    check(abs(br.step_s_of(500.0, 0.075, 7) - 500.0 / 1.525) < 1e-9,
+          "step/s normalization matches tok/s / (1 + k*raw_acc)")
+    check(br.step_s_of(500.0, None, 7) is None,
+          "no acceptance counter -> no step/s (judge falls back, loudly)")
+    # the knobs the campaign judges on must be in the snapshot list (source
+    # contract: the list itself is os.environ-filtered at import time)
+    src = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    for key in ("VLLM_GLM53_ASYNC_DFLASH", "VLLM_GLM53_PREP_FUSED",
+                "VLLM_GLM53_INDEXER_GATE_SPLITK", "VLLM_GLM53_FP8_DENSE",
+                "ENABLE_EP", "CUSTOM_OPS_AXIS"):
+        check(key in src, f"snapshot list covers {key}")
+    check("사람이 한다" in src and "읽기 전용" in src,
+          "the tool states the reboot-is-human rule (automation is read-only)")
+    print("  bracket runner contracts .. OK")
+
+
+def test_trace_composition_analyze() -> None:
+    """tools/trace_step_composition.py: analyze on a synthetic trace, and the
+    diff contract that counts are the authoritative channel."""
+    import importlib.util
+    import json
+    import tempfile
+
+    spec = importlib.util.spec_from_file_location(
+        "tsc", os.path.join(REPO, "tools", "trace_step_composition.py"))
+    tsc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tsc)
+
+    def trace(extra_per_step=0):
+        evs = []
+        t = 0
+        for _ in range(14):
+            base_ts = t
+            evs.append({"ph": "X", "cat": "kernel", "name": "_gather_block_tables_kernel",
+                        "ts": base_ts, "dur": 50, "args": {"stream": 210}})
+            for j in range(2 + extra_per_step):
+                evs.append({"ph": "X", "cat": "kernel",
+                            "name": "deep_gemm::sm120_fp8_fp4_gemm_nt",
+                            "ts": base_ts + 100 + j * 100, "dur": 100,
+                            "args": {"stream": 210}})
+            evs.append({"ph": "X", "cat": "kernel", "name": "k_oneshot",
+                        "ts": base_ts + 300, "dur": 40, "args": {"stream": 210}})
+            t += 10000
+        return {"traceEvents": evs}
+
+    with tempfile.TemporaryDirectory() as td:
+        pa = os.path.join(td, "base.json")
+        pb = os.path.join(td, "cand.json")
+        open(pa, "w").write(json.dumps(trace(0)))
+        open(pb, "w").write(json.dumps(trace(1)))
+        ra = tsc.analyze(pa)
+        rb = tsc.analyze(pb)
+    check(ra["steps"] == 8, f"14 step anchors -> 8 analysed windows (got {ra['steps']})")
+    check(ra["cats"]["deep_gemm fp8/fp4 GEMM"]["cnt"] == 2,
+          "per-step median kernel count per category")
+    check(abs(ra["cats"]["deep_gemm fp8/fp4 GEMM"]["ms"] - 0.2) < 1e-9,
+          "2 x 100 us deep_gemm per step = 0.2 ms")
+    check(abs(ra["idle_ms"] - 0.05) < 1e-9,
+          "idle = span 340 us - union busy 290 us = 0.05 ms")
+    check(ra["ar"][:3] == (40.0, 40.0, 40.0) and ra["ar"][4] == 8,
+          "AR percentiles over the analysed windows")
+    d_cnt = rb["cats"]["deep_gemm fp8/fp4 GEMM"]["cnt"] - ra["cats"]["deep_gemm fp8/fp4 GEMM"]["cnt"]
+    check(d_cnt == 1, "the diff's kernel-count delta is +1 for an added launch")
+    src = open(os.path.join(REPO, "tools", "trace_step_composition.py"),
+               encoding="utf-8").read()
+    check("--diff" in src and "kernel-count change" in src
+          and "ground truth" in src,
+          "diff mode prints the count delta as the authoritative channel")
+    print("  trace composition analyze .. OK")
+
+
+def test_drafter_fc_probe_contracts() -> None:
+    """probes/drafter_fc_check.py: fleet shape, cold-weight method, every arm
+    the image already has, and the W4-bound verdict line."""
+    src = open(os.path.join(REPO, "probes", "drafter_fc_check.py"),
+               encoding="utf-8").read()
+    check("DEF_LAYERS, DEF_HIDDEN, DEF_M = 5, 4096, 7" in src,
+          "fleet drafter defaults: 5 layers x hidden 4096, decode M=7")
+    check("--config" in src and "num_hidden_layers" in src
+          and "hidden_size" in src,
+          "#231's lesson: the fleet shape is read from config, not assumed")
+    check("NW = 6" in src and "24 MB" in src,
+          "cold weights by graph cycling (6 x 42 MB >> L2 24 MB)")
+    for arm in ("_fp8_fp4_dense_gemm", "torch.mm(x, w.t())",
+                "functional.linear", "build_mk_weight_w4"):
+        check(arm in src, f"arm present: {arm}")
+    check("SKIP" in src,
+          "mk_w4 refusing K=20480 is a SKIP line, not a failure")
+    check("0.15" in src and "e2m1" in src,
+          "e2m1 arms gated at the MK bench's by-design 0.15")
+    check("W4_GBPS" in src and "W4 stream bound" in src,
+          "the verdict compares against the ledger's W4 stream bound")
+    check("step_ms" in src and "71" in src,
+          "prize math against the ledger's 71 ms step")
+    print("  drafter fc probe contracts .. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -7255,4 +7413,8 @@ if __name__ == "__main__":
     test_glm53_prep_fused_contracts()
     test_profile_keys_not_passed_via_extra_env()
     test_glm53_indexer_gate_splitk_contracts()
+    test_bracket_runner_contracts()
+    test_trace_composition_analyze()
+    test_drafter_fc_probe_contracts()
     print(f"all OK ({PASS} checks)")
+
