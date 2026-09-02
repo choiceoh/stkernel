@@ -1364,21 +1364,8 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     MK_MHC_TS(4);  // (probe) p34 end
   }
   MK_MHC_TS(6);
-  // Blocks that are out of tails keep warming, paced (64 lines per block
-  // per ~1.5 us, ~200 GB/s over the grid), until the walk is done or a
-  // bounded stretch has passed -- the kernel must not outlive its useful
-  // work by more than the consumer's launch latency.
-  if (a.warm_tiles > 0) {
-    const long long base = (long long)warm_iter * a.grid * (MK_THREADS / 4);
-    const long long total = (long long)a.warm_tiles * (a.warm_stride / 128);
-    for (int it = 0; it < 6; ++it) {
-      const long long l = base + ((long long)it * a.grid + bid) * (MK_THREADS / 4)
-                          + (threadIdx.x >> 2);
-      if (l >= total) break;
-      if ((threadIdx.x & 3) == 0) warm_line(l);
-      __nanosleep(1500);
-    }
-  }
+  // (No warming after the tails: a stretch of paced prefetches here only
+  // delays the consumer's PDL start by about the time it saves.)
   // exit ticket: the last block out rearms the tail counter for the next
   // launch (every block has made its final, failing take by then)
   __syncthreads();

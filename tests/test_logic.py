@@ -6677,9 +6677,9 @@ def test_glm53_megakernel_contracts() -> None:
     #    exit stretch. (Handing the consumer fp8 A tiles measured a wash.)
     check("const long long off = (l / a.warm_tiles) * 128;" in cu
           and "if (a.warm_tiles > 0 && (threadIdx.x & 3) == 0) {" in cu
-          and "__nanosleep(1500);" in cu and "emit_a" not in cu
+          and "__nanosleep(1500);" not in cu and "emit_a" not in cu
           and "a_ready != 0" not in cu,
-          "mhc warms every tile's prefix together, paced; no fp8 handoff")
+          "mhc warms every tile's prefix together, paced from p1 only; no fp8 handoff")
     check("def _warm_of(pack):" in pysrc_full
           and "warm = _NEXT_PACK.get(fn.data_ptr())" in pysrc_full
           and "_register_consumer(layer._mk_in_pack)" in pysrc_full
