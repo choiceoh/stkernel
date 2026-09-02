@@ -750,7 +750,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #pragma unroll
           for (int c = 0; c < 4; ++c) kacc[i][j][c] = 0.0f;
 
-#pragma unroll 2
+#pragma unroll
       for (int ks = 0; ks < KSTEP / 32; ++ks) {
         const int koff = ks * 32;
         uint32_t a[2][4];
