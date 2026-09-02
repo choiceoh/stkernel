@@ -139,6 +139,14 @@ def probe_gemm(iters: int) -> bool:
         x = torch.randn(m, 4096, dtype=torch.bfloat16, device=DEV)
         sq, sws, srows, scols = mk._stock_fp8_pair(w)
         mkq, mkws = mk.build_mk_weight(w)
+        # a SECOND weight for the back-to-back pair: two launches on the
+        # same weight leave the second one reading L2 (4 MB at n=1024 is
+        # entirely resident after the first), which is not what a decode
+        # step's run of different projections sees. Pair = w then w2.
+        w2 = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
+        sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
+        mkq2, mkws2 = mk.build_mk_weight(w2)
+        del w2
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, (mkq, mkws), n)
         torch.cuda.synchronize()
@@ -147,18 +155,18 @@ def probe_gemm(iters: int) -> bool:
                       iters, hot=(x,))
         t_mk, t_lo, t_hi = _time_stats(
             lambda: mk._gemm_call(x, (mkq, mkws), n), iters, hot=(x,))
-        # two launches back to back, per launch: what a decode step's run
-        # of GEMMs sees. With VLLM_GLM53_MK_PDL=1 the second one starts on
-        # the SMs the first frees and prefetches its W during the first's
-        # tail; a single launch cannot show that.
+        # two launches back to back on two DIFFERENT weights, per launch:
+        # what a decode step's run of GEMMs sees. With VLLM_GLM53_MK_PDL=1
+        # the second one starts on the SMs the first frees and prefetches
+        # its W during the first's tail; a single launch cannot show that.
         t_x2 = _time(lambda: (mk._gemm_call(x, (mkq, mkws), n),
-                              mk._gemm_call(x, (mkq, mkws), n)),
+                              mk._gemm_call(x, (mkq2, mkws2), n)),
                      iters, hot=(x,)) / 2
         # the stock pair too: back-to-back launches amortise launch latency
         # for either arm, so single-launch columns flatter neither and the
         # x2 pair is the like-for-like comparison.
         t_sx2 = _time(lambda: (_fp8_dense_gemm(x, sq, sws, srows, scols),
-                               _fp8_dense_gemm(x, sq, sws, srows, scols)),
+                               _fp8_dense_gemm(x, sq2, sws2, srows2, scols2)),
                       iters, hot=(x,)) / 2
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
@@ -232,8 +240,10 @@ def probe_w4(iters: int) -> bool:
         torch.empty(m, n, dtype=torch.bfloat16, device=DEV), n), iters,
         hot=(x,))
     t4 = _time(lambda: run4((None, None) + p4, n), iters, hot=(x,))
+    p4b = mk.build_mk_weight_w4(torch.randn(n, k, dtype=torch.bfloat16,
+                                            device=DEV) * 0.05)
     t4x2 = _time(lambda: (run4((None, None) + p4, n),
-                          run4((None, None) + p4, n)), iters, hot=(x,)) / 2
+                          run4((None, None) + p4b, n)), iters, hot=(x,)) / 2
     nbytes4 = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * n * 2
     mark = "!" if e > 0.15 else " "
     ok &= e <= 0.15
