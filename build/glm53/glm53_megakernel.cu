@@ -1983,6 +1983,7 @@ struct MKMlaArgs {
   float sm_scale;
   float ckv_scale;
   int T, W, splits, grid;
+  int probe;   // 1 = memory pipeline only (roofline), 0 = full
 };
 
 // v3: tensor cores. The FMA versions (v1 lane=D + shuffles, v2 lane=slot)
@@ -2117,6 +2118,13 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       }
       __syncthreads();
 
+      if (a.probe == 1) {   // roofline: consume the tile, skip both mma phases
+        float t = 0.f;
+        for (int i = threadIdx.x; i < MLA_TILE * MLA_D; i += MK_THREADS) t += (float)tile8[i];
+        acc[0][0] += t;
+        __syncthreads();
+        continue;
+      }
       // ---- S = Q C^T: warp -> (8 slots, half of K); 16 heads x 8 slots per warp
       {
         const int n0 = (warp & 3) * 8, kh = warp >> 2;
@@ -2587,6 +2595,11 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   TORCH_CHECK(a.splits >= 1 && a.splits <= MLA_SPLITS_MAX, "mla: split count");
   a.sm_scale = (float)scalars[0];
   a.ckv_scale = (float)scalars[1];
+  {  // roofline probe knob (never set in serving)
+    static int pv = -1;
+    if (pv < 0) { const char* e = getenv("VLLM_GLM53_MK_MLA_PROBE"); pv = e ? atoi(e) : 0; }
+    a.probe = pv;
+  }
   auto stream = c10::cuda::getCurrentCUDAStream();
   a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM);
   mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
