@@ -130,17 +130,22 @@ def _make_state(max_num_reqs, max_tokens, widths, kbs):
     return bt, ib
 
 
-def _rand_requests(bt, widths, kbs, max_num_reqs, gen, num_blocks_total=4096):
-    """Stage random block ids for every request slot, like add_request does."""
+def _rand_requests(bt, widths, kbs, max_num_reqs, gen, max_seq, num_blocks_total=4096):
+    """Stage random block ids for every request slot, like add_request does.
+
+    Every group holds at least cdiv(max_seq, block) blocks, as the allocator
+    guarantees in production, so no gathered position falls beyond num_blocks:
+    both the stock and the fused kernel read block ids unmasked, and a column
+    read past the row would compare undefined memory instead of the layout."""
     for r in range(max_num_reqs):
         ids = []
         for g, w in enumerate(widths):
-            if kbs[g] == 4:
-                n = 1  # the tail: one block per request, never grows
-            elif w <= 16:
+            need = -(-max_seq // kbs[g])
+            assert need <= w, (g, need, w)
+            if w <= 16:
                 n = w  # mamba: every spec block allocated at admission
             else:
-                n = int(gen.integers(8, min(w, 300) + 1))
+                n = int(gen.integers(need, max(need, min(w, 300)) + 1))
             ids.append([int(x) for x in gen.integers(1, num_blocks_total, size=n)])
         bt.append_block_ids(r, tuple(ids), overwrite=True)
     bt.apply_staged_writes()
@@ -160,7 +165,11 @@ def main() -> int:
     q, num_spec = 8, 7
     max_num_reqs, max_tokens = 4, 2048
     # groups: [MLA+indexer, kpool tail, mamba x4, drafter]
-    widths = [args.width, 8, 8, 8, 8, 8, args.width]
+    # prefill_len < 3000, num_computed < prefill_len + 2000, plus the Q tokens
+    max_seq = 3000 + 2000 + q
+    # the kpool tail (block 4) is sized for the whole context in production
+    # (262144 columns); here cdiv(max_seq, 4) so every position is inside a row
+    widths = [args.width, -(-max_seq // 4), 8, 8, 8, 8, args.width]
     kbs = [64, 4, 2304, 2304, 2304, 2304, 64]
     gdn_groups = [2, 3, 4, 5]
     # indexer spec: 256-token blocks (kpool 4 -> storage block 64 pools, the
@@ -267,7 +276,7 @@ def main() -> int:
     fails = 0
     for trial in range(args.trials):
         num_reqs = int(gen.integers(1, max_num_reqs + 1))
-        _rand_requests(bt, widths, kbs, max_num_reqs, gen)  # stages + apply_staged_writes (rotates num_blocks)
+        _rand_requests(bt, widths, kbs, max_num_reqs, gen, max_seq)  # stages + apply_staged_writes (rotates num_blocks)
         idx_np = gen.permutation(max_num_reqs)[:num_reqs].astype(np.intp)
         pl = gen.integers(1, 3000, size=max_num_reqs)
         rs["prefill_src"].np[:] = pl
