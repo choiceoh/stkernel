@@ -128,9 +128,14 @@ launch failure, so nothing arms unverified). A failed self-test disarms
 that segment and logs `[megakernel] ... -> DISARM`. Armed hooks do NOT
 try/except their launch.
 
-First arm compiles the extension in-container (`/root/.mk_build`, ~a
-minute, same pattern as tp_oneshot_ar) and logs the source md5 + kernel
-count fingerprint.
+First arm compiles the extension (34.4 s of nvcc) and logs the source md5
++ kernel count fingerprint. The build directory sits on the container's
+PERSISTENT cache mount -- `/cache/mk_build`, next to `TRITON_CACHE_DIR`
+and `VLLM_CACHE_ROOT`, overridable with `VLLM_GLM53_MK_BUILD_ROOT` and
+falling back to `/root/.cache` then the old container-local path -- under
+a name that hashes the source, the nvcc flags and the torch/CUDA pair. So
+a restart reloads the .so in 0.3 s while a deploy, a probe flag sweep or
+an image bump still recompiles (measured 59.4 s cold, 0.3 s warm).
 
 ## The state-index contract (settled 2026-09-02 from the stock source)
 
