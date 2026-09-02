@@ -6704,6 +6704,8 @@ def test_glm53_megakernel_contracts() -> None:
           "(the warp-per-dot form measured 14-18 us for 1 MB of weights)")
     check("__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];" in cu
           and "if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);" in cu
+          and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu
+          and "int pend = -1;  // a token whose chunk is done but not yet published" in cu
           and "s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);" in cu
           and "while (*v < (unsigned int)NCHUNK) __nanosleep(128);" in cu
           and "g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch" in cu
