@@ -6281,7 +6281,7 @@ def test_glm53_megakernel_contracts() -> None:
           "gemm, kda and mhc kernels trigger their dependents at entry and "
           "are launched programmatically behind the MK_PDL knob (default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
-          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);" in cu,
+          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
           "staged -- a second cp.async group for the same buffer would "
           "break the one-stage-one-group wait accounting")
