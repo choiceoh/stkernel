@@ -304,12 +304,21 @@ ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_O
 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 -e TORCH_CUDA_ARCH_LIST=12.1a -e FLASHINFER_CUDA_ARCH_LIST=12.1a \
 -e FLASHINFER_DISABLE_VERSION_CHECK=1 \
+# Channel count is the only NCCL axis that moved on this fabric (4-node
+# torch all-reduce sweep, 2026-09-03, engine down): the default channel
+# count leaves the 200G links at 129-131 Gb/s ring-effective on the 64 MB
+# prefill payload; 16 channels with 4 per net peer reaches 142.3 Gb/s
+# (-8.2% on that all-reduce) and cuts a 256 KB message 0.272 -> 0.157 ms.
+# 8/24/32 channels, LL128-only, extra QPs and a 16 MB buffer were all
+# neutral or worse; LL128-only is 3.5x SLOWER. Prefill AR is 16% of a
+# 32K prefill, so this is ~1.3% of prefill -- env only, no numerics.
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
 -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 \
 -e TP_SOCKET_IFNAME=enp1s0f0np0 -e MN_IF_NAME=enp1s0f0np0 \
 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
 -e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
 -e NCCL_NVLS_ENABLE=0 -e NCCL_IGNORE_CPU_AFFINITY=1 -e NCCL_DEBUG=WARN \
+-e NCCL_MIN_NCHANNELS=16 -e NCCL_MAX_NCHANNELS=16 -e NCCL_NCHANNELS_PER_NET_PEER=4 \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1"
 
 # Profile-declared VLLM_* knobs. Until now the profile set them and nothing
