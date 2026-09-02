@@ -85,7 +85,15 @@ ENV = "VLLM_GLM53_PREP_FUSED"
 ENV_SHADOW_EVERY = "VLLM_GLM53_PREP_FUSED_SHADOW_EVERY"
 ENV_SELFCHECK_EVERY = "VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY"
 _BLOCK = 1024
-_SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator")
+# Speculators whose propose() never hands the TARGET's attention metadata to
+# the draft forward, so the cached metadata dict below cannot reach them.
+# Checked in the image (dflash/speculator.py): both _generate_draft call
+# sites pass either (attn_metadata=None, slot_mappings=None) or the
+# drafter's OWN draft_attn_metadata / draft_slot_mappings_by_layer.
+# DSpark and DFlash2 subclass DFlashSpeculator and neither overrides
+# propose(), so the property holds for them too (2026-09-03: the fleet
+# runs DFlash2Speculator, which this list used to reject).
+_SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator", "DFlash2Speculator")
 
 # sha256 of the files whose control flow this module bypasses, as shipped in
 # glm53:v13-b12x. mla/indexer.py is the glm53_tail_slot_persistent copy that
@@ -648,9 +656,9 @@ def build_plan(runner) -> PrepPlan:
     spec = runner.speculator
     if _builder_name(spec) not in _SPECULATORS:
         # the cached attention-metadata dict is only safe with a speculator
-        # that never reads the target's attn_metadata (DFlash and its subclass)
+        # that never reads the target's attn_metadata (see _SPECULATORS)
         raise RuntimeError(f"speculator {_builder_name(spec)} may consume the target "
-                           "attention metadata; only DFlash ignores it")
+                           f"attention metadata; known-safe: {_SPECULATORS}")
     for attr, want in (("use_dcp", False), ("use_pp", False)):
         if bool(getattr(runner, attr)) != want:
             raise RuntimeError(f"runner.{attr} is {getattr(runner, attr)}")

@@ -7034,6 +7034,7 @@ def test_glm53_prep_fused_contracts() -> None:
     check("self.q & (self.q - 1)" in post and "self.exp_bt.stride(0) != wa" in post,
           "the plan must refuse a non-power-of-two Q and an expanded-table width mismatch")
     plan_src = ast.get_source_segment(src, funcs["build_plan"])
+    check("DFlash2Speculator" in src, "the fleet's DFlash2Speculator must be admitted")
     for guard in ("_SPECULATORS", "draft_attn_layer_names", "draft_kv_cache_group_ids",
                   "tail_builder=tail_b", "q & (q - 1)"):
         check(guard in plan_src, f"build_plan must carry the guard {guard}")
@@ -7094,46 +7095,6 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
     print("  profile keys not via EXTRA_ENV .. OK")
 
 
-def test_glm53_async_dflash_contracts() -> None:
-    """glm53_async_dflash: opt-in dflash allowlisting, both branches, stock default."""
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_async_dflash")
-    src = open(os.path.join(mod_dir, "glm53_config_vllm.py"), encoding="utf-8").read()
-    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_async_dflash" in modules, "glm53 profile must mount glm53_async_dflash")
-    check(re.search(r"^VLLM_GLM53_ASYNC_DFLASH=0$", profile, re.M) is not None,
-          "profile must ship VLLM_GLM53_ASYNC_DFLASH=0 (stock verdict by default)")
-    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
-            .read().splitlines() if l and not l.startswith("#")]
-    check(len(rows) == 1 and rows[0][1] == "vllm/config/vllm.py"
-          and re.fullmatch(r"[0-9a-f]{64}", rows[0][2]) is not None,
-          f"manifest must overlay vllm/config/vllm.py with a pinned preimage: {rows}")
-    check(src.count("and not _deneb_dflash_async_ok(self.speculative_config.method)") == 2,
-          "both the hard-fail and the auto-resolution allowlist must consult the helper")
-    check('and self.speculative_config.method != "dspark"' in src
-          and "not in get_args(EagleModelTypes)" in src,
-          "the stock allowlist terms must remain (only extended, never replaced)")
-    check(src.count("_deneb_dflash_async_ok") == 3, "helper defined once, used twice")
-    ns = load_defs("overlay/glm53_config_vllm.py", {"_deneb_dflash_async_ok"},
-                   {"os": os, "logger": _CapturingLogger()})
-    fn = ns["_deneb_dflash_async_ok"]
-    saved = os.environ.pop("VLLM_GLM53_ASYNC_DFLASH", None)
-    try:
-        check(fn("dflash") is False, "unset knob keeps the stock verdict for dflash")
-        os.environ["VLLM_GLM53_ASYNC_DFLASH"] = "0"
-        check(fn("dflash") is False, "knob 0 keeps the stock verdict")
-        os.environ["VLLM_GLM53_ASYNC_DFLASH"] = "1"
-        check(fn("dflash") is True, "knob 1 whitelists dflash")
-        for other in ("dspark", "eagle3", "mtp", "ngram", None):
-            check(fn(other) is False, f"knob 1 must not touch method {other!r}")
-        logs = ns["logger"].lines
-        check(any("[async-dflash]" in l and "whitelisted" in l for l in logs),
-              "whitelisting must announce itself in the boot log")
-    finally:
-        os.environ.pop("VLLM_GLM53_ASYNC_DFLASH", None)
-        if saved is not None:
-            os.environ["VLLM_GLM53_ASYNC_DFLASH"] = saved
-    print("  glm53 async dflash contracts .. OK")
 
 
 def test_glm53_indexer_gate_splitk_contracts() -> None:
@@ -7291,6 +7252,5 @@ if __name__ == "__main__":
     test_megakernel_w4_layout_functional()
     test_glm53_prep_fused_contracts()
     test_profile_keys_not_passed_via_extra_env()
-    test_glm53_async_dflash_contracts()
     test_glm53_indexer_gate_splitk_contracts()
     print(f"all OK ({PASS} checks)")

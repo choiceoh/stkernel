@@ -2206,3 +2206,31 @@ in-situ 88 us 와 일치(첫 판의 47 us 는 N=16 값). 수치 200회/1,571행 
 
 **MoE 게이트 스윕 재확인**: 배포 커널을 직접 import 해 스윕(BM32 는 stages 3 사다리);
 E=288 결론(더 빠른 비트 동일 타일 없음)은 유지.
+
+## ★★★EXP-8 기각 — dflash async scheduling 은 이미 켜져 있었다 (2026-09-03, 전 팔 부팅)
+
+`glm53_async_dflash`(#223/#226 계열)의 전제가 틀렸다. 이미지의 `config/speculative.py` 에서
+`EagleModelTypes` 는 `DFlashModelTypes = Literal["dflash"]` 를 **중첩 포함**하고 `get_args` 가
+이를 평탄화한다 — `get_args(EagleModelTypes)[-1] == 'dflash'`. 그래서 `config/vllm.py` 의
+async 비활성화 elif 는 첫 항에서 단락되고, 우리 헬퍼(`_deneb_dflash_async_ok`)는 **두 분기
+어디에서도 호출되지 않는다**. 체인의 나머지 분기도 안 걸려 `else: async_scheduling = True`.
+
+**부팅 증거**: 전 팔 부팅(2026-09-03)의 헤드·워커 로그에 async 관련 경고가 **하나도 없다**.
+비활성화 분기는 pooling(디버그)만 빼고 전부 warning_once 를 남기고, 이 모델은 pooling 이
+아니다. 컨테이너 안에서 헬퍼를 직접 부르면 정상 동작하고 로그도 남는다(즉 마운트·환경변수
+문제가 아니라 도달 불가). 모듈과 노브는 제거했다.
+
+**천장 7~12% 철회**: 9월 1일 트레이스의 호스트 준비 유휴(스트림 합집합 9.24 ms/스텝)는
+**async 가 켜진 상태에서** 찍힌 값이다. async 는 스케줄러 파이썬 작업을 겹치게 할 뿐,
+워커 `execute_model` 안의 입력 준비는 그래프 리플레이 사이에 직렬로 남는다. 그 구간의
+레버는 EXP-7(`glm53_prep_fused`) 하나다.
+
+**교훈**: 허용 목록을 이름 문자열로 읽을 때 `Literal` 중첩·`get_args` 평탄화를 확인할 것.
+소스 grep 으로 "dflash 가 목록에 없다" 를 결론냈는데, 목록은 다른 Literal 을 통해 그것을
+포함하고 있었다. 부팅 로그에 **켜졌다는 줄도 꺼졌다는 줄도 없으면 코드가 아니라 도달성을
+의심할 것.**
+
+**부수 수정**: `glm53_prep_fused` 의 화자 가드가 플릿의 `DFlash2Speculator` 를 이름으로
+거부해 이 부팅에서 DISARM 됐다. 이미지 소스 확인 결과 `_generate_draft` 호출 두 곳 모두
+타깃 메타데이터를 넘기지 않는다(`attn_metadata=None` 또는 드래프터 자신의
+`draft_attn_metadata`), `DFlash2Speculator` 는 `propose()` 를 재정의하지 않는다 → 가드에 추가.
