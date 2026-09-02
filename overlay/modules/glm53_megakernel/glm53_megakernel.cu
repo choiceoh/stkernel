@@ -1266,6 +1266,7 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
         cm_[k][j] = a.comb_mix_in[t * HC * HC + k * HC + j];
     }
   };
+  int warm_iter = 0;  // token iterations this block has run (warming)
   for (int cg = bid; cg < NCHUNK * groups; cg += a.grid) {
     const int c = cg % NCHUNK, g = cg / NCHUNK;
     const int h = c * HCHUNK + threadIdx.x;  // HCHUNK == MK_THREADS
@@ -1283,6 +1284,19 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
       float npm[HC], ncm[HC][HC];
       if (t + groups < a.num_tokens)
         load_tok(t + groups, h, nxv, nres, npm, ncm);
+      // L2 warming of the next consumer's weight pack, paced by this loop:
+      // a quarter of the threads each pull one 128 B line per token
+      // iteration -- 48 blocks x 64 lines x 128 B per ~3 us, ~110 GB/s of
+      // the DRAM this kernel otherwise leaves idle (an unpaced burst under
+      // a latency-bound phase measured a net loss on the kda delta rule).
+      if (a.warm_bytes > 0 && (threadIdx.x & 3) == 0) {
+        const long long line =
+            ((long long)warm_iter * a.grid + bid) * (MK_THREADS / 4) +
+            (threadIdx.x >> 2);
+        if (line * 128 < a.warm_bytes)
+          asm volatile("prefetch.global.L2 [%0];" ::"l"(a.warm_ptr + line * 128));
+      }
+      ++warm_iter;
       float r[HC], sqr = 0.0f;
 #pragma unroll
       for (int j = 0; j < HC; ++j) {

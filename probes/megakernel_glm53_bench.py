@@ -260,10 +260,10 @@ def probe_chain(iters: int, with_kda: bool) -> bool:
     fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
     nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
 
-    def mhc(emit):
+    def mhc(emit, warm=None):
         return mk._mhc_call(x, res, pm, cm16, fn, mk.hc_scale_ones(),
                             mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
-                            1.0, 1e-6, 4, emit_a=emit)[3]
+                            1.0, 1e-6, 4, emit_a=emit, warm=warm)[3]
 
     n = 6416
     w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -301,9 +301,18 @@ def probe_chain(iters: int, with_kda: bool) -> bool:
                         hot=(x, res, pm, cm16))
         t_ready = _time(lambda: kda(mhc(True), True), iters,
                         hot=(x, res, pm, cm16))
+        # + L2 warming of the in_proj pack (nibbles + exponents are two
+        # tensors; warm the nibbles, 13 MB) during the mhc kernel
+        pk = la._mk_in_pack[0]
+        warm = (pk.data_ptr(), pk.numel())
+        t_warm = _time(lambda: kda(mhc(True, warm), True), iters,
+                       hot=(x, res, pm, cm16))
+        t_mhc_w = _time(lambda: mhc(True, warm), iters, hot=(x, res, pm, cm16))
+        t_mhc = _time(lambda: mhc(True), iters, hot=(x, res, pm, cm16))
         mark = "!" if not eq else " "
         ok &= eq
-        print(f"{mark}mhc->kda acc=3{'':<10}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}")
+        print(f"{mark}mhc->kda acc=3{'':<10}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}"
+              f"   +warm(in_proj 13MB): pair {t_warm:.1f}  mhc alone {t_mhc:.1f} -> {t_mhc_w:.1f}")
     return ok
 
 

@@ -6690,7 +6690,9 @@ def test_glm53_megakernel_contracts() -> None:
     # -- kda: the split-K model keeps >= 8 k-blocks per slice (warming L2
     #    with the o_proj pack from the idle blocks measured a net loss:
     #    p5 -5.6 us, p3 +12)
-    check("prefetch.global.L2" not in cu
+    _kda_body = cu[cu.index("__global__ void mk_kda_kernel(const MKKdaArgs a) {"):]
+    _kda_body = _kda_body[:_kda_body.index("\n}\n")]
+    check("prefetch.global.L2" not in _kda_body
           and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
           and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
           "split-K never makes slices shorter than 8 k-blocks; no L2 "
