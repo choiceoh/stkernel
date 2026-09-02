@@ -6788,21 +6788,53 @@ def test_glm53_megakernel_contracts() -> None:
     check("VLLM_GLM53_MK_MLA=0" in open(os.path.join(REPO, "profiles/glm53.env"),
                                         encoding="utf-8").read(),
           "profile ships MK_SEG_MLA off")
-    check("else mk_cp_commit();   // keep the in-flight group count at NSTAGE-1" in cu
+    check(cu.count("else mk_cp_commit();") >= 2
           and "for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {" in cu,
           "mla: empty commits keep cp.async groups aligned with wait_group, "
           "including rows whose slot count is under one tile")
     check("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);" in cu
           and cu.index("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);")
-              < cu.index("const uint8_t* tile = sc +"),
+              < cu.index("const uint8_t* tile8 = ring +"),
           "mla: the next tile is issued BEFORE the current one is consumed "
-          "(issuing after drained the pipeline: stream+dot+softmax was additive)")
+          "(issuing after drained the pipeline: every phase was additive)")
+    check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
+          and "ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16" in cu
+          and "__nv_cvt_fp8x2_to_halfraw2" in cu,
+          "mla v3: bf16 tensor-core scores and output, hardware fp8x2 conversion "
+          "(the FMA versions lost 1.7x to conversion and unpacking instruction count)")
     check("MLA_TILE = 32" in cu and "MLA_NSTAGE = 2" in cu,
           "mla: 32 KB of ring buffers -- 64 KB drops to one block per SM")
     check("a.lens = (const int*)ptrs[3];" in cu and "const int len = a.lens[t];" in cu,
           "mla: per-row lengths are read from DEVICE memory (that is what a "
           "captured-graph launch needs; the wrapper's host replan is the cost "
           "this kernel exists to remove)")
+    # -- glm53_mk_mla_wiring: the image-bound hook for MK_SEG_MLA
+    wd = os.path.join(REPO, "overlay", "modules", "glm53_mk_mla_wiring")
+    wsrc = open(os.path.join(wd, "flashinfer_mla_sparse_sm90.py"), encoding="utf-8").read()
+    wrows = [l.split("\t") for l in open(os.path.join(wd, "manifest.tsv"), encoding="utf-8")
+             .read().splitlines() if l and not l.startswith("#")]
+    check(len(wrows) == 1 and wrows[0][1] == "vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py"
+          and re.fullmatch(r"[0-9a-f]{64}", wrows[0][2]) is not None,
+          "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
+    check("_MK_MLA_MAX_T = 32" in wsrc and "num_tokens > _MK_MLA_MAX_T" in wsrc,
+          "mk_mla_wiring routes only T<=32 (decode verify batches); prefill keeps the wrapper")
+    # the wrapper tail also lives in the module-level _sm90_wrapper_run
+    # helper (defined before the class), so compare against forward_mqa's
+    # own copy -- the LAST occurrence
+    check("if _mk_mla_route(self, num_tokens):" in wsrc
+          and wsrc.index("if _mk_mla_route(self, num_tokens):") < wsrc.rindex("state.kv_indices[: num_tokens * width].copy_("),
+          "the MK branch precedes the wrapper tail in forward_mqa")
+    check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
+          "the builder still plans every step (prefill and T>32 use the wrapper)")
+    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "is_current_stream_capturing()" in wsrc,
+          "one-shot shadow vs the wrapper on the first EAGER call; drift or non-finite output DISARMs")
+    check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
+          "mk_mla_wiring requires the megakernel module")
+    check("glm53_megakernel glm53_mk_mla_wiring" in open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(),
+          "profile mounts the wiring right after the megakernel")
+    check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
+          "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
     print("  glm53 megakernel contracts .. OK")
 
 

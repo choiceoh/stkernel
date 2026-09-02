@@ -1171,14 +1171,23 @@ def _mla_workspace(device, T: int, splits: int):
 
 
 def mla_splits(T: int) -> int:
-    """Slot-axis splits that fill the persistent grid for this row count.
+    """Slot-axis splits for this row count.
 
-    T is 8 at C=1 and 32 at C=4, against a 48-block grid: without the split
-    the kernel would leave five sixths of the GPU idle at C=1."""
+    Measured rule (grid 48, W=2048): the best split is the smallest s with
+    T*s a multiple of the resident grid -- every block then gets the same
+    number of items and the same slot count per item. T=8 -> 6 (94 us),
+    16 -> 3 (162), 24 -> 2 (235), 32 -> 3 (330; 1 and 2 leave a third of the
+    blocks walking a second item alone and cost 40%)."""
     if _EXT is None or T <= 0:
         return 1
     grid = int(_EXT.mla_grid())
-    return max(1, min(MLA_SPLITS_MAX, grid // T))
+    forced = os.environ.get("VLLM_GLM53_MK_MLA_SPLITS")   # probe knob, never set in serving
+    if forced:
+        return max(1, min(MLA_SPLITS_MAX, int(forced)))
+    for s in range(1, MLA_SPLITS_MAX + 1):
+        if (T * s) % grid == 0:
+            return s
+    return max(1, min(MLA_SPLITS_MAX, round(grid / T)))
 
 
 def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
