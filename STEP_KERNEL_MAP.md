@@ -256,7 +256,8 @@ mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`a
 
 **읽다가 나온 것**: (1) 인덱서의 fp32 head-gate `torch.mm(hidden.float(), _wp_fp32)`
 가 cuBLAS gemmSN 2블록 커널로 층당 86 us, 11층 0.95 ms/스텝(CUPTI) — 우리
-`glm53_prefill_fastpath.py:402` 소유, split-K 로 수 us 감. (2) 드래프터 fc 투영
+`glm53_prefill_fastpath.py:402` 소유, split-K 로 수 us 감 → `glm53_indexer_gate_splitk`
+(EXP-9, opt-in, 오프라인 50 → 10 us, ~0.65%/스텝). (2) 드래프터 fc 투영
 814 us(eager bf16, 5층 hidden cat, 168 MB 읽기, `ReplicatedLinear` 라 fp8 dense
 패턴 밖) 포함 드래프터 커널 합 ~3 ms(CUPTI) — 원장 D≈0 과 긴장, 직접 측정 전
 판단 보류. (3) `KpoolTailMetadataBuilder` 의 원형 tail 슬롯 매핑은 러너가
