@@ -480,14 +480,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // the bytes in flight -- and this stage is latency-bound, so in-flight
     // bytes ARE the bandwidth (Little's law).
     constexpr int MK_W_CHUNKS = KSTEP / 16;
-    // A straight 16 KB memcpy, chunk t -> byte t * 16 on both sides. The
-    // pack is PRE-SWIZZLED (build_mk_weight permutes the 16 B chunks of
-    // each row by row & 7), so the dense copy lands the swizzled image the
-    // fragment loads expect. Swizzling at the destination instead
-    // (d0 + r * 128 + mk_swz(r, e)) measured 6-8% SLOWER than the padded
-    // 144 B pitch on every W8 shape -- the permuted destination costs the
-    // copy what the padding cost it -- while a linear destination streams
-    // at 228 GB/s (srv2 micro-benchmark).
     // Thread 0 issues NO copies (it still commits an empty group, so the
     // per-thread wait counts stay uniform). It is the thread that runs
     // the grid barrier, and the barrier's __threadfence drains that
@@ -496,8 +488,14 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // from 1.3 us to 6-12 us -- the fill's latency had simply moved into
     // the barrier. Threads 1..255 cover the 1024 chunks, 4-5 each.
     for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
-         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)
-      mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
+         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1) {
+      const int r = t / MK_W_CHUNKS;
+      const int e = (t % MK_W_CHUNKS) * 16;
+      // r * KSTEP + e == t * 16, so the source walk is now linear across
+      // the whole block; only the destination keeps the padded pitch.
+      mk_cp_async16(d0 + r * SMEM_W_PITCH + mk_swz(r, e),
+                    wsrc + (size_t)t * 16);
+    }
     mk_cp_commit();
   };
   // W4: stage one raw (tile, k-block) record -- 512 nibble chunks (two
