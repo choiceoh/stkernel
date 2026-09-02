@@ -1045,6 +1045,11 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     }
 
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+#ifdef MK_PHASE_TS
+    // probe: time of the per-pair reduce + publish, accumulated per block
+    // into g_mk_ts[block][0] (the gemm buffer is idle during mhc)
+    const unsigned long long t_red0 = mk_globaltimer();
+#endif
 #pragma unroll
     for (int m = 0; m < NOUT; ++m)
       for (int off = 16; off; off >>= 1)
@@ -1066,6 +1071,9 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
         a.rp[c * MAX_TOK + t] = v;
     }
     __syncthreads();
+#ifdef MK_PHASE_TS
+    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8] += mk_globaltimer() - t_red0;
+#endif
   }
 }
 
