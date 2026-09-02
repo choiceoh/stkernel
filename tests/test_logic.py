@@ -388,56 +388,79 @@ def test_overlay_symbol_contracts() -> None:
     and since the overlays were never mounted, nothing had tried the import --
     so the boot died on ImportError forty seconds in.
     """
-    owners = {}          # dotted module path -> (module dir, source path)
-    for manifest in sorted(glob.glob(
-            os.path.join(REPO, "overlay", "modules", "*", "manifest.tsv"))):
-        moddir = os.path.dirname(manifest)
-        for raw in open(manifest, encoding="utf-8"):
-            line = raw.rstrip("\n")
-            if not line or line.startswith("#"):
-                continue
-            source, target = line.split("\t")[:2]
-            if not source.endswith(".py"):
-                continue
-            # Targets are absolute for image-bound overlays and relative to the
-            # package root for portable ones, so anchoring on "/vllm/" silently
-            # skipped every portable module -- including moe_gate_sm121, the one
-            # this check exists for.
-            if target.startswith("vllm/"):
-                rel = target
-            elif "/vllm/" in target:
-                rel = "vllm/" + target.split("/vllm/", 1)[1]
-            else:
-                continue
-            dotted = rel[:-3].replace("/", ".")
-            owners[dotted] = os.path.join(moddir, source)
+    # Owners are resolved per profile: two profiles may overlay the same
+    # container path with different files (dsv4's mla_indexer and glm53's
+    # glm53_tail_slot_persistent both own mla/indexer.py), and only the modules
+    # composed together ever meet at runtime. A global "last manifest wins" map
+    # checked glm53's attention.py against dsv4's indexer. Modules listed in
+    # no profile are not checked here.
+    profiles = {}
+    for env in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        m = re.search(r'^MODULES="([^"]*)"', open(env, encoding="utf-8").read(), re.M)
+        if m:
+            profiles[os.path.basename(env)] = m.group(1).split()
+
+    def _owners(mods):
+        owners = {}      # dotted module path -> source path
+        for mod in mods:
+            manifest = os.path.join(REPO, "overlay", "modules", mod, "manifest.tsv")
+            moddir = os.path.dirname(manifest)
+            for raw in open(manifest, encoding="utf-8"):
+                line = raw.rstrip("\n")
+                if not line or line.startswith("#"):
+                    continue
+                source, target = line.split("\t")[:2]
+                if not source.endswith(".py"):
+                    continue
+                # Targets are absolute for image-bound overlays and relative to
+                # the package root for portable ones, so anchoring on "/vllm/"
+                # silently skipped every portable module -- including
+                # moe_gate_sm121, the one this check exists for.
+                if target.startswith("vllm/"):
+                    rel = target
+                elif "/vllm/" in target:
+                    rel = "vllm/" + target.split("/vllm/", 1)[1]
+                else:
+                    continue
+                dotted = rel[:-3].replace("/", ".")
+                prev = owners.get(dotted)
+                check(prev is None, f"{mod} and {prev} both own {dotted}")
+                owners[dotted] = os.path.join(moddir, source)
+        return owners
 
     checked = 0
-    for dotted, srcpath in sorted(owners.items()):
-        provided = set()
-        tree = ast.parse(open(srcpath, encoding="utf-8").read())
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                provided.add(node.name)
-            elif isinstance(node, ast.Assign):
-                provided.update(t.id for t in node.targets if isinstance(t, ast.Name))
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                provided.add(node.target.id)
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                provided.update((a.asname or a.name).split(".")[0] for a in node.names)
+    seen = set()
+    for pname, mods in sorted(profiles.items()):
+        owners = _owners(mods)
+        for dotted, srcpath in sorted(owners.items()):
+            provided = set()
+            tree = ast.parse(open(srcpath, encoding="utf-8").read())
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    provided.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    provided.update(t.id for t in node.targets if isinstance(t, ast.Name))
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    provided.add(node.target.id)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    provided.update((a.asname or a.name).split(".")[0] for a in node.names)
 
-        for other in sorted(set(owners.values())):
-            if other == srcpath:
-                continue
-            for node in ast.walk(ast.parse(open(other, encoding="utf-8").read())):
-                if not isinstance(node, ast.ImportFrom) or node.module != dotted:
+            for other in sorted(set(owners.values())):
+                if other == srcpath:
                     continue
-                for alias in node.names:
-                    checked += 1
-                    check(alias.name in provided,
-                          f"{os.path.basename(other)} imports {alias.name} from "
-                          f"{dotted}, which {os.path.basename(srcpath)} does not define")
-    print(f"  overlay symbol contracts ({checked}) ... OK")
+                for node in ast.walk(ast.parse(open(other, encoding="utf-8").read())):
+                    if not isinstance(node, ast.ImportFrom) or node.module != dotted:
+                        continue
+                    for alias in node.names:
+                        key = (other, dotted, alias.name, srcpath)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        checked += 1
+                        check(alias.name in provided,
+                              f"[{pname}] {os.path.basename(other)} imports {alias.name} from "
+                              f"{dotted}, which {os.path.basename(srcpath)} does not define")
+    print(f"  overlay symbol contracts ({checked}, per profile) ... OK")
 
 
 def test_profile_env_carried() -> None:
@@ -3969,6 +3992,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
             "_glm53_cache_only_indexer_contract",
             "_glm53_cache_only_indexer_forward",
             "_glm53_fused_indexer_forward",
+            "_glm53_head_gate", "_HEAD_GATE",
             "install_glm53_prefill_fastpath",
             "prepare_glm53_prefill_fastpath",
         },
@@ -6859,6 +6883,276 @@ def test_megakernel_w4_layout_functional() -> None:
     print("  w4 layout roundtrip ...... OK")
 
 
+def test_glm53_prep_fused_contracts() -> None:
+    """glm53_prep_fused: wiring, kill switch, preimage pins, live handles, guards."""
+    import hashlib
+    import tempfile
+
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_prep_fused")
+    src_path = os.path.join(mod_dir, "glm53_prep_fused.py")
+    src = open(src_path, encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_prep_fused" in modules, "glm53 profile must mount glm53_prep_fused")
+    check(re.search(r"^VLLM_GLM53_PREP_FUSED=0$", profile, re.M) is not None,
+          "profile must ship VLLM_GLM53_PREP_FUSED=0 (kill switch default off)")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"]],
+          f"manifest must bind the module as a new file next to the model: {rows}")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check({"glm53_model_wiring", "glm53_tail_slot_persistent", "glm53_kpool_tail_select"} <= set(req),
+          "requires must name the wiring, the tail indexer and the kpool op it was read against")
+    wiring = open(_overlay_source("overlay/glm5next_model.py"), encoding="utf-8").read()
+    hook = wiring.find("install_glm53_prep_fused()")
+    check(hook > wiring.find("logger = init_logger(__name__)"),
+          "the install hook must run after the wiring's logger exists (it logs failures)")
+    check("except ImportError as _e:\n    install_glm53_prep_fused = None" in wiring
+          and 'if _e.name != f"{__package__}.glm53_prep_fused":' in wiring,
+          "a boot without the module mounted stays stock silently; a broken module is logged")
+
+    ns = load_defs(
+        "overlay/glm53_prep_fused.py",
+        {"prep_fused_mode", "shadow_every", "selfcheck_every", "_every", "check_preimages",
+         "PREIMAGES", "ENV", "ENV_SHADOW_EVERY", "ENV_SELFCHECK_EVERY"},
+        {"os": os, "hashlib": hashlib, "logger": _CapturingLogger()},
+    )
+    pins = ns["PREIMAGES"]
+    check(len(pins) >= 15 and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in pins.values()),
+          "preimage table must pin full sha256 digests of the bypassed runner files")
+    tail_idx = open(_overlay_source("overlay/glm53_kpool_indexer.py"), "rb").read()
+    check(pins["v1/attention/backends/mla/indexer.py"] == hashlib.sha256(tail_idx).hexdigest(),
+          "the pinned mla/indexer.py must be the mounted glm53_tail_slot_persistent copy")
+    for rel in ("v1/worker/gpu/model_runner.py", "v1/worker/gpu/input_batch.py",
+                "v1/worker/gpu/block_table.py", "v1/worker/gpu/buffer_utils.py",
+                "v1/worker/gpu/model_states/mamba_hybrid.py",
+                "v1/attention/backends/gdn_attn.py", "v1/attention/backends/mla/compressor_utils.py",
+                "model_executor/layers/attention/sparse_mla_attention.py"):
+        check(rel in pins, f"preimage table must pin {rel}")
+    saved = os.environ.pop("VLLM_GLM53_PREP_FUSED", None)
+    try:
+        check(ns["prep_fused_mode"]() == "off", "unset knob must be off")
+        # a kernel-selecting knob must land on the safe side on any typo
+        for v, want in (("0", "off"), ("off", "off"), ("", "off"), ("shadow", "shadow"),
+                        ("SHADOW", "shadow"), ("1", "on"), ("yes", "off"), ("shadwo", "off"),
+                        ("true", "off"), ("on", "off"), ("2", "off")):
+            os.environ["VLLM_GLM53_PREP_FUSED"] = v
+            check(ns["prep_fused_mode"]() == want, f"knob {v!r} -> {want}")
+        check(any("DISARM" in l for l in ns["logger"].lines), "an unknown knob value must be logged")
+    finally:
+        os.environ.pop("VLLM_GLM53_PREP_FUSED", None)
+        if saved is not None:
+            os.environ["VLLM_GLM53_PREP_FUSED"] = saved
+    for name, env, default in (("shadow_every", "VLLM_GLM53_PREP_FUSED_SHADOW_EVERY", 1),
+                               ("selfcheck_every", "VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY", 64)):
+        saved = os.environ.pop(env, None)
+        try:
+            check(ns[name]() == default, f"{name} default {default}")
+            os.environ[env] = "16"
+            check(ns[name]() == 16, f"{name} knob")
+            os.environ[env] = "x"
+            check(ns[name]() == default, f"{name}: unparsable falls back to the default")
+        finally:
+            os.environ.pop(env, None)
+            if saved is not None:
+                os.environ[env] = saved
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = ns["check_preimages"](tmp)
+        check(len(bad) == len(pins), "every absent file is drift")
+        rel = "v1/attention/backends/mla/indexer.py"
+        os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+        with open(os.path.join(tmp, rel), "wb") as f:
+            f.write(tail_idx)
+        bad = ns["check_preimages"](tmp)
+        check(len(bad) == len(pins) - 1 and not any(b.startswith(rel) for b in bad),
+              "a matching file is not drift")
+
+    tree = ast.parse(src)
+    funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for name in ("_fused_prepare_inputs", "launch", "_args", "_eligible", "_patched_prepare_attn"):
+        body = ast.get_source_segment(src, funcs[name])
+        check(body is not None and not re.search(r"\.(item|cpu|tolist|numpy)\(|synchronize\(", body),
+              f"{name} must not synchronize with the device (the whole point is host time)")
+    # live handles: the rotating UVA views and the block-table pointer tensors
+    # are dereferenced at every launch, never cached in the plan
+    args = ast.get_source_segment(src, funcs["_args"])
+    for live in ("bt.num_blocks.gpu", "self.prefill_len_src.gpu", "bt.block_table_ptrs",
+                 "bt.input_block_table_ptrs", "bt.block_table_strides", "bt.block_sizes_tensor"):
+        check(live in args, f"_args must read {live} live (UVA handles rotate, wake re-makes pointers)")
+    post = ast.get_source_segment(src, funcs["__post_init__"])
+    check("UvaBufferPool(" in post and "pin_memory=True" not in post,
+          "idx_mapping staging must use the image's round-robin UVA pool (async-safe)")
+    check("self.q & (self.q - 1)" in post and "self.exp_bt.stride(0) != wa" in post,
+          "the plan must refuse a non-power-of-two Q and an expanded-table width mismatch")
+    plan_src = ast.get_source_segment(src, funcs["build_plan"])
+    for guard in ("_SPECULATORS", "draft_attn_layer_names", "draft_kv_cache_group_ids",
+                  "tail_builder=tail_b", "q & (q - 1)"):
+        check(guard in plan_src, f"build_plan must carry the guard {guard}")
+    check("def tail_ok" in src and src.count("tail_ok()") >= 3,
+          "the kpool tail builder's dormancy is asserted at plan build and on every verification")
+    elig = ast.get_source_segment(src, funcs["_eligible"])
+    check("CUDAGraphMode.FULL" in elig and "uniform_token_count != q" in elig
+          and "batch_desc.num_reqs != num_reqs" in elig and "has_prefill" in elig,
+          "eligibility must require FULL cudagraph, uniform Q, no request padding, no prefill")
+    check("adaptive_verification is not None" in elig, "adaptive verification must fall back")
+    ppi = ast.get_source_segment(src, funcs["_patched_prepare_inputs"])
+    check("except Exception" in ppi and 'st.disarm(' in ppi and "_ORIG[\"prepare_inputs\"]" in ppi,
+          "a fused launch failure must disarm and serve stock for that step")
+    check("return fused" in ppi and "_verify(" in ppi and "selfcheck_every" in ppi,
+          "shadow serves the fused batch after a clean verification; armed mode self-checks")
+    ens = ast.get_source_segment(src, funcs["_ensure_plan"])
+    check("plan.warmup()" in ens and "st.disarm(" in ens,
+          "a warmup failure must disarm instead of JIT-ing on the first request")
+    kern = ast.get_source_segment(src, funcs["_glm53_prep_fused_kernel"])
+    check("_fill(slot_ptr + g * slot_stride, num_tokens, max_num_tokens, PAD_ID, BLOCK)" in kern,
+          "every group's slot-mapping tail must be padded like the stock kernel")
+    barrier = kern.find("tl.debug_barrier()")
+    check(0 < barrier < kern.find("_load_ptr(gdn_state_ptrs + k") and barrier > kern.find("tl.store(dst_row + off"),
+          "the gathered rows must be visible before the GDN read-back")
+    check("_fill(qsl_ptr, num_reqs, max_num_reqs + 1, num_tokens, BLOCK)" in kern
+          and "_fill(seq_lens_ptr, num_reqs, max_num_reqs, 0, BLOCK)" in kern,
+          "query_start_loc / seq_lens tails must be padded like prepare_inputs")
+    check("from vllm.v1.worker.gpu.buffer_utils import UvaBufferPool, _load_ptr" in src
+          and "from vllm.v1.attention.backends.utils import PAD_SLOT_ID" in src,
+          "reuse the image's pointer helper, UVA pool and PAD_SLOT_ID instead of copies")
+    inst = ast.get_source_segment(src, funcs["install_glm53_prep_fused"])
+    check(inst.find("check_preimages(root)") < inst.find("Runner.prepare_inputs = _patched_prepare_inputs"),
+          "preimages are checked before any class is patched")
+    check("_ORIG[\"build_slot_mappings_by_layer\"]" in inst
+          and "Runner.post_kv_cache_wake_up = _patched_post_kv_cache_wake_up" in inst,
+          "the unbind memo wraps the original and a KV-cache wake-up invalidates the plan")
+    wrapper = open(os.path.join(REPO, "probes", "run_prep_fused_check.sh"), encoding="utf-8").read()
+    check("sha256sum" in wrapper and "base preimage mismatch" in wrapper and "PROFILE_IMAGE" in wrapper,
+          "the probe wrapper must verify every mounted row's base contract like the launcher")
+    print("  glm53 prep fused contracts .. OK")
+
+
+def test_profile_keys_not_passed_via_extra_env() -> None:
+    """A profile-declared VLLM_* key cannot be overridden through EXTRA_ENV: the
+    launcher aborts. Every documented arming command must use the caller env."""
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    keys = set(re.findall(r"^(VLLM_[A-Z0-9_]+)=", profile, re.M))
+    docs = [os.path.join(REPO, "RUNBOOK_KERNEL_CAMPAIGN2.md")]
+    docs += sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "glm53_*", "README.md")))
+    offenders = []
+    for path in docs:
+        for i, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+            for m in re.finditer(r'EXTRA_ENV="([^"]+)"', line):
+                for kv in m.group(1).split():
+                    if kv.split("=", 1)[0] in keys:
+                        offenders.append(f"{os.path.relpath(path, REPO)}:{i} {kv}")
+    check(not offenders, f"profile-declared keys passed via EXTRA_ENV (launcher ABORTs): {offenders}")
+    print("  profile keys not via EXTRA_ENV .. OK")
+
+
+def test_glm53_async_dflash_contracts() -> None:
+    """glm53_async_dflash: opt-in dflash allowlisting, both branches, stock default."""
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_async_dflash")
+    src = open(os.path.join(mod_dir, "glm53_config_vllm.py"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_async_dflash" in modules, "glm53 profile must mount glm53_async_dflash")
+    check(re.search(r"^VLLM_GLM53_ASYNC_DFLASH=0$", profile, re.M) is not None,
+          "profile must ship VLLM_GLM53_ASYNC_DFLASH=0 (stock verdict by default)")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(len(rows) == 1 and rows[0][1] == "vllm/config/vllm.py"
+          and re.fullmatch(r"[0-9a-f]{64}", rows[0][2]) is not None,
+          f"manifest must overlay vllm/config/vllm.py with a pinned preimage: {rows}")
+    check(src.count("and not _deneb_dflash_async_ok(self.speculative_config.method)") == 2,
+          "both the hard-fail and the auto-resolution allowlist must consult the helper")
+    check('and self.speculative_config.method != "dspark"' in src
+          and "not in get_args(EagleModelTypes)" in src,
+          "the stock allowlist terms must remain (only extended, never replaced)")
+    check(src.count("_deneb_dflash_async_ok") == 3, "helper defined once, used twice")
+    ns = load_defs("overlay/glm53_config_vllm.py", {"_deneb_dflash_async_ok"},
+                   {"os": os, "logger": _CapturingLogger()})
+    fn = ns["_deneb_dflash_async_ok"]
+    saved = os.environ.pop("VLLM_GLM53_ASYNC_DFLASH", None)
+    try:
+        check(fn("dflash") is False, "unset knob keeps the stock verdict for dflash")
+        os.environ["VLLM_GLM53_ASYNC_DFLASH"] = "0"
+        check(fn("dflash") is False, "knob 0 keeps the stock verdict")
+        os.environ["VLLM_GLM53_ASYNC_DFLASH"] = "1"
+        check(fn("dflash") is True, "knob 1 whitelists dflash")
+        for other in ("dspark", "eagle3", "mtp", "ngram", None):
+            check(fn(other) is False, f"knob 1 must not touch method {other!r}")
+        logs = ns["logger"].lines
+        check(any("[async-dflash]" in l and "whitelisted" in l for l in logs),
+              "whitelisting must announce itself in the boot log")
+    finally:
+        os.environ.pop("VLLM_GLM53_ASYNC_DFLASH", None)
+        if saved is not None:
+            os.environ["VLLM_GLM53_ASYNC_DFLASH"] = saved
+    print("  glm53 async dflash contracts .. OK")
+
+
+def test_glm53_indexer_gate_splitk_contracts() -> None:
+    """glm53_indexer_gate_splitk: opt-in split-K head gate, small-M only, stock default."""
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_indexer_gate_splitk")
+    kern = open(os.path.join(mod_dir, "glm53_indexer_gate.py"), encoding="utf-8").read()
+    attn = open(os.path.join(mod_dir, "glm5next_attention.py"), encoding="utf-8").read()
+    fast = open(os.path.join(REPO, "overlay", "modules", "glm53_model_wiring",
+                             "glm53_prefill_fastpath.py"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_indexer_gate_splitk" in modules, "glm53 profile must mount glm53_indexer_gate_splitk")
+    check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=0$", profile, re.M) is not None,
+          "profile must ship VLLM_GLM53_INDEXER_GATE_SPLITK=0 (stock torch.mm by default)")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    by_target = {r[1]: r[2] for r in rows}
+    check(len(rows) == 2 and re.fullmatch(
+        r"[0-9a-f]{64}", by_target.get("vllm/models/glm5next/nvidia/attention.py", "")) is not None
+        and by_target.get("vllm/models/glm5next/nvidia/glm53_indexer_gate.py") == "absent",
+        f"manifest must overlay attention.py (pinned) and add the kernel file (absent): {rows}")
+    stock = "torch.mm(hidden_states.float(), self._wp_fp32)"
+    helper = "_glm53_head_gate(hidden_states, self._wp_fp32)"
+    check(stock not in attn and attn.count(helper) == 1,
+          "attention overlay routes the head gate through the helper exactly once")
+    check("from vllm.models.glm5next.nvidia.glm53_indexer_gate import head_gate as _glm53_head_gate" in attn,
+          "attention overlay imports the helper from the module's kernel file")
+    check(stock not in fast and fast.count(helper) == 1,
+          "the fused-indexer forward (VLLM_GLM53_FUSED_K_GATE) routes through the same helper")
+    check("except ImportError:" in fast and "return torch.mm(x.float(), w)" in fast,
+          "the fastpath falls back to stock torch.mm when the module is not mounted")
+    check("MAX_M = 16" in kern and "x.shape[0] <= MAX_M" in kern,
+          "split-K only for the small-M decode shape (cuBLAS is already fast at M=32)")
+    check("return torch.mm(x.float(), w)" in kern, "the helper itself falls back to the stock product")
+    check("torch.zeros(M, N" in kern and "tl.atomic_add" in kern,
+          "atomic split-K must reduce into a zeroed output")
+    check("w.shape[0] % (_SPLIT * _BLOCK_K) == 0" in kern
+          and "w.dtype == torch.float32" in kern and "w.is_contiguous()" in kern,
+          "applicability: K tiles the split, fp32 contiguous weight")
+    check(kern.count("do_not_specialize") == 0 or "K" in kern,
+          "integer args do not need specialization pins here (K, N are shape constants per layer)")
+    tree = ast.parse(kern)
+    nodes = [n for n in tree.body
+             if (isinstance(n, ast.FunctionDef) and n.name == "gate_splitk_enabled")
+             or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "ENV" for t in n.targets))]
+    check(len(nodes) == 2, "ENV constant and gate_splitk_enabled must be top-level definitions")
+    ns: dict = {"os": os}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "glm53_indexer_gate", "exec"), ns)
+    fn = ns["gate_splitk_enabled"]
+    saved = os.environ.pop("VLLM_GLM53_INDEXER_GATE_SPLITK", None)
+    try:
+        check(fn() is False, "unset knob keeps stock torch.mm")
+        for v, want in (("0", False), ("1", True), (" 1 ", True), ("on", False), ("true", False),
+                        ("2", False), ("shadow", False), ("", False)):
+            os.environ["VLLM_GLM53_INDEXER_GATE_SPLITK"] = v
+            check(fn() is want, f"knob {v!r} must map to {want} (only the exact string 1 arms)")
+    finally:
+        os.environ.pop("VLLM_GLM53_INDEXER_GATE_SPLITK", None)
+        if saved is not None:
+            os.environ["VLLM_GLM53_INDEXER_GATE_SPLITK"] = saved
+    readme = open(os.path.join(mod_dir, "README.md"), encoding="utf-8").read()
+    check("not bit-exact" in readme and "VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/" in readme,
+          "README must state the numerics caveat and the caller-env arming form")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check("glm53_model_wiring" in req, "the fastpath hunk lives in glm53_model_wiring")
+    print("  glm53 indexer gate split-K contracts .. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -6931,4 +7225,8 @@ if __name__ == "__main__":
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
+    test_glm53_prep_fused_contracts()
+    test_profile_keys_not_passed_via_extra_env()
+    test_glm53_async_dflash_contracts()
+    test_glm53_indexer_gate_splitk_contracts()
     print(f"all OK ({PASS} checks)")
