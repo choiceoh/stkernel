@@ -6160,6 +6160,8 @@ def test_glm53_megakernel_contracts() -> None:
 
     pysrc_full = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
                       encoding="utf-8").read()
+    bench = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
+                 encoding="utf-8").read()
 
     # -- sm_121a static contract (code only: the header COMMENT names the
     #    forbidden instructions, so strip // and /* */ tails before scanning)
@@ -6229,6 +6231,26 @@ def test_glm53_megakernel_contracts() -> None:
           "dense 128 B rows (every thread issues copies), and the fragment "
           "loads read through the same XOR -- the padded pitch cost the copy "
           "16% of its bandwidth")
+    check("smem += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);"
+          in cu and "constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +"
+          in cu and "constexpr int GEMM_SMEM_W4 = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +"
+          in cu,
+          "the dynamic smem base must be re-aligned at runtime (the static "
+          "s_last/s_unit push it to +16, which put every 128 B tile row across "
+          "a bank-line boundary: dense rows measured no faster until this) and "
+          "both smem budgets must carry the alignment slack")
+    check("stage_w(nt0, kb00, kb00 % MK_W_NBUF, false);" in cu
+          and "stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF, true);" in cu
+          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);" in cu,
+          "only the fill hoisted above the grid barrier leaves thread 0 out of "
+          "the copies (the barrier's fence would drain them); every later "
+          "stage_w uses all 256 threads, 4 chunks each")
+    check(bench.index("torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])")
+          < bench.index("_DRAIN.sum()") < bench.index("for t in hot:"),
+          "the bench flush must drain the dirty lines with a read stream AFTER "
+          "the matmul spacer (whose 8 MB output is dirty too) and before the "
+          "hot touch: the old order left ~24 MB of write-back under the timed "
+          "kernel (both arms ~35% slow at the first launch)")
     check("threadIdx.x != 0\n         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
           and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
           "thread 0 issues no cp.async: it runs the grid barrier, whose "
