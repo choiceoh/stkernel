@@ -186,18 +186,24 @@ Bench (srv2, PDL on): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
 in_proj 76 | gates 6 | conv 4 | delta 34 | norm 0.5 | o_proj 35 |
 barriers ~17 = **176 us** per layer-step (402 before the phase
 stamps went in; stock's five kernels 640+). Four grid barriers: gates and
-conv share a phase (both read only in_proj's output). The gates are a
+conv share a phase (both read only in_proj's output). The barrier waits
+are NOT a remaining lever: replacing bar1/bar2/bar3 with per-tile and
+per-head arrival counters measured neutral-to-worse and was reverted
+(MEASUREMENTS.md 11차) -- the med waits are idle blocks absorbing while
+the true-dependency chain (gates needs the LAST in_proj tiles, delta its
+head's conv+gates, o_proj every head) runs; only the producing phase's
+arrival spread (~2-3 us) is on the critical path. The 16 head-less blocks
+during delta also stay idle on purpose: warming L2 with the o_proj pack
+from them measured a net loss (10차). The gates are a
 cp.async + `mma.sync m16n8k16 bf16` GEMM over 32-row weight tiles; the
 conv is unrolled to the 8-token spec window (the host refuses a wider
-`max_query_len`); the delta rule runs two blocks per head (rows split, S
-register-resident, per-token state stores staged through smem) while the
-16 head-less blocks warm L2 with the o_proj pack (`prefetch.global.L2`);
-p4 emits the o_proj's fp8 A tiles itself so p5 starts without a prologue;
-split-K never makes a slice shorter than 8 k-blocks (o_proj: r=2, not the
-cost model's 3). `-DMK_PHASE_TS=1` + `read_kda_ts` give the per-phase,
+`max_query_len`); p4 emits the o_proj's fp8 A tiles itself so p5 starts
+without a prologue; split-K never makes a slice shorter than 8 k-blocks
+(o_proj: r=2, not the cost model's 3). `-DMK_PHASE_TS=1` +
+`read_kda_ts`, read by `probes/diag_kda_stamps.py`, give the per-phase,
 per-block stamps; the fixture's `mk_run(drain=True)` keeps its own 10 MB
 state clones from polluting the first phase; `VLLM_GLM53_MK_KSR_IN/OUT`
-force a split for probing (MEASUREMENTS.md 8차, 10차).
+force a split for probing (MEASUREMENTS.md 8차, 10차, 11차).
 
 ## Review fixes already folded in (2026-09-01)
 
