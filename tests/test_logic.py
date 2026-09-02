@@ -6798,12 +6798,17 @@ def test_glm53_megakernel_contracts() -> None:
           "mla: the next tile is issued BEFORE the current one is consumed "
           "(issuing after drained the pipeline: every phase was additive)")
     check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
-          and "ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16" in cu
           and "__nv_cvt_fp8x2_to_halfraw2" in cu,
-          "mla v3: bf16 tensor-core scores and output, hardware fp8x2 conversion "
+          "mla: bf16 tensor cores for both mma phases, hardware fp8x2 conversion "
           "(the FMA versions lost 1.7x to conversion and unpacking instruction count)")
-    check("MLA_TILE = 32" in cu and "MLA_NSTAGE = 2" in cu,
-          "mla: 32 KB of ring buffers -- 64 KB drops to one block per SM")
+    _mla_src = cu[cu.index("// v4: tensor cores"): cu.index("// host entry points")]
+    check("ldmatrix.sync" not in _mla_src and "mla_e4m3x2_strided" in cu
+          and "MLA_SMEM_CT" not in cu,
+          "mla v4: no bf16 copy of the tile in smem -- fragments convert from the "
+          "e4m3 ring in registers, which is what buys the second block per SM")
+    check("MLA_TILE = 16" in cu and "MLA_NSTAGE = 3" in cu and "MLA_KQ = 4" in cu,
+          "mla v4 geometry: 16-slot tiles, 3 ring stages, 4 k-quarters -> ~46 KB smem")
+
     check("a.lens = (const int*)ptrs[3];" in cu and "const int len = a.lens[t];" in cu,
           "mla: per-row lengths are read from DEVICE memory (that is what a "
           "captured-graph launch needs; the wrapper's host replan is the cost "

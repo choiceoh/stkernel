@@ -1965,10 +1965,8 @@ constexpr int MLA_H = 16;                     // MLA heads per rank at TP4
 constexpr int MLA_WARPS = MK_THREADS / 32;    // 8
 constexpr int MLA_HPW = MLA_H / MLA_WARPS;    // 2 heads per warp (softmax owner)
 constexpr int MLA_VD = MLA_D / 32;            // 16 latent elements per lane (phase 1)
-constexpr int MLA_TILE = 32;                  // slots staged per cp.async tile
-constexpr int MLA_NSTAGE = 2;                 // ring buffers -- 32 KB keeps
-                                              // 3 blocks/SM; 64 KB drops to 1
-                                              // and T=32 lost 65% to occupancy
+constexpr int MLA_TILE = 16;   // slots per cp.async tile (2 n-groups x 8)
+constexpr int MLA_NSTAGE = 3;  // ring buffers; total smem ~45 KB -> 2 blocks/SM
 constexpr int MLA_SPLITS_MAX = 16;
 
 struct MKMlaArgs {
@@ -1986,28 +1984,34 @@ struct MKMlaArgs {
   int probe;   // 1 = memory pipeline only (roofline), 0 = full
 };
 
-// v3: tensor cores. The FMA versions (v1 lane=D + shuffles, v2 lane=slot)
-// were both ~2x slower than FlashInfer with every phase additive on the
-// roofline probe -- the score phase alone was 4k+ instructions per slot per
-// lane once the fp8->fp32 software conversion and the q unpacking were
-// counted. bf16 mma.sync m16n8k16 computes 16 heads x 8 slots per
-// instruction with fp32 accumulation: the same precision as the FA2 path it
-// replaces (bf16 q, bf16 C -- e4m3 -> bf16 is lossless -- fp32 acc), and no
-// q quantisation.
+// v4: tensor cores, and the e4m3 ring is the ONLY copy of the latent.
 //
-// Per 32-slot tile: fp8 ring -> bf16 tile (once) -> S = Q C^T (8 warps, K
-// split in two) -> per-head online softmax (lane = slot, 10 shuffles per
-// tile) -> P (bf16, latent scale folded in) -> O += P C (each warp owns 64
-// columns of D; B fragments via ldmatrix.trans off the same bf16 tile).
-constexpr int MLA_CP = MLA_D + 8;        // bf16 tile / q pitch (words): rows land on distinct banks
-constexpr int MLA_PP = MLA_TILE + 8;     // P pitch
-constexpr int MLA_SMEM_RING = MLA_NSTAGE * MLA_TILE * MLA_D;           // e4m3 staging
-constexpr int MLA_SMEM_CT = MLA_TILE * MLA_CP * 2;                       // bf16 tile
-constexpr int MLA_SMEM_Q = MLA_H * MLA_CP * 2;                           // bf16 q rows
-constexpr int MLA_SMEM_S = 2 * MLA_H * MLA_TILE * 4;                     // fp32 score partials (2 K halves)
-constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;                           // bf16 P
-constexpr int MLA_SMEM_C = MLA_H * 4;                                    // fp32 corr per head
-constexpr int MLA_SMEM = MLA_SMEM_RING + MLA_SMEM_CT + MLA_SMEM_Q + MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C;
+// v3 materialised a bf16 copy of each tile in shared memory so both mma
+// phases could take fragments from it (the output phase with
+// ldmatrix.trans). That copy cost 33 KB of the 99 KB budget, which pinned
+// the kernel at ONE block per SM -- and a gather microbenchmark on this part
+// (scattered 512 B chunks, 1 GiB buffer) reaches 225 GB/s against the 106
+// GB/s the kernel was getting, i.e. the access pattern was never the
+// problem, occupancy was. v4 converts e4m3 -> bf16 in registers at fragment
+// load time, drops the tile, and halves TILE so two blocks fit per SM.
+//
+// Layout per 16-slot tile:
+//   scores  S = Q C^T  -- warp w owns n-group (w & 1) of 8 slots and
+//                         k-quarter (w >> 1) of D; 4 partials summed in smem
+//   softmax -- warp w owns heads 2w, 2w+1, lane = slot (10 shuffles/tile)
+//   output  O += P C   -- warp w owns 64 of the 512 columns, B fragments
+//                         assembled from 4 single-byte ring reads each
+constexpr int MLA_KQ = 4;                       // k-quarters in the score mma
+constexpr int MLA_NG = MLA_WARPS / MLA_KQ;      // 2 n-groups of 8 slots -> TILE 16
+constexpr int MLA_CP = MLA_D + 8;               // q pitch (words), bank-skewed
+constexpr int MLA_PP = MLA_TILE + 8;            // P pitch
+constexpr int MLA_RP = MLA_D + 16;              // e4m3 ring row pitch (bytes)
+constexpr int MLA_SMEM_RING = MLA_NSTAGE * MLA_TILE * MLA_RP;
+constexpr int MLA_SMEM_Q = MLA_H * MLA_CP * 2;
+constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * MLA_TILE * 4;
+constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;
+constexpr int MLA_SMEM_C = MLA_H * 4;
+constexpr int MLA_SMEM = MLA_SMEM_RING + MLA_SMEM_Q + MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C;
 
 __device__ __forceinline__ float mla_warp_max(float v) {
 #pragma unroll
@@ -2019,7 +2023,19 @@ __device__ __forceinline__ float mla_warp_sum(float v) {
   for (int off = 16; off; off >>= 1) v += __shfl_xor_sync(0xffffffff, v, off);
   return v;
 }
-
+// two adjacent e4m3 bytes -> one bf16x2 register (an mma fragment half)
+__device__ __forceinline__ uint32_t mla_e4m3x2(const uint8_t* p) {
+  const __half2 h = __nv_cvt_fp8x2_to_halfraw2(*(const __nv_fp8x2_storage_t*)p, __NV_E4M3);
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
+// two e4m3 bytes at a stride (column of the ring) -> one bf16x2 register
+__device__ __forceinline__ uint32_t mla_e4m3x2_strided(const uint8_t* p, int stride) {
+  const __half2 h = __halves2half2(__nv_cvt_fp8_to_halfraw(p[0], __NV_E4M3),
+                                   __nv_cvt_fp8_to_halfraw(p[stride], __NV_E4M3));
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
 __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, float& c3,
                                              uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                                              uint32_t b0, uint32_t b1) {
@@ -2030,23 +2046,13 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-// B fragment (k16 x n8) of a row-major [k][n] bf16 matrix, transposed on the
-// way in: lanes 0-7 address rows k0..k0+7, lanes 8-15 rows k0+8..k0+15, each
-// pointing at the 8-column (16 B) run starting at n0.
-__device__ __forceinline__ void mla_ldsm_x2_trans(uint32_t& b0, uint32_t& b1, const void* row_ptr) {
-  const uint32_t addr = (uint32_t)__cvta_generic_to_shared(row_ptr);
-  asm volatile("ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%0,%1}, [%2];\n"
-               : "=r"(b0), "=r"(b1) : "r"(addr));
-}
-
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
   extern __shared__ __align__(16) char mla_smem[];
   uint8_t* ring = (uint8_t*)mla_smem;
-  __nv_bfloat16* ct = (__nv_bfloat16*)(ring + MLA_SMEM_RING);      // [TILE][CP]
-  __nv_bfloat16* sq = (__nv_bfloat16*)((uint8_t*)ct + MLA_SMEM_CT); // [H][CP]
-  float* ss = (float*)((uint8_t*)sq + MLA_SMEM_Q);                  // [2][H][TILE]
-  __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_SMEM_S);  // [H][PP]
-  float* scorr = (float*)((uint8_t*)sp + MLA_SMEM_P);               // [H]
+  __nv_bfloat16* sq = (__nv_bfloat16*)(ring + MLA_SMEM_RING);
+  float* ss = (float*)((uint8_t*)sq + MLA_SMEM_Q);
+  __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_SMEM_S);
+  float* scorr = (float*)((uint8_t*)sp + MLA_SMEM_P);
   const int lane = threadIdx.x & 31;
   const int warp = threadIdx.x >> 5;
   const int g = lane >> 2, q4 = lane & 3;
@@ -2063,38 +2069,32 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
     const int j0 = min(len, sp_i * per);
     const int j1 = min(len, j0 + per);
 
-    // q rows -> padded smem (A operand of the score mma)
     for (int i = threadIdx.x; i < MLA_H * (MLA_D / 8); i += MK_THREADS) {
       const int h = i / (MLA_D / 8), c8 = i - h * (MLA_D / 8);
       *(uint4*)(sq + h * MLA_CP + c8 * 8) =
           *(const uint4*)(a.q + ((size_t)t * MLA_H + h) * MLA_D + c8 * 8);
     }
-    // this warp's 64 output columns, 8 n-tiles of the mma C layout
     float acc[8][4];
 #pragma unroll
     for (int nt = 0; nt < 8; ++nt) { acc[nt][0] = acc[nt][1] = acc[nt][2] = acc[nt][3] = 0.f; }
-    // softmax state, owned by the warp that handles heads 2w, 2w+1
     float m0 = -INFINITY, m1 = -INFINITY, l0 = 0.f, l1 = 0.f;
 
     const int ntile = (j1 > j0) ? ((j1 - j0 + MLA_TILE - 1) / MLA_TILE) : 0;
     auto issue = [&](int ti) {
-      uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_D;
+      uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
 #pragma unroll
       for (int r = 0; r < MLA_TILE / MLA_WARPS; ++r) {
         const int k = r * MLA_WARPS + warp;
         const int j = j0 + ti * MLA_TILE + k;
         const int sj = (j < j1) ? j : j0;
         const int slot = a.slots[(size_t)t * a.W + sj];
-        mk_cp_async16(dst + (size_t)k * MLA_D + lane * 16,
+        mk_cp_async16(dst + (size_t)k * MLA_RP + lane * 16,
                       a.ckv + (size_t)slot * MLA_D + lane * 16);
       }
       mk_cp_commit();
     };
 #pragma unroll 1
-    for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {
-      if (ti < ntile) issue(ti);
-      else mk_cp_commit();
-    }
+    for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) { if (ti < ntile) issue(ti); else mk_cp_commit(); }
 
 #pragma unroll 1
     for (int ti = 0; ti < ntile; ++ti) {
@@ -2102,47 +2102,25 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       __syncthreads();
       if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);
       else mk_cp_commit();
-      const uint8_t* tile8 = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_D;
+      const uint8_t* tile8 = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
       const int kmax = min(MLA_TILE, j1 - (j0 + ti * MLA_TILE));
 
-      // ---- e4m3 -> bf16 tile, 64 values per thread (lossless)
-      {
-        const int k = threadIdx.x >> 3, c64 = (threadIdx.x & 7) * 64;
-        const uint8_t* src = tile8 + k * MLA_D + c64;
-        __nv_bfloat16* dst = ct + k * MLA_CP + c64;
-#pragma unroll
-        for (int i = 0; i < 64; i += 2) {
-          const __half2 h2 = __nv_cvt_fp8x2_to_halfraw2(*(const __nv_fp8x2_storage_t*)(src + i), __NV_E4M3);
-          *(__nv_bfloat162*)(dst + i) = __float22bfloat162_rn(__half22float2(h2));
-        }
-      }
-      __syncthreads();
-
-      if (a.probe == 1) {   // roofline: consume the tile, skip both mma phases
-        float t = 0.f;
-        for (int i = threadIdx.x; i < MLA_TILE * MLA_D; i += MK_THREADS) t += (float)tile8[i];
-        acc[0][0] += t;
-        __syncthreads();
-        continue;
-      }
-      // ---- S = Q C^T: warp -> (8 slots, half of K); 16 heads x 8 slots per warp
-      {
-        const int n0 = (warp & 3) * 8, kh = warp >> 2;
+      {  // ---- S = Q C^T, B fragments converted from the ring in registers
+        const int n0 = (warp % MLA_NG) * 8, kq = warp / MLA_NG;
         float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
         const __nv_bfloat16* qa = sq + g * MLA_CP;
-        const __nv_bfloat16* cb = ct + (n0 + g) * MLA_CP;
+        const uint8_t* cb = tile8 + (size_t)(n0 + g) * MLA_RP;
 #pragma unroll
-        for (int ks = 0; ks < (MLA_D / 16) / 2; ++ks) {
-          const int k0 = (kh * (MLA_D / 2)) + ks * 16 + q4 * 2;
-          const uint32_t a0 = *(const uint32_t*)(qa + k0);
-          const uint32_t a1 = *(const uint32_t*)(qa + 8 * MLA_CP + k0);
-          const uint32_t a2 = *(const uint32_t*)(qa + k0 + 8);
-          const uint32_t a3 = *(const uint32_t*)(qa + 8 * MLA_CP + k0 + 8);
-          const uint32_t b0 = *(const uint32_t*)(cb + k0);
-          const uint32_t b1 = *(const uint32_t*)(cb + k0 + 8);
-          mla_mma_bf16(c0, c1, c2, c3, a0, a1, a2, a3, b0, b1);
+        for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
+          const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
+          mla_mma_bf16(c0, c1, c2, c3,
+                       *(const uint32_t*)(qa + k0),
+                       *(const uint32_t*)(qa + 8 * MLA_CP + k0),
+                       *(const uint32_t*)(qa + k0 + 8),
+                       *(const uint32_t*)(qa + 8 * MLA_CP + k0 + 8),
+                       mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
         }
-        float* sh = ss + (kh * MLA_H) * MLA_TILE;
+        float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
         sh[g * MLA_TILE + n0 + q4 * 2] = c0;
         sh[g * MLA_TILE + n0 + q4 * 2 + 1] = c1;
         sh[(g + 8) * MLA_TILE + n0 + q4 * 2] = c2;
@@ -2150,12 +2128,18 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       }
       __syncthreads();
 
-      // ---- online softmax for heads 2w, 2w+1 (lane = slot)
-      {
+      {  // ---- online softmax for heads 2w, 2w+1 (lane = slot)
         const int h0 = warp * 2;
         const bool ok = lane < kmax;
-        const float s0 = ok ? (ss[h0 * MLA_TILE + lane] + ss[(MLA_H + h0) * MLA_TILE + lane]) * sscale : -INFINITY;
-        const float s1 = ok ? (ss[(h0 + 1) * MLA_TILE + lane] + ss[(MLA_H + h0 + 1) * MLA_TILE + lane]) * sscale : -INFINITY;
+        float s0 = 0.f, s1 = 0.f;
+#pragma unroll
+        for (int kq = 0; kq < MLA_KQ; ++kq) {
+          const float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
+          s0 += sh[h0 * MLA_TILE + (lane % MLA_TILE)];
+          s1 += sh[(h0 + 1) * MLA_TILE + (lane % MLA_TILE)];
+        }
+        s0 = ok ? s0 * sscale : -INFINITY;
+        s1 = ok ? s1 * sscale : -INFINITY;
         const float n0 = fmaxf(m0, mla_warp_max(s0));
         const float n1 = fmaxf(m1, mla_warp_max(s1));
         const float cr0 = __expf(m0 - n0), cr1 = __expf(m1 - n1);
@@ -2164,41 +2148,38 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         l0 = fmaf(l0, cr0, mla_warp_sum(p0));
         l1 = fmaf(l1, cr1, mla_warp_sum(p1));
         m0 = n0; m1 = n1;
-        sp[h0 * MLA_PP + lane] = __float2bfloat16(p0 * a.ckv_scale);
-        sp[(h0 + 1) * MLA_PP + lane] = __float2bfloat16(p1 * a.ckv_scale);
+        if (lane < MLA_TILE) {
+          sp[h0 * MLA_PP + lane] = __float2bfloat16(p0 * a.ckv_scale);
+          sp[(h0 + 1) * MLA_PP + lane] = __float2bfloat16(p1 * a.ckv_scale);
+        }
         if (lane == 0) { scorr[h0] = cr0; scorr[h0 + 1] = cr1; }
       }
       __syncthreads();
 
-      // ---- O += P C : this warp's 64 columns, K = 32 slots in two k16 steps
-      {
+      {  // ---- O += P C : 64 columns per warp, B fragments straight from the ring
         const float crg = scorr[g], crg8 = scorr[g + 8];
 #pragma unroll
         for (int nt = 0; nt < 8; ++nt) {
           acc[nt][0] *= crg; acc[nt][1] *= crg; acc[nt][2] *= crg8; acc[nt][3] *= crg8;
         }
         const __nv_bfloat16* pa = sp + g * MLA_PP;
+        const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
+        const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2);
+        const uint32_t a2 = *(const uint32_t*)(pa + q4 * 2 + 8);
+        const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2 + 8);
+        const int krow = q4 * 2;                     // this lane's two k (slot) rows
+        const uint8_t* cb = tile8 + (size_t)krow * MLA_RP + warp * 64;
 #pragma unroll
-        for (int ks = 0; ks < MLA_TILE / 16; ++ks) {
-          const int k0 = ks * 16 + q4 * 2;
-          const uint32_t a0 = *(const uint32_t*)(pa + k0);
-          const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PP + k0);
-          const uint32_t a2 = *(const uint32_t*)(pa + k0 + 8);
-          const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PP + k0 + 8);
-          // ldmatrix row provider: lanes 0-15 -> slot rows ks*16 + (lane & 15)
-          const __nv_bfloat16* brow = ct + (ks * 16 + (lane & 15)) * MLA_CP + warp * 64;
-#pragma unroll
-          for (int nt = 0; nt < 8; ++nt) {
-            uint32_t b0, b1;
-            mla_ldsm_x2_trans(b0, b1, brow + nt * 8);
-            mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3, b0, b1);
-          }
+        for (int nt = 0; nt < 8; ++nt) {
+          const int n = nt * 8 + g;                  // this lane's output column
+          mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
+                       mla_e4m3x2_strided(cb + n, MLA_RP),
+                       mla_e4m3x2_strided(cb + 8 * MLA_RP + n, MLA_RP));
         }
       }
-      __syncthreads();     // ring / ct / P are rewritten by the next tile
+      __syncthreads();
     }
 
-    // split partials in the C-fragment layout: (head g, cols 2q..), (head g+8, ...)
     {
       float* base = a.part + (((size_t)t * a.splits + sp_i) * MLA_H) * MLA_D;
 #pragma unroll
