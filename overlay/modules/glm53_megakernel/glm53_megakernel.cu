@@ -480,7 +480,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // stage one k-block of W rows [nt*128, nt*128+128) into a pipeline
   // buffer (async, 16B copies; both addresses are 16B aligned by
   // construction: pitch 144 and k in {2048, 4096}).
-  auto stage_w = [&](int nt, int kb, int buf) {
+  auto stage_w = [&](int nt, int kb, int buf, bool all) {
     // wq is TILE-major: [n/128][k/128][128][128]. Row-major would put the
     // 128 rows of this tile 4096 B apart, so a warp's 32 copies landed on
     // four 128 B segments in four different DRAM pages to fetch 16 KB.
@@ -493,19 +493,28 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // the bytes in flight -- and this stage is latency-bound, so in-flight
     // bytes ARE the bandwidth (Little's law).
     constexpr int MK_W_CHUNKS = KSTEP / 16;
-    // Thread 0 issues NO copies (it still commits an empty group, so the
-    // per-thread wait counts stay uniform). It is the thread that runs
-    // the grid barrier, and the barrier's __threadfence drains that
-    // thread's outstanding cp.async: with the first unit's fill hoisted
-    // above the A-quant barrier, the stamps showed the barrier wait grow
-    // from 1.3 us to 6-12 us -- the fill's latency had simply moved into
-    // the barrier. Threads 1..255 cover the 1024 chunks, 4-5 each.
+    // all == false (the first unit's fill, hoisted above the A-quant grid
+    // barrier): thread 0 issues NO copies. It runs the barrier, and the
+    // barrier's __threadfence drains that thread's outstanding cp.async
+    // -- the stamps showed the barrier wait grow from 1.3 us to 6-12 us
+    // when it took part, the fill's latency simply moved into the
+    // barrier. Threads 1..255 cover the 1024 chunks, 4-5 each. It still
+    // commits an (empty) group so the per-thread wait counts stay uniform.
+    // all == true (every later fill and the steady-state loop): no barrier
+    // ahead, all 256 threads issue exactly 4 chunks each -- the clean-
+    // regime micro put the exclusion at ~3 us over a 24 MB stream.
     // chunk t -> byte t * 16 on both sides: the pack is pre-swizzled, so
     // this straight memcpy lands the swizzled image the fragment loads
     // expect (a swizzle applied here instead measured slower).
-    for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
-         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)
-      mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
+    if (all) {
+      for (int t = (int)threadIdx.x; t < SMEM_W_ROWS * MK_W_CHUNKS;
+           t += MK_THREADS)
+        mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
+    } else {
+      for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
+           && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)
+        mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
+    }
     mk_cp_commit();
   };
   // W4: stage one raw (tile, k-block) record -- 512 nibble chunks (two
@@ -618,10 +627,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           if (kb00 + d < kbn0)
             stage_raw4(nt0, kb00 + d, (kb00 + d) % W4_RAW_NBUF);
       } else {
-        stage_w(nt0, kb00, kb00 % MK_W_NBUF);
+        stage_w(nt0, kb00, kb00 % MK_W_NBUF, false);
 #pragma unroll
         for (int d = 1; d < DIST; ++d)
-          if (kb00 + d < kbn0) stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF);
+          if (kb00 + d < kbn0)
+            stage_w(nt0, kb00 + d, (kb00 + d) % MK_W_NBUF, false);
       }
       hoisted = true;
     }
@@ -906,12 +916,13 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // the old hard-coded 2 a depth of 2 would have staged kb+2 into
       // (kb+2) % 2 == kb % 2 -- straight over the tile the mma was reading.
       // That made MK_W_NBUF a knob that silently corrupted below 3.
-      if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);
+      if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);
       stage_a(kb0);
       if (!prefilled) {
 #pragma unroll
         for (int d = 1; d < DIST; ++d)
-          if (kb0 + d < kbn) stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF);
+          if (kb0 + d < kbn)
+            stage_w(nt, kb0 + d, (kb0 + d) % MK_W_NBUF, true);
       }
       // Wait for exactly W(kb0): the groups allowed to stay in flight are
       // the ones issued after it, min(DIST - 1, kbn - kb0 - 1).
@@ -921,7 +932,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 
       for (int kb = kb0;; ++kb) {
 #if MK_PROBE_SKIP != 3
-        if (kb + DIST < kbn) stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF);
+        if (kb + DIST < kbn)
+          stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF, true);
 #else
         mk_cp_commit();  // keep the group count
 #endif
