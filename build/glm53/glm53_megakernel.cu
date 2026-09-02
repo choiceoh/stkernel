@@ -723,18 +723,37 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // Plain stores rather than cp.async: the tile is at most m * 128 = 4 KB
     // and L2-hot, and a cp.async here would land in the same group stream
     // the W pipeline's wait counts depend on.
-    auto stage_a = [&](int kb) {
-      constexpr int WORDS = KSTEP / 4;
-      for (int t = threadIdx.x; t < c.m * WORDS; t += MK_THREADS) {
-        const int r = t / WORDS, e = (t % WORDS) * 4;
-        uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
-                       (r & 15) * SMEM_A_PITCH;
-        *(uint32_t*)(dst + mk_swz(r & 15, e)) = *(const uint32_t*)(
-            g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
+    // Split in two so the L2 loads go out at the top of an iteration and
+    // only the smem stores sit between the syncs: the load's latency was
+    // exposed once per k-block (the stamps' ~0.9 us "other" per k-block).
+    constexpr int A_WORDS = KSTEP / 4;
+    constexpr int A_PER_THREAD = 32 * A_WORDS / MK_THREADS;  // 4 at m = 32
+    uint32_t areg[A_PER_THREAD];
+    auto stage_a_load = [&](int kb) {
+#pragma unroll
+      for (int i = 0; i < A_PER_THREAD; ++i) {
+        const int t = threadIdx.x + i * MK_THREADS;
+        const int r = t / A_WORDS, e = (t % A_WORDS) * 4;
+        if (r < c.m)
+          areg[i] = *(const uint32_t*)(
+              g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
+      }
+    };
+    auto stage_a_store = [&]() {
+#pragma unroll
+      for (int i = 0; i < A_PER_THREAD; ++i) {
+        const int t = threadIdx.x + i * MK_THREADS;
+        const int r = t / A_WORDS, e = (t % A_WORDS) * 4;
+        if (r < c.m) {
+          uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
+                         (r & 15) * SMEM_A_PITCH;
+          *(uint32_t*)(dst + mk_swz(r & 15, e)) = areg[i];
+        }
       }
       // rows >= m keep stale bytes: their output rows are never written and
       // finite e4m3 cannot poison other rows of the same mma.
     };
+    auto stage_a = [&](int kb) { stage_a_load(kb); stage_a_store(); };
 
     // mma + per-k-block scale fold, shared by the W8 and W4 pipelines
     // (W4 tiles arrive already scale-multiplied, so their wsc is 1).
@@ -827,6 +846,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       for (int kb = kb0;; ++kb) {
         if (kb + RAW_DIST < kbn)
           stage_raw4(nt, kb + RAW_DIST, (kb + RAW_DIST) % W4_RAW_NBUF);
+        if (kb + 1 < kbn) stage_a_load(kb + 1);
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
         MK_TS_ACC_BEGIN(tm);
@@ -842,7 +862,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         MK_TS_ACC_BEGIN(te);
         expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
         MK_TS_ACC_END(texp, te);
-        stage_a(kb + 1);
+        stage_a_store();
         __syncthreads();
       }
     } else {
@@ -875,6 +895,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #else
         mk_cp_commit();  // keep the group count
 #endif
+        if (kb + 1 < kbn) stage_a_load(kb + 1);  // L2 latency under the mma
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
 #if MK_PROBE_SKIP != 1 && MK_PROBE_SKIP != 4
@@ -886,7 +907,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
 #if MK_PROBE_SKIP != 2 && MK_PROBE_SKIP != 4
-        stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
+        stage_a_store();  // saq(kb+1) from the registers loaded above
 #endif
         // outstanding after W(kb+1): the deeper stages, when they exist --
         // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
