@@ -345,6 +345,33 @@ VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # cand (프�
   dflash 의 async off 모두 손상, 원인은 LibertAIDAI 가중치). 이 실험은 그 판정을
   재론하지 않는다.
 
+## EXP-9 — 인덱서 fp32 head-gate 를 split-K 로 (`glm53_indexer_gate_splitk`, 2026-09-02 추가)
+
+`Indexer.forward` 의 `weights = torch.mm(hidden_states.float(), self._wp_fp32)`
+([M,4096]×[4096,16] fp32, 층당 1회 × 11) 을 cuBLAS 가 2블록 `gemmSN` 커널로 답한다:
+유휴 GB10 에서 47 us, 9월 1일 트레이스(CUPTI)에서 86 us. 48 SM 에 블록 2개가 문제의
+전부라 (행, K-슬라이스 512) 마다 프로그램 하나를 띄우고 fp32 atomic 으로 모으는
+split-K Triton 커널이 같은 곱을 10 us 에 낸다. **M<=16(디코드) 만** 이 경로,
+나머지(프리필, C>=3 verify)는 stock `torch.mm` 그대로.
+
+**수치**: 양쪽 다 fp32 누적, 합산 순서만 다르다 — bit-exact 가 아니다. 오프라인
+300회/2,480행: max|diff| 2.4e-6, 행 최대 대비 6.7e-7, top-1 뒤집힘 0, top-4 집합 변화 0
+(`probes/indexer_gate_check.py`). bf16 게이트가 순위를 뒤집는 오차(1e-2)보다 네 자릿수
+아래지만 품질 브래킷은 필요하다.
+
+**천장**: 11층 × ~40 us ≈ 0.44 ms/스텝, C=1 66 ms 스텝의 **~0.65%** — 원장 규칙(1% 미만은
+단독 부팅 가치 없음)에 걸린다. EXP-7/EXP-8 과 독립이라 그 부팅에 얹어 같이 재는
+용도. 단독 부팅 금지.
+
+```bash
+# 프로필 선언 키: caller env. 트레이스에서 gemmSN 11개가 _gate_splitk_kernel 11개로
+# 바뀐 것이 켜진 증거 (부팅 로그 줄은 없다 — 그래프 안에서 층마다 호출).
+VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
+```
+
+- 게이트: 품질 9/9, 한국어 0/16, C=1 step/s 브래킷 base→cand→base (얹은 부팅의 것과 공유).
+- 롤백 = env 한 줄. 기본 0 = stock 과 동일한 `torch.mm` 호출.
+
 ---
 
 ## 순서와 근거
