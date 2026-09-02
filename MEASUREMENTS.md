@@ -2065,3 +2065,27 @@ stock 열은 빌딩블록만이라 러너의 aten ~1,000 호출은 빠져 있다
 `torch.mm` 이 cuBLAS gemmSN 2블록 커널로 층당 86 us × 11(CUPTI) — 우리
 `glm53_prefill_fastpath.py:402` 소유. (3) 드래프터 커널 합 ~3 ms(CUPTI; fc 투영
 814 us eager bf16 168 MB 포함) — 원장 D≈0 과 긴장, 직접 측정 전 판단 보류.
+
+## ★★★dflash 는 이름 때문에 async scheduling 을 잃고 있다 (`glm53_async_dflash`, 2026-09-02, 코드 읽기)
+
+`config/vllm.py` 의 async 자동 판정은 method 이름 허용 목록(eagle 계열·ngram GPU·
+`draft_model`·`dspark`)이고 `dflash` 가 없다 → 모든 dflash 부팅이 동기 스케줄러
+(로그: "Async scheduling not supported with dflash-based speculative decoding and
+will be disabled"). 업스트림 main 도 동일(2026-09-02). 그런데 `DSparkSpeculator` 는
+`DFlashSpeculator` 의 서브클래스로 `propose()` 를 상속하며 dsv4 는 dspark 를 async 로
+서빙 중이고, V2 러너에는 method 별 async 분기가 없다(스케줄러는 `[-1]` placeholder,
+워커가 실제 id 를 커널로 채움). 즉 dflash 의 동기 실행은 기전이 아니라 이름의 결과다.
+
+**의미**: 9월 1일 트레이스의 GPU 유휴(입력 준비 ~5.7 + 그래프 제출 1.43 + 전환,
+스텝의 12%, 프로파일러 없이 ~7%)가 전부 동기 스케줄러가 임계경로에 올린 호스트
+시간이다. async 는 그것을 이전 스텝의 GPU 실행 뒤로 숨긴다 — **천장 7~12%**,
+이 캠페인 최대 단일 레버(EXP-1 EP 와 같은 급).
+
+**구현**: `overlay/modules/glm53_async_dflash` — 플릿 이미지의 `config/vllm.py`
+(preimage 2469…) 에 두 허용 조건 각각 `and not _deneb_dflash_async_ok(method)` 한 줄,
+헬퍼는 `VLLM_GLM53_ASYNC_DFLASH=1` 이고 method 가 dflash 일 때만 True 이며 부팅
+로그에 자기 선언. 기본 0 = stock 판정 그대로. 파일 전체를 마운트하는 이유: 판정이
+프런트엔드·엔진코어 프로세스에서 모델 모듈 import 전에 돌아 우리 훅이 닿지 않는다.
+
+**미측정**: EXP-8(부팅 1회 + 브래킷). 수용률은 움직이면 안 된다(실행 시점만 바뀜).
+V2+async 는 `max_concurrent_batches`=2 라 KV in-flight 예약이 두 배 — KV 라인 확인.
