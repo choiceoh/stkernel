@@ -1128,77 +1128,39 @@ __device__ void mk_mhc_p2(const MKMhcArgs& a, int bid) {
             mk_sigmoid(mixes[j + HC] * a.hc_scale[1] + a.hc_base[j + HC]) *
             a.post_mult;
     }
-    if (lane == 1) {  // comb mixes: hc_scale[2] + sinkhorn
-      float cm[HC][HC];
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-#pragma unroll
-        for (int k = 0; k < HC; ++k)
-          cm[j][k] = mixes[j * HC + k + 2 * HC] * a.hc_scale[2] +
-                     a.hc_base[j * HC + k + 2 * HC];
-
-      float row_max[HC], row_sum[HC], col_sum[HC];
-#pragma unroll
-      for (int j = 0; j < HC; ++j) {
-        row_max[j] = -INFINITY;
-#pragma unroll
-        for (int k = 0; k < HC; ++k) row_max[j] = fmaxf(row_max[j], cm[j][k]);
-      }
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-#pragma unroll
-        for (int k = 0; k < HC; ++k) cm[j][k] = expf(cm[j][k] - row_max[j]);
-#pragma unroll
-      for (int j = 0; j < HC; ++j) {
-        row_sum[j] = 0.0f;
-#pragma unroll
-        for (int k = 0; k < HC; ++k) row_sum[j] += cm[j][k];
-      }
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-#pragma unroll
-        for (int k = 0; k < HC; ++k)
-          cm[j][k] = cm[j][k] / row_sum[j] + a.sinkhorn_eps;
-#pragma unroll
-      for (int k = 0; k < HC; ++k) {
-        col_sum[k] = 0.0f;
-#pragma unroll
-        for (int j = 0; j < HC; ++j) col_sum[k] += cm[j][k];
-      }
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-#pragma unroll
-        for (int k = 0; k < HC; ++k)
-          cm[j][k] = cm[j][k] / (col_sum[k] + a.sinkhorn_eps);
+    {  // comb mixes: hc_scale[2] + sinkhorn, one lane per matrix element.
+      // Lane l < 16 owns cm[j][k] with j = l >> 2, k = l & 3; row sums are
+      // xor-shuffles over bits 0-1, column sums over bits 2-3, and every
+      // pass is two shuffles + one divide per lane instead of the single
+      // lane's 16-element serial chain (the stamps had that lane at ~9 us
+      // per token-warp with 143 blocks waiting at the next barrier for
+      // it). Lanes 16..31 run along on dummies and never store.
+      const int j = (lane >> 2) & 3, k = lane & 3;
+      float v = mixes[j * HC + k + 2 * HC] * a.hc_scale[2] +
+                a.hc_base[j * HC + k + 2 * HC];
+      float rm = v;
+      rm = fmaxf(rm, __shfl_xor_sync(0xffffffffu, rm, 1));
+      rm = fmaxf(rm, __shfl_xor_sync(0xffffffffu, rm, 2));
+      v = expf(v - rm);
+      float rs = v;
+      rs += __shfl_xor_sync(0xffffffffu, rs, 1);
+      rs += __shfl_xor_sync(0xffffffffu, rs, 2);
+      v = v / rs + a.sinkhorn_eps;
+      float cs = v;
+      cs += __shfl_xor_sync(0xffffffffu, cs, 4);
+      cs += __shfl_xor_sync(0xffffffffu, cs, 8);
+      v = v / (cs + a.sinkhorn_eps);
       for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {
-#pragma unroll
-        for (int j = 0; j < HC; ++j) {
-          row_sum[j] = 0.0f;
-#pragma unroll
-          for (int k = 0; k < HC; ++k) row_sum[j] += cm[j][k];
-        }
-#pragma unroll
-        for (int j = 0; j < HC; ++j)
-#pragma unroll
-            for (int k = 0; k < HC; ++k)
-              cm[j][k] = cm[j][k] / (row_sum[j] + a.sinkhorn_eps);
-#pragma unroll
-        for (int k = 0; k < HC; ++k) {
-          col_sum[k] = 0.0f;
-#pragma unroll
-          for (int j = 0; j < HC; ++j) col_sum[k] += cm[j][k];
-        }
-#pragma unroll
-        for (int j = 0; j < HC; ++j)
-#pragma unroll
-            for (int k = 0; k < HC; ++k)
-              cm[j][k] = cm[j][k] / (col_sum[k] + a.sinkhorn_eps);
+        rs = v;
+        rs += __shfl_xor_sync(0xffffffffu, rs, 1);
+        rs += __shfl_xor_sync(0xffffffffu, rs, 2);
+        v = v / (rs + a.sinkhorn_eps);
+        cs = v;
+        cs += __shfl_xor_sync(0xffffffffu, cs, 4);
+        cs += __shfl_xor_sync(0xffffffffu, cs, 8);
+        v = v / (cs + a.sinkhorn_eps);
       }
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-#pragma unroll
-        for (int k = 0; k < HC; ++k)
-          a.comb_mix_out[t * HC * HC + j * HC + k] = cm[j][k];
+      if (lane < HC * HC) a.comb_mix_out[t * HC * HC + lane] = v;
     }
     if (lane == 2) {  // pre mixes: hc_scale[0]
 #pragma unroll
