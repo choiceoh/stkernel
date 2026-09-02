@@ -988,7 +988,7 @@ struct MKMhcArgs {
   const __nv_bfloat16* residual_in;  // [T, HC, HIDDEN]
   const float* post_mix_in;          // [T, HC]
   const float* comb_mix_in;          // [T, HC*HC]
-  const float* fn;                   // [NOUT, HC*HIDDEN]
+  const float* fn;                   // [HC][HIDDEN][NOUT] fp32 (driver copy, m contiguous)
   const float* hc_scale;             // [3]
   const float* hc_base;              // [NOUT]
   const __nv_bfloat16* norm_weight;  // [HIDDEN]
