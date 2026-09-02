@@ -686,6 +686,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   };
 #ifdef MK_PHASE_TS
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
+  unsigned long long tmma = 0ull, texp = 0ull;  // ns in mma_fold / expand (W4)
 #endif
   for (int u = blockIdx.x; u < units; u = next_unit()) {
     int nt, kb0, kbn;
@@ -812,7 +813,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           stage_raw4(nt, kb + RAW_DIST, (kb + RAW_DIST) % W4_RAW_NBUF);
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
+        MK_TS_ACC_BEGIN(tm);
         mma_fold(sw4t, kb, 1.0f);  // scales already inside the bytes
+        MK_TS_ACC_END(tmma, tm);
         if (kb + 1 >= kbn) break;
         // raw(kb+1) landed: the groups still allowed in flight are the
         // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
@@ -820,7 +823,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));
         __syncthreads();  // raw(kb+1) visible; every mma reader of kb done
         MK_TS_ACC_END(twait, tw);
+        MK_TS_ACC_BEGIN(te);
         expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
+        MK_TS_ACC_END(texp, te);
         stage_a(kb + 1);
         __syncthreads();
       }
@@ -971,6 +976,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   MK_TS(4);  // all units of this block done (no fold barrier any more)
 #ifdef MK_PHASE_TS
   MK_TS_STORE(5, twait);
+  if (W4) { MK_TS_STORE(3, tmma); MK_TS_STORE(7, texp); }
 #endif
 }
 
