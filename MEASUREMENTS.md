@@ -2009,3 +2009,115 @@ W4 루프의 누적 스탬프(srv2): n=6416 루프 127 µs = mma_fold 41 + expan
 **먹힌 것(순서대로, W4 x2 n=6416)**: A 타일 밀집 128 B + XOR 스위즐(4-way 충돌 제거) 145→141; 확장의 바이트-레인 SIMD(LUT 닫힌 식, `__vcmpeq4/__vadd4/__byte_perm`, 비트 동일) →128; mma k 스텝 완전 언롤 →122; stage_a L2 로드 선발행 →118; m ≤ 16 에서 두 번째 m 타일 제거(`mma_fold<MT>`, 제네릭 람다) →112. W8 도 같은 절감으로 6416 +10%·4096 동률·2048 +4%·1024 +8% 까지.
 **지속 스트림 한계**: srv2 마이크로벤치에서 cp.async·TMA 1D·TMA 2D(텐서맵 128 B 스위즐)·레이아웃(타일 우선/행 우선 128~2 KB 런)·깊이 3~8 모두 ~135~150 GB/s. 프로세스의 **첫 커널 배치만 225 GB/s**(부스트) — 마이크로벤치는 워밍업 뒤 값만 믿을 것. W8 이 deepgemm 에 지는 남은 10% 는 스트림이 아니라 고정비.
 **W4 채택은 운영자 결정**(서빙 수치 변경, by-design 1.24e-01): README 의 품질 브래킷(9/9 + 한국어 0/16 + pos-1 수용률 2%p) 뒤에만.
+
+## ★★준비 커널 통합 (`glm53_prep_fused`) — 스텝의 12% 가 GPU 유휴, 그 자리에 발사 하나 (2026-09-02, srv4 오프라인)
+
+**발견 (9월 1일 트레이스 재분석, rank 3, 229 스텝, 스트림 합집합)**: 프로파일된 72.1 ms
+스텝에서 GPU 가 비는 시간 8.9 ms(12%)가 한 곳에 몰려 있다 — 드래프터 그래프와
+타깃 그래프 사이의 eager 입력 준비 5.7 ms(aten 1,028 호출·memcpy 45·1~3 us 커널
+~100개, 커널 간 공백 50~430 us = 호스트가 발사를 못 따라감), 타깃 그래프 제출
+`cudaGraphLaunch` 1.43 ms(1,640 노드, 50스텝 중앙, p10 1.34 p90 1.59), 드래프터 앞
+DtoH 대기 0.6, 스텝 전환 0.8. 프로파일러가 호스트를 부풀리므로 프로파일러 없는
+앵커는 기존 원장의 "디코드 중 GPU 93%" (같은 정의) → 실제 유휴 4~5 ms/66 ms. dflash
+가 async scheduling 을 끈다는 기록(위 표)과 일치한다. 준비 구간이 그 대부분이다.
+**천장 = 준비 구간 자체, 스텝의 4~6%**; 읽는 바이트 0.
+
+같은 트레이스에서 그래프 안 elementwise 글루 605개의 정체도 잡았다(STEP_KERNEL_MAP
+보충 분해 2): 풀어텐션 인덱서 275(우리 kpool 파일), KDA 의 split-뷰 복사 136(MK-KDA
+가 흡수), MoE shared 덧셈 42, 나머지 ~150 — 커널당 CUPTI 2.0 us + 간격 0.2 us,
+전부 합쳐 2.7 ms(부풀린 값)라 호스트 유휴가 그래프 안 글루 전체보다 크다.
+
+**구현**: `overlay/modules/glm53_prep_fused` — 균일 spec-verify 스텝(전 요청 드래프트
+7개, FULL 그래프, 요청 패딩 없음)에서 `prepare_inputs` + `prepare_attn` + KV 그룹 7개
+빌더가 쓰는 **모든 persistent 버퍼**를 pinned H2D 1회 + Triton 발사 1회 + deep_gemm
+스케줄 1회로 쓴다. 메타데이터 dict 는 형상별 캐시(FULL 리플레이는 버퍼만 읽고,
+dict 는 드래프터에 넘어가 무시된다). 설치는 러너/빌더 파일 17개의 preimage 를
+고정(드리프트 → DISARM), plan 은 캡처 직후 live 러너에서 만들고 커널을 미리
+컴파일한다. 러너 파일은 덮지 않는다(메서드 패치).
+
+**오프라인 게이트 (srv4 새 컨테이너 `glm53:sm121-fi618`, 마운트 오버레이 30개,
+`probes/run_prep_fused_check.sh`)**: stock 빌딩블록(input_batch Triton 3종·
+BlockTables gather/slot·GDN FULL 복사·MLA req_id·indexer uniform-decode +
+compressed slot + deep_gemm 스케줄) vs fused 커널, 프로덕션 기하(그룹 7, MLA 폭
+2052, indexer 256토큰 페이지/factor 4/storage 64, kpool 4, mamba 폭 8), 무작위
+배치 C=1~4 **60/60 회 46개 텐서 bit-exact**.
+
+| C=1 스텝당 | stock 빌딩블록 | fused |
+|---|---|---|
+| 발사 | 커널 ~30 + memcpy ~8 | 커널 3 + memcpy 1 |
+| 벽시계(호스트+GPU) | 2,556 us | 201 us |
+| 이벤트 루프 (당초 "GPU" 로 적었던 값) | (호스트 대기 포함 2,562) | 200 = 커널 88.5 + deep_gemm 스케줄 64.4 + 복사 |
+| **실제 GPU 시간** (CUDA 그래프 리플레이·CUPTI, 리뷰 검증) | — | 커널 ~23, deep_gemm 스케줄 ~3.4, 발사 전체 ~27~40 |
+
+stock 열은 빌딩블록만이라 러너의 aten ~1,000 호출은 빠져 있다 — 실제 절감은 이보다
+크고, 상한은 트레이스의 준비 구간(프로파일러 없이 3~5 ms). **정정(2026-09-02 리뷰)**:
+파이썬 발사 루프를 이벤트로 감싼 "88/64/200 us GPU" 는 발사 비용보다 짧은 커널에서
+호스트 발사 시간(Triton 디스패처 ~45, deep_gemm 래퍼 ~75 us, Grace CPU)을 잰 것이다.
+fused 가 임계경로에 새로 올리는 GPU 비용은 ~30 us 이고 호스트 ~200 us 가 남는 몫이다.
+
+**미측정 (서빙)**: 섀도 부팅(`VLLM_GLM53_PREP_FUSED=shadow`, drift=0 확인) → EXP-7
+브래킷(C=1 step/s). 물리 기전 확인 = 켠 부팅 트레이스에서 준비 구간의 memcpy·
+`at::native::*` 가 사라지고 `_glm53_prep_fused_kernel` 하나가 남는 것. 기본값 0.
+
+**코드 리뷰 (2026-09-02, 10 관점 × 검증 14건)** — 첫 판(PR #221)의 결함과 수정:
+(1) plan 이 `prefill_len.gpu`·`num_blocks.gpu` 를 캐시했는데 둘은 `UvaBackedTensor` 라
+`copy_to_uva()` 마다 라운드로빈 풀의 다른 버퍼로 재바인딩된다(깊이 ≥2, `num_blocks` 는
+매 스텝 `apply_staged_writes` 로 회전) → 격 스텝마다 한 스텝 stale: 새 블록으로 넘어가는
+스텝(요청당 ~16 스텝에 1회)에 gather 가 한 블록 짧아 어텐션이 잘못된 블록을 읽고, 슬롯
+재사용 시 `input_ids` 를 안 쓴다. 이미지 코드로 재현. 수정 = 발사 시점에 소유 객체에서
+읽기. (2) 드래프터 KV 그룹(7번째)에 타깃 쪽 FlashInfer 빌더가 붙어 있어 `build_plan` 이
+모든 실제 부팅에서 실패 → 모듈 inert(오프라인 하네스는 그 그룹을 빌더 없음으로 가정해
+못 잡음). 수정 = 레이어 소속으로 드래프터 그룹 식별. (3) pinned 스테이징 버퍼 1개를 매
+스텝 덮어써 async scheduling 아래에서 이전 스텝의 DMA 와 경합(GB10 재현) → `UvaBufferPool`.
+(4) Q 가 2의 거듭제곱이 아니면 `tl.arange` 컴파일 실패가 첫 적격 스텝에서 엔진을 죽임 →
+plan 가드 + warmup 실패 DISARM + 발사 예외 시 stock 폴백. (5) shadow 가 stock 배치를
+반환해 armed 분기를 한 번도 실행 안 함 → 검증 뒤 fused 배치를 흘리고 armed 도 64 스텝마다
+self-check. (6) kpool tail 원형 버퍼 휴면을 가정만 함 → plan·검증마다 assert.
+(7) 메타데이터 캐시는 dflash 가 dict 를 무시할 때만 안전 → speculator 타입 게이트.
+(8) 노브 오타가 arm 으로 떨어짐 → 미지 값 DISARM. (9) 런북·README 의 `EXTRA_ENV=` 명령이
+프로필 선언 키라 런처에서 ABORT → caller env 형식(EXP-6 도 같은 결함). (10) 프로브 래퍼가
+preimage 검증 없이 전 행을 마운트해 fi618 위에 v13 오버레이 5개를 섞어 돌림 → 래퍼가
+런처처럼 검증. (11) "88 us GPU" 는 호스트 발사 시간(위 정정). (12) warmup 이 돌려주는
+컴파일 커널로 직접 발사해 Triton 디스패처 호스트 비용 ~12 us/스텝 절감(검증에서 bit-exact).
+기록되지 않은 부수 사실: PR #221 은 09:46Z 머지됐으나 PR #224(e76452f) 가 언급 없이
+전부 되돌려 main 에서 사라졌다 — 이 판(v2)이 복원본이다.
+
+**v2 오프라인 게이트 재실행 (srv2, 프로필 이미지 `glm53:v13-b12x`, 래퍼가 31개 행의
+base preimage 를 검증)**: 무작위 배치 60/60 이 46개 텐서 bit-exact — 이번엔 stock 팔과
+fused 팔 사이에 `num_blocks`·`prefill_len` 의 UVA 핸들을 한 번 더 회전시켜 첫 판의 결함
+(1)을 재현하는 조건에서. C=1 스텝당 stock 빌딩블록 2,469~2,535 us vs fused 184 us
+(JIT 디스패치) → **152 us**(warmup 의 컴파일 커널로 직접 발사, 두 번째 실행), 호스트+GPU;
+**실제 GPU 시간 24.4~24.5 us/스텝**(발사 20개를 CUDA 그래프로 캡처해 리플레이, deep_gemm
+스케줄·복사 포함), deep_gemm 스케줄 호출 호스트+GPU 11~65 us(실행 간 호스트 편차).
+
+**부수 발견(미조치)**: (1) kpool tail 의 원형 슬롯 매핑은 러너가 빌더에 `positions`
+를 안 넘겨 이 이미지에서 잠들어 있다 — `glm53_tail_slot_persistent` 의 고정 버퍼도
+그래서 무효이고, tail 그룹은 generic 매핑(문서 자체가 "pos >= kpool 이면 블록 0 으로
+붕괴"라 적은 것)을 쓴다. C>=2 수치 축이라 별도 브래킷. (2) 인덱서 fp32 head-gate
+`torch.mm` 이 cuBLAS gemmSN 2블록 커널로 층당 86 us × 11(CUPTI) — 우리
+`glm53_prefill_fastpath.py:402` 소유. (3) 드래프터 커널 합 ~3 ms(CUPTI; fc 투영
+814 us eager bf16 168 MB 포함) — 원장 D≈0 과 긴장, 직접 측정 전 판단 보류.
+
+## ★★★dflash 는 이름 때문에 async scheduling 을 잃고 있다 (`glm53_async_dflash`, 2026-09-02, 코드 읽기)
+
+`config/vllm.py` 의 async 자동 판정은 method 이름 허용 목록(eagle 계열·ngram GPU·
+`draft_model`·`dspark`)이고 `dflash` 가 없다 → 모든 dflash 부팅이 동기 스케줄러
+(로그: "Async scheduling not supported with dflash-based speculative decoding and
+will be disabled"). 업스트림 main 도 동일(2026-09-02). 그런데 `DSparkSpeculator` 는
+`DFlashSpeculator` 의 서브클래스로 `propose()` 를 상속하며 dsv4 는 dspark 를 async 로
+서빙 중이고, V2 러너에는 method 별 async 분기가 없다(스케줄러는 `[-1]` placeholder,
+워커가 실제 id 를 커널로 채움). 즉 dflash 의 동기 실행은 기전이 아니라 이름의 결과다.
+
+**의미**: 9월 1일 트레이스의 GPU 유휴(입력 준비 ~5.7 + 그래프 제출 1.43 + 전환,
+스텝의 12%, 프로파일러 없이 ~7%)가 전부 동기 스케줄러가 임계경로에 올린 호스트
+시간이다. async 는 그것을 이전 스텝의 GPU 실행 뒤로 숨긴다 — **천장 7~12%**,
+이 캠페인 최대 단일 레버(EXP-1 EP 와 같은 급).
+
+**구현**: `overlay/modules/glm53_async_dflash` — 플릿 이미지의 `config/vllm.py`
+(preimage 2469…) 에 두 허용 조건 각각 `and not _deneb_dflash_async_ok(method)` 한 줄,
+헬퍼는 `VLLM_GLM53_ASYNC_DFLASH=1` 이고 method 가 dflash 일 때만 True 이며 부팅
+로그에 자기 선언. 기본 0 = stock 판정 그대로. 파일 전체를 마운트하는 이유: 판정이
+프런트엔드·엔진코어 프로세스에서 모델 모듈 import 전에 돌아 우리 훅이 닿지 않는다.
+
+**미측정**: EXP-8(부팅 1회 + 브래킷). 수용률은 움직이면 안 된다(실행 시점만 바뀜).
+V2+async 는 `max_concurrent_batches`=2 라 KV in-flight 예약이 두 배 — KV 라인 확인.
