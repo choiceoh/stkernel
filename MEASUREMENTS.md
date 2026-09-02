@@ -2264,3 +2264,32 @@ async 비활성화 elif 는 첫 항에서 단락되고, 우리 헬퍼(`_deneb_df
 거부해 이 부팅에서 DISARM 됐다. 이미지 소스 확인 결과 `_generate_draft` 호출 두 곳 모두
 타깃 메타데이터를 넘기지 않는다(`attn_metadata=None` 또는 드래프터 자신의
 `draft_attn_metadata`), `DFlash2Speculator` 는 `propose()` 를 재정의하지 않는다 → 가드에 추가.
+
+## ★★GLM-5.3 프리필 첫 프로파일 — 32K 에서 시간의 정체와 레버 (2026-09-03, MK-MLA 부팅, rank 0)
+
+프리필 개선 여지를 묻는 질문에 원장에 GLM 프리필 분해가 없었다(있던 것은 DSV4 32K).
+MK-MLA 부팅에서 신선한 36,852 토큰 프롬프트 하나를 프로파일했다(벽시계 17.1 s, 커널
+합 16.9 s → **GPU 99% 바쁨, 프리필은 GPU 바운드**). `census.py` 그룹 합계 × 8 스텝:
+
+| 그룹 | 초 | 비중 | 무엇 | 레버 |
+|---|---|---|---|---|
+| **어텐션 (sparse MLA 프리필)** | **4.19** | **24.8%** | 11층 × 5청크, 층-청크당 76 ms — 쿼리마다 top-k 2048 × 512 B 를 gather (층-청크당 8.6 GB) → gather 대역폭 바운드 | `glm53_union_prefill`(인접 쿼리 union, exact, opt-in, **미측정**) |
+| MoE b12x | 3.22 | 19.0% | 42층 × 5청크, 층-청크당 14.6 ms = 3.3 TFLOP → **226 TFLOP/s** | b12x 커널 몫, 우리 레버 아님 |
+| NCCL AllReduce (ring LL bf16) | 2.72 | 16.1% | 455회 × 6.0 ms, 64 MB 페이로드 → 링크의 64% | 겹치기(SP/async TP 패스는 torch.compile 필요 — 이 모델은 미지원), fp8 AR(수치) |
+| cutlass/cublas GEMM | 2.35 | 13.9% | M=8192 밀집 투영 | — |
+| mHC (TileLang) | 1.92 | 11.4% | post 1.19 + pre 0.73 | BIGFUSE 는 dsv4 에서 in-graph +0.1% — 아님 |
+| KDA/FLA 청크 | 0.91 | 5.4% | 34층 청크 스캔 | EXP-5 청크 스윕(1~2%) |
+| elementwise·기타·norm/quant | 1.51 | 8.9% | | |
+
+**판정**: 프리필은 MoE·GEMM(33%, 물리)과 어텐션 gather(25%)·통신(16%)이 지배한다.
+오버레이가 닿는 레버는 어텐션 gather 하나가 크다 — 인접 쿼리의 top-k 가 대부분 겹치므로
+union 으로 한 번 읽으면 gather 가 절반 이하: **천장 ~12%**. KDA 1~2%, 통신은 이 이미지의
+겹치기 패스가 torch.compile 전제라 막혀 있어 0~5%(연구 항목). 합쳐 **15~20%**, 32K TTFT
+17.1 → ~14 s(2,150 → ~2,600 tok/s). 그 이상은 MoE/GEMM 커널 몫.
+
+**사용자가 체감하는 첫 요청 비용은 따로 있다**: 콜드 JIT 세금 11~41%(9/1 실측). 런처의
+`PREFILL_WARMUP` 이 호출자 env 복원 목록에 없어 켜지지 않던 버그를 #243 으로 고쳤다.
+다음 부팅부터 `PREFILL_WARMUP=1` 이 실제로 웜업한다.
+
+**재현**: `~/glm53-logs/prefill_profile.sh`(헤드; start_profile → 32K 요청 → stop_profile →
+census). 트레이스 `dp0_pp0_tp0_dcp0_ep0_rank0.1788380125392907694`.
