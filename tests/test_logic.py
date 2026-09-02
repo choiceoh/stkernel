@@ -6520,22 +6520,42 @@ def test_glm53_megakernel_contracts() -> None:
           "conv state slot stride is KDA_QKV*conv_width, computed once as "
           "sbase and used by every read and write "
           "(spec allocates a wider window; runtime width is the stride)")
-    check("a.conv_width - (CONV_W - 1) + i" in cu,
-          "the convolution's pos<0 history is the NEWEST end of the state "
-          "buffer -- reading the front took the oldest entries once the "
-          "width grew past CONV_W - 1")
+    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+          and "a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i]" not in cu,
+          "the convolution's pos<0 history starts at the accepted boundary "
+          "(state[acc - 1 .. acc + 1], the stock spec kernel's prior_tokens) "
+          "-- the buffer's newest end is that window only when every draft "
+          "was accepted")
     check("for (int i = 0; i < a.conv_width; ++i)" in cu
           and "(i < keep) ? kept[i] : hist(i - keep)" in cu,
           "the state update writes the WHOLE window: causal_conv1d_update "
           "keeps conv_width - nq old values starting at `acc` and appends "
           "every query token")
-    check("slot * KDA_H + head) * KDA_D * KDA_D" in cu,
-          "recurrent state slot stride is H*D*D")
+    check("(((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D)" in cu
+          and "(((size_t)sj * KDA_H + head) * KDA_D * KDA_D)" in cu,
+          "recurrent state slot stride is H*D*D for both the resume slot "
+          "and the per-position store slots")
 
     # -- driver-side guards from the same review
     check("SLOT = 1" in pysrc_full
-          and "torch.full((1, 8), self.SLOT" in pysrc_full,
-          "the KDA fixture addresses a NONZERO state slot")
+          and "self.sidx = (self.SLOT + torch.arange(8, dtype=torch.int32,"
+          in pysrc_full
+          and "mkw(self.SLOT + 8 + 1, KDA_H, KDA_D, KDA_D," in pysrc_full,
+          "the KDA fixture addresses NONZERO, DISTINCT state slots per query "
+          "position (the engine's spec-decode layout)")
+    # -- the state-index contract, taken from the stock kernels: the conv
+    #    history starts at the accepted boundary, the recurrence resumes
+    #    from slot [r, acc - 1] and stores after every token into [r, j]
+    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+          and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
+          and "if (slot0 <= 0) continue;" in cu
+          and "const int sj = a.state_idx[r * a.mql + j];" in cu
+          and "if (sj > 0) {" in cu
+          and "if (j == acc - 1)" not in cu
+          and "a.conv_width - (CONV_W - 1) + i" not in cu,
+          "MK-KDA follows the stock state-index contract: conv history from "
+          "state[acc - 1], recurrence resumed from slot [r, acc - 1] and "
+          "stored per position into [r, j] (slot <= 0 skipped)")
     arm_fn = pysrc_full[pysrc_full.index("def maybe_arm"):]
     check("is_current_stream_capturing()" in arm_fn,
           "maybe_arm never compiles/self-tests inside graph capture")
