@@ -167,13 +167,14 @@ constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
 // before the W4 pipeline: sharing one budget put the W4 raw stages into the
 // W8 launch too, and that measured 4-7% slower on every W8 shape (the
 // carveout that grew took the L1 the W8 loop was using).
-constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
+constexpr int MK_SMEM_ALIGN = 1024;  // runtime alignment of the dynamic base
+constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;   // 57,344 at NBUF 3
-constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
+                          KBLK_MAX * KBLK_MAX * 4;   // 58,368 at NBUF 3
+constexpr int GEMM_SMEM_W4 = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +
                              W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                              KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 68,608 at 3
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 69,632 at 3
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
@@ -446,7 +447,17 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // pre-set values that are all overwritten before anyone reads them.
 
   constexpr int NWB = W4 ? W4_EXP_NBUF : MK_W_NBUF;
-  uint8_t* saq = smem;  // [2][16][132] fp8 A tiles (single per kb)
+  // The dynamic smem region starts right after this kernel's STATIC
+  // __shared__ variables (s_last, s_unit below: 8 B -> base at +16), so
+  // without this every 128 B tile row straddled a bank-line boundary --
+  // the same penalty as the old padded pitch, which is why dense rows
+  // measured no faster at first. Align to 1 KB (the constants carry 1 KB
+  // of slack for it).
+  {
+    const uint32_t sb = (uint32_t)__cvta_generic_to_shared(smem);
+    smem += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);
+  }
+  uint8_t* saq = smem;  // [2][16][128] fp8 A tiles (single per kb)
   uint8_t* swb = saq + 2 * 16 * SMEM_A_PITCH;  // [NWB][128][144]
   float* sxs = (float*)(swb + NWB * SMEM_W_ROWS * SMEM_W_PITCH);  // [32][32]
   uint8_t* sraw = (uint8_t*)(sxs + KBLK_MAX * KBLK_MAX);  // W4 raw stages
