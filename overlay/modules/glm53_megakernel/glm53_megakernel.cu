@@ -956,12 +956,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       }
       __syncthreads();  // s_last is reused by the next unit
     }
+    if (u == (int)blockIdx.x) MK_TS(6);  // first unit (incl. its epilogue) done
   }
   MK_TS(4);  // all units of this block done (no fold barrier any more)
 #ifdef MK_PHASE_TS
   MK_TS_STORE(5, twait);
 #endif
-  MK_TS(6);  // exit
 }
 
 template <bool W4>
