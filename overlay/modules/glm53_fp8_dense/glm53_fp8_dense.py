@@ -364,6 +364,28 @@ def _copy_matches_source(mod, method, weight, rtol=None, got_fn=None):
         return None
 
 
+
+_FREE_BF16_ENV = "VLLM_GLM53_FP8_DENSE_FREE_BF16"
+
+
+def _free_bf16_enabled() -> bool:
+    """Exact opt-in: release the bf16 source of every quantised linear.
+
+    After `quant_method` is swapped, apply() reads only the fp8 copy (and the
+    megakernel's W4 pack), so the bf16 tensor is dead weight -- 2.94 GB per
+    rank at TP4, against 1.47 GB of fp8 pack and 0.82 GB of W4 pack. Freeing
+    it hands that straight to the KV cache.
+
+    What it costs: the two paths that still reach `self._base.apply` -- a
+    bias, and an exception in the fp8 kernel -- would then read an empty
+    tensor. No linear this module admits has a bias (checked against the
+    checkpoint: the only matching `.bias` entries are in the vision tower,
+    which this profile disables), and the error path is the same "a boot
+    self-test is the gate" trade the megakernel segments already make. Still
+    default OFF and knob-gated, because it is not recoverable at runtime.
+    """
+    return os.environ.get(_FREE_BF16_ENV, "").strip() == "1"
+
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
 
@@ -384,6 +406,8 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     scheme = "w4a8" if raw in ("w4a8", "w4", "fp4") else "w8a8"
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
+    free_bf16 = _free_bf16_enabled()
+    freed_bytes = 0
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _include_patterns()):
             continue
@@ -464,6 +488,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
+            if free_bf16 and getattr(mod, "bias", None) is None:
+                # the copy check above already ran against this tensor
+                freed_bytes += weight.numel() * weight.element_size()
+                mod.weight.data = torch.empty(
+                    0, dtype=weight.dtype, device=weight.device)
+                weight = None
         except Exception as e:
             logger.warning("[fp8-dense] %s stayed bf16: %r", name, e)
             skipped.append(name)
@@ -476,6 +506,11 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         len(quantized), params * 2 / 1e9, len(skipped), len(stale),
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    if free_bf16:
+        logger.warning(
+            "[fp8-dense] %s=1: released %.2f GB of bf16 sources; the bias and "
+            "error fallbacks through the base method are gone with them",
+            _FREE_BF16_ENV, freed_bytes / 1e9)
     if stale:
         logger.warning(
             "[fp8-dense] %s: %d copies did not reproduce their bf16 source "

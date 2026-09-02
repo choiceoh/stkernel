@@ -2074,6 +2074,30 @@ def test_glm53_v2_overlay_contracts() -> None:
     print("  glm53 V2/deploy contracts ...... OK")
 
 
+def test_fp8_dense_free_bf16_contract() -> None:
+    """Releasing the bf16 sources is exact-opt-in and drops the base fallbacks.
+
+    After the quant_method swap apply() reads only the fp8 copy, so the bf16
+    tensor is dead: 2.94 GB/rank at TP4 against 1.47 GB of fp8 pack and 0.82
+    GB of the megakernel's W4 pack (computed from the checkpoint's shapes).
+    Freeing it also removes the bias and exception fallbacks through the base
+    method, which is why it is knob-gated and off by default."""
+    src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+               encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_FP8_DENSE_FREE_BF16=0$", profile, re.M) is not None,
+          "profile ships the bf16 release off")
+    check('os.environ.get(_FREE_BF16_ENV, "").strip() == "1"' in src,
+          "exact opt-in: only the string 1 releases the bf16 sources")
+    check('if free_bf16 and getattr(mod, "bias", None) is None:' in src,
+          "a linear with a bias keeps its bf16 source (the bias path needs it)")
+    idx_swap = src.index("mod.quant_method = method")
+    idx_free = src.index("mod.weight.data = torch.empty(")
+    check(idx_swap < idx_free,
+          "the release happens after the copy check and the quant_method swap")
+    print("  fp8-dense bf16 release contract .. OK")
+
+
 def test_fp8_dense_bproj() -> None:
     """The b-projection arm matches exactly the rear halves meant for it.
 
@@ -7543,6 +7567,7 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
     test_mhc_probe_contracts()

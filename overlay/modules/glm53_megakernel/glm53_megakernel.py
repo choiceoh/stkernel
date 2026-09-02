@@ -1213,7 +1213,9 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
     ws = _ensure_workspace(q_nope.device)
     splits = mla_splits(T)
-    mw = (_mla_workspace(q_nope.device, T, MLA_SPLITS_MAX) if splits > 1
+    # size the scratch by the splits this shape actually uses, not the cap:
+    # MLA_SPLITS_MAX is 64 and sizing by it reserved 134 MB where 25 is used
+    mw = (_mla_workspace(q_nope.device, T, splits) if splits > 1
           else {"part": ws["barrier"], "pml": ws["barrier"]})   # unused when splits == 1
     if out is None:
         out = torch.empty_like(q_nope)
