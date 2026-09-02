@@ -6173,25 +6173,23 @@ def test_glm53_megakernel_contracts() -> None:
     check("m16n8k32.row.col.f32.e4m3.e4m3.f32" in cu,
           "the GEMM uses the e4m3 mma.sync kind available on sm_121a")
     check("cp.async.cg.shared.global" in cu_code
-          and "MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH" in cu
+          and "W4_RAW_NBUF * W4_RAW_BYTES" in cu
           and "cp.async.wait_group" in cu_code,
-          "the W stream is a multi-buffer cp.async pipeline")
+          "the W stream is a multi-buffer cp.async pipeline of raw records")
     # Depth is a tuning knob, not a contract -- but it must stay deep enough
-    # to keep more than one tile in flight, and the smem it costs must fit
+    # to keep more than one record in flight, and the smem it costs must fit
     # the opt-in this part actually reports (101376 B).
-    nbuf = consts["MK_W_NBUF"]
+    nbuf = consts["W4_RAW_NBUF"]
     check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
-    smem = 2 * 16 * 132 + nbuf * 128 * 144 + 32 * 32 * 4
+    smem = consts["GEMM_SMEM"]
     check(smem <= 101376,
           f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
     # The opt-in is per BLOCK; occupancy is set by the SM's shared memory,
     # which on this part is 102,400 B -- NOT the 131,072 an earlier version
     # of this check assumed. That wrong number let the check pass while
-    # asserting the opposite of the truth: at nbuf=3 the block takes 63,616 B,
-    # so 2 x 63,616 = 127,232 overruns 102,400 and exactly ONE block is
-    # resident. (It also explains why deepening 3 -> 4 measured zero: both
-    # depths were already at one block/SM, so there was no occupancy left
-    # to lose.) Record the real figure rather than assert a fiction.
+    # asserting the opposite of the truth: at nbuf=3 the block takes 69,632 B,
+    # so two blocks overrun 102,400 and exactly ONE block is resident.
+    # Record the real figure rather than assert a fiction.
     #
     # The load-bearing contract is residency, not depth: mk_gemm_kernel is a
     # PERSISTENT grid with a grid barrier, so a grid that does not fit is a
@@ -6209,64 +6207,45 @@ def test_glm53_megakernel_contracts() -> None:
           f"gemm grid ceiling {consts['MK_GRID_CAP']} is more than twice "
           f"what {smem} B of smem allows ({blocks_per_sm} block(s)/SM on 48 "
           "SMs) -- raise the ceiling only alongside a shallower pipeline")
-    # The fp8 W pack is TILE-major and the packer and the kernel are the only
+    # The W pack is TILE-major and the packer and the kernel are the only
     # two places that know it -- they must move together or the kernel reads
     # a correct-looking tensor as garbage. Row-major put the 128 rows of a
-    # tile 4096 B apart, so one 16 KB tile touched 128 DRAM pages.
-    check("c.wq + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * KSTEP)" in cu
-          and "wsrc + (size_t)t * 16" in cu,
-          "stage_w reads a tile as one contiguous run")
-    check("wq.dim() == 4" in cu and "wq.size(3) == KSTEP" in cu
-          and "wq.is_contiguous()" in cu,
-          "run_gemm rejects a wq that is not the tile-major pack -- the "
-          "shape is the only thing standing between a stale row-major "
-          "tensor and silently wrong output")
-    check(".permute(0, 2, 1, 3).contiguous())" in pysrc_full
-          and "q.view(n_pad // 128, 128, k // 128, 128)" in pysrc_full,
-          "build_mk_weight emits [n/128, k/128, 128, 128]")
-    check("mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);" in cu
-          and "src = (torch.arange(8, device=q.device)[None, :] ^ (rows[:, None] & 7))"
-          in pysrc_full and "wrow + mk_swz(nrow, koff + t4)" in cu,
-          "the W8 tile copy is a straight memcpy of a PRE-SWIZZLED pack into "
-          "dense 128 B rows (every thread issues copies), and the fragment "
-          "loads read through the same XOR -- the padded pitch cost the copy "
-          "16% of its bandwidth")
+    # tile 4096 B apart, so one record touched 128 DRAM pages.
+    check("c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);" in cu
+          and "((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);" in cu,
+          "stage_raw4 reads a (tile, k-block) record as one contiguous run")
+    check("rowb + mk_swz(row4, half4 * 64 + g4 * 16)" in cu
+          and "wrow + mk_swz(nrow, koff + t4)" in cu
+          and "constexpr int SMEM_W_PITCH = KSTEP;" in cu,
+          "the expanded e4m3 tile is dense 128 B rows: the expansion stores "
+          "and the fragment loads go through the same XOR swizzle (a padded "
+          "pitch put every row across a bank-line boundary)")
     check("smem += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);"
           in cu and "constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +"
-          in cu and "constexpr int GEMM_SMEM_W4 = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +"
           in cu,
           "the dynamic smem base must be re-aligned at runtime (the static "
           "s_last/s_unit push it to +16, which put every 128 B tile row across "
-          "a bank-line boundary: dense rows measured no faster until this) and "
-          "both smem budgets must carry the alignment slack")
-    check("stage_w(nt0, kb00, kb00 % MK_W_NBUF, false);" in cu
-          and "stage_w(nt, kb + DIST, (kb + DIST) % MK_W_NBUF, true);" in cu
-          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);" in cu,
-          "only the fill hoisted above the grid barrier leaves thread 0 out of "
-          "the copies (the barrier's fence would drain them); every later "
-          "stage_w uses all 256 threads, 4 chunks each")
+          "a bank-line boundary) and the smem budget must carry the slack")
     check(bench.index("torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])")
           < bench.index("_DRAIN.sum()") < bench.index("for t in hot:"),
           "the bench flush must drain the dirty lines with a read stream AFTER "
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check("threadIdx.x != 0\n           && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
-          and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
-          "thread 0 issues no cp.async in the hoisted fill: it runs the grid barrier, whose "
+    check("threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
+          "thread 0 issues no cp.async: it runs the grid barrier, whose "
           "__threadfence drains its own outstanding copies -- with the "
           "fill hoisted above the barrier that turned into a 6-12 us wait")
-    _w8_at = cu_code.index("stage_w(nt, kb0,")
-    check(_w8_at < cu_code.index("stage_a(kb0);", _w8_at),
-          "W(kb0) starts flying before A(kb0) is staged (the W8 pipeline "
-          "fill; the W4 branch above fills its own buffers first by "
-          "construction). kb0, not 0: a block may own a k SLICE of a tile.")
+    _w_at = cu_code.index("stage_raw4(nt, kb0,")
+    check(_w_at < cu_code.index("stage_a(kb0);", _w_at),
+          "W(kb0) starts flying before A(kb0) is staged. kb0, not 0: a "
+          "block may own a k SLICE of a tile.")
     # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
     #    its barrier, and the prologue's own x loads (consumed by the amax
     #    shuffle) go out before that fill. Phase stamps: quant + barrier
     #    took 3-10 us during which DRAM idled; a fill issued first instead
     #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
-    _hoist_at = cu_code.index("stage_w(nt0, kb00,")
+    _hoist_at = cu_code.index("stage_raw4(nt0, kb00,")
     check(_hoist_at < cu_code.index('asm volatile("griddepcontrol.wait;"')
           < cu_code.index("raw[i] = *(const uint2*)(c.x +")
           < cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)")
@@ -6281,7 +6260,7 @@ def test_glm53_megakernel_contracts() -> None:
           "gemm, kda and mhc kernels trigger their dependents at entry and "
           "are launched programmatically behind the MK_PDL knob (default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
-          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF, true);" in cu,
+          and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
           "staged -- a second cp.async group for the same buffer would "
           "break the one-stage-one-group wait accounting")
@@ -6310,7 +6289,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 5
+          and cu.count("mk_choose_ksr(") == 4  # def, gemm, kda in/out
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -6386,7 +6365,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the W4 prologue must fill the buffer the loop reads first: the "
           "loop starts at kb0, so a hardcoded 0 loads the wrong k-block "
           "(this broke the W4 exact-grid check when split-K landed)")
-    # -- W4 streams its raw records through cp.async like the W8 tiles:
+    # -- W streams its raw records through cp.async:
     #    tile-major pack (one contiguous 8 KB + 1 KB record per (tile,
     #    k-block)), one commit group per stage, the exact-wait formula,
     #    and a smem budget that stays under the sm_121 opt-in.
@@ -6396,7 +6375,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "wq4.view(n_pad // 128, 128, k // 128, 64)" in pysrc_full,
           "the W4 pack is tile-major and the host refuses any other shape")
     check("W4_RAW_NBUF * W4_RAW_BYTES" in cu
-          and "static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376" in cu
+          and 'static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");' in cu
           and "mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));" in cu,
           "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
           "the record it needs")
@@ -6421,11 +6400,43 @@ def test_glm53_megakernel_contracts() -> None:
           "with the group exponent folded in per 16 elements -- never a "
           "__constant__ load, never per-nibble scalar chains, and no longer "
           "the byte-lane arithmetic (22 -> 13 ops per raw word)")
-    check("mk_gemm_kernel<true>" in cu_code and "run_gemm_w4" in cu
-          and "GEMM_SMEM_W4" in cu and "g_mk_gemm4_bar" in cu,
-          "the W4 path is its own kernel instantiation with its own smem "
-          "budget and ticket counter; the W8 kernel keeps the 63,616 B "
-          "budget it had before the W4 pipeline")
+    # -- one lane: the fp8 (W8) MK arm was removed once W4 beat the stock
+    #    pair on every decode shape. One kernel, one budget, one ticket
+    #    counter, one pack builder, one knob (MK_GEMM) -- nothing to select.
+    check("mk_gemm_kernel<" not in cu_code and "template <bool W4>" not in cu
+          and "run_gemm_w4" not in cu and "GEMM_SMEM_W4" not in cu
+          and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
+          and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
+          and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
+          and "mk_gemm_phase(c, smem, &g_mk_gemm_bar);" in cu,
+          "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
+          "or entry point remains in the .cu")
+    check("def build_mk_weight(" not in pysrc_full
+          and "run_gemm_w4" not in pysrc_full and "ENABLE_W4" not in pysrc_full
+          and "W4_ALL" not in pysrc_full and "_W4_ARMED" not in pysrc_full
+          and "VLLM_GLM53_MK_W4" not in pysrc_full
+          and "-DMK_NBUF_DEF=" in pysrc_full and "MK_W4_NBUF" not in pysrc_full
+          and "MK_PROBE_SKIP" not in pysrc_full and "MK_PROBE_SKIP" not in cu,
+          "the driver has one pack builder, one launch entry and one depth "
+          "knob (VLLM_GLM53_MK_NBUF); the W4 arm knob and the probe-skip "
+          "switch are gone")
+    check("mk_pack[0].shape[0] * 128" in pysrc_full
+          and "def gemm_w4a8(x, mk_pack, n_rows):" in pysrc_full,
+          "eligibility derives n_pad from the tile-major pack's first dim x "
+          "128 (the tile count itself failed n_pad % 128 on every real shape "
+          "and the lane silently stayed stock)")
+    check("_TOL_KDA_SHADOW = 0.15" in pysrc_full
+          and "not (v <= _TOL_KDA_SHADOW)" in pysrc_full
+          and "_TOL_KDA = 2e-2" in pysrc_full,
+          "the serving KDA shadow is gated at the e2m1 by-design class (its "
+          "MK arm streams W4 packs of the real weights); the fixture keeps "
+          "the 2e-2 noise gate on grid-snapped weights")
+    check("mk_w4_dequant(*build_mk_weight_w4(" in pysrc_full
+          and "in_mk, o_mk = build_mk_weight_w4(f.w_in), build_mk_weight_w4(f.w_o)"
+          in pysrc_full,
+          "the KDA fixture snaps its weights to the e2m1 grid so both arms "
+          "see the same values and the 2e-2 gate measures noise, not e2m1's "
+          "by-design error")
     check("(int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)" in cu_code
           and "__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in cu_code
           and "__byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u)" in cu_code
@@ -6433,13 +6444,27 @@ def test_glm53_megakernel_contracts() -> None:
           "expansion is exponent-field add (in the table) + sign (a second "
           "prmt over nibble bit 3) in registers, never a float multiply and "
           "never a local-memory byte array")
-    check(pysrc_full.count("_selftest_w4") >= 1
-          and "1e-5" in pysrc_full and "0.15" in pysrc_full,
-          "the W4 self-test gates bit-exact expansion and by-design error")
-    check('".in_proj_qkvbfg_a" not in name' in open(
+    check("def _selftest_gemm() -> bool:" in pysrc_full
+          and "_selftest_w4" not in pysrc_full
+          and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(pack[0], pack[1], n).float().T"
+          in pysrc_full and "if e_exact > 1e-3 or n_ulp > 0:" in pysrc_full
+          and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
+          and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
+          and "_TOL_GEMM_W4 = 0.15" in pysrc_full,
+          "the GEMM self-test gates bit-exact expansion against the torch "
+          "twins (kernel activation quant x dequantized pack) and the "
+          "by-design error against the stock pair")
+    check("def mk_w4_dequant(wq4, ws4, n_rows):" in pysrc_full
+          and "def _mk_quant_x_ref(x):" in pysrc_full
+          and "torch.float8_e4m3fn" in pysrc_full
+          and "torch.exp2(exp.float())" in pysrc_full,
+          "the torch twins exist: dequant of the tile-major pack and the "
+          "prologue's per-128-group pow2 activation quant")
+    check('".in_proj_qkvbfg_a" not in name' not in open(
         os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
                             "glm53_fp8_dense.py"), encoding="utf-8").read(),
-          "the W4 attach skips the KDA in_proj unless the knob is 'all'")
+          "every eligible linear gets the W4 pack, the KDA in_proj included: "
+          "there is no per-linear knob left")
     # All four launches are persistent grids that resolve their own size
     # from the device. mhc has its own ceiling because it takes no dynamic
     # smem; gemm and kda share MK_GRID_CAP but resolve separately, since
@@ -6447,18 +6472,16 @@ def test_glm53_megakernel_contracts() -> None:
     # gemm and kda are persistent grids too, and their occupancy differs
     # from each other's, so each resolves its own -- clamped, like mhc, so a
     # grid that does not fit degrades instead of refusing to launch.
-    check("mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM)" in cu
-          and "mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4)"
-          in cu
+    check("mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM)" in cu
           and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
           and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
-          "gemm, gemm_w4 and kda each resolve their persistent grid from "
-          "the device rather than assuming MK_GRID_CAP")
+          "gemm and kda each resolve their persistent grid from the device "
+          "rather than assuming MK_GRID_CAP")
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase<false>(c, smem, &g_mk_kda_bar)") == 2,
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
@@ -6518,7 +6541,7 @@ def test_glm53_megakernel_contracts() -> None:
           "maybe_arm never compiles/self-tests inside graph capture")
     check("_kda_ensure_packs" in pysrc_full
           and "isinstance(in_m, Fp8DenseMethod)" in pysrc_full,
-          "KDA packs build themselves and only against a W8A8 stock arm")
+          "KDA packs build themselves and only against a stock fp8-dense arm")
 
     # -- kda.py overlay keeps the stock body reachable
     kda = open(os.path.join(REPO, mod, "glm5next_kda.py"),
@@ -6544,12 +6567,20 @@ def test_glm53_megakernel_contracts() -> None:
     # -- fp8_dense hook routes armed decode shapes and falls back otherwise
     fp8 = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
                                   "glm53_fp8_dense.py"), encoding="utf-8").read()
-    check("gemm_w8a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
+    check("gemm_w4a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
           "Fp8DenseMethod.apply routes through the megakernel driver")
-    check("build_mk_weight" in fp8 and "build_mk_weight_w4" in fp8
-          and "ENABLE_W4" in fp8,
-          "the build attaches the MK pack (fp8 or W4) next to the deepgemm "
-          "pair")
+    check("method._mk = _mkmod.build_mk_weight_w4(weight)" in fp8
+          and "ENABLE_W4" not in fp8 and "build_mk_weight(" not in fp8
+          and "VLLM_GLM53_MK_W4" not in fp8,
+          "the build attaches the W4 pack next to the deepgemm pair on every "
+          "eligible linear, no arm knob")
+    check("def probe_exact() -> bool:" in bench and "probe_w4" not in bench
+          and "run_gemm_w4" not in bench and "build_mk_weight(" not in bench
+          and "VLLM_GLM53_MK_W4" not in bench
+          and 'TOL = {"mhc": 1e-3, "gemm": 0.15, "kda": 2e-2}' in bench,
+          "the bench times the W4 lane as the MK arm, gates it at the e2m1 "
+          "by-design class, and keeps the exact-grid gate against the torch "
+          "twins")
     print("  glm53 megakernel contracts .. OK")
 
 

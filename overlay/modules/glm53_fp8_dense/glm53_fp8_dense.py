@@ -291,9 +291,10 @@ class Fp8DenseMethod:
         self._base = base
         self._q, self._ws = q, ws
         self._rows, self._cols = orig_rows, orig_cols
-        # deneb fork (glm53_megakernel): MK_SEG_GEMM pack (own e4m3 + fp32
-        # pow2-scale layout, never aliased with the deepgemm pair). None
-        # until maybe_build_fp8_dense attaches one; apply() then keeps stock.
+        # deneb fork (glm53_megakernel): MK_SEG_GEMM pack (W4: e2m1 nibbles
+        # + per-16-group exponents, never aliased with the deepgemm pair).
+        # None until maybe_build_fp8_dense attaches one; apply() then keeps
+        # stock.
         self._mk = None
 
     def apply(self, layer, x, bias=None):
@@ -307,7 +308,7 @@ class Fp8DenseMethod:
             _mk_gemm = _mk_arm = None
             try:  # import only: a boot without the megakernel module is stock
                 from vllm.model_executor.layers.glm53_megakernel import (
-                    gemm_w8a8 as _mk_gemm,
+                    gemm_w4a8 as _mk_gemm,
                     maybe_arm as _mk_arm,
                 )
             except Exception:
@@ -409,24 +410,17 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             # deneb fork (glm53_megakernel): build the MK pack alongside the
             # deepgemm pair. A build failure only means apply() keeps the
             # stock path; the pair above stays the fallback either way.
-            # VLLM_GLM53_MK_W4=1 REPLACES the fp8 pack with the W4 pack
-            # (e2m1 x per-16 pow2 scale -> exact e4m3 in-kernel; ~0.56x the
-            # fp8 bytes, so the W4 arm is CHEAPER in memory than the W8 one).
-            # The KDA in_proj stays fp8 unless the knob is "all": its output
-            # feeds the recurrence, where quantization error accumulates in
-            # the state instead of washing out per token.
+            # The pack is W4 (e2m1 x per-16 pow2 scale -> exact e4m3
+            # in-kernel, ~0.56x the fp8 bytes) on every eligible linear,
+            # the KDA in_proj included: the fp8 MK arm and its knob are
+            # gone, so VLLM_GLM53_MK_GEMM=1 means W4 numerics on the decode
+            # linears -- bracket before arming (megakernel README).
             try:
                 from vllm.model_executor.layers import (
                     glm53_megakernel as _mkmod)
 
                 if _mkmod.ENABLE_GEMM and cols % 128 == 0:
-                    if (_mkmod.ENABLE_W4
-                            and (_mkmod.W4_ALL
-                                 or ".in_proj_qkvbfg_a" not in name)):
-                        method._mk = (None, None) + _mkmod.build_mk_weight_w4(
-                            weight)
-                    else:
-                        method._mk = _mkmod.build_mk_weight(weight)
+                    method._mk = _mkmod.build_mk_weight_w4(weight)
             except Exception:
                 method._mk = None
             if _copy_matches_source(

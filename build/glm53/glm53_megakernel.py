@@ -71,18 +71,22 @@ ENABLE_MHC = MASTER and _flag("VLLM_GLM53_MK_MHC")
 ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
-# W4 weights (e2m1 x per-16-group pow2 scale, expanded to EXACT e4m3 bytes
-# in-kernel): the ledger's last unpulled lever, dense W8A8 -> W4, est.
-# -3.7 ms/step. "1" covers every MK-GEMM linear except the KDA in_proj
-# (recurrence path -- error accumulates in the state); "all" includes it.
-ENABLE_W4 = ENABLE_GEMM and _flag("VLLM_GLM53_MK_W4")
-W4_ALL = ENABLE_W4 and (os.environ.get("VLLM_GLM53_MK_W4", "")
-                        .strip().lower() == "all")
+# MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
+# to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
+# in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
+# was removed once W4 beat the stock pair on every shape, so the lane is
+# W4 or stock). Arming it changes served numerics: bracket first (README).
 
-# tolerances: the W8A8 GEMMs dominate; everything below them is fp32
-_TOL_GEMM = 2e-2
+# tolerances. The W4 GEMM's by-design (e2m1) error class is 0.02-0.08 rel
+# on row blocks; the exact-grid gate below it is 1e-5.
+_TOL_GEMM_W4 = 0.15
 _TOL_MHC = 1e-3     # fp32 port of the TileLang pair, bf16 rounding only
-_TOL_KDA = 2e-2     # conv/gemm inputs differ the states by W8A8-order noise
+_TOL_KDA = 2e-2     # fixture (grid-snapped weights): fp8/activation noise only
+# The serving shadow diffs the MK arm (W4 packs of the layer's bf16 weights)
+# against stock (its fp8 blocks of the same weights): e2m1's by-design error
+# (0.02-0.08 rel on row blocks) is inside that diff, so the gate is the
+# by-design class. Drift above it is a real fault, not quantization.
+_TOL_KDA_SHADOW = 0.15
 
 
 def _mk_pow2_scale(amax: float) -> float:
@@ -117,7 +121,6 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 _EXT = None
 _WS = None
 _ARMED = {"mhc": False, "gemm": False, "kda": False}
-_W4_ARMED = False  # set by the W4 self-test; packs exist but stay unused until then
 
 
 def _build():
@@ -142,12 +145,9 @@ def _build():
             # Swept by the probe; the .cu carries the shipped defaults.
             f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
             f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
-            f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
-            f"-DMK_W4_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_W4_NBUF', '3')}",
+            f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
         ] + (["-DMK_PHASE_TS=1"]
-             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
-          + ([f"-DMK_PROBE_SKIP={os.environ['VLLM_GLM53_MK_PROBE_SKIP']}"]
-             if os.environ.get("VLLM_GLM53_MK_PROBE_SKIP") else []),
+             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else []),
         build_directory="/root/.mk_build",
         verbose=False,
     )
@@ -199,51 +199,6 @@ def _barrier_ptr(ws):
 # is deliberately NOT reused -- the stock pair stays a byte-identical
 # fallback and the two never alias.
 # ---------------------------------------------------------------------------
-def build_mk_weight(weight):
-    """(wq uint8 [n_pad/128, k/128, 128, 128], ws fp32 [n_pad/128, k/128]).
-
-    The wq pack is TILE-major: one 128x128 tile is one contiguous 16 KB run,
-    which is the unit stage_w copies. Row-major put those 128 rows 4096 B
-    apart, so fetching one tile touched 128 DRAM pages.
-    """
-    import torch
-
-    n, k = weight.shape
-    if k % 128 != 0:
-        raise ValueError(f"K={k} not a multiple of 128")
-    n_pad = _mk_pad128(n)
-    wf = weight.float()
-    q = torch.zeros(n_pad, k, dtype=torch.uint8, device=weight.device)
-    s = torch.ones(n_pad // 128, k // 128, dtype=torch.float32,
-                   device=weight.device)
-    for n0 in range(0, n_pad, 128):
-        rows = wf[n0:min(n0 + 128, n)]
-        for k0 in range(0, k, 128):
-            blk = rows[:, k0:k0 + 128]
-            amax = float(blk.abs().max()) if blk.numel() else 0.0
-            scale = _mk_pow2_scale(amax)
-            if blk.numel():
-                q[n0:n0 + rows.shape[0], k0:k0 + 128] = (
-                    blk / scale).to(torch.float8_e4m3fn).view(torch.uint8)
-            s[n0 // 128, k0 // 128] = scale
-    # [n_pad, k] -> [n_pad/128, k/128, 128, 128]
-    q = (q.view(n_pad // 128, 128, k // 128, 128)
-          .permute(0, 2, 1, 3).contiguous())
-    # Pre-swizzle: within every 128 x 128 tile, row r's 16 B chunk c goes
-    # to slot c ^ (r & 7). The kernel copies each tile as a straight 16 KB
-    # memcpy into dense 128 B smem rows and reads its mma fragments through
-    # the same XOR -- conflict-free without a padded pitch (the padding cost
-    # the copy 16% of its bandwidth).
-    n_t, k_t = q.shape[0], q.shape[1]
-    q5 = q.view(n_t, k_t, 128, 8, 16)
-    rows = torch.arange(128, device=q.device)
-    src = (torch.arange(8, device=q.device)[None, :] ^ (rows[:, None] & 7))
-    q = torch.gather(
-        q5, 3, src[None, None, :, :, None].expand(n_t, k_t, 128, 8, 16)
-    ).reshape(n_t, k_t, 128, 128).contiguous()
-    return q, s
-
-
 _E2M1_GRID = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 _E2M1_MIDS = (0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0)
 
@@ -327,6 +282,45 @@ def build_mk_weight_w4(weight):
     return wq4, ws4
 
 
+def mk_w4_dequant(wq4, ws4, n_rows):
+    """bf16 [n_rows, k] holding exactly the values the kernel's expansion
+    feeds the mma for this pack: the pure-torch twin of expand_w4 (nibble
+    -> e2m1 grid value x 2^s, sign from nibble bit 3). Weights already on
+    the grid round-trip bit-exactly, which is what the exact gate and the
+    KDA fixture rely on."""
+    import torch
+
+    nt, kt = wq4.shape[0], wq4.shape[1]
+    n_pad, k = nt * 128, kt * 128
+    q = wq4.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
+    nib = torch.stack((q & 0x0F, q >> 4), dim=-1).reshape(n_pad, k)
+    grid = torch.tensor(_E2M1_GRID, device=wq4.device)
+    mag = grid[(nib & 7).long()]
+    sign = torch.where((nib & 8) != 0, -1.0, 1.0)
+    s = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16).float()
+    w = mag * sign * torch.exp2(s).repeat_interleave(16, dim=1)
+    return w[:n_rows].to(torch.bfloat16)
+
+
+def _mk_quant_x_ref(x):
+    """fp32 [m, k]: x after the kernel's activation quant (per row, per
+    128-k group: pow2 scale 2^frexp_exp(amax/448), e4m3 round-to-nearest,
+    rescale). Pure twin of the prologue; with mk_w4_dequant it makes a
+    torch fp32 matmul the kernel's exact reference (no fp8 MK arm exists
+    to diff against any more)."""
+    import torch
+
+    m, k = x.shape
+    g = x.float().view(m, k // 128, 128)
+    amax = g.abs().amax(-1, keepdim=True)
+    ratio = (amax / 448.0).clamp(min=1e-30)
+    _frac, exp = torch.frexp(ratio)
+    scale = torch.where(amax > 0, torch.exp2(exp.float()),
+                        torch.ones_like(amax))
+    q = (g / scale).to(torch.float8_e4m3fn).float() * scale
+    return q.view(m, k)
+
+
 def _stock_fp8_pair(w):
     """The stock deepgemm-layout pair for the same bf16 weight (self-tests
     and shadow arms need the arm they are diffing against)."""
@@ -343,35 +337,31 @@ def _stock_fp8_pair(w):
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
 def _gemm_call(x, mk_pack, n_rows):
-    """mk_pack is (wq8, ws8) or (wq8, ws8, wq4, ws4); the W4 half, when
-    present AND armed, replaces the fp8 stream (the pack is not additive:
-    a W4 arm stores 0.56x the fp8 bytes, cheaper than the W8 arm itself)."""
+    """mk_pack is (wq4, ws4) from build_mk_weight_w4."""
     import torch
 
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
-    w4 = mk_pack[2] if len(mk_pack) > 2 else None
-    if w4 is not None and _W4_ARMED:
-        _EXT.run_gemm_w4(x.contiguous(), w4, mk_pack[3], out, n_rows)
-    else:
-        _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows)
+    _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows)
     return out
 
 
-def gemm_w8a8(x, mk_pack, n_rows):
+def gemm_w4a8(x, mk_pack, n_rows):
     """Fp8DenseMethod.apply hook: None = not armed/eligible (stock runs).
 
-    A W4 pack REPLACES the fp8 stream, so a W4 self-test failure disarms
-    the whole MK lane for that linear (stock deepgemm), not just the W4
-    half -- there is no fp8 pack to fall back to by construction."""
-    if not _ARMED["gemm"] or x.dim() != 2:
+    The lane is W4 or stock: a self-test failure disarms MK-GEMM for
+    every linear (stock deepgemm), there is no fp8 MK pack to fall back
+    to by construction."""
+    if not _ARMED["gemm"] or x.dim() != 2 or mk_pack is None:
         return None
-    has_w8 = mk_pack[0] is not None
-    has_w4 = len(mk_pack) > 2 and mk_pack[2] is not None and _W4_ARMED
-    if not (has_w8 or has_w4):
+    if mk_pack[0] is None:
         return None
-    ref = mk_pack[0] if has_w8 else mk_pack[2]
-    if not _mk_gemm_eligible(x.shape[0], x.shape[1], ref.shape[0]):
+    # the pack is tile-major [n_pad/128, k/128, 128, 64]: the padded n is
+    # 128 x its first dim (shape[0] alone is the tile count -- passing it
+    # as n_pad failed the n_pad % 128 test on every real shape and the
+    # lane silently stayed stock)
+    if not _mk_gemm_eligible(x.shape[0], x.shape[1],
+                             mk_pack[0].shape[0] * 128):
         return None
     return _gemm_call(x, mk_pack, n_rows)
 
@@ -529,19 +519,16 @@ def _kda_ensure_packs(layer) -> bool:
         if not isinstance(in_m, Fp8DenseMethod) or not isinstance(
                 o_m, Fp8DenseMethod):
             return False  # stock in_proj/o_proj is bf16 here -> stay stock
-        # KDA packs are ALWAYS fp8 by policy (the recurrence path does not
-        # ride the W4 arm). A W4-only pack on the linear (the VLLM_GLM53_
-        # MK_W4=all boot) is a truthy (None, None, ...) tuple, so "or" is
-        # not a usable presence test here -- index the fp8 half explicitly.
-        def _fp8_pack(method, weight):
+        # The in-kernel in_proj / o_proj GEMMs stream the same W4 packs the
+        # linears serve (built here when MK-GEMM is off and none exists).
+        def _w4_pack(method, weight):
             p = getattr(method, "_mk", None)
             if p is not None and p[0] is not None:
                 return p
-            return build_mk_weight(weight)
+            return build_mk_weight_w4(weight)
 
-        layer._mk_in_pack = _fp8_pack(in_m,
-                                      layer.in_proj_qkvbfg_a.weight)
-        layer._mk_o_pack = _fp8_pack(o_m, layer.o_proj.weight)
+        layer._mk_in_pack = _w4_pack(in_m, layer.in_proj_qkvbfg_a.weight)
+        layer._mk_o_pack = _w4_pack(o_m, layer.o_proj.weight)
         layer._mk_packs_ready = True
         return True
     except Exception:
@@ -669,7 +656,8 @@ class KdaShadowArm:
         errs = {"out": _rel_err(self.out, stock_out),
                 "conv_state": _rel_err(self.conv_mk, conv_state),
                 "rec_state": _rel_err(self.rec_mk, rec_state)}
-        drift = any(not (v <= _TOL_KDA) or math.isnan(v) for v in errs.values())
+        drift = any(not (v <= _TOL_KDA_SHADOW) or math.isnan(v)
+                    for v in errs.values())
         KdaShadowArm._n_calls += 1
         if drift or KdaShadowArm._n_calls % 64 == 1:
             logger.warning("[megakernel] kda shadow #%d rel_errs=%s %s",
@@ -687,6 +675,24 @@ def _rel_err(a, b) -> float:
     d = (a.float() - b.float()).norm()
     den = b.float().norm()
     return float(d / den) if den > 0 else float(d)
+
+
+def _exact_gate(got, ref32) -> tuple:
+    """(rel_err, n_over_ulp) of a bf16 kernel output against an fp32 torch
+    reference: the reference is rounded to bf16 first (the kernel rounds
+    its fp32 accumulation the same way), and an element counts as OVER
+    when it differs from that by more than one bf16 ulp of the reference
+    (2^-7 relative, floored at 1e-2 of the row's largest magnitude so
+    near-zero elements are judged in absolute terms). A different fp32
+    summation order flips a handful of elements by one ulp (rel ~1e-4); a
+    layout / expansion bug moves whole rows (rel >= 1e-2, ulps >> 1)."""
+    import torch
+
+    refb = ref32.to(torch.bfloat16).float()
+    diff = (got.float() - refb).abs()
+    floor = refb.abs().amax(dim=-1, keepdim=True) * 1e-2
+    ulp = torch.maximum(refb.abs(), floor) * (2.0 ** -7)
+    return _rel_err(got, refb), int((diff > ulp).sum().item())
 
 
 def _selftest_mhc() -> bool:
@@ -741,26 +747,55 @@ def _selftest_mhc() -> bool:
 
 
 def _selftest_gemm() -> bool:
-    """Diff MK_SEG_GEMM against the stock quant+deepgemm pair."""
+    """Two gates for the W4 lane:
+
+    (a) EXACT expansion: weights built ON the e2m1 x 2^s grid quantize
+        losslessly, so the kernel must reproduce a torch fp32 matmul of
+        the kernel-quantized activations (_mk_quant_x_ref) against the
+        dequantized pack (mk_w4_dequant) to bf16 output rounding: no
+        element more than one bf16 ulp off, rel <= 1e-3 (_exact_gate).
+        Anything above is a layout / expansion bug, not quantization.
+    (b) BY-DESIGN error: random weights through W4 vs the stock W8A8 pair
+        on the decode shapes, gated at 0.15 (e2m1's by-design error is
+        0.02-0.08 rel on row blocks -- the same tolerance class the
+        fp8-dense module uses for its w4 arm).
+    """
     import torch
 
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
 
     torch.manual_seed(0)
     dev = "cuda"
+    n, k, m = 1024, 4096, 8
+    code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
+    sexp = torch.randint(-5, 7, (n, k // 16, 1), device=dev)
+    grid = torch.tensor(_E2M1_GRID, device=dev)
+    w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+        torch.randn_like(code.float()) < 0, -1.0, 1.0)
+    w_exact = w_exact.view(n, k).to(torch.bfloat16)
+    x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
+    pack = build_mk_weight_w4(w_exact)
+    got = _gemm_call(x, pack, n)
+    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(pack[0], pack[1], n).float().T
+    torch.cuda.synchronize()
+    e_exact, n_ulp = _exact_gate(got, ref)
+    if e_exact > 1e-3 or n_ulp > 0:
+        logger.warning("[megakernel] selftest gemm EXACT rel=%.2e over-ulp=%d "
+                       "-> DISARM (expansion is not bit-exact)", e_exact, n_ulp)
+        return False
     for m, n in ((8, KDA_INPROJ_N), (16, HIDDEN), (32, 1024)):
         w = torch.randn(n, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.05
         x = torch.randn(m, HIDDEN, dtype=torch.bfloat16, device=dev)
         sq, sws, srows, scols = _stock_fp8_pair(w)
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
-        got = _gemm_call(x, build_mk_weight(w), n)
+        got = _gemm_call(x, build_mk_weight_w4(w), n)
         torch.cuda.synchronize()
         e = _rel_err(got, ref)
-        if e > _TOL_GEMM:
-            logger.warning("[megakernel] selftest gemm m=%d n=%d rel=%.2e "
-                           "-> DISARM", m, n, e)
+        if e > _TOL_GEMM_W4:
+            logger.warning("[megakernel] selftest gemm m=%d n=%d by-design "
+                           "rel=%.2e -> DISARM", m, n, e)
             return False
-    logger.warning("[megakernel] selftest gemm -> ARM")
+    logger.warning("[megakernel] selftest gemm exact=%.2e -> ARM", e_exact)
     return True
 
 
@@ -798,8 +833,14 @@ class _KdaFixture:
             torch.randn(*s, dtype=dt, device="cuda"))
         self.T, self.acc = T, acc
         self.x = mkw(T, HIDDEN) * 0.1
-        self.w_in = mkw(KDA_INPROJ_N, HIDDEN) * 0.02
-        self.w_o = mkw(HIDDEN, KDA_OUT) * 0.02
+        # Both arms see weights ON the e2m1 grid: the MK side packs them
+        # losslessly (W4 is the only MK arm), the stock side quantizes them
+        # to its fp8 blocks -- so the diff below is activation / fp8
+        # rounding noise (the 2e-2 class), not e2m1's by-design error.
+        self.w_in = mk_w4_dequant(*build_mk_weight_w4(
+            mkw(KDA_INPROJ_N, HIDDEN) * 0.02), KDA_INPROJ_N)
+        self.w_o = mk_w4_dequant(*build_mk_weight_w4(
+            mkw(HIDDEN, KDA_OUT) * 0.02), HIDDEN)
         self.f_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.g_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.conv_w = mkw(KDA_QKV, 4, dt=torch.float32) * 0.2
@@ -837,7 +878,7 @@ class _KdaFixture:
         if self._mk_cache is not None:
             return self._mk_cache
         f = self
-        in_mk, o_mk = build_mk_weight(f.w_in), build_mk_weight(f.w_o)
+        in_mk, o_mk = build_mk_weight_w4(f.w_in), build_mk_weight_w4(f.w_o)
 
         class _P:
             pass
@@ -1023,65 +1064,6 @@ def _selftest_kda() -> bool:
     return True
 
 
-def _selftest_w4() -> bool:
-    """Two gates:
-
-    (a) EXACT expansion: weights built ON the e2m1 x 2^s grid quantize
-        losslessly, so the W4 kernel must reproduce the W8 kernel to fp32
-        accumulation noise (<= 1e-5). This proves the nibble/scale/expansion
-        pipeline bit-for-bit; anything above the gate is a layout bug, not
-        quantization.
-    (b) BY-DESIGN error: random weights through W4 vs the stock W8A8 pair,
-        gated at 0.15 (e2m1's by-design error is 0.02-0.08 rel on row
-        blocks -- the same tolerance class the fp8-dense module uses for
-        its w4 arm).
-    """
-    import torch
-
-    torch.manual_seed(0)
-    dev = "cuda"
-    n, k, m = 1024, 4096, 8
-    # (a) exact fixture: random codes x random legal exponents
-    code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
-    sexp = torch.randint(-5, 7, (n, k // 16, 1), device=dev)
-    grid = torch.tensor(_E2M1_GRID, device=dev)
-    w_exact = (grid[code] * torch.exp2(sexp.float())) *                  torch.where(torch.randn_like(code.float()) < 0, -1.0, 1.0)
-    w_exact = w_exact.view(n, k).to(torch.bfloat16)
-    x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
-
-    def _run(pack):
-        import torch as _t
-
-        out = _t.empty(m, n, dtype=_t.bfloat16, device=dev)
-        if len(pack) == 4 and pack[2] is not None:
-            _EXT.run_gemm_w4(x.contiguous(), pack[2], pack[3], out, n)
-        else:
-            _EXT.run_gemm(x.contiguous(), pack[0], pack[1], out, n)
-        return out
-
-    got4 = _run((None, None) + build_mk_weight_w4(w_exact))
-    got8 = _run(build_mk_weight(w_exact))
-    torch.cuda.synchronize()
-    e_exact = _rel_err(got4, got8)
-    if e_exact > 1e-5:
-        logger.warning("[megakernel] selftest w4 EXACT rel=%.2e -> DISARM "
-                       "(expansion is not bit-exact)", e_exact)
-        return False
-    # (b) by-design error vs the stock pair
-    w = torch.randn(n, k, dtype=torch.bfloat16, device=dev) * 0.05
-    sq, sws, srows, scols = _stock_fp8_pair(w)
-    from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
-
-    ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
-    got = _run((None, None) + build_mk_weight_w4(w))
-    torch.cuda.synchronize()
-    e = _rel_err(got, ref)
-    ok = e <= 0.15
-    logger.warning("[megakernel] selftest w4 exact=%.2e by-design=%.2e -> %s",
-                   e_exact, e, "ARM" if ok else "DISARM")
-    return ok
-
-
 def arm() -> None:
     """Boot gate: device check + per-segment self-tests. Idempotent."""
     import torch
@@ -1112,13 +1094,10 @@ def arm() -> None:
         _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
     if ENABLE_GEMM:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
-        if ENABLE_W4:
-            global _W4_ARMED
-            _W4_ARMED = _gate("w4", _selftest_w4)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
-    logger.warning("[megakernel] armed=%s w4=%s shadow_kda=%s",
-                   dict(_ARMED), _W4_ARMED, KDA_SHADOW)
+    logger.warning("[megakernel] armed=%s shadow_kda=%s",
+                   dict(_ARMED), KDA_SHADOW)
 
 
 _armed_once = False
