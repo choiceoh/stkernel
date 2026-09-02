@@ -6251,9 +6251,9 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check("threadIdx.x != 0\n         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
+    check("threadIdx.x != 0\n           && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
           and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
-          "thread 0 issues no cp.async: it runs the grid barrier, whose "
+          "thread 0 issues no cp.async in the hoisted fill: it runs the grid barrier, whose "
           "__threadfence drains its own outstanding copies -- with the "
           "fill hoisted above the barrier that turned into a 6-12 us wait")
     _w8_at = cu_code.index("stage_w(nt, kb0,")
