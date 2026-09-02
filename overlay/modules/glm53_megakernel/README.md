@@ -160,6 +160,17 @@ both arms run, outputs AND the states the next step reads are diffed every
 replay stays stock. Run shadow on a bench boot, read the log, then decide
 the arm.
 
+## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
+
+in_proj 77 | gates 14-18 | conv 8 | delta 35 | norm 0.5 | o_proj 39 |
+barriers ~18 = **199 us** per layer-step (was 402 before the phase stamps
+went in; stock's five kernels 640+). The delta rule runs two blocks per
+head (rows split, S register-resident, per-token state stores staged
+through smem); p4 emits the o_proj's fp8 A tiles itself so p5 starts
+without a prologue. `-DMK_PHASE_TS=1` + `read_kda_ts` give the per-phase,
+per-block stamps; the fixture's `mk_run(drain=True)` keeps its own 10 MB
+state clones from polluting the first phase (MEASUREMENTS.md 8차).
+
 ## Review fixes already folded in (2026-09-01)
 
 * conv-state slot stride was missing its `*(CONV_W-1)` factor — slot >= 1

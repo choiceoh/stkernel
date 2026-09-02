@@ -669,6 +669,18 @@ class KdaShadowArm:
 # ---------------------------------------------------------------------------
 # boot arm + self-tests
 # ---------------------------------------------------------------------------
+_DRAIN_BUF = None
+
+
+def _drain_l2():
+    import torch
+    global _DRAIN_BUF
+    if _DRAIN_BUF is None:
+        _DRAIN_BUF = torch.zeros(16 << 20, dtype=torch.float32, device="cuda")
+    _DRAIN_BUF.sum()
+    _DRAIN_BUF.sum()
+
+
 def _rel_err(a, b) -> float:
     import torch
 
@@ -916,7 +928,7 @@ class _KdaFixture:
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
-    def mk_run(self, delta_variant=None):
+    def mk_run(self, delta_variant=None, drain=False):
         """MK arm on cloned states -> dict(out, conv_state, rec_state).
 
         delta_variant sweeps the retrieval/write operand order (see the .cu
@@ -932,6 +944,12 @@ class _KdaFixture:
         conv_mk, rec_mk = self.conv_st.clone(), self.rec_st.clone()
         out = torch.empty(self.T, HIDDEN, dtype=torch.bfloat16,
                           device="cuda")
+        if drain:
+            # diagnosis only: the clones above leave ~11 MB of dirty lines
+            # in L2 whose write-back would otherwise run under the kernel's
+            # in_proj stream (+20 us on the p0 stamp; the serving chain has
+            # no such predecessor). A 64 MB read evicts them first.
+            _drain_l2()
         _kda_launch(la, self.x, meta, conv_mk, rec_mk, out,
                     delta_variant=delta_variant)
         torch.cuda.synchronize()
