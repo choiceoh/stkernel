@@ -301,6 +301,44 @@ EXTRA_ENV="VLLM_GLM53_PREP_FUSED=1" bash launchers/start-glm53-nvfp4-tp4.sh
   `positions` 를 안 넘겨 그 매핑은 이 이미지에서 잠들어 있고, fused 는 현행
   generic 매핑을 그대로 재현). 그 활성화는 C>=2 수치 변경이라 별도 브래킷.
 
+## EXP-8 — dflash 에 async scheduling (`glm53_async_dflash`, 2026-09-02 추가)
+
+이미지의 `config/vllm.py` 는 `async_scheduling=None`(런처는 플래그를 안 준다)을
+speculative method **이름** 허용 목록으로 판정한다: eagle 계열·ngram GPU·
+`draft_model`·`dspark`. `dflash` 는 없어서 모든 dflash 부팅이 "Async scheduling
+not supported with dflash-based speculative decoding and will be disabled" 로
+동기 스케줄러를 쓴다. 업스트림 main 도 같은 목록(2026-09-02 확인).
+
+기전으로는 이름 문제다: `DSparkSpeculator` 는 `DFlashSpeculator` 의 서브클래스로
+`propose()` 를 상속하고(async 가 건드리는 유일한 드래프터 흐름), dspark 는 dsv4 에서
+8월부터 `--async-scheduling` 으로 서빙 중이다. V2 러너에는 method 별 async 분기가
+없고(요청 상태 미러가 설계상 낙관적 상한), 스케줄러 쪽은 `AsyncScheduler` 의
+`[-1]` placeholder 를 워커가 `combine_sampled_and_draft_tokens` 커널로 덮어쓴다.
+마운트된 glm53 오버레이 중 스케줄러 쪽 드래프트 id 를 읽는 것은 없다.
+
+**기대값**: 9월 1일 트레이스의 GPU 유휴 8.9 ms/72 ms(프로파일러 없이 ~7%) —
+입력 준비 ~5.7, 그래프 제출 1.43, 스텝 전환 — 가 동기 스케줄러 때문에 임계경로에
+있다. async 는 N+1 스텝의 스케줄·준비·그래프 제출을 N 스텝의 GPU 실행과 겹치므로
+천장은 유휴 몫 전부, **스텝의 7~12%**. 이 캠페인에서 가장 큰 단일 레버다.
+`glm53_prep_fused`(EXP-7)와 독립이며 같이 켤 수 있다.
+
+```bash
+# 부팅 로그에서 "[async-dflash] ... whitelisted" 가 있고 "Async scheduling not
+# supported" 가 없어야 켜진 것이다 (engine-confirmed 원칙).
+EXTRA_ENV="VLLM_GLM53_ASYNC_DFLASH=1" bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+```
+
+- 게이트: 품질 9/9, 한국어 0/16, **pos-1 수용률 ±2pct(움직이면 안 된다 — 언제 도는지만
+  바뀌고 무엇을 뽑는지는 안 바뀐다)**, C=1 step/s 브래킷 base→cand→base.
+- 첫 부팅에서 볼 것: V2 + async 는 `max_concurrent_batches` 가 2 라 KV 캐시의 in-flight
+  예약이 두 배 — KV 라인과 memfree preflight 를 먼저 읽고 step/s 를 비교한다.
+- 구조화 출력 요청은 드래프트 id 를 스케줄러로 되돌리는 경로(`DraftTokensHandler`)를
+  탄다 — 일반 생성은 안 탄다. 벤치에 구조화 출력이 섞이면 따로 본다.
+- 롤백 = env 한 줄. `ASYNC_SCHED=0` 은 여전히 동기 강제.
+- 원장의 2026-08 한국어 손상 조사에서 async 는 용의자로 기각됐다(SPEC=0 의 async on 과
+  dflash 의 async off 모두 손상, 원인은 LibertAIDAI 가중치). 이 실험은 그 판정을
+  재론하지 않는다.
+
 ---
 
 ## 순서와 근거
@@ -312,6 +350,7 @@ EXTRA_ENV="VLLM_GLM53_PREP_FUSED=1" bash launchers/start-glm53-nvfp4-tp4.sh
 5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
 6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
 7. **EXP-7 (준비 커널 통합)** — bit-exact 프로브 → 섀도 부팅 → 브래킷. 호스트 유휴 4~5 ms 가 표적이라 GPU 커널 축과 독립.
+8. **EXP-8 (dflash async scheduling)** — 부팅 하나, 코드 변경은 허용 목록 한 조건. 천장이 가장 크다(7~12%); EXP-7 보다 먼저 돌려도 된다.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
