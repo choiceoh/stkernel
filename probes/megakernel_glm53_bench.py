@@ -77,6 +77,7 @@ def _rel(a: torch.Tensor, b: torch.Tensor) -> float:
 _L2_BYTES = 24 << 20
 _L2_FLUSH = None
 _SPACER = None
+_DRAIN = None
 
 
 def _l2_flush(hot=()) -> None:
@@ -88,14 +89,24 @@ def _l2_flush(hot=()) -> None:
     unevenly: blocks whose x loads queued behind other blocks' W fill took
     13 us where the rest took 2, and the publishing barrier then held every
     block for the slowest (bar1 median 8 us in the phase stamps)."""
-    global _L2_FLUSH, _SPACER
+    global _L2_FLUSH, _SPACER, _DRAIN
     if _L2_FLUSH is None:
         _L2_FLUSH = torch.empty(2 * _L2_BYTES, dtype=torch.int8, device=DEV)
         a = torch.randn(2048, 2048, dtype=torch.bfloat16, device=DEV)
         b = torch.randn(2048, 2048, dtype=torch.bfloat16, device=DEV)
         _SPACER = (a, b, torch.empty(2048, 2048, dtype=torch.bfloat16,
                                      device=DEV))
+        _DRAIN = torch.zeros(16 << 20, dtype=torch.float32, device=DEV)  # 64 MB
     _L2_FLUSH.zero_()
+    # The fill leaves up to 24 MB of DIRTY lines in L2; the compute spacer
+    # lets the fill's own drain finish but does not evict those, so the
+    # timed kernel evicts them and their write-back runs under it: a pure
+    # 24 MB stream measured 148 GB/s after zero_ + matmul and 232 GB/s
+    # after zero_ + a 128 MB read stream (srv2, sustained state, both arms
+    # affected). A read pass evicts once-written lines (they carry no reuse)
+    # and forces the write-back out before the start event. Two passes.
+    _DRAIN.sum()
+    _DRAIN.sum()
     torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])
     for t in hot:
         t.add_(0)
