@@ -121,7 +121,14 @@ constexpr int KBLK_MAX = 32;             // max k blocks (K <= 4096)
 // removing mma_fold measured -15..-27 us per launch. Rows g and g+8 share
 // a key, so the 8 lanes of one fragment load land on 8 bank groups.
 constexpr int SMEM_A_PITCH = KSTEP;      // 128, dense + swizzled
-constexpr int SMEM_W_PITCH = KSTEP + 16; // fp8 W tile row pitch (16B aligned)
+// fp8 W tile rows are DENSE (128 B). The pack is pre-swizzled: chunk c of
+// row r sits at chunk c ^ (r & 7) (build_mk_weight), so the tile copy is a
+// straight 16 KB memcpy and the mma's fragment loads read through mk_swz.
+// The old 144 B padding kept those loads conflict-free but put every
+// cp.async destination row across a 128 B boundary: in the clean regime a
+// pure 24 MB stream is 130 us at pitch 144 and 110 us at pitch 128 (srv2,
+// second launch of a pair) -- 16%, the whole gap to deepgemm's stream.
+constexpr int SMEM_W_PITCH = KSTEP;      // 128, dense + pre-swizzled
 constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 
 // dynamic smem layout used by the GEMM routine:
@@ -162,11 +169,11 @@ constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
 // carveout that grew took the L1 the W8 loop was using).
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;   // 63,488 at NBUF 3
+                          KBLK_MAX * KBLK_MAX * 4;   // 57,344 at NBUF 3
 constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
                              W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                              KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,704 at 3
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 68,608 at 3
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
@@ -482,14 +489,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // above the A-quant barrier, the stamps showed the barrier wait grow
     // from 1.3 us to 6-12 us -- the fill's latency had simply moved into
     // the barrier. Threads 1..255 cover the 1024 chunks, 4-5 each.
+    // chunk t -> byte t * 16 on both sides: the pack is pre-swizzled, so
+    // this straight memcpy lands the swizzled image the fragment loads
+    // expect (a swizzle applied here instead measured slower).
     for (int t = (int)threadIdx.x - 1; threadIdx.x != 0
-         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1) {
-      const int r = t / MK_W_CHUNKS;
-      const int e = (t % MK_W_CHUNKS) * 16;
-      // r * KSTEP + e == t * 16, so the source walk is now linear across
-      // the whole block; only the destination keeps the padded pitch.
-      mk_cp_async16(d0 + r * SMEM_W_PITCH + e, wsrc + (size_t)t * 16);
-    }
+         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)
+      mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);
     mk_cp_commit();
   };
   // W4: stage one raw (tile, k-block) record -- 512 nibble chunks (two
@@ -531,7 +536,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         *(const uint32_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
     const uint32_t nw[8] = {n0.x, n0.y, n0.z, n0.w, n1.x, n1.y, n1.z, n1.w};
     uint8_t* rowb = swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
-                    row4 * SMEM_W_PITCH + half4 * 64;
+                    row4 * SMEM_W_PITCH;  // chunk offsets go through mk_swz
     // Byte-lane SIMD: a raw word holds 8 nibbles = 8 elements; its low
     // nibbles are elements 0,2,4,6 and its high nibbles 1,3,5,7. For the
     // e2m1 magnitude t (0..7) the e4m3 byte is 0x30 + ((t>>1)<<3) + ((t&1)<<2)
@@ -570,7 +575,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         ow[2 * h] = __byte_perm(out2[0], out2[1], 0x5140);
         ow[2 * h + 1] = __byte_perm(out2[0], out2[1], 0x7362);
       }
-      *(uint4*)(rowb + g4 * 16) = make_uint4(ow[0], ow[1], ow[2], ow[3]);
+      *(uint4*)(rowb + mk_swz(row4, half4 * 64 + g4 * 16)) =
+          make_uint4(ow[0], ow[1], ow[2], ow[3]);
     }
   };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
@@ -792,10 +798,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #pragma unroll
         for (int j = 0; j < 2; ++j) {
           const int nrow = warp * 16 + j * 8 + g;
-          uint32_t b0 =
-              *(const uint32_t*)(sw + nrow * SMEM_W_PITCH + koff + t4);
+          const uint8_t* wrow = sw + nrow * SMEM_W_PITCH;
+          uint32_t b0 = *(const uint32_t*)(wrow + mk_swz(nrow, koff + t4));
           uint32_t b1 =
-              *(const uint32_t*)(sw + nrow * SMEM_W_PITCH + koff + 16 + t4);
+              *(const uint32_t*)(wrow + mk_swz(nrow, koff + 16 + t4));
 #pragma unroll
           for (int i = 0; i < MT; ++i) {
             asm volatile(

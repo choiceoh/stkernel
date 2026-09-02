@@ -83,7 +83,7 @@ cold tax by the share this module covers.
 - Fixed 48-block grid everywhere; the never-reset monotonic ticket barrier
   is what keeps CUDA-graph replay with baked pointers exact (the osar
   `done_ctr` trick). A larger grid deadlocked on this part (#150).
-- Dynamic smem: W8 kernel 63,488 B (the 3 W pipeline buffers), W4 kernel
+- Dynamic smem: W8 kernel 57,344 B (dense 128 B rows, pre-swizzled pack) (the 3 W pipeline buffers), W4 kernel
   72,832 B (2 expanded tiles + 3 raw stages) -- separate instantiations
   with separate budgets, because one shared budget cost the W8 loop 4-7%.
   Both resolve to 1 block/SM. Deeper W4 staging (4, 5) measured worse.

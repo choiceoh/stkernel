@@ -6222,10 +6222,13 @@ def test_glm53_megakernel_contracts() -> None:
     check(".permute(0, 2, 1, 3).contiguous())" in pysrc_full
           and "q.view(n_pad // 128, 128, k // 128, 128)" in pysrc_full,
           "build_mk_weight emits [n/128, k/128, 128, 128]")
-    check("t / MK_W_CHUNKS" in cu,
-          "staging must flatten (row, chunk) so every thread issues copies: "
-          "the row-strided form left half of MK_THREADS idle and halved the "
-          "bytes in flight, which is the bandwidth on a latency-bound stage")
+    check("mk_cp_async16(d0 + (size_t)t * 16, wsrc + (size_t)t * 16);" in cu
+          and "src = (torch.arange(8, device=q.device)[None, :] ^ (rows[:, None] & 7))"
+          in pysrc_full and "wrow + mk_swz(nrow, koff + t4)" in cu,
+          "the W8 tile copy is a straight memcpy of a PRE-SWIZZLED pack into "
+          "dense 128 B rows (every thread issues copies), and the fragment "
+          "loads read through the same XOR -- the padded pitch cost the copy "
+          "16% of its bandwidth")
     check("threadIdx.x != 0\n         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
           and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
           "thread 0 issues no cp.async: it runs the grid barrier, whose "
