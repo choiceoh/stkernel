@@ -2074,6 +2074,57 @@ def test_glm53_v2_overlay_contracts() -> None:
     print("  glm53 V2/deploy contracts ...... OK")
 
 
+def test_fp8_dense_nvfp4_scheme_contract() -> None:
+    """nvfp4 is opt-in, stacks on fp8, and arms only on a value check.
+
+    It buys 2.3x on the prefill GEMM (236 vs 104 TFLOP/s measured) and halves
+    the pack, for 3.7x the quantization error -- past what the checkpoint's own
+    recipe was willing to do to these projections, which put fp4 on
+    `mlp.experts.*` only. So it must behave like the other experimental
+    scheme: never the default, never a boot failure, and never armed on
+    "did not raise"."""
+    src = open(os.path.join(
+        REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+        encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+
+    check(re.search(r"^VLLM_GLM53_FP8_DENSE=1$", profile, re.M) is not None,
+          "the profile still ships w8a8, not nvfp4")
+    check('scheme = "nvfp4"' in src, "the nvfp4 scheme exists")
+    check('raw in ("nvfp4", "fp4x4", "w4a4")' in src,
+          "nvfp4 needs its own spelling: bare 'fp4' stays w4a8")
+
+    # Both operands, or there is no 2x -- quantizing only the weight is the
+    # existing w4a8 arm and runs at the fp8 issue rate.
+    gemm = src[src.index("def _nvfp4_dense_gemm("):]
+    gemm = gemm[:gemm.index("\n\n\n")]
+    check("nvfp4_quantize(flat" in gemm,
+          "the activation is quantized too, per call")
+    check("mm_fp4(" in gemm, "and the pair goes through mm_fp4")
+
+    # Arms only on a check that ran (is True), like w4a8 -- not on "did not
+    # raise", which is how the w4a8 default once poisoned a CUDA context.
+    branch = src[src.index('if scheme == "nvfp4"'):]
+    branch = branch[:branch.index('if scheme == "w4a8"')]
+    check("_copy_matches_source(" in branch and ") is True:" in branch,
+          "nvfp4 arms only on a value check that actually ran")
+    check("mod.quant_method = method" in branch,
+          "a failed check leaves the layer on the fp8 copy")
+
+    # It stacks on the fp8 METHOD, so a runtime failure drops one notch.
+    ctor = src[src.index("class NvFp4DenseMethod"):]
+    ctor = ctor[:ctor.index("class W4A8DenseMethod")]
+    check("layer.quant_method = self._base" in ctor,
+          "a runtime failure falls back to the fp8 method, not to bf16")
+
+    # Re-arming has to unwrap every stacked method, not one.
+    check("while isinstance(\n            base, (Fp8DenseMethod, "
+          "W4A8DenseMethod, NvFp4DenseMethod)\n        ):" in src,
+          "re-arm unwraps stacked methods in a loop")
+    print("  fp8-dense nvfp4 scheme contract .. OK")
+
+
 def test_korean_gate_separates_notation_from_damage() -> None:
     """The Korean gate must not fire on the model writing about Korean.
 
@@ -7636,6 +7687,7 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_fp8_dense_nvfp4_scheme_contract()
     test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()

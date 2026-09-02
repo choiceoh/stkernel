@@ -192,6 +192,67 @@ def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
     return packed, sf
 
 
+# nvfp4 blocks are 16 wide and the scale is e4m3, not the ue8m0 the fp8 path
+# uses; the format's max magnitude is 6.0 (e2m1's top grid point).
+_NVFP4_BLOCK = 16
+_NVFP4_MAX = 6.0
+
+
+def _nvfp4_global_scale(t: torch.Tensor) -> torch.Tensor:
+    """The per-tensor scale that puts this tensor's amax at the format's top.
+
+    e4m3 block scales top out at 448 and the values at 6.0, so the product is
+    what the block scale has to reach for the largest block."""
+    amax = t.abs().amax().float().clamp_min(1e-12)
+    return (448.0 * _NVFP4_MAX / amax).view(1)
+
+
+def _quantize_nvfp4(weight: torch.Tensor):
+    """[N, K] bf16 -> (packed e2m1 [N, K//2], e4m3 block scales, global scale).
+
+    Same format the checkpoint already uses for the MoE experts, on the dense
+    projections its recipe left in higher precision. Worth 2.3x on the prefill
+    GEMM (236 vs 104 TFLOP/s measured) and half the pack, against 3.7x the
+    quantization error -- which is why this scheme is knob-gated and arms only
+    on a value check that ran."""
+    from flashinfer import nvfp4_quantize
+
+    with torch.no_grad():
+        w = weight.detach()
+        gs = _nvfp4_global_scale(w)
+        packed, sf = nvfp4_quantize(w, gs)
+        return packed, sf, gs
+
+
+def _nvfp4_dense_gemm(
+    x: torch.Tensor,
+    wq: torch.Tensor,
+    wsf: torch.Tensor,
+    w_gs: torch.Tensor,
+    out_rows: int,
+    alpha_scale: float,
+) -> torch.Tensor:
+    """Both operands in nvfp4 -- that is where the 2x lives.
+
+    Quantizing only the weight leaves the GEMM running at the fp8 issue rate
+    (that is the existing w4a8 arm), so the activation is quantized per call,
+    dynamically, the way the checkpoint's recipe does it for the experts."""
+    from flashinfer import mm_fp4, nvfp4_quantize
+
+    flat = x.reshape(-1, x.shape[-1])
+    x_gs = _nvfp4_global_scale(flat)
+    xq, xsf = nvfp4_quantize(flat.to(torch.bfloat16), x_gs)
+    # Both operands carry their global scale into the values, so the product
+    # has to be divided back out once, in the epilogue.
+    alpha = (alpha_scale / (x_gs * w_gs)).to(torch.float32)
+    out = torch.empty(
+        flat.shape[0], out_rows, dtype=torch.bfloat16, device=flat.device
+    )
+    mm_fp4(xq, wq.T, xsf, wsf.T, alpha, torch.bfloat16, out,
+           _NVFP4_BLOCK, False, "auto")
+    return out.reshape(x.shape[:-1] + (out_rows,))
+
+
 def _fp8_fp4_dense_gemm(
     x: torch.Tensor,
     wq: torch.Tensor,
@@ -251,6 +312,53 @@ try:
         )
 except Exception:
     _w4_dense_gemm_op = _fp8_fp4_dense_gemm
+
+
+try:
+    _nvfp4_dense_gemm_op = torch.library.custom_op(
+        "glm53_fp8_dense::gemm_nvfp4", mutates_args=()
+    )(_nvfp4_dense_gemm)
+
+    @_nvfp4_dense_gemm_op.register_fake
+    def _nvfp4_dense_gemm_fake(
+        x, wq, wsf, w_gs, out_rows: int, alpha_scale: float
+    ) -> torch.Tensor:
+        return torch.empty(
+            x.shape[:-1] + (out_rows,), dtype=torch.bfloat16,
+            device=x.device,
+        )
+except Exception:
+    _nvfp4_dense_gemm_op = _nvfp4_dense_gemm
+
+
+class NvFp4DenseMethod:
+    """Both operands in nvfp4: 2.3x the fp8 GEMM, 3.7x its error.
+
+    `_base` is the layer's fp8 METHOD, so a runtime failure drops one notch to
+    W8A8 rather than to bf16 -- the same ladder W4A8DenseMethod uses, and for
+    the same reason: never let a scheme choice fail a boot.
+
+    The error is the whole story here. The checkpoint's own recipe put fp4 on
+    `mlp.experts.*` and left these projections alone, so this scheme goes past
+    what its authors were willing to quantize. Offline norms cannot settle
+    whether that was necessary or conservative -- the bracket does."""
+
+    def __init__(self, base, wq, wsf, w_gs, out_rows, alpha_scale):
+        self._base = base
+        self._wq, self._wsf, self._gs = wq, wsf, w_gs
+        self._rows = out_rows
+        self._alpha = alpha_scale
+
+    def apply(self, layer, x, bias=None):
+        if bias is not None:
+            return self._base.apply(layer, x, bias)
+        try:
+            return _nvfp4_dense_gemm_op(
+                x, self._wq, self._wsf, self._gs, self._rows, self._alpha
+            )
+        except Exception:
+            layer.quant_method = self._base
+            return self._base.apply(layer, x, bias)
 
 
 class W4A8DenseMethod:
@@ -414,7 +522,7 @@ def maybe_free_fp8_dense_bf16(model) -> int:
     kept_bias = 0
     for mod in model.modules():
         method = getattr(mod, "quant_method", None)
-        if not isinstance(method, (Fp8DenseMethod, W4A8DenseMethod)):
+        if not isinstance(method, (Fp8DenseMethod, W4A8DenseMethod, NvFp4DenseMethod)):
             continue
         weight = getattr(mod, "weight", None)
         if weight is None or weight.numel() == 0:
@@ -450,7 +558,13 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     # w4a8: weights one notch lower on the same kernel family
     # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
     # stay fp8 -- the axis the literature blesses. 1/true keeps W8A8.
-    scheme = "w4a8" if raw in ("w4a8", "w4", "fp4") else "w8a8"
+    if raw in ("nvfp4", "fp4x4", "w4a4"):
+        # both operands in nvfp4 -- the only shape that gets the 2x
+        scheme = "nvfp4"
+    elif raw in ("w4a8", "w4", "fp4"):
+        scheme = "w4a8"
+    else:
+        scheme = "w8a8"
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     for name, mod in model.named_modules():
@@ -459,8 +573,15 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         weight = getattr(mod, "weight", None)
         base = getattr(mod, "quant_method", None)
         # Re-arming: unwrap a copy already installed so this call quantizes
-        # today's weights and replaces it.
-        if isinstance(base, (Fp8DenseMethod, W4A8DenseMethod)):
+        # today's weights and replaces it. The low-precision schemes stack on
+        # the fp8 method rather than on bf16 (so a runtime failure drops one
+        # notch, not two), so unwrap until the original method reappears --
+        # one step would leave an fp8 method here, and the
+        # UnquantizedLinearMethod test below would then skip the layer and
+        # keep serving the copy this call was meant to replace.
+        while isinstance(
+            base, (Fp8DenseMethod, W4A8DenseMethod, NvFp4DenseMethod)
+        ):
             base = base._base
         if (
             weight is None
@@ -498,6 +619,43 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             ) is False:
                 mod.quant_method = base
                 stale.append(name)
+                continue
+            if scheme == "nvfp4" and weight.shape[1] % _NVFP4_BLOCK == 0:
+                # Same discipline as w4a8 below: an experimental scheme arms
+                # only on a value check that actually RAN, against the bf16
+                # tensor it claims to stand for. The tolerance is 4x the
+                # stale threshold because nvfp4's by-design error on these
+                # projections is 1.3e-1 (measured, probes/nvfp4_dense_
+                # accuracy.py) while an uncorrelated result lands near
+                # sqrt(2) -- the two are still nowhere near each other.
+                #
+                # alpha carries both global scales back out of the product.
+                # Which way round that division goes is a property of the
+                # vendored kernel's dequant convention, not something this
+                # file can read, so both are tried and whichever reproduces
+                # bf16 is kept -- exactly how the w4a8 scale layout is
+                # settled.
+                for alpha_scale in (1.0, -1.0):
+                    try:
+                        wq, wsf, w_gs = _quantize_nvfp4(weight)
+                        nv = NvFp4DenseMethod(
+                            method, wq, wsf, w_gs, rows, alpha_scale)
+                        if _copy_matches_source(
+                                mod, nv, weight,
+                                rtol=4 * _STALE_RTOL,
+                                got_fn=lambda xx: _nvfp4_dense_gemm(
+                                    xx, wq, wsf, w_gs, rows, alpha_scale),
+                        ) is True:
+                            mod.quant_method = nv
+                            quantized_w4.append(name)
+                            params_w4 += weight.numel()
+                            break
+                    except Exception:
+                        continue
+                else:
+                    mod.quant_method = method
+                    quantized.append(name)
+                    params += weight.numel()
                 continue
             if scheme == "w4a8" and weight.shape[1] % 2 == 0:
                 # Stricter than the fp8 path on purpose: an EXPERIMENTAL
