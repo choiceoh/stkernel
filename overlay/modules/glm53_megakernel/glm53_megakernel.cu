@@ -1050,24 +1050,11 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
             __float2bfloat16(r[j]);
         sqr += r[j] * r[j];
       }
-      // fn is the driver's [HC][HIDDEN][NOUT] copy (m contiguous): the 24
-      // outputs of one (j, h) are 6 float4 loads, 24 per thread for the
-      // pair instead of 96 scalars 64 KB apart. With the scalars the p1
-      // stamp sat at 17 us (T=8) for 96 KB per block -- register-limited
-      // batches of a latency chain, not bandwidth.
 #pragma unroll
-      for (int j = 0; j < HC; ++j) {
-        const float4* f4 =
-            (const float4*)(a.fn + ((size_t)j * HIDDEN + h) * NOUT);
+      for (int j = 0; j < HC; ++j)
 #pragma unroll
-        for (int q = 0; q < NOUT / 4; ++q) {
-          const float4 v = f4[q];
-          dot[4 * q + 0] += v.x * r[j];
-          dot[4 * q + 1] += v.y * r[j];
-          dot[4 * q + 2] += v.z * r[j];
-          dot[4 * q + 3] += v.w * r[j];
-        }
-      }
+        for (int m = 0; m < NOUT; ++m)
+          dot[m] += a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h] * r[j];
     }
 
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
