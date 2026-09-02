@@ -7079,6 +7079,41 @@ def test_glm53_prep_fused_contracts() -> None:
     print("  glm53 prep fused contracts .. OK")
 
 
+def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
+    """A `#` line inside a backslash-continued shell string ends the string.
+
+    The NCCL channel note was added directly above the `-e NCCL_NET=IB` line,
+    which sits INSIDE the ENVV="..." continuation: bash then closed the string
+    early, ran the comment as a comment, and tried to execute the remaining
+    `-e NCCL_...` lines as commands -- the boot died with "docker run requires
+    at least 1 argument" AFTER clearing the compile cache. `bash -n` accepts
+    it (the result is still valid syntax), so this check exists instead."""
+    for name in ("start-glm53-nvfp4-tp4.sh", "start-hy4-tp4.sh", "start-qwen38-nvfp4-tp4.sh"):
+        path = os.path.join(REPO, "launchers", name)
+        if not os.path.exists(path):
+            continue
+        in_str = False
+        for i, raw in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+            line = raw.rstrip()
+            if not in_str:
+                # an assignment that opens a quote and continues to the next line
+                m = re.match(r'^\s*[A-Za-z_][A-Za-z0-9_]*="[^"]*\\$', line)
+                if m:
+                    in_str = True
+                continue
+            check(not line.lstrip().startswith("#"),
+                  f"{name}:{i} is a comment inside a continued string assignment "
+                  f"-- it silently truncates the value: {line.strip()[:60]}")
+            if not line.endswith("\\"):
+                in_str = False
+    env = open(os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    envv = env[env.index('ENVV="'):]
+    envv = envv[: envv.index('"\n', 1) + 1] if '"\n' in envv else envv[:4000]
+    for k in ("NCCL_MIN_NCHANNELS=16", "NCCL_MAX_NCHANNELS=16", "NCCL_NCHANNELS_PER_NET_PEER=4"):
+        check(k in envv, f"the measured NCCL channel tuning ({k}) is inside the ENVV string")
+    print("  launcher continued-string assignments carry no comments .. OK")
+
+
 def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
     """PREFILL_WARMUP=1 bash launchers/... must survive sourcing the profile.
 
@@ -7430,6 +7465,7 @@ if __name__ == "__main__":
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
     test_glm53_prep_fused_contracts()
+    test_launcher_multiline_assignments_have_no_embedded_comments()
     test_launcher_restores_prefill_warmup_from_caller_env()
     test_profile_keys_not_passed_via_extra_env()
     test_glm53_indexer_gate_splitk_contracts()
