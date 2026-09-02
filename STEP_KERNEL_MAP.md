@@ -215,54 +215,6 @@ self `copy_`는 ATen 쇼트서킷으로 커널 미발생. conv→recurrent 융�
 상태 읽기가 지배라 0.1~0.2% — 채택 바 아래로 확정. 교훈: 인구조사의 그룹 합계는
 **소스를 읽기 전까지는 개선 여지가 아니라 의문점**이다.
 
-## 보충 분해 2 (2026-09-02 — 9월 1일 트레이스 재분석, 커널 밖)
-
-앞의 지도는 GPU 커널만 셌다. 같은 트레이스(229 스텝)를 **스트림 합집합**으로
-보면 스텝의 12%가 GPU 유휴이고, 그 위치가 하나다.
-
-| 구간 (스텝 72.1 ms, 프로파일러 하) | 유휴 | 무엇 |
-|---|---|---|
-| 1.6 ms 지점 | 0.6 ms | DtoH 회수 뒤 드래프터 그래프 발사 대기 |
-| 6.6~12.3 ms | **5.7 ms** | eager 입력 준비: aten 호출 1,028개, memcpy 45개, 1~3 us 커널 ~100개, 커널 사이 50~430 us 공백 (호스트가 발사를 못 따라감) |
-| 12.5~14.0 ms | **1.43 ms** | `cudaGraphLaunch` — 1,640 노드 타깃 그래프 제출 호스트 소요 (50스텝 중앙, p10 1.34 p90 1.59); 노드당 ~0.87 us |
-| 스텝 끝 | 0.8 ms | 샘플러 → 다음 스텝 전환 |
-| 합 | 8.9 ms | |
-
-프로파일러가 호스트를 부풀리므로 절대값은 과장이다. 프로파일러 없는 앵커는
-원장의 "디코드 중 GPU 93%" (같은 정의) → 실제 유휴 4~5 ms/스텝. 원장의
-"호스트 병목" 기각은 32 ms 잔차의 설명으로서 맞았고, 5 ms 짜리 항목으로는
-살아 있다. dflash 가 async scheduling 을 자동으로 끈다는 기록(#1455)과 준비
-구간 동안 GPU 가 완전히 비는 트레이스가 일치한다.
-
-준비 구간의 코드: `v1/worker/gpu/input_batch.py`·`block_table.py`(Triton 5개),
-`model_states/mamba_hybrid.py`, KV 그룹 7개(MLA+indexer 1, kpool tail 1,
-mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`arange`·`index`×2·
-`copy_`×5 를 내고(트레이스의 4회 반복 패턴), indexer 빌더가 `floor_divide`×3·
-`diff`·fill·`_prepare_uniform_decode`·deep_gemm 스케줄을 낸다. 전부 이미지 파일이고
-오버레이돼 있지 않다. 접수 방식은 `overlay/modules/glm53_prep_fused`(EXP-7):
-파일을 덮지 않고 러너 메서드를 패치하며 preimage 를 고정한다.
-
-**그래프 안 글루 605개의 정체**(같은 트레이스, 위치 귀속):
-
-| 위치 | 개/스텝 | 무엇 | 처리 |
-|---|---|---|---|
-| 풀어텐션 11층 인덱서 | 275 | 꼬리 풀 강제 8개, seq_len 유도, fill, 확장·변환 주변 | 우리 `sparse_attn_indexer_kpool.py` — `VLLM_GLM53_KPOOL_FUSED_TOPK`(기본 off, 미측정)에 접기 |
-| KDA 34층 | 136 | conv 뒤 `reshape` 가 split 뷰를 q/k/v 세 번 복사 | MK-KDA 가 흡수 |
-| MoE 42층 | 42 | shared expert 덧셈 | osar copy-in 에 접기 |
-| 나머지 | ~150 | 드래프터 inductor 글루, 꼬리 native RMSNorm, eager memcpy | 작음 |
-
-커널당 점유는 CUPTI 로 길이 중앙 2.0 us + 그래프 안 간격 0.2 us — 원장의
-5.4 us 상한과 부합하고, 605개 전부가 2.7 ms(부풀린 값)다.
-
-**읽다가 나온 것**: (1) 인덱서의 fp32 head-gate `torch.mm(hidden.float(), _wp_fp32)`
-가 cuBLAS gemmSN 2블록 커널로 층당 86 us, 11층 0.95 ms/스텝(CUPTI) — 우리
-`glm53_prefill_fastpath.py:402` 소유, split-K 로 수 us 감. (2) 드래프터 fc 투영
-814 us(eager bf16, 5층 hidden cat, 168 MB 읽기, `ReplicatedLinear` 라 fp8 dense
-패턴 밖) 포함 드래프터 커널 합 ~3 ms(CUPTI) — 원장 D≈0 과 긴장, 직접 측정 전
-판단 보류. (3) `KpoolTailMetadataBuilder` 의 원형 tail 슬롯 매핑은 러너가
-`positions` 를 안 넘겨 이 이미지에서 잠들어 있다(generic 매핑 사용) —
-`glm53_tail_slot_persistent` 의 고정 버퍼도 그래서 무효; C>=2 수치 축.
-
 ## 재현
 
 ```bash

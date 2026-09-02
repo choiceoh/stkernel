@@ -365,6 +365,11 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
     if (threadIdx.x == 0)                                                    \
       g_mk_kda_ts[blockIdx.x * 16 + (slot)] = mk_globaltimer();             \
   } while (0)
+// mhc tail probes ride the gemm stamp array (idle during mhc), slots 1..7
+#define MK_MHC_PROBE(slot)                                                   \
+  do {                                                                       \
+    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
+  } while (0)
 #define MK_TS_ACC_BEGIN(v) const unsigned long long v = mk_globaltimer()
 #define MK_TS_ACC_END(acc, v) acc += mk_globaltimer() - (v)
 #define MK_TS_STORE(slot, acc)                                               \
@@ -382,6 +387,9 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
   } while (0)
 #define MK_KDA_TS(slot) \
   do {                  \
+  } while (0)
+#define MK_MHC_PROBE(slot) \
+  do {                     \
   } while (0)
 #define MK_TS_ACC_BEGIN(v) \
   do {                     \
@@ -991,263 +999,360 @@ struct MKMhcArgs {
   int sinkhorn_repeat;
 };
 
-__device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
-  // fn is LOGICALLY re-read once per token (T x 1.5 MB) but the (t, chunk)
-  // pair -> block assignment co-schedules all tokens of a chunk, so L2
-  // serves T-1 of them and DRAM sees ~1.5 MB per op -- the same traffic
-  // the stock grid pattern produces. Do not "fix" the re-read without
-  // measuring DRAM first.
-  __shared__ float red[MK_WARPS][NOUT + 1];
-  const int npairs = a.num_tokens * NCHUNK;
-  for (int p = bid; p < npairs; p += a.grid) {
-    const int t = p / NCHUNK, c = p % NCHUNK, h0 = c * HCHUNK;
-    float cm[HC][HC], pm[HC];
+// Per-token chunk arrivals (rearmed by the block that runs the token's
+// tail), the tail ticket counter, and the exit ticket whose last holder
+// rearms the tail counter -- so graph replay needs no host-side reset (the
+// tile counters' trick, twice).
+__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];
+__device__ unsigned int g_mk_mhc_tail_next = 0u;
+__device__ unsigned int g_mk_mhc_exit = 0u;
+
+__device__ __forceinline__ float mk_ldcg_bf16(const __nv_bfloat16* p) {
+  return __bfloat162float(__ushort_as_bfloat16(__ldcg((const unsigned short*)p)));
+}
+
+// p2 for ONE token, by one warp: the 24 chunk reductions, rms, the post /
+// comb (sinkhorn) / pre mixes. Reads the other blocks' partials through
+// L2 (__ldcg): they were published with a fence + the arrival counter.
+__device__ void mk_mhc_p2_token(const MKMhcArgs& a, int t, float* s_pmix) {
+  // One warp, and as few DEPENDENT shuffles as possible: on this part a
+  // dependent shuffle step in this tail measured ~0.15 us (the 5-step rms
+  // reduce 0.75 us, the 16-step lane-parallel sinkhorn ~3.5 us, and a
+  // warm second pass cost the same, so it is not cold code). Now: lanes
+  // 0..23 sum their output's 16 partials, lane 24 sums all 16 sumsq
+  // partials itself and broadcasts rms with ONE shuffle, lane 0 gathers
+  // the 16 comb inputs with 16 INDEPENDENT shuffles and runs the whole
+  // 4x4 sinkhorn in its registers (fully unrolled, no shuffles), lanes
+  // 4..7 / 8..11 do the post / pre sigmoids meanwhile.
+  const int lane = threadIdx.x & 31;
+  const float hs0 = a.hc_scale[0], hs1 = a.hc_scale[1], hs2 = a.hc_scale[2];
+  const float hb_post = a.hc_base[(lane & 3) + HC];
+  const float hb_pre = a.hc_base[lane & 3];
+  // lane 0's 16 comb biases, issued with the partial-sum loads
+  const float4* hb4 = (const float4*)(a.hc_base + 2 * HC);
+  const float4 hbc0 = hb4[0], hbc1 = hb4[1], hbc2 = hb4[2], hbc3 = hb4[3];
+  float mine = 0.0f;
+  if (lane < NOUT) {
+#pragma unroll
+    for (int c = 0; c < NCHUNK; ++c)
+      mine += __ldcg(&a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane]);
+  } else if (lane == NOUT) {
+#pragma unroll
+    for (int c = 0; c < NCHUNK; ++c) mine += __ldcg(&a.rp[c * MAX_TOK + t]);
+  }
+  MK_MHC_PROBE(1);  // partial sums landed
+  const float rms_l = rsqrtf(mine / (float)(HC * HIDDEN) + a.rms_eps);
+  const float rms = __shfl_sync(0xffffffffu, rms_l, NOUT);
+  const float mixv = mine * rms;
+  const float post_in = __shfl_sync(0xffffffffu, mixv, HC + (lane & 3));
+  const float pre_in = __shfl_sync(0xffffffffu, mixv, lane & 3);
+  float m[HC][HC];
+#pragma unroll
+  for (int j = 0; j < HC; ++j)
+#pragma unroll
+    for (int k = 0; k < HC; ++k)
+      m[j][k] = __shfl_sync(0xffffffffu, mixv, j * HC + k + 2 * HC);
+  MK_MHC_PROBE(2);  // mixes fetched
+  if (lane >= HC && lane < 2 * HC) {  // post mixes: hc_scale[1], lanes 4..7
+    a.post_mix_out[t * HC + (lane & 3)] =
+        mk_sigmoid(post_in * hs1 + hb_post) * a.post_mult;
+  }
+  if (lane >= 2 * HC && lane < 3 * HC) {  // pre mixes: hc_scale[0], 8..11
+    s_pmix[lane & 3] = mk_sigmoid(pre_in * hs0 + hb_pre) + a.pre_eps;
+  }
+  if (lane == 0) {  // comb mixes: hc_scale[2] + sinkhorn, 4x4 in registers
+    const float hb[HC][HC] = {{hbc0.x, hbc0.y, hbc0.z, hbc0.w},
+                              {hbc1.x, hbc1.y, hbc1.z, hbc1.w},
+                              {hbc2.x, hbc2.y, hbc2.z, hbc2.w},
+                              {hbc3.x, hbc3.y, hbc3.z, hbc3.w}};
 #pragma unroll
     for (int j = 0; j < HC; ++j) {
-      pm[j] = a.post_mix_in[t * HC + j];
+      float rm = -INFINITY;
+#pragma unroll
+      for (int k = 0; k < HC; ++k) {
+        m[j][k] = m[j][k] * hs2 + hb[j][k];
+        rm = fmaxf(rm, m[j][k]);
+      }
+      float rs = 0.0f;
+#pragma unroll
+      for (int k = 0; k < HC; ++k) {
+        m[j][k] = __expf(m[j][k] - rm);
+        rs += m[j][k];
+      }
 #pragma unroll
       for (int k = 0; k < HC; ++k)
-        cm[k][j] = a.comb_mix_in[t * HC * HC + k * HC + j];
+        m[j][k] = __fdividef(m[j][k], rs) + a.sinkhorn_eps;
     }
-    float dot[NOUT], sqr = 0.0f;
 #pragma unroll
-    for (int m = 0; m < NOUT; ++m) dot[m] = 0.0f;
+    for (int k = 0; k < HC; ++k) {
+      float cs = 0.0f;
+#pragma unroll
+      for (int j = 0; j < HC; ++j) cs += m[j][k];
+#pragma unroll
+      for (int j = 0; j < HC; ++j)
+        m[j][k] = __fdividef(m[j][k], cs + a.sinkhorn_eps);
+    }
+    for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {
+#pragma unroll
+      for (int j = 0; j < HC; ++j) {
+        float rs = 0.0f;
+#pragma unroll
+        for (int k = 0; k < HC; ++k) rs += m[j][k];
+#pragma unroll
+        for (int k = 0; k < HC; ++k)
+          m[j][k] = __fdividef(m[j][k], rs + a.sinkhorn_eps);
+      }
+#pragma unroll
+      for (int k = 0; k < HC; ++k) {
+        float cs = 0.0f;
+#pragma unroll
+        for (int j = 0; j < HC; ++j) cs += m[j][k];
+#pragma unroll
+        for (int j = 0; j < HC; ++j)
+          m[j][k] = __fdividef(m[j][k], cs + a.sinkhorn_eps);
+      }
+    }
+    MK_MHC_PROBE(3);  // sinkhorn done
+    float4* out4 = (float4*)(a.comb_mix_out + t * HC * HC);
+#pragma unroll
+    for (int j = 0; j < HC; ++j)
+      out4[j] = make_float4(m[j][0], m[j][1], m[j][2], m[j][3]);
+  }
+}
 
-    for (int h = h0 + threadIdx.x; h < h0 + HCHUNK; h += MK_THREADS) {
-      const float xv = __bfloat162float(a.x_in[t * HIDDEN + h]);
-      float r[HC];
+// p3 + p4 for ONE token, by one block: pre-mix the four residual streams
+// (16 elements per thread, kept in registers), one block-wide sum of
+// squares, then the normalized layer input -- the ol_stash / sq round
+// trips and their two grid barriers are gone.
+// p3 + p4 for ONE token, by one block: pre-mix the four residual streams
+// (16 elements per thread, kept in registers), one block-wide sum of
+// squares, then the normalized layer input -- the ol_stash / sq round
+// trips and their two grid barriers are gone. The residual loads do not
+// depend on p2, so every warp issues them BEFORE warp 0 runs p2 (load
+// phase) and only the mixing runs after (compute phase).
+constexpr int MHC_EPT = HIDDEN / MK_THREADS;  // 16 elements per thread
+struct MhcTailRegs {
+  float res[HC][MHC_EPT];
+  float nw[MHC_EPT];
+};
+
+__device__ __forceinline__ void mk_mhc_p34_load(const MKMhcArgs& a, int t,
+                                                MhcTailRegs& r) {
+#pragma unroll
+  for (int i = 0; i < MHC_EPT; ++i) {
+    const int h = i * MK_THREADS + threadIdx.x;
+#pragma unroll
+    for (int j = 0; j < HC; ++j)
+      r.res[j][i] = mk_ldcg_bf16(a.residual_out + (size_t)t * HC * HIDDEN +
+                                 j * HIDDEN + h);
+    r.nw[i] = __bfloat162float(a.norm_weight[h]);
+  }
+}
+
+__device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
+                                   const float* s_pmix,
+                                   const MhcTailRegs& r) {
+  __shared__ float sqred[MK_WARPS];
+  float pre[HC];
+#pragma unroll
+  for (int j = 0; j < HC; ++j) pre[j] = s_pmix[j];
+  float vals[MHC_EPT], sq = 0.0f;
+#pragma unroll
+  for (int i = 0; i < MHC_EPT; ++i) {
+    float v = 0.0f;
+#pragma unroll
+    for (int j = 0; j < HC; ++j) v += pre[j] * r.res[j][i];
+    sq += v * v;
+    // the old p3 stashed v as bf16 and p4 read it back: same rounding
+    vals[i] = __bfloat162float(__float2bfloat16(v));
+  }
+  MK_MHC_PROBE(5);  // loads consumed, mixing done
+#pragma unroll
+  for (int off = 16; off; off >>= 1) sq += __shfl_xor_sync(~0u, sq, off);
+  if ((threadIdx.x & 31) == 0) sqred[threadIdx.x >> 5] = sq;
+  __syncthreads();
+  float tot = 0.0f;
+#pragma unroll
+  for (int w = 0; w < MK_WARPS; ++w) tot += sqred[w];
+  const float rsq = rsqrtf(tot / (float)HIDDEN + a.norm_eps);
+#pragma unroll
+  for (int i = 0; i < MHC_EPT; ++i) {
+    const int h = i * MK_THREADS + threadIdx.x;
+    a.layer_input[t * HIDDEN + h] =
+        __float2bfloat16(vals[i] * rsq * r.nw[i]);
+  }
+  __syncthreads();  // sqred reuse
+}
+
+__device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
+  // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
+  // streams for this thread's h -- lives in 96 REGISTERS, loaded once, and
+  // the group's tokens run against it. At T=8 the old (token, chunk)-pair
+  // mapping had all 128 pairs in flight at once, each pulling its 96 KB of
+  // fn: 12 MB through L2 -> SM in one round, ~10 us, which is the L2 rate,
+  // not DRAM (fn is 1.5 MB). grid / NCHUNK token groups per chunk (6 at
+  // the 96 resident blocks this kernel's registers allow) cut that to 8
+  // MB and keep every block busy. (The smem-slice form measured worse:
+  // its 96-load fill was latency-bound and every token then paid 96 smem
+  // reads per thread; registers pay neither. Three groups on 48 blocks
+  // left half the grid idle: T=8 span 22.6 us.)
+  //  * the 25 per-token partials are reduced through a transposed smem
+  //    tile (8 loads + 5 shuffles per output per warp);
+  //  * a token's p2 / p3 / p4 ("tail", ~4 us on one block) runs on
+  //    whichever block is free: blocks that are done take tail tickets
+  //    and wait on the token's chunk-arrival counter -- no grid barrier.
+  const int groups = max(1, a.grid / NCHUNK);  // token groups per chunk
+  __shared__ float part[MK_THREADS][NOUT + 3];  // pitch 27: conflict-free
+  __shared__ float s_pmix[HC];
+  __shared__ int s_tok;
+  const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+  // a token's x / residual inputs for this thread's h, loaded one token
+  // ahead so the chain does not open with a global round trip
+  auto load_tok = [&](int t, int h, float& xv_, float (&res_)[HC],
+                      float (&pm_)[HC], float (&cm_)[HC][HC]) {
+    xv_ = __bfloat162float(a.x_in[t * HIDDEN + h]);
+#pragma unroll
+    for (int k = 0; k < HC; ++k)
+      res_[k] = __bfloat162float(
+          a.residual_in[(size_t)t * HC * HIDDEN + k * HIDDEN + h]);
+#pragma unroll
+    for (int j = 0; j < HC; ++j) {
+      pm_[j] = a.post_mix_in[t * HC + j];
+#pragma unroll
+      for (int k = 0; k < HC; ++k)
+        cm_[k][j] = a.comb_mix_in[t * HC * HC + k * HC + j];
+    }
+  };
+  for (int cg = bid; cg < NCHUNK * groups; cg += a.grid) {
+    const int c = cg % NCHUNK, g = cg / NCHUNK;
+    const int h = c * HCHUNK + threadIdx.x;  // HCHUNK == MK_THREADS
+    float xv = 0.0f, res[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float pm[HC], cm[HC][HC];
+    if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
+    float fnr[NOUT][HC];
+#pragma unroll
+    for (int m = 0; m < NOUT; ++m)
+#pragma unroll
+      for (int j = 0; j < HC; ++j)
+        fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+    for (int t = g; t < a.num_tokens; t += groups) {
+      float nxv = 0.0f, nres[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
+      float npm[HC], ncm[HC][HC];
+      if (t + groups < a.num_tokens)
+        load_tok(t + groups, h, nxv, nres, npm, ncm);
+      float r[HC], sqr = 0.0f;
 #pragma unroll
       for (int j = 0; j < HC; ++j) {
         float v = pm[j] * xv;
 #pragma unroll
-        for (int k = 0; k < HC; ++k)
-          v += cm[k][j] *
-               __bfloat162float(a.residual_in[(size_t)t * HC * HIDDEN +
-                                              k * HIDDEN + h]);
+        for (int k = 0; k < HC; ++k) v += cm[k][j] * res[k];
         r[j] = v;
-      }
-#pragma unroll
-      for (int j = 0; j < HC; ++j) {
         a.residual_out[(size_t)t * HC * HIDDEN + j * HIDDEN + h] =
-            __float2bfloat16(r[j]);
-        sqr += r[j] * r[j];
+            __float2bfloat16(v);
+        sqr += v * v;
       }
 #pragma unroll
-      for (int j = 0; j < HC; ++j)
+      for (int m = 0; m < NOUT; ++m) {
+        float v = 0.0f;
 #pragma unroll
-        for (int m = 0; m < NOUT; ++m)
-          dot[m] += a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h] * r[j];
-    }
-
-    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-#ifdef MK_PHASE_TS
-    // probe: time of the per-pair reduce + publish, accumulated per block
-    // into g_mk_ts[block][0] (the gemm buffer is idle during mhc)
-    const unsigned long long t_red0 = mk_globaltimer();
-#endif
-#pragma unroll
-    for (int m = 0; m < NOUT; ++m)
-      for (int off = 16; off; off >>= 1)
-        dot[m] += __shfl_xor_sync(~0u, dot[m], off);
-    for (int off = 16; off; off >>= 1) sqr += __shfl_xor_sync(~0u, sqr, off);
-    if (lane == 0) {
-#pragma unroll
-      for (int m = 0; m < NOUT; ++m) red[warp][m] = dot[m];
-      red[warp][NOUT] = sqr;
-    }
-    __syncthreads();
-    if (threadIdx.x < NOUT + 1) {
-      float v = 0.0f;
-#pragma unroll
-      for (int w = 0; w < MK_WARPS; ++w) v += red[w][threadIdx.x];
-      if (threadIdx.x < NOUT)
-        a.yp[((size_t)c * MAX_TOK + t) * NOUT + threadIdx.x] = v;
-      else
-        a.rp[c * MAX_TOK + t] = v;
-    }
-    __syncthreads();
-#ifdef MK_PHASE_TS
-    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8] += mk_globaltimer() - t_red0;
-#endif
-  }
-}
-
-__device__ void mk_mhc_p2(const MKMhcArgs& a, int bid) {
-  // One warp per token, lanes 0/1/2 carry the three splits. This used to be
-  // `if (blockIdx.x != 0) return;` -- 8 warps of ONE block for every token,
-  // with 47 blocks idle, so the phase cost scaled with num_tokens while p1,
-  // p3 and p4 all spread over `bid`. Measured: T=8 66.3 us but T=32 145.1
-  // (stock 64.2 -> 79.6), i.e. 4 serial passes instead of 1. The body is
-  // per-token register work with no block-wide sync, so it distributes.
-  const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-  const int gw = bid * MK_WARPS + warp;   // 96 x 8 = 768 warps >= MAX_TOK
-  for (int t = gw; t < a.num_tokens; t += a.grid * MK_WARPS) {
-    // The 24 chunk reductions are spread over the warp: lanes 0..23 each
-    // sum one output's 16 partials (16 independent loads, one L2 round
-    // trip), lanes 24..31 the sumsq partials. Every lane used to run all
-    // 384 loads itself, in a dependent chain -- the stamps put this phase
-    // at 12.5 us per token-warp while 143 blocks waited at the barrier.
-    float mine = 0.0f;
-    if (lane < NOUT) {
-#pragma unroll
-      for (int c = 0; c < NCHUNK; ++c)
-        mine += a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane];
-    } else {
-#pragma unroll
-      for (int c = lane - NOUT; c < NCHUNK; c += 32 - NOUT)
-        mine += a.rp[c * MAX_TOK + t];
-    }
-    float sqr = (lane >= NOUT) ? mine : 0.0f;
-#pragma unroll
-    for (int off = 16; off; off >>= 1)
-      sqr += __shfl_xor_sync(0xffffffffu, sqr, off);
-    const float rms = rsqrtf(sqr / (float)(HC * HIDDEN) + a.rms_eps);
-    const float mixv = mine * rms;
-    float mixes[NOUT];
-#pragma unroll
-    for (int m = 0; m < NOUT; ++m) mixes[m] = __shfl_sync(0xffffffffu, mixv, m);
-
-    if (lane == 0) {  // post mixes: hc_scale[1]
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-        a.post_mix_out[t * HC + j] =
-            mk_sigmoid(mixes[j + HC] * a.hc_scale[1] + a.hc_base[j + HC]) *
-            a.post_mult;
-    }
-    {  // comb mixes: hc_scale[2] + sinkhorn, one lane per matrix element.
-      // Lane l < 16 owns cm[j][k] with j = l >> 2, k = l & 3; row sums are
-      // xor-shuffles over bits 0-1, column sums over bits 2-3, and every
-      // pass is two shuffles + one divide per lane instead of the single
-      // lane's 16-element serial chain (the stamps had that lane at ~9 us
-      // per token-warp with 143 blocks waiting at the next barrier for
-      // it). Lanes 16..31 run along on dummies and never store.
-      const int j = (lane >> 2) & 3, k = lane & 3;
-      float v = mixes[j * HC + k + 2 * HC] * a.hc_scale[2] +
-                a.hc_base[j * HC + k + 2 * HC];
-      float rm = v;
-      rm = fmaxf(rm, __shfl_xor_sync(0xffffffffu, rm, 1));
-      rm = fmaxf(rm, __shfl_xor_sync(0xffffffffu, rm, 2));
-      v = expf(v - rm);
-      float rs = v;
-      rs += __shfl_xor_sync(0xffffffffu, rs, 1);
-      rs += __shfl_xor_sync(0xffffffffu, rs, 2);
-      v = v / rs + a.sinkhorn_eps;
-      float cs = v;
-      cs += __shfl_xor_sync(0xffffffffu, cs, 4);
-      cs += __shfl_xor_sync(0xffffffffu, cs, 8);
-      v = v / (cs + a.sinkhorn_eps);
-      for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {
-        rs = v;
-        rs += __shfl_xor_sync(0xffffffffu, rs, 1);
-        rs += __shfl_xor_sync(0xffffffffu, rs, 2);
-        v = v / (rs + a.sinkhorn_eps);
-        cs = v;
-        cs += __shfl_xor_sync(0xffffffffu, cs, 4);
-        cs += __shfl_xor_sync(0xffffffffu, cs, 8);
-        v = v / (cs + a.sinkhorn_eps);
+        for (int j = 0; j < HC; ++j) v += fnr[m][j] * r[j];
+        part[threadIdx.x][m] = v;
       }
-      if (lane < HC * HC) a.comb_mix_out[t * HC * HC + lane] = v;
-    }
-    if (lane == 2) {  // pre mixes: hc_scale[0]
+      part[threadIdx.x][NOUT] = sqr;
+      __syncthreads();
+      // 25 columns over 8 warps x 4 lane-groups of 8: warp w, group q
+      // owns column w + 8q (< 25); each lane sums 32 rows (8 + 32 i) and
+      // three xor-shuffles finish the group -- one pass of 32 loads + 3
+      // shuffles per lane instead of 3-4 passes of 8 + 5.
+      {
+        const int q = lane >> 3, l8 = lane & 7;
+        const int m = warp + 8 * q;
+        float v = 0.0f;
+        if (m <= NOUT) {
 #pragma unroll
-      for (int j = 0; j < HC; ++j)
-        a.pmix[t * HC + j] =
-            mk_sigmoid(mixes[j] * a.hc_scale[0] + a.hc_base[j]) + a.pre_eps;
+          for (int i = 0; i < MK_THREADS / 8; ++i)
+            v += part[l8 + 8 * i][m];
+        }
+#pragma unroll
+        for (int off = 4; off; off >>= 1) v += __shfl_xor_sync(~0u, v, off);
+        if (l8 == 0 && m <= NOUT) {
+          if (m < NOUT)
+            a.yp[((size_t)c * MAX_TOK + t) * NOUT + m] = v;
+          else
+            a.rp[c * MAX_TOK + t] = v;
+        }
+      }
+      // publish, then count this chunk in
+      __threadfence();
+      __syncthreads();
+      if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);
+      xv = nxv;
+#pragma unroll
+      for (int k = 0; k < HC; ++k) {
+        res[k] = nres[k];
+        pm[k] = npm[k];
+#pragma unroll
+        for (int j = 0; j < HC; ++j) cm[k][j] = ncm[k][j];
+      }
     }
   }
-}
-
-__device__ void mk_mhc_p3(const MKMhcArgs& a, int bid) {
-  // ol = sum_j pre_mix[j] * residual_out[t, j, :]; bf16 stash + sumsq
-  __shared__ float sqred[MK_WARPS];
-  const int npairs = a.num_tokens * NCHUNK;
-  for (int p = bid; p < npairs; p += a.grid) {
-    const int t = p / NCHUNK, c = p % NCHUNK, h0 = c * HCHUNK;
-    float pre[HC];
-#pragma unroll
-    for (int j = 0; j < HC; ++j) pre[j] = a.pmix[t * HC + j];
-    float sq = 0.0f;
-    for (int h = h0 + threadIdx.x; h < h0 + HCHUNK; h += MK_THREADS) {
-      float v = 0.0f;
-#pragma unroll
-      for (int j = 0; j < HC; ++j)
-        v += pre[j] *
-             __bfloat162float(a.residual_out[(size_t)t * HC * HIDDEN +
-                                            j * HIDDEN + h]);
-      a.ol_stash[t * HIDDEN + h] = __float2bfloat16(v);
-      sq += v * v;
-    }
-    for (int off = 16; off; off >>= 1) sq += __shfl_xor_sync(~0u, sq, off);
-    if ((threadIdx.x & 31) == 0) sqred[threadIdx.x >> 5] = sq;
+  MK_MHC_TS(1);
+  // ---- tails: take tokens off the ticket counter until it runs past T;
+  // wait for the token's 16 chunks (they are all in flight on resident
+  // blocks, so the wait is bounded), rearm its counter, run p2 / p3 / p4.
+  MK_MHC_TS(5);
+  for (;;) {
+    if (threadIdx.x == 0) s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);
     __syncthreads();
+    const int t = s_tok;
+    if (t >= a.num_tokens) break;
     if (threadIdx.x == 0) {
-      float v = 0.0f;
-#pragma unroll
-      for (int w = 0; w < MK_WARPS; ++w) v += sqred[w];
-      // One slot per (chunk, token), not atomicAdd(&sq[t]): each pair is
-      // owned by exactly one block, so the store is unique, and p4 sums the
-      // NCHUNK slots in a fixed order. atomicAdd made layer_input the only
-      // non-deterministic output of this kernel -- 4.1e-05 to 3.3e-04 of
-      // drift between identical calls at T=32, where 512 pairs over 48
-      // blocks arrive in a different order each launch. (T=8 has 128 pairs
-      // and happened to be stable, which is why this hid.) p1/p2 already
-      // reduce their sumsq this way through rp[]; p3 was the odd one out.
-      a.sq[(size_t)c * MAX_TOK + t] = v;
+      volatile unsigned int* v = &g_mk_mhc_tok_arrive[t];
+      while (*v < (unsigned int)NCHUNK) __nanosleep(128);
+      g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch
+      __threadfence();
     }
     __syncthreads();
+    MK_MHC_TS(2);  // (probe) last tail's p2 start
+    MhcTailRegs tr;
+    // warps 1..7 issue their p34 loads under p2; warp 0 loads after its
+    // p2 so the sinkhorn chain is not squeezed for registers by them
+    if (warp != 0) mk_mhc_p34_load(a, t, tr);
+    MK_MHC_PROBE(4);  // p34 loads issued
+    if (warp == 0) {
+      mk_mhc_p2_token(a, t, s_pmix);
+      mk_mhc_p34_load(a, t, tr);
+    }
+    __syncthreads();
+    MK_MHC_TS(3);  // (probe) p2 end / p34 start
+    mk_mhc_p34_compute(a, t, s_pmix, tr);  // ends in a __syncthreads
+    MK_MHC_TS(4);  // (probe) p34 end
   }
-}
-
-__device__ void mk_mhc_p4(const MKMhcArgs& a, int bid) {
-  // Every block reduces the same NCHUNK slots in the same order and so gets
-  // bit-identical rsq. This replaced both the old a.rsq[] phase (one thread
-  // looping over tokens, plus a grid barrier) and the atomicAdd feeding it.
-  __shared__ float rsq_s[MAX_TOK];
-  if (threadIdx.x < a.num_tokens) {
-    float sum = 0.0f;
-#pragma unroll
-    for (int c = 0; c < NCHUNK; ++c) sum += a.sq[c * MAX_TOK + threadIdx.x];
-    rsq_s[threadIdx.x] = rsqrtf(sum / (float)HIDDEN + a.norm_eps);
-  }
+  MK_MHC_TS(6);
+  // exit ticket: the last block out rearms the tail counter for the next
+  // launch (every block has made its final, failing take by then)
   __syncthreads();
-  const int total = a.num_tokens * HIDDEN;
-  for (int i = bid * MK_THREADS + threadIdx.x; i < total;
-       i += a.grid * MK_THREADS) {
-    const int t = i / HIDDEN, h = i % HIDDEN;
-    a.layer_input[t * HIDDEN + h] = __float2bfloat16(
-        __bfloat162float(a.ol_stash[t * HIDDEN + h]) * rsq_s[t] *
-        __bfloat162float(a.norm_weight[h]));
+  if (threadIdx.x == 0) {
+    __threadfence();
+    const unsigned int e = atomicAdd(&g_mk_mhc_exit, 1u);
+    if (e + 1u == (unsigned int)a.grid) {
+      g_mk_mhc_exit = 0u;
+      g_mk_mhc_tail_next = 0u;
+      __threadfence();
+    }
   }
 }
 
 __global__ void mk_mhc_kernel(const MKMhcArgs a) {
-  // PDL, no prefetch: this kernel takes no dynamic smem to stage weights
-  // into, so it only lets the next launch start on the SMs it frees and
-  // itself waits for its predecessor before p1's first read.
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
   MK_MHC_TS(0);
-  // 3 grid barriers, down from 5, and no prologue. Each surviving one is a
-  // real data dependency (partials -> mixes -> pre-mixes -> sumsq). What
-  // went: p3 now STORES its sumsq per (chunk, token) instead of accumulating
-  // into sq[t], so there is nothing to zero and no barrier to order the
-  // zeroing against; and p4 reduces those slots itself, which retired the
-  // separate rsqrt phase and its barrier.
+  // p1 over the (token, chunk) pairs; each token's p2 / p3 / p4 run on
+  // the block that completes its last chunk (see mk_mhc_p1) -- no grid
+  // barrier anywhere in this kernel. (There used to be three: p1|p2,
+  // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
+  // retired.)
   mk_mhc_p1(a, blockIdx.x);
-  MK_MHC_TS(1);
-  mk_grid_barrier(a.barrier_ctr, a.grid);
-  MK_MHC_TS(2);
-  mk_mhc_p2(a, blockIdx.x);
-  MK_MHC_TS(3);
-  mk_grid_barrier(a.barrier_ctr, a.grid);
-  MK_MHC_TS(4);
-  mk_mhc_p3(a, blockIdx.x);
-  MK_MHC_TS(5);
-  mk_grid_barrier(a.barrier_ctr, a.grid);
-  MK_MHC_TS(6);
-  // p4 does its own rsqrt, so the fourth phase boundary (sumsq -> rsqrt)
-  // and the single-thread loop that used to sit on it are both gone.
-  mk_mhc_p4(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 

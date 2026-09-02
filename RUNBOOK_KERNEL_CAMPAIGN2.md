@@ -248,59 +248,6 @@ EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
 - 첫 암 부팅은 확장 컴파일(~1분, `/root/.mk_build`)만큼 느려진다.
 - MK-KDA는 3단계 섀도 로그가 깨끗하기 전에 4단계에 올리지 않는다.
 
-## EXP-7 — 준비 커널 통합 (`glm53_prep_fused`, 2026-09-02 추가)
-
-디코드 스텝의 **호스트 쪽** 입력 준비를 Triton 발사 하나로 접는 모듈. 트레이스
-(2026-09-01, rank 3, 229 스텝)에서 스텝의 GPU 유휴가 8.9 ms/72 ms(12%) 이고,
-그중 5.7 ms 가 드래프터 그래프와 타깃 그래프 사이의 eager 준비 구간이다 —
-`prepare_inputs` + `prepare_attn` + KV 그룹 7개의 메타데이터 빌더가 스텝마다
-aten 호출 ~1,000개, memcpy ~45개, 1~3 us 짜리 커널 ~100개를 내고, dflash 는
-스케줄러가 동기라 그 시간 내내 GPU 가 빈다. 프로파일러 없는 앵커는 원장의
-"디코드 중 GPU 93%" (같은 정의) → 실제 4~5 ms/스텝. 천장: 그 구간 자체,
-스텝의 4~6%. 읽는 바이트는 0.
-
-| 스텝의 준비 구간 | stock | fused |
-|---|---|---|
-| H2D memcpy | ~45 | 1 (idx_mapping, pinned) |
-| 커널 발사 | ~100 | 1 (+ deep_gemm 스케줄 메타 1 + 복사 1) |
-| aten 호출 | ~1,000 | ~15 |
-
-적용 조건(하나라도 아니면 stock): 전 요청이 spec-verify 이고 드래프트가 꽉 참
-(`decode_query_len - 1`), FULL cudagraph 디스패치, 요청 패딩 없음, 프리필 없음,
-적응형 검증·DCP·PCP·PP·LoRA 없음. 설치 시 러너/빌더 파일 17개의 preimage 를
-고정하고(드리프트 → DISARM), 첫 적격 스텝에서 live 러너로 plan 을 만들며
-기하가 다르면 그 부팅은 stock.
-
-사다리(순서대로, 건너뛰기 없음):
-
-```bash
-# 1. 순수 논리
-python3 tests/test_logic.py                      # test_glm53_prep_fused_contracts
-
-# 2. srv4 새 컨테이너: stock 빌딩블록 vs fused 커널, 무작위 배치 60회 bit-exact
-IMAGE=glm53:sm121-fi618 bash probes/run_prep_fused_check.sh --trials 60
-
-# 3. 섀도 부팅: fused 먼저, 그 위에 stock, 버퍼 전부 diff — stock 이 진실
-EXTRA_ENV="VLLM_GLM53_PREP_FUSED=shadow" bash launchers/start-glm53-nvfp4-tp4.sh
-#    bench-tp4 1회 동안 [prep-fused] shadow ... drift=0 확인
-
-# 4. 브래킷: base -> cand -> base, C=1 step/s
-EXTRA_ENV="VLLM_GLM53_PREP_FUSED=1" bash launchers/start-glm53-nvfp4-tp4.sh
-```
-
-주의:
-
-- 부팅 로그의 `[prep-fused] installed mode=...` 와 `[prep-fused] plan built:` 가
-  판정 근거다. `preimage drift -> DISARM` 이나 `plan build failed` 가 보이면 그
-  부팅은 stock 이고, 그 브래킷 셀은 무효다.
-- 물리 기전 확인: 켠 부팅의 트레이스에서 준비 구간의 `Memcpy HtoD/DtoD` 와
-  `at::native::*` 커널이 사라지고 `_glm53_prep_fused_kernel` 하나가 남아야 한다.
-- 수치는 stock 과 bit-exact 가 계약이라 품질 게이트는 형식상 통과해야 하지만,
-  섀도 drift=0 없이는 arm 하지 않는다.
-- 이 모듈은 kpool tail 의 원형 슬롯 매핑을 **건드리지 않는다**(러너가 빌더에
-  `positions` 를 안 넘겨 그 매핑은 이 이미지에서 잠들어 있고, fused 는 현행
-  generic 매핑을 그대로 재현). 그 활성화는 C>=2 수치 변경이라 별도 브래킷.
-
 ---
 
 ## 순서와 근거
@@ -311,7 +258,6 @@ EXTRA_ENV="VLLM_GLM53_PREP_FUSED=1" bash launchers/start-glm53-nvfp4-tp4.sh
 4. **EXP-4 (bproj)** — 천장 0.9%, 최우선순위 아님. 다음 창으로 미뤄도 됨.
 5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
 6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
-7. **EXP-7 (준비 커널 통합)** — bit-exact 프로브 → 섀도 부팅 → 브래킷. 호스트 유휴 4~5 ms 가 표적이라 GPU 커널 축과 독립.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
