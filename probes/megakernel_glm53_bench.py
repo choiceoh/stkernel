@@ -241,6 +241,72 @@ def probe_exact() -> bool:
     return ok
 
 
+def probe_chain(iters: int, with_kda: bool) -> bool:
+    """Adjacent-kernel cooperation: the mhc tail emits layer_input's fp8 A
+    tiles and the next GEMM / KDA launch runs with a_ready (no x load,
+    quant or publishing barrier). The consumer's output must be BIT-
+    identical to the same launch quantizing the bf16 rows itself; the
+    pair timing (mhc -> consumer, PDL) shows the prologue saved."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    print(f"{'chain':<24}{'bit-equal':>10}{'gate':>8}{'plain_us':>10}{'ready_us':>10}")
+    ok = True
+    torch.manual_seed(0)
+    T = 8
+    x = torch.randn(T, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+    res = torch.randn(T, 4, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+    pm = torch.rand(T, 4, dtype=torch.float32, device=DEV)
+    cm16 = torch.rand(T, 16, dtype=torch.float32, device=DEV)
+    fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
+    nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
+
+    def mhc(emit):
+        return mk._mhc_call(x, res, pm, cm16, fn, mk.hc_scale_ones(),
+                            mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
+                            1.0, 1e-6, 4, emit_a=emit)[3]
+
+    n = 6416
+    w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
+    p4 = mk.build_mk_weight_w4(w)
+    li = mhc(True)
+    got_r = mk._gemm_call(li, p4, n, True)
+    got_p = mk._gemm_call(li, p4, n, False)
+    torch.cuda.synchronize()
+    eq = bool(torch.equal(got_r, got_p))
+    t_plain = _time(lambda: mk._gemm_call(mhc(False), p4, n, False), iters,
+                    hot=(x, res, pm, cm16))
+    t_ready = _time(lambda: mk._gemm_call(mhc(True), p4, n, True), iters,
+                    hot=(x, res, pm, cm16))
+    mark = "!" if not eq else " "
+    ok &= eq
+    print(f"{mark}mhc->gemm n=6416{'':<8}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}")
+    if with_kda:
+        fx = mk._KdaFixture(acc=3)
+        la, meta = fx._layer_stand_in()
+
+        def kda(hs, ready):
+            conv, rec = fx.conv_st.clone(), fx.rec_st.clone()
+            out = torch.empty(T, 4096, dtype=torch.bfloat16, device=DEV)
+            mk._kda_launch(la, hs, meta, conv, rec, out,
+                           delta_variant=mk._KDA_VARIANT, x_ready=ready)
+            return out, conv, rec
+
+        li = mhc(True)
+        o_r, c_r, r_r = kda(li, True)
+        o_p, c_p, r_p = kda(li, False)
+        torch.cuda.synchronize()
+        eq = bool(torch.equal(o_r, o_p) and torch.equal(c_r, c_p)
+                  and torch.equal(r_r, r_p))
+        t_plain = _time(lambda: kda(mhc(False), False), iters,
+                        hot=(x, res, pm, cm16))
+        t_ready = _time(lambda: kda(mhc(True), True), iters,
+                        hot=(x, res, pm, cm16))
+        mark = "!" if not eq else " "
+        ok &= eq
+        print(f"{mark}mhc->kda acc=3{'':<10}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}")
+    return ok
+
+
 def probe_mhc(iters: int) -> bool:
     from vllm.model_executor.kernels.mhc import tilelang_kernels as tlk
     from vllm.model_executor.layers import glm53_megakernel as mk
@@ -355,6 +421,7 @@ def main() -> int:
     ok &= probe_mhc(args.iters)
     if not args.skip_kda:
         ok &= probe_kda(args.iters)
+    ok &= probe_chain(args.iters, not args.skip_kda)
     print("VERDICT:", "PASS" if ok else "FAIL (a ! cell disqualifies)")
     return 0 if ok else 1
 

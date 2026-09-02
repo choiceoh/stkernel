@@ -121,6 +121,22 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 _EXT = None
 _WS = None
 _ARMED = {"mhc": False, "gemm": False, "kda": False}
+# Adjacent-kernel cooperation: the mhc kernel's tail can emit its
+# layer_input as the next GEMM's fp8 A tiles (g_mk_aq / g_mk_axs). This
+# records (data_ptr, num_tokens, hidden) of the tensor whose tiles sit in
+# that workspace; a GEMM / KDA launch whose input IS that tensor runs with
+# a_ready (no x load, quant or publishing barrier), and every launch that
+# writes the workspace clears the record.
+_A_READY = None
+
+
+def _a_ready_for(x) -> bool:
+    global _A_READY
+    rec = _A_READY
+    _A_READY = None  # one consumer; any launch below rewrites the tiles
+    return (rec is not None and x.data_ptr() == rec[0]
+            and x.dim() == 2 and x.shape[0] == rec[1] and x.shape[1] == rec[2]
+            and x.is_contiguous())
 
 
 def _build():
@@ -336,13 +352,17 @@ def _stock_fp8_pair(w):
 # ---------------------------------------------------------------------------
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
-def _gemm_call(x, mk_pack, n_rows):
-    """mk_pack is (wq4, ws4) from build_mk_weight_w4."""
+def _gemm_call(x, mk_pack, n_rows, a_ready=False):
+    """mk_pack is (wq4, ws4) from build_mk_weight_w4. a_ready: the fp8 A
+    tiles of x are already in the workspace (mhc emitted them)."""
     import torch
 
+    global _A_READY
+    _A_READY = None
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
-    _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows)
+    _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
+                  1 if a_ready else 0)
     return out
 
 
@@ -363,7 +383,7 @@ def gemm_w4a8(x, mk_pack, n_rows):
     if not _mk_gemm_eligible(x.shape[0], x.shape[1],
                              mk_pack[0].shape[0] * 128):
         return None
-    return _gemm_call(x, mk_pack, n_rows)
+    return _gemm_call(x, mk_pack, n_rows, _a_ready_for(x))
 
 
 # ---------------------------------------------------------------------------
@@ -371,9 +391,18 @@ def gemm_w4a8(x, mk_pack, n_rows):
 # ---------------------------------------------------------------------------
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
               hc_base, norm_weight, num_tokens, rms_eps, pre_eps,
-              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat):
+              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat,
+              emit_a=None, warm=None):
+    """emit_a: the tail also writes layer_input's fp8 A tiles for the next
+    GEMM / KDA launch (default: whenever a consumer segment is armed).
+    warm: (ptr, bytes) of the next consumer's weight pack to pull into L2
+    while this kernel leaves DRAM idle (None = no warming)."""
     import torch
 
+    global _A_READY
+    _A_READY = None
+    if emit_a is None:
+        emit_a = _ARMED["gemm"] or _ARMED["kda"]
     hc_mult, hidden = residual_flat.shape[1], residual_flat.shape[2]
     residual_cur = torch.empty_like(residual_flat)
     post_mix_cur = torch.empty(num_tokens, hc_mult, dtype=torch.float32,
@@ -391,11 +420,15 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
          comb_mix_cur.data_ptr(), layer_input_cur.data_ptr(),
          ws["yp"].data_ptr(), ws["rp"].data_ptr(), ws["sq"].data_ptr(),
          ws["pmix"].data_ptr(),
-         ws["ol_stash"].data_ptr(), ws["barrier_mhc"].data_ptr()],
+         ws["ol_stash"].data_ptr(), ws["barrier_mhc"].data_ptr(),
+         int(warm[0]) if warm else 0],
         [float(rms_eps), float(pre_eps), float(sinkhorn_eps),
          float(post_mult), float(norm_eps)],
-        [num_tokens, int(sinkhorn_repeat)],
+        [num_tokens, int(sinkhorn_repeat), 1 if emit_a else 0,
+         int(warm[1]) if warm else 0],
     )
+    if emit_a:
+        _A_READY = (layer_input_cur.data_ptr(), num_tokens, hidden)
     return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur
 
 
@@ -567,9 +600,14 @@ def kda_takeover(layer) -> bool:
 
 
 def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
-                delta_variant=1):
+                delta_variant=1, x_ready=None):
     import torch
     ws = _ensure_workspace(hidden_states.device)
+    if x_ready is None:
+        x_ready = _a_ready_for(hidden_states)  # mhc emitted its A tiles
+    else:
+        global _A_READY
+        _A_READY = None
     n_spec = meta.num_spec_decodes
     ow = getattr(layer.o_norm, "weight", None)
     onorm_w = ow if isinstance(ow, torch.Tensor) else torch.ones(
@@ -596,7 +634,8 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          float(getattr(layer.o_norm, "eps", 1e-5))],
         [int(meta.num_actual_tokens), int(n_spec),
          int(meta.spec_state_indices_tensor.size(-1)),
-         int(delta_variant), int(conv_state.shape[-1])],
+         int(delta_variant), int(conv_state.shape[-1]),
+         1 if x_ready else 0],
     )
 
 
