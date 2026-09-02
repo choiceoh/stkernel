@@ -6721,6 +6721,105 @@ def test_megakernel_w4_layout_functional() -> None:
     print("  w4 layout roundtrip ...... OK")
 
 
+def test_glm53_prep_fused_contracts() -> None:
+    """glm53_prep_fused: wiring, kill switch, preimage pins, sync-free fast path."""
+    import hashlib
+    import tempfile
+
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_prep_fused")
+    src_path = os.path.join(mod_dir, "glm53_prep_fused.py")
+    src = open(src_path, encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_prep_fused" in modules, "glm53 profile must mount glm53_prep_fused")
+    check(re.search(r"^VLLM_GLM53_PREP_FUSED=0$", profile, re.M) is not None,
+          "profile must ship VLLM_GLM53_PREP_FUSED=0 (kill switch default off)")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"]],
+          f"manifest must bind the module as a new file next to the model: {rows}")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check({"glm53_model_wiring", "glm53_tail_slot_persistent", "glm53_kpool_tail_select"} <= set(req),
+          "requires must name the wiring, the tail indexer and the kpool op it was read against")
+    wiring = open(_overlay_source("overlay/glm5next_model.py"), encoding="utf-8").read()
+    hook = wiring.find("install_glm53_prep_fused()")
+    check(hook > wiring.find("logger = init_logger(__name__)"),
+          "the install hook must run after the wiring's logger exists (it logs failures)")
+    check("except ImportError:\n    install_glm53_prep_fused = None" in wiring,
+          "a boot without the module mounted must stay stock (import guarded)")
+
+    ns = load_defs(
+        "overlay/glm53_prep_fused.py",
+        {"prep_fused_mode", "shadow_every", "check_preimages", "PREIMAGES", "ENV", "ENV_SHADOW_EVERY"},
+        {"os": os, "hashlib": hashlib},
+    )
+    pins = ns["PREIMAGES"]
+    check(len(pins) >= 15 and all(re.fullmatch(r"[0-9a-f]{64}", v) for v in pins.values()),
+          "preimage table must pin full sha256 digests of the bypassed runner files")
+    tail_idx = open(_overlay_source("overlay/glm53_kpool_indexer.py"), "rb").read()
+    check(pins["v1/attention/backends/mla/indexer.py"] == hashlib.sha256(tail_idx).hexdigest(),
+          "the pinned mla/indexer.py must be the mounted glm53_tail_slot_persistent copy")
+    for rel in ("v1/worker/gpu/model_runner.py", "v1/worker/gpu/input_batch.py",
+                "v1/worker/gpu/block_table.py", "v1/worker/gpu/model_states/mamba_hybrid.py",
+                "v1/attention/backends/gdn_attn.py", "v1/attention/backends/mla/compressor_utils.py",
+                "model_executor/layers/attention/sparse_mla_attention.py"):
+        check(rel in pins, f"preimage table must pin {rel}")
+    saved = os.environ.pop("VLLM_GLM53_PREP_FUSED", None)
+    try:
+        check(ns["prep_fused_mode"]() == "off", "unset knob must be off")
+        for v, want in (("0", "off"), ("off", "off"), ("", "off"), ("shadow", "shadow"),
+                        ("SHADOW", "shadow"), ("1", "on"), ("yes", "on")):
+            os.environ["VLLM_GLM53_PREP_FUSED"] = v
+            check(ns["prep_fused_mode"]() == want, f"knob {v!r} -> {want}")
+    finally:
+        os.environ.pop("VLLM_GLM53_PREP_FUSED", None)
+        if saved is not None:
+            os.environ["VLLM_GLM53_PREP_FUSED"] = saved
+    os.environ.pop("VLLM_GLM53_PREP_FUSED_SHADOW_EVERY", None)
+    check(ns["shadow_every"]() == 1, "shadow compare default every step")
+    os.environ["VLLM_GLM53_PREP_FUSED_SHADOW_EVERY"] = "16"
+    check(ns["shadow_every"]() == 16, "shadow cadence knob")
+    os.environ["VLLM_GLM53_PREP_FUSED_SHADOW_EVERY"] = "x"
+    check(ns["shadow_every"]() == 1, "unparsable cadence falls back to 1")
+    os.environ.pop("VLLM_GLM53_PREP_FUSED_SHADOW_EVERY", None)
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = ns["check_preimages"](tmp)
+        check(len(bad) == len(pins), "every absent file is drift")
+        rel = "v1/attention/backends/mla/indexer.py"
+        os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+        with open(os.path.join(tmp, rel), "wb") as f:
+            f.write(tail_idx)
+        bad = ns["check_preimages"](tmp)
+        check(len(bad) == len(pins) - 1 and not any(b.startswith(rel) for b in bad),
+              "a matching file is not drift")
+
+    tree = ast.parse(src)
+    funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for name in ("_fused_prepare_inputs", "launch", "_eligible", "_patched_prepare_attn"):
+        body = ast.get_source_segment(src, funcs[name])
+        check(body is not None and not re.search(r"\.(item|cpu|tolist|numpy)\(|synchronize\(", body),
+              f"{name} must not synchronize with the device (the whole point is host time)")
+    elig = ast.get_source_segment(src, funcs["_eligible"])
+    check("CUDAGraphMode.FULL" in elig and "uniform_token_count != q" in elig
+          and "batch_desc.num_reqs != num_reqs" in elig and "has_prefill" in elig,
+          "eligibility must require FULL cudagraph, uniform Q, no request padding, no prefill")
+    check("adaptive_verification is not None" in elig, "adaptive verification must fall back")
+    kern = ast.get_source_segment(src, funcs["_glm53_prep_fused_kernel"])
+    check("_fill(slot_ptr + g * slot_stride, num_tokens, max_num_tokens, PAD_ID, BLOCK)" in kern,
+          "every group's slot-mapping tail must be padded like the stock kernel")
+    barrier = kern.find("tl.debug_barrier()")
+    check(0 < barrier < kern.find("_ptr(gdn_state_ptrs + k") and barrier > kern.find("tl.store(dst_row + off"),
+          "the gathered rows must be visible before the GDN read-back")
+    check("_fill(qsl_ptr, num_reqs, max_num_reqs + 1, num_tokens, BLOCK)" in kern
+          and "_fill(seq_lens_ptr, num_reqs, max_num_reqs, 0, BLOCK)" in kern,
+          "query_start_loc / seq_lens tails must be padded like prepare_inputs")
+    inst = ast.get_source_segment(src, funcs["install_glm53_prep_fused"])
+    check(inst.find("check_preimages(root)") < inst.find("Runner.prepare_inputs = _patched_prepare_inputs"),
+          "preimages are checked before any class is patched")
+    check("_ORIG[\"build_slot_mappings_by_layer\"]" in inst, "the unbind memo wraps the original")
+    print("  glm53 prep fused contracts .. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -6793,4 +6892,5 @@ if __name__ == "__main__":
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
+    test_glm53_prep_fused_contracts()
     print(f"all OK ({PASS} checks)")
