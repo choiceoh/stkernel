@@ -7148,8 +7148,10 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
     check("K % block_k" in kern and "raise ValueError" in kern,
           "a non-tiling block_k fails loud (the partial kernel reads w rows unmasked)")
     check("return torch.mm(x.float(), w)" in kern, "the helper falls back to the stock product")
-    check("[indexer-gate]" in kern and "logger.warning" in kern,
-          "routing is announced once per shape so an armed boot that never runs split-K is visible")
+    check("[indexer-gate]" in kern and "logger.warning" in kern
+          and "if ok not in _ANNOUNCED:" in kern,
+          "each routing verdict is announced ONCE (keyed on the verdict, not the "
+          "shape: prefill M differs per request and would fill the log)")
     check("do_not_specialize" not in kern,
           "no specialization pins: K, N and strides are per-layer constants (one compile per shape)")
     tree = ast.parse(kern)

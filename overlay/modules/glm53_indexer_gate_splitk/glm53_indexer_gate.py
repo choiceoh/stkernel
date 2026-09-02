@@ -38,7 +38,7 @@ MAX_M = 16          # rows per program tile; also the routing cap (C=1: 8, C=2: 
 MAX_N = 32          # index_n_heads of the fleet checkpoint; BN = next pow2 >= N
 _BLOCK_K = 128      # K per program: 4096 / 128 = 32 programs on 48 SMs
 
-_ANNOUNCED: set = set()
+_ANNOUNCED: set = set()   # verdicts announced so far (at most {True, False})
 
 
 def gate_splitk_enabled() -> bool:
@@ -121,12 +121,15 @@ def head_gate(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
     armed boot that never takes the split-K path is visible in the log."""
     if gate_splitk_enabled():
         ok = splitk_applicable(x, w)
-        key = (tuple(x.shape), tuple(w.shape), x.dtype, ok)
-        if key not in _ANNOUNCED:
-            _ANNOUNCED.add(key)
+        # One line per VERDICT, not per shape: prefill M is a different number
+        # on every request, so keying the announcement on the shape filled the
+        # boot log (31 lines in the first bench) and grew the set without bound.
+        if ok not in _ANNOUNCED:
+            _ANNOUNCED.add(ok)
             (logger.info if ok else logger.warning)(
-                "[indexer-gate] %s=1: x%s %s @ w%s -> %s", ENV, tuple(x.shape),
-                x.dtype, tuple(w.shape), "split-K" if ok else "stock torch.mm (shape not admitted)")
+                "[indexer-gate] %s=1: first %s routing, e.g. x%s %s @ w%s (M<=%d admitted)",
+                ENV, "split-K" if ok else "stock torch.mm", tuple(x.shape), x.dtype,
+                tuple(w.shape), MAX_M)
         if ok:
             return head_gate_splitk(x, w)
     return torch.mm(x.float(), w)
