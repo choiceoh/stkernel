@@ -1237,6 +1237,7 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
 #pragma unroll
       for (int j = 0; j < HC; ++j)
         fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+    int pend = -1;  // a token whose chunk is done but not yet published
     for (int t = g; t < a.num_tokens; t += groups) {
       float nxv = 0.0f, nres[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
       float npm[HC], ncm[HC][HC];
@@ -1284,10 +1285,25 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
             a.rp[c * MAX_TOK + t] = v;
         }
       }
-      // publish, then count this chunk in
-      __threadfence();
-      __syncthreads();
-      if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);
+      // publish every second token (and the last): the fence + sync +
+      // atomic is ~1 us of the ~2.3 us per-token chain at T=32; a token's
+      // tail can start one token later without loss (tails overlap p1 at
+      // T=32 and only start after it at T=8 anyway)
+      if (pend >= 0) {
+        __threadfence();
+        __syncthreads();
+        if (threadIdx.x == 0) {
+          atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);
+          atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);
+        }
+        pend = -1;
+      } else if (t + groups >= a.num_tokens) {  // last token of this block
+        __threadfence();
+        __syncthreads();
+        if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);
+      } else {
+        pend = t;
+      }
       xv = nxv;
 #pragma unroll
       for (int k = 0; k < HC; ++k) {
