@@ -6385,17 +6385,19 @@ def test_glm53_megakernel_contracts() -> None:
     check([(_lut64 >> (8 * c)) & 0xFF for c in range(8)]
           == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
           and "0x4C484440'3C383000ULL" in cu
-          and "mk_e2m1_byte((int)c7)" in cu_code
+          and "__vcmpeq4(mag, 0x01010101u)" in cu_code
+          and "__byte_perm(out2[0], out2[1], 0x5140)" in cu_code
           and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code,
-          "the W4 expansion uses the packed LUT immediate (a __constant__ "
-          "load serialises over the warp's distinct codes)")
+          "the W4 expansion is byte-lane SIMD on the LUT's closed form -- "
+          "never a __constant__ load (it serialises over the warp's "
+          "distinct codes) and never per-nibble scalar chains")
     check("mk_gemm_kernel<true>" in cu_code and "run_gemm_w4" in cu
           and "GEMM_SMEM_W4" in cu and "g_mk_gemm4_bar" in cu,
           "the W4 path is its own kernel instantiation with its own smem "
           "budget and ticket counter; the W8 kernel keeps the 63,616 B "
           "budget it had before the W4 pipeline")
-    check("(sc4 >> (8 * g4)) & 0xFFu)) << 3" in cu_code
-          and "(code & 8u) << 4" in cu_code
+    check("(int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)" in cu_code
+          and "(code & 0x08080808u) << 4" in cu_code
           and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,
           "expansion is exponent-field add + sign in registers, never a "
           "float multiply and never a local-memory byte array")
