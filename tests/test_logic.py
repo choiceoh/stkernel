@@ -388,22 +388,53 @@ def test_overlay_symbol_contracts() -> None:
     and since the overlays were never mounted, nothing had tried the import --
     so the boot died on ImportError forty seconds in.
     """
-    # Owners are resolved per profile: two profiles may overlay the same
+    # Owners are resolved per composition: two profiles may overlay the same
     # container path with different files (dsv4's mla_indexer and glm53's
     # glm53_tail_slot_persistent both own mla/indexer.py), and only the modules
     # composed together ever meet at runtime. A global "last manifest wins" map
-    # checked glm53's attention.py against dsv4's indexer. Modules listed in
-    # no profile are not checked here.
+    # checked glm53's attention.py against dsv4's indexer. Modules listed in no
+    # profile are checked as their own composition (the module plus its
+    # `requires` closure), so an orphan's intra-module contracts stay guarded.
+    # Relative imports (`from .attention import X`) are resolved against the
+    # importing file's own container path, so an overlay of a sibling module's
+    # file is checked too. Every source is parsed once.
+    all_mods = sorted(os.path.basename(os.path.dirname(m)) for m in glob.glob(
+        os.path.join(REPO, "overlay", "modules", "*", "manifest.tsv")))
     profiles = {}
     for env in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
         m = re.search(r'^MODULES="([^"]*)"', open(env, encoding="utf-8").read(), re.M)
         if m:
             profiles[os.path.basename(env)] = m.group(1).split()
+    listed = {mod for mods in profiles.values() for mod in mods}
+    for mod in all_mods:
+        if mod not in listed:
+            closure, todo = [], [mod]
+            while todo:
+                cur = todo.pop()
+                if cur in closure:
+                    continue
+                closure.append(cur)
+                req = os.path.join(REPO, "overlay", "modules", cur, "requires")
+                if os.path.exists(req):
+                    todo.extend(open(req, encoding="utf-8").read().split())
+            profiles[f"(orphan) {mod}"] = closure
 
-    def _owners(mods):
+    def _target_dotted(target):
+        if target.startswith("vllm/"):
+            rel = target
+        elif "/vllm/" in target:
+            rel = "vllm/" + target.split("/vllm/", 1)[1]
+        else:
+            return None
+        return rel[:-3].replace("/", ".")
+
+    def _owners(pname, mods):
         owners = {}      # dotted module path -> source path
         for mod in mods:
             manifest = os.path.join(REPO, "overlay", "modules", mod, "manifest.tsv")
+            check(os.path.exists(manifest), f"[{pname}] MODULES lists {mod!r} but it has no manifest")
+            if not os.path.exists(manifest):
+                continue
             moddir = os.path.dirname(manifest)
             for raw in open(manifest, encoding="utf-8"):
                 line = raw.rstrip("\n")
@@ -416,51 +447,69 @@ def test_overlay_symbol_contracts() -> None:
                 # the package root for portable ones, so anchoring on "/vllm/"
                 # silently skipped every portable module -- including
                 # moe_gate_sm121, the one this check exists for.
-                if target.startswith("vllm/"):
-                    rel = target
-                elif "/vllm/" in target:
-                    rel = "vllm/" + target.split("/vllm/", 1)[1]
-                else:
+                dotted = _target_dotted(target)
+                if dotted is None:
                     continue
-                dotted = rel[:-3].replace("/", ".")
                 prev = owners.get(dotted)
-                check(prev is None, f"{mod} and {prev} both own {dotted}")
+                check(prev is None, f"[{pname}] {mod} and {prev and os.path.basename(os.path.dirname(prev))} both own {dotted}")
                 owners[dotted] = os.path.join(moddir, source)
         return owners
+
+    parsed = {}      # source path -> (provided names, [(absolute dotted module, [alias names])])
+
+    def _parse(srcpath, dotted_self):
+        if srcpath in parsed:
+            return parsed[srcpath]
+        tree = ast.parse(open(srcpath, encoding="utf-8").read())
+        provided = set()
+        imports = []
+        package = dotted_self.rsplit(".", 1)[0]
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                provided.add(node.name)
+            elif isinstance(node, ast.Assign):
+                provided.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                provided.add(node.target.id)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                provided.update((a.asname or a.name).split(".")[0] for a in node.names)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.level == 0:
+                target = node.module
+            else:
+                base = package.split(".")
+                base = base[: len(base) - (node.level - 1)] if node.level > 1 else base
+                target = ".".join(base + ([node.module] if node.module else []))
+            imports.append((target, [a.name for a in node.names]))
+        parsed[srcpath] = (provided, imports)
+        return parsed[srcpath]
 
     checked = 0
     seen = set()
     for pname, mods in sorted(profiles.items()):
-        owners = _owners(mods)
+        owners = _owners(pname, mods)
+        by_src = {v: k for k, v in owners.items()}
         for dotted, srcpath in sorted(owners.items()):
-            provided = set()
-            tree = ast.parse(open(srcpath, encoding="utf-8").read())
-            for node in tree.body:
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    provided.add(node.name)
-                elif isinstance(node, ast.Assign):
-                    provided.update(t.id for t in node.targets if isinstance(t, ast.Name))
-                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                    provided.add(node.target.id)
-                elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                    provided.update((a.asname or a.name).split(".")[0] for a in node.names)
-
+            provided, _ = _parse(srcpath, dotted)
             for other in sorted(set(owners.values())):
                 if other == srcpath:
                     continue
-                for node in ast.walk(ast.parse(open(other, encoding="utf-8").read())):
-                    if not isinstance(node, ast.ImportFrom) or node.module != dotted:
+                _, imports = _parse(other, by_src[other])
+                for target, names in imports:
+                    if target != dotted:
                         continue
-                    for alias in node.names:
-                        key = (other, dotted, alias.name, srcpath)
+                    for name in names:
+                        key = (other, dotted, name, srcpath)
                         if key in seen:
                             continue
                         seen.add(key)
                         checked += 1
-                        check(alias.name in provided,
-                              f"[{pname}] {os.path.basename(other)} imports {alias.name} from "
+                        check(name in provided,
+                              f"[{pname}] {os.path.basename(other)} imports {name} from "
                               f"{dotted}, which {os.path.basename(srcpath)} does not define")
-    print(f"  overlay symbol contracts ({checked}, per profile) ... OK")
+    print(f"  overlay symbol contracts ({checked}, per composition incl. orphans) ... OK")
 
 
 def test_profile_env_carried() -> None:
@@ -3992,7 +4041,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
             "_glm53_cache_only_indexer_contract",
             "_glm53_cache_only_indexer_forward",
             "_glm53_fused_indexer_forward",
-            "_glm53_head_gate", "_HEAD_GATE",
+            "_glm53_head_gate", "_HEAD_GATE", "_HEAD_GATE_MODULE",
             "install_glm53_prefill_fastpath",
             "prepare_glm53_prefill_fastpath",
         },
@@ -7088,7 +7137,8 @@ def test_glm53_async_dflash_contracts() -> None:
 
 
 def test_glm53_indexer_gate_splitk_contracts() -> None:
-    """glm53_indexer_gate_splitk: opt-in split-K head gate, small-M only, stock default."""
+    """glm53_indexer_gate_splitk: opt-in deterministic split-K head gate on the
+    checkpoint's shape (index_n_heads=32), small-M only, stock default."""
     mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_indexer_gate_splitk")
     kern = open(os.path.join(mod_dir, "glm53_indexer_gate.py"), encoding="utf-8").read()
     attn = open(os.path.join(mod_dir, "glm5next_attention.py"), encoding="utf-8").read()
@@ -7114,18 +7164,31 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
           "attention overlay imports the helper from the module's kernel file")
     check(stock not in fast and fast.count(helper) == 1,
           "the fused-indexer forward (VLLM_GLM53_FUSED_K_GATE) routes through the same helper")
-    check("except ImportError:" in fast and "return torch.mm(x.float(), w)" in fast,
-          "the fastpath falls back to stock torch.mm when the module is not mounted")
+    check("isinstance(e, ModuleNotFoundError) and e.name == _HEAD_GATE_MODULE" in fast
+          and "logger.exception(" in fast.split("def _glm53_head_gate")[1].split("return _HEAD_GATE")[0],
+          "the fastpath tolerates only 'module not mounted' silently and logs other ImportErrors")
+    check("VLLM_GLM53_INDEXER_GATE_SPLITK" in fast.split("def _glm53_head_gate")[1].split("return _HEAD_GATE")[0],
+          "the fastpath announces a knob that asks for split-K while the module is missing")
+    check(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().strip() == "",
+          "the module is self-contained (the wiring fastpath optionally imports it, not the reverse)")
+    # kernel/helper contracts: deterministic two-stage reduce, the checkpoint's N, layout guards
+    check("MAX_N = 32" in kern and "w.shape[1] <= MAX_N" in kern,
+          "the applicability cap must admit the checkpoint's index_n_heads=32")
     check("MAX_M = 16" in kern and "x.shape[0] <= MAX_M" in kern,
-          "split-K only for the small-M decode shape (cuBLAS is already fast at M=32)")
-    check("return torch.mm(x.float(), w)" in kern, "the helper itself falls back to the stock product")
-    check("torch.zeros(M, N" in kern and "tl.atomic_add" in kern,
-          "atomic split-K must reduce into a zeroed output")
-    check("w.shape[0] % (_SPLIT * _BLOCK_K) == 0" in kern
-          and "w.dtype == torch.float32" in kern and "w.is_contiguous()" in kern,
-          "applicability: K tiles the split, fp32 contiguous weight")
-    check(kern.count("do_not_specialize") == 0 or "K" in kern,
-          "integer args do not need specialization pins here (K, N are shape constants per layer)")
+          "split-K only for the small-M decode shape (cuBLAS is fast from M=24)")
+    check("tl.atomic_add" not in kern and "_gate_splitk_reduce_kernel" in kern
+          and "tl.static_range(SPLIT)" in kern,
+          "the reduction must be a fixed-order partial sum, not fp32 atomics (bitwise reproducible)")
+    check("torch.zeros" not in kern, "no memset: partials are written, not accumulated")
+    check("x.stride(1) == 1" in kern and "x.shape[1] == w.shape[0]" in kern and "x.dim() == 2" in kern,
+          "applicability guards x's layout and the K match (the kernel assumes both)")
+    check("w.dtype == torch.float32" in kern and "w.is_contiguous()" in kern,
+          "applicability: fp32 contiguous weight only")
+    check("return torch.mm(x.float(), w)" in kern, "the helper falls back to the stock product")
+    check("[indexer-gate]" in kern and "logger.warning" in kern,
+          "routing is announced once per shape so an armed boot that never runs split-K is visible")
+    check("do_not_specialize" not in kern,
+          "no specialization pins: K, N and strides are per-layer constants (one compile per shape)")
     tree = ast.parse(kern)
     nodes = [n for n in tree.body
              if (isinstance(n, ast.FunctionDef) and n.name == "gate_splitk_enabled")
@@ -7146,10 +7209,9 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
         if saved is not None:
             os.environ["VLLM_GLM53_INDEXER_GATE_SPLITK"] = saved
     readme = open(os.path.join(mod_dir, "README.md"), encoding="utf-8").read()
-    check("not bit-exact" in readme and "VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/" in readme,
-          "README must state the numerics caveat and the caller-env arming form")
-    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
-    check("glm53_model_wiring" in req, "the fastpath hunk lives in glm53_model_wiring")
+    check("not bit-exact" in readme and "VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/" in readme
+          and "index_n_heads" in readme and "[indexer-gate]" in readme,
+          "README states the numerics caveat, the caller-env arming form, the checkpoint shape and the log anchor")
     print("  glm53 indexer gate split-K contracts .. OK")
 
 

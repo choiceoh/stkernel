@@ -65,8 +65,8 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 |---|---|---:|:---:|:---:|:---:|:---:|
 | `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | · |
 | `tp_oneshot_ar` | 어느 모델이든 | 2 | ✓ | ● | ● | ● |
-| `b12x_swiglu_clamp` | flashinfer 0.6.18 b12x | 2 | — | · | ● | · |
-| `flashinfer_b12x_collapse` | flashinfer 0.6.18 b12x | 1 | — | · | ● | · |
+| `b12x_swiglu_clamp` | flashinfer 0.6.18 b12x (어느 프로필에도 없음, v9 이미지용 보존) | 2 | — | · | · | · |
+| `flashinfer_b12x_collapse` | flashinfer 0.6.18 b12x (어느 프로필에도 없음, 보존) | 1 | — | · | · | · |
 | `mla_indexer` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | — | ○ | · | · |
@@ -92,6 +92,10 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_oneshot_wiring` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_v2_sampler_guards` | 모델 전용 | 1 | — | · | ● | · |
 | `glm53_sm121_mla_prefill` | GLM-5.3 SM121 short prefill (opt-in) | 1 | — | · | ○ | · |
+| `glm53_megakernel` | GLM-5.3 메가커널 세그먼트 (opt-in, EXP-6) | 3 | — | · | ○ | · |
+| `glm53_prep_fused` | GLM-5.3 디코드 입력 준비 통합 (opt-in, EXP-7; 러너 preimage 를 코드에서 고정) | 1 | — | · | ○ | · |
+| `glm53_async_dflash` | dflash async scheduling 허용 (opt-in, EXP-8) | 1 | — | · | ○ | · |
+| `glm53_indexer_gate_splitk` | 인덱서 head-gate split-K (opt-in, EXP-9) | 2 | — | · | ○ | · |
 
 이식 가능한 모듈은 셋뿐이다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_lm_head`. 셋 다 새로 만드는 파일이라 대체할 베이스가 없고, 그래서 이미지가 달라도 계약이 성립한다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
 
