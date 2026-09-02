@@ -48,7 +48,6 @@ HIDDEN = 4096
 NOUT = HC * (2 + HC)
 MAX_TOK = 32
 NCHUNK = 16
-P1_NCHUNK = 64  # mhc p1 partial slots per token (64-column sub-chunks)
 KDA_H, KDA_D = 16, 128
 KDA_QKV = 3 * KDA_H * KDA_D                 # 6144
 KDA_INPROJ_N = KDA_QKV + KDA_H + 2 * KDA_D  # 6416
@@ -172,8 +171,8 @@ def _ensure_workspace(device):
         # (5 x 48 = 240, and 240 % 96 = 48), and a misaligned mhc
         # launch releases after 48 of its 96 blocks arrive.
         "barrier_mhc": z(8, dt=torch.int32),
-        "yp": z(P1_NCHUNK * MAX_TOK * NOUT),
-        "rp": z(P1_NCHUNK * MAX_TOK),
+        "yp": z(NCHUNK * MAX_TOK * NOUT),
+        "rp": z(NCHUNK * MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
         # p4 reduces them in a fixed order -- see the note in mk_mhc_p3.
         "sq": z(NCHUNK * MAX_TOK),

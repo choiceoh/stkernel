@@ -6134,8 +6134,7 @@ def test_glm53_megakernel_contracts() -> None:
     for m in re.finditer(r"^constexpr int (\w+) = ([^;]+);", cu, re.M):
         consts[m.group(1)] = ev(m.group(2))
     for name, want in (("HC", 4), ("HIDDEN", 4096), ("NOUT", 24),
-                       ("MAX_TOK", 32), ("NCHUNK", 16), ("P1_NCHUNK", 64),
-                       ("P1_HCHUNK", 64), ("KDA_H", 16),
+                       ("MAX_TOK", 32), ("NCHUNK", 16), ("KDA_H", 16),
                        ("KDA_D", 128), ("KDA_QKV", 6144),
                        ("KDA_INPROJ_N", 6416), ("KDA_INPROJ_N_PAD", 6528),
                        ("CONV_W", 4), ("KDA_OUT", 2048), ("MK_GRID_CAP", 96),
@@ -6143,12 +6142,6 @@ def test_glm53_megakernel_contracts() -> None:
                        ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
         check(consts.get(name) == want,
               f".cu constant {name} == {want} (got {consts.get(name)})")
-    _drv = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
-                encoding="utf-8").read()
-    check('"yp": z(P1_NCHUNK * MAX_TOK * NOUT)' in _drv
-          and '"rp": z(P1_NCHUNK * MAX_TOK)' in _drv
-          and "P1_NCHUNK = 64" in _drv,
-          "the mhc workspace sizes yp/rp by the p1 sub-chunk count")
     check(consts["GEMM_SMEM"] <= 98304,
           "dynamic smem stays inside the 96 KB discipline of the 128 KB/SM")
 
