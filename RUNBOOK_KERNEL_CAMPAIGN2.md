@@ -228,14 +228,14 @@ python3 tests/test_logic.py          # test_glm53_megakernel_contracts 포함
 bash probes/run_megakernel_bench.sh
 
 # 3. KDA 섀도 부팅 (상태-인덱스 계약이 열린 항목 — 섀도 통과 전에 암 금지)
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_KDA_SHADOW=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_KDA_SHADOW=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh
 #    bench-tp4 1회 내내 [megakernel] kda shadow 로그에 DRIFT 0 확인
 
 # 4. 브래킷 — 세그먼트별 개별 암(MHC와 GEMM은 별도 부팅으로 분리)
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh   # cand A
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh   # cand B (MHC 합침은 그 다음)
 ```
 
@@ -248,6 +248,130 @@ EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
 - 첫 암 부팅은 확장 컴파일(~1분, `/root/.mk_build`)만큼 느려진다.
 - MK-KDA는 3단계 섀도 로그가 깨끗하기 전에 4단계에 올리지 않는다.
 
+## EXP-7 — 준비 커널 통합 (`glm53_prep_fused`, 2026-09-02 추가)
+
+디코드 스텝의 **호스트 쪽** 입력 준비를 Triton 발사 하나로 접는 모듈. 트레이스
+(2026-09-01, rank 3, 229 스텝)에서 스텝의 GPU 유휴가 8.9 ms/72 ms(12%) 이고,
+그중 5.7 ms 가 드래프터 그래프와 타깃 그래프 사이의 eager 준비 구간이다 —
+`prepare_inputs` + `prepare_attn` + KV 그룹 7개의 메타데이터 빌더가 스텝마다
+aten 호출 ~1,000개, memcpy ~45개, 1~3 us 짜리 커널 ~100개를 내고, dflash 는
+스케줄러가 동기라 그 시간 내내 GPU 가 빈다. 프로파일러 없는 앵커는 원장의
+"디코드 중 GPU 93%" (같은 정의) → 실제 4~5 ms/스텝. 천장: 그 구간 자체,
+스텝의 4~6%. 읽는 바이트는 0.
+
+| 스텝의 준비 구간 | stock | fused |
+|---|---|---|
+| H2D memcpy | ~45 | 1 (idx_mapping, pinned) |
+| 커널 발사 | ~100 | 1 (+ deep_gemm 스케줄 메타 1 + 복사 1) |
+| aten 호출 | ~1,000 | ~15 |
+
+적용 조건(하나라도 아니면 stock): 전 요청이 spec-verify 이고 드래프트가 꽉 참
+(`decode_query_len - 1`), FULL cudagraph 디스패치, 요청 패딩 없음, 프리필 없음,
+적응형 검증·DCP·PCP·PP·LoRA 없음. 설치 시 러너/빌더 파일 17개의 preimage 를
+고정하고(드리프트 → DISARM), 첫 적격 스텝에서 live 러너로 plan 을 만들며
+기하가 다르면 그 부팅은 stock.
+
+사다리(순서대로, 건너뛰기 없음):
+
+```bash
+# 1. 순수 논리
+python3 tests/test_logic.py                      # test_glm53_prep_fused_contracts
+
+# 2. 프로필 이미지(glm53:v13-b12x, srv2)의 새 컨테이너: stock 빌딩블록 vs fused
+#    커널, 무작위 배치 60회 bit-exact. 래퍼가 행마다 preimage 를 검증하므로
+#    srv4 의 sm121-fi618 은 거부된다(마운트 파일 5개가 다른 빌드).
+bash probes/run_prep_fused_check.sh --trials 60
+
+# 3. 섀도 부팅: fused 뒤에 stock 사슬 전체를 같은 버퍼에 돌려 diff 하고, 깨끗하면
+#    fused 배치를 그대로 흘려 armed 분기까지 실행한다. 프로필 선언 키라
+#    EXTRA_ENV 가 아니라 caller env 로 넘긴다(런처가 EXTRA_ENV 재정의를 거부).
+VLLM_GLM53_PREP_FUSED=shadow bash launchers/start-glm53-nvfp4-tp4.sh
+#    bench-tp4 1회 동안 [prep-fused] shadow ... drift=0 확인
+
+# 4. 브래킷: base -> cand -> base, C=1 step/s. armed 모드는 64 fused 스텝마다
+#    stock 사슬을 다시 돌려 self-check 하고 drift 면 DISARM 한다
+#    (VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY, 0 이면 끔).
+VLLM_GLM53_PREP_FUSED=1 bash launchers/start-glm53-nvfp4-tp4.sh
+```
+
+주의:
+
+- 부팅 로그의 `[prep-fused] installed mode=...` 와 `[prep-fused] plan built:` 가
+  판정 근거다. `preimage drift -> DISARM` 이나 `plan build failed` 가 보이면 그
+  부팅은 stock 이고, 그 브래킷 셀은 무효다.
+- 물리 기전 확인: 켠 부팅의 트레이스에서 준비 구간의 `Memcpy HtoD/DtoD` 와
+  `at::native::*` 커널이 사라지고 `_glm53_prep_fused_kernel` 하나가 남아야 한다.
+- 수치는 stock 과 bit-exact 가 계약이라 품질 게이트는 형식상 통과해야 하지만,
+  섀도 drift=0 없이는 arm 하지 않는다.
+- 이 모듈은 kpool tail 의 원형 슬롯 매핑을 **건드리지 않는다**(러너가 빌더에
+  `positions` 를 안 넘겨 그 매핑은 이 이미지에서 잠들어 있고, fused 는 현행
+  generic 매핑을 그대로 재현). 그 활성화는 C>=2 수치 변경이라 별도 브래킷.
+
+## EXP-8 — dflash 에 async scheduling (`glm53_async_dflash`, 2026-09-02 추가)
+
+이미지의 `config/vllm.py` 는 `async_scheduling=None`(런처는 플래그를 안 준다)을
+speculative method **이름** 허용 목록으로 판정한다: eagle 계열·ngram GPU·
+`draft_model`·`dspark`. `dflash` 는 없어서 모든 dflash 부팅이 "Async scheduling
+not supported with dflash-based speculative decoding and will be disabled" 로
+동기 스케줄러를 쓴다. 업스트림 main 도 같은 목록(2026-09-02 확인).
+
+기전으로는 이름 문제다: `DSparkSpeculator` 는 `DFlashSpeculator` 의 서브클래스로
+`propose()` 를 상속하고(async 가 건드리는 유일한 드래프터 흐름), dspark 는 dsv4 에서
+8월부터 `--async-scheduling` 으로 서빙 중이다. V2 러너에는 method 별 async 분기가
+없고(요청 상태 미러가 설계상 낙관적 상한), 스케줄러 쪽은 `AsyncScheduler` 의
+`[-1]` placeholder 를 워커가 `combine_sampled_and_draft_tokens` 커널로 덮어쓴다.
+마운트된 glm53 오버레이 중 스케줄러 쪽 드래프트 id 를 읽는 것은 없다.
+
+**기대값**: 9월 1일 트레이스의 GPU 유휴 8.9 ms/72 ms(프로파일러 없이 ~7%) —
+입력 준비 ~5.7, 그래프 제출 1.43, 스텝 전환 — 가 동기 스케줄러 때문에 임계경로에
+있다. async 는 N+1 스텝의 스케줄·준비·그래프 제출을 N 스텝의 GPU 실행과 겹치므로
+천장은 유휴 몫 전부, **스텝의 7~12%**. 이 캠페인에서 가장 큰 단일 레버다.
+`glm53_prep_fused`(EXP-7)와 독립이며 같이 켤 수 있다.
+
+```bash
+# 부팅 로그에서 "[async-dflash] ... whitelisted" 가 있고 "Async scheduling not
+# supported" 가 없어야 켜진 것이다 (engine-confirmed 원칙).
+VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # cand (프로필 선언 키: caller env)
+```
+
+- 게이트: 품질 9/9, 한국어 0/16, **pos-1 수용률 ±2pct(움직이면 안 된다 — 언제 도는지만
+  바뀌고 무엇을 뽑는지는 안 바뀐다)**, C=1 step/s 브래킷 base→cand→base.
+- 첫 부팅에서 볼 것: V2 + async 는 `max_concurrent_batches` 가 2 라 KV 캐시의 in-flight
+  예약이 두 배 — KV 라인과 memfree preflight 를 먼저 읽고 step/s 를 비교한다.
+- 구조화 출력 요청은 드래프트 id 를 스케줄러로 되돌리는 경로(`DraftTokensHandler`)를
+  탄다 — 일반 생성은 안 탄다. 벤치에 구조화 출력이 섞이면 따로 본다.
+- 롤백 = env 한 줄. `ASYNC_SCHED=0` 은 여전히 동기 강제.
+- 원장의 2026-08 한국어 손상 조사에서 async 는 용의자로 기각됐다(SPEC=0 의 async on 과
+  dflash 의 async off 모두 손상, 원인은 LibertAIDAI 가중치). 이 실험은 그 판정을
+  재론하지 않는다.
+
+## EXP-9 — 인덱서 fp32 head-gate 를 split-K 로 (`glm53_indexer_gate_splitk`, 2026-09-02 추가)
+
+`Indexer.forward` 의 `weights = torch.mm(hidden_states.float(), self._wp_fp32)`
+([M,4096]×[4096,16] fp32, 층당 1회 × 11) 을 cuBLAS 가 2블록 `gemmSN` 커널로 답한다:
+유휴 GB10 에서 47 us, 9월 1일 트레이스(CUPTI)에서 86 us. 48 SM 에 블록 2개가 문제의
+전부라 (행, K-슬라이스 512) 마다 프로그램 하나를 띄우고 fp32 atomic 으로 모으는
+split-K Triton 커널이 같은 곱을 10 us 에 낸다. **M<=16(디코드) 만** 이 경로,
+나머지(프리필, C>=3 verify)는 stock `torch.mm` 그대로.
+
+**수치**: 양쪽 다 fp32 누적, 합산 순서만 다르다 — bit-exact 가 아니다. 오프라인
+300회/2,480행: max|diff| 2.4e-6, 행 최대 대비 6.7e-7, top-1 뒤집힘 0, top-4 집합 변화 0
+(`probes/indexer_gate_check.py`). bf16 게이트가 순위를 뒤집는 오차(1e-2)보다 네 자릿수
+아래지만 품질 브래킷은 필요하다.
+
+**천장**: 유휴 GPU 기준 11층 × ~40 us ≈ 0.44 ms/스텝 = C=1 의 **~0.65%**; 9월 1일 트레이스
+in-situ 는 gemmSN 88 us 라 ~0.96 ms = **~1.35%**. 어느 쪽이든 단독 부팅은 하지 않는다. EXP-7/EXP-8 과 독립이라 그 부팅에 얹어 같이 재는
+용도. 단독 부팅 금지.
+
+```bash
+# 프로필 선언 키: caller env. 트레이스에서 gemmSN 11개가 _gate_splitk_kernel 11개로
+# 바뀐 것이 켜진 증거 (부팅 로그 줄은 없다 — 그래프 안에서 층마다 호출).
+VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
+```
+
+- 게이트: 품질 9/9, 한국어 0/16, C=1 step/s 브래킷 base→cand→base (얹은 부팅의 것과 공유).
+- 롤백 = env 한 줄. 기본 0 = stock 과 동일한 `torch.mm` 호출.
+
 ---
 
 ## 순서와 근거
@@ -258,6 +382,10 @@ EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
 4. **EXP-4 (bproj)** — 천장 0.9%, 최우선순위 아님. 다음 창으로 미뤄도 됨.
 5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
 6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
+7. **EXP-7 (준비 커널 통합)** — bit-exact 프로브 → 섀도 부팅 → 브래킷. 호스트 유휴 4~5 ms 가 표적이라 GPU 커널 축과 독립.
+8. **EXP-8 (dflash async scheduling)** — 부팅 하나, 코드 변경은 허용 목록 한 조건. 천장이 가장 크다(7~12%); EXP-7 보다 먼저 돌려도 된다.
+9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7/8 부팅에 얹는다.
+10. **EXP-7/8 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
