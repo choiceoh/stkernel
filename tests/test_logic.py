@@ -6226,18 +6226,48 @@ def test_glm53_megakernel_contracts() -> None:
           "staging must flatten (row, chunk) so every thread issues copies: "
           "the row-strided form left half of MK_THREADS idle and halved the "
           "bytes in flight, which is the bandwidth on a latency-bound stage")
-    _w8_at = cu_code.index("stage_w(kb0,")
+    check("threadIdx.x != 0\n         && t < SMEM_W_ROWS * MK_W_CHUNKS; t += MK_THREADS - 1)" in cu
+          and "threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
+          "thread 0 issues no cp.async: it runs the grid barrier, whose "
+          "__threadfence drains its own outstanding copies -- with the "
+          "fill hoisted above the barrier that turned into a 6-12 us wait")
+    _w8_at = cu_code.index("stage_w(nt, kb0,")
     check(_w8_at < cu_code.index("stage_a(kb0);", _w8_at),
           "W(kb0) starts flying before A(kb0) is staged (the W8 pipeline "
           "fill; the W4 branch above fills its own buffers first by "
           "construction). kb0, not 0: a block may own a k SLICE of a tile.")
+    # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
+    #    its barrier, and the prologue's own x loads (consumed by the amax
+    #    shuffle) go out before that fill. Phase stamps: quant + barrier
+    #    took 3-10 us during which DRAM idled; a fill issued first instead
+    #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
+    _hoist_at = cu_code.index("stage_w(nt0, kb00,")
+    check(_hoist_at < cu_code.index('asm volatile("griddepcontrol.wait;"')
+          < cu_code.index("raw[i] = *(const uint2*)(c.x +")
+          < cu_code.index("__shfl_xor_sync(0xffffffffu, mx[i], off)")
+          < cu_code.index("mk_grid_barrier(bar, c.grid);"),
+          "prologue order: the first unit's W fill (independent of the "
+          "previous kernel), the PDL wait, x into registers, amax/convert/"
+          "store, barrier")
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
+          and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
+          and 'getenv("VLLM_GLM53_MK_PDL")' in cu
+          and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
+          "gemm, kda and mhc kernels trigger their dependents at entry and "
+          "are launched programmatically behind the MK_PDL knob (default off)")
+    check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
+          and "if (!prefilled) stage_w(nt, kb0, kb0 % MK_W_NBUF);" in cu,
+          "the unit loop must not re-issue the tiles the hoist already "
+          "staged -- a second cp.async group for the same buffer would "
+          "break the one-stage-one-group wait accounting")
     # -- A is quantized ONCE per launch, not once per (tile, k-block). Every
     #    n-tile walks all of k, so the in-loop form redid it nblk times --
     #    51x at n=6416 -- on bf16 input, twice the bytes the mma consumes.
     #    Measured ceiling for removing it: -10% at n=6416/4096, -22% at
     #    n=2048, -14% at n=1024.
     check("__device__ uint8_t g_mk_aq[" in cu
-          and "for (int kb = blockIdx.x; kb < kblk; kb += c.grid)" in cu
+          and "const int kbq = (int)blockIdx.x;" in cu
+          and "for (int kb = kbq + c.grid; kb < kblk; kb += c.grid)" in cu
           and cu.index("g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4")
               < cu.index("auto stage_a"),
           "A is quantized once, cooperatively across the grid, before the "
@@ -6253,7 +6283,10 @@ def test_glm53_megakernel_contracts() -> None:
     #    slices instead of leaving grid - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.
     check("const int rem = nblk % c.grid;" in cu
-          and "int ksr = (rem > 0) ? (c.grid / rem) : 1;" in cu,
+          and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
+          and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
+          and cu.count("mk_choose_ksr(") == 5
+          and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
           "below does not apply to them")
@@ -6262,7 +6295,7 @@ def test_glm53_megakernel_contracts() -> None:
     # simply the wrong pick: it returns 1 for nblk in (grid/2, grid],
     # i.e. the 4096-wide projections, leaving 16 of 48 blocks
     # idle where r=3 would cost 0.667 tile-times.
-    check("if (full == 0 && rem > 0 && c.m <= 32) {" in cu
+    check("if (full == 0 && rem > 0 && m <= 32) {" in cu
           and "if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }"
           in cu,
           "with no whole tiles the k-split is the cost-minimising one, not "
@@ -6278,9 +6311,30 @@ def test_glm53_megakernel_contracts() -> None:
     # reads that fold them -- anchor it on the READ, not on the comment: the
     # zero pass used to sit above the comment and the ordering check passed
     # by accident of that layout.
-    check(cu.index("mk_grid_barrier(bar, c.grid);")
-          < cu.index("v += g_mk_gemm_partial["),
-          "a barrier separates the slice writes from the reduce")
+    # No fold barrier any more: the last slice of a tile folds it. The
+    # writer fences before its arrival is counted, the completing block
+    # fences after seeing the count and reads the other slices through L2
+    # (L1 is not coherent within a launch), and re-arms the counter.
+    _arr = cu.index("atomicAdd(&g_mk_tile_arrive[lt], 1u)")
+    check(cu.rindex("__threadfence();", 0, _arr) < _arr
+          < cu.index("__ldcg((const float4*)(src + (size_t)spx * pslice))"),
+          "last-arriver fold: fence before the arrival, L2 reads after it")
+    check("if (s_last) g_mk_tile_arrive[lt] = 0u;" in cu
+          and "const unsigned expect = (unsigned)min(ksr, kblk);" in cu,
+          "the tile counter is re-armed by its completing slice and expects "
+          "only the non-empty slices (kb0 == kbn never arrives)")
+    check(cu.count("mk_grid_barrier(bar, c.grid);") == 1,
+          "one grid barrier per gemm phase (the A-quant publish) -- the "
+          "fold has none")
+    # Units after the first are handed out dynamically; the counter is
+    # re-armed by block 0 BEFORE the A-quant barrier so the barrier orders
+    # the reset ahead of every block's first take.
+    check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
+          < cu.index("mk_grid_barrier(bar, c.grid);")
+          and "for (int u = blockIdx.x; u < units; u = next_unit())" in cu
+          and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
+          "dynamic unit hand-out: first unit static (hoisted fill), the "
+          "rest from a counter re-armed ahead of the publish barrier")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The
@@ -6302,18 +6356,49 @@ def test_glm53_megakernel_contracts() -> None:
           "accumulator returns bitwise-different results for back-to-back "
           "launches of the same call, which the probe's replay-stability "
           "check flags and this lane cannot ship")
-    check("expand_w4(kb0 % 2)" in cu and "load_w4(kb0);" in cu,
+    check("expand_w4(kb0 % W4_RAW_NBUF, kb0 % 2)" in cu
+          and "stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the W4 prologue must fill the buffer the loop reads first: the "
           "loop starts at kb0, so a hardcoded 0 loads the wrong k-block "
           "(this broke the W4 exact-grid check when split-K landed)")
+    # -- W4 streams its raw records through cp.async like the W8 tiles:
+    #    tile-major pack (one contiguous 8 KB + 1 KB record per (tile,
+    #    k-block)), one commit group per stage, the exact-wait formula,
+    #    and a smem budget that stays under the sm_121 opt-in.
+    check("wq4.dim() == 4" in cu and "wq4.size(3) == 64" in cu
+          and "ws4.size(3) == 8" in cu
+          and ".permute(0, 2, 1, 3).contiguous())" in pysrc_full
+          and "wq4.view(n_pad // 128, 128, k // 128, 64)" in pysrc_full,
+          "the W4 pack is tile-major and the host refuses any other shape")
+    check("W4_RAW_NBUF * W4_RAW_BYTES" in cu
+          and "static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376" in cu
+          and "mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));" in cu,
+          "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
+          "the record it needs")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
     check("mk_e2m1_to_e4m3[8]" in cu_code
           and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
           "the e2m1->e4m3 LUT covers {0,.5,1,1.5,2,3,4,6} exactly")
-    check("c.wq4 != nullptr" in cu_code and "run_gemm_w4" in cu,
-          "the W4 path selects on the pack and has its own host entry")
-    check("(sexp[g4] << 3)" in cu_code and "((lo & 0x8) << 4)" in cu_code,
-          "expansion is exponent-field add + sign, never a float multiply")
+    # the expansion reads the packed immediate, not constant memory, and
+    # the immediate must be the same table byte for byte
+    _lut64 = int("0x4C4844403C383000", 16)
+    check([(_lut64 >> (8 * c)) & 0xFF for c in range(8)]
+          == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
+          and "0x4C484440'3C383000ULL" in cu
+          and "mk_e2m1_byte((int)c7)" in cu_code
+          and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code,
+          "the W4 expansion uses the packed LUT immediate (a __constant__ "
+          "load serialises over the warp's distinct codes)")
+    check("mk_gemm_kernel<true>" in cu_code and "run_gemm_w4" in cu
+          and "GEMM_SMEM_W4" in cu and "g_mk_gemm4_bar" in cu,
+          "the W4 path is its own kernel instantiation with its own smem "
+          "budget and ticket counter; the W8 kernel keeps the 63,616 B "
+          "budget it had before the W4 pipeline")
+    check("(sc4 >> (8 * g4)) & 0xFFu)) << 3" in cu_code
+          and "(code & 8u) << 4" in cu_code
+          and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,
+          "expansion is exponent-field add + sign in registers, never a "
+          "float multiply and never a local-memory byte array")
     check(pysrc_full.count("_selftest_w4") >= 1
           and "1e-5" in pysrc_full and "0.15" in pysrc_full,
           "the W4 self-test gates bit-exact expansion and by-design error")
@@ -6328,18 +6413,20 @@ def test_glm53_megakernel_contracts() -> None:
     # gemm and kda are persistent grids too, and their occupancy differs
     # from each other's, so each resolves its own -- clamped, like mhc, so a
     # grid that does not fit degrades instead of refusing to launch.
-    check(cu.count("mk_resident_grid(mk_gemm_kernel, g_gemm_grid)") == 2
-          and cu.count("mk_resident_grid(mk_kda_kernel, g_kda_grid)") == 1
+    check("mk_resident_grid(mk_gemm_kernel<false>, g_gemm_grid, GEMM_SMEM)" in cu
+          and "mk_resident_grid(mk_gemm_kernel<true>, g_gemm4_grid, GEMM_SMEM_W4)"
+          in cu
+          and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
           and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
           "gemm, gemm_w4 and kda each resolve their persistent grid from "
           "the device rather than assuming MK_GRID_CAP")
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
+          and cu.count("mk_gemm_phase<W4>(c, smem, W4 ? &g_mk_gemm4_bar : &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase<false>(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
-    check(cu.count("<<<mhc_grid, MK_THREADS") == 1
+    check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
@@ -6560,17 +6647,28 @@ def test_megakernel_w4_layout_functional() -> None:
                for _ in range(n)]
     wq4, ws4 = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
                                             lambda r, g: sexps_a[r][g]))
-    check(tuple(wq4.shape) == (128, k // 2), "wq4 is [n_pad, k/2]")
-    check(tuple(ws4.shape) == (128, k // 16), "ws4 is [n_pad, k/16]")
+    check(tuple(wq4.shape) == (1, 1, 128, k // 2),
+          "wq4 is tile-major [n_pad/128, k/128, 128, 64]")
+    check(tuple(ws4.shape) == (1, 1, 128, k // 16),
+          "ws4 is tile-major [n_pad/128, k/128, 128, 8]")
     q, sc = wq4.tolist(), ws4.tolist()
+
+    # the kernel's index math (stage_raw4 / expand_w4): tile = r // 128,
+    # k-block = kk // 128, then row-in-tile and byte / group within it
+    def nib(r, kk):
+        return q[r // 128][kk // 128][r % 128][(kk % 128) // 2]
+
+    def sexp_at(r, kk):
+        return sc[r // 128][kk // 128][r % 128][(kk % 128) // 16]
+
     for r in range(n):
         for kk in range(k):
-            byte = q[r][kk // 2]
+            byte = nib(r, kk)
             code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
             check(code == codes_a[r][kk // 16],
                   f"byte-exact tier: elem {kk} rides byte {kk // 2} "
                   f"half {kk % 2} with the crafted nibble (row {r})")
-            check(sc[r][kk // 16] == sexps_a[r][kk // 16],
+            check(sexp_at(r, kk) == sexps_a[r][kk // 16],
                   "byte-exact tier: scale index follows the 16-group")
 
     # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
@@ -6585,14 +6683,14 @@ def test_megakernel_w4_layout_functional() -> None:
     q, sc = wq4.tolist(), ws4.tolist()
     for r in range(n):
         for kk in range(k):
-            byte = q[r][kk // 2]
+            byte = nib(r, kk)
             code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
-            val = grid[code & 7] * 2.0 ** sc[r][kk // 16]                 * (-1.0 if code & 8 else 1.0)
+            val = grid[code & 7] * 2.0 ** sexp_at(r, kk)                 * (-1.0 if code & 8 else 1.0)
             check(val == wb[r, kk].item(),
                   f"value-exact tier: elem {kk} dequantizes to the original "
                   f"(row {r}: {val} != {wb[r, kk].item()})")
     for r in range(n, 128):  # padded rows are zero nibbles
-        check(all(b == 0 for b in q[r]), f"pad row {r} packed as zeros")
+        check(all(b == 0 for b in q[0][0][r]), f"pad row {r} packed as zeros")
     print("  w4 layout roundtrip ...... OK")
 
 

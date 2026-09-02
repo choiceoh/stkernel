@@ -143,7 +143,11 @@ def _build():
             f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
             f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
             f"-DMK_W_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
-        ],
+            f"-DMK_W4_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_W4_NBUF', '3')}",
+        ] + (["-DMK_PHASE_TS=1"]
+             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
+          + ([f"-DMK_PROBE_SKIP={os.environ['VLLM_GLM53_MK_PROBE_SKIP']}"]
+             if os.environ.get("VLLM_GLM53_MK_PROBE_SKIP") else []),
         build_directory="/root/.mk_build",
         verbose=False,
     )
@@ -253,7 +257,8 @@ def _mk_w4_scale_exp(amax: float) -> int:
 
 
 def build_mk_weight_w4(weight):
-    """(wq4 uint8 [n_pad, k/2] nibbles, ws4 int8 [n_pad, k/16] exponents).
+    """(wq4 uint8 [n_pad/128, k/128, 128, 64] nibbles,
+        ws4 int8 [n_pad/128, k/128, 128, 8] exponents) -- tile-major.
 
     Nibble layout: low nibble = even element, high = odd. Round-to-nearest
     on the e2m1 grid {0, .5, 1, 1.5, 2, 3, 4, 6} x 2^s. The kernel expands
@@ -299,7 +304,15 @@ def build_mk_weight_w4(weight):
         f"wq4 {tuple(wq4.shape)} != {(n_pad, k // 2)}"
     assert ws4.shape == (n_pad, k // 16), \
         f"ws4 {tuple(ws4.shape)} != {(n_pad, k // 16)}"
-    return wq4.contiguous(), ws4
+    # Tile-major, like the fp8 pack (#208): one (tile, k-block) record is
+    # 128 rows x 64 nibble bytes + 128 x 8 exponents, contiguous, so the
+    # kernel's stage_raw4 streams it with cp.async as one 8 KB + 1 KB run
+    # instead of touching 128 DRAM pages per tile.
+    wq4 = (wq4.view(n_pad // 128, 128, k // 128, 64)
+           .permute(0, 2, 1, 3).contiguous())
+    ws4 = (ws4.view(n_pad // 128, 128, k // 128, 8)
+           .permute(0, 2, 1, 3).contiguous())
+    return wq4, ws4
 
 
 def _stock_fp8_pair(w):
