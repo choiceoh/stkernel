@@ -181,6 +181,26 @@ broadcast in the tail (spills under the p1 register pressure).
 Bench (srv2, PDL on): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
 (MEASUREMENTS.md 9차 has the eight experiments that got here).
 
+## Adjacent kernels: mhc warms the next consumer's pack in L2
+
+Within a layer the MK-MHC kernel runs right before the KDA kernel (or the
+qkv GEMM) and leaves DRAM idle (its `fn` is L2-resident after the first
+token). The driver learns, from the call order on the eager steps, which
+W4 pack the launch after each mhc call streams (`_NEXT_PACK`, keyed by
+the mhc call's `fn` pointer; stock consumers never register) and hands it
+to the mhc kernel, which pulls it into L2 with `prefetch.global.L2`,
+paced by p1's token loop (a quarter of the threads, one 128 B line each
+per token) and walked tile-prefix-major so every consumer block's first
+k-blocks hit L2 rather than a few blocks' whole tiles. Nothing changes
+numerically (the consumer reads the same bytes; the bench chains mhc ->
+gemm / kda and checks bit-equality). Two things measured a wash on the
+way (MEASUREMENTS.md 11차): handing the consumer layer_input's fp8 A
+tiles (the tail's group-amax emission cost what the prologue saved) and a
+paced prefetch stretch after the tails (it delays the consumer's PDL
+start by about what it saves).
+
+WARM_NUMBERS_PLACEHOLDER
+
 ## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
 
 in_proj 76 | gates 6 | conv 4 | delta 34 | norm 0.5 | o_proj 35 |
