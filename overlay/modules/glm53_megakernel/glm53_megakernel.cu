@@ -358,6 +358,13 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
   do {                                                                       \
     if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = mk_globaltimer(); \
   } while (0)
+// accumulated durations (ns), e.g. time spent inside the W pipeline wait
+#define MK_TS_ACC_BEGIN(v) const unsigned long long v = mk_globaltimer()
+#define MK_TS_ACC_END(acc, v) acc += mk_globaltimer() - (v)
+#define MK_TS_STORE(slot, acc)                                               \
+  do {                                                                       \
+    if (threadIdx.x == 0) g_mk_ts[blockIdx.x * 8 + (slot)] = (acc);         \
+  } while (0)
 #define MK_MHC_TS(slot)                                                      \
   do {                                                                       \
     if (threadIdx.x == 0)                                                    \
@@ -366,6 +373,15 @@ __device__ __forceinline__ unsigned long long mk_globaltimer() {
 #else
 #define MK_TS(slot) \
   do {              \
+  } while (0)
+#define MK_TS_ACC_BEGIN(v) \
+  do {                     \
+  } while (0)
+#define MK_TS_ACC_END(acc, v) \
+  do {                        \
+  } while (0)
+#define MK_TS_STORE(slot, acc) \
+  do {                         \
   } while (0)
 #define MK_MHC_TS(slot) \
   do {                  \
@@ -657,6 +673,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     __syncthreads();
     return s_unit;
   };
+#ifdef MK_PHASE_TS
+  unsigned long long twait = 0ull;  // ns inside the W pipeline waits
+#endif
   for (int u = blockIdx.x; u < units; u = next_unit()) {
     int nt, kb0, kbn;
     decode_unit(u, nt, kb0, kbn);
@@ -788,7 +807,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         if (kb + 1 >= kbn) break;
         // raw(kb+1) landed: the groups still allowed in flight are the
         // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
+        MK_TS_ACC_BEGIN(tw);
         mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));
+        MK_TS_ACC_END(twait, tw);
         __syncthreads();  // raw(kb+1) visible; every mma reader of kb done
         expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
         stage_a(kb + 1);
@@ -829,7 +850,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
         // outstanding after W(kb+1): the deeper stages, when they exist --
         // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
+        MK_TS_ACC_BEGIN(tw);
         mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));
+        MK_TS_ACC_END(twait, tw);
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
       }
     }
@@ -926,6 +949,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     }
   }
   MK_TS(4);  // all units of this block done (no fold barrier any more)
+#ifdef MK_PHASE_TS
+  MK_TS_STORE(5, twait);
+#endif
   MK_TS(6);  // exit
 }
 
