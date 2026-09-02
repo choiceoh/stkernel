@@ -813,8 +813,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
         MK_TS_ACC_BEGIN(tw);
         mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));
-        MK_TS_ACC_END(twait, tw);
         __syncthreads();  // raw(kb+1) visible; every mma reader of kb done
+        MK_TS_ACC_END(twait, tw);
         expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
         stage_a(kb + 1);
         __syncthreads();
@@ -856,8 +856,8 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
         MK_TS_ACC_BEGIN(tw);
         mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));
-        MK_TS_ACC_END(twait, tw);
         __syncthreads();  // publish W(kb+1) and saq(kb+1) block-wide
+        MK_TS_ACC_END(twait, tw);  // thread 0 waits here, not in wait_group
       }
     }
     // ---- epilogue: real rows/cols only
