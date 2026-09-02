@@ -2046,17 +2046,49 @@ compressed slot + deep_gemm 스케줄) vs fused 커널, 프로덕션 기하(그�
 |---|---|---|
 | 발사 | 커널 ~30 + memcpy ~8 | 커널 3 + memcpy 1 |
 | 벽시계(호스트+GPU) | 2,556 us | 201 us |
-| GPU 이벤트 | (호스트 대기 포함 2,562) | 200 = 커널 88.5 + deep_gemm 스케줄 64.4 + 복사 |
+| 이벤트 루프 (당초 "GPU" 로 적었던 값) | (호스트 대기 포함 2,562) | 200 = 커널 88.5 + deep_gemm 스케줄 64.4 + 복사 |
+| **실제 GPU 시간** (CUDA 그래프 리플레이·CUPTI, 리뷰 검증) | — | 커널 ~23, deep_gemm 스케줄 ~3.4, 발사 전체 ~27~40 |
 
 stock 열은 빌딩블록만이라 러너의 aten ~1,000 호출은 빠져 있다 — 실제 절감은 이보다
-크고, 상한은 트레이스의 준비 구간(프로파일러 없이 3~5 ms). fused 의 GPU 200 us 는
-임계경로에 새로 올라오는 비용이다(그중 64 us 는 stock 도 내는 deep_gemm 스케줄).
-커널 88 us 는 요청당 직렬 루프(그룹 7 gather + 토큰 8 × 폭 2052 행 복사)라 더 줄일
-수 있으나, 절감 규모(ms) 대비 작아 섀도 부팅 뒤로 미룬다.
+크고, 상한은 트레이스의 준비 구간(프로파일러 없이 3~5 ms). **정정(2026-09-02 리뷰)**:
+파이썬 발사 루프를 이벤트로 감싼 "88/64/200 us GPU" 는 발사 비용보다 짧은 커널에서
+호스트 발사 시간(Triton 디스패처 ~45, deep_gemm 래퍼 ~75 us, Grace CPU)을 잰 것이다.
+fused 가 임계경로에 새로 올리는 GPU 비용은 ~30 us 이고 호스트 ~200 us 가 남는 몫이다.
 
 **미측정 (서빙)**: 섀도 부팅(`VLLM_GLM53_PREP_FUSED=shadow`, drift=0 확인) → EXP-7
 브래킷(C=1 step/s). 물리 기전 확인 = 켠 부팅 트레이스에서 준비 구간의 memcpy·
 `at::native::*` 가 사라지고 `_glm53_prep_fused_kernel` 하나가 남는 것. 기본값 0.
+
+**코드 리뷰 (2026-09-02, 10 관점 × 검증 14건)** — 첫 판(PR #221)의 결함과 수정:
+(1) plan 이 `prefill_len.gpu`·`num_blocks.gpu` 를 캐시했는데 둘은 `UvaBackedTensor` 라
+`copy_to_uva()` 마다 라운드로빈 풀의 다른 버퍼로 재바인딩된다(깊이 ≥2, `num_blocks` 는
+매 스텝 `apply_staged_writes` 로 회전) → 격 스텝마다 한 스텝 stale: 새 블록으로 넘어가는
+스텝(요청당 ~16 스텝에 1회)에 gather 가 한 블록 짧아 어텐션이 잘못된 블록을 읽고, 슬롯
+재사용 시 `input_ids` 를 안 쓴다. 이미지 코드로 재현. 수정 = 발사 시점에 소유 객체에서
+읽기. (2) 드래프터 KV 그룹(7번째)에 타깃 쪽 FlashInfer 빌더가 붙어 있어 `build_plan` 이
+모든 실제 부팅에서 실패 → 모듈 inert(오프라인 하네스는 그 그룹을 빌더 없음으로 가정해
+못 잡음). 수정 = 레이어 소속으로 드래프터 그룹 식별. (3) pinned 스테이징 버퍼 1개를 매
+스텝 덮어써 async scheduling 아래에서 이전 스텝의 DMA 와 경합(GB10 재현) → `UvaBufferPool`.
+(4) Q 가 2의 거듭제곱이 아니면 `tl.arange` 컴파일 실패가 첫 적격 스텝에서 엔진을 죽임 →
+plan 가드 + warmup 실패 DISARM + 발사 예외 시 stock 폴백. (5) shadow 가 stock 배치를
+반환해 armed 분기를 한 번도 실행 안 함 → 검증 뒤 fused 배치를 흘리고 armed 도 64 스텝마다
+self-check. (6) kpool tail 원형 버퍼 휴면을 가정만 함 → plan·검증마다 assert.
+(7) 메타데이터 캐시는 dflash 가 dict 를 무시할 때만 안전 → speculator 타입 게이트.
+(8) 노브 오타가 arm 으로 떨어짐 → 미지 값 DISARM. (9) 런북·README 의 `EXTRA_ENV=` 명령이
+프로필 선언 키라 런처에서 ABORT → caller env 형식(EXP-6 도 같은 결함). (10) 프로브 래퍼가
+preimage 검증 없이 전 행을 마운트해 fi618 위에 v13 오버레이 5개를 섞어 돌림 → 래퍼가
+런처처럼 검증. (11) "88 us GPU" 는 호스트 발사 시간(위 정정). (12) warmup 이 돌려주는
+컴파일 커널로 직접 발사해 Triton 디스패처 호스트 비용 ~12 us/스텝 절감(검증에서 bit-exact).
+기록되지 않은 부수 사실: PR #221 은 09:46Z 머지됐으나 PR #224(e76452f) 가 언급 없이
+전부 되돌려 main 에서 사라졌다 — 이 판(v2)이 복원본이다.
+
+**v2 오프라인 게이트 재실행 (srv2, 프로필 이미지 `glm53:v13-b12x`, 래퍼가 31개 행의
+base preimage 를 검증)**: 무작위 배치 60/60 이 46개 텐서 bit-exact — 이번엔 stock 팔과
+fused 팔 사이에 `num_blocks`·`prefill_len` 의 UVA 핸들을 한 번 더 회전시켜 첫 판의 결함
+(1)을 재현하는 조건에서. C=1 스텝당 stock 빌딩블록 2,469~2,535 us vs fused 184 us
+(JIT 디스패치) → **152 us**(warmup 의 컴파일 커널로 직접 발사, 두 번째 실행), 호스트+GPU;
+**실제 GPU 시간 24.4~24.5 us/스텝**(발사 20개를 CUDA 그래프로 캡처해 리플레이, deep_gemm
+스케줄·복사 포함), deep_gemm 스케줄 호출 호스트+GPU 11~65 us(실행 간 호스트 편차).
 
 **부수 발견(미조치)**: (1) kpool tail 의 원형 슬롯 매핑은 러너가 빌더에 `positions`
 를 안 넘겨 이 이미지에서 잠들어 있다 — `glm53_tail_slot_persistent` 의 고정 버퍼도

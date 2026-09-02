@@ -58,7 +58,7 @@ module is imported, where no hook of ours exists.
 
 ```
 VLLM_GLM53_ASYNC_DFLASH=0   # default: stock verdict (synchronous)
-EXTRA_ENV="VLLM_GLM53_ASYNC_DFLASH=1" bash launchers/start-glm53-nvfp4-tp4.sh
+VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # profile-declared key: caller env, not EXTRA_ENV
 ```
 
 Rollback is the env line. `ASYNC_SCHED=0` still forces the synchronous

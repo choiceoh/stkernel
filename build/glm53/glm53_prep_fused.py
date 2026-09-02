@@ -11,12 +11,13 @@ profiler says ~7 pct, i.e. 4-5 ms of a 66 ms step).
 
 For the steady-state decode step -- every request in spec-verify with the
 full draft, FULL cudagraph dispatched, no request padding -- this module
-replaces the whole region with ONE pinned H2D copy (idx_mapping), ONE Triton
+replaces the whole region with ONE staged H2D copy (idx_mapping), ONE Triton
 launch that writes every persistent buffer the captured graph reads, and the
 deep_gemm scheduler-metadata call the indexer needs. Everything else the
 stock path produced was Python objects nothing consumes under FULL replay
-(the attention metadata dicts are only handed to the speculator, which
-ignores them), so those are served from a per-shape cache.
+(the attention metadata dicts are only handed to the speculator, and DFlash
+ignores them -- the plan refuses any other speculator), so those are served
+from a per-shape cache.
 
 What the kernel writes, per request r with state slot rs and query start
 qs = r*Q (Q = decode_query_len = num_spec + 1):
@@ -34,18 +35,34 @@ qs = r*Q (Q = decode_query_len = num_spec + 1):
   tails: query_start_loc / seq_lens padding, slot-mapping PAD tails, the
     indexer/MLA buffer tails the stock path re-fills every step.
 
-Bit-exactness with the stock path is the contract: shadow mode
-(VLLM_GLM53_PREP_FUSED=shadow) runs the fused path first, then the stock
-path over the same buffers, and diffs every buffer above; stock stays the
-truth. Arm ("1") only after a shadow boot is clean and the EXP-7 bracket in
-RUNBOOK_KERNEL_CAMPAIGN2.md holds.
+Live handles, not snapshots. The runner's request-state mirrors are
+UvaBackedTensors whose `.gpu` is REBOUND to the next round-robin buffer on
+every copy_to_uva() (block_tables.apply_staged_writes rotates num_blocks
+every step, admissions rotate prefill_len), and the block-table pointer
+tensors are re-made after a KV-cache wake-up. The plan therefore keeps the
+OWNING objects (BlockTables, the UvaBackedTensor) and dereferences them at
+every launch, exactly as the stock kernels do.
+
+Bit-exactness with the stock path is the contract, and it is checked where
+it matters. shadow mode (VLLM_GLM53_PREP_FUSED=shadow) runs the fused path,
+then the WHOLE stock chain (prepare_inputs, prepare_attn, the builders) over
+the same buffers, diffs every buffer above and the InputBatch index fields,
+and -- when clean -- hands the FUSED batch to the rest of the step, so the
+armed control flow (view-based InputBatch through sampler / rejection sampler
+/ drafter, the metadata cache) is exercised under shadow too. Armed mode
+repeats that verification every VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY fused
+steps (default 64) and DISARMs on the first drift.
 
 Guards: the install pins the sha256 of every runner/builder file whose
 control flow is bypassed (as shipped in glm53:v13-b12x, plus the mounted
 glm53_tail_slot_persistent indexer). Any drift -> the module stays inert and
-says so in the boot log. The kpool tail group keeps the generic slot mapping
+says so in the boot log. The plan is (re)built after every cudagraph capture
+from the live runner and refuses (stock for the boot, logged) any geometry it
+was not read against. The kpool tail group keeps the generic slot mapping
 because the runner never hands the tail builder `positions` (its circular
-mapping is dormant in this image); this module does not change that.
+mapping is dormant in this image); the plan asserts that dormancy (the
+builder's circular buffer must stay unallocated) and every verification pass
+re-checks it.
 """
 from __future__ import annotations
 
@@ -59,13 +76,16 @@ import torch
 
 from vllm.logger import init_logger
 from vllm.triton_utils import tl, triton
+from vllm.v1.attention.backends.utils import PAD_SLOT_ID
+from vllm.v1.worker.gpu.buffer_utils import UvaBufferPool, _load_ptr
 
 logger = init_logger(__name__)
 
 ENV = "VLLM_GLM53_PREP_FUSED"
 ENV_SHADOW_EVERY = "VLLM_GLM53_PREP_FUSED_SHADOW_EVERY"
-PAD_SLOT_ID = -1
+ENV_SELFCHECK_EVERY = "VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY"
 _BLOCK = 1024
+_SPECULATORS = ("DFlashSpeculator", "DSparkSpeculator")
 
 # sha256 of the files whose control flow this module bypasses, as shipped in
 # glm53:v13-b12x. mla/indexer.py is the glm53_tail_slot_persistent copy that
@@ -110,20 +130,37 @@ PREIMAGES: dict[str, str] = {
 
 
 def prep_fused_mode() -> str:
-    """off | on | shadow. Anything not "shadow" and not falsy arms."""
-    v = os.environ.get(ENV, "0").strip().lower()
+    """off | on | shadow. Unknown values DISARM (stock path) and are logged.
+
+    This knob selects a runner bypass, so a typo must land on the safe side
+    (the repo's read_b12x_ep_exact_bool rule), never on "armed"."""
+    raw = os.environ.get(ENV, "0")
+    v = raw.strip().lower()
     if v in ("", "0", "false", "no", "off"):
         return "off"
     if v == "shadow":
         return "shadow"
-    return "on"
+    if v == "1":
+        return "on"
+    logger.warning("[prep-fused] %s=%r is not one of 0/off/false/no, shadow, 1 -> DISARM "
+                   "(stock path)", ENV, raw)
+    return "off"
+
+
+def _every(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
 
 
 def shadow_every() -> int:
-    try:
-        return max(1, int(os.environ.get(ENV_SHADOW_EVERY, "1")))
-    except ValueError:
-        return 1
+    return max(1, _every(ENV_SHADOW_EVERY, 1))
+
+
+def selfcheck_every() -> int:
+    """Armed-mode verification cadence in fused steps; 0 disables."""
+    return _every(ENV_SELFCHECK_EVERY, 64)
 
 
 def check_preimages(root: str) -> list[str]:
@@ -144,12 +181,6 @@ def check_preimages(root: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # kernel
 # ---------------------------------------------------------------------------
-@triton.jit
-def _ptr(ptr_to_ptr, elem_dtype: tl.constexpr):
-    p = tl.load(ptr_to_ptr)
-    return tl.cast(p, tl.pointer_type(elem_dtype))
-
-
 @triton.jit
 def _fill(ptr, start, end, value, BLOCK: tl.constexpr):
     for i in range(start, end, BLOCK):
@@ -242,7 +273,7 @@ def _glm53_prep_fused_kernel(
             # padding on this path, so there is no True range to write.
             _fill(is_padding_ptr, 0, num_tokens, 0, BLOCK)
             for k in tl.static_range(N_GDN):
-                qp = _ptr(gdn_qsl_ptrs + k, tl.int32)
+                qp = _load_ptr(gdn_qsl_ptrs + k, tl.int32)
                 tl.store(qp + num_reqs, num_tokens)
             # sparse MLA: req_id_per_token_buffer.fill_(0) before the copy;
             # indexer: decode_seq_lens_buffer[num_decode_tokens:] = 0 and
@@ -279,13 +310,13 @@ def _glm53_prep_fused_kernel(
         tl.store(input_ids_ptr + qs + 1 + offs, dr.to(tl.int32), mask=dmask)
 
     # expand_idx_mapping
-    tl.store(expanded_idx_ptr + qs + offs, tl.zeros([Q], dtype=tl.int64) + rs)
+    tl.store(expanded_idx_ptr + qs + offs, tl.full([Q], 0, tl.int64) + rs)
     tl.store(expanded_pos_ptr + qs + offs, offs.to(tl.int32))
 
     # gather_block_tables + compute_slot_mappings, every group
     for g in tl.static_range(G):
-        src = _ptr(src_bt_ptrs + g, tl.int32)
-        dst = _ptr(dst_bt_ptrs + g, tl.int32)
+        src = _load_ptr(src_bt_ptrs + g, tl.int32)
+        dst = _load_ptr(dst_bt_ptrs + g, tl.int32)
         stride = tl.load(bt_strides + g)
         bs = tl.load(block_sizes + g)
         nb = tl.load(num_blocks_ptr + g * num_blocks_stride + rs)
@@ -312,27 +343,27 @@ def _glm53_prep_fused_kernel(
     nacc = tl.load(num_accepted_ptr + rs)
     for k in tl.static_range(N_GDN):
         gm = tl.load(gdn_group_idx_ptr + k)
-        dst = _ptr(dst_bt_ptrs + gm, tl.int32)
+        dst = _load_ptr(dst_bt_ptrs + gm, tl.int32)
         stride = tl.load(bt_strides + gm)
         st = tl.load(dst + r * stride + soffs, mask=smask, other=0)
-        sp = _ptr(gdn_state_ptrs + k, tl.int32)
+        sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
         ss = tl.load(gdn_state_strides + k)
         tl.store(sp + r * ss + soffs, st, mask=smask)
-        mp = _ptr(gdn_mask_ptrs + k, tl.int8)
+        mp = _load_ptr(gdn_mask_ptrs + k, tl.int8)
         tl.store(mp + r + tl.arange(0, 1), tl.full([1], 1, tl.int8))
-        tp = _ptr(gdn_tok_ptrs + k, tl.int32)
+        tp = _load_ptr(gdn_tok_ptrs + k, tl.int32)
         tl.store(tp + qs + offs, (qs + offs).to(tl.int32))
-        qp = _ptr(gdn_qsl_ptrs + k, tl.int32)
+        qp = _load_ptr(gdn_qsl_ptrs + k, tl.int32)
         tl.store(qp + r, qs)
-        ap = _ptr(gdn_nacc_ptrs + k, tl.int32)
+        ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
         tl.store(ap + r, nacc)
 
     # attention group: sparse MLA req ids + indexer decode buffers
-    dsta = _ptr(dst_bt_ptrs + ATTN_G, tl.int32)
+    dsta = _load_ptr(dst_bt_ptrs + ATTN_G, tl.int32)
     wa = tl.load(bt_strides + ATTN_G)
     row = dsta + r * wa
-    tl.store(req_id_ptr + qs + offs, tl.zeros([Q], dtype=tl.int32) + r)
-    tl.store(dec_lens_ptr + qs + offs, tl.zeros([Q], dtype=tl.int32) + 1)
+    tl.store(req_id_ptr + qs + offs, tl.full([Q], 0, tl.int32) + r)
+    tl.store(dec_lens_ptr + qs + offs, tl.full([Q], 1, tl.int32))
     tl.store(per_req_dec_lens_ptr + r, Q)
     # _prepare_uniform_decode_kernel: per-token context length, then
     # `seq_lens //= compress_ratio` on the same buffer
@@ -347,24 +378,26 @@ def _glm53_prep_fused_kernel(
     cslot = bn * SBS + pc % SBS
     cslot = tl.where(valid, cslot, PAD_ID)
     tl.store(comp_slot_ptr + qs + offs, cslot.to(tl.int64))
-    for j in tl.static_range(Q):
-        t = qs + j
-        # expanded_block_table_buffer[t] = the gathered row, full width
-        for i in range(0, wa, BLOCK):
-            off = i + tl.arange(0, BLOCK)
-            msk = off < wa
-            v = tl.load(row + off, mask=msk, other=0)
-            tl.store(exp_bt_ptr + t * exp_bt_stride + off, v, mask=msk)
-        # indexer_decode_block_table_buffer[t, c] = row[c*F] // F
-        for i in range(0, idx_bt_cols, BLOCK):
-            off = i + tl.arange(0, BLOCK)
-            msk = off < idx_bt_cols
-            v = tl.load(row + off * FACTOR, mask=msk, other=0)
-            tl.store(idx_bt_ptr + t * idx_bt_stride + off, v // FACTOR, mask=msk)
+    # expanded_block_table_buffer[t] = the gathered row, full width, for the
+    # Q tokens of this request: read each chunk once, store it Q times.
+    trow = (qs + offs).to(tl.int64)
+    exp_rows = exp_bt_ptr + trow[:, None] * exp_bt_stride
+    idx_rows = idx_bt_ptr + trow[:, None] * idx_bt_stride
+    for i in range(0, wa, BLOCK):
+        off = i + tl.arange(0, BLOCK)
+        msk = off < wa
+        v = tl.load(row + off, mask=msk, other=0)
+        tl.store(exp_rows + off[None, :], v[None, :], mask=msk[None, :])
+    # indexer_decode_block_table_buffer[t, c] = row[c*F] // F
+    for i in range(0, idx_bt_cols, BLOCK):
+        off = i + tl.arange(0, BLOCK)
+        msk = off < idx_bt_cols
+        v = tl.load(row + off * FACTOR, mask=msk, other=0) // FACTOR
+        tl.store(idx_rows + off[None, :], v[None, :], mask=msk[None, :])
 
 
 # ---------------------------------------------------------------------------
-# plan: every pointer the kernel needs, gathered once from the runner
+# plan: every buffer the kernel writes and every live handle it reads
 # ---------------------------------------------------------------------------
 def _ptrs(tensors: list[torch.Tensor], device) -> torch.Tensor:
     return torch.tensor([t.data_ptr() for t in tensors], dtype=torch.uint64, device=device)
@@ -377,9 +410,9 @@ class PrepPlan:
     max_num_reqs: int
     max_num_tokens: int
     device: torch.device
-    # request state
+    # request state; prefill_len_src is the UvaBackedTensor (its .gpu rotates)
     num_computed: torch.Tensor
-    prefill_len: torch.Tensor
+    prefill_len_src: Any
     last_sampled: torch.Tensor
     draft_tokens: torch.Tensor
     num_accepted: torch.Tensor
@@ -389,13 +422,9 @@ class PrepPlan:
     query_start_loc: torch.Tensor
     seq_lens: torch.Tensor
     is_padding: torch.Tensor
-    # block tables
-    src_bt: list[torch.Tensor]
-    dst_bt: list[torch.Tensor]
-    bt_strides: torch.Tensor
-    block_sizes: torch.Tensor
-    num_blocks: torch.Tensor
-    slot_mappings: torch.Tensor
+    # the runner's BlockTables: pointer tensors, num_blocks (.gpu rotates),
+    # slot mappings and the gathered tables are read from it at launch
+    bt: Any
     # GDN builders (group index, buffers)
     gdn_groups: list[int]
     gdn_state: list[torch.Tensor]
@@ -417,21 +446,24 @@ class PrepPlan:
     sbs: int
     num_sms: int
     sched_buf: torch.Tensor
-    # derived / owned
+    # the kpool tail builder whose circular slot buffer must stay dormant
+    tail_builder: Any = None
     owned: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         dev = self.device
-        self.owned["idx_pinned"] = torch.zeros(
-            self.max_num_reqs, dtype=torch.int64, device="cpu", pin_memory=True)
+        if self.q & (self.q - 1):
+            raise RuntimeError(f"decode_query_len {self.q} is not a power of two (tl.arange)")
+        # idx_mapping staging: the image's round-robin UVA pool, sized by the
+        # runner to max_concurrent_batches, so a step's host write can never
+        # land under the previous step's in-flight copy (async scheduling).
+        self.owned["idx_pool"] = UvaBufferPool(self.max_num_reqs, torch.int64)
         self.owned["idx_gpu"] = torch.zeros(self.max_num_reqs, dtype=torch.int64, device=dev)
         self.owned["expanded_idx"] = torch.zeros(self.max_num_tokens, dtype=torch.int64, device=dev)
         self.owned["expanded_pos"] = torch.zeros(self.max_num_tokens, dtype=torch.int32, device=dev)
         self.owned["cu_num_logits"] = (
             torch.arange(self.max_num_reqs + 1, dtype=torch.int32, device=dev) * self.q)
         self.owned["logits_arange"] = torch.arange(self.max_num_tokens, dtype=torch.int64, device=dev)
-        self.owned["src_ptrs"] = _ptrs(self.src_bt, dev)
-        self.owned["dst_ptrs"] = _ptrs(self.dst_bt, dev)
         self.owned["gdn_group_idx"] = torch.tensor(self.gdn_groups, dtype=torch.int32, device=dev)
         self.owned["gdn_state_ptrs"] = _ptrs(self.gdn_state, dev)
         self.owned["gdn_state_strides"] = torch.tensor(
@@ -440,29 +472,31 @@ class PrepPlan:
         self.owned["gdn_tok_ptrs"] = _ptrs(self.gdn_tok, dev)
         self.owned["gdn_qsl_ptrs"] = _ptrs(self.gdn_qsl, dev)
         self.owned["gdn_nacc_ptrs"] = _ptrs(self.gdn_nacc, dev)
-        self.idx_bt_cols = -(-int(self.bt_strides[self.attn_g].item()) // self.factor)
-        assert self.idx_bt.shape[1] >= self.idx_bt_cols, "indexer decode table narrower than bt[:, ::factor]"
+        wa = int(self.bt.block_table_strides[self.attn_g].item())
+        if self.exp_bt.stride(0) != wa:
+            raise RuntimeError(f"expanded block table stride {self.exp_bt.stride(0)} != "
+                               f"attention block table width {wa}")
+        self.idx_bt_cols = -(-wa // self.factor)
+        if self.idx_bt.shape[1] < self.idx_bt_cols:
+            raise RuntimeError("indexer decode table narrower than bt[:, ::factor]")
         ns = self.num_spec + 1
         self.ns_p2 = 1 << (ns - 1).bit_length()
+        self.tail_ok()
 
     @property
     def G(self) -> int:
-        return len(self.src_bt)
+        return self.bt.num_kv_cache_groups
 
-    def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
-        """Copy idx_mapping, run the kernel, build the deep_gemm schedule.
-
-        Returns the GPU idx_mapping view ([num_reqs], int64)."""
-        o = self.owned
-        pinned = o["idx_pinned"]
-        pinned[:num_reqs].copy_(torch.from_numpy(idx_mapping_np.astype(np.int64, copy=False)))
-        idx = o["idx_gpu"][:num_reqs]
-        idx.copy_(pinned[:num_reqs], non_blocking=True)
-        num_tokens = num_reqs * self.q
-        grid = (num_reqs + 1 + self.G,)
-        _glm53_prep_fused_kernel[grid](*self._args(idx, num_reqs, num_tokens), **self._consts())
-        self.schedule(num_tokens)
-        return idx
+    def tail_ok(self) -> bool:
+        """The kpool tail builder must never have allocated its circular
+        slot buffer: that only happens when `positions` reach it, and then
+        the graph reads a buffer this kernel does not write."""
+        b = self.tail_builder
+        if b is not None and getattr(b, "_tail_slot_buf", None) is not None:
+            raise RuntimeError("kpool tail builder holds a live circular slot buffer: "
+                               "positions reached it, the generic mapping is no longer "
+                               "what the graph reads")
+        return True
 
     def _consts(self) -> dict[str, int]:
         return dict(
@@ -474,15 +508,17 @@ class PrepPlan:
 
     def _args(self, idx: torch.Tensor, num_reqs: int, num_tokens: int) -> tuple:
         o = self.owned
+        bt = self.bt
+        num_blocks = bt.num_blocks.gpu  # live: rebound on every apply_staged_writes
         return (
             num_reqs, num_tokens, self.max_num_reqs, self.max_num_tokens,
-            idx, self.num_computed, self.prefill_len, self.last_sampled,
+            idx, self.num_computed, self.prefill_len_src.gpu, self.last_sampled,
             self.draft_tokens, self.draft_tokens.stride(0), self.num_accepted,
             self.input_ids, self.positions, self.query_start_loc, self.seq_lens,
             self.is_padding.view(torch.int8), o["expanded_idx"], o["expanded_pos"],
-            o["src_ptrs"], o["dst_ptrs"], self.bt_strides, self.block_sizes,
-            self.num_blocks, self.num_blocks.stride(0),
-            self.slot_mappings, self.slot_mappings.stride(0),
+            bt.block_table_ptrs, bt.input_block_table_ptrs, bt.block_table_strides,
+            bt.block_sizes_tensor, num_blocks, num_blocks.stride(0),
+            bt.slot_mappings, bt.slot_mappings.stride(0),
             o["gdn_group_idx"], o["gdn_state_ptrs"], o["gdn_state_strides"],
             o["gdn_mask_ptrs"], o["gdn_tok_ptrs"], o["gdn_qsl_ptrs"], o["gdn_nacc_ptrs"],
             self.req_id_buf, self.req_id_buf.numel(),
@@ -493,20 +529,37 @@ class PrepPlan:
             self.comp_slot, self.comp_slot.numel(),
         )
 
-    def warmup(self) -> bool:
-        """Compile the kernel without launching it (no buffer is touched).
+    def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
+        """Stage idx_mapping, run the kernel, build the deep_gemm schedule.
 
-        Triton's warmup takes the same positional/keyword arguments as a
-        launch and only builds the binary for their types; with the integer
-        scalars excluded from specialization one build serves every batch."""
+        Returns the GPU idx_mapping view ([num_reqs], int64)."""
+        o = self.owned
+        idx = o["idx_pool"].copy_to_gpu(
+            idx_mapping_np.astype(np.int64, copy=False), out=o["idx_gpu"][:num_reqs])
+        num_tokens = num_reqs * self.q
+        args = self._args(idx, num_reqs, num_tokens)
+        compiled = o.get("compiled")
+        if compiled is not None:
+            # the binary warmup() built: same launcher the JIT path ends in,
+            # minus its per-call binder/specialization/cache-key work (~12 us
+            # of host time per step on this CPU). Valid for the boot because
+            # every scalar is do_not_specialize and every pointer is a fixed
+            # allocation; constexprs are passed positionally and ignored.
+            compiled[(num_reqs + 1 + self.G, 1, 1)](*args, *self._consts().values())
+        else:
+            _glm53_prep_fused_kernel[(num_reqs + 1 + self.G,)](*args, **self._consts())
+        self.schedule(num_tokens)
+        return idx
+
+    def warmup(self) -> None:
+        """Compile the kernel without launching it (no buffer is touched).
+        Raises on failure so the caller can DISARM instead of JIT-ing (or
+        failing) on the first real request. Keeps the compiled binary for
+        direct launches when this Triton hands one back."""
         idx = self.owned["idx_gpu"][:1]
-        try:
-            _glm53_prep_fused_kernel.warmup(
-                *self._args(idx, 1, self.q), **self._consts(), grid=(1,))
-            return True
-        except Exception:
-            logger.exception("[prep-fused] kernel warmup failed; it will JIT on first use")
-            return False
+        compiled = _glm53_prep_fused_kernel.warmup(
+            *self._args(idx, 1, self.q), **self._consts(), grid=(1,))
+        self.owned["compiled"] = compiled if hasattr(compiled, "__getitem__") else None
 
     def schedule(self, num_tokens: int) -> None:
         from vllm.utils.deep_gemm import get_paged_mqa_logits_metadata
@@ -514,7 +567,7 @@ class PrepPlan:
         seq_lens = self.dec_seq_lens[:num_tokens].unsqueeze(-1)
         self.sched_buf[:] = get_paged_mqa_logits_metadata(seq_lens, self.sbs, self.num_sms)
 
-    # -- shadow support -----------------------------------------------------
+    # -- verification support ---------------------------------------------
     def snapshot(self, num_reqs: int) -> dict[str, torch.Tensor]:
         t = num_reqs * self.q
         o = self.owned
@@ -523,13 +576,13 @@ class PrepPlan:
             "query_start_loc": self.query_start_loc, "seq_lens": self.seq_lens,
             "is_padding": self.is_padding[:t],
             "expanded_idx": o["expanded_idx"][:t], "expanded_pos": o["expanded_pos"][:t],
-            "slot_mappings": self.slot_mappings,
+            "slot_mappings": self.bt.slot_mappings,
             "req_id": self.req_id_buf, "exp_bt": self.exp_bt[:t],
             "dec_seq_lens": self.dec_seq_lens, "dec_lens": self.dec_lens[:t],
             "per_req_dec_lens": self.per_req_dec_lens[:num_reqs],
             "idx_bt": self.idx_bt[:t], "comp_slot": self.comp_slot, "sched": self.sched_buf,
         }
-        for g, bt in enumerate(self.dst_bt):
+        for g, bt in enumerate(self.bt.input_block_tables):
             snap[f"bt{g}"] = bt[:num_reqs]
         for m in range(len(self.gdn_groups)):
             snap[f"gdn{m}_state"] = self.gdn_state[m][:num_reqs]
@@ -556,14 +609,21 @@ class PrepPlan:
 @dataclass
 class _State:
     mode: str
+    shadow_every: int
+    selfcheck_every: int
     plan: PrepPlan | None = None
     plan_failed: bool = False
     metadata_cache: dict[tuple[int, int], dict[str, Any]] = field(default_factory=dict)
-    pending: tuple[dict[str, torch.Tensor], int] | None = None
     steps_fused: int = 0
     steps_stock: int = 0
-    shadow_ok: int = 0
-    shadow_drift: int = 0
+    checks_ok: int = 0
+    checks_drift: int = 0
+
+    def disarm(self, why: str) -> None:
+        self.plan = None
+        self.plan_failed = True
+        self.metadata_cache.clear()
+        logger.warning("[prep-fused] DISARM -> stock path for the rest of this boot: %s", why)
 
 
 def _builder_name(b) -> str:
@@ -581,8 +641,16 @@ def build_plan(runner) -> PrepPlan:
     num_spec = int(runner.num_speculative_steps)
     if q != num_spec + 1 or num_spec <= 0:
         raise RuntimeError(f"decode_query_len {q} != num_spec {num_spec} + 1")
+    if q & (q - 1):
+        raise RuntimeError(f"decode_query_len {q} is not a power of two")
     if runner.model_state.num_new_sampled_tokens_per_step != 1:
         raise RuntimeError("num_new_sampled_tokens_per_step != 1")
+    spec = runner.speculator
+    if _builder_name(spec) not in _SPECULATORS:
+        # the cached attention-metadata dict is only safe with a speculator
+        # that never reads the target's attn_metadata (DFlash and its subclass)
+        raise RuntimeError(f"speculator {_builder_name(spec)} may consume the target "
+                           "attention metadata; only DFlash ignores it")
     for attr, want in (("use_dcp", False), ("use_pp", False)):
         if bool(getattr(runner, attr)) != want:
             raise RuntimeError(f"runner.{attr} is {getattr(runner, attr)}")
@@ -604,19 +672,27 @@ def build_plan(runner) -> PrepPlan:
     groups = runner.kv_cache_config.kv_cache_groups
     if len(groups) != G:
         raise RuntimeError("kv_cache_groups / block table group count mismatch")
+    draft_names = set(getattr(spec, "draft_attn_layer_names", ()) or ())
+    draft_gids = set(getattr(spec, "draft_kv_cache_group_ids", ()) or ())
 
     gdn_groups, gdn_state, gdn_mask, gdn_tok, gdn_qsl, gdn_nacc = [], [], [], [], [], []
     attn_g = None
-    mla_b = idx_b = None
+    mla_b = idx_b = tail_b = None
     for g in range(G):
+        names_in_group = set(groups[g].layer_names)
+        if not names_in_group or g in draft_gids or (draft_names and names_in_group <= draft_names):
+            # the drafter's group (or a PP-empty one): the target runner
+            # gathers its block table and slot mapping -- the drafter's prep
+            # reads them -- but the drafter builds its own attention metadata
+            # from its own builders, so the target-side builder this group
+            # carries (FlashInfer for DFlash2) writes buffers nothing reads
+            continue
         builders = [ag.get_metadata_builder(0) for ag in runner.attn_groups[g]]
         names = [_builder_name(b) for b in builders]
-        spec = groups[g].kv_cache_spec
-        if not builders:
-            continue  # the drafter's group: block table + slot mapping only
+        spec_g = groups[g].kv_cache_spec
         if names == ["GDNAttentionMetadataBuilder"]:
             b = builders[0]
-            if not isinstance(spec, MambaSpec):
+            if not isinstance(spec_g, MambaSpec):
                 raise RuntimeError(f"group {g}: GDN builder on non-mamba spec")
             if runner.cache_config.mamba_cache_mode != "none":
                 raise RuntimeError("mamba_cache_mode != none (block table select differs)")
@@ -624,6 +700,8 @@ def build_plan(runner) -> PrepPlan:
                 raise RuntimeError(f"group {g}: GDN builder cudagraph/num_spec contract")
             if b.spec_state_indices_tensor.shape[1] != num_spec + 1:
                 raise RuntimeError(f"group {g}: spec_state_indices width")
+            if int(bt.block_table_strides[g].item()) < num_spec + 1:
+                raise RuntimeError(f"mamba group {g} block table narrower than num_spec+1")
             gdn_groups.append(g)
             gdn_state.append(b.spec_state_indices_tensor)
             gdn_mask.append(b.spec_sequence_masks)
@@ -631,7 +709,7 @@ def build_plan(runner) -> PrepPlan:
             gdn_qsl.append(b.spec_query_start_loc)
             gdn_nacc.append(b.num_accepted_tokens)
         elif names == ["KpoolTailMetadataBuilder"]:
-            continue  # positions never reach it: generic slot mapping, no buffers
+            tail_b = builders[0]  # dormant circular mapping: asserted by the plan
         elif sorted(names) == ["DeepseekV32IndexerMetadataBuilder", "FlashInferMLASparseMetadataBuilder"]:
             attn_g = g
             for b in builders:
@@ -640,11 +718,13 @@ def build_plan(runner) -> PrepPlan:
                 else:
                     idx_b = b
         else:
-            raise RuntimeError(f"group {g}: unexpected builders {names}")
+            raise RuntimeError(f"group {g} {sorted(names_in_group)[:3]}: unexpected builders {names}")
     if attn_g is None or mla_b is None or idx_b is None:
         raise RuntimeError("no MLA+indexer attention group")
     if not gdn_groups:
         raise RuntimeError("no GDN groups")
+    if tail_b is None:
+        raise RuntimeError("no kpool tail group")
     if idx_b.compress_ratio <= 1 or not idx_b.use_flattening or idx_b.supports_varlen:
         raise RuntimeError("indexer builder is not on the flattened uniform-decode path")
     if idx_b.dcp_world_size != 1 or idx_b.pcp_world_size != 1:
@@ -657,10 +737,6 @@ def build_plan(runner) -> PrepPlan:
         raise RuntimeError("indexer decode block table buffer not allocated yet")
     if bt.kernel_block_sizes[attn_g] != kbs:
         raise RuntimeError("attn group kernel block size != indexer kernel block size")
-    for m, g in enumerate(gdn_groups):
-        w = int(bt.block_table_strides[g].item())
-        if w < num_spec + 1:
-            raise RuntimeError(f"mamba group {g} block table narrower than num_spec+1")
 
     rs = runner.req_states
     ib = runner.input_buffers
@@ -668,14 +744,12 @@ def build_plan(runner) -> PrepPlan:
         q=q, num_spec=num_spec,
         max_num_reqs=int(runner.max_num_reqs), max_num_tokens=int(ib.max_num_tokens),
         device=runner.device,
-        num_computed=rs.num_computed_tokens.gpu, prefill_len=rs.prefill_len.gpu,
+        num_computed=rs.num_computed_tokens.gpu, prefill_len_src=rs.prefill_len,
         last_sampled=rs.last_sampled_tokens, draft_tokens=rs.draft_tokens,
         num_accepted=ms.num_accepted_tokens_gpu,
         input_ids=ib.input_ids, positions=ib.positions, query_start_loc=ib.query_start_loc,
         seq_lens=ib.seq_lens, is_padding=ib.is_padding,
-        src_bt=[b.gpu for b in bt.block_tables], dst_bt=list(bt.input_block_tables),
-        bt_strides=bt.block_table_strides, block_sizes=bt.block_sizes_tensor,
-        num_blocks=bt.num_blocks.gpu, slot_mappings=bt.slot_mappings,
+        bt=bt,
         gdn_groups=gdn_groups, gdn_state=gdn_state, gdn_mask=gdn_mask, gdn_tok=gdn_tok,
         gdn_qsl=gdn_qsl, gdn_nacc=gdn_nacc,
         attn_g=attn_g, req_id_buf=mla_b.req_id_per_token_buffer,
@@ -685,14 +759,15 @@ def build_plan(runner) -> PrepPlan:
         factor=bs_idx // kbs, ratio=int(idx_b.compress_ratio),
         sbs=int(idx_b.kv_cache_spec.storage_block_size), num_sms=int(idx_b.num_sms),
         sched_buf=idx_b.scheduler_metadata_buffer,
+        tail_builder=tail_b,
     )
     for name, t, dt in (
-        ("num_computed", plan.num_computed, torch.int32), ("prefill_len", plan.prefill_len, torch.int32),
+        ("num_computed", plan.num_computed, torch.int32), ("prefill_len", rs.prefill_len.gpu, torch.int32),
         ("last_sampled", plan.last_sampled, torch.int64), ("draft_tokens", plan.draft_tokens, torch.int64),
         ("num_accepted", plan.num_accepted, torch.int32), ("input_ids", plan.input_ids, torch.int32),
         ("positions", plan.positions, torch.int64), ("query_start_loc", plan.query_start_loc, torch.int32),
         ("seq_lens", plan.seq_lens, torch.int32), ("is_padding", plan.is_padding, torch.bool),
-        ("slot_mappings", plan.slot_mappings, torch.int64), ("num_blocks", plan.num_blocks, torch.int32),
+        ("slot_mappings", bt.slot_mappings, torch.int64), ("num_blocks", bt.num_blocks.gpu, torch.int32),
         ("req_id", plan.req_id_buf, torch.int32), ("exp_bt", plan.exp_bt, torch.int32),
         ("dec_seq_lens", plan.dec_seq_lens, torch.int32), ("dec_lens", plan.dec_lens, torch.int32),
         ("idx_bt", plan.idx_bt, torch.int32), ("comp_slot", plan.comp_slot, torch.int64),
@@ -702,6 +777,28 @@ def build_plan(runner) -> PrepPlan:
     if plan.draft_tokens.shape[1] != num_spec:
         raise RuntimeError("draft_tokens width != num_spec")
     return plan
+
+
+def _ensure_plan(runner, st: _State) -> bool:
+    """Build (and warm) the plan once per capture; False keeps stock."""
+    if st.plan is not None:
+        return True
+    if st.plan_failed:
+        return False
+    try:
+        plan = build_plan(runner)
+        plan.warmup()
+    except Exception as e:  # loud, never fatal: the boot serves stock
+        st.disarm(f"plan build/warmup failed: {e!r}")
+        logger.exception("[prep-fused] plan build failed")
+        return False
+    st.plan = plan
+    runner.model_state._glm53_prep = st
+    logger.warning("[prep-fused] plan built: mode=%s groups=%d gdn=%s attn_g=%d factor=%d "
+                   "ratio=%d sbs=%d q=%d shadow_every=%d selfcheck_every=%d", st.mode,
+                   plan.G, plan.gdn_groups, plan.attn_g, plan.factor, plan.ratio, plan.sbs,
+                   plan.q, st.shadow_every, st.selfcheck_every)
+    return True
 
 
 def _eligible(runner, st: _State, scheduler_output, batch_req_state, batch_desc) -> bool:
@@ -725,21 +822,7 @@ def _eligible(runner, st: _State, scheduler_output, batch_req_state, batch_desc)
             return False
     if runner.adaptive_verification is not None:
         return False
-    if st.plan is None:
-        if st.plan_failed:
-            return False
-        try:
-            st.plan = build_plan(runner)
-            runner.model_state._glm53_prep = st
-            logger.warning("[prep-fused] plan built: mode=%s groups=%d gdn=%s attn_g=%d "
-                           "factor=%d ratio=%d sbs=%d q=%d", st.mode, st.plan.G,
-                           st.plan.gdn_groups, st.plan.attn_g, st.plan.factor,
-                           st.plan.ratio, st.plan.sbs, st.plan.q)
-        except Exception:
-            st.plan_failed = True
-            logger.exception("[prep-fused] plan build failed -> stock path for this boot")
-            return False
-    return True
+    return _ensure_plan(runner, st)
 
 
 def _fused_prepare_inputs(runner, st: _State, scheduler_output, batch_req_state, batch_desc):
@@ -790,7 +873,7 @@ def _fused_prepare_inputs(runner, st: _State, scheduler_output, batch_req_state,
         is_padding=ib.is_padding[:num_tokens],
         logits_indices=o["logits_arange"][:num_tokens],
         cu_num_logits=o["cu_num_logits"][:num_reqs + 1],
-        cu_num_logits_np=query_start_loc_np,
+        cu_num_logits_np=query_start_loc_np.copy(),
         has_structured_output_reqs=scheduler_output.has_structured_output_requests,
         prompt_lens=None,
         max_query_len=None,
@@ -799,7 +882,7 @@ def _fused_prepare_inputs(runner, st: _State, scheduler_output, batch_req_state,
     return batch
 
 
-def _compare_input_batches(st: _State, fused, stock) -> list[str]:
+def _compare_input_batches(fused, stock) -> list[str]:
     bad = []
     pairs = [
         ("logits_indices", fused.logits_indices, stock.logits_indices),
@@ -831,9 +914,32 @@ def _state_of(runner) -> _State | None:
     st = getattr(runner, "_glm53_prep", None)
     if st is None:
         mode = prep_fused_mode()
-        st = _State(mode=mode) if mode != "off" else None
+        st = _State(mode=mode, shadow_every=shadow_every(),
+                    selfcheck_every=selfcheck_every()) if mode != "off" else None
         runner._glm53_prep = st
     return st
+
+
+def _verify(runner, st: _State, fused, scheduler_output, batch_req_state, batch_desc):
+    """Run the whole stock chain over the fused buffers and diff.
+
+    Returns the stock InputBatch (buffers now hold stock bytes) and the list
+    of drifted names; an empty list means the fused batch is exact."""
+    plan = st.plan
+    assert plan is not None
+    num_reqs = fused.num_reqs
+    snap = plan.snapshot(num_reqs)
+    stock = _ORIG["prepare_inputs"](runner, scheduler_output, batch_req_state, batch_desc)
+    bad = _compare_input_batches(fused, stock)
+    block_tables, slot_mappings = _ORIG["prepare_attn"](runner, stock)
+    _ORIG["ms_prepare_attn"](runner.model_state, stock, batch_desc.cg_mode, block_tables,
+                             slot_mappings, runner.attn_groups, runner.kv_cache_config, False)
+    bad += plan.diff(snap, num_reqs)
+    try:
+        plan.tail_ok()
+    except RuntimeError as e:
+        bad.append(f"tail:{e}")
+    return stock, bad
 
 
 def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc):
@@ -842,43 +948,33 @@ def _patched_prepare_inputs(self, scheduler_output, batch_req_state, batch_desc)
         if st is not None:
             st.steps_stock += 1
         return _ORIG["prepare_inputs"](self, scheduler_output, batch_req_state, batch_desc)
-    fused = _fused_prepare_inputs(self, st, scheduler_output, batch_req_state, batch_desc)
+    try:
+        fused = _fused_prepare_inputs(self, st, scheduler_output, batch_req_state, batch_desc)
+    except Exception as e:
+        st.disarm(f"fused launch failed: {e!r}")
+        logger.exception("[prep-fused] fused prepare failed")
+        return _ORIG["prepare_inputs"](self, scheduler_output, batch_req_state, batch_desc)
     st.steps_fused += 1
-    if st.mode != "shadow":
+    if st.mode == "shadow":
+        check = st.steps_fused % st.shadow_every == 0
+    else:
+        check = st.selfcheck_every > 0 and st.steps_fused % st.selfcheck_every == 0
+    if not check:
         return fused
-    # shadow: fused first, then stock over the same buffers; stock is the truth
-    plan = st.plan
-    assert plan is not None
-    num_reqs = fused.num_reqs
-    every = shadow_every()
-    do_compare = (st.steps_fused % every) == 0
-    snap = plan.snapshot(num_reqs) if do_compare else None
-    stock = _ORIG["prepare_inputs"](self, scheduler_output, batch_req_state, batch_desc)
-    if do_compare:
-        bad = _compare_input_batches(st, fused, stock)
-        if bad:
-            st.shadow_drift += 1
-            logger.warning("[prep-fused] shadow DRIFT in InputBatch: %s", bad)
-        st.pending = (snap, num_reqs)
-    return stock
-
-
-def _patched_capture_model(self):
-    out = _ORIG["capture_model"](self)
-    st = _state_of(self)
-    if st is not None and st.plan is None and not st.plan_failed:
-        try:
-            st.plan = build_plan(self)
-            self.model_state._glm53_prep = st
-            warmed = st.plan.warmup()
-            logger.warning("[prep-fused] plan built after capture: mode=%s groups=%d gdn=%s "
-                           "attn_g=%d factor=%d ratio=%d sbs=%d q=%d warmup=%s", st.mode,
-                           st.plan.G, st.plan.gdn_groups, st.plan.attn_g, st.plan.factor,
-                           st.plan.ratio, st.plan.sbs, st.plan.q, warmed)
-        except Exception:
-            st.plan_failed = True
-            logger.exception("[prep-fused] plan build failed after capture -> stock path")
-    return out
+    stock, bad = _verify(self, st, fused, scheduler_output, batch_req_state, batch_desc)
+    if bad:
+        st.checks_drift += 1
+        logger.warning("[prep-fused] %s DRIFT at fused step %d: %s", st.mode, st.steps_fused, bad[:12])
+        if st.mode != "shadow":
+            st.disarm("self-check drift")
+        return stock
+    st.checks_ok += 1
+    if st.checks_ok % 64 == 0 or st.mode == "shadow" and st.checks_ok % 16 == 0:
+        logger.warning("[prep-fused] %s: fused_steps=%d stock_steps=%d checks ok=%d drift=%d",
+                       st.mode, st.steps_fused, st.steps_stock, st.checks_ok, st.checks_drift)
+    # the buffers hold bytes identical to the fused ones: let the fused batch
+    # (persistent views) drive the rest of the step, as arming would
+    return fused
 
 
 def _patched_prepare_attn(self, input_batch):
@@ -894,48 +990,61 @@ def _patched_ms_prepare_attn(self, input_batch, cudagraph_mode, block_tables, sl
                              attn_groups, kv_cache_config, for_capture=False):
     st = getattr(self, "_glm53_prep", None)
     orig = _ORIG["ms_prepare_attn"]
-    if getattr(input_batch, "_glm53_fused", False) and not for_capture and st is not None:
+    if getattr(input_batch, "_glm53_fused", False) and not for_capture and st is not None \
+            and st.plan is not None:
         key = (input_batch.num_reqs_after_padding, input_batch.num_tokens_after_padding)
         md = st.metadata_cache.get(key)
         if md is None:
             # first fused step of this shape: the stock builders over the fused
             # buffers (idempotent by contract) give the dict the speculator is
-            # handed; every later step reuses it.
+            # handed; every later step reuses it. The dict is only safe with a
+            # speculator that ignores it, which build_plan enforced.
             md = orig(self, input_batch, cudagraph_mode, block_tables, slot_mappings,
                       attn_groups, kv_cache_config, for_capture)
+            st.plan.tail_ok()
             st.metadata_cache[key] = md
         return md
-    out = orig(self, input_batch, cudagraph_mode, block_tables, slot_mappings,
-               attn_groups, kv_cache_config, for_capture)
-    if st is not None and st.pending is not None and not for_capture:
-        snap, num_reqs = st.pending
-        st.pending = None
-        assert st.plan is not None
-        bad = st.plan.diff(snap, num_reqs)
-        if bad:
-            st.shadow_drift += 1
-            logger.warning("[prep-fused] shadow DRIFT step %d: %s", st.steps_fused, bad[:12])
-        else:
-            st.shadow_ok += 1
-        if st.steps_fused % 64 == 0:
-            logger.warning("[prep-fused] shadow: fused_steps=%d stock_steps=%d ok=%d drift=%d",
-                           st.steps_fused, st.steps_stock, st.shadow_ok, st.shadow_drift)
+    return orig(self, input_batch, cudagraph_mode, block_tables, slot_mappings,
+                attn_groups, kv_cache_config, for_capture)
+
+
+def _patched_capture_model(self):
+    out = _ORIG["capture_model"](self)
+    st = _state_of(self)
+    if st is not None:
+        # every capture re-creates the geometry the plan was read from
+        st.plan = None
+        st.metadata_cache.clear()
+        st.plan_failed = False
+        _ensure_plan(self, st)
     return out
 
 
-def _memo_slot_mappings_by_layer(kv_cache_config):
-    cache: dict[tuple[int, tuple[int, ...]], dict[str, torch.Tensor]] = {}
-    orig = _ORIG["build_slot_mappings_by_layer"]
+def _patched_post_kv_cache_wake_up(self):
+    out = _ORIG["post_kv_cache_wake_up"](self)
+    st = getattr(self, "_glm53_prep", None)
+    if st is not None:
+        # the block-table pointer tensors were just re-made; the plan reads
+        # them live, but the cached metadata dicts hold views -> rebuild
+        st.plan = None
+        st.metadata_cache.clear()
+        st.plan_failed = False
+    return out
 
-    def build(slot_mappings, cfg):
-        if cfg is not kv_cache_config:
-            return orig(slot_mappings, cfg)
-        key = (slot_mappings.data_ptr(), tuple(slot_mappings.shape))
+
+def _memo_slot_mappings_by_layer():
+    """build_slot_mappings_by_layer's dict for a persistent slot-mapping view
+    is a pure function of (address, shape, config); memoize it."""
+    orig = _ORIG["build_slot_mappings_by_layer"]
+    cache: dict[tuple[int, int, tuple[int, ...]], dict[str, torch.Tensor]] = {}
+
+    def build(slot_mappings, kv_cache_config):
+        key = (id(kv_cache_config), slot_mappings.data_ptr(), tuple(slot_mappings.shape))
         d = cache.get(key)
         if d is None:
-            d = orig(slot_mappings, cfg)
             if len(cache) > 64:
                 cache.clear()
+            d = orig(slot_mappings, kv_cache_config)
             cache[key] = d
         return d
 
@@ -973,25 +1082,17 @@ def install_glm53_prep_fused() -> bool:
     MS = mh.MambaHybridModelState
     _ORIG["prepare_inputs"] = Runner.prepare_inputs
     _ORIG["prepare_attn"] = Runner.prepare_attn
+    _ORIG["capture_model"] = Runner.capture_model
+    _ORIG["post_kv_cache_wake_up"] = Runner.post_kv_cache_wake_up
     _ORIG["ms_prepare_attn"] = MS.prepare_attn
     _ORIG["build_slot_mappings_by_layer"] = mr.build_slot_mappings_by_layer
-    _ORIG["capture_model"] = Runner.capture_model
     Runner.prepare_inputs = _patched_prepare_inputs
     Runner.prepare_attn = _patched_prepare_attn
     Runner.capture_model = _patched_capture_model
+    Runner.post_kv_cache_wake_up = _patched_post_kv_cache_wake_up
     MS.prepare_attn = _patched_ms_prepare_attn
-    _memo: dict[str, Any] = {}
-
-    def build_slot_mappings_by_layer(slot_mappings, kv_cache_config):
-        fn = _memo.get("fn")
-        if fn is None or _memo.get("cfg") is not kv_cache_config:
-            fn = _memo_slot_mappings_by_layer(kv_cache_config)
-            _memo["fn"] = fn
-            _memo["cfg"] = kv_cache_config
-        return fn(slot_mappings, kv_cache_config)
-
-    mr.build_slot_mappings_by_layer = build_slot_mappings_by_layer
+    mr.build_slot_mappings_by_layer = _memo_slot_mappings_by_layer()
     _INSTALLED = True
-    logger.warning("[prep-fused] installed mode=%s (preimages %d ok); the plan is built on "
-                   "the first eligible decode step", mode, len(PREIMAGES))
+    logger.warning("[prep-fused] installed mode=%s (preimages %d ok); the plan is built after "
+                   "cudagraph capture", mode, len(PREIMAGES))
     return True

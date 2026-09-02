@@ -228,14 +228,14 @@ python3 tests/test_logic.py          # test_glm53_megakernel_contracts 포함
 bash probes/run_megakernel_bench.sh
 
 # 3. KDA 섀도 부팅 (상태-인덱스 계약이 열린 항목 — 섀도 통과 전에 암 금지)
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_KDA_SHADOW=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_KDA_SHADOW=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh
 #    bench-tp4 1회 내내 [megakernel] kda shadow 로그에 DRIFT 0 확인
 
 # 4. 브래킷 — 세그먼트별 개별 암(MHC와 GEMM은 별도 부팅으로 분리)
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh   # cand A
-EXTRA_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1" \
+VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1 \
   bash launchers/start-glm53-nvfp4-tp4.sh   # cand B (MHC 합침은 그 다음)
 ```
 
@@ -277,15 +277,21 @@ aten 호출 ~1,000개, memcpy ~45개, 1~3 us 짜리 커널 ~100개를 내고, df
 # 1. 순수 논리
 python3 tests/test_logic.py                      # test_glm53_prep_fused_contracts
 
-# 2. srv4 새 컨테이너: stock 빌딩블록 vs fused 커널, 무작위 배치 60회 bit-exact
-IMAGE=glm53:sm121-fi618 bash probes/run_prep_fused_check.sh --trials 60
+# 2. 프로필 이미지(glm53:v13-b12x, srv2)의 새 컨테이너: stock 빌딩블록 vs fused
+#    커널, 무작위 배치 60회 bit-exact. 래퍼가 행마다 preimage 를 검증하므로
+#    srv4 의 sm121-fi618 은 거부된다(마운트 파일 5개가 다른 빌드).
+bash probes/run_prep_fused_check.sh --trials 60
 
-# 3. 섀도 부팅: fused 먼저, 그 위에 stock, 버퍼 전부 diff — stock 이 진실
-EXTRA_ENV="VLLM_GLM53_PREP_FUSED=shadow" bash launchers/start-glm53-nvfp4-tp4.sh
+# 3. 섀도 부팅: fused 뒤에 stock 사슬 전체를 같은 버퍼에 돌려 diff 하고, 깨끗하면
+#    fused 배치를 그대로 흘려 armed 분기까지 실행한다. 프로필 선언 키라
+#    EXTRA_ENV 가 아니라 caller env 로 넘긴다(런처가 EXTRA_ENV 재정의를 거부).
+VLLM_GLM53_PREP_FUSED=shadow bash launchers/start-glm53-nvfp4-tp4.sh
 #    bench-tp4 1회 동안 [prep-fused] shadow ... drift=0 확인
 
-# 4. 브래킷: base -> cand -> base, C=1 step/s
-EXTRA_ENV="VLLM_GLM53_PREP_FUSED=1" bash launchers/start-glm53-nvfp4-tp4.sh
+# 4. 브래킷: base -> cand -> base, C=1 step/s. armed 모드는 64 fused 스텝마다
+#    stock 사슬을 다시 돌려 self-check 하고 drift 면 DISARM 한다
+#    (VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY, 0 이면 끔).
+VLLM_GLM53_PREP_FUSED=1 bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
 주의:
@@ -325,7 +331,7 @@ not supported with dflash-based speculative decoding and will be disabled" 로
 ```bash
 # 부팅 로그에서 "[async-dflash] ... whitelisted" 가 있고 "Async scheduling not
 # supported" 가 없어야 켜진 것이다 (engine-confirmed 원칙).
-EXTRA_ENV="VLLM_GLM53_ASYNC_DFLASH=1" bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # cand (프로필 선언 키: caller env)
 ```
 
 - 게이트: 품질 9/9, 한국어 0/16, **pos-1 수용률 ±2pct(움직이면 안 된다 — 언제 도는지만

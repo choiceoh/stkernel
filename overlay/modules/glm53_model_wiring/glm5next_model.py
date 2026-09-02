@@ -121,8 +121,12 @@ logger = init_logger(__name__)
 # failure is loud in the boot log, never fatal.
 try:
     from .glm53_prep_fused import install_glm53_prep_fused
-except ImportError:
+except ImportError as _e:
     install_glm53_prep_fused = None
+    # only "module not mounted" is silent; an ImportError raised INSIDE the
+    # module (a renamed vllm symbol on an image bump) must show in the log
+    if _e.name != f"{__package__}.glm53_prep_fused":
+        logger.exception("[prep-fused] module import failed -> stock path")
 if install_glm53_prep_fused is not None:
     try:
         install_glm53_prep_fused()

@@ -7,7 +7,13 @@ fused prep kernel reproduces, bit for bit, what the stock building blocks
 write -- input_batch's Triton kernels, BlockTables.gather/compute_slot,
 the GDN FULL-graph buffer copies, the sparse-MLA req ids, and the indexer's
 uniform-decode kernel + compressed slot mapping -- on randomized batches, and
-reports the host time of both sequences.
+reports the host time of both sequences. The plan is built ONCE and the
+request state is driven through the image's own UvaBackedTensor / BlockTables
+objects, so the rotating `.gpu` handles (num_blocks rotates on every
+apply_staged_writes, prefill_len on every admission) are exercised: the fused
+arm launches after a further rotation and must still read the live buffer.
+GPU time is taken from a CUDA-graph replay of the launch (events around a
+Python launch loop only measure host issue time for kernels this short).
 
     /repo/probes/prep_fused_check.py [--trials 60] [--width 2052]
 
@@ -62,7 +68,7 @@ def _stock(bt, ib, rs, gdn, mla, idx, plan_like, idx_np, num_reqs, q):
     prepare_pos_seq_lens(idx_mapping, qsl, rs["num_computed"], ib.positions, ib.seq_lens)
     seq_lens = ib.seq_lens[:num_reqs]
     logits_indices = combine_sampled_and_draft_tokens(
-        ib.input_ids, idx_mapping, rs["last_sampled"], qsl, seq_lens, rs["prefill_len"],
+        ib.input_ids, idx_mapping, rs["last_sampled"], qsl, seq_lens, rs["prefill_src"].gpu,
         rs["draft_tokens"], cu_num_logits, num_tokens, 1)
     block_tables = bt.gather_block_tables(idx_mapping, num_reqs_padded=num_reqs)
     slot_mappings = bt.compute_slot_mappings(idx_mapping, qsl, ib.positions, num_tokens_padded=num_tokens)
@@ -185,9 +191,12 @@ def main() -> int:
         }
         return gdn, mla, idx
 
+    from vllm.v1.worker.gpu.buffer_utils import UvaBackedTensor
+
     rs = {
         "num_computed": torch.zeros(max_num_reqs, dtype=torch.int32, device=DEV),
-        "prefill_len": torch.zeros(max_num_reqs, dtype=torch.int32, device=DEV),
+        # like RequestState.prefill_len: a UVA-backed mirror whose .gpu rotates
+        "prefill_src": UvaBackedTensor(max_num_reqs, torch.int32),
         "last_sampled": torch.zeros(max_num_reqs, 1, dtype=torch.int64, device=DEV),
         "draft_tokens": torch.zeros(max_num_reqs, num_spec, dtype=torch.int64, device=DEV),
         "num_accepted": torch.ones(max_num_reqs, dtype=torch.int32, device=DEV),
@@ -223,50 +232,62 @@ def main() -> int:
         ib.query_start_loc.fill_(-5)
         ib.seq_lens.fill_(-5)
         ib.is_padding.fill_(True)
+        for b in gdn:
+            for t in b.values():
+                t.zero_()
+        mla["req_id"].zero_()
+        for k, t in idx.items():
+            if k == "sched":
+                t.fill_(-9)
+            else:
+                t.zero_()
 
-    def make_plan(gdn, mla, idx):
-        return PrepPlan(
-            q=q, num_spec=num_spec, max_num_reqs=max_num_reqs, max_num_tokens=max_tokens,
-            device=torch.device(DEV),
-            num_computed=rs["num_computed"], prefill_len=rs["prefill_len"],
-            last_sampled=rs["last_sampled"], draft_tokens=rs["draft_tokens"],
-            num_accepted=rs["num_accepted"],
-            input_ids=ib.input_ids, positions=ib.positions, query_start_loc=ib.query_start_loc,
-            seq_lens=ib.seq_lens, is_padding=ib.is_padding,
-            src_bt=[b.gpu for b in bt.block_tables], dst_bt=list(bt.input_block_tables),
-            bt_strides=bt.block_table_strides, block_sizes=bt.block_sizes_tensor,
-            num_blocks=bt.num_blocks.gpu, slot_mappings=bt.slot_mappings,
-            gdn_groups=gdn_groups, gdn_state=[b["state"] for b in gdn], gdn_mask=[b["mask"] for b in gdn],
-            gdn_tok=[b["tok"] for b in gdn], gdn_qsl=[b["qsl"] for b in gdn], gdn_nacc=[b["nacc"] for b in gdn],
-            attn_g=attn_g, req_id_buf=mla["req_id"], exp_bt=idx["exp_bt"], dec_seq_lens=idx["dec_seq_lens"],
-            dec_lens=idx["dec_lens"], per_req_dec_lens=idx["per_req_dec_lens"], idx_bt=idx["idx_bt"],
-            comp_slot=idx["comp_slot"], factor=factor, ratio=ratio, sbs=sbs, num_sms=num_sms,
-            sched_buf=idx["sched"],
-        )
+    class _Tail:  # stands in for the kpool tail builder: dormant circular buffer
+        _tail_slot_buf = None
+
+    gdn, mla, idx = fresh_buffers()
+    plan = PrepPlan(
+        q=q, num_spec=num_spec, max_num_reqs=max_num_reqs, max_num_tokens=max_tokens,
+        device=torch.device(DEV),
+        num_computed=rs["num_computed"], prefill_len_src=rs["prefill_src"],
+        last_sampled=rs["last_sampled"], draft_tokens=rs["draft_tokens"],
+        num_accepted=rs["num_accepted"],
+        input_ids=ib.input_ids, positions=ib.positions, query_start_loc=ib.query_start_loc,
+        seq_lens=ib.seq_lens, is_padding=ib.is_padding,
+        bt=bt,
+        gdn_groups=gdn_groups, gdn_state=[b["state"] for b in gdn], gdn_mask=[b["mask"] for b in gdn],
+        gdn_tok=[b["tok"] for b in gdn], gdn_qsl=[b["qsl"] for b in gdn], gdn_nacc=[b["nacc"] for b in gdn],
+        attn_g=attn_g, req_id_buf=mla["req_id"], exp_bt=idx["exp_bt"], dec_seq_lens=idx["dec_seq_lens"],
+        dec_lens=idx["dec_lens"], per_req_dec_lens=idx["per_req_dec_lens"], idx_bt=idx["idx_bt"],
+        comp_slot=idx["comp_slot"], factor=factor, ratio=ratio, sbs=sbs, num_sms=num_sms,
+        sched_buf=idx["sched"], tail_builder=_Tail(),
+    )
+    plan.warmup()
 
     fails = 0
-    plan = None
     for trial in range(args.trials):
         num_reqs = int(gen.integers(1, max_num_reqs + 1))
-        _rand_requests(bt, widths, kbs, max_num_reqs, gen)
+        _rand_requests(bt, widths, kbs, max_num_reqs, gen)  # stages + apply_staged_writes (rotates num_blocks)
         idx_np = gen.permutation(max_num_reqs)[:num_reqs].astype(np.intp)
         pl = gen.integers(1, 3000, size=max_num_reqs)
-        rs["prefill_len"].copy_(torch.tensor(pl, dtype=torch.int32))
+        rs["prefill_src"].np[:] = pl
+        rs["prefill_src"].copy_to_uva()  # admission: rotates prefill_len.gpu
         rs["num_computed"].copy_(torch.tensor(pl + gen.integers(0, 2000, size=max_num_reqs), dtype=torch.int32))
         rs["last_sampled"].copy_(torch.tensor(gen.integers(0, 150000, size=(max_num_reqs, 1)), dtype=torch.int64))
         rs["draft_tokens"].copy_(torch.tensor(gen.integers(0, 150000, size=(max_num_reqs, num_spec)), dtype=torch.int64))
         rs["num_accepted"].copy_(torch.tensor(gen.integers(1, 9, size=max_num_reqs), dtype=torch.int32))
 
         reset_stale()
-        gdn, mla, idx = fresh_buffers()
         stock_extra = _stock(bt, ib, rs, gdn, mla, idx, plan_like, idx_np, num_reqs, q)
         torch.cuda.synchronize()
         A = snapshot(gdn, mla, idx, num_reqs)
         A_extra = {k: v.clone() for k, v in stock_extra.items()}
 
         reset_stale()
-        gdn, mla, idx = fresh_buffers()
-        plan = make_plan(gdn, mla, idx)
+        # a further rotation of both UVA handles between the arms: the live
+        # buffers hold the same values, the previous ones are now stale
+        bt.apply_staged_writes()
+        rs["prefill_src"].copy_to_uva()
         idx_mapping = plan.launch(idx_np, num_reqs)
         torch.cuda.synchronize()
         B = snapshot(gdn, mla, idx, num_reqs)
@@ -301,8 +322,6 @@ def main() -> int:
     # the runner's ~1,000 aten calls of Python around them are not modelled)
     num_reqs = 1
     idx_np = np.arange(num_reqs, dtype=np.intp)
-    gdn, mla, idx = fresh_buffers()
-    plan = make_plan(gdn, mla, idx)
     for _ in range(5):
         _stock(bt, ib, rs, gdn, mla, idx, plan_like, idx_np, num_reqs, q)
         plan.launch(idx_np, num_reqs)
@@ -319,42 +338,38 @@ def main() -> int:
     print(f"host+gpu per step, C=1: stock building blocks {(t1 - t0) / args.reps * 1e6:.0f} us, "
           f"fused {(t2 - t1) / args.reps * 1e6:.0f} us "
           f"(launches: stock ~30 kernels + ~8 memcpy, fused 3 kernels + 1 memcpy)")
-    s = torch.cuda.Event(enable_timing=True)
-    e = torch.cuda.Event(enable_timing=True)
-    s.record()
-    for _ in range(args.reps):
-        plan.launch(idx_np, num_reqs)
-    e.record()
+
+    # GPU time: capture N launches in one CUDA graph and time the replay, so
+    # the host issue cost (Triton dispatch ~45 us, deep_gemm wrapper ~75 us
+    # on this CPU) cannot masquerade as kernel time. The pool staging copy is
+    # excluded (host-side numpy write + a UVA copy that captures fine).
+    n_cap = 20
+    g = torch.cuda.CUDAGraph()
+    stream = torch.cuda.Stream()
+    with torch.cuda.stream(stream):
+        for _ in range(3):
+            plan.launch(idx_np, num_reqs)
+        stream.synchronize()
+        with torch.cuda.graph(g, stream=stream):
+            for _ in range(n_cap):
+                plan.launch(idx_np, num_reqs)
     torch.cuda.synchronize()
-    print(f"fused GPU time per step (event, includes deep_gemm schedule): "
-          f"{s.elapsed_time(e) / args.reps * 1e3:.1f} us")
-
-    # breakdown: the fused kernel alone, the deep_gemm schedule alone, and the
-    # stock sequence's GPU time, all by CUDA events around back-to-back launches
-    def _event_time(fn, reps):
-        a = torch.cuda.Event(enable_timing=True)
-        b = torch.cuda.Event(enable_timing=True)
-        a.record()
-        for _ in range(reps):
-            fn()
-        b.record()
-        torch.cuda.synchronize()
-        return a.elapsed_time(b) / reps * 1e3
-
-    grid = (num_reqs + 1 + plan.G,)
-    kernel_only = _event_time(
-        lambda: __import__("vllm.models.glm5next.nvidia.glm53_prep_fused", fromlist=["x"])
-        ._glm53_prep_fused_kernel[grid](*plan._args(plan.owned["idx_gpu"][:num_reqs], num_reqs, num_reqs * q),
-                                        **plan._consts()), args.reps)
-    sched_only = _event_time(lambda: plan.schedule(num_reqs * q), args.reps)
-    stock_gpu = _event_time(lambda: _stock(bt, ib, rs, gdn, mla, idx, plan_like, idx_np, num_reqs, q), 50)
-    t0 = time.perf_counter()
+    s_ev = torch.cuda.Event(enable_timing=True)
+    e_ev = torch.cuda.Event(enable_timing=True)
+    g.replay()
+    torch.cuda.synchronize()
+    s_ev.record()
+    for _ in range(10):
+        g.replay()
+    e_ev.record()
+    torch.cuda.synchronize()
+    print(f"fused GPU time per step (CUDA-graph replay of the launch incl. deep_gemm "
+          f"schedule + copies): {s_ev.elapsed_time(e_ev) / (10 * n_cap) * 1e3:.1f} us")
+    t3 = time.perf_counter()
     for _ in range(args.reps):
         plan.schedule(num_reqs * q)
     torch.cuda.synchronize()
-    sched_host = (time.perf_counter() - t0) / args.reps * 1e6
-    print(f"breakdown per step, C=1: fused kernel {kernel_only:.1f} us GPU | deep_gemm schedule "
-          f"{sched_only:.1f} us GPU ({sched_host:.0f} us host+gpu) | stock sequence {stock_gpu:.1f} us GPU")
+    print(f"deep_gemm schedule call, host+gpu: {(time.perf_counter() - t3) / args.reps * 1e6:.0f} us")
     return 1 if fails else 0
 
 
