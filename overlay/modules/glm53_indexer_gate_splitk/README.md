@@ -78,10 +78,12 @@ env, never through `EXTRA_ENV`.
 VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
-Boot log: the helper announces its routing once per shape --
-`[indexer-gate] VLLM_GLM53_INDEXER_GATE_SPLITK=1: x(8, 4096) torch.bfloat16 @ w(4096, 32) -> split-K`.
-A line ending in `stock torch.mm (shape not admitted)` means the knob is on
-but the kernel never runs (that is how the N=16 version would have shown up).
+Boot log: the helper announces each verdict ONCE (not once per shape -- prefill
+M differs on every request) --
+`[indexer-gate] ...=1: first split-K routing, e.g. x(8, 4096) torch.bfloat16 @ w(4096, 32) (M<=16 admitted)`.
+The companion `first stock torch.mm routing` line is normal (prefill and C>=3
+take it). Only the split-K line missing means the kernel never ran -- that is
+how the N=16 version would have shown up.
 If `glm53_model_wiring` is mounted without this module, its fastpath logs
 `[indexer-gate] ... not mounted -> stock torch.mm`. In a trace the eleven
 `gemmSN` launches become eleven `_gate_splitk_partial_kernel` +
