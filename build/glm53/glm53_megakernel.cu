@@ -720,7 +720,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         uint32_t a[2][4];
 #pragma unroll
         for (int i = 0; i < 2; ++i) {
-          if (i >= mtiles) break;
           const uint8_t* base = saq + i * 16 * SMEM_A_PITCH;
           a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + koff + t4);
           a[i][1] =
@@ -739,9 +738,6 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
               *(const uint32_t*)(sw + nrow * SMEM_W_PITCH + koff + 16 + t4);
 #pragma unroll
           for (int i = 0; i < 2; ++i) {
-            // the second m-tile holds rows 16..31: nothing to multiply
-            // when m <= 16 (m=8 is the biggest shape, in_proj)
-            if (i >= mtiles) break;
             asm volatile(
                 "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
                 "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
