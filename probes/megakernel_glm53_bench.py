@@ -106,9 +106,10 @@ def _l2_flush(hot=()) -> None:
     # affected; the pair's SECOND launch was already at 228). A read pass
     # evicts once-written lines (they carry no reuse) and forces the
     # write-back out before the start event. Two passes.
-    _DRAIN.sum()
-    _DRAIN.sum()
     torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])
+    # the drain goes LAST: the matmul spacer's own 8 MB output is dirty too
+    _DRAIN.sum()
+    _DRAIN.sum()
     for t in hot:
         t.add_(0)
 
