@@ -6412,8 +6412,8 @@ def test_glm53_megakernel_contracts() -> None:
           and "0x4C484440'3C383000ULL" in cu
           and "__byte_perm(l0, l1, w & 0x7777u)" in cu_code
           and "__byte_perm(l0, l1, (w >> 16) & 0x7777u)" in cu_code
-          and "(uint32_t)MK_E2M1_LUT64 + eb * 0x01010100u" in cu_code
-          and "(uint32_t)(MK_E2M1_LUT64 >> 32) + eb * 0x01010101u" in cu_code
+          and "__vadd4((uint32_t)MK_E2M1_LUT64, eb * 0x01010100u)" in cu_code
+          and "__vadd4((uint32_t)(MK_E2M1_LUT64 >> 32), eb * 0x01010101u)" in cu_code
           and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code
           and "__vcmpeq4(mag" not in cu_code,
           "the W4 expansion is a byte-permute table lookup: the raw nibbles "

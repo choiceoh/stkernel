@@ -573,10 +573,14 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 raw words -> 4 out words
       const uint32_t eb = (uint32_t)((int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)
                           & 0xFFu;
+      // per-lane adds: a negative exponent is eb >= 0x80 and the byte sum
+      // wraps (0x30 + 0xF8 = 0x28, the right e4m3 for 0.5 * 2^-1); a plain
+      // 32-bit add carried that wrap into the next table byte (accuracy
+      // gate FAIL on the first run of this form)
       const uint32_t l0 =  // codes 0..3: 0x00 0x30 0x38 0x3C, + (s << 3)
-          (uint32_t)MK_E2M1_LUT64 + eb * 0x01010100u;
+          __vadd4((uint32_t)MK_E2M1_LUT64, eb * 0x01010100u);
       const uint32_t l1 =  // codes 4..7: 0x40 0x44 0x48 0x4C
-          (uint32_t)(MK_E2M1_LUT64 >> 32) + eb * 0x01010101u;
+          __vadd4((uint32_t)(MK_E2M1_LUT64 >> 32), eb * 0x01010101u);
       uint32_t ow[4];
 #pragma unroll
       for (int h = 0; h < 2; ++h) {   // raw word h of the group: elements 8h..8h+7
