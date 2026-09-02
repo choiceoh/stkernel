@@ -2106,19 +2106,29 @@ def test_fp8_dense_free_bf16_contract() -> None:
     check("mod.weight.data = torch.empty(" in free,
           "the release lives in its own pass")
 
-    # ... and that pass is driven from the one point where both the model and
-    # the drafter have finished loading, inside the memory profiler so the
-    # weight figure KV sizing uses is the reduced one.
-    runner = open(os.path.join(
-        REPO, "overlay/modules/glm53_drop_audit/gpu_model_runner.py"),
-        encoding="utf-8").read()
-    body = runner[runner.index("def load_model(self, load_dummy_weights"):]
-    body = body[:body.index("self.model_memory_usage = m.consumed_memory")]
-    check("maybe_free_fp8_dense_bf16(self.model)" in body,
-          "the release runs inside load_model's DeviceMemoryProfiler block")
-    check(body.index("self.drafter.load_model(self.model)")
-          < body.index("maybe_free_fp8_dense_bf16(self.model)"),
-          "the release runs after the drafter has loaded too")
+    # ... and it is driven from the first forward of the model file, which is
+    # the only COMPOSED place that provably runs after loading. The first
+    # attempt drove it from GPUModelRunner.load_model -- correct in principle,
+    # dead in practice: glm53_drop_audit is in no composition, so the release
+    # never ran and the boot silently measured the baseline.
+    wiring = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+                          "glm5next_model.py")
+    src_w = open(wiring, encoding="utf-8").read()
+    check("maybe_free_fp8_dense_bf16(self)" in src_w,
+          "the release is triggered from the composed model wiring")
+    fwd = src_w[src_w.rindex("    def forward("):]
+    check("maybe_free_fp8_dense_bf16(self)" in fwd,
+          "and from a forward -- a forward is proof the weights landed")
+    check('getattr(self, "_bf16_released", False)' in fwd,
+          "guarded so it runs once, not every step")
+
+    # Every module the release touches must actually be composed; that is the
+    # check the dead call site would have failed.
+    manifest = open(os.path.join(REPO, "build/glm53/manifest.tsv"),
+                    encoding="utf-8").read()
+    for needed in ("glm5next_model.py", "glm53_fp8_dense.py"):
+        check(needed in manifest,
+              f"{needed} is in the glm53 composition")
     print("  fp8-dense bf16 release contract .. OK")
 
 

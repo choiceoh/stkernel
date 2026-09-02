@@ -1051,6 +1051,25 @@ class Glm5NextForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
+        # deneb fork: release the bf16 sources of the fp8 dense copies, once,
+        # on the first forward. It cannot go in maybe_build_fp8_dense --
+        # AutoWeightsLoader calls that before the checkpoint is walked and a
+        # freed source breaks the loader's own shape read (parameter.py:221,
+        # IndexError on a 1-D empty tensor) -- and this model file is the only
+        # composed place that runs after loading for certain: a forward is
+        # proof the weights landed. Runs inside the profile forward, so the
+        # KV sizing that follows works from the smaller footprint.
+        # No-op unless VLLM_GLM53_FP8_DENSE_FREE_BF16=1.
+        if not getattr(self, "_bf16_released", False):
+            self._bf16_released = True
+            try:
+                from vllm.model_executor.layers.glm53_fp8_dense import (
+                    maybe_free_fp8_dense_bf16,
+                )
+
+                maybe_free_fp8_dense_bf16(self)
+            except Exception:
+                logger.exception("[fp8-dense] bf16 release skipped")
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs
         )
