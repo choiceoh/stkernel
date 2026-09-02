@@ -6671,32 +6671,23 @@ def test_glm53_megakernel_contracts() -> None:
           < kda.index("_mk_arm(self, hidden_states)"),
           "shadow runs eager-only, never inside graph capture")
 
-    # -- adjacent-kernel cooperation: the mhc tail emits layer_input's fp8
-    #    A tiles (emit_a), consumers whose input IS that tensor run with
-    #    a_ready, the mhc kernel resets the unit counter for them, and the
-    #    next consumer's pack (learned from call order) is warmed in L2 by
-    #    a paced prefetch inside p1's token loop
-    check("if (a.emit_a) {" in cu
-          and "g_mk_aq[((size_t)kb * 32 + t) * KSTEP + pos] = mk_f32_to_e4m3(outv[i] * rsc);" in cu
-          and "if (pos == 0) g_mk_axs[t * KBLK_MAX + kb] = sc;" in cu
-          and "if (a.emit_a && blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;" in cu
-          and "c.a_ready = a_ready != 0;" in cu and "c.a_ready = a.x_ready != 0;" in cu
-          and 'asm volatile("prefetch.global.L2 [%0];" ::"l"(a.warm_ptr + line * 128));' in cu
-          and "if (a.warm_bytes > 0 && (threadIdx.x & 3) == 0) {" in cu,
-          "mhc emits fp8 A tiles + pow2 scales in the GEMM layout, resets the "
-          "unit counter, and warms the consumer's pack a quarter-line per "
-          "thread per token iteration")
-    check("def _a_ready_for(x) -> bool:" in pysrc_full
-          and "return _gemm_call(x, mk_pack, n_rows, ready)" in pysrc_full
-          and "x_ready = _a_ready_for(hidden_states)" in pysrc_full
-          and "_A_READY = (layer_input_cur.data_ptr(), num_tokens, hidden)" in pysrc_full
+    # -- adjacent-kernel cooperation: the mhc kernel warms L2 with the next
+    #    consumer's W4 pack (learned from call order per mhc fn pointer),
+    #    walked tile-prefix-major and paced from p1's token loop and the
+    #    exit stretch. (Handing the consumer fp8 A tiles measured a wash.)
+    check("const long long off = (l / a.warm_tiles) * 128;" in cu
+          and "if (a.warm_tiles > 0 && (threadIdx.x & 3) == 0) {" in cu
+          and "__nanosleep(1500);" in cu and "emit_a" not in cu
+          and "a_ready != 0" not in cu,
+          "mhc warms every tile's prefix together, paced; no fp8 handoff")
+    check("def _warm_of(pack):" in pysrc_full
           and "warm = _NEXT_PACK.get(fn.data_ptr())" in pysrc_full
           and "_register_consumer(layer._mk_in_pack)" in pysrc_full
+          and "_register_consumer(mk_pack)  # this pack follows the last mhc call" in pysrc_full
+          and "_A_READY" not in pysrc_full
           and "def probe_chain(iters: int, with_kda: bool) -> bool:" in bench,
-          "the glue hands a_ready only to a launch whose input is exactly the "
-          "mhc output, clears the record on every launch, learns the next "
-          "consumer's pack per mhc fn pointer, and the bench chains mhc -> "
-          "gemm / kda with a bit-equality gate")
+          "the glue learns the next consumer's pack per mhc fn pointer and "
+          "the bench chains mhc -> gemm / kda, plain vs warmed")
     # -- mhc: no grid barrier. The block that completes a token's 16th
     #    chunk runs that token's p2/p3/p4 (arrival counter, rearmed by the
     #    last arriver, other blocks' partials read through L2); p1 reduces

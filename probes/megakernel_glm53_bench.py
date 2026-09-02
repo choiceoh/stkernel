@@ -242,77 +242,69 @@ def probe_exact() -> bool:
 
 
 def probe_chain(iters: int, with_kda: bool) -> bool:
-    """Adjacent-kernel cooperation: the mhc tail emits layer_input's fp8 A
-    tiles and the next GEMM / KDA launch runs with a_ready (no x load,
-    quant or publishing barrier). The consumer's output must be BIT-
-    identical to the same launch quantizing the bf16 rows itself; the
-    pair timing (mhc -> consumer, PDL) shows the prologue saved."""
+    """Adjacent-kernel cooperation: the mhc kernel warms L2 with the next
+    consumer's W4 pack (tile-prefix-major, paced) while its own DRAM use is
+    small. Pair timing mhc -> consumer (PDL), plain vs warmed; the consumer
+    reads the same bytes either way, so its output is unchanged by
+    construction (checked bit-exact anyway)."""
     from vllm.model_executor.layers import glm53_megakernel as mk
 
-    print(f"{'chain':<24}{'bit-equal':>10}{'gate':>8}{'plain_us':>10}{'ready_us':>10}")
+    print(f"{'chain':<26}{'bit-equal':>10}{'plain_us':>10}{'warm_us':>9}"
+          f"{'mhc_us':>8}{'mhc+w_us':>9}")
     ok = True
-    torch.manual_seed(0)
-    T = 8
-    x = torch.randn(T, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
-    res = torch.randn(T, 4, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
-    pm = torch.rand(T, 4, dtype=torch.float32, device=DEV)
-    cm16 = torch.rand(T, 16, dtype=torch.float32, device=DEV)
-    fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
-    nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
-
-    def mhc(emit, warm=None):
-        return mk._mhc_call(x, res, pm, cm16, fn, mk.hc_scale_ones(),
-                            mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
-                            1.0, 1e-6, 4, emit_a=emit, warm=warm)[3]
-
     n = 6416
+    torch.manual_seed(0)
     w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
     p4 = mk.build_mk_weight_w4(w)
-    li = mhc(True)
-    got_r = mk._gemm_call(li, p4, n, True)
-    got_p = mk._gemm_call(li, p4, n, False)
-    torch.cuda.synchronize()
-    eq = bool(torch.equal(got_r, got_p))
-    t_plain = _time(lambda: mk._gemm_call(mhc(False), p4, n, False), iters,
-                    hot=(x, res, pm, cm16))
-    t_ready = _time(lambda: mk._gemm_call(mhc(True), p4, n, True), iters,
-                    hot=(x, res, pm, cm16))
-    mark = "!" if not eq else " "
-    ok &= eq
-    print(f"{mark}mhc->gemm n=6416{'':<8}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}")
-    if with_kda:
-        fx = mk._KdaFixture(acc=3)
-        la, meta = fx._layer_stand_in()
+    warm = mk._warm_of(p4)
+    for T in (8, 32):
+        x = torch.randn(T, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+        res = torch.randn(T, 4, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+        pm = torch.rand(T, 4, dtype=torch.float32, device=DEV)
+        cm16 = torch.rand(T, 16, dtype=torch.float32, device=DEV)
+        fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
+        nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
 
-        def kda(hs, ready):
-            conv, rec = fx.conv_st.clone(), fx.rec_st.clone()
-            out = torch.empty(T, 4096, dtype=torch.bfloat16, device=DEV)
-            mk._kda_launch(la, hs, meta, conv, rec, out,
-                           delta_variant=mk._KDA_VARIANT, x_ready=ready)
-            return out, conv, rec
+        def mhc(wm):
+            return mk._mhc_call(x, res, pm, cm16, fn, mk.hc_scale_ones(),
+                                mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
+                                1.0, 1e-6, 4, warm=wm)[3]
 
-        li = mhc(True)
-        o_r, c_r, r_r = kda(li, True)
-        o_p, c_p, r_p = kda(li, False)
+        got_w = mk._gemm_call(mhc(warm), p4, n)
+        got_p = mk._gemm_call(mhc(None), p4, n)
         torch.cuda.synchronize()
-        eq = bool(torch.equal(o_r, o_p) and torch.equal(c_r, c_p)
-                  and torch.equal(r_r, r_p))
-        t_plain = _time(lambda: kda(mhc(False), False), iters,
-                        hot=(x, res, pm, cm16))
-        t_ready = _time(lambda: kda(mhc(True), True), iters,
-                        hot=(x, res, pm, cm16))
-        # + L2 warming of the in_proj pack (nibbles + exponents are two
-        # tensors; warm the nibbles, 13 MB) during the mhc kernel
-        pk = la._mk_in_pack[0]
-        warm = (pk.data_ptr(), pk.numel())
-        t_warm = _time(lambda: kda(mhc(True, warm), True), iters,
-                       hot=(x, res, pm, cm16))
-        t_mhc_w = _time(lambda: mhc(True, warm), iters, hot=(x, res, pm, cm16))
-        t_mhc = _time(lambda: mhc(True), iters, hot=(x, res, pm, cm16))
+        eq = bool(torch.equal(got_w, got_p))
+        hot = (x, res, pm, cm16)
+        t_plain = _time(lambda: mk._gemm_call(mhc(None), p4, n), iters, hot=hot)
+        t_warm = _time(lambda: mk._gemm_call(mhc(warm), p4, n), iters, hot=hot)
+        t_mhc = _time(lambda: mhc(None), iters, hot=hot)
+        t_mhcw = _time(lambda: mhc(warm), iters, hot=hot)
         mark = "!" if not eq else " "
         ok &= eq
-        print(f"{mark}mhc->kda acc=3{'':<10}{str(eq):>10}{'exact':>8}{t_plain:>10.1f}{t_ready:>10.1f}"
-              f"   +warm(in_proj 13MB): pair {t_warm:.1f}  mhc alone {t_mhc:.1f} -> {t_mhc_w:.1f}")
+        print(f"{mark}mhc->gemm n=6416 T={T:<4}{str(eq):>10}{t_plain:>10.1f}"
+              f"{t_warm:>9.1f}{t_mhc:>8.1f}{t_mhcw:>9.1f}")
+        if with_kda and T == 8:
+            fx = mk._KdaFixture(acc=3)
+            la, meta = fx._layer_stand_in()
+
+            def kda(hs):
+                conv, rec = fx.conv_st.clone(), fx.rec_st.clone()
+                out = torch.empty(T, 4096, dtype=torch.bfloat16, device=DEV)
+                mk._kda_launch(la, hs, meta, conv, rec, out,
+                               delta_variant=mk._KDA_VARIANT)
+                return out
+
+            kw = mk._warm_of(la._mk_in_pack)
+            o_w = kda(mhc(kw))
+            o_p = kda(mhc(None))
+            torch.cuda.synchronize()
+            eq = bool(torch.equal(o_w, o_p))
+            t_plain = _time(lambda: kda(mhc(None)), iters, hot=hot)
+            t_warm = _time(lambda: kda(mhc(kw)), iters, hot=hot)
+            mark = "!" if not eq else " "
+            ok &= eq
+            print(f"{mark}mhc->kda acc=3 T=8{'':<4}{str(eq):>10}{t_plain:>10.1f}"
+                  f"{t_warm:>9.1f}")
     return ok
 
 

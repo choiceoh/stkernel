@@ -999,16 +999,16 @@ struct MKMhcArgs {
   int num_tokens;
   float rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps;
   int sinkhorn_repeat;
-  // Adjacent-kernel cooperation. emit_a: the tail also writes layer_input
-  // as the next GEMM's fp8 A tiles + pow2 group scales (g_mk_aq /
-  // g_mk_axs, one 128-group per k-block), bit-identical to what that
-  // GEMM's prologue would quantize from the bf16 rows, so a consumer
-  // launched with a_ready skips its x load / quant / publishing barrier.
-  // warm: a range (the next consumer's weight pack) to pull into L2 with
-  // prefetch.global.L2 while this kernel leaves DRAM idle; 0 = none.
-  int emit_a;
+  // Adjacent-kernel cooperation: the next consumer's tile-major weight
+  // pack, pulled into L2 with prefetch.global.L2 while this kernel leaves
+  // DRAM idle -- walked tile-prefix-major (128 B of every tile, then the
+  // next 128 B of every tile, ...) so whatever amount lands shortens the
+  // consumer's first k-blocks on EVERY block. warm_tiles == 0: none.
+  // (Handing the consumer layer_input's fp8 A tiles instead measured a
+  // wash: the tail's group-amax emission cost what the prologue saved.)
   const uint8_t* warm_ptr;
-  long long warm_bytes;
+  long long warm_stride;  // bytes per tile (k-blocks x record bytes)
+  int warm_tiles;
 };
 
 // Per-token chunk arrivals (rearmed by the block that runs the token's
@@ -1187,42 +1187,11 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
 #pragma unroll
   for (int w = 0; w < MK_WARPS; ++w) tot += sqred[w];
   const float rsq = rsqrtf(tot / (float)HIDDEN + a.norm_eps);
-  float outv[MHC_EPT];
 #pragma unroll
   for (int i = 0; i < MHC_EPT; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
-    const __nv_bfloat16 ob = __float2bfloat16(vals[i] * rsq * r.nw[i]);
-    a.layer_input[t * HIDDEN + h] = ob;
-    outv[i] = __bfloat162float(ob);  // what the GEMM prologue would read
-  }
-  if (a.emit_a) {
-    // fp8 A tiles for the next GEMM: element h sits in k-group kb = h / 128
-    // = 2i + (tid >> 7), position tid & 127. The group's amax is a max over
-    // the 128 threads of that half (4 warps: shuffle + smem), the scale is
-    // the prologue's pow2 rule, the byte the same e4m3 conversion.
-    __shared__ float gmax[MK_WARPS][MHC_EPT];
-    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
-    const int half = threadIdx.x >> 7, pos = threadIdx.x & 127;
-#pragma unroll
-    for (int i = 0; i < MHC_EPT; ++i) {
-      float m = fabsf(outv[i]);
-#pragma unroll
-      for (int off = 16; off; off >>= 1)
-        m = fmaxf(m, __shfl_xor_sync(~0u, m, off));
-      if (lane == 0) gmax[warp][i] = m;
-    }
-    __syncthreads();
-#pragma unroll
-    for (int i = 0; i < MHC_EPT; ++i) {
-      const float amax = fmaxf(fmaxf(gmax[half * 4][i], gmax[half * 4 + 1][i]),
-                               fmaxf(gmax[half * 4 + 2][i], gmax[half * 4 + 3][i]));
-      const float sc = mk_pow2_scale(amax);
-      const float rsc = 1.0f / sc;  // exact: sc is a power of two
-      const int kb = 2 * i + half;
-      g_mk_aq[((size_t)kb * 32 + t) * KSTEP + pos] = mk_f32_to_e4m3(outv[i] * rsc);
-      if (pos == 0) g_mk_axs[t * KBLK_MAX + kb] = sc;
-    }
-    __syncthreads();  // gmax reuse by the next tail
+    a.layer_input[t * HIDDEN + h] =
+        __float2bfloat16(vals[i] * rsq * r.nw[i]);
   }
   __syncthreads();  // sqred reuse
 }
@@ -1267,6 +1236,14 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     }
   };
   int warm_iter = 0;  // token iterations this block has run (warming)
+  // line l of the warm walk: 128 B at offset (l / tiles) * 128 of tile
+  // l % tiles -- every tile's prefix grows together
+  auto warm_line = [&](long long l) {
+    const long long off = (l / a.warm_tiles) * 128;
+    if (off < a.warm_stride)
+      asm volatile("prefetch.global.L2 [%0];" ::"l"(
+          a.warm_ptr + (l % a.warm_tiles) * a.warm_stride + off));
+  };
   for (int cg = bid; cg < NCHUNK * groups; cg += a.grid) {
     const int c = cg % NCHUNK, g = cg / NCHUNK;
     const int h = c * HCHUNK + threadIdx.x;  // HCHUNK == MK_THREADS
@@ -1289,12 +1266,11 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
       // iteration -- 48 blocks x 64 lines x 128 B per ~3 us, ~110 GB/s of
       // the DRAM this kernel otherwise leaves idle (an unpaced burst under
       // a latency-bound phase measured a net loss on the kda delta rule).
-      if (a.warm_bytes > 0 && (threadIdx.x & 3) == 0) {
+      if (a.warm_tiles > 0 && (threadIdx.x & 3) == 0) {
         const long long line =
             ((long long)warm_iter * a.grid + bid) * (MK_THREADS / 4) +
             (threadIdx.x >> 2);
-        if (line * 128 < a.warm_bytes)
-          asm volatile("prefetch.global.L2 [%0];" ::"l"(a.warm_ptr + line * 128));
+        warm_line(line);
       }
       ++warm_iter;
       float r[HC], sqr = 0.0f;
@@ -1370,6 +1346,8 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
       __threadfence();
     }
     __syncthreads();
+    // (the spin above is one thread; warming from the waiting block goes
+    // through the exit loop below instead, where every block passes)
     MK_MHC_TS(2);  // (probe) last tail's p2 start
     MhcTailRegs tr;
     // warps 1..7 issue their p34 loads under p2; warp 0 loads after its
@@ -1386,6 +1364,21 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     MK_MHC_TS(4);  // (probe) p34 end
   }
   MK_MHC_TS(6);
+  // Blocks that are out of tails keep warming, paced (64 lines per block
+  // per ~1.5 us, ~200 GB/s over the grid), until the walk is done or a
+  // bounded stretch has passed -- the kernel must not outlive its useful
+  // work by more than the consumer's launch latency.
+  if (a.warm_tiles > 0) {
+    const long long base = (long long)warm_iter * a.grid * (MK_THREADS / 4);
+    const long long total = (long long)a.warm_tiles * (a.warm_stride / 128);
+    for (int it = 0; it < 6; ++it) {
+      const long long l = base + ((long long)it * a.grid + bid) * (MK_THREADS / 4)
+                          + (threadIdx.x >> 2);
+      if (l >= total) break;
+      if ((threadIdx.x & 3) == 0) warm_line(l);
+      __nanosleep(1500);
+    }
+  }
   // exit ticket: the last block out rearms the tail counter for the next
   // launch (every block has made its final, failing take by then)
   __syncthreads();
@@ -1404,9 +1397,6 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
   MK_MHC_TS(0);
-  // an a_ready consumer skips the prologue that used to reset the dynamic
-  // unit counter; no GEMM runs concurrently with this kernel
-  if (a.emit_a && blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
   // p1 over the (token, chunk) pairs; each token's p2 / p3 / p4 run on
   // the block that completes its last chunk (see mk_mhc_p1) -- no grid
   // barrier anywhere in this kernel. (There used to be three: p1|p2,
@@ -1469,7 +1459,6 @@ struct MKKdaArgs {
   unsigned long long* barrier_ctr;
   int grid;          // resident blocks; see MK_GRID_CAP
   int ksr_in, ksr_out;  // mk_choose_ksr for the in_proj / o_proj phases
-  int x_ready;          // p0 may skip its A quant (see MKMhcArgs::emit_a)
   int num_tokens;
   float lower_bound, onorm_eps;
 };
@@ -1482,7 +1471,6 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   {  // phase 0: in_proj GEMM into workspace
     MKGemmCtx c;
     c.x = a.x;
-    c.a_ready = a.x_ready != 0;
     c.wq4 = a.in_wq4;
     c.ws4 = a.in_ws4;
     c.out = a.qkv;
@@ -2108,10 +2096,9 @@ std::vector<int64_t> mk_read_mhc_ts() {
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
-                 torch::Tensor out, int64_t n_orig, int64_t a_ready) {
+                 torch::Tensor out, int64_t n_orig) {
   set_kernel_attrs();
   MKGemmCtx c{};
-  c.a_ready = a_ready != 0;  // the previous kernel's tail emitted the A tiles
   c.x = (const __nv_bfloat16*)x.data_ptr();
   c.wq4 = (const uint8_t*)wq4.data_ptr();
   c.ws4 = (const int8_t*)ws4.data_ptr();
@@ -2172,11 +2159,9 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.barrier_ctr = (unsigned long long*)ptrs[17];
   a.num_tokens = (int)ints[0];
   a.sinkhorn_repeat = (int)ints[1];
-  a.emit_a = (int)ints[2];
-  a.warm_bytes = (long long)ints[3];
   a.warm_ptr = (const uint8_t*)ptrs[18];
-  TORCH_CHECK(!a.emit_a || (a.num_tokens <= 32 && HIDDEN == KBLK_MAX * KSTEP),
-              "emit_a: A tiles hold 32 rows x 32 k-groups");
+  a.warm_stride = (long long)ints[2];
+  a.warm_tiles = (int)ints[3];
   a.rms_eps = (float)scalars[0];
   a.pre_eps = (float)scalars[1];
   a.sinkhorn_eps = (float)scalars[2];
@@ -2241,7 +2226,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 6 && scalars.size() == 2,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 2,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -2250,7 +2235,6 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
               "kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)");
   a.delta_variant = (int)ints[3];
   a.conv_width = (int)ints[4];
-  a.x_ready = (int)ints[5];  // hidden_states' fp8 A tiles came from mhc
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
