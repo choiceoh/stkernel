@@ -132,7 +132,7 @@ def probe_gemm(iters: int) -> bool:
     ok = True
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
           f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
-          f"{'st_x2':>7}")
+          f"{'st_x2':>7}{'w4_us':>7}{'w4_x2':>7}")
     for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
         torch.manual_seed(0)
         w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -146,6 +146,12 @@ def probe_gemm(iters: int) -> bool:
         w2 = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
         mkq2, mkws2 = mk.build_mk_weight(w2)
+        # the W4 arm on every shape (timing only; its by-design error is
+        # gated in probe_w4): the only arm that reads fewer bytes than
+        # deepgemm, so the only one that can beat the stock pair once the
+        # W8 loop sits on the part's sustained streaming ceiling.
+        p4 = mk.build_mk_weight_w4(w)
+        p4b = mk.build_mk_weight_w4(w2)
         del w2
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, (mkq, mkws), n)
@@ -168,6 +174,12 @@ def probe_gemm(iters: int) -> bool:
         t_sx2 = _time(lambda: (_fp8_dense_gemm(x, sq, sws, srows, scols),
                                _fp8_dense_gemm(x, sq2, sws2, srows2, scols2)),
                       iters, hot=(x,)) / 2
+        o4 = torch.empty(m, n, dtype=torch.bfloat16, device=DEV)
+        t_w4 = _time(lambda: mk._EXT.run_gemm_w4(x, p4[0], p4[1], o4, n),
+                     iters, hot=(x,))
+        t_w4x2 = _time(lambda: (mk._EXT.run_gemm_w4(x, p4[0], p4[1], o4, n),
+                                mk._EXT.run_gemm_w4(x, p4b[0], p4b[1], o4, n)),
+                       iters, hot=(x,)) / 2
         # replay stability: the timing loop just relaunched the same kernel
         # dozens of times over ONE workspace -- the monotonic-barrier
         # contract. The result must be unchanged.
@@ -186,7 +198,8 @@ def probe_gemm(iters: int) -> bool:
         print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nbytes / t_mk / 1e3:>9.0f}{nbytes / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}"
+              f"{t_w4:>7.1f}{t_w4x2:>7.1f}")
     return ok
 
 
