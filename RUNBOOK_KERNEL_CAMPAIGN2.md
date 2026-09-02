@@ -307,43 +307,31 @@ VLLM_GLM53_PREP_FUSED=1 bash launchers/start-glm53-nvfp4-tp4.sh
   `positions` 를 안 넘겨 그 매핑은 이 이미지에서 잠들어 있고, fused 는 현행
   generic 매핑을 그대로 재현). 그 활성화는 C>=2 수치 변경이라 별도 브래킷.
 
-## EXP-8 — dflash 에 async scheduling (`glm53_async_dflash`, 2026-09-02 추가)
+## EXP-8 — dflash async scheduling: **이미 켜져 있었다 (기각, 2026-09-03 부팅으로 확정)**
 
-이미지의 `config/vllm.py` 는 `async_scheduling=None`(런처는 플래그를 안 준다)을
-speculative method **이름** 허용 목록으로 판정한다: eagle 계열·ngram GPU·
-`draft_model`·`dspark`. `dflash` 는 없어서 모든 dflash 부팅이 "Async scheduling
-not supported with dflash-based speculative decoding and will be disabled" 로
-동기 스케줄러를 쓴다. 업스트림 main 도 같은 목록(2026-09-02 확인).
+전제가 틀렸다. 이미지의 `config/speculative.py` 는
 
-기전으로는 이름 문제다: `DSparkSpeculator` 는 `DFlashSpeculator` 의 서브클래스로
-`propose()` 를 상속하고(async 가 건드리는 유일한 드래프터 흐름), dspark 는 dsv4 에서
-8월부터 `--async-scheduling` 으로 서빙 중이다. V2 러너에는 method 별 async 분기가
-없고(요청 상태 미러가 설계상 낙관적 상한), 스케줄러 쪽은 `AsyncScheduler` 의
-`[-1]` placeholder 를 워커가 `combine_sampled_and_draft_tokens` 커널로 덮어쓴다.
-마운트된 glm53 오버레이 중 스케줄러 쪽 드래프트 id 를 읽는 것은 없다.
-
-**기대값**: 9월 1일 트레이스의 GPU 유휴 8.9 ms/72 ms(프로파일러 없이 ~7%) —
-입력 준비 ~5.7, 그래프 제출 1.43, 스텝 전환 — 가 동기 스케줄러 때문에 임계경로에
-있다. async 는 N+1 스텝의 스케줄·준비·그래프 제출을 N 스텝의 GPU 실행과 겹치므로
-천장은 유휴 몫 전부, **스텝의 7~12%**. 이 캠페인에서 가장 큰 단일 레버다.
-`glm53_prep_fused`(EXP-7)와 독립이며 같이 켤 수 있다.
-
-```bash
-# 부팅 로그에서 "[async-dflash] ... whitelisted" 가 있고 "Async scheduling not
-# supported" 가 없어야 켜진 것이다 (engine-confirmed 원칙).
-VLLM_GLM53_ASYNC_DFLASH=1 bash launchers/start-glm53-nvfp4-tp4.sh   # cand (프로필 선언 키: caller env)
+```python
+DFlashModelTypes = Literal["dflash"]
+EagleModelTypes  = Literal["eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes]
 ```
 
-- 게이트: 품질 9/9, 한국어 0/16, **pos-1 수용률 ±2pct(움직이면 안 된다 — 언제 도는지만
-  바뀌고 무엇을 뽑는지는 안 바뀐다)**, C=1 step/s 브래킷 base→cand→base.
-- 첫 부팅에서 볼 것: V2 + async 는 `max_concurrent_batches` 가 2 라 KV 캐시의 in-flight
-  예약이 두 배 — KV 라인과 memfree preflight 를 먼저 읽고 step/s 를 비교한다.
-- 구조화 출력 요청은 드래프트 id 를 스케줄러로 되돌리는 경로(`DraftTokensHandler`)를
-  탄다 — 일반 생성은 안 탄다. 벤치에 구조화 출력이 섞이면 따로 본다.
-- 롤백 = env 한 줄. `ASYNC_SCHED=0` 은 여전히 동기 강제.
-- 원장의 2026-08 한국어 손상 조사에서 async 는 용의자로 기각됐다(SPEC=0 의 async on 과
-  dflash 의 async off 모두 손상, 원인은 LibertAIDAI 가중치). 이 실험은 그 판정을
-  재론하지 않는다.
+이고 `get_args` 는 중첩 Literal 을 평탄화하므로 **`dflash` 가 이미 허용 목록 안에 있다**
+(`get_args(EagleModelTypes)` 마지막 원소가 `'dflash'`). 따라서 `config/vllm.py` 의 async
+비활성화 조건은 **첫 항 `method not in get_args(EagleModelTypes)` 에서 단락**되고, 체인의
+나머지 분기(모두 경고를 남긴다)도 걸리지 않아 끝의 `else: async_scheduling = True` 가 실행된다.
+
+**부팅 증거(2026-09-03, 전 팔 부팅)**: 헤드·워커 로그에 "Async scheduling not supported"
+도, 우리 화이트리스트 줄도, 다른 비활성화 경고도 하나도 없다. 조용한 경로는 pooling(디버그
+로그)과 `else`(무로그) 둘뿐이고 이 모델은 pooling 이 아니다 → async 는 켜진 상태로 서빙 중.
+
+**따라서 `glm53_async_dflash` 모듈은 죽은 코드였다** — 헬퍼는 두 분기 모두에서 도달 불가.
+제거했다(노브 `VLLM_GLM53_ASYNC_DFLASH` 포함).
+
+**천장 7~12% 주장도 함께 철회한다.** 9월 1일 트레이스의 호스트 준비 유휴는 async 가 켜진
+상태에서 찍힌 것이다. async 스케줄링은 스케줄러 파이썬 작업을 겹치게 할 뿐, 워커의
+`execute_model` 안에서 도는 입력 준비는 여전히 그래프 리플레이 사이에 직렬로 남는다.
+그 구간은 **EXP-7(`glm53_prep_fused`)이 유일한 레버**다.
 
 ## EXP-9 — 인덱서 fp32 head-gate 를 split-K 로 (`glm53_indexer_gate_splitk`, 2026-09-02 추가, 09-03 정정)
 
@@ -362,8 +350,7 @@ README 한 곳에만 둔다; `probes/indexer_gate_check.py --config <ckpt>/confi
 
 **천장**: 11 × (89.5 − 12.7) us ≈ 0.84 ms/스텝 = C=1 71 ms 스텝의 **~1.2%**. 단독 부팅은
 하지 않고 **EXP-7 부팅에 얹는다** (EXP-7 은 bit-exact 라 그 부팅의 수치 축은 이것 하나 —
-"부팅당 수치 축 하나" 규칙 유지). EXP-8 에는 얹지 않는다: EXP-8 의 게이트가 "수용률이
-움직이면 안 된다" 라 귀속이 섞인다.
+"부팅당 수치 축 하나" 규칙 유지).
 
 ```bash
 # 프로필 선언 키: caller env. 부팅 로그의 "[indexer-gate] ... w(4096, 32) -> split-K" 가
@@ -385,9 +372,9 @@ VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 5. **EXP-5 (프리필)** — 캡처 1회가 관문. KDA 스윕은 그 다음.
 6. **EXP-6 (메가커널)** — 프로브와 섀도가 먼저 수치·계약을 닫고 브래킷.
 7. **EXP-7 (준비 커널 통합)** — bit-exact 프로브 → 섀도 부팅 → 브래킷. 호스트 유휴 4~5 ms 가 표적이라 GPU 커널 축과 독립.
-8. **EXP-8 (dflash async scheduling)** — 부팅 하나, 코드 변경은 허용 목록 한 조건. 천장이 가장 크다(7~12%); EXP-7 보다 먼저 돌려도 된다.
-9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7 부팅에만 얹는다 (EXP-8 은 수용률 게이트 귀속 때문에 제외).
-10. **EXP-7/8 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
+8. ~~EXP-8 (dflash async scheduling)~~ — **기각**: 이미 켜져 있었다(`dflash` ∈ `EagleModelTypes`). 모듈 제거, 천장 주장 철회.
+9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7 부팅에 얹는다.
+10. **EXP-7 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
