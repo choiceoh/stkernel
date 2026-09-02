@@ -7169,6 +7169,11 @@ def test_glm53_prep_fused_contracts() -> None:
     wrapper = open(os.path.join(REPO, "probes", "run_prep_fused_check.sh"), encoding="utf-8").read()
     check("sha256sum" in wrapper and "base preimage mismatch" in wrapper and "PROFILE_IMAGE" in wrapper,
           "the probe wrapper must verify every mounted row's base contract like the launcher")
+    check("FlashInferMLASparseSM90Builder" in src and "_mk_mla_armed()" in src
+          and "replans the wrapper every step" in src,
+          "the SM90 sparse builder is accepted ONLY while MK_SEG_MLA is armed: it "
+          "replans FlashInfer's wrapper every step from host lengths, which caching "
+          "this group's metadata would skip")
     print("  glm53 prep fused contracts .. OK")
 
 
