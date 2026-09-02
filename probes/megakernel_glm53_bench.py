@@ -189,7 +189,7 @@ def probe_w4(iters: int) -> bool:
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     print(f"{'case':<24}{'rel_err':>10}{'gate':>8}{'w8_us':>8}{'w4_us':>8}"
-          f"{'w4_GBps':>9}")
+          f"{'w4_GBps':>9}{'w4_x2':>8}")
     ok = True
     torch.manual_seed(0)
     n, k, m = 1024, 4096, 8
@@ -232,11 +232,13 @@ def probe_w4(iters: int) -> bool:
         torch.empty(m, n, dtype=torch.bfloat16, device=DEV), n), iters,
         hot=(x,))
     t4 = _time(lambda: run4((None, None) + p4, n), iters, hot=(x,))
+    t4x2 = _time(lambda: (run4((None, None) + p4, n),
+                          run4((None, None) + p4, n)), iters, hot=(x,)) / 2
     nbytes4 = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * n * 2
     mark = "!" if e > 0.15 else " "
     ok &= e <= 0.15
     print(f"{mark}w4 by-design{'':<8}{e:>13.2e}{0.15:>8.2f}{t8:>8.1f}"
-          f"{t4:>8.1f}{nbytes4 / t4 / 1e3:>9.0f}")
+          f"{t4:>8.1f}{nbytes4 / t4 / 1e3:>9.0f}{t4x2:>8.1f}")
     return ok
 
 

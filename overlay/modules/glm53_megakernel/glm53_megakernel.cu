@@ -63,6 +63,9 @@ namespace {
 #ifndef MK_W_NBUF_DEF
 #define MK_W_NBUF_DEF 3
 #endif
+#ifndef MK_W4_NBUF_DEF
+#define MK_W4_NBUF_DEF 5
+#endif
 // Ceiling for the gemm and kda persistent grids -- each launch takes the
 // smaller of it and what the device reports resident, exactly as mhc
 // does. At MK_W_NBUF 3 the 63,616 B block only fits once in the SM's
@@ -147,7 +150,8 @@ constexpr int MK_W_NBUF = MK_W_NBUF_DEF;
 constexpr int W4_RAW_PITCH = 64;
 constexpr int W4_RAW_NIB = SMEM_W_ROWS * W4_RAW_PITCH;   // 8192
 constexpr int W4_RAW_BYTES = W4_RAW_NIB + SMEM_W_ROWS * 8;  // 9216
-constexpr int W4_RAW_NBUF = 5;
+constexpr int W4_RAW_NBUF = MK_W4_NBUF_DEF;  // 3..5, swept by the probe
+static_assert(W4_RAW_NBUF >= 3 && W4_RAW_NBUF <= 5, "W4 raw stages");
 constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
 // Two kernels, two budgets. The W8 kernel is exactly the 63,616 B it was
 // before the W4 pipeline: sharing one budget put the W4 raw stages into the
