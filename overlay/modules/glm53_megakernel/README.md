@@ -183,14 +183,21 @@ Bench (srv2, PDL on): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
 
 ## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
 
-in_proj 77 | gates 14-18 | conv 8 | delta 35 | norm 0.5 | o_proj 39 |
-barriers ~18 = **199 us** per layer-step (was 402 before the phase stamps
-went in; stock's five kernels 640+). The delta rule runs two blocks per
-head (rows split, S register-resident, per-token state stores staged
-through smem); p4 emits the o_proj's fp8 A tiles itself so p5 starts
-without a prologue. `-DMK_PHASE_TS=1` + `read_kda_ts` give the per-phase,
+in_proj 76 | gates 6 | conv 4 | delta 34 | norm 0.5 | o_proj 35 |
+barriers ~17 = **176 us** per layer-step (402 before the phase
+stamps went in; stock's five kernels 640+). Four grid barriers: gates and
+conv share a phase (both read only in_proj's output). The gates are a
+cp.async + `mma.sync m16n8k16 bf16` GEMM over 32-row weight tiles; the
+conv is unrolled to the 8-token spec window (the host refuses a wider
+`max_query_len`); the delta rule runs two blocks per head (rows split, S
+register-resident, per-token state stores staged through smem) while the
+16 head-less blocks warm L2 with the o_proj pack (`prefetch.global.L2`);
+p4 emits the o_proj's fp8 A tiles itself so p5 starts without a prologue;
+split-K never makes a slice shorter than 8 k-blocks (o_proj: r=2, not the
+cost model's 3). `-DMK_PHASE_TS=1` + `read_kda_ts` give the per-phase,
 per-block stamps; the fixture's `mk_run(drain=True)` keeps its own 10 MB
-state clones from polluting the first phase (MEASUREMENTS.md 8차).
+state clones from polluting the first phase; `VLLM_GLM53_MK_KSR_IN/OUT`
+force a split for probing (MEASUREMENTS.md 8차, 10차).
 
 ## Review fixes already folded in (2026-09-01)
 

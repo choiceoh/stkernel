@@ -104,6 +104,8 @@ constexpr int KDA_INPROJ_N = KDA_QKV + KDA_H + 2 * KDA_D;  // 6416
 constexpr int KDA_INPROJ_N_PAD = ((KDA_INPROJ_N + 127) / 128) * 128;  // 6528
 constexpr int CONV_W = 4;                // short_conv_kernel_size
 constexpr int KDA_OUT = KDA_H * KDA_D;             // 2048
+constexpr int KDA_SPEC = 7;                        // num_speculative_tokens
+constexpr int KDA_NQ_MAX = KDA_SPEC + 1;           // query tokens per request
 constexpr int KDA_OUT_PAD = KDA_OUT;               // 2048 = 16 x 128
 
 constexpr int KSTEP = 128;               // one scale block of K
@@ -1436,71 +1438,98 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   mk_grid_barrier(a.barrier_ctr, a.grid);
   MK_KDA_TS(2);
 
-  {  // phase 1: f_b / g_b low-rank gates (K = 128), one warp per dot.
-    // Lane l reads elements 4l..4l+3 of the 256 B weight row (and of the
-    // token's 128-wide activation), so the warp pulls the row in ONE
-    // coalesced instruction and reduces with five shuffles. The old form
-    // gave each thread a whole row read 2 B at a time: adjacent lanes 256 B
-    // apart, every load its own 32 B sector -- 68 us for 4M MACs on the
-    // phase stamps (16% of the kernel); this is ~3 us.
-    // One weight ROW per warp step, every token against it: the row (256 B,
-    // 8 B per lane, one coalesced load) is read from DRAM exactly once and
-    // the T activation rows are L1-hot; the previous order (dots in (t, n)
-    // order, 8 per step) re-read each row per token through L2 and left
-    // each step waiting on its own DRAM round trip (25 us on the stamps).
-    // Tokens run in groups of 8 so the in-flight loads stay bounded.
-    const int lane = threadIdx.x & 31;
-    const int nwarps = a.grid * MK_WARPS;
+  {  // phase 1: f_b / g_b low-rank gates as a tensor-core GEMM.
+    // [T x 128] @ [128 x 2048]^T twice (f, g). The weights (1 MB bf16, the
+    // whole cost: ~4.5 us of DRAM) stream through cp.async as 32-row x
+    // 128-k tiles (8 KB, double-buffered in the dynamic smem the GEMM
+    // phases own), the two activation slices sit in smem once, and each
+    // warp runs one (m16, n8) pair over 8 k16 steps of
+    // mma.sync.m16n8k16 bf16 -> fp32. The warp-per-dot form before it
+    // (one 256 B row per step, five shuffles per token) measured 14-18 us.
+    constexpr int GT_ROWS = 32;                    // weight rows per tile
+    constexpr int GT_PITCH = KDA_D + 8;            // bf16, 272 B: conflict-free
+    constexpr int GT_BYTES = GT_ROWS * GT_PITCH * 2;  // 8704
+    constexpr int GT_TILES = 2 * KDA_OUT / GT_ROWS;   // 128 (64 per gate)
+    uint8_t* sx = smem;                            // [2][32][GT_PITCH] bf16
+    uint8_t* sw = smem + 2 * GT_BYTES;             // [2][GT_ROWS][GT_PITCH]
     const int T = a.num_tokens;
-    constexpr int RPI = 2;  // rows per step: two DRAM loads in flight
-                            // (14.4 us on the stamps; 4 measured 18.2)
-    for (int r0 = (blockIdx.x * MK_WARPS + (threadIdx.x >> 5)) * RPI;
-         r0 < 2 * KDA_OUT; r0 += nwarps * RPI) {
-      uint2 wr[RPI];
-      int which[RPI], n[RPI];
-#pragma unroll
-      for (int u = 0; u < RPI; ++u) {
-        const int rr = min(r0 + u, 2 * KDA_OUT - 1);  // clamp: dup, not OOB
-        which[u] = rr / KDA_OUT;
-        n[u] = rr - which[u] * KDA_OUT;
-        wr[u] = *(const uint2*)((which[u] ? a.g_b_w : a.f_b_w) +
-                                (size_t)n[u] * KDA_D + lane * 4);
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+    const int g = lane >> 2, q = lane & 3;
+    // activations: 2 gates x 32 rows x 16 chunks of 16 B; rows >= T zeroed
+    for (int i = threadIdx.x; i < 2 * GT_ROWS * 16; i += MK_THREADS) {
+      const int which = i / (GT_ROWS * 16), rem = i - which * (GT_ROWS * 16);
+      const int t = rem >> 4, ck = rem & 15;
+      uint8_t* dst = sx + which * GT_BYTES + t * (GT_PITCH * 2) + ck * 16;
+      if (t < T)
+        mk_cp_async16(dst, a.qkv + (size_t)t * KDA_INPROJ_N + KDA_QKV + KDA_H +
+                               which * KDA_D + ck * 8);
+      else
+        *(uint4*)dst = make_uint4(0u, 0u, 0u, 0u);
+    }
+    mk_cp_commit();
+    auto stage_tile = [&](int tile, int buf) {  // 32 rows x 256 B
+      const int which = tile / (KDA_OUT / GT_ROWS);
+      const int row0 = (tile - which * (KDA_OUT / GT_ROWS)) * GT_ROWS;
+      const __nv_bfloat16* wsrc = (which ? a.g_b_w : a.f_b_w) +
+                                  (size_t)row0 * KDA_D;
+      uint8_t* dst = sw + buf * GT_BYTES;
+      for (int i = threadIdx.x; i < GT_ROWS * 16; i += MK_THREADS) {
+        const int r = i >> 4, ck = i & 15;
+        mk_cp_async16(dst + r * (GT_PITCH * 2) + ck * 16,
+                      wsrc + (size_t)r * KDA_D + ck * 8);
       }
-      for (int tg = 0; tg < T; tg += 8) {
-        uint2 xr[RPI][8];
+      mk_cp_commit();
+    };
+    int tile = (int)blockIdx.x;
+    if (tile < GT_TILES) stage_tile(tile, 0);
+    for (int buf = 0; tile < GT_TILES; tile += a.grid, buf ^= 1) {
+      const int next = tile + a.grid;
+      if (next < GT_TILES) stage_tile(next, buf ^ 1);
+      if (next < GT_TILES) mk_cp_wait<1>(); else mk_cp_wait<0>();
+      __syncthreads();  // x + tile `buf` landed for every thread
+      const int which = tile / (KDA_OUT / GT_ROWS);
+      const int row0 = (tile - which * (KDA_OUT / GT_ROWS)) * GT_ROWS;
+      const int n8 = warp & 3, m16 = warp >> 2;
+      const uint8_t* xa = sx + which * GT_BYTES + (m16 * 16) * (GT_PITCH * 2);
+      const uint8_t* wb = sw + buf * GT_BYTES + (n8 * 8) * (GT_PITCH * 2);
+      float c0 = 0.0f, c1 = 0.0f, c2 = 0.0f, c3 = 0.0f;
 #pragma unroll
-        for (int u = 0; u < RPI; ++u)
-#pragma unroll
-          for (int q = 0; q < 8; ++q) {
-            const int t = min(tg + q, T - 1);
-            xr[u][q] = *(const uint2*)(a.qkv + (size_t)t * KDA_INPROJ_N +
-                                       (KDA_QKV + KDA_H + which[u] * KDA_D) +
-                                       lane * 4);
-          }
-#pragma unroll
-        for (int u = 0; u < RPI; ++u) {
-          const __nv_bfloat16* wp = (const __nv_bfloat16*)&wr[u];
-#pragma unroll
-          for (int q = 0; q < 8; ++q) {
-            const __nv_bfloat16* xp = (const __nv_bfloat16*)&xr[u][q];
-            float v = 0.0f;
-#pragma unroll
-            for (int e = 0; e < 4; ++e)
-              v += __bfloat162float(xp[e]) * __bfloat162float(wp[e]);
-#pragma unroll
-            for (int off = 16; off; off >>= 1)
-              v += __shfl_xor_sync(0xffffffffu, v, off);
-            const int t = tg + q;
-            if (lane == 0 && t < T && r0 + u < 2 * KDA_OUT)
-              (which[u] ? a.g2 : a.g1)[(size_t)t * KDA_OUT + n[u]] =
-                  __float2bfloat16(v);
-          }
-        }
+      for (int ks = 0; ks < KDA_D / 16; ++ks) {
+        const int k0 = ks * 16 + q * 2;
+        const uint32_t a0 = *(const uint32_t*)(xa + g * (GT_PITCH * 2) + k0 * 2);
+        const uint32_t a1 =
+            *(const uint32_t*)(xa + (g + 8) * (GT_PITCH * 2) + k0 * 2);
+        const uint32_t a2 =
+            *(const uint32_t*)(xa + g * (GT_PITCH * 2) + (k0 + 8) * 2);
+        const uint32_t a3 =
+            *(const uint32_t*)(xa + (g + 8) * (GT_PITCH * 2) + (k0 + 8) * 2);
+        const uint32_t b0 = *(const uint32_t*)(wb + g * (GT_PITCH * 2) + k0 * 2);
+        const uint32_t b1 =
+            *(const uint32_t*)(wb + g * (GT_PITCH * 2) + (k0 + 8) * 2);
+        asm volatile(
+            "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+            "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+            : "+f"(c0), "+f"(c1), "+f"(c2), "+f"(c3)
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
       }
+      // c0,c1: (row g, cols 2q, 2q+1); c2,c3: row g + 8
+      __nv_bfloat16* out = which ? a.g2 : a.g1;
+      const int n = row0 + n8 * 8 + q * 2;
+      const int t0 = m16 * 16 + g;
+      if (t0 < T)
+        *(__nv_bfloat162*)(out + (size_t)t0 * KDA_OUT + n) =
+            __floats2bfloat162_rn(c0, c1);
+      if (t0 + 8 < T)
+        *(__nv_bfloat162*)(out + (size_t)(t0 + 8) * KDA_OUT + n) =
+            __floats2bfloat162_rn(c2, c3);
+      __syncthreads();  // buffer `buf` is refilled two steps from now
     }
   }
   MK_KDA_TS(3);
-  mk_grid_barrier(a.barrier_ctr, a.grid);
+  // no barrier here: phase 2 (conv) reads only phase 0's qkv, like phase
+  // 1 does, so a block goes straight from its gate dots to its conv
+  // channels; the barrier that separated them cost ~4 us of wait per
+  // launch on the stamps
   MK_KDA_TS(4);
 
   {  // phase 2: merged short conv (k=4, silu) with accepted-window rollback.
@@ -1508,65 +1537,72 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     // reads the slot's conv state). Outputs are produced for ALL query
     // tokens; the history starts at the accepted boundary and the window
     // written back keeps the accepted drafts (stock's spec conv kernel).
+    // Everything a thread touches is indexed by compile-time constants:
+    // the token loop is unrolled to the spec window (KDA_NQ_MAX = 8
+    // tokens) with a guard, and the history / kept values
+    // are selected, never indexed at runtime -- the old form (a lambda
+    // over a runtime `pos`) put st[] and kept[] in local memory and the 8
+    // token loads behind each other: 8 us for 6144 channels of ~40 FMAs.
+    constexpr int NQ_MAX = KDA_NQ_MAX;  // 8 (the host refuses a wider mql)
     for (int r = 0; r < a.n_spec; ++r) {
       const int t0 = a.cu_seqlens[r], t1 = a.cu_seqlens[r + 1];
       const int slot = a.state_idx[r * a.mql + 0];
       const int acc = a.n_accepted[r];
-      // 6144 channels over grid x 256 threads: with 256 per block only 24
-      // blocks had channels and the other 24 waited ~9.5 us at the next
-      // barrier; 128 per block gives every block half a tile of work.
+      const int nq_tok = t1 - t0;
       constexpr int CPB = KDA_QKV / 48;  // 128 channels per block at grid 48
       for (int ch = blockIdx.x * CPB + threadIdx.x;
            ch < KDA_QKV && threadIdx.x < CPB; ch += a.grid * CPB) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
         const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
                              (size_t)ch * a.conv_width;
-        // The state is conv_width wide (conv_kernel_size - 1 + num_spec, so
-        // 10 here): [history .., draft1 .. draftN] of the PREVIOUS step,
-        // of whose drafts `acc` were accepted. The stock spec kernel
-        // (causal_conv1d.py, _causal_conv1d_update_kernel with
-        // num_accepted_tokens) reads this step's history as
-        //   prior_tokens = base + (acc - 1),  cols at +0, +1, +2
-        // i.e. the three entries ending at the last ACCEPTED draft. This
-        // kernel used to read the last three entries of the buffer -- the
-        // rejected drafts -- which is the same window only when every
-        // draft was accepted (acc == nq): the fixture's acc=8 passed and
-        // acc=1/3 differed by ~1.3 in the output, conv_state matching.
+        const int keep = a.conv_width - nq_tok;
+        // history = state[acc-1 .. acc+1]; kept = state[acc .. acc+keep-1]
+        // (keep <= 2 whenever nq_tok >= 8; guard the general case)
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           st[i] = a.conv_state[sbase + (acc - 1) + i];
-        // The two entries the update keeps, read before anything is written:
-        // stock keeps conv_width - nq old values starting at `acc`.
-        const int nq_tok = t1 - t0;
-        const int keep = a.conv_width - nq_tok;
         float kept[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           kept[i] = (i < keep && acc + i < a.conv_width)
                         ? a.conv_state[sbase + acc + i]
                         : 0.0f;
-        auto hist = [&](int pos) -> float {
-          return (pos >= 0)
-                     ? __bfloat162float(
-                           a.qkv[(size_t)(t0 + pos) * KDA_INPROJ_N + ch])
-                     : st[pos + (CONV_W - 1)];
-        };
-        for (int j = 0; j < t1 - t0; ++j) {
-          float v = 0.0f;
+        float xin[NQ_MAX];
 #pragma unroll
-          for (int i = 0; i < CONV_W; ++i)
-            v += w[i] * hist(j - (CONV_W - 1) + i);
-          a.convq[(size_t)(t0 + j) * KDA_QKV + ch] =
-              __float2bfloat16(v / (1.0f + expf(-v)));  // silu
+        for (int j = 0; j < NQ_MAX; ++j)
+          xin[j] = (j < nq_tok)
+                       ? __bfloat162float(
+                             a.qkv[(size_t)(t0 + j) * KDA_INPROJ_N + ch])
+                       : 0.0f;
+        float w0 = w[0], w1 = w[1], w2 = w[2], w3 = w[3];
+        // h(pos) for pos in [-3, NQ_MAX): compile-time selection
+        auto hist = [&](int pos) -> float {  // pos is a constant after unroll
+          return pos < 0 ? st[pos + (CONV_W - 1)] : xin[pos];
+        };
+#pragma unroll
+        for (int j = 0; j < NQ_MAX; ++j) {
+          if (j < nq_tok) {
+            const float v = w0 * hist(j - 3) + w1 * hist(j - 2) +
+                            w2 * hist(j - 1) + w3 * hist(j);
+            a.convq[(size_t)(t0 + j) * KDA_QKV + ch] =
+                __float2bfloat16(v / (1.0f + expf(-v)));  // silu
+          }
         }
         // Write the WHOLE window, matching causal_conv1d_update:
         //   [init[acc] .. init[acc + keep - 1], x[0] .. x[nq - 1]]
-        // The old code wrote only CONV_W - 1 slots at the front, which is
-        // both the wrong count and the wrong place once conv_width > 3.
-        for (int i = 0; i < a.conv_width; ++i)
-          a.conv_state[sbase + i] =
-              (i < keep) ? kept[i] : hist(i - keep);
+        for (int i = 0; i < a.conv_width; ++i) {
+          float v;
+          if (i < keep) {
+            v = (i == 0) ? kept[0] : (i == 1) ? kept[1] : kept[2];
+          } else {
+            const int q = i - keep;  // 0 .. nq_tok - 1
+            v = 0.0f;
+#pragma unroll
+            for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;
+          }
+          a.conv_state[sbase + i] = v;
+        }
       }
     }
   }
@@ -1933,7 +1969,13 @@ int mk_choose_ksr(int m, int n, int k, int grid) {
   int ksr = (rem > 0) ? (grid / rem) : 1;
   if (full == 0 && rem > 0 && m <= 32) {
     int bn = (nblk + grid - 1) / grid, bd = 1;
-    for (int r = 2; r <= kblk; ++r) {
+    // A slice shorter than ~8 k-blocks never gets its cp.async pipeline
+    // going (fill latency, then a handful of iterations), so the "fewer
+    // rounds" the model counts are not shorter in wall time. Measured on
+    // the kda o_proj (k = 2048, 16 k-blocks): r=3 (the model) 40.8 us,
+    // r=2 33.4, r=1 35.5, r=4 43.8.
+    const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;
+    for (int r = 2; r <= kblk && r <= rmax; ++r) {
       if ((size_t)m * rem * 128 * r > MK_SPLIT_ELEMS) break;
       const int rounds = (nblk * r + grid - 1) / grid;
       if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
@@ -2111,8 +2153,10 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.g_b_w = (const __nv_bfloat16*)ptrs[4];
   // phase 1 reads the gate weight rows and the token's activation as 8 B
   // vectors per lane (row bases are multiples of 256 B / 8 B by layout)
-  TORCH_CHECK((ptrs[3] & 7) == 0 && (ptrs[4] & 7) == 0 && (ptrs[16] & 7) == 0,
-              "gate weights and the qkv workspace must be 8 B aligned");
+  TORCH_CHECK((ptrs[3] & 15) == 0 && (ptrs[4] & 15) == 0 && (ptrs[16] & 15) == 0,
+              "gate weights and the qkv workspace must be 16 B aligned (cp.async)");
+  static_assert(((KDA_QKV + KDA_H) * 2) % 16 == 0 && (KDA_INPROJ_N * 2) % 16 == 0,
+                "gate activation slices must be 16 B aligned rows");
   a.conv_w = (const float*)ptrs[5];
   a.conv_state = (float*)ptrs[6];
   a.rec_state = (float*)ptrs[7];
@@ -2136,6 +2180,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
   a.mql = (int)ints[2];
+  TORCH_CHECK(a.mql <= KDA_NQ_MAX,
+              "kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)");
   a.delta_variant = (int)ints[3];
   a.conv_width = (int)ints[4];
   a.lower_bound = (float)scalars[0];
@@ -2144,6 +2190,17 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM);
   a.ksr_in = mk_choose_ksr(a.num_tokens, KDA_INPROJ_N_PAD, HIDDEN, a.grid);
   a.ksr_out = mk_choose_ksr(a.num_tokens, HIDDEN, KDA_OUT_PAD, a.grid);
+  {  // probe knobs: force the split-K of either phase (0 = the cost model)
+    static int f_in = -1, f_out = -1;
+    if (f_in < 0) {
+      const char* e = getenv("VLLM_GLM53_MK_KSR_IN");
+      f_in = e ? atoi(e) : 0;
+      e = getenv("VLLM_GLM53_MK_KSR_OUT");
+      f_out = e ? atoi(e) : 0;
+    }
+    if (f_in > 0) a.ksr_in = f_in;
+    if (f_out > 0) a.ksr_out = f_out;
+  }
   mk_launch(mk_kda_kernel, a.grid, GEMM_SMEM, stream, a);
 }
 
