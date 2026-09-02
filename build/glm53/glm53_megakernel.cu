@@ -529,31 +529,47 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     const uint32_t sc4 =
         *(const uint32_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
     const uint32_t nw[8] = {n0.x, n0.y, n0.z, n0.w, n1.x, n1.y, n1.z, n1.w};
-    uint4* dv = (uint4*)(swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
-                         row4 * SMEM_W_PITCH + half4 * 64);
+    uint8_t* rowb = swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
+                    row4 * SMEM_W_PITCH + half4 * 64;
+    // Byte-lane SIMD: a raw word holds 8 nibbles = 8 elements; its low
+    // nibbles are elements 0,2,4,6 and its high nibbles 1,3,5,7. For the
+    // e2m1 magnitude t (0..7) the e4m3 byte is 0x30 + ((t>>1)<<3) + ((t&1)<<2)
+    // for t >= 2, 0x30 for t == 1 and 0 for t == 0 (the LUT, closed form),
+    // computed on four lanes at once; the exponent add and the sign ride
+    // the same lanes (__vadd4 has no carries between lanes, and
+    // LUT + e stays in [8, 124]). Then __byte_perm interleaves low and
+    // high lanes back into element order. ~12 ops per 8 elements against
+    // ~8 per element for the scalar chain; the stamps had the expansion
+    // at 1.55 us per k-block per block, more than the record's DRAM time.
 #pragma unroll
-    for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 nibble words -> 4 bytes words
-      // exponent-field add; s in [-5, 6] keeps LUT + e inside [8, 124], so
-      // it never carries into the sign bit
-      const int e = ((int)(int8_t)((sc4 >> (8 * g4)) & 0xFFu)) << 3;
+    for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 raw words -> 4 out words
+      const uint32_t eb = (uint32_t)((int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)
+                          & 0xFFu;
+      const uint32_t e4 = eb * 0x01010101u;
       uint32_t ow[4];
 #pragma unroll
-      for (int j = 0; j < 4; ++j) {  // output word j = elements 4j..4j+3
-        const uint32_t w = nw[2 * g4 + (j >> 1)] >> (16 * (j & 1));
-        uint32_t o = 0u;
+      for (int h = 0; h < 2; ++h) {   // raw word h of the group: elements 8h..8h+7
+        const uint32_t w = nw[2 * g4 + h];
+        uint32_t out2[2];
 #pragma unroll
-        for (int q = 0; q < 4; ++q) {
-          const uint32_t code = (w >> (4 * q)) & 0xFu;
-          const uint32_t c7 = code & 7u;
-          uint32_t bt = c7 ? (((uint32_t)mk_e2m1_byte((int)c7) +
-                               (uint32_t)e) & 0xFFu)
-                           : 0u;
-          bt |= (code & 8u) << 4;  // sign
-          o |= bt << (8 * q);
+        for (int par = 0; par < 2; ++par) {  // 0: low nibbles (even), 1: high (odd)
+          const uint32_t code = (par ? (w >> 4) : w) & 0x0F0F0F0Fu;
+          const uint32_t mag = code & 0x07070707u;
+          const uint32_t nz = ~__vcmpeq4(mag, 0u);                 // 0xFF where t != 0
+          const uint32_t one = __vcmpeq4(mag, 0x01010101u);        // 0xFF where t == 1
+          uint32_t bt = ((mag >> 1) & 0x03030303u) << 3;           // (t>>1)<<3
+          bt |= (mag & 0x01010101u) << 2;                          // (t&1)<<2
+          bt = __vadd4(bt, 0x30303030u & nz);                      // + 0x30 (t != 0)
+          bt = __vsub4(bt, 0x04040404u & one);                     // t == 1 -> 0x30
+          bt = __vadd4(bt, e4 & nz);                               // + (s << 3)
+          bt |= (code & 0x08080808u) << 4;                         // sign
+          out2[par] = bt;
         }
-        ow[j] = o;
+        // interleave: elements (0,1,2,3) = lo.b0, hi.b0, lo.b1, hi.b1 ...
+        ow[2 * h] = __byte_perm(out2[0], out2[1], 0x5140);
+        ow[2 * h + 1] = __byte_perm(out2[0], out2[1], 0x7362);
       }
-      dv[g4] = make_uint4(ow[0], ow[1], ow[2], ow[3]);
+      *(uint4*)(rowb + g4 * 16) = make_uint4(ow[0], ow[1], ow[2], ow[3]);
     }
   };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
