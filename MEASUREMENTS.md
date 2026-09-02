@@ -2121,3 +2121,31 @@ will be disabled"). 업스트림 main 도 동일(2026-09-02). 그런데 `DSparkS
 
 **미측정**: EXP-8(부팅 1회 + 브래킷). 수용률은 움직이면 안 된다(실행 시점만 바뀜).
 V2+async 는 `max_concurrent_batches`=2 라 KV in-flight 예약이 두 배 — KV 라인 확인.
+
+## ★인덱서 fp32 head-gate: cuBLAS 2블록 47 us → split-K 10 us (`glm53_indexer_gate_splitk`, 2026-09-02, srv4 오프라인)
+
+**대상**: `attention.py` `Indexer.forward` 의 `torch.mm(hidden_states.float(), self._wp_fp32)`
+— [M,4096]×[4096,16] fp32, 층당 1회 × 11층. fp32 인 이유는 코드 주석대로 bf16 게이트
+(~1e-2)가 근소 차 풀 순위를 뒤집기 때문. cuBLAS 는 이 형상에 `gemmSN` 2블록 커널을
+고른다(48 SM 중 2개).
+
+**실측**(GB10, CUDA 그래프 리플레이, `probes/indexer_gate_check.py`; 9월 1일 트레이스의
+86 us 는 CUPTI + 공유 경합):
+
+| M | stock `torch.mm` | split-K(8) | 경로 |
+|---|---|---|---|
+| 1 | 15.5 us | 8.5 us | split-K |
+| 8 (C=1) | 50.0 us | 9.9 us | split-K |
+| 16 (C=2) | 50.1 us | 11.7 us | split-K |
+| 32 (C=4) | 15.9 us | 17.4 us | `torch.mm` 유지 |
+
+M=32 부터 cuBLAS 가 다른 커널을 고르며 빨라지므로 M<=16 만 라우팅. 대안 비교(M=8):
+`F.linear` NT 레이아웃 32 us, mul+sum 20.7 us, split-K(16) 6.2 us — 8 분할이 원자 경합과
+프로그램 수의 균형점이라 채택.
+
+**수치**: 양쪽 fp32 누적, 합산 순서만 다름. 300회/2,480행 max|diff| 2.4e-6 절대,
+6.7e-7/행 최대, top-1 뒤집힘 0, top-4 집합 변화 0. bit-exact 아님 → 품질 브래킷 대상.
+
+**천장**: 11 × 40 us ≈ 0.44 ms/스텝 = C=1 스텝의 ~0.65% (<1%, 단독 부팅 불가). EXP-7/8
+부팅에 얹어 잰다. `VLLM_GLM53_FUSED_K_GATE=1` 팔의 융합 인덱서도 같은 헬퍼를 타므로
+두 팔이 어긋나지 않는다. 기본 0 = stock 과 같은 `torch.mm` 호출. RUNBOOK EXP-9.
