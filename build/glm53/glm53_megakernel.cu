@@ -90,7 +90,19 @@ constexpr int HIDDEN = 4096;
 constexpr int NOUT = HC * (2 + HC);      // 24 hc pre outputs
 constexpr int MAX_TOK = 32;              // C=4 x (SPEC_K+1) verify buckets
 constexpr int HCHUNK = 256;
-constexpr int NCHUNK = HIDDEN / HCHUNK;  // 16
+constexpr int NCHUNK = HIDDEN / HCHUNK;  // 16 (p3/p4 slots)
+// mhc p1 work item = (64-column sub-chunk, token half). The block loads its
+// fn slice ONCE into registers -- 4 output groups x 6 outputs x HC per
+// thread -- and walks its tokens, so fn costs 2 x 1.5 MB per op instead of
+// T x 1.5 MB. The old (token, 256-chunk) split re-read fn per token: the
+// stamps had p1 at 17 us (T=8) and 41 us (T=32), 48 MB of L2 re-reads.
+constexpr int P1_HCHUNK = 64;
+constexpr int P1_NCHUNK = HIDDEN / P1_HCHUNK;  // 64 yp/rp slots per token
+constexpr int P1_TSPLIT = 2;                    // 128 items for 144 blocks
+constexpr int P1_MG = MK_THREADS / P1_HCHUNK;   // 4 output groups
+constexpr int P1_MPER = NOUT / P1_MG;           // 6 outputs per group
+static_assert(NOUT % P1_MG == 0 && P1_HCHUNK * P1_MG == MK_THREADS,
+              "p1 thread map: 64 columns x 4 output groups");
 
 constexpr int KDA_H = 16;                // local linear heads (64 / 4)
 constexpr int KDA_D = 128;               // linear_head_dim
@@ -963,28 +975,35 @@ struct MKMhcArgs {
 };
 
 __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
-  // fn is LOGICALLY re-read once per token (T x 1.5 MB) but the (t, chunk)
-  // pair -> block assignment co-schedules all tokens of a chunk, so L2
-  // serves T-1 of them and DRAM sees ~1.5 MB per op -- the same traffic
-  // the stock grid pattern produces. Do not "fix" the re-read without
-  // measuring DRAM first.
-  __shared__ float red[MK_WARPS][NOUT + 1];
-  const int npairs = a.num_tokens * NCHUNK;
-  for (int p = bid; p < npairs; p += a.grid) {
-    const int t = p / NCHUNK, c = p % NCHUNK, h0 = c * HCHUNK;
-    float cm[HC][HC], pm[HC];
+  // thread -> (column hl of the sub-chunk, output group mg); group g is
+  // warps 2g and 2g+1, so a group's 64 partials reduce as two warp shuffles
+  // plus one smem add. sqr (and residual_out) belong to group 0 only.
+  __shared__ float red[MK_WARPS][P1_MPER + 1];
+  const int nitems = P1_NCHUNK * P1_TSPLIT;
+  const int hl = threadIdx.x & (P1_HCHUNK - 1);
+  const int mg = threadIdx.x / P1_HCHUNK;
+  const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+  for (int it = bid; it < nitems; it += a.grid) {
+    const int c1 = it / P1_TSPLIT, th = it % P1_TSPLIT;
+    const int h = c1 * P1_HCHUNK + hl;
+    const int t0 = (a.num_tokens * th) / P1_TSPLIT;
+    const int t1 = (a.num_tokens * (th + 1)) / P1_TSPLIT;
+    float fnr[P1_MPER][HC];
 #pragma unroll
-    for (int j = 0; j < HC; ++j) {
-      pm[j] = a.post_mix_in[t * HC + j];
+    for (int mm = 0; mm < P1_MPER; ++mm)
 #pragma unroll
-      for (int k = 0; k < HC; ++k)
-        cm[k][j] = a.comb_mix_in[t * HC * HC + k * HC + j];
-    }
-    float dot[NOUT], sqr = 0.0f;
+      for (int j = 0; j < HC; ++j)
+        fnr[mm][j] = a.fn[(size_t)(mg * P1_MPER + mm) * HC * HIDDEN +
+                          j * HIDDEN + h];
+    for (int t = t0; t < t1; ++t) {
+      float cm[HC][HC], pm[HC];
 #pragma unroll
-    for (int m = 0; m < NOUT; ++m) dot[m] = 0.0f;
-
-    for (int h = h0 + threadIdx.x; h < h0 + HCHUNK; h += MK_THREADS) {
+      for (int j = 0; j < HC; ++j) {
+        pm[j] = a.post_mix_in[t * HC + j];
+#pragma unroll
+        for (int k = 0; k < HC; ++k)
+          cm[k][j] = a.comb_mix_in[t * HC * HC + k * HC + j];
+      }
       const float xv = __bfloat162float(a.x_in[t * HIDDEN + h]);
       float r[HC];
 #pragma unroll
@@ -997,41 +1016,43 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
                                               k * HIDDEN + h]);
         r[j] = v;
       }
+      float sqr = 0.0f;
+      if (mg == 0) {
 #pragma unroll
-      for (int j = 0; j < HC; ++j) {
-        a.residual_out[(size_t)t * HC * HIDDEN + j * HIDDEN + h] =
-            __float2bfloat16(r[j]);
-        sqr += r[j] * r[j];
+        for (int j = 0; j < HC; ++j) {
+          a.residual_out[(size_t)t * HC * HIDDEN + j * HIDDEN + h] =
+              __float2bfloat16(r[j]);
+          sqr += r[j] * r[j];
+        }
+      }
+      float dot[P1_MPER];
+#pragma unroll
+      for (int mm = 0; mm < P1_MPER; ++mm) {
+        float v = 0.0f;
+#pragma unroll
+        for (int j = 0; j < HC; ++j) v += fnr[mm][j] * r[j];
+        dot[mm] = v;
       }
 #pragma unroll
-      for (int j = 0; j < HC; ++j)
+      for (int mm = 0; mm < P1_MPER; ++mm)
+        for (int off = 16; off; off >>= 1)
+          dot[mm] += __shfl_xor_sync(~0u, dot[mm], off);
+      for (int off = 16; off; off >>= 1) sqr += __shfl_xor_sync(~0u, sqr, off);
+      if (lane == 0) {
 #pragma unroll
-        for (int m = 0; m < NOUT; ++m)
-          dot[m] += a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h] * r[j];
+        for (int mm = 0; mm < P1_MPER; ++mm) red[warp][mm] = dot[mm];
+        red[warp][P1_MPER] = sqr;
+      }
+      __syncthreads();
+      if (threadIdx.x < NOUT) {
+        const int g = threadIdx.x / P1_MPER, mm = threadIdx.x % P1_MPER;
+        a.yp[((size_t)c1 * MAX_TOK + t) * NOUT + threadIdx.x] =
+            red[2 * g][mm] + red[2 * g + 1][mm];
+      } else if (threadIdx.x == NOUT) {
+        a.rp[c1 * MAX_TOK + t] = red[0][P1_MPER] + red[1][P1_MPER];
+      }
+      __syncthreads();
     }
-
-    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-#pragma unroll
-    for (int m = 0; m < NOUT; ++m)
-      for (int off = 16; off; off >>= 1)
-        dot[m] += __shfl_xor_sync(~0u, dot[m], off);
-    for (int off = 16; off; off >>= 1) sqr += __shfl_xor_sync(~0u, sqr, off);
-    if (lane == 0) {
-#pragma unroll
-      for (int m = 0; m < NOUT; ++m) red[warp][m] = dot[m];
-      red[warp][NOUT] = sqr;
-    }
-    __syncthreads();
-    if (threadIdx.x < NOUT + 1) {
-      float v = 0.0f;
-#pragma unroll
-      for (int w = 0; w < MK_WARPS; ++w) v += red[w][threadIdx.x];
-      if (threadIdx.x < NOUT)
-        a.yp[((size_t)c * MAX_TOK + t) * NOUT + threadIdx.x] = v;
-      else
-        a.rp[c * MAX_TOK + t] = v;
-    }
-    __syncthreads();
   }
 }
 
@@ -1052,12 +1073,12 @@ __device__ void mk_mhc_p2(const MKMhcArgs& a, int bid) {
     // at 12.5 us per token-warp while 143 blocks waited at the barrier.
     float mine = 0.0f;
     if (lane < NOUT) {
-#pragma unroll
-      for (int c = 0; c < NCHUNK; ++c)
+#pragma unroll 16
+      for (int c = 0; c < P1_NCHUNK; ++c)
         mine += a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane];
     } else {
 #pragma unroll
-      for (int c = lane - NOUT; c < NCHUNK; c += 32 - NOUT)
+      for (int c = lane - NOUT; c < P1_NCHUNK; c += 32 - NOUT)
         mine += a.rp[c * MAX_TOK + t];
     }
     float sqr = (lane >= NOUT) ? mine : 0.0f;
