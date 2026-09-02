@@ -229,6 +229,19 @@ def build_mk_weight(weight):
     # [n_pad, k] -> [n_pad/128, k/128, 128, 128]
     q = (q.view(n_pad // 128, 128, k // 128, 128)
           .permute(0, 2, 1, 3).contiguous())
+    # Pre-swizzle: within every 128 x 128 tile, row r's 16 B chunk c goes
+    # to slot c ^ (r & 7). The kernel then copies each tile as a straight
+    # 16 KB memcpy and reads its mma fragments through the same XOR, which
+    # keeps the 8 rows of a fragment load on 8 bank groups without a padded
+    # pitch (the padding halved the copy's smem write throughput, and
+    # permuting at the destination instead cost the copy just as much).
+    n_t, k_t = q.shape[0], q.shape[1]
+    q5 = q.view(n_t, k_t, 128, 8, 16)
+    rows = torch.arange(128, device=q.device)
+    src = (torch.arange(8, device=q.device)[None, :] ^ (rows[:, None] & 7))
+    q = torch.gather(
+        q5, 3, src[None, None, :, :, None].expand(n_t, k_t, 128, 8, 16)
+    ).reshape(n_t, k_t, 128, 128).contiguous()
     return q, s
 
 
