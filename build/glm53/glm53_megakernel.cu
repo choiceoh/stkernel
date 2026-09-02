@@ -49,6 +49,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <vector>
+#include <type_traits>
 
 namespace {
 
@@ -112,7 +113,14 @@ constexpr int KDA_OUT_PAD = KDA_OUT;               // 2048 = 16 x 128
 
 constexpr int KSTEP = 128;               // one scale block of K
 constexpr int KBLK_MAX = 32;             // max k blocks (K <= 4096)
-constexpr int SMEM_A_PITCH = KSTEP + 4;  // fp8 A tile row pitch (4B aligned)
+// fp8 A tiles: dense 128 B rows with a 16 B-chunk XOR swizzle (mk_swz) keyed
+// by the row within the 16-row tile. The old 132 B pitch (33 words) put the
+// 8 rows of a fragment load on banks g+q, i.e. 4-way conflicts on 8 of the
+// 12 smem loads per k-step: ~1,150 wavefronts per k-block per SM, ~25 us
+// at n=6416. Hidden under the W8 stream, exposed in the W4 loop, where
+// removing mma_fold measured -15..-27 us per launch. Rows g and g+8 share
+// a key, so the 8 lanes of one fragment load land on 8 bank groups.
+constexpr int SMEM_A_PITCH = KSTEP;      // 128, dense + swizzled
 constexpr int SMEM_W_PITCH = KSTEP + 16; // fp8 W tile row pitch (16B aligned)
 constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 
@@ -154,11 +162,11 @@ constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
 // carveout that grew took the L1 the W8 loop was using).
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;   // 63,616 at NBUF 3
+                          KBLK_MAX * KBLK_MAX * 4;   // 63,488 at NBUF 3
 constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
                              W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                              KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,832 at 3
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,704 at 3
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
@@ -218,6 +226,11 @@ __device__ __forceinline__ uint8_t mk_f32_to_e4m3(float x) {
 // that do not occupy a register while in flight. wait_group<N> stalls until
 // at most N of THIS thread's committed groups are still pending; the
 // __syncthreads that follows each wait publishes other threads' copies.
+// byte offset within a 128 B tile row -> its swizzled offset (A tiles)
+__device__ __forceinline__ int mk_swz(int row, int off) {
+  return ((((off >> 4) ^ (row & 7)) << 4) | (off & 15));
+}
+
 __device__ __forceinline__ void mk_cp_async16(void* smem_dst,
                                               const void* gmem_src) {
   uint32_t d = (uint32_t)__cvta_generic_to_shared(smem_dst);
@@ -517,31 +530,47 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     const uint32_t sc4 =
         *(const uint32_t*)(rr + W4_RAW_NIB + row4 * 8 + half4 * 4);
     const uint32_t nw[8] = {n0.x, n0.y, n0.z, n0.w, n1.x, n1.y, n1.z, n1.w};
-    uint4* dv = (uint4*)(swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
-                         row4 * SMEM_W_PITCH + half4 * 64);
+    uint8_t* rowb = swb + expbuf * (SMEM_W_ROWS * SMEM_W_PITCH) +
+                    row4 * SMEM_W_PITCH + half4 * 64;
+    // Byte-lane SIMD: a raw word holds 8 nibbles = 8 elements; its low
+    // nibbles are elements 0,2,4,6 and its high nibbles 1,3,5,7. For the
+    // e2m1 magnitude t (0..7) the e4m3 byte is 0x30 + ((t>>1)<<3) + ((t&1)<<2)
+    // for t >= 2, 0x30 for t == 1 and 0 for t == 0 (the LUT, closed form),
+    // computed on four lanes at once; the exponent add and the sign ride
+    // the same lanes (__vadd4 has no carries between lanes, and
+    // LUT + e stays in [8, 124]). Then __byte_perm interleaves low and
+    // high lanes back into element order. ~12 ops per 8 elements against
+    // ~8 per element for the scalar chain; the stamps had the expansion
+    // at 1.55 us per k-block per block, more than the record's DRAM time.
 #pragma unroll
-    for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 nibble words -> 4 bytes words
-      // exponent-field add; s in [-5, 6] keeps LUT + e inside [8, 124], so
-      // it never carries into the sign bit
-      const int e = ((int)(int8_t)((sc4 >> (8 * g4)) & 0xFFu)) << 3;
+    for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 raw words -> 4 out words
+      const uint32_t eb = (uint32_t)((int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)
+                          & 0xFFu;
+      const uint32_t e4 = eb * 0x01010101u;
       uint32_t ow[4];
 #pragma unroll
-      for (int j = 0; j < 4; ++j) {  // output word j = elements 4j..4j+3
-        const uint32_t w = nw[2 * g4 + (j >> 1)] >> (16 * (j & 1));
-        uint32_t o = 0u;
+      for (int h = 0; h < 2; ++h) {   // raw word h of the group: elements 8h..8h+7
+        const uint32_t w = nw[2 * g4 + h];
+        uint32_t out2[2];
 #pragma unroll
-        for (int q = 0; q < 4; ++q) {
-          const uint32_t code = (w >> (4 * q)) & 0xFu;
-          const uint32_t c7 = code & 7u;
-          uint32_t bt = c7 ? (((uint32_t)mk_e2m1_byte((int)c7) +
-                               (uint32_t)e) & 0xFFu)
-                           : 0u;
-          bt |= (code & 8u) << 4;  // sign
-          o |= bt << (8 * q);
+        for (int par = 0; par < 2; ++par) {  // 0: low nibbles (even), 1: high (odd)
+          const uint32_t code = (par ? (w >> 4) : w) & 0x0F0F0F0Fu;
+          const uint32_t mag = code & 0x07070707u;
+          const uint32_t nz = ~__vcmpeq4(mag, 0u);                 // 0xFF where t != 0
+          const uint32_t one = __vcmpeq4(mag, 0x01010101u);        // 0xFF where t == 1
+          uint32_t bt = ((mag >> 1) & 0x03030303u) << 3;           // (t>>1)<<3
+          bt |= (mag & 0x01010101u) << 2;                          // (t&1)<<2
+          bt = __vadd4(bt, 0x30303030u & nz);                      // + 0x30 (t != 0)
+          bt = __vsub4(bt, 0x04040404u & one);                     // t == 1 -> 0x30
+          bt = __vadd4(bt, e4 & nz);                               // + (s << 3)
+          bt |= (code & 0x08080808u) << 4;                         // sign
+          out2[par] = bt;
         }
-        ow[j] = o;
+        // interleave: elements (0,1,2,3) = lo.b0, hi.b0, lo.b1, hi.b1 ...
+        ow[2 * h] = __byte_perm(out2[0], out2[1], 0x5140);
+        ow[2 * h + 1] = __byte_perm(out2[0], out2[1], 0x7362);
       }
-      dv[g4] = make_uint4(ow[0], ow[1], ow[2], ow[3]);
+      *(uint4*)(rowb + g4 * 16) = make_uint4(ow[0], ow[1], ow[2], ow[3]);
     }
   };
   static_assert(MK_W_NBUF >= 2, "the pipeline needs a spare buffer");
@@ -674,6 +703,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   };
 #ifdef MK_PHASE_TS
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
+  unsigned long long tmma = 0ull, texp = 0ull;  // ns in mma_fold / expand (W4)
 #endif
   for (int u = blockIdx.x; u < units; u = next_unit()) {
     int nt, kb0, kbn;
@@ -694,47 +724,70 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // Plain stores rather than cp.async: the tile is at most m * 128 = 4 KB
     // and L2-hot, and a cp.async here would land in the same group stream
     // the W pipeline's wait counts depend on.
-    auto stage_a = [&](int kb) {
-      constexpr int WORDS = KSTEP / 4;
-      for (int t = threadIdx.x; t < c.m * WORDS; t += MK_THREADS) {
-        const int r = t / WORDS, e = (t % WORDS) * 4;
-        uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
-                       (r & 15) * SMEM_A_PITCH;
-        *(uint32_t*)(dst + e) = *(const uint32_t*)(
-            g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
+    // Split in two so the L2 loads go out at the top of an iteration and
+    // only the smem stores sit between the syncs: the load's latency was
+    // exposed once per k-block (the stamps' ~0.9 us "other" per k-block).
+    constexpr int A_WORDS = KSTEP / 4;
+    constexpr int A_PER_THREAD = 32 * A_WORDS / MK_THREADS;  // 4 at m = 32
+    uint32_t areg[A_PER_THREAD];
+    auto stage_a_load = [&](int kb) {
+#pragma unroll
+      for (int i = 0; i < A_PER_THREAD; ++i) {
+        const int t = threadIdx.x + i * MK_THREADS;
+        const int r = t / A_WORDS, e = (t % A_WORDS) * 4;
+        if (r < c.m)
+          areg[i] = *(const uint32_t*)(
+              g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
+      }
+    };
+    auto stage_a_store = [&]() {
+#pragma unroll
+      for (int i = 0; i < A_PER_THREAD; ++i) {
+        const int t = threadIdx.x + i * MK_THREADS;
+        const int r = t / A_WORDS, e = (t % A_WORDS) * 4;
+        if (r < c.m) {
+          uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
+                         (r & 15) * SMEM_A_PITCH;
+          *(uint32_t*)(dst + mk_swz(r & 15, e)) = areg[i];
+        }
       }
       // rows >= m keep stale bytes: their output rows are never written and
       // finite e4m3 cannot poison other rows of the same mma.
     };
+    auto stage_a = [&](int kb) { stage_a_load(kb); stage_a_store(); };
 
     // mma + per-k-block scale fold, shared by the W8 and W4 pipelines
     // (W4 tiles arrive already scale-multiplied, so their wsc is 1).
-    auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
+    // MT = m-tiles actually present (1 for m <= 16, 2 otherwise), a compile-
+    // time constant per instantiation: the loops below fully unroll and the
+    // second tile's A loads and mmas simply do not exist for m <= 16 (m=8 is
+    // in_proj, the biggest shape). A runtime `break` inside the unrolled
+    // loops measured 10% slower -- the compiler gave up on the unroll.
+    auto mma_fold_t = [&](auto MTC, const uint8_t* sw, int kb, float wsc) {
+      constexpr int MT = decltype(MTC)::value;
       // ---- mma: warp covers n-cols [warp*16, warp*16+16) of the tile,
       // two m16n8 mmas per k-slice; each n8 half keeps its own kacc
       // (a shared accumulator would sum the two halves' products).
       float kacc[2][2][4];
 #pragma unroll
-      for (int i = 0; i < 2; ++i)
+      for (int i = 0; i < MT; ++i)
 #pragma unroll
         for (int j = 0; j < 2; ++j)
 #pragma unroll
           for (int c = 0; c < 4; ++c) kacc[i][j][c] = 0.0f;
 
-#pragma unroll 2
+#pragma unroll
       for (int ks = 0; ks < KSTEP / 32; ++ks) {
         const int koff = ks * 32;
         uint32_t a[2][4];
 #pragma unroll
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < MT; ++i) {
           const uint8_t* base = saq + i * 16 * SMEM_A_PITCH;
-          a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + koff + t4);
-          a[i][1] =
-              *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + koff + t4);
-          a[i][2] =
-              *(const uint32_t*)(base + g * SMEM_A_PITCH + koff + 16 + t4);
-          a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + koff +
-                                       16 + t4);
+          const int o0 = mk_swz(g, koff + t4), o1 = mk_swz(g, koff + 16 + t4);
+          a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o0);
+          a[i][1] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o0);
+          a[i][2] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o1);
+          a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o1);
         }
 #pragma unroll
         for (int j = 0; j < 2; ++j) {
@@ -744,7 +797,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           uint32_t b1 =
               *(const uint32_t*)(sw + nrow * SMEM_W_PITCH + koff + 16 + t4);
 #pragma unroll
-          for (int i = 0; i < 2; ++i) {
+          for (int i = 0; i < MT; ++i) {
             asm volatile(
                 "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
                 "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
@@ -760,7 +813,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // ws is per (n-block, k-block); the whole staged tile shares nb == nt
       // and the warp's 16 columns sit inside it. xs is per (row, k-block).
 #pragma unroll
-      for (int i = 0; i < mtiles; ++i) {
+      for (int i = 0; i < MT; ++i) {
         const int r0 = i * 16 + g;
         const int r1 = r0 + 8;
         const float s0 = (r0 < c.m) ? wsc * sxs[r0 * KBLK_MAX + kb] : 0.0f;
@@ -774,6 +827,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         }
       }
 
+    };
+    auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
+      if (mtiles == 2)
+        mma_fold_t(std::integral_constant<int, 2>{}, sw, kb, wsc);
+      else
+        mma_fold_t(std::integral_constant<int, 1>{}, sw, kb, wsc);
     };
 
     const bool prefilled = hoisted && (u == (int)blockIdx.x);
@@ -800,9 +859,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       for (int kb = kb0;; ++kb) {
         if (kb + RAW_DIST < kbn)
           stage_raw4(nt, kb + RAW_DIST, (kb + RAW_DIST) % W4_RAW_NBUF);
+        if (kb + 1 < kbn) stage_a_load(kb + 1);
         const uint8_t* sw4t =
             swb + (kb % 2) * (SMEM_W_ROWS * SMEM_W_PITCH);
+        MK_TS_ACC_BEGIN(tm);
         mma_fold(sw4t, kb, 1.0f);  // scales already inside the bytes
+        MK_TS_ACC_END(tmma, tm);
         if (kb + 1 >= kbn) break;
         // raw(kb+1) landed: the groups still allowed in flight are the
         // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
@@ -810,8 +872,10 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));
         __syncthreads();  // raw(kb+1) visible; every mma reader of kb done
         MK_TS_ACC_END(twait, tw);
+        MK_TS_ACC_BEGIN(te);
         expand_w4((kb + 1) % W4_RAW_NBUF, (kb + 1) % 2);
-        stage_a(kb + 1);
+        MK_TS_ACC_END(texp, te);
+        stage_a_store();
         __syncthreads();
       }
     } else {
@@ -844,6 +908,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #else
         mk_cp_commit();  // keep the group count
 #endif
+        if (kb + 1 < kbn) stage_a_load(kb + 1);  // L2 latency under the mma
         const uint8_t* sw =
             swb + (kb % MK_W_NBUF) * (SMEM_W_ROWS * SMEM_W_PITCH);
 #if MK_PROBE_SKIP != 1 && MK_PROBE_SKIP != 4
@@ -855,7 +920,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         if (kb + 1 >= kbn) break;
         __syncthreads();  // every mma reader of saq is done first
 #if MK_PROBE_SKIP != 2 && MK_PROBE_SKIP != 4
-        stage_a(kb + 1);  // ALU work while W(kb+1) finishes its flight
+        stage_a_store();  // saq(kb+1) from the registers loaded above
 #endif
         // outstanding after W(kb+1): the deeper stages, when they exist --
         // min(DIST - 1, kbn - kb - 2) of them (kb + DIST was just issued).
@@ -961,6 +1026,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   MK_TS(4);  // all units of this block done (no fold barrier any more)
 #ifdef MK_PHASE_TS
   MK_TS_STORE(5, twait);
+  if (W4) { MK_TS_STORE(3, tmma); MK_TS_STORE(7, texp); }
 #endif
 }
 
