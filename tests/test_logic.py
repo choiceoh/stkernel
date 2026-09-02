@@ -6143,9 +6143,11 @@ def test_glm53_megakernel_contracts() -> None:
                        ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
         check(consts.get(name) == want,
               f".cu constant {name} == {want} (got {consts.get(name)})")
-    check('"yp": z(P1_NCHUNK * MAX_TOK * NOUT)' in pysrc_full
-          and '"rp": z(P1_NCHUNK * MAX_TOK)' in pysrc_full
-          and "P1_NCHUNK = 64" in pysrc_full,
+    _drv = open(os.path.join(REPO, mod, "glm53_megakernel.py"),
+                encoding="utf-8").read()
+    check('"yp": z(P1_NCHUNK * MAX_TOK * NOUT)' in _drv
+          and '"rp": z(P1_NCHUNK * MAX_TOK)' in _drv
+          and "P1_NCHUNK = 64" in _drv,
           "the mhc workspace sizes yp/rp by the p1 sub-chunk count")
     check(consts["GEMM_SMEM"] <= 98304,
           "dynamic smem stays inside the 96 KB discipline of the 128 KB/SM")
