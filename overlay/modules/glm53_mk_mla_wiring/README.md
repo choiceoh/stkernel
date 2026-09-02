@@ -7,10 +7,12 @@ module is the image-bound hook: an overlay of
 `vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py` (the FA2
 wrapper backend vLLM selects on sm_12x) with two hunks:
 
-* `forward_mqa`: for `num_tokens <= 32` (every decode verify batch: C=1..4
-  x 8 tokens) call `mla_decode` on the same `topk_slots` / `valid_counts` /
-  fp8 latent bytes the wrapper would have used, and return. Prefill and any
-  larger T keep the wrapper, so the builder's per-step `plan()` stays.
+* `forward_mqa`: call `mla_decode` on the same `topk_slots` /
+  `valid_counts` / fp8 latent bytes the wrapper would have used, and return.
+  Decode (T <= 64) uses the split + log-sum-exp path; **prefill (T > 64) runs
+  at splits == 1**, where the kernel normalises in place and needs no fp32
+  partial scratch. The builder's per-step `plan()` still runs -- it is on the
+  builder, not this call -- so the wrapper stays a working fallback.
 * a one-shot shadow on the first eager call: kernel vs wrapper on the same
   bytes, `rel > 2e-2` or a non-finite output DISARMs the segment for the boot
   (`[megakernel] mla shadow vs wrapper rel=... -> ARMED for decode` is the
@@ -25,11 +27,14 @@ Isolated (srv4, W=2048, L2-cold), per layer:
 
 | T | MK_SEG_MLA | FlashInfer run |
 |---|---|---|
-| 8 (C=1) | 93.7 us | 124.8 us |
-| 16 | 162.5 us | 196.1 us |
-| 32 | 335.8 us | 551.9 us |
+| 8 (C=1) | 67.7 us | 124.3 us |
+| 16 | 96.7 us | 199.8 us |
+| 32 | 212.8 us | 547.2 us |
+| 8192 (prefill) | 31.6 ms @ 204 GB/s | ~76 ms/layer-chunk |
 
-11 layers x (124.8 - 93.7) = 0.34 ms/step at C=1, ~0.5% of the step. Pass
+Decode: 11 layers x (124.3 - 67.7) = 0.62 ms/step at C=1. Prefill: attention
+is 25% of a 32K prefill (4.19 s of 16.9 s) at 113 GB/s; this kernel does the
+same gather at 204 GB/s, 91% of the part's 225 GB/s scattered ceiling. Pass
 the knobs as caller env:
 
 ```bash

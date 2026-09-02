@@ -6821,8 +6821,16 @@ def test_glm53_megakernel_contracts() -> None:
     check(len(wrows) == 1 and wrows[0][1] == "vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py"
           and re.fullmatch(r"[0-9a-f]{64}", wrows[0][2]) is not None,
           "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
-    check("_MK_MLA_MAX_T = 32" in wsrc and "num_tokens > _MK_MLA_MAX_T" in wsrc,
-          "mk_mla_wiring routes only T<=32 (decode verify batches); prefill keeps the wrapper")
+    check("num_tokens > _MK_MLA_MAX_T" in wsrc and "_MK_MLA_MAX_T = 1 << 20" in wsrc,
+          "mk_mla_wiring routes decode AND prefill (v5: splits==1 needs no scratch)")
+    check("q_nope.shape[0] <= 64" in wsrc,
+          "the one-shot wrapper shadow stays on a decode-sized call (a prefill "
+          "shadow would allocate a second 134 MB output)")
+    check("if T > MLA_MAX_SPLIT_ROWS:" in pysrc_full and "return 1" in pysrc_full,
+          "prefill row counts take splits == 1 (a [T][splits][H][D] fp32 scratch "
+          "would be 268 MB at T=8192)")
+    check("if (a.splits == 1) return;" in cu and "v5 (prefill)" in cu,
+          "the kernel normalises in phase 0 and skips the combine when splits == 1")
     # the wrapper tail also lives in the module-level _sm90_wrapper_run
     # helper (defined before the class), so compare against forward_mqa's
     # own copy -- the LAST occurrence

@@ -387,7 +387,12 @@ class FlashInferMLASparseSM90Builder(FlashInferMLASparseMetadataBuilder):
 # same precision class as the FA2 wrapper it replaces). Prefill and any
 # T > 32 keep the wrapper, so the builder's plan() still runs every step.
 logger = init_logger(__name__)
-_MK_MLA_MAX_T = 32
+# v5: prefill rides the same kernel. At splits == 1 (every T > 64) the kernel
+# normalises in place and needs no fp32 partial scratch, so the only limit is
+# the batch the scheduler can hand us. Measured at the prefill shape: 204 GB/s
+# against the part's 225 GB/s scattered-gather ceiling, versus 113 GB/s for
+# the wrapper -- prefill attention is 25% of a 32K prefill.
+_MK_MLA_MAX_T = 1 << 20
 _MK_MLA_SHADOW = {"checked": False}
 
 
@@ -446,7 +451,8 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
     if lens.dtype != torch.int32:
         lens = lens.to(torch.int32)
     out = m.mla_decode(q, kv_c_and_k_pe_cache.view(torch.uint8), slots, lens, impl.scale, ckv_scale)
-    if not _MK_MLA_SHADOW["checked"] and not torch.cuda.is_current_stream_capturing():
+    if (not _MK_MLA_SHADOW["checked"] and q_nope.shape[0] <= 64
+            and not torch.cuda.is_current_stream_capturing()):
         # one-shot shadow on the first eager call: the kernel against the
         # wrapper on the same bytes. vLLM warms up eagerly before capture,
         # so this lands before any graph bakes the MK launch in.

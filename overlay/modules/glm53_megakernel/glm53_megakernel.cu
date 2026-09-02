@@ -2010,7 +2010,7 @@ constexpr int MLA_SMEM_RING = MLA_NSTAGE * MLA_TILE * MLA_RP;
 constexpr int MLA_SMEM_Q = MLA_H * MLA_CP * 2;
 constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * MLA_TILE * 4;
 constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;
-constexpr int MLA_SMEM_C = MLA_H * 4;
+constexpr int MLA_SMEM_C = MLA_H * 8;   // [H] corr, then [H] l
 constexpr int MLA_SMEM = MLA_SMEM_RING + MLA_SMEM_Q + MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C;
 
 __device__ __forceinline__ float mla_warp_max(float v) {
@@ -2180,7 +2180,30 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       __syncthreads();
     }
 
-    {
+    if (a.splits == 1) {
+      // v5 (prefill): one split owns the whole row, so there is nothing for
+      // the log-sum-exp phase to combine -- normalise and store bf16 here.
+      // Without this a prefill call would need a [T][splits][H][D] fp32
+      // scratch: 268 MB at T = 8192.
+      //
+      // The softmax state lives on the warp that owns heads 2w, 2w+1, while
+      // acc rows are heads (g, g+8) of the mma C layout, so the denominator
+      // goes through smem first.
+      float* sl = scorr + MLA_H;
+      if (lane == 0) { sl[warp * 2] = l0; sl[warp * 2 + 1] = l1; }
+      __syncthreads();
+      const float ig = (sl[g] > 0.f) ? __frcp_rn(sl[g]) : 0.f;
+      const float ig8 = (sl[g + 8] > 0.f) ? __frcp_rn(sl[g + 8]) : 0.f;
+      __nv_bfloat16* o0 = a.out + ((size_t)t * MLA_H + g) * MLA_D;
+      __nv_bfloat16* o8 = a.out + ((size_t)t * MLA_H + g + 8) * MLA_D;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int col = warp * 64 + nt * 8 + q4 * 2;
+        *(__nv_bfloat162*)(o0 + col) = __floats2bfloat162_rn(acc[nt][0] * ig, acc[nt][1] * ig);
+        *(__nv_bfloat162*)(o8 + col) = __floats2bfloat162_rn(acc[nt][2] * ig8, acc[nt][3] * ig8);
+      }
+      __syncthreads();   // sl is rewritten by the next item
+    } else {
       float* base = a.part + (((size_t)t * a.splits + sp_i) * MLA_H) * MLA_D;
 #pragma unroll
       for (int nt = 0; nt < 8; ++nt) {
@@ -2195,6 +2218,8 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       }
     }
   }
+
+  if (a.splits == 1) return;   // v5: phase 0 already normalised and stored
 
   mk_grid_barrier(a.barrier_ctr, a.grid);
 

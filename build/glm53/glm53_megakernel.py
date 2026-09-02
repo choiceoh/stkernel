@@ -1152,6 +1152,9 @@ MLA_SPLITS_MAX = 16
 _MLA_WS = None
 
 
+MLA_MAX_SPLIT_ROWS = 64   # beyond this the split path's fp32 scratch is silly
+
+
 def _mla_workspace(device, T: int, splits: int):
     """Split partials + (m, l), grown once and then strongly held: a captured
     graph bakes these addresses, so they must never be reallocated."""
@@ -1180,6 +1183,10 @@ def mla_splits(T: int) -> int:
     blocks walking a second item alone and cost 40%)."""
     if _EXT is None or T <= 0:
         return 1
+    if T > MLA_MAX_SPLIT_ROWS:
+        # prefill: every row is its own item, the kernel normalises in place
+        # and no [T][splits][H][D] fp32 scratch exists (268 MB at T=8192)
+        return 1
     grid = int(_EXT.mla_grid())
     forced = os.environ.get("VLLM_GLM53_MK_MLA_SPLITS")   # probe knob, never set in serving
     if forced:
@@ -1205,8 +1212,9 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
     ws = _ensure_workspace(q_nope.device)
-    mw = _mla_workspace(q_nope.device, T, MLA_SPLITS_MAX)
     splits = mla_splits(T)
+    mw = (_mla_workspace(q_nope.device, T, MLA_SPLITS_MAX) if splits > 1
+          else {"part": ws["barrier"], "pml": ws["barrier"]})   # unused when splits == 1
     if out is None:
         out = torch.empty_like(q_nope)
     _EXT.run_mla(
