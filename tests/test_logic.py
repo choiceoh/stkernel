@@ -7184,6 +7184,8 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
           "applicability guards x's layout and the K match (the kernel assumes both)")
     check("w.dtype == torch.float32" in kern and "w.is_contiguous()" in kern,
           "applicability: fp32 contiguous weight only")
+    check("K % block_k" in kern and "raise ValueError" in kern,
+          "a non-tiling block_k fails loud (the partial kernel reads w rows unmasked)")
     check("return torch.mm(x.float(), w)" in kern, "the helper falls back to the stock product")
     check("[indexer-gate]" in kern and "logger.warning" in kern,
           "routing is announced once per shape so an armed boot that never runs split-K is visible")

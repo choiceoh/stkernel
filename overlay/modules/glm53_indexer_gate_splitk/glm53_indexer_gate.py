@@ -86,6 +86,11 @@ def head_gate_splitk(x: torch.Tensor, w: torch.Tensor, block_k: int = _BLOCK_K) 
     fp32, contiguous). Returns a fresh contiguous fp32 [M, N] tensor."""
     M, K = x.shape
     N = w.shape[1]
+    if K % block_k:
+        # The partial kernel reads w rows unmasked over [0, split*block_k): a K
+        # the block does not tile would drop the tail and answer quietly wrong.
+        raise ValueError(
+            f"head_gate_splitk: K={K} is not a multiple of block_k={block_k}")
     bn = _bn_for(N)
     split = K // block_k
     part = torch.empty(split * MAX_M, bn, device=x.device, dtype=torch.float32)
