@@ -115,7 +115,7 @@ gate catches it before a boot lies about what it is running.
 VLLM_GLM53_MEGAKERNEL=1     # master, default 0
 VLLM_GLM53_MK_MHC=1         # per segment, each default 0
 VLLM_GLM53_MK_GEMM=1
-VLLM_GLM53_MK_KDA=1         # see the open item below before arming this
+VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
 ```
@@ -132,24 +132,33 @@ First arm compiles the extension in-container (`/root/.mk_build`, ~a
 minute, same pattern as tp_oneshot_ar) and logs the source md5 + kernel
 count fingerprint.
 
-## Open item before MK-KDA serves: the state-index contract
+## The state-index contract (settled 2026-09-02 from the stock source)
 
-`fused_recurrent_kda` receives `spec_state_indices_tensor` shaped
-`[n_spec, max_query_len]`; this kernel treats `[r, 0]` as THE state slot of
-request r for both conv and recurrent state (read at entry, written at the
-accepted boundary). If the stock kernel actually addresses per-position
-slots, eager **shadow mode** (`VLLM_GLM53_MK_KDA_SHADOW=1`) is the gate
-that settles it: both arms run, outputs AND the states the next step reads
-are diffed every 64 calls and on drift, graph replay stays stock. Run shadow
-on a bench boot, read the log, then decide the arm.
+`spec_state_indices_tensor` is `[n_spec, max_query_len]`: **one state slot
+per query position**. The stock kernels (`fused_recurrent.py`,
+`IS_SPEC_DECODING`; `causal_conv1d.py`, the spec update kernel) read
+`num_accepted_tokens` as the PREVIOUS step's acceptance count:
 
-Shadow is self-sufficient: the KDA packs build lazily per layer from the
-bf16 source weights (cached, eager-only), so a shadow boot does not need
-MK-GEMM armed. It does require `VLLM_GLM53_FP8_DENSE=1` so the stock arm of
-every comparison runs the fp8 axis; the shadow gate is the e2m1 by-design
-class (0.15) because the MK arm streams W4 packs of the same weights --
-against bf16 stock even that could not tell a broken kernel from
-quantization.
+- recurrence: resume from slot `[r, acc - 1]`, and after every token j
+  store the running state into slot `[r, j]` (slot <= 0 is NULL_BLOCK_ID:
+  the program returns without outputs);
+- short conv: the history for this step's first token is the state
+  window's entries `[acc - 1, acc, acc + 1]` (the three ending at the last
+  accepted draft), and the window written back keeps `old[acc], old[acc+1]`
+  ahead of the new tokens (conv slot = `[r, 0]`, as the serving overlay
+  passes `spec_state_indices_tensor[:, 0]`).
+
+This kernel used to resume from `[r, 0]`, write the recurrent state only
+at `j == acc - 1`, and read the conv history from the buffer's newest end
+-- right only when every draft was accepted, which is why the fixture's
+acc=8 passed and acc=1/3 differed by ~1.3 in the output. The fixture now
+addresses distinct slots per position (`SLOT .. SLOT + 7`), so the boot
+self-test and the bench probe check the per-position contract itself.
+Eager **shadow mode** (`VLLM_GLM53_MK_KDA_SHADOW=1`) stays the live gate:
+both arms run, outputs AND the states the next step reads are diffed every
+64 calls and on drift (gated at the e2m1 by-design class, see above), graph
+replay stays stock. Run shadow on a bench boot, read the log, then decide
+the arm.
 
 ## Review fixes already folded in (2026-09-01)
 

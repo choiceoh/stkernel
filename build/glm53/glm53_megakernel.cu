@@ -152,6 +152,9 @@ constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +
                           KBLK_MAX * KBLK_MAX * 4 +
                           W4_RAW_NBUF * W4_RAW_BYTES;  // 69,632 at 3
 static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");
+static_assert(KDA_D * (KDA_D + 1) * 4 <= GEMM_SMEM,
+              "the kda per-position state store stages a padded D x D tile "
+              "in the dynamic smem the gemm phases own");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
 
 #define MK_CHECK_CUDA(x)                                                     \
@@ -1326,7 +1329,8 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   {  // phase 2: merged short conv (k=4, silu) with accepted-window rollback.
     // hist(pos) is the channel's input at in-request position pos (pos < 0
     // reads the slot's conv state). Outputs are produced for ALL query
-    // tokens; the state window is rolled to the accepted boundary.
+    // tokens; the history starts at the accepted boundary and the window
+    // written back keeps the accepted drafts (stock's spec conv kernel).
     for (int r = 0; r < a.n_spec; ++r) {
       const int t0 = a.cu_seqlens[r], t1 = a.cu_seqlens[r + 1];
       const int slot = a.state_idx[r * a.mql + 0];
@@ -1337,14 +1341,20 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
                              (size_t)ch * a.conv_width;
         // The state is conv_width wide (conv_kernel_size - 1 + num_spec, so
-        // 10 here), NOT conv_width == CONV_W - 1. Its NEWEST entry is the
-        // last one, so the convolution's history for pos < 0 comes off the
-        // END of the buffer, not the front. Reading st[pos + CONV_W - 1]
-        // took the three OLDEST entries instead.
+        // 10 here): [history .., draft1 .. draftN] of the PREVIOUS step,
+        // of whose drafts `acc` were accepted. The stock spec kernel
+        // (causal_conv1d.py, _causal_conv1d_update_kernel with
+        // num_accepted_tokens) reads this step's history as
+        //   prior_tokens = base + (acc - 1),  cols at +0, +1, +2
+        // i.e. the three entries ending at the last ACCEPTED draft. This
+        // kernel used to read the last three entries of the buffer -- the
+        // rejected drafts -- which is the same window only when every
+        // draft was accepted (acc == nq): the fixture's acc=8 passed and
+        // acc=1/3 differed by ~1.3 in the output, conv_state matching.
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i];
+          st[i] = a.conv_state[sbase + (acc - 1) + i];
         // The two entries the update keeps, read before anything is written:
         // stock keeps conv_width - nq old values starting at `acc`.
         const int nq_tok = t1 - t0;
@@ -1405,10 +1415,22 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 
       for (int r = 0; r < a.n_spec; ++r) {
         const int t0 = a.cu_seqlens[r], t1 = a.cu_seqlens[r + 1];
-        const int slot = a.state_idx[r * a.mql + 0];
         const int acc = a.n_accepted[r];
+        // The state-index contract, from the stock kernel
+        // (fused_recurrent.py, IS_SPEC_DECODING): the state to resume from
+        // is the slot of the previous step's last ACCEPTED position,
+        // ssm_state_indices[r, acc - 1]; after every token j the running
+        // state is stored into ssm_state_indices[r, j] (a slot per query
+        // position, so the next step can roll back by picking one); a
+        // slot <= 0 is NULL_BLOCK_ID (padding) and the stock program
+        // returns without outputs. This kernel used to read [r, 0] and
+        // write only at j == acc - 1 -- the fixture (one slot for every
+        // position) hid the per-position part and showed the rest as the
+        // rec_state mismatch at acc < nq.
+        const int slot0 = a.state_idx[r * a.mql + (acc - 1)];
+        if (slot0 <= 0) continue;
         float* Sbase =
-            a.rec_state + (((size_t)slot * KDA_H + head) * KDA_D * KDA_D);
+            a.rec_state + (((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D);
         // Element (v, k) lives at v * KDA_D + k, matching the stock
         // writer: fused_recurrent.py stores b_h as
         //   p_ht + o_v[:, None] * K + o_k[None, :]
@@ -1516,10 +1538,27 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
                 __float2bfloat16(sred[0][v] + sred[1][v]);
           __syncthreads();
 
-          if (j == acc - 1) {  // accepted boundary: write the state back
+          {  // this position's slot takes the state after token j
+            const int sj = a.state_idx[r * a.mql + j];  // block-uniform
+            if (sj > 0) {
+              // Staged through the (idle here) dynamic smem so the 64 KB
+              // lands as coalesced 128 B rows: written straight from the
+              // registers, thread v's 64 floats sit 512 B apart across the
+              // warp, every 4 B store its own 32 B sector -- 8x the
+              // traffic, and with a store per token instead of one per
+              // request that measured 445 -> 978 us per launch.
+              float* stg = (float*)smem;  // [KDA_D][KDA_D + 1]
 #pragma unroll 8
-            for (int kk = 0; kk < KDA_D / 2; ++kk)
-              Sbase[(size_t)v * KDA_D + (k0 + kk)] = S[kk];
+              for (int kk = 0; kk < KDA_D / 2; ++kk)
+                stg[v * (KDA_D + 1) + (k0 + kk)] = S[kk];
+              __syncthreads();
+              float* Sj = a.rec_state +
+                          (((size_t)sj * KDA_H + head) * KDA_D * KDA_D);
+              for (int idx = threadIdx.x; idx < KDA_D * KDA_D;
+                   idx += MK_THREADS)
+                Sj[idx] = stg[(idx >> 7) * (KDA_D + 1) + (idx & (KDA_D - 1))];
+              __syncthreads();  // stg is rewritten by the next token
+            }
           }
         }
       }

@@ -1858,6 +1858,18 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★메가커널 7차 — MK-KDA 의 state-index 계약 확정과 수정 (2026-09-02, srv2)
+
+README 의 "MK-KDA 서빙 전 미결 항목"을 stock 소스로 닫았다. `spec_state_indices_tensor` 는 `[n_spec, max_query_len]` = **질의 위치마다 상태 슬롯 하나**이고, `num_accepted_tokens` 는 *이전* 스텝의 수용 수다:
+- 재귀(`fused_recurrent.py`, IS_SPEC_DECODING): 초기 상태는 슬롯 `[r, acc−1]`, **매 토큰 j 뒤** 상태를 슬롯 `[r, j]` 에 저장(슬롯 ≤ 0 = NULL_BLOCK_ID, 출력 없이 반환).
+- conv(`causal_conv1d.py` spec 커널): 이력은 `prior_tokens = base + (acc−1)` 의 세 항목 `[acc−1, acc, acc+1]`, 되쓰는 창은 `old[acc], old[acc+1]` + 새 토큰(이미 MK 와 일치), conv 슬롯 = `[r, 0]`(서빙 오버레이가 `spec_state_indices_tensor[:, 0]` 을 넘김).
+
+MK 는 `[r, 0]` 에서 재개하고 `j == acc−1` 에서만 되감아 쓰며 conv 이력을 버퍼 끝 3개에서 읽었다 — 모든 초안이 수용된 경우(acc == nq)에만 맞는 창. 그래서 픽스처의 acc=8 만 통과하고 acc=1/3 은 out 1.3(conv 이력), rec_state 0.05~0.12(되감기 위치)로 어긋났다. 픽스처는 슬롯 하나를 모든 위치에 매핑해 위치별 계약을 숨기고 있었다 → `SLOT .. SLOT+7` 로 확장(rec 슬롯 10개).
+
+**검증 (srv2, iters 10, cec6610)**: KDA acc=1/3/8 = out 4.5e-4 / 5.0e-4 / 5.0e-4 (게이트 2e-2), conv_state 0.0, rec_state 1.6e-6 — 위치별 슬롯 전부 일치. GEMM/MHC/정확 게이트 변화 없음. VERDICT PASS.
+
+**비용**: 토큰마다 상태(64 KB/헤드)를 쓰므로 8 MB/레이어 — stock 도 같다. 첫 구현은 레지스터에서 바로 써서(스레드 v 의 64개 float 이 512 B 간격, 4 B 저장마다 32 B 섹터) MK-KDA 445→978 µs; dynamic smem 으로 전치해 128 B 행으로 병합 저장(024dcf0)하면 **478~481 µs** — 계약의 대가 ~33 µs(7%), stock 642~659 대비 −26%. 수치는 동일(out 4.5e-4/5.0e-4, rec_state 1.6e-6), VERDICT PASS.
+
 ## 메가커널 6차 — W8 팔 제거, W4 단일 레인 (2026-09-02, 운영자 결정)
 
 운영자: "W8 있으면 끄는 설정해야하고 유지보수 부담해야하니 귀찮지않나". W8 팔은 정상 상태에서 stock 보다 10~18% 빨랐지만(4차) W4 가 22~42% 빠른 마당에 선택·자가검증·브래킷·유지의 두 번째 팔이었다. **레인은 W4 아니면 stock.**
@@ -1879,7 +1891,7 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 | 32×2048 | 1.25e-1 | 41.9 | 37.9 | 52.1 | 51.6 |
 | 32×1024 | 1.25e-1 | 31.7 | 28.1 | 35.8 | 33.7 |
 
-게이트: pack roundtrip 0, exact grid 0.00e+00(1 ulp 초과 0개 — 비트 정확), MHC 1.15e-7/3.47e-7, KDA acc=8 out 0.0(스냅 덕분에 정확; main 은 3.9e-3). **KDA acc=1/3 은 main(1ed1127)에서도 1.32/1.42 로 동일하게 실패** — 기존 state-index 미결, 이번 변경과 무관. MK-KDA 커널 477→447 µs(W4 팩). 관찰: stock KDA 열이 637(main, iters 10)→1739(W4 단일, iters 20) µs — 원인 미확인(픽스처 스냅 또는 반복 수; 차등 실행으로 확인 중), MK 팔 판정과 무관. 한 실행에서 GEMM `mk_spread` 가 54/85% 로 튄 적이 있으나(876a429) 재실행에서 3.5~6%.
+게이트: pack roundtrip 0, exact grid 0.00e+00(1 ulp 초과 0개 — 비트 정확), MHC 1.15e-7/3.47e-7, KDA acc=8 out 0.0(스냅 덕분에 정확; main 은 3.9e-3). **KDA acc=1/3 은 main(1ed1127)에서도 1.32/1.42 로 동일하게 실패** — 기존 state-index 미결, 이번 변경과 무관. MK-KDA 커널 477→447 µs(W4 팩). 관찰: stock KDA 열은 같은 코드에서도 실행마다 637~1797 µs 로 흔들린다(main@iters10 637, main@iters20 1739, W4단일@iters10 1700, @iters20 1739~1797) — 반복 수도 스냅도 아닌 stock 경로(Triton 5커널)의 실행 간 편차; MK 열은 안정(main 477~500, W4 단일 445~447 = −7~10%). 한 실행에서 GEMM `mk_spread` 가 54/85% 로 튄 적이 있으나(876a429) 재실행에서 3.5~6%.
 
 ## ★★★메가커널 5차 — W4 확장을 prmt 테이블 조회로 (2026-09-02, srv2)
 

@@ -857,10 +857,16 @@ class _KdaFixture:
         # than any input (1.2 against a 0.24 max) and why ~64% of channels
         # disagreed even at acc=1. The gate was comparing against garbage.
         self.conv_st = mkw(2, KDA_QKV, KDA_CONV_STATE_W, dt=torch.float32)
-        self.rec_st = (mkw(2, KDA_H, KDA_D, KDA_D, dt=torch.float32) * 0.1)
+        # One recurrent slot PER QUERY POSITION (SLOT .. SLOT + 7), as the
+        # engine allocates for spec decode: the stock kernel resumes from
+        # slot [acc - 1] and stores the state after token j into slot [j].
+        # A single shared slot passed while the kernel resumed from [0] and
+        # wrote only at the accepted boundary.
+        self.rec_st = (mkw(self.SLOT + 8 + 1, KDA_H, KDA_D, KDA_D,
+                           dt=torch.float32) * 0.1)
         self.cu = torch.tensor([0, T], dtype=torch.int32, device="cuda")
-        self.sidx = torch.full((1, 8), self.SLOT, dtype=torch.int32,
-                               device="cuda")
+        self.sidx = (self.SLOT + torch.arange(8, dtype=torch.int32,
+                                              device="cuda")).view(1, 8)
         self.nacc = torch.tensor([acc], dtype=torch.int32, device="cuda")
         # KDA_D, not KDA_OUT: the CUDA side declares onorm_w as [KDA_D] and
         # indexes it by the within-head dim (a.onorm_w[d]), and the stock
