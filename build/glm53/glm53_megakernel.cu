@@ -112,7 +112,14 @@ constexpr int KDA_OUT_PAD = KDA_OUT;               // 2048 = 16 x 128
 
 constexpr int KSTEP = 128;               // one scale block of K
 constexpr int KBLK_MAX = 32;             // max k blocks (K <= 4096)
-constexpr int SMEM_A_PITCH = KSTEP + 4;  // fp8 A tile row pitch (4B aligned)
+// fp8 A tiles: dense 128 B rows with a 16 B-chunk XOR swizzle (mk_swz) keyed
+// by the row within the 16-row tile. The old 132 B pitch (33 words) put the
+// 8 rows of a fragment load on banks g+q, i.e. 4-way conflicts on 8 of the
+// 12 smem loads per k-step: ~1,150 wavefronts per k-block per SM, ~25 us
+// at n=6416. Hidden under the W8 stream, exposed in the W4 loop, where
+// removing mma_fold measured -15..-27 us per launch. Rows g and g+8 share
+// a key, so the 8 lanes of one fragment load land on 8 bank groups.
+constexpr int SMEM_A_PITCH = KSTEP;      // 128, dense + swizzled
 constexpr int SMEM_W_PITCH = KSTEP + 16; // fp8 W tile row pitch (16B aligned)
 constexpr int SMEM_W_ROWS = 128;         // W rows staged per k-block
 
@@ -154,11 +161,11 @@ constexpr int W4_EXP_NBUF = 2;  // expanded e4m3 tiles, ping-pong
 // carveout that grew took the L1 the W8 loop was using).
 constexpr int GEMM_SMEM = 2 * 16 * SMEM_A_PITCH +
                           MK_W_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
-                          KBLK_MAX * KBLK_MAX * 4;   // 63,616 at NBUF 3
+                          KBLK_MAX * KBLK_MAX * 4;   // 63,488 at NBUF 3
 constexpr int GEMM_SMEM_W4 = 2 * 16 * SMEM_A_PITCH +
                              W4_EXP_NBUF * SMEM_W_ROWS * SMEM_W_PITCH +
                              KBLK_MAX * KBLK_MAX * 4 +
-                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,832 at 3
+                             W4_RAW_NBUF * W4_RAW_BYTES;  // 72,704 at 3
 static_assert(GEMM_SMEM <= 101376 && GEMM_SMEM_W4 <= 101376,
               "over the sm_121 opt-in smem");
 static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
@@ -218,6 +225,11 @@ __device__ __forceinline__ uint8_t mk_f32_to_e4m3(float x) {
 // that do not occupy a register while in flight. wait_group<N> stalls until
 // at most N of THIS thread's committed groups are still pending; the
 // __syncthreads that follows each wait publishes other threads' copies.
+// byte offset within a 128 B tile row -> its swizzled offset (A tiles)
+__device__ __forceinline__ int mk_swz(int row, int off) {
+  return ((((off >> 4) ^ (row & 7)) << 4) | (off & 15));
+}
+
 __device__ __forceinline__ void mk_cp_async16(void* smem_dst,
                                               const void* gmem_src) {
   uint32_t d = (uint32_t)__cvta_generic_to_shared(smem_dst);
@@ -700,7 +712,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         const int r = t / WORDS, e = (t % WORDS) * 4;
         uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
                        (r & 15) * SMEM_A_PITCH;
-        *(uint32_t*)(dst + e) = *(const uint32_t*)(
+        *(uint32_t*)(dst + mk_swz(r & 15, e)) = *(const uint32_t*)(
             g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
       }
       // rows >= m keep stale bytes: their output rows are never written and
@@ -728,13 +740,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 #pragma unroll
         for (int i = 0; i < 2; ++i) {
           const uint8_t* base = saq + i * 16 * SMEM_A_PITCH;
-          a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + koff + t4);
-          a[i][1] =
-              *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + koff + t4);
-          a[i][2] =
-              *(const uint32_t*)(base + g * SMEM_A_PITCH + koff + 16 + t4);
-          a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + koff +
-                                       16 + t4);
+          const int o0 = mk_swz(g, koff + t4), o1 = mk_swz(g, koff + 16 + t4);
+          a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o0);
+          a[i][1] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o0);
+          a[i][2] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o1);
+          a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o1);
         }
 #pragma unroll
         for (int j = 0; j < 2; ++j) {
