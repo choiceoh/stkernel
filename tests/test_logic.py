@@ -7079,6 +7079,23 @@ def test_glm53_prep_fused_contracts() -> None:
     print("  glm53 prep fused contracts .. OK")
 
 
+def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
+    """PREFILL_WARMUP=1 bash launchers/... must survive sourcing the profile.
+
+    The profile declares PREFILL_WARMUP=0, and the launcher restores only the
+    keys in its _caller list after `. "$PROFILE_ENV"`; the warmup keys were
+    not on it, so a caller's =1 was silently clobbered back to 0 and the
+    2026-09-03 warm-prefill boot ran cold with no prefill-warmup.log at all."""
+    src = open(os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    head = src[: src.index('. "$PROFILE_ENV"')]
+    check("PREFILL_WARMUP PREFILL_WARMUP_LENS $_vllm_keys" in head,
+          "PREFILL_WARMUP and PREFILL_WARMUP_LENS are on the launcher's caller-env restore list")
+    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(re.search(r"^PREFILL_WARMUP=0$", prof, re.M) is not None,
+          "profile still ships PREFILL_WARMUP=0 (warm boots are opt-in)")
+    print("  launcher restores PREFILL_WARMUP from caller env .. OK")
+
+
 def test_profile_keys_not_passed_via_extra_env() -> None:
     """A profile-declared VLLM_* key cannot be overridden through EXTRA_ENV: the
     launcher aborts. Every documented arming command must use the caller env."""
@@ -7413,6 +7430,7 @@ if __name__ == "__main__":
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
     test_glm53_prep_fused_contracts()
+    test_launcher_restores_prefill_warmup_from_caller_env()
     test_profile_keys_not_passed_via_extra_env()
     test_glm53_indexer_gate_splitk_contracts()
     test_bracket_runner_contracts()
