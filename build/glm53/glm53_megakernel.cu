@@ -49,6 +49,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <vector>
+#include <type_traits>
 
 namespace {
 
@@ -757,13 +758,19 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
 
     // mma + per-k-block scale fold, shared by the W8 and W4 pipelines
     // (W4 tiles arrive already scale-multiplied, so their wsc is 1).
-    auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
+    // MT = m-tiles actually present (1 for m <= 16, 2 otherwise), a compile-
+    // time constant per instantiation: the loops below fully unroll and the
+    // second tile's A loads and mmas simply do not exist for m <= 16 (m=8 is
+    // in_proj, the biggest shape). A runtime `break` inside the unrolled
+    // loops measured 10% slower -- the compiler gave up on the unroll.
+    auto mma_fold_t = [&](auto MTC, const uint8_t* sw, int kb, float wsc) {
+      constexpr int MT = decltype(MTC)::value;
       // ---- mma: warp covers n-cols [warp*16, warp*16+16) of the tile,
       // two m16n8 mmas per k-slice; each n8 half keeps its own kacc
       // (a shared accumulator would sum the two halves' products).
       float kacc[2][2][4];
 #pragma unroll
-      for (int i = 0; i < 2; ++i)
+      for (int i = 0; i < MT; ++i)
 #pragma unroll
         for (int j = 0; j < 2; ++j)
 #pragma unroll
@@ -774,7 +781,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         const int koff = ks * 32;
         uint32_t a[2][4];
 #pragma unroll
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < MT; ++i) {
           const uint8_t* base = saq + i * 16 * SMEM_A_PITCH;
           const int o0 = mk_swz(g, koff + t4), o1 = mk_swz(g, koff + 16 + t4);
           a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o0);
@@ -790,7 +797,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           uint32_t b1 =
               *(const uint32_t*)(sw + nrow * SMEM_W_PITCH + koff + 16 + t4);
 #pragma unroll
-          for (int i = 0; i < 2; ++i) {
+          for (int i = 0; i < MT; ++i) {
             asm volatile(
                 "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
                 "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
@@ -806,7 +813,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
       // ws is per (n-block, k-block); the whole staged tile shares nb == nt
       // and the warp's 16 columns sit inside it. xs is per (row, k-block).
 #pragma unroll
-      for (int i = 0; i < mtiles; ++i) {
+      for (int i = 0; i < MT; ++i) {
         const int r0 = i * 16 + g;
         const int r1 = r0 + 8;
         const float s0 = (r0 < c.m) ? wsc * sxs[r0 * KBLK_MAX + kb] : 0.0f;
@@ -820,6 +827,12 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
         }
       }
 
+    };
+    auto mma_fold = [&](const uint8_t* sw, int kb, float wsc) {
+      if (mtiles == 2)
+        mma_fold_t(std::integral_constant<int, 2>{}, sw, kb, wsc);
+      else
+        mma_fold_t(std::integral_constant<int, 1>{}, sw, kb, wsc);
     };
 
     const bool prefilled = hoisted && (u == (int)blockIdx.x);
