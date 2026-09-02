@@ -9,8 +9,10 @@ step, compiled AOT by nvcc (`-arch=sm_121a`) instead of JIT.
 **2026-09-02: it is faster than the stock W8 pair on every decode shape**
 (srv2, two different weights back to back, PDL on): 112/82/52/35 us vs
 151/115/65/40 for n=6416/4096/2048/1024. What got it there was making the
-W4 loop stop being compute-bound -- register-only expansion on the LUT's
-closed form (byte-lane SIMD), a swizzled A tile, the A staging load
+W4 loop stop being compute-bound -- register-only expansion by byte-permute
+table lookup (the raw nibbles are the `prmt` selector over the LUT's two
+halves, exponent folded in per 16-group; it replaced a byte-lane SIMD
+closed form at ~half the ops), a swizzled A tile, the A staging load
 hoisted out of the sync window and the second m-tile compiled away for
 m <= 16. The arm still changes served numerics, so arming it is the
 quality bracket's call, not this module's.
