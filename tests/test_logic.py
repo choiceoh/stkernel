@@ -2235,7 +2235,8 @@ def test_korean_gate_separates_notation_from_damage() -> None:
     delimiter. The character BEFORE the jamo is the whole discriminator."""
     ns = load_defs(
         "bench/korean-corruption.py",
-        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "INFORMATIONAL", "scan"},
+        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "HANJA_GLOSS",
+         "INFORMATIONAL", "scan"},
         {"re": re, "unicodedata": __import__("unicodedata")},
     )
     scan = ns["scan"]
@@ -2254,6 +2255,27 @@ def test_korean_gate_separates_notation_from_damage() -> None:
               f"a jamo welded to a syllable is damage: {text}")
     check("jamo_notation" in ns["INFORMATIONAL"],
           "the notation count is reported but never gates a response")
+
+    # Same class of false positive, second detector: these prompts ask about
+    # Korean, and Korean technical writing gives the hanja for a term.
+    #   Clear and crisp weather (천고마비 - 天高馬肥)
+    #   조력 (潮力) refers to tidal power
+    # Both were counted as corruption. A gloss follows its Korean word through
+    # a bracket, dash, colon or comma; damage puts Han where Hangul belonged.
+    gloss = [
+        "Clear and crisp weather (천고마비 - 天高馬肥) - Dry skies",
+        "조력 (潮力) refers to tidal power",
+        "조력 발전(水力發電)의 원리",
+        "변압기 - 變壓器 는 전압을 바꾼다",
+        "조력 발전은 밀물과 썰물을 이용한다.",
+    ]
+    for text in gloss:
+        check(scan(text)["cjk_mixed"] == 0,
+              f"a hanja gloss is not damage: {text[:34]}")
+    check(scan("발전소는 電氣를 만든다")["cjk_mixed"] == 2,
+          "Han standing in for Hangul is damage, counted per character")
+    check("hanja_gloss" in ns["INFORMATIONAL"],
+          "the gloss count is reported but never gates a response")
     print("  korean gate notation vs damage .. OK")
 
 
