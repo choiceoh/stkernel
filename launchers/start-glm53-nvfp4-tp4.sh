@@ -359,6 +359,25 @@ for _k in ${_vllm_keys:-}; do
   if [ -n "${!_k:-}" ]; then ENVV="$ENVV -e $_k=${!_k}"; fi
 done
 
+# MK-KDA indexes the conv state as DS (dim, state_len). vLLM's default is SD,
+# and the segment's layout gate then rejects EVERY layer for the life of the
+# boot -- silently, while the boot log still reports armed={'kda': True},
+# because the self-test builds its own DS fixtures and passes. The 09-03
+# decode trace carried no mk_kda_kernel at all for exactly this reason. One
+# knob implies the other, so derive it here instead of asking the operator to
+# remember two.
+if [ "${VLLM_GLM53_MEGAKERNEL:-0}" != 0 ] && [ "${VLLM_GLM53_MK_KDA:-0}" != 0 ]; then
+  if [ -n "${VLLM_SSM_CONV_STATE_LAYOUT:-}" ] \
+     && [ "${VLLM_SSM_CONV_STATE_LAYOUT}" != DS ]; then
+    echo "ABORT: VLLM_GLM53_MK_KDA needs VLLM_SSM_CONV_STATE_LAYOUT=DS, but it"
+    echo "       is set to '${VLLM_SSM_CONV_STATE_LAYOUT}'. Under SD every KDA"
+    echo "       layer falls back to stock and the segment measures nothing."
+    exit 1
+  fi
+  ENVV="$ENVV -e VLLM_SSM_CONV_STATE_LAYOUT=DS"
+  echo "mk-kda    : conv state layout -> DS (kernel indexing contract)"
+fi
+
 # Diagnostic env passthrough. EXTRA_ENV="A=1 B=2" becomes -e A=1 -e B=2.
 # For one-shot debugging only -- CUDA_LAUNCH_BLOCKING=1 pins an async kernel
 # failure to its real launch site instead of surfacing at the next sync
