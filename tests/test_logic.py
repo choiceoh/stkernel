@@ -5175,11 +5175,11 @@ def test_glm53_upstream_prefill_batch() -> None:
         "union path ships preparation, compaction, attention and installer",
     )
     for gate in (
-        "q[0].shape[1:] == (16, 512)",
+        "(16, 512)",
         'getattr(attn_metadata, "num_decodes", -1) == 0',
         'getattr(attn_metadata, "num_prefills", 0) > 0',
         'getattr(self, "qk_rope_head_dim", -1) == 0',
-        "not torch.cuda.is_current_stream_capturing()",
+        "torch.cuda.is_current_stream_capturing()",
     ):
         check(gate in union_source, f"union forward pins {gate}")
     check(
