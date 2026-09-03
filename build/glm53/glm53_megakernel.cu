@@ -1900,6 +1900,359 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 
 }  // namespace
 
+
+// ---------------------------------------------------------------- MK_SEG_MLA
+// Sparse MLA decode for GLM-5-Next's NoPE shape, replacing FlashInfer's
+// BatchMLAPagedAttentionWrapper (the "SM90" FA2 path vLLM picks on sm_12x).
+//
+// Per query row t and head h, over the indexer's top-k slots of that row:
+//     s_j        = sm_scale * dot(q[t,h,:], c[slot_j,:]) * ckv_scale
+//     out[t,h,:] = sum_j softmax(s)_j * c[slot_j,:] * ckv_scale
+// k and v are the SAME compressed latent (D = kv_lora_rank = 512, one fp8
+// scale per layer), so a slot's 512 bytes are read ONCE and serve all H
+// heads. That sharing sets the cost model this kernel is shaped around.
+//
+// GB10 cost model (why it looks like this):
+//   * per (row, slot): 512 B read, 16 heads x 512 x 2 = 32,768 flop
+//     -> 64 flop/byte. The ledger's sustained stream on this part is
+//     135-175 GB/s (225 only on a process's first burst), so the kernel
+//     needs ~11 TFLOP/s to stay memory-bound. FP32 FMA peak here is
+//     ~19.7 TFLOP/s (48 SM x 128 lanes x 2 x ~1.6 GHz), so PLAIN FMA
+//     clears it -- and keeps q in bf16, which the sparse backend requires
+//     (no query quantization). Tensor cores would force q to e4m3 or an
+//     extra bf16 materialisation of C in smem; neither buys anything
+//     against a memory bound.
+//   * 512 B / 32 lanes = 16 B per lane: one cp.async.cg per lane per slot,
+//     perfectly coalesced, L1-bypassing (the latents are read once and
+//     never reused -- keeping them out of L1 leaves it to the q rows).
+//   * per-SM bandwidth share is ~3.6 GB/s, so ~2.2 KB in flight covers the
+//     ~600 ns DRAM latency; TILE=16 slots x NSTAGE=3 = 24 KB is an order of
+//     magnitude past that and still leaves smem for 3 blocks/SM.
+//   * q lives in REGISTERS (2 heads x 16 lanes-worth = 32 values), never
+//     re-read from smem inside the slot loop.
+//   * 48 SMs with T as small as 8 rows: the slot axis is split so
+//     T x splits fills the persistent grid, then combined by log-sum-exp
+//     behind the same monotonic-ticket barrier the other segments use.
+//
+// MEASURED STATE (2026-09-03, srv4, W=2048, 300k-slot cache so every read
+// misses L2). NOT adopted -- the kernel is correct but slower than the
+// wrapper it would replace, and nothing routes to it yet:
+//   T= 8: MK 205 us vs FlashInfer run 124 us   (per layer, per step)
+//   T=16: MK 317 us vs 194
+//   T=32: MK 579 us vs 542
+// Roofline probe (VLLM_GLM53_MK_MLA_PROBE): streaming alone 68-91 us
+// (92-124 GB/s, i.e. the box's real band), + dot/shuffle 68, + softmax and
+// output 52 -- ADDITIVE, so the cross-lane reduction in the score phase is
+// the wall, not memory. The fix is to stop reducing across lanes: give the
+// dot a lane-per-SLOT layout (no shuffles, unlimited ILP), pass p through
+// smem, and keep the lane-per-D layout only for the output accumulation.
+// Tile/stage sweep found 32x2 (32 KB) best; 64 KB drops to 1 block/SM and
+// costs T=32 65%.
+//
+// The host-side plan() this was meant to remove is ~38 us/step, not the
+// 2.4 ms an earlier synthetic measurement suggested (that built a wrapper
+// without reserved buffers). So the whole lever here is ~2% of a step, and
+// the kernel has to beat the wrapper outright to be worth arming.
+//
+// The point of owning this kernel is not the 0.66 ms it spends on the GPU.
+// FlashInfer's wrapper bakes each row's kv_len into a HOST-side schedule at
+// plan() time and never reads the device-side length buffer, so vLLM's
+// builder replans every step outside graph capture -- 2.4 ms of host time
+// per step, measured. This kernel reads the row length from device memory,
+// so it runs inside the captured graph and that replan disappears with it.
+constexpr int MLA_D = 512;                    // kv_lora_rank
+constexpr int MLA_H = 16;                     // MLA heads per rank at TP4
+constexpr int MLA_WARPS = MK_THREADS / 32;    // 8
+constexpr int MLA_HPW = MLA_H / MLA_WARPS;    // 2 heads per warp (softmax owner)
+constexpr int MLA_VD = MLA_D / 32;            // 16 latent elements per lane (phase 1)
+constexpr int MLA_TILE = 16;   // slots per cp.async tile (2 n-groups x 8)
+constexpr int MLA_NSTAGE = 3;  // ring buffers; total smem ~45 KB -> 2 blocks/SM
+constexpr int MLA_SPLITS_MAX = 64;
+
+struct MKMlaArgs {
+  const __nv_bfloat16* q;      // [T, H, D] bf16, never quantised
+  const uint8_t* ckv;          // e4m3 [num_slots, D]
+  const int* slots;            // [T, W] global slot ids, valid prefix first
+  const int* lens;             // [T] valid count per row -- DEVICE side
+  __nv_bfloat16* out;          // [T, H, D]
+  float* part;                 // [T, splits, H, D] fp32 split partials
+  float* pml;                  // [T, splits, H, 2] running (m, l)
+  unsigned long long* barrier_ctr;
+  float sm_scale;
+  float ckv_scale;
+  int T, W, splits, grid;
+  int probe;   // 1 = memory pipeline only (roofline), 0 = full
+};
+
+// v4: tensor cores, and the e4m3 ring is the ONLY copy of the latent.
+//
+// v3 materialised a bf16 copy of each tile in shared memory so both mma
+// phases could take fragments from it (the output phase with
+// ldmatrix.trans). That copy cost 33 KB of the 99 KB budget, which pinned
+// the kernel at ONE block per SM -- and a gather microbenchmark on this part
+// (scattered 512 B chunks, 1 GiB buffer) reaches 225 GB/s against the 106
+// GB/s the kernel was getting, i.e. the access pattern was never the
+// problem, occupancy was. v4 converts e4m3 -> bf16 in registers at fragment
+// load time, drops the tile, and halves TILE so two blocks fit per SM.
+//
+// Layout per 16-slot tile:
+//   scores  S = Q C^T  -- warp w owns n-group (w & 1) of 8 slots and
+//                         k-quarter (w >> 1) of D; 4 partials summed in smem
+//   softmax -- warp w owns heads 2w, 2w+1, lane = slot (10 shuffles/tile)
+//   output  O += P C   -- warp w owns 64 of the 512 columns, B fragments
+//                         assembled from 4 single-byte ring reads each
+constexpr int MLA_KQ = 4;                       // k-quarters in the score mma
+constexpr int MLA_NG = MLA_WARPS / MLA_KQ;      // 2 n-groups of 8 slots -> TILE 16
+constexpr int MLA_CP = MLA_D + 8;               // q pitch (words), bank-skewed
+constexpr int MLA_PP = MLA_TILE + 8;            // P pitch
+constexpr int MLA_RP = MLA_D + 16;              // e4m3 ring row pitch (bytes)
+constexpr int MLA_SMEM_RING = MLA_NSTAGE * MLA_TILE * MLA_RP;
+constexpr int MLA_SMEM_Q = MLA_H * MLA_CP * 2;
+constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * MLA_TILE * 4;
+constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;
+constexpr int MLA_SMEM_C = MLA_H * 8;   // [H] corr, then [H] l
+constexpr int MLA_SMEM = MLA_SMEM_RING + MLA_SMEM_Q + MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C;
+
+__device__ __forceinline__ float mla_warp_max(float v) {
+#pragma unroll
+  for (int off = 16; off; off >>= 1) v = fmaxf(v, __shfl_xor_sync(0xffffffff, v, off));
+  return v;
+}
+__device__ __forceinline__ float mla_warp_sum(float v) {
+#pragma unroll
+  for (int off = 16; off; off >>= 1) v += __shfl_xor_sync(0xffffffff, v, off);
+  return v;
+}
+// two adjacent e4m3 bytes -> one bf16x2 register (an mma fragment half)
+__device__ __forceinline__ uint32_t mla_e4m3x2(const uint8_t* p) {
+  const __half2 h = __nv_cvt_fp8x2_to_halfraw2(*(const __nv_fp8x2_storage_t*)p, __NV_E4M3);
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
+// two e4m3 bytes at a stride (column of the ring) -> one bf16x2 register
+__device__ __forceinline__ uint32_t mla_e4m3x2_strided(const uint8_t* p, int stride) {
+  const __half2 h = __halves2half2(__nv_cvt_fp8_to_halfraw(p[0], __NV_E4M3),
+                                   __nv_cvt_fp8_to_halfraw(p[stride], __NV_E4M3));
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
+__device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, float& c3,
+                                             uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
+                                             uint32_t b0, uint32_t b1) {
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+      "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+      : "+f"(c0), "+f"(c1), "+f"(c2), "+f"(c3)
+      : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+}
+
+__global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
+  extern __shared__ __align__(16) char mla_smem[];
+  uint8_t* ring = (uint8_t*)mla_smem;
+  __nv_bfloat16* sq = (__nv_bfloat16*)(ring + MLA_SMEM_RING);
+  float* ss = (float*)((uint8_t*)sq + MLA_SMEM_Q);
+  __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_SMEM_S);
+  float* scorr = (float*)((uint8_t*)sp + MLA_SMEM_P);
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+  const int g = lane >> 2, q4 = lane & 3;
+  asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const float sscale = a.sm_scale * a.ckv_scale;
+
+  const int items = a.T * a.splits;
+  for (int item = blockIdx.x; item < items; item += a.grid) {
+    const int t = item / a.splits;
+    const int sp_i = item - t * a.splits;
+    const int len = a.lens[t];
+    const int per = (len + a.splits - 1) / a.splits;
+    const int j0 = min(len, sp_i * per);
+    const int j1 = min(len, j0 + per);
+
+    for (int i = threadIdx.x; i < MLA_H * (MLA_D / 8); i += MK_THREADS) {
+      const int h = i / (MLA_D / 8), c8 = i - h * (MLA_D / 8);
+      *(uint4*)(sq + h * MLA_CP + c8 * 8) =
+          *(const uint4*)(a.q + ((size_t)t * MLA_H + h) * MLA_D + c8 * 8);
+    }
+    float acc[8][4];
+#pragma unroll
+    for (int nt = 0; nt < 8; ++nt) { acc[nt][0] = acc[nt][1] = acc[nt][2] = acc[nt][3] = 0.f; }
+    float m0 = -INFINITY, m1 = -INFINITY, l0 = 0.f, l1 = 0.f;
+
+    const int ntile = (j1 > j0) ? ((j1 - j0 + MLA_TILE - 1) / MLA_TILE) : 0;
+    auto issue = [&](int ti) {
+      uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
+#pragma unroll
+      for (int r = 0; r < MLA_TILE / MLA_WARPS; ++r) {
+        const int k = r * MLA_WARPS + warp;
+        const int j = j0 + ti * MLA_TILE + k;
+        const int sj = (j < j1) ? j : j0;
+        const int slot = a.slots[(size_t)t * a.W + sj];
+        mk_cp_async16(dst + (size_t)k * MLA_RP + lane * 16,
+                      a.ckv + (size_t)slot * MLA_D + lane * 16);
+      }
+      mk_cp_commit();
+    };
+#pragma unroll 1
+    for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) { if (ti < ntile) issue(ti); else mk_cp_commit(); }
+
+#pragma unroll 1
+    for (int ti = 0; ti < ntile; ++ti) {
+      mk_cp_wait<MLA_NSTAGE - 2>();
+      __syncthreads();
+      if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);
+      else mk_cp_commit();
+      const uint8_t* tile8 = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
+      const int kmax = min(MLA_TILE, j1 - (j0 + ti * MLA_TILE));
+
+      {  // ---- S = Q C^T, B fragments converted from the ring in registers
+        const int n0 = (warp % MLA_NG) * 8, kq = warp / MLA_NG;
+        float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
+        const __nv_bfloat16* qa = sq + g * MLA_CP;
+        const uint8_t* cb = tile8 + (size_t)(n0 + g) * MLA_RP;
+#pragma unroll
+        for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
+          const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
+          mla_mma_bf16(c0, c1, c2, c3,
+                       *(const uint32_t*)(qa + k0),
+                       *(const uint32_t*)(qa + 8 * MLA_CP + k0),
+                       *(const uint32_t*)(qa + k0 + 8),
+                       *(const uint32_t*)(qa + 8 * MLA_CP + k0 + 8),
+                       mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
+        }
+        float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
+        sh[g * MLA_TILE + n0 + q4 * 2] = c0;
+        sh[g * MLA_TILE + n0 + q4 * 2 + 1] = c1;
+        sh[(g + 8) * MLA_TILE + n0 + q4 * 2] = c2;
+        sh[(g + 8) * MLA_TILE + n0 + q4 * 2 + 1] = c3;
+      }
+      __syncthreads();
+
+      {  // ---- online softmax for heads 2w, 2w+1 (lane = slot)
+        const int h0 = warp * 2;
+        const bool ok = lane < kmax;
+        float s0 = 0.f, s1 = 0.f;
+#pragma unroll
+        for (int kq = 0; kq < MLA_KQ; ++kq) {
+          const float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
+          s0 += sh[h0 * MLA_TILE + (lane % MLA_TILE)];
+          s1 += sh[(h0 + 1) * MLA_TILE + (lane % MLA_TILE)];
+        }
+        s0 = ok ? s0 * sscale : -INFINITY;
+        s1 = ok ? s1 * sscale : -INFINITY;
+        const float n0 = fmaxf(m0, mla_warp_max(s0));
+        const float n1 = fmaxf(m1, mla_warp_max(s1));
+        const float cr0 = __expf(m0 - n0), cr1 = __expf(m1 - n1);
+        const float p0 = ok ? __expf(s0 - n0) : 0.f;
+        const float p1 = ok ? __expf(s1 - n1) : 0.f;
+        l0 = fmaf(l0, cr0, mla_warp_sum(p0));
+        l1 = fmaf(l1, cr1, mla_warp_sum(p1));
+        m0 = n0; m1 = n1;
+        if (lane < MLA_TILE) {
+          sp[h0 * MLA_PP + lane] = __float2bfloat16(p0 * a.ckv_scale);
+          sp[(h0 + 1) * MLA_PP + lane] = __float2bfloat16(p1 * a.ckv_scale);
+        }
+        if (lane == 0) { scorr[h0] = cr0; scorr[h0 + 1] = cr1; }
+      }
+      __syncthreads();
+
+      {  // ---- O += P C : 64 columns per warp, B fragments straight from the ring
+        const float crg = scorr[g], crg8 = scorr[g + 8];
+#pragma unroll
+        for (int nt = 0; nt < 8; ++nt) {
+          acc[nt][0] *= crg; acc[nt][1] *= crg; acc[nt][2] *= crg8; acc[nt][3] *= crg8;
+        }
+        const __nv_bfloat16* pa = sp + g * MLA_PP;
+        const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
+        const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2);
+        const uint32_t a2 = *(const uint32_t*)(pa + q4 * 2 + 8);
+        const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2 + 8);
+        const int krow = q4 * 2;                     // this lane's two k (slot) rows
+        const uint8_t* cb = tile8 + (size_t)krow * MLA_RP + warp * 64;
+#pragma unroll
+        for (int nt = 0; nt < 8; ++nt) {
+          const int n = nt * 8 + g;                  // this lane's output column
+          mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
+                       mla_e4m3x2_strided(cb + n, MLA_RP),
+                       mla_e4m3x2_strided(cb + 8 * MLA_RP + n, MLA_RP));
+        }
+      }
+      __syncthreads();
+    }
+
+    if (a.splits == 1) {
+      // v5 (prefill): one split owns the whole row, so there is nothing for
+      // the log-sum-exp phase to combine -- normalise and store bf16 here.
+      // Without this a prefill call would need a [T][splits][H][D] fp32
+      // scratch: 268 MB at T = 8192.
+      //
+      // The softmax state lives on the warp that owns heads 2w, 2w+1, while
+      // acc rows are heads (g, g+8) of the mma C layout, so the denominator
+      // goes through smem first.
+      float* sl = scorr + MLA_H;
+      if (lane == 0) { sl[warp * 2] = l0; sl[warp * 2 + 1] = l1; }
+      __syncthreads();
+      const float ig = (sl[g] > 0.f) ? __frcp_rn(sl[g]) : 0.f;
+      const float ig8 = (sl[g + 8] > 0.f) ? __frcp_rn(sl[g + 8]) : 0.f;
+      __nv_bfloat16* o0 = a.out + ((size_t)t * MLA_H + g) * MLA_D;
+      __nv_bfloat16* o8 = a.out + ((size_t)t * MLA_H + g + 8) * MLA_D;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int col = warp * 64 + nt * 8 + q4 * 2;
+        *(__nv_bfloat162*)(o0 + col) = __floats2bfloat162_rn(acc[nt][0] * ig, acc[nt][1] * ig);
+        *(__nv_bfloat162*)(o8 + col) = __floats2bfloat162_rn(acc[nt][2] * ig8, acc[nt][3] * ig8);
+      }
+      __syncthreads();   // sl is rewritten by the next item
+    } else {
+      float* base = a.part + (((size_t)t * a.splits + sp_i) * MLA_H) * MLA_D;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int col = warp * 64 + nt * 8 + q4 * 2;
+        *(float2*)(base + (size_t)g * MLA_D + col) = make_float2(acc[nt][0], acc[nt][1]);
+        *(float2*)(base + (size_t)(g + 8) * MLA_D + col) = make_float2(acc[nt][2], acc[nt][3]);
+      }
+      if (lane == 0) {
+        float* ml = a.pml + (((size_t)t * a.splits + sp_i) * MLA_H + warp * 2) * 2;
+        ml[0] = (ntile > 0) ? m0 : -INFINITY;  ml[1] = (ntile > 0) ? l0 : 0.f;
+        ml[2] = (ntile > 0) ? m1 : -INFINITY;  ml[3] = (ntile > 0) ? l1 : 0.f;
+      }
+    }
+  }
+
+  if (a.splits == 1) return;   // v5: phase 0 already normalised and stored
+
+  mk_grid_barrier(a.barrier_ctr, a.grid);
+
+  // phase 1 -- log-sum-exp combine, one (row, head) per warp
+  const int pairs = a.T * MLA_H;
+#pragma unroll 1
+  for (int p = blockIdx.x * MLA_WARPS + warp; p < pairs; p += a.grid * MLA_WARPS) {
+    const int t = p / MLA_H;
+    const int h = p - t * MLA_H;
+    float mm = -INFINITY;
+    for (int sp = 0; sp < a.splits; ++sp)
+      mm = fmaxf(mm, a.pml[(((size_t)t * a.splits + sp) * MLA_H + h) * 2]);
+    float ltot = 0.f, o[MLA_VD];
+#pragma unroll
+    for (int e = 0; e < MLA_VD; ++e) o[e] = 0.f;
+    for (int sp = 0; sp < a.splits; ++sp) {
+      const float* ml = a.pml + (((size_t)t * a.splits + sp) * MLA_H + h) * 2;
+      const float lsp = ml[1];
+      if (!(lsp > 0.f)) continue;
+      const float w = __expf(ml[0] - mm);
+      ltot = fmaf(lsp, w, ltot);
+      const float* src = a.part + (((size_t)t * a.splits + sp) * MLA_H + h) * MLA_D
+                        + lane * MLA_VD;
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e) o[e] = fmaf(src[e], w, o[e]);
+    }
+    const float inv = (ltot > 0.f) ? __frcp_rn(ltot) : 0.f;
+    __nv_bfloat16* dst = a.out + ((size_t)t * MLA_H + h) * MLA_D + lane * MLA_VD;
+#pragma unroll
+    for (int e = 0; e < MLA_VD; ++e) dst[e] = __float2bfloat16(o[e] * inv);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // host entry points
 // ---------------------------------------------------------------------------
@@ -1914,6 +2267,8 @@ void set_kernel_attrs() {
       GEMM_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
   g_attrs_set = true;
 }
 
@@ -1921,7 +2276,7 @@ void set_kernel_attrs() {
 // Cached per kernel: the ticket barrier needs the SAME grid on every launch,
 // and the two kernels are asked separately because their occupancy differs.
 template <typename K>
-int mk_resident_grid(K kernel, int& cache, int smem) {
+int mk_resident_grid(K kernel, int& cache, int smem, int cap = MK_GRID_CAP) {
   if (cache == 0) {
     int per_sm = 0, sms = 0;
     MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -1929,7 +2284,7 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
     MK_CHECK_CUDA(cudaDeviceGetAttribute(
         &sms, cudaDevAttrMultiProcessorCount, 0));
     cache = per_sm * sms;
-    if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;
+    if (cache > cap) cache = cap;
     TORCH_CHECK(cache > 0, "persistent grid has no resident blocks");
   }
   return cache;
@@ -1937,6 +2292,14 @@ int mk_resident_grid(K kernel, int& cache, int smem) {
 
 int g_gemm_grid = 0;
 int g_kda_grid = 0;
+int g_mla_grid = 0;
+// MK_SEG_MLA keeps its own ticket counter, so it is not bound by the shared
+// 96-block contract the gemm/kda/mhc kernels observe. It still measures 96
+// (2 blocks/SM at 45.8 KB smem); the cap is here so a future smem cut is
+// not silently thrown away. Moving q to registers frees the smem for a
+// third block but pushes registers past the limit -- measured 2 either
+// way, and 6-8% SLOWER, so q stays in shared memory.
+constexpr int MLA_GRID_CAP = 192;
 
 // VLLM_GLM53_MK_PDL=1: launch with programmatic stream serialization so
 // each MK kernel may begin on the SMs its predecessor frees and prefetch
@@ -2220,6 +2583,47 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   mk_launch(mk_kda_kernel, a.grid, GEMM_SMEM, stream, a);
 }
 
+// MK_SEG_MLA. `splits` is chosen by the caller so T x splits fills the
+// persistent grid; the kernel reads every per-row length from device memory,
+// which is what lets this run inside the captured graph.
+void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                std::vector<int64_t> ints) {
+  set_kernel_attrs();
+  MKMlaArgs a{};
+  TORCH_CHECK(ptrs.size() == 8 && ints.size() == 3 && scalars.size() == 2,
+              "run_mla arg contract");
+  a.q = (const __nv_bfloat16*)ptrs[0];
+  a.ckv = (const uint8_t*)ptrs[1];
+  a.slots = (const int*)ptrs[2];
+  a.lens = (const int*)ptrs[3];
+  a.out = (__nv_bfloat16*)ptrs[4];
+  a.part = (float*)ptrs[5];
+  a.pml = (float*)ptrs[6];
+  a.barrier_ctr = (unsigned long long*)ptrs[7];
+  TORCH_CHECK((ptrs[1] & 15) == 0 && (ptrs[0] & 15) == 0,
+              "mla: q and the latent cache must be 16 B aligned (cp.async)");
+  a.T = (int)ints[0];
+  a.W = (int)ints[1];
+  a.splits = (int)ints[2];
+  TORCH_CHECK(a.splits >= 1 && a.splits <= MLA_SPLITS_MAX, "mla: split count");
+  a.sm_scale = (float)scalars[0];
+  a.ckv_scale = (float)scalars[1];
+  {  // roofline probe knob (never set in serving)
+    static int pv = -1;
+    if (pv < 0) { const char* e = getenv("VLLM_GLM53_MK_MLA_PROBE"); pv = e ? atoi(e) : 0; }
+    a.probe = pv;
+  }
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  a.grid = mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
+  mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
+}
+
+// Blocks the caller can fill: the split count this launch would use.
+int64_t mk_mla_grid() {
+  set_kernel_attrs();
+  return mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
@@ -2228,4 +2632,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
+  m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
+  m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");
 }

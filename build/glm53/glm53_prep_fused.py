@@ -638,6 +638,25 @@ def _builder_name(b) -> str:
     return type(b).__name__
 
 
+
+def _mk_mla_armed() -> bool:
+    """True when the megakernel's own sparse MLA kernel serves every shape.
+
+    Then FlashInfer's wrapper -- and the per-step plan() its builder does for
+    it -- is dead work, and this module may cache the attention group's
+    metadata like it does the others."""
+    try:
+        from vllm.model_executor.layers import glm53_megakernel as mk
+    except Exception:
+        return False
+    if not getattr(mk, "ENABLE_MLA", False):
+        return False
+    try:
+        mk.maybe_arm()
+    except Exception:
+        return False
+    return bool(mk._ARMED.get("mla"))
+
 def build_plan(runner) -> PrepPlan:
     """Read every buffer the fast path writes off the live runner.
 
@@ -718,13 +737,33 @@ def build_plan(runner) -> PrepPlan:
             gdn_nacc.append(b.num_accepted_tokens)
         elif names == ["KpoolTailMetadataBuilder"]:
             tail_b = builders[0]  # dormant circular mapping: asserted by the plan
-        elif sorted(names) == ["DeepseekV32IndexerMetadataBuilder", "FlashInferMLASparseMetadataBuilder"]:
+        elif sorted(names) in (
+                ["DeepseekV32IndexerMetadataBuilder", "FlashInferMLASparseMetadataBuilder"],
+                ["DeepseekV32IndexerMetadataBuilder", "FlashInferMLASparseSM90Builder"]):
+            # The SM90 builder is the one this fleet actually gets, and it does
+            # something the base builder does not: build() replans FlashInfer's
+            # wrapper every step from HOST-side kv_lens, because the wrapper
+            # bakes those lengths into an int schedule and run() never reads the
+            # device-side buffer. Caching this group's metadata (which is what
+            # this module does) would skip that replan and the captured
+            # attention would read a stale schedule -- so the SM90 builder is
+            # only safe here when nothing calls the wrapper at all. That is
+            # exactly the case once MK_SEG_MLA is armed: glm53_mk_mla_wiring
+            # routes every shape, decode and prefill, to our own kernel, which
+            # reads the per-row length from device memory.
+            if _builder_name([b for b in builders
+                              if _builder_name(b) != "DeepseekV32IndexerMetadataBuilder"][0]
+                             ) == "FlashInferMLASparseSM90Builder" and not _mk_mla_armed():
+                raise RuntimeError(
+                    "FlashInferMLASparseSM90Builder replans the wrapper every step; "
+                    "MK_SEG_MLA must be armed (VLLM_GLM53_MEGAKERNEL=1 "
+                    "VLLM_GLM53_MK_MLA=1) for its metadata to be cacheable")
             attn_g = g
             for b in builders:
-                if _builder_name(b) == "FlashInferMLASparseMetadataBuilder":
-                    mla_b = b
-                else:
+                if _builder_name(b) == "DeepseekV32IndexerMetadataBuilder":
                     idx_b = b
+                else:
+                    mla_b = b
         else:
             raise RuntimeError(f"group {g} {sorted(names_in_group)[:3]}: unexpected builders {names}")
     if attn_g is None or mla_b is None or idx_b is None:

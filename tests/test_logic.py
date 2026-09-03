@@ -2074,6 +2074,189 @@ def test_glm53_v2_overlay_contracts() -> None:
     print("  glm53 V2/deploy contracts ...... OK")
 
 
+def test_deploy_refusal_is_not_swallowed() -> None:
+    """A refused deploy must stop a boot, not scroll past it.
+
+    deploy-overlays refuses when HEAD is not based on current origin/main --
+    a real guard against booting a stale overlay rollback. On 2026-09-03 three
+    boots came up anyway: the bench script ran it as
+
+        bash launchers/deploy-overlays.sh glm53 2>&1 | tail -1
+
+    and the ABORT is three lines, so `tail -1` printed only the origin/main
+    sha, which reads exactly like a normal status line. Those boots served
+    overlays six commits old while their logs looked healthy, and the arm
+    under test had simply never been deployed.
+
+    The guard itself must stay, and it must exit non-zero so a caller that
+    checks can see it."""
+    text = open(os.path.join(REPO, "launchers/deploy-overlays.sh"),
+                encoding="utf-8").read()
+    check("HEAD is not based on current origin/main" in text,
+          "the stale-rollback guard is the thing that caught this")
+    guard = text[text.index("HEAD is not based on current origin/main"):]
+    check("exit 1" in guard[:400],
+          "the refusal must exit non-zero so a caller can branch on it")
+    print("  deploy refusal exits non-zero .. OK")
+
+
+def test_fp8_dense_nvfp4_scheme_contract() -> None:
+    """nvfp4 is opt-in, stacks on fp8, and arms only on a value check.
+
+    It buys 2.3x on the prefill GEMM (236 vs 104 TFLOP/s measured) and halves
+    the pack, for 3.7x the quantization error -- past what the checkpoint's own
+    recipe was willing to do to these projections, which put fp4 on
+    `mlp.experts.*` only. So it must behave like the other experimental
+    scheme: never the default, never a boot failure, and never armed on
+    "did not raise"."""
+    src = open(os.path.join(
+        REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+        encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+
+    check(re.search(r"^VLLM_GLM53_FP8_DENSE=1$", profile, re.M) is not None,
+          "the profile still ships w8a8, not nvfp4")
+    check('scheme = "nvfp4"' in src, "the nvfp4 scheme exists")
+    check('raw in ("nvfp4", "fp4x4", "w4a4")' in src,
+          "nvfp4 needs its own spelling: bare 'fp4' stays w4a8")
+
+    # Both operands, or there is no 2x -- quantizing only the weight is the
+    # existing w4a8 arm and runs at the fp8 issue rate.
+    gemm = src[src.index("def _nvfp4_dense_gemm("):]
+    gemm = gemm[:gemm.index("\n\n\n")]
+    check("nvfp4_quantize(flat" in gemm,
+          "the activation is quantized too, per call")
+    check("mm_fp4(" in gemm, "and the pair goes through mm_fp4")
+
+    # Arms only on a check that ran (is True), like w4a8 -- not on "did not
+    # raise", which is how the w4a8 default once poisoned a CUDA context.
+    branch = src[src.index('if scheme == "nvfp4"'):]
+    branch = branch[:branch.index('if scheme == "w4a8"')]
+    check("_copy_matches_source(" in branch and ") is True:" in branch,
+          "nvfp4 arms only on a value check that actually ran")
+    check("mod.quant_method = method" in branch,
+          "a failed check leaves the layer on the fp8 copy")
+
+    # It stacks on the fp8 METHOD, so a runtime failure drops one notch.
+    ctor = src[src.index("class NvFp4DenseMethod"):]
+    ctor = ctor[:ctor.index("class W4A8DenseMethod")]
+    check("layer.quant_method = self._base" in ctor,
+          "a runtime failure falls back to the fp8 method, not to bf16")
+
+    # Re-arming has to unwrap every stacked method, not one.
+    check("while isinstance(\n            base, (Fp8DenseMethod, "
+          "W4A8DenseMethod, NvFp4DenseMethod)\n        ):" in src,
+          "re-arm unwraps stacked methods in a loop")
+    print("  fp8-dense nvfp4 scheme contract .. OK")
+
+
+def test_korean_gate_separates_notation_from_damage() -> None:
+    """The Korean gate must not fire on the model writing about Korean.
+
+    It did, for boots on end: a response explaining spacing wrote the correct
+    construction "-(으)ㄹ 수 있다" and the bench reported that ㄹ as corruption.
+    That single false hit is what a 1/8 and a 1/16 in the ledger were, and it
+    nearly cost an arm -- prep-fused was about to be blamed for a regression
+    the detector invented.
+
+    Damage welds a jamo onto a syllable (하ㄹ수). Notation always leads with a
+    delimiter. The character BEFORE the jamo is the whole discriminator."""
+    ns = load_defs(
+        "bench/korean-corruption.py",
+        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "INFORMATIONAL", "scan"},
+        {"re": re, "unicodedata": __import__("unicodedata")},
+    )
+    scan = ns["scan"]
+    notation = [
+        'The construction "-(으)ㄹ 수 있다" requires spacing',
+        "받침 ㄹ 과 ㄴ 은 다르다",
+        "-ㅂ니다 체를 쓴다",
+        "ㄱ부터 ㅎ까지",
+        "조력 발전은 밀물과 썰물의 낙차를 이용한다.",
+    ]
+    for text in notation:
+        check(scan(text)["lone_jamo"] == 0,
+              f"grammar notation is not damage: {text[:34]}")
+    for text in ("하ㄹ수 있다", "할ㅅ우 있다"):
+        check(scan(text)["lone_jamo"] == 1,
+              f"a jamo welded to a syllable is damage: {text}")
+    check("jamo_notation" in ns["INFORMATIONAL"],
+          "the notation count is reported but never gates a response")
+    print("  korean gate notation vs damage .. OK")
+
+
+def test_fp8_dense_free_bf16_contract() -> None:
+    """Releasing the bf16 sources is exact-opt-in and drops the base fallbacks.
+
+    After the quant_method swap apply() reads only the fp8 copy, so the bf16
+    tensor is dead: 2.94 GB/rank at TP4 against 1.47 GB of fp8 pack and 0.82
+    GB of the megakernel's W4 pack (computed from the checkpoint's shapes).
+    Freeing it also removes the bias and exception fallbacks through the base
+    method, which is why it is knob-gated and off by default."""
+    src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+               encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_FP8_DENSE_FREE_BF16=0$", profile, re.M) is not None,
+          "profile ships the bf16 release off")
+    check('os.environ.get(_FREE_BF16_ENV, "").strip() == "1"' in src,
+          "exact opt-in: only the string 1 releases the bf16 sources")
+    check('if getattr(mod, "bias", None) is not None:' in src,
+          "a linear with a bias keeps its bf16 source (the bias path needs it)")
+
+    # The release must NOT run from maybe_build_fp8_dense. That function is
+    # written to tolerate an early call -- AutoWeightsLoader enters a child
+    # load_weights before the checkpoint is walked, and a later call rebuilds
+    # the copy -- but a rebuild cannot restore a deleted source. Freeing from
+    # inside it killed a boot at parameter.py:221, where the loader read
+    # shape[input_dim] of a 1-D empty tensor.
+    build = src[src.index("def maybe_build_fp8_dense"):]
+    build = build[:build.index("\ndef ")] if "\ndef " in build else build
+    check("mod.weight.data = torch.empty(" not in build,
+          "maybe_build_fp8_dense never frees: it may run before the load ends")
+    free = src[src.index("def maybe_free_fp8_dense_bf16"):]
+    check("mod.weight.data = torch.empty(" in free,
+          "the release lives in its own pass")
+
+    # ... and it is driven from the first forward of the model file, which is
+    # the only COMPOSED place that provably runs after loading. The first
+    # attempt drove it from GPUModelRunner.load_model -- correct in principle,
+    # dead in practice: glm53_drop_audit is in no composition, so the release
+    # never ran and the boot silently measured the baseline.
+    wiring = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+                          "glm5next_model.py")
+    src_w = open(wiring, encoding="utf-8").read()
+    check("maybe_free_fp8_dense_bf16(self)" in src_w,
+          "the release is triggered from the composed model wiring")
+
+    # It must hang off Glm5NextForConditionalGeneration, the class vLLM
+    # actually runs. Glm5NextForCausalLM.forward reads like the right place
+    # and is never called: Glm4vForConditionalGeneration.forward reaches past
+    # it into `self.language_model.model(...)`. A trigger there is dead code,
+    # and two boots came up healthy-looking with the release silently skipped.
+    outer = src_w[src_w.index("class Glm5NextForConditionalGeneration"):]
+    check("maybe_free_fp8_dense_bf16(self)" in outer,
+          "the trigger is on the class vLLM calls, not the bypassed one")
+    inner = src_w[src_w.index("class Glm5NextForCausalLM"):
+                  src_w.index("class Glm5NextForConditionalGeneration")]
+    check("maybe_free_fp8_dense_bf16" not in inner,
+          "Glm5NextForCausalLM.forward is bypassed -- nothing may rely on it")
+    fwd = outer[outer.index("    def forward("):]
+    check('getattr(self, "_bf16_released", False)' in fwd,
+          "guarded so it runs once, not every step")
+    check("return super().forward(" in fwd,
+          "and it delegates -- the override adds the release, nothing else")
+
+    # Every module the release touches must actually be composed; that is the
+    # check the dead call site would have failed.
+    manifest = open(os.path.join(REPO, "build/glm53/manifest.tsv"),
+                    encoding="utf-8").read()
+    for needed in ("glm5next_model.py", "glm53_fp8_dense.py"):
+        check(needed in manifest,
+              f"{needed} is in the glm53 composition")
+    print("  fp8-dense bf16 release contract .. OK")
+
+
 def test_fp8_dense_bproj() -> None:
     """The b-projection arm matches exactly the rear halves meant for it.
 
@@ -5388,8 +5571,25 @@ def _launcher_caller_passthrough(text: str) -> set[str]:
 def test_launcher_load_format_gate() -> None:
     """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
-    check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
-          "the default must stay auto -- instanttensor is opt-in")
+    # The fast loader is the default, and the profile names the image that
+    # actually carries it. These two have to move together: defaulting to
+    # instanttensor while the profile pointed at the bare image cost a boot,
+    # dead 75 s in on "No module named 'instanttensor'".
+    check('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"' in text,
+          "glm53 boots on the fast loader by default")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check('PROFILE_IMAGE="glm53:v13-b12x-it"' in profile,
+          "the profile names the image that has instanttensor, not the base")
+    # And validating the string is still not validating anything: ask
+    # whichever image is in play whether it can import it.
+    check('import instanttensor' in text,
+          "the launcher must check the image can import instanttensor")
+    check(text.index('IMAGE="${IMAGE:-glm53:v13-b12x}"')
+          < text.index('-c "import instanttensor"'),
+          "the availability check needs IMAGE, so it runs after IMAGE is set")
+    check("No module named instanttensor" in text,
+          "the abort names the failure a boot would otherwise hit at 75 s")
     check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor"
           in text,
           "an unknown format must abort, not reach vLLM as a typo")
@@ -5398,7 +5598,7 @@ def test_launcher_load_format_gate() -> None:
     check("LOAD_FORMAT" in _launcher_caller_passthrough(text),
           "LOAD_FORMAT must be in the caller passthrough list -- a knob the "
           "launcher never forwards is the failure this lane hit five times")
-    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-auto}"')
+    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"')
           < text.index("--load-format $LOAD_FORMAT"),
           "validation must precede use")
     check("SILENT RANK DEATH" in text,
@@ -6407,12 +6607,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 4
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "gemm, kda and mhc kernels trigger their dependents at entry and "
-          "are launched programmatically behind the MK_PDL knob (default off)")
+          "every segment kernel (gemm, kda, mhc, mla) triggers its dependents "
+          "at entry and is launched programmatically behind the MK_PDL knob "
+          "(default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -6644,9 +6845,10 @@ def test_glm53_megakernel_contracts() -> None:
     # grid that does not fit degrades instead of refusing to launch.
     check("mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM)" in cu
           and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
-          and "if (cache > MK_GRID_CAP) cache = MK_GRID_CAP;" in cu,
+          and "int cap = MK_GRID_CAP" in cu and "if (cache > cap) cache = cap;" in cu,
           "gemm and kda each resolve their persistent grid from the device "
-          "rather than assuming MK_GRID_CAP")
+          "rather than assuming MK_GRID_CAP (the cap is a defaulted argument so "
+          "MK_SEG_MLA, which owns its ticket counter, can raise its own)")
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
@@ -6667,10 +6869,11 @@ def test_glm53_megakernel_contracts() -> None:
     # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
     # of 96, and the next 96-block launch then releases at half its blocks.
     check('ws["barrier_mhc"].data_ptr()' in pysrc_full
+          and 'ws["barrier_mla"].data_ptr()' in pysrc_full
           and pysrc_full.count("_barrier_ptr(ws)")
           - pysrc_full.count("def _barrier_ptr(ws)") == 1,
-          "mhc runs its own barrier counter, not the one the 48-block "
-          "kernels share")
+          "mhc and mla each run their own barrier counter, not the one the "
+          "48-block kernels share (their grids are 96 blocks)")
     check("(t / (unsigned long long)grid + 1ULL) * grid" in cu,
           "grid barrier is the never-reset monotonic ticket form, 64-bit "
           "(32-bit wraps in ~a week of arrivals and releases early)")
@@ -6837,6 +7040,72 @@ def test_glm53_megakernel_contracts() -> None:
           "the bench times the W4 lane as the MK arm, gates it at the e2m1 "
           "by-design class, and keeps the exact-grid gate against the torch "
           "twins")
+    # -- MK_SEG_MLA: correct-but-not-adopted sparse MLA decode. The contract
+    #    that matters is that nothing routes to it and the pipeline keeps a
+    #    fixed in-flight group count (a short row read stale smem without it).
+    check("VLLM_GLM53_MK_MLA=0" in open(os.path.join(REPO, "profiles/glm53.env"),
+                                        encoding="utf-8").read(),
+          "profile ships MK_SEG_MLA off")
+    check(cu.count("else mk_cp_commit();") >= 2
+          and "for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {" in cu,
+          "mla: empty commits keep cp.async groups aligned with wait_group, "
+          "including rows whose slot count is under one tile")
+    check("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);" in cu
+          and cu.index("if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);")
+              < cu.index("const uint8_t* tile8 = ring +"),
+          "mla: the next tile is issued BEFORE the current one is consumed "
+          "(issuing after drained the pipeline: every phase was additive)")
+    check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
+          and "__nv_cvt_fp8x2_to_halfraw2" in cu,
+          "mla: bf16 tensor cores for both mma phases, hardware fp8x2 conversion "
+          "(the FMA versions lost 1.7x to conversion and unpacking instruction count)")
+    _mla_src = cu[cu.index("// v4: tensor cores"): cu.index("// host entry points")]
+    check("ldmatrix.sync" not in _mla_src and "mla_e4m3x2_strided" in cu
+          and "MLA_SMEM_CT" not in cu,
+          "mla v4: no bf16 copy of the tile in smem -- fragments convert from the "
+          "e4m3 ring in registers, which is what buys the second block per SM")
+    check("MLA_TILE = 16" in cu and "MLA_NSTAGE = 3" in cu and "MLA_KQ = 4" in cu,
+          "mla v4 geometry: 16-slot tiles, 3 ring stages, 4 k-quarters -> ~46 KB smem")
+
+    check("a.lens = (const int*)ptrs[3];" in cu and "const int len = a.lens[t];" in cu,
+          "mla: per-row lengths are read from DEVICE memory (that is what a "
+          "captured-graph launch needs; the wrapper's host replan is the cost "
+          "this kernel exists to remove)")
+    # -- glm53_mk_mla_wiring: the image-bound hook for MK_SEG_MLA
+    wd = os.path.join(REPO, "overlay", "modules", "glm53_mk_mla_wiring")
+    wsrc = open(os.path.join(wd, "flashinfer_mla_sparse_sm90.py"), encoding="utf-8").read()
+    wrows = [l.split("\t") for l in open(os.path.join(wd, "manifest.tsv"), encoding="utf-8")
+             .read().splitlines() if l and not l.startswith("#")]
+    check(len(wrows) == 1 and wrows[0][1] == "vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py"
+          and re.fullmatch(r"[0-9a-f]{64}", wrows[0][2]) is not None,
+          "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
+    check("num_tokens > _MK_MLA_MAX_T" in wsrc and "_MK_MLA_MAX_T = 1 << 20" in wsrc,
+          "mk_mla_wiring routes decode AND prefill (v5: splits==1 needs no scratch)")
+    check("q_nope.shape[0] <= 64" in wsrc,
+          "the one-shot wrapper shadow stays on a decode-sized call (a prefill "
+          "shadow would allocate a second 134 MB output)")
+    check("if T > MLA_MAX_SPLIT_ROWS:" in pysrc_full and "return 1" in pysrc_full,
+          "prefill row counts take splits == 1 (a [T][splits][H][D] fp32 scratch "
+          "would be 268 MB at T=8192)")
+    check("if (a.splits == 1) return;" in cu and "v5 (prefill)" in cu,
+          "the kernel normalises in phase 0 and skips the combine when splits == 1")
+    # the wrapper tail also lives in the module-level _sm90_wrapper_run
+    # helper (defined before the class), so compare against forward_mqa's
+    # own copy -- the LAST occurrence
+    check("if _mk_mla_route(self, num_tokens):" in wsrc
+          and wsrc.index("if _mk_mla_route(self, num_tokens):") < wsrc.rindex("state.kv_indices[: num_tokens * width].copy_("),
+          "the MK branch precedes the wrapper tail in forward_mqa")
+    check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
+          "the builder still plans every step (prefill and T>32 use the wrapper)")
+    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "is_current_stream_capturing()" in wsrc,
+          "one-shot shadow vs the wrapper on the first EAGER call; drift or non-finite output DISARMs")
+    check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
+          "mk_mla_wiring requires the megakernel module")
+    check("glm53_megakernel glm53_mk_mla_wiring" in open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(),
+          "profile mounts the wiring right after the megakernel")
+    check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
+          "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
     print("  glm53 megakernel contracts .. OK")
 
 
@@ -7157,6 +7426,11 @@ def test_glm53_prep_fused_contracts() -> None:
     wrapper = open(os.path.join(REPO, "probes", "run_prep_fused_check.sh"), encoding="utf-8").read()
     check("sha256sum" in wrapper and "base preimage mismatch" in wrapper and "PROFILE_IMAGE" in wrapper,
           "the probe wrapper must verify every mounted row's base contract like the launcher")
+    check("FlashInferMLASparseSM90Builder" in src and "_mk_mla_armed()" in src
+          and "replans the wrapper every step" in src,
+          "the SM90 sparse builder is accepted ONLY while MK_SEG_MLA is armed: it "
+          "replans FlashInfer's wrapper every step from host lengths, which caching "
+          "this group's metadata would skip")
     print("  glm53 prep fused contracts .. OK")
 
 
@@ -7526,6 +7800,10 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_deploy_refusal_is_not_swallowed()
+    test_fp8_dense_nvfp4_scheme_contract()
+    test_korean_gate_separates_notation_from_damage()
+    test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
     test_mhc_probe_contracts()

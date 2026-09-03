@@ -90,12 +90,28 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # boot under 5 min. That report also says it can cause SILENT RANK DEATH in
 # multi-node, so it stays opt-in and every boot that uses it must clear the
 # generation check before its numbers are read.
-LOAD_FORMAT="${LOAD_FORMAT:-auto}"
+#
+# It is NOT in the bare glm53:v13-b12x, and defaulting to it while the
+# profile pointed there cost a boot on 2026-09-03: the case below passed the
+# string, the launcher handed --load-format instanttensor to vLLM, and every
+# rank died 75 s in with "No module named 'instanttensor'". The profile now
+# names glm53:v13-b12x-it, which is that image plus the package, so the
+# default can be the fast loader -- but validating the STRING is still not
+# validating anything, so the check below asks whichever image is actually in
+# play whether it can import it, before a boot is spent instead of after.
+LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"
 case "$LOAD_FORMAT" in
   auto|safetensors|instanttensor) ;;
   *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
 esac
-[ "$LOAD_FORMAT" = auto ] || echo "load-format: $LOAD_FORMAT (default is auto)"
+if [ "$LOAD_FORMAT" = instanttensor ] \
+   && ! docker run --rm --entrypoint python3 "$IMAGE" -c "import instanttensor" 2>/dev/null; then
+  echo "ABORT: LOAD_FORMAT=instanttensor but $IMAGE cannot import it." >&2
+  echo "       vLLM fails 75 s into the boot with 'No module named instanttensor'." >&2
+  echo "       Use LOAD_FORMAT=auto, or build an image with vllm[instanttensor]." >&2
+  exit 2
+fi
+echo "load-format: $LOAD_FORMAT (default is instanttensor)"
 
 ENABLE_EP="${ENABLE_EP:-0}"
 case "$ENABLE_EP" in
