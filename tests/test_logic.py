@@ -6312,6 +6312,42 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_kv_cache_is_pinned_in_tokens() -> None:
+    """KV is pinned in tokens, not left to take whatever GMU leaves.
+
+    Measured live 2026-09-03: num_gpu_blocks=2175, kv_cache_size_tokens=
+    4,579,624, kv_cache_max_concurrency=4.37 on a server that runs
+    MAX_SEQS=4 -- four times the headroom the scheduler can use. vllm applies
+    the override by setting available_memory = override * bytes_per_block
+    (kv_cache_utils), so the blocks that are not claimed are never allocated
+    and the memory stays free on this unified-memory part.
+
+    tokens -> blocks is not tokens/block_size: the 34 KDA layers hold
+    recurrent state per SEQUENCE in whole blocks, which does not scale with
+    tokens. The reserve is measured, named and re-checkable, not folded into
+    a magic number."""
+    src = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"),
+               encoding="utf-8").read()
+    check('KV_TOKENS="${KV_TOKENS:-2000000}"' in src
+          and 'KV_HYBRID_BLOCKS="${KV_HYBRID_BLOCKS:-187}"' in src,
+          "the launcher pins KV in tokens and names the hybrid reserve it "
+          "adds on top")
+    check("--num-gpu-blocks-override $KV_BLOCKS" in src
+          and "int(($KV_TOKENS + 2303) / 2304) + $KV_HYBRID_BLOCKS" in src,
+          "tokens convert to blocks by block_size plus the measured hybrid "
+          "reserve, and reach vllm as --num-gpu-blocks-override")
+    check("ABORT: KV_TOKENS and KV_BYTES both set" in src,
+          "KV_TOKENS and KV_BYTES size the same cache; setting both is a "
+          "config error, not a silent precedence rule")
+    check("--kv-cache-memory-bytes $KV_BYTES" in src
+          and "--kv-cache-memory $KV_BYTES" not in src,
+          "the KV bytes flag is spelled out -- --kv-cache-memory only works "
+          "as an argparse abbreviation while no other flag shares the prefix")
+    check(src.index("KV_FLAG=") < src.index("SERVE_ARGS="),
+          "the KV flag resolves before SERVE_ARGS bakes it in")
+    print("  kv cache is pinned in tokens ... OK")
+
+
 def test_cudagraph_mem_profiling_off_keeps_the_kv_size() -> None:
     """Disabling the estimator must not silently resize the KV cache.
 
@@ -7900,6 +7936,7 @@ if __name__ == "__main__":
     test_self_built_kernels_persist_their_caches()
     test_boot_stamps_measure_without_changing_the_boot()
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
+    test_kv_cache_is_pinned_in_tokens()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
