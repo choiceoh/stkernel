@@ -6312,6 +6312,49 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_boot_stamps_measure_without_changing_the_boot() -> None:
+    """`init engine took 192.52 s` is one number for eight things.
+
+    The 2026-09-02 boot could only be split where something happened to log,
+    leaving 63 s in two gaps with no marker at all. This module stamps the
+    phases themselves. It is additive (the image ships its own
+    sitecustomize.py, which must not be shadowed), it patches deterministically
+    (an audit hook misses modules already in sys.modules), and it must never
+    stand between the boot and its work."""
+    d = os.path.join(REPO, "overlay/modules/glm53_boot_stamps")
+    src = open(os.path.join(d, "deneb_boot_stamps.py"), encoding="utf-8").read()
+    man = open(os.path.join(d, "manifest.tsv"), encoding="utf-8").read()
+    pth = open(os.path.join(d, "zz_deneb_boot_stamps.pth"),
+               encoding="utf-8").read()
+    check(man.count("\tabsent") == 2 and "sitecustomize" not in man,
+          "boot stamps add two NEW files and replace nothing -- shadowing the "
+          "image's sitecustomize.py would silently drop whatever it does")
+    check(pth.strip() == "import deneb_boot_stamps; deneb_boot_stamps.install()",
+          "the .pth is the additive entry point and does nothing else")
+    check("class _PostImport:" in src
+          and 'TARGETS = ("vllm.v1.worker.gpu_worker", '
+              '"vllm.v1.worker.gpu.model_runner")' in src
+          and "loader.exec_module = exec_module" in src
+          and "not isinstance(f, _PostImport)" in src,
+          "the patch rides a meta-path post-import hook (an audit hook never "
+          "fires for a module already in sys.modules) and skips itself when "
+          "resolving, so it cannot recurse")
+    for phase in ("determine_available_memory", "initialize_from_config",
+                  "compile_or_warm_up_model", "profile_run", "capture_model"):
+        check(phase in src, f"the {phase} phase is stamped")
+    check("return fn(*a, **kw)" in src and "finally:" in src,
+          "every wrapper returns the original's value and times it in a "
+          "finally, so a raising phase is still measured and still raises")
+    check('os.environ.get("DENEB_BOOT_STAMPS", "1")' in src
+          and src.count("except Exception") >= 4,
+          "boot stamps are opt-out and inert on any failure: measuring a boot "
+          "must never be able to stop one")
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    check("glm53_boot_stamps" in prof,
+          "the glm53 profile ships the boot stamps")
+    print("  boot stamps measure without changing the boot .. OK")
+
+
 def test_self_built_kernels_persist_their_caches() -> None:
     """A restart must not recompile what only a deploy changes.
 
@@ -7822,6 +7865,7 @@ if __name__ == "__main__":
     test_oneshot_sm121_grid_contract()
     test_cuda_builds_keep_the_arch_specific_target()
     test_self_built_kernels_persist_their_caches()
+    test_boot_stamps_measure_without_changing_the_boot()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
