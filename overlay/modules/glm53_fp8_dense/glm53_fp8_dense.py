@@ -563,6 +563,34 @@ def maybe_free_fp8_dense_bf16(model) -> int:
         _FREE_BF16_ENV, freed / 1e9, kept_bias)
     return freed
 
+def _attach_mk_pack(method, weight, cols) -> bool:
+    """Attach the megakernel's W4 pack to an fp8 method that will SERVE.
+
+    deneb fork (glm53_megakernel): W4 is e2m1 x per-16 pow2 scale, expanded
+    to EXACT e4m3 in-kernel, ~0.56x the fp8 bytes -- on every eligible
+    linear, the KDA in_proj included. The fp8 MK arm and its knob are gone,
+    so VLLM_GLM53_MK_GEMM=1 means W4 numerics on the decode linears: bracket
+    before arming (megakernel README). A build failure only means apply()
+    keeps the deepgemm pair, which is the fallback either way.
+
+    Called only once the layer's serving method is settled. It used to run
+    before the copy check and before the scheme branch, so a stale layer and
+    -- worse -- EVERY layer the nvfp4 arm then took paid for a pack that
+    NvFp4DenseMethod.apply never reads: ~1.0 GB/rank of weights built,
+    verified and held for nothing, at the peak of the boot that OOM-killed
+    srv3 on 2026-09-03.
+    """
+    try:
+        from vllm.model_executor.layers import glm53_megakernel as _mkmod
+
+        if _mkmod.ENABLE_GEMM and cols % 128 == 0:
+            method._mk = _mkmod.build_mk_weight_w4(weight)
+            return method._mk is not None
+    except Exception:
+        method._mk = None
+    return False
+
+
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
 
@@ -589,6 +617,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         scheme = "w8a8"
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
+    mk_packs = 0
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _include_patterns()):
             continue
@@ -619,22 +648,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
-            # deneb fork (glm53_megakernel): build the MK pack alongside the
-            # deepgemm pair. A build failure only means apply() keeps the
-            # stock path; the pair above stays the fallback either way.
-            # The pack is W4 (e2m1 x per-16 pow2 scale -> exact e4m3
-            # in-kernel, ~0.56x the fp8 bytes) on every eligible linear,
-            # the KDA in_proj included: the fp8 MK arm and its knob are
-            # gone, so VLLM_GLM53_MK_GEMM=1 means W4 numerics on the decode
-            # linears -- bracket before arming (megakernel README).
-            try:
-                from vllm.model_executor.layers import (
-                    glm53_megakernel as _mkmod)
-
-                if _mkmod.ENABLE_GEMM and cols % 128 == 0:
-                    method._mk = _mkmod.build_mk_weight_w4(weight)
-            except Exception:
-                method._mk = None
             if _copy_matches_source(
                 mod, method, weight,
                 got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
@@ -657,9 +670,18 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 # file can read, so both are tried and whichever reproduces
                 # bf16 is kept -- exactly how the w4a8 scale layout is
                 # settled.
-                for alpha_scale in (1.0, -1.0):
+                # alpha_scale carries a DEQUANT convention, not a quantizer
+                # input -- _quantize_nvfp4 never reads it. Quantizing inside
+                # the retry loop therefore recomputed the identical triple
+                # and, because the right-hand side is built before the names
+                # are rebound, held two of them at once. Hoisted: one
+                # quantization, one triple, both attempts.
+                try:
+                    wq, wsf, w_gs = _quantize_nvfp4(weight)
+                except Exception:
+                    wq = None
+                for alpha_scale in (1.0, -1.0) if wq is not None else ():
                     try:
-                        wq, wsf, w_gs = _quantize_nvfp4(weight)
                         nv = NvFp4DenseMethod(
                             method, wq, wsf, w_gs, rows, alpha_scale)
                         if _copy_matches_source(
@@ -668,6 +690,9 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                                 got_fn=lambda xx: _nvfp4_dense_gemm(
                                     xx, wq, wsf, w_gs, rows, alpha_scale),
                         ) is True:
+                            # NvFp4DenseMethod.apply goes straight to the
+                            # nvfp4 kernel: it never reads the MK pack, so
+                            # this layer must not build one.
                             mod.quant_method = nv
                             quantized_w4.append(name)
                             params_w4 += weight.numel()
@@ -675,6 +700,8 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
+                    if _attach_mk_pack(method, weight, cols):
+                        mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
@@ -705,11 +732,15 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
+                    if _attach_mk_pack(method, weight, cols):
+                        mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
                     continue
                 continue
+            if _attach_mk_pack(method, weight, cols):
+                mk_packs += 1
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
@@ -719,12 +750,31 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
-        "copy check%s -- fingerprint for the boot log",
+        "copy check, %d MK W4 packs%s -- fingerprint for the boot log",
         type(model).__name__, env, scheme,
         len(quantized_w4), params_w4 * 2 / 1e9,
-        len(quantized), params * 2 / 1e9, len(skipped), len(stale),
+        len(quantized), params * 2 / 1e9, len(skipped), len(stale), mk_packs,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    if mk_packs == 0 and quantized_w4:
+        # The scheme that wins the layer decides which kernel serves it, and
+        # nothing else said so: NvFp4DenseMethod/W4A8DenseMethod.apply never
+        # reach the MK path, so an nvfp4 or w4a8 arm turns MK-GEMM off for
+        # every layer it takes. Silence here is how "armed" stops meaning
+        # "serving" -- the same trap the MK-KDA layout gate was.
+        try:
+            from vllm.model_executor.layers import glm53_megakernel as _mkmod
+
+            if _mkmod.ENABLE_GEMM:
+                logger.warning(
+                    "[fp8-dense] %s: VLLM_GLM53_MK_GEMM=1 but the %s arm took "
+                    "every eligible linear, so NO layer carries an MK W4 pack "
+                    "-- MK-GEMM will not run on the dense projections this "
+                    "boot (and MK-KDA's in_proj packs go with it). The two "
+                    "schemes are mutually exclusive; pick one.",
+                    type(model).__name__, scheme)
+        except Exception:
+            pass
     if stale:
         logger.warning(
             "[fp8-dense] %s: %d copies did not reproduce their bf16 source "
