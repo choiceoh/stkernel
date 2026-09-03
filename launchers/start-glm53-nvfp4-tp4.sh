@@ -86,16 +86,26 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # Weight loading is the whole boot: 340 s of an 11 min cold start, of which
 # ~161 s is reading 185 GB at 1.15 GB/s and the rest is per-tensor work. vLLM's
 # "instanttensor" does distributed loading with pipelined prefetch and direct
-# I/O; a deploy report on identical hardware measured 15x, which would take the
-# boot under 5 min. That report also says it can cause SILENT RANK DEATH in
-# multi-node, so it stays opt-in and every boot that uses it must clear the
-# generation check before its numbers are read.
-LOAD_FORMAT="${LOAD_FORMAT:-auto}"
+# I/O; a deploy report on identical hardware measured 15x. Default since
+# 2026-09-03: this lane reboots many times a day and `auto` was spending five
+# minutes of every one of them on the plain safetensors loader.
+#
+# The one failure this lane actually hit -- three ranks dying at once as
+# ncclSystemError "Too many open files" -- was the container's 1024 soft
+# nofile, and the COMMON block below now raises it to 524288.
+#
+# The residual risk is different in kind and is why the format is echoed on
+# EVERY boot, not just when it is overridden: the deploy report describes
+# SILENT RANK DEATH in multi-node, which does not fail the boot, it corrupts
+# the output. So a boot whose numbers are being read must still clear the
+# generation check, and the log has to say which loader produced them.
+# `LOAD_FORMAT=safetensors bash launchers/...` is the way back.
+LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"
 case "$LOAD_FORMAT" in
   auto|safetensors|instanttensor) ;;
   *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
 esac
-[ "$LOAD_FORMAT" = auto ] || echo "load-format: $LOAD_FORMAT (default is auto)"
+echo "load-format: $LOAD_FORMAT (default is instanttensor)"
 
 ENABLE_EP="${ENABLE_EP:-0}"
 case "$ENABLE_EP" in

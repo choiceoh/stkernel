@@ -5528,8 +5528,19 @@ def _launcher_caller_passthrough(text: str) -> set[str]:
 def test_launcher_load_format_gate() -> None:
     """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
-    check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
-          "the default must stay auto -- instanttensor is opt-in")
+    # Default since 2026-09-03. `auto` was spending five minutes of every
+    # reboot on the plain safetensors loader, and this lane reboots many
+    # times a day. The nofile failure that once killed three ranks is fixed
+    # in COMMON (nofile 524288); the residual hazard is silent rank death,
+    # which is why the format is echoed unconditionally below.
+    check('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"' in text,
+          "glm53 boots on instanttensor by default")
+    check('echo "load-format: $LOAD_FORMAT' in text
+          and '[ "$LOAD_FORMAT" = auto ] || echo "load-format:' not in text,
+          "every boot logs which loader ran -- silent rank death corrupts "
+          "output instead of failing, so the record has to be attributable")
+    check("--ulimit nofile=524288" in text,
+          "instanttensor as a default requires the raised nofile limit")
     check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor"
           in text,
           "an unknown format must abort, not reach vLLM as a typo")
@@ -5538,7 +5549,7 @@ def test_launcher_load_format_gate() -> None:
     check("LOAD_FORMAT" in _launcher_caller_passthrough(text),
           "LOAD_FORMAT must be in the caller passthrough list -- a knob the "
           "launcher never forwards is the failure this lane hit five times")
-    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-auto}"')
+    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"')
           < text.index("--load-format $LOAD_FORMAT"),
           "validation must precede use")
     check("SILENT RANK DEATH" in text,
