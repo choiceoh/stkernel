@@ -6563,9 +6563,12 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     check("%d MK W4 packs" in body,
           "the fingerprint must count the packs, or 'MK_GEMM=1 with 0 packs' "
           "is invisible")
-    check("mutually exclusive" in body and "MK_GEMM=1 but the" in body,
-          "the scheme that wins the layer turns MK-GEMM off for it; silence "
-          "there is how 'armed' stops meaning 'serving'")
+    check("MK_GEMM=1 but the" in body
+          and "the exclusion is " in body and "per layer" in body,
+          "the scheme that wins the layer turns MK-GEMM off for it, and the "
+          "message must scope the exclusion to MK-GEMM: silence there is how "
+          "'armed' stops meaning 'serving', and an over-broad claim is how "
+          "MK-KDA got written off with it")
 
     # 5. the bf16 release stays its own pass
     free = src[src.index("def maybe_free_fp8_dense_bf16("):]
@@ -6575,6 +6578,44 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
           "the bf16 release must stay outside the build pass: releasing from "
           "inside it made the early AutoWeightsLoader call destructive")
     print("  fp8-dense build peak .......... OK")
+
+
+def test_kda_owns_its_projections_across_dense_schemes() -> None:
+    """MK-KDA and the nvfp4 dense scheme are not exclusive; only MK-GEMM is.
+
+    MK-MHC and MK-MLA never read a pack. MK-KDA fuses in_proj/o_proj into
+    its own launch, so for those two the layer's quant_method is never
+    called -- whichever scheme won them is dead weight, and the W4 pack the
+    kernel does read must be attached while the bf16 source is still alive.
+    Only MK-GEMM, which IS the Fp8DenseMethod.apply hook, cannot share a
+    layer with an nvfp4/w4a8 arm.
+    """
+    src = open(
+        "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8"
+    ).read()
+    check("def _kda_owns(" in src,
+          "ownership must be decided in the build pass, where the bf16 "
+          "source is still alive")
+    owns = src[src.index("def _kda_owns("):src.index("def maybe_build_fp8_dense(")]
+    check("in_proj_qkvbfg_a" in owns and "o_proj" in owns,
+          "the KDA block's two projections are the owned pair")
+    check('hasattr(parent, "in_proj_qkvbfg_a")' in owns,
+          "o_proj also names the attention block's output projection -- the "
+          "KDA one is the sibling of in_proj_qkvbfg_a")
+    check("ENABLE_KDA or _mkmod.KDA_SHADOW" in owns,
+          "ownership follows the KDA knob; with the segment off the dense "
+          "scheme keeps the layer")
+
+    body = src[src.index("def maybe_build_fp8_dense("):]
+    owns_at = body.index("if _kda_owns(model, name):")
+    nv_at = body.index('if scheme == "nvfp4"')
+    check(owns_at < nv_at,
+          "ownership is decided BEFORE any low-precision arm bids, or the "
+          "layer pays for a copy nothing reads")
+    branch = body[owns_at:nv_at]
+    check("_attach_mk_pack" in branch and "continue" in branch,
+          "an owned layer attaches the pack and skips the arm")
+    print("  kda owns its projections ...... OK")
 
 
 def test_fused_k_gate_lazy_slot_exists() -> None:
@@ -7417,8 +7458,19 @@ def test_glm53_megakernel_contracts() -> None:
     check("is_current_stream_capturing()" in arm_fn,
           "maybe_arm never compiles/self-tests inside graph capture")
     check("_kda_ensure_packs" in pysrc_full
-          and "isinstance(in_m, Fp8DenseMethod)" in pysrc_full,
-          "KDA packs build themselves and only against a stock fp8-dense arm")
+          and "NvFp4DenseMethod, W4A8DenseMethod" in pysrc_full
+          and "while isinstance(m, (NvFp4DenseMethod, W4A8DenseMethod))"
+          in pysrc_full,
+          "KDA packs require a QUANTIZED arm, but the method may be wrapped "
+          "(nvfp4/w4a8 stack on the fp8 one) -- demanding Fp8DenseMethod by "
+          "isinstance is what made MK-KDA look exclusive with the nvfp4 "
+          "dense scheme when only MK-GEMM ever was")
+    packs_fn = pysrc_full[pysrc_full.index("def _kda_ensure_packs"):]
+    packs_fn = packs_fn[:packs_fn.index("def _kda_device_ok")]
+    check("_bf16_freed" in packs_fn and "raise RuntimeError" in packs_fn,
+          "this runs on the first eager forward, AFTER "
+          "maybe_free_fp8_dense_bf16: a missing pack whose source was "
+          "released must refuse loudly, not pack an empty tensor")
 
     # -- kda.py overlay keeps the stock body reachable (its own module since
     #    the core was made model-agnostic; see test_megakernel_core_is_shared)
@@ -8715,5 +8767,6 @@ if __name__ == "__main__":
     test_drafter_fc_probe_contracts()
     test_kda_conv_state_layout_is_the_arming_contract()
     test_fp8_dense_build_peak_pays_only_for_what_serves()
+    test_kda_owns_its_projections_across_dense_schemes()
     print(f"all OK ({PASS} checks)")
 
