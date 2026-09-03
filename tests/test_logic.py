@@ -2151,6 +2151,39 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     print("  fp8-dense nvfp4 scheme contract .. OK")
 
 
+def test_union_overlap_probe_avoids_the_degenerate_regimes() -> None:
+    """The overlap probe must measure the selector, not arithmetic.
+
+    Two regimes give a number that looks like an answer and is not:
+
+    * the warm-up prefill runs against a nearly empty cache, so top-k selects
+      almost nothing -- the first run of this probe spent its whole sample
+      budget on `per-token-topk=1` rows;
+    * the front of any prefill has a context SHORTER than top-k, so every
+      token takes the whole prefix. Token i sees [0..i] and token i+1 sees
+      [0..i+1], so the union is i+2 against 2(i+1) and the overlap is 50 pct
+      by construction. Sampling the first 512 rows duly reported "49.7 pct of
+      a 50.0 pct ceiling", which is arithmetic, not a property of the top-k.
+
+    The question is what adjacent tokens pick when top-k actually chooses
+    2048 out of a long context. So: spread the sample across the batch, and
+    only count a saturated top-k."""
+    path = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+                        "glm53_union_prefill.py")
+    src = open(path, encoding="utf-8").read()
+    probe = src[src.index("def _measure_overlap("):]
+    probe = probe[:probe.index("\n\ndef ")] if "\n\ndef " in probe else probe
+    check("stride" in probe and "allg[::stride]" in probe,
+          "groups are sampled across the batch, not from its front")
+    check("0.9 * 2048" in probe,
+          "only a saturated top-k counts -- a short prefix is arithmetic")
+    check("_UNION_STATS_SEEN[0] += 1" in probe
+          and probe.index("if per_token.mean().item()")
+          < probe.index("_UNION_STATS_SEEN[0] += 1"),
+          "a skipped sample must not consume the budget")
+    print("  union overlap probe regimes .. OK")
+
+
 def test_union_prefill_width_matches_the_converter_tile() -> None:
     """The union arm must hand the converter a width it accepts.
 
@@ -8121,6 +8154,7 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
+    test_union_overlap_probe_avoids_the_degenerate_regimes()
     test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
