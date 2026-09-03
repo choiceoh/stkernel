@@ -4955,8 +4955,12 @@ def test_oneshot_sm121_grid_contract() -> None:
           "Python eligibility must consume the resolved MAXEL")
     check('f"-DMAXEL={_MAXEL}"' in shim,
           "the resolved MAXEL must reach the CUDA compiler")
-    check('f"/root/.osar_build_maxel{_MAXEL}"' in shim,
-          "each OSAR stride must use an isolated extension build directory")
+    check("build_directory = _build_dir(_src_md5, cuda_flags)" in shim
+          and "[src_md5, *flags, torch.__version__, str(torch.version.cuda)]"
+          in shim,
+          "each OSAR stride must use an isolated extension build directory -- "
+          "the -DMAXEL flag rides in the key that names it, so an object "
+          "compiled for another peer-buffer stride is never reused")
     check("maxel=%d" in shim,
           "boot fingerprint must expose rank-to-rank MAXEL skew")
     check("class OneShotFatal(RuntimeError):" in shim,
@@ -6108,6 +6112,51 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_self_built_kernels_persist_their_caches() -> None:
+    """A restart must not recompile what only a deploy changes.
+
+    The 2026-09-02 boot spent 34.4 s on the megakernel's nvcc (ninja log),
+    60 s on osar's, and ~10 s re-JITing the MHC TileLang pair -- all into
+    container-local directories, all paid again on every restart, while
+    TRITON_CACHE_DIR and VLLM_CACHE_ROOT already pointed at the host mount.
+    Each cache now lives on that mount under a key that still forces an
+    honest rebuild when the source, the flags or the torch/CUDA pair move.
+    Measured on srv4, two containers sharing one cache: 59.4 s -> 0.3 s."""
+    mk = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                 "glm53_megakernel.py"), encoding="utf-8").read()
+    check("def _build_dir(src_md5: str, flags: list) -> str:" in mk
+          and 'os.environ.get("VLLM_GLM53_MK_BUILD_ROOT")' in mk
+          and "build_directory=_build_dir(md5, flags)," in mk
+          and "[src_md5, *flags, torch.__version__, str(torch.version.cuda)]" in mk
+          and 'build_directory="/root/.mk_build"' not in mk,
+          "the megakernel builds into the persistent cache mount, keyed over "
+          "source + flags + torch/CUDA")
+    osar = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                   "dsv4_oneshot_shim.py"), encoding="utf-8").read()
+    check("def _build_dir(src_md5: str, flags: list) -> str:" in osar
+          and 'os.environ.get("VLLM_DSV4_OSAR_BUILD_ROOT")' in osar
+          and "build_directory = _build_dir(_src_md5, cuda_flags)" in osar
+          and 'os.makedirs("/root/.osar_build", exist_ok=True)' not in osar,
+          "osar builds into the persistent cache mount too, and MAXEL rides "
+          "in the flags so a different peer-buffer stride keys a new build")
+    tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
+                                 "tilelang.py"), encoding="utf-8").read()
+    check("def _deneb_persist_tilelang_cache() -> None:" in tl
+          and 'if os.environ.get("TILELANG_CACHE_DIR"):' in tl
+          and 'os.environ["TILELANG_CACHE_DIR"] = os.path.join(cand, "tilelang")' in tl
+          and tl.index("_deneb_persist_tilelang_cache()\n")
+              < tl.index("from vllm.utils.torch_utils"),
+          "the MHC overlay points TILELANG_CACHE_DIR at the persistent mount "
+          "at its own import, ahead of the vllm/tilelang machinery, and never "
+          "overrides an explicit setting")
+    for src, name in ((mk, "megakernel"), (osar, "osar")):
+        check("shutil.rmtree(stale, ignore_errors=True)" in src
+              and "except OSError:" in src,
+              f"{name} prunes stale sibling builds, and a failed prune never "
+              f"fails the build")
+    print("  self-built kernels persist their caches .. OK")
+
+
 def test_cuda_builds_keep_the_arch_specific_target() -> None:
     """-arch=sm_121a silently drops the 'a' suffix under -c (cpp_extension's mode).
 
@@ -7494,6 +7543,7 @@ if __name__ == "__main__":
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
     test_cuda_builds_keep_the_arch_specific_target()
+    test_self_built_kernels_persist_their_caches()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
