@@ -91,18 +91,15 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # multi-node, so it stays opt-in and every boot that uses it must clear the
 # generation check before its numbers are read.
 #
-# It is NOT in glm53:v13-b12x. Making it the default cost a boot on
-# 2026-09-03: the case below passed the string, the launcher handed
-# --load-format instanttensor to vLLM, and every rank died 75 s in with
-#
-#     Error: No module named 'instanttensor'
-#     Please install instanttensor via `pip install vllm[instanttensor]`
-#
-# The package exists (0.1.9 on the index) but putting it in the image is its
-# own decision, so validating the STRING is not enough -- the check below asks
-# the image whether it can actually import it, and says so before a boot is
-# spent instead of after.
-LOAD_FORMAT="${LOAD_FORMAT:-auto}"
+# It is NOT in the bare glm53:v13-b12x, and defaulting to it while the
+# profile pointed there cost a boot on 2026-09-03: the case below passed the
+# string, the launcher handed --load-format instanttensor to vLLM, and every
+# rank died 75 s in with "No module named 'instanttensor'". The profile now
+# names glm53:v13-b12x-it, which is that image plus the package, so the
+# default can be the fast loader -- but validating the STRING is still not
+# validating anything, so the check below asks whichever image is actually in
+# play whether it can import it, before a boot is spent instead of after.
+LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"
 case "$LOAD_FORMAT" in
   auto|safetensors|instanttensor) ;;
   *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
@@ -114,7 +111,7 @@ if [ "$LOAD_FORMAT" = instanttensor ] \
   echo "       Use LOAD_FORMAT=auto, or build an image with vllm[instanttensor]." >&2
   exit 2
 fi
-echo "load-format: $LOAD_FORMAT (default is auto)"
+echo "load-format: $LOAD_FORMAT (default is instanttensor)"
 
 ENABLE_EP="${ENABLE_EP:-0}"
 case "$ENABLE_EP" in

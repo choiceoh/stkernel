@@ -5554,12 +5554,18 @@ def _launcher_caller_passthrough(text: str) -> set[str]:
 def test_launcher_load_format_gate() -> None:
     """LOAD_FORMAT must reach the container and refuse anything unvalidated."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
-    check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
-          "the default must stay auto -- instanttensor is opt-in")
-    # Validating the string is not enough. instanttensor is not in
-    # glm53:v13-b12x, and defaulting to it cost a boot: the case statement
-    # accepted the value and every rank died 75 s later on
-    # "No module named 'instanttensor'". Ask the image before spending a boot.
+    # The fast loader is the default, and the profile names the image that
+    # actually carries it. These two have to move together: defaulting to
+    # instanttensor while the profile pointed at the bare image cost a boot,
+    # dead 75 s in on "No module named 'instanttensor'".
+    check('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"' in text,
+          "glm53 boots on the fast loader by default")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check('PROFILE_IMAGE="glm53:v13-b12x-it"' in profile,
+          "the profile names the image that has instanttensor, not the base")
+    # And validating the string is still not validating anything: ask
+    # whichever image is in play whether it can import it.
     check('import instanttensor' in text,
           "the launcher must check the image can import instanttensor")
     check(text.index('IMAGE="${IMAGE:-glm53:v13-b12x}"')
@@ -5575,7 +5581,7 @@ def test_launcher_load_format_gate() -> None:
     check("LOAD_FORMAT" in _launcher_caller_passthrough(text),
           "LOAD_FORMAT must be in the caller passthrough list -- a knob the "
           "launcher never forwards is the failure this lane hit five times")
-    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-auto}"')
+    check(text.index('LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"')
           < text.index("--load-format $LOAD_FORMAT"),
           "validation must precede use")
     check("SILENT RANK DEATH" in text,
