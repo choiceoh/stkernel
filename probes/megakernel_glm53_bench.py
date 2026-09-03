@@ -7,11 +7,16 @@ the pre-boot proof. It diffs each persistent segment against the stock path
 it replaces on production shapes and times both arms with CUDA events.
 
     /repo/probes/megakernel_glm53_bench.py [--iters 30] [--skip-kda]
+        [--segments mhc] [--stock raw|dispatch|both]
 
 or, on srv4, via the wrapper that bind-mounts the composed overlay at its
 real image paths first:
 
-    bash /repo/probes/run_megakernel_bench.sh [--iters 30]
+    bash /repo/probes/run_megakernel_bench.sh [--profile glm53|dsv4] [--iters 30]
+
+The wrapper picks the profile's image, composed build tree, mount list and
+package root; the profile decides which segments can run at all (dsv4
+reaches MHC alone).
 
 Conventions follow the repo's probe rules:
   * rel err > gate marks the cell with `!` and fails the run
@@ -38,7 +43,12 @@ os.environ.setdefault("VLLM_GLM53_MK_KDA", "1")
 # programmatic launches: the mk_x2 column below is where they show
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
-sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
+# The image's package root. GLM's image installs to dist-packages, dsv4's to
+# the venv site-packages -- the wrapper passes the profile's TARGET_PREFIX so
+# a probe run can never import the wrong tree (it would import nothing at all
+# and read as "vllm missing" instead of "wrong profile").
+sys.path.insert(0, os.environ.get("MK_PKG_PATH",
+                                  "/usr/local/lib/python3.12/dist-packages"))
 
 import torch  # noqa: E402
 
@@ -335,11 +345,106 @@ def probe_kda(iters: int) -> bool:
     return ok
 
 
+def probe_mhc_dispatch(iters: int) -> bool:
+    """MHC through the image's OWN wrapper -- the arm a boot actually takes.
+
+    `probe_mhc` above times the MK kernel against a hand-rolled stock pair at
+    tile_n=2 / n_splits=4. That is the right instrument for the KERNEL and it
+    is the basis every recorded MHC number was measured on, but it is NOT
+    what a boot runs:
+
+      * each profile's wrapper picks its own tile config -- dsv4's small-M
+        pair is swept (R1/R2/R3, per-call 15.6 -> 13.1 us), so measuring MK
+        against the unswept config would manufacture the sweep's win twice;
+      * the serving hook sits under `use_small_fma` (T <= 16), even though
+        the kernel's own gate is T <= 32. Above 16 the wrapper takes
+        mhc_post + big_fuse and MK is never offered the call.
+
+    So this arm calls the wrapper twice -- MK disarmed, then armed -- and
+    prints a `hit` column that says whether MK served it. `hit=no` with a
+    0.0 rel err is the receipt for the window, not a passing gate.
+    """
+    from vllm.model_executor.kernels.mhc import tilelang as tl
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    call = getattr(tl, "_mhc_fused_post_pre_tilelang_impl", None) or \
+        tl.mhc_fused_post_pre_tilelang
+
+    mk.maybe_arm()  # so _ARMED reflects the self-test, not the first call
+    if not mk._ARMED["mhc"]:
+        print("!mhc dispatch: the MHC segment did not arm -- nothing to compare")
+        return False
+
+    hits = {"n": 0}
+    real = mk.mhc_fused_post_pre
+
+    def counting(*a, **k):
+        out = real(*a, **k)
+        hits["n"] += out is not None
+        return out
+
+    mk.mhc_fused_post_pre = counting          # the wiring re-imports per call
+    ok = True
+    try:
+        print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}"
+              f"{'mk_us':>9}{'hit':>6}")
+        for T in (8, 16, 32):
+            torch.manual_seed(0)
+            x = torch.randn(T, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+            res = torch.randn(T, 4, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+            pm = torch.rand(T, 4, dtype=torch.float32, device=DEV)
+            cm = torch.rand(T, 4, 4, dtype=torch.float32, device=DEV)
+            fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
+            nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
+            args = (x, res, pm, cm, fn, mk.hc_scale_ones(), mk.hc_base_zeros(),
+                    1e-6, 1e-6, 1e-6, 1.0, 4)
+            kw = {"norm_weight": nw, "norm_eps": 1e-6}
+            hot = (x, res, pm, cm)
+
+            mk._ARMED["mhc"] = False
+            ref = call(*args, **kw)
+            t_ref = _time(lambda: call(*args, **kw), iters, hot=hot)
+
+            mk._ARMED["mhc"] = True
+            hits["n"] = 0
+            got = call(*args, **kw)
+            torch.cuda.synchronize()
+            hit = hits["n"] > 0
+            t_mk = _time(lambda: call(*args, **kw), iters, hot=hot)
+
+            r = max(_rel(g, rr) for g, rr in zip(got, ref))
+            bad = r > TOL["mhc"]
+            ok &= not bad
+            print(f"{'!' if bad else ' '}mhc T={T:<17}{r:>10.2e}"
+                  f"{TOL['mhc']:>8.0e}{t_ref:>10.1f}{t_mk:>9.1f}"
+                  f"{('yes' if hit else 'no'):>6}")
+    finally:
+        mk.mhc_fused_post_pre = real
+    return ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=30)
     ap.add_argument("--skip-kda", action="store_true")
+    # Which segments this profile can even run. dsv4 reaches MHC alone: it has
+    # no linear-attention layer (kda), no e2m1 dense pack (gemm/exact) and a
+    # different MLA geometry. Naming a segment a profile cannot serve would
+    # measure an arm nothing will ever run.
+    ap.add_argument("--segments", default="gemm,exact,mhc,kda",
+                    help="comma list of gemm,exact,mhc,kda (default: all)")
+    # raw   = the hand-rolled stock pair (kernel instrument; the recorded basis)
+    # both  = raw plus the wrapper's real arm (see probe_mhc_dispatch)
+    ap.add_argument("--stock", choices=("raw", "dispatch", "both"),
+                    default="raw")
     args = ap.parse_args()
+    segs = [s.strip() for s in args.segments.split(",") if s.strip()]
+    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda")]
+    if unknown:
+        print(f"unknown segment(s): {unknown}")
+        return 2
+    if args.skip_kda and "kda" in segs:
+        segs.remove("kda")
 
     from vllm.model_executor.layers import glm53_megakernel as mk
 
@@ -349,11 +454,18 @@ def main() -> int:
     print(f"device cc={major}.{minor} sms={sms} smem_optin={smem}")
     assert (major, minor, sms) == (12, 1, 48), "not a GB10"
 
+    print(f"segments={','.join(segs)} stock={args.stock}")
     ok = True
-    ok &= probe_gemm(args.iters)
-    ok &= probe_exact()
-    ok &= probe_mhc(args.iters)
-    if not args.skip_kda:
+    if "gemm" in segs:
+        ok &= probe_gemm(args.iters)
+    if "exact" in segs:
+        ok &= probe_exact()
+    if "mhc" in segs:
+        if args.stock in ("raw", "both"):
+            ok &= probe_mhc(args.iters)
+        if args.stock in ("dispatch", "both"):
+            ok &= probe_mhc_dispatch(args.iters)
+    if "kda" in segs:
         ok &= probe_kda(args.iters)
     print("VERDICT:", "PASS" if ok else "FAIL (a ! cell disqualifies)")
     return 0 if ok else 1

@@ -715,9 +715,12 @@ def mhc_fused_post_pre_tilelang(
     # from GLM's DISARMs instead of serving.
     #
     # Placed before the gemm_out allocations because the fused kernel has no
-    # gemm_out. The window is small-M only: at SPEC_TOKENS=5 a step carries
-    # C x 6 tokens, so C <= 5 reaches the gate and production C=32 (M=192)
-    # never does.
+    # gemm_out. The window is the WRAPPER's, not the kernel's: the hook sits
+    # inside `use_small_fma` (T <= 16) while the kernel's own gate is T <= 32,
+    # so at SPEC_TOKENS=5 (6 tokens/seq) only C <= 2 is ever offered to it and
+    # production C=32 (M=192) is nowhere near. 16 < T <= 32 is the stock
+    # post+big_fuse branch; MK is not offered those calls at all -- an open
+    # door, unmeasured.
     if use_small_fma and norm_weight is not None:
         _mk_mhc = _mk_maybe_arm = None
         try:  # import only: a boot without the megakernel module is stock

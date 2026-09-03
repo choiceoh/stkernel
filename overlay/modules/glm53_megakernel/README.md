@@ -133,10 +133,19 @@ That is what lets **`profiles/dsv4.env` mount this same module**
 | `MK_SEG_GEMM` | no | the lane is W4 (e2m1 packs built from bf16); V4-Flash's dense weights are block-fp8 with no bf16 source. The fp8 W8 arm that WOULD have fit was removed 2026-09-02 (`cfeae2b`) |
 
 The unreachable segments still compile into the extension there; they are
-never launched. Nothing is measured on that model yet -- the window is
-`T <= 32` (C <= 5 at its SPEC_TOKENS=5, never its production C=32), its
-stock MHC pair is already swept, and it is production. The ladder below
-applies unchanged, on that image, before any arm.
+never launched. Nothing is measured on that model yet, its stock MHC pair is
+already swept (unlike GLM's), and it is production. The ladder below applies
+unchanged, on that image, before any arm.
+
+**The serving window is the wrapper's, not the kernel's** -- true on BOTH
+models and not previously written down: the MHC hook sits inside the
+wrapper's `use_small_fma` branch (`T <= 16`) while the kernel's own gate is
+`T <= 32`. So the hook is offered `C <= 2` on GLM (8 tokens/seq) and `C <= 2`
+on dsv4 (6 tokens/seq); `16 < T <= 32` is the stock post+big_fuse branch,
+which MK never sees. Every T=32 number recorded for MK-MHC is a KERNEL
+measurement (`probes/megakernel_glm53_bench.py` calls `_mhc_call` directly),
+not a served shape. `--stock dispatch` in that probe measures the arm a boot
+would really take and prints a `hit` column that says so.
 
 The module name still says `glm53`. Renaming it (dir, sources, container
 path, `VLLM_GLM53_MK_*`) is 86 references across 21 files including the
@@ -263,9 +272,10 @@ projections is the fallback scope (a one-line change in the build attach).
 
 1. `python3 tests/test_logic.py` -- pure logic + .cu/.py geometry parity +
    manifest invariants (this repo, no GPU).
-2. `bash probes/run_megakernel_bench.sh` in a fresh container (srv4, never
-   the serving one; the wrapper binds the composed overlay at its real
-   image paths): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
+2. `bash probes/run_megakernel_bench.sh [--profile glm53|dsv4]` in a fresh
+   container (srv4, never the serving one; the wrapper binds the profile's
+   composed overlay at that image's real paths, and passes its package
+   root as `MK_PKG_PATH`): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
    by-design + 1e-5 exact-grid, 2e-2 KDA outputs and states on grid-snapped
    weights) + CUDA-event timing per segment + a replay-stability
    check (re-launch drift <= 1e-6 over the shared workspace -- the

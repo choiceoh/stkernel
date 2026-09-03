@@ -7485,6 +7485,74 @@ def test_megakernel_core_is_shared() -> None:
     check("start-hy4-tp4.sh" in body,
           "the abort must name THIS launcher in the caller-env command it "
           "suggests")
+    # -- the probe is profile-driven too, or step 2 measures the wrong stack
+    wrap = open(os.path.join(REPO, "probes", "run_megakernel_bench.sh"),
+                encoding="utf-8").read()
+    check("--profile" in wrap and 'PROFILE=${PROFILE:-glm53}' in wrap,
+          "the bench wrapper takes --profile and still defaults to glm53")
+    check("IMAGE=${IMAGE:-$PROFILE_IMAGE}" in wrap
+          and "glm53:v13-b12x" not in wrap,
+          "the image comes from the profile, not a hard-coded default that "
+          "drifts (the profile's is the -it build)")
+    check('MK_PKG_PATH=${TARGET_PREFIX%/}' in wrap,
+          "the probe's package root comes from the profile: GLM's image "
+          "installs to dist-packages, dsv4's to the venv site-packages")
+    check("VLLM_(GLM53|DSV4)_" in wrap,
+          "dsv4's STOCK arm is tuned by VLLM_DSV4_MHC_* knobs; a sweep that "
+          "wants the untuned reference must be able to pass them in")
+    check('cmd="python3 /repo/probes/megakernel_glm53_bench.py"' in wrap
+          and 'megakernel_glm53_bench.py $*' not in wrap,
+          "probe args are appended explicitly -- the old \"$*\" form went "
+          "empty once the wrapper shifted --profile off, which would have "
+          "silently run the defaults while the caller believed otherwise")
+    # every source a recipe names must be a row in that profile's manifest
+    for profile in ("glm53", "dsv4"):
+        m = re.search(rf"^  {profile}\)\n(.*?)^    ;;", wrap, re.M | re.S)
+        check(m is not None, f"the wrapper has no recipe for {profile}")
+        srcs = re.search(r"sources=\(([^)]*)\)", m.group(1), re.S).group(1).split()
+        rows = {l.split("\t")[0] for l in
+                open(os.path.join(REPO, "build", profile, "manifest.tsv"),
+                     encoding="utf-8").read().splitlines()
+                if l and not l.startswith("#")}
+        missing = [x for x in srcs if x not in rows]
+        check(not missing,
+              f"{profile}'s probe recipe names sources its manifest does not "
+              f"have: {missing}")
+        check("glm53_megakernel.py" in srcs and "glm53_megakernel.cu" in srcs,
+              f"{profile}'s recipe must mount the driver and the kernel")
+    dsv4_recipe = re.search(r"^  dsv4\)\n(.*?)^    ;;", wrap, re.M | re.S).group(1)
+    check("--segments mhc" in dsv4_recipe and "--stock both" in dsv4_recipe,
+          "dsv4 runs MHC alone (no kda layer, no e2m1 pack, other MLA) and "
+          "measures both stock arms")
+    for absent in ("glm5next_kda.py", "tilelang_kernels.py", "glm53_fp8_dense.py"):
+        check(absent not in dsv4_recipe,
+              f"dsv4's recipe must not name {absent}: that file has no row in "
+              "its manifest and the mount loop would ABORT")
+
+    probe = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
+                 encoding="utf-8").read()
+    check('os.environ.get("MK_PKG_PATH"' in probe,
+          "the probe imports from the package root the wrapper hands it")
+    check('ap.add_argument("--segments"' in probe
+          and 'ap.add_argument("--stock"' in probe
+          and '"--skip-kda", action="store_true"' in probe,
+          "--segments and --stock exist and --skip-kda still works (the "
+          "campaign's running commands use it)")
+    disp = probe[probe.index("def probe_mhc_dispatch"):probe.index("def main()")]
+    check("mk.maybe_arm()" in disp
+          and disp.index("mk.maybe_arm()") < disp.index('mk._ARMED["mhc"] = False'),
+          "the dispatch arm arms FIRST and only then disarms for the "
+          "reference call -- otherwise the wiring's own maybe_arm re-arms it "
+          "and both arms measure MK")
+    check(disp.count("call(*args, **kw)") >= 4 and "{'hit':>6}" in disp
+          and 'hit = hits["n"] > 0' in disp,
+          "the dispatch arm calls the wrapper both ways and reports whether "
+          "MK actually served the call (the hook is under use_small_fma, "
+          "T <= 16, while the kernel gates at T <= 32)")
+    check("for T in (8, 16, 32):" in disp,
+          "the dispatch arm spans the wrapper's boundary (16) so the window "
+          "shows up as a hit column rather than as an assumption")
+
     print("  megakernel core is shared ..... OK")
 
 

@@ -403,18 +403,34 @@ MLA(rope 64 · topk 512 · 압축기 · 슬라이딩 윈도)·GEMM(dense 가 블
   glm53 컴포즈 결과는 전후 **바이트 동일**(매니페스트 행 순서만 이동).
   dsv4 런처에 프로필 키 EXTRA_ENV 가드 이식(여기선 `$COMMON` 이 `$ENVV` 보다
   먼저 렌더돼 프로필 값이 무조건 이긴다 — 스윕이 조용히 0 을 측정하는 자리).
-- **2단계 (미착수, 부팅 없음)**: srv2 의 `production-hybrid-1.6` 이미지로 오프라인
-  프로브. `probes/run_megakernel_bench.sh` 는 glm53 전용이다(이미지·`build/glm53`·
-  `glm5next_kda.py`/`tilelang_kernels.py` 마운트 목록 고정) → **프로필 인자화가
-  2단계의 첫 일**이고, dsv4 는 MHC 만 도는 경로가 필요하다(`--skip-kda` 는 있고
-  MHC-only 는 없다). 판정: 이 이미지의 stock 페어 대비 수치(rel 1e-3)와 T=6/12/24 시간.
+- **2단계 도구 (완료, 같은 커밋)**: 프로브를 프로필 인자화했다. 프로필이
+  이미지·컴포즈 트리·마운트 목록·패키지 루트를 정하고(`MK_PKG_PATH`: GLM 은
+  dist-packages, dsv4 는 venv site-packages), `--segments`/`--stock` 이 세그먼트와
+  기준 팔을 고른다. dsv4 기본값은 `--segments mhc --stock both`.
+
+  ```bash
+  bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20
+  ```
+
+  `--stock raw` 는 기존 기준(직접 호출한 tile_n=2/n_splits=4 페어) — 기록된 수치와
+  비교 가능한 **커널** 계측. `--stock dispatch` 는 래퍼를 MK 해제/무장 두 번 불러
+  **부팅이 실제로 타는 팔**을 재고, MK 가 그 호출을 실제로 가져갔는지 `hit` 열로
+  말한다. dsv4 에서 이게 중요한 이유: 이 레인의 stock 페어는 이미 스윕돼 있어서
+  (R1/R2/R3) 스윕 안 된 기준에 대고 재면 스윕의 이득을 두 번 세게 된다.
+- **2단계 실행 (미착수, 부팅 없음)**: srv2 의 `production-hybrid-1.6` 이미지로
+  위 명령. 판정: rel 1e-3 게이트 + T=8/16 의 dispatch 시간(그 위는 훅이 안 걸린다).
 - **3단계**: 2단계가 이기면 그때만. 프로덕션이고 리듀스 순서가 바뀌므로
   품질 9/9 + 한국어 0/16 + C=1/2/4 브래킷, 부팅당 수치 축 하나.
 - **정직한 기대값**: 43층 × 페어 하나 = 0.2~0.3 ms / 43.6 ms 스텝 ≈ 0.5% 급.
   GLM 의 −16%/−41% 는 **스윕 안 된** stock 상대의 숫자다. 이 레인의 페어는 이미
   R1/R2/R3 로 스윕돼 있어(per-call 15.6 → 13.1 us) 격차가 더 작을 수 있다.
-- **창**: 커널 게이트가 T ≤ 32 다. SPEC_TOKENS=5 라 스텝 토큰이 C×6 →
-  C ≤ 5 만 닿고 프로덕션 C=32(M=192)는 절대 안 닿는다. 저동시성 레인 전용.
+- **창 (2026-09-03 정정)**: 커널 게이트는 T ≤ 32 지만 **서빙 훅은 래퍼의
+  `use_small_fma`(T ≤ 16) 안에 있다 — 두 모델 다.** dsv4 는 C×6 이라 **C ≤ 2**,
+  GLM 은 C×8 이라 역시 C ≤ 2. 16 < T ≤ 32 는 stock 이 post+big_fuse 로 가는
+  구간이라 MK 는 제안조차 못 받는다(문은 열려 있고 미측정). 기록된 T=32 MK-MHC
+  수치는 전부 **커널 측정**(`_mhc_call` 직접 호출)이지 서빙 형상이 아니다 —
+  프로브의 `--stock dispatch` 가 부팅이 실제로 타는 팔을 재고 `hit` 열로 그걸
+  말한다.
 
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 

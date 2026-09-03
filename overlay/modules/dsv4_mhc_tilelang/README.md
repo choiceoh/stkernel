@@ -28,10 +28,13 @@ byte-identical to today.
 
 Two things this hook does NOT claim:
 
-- **The window is small.** At `SPEC_TOKENS=5` a step carries `C x 6` tokens,
-  so only `C <= 5` reaches the gate; production `MAX_NUM_SEQS=32` (M=192)
-  never does. This is a low-concurrency lever, which is also where the
-  fleet's adoption bracket (C=1/2/4) lives.
+- **The window is the wrapper's, and it is narrower than the kernel's.**
+  The hook sits inside `use_small_fma` (`T <= 16`) while the kernel's gate is
+  `T <= 32`. At `SPEC_TOKENS=5` a step carries `C x 6` tokens, so only
+  **`C <= 2`** is ever offered to it; `16 < T <= 32` takes the stock
+  post+big_fuse branch and production `MAX_NUM_SEQS=32` (M=192) is nowhere
+  near. Widening the hook to that branch is an open door, unmeasured. The
+  adoption bracket (C=1/2/4) straddles the boundary: C=1/2 hit, C=4 does not.
 - **Nothing is measured on this model yet.** GLM's numbers (T=8 27.4 us,
   T=32 42.0 us vs stock 32.8 / 71.6) came from an UNSWEPT stock pair; this
   lane's pair is already swept (R1/R2/R3, per-call 15.6 -> 13.1 us), so the
