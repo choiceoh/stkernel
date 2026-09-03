@@ -571,26 +571,57 @@ def _read_group_size() -> int:
 def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
     original = type(self)._glm53_union_original_forward_mqa
     group_size = _read_group_size()
-    if not (
-        group_size
-        and not torch.cuda.is_current_stream_capturing()
-        and isinstance(q, tuple)
-        and len(q) == 2
-        and q[0].is_cuda
-        and q[0].dtype == torch.bfloat16
-        and q[0].ndim == 3
-        and q[0].shape[1:] == (16, 512)
-        and q[1].shape[-1] == 0
-        and bool(getattr(self, "use_fp8_kv_cache", False))
-        and getattr(self, "qk_rope_head_dim", -1) == 0
-        and getattr(self, "kv_lora_rank", -1) == 512
-        and getattr(attn_metadata, "num_decodes", -1) == 0
-        and getattr(attn_metadata, "num_prefills", 0) > 0
-        and getattr(attn_metadata, "num_actual_tokens", -1) == q[0].shape[0]
-        and getattr(attn_metadata, "topk_tokens", -1) == 2048
-        and getattr(attn_metadata, "cp_kv_cache_interleave_size", -1) == 1
-    ):
+
+    def decline(reason: str):
+        """Say why once, then serve stock.
+
+        Every condition here is a way this arm can silently not run, and
+        silence is how it spent its whole life logging "ARMED" without ever
+        executing -- first a width the converter rejected, then a row cap that
+        made the configured width impossible, and neither left a mark."""
+        if reason not in _UNION_DECLINED:
+            _UNION_DECLINED.add(reason)
+            logger.warning(
+                "union prefill DECLINED at the entry gate and the stock path "
+                "is serving: %s", reason)
         return original(self, q, kv_cache, attn_metadata, layer)
+
+    if not group_size:
+        return original(self, q, kv_cache, attn_metadata, layer)
+    if torch.cuda.is_current_stream_capturing():
+        return original(self, q, kv_cache, attn_metadata, layer)
+    if not (isinstance(q, tuple) and len(q) == 2):
+        return decline(f"q is {type(q).__name__}, not the (nope, rope) pair")
+    nope, rope = q
+    for reason, ok in (
+        ("q is not a cuda bf16 3-d tensor",
+         nope.is_cuda and nope.dtype == torch.bfloat16 and nope.ndim == 3),
+        (f"q heads/dim {tuple(nope.shape[1:])} != (16, 512)",
+         nope.ndim == 3 and tuple(nope.shape[1:]) == (16, 512)),
+        (f"rope part width {rope.shape[-1]} != 0", rope.shape[-1] == 0),
+        ("kv cache is not fp8",
+         bool(getattr(self, "use_fp8_kv_cache", False))),
+        (f"qk_rope_head_dim={getattr(self, 'qk_rope_head_dim', -1)} != 0",
+         getattr(self, "qk_rope_head_dim", -1) == 0),
+        (f"kv_lora_rank={getattr(self, 'kv_lora_rank', -1)} != 512",
+         getattr(self, "kv_lora_rank", -1) == 512),
+        (f"num_decodes={getattr(attn_metadata, 'num_decodes', -1)} != 0 "
+         "(mixed batch)",
+         getattr(attn_metadata, "num_decodes", -1) == 0),
+        ("no prefill in this batch",
+         getattr(attn_metadata, "num_prefills", 0) > 0),
+        (f"num_actual_tokens="
+         f"{getattr(attn_metadata, 'num_actual_tokens', -1)} != {nope.shape[0]}"
+         " q rows",
+         getattr(attn_metadata, "num_actual_tokens", -1) == nope.shape[0]),
+        (f"topk_tokens={getattr(attn_metadata, 'topk_tokens', -1)} != 2048",
+         getattr(attn_metadata, "topk_tokens", -1) == 2048),
+        (f"cp_interleave="
+         f"{getattr(attn_metadata, 'cp_kv_cache_interleave_size', -1)} != 1",
+         getattr(attn_metadata, "cp_kv_cache_interleave_size", -1) == 1),
+    ):
+        if not ok:
+            return decline(reason)
 
     try:
         from vllm.v1.attention.backends.mla.sparse_utils import (

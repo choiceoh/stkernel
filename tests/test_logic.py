@@ -2208,7 +2208,7 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
     # it returns None and the caller quietly uses the stock path. Not an
     # exception, so it does not even reach the fallback counter. This lane
     # booted "union prefill: ARMED width=4" for weeks on that.
-    check("q[0].shape[1:] == (16, 512)" in src,
+    check("(16, 512)" in src,
           "the hook pins 16 heads, which is what makes the cap a width limit")
     check("group_size * heads > 32" in src, "the row cap is still the gate")
     decline = src[src.index("if group_size not in (2, 4)"):]
@@ -2217,6 +2217,22 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
           "a declined width must say so once, not fail silently")
     check("VLLM_GLM53_UNION_PREFILL=2" in decline,
           "and must name the width that can actually run")
+
+    # Third layer of silence found on 2026-09-03: with the width fixed and set
+    # to 2, the arm still logged nothing at all -- not even the DECLINED line,
+    # because the ENTRY gate was refusing before the kernel was reached. A
+    # fifteen-condition boolean that returns the stock path tells nobody which
+    # condition failed.
+    gate = src[src.index("def _glm53_union_forward_mqa"):]
+    gate = gate[:gate.index("\n    try:")]
+    check("def decline(" in gate and "_UNION_DECLINED" in gate,
+          "the entry gate names the condition that refused")
+    for named in ("kv cache is not fp8", "num_decodes", "topk_tokens",
+                  "no prefill in this batch"):
+        check(named in gate,
+              f"the gate must be able to say '{named}'")
+    check("if not group_size:" in gate,
+          "an off knob is not a refusal and must stay quiet")
     print("  union prefill width vs converter tile .. OK")
 
 
