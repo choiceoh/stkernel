@@ -2602,3 +2602,31 @@ GPQA Diamond 90.57% 를 낸다. (2) 그럼에도 recipe.yaml 은 fp4 대상을
 (9/9 검색 · 0/16 한국어 · pos-1 수용률 ±2% · C=1/2/4)을 돌린다. 하나라도 움직이면
 기각하고 여기에 적는다. 재현: `probes/fp8_scale_granularity.py`(속도),
 `probes/nvfp4_dense_accuracy.py`(품질).
+
+## 부팅 로더: instanttensor 는 내내 있었다, 프로필이 안 가리켰을 뿐 (2026-09-03)
+
+`glm53:v13-b12x-it` = 베이스 + `pip install instanttensor` 는 **이틀 전부터 네 노드에
+전부** 있었다. `profiles/glm53.env` 의 `PROFILE_IMAGE` 가 베이스 태그를 가리켜서 쓰이지
+않았고, 그래서 매 부팅이 평범한 safetensors 로더로 340초를 썼다.
+
+같은 날 `LOAD_FORMAT` 기본만 instanttensor 로 바꿨다가 부팅 하나를 날렸다 — case 문은
+문자열을 통과시키고, 이미지에 패키지가 없어 75초 뒤 전 랭크가
+`No module named 'instanttensor'` 로 죽었다. **문자열 검증은 검증이 아니다.** 런처가
+이제 실제 이미지에 `import instanttensor` 를 시켜 보고 안 되면 부팅 전에 멈춘다.
+
+전환 전 확인:
+- `-it` 이미지에서 import 통과, `torch.cuda.nccl.version()` = (2, 29, 7)
+- pip 이 nvidia-nccl-cu13 을 2.30.7 → 2.29.7 로 내린다고 표시하지만 **실질 무해**:
+  현재 서빙 컨테이너도 이미 torch nccl (2,29,7) 로 돌고 있다(pip 메타데이터만 2.30.7).
+- 오버레이 preimage **20/20 일치, 불일치 0** — 추가 패키지는 `instanttensor/` 와
+  `nvidia/nccl/` 만 건드리고 오버레이는 그 경로를 대체하지 않는다.
+
+굽는 비용(재확인용): `pip install` 53초 + 레이어 커밋. 네 노드가 31.2 GB 베이스를 이미
+갖고 있으므로 전송은 없고 각자 로컬 빌드라 병렬 3~5분.
+
+되돌리는 길: `PROFILE_IMAGE="glm53:v13-b12x"` + `LOAD_FORMAT=auto`.
+
+**남은 위험**: 배포 보고서가 말하는 다중 노드 조용한 랭크 사망은 부팅을 죽이지 않고
+출력을 망가뜨린다. 운영자 확인으로는 그동안 문제가 없었다. 그래도 런처가 매 부팅마다
+load-format 을 무조건 찍게 두어(전에는 auto 가 아닐 때만 찍었다) 나중에 이상한 숫자가
+어느 로더의 것인지 귀속할 수 있게 한다.
