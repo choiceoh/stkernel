@@ -6397,6 +6397,61 @@ def test_extra_env_rejects_comma_list() -> None:
     print("  extra-env comma guard ......... OK")
 
 
+def test_kda_conv_state_layout_is_the_arming_contract() -> None:
+    """MK-KDA indexes DS; vLLM's default is SD, and the mismatch was silent.
+
+    The 09-03 decode trace carried no mk_kda_kernel at all while the boot log
+    said armed={'kda': True}: _selftest_kda builds its own DS fixtures and
+    passes, then _kda_layout_ok rejects every production layer for the life
+    of the boot and says nothing. Two things must hold so that cannot recur:
+    the launcher derives the layout the segment needs, and a rejection names
+    itself in the log.
+    """
+    mk = open(
+        "overlay/modules/glm53_megakernel/glm53_megakernel.py", encoding="utf-8"
+    ).read()
+    launcher = open(
+        "launchers/start-glm53-nvfp4-tp4.sh", encoding="utf-8"
+    ).read()
+
+    # 1. the gate returns a REASON, and the hot path logs each one once
+    check("def _kda_layout_reason(layer)" in mk,
+          "the layout gate must be able to say which predicate failed")
+    reason = mk[mk.index("def _kda_layout_reason(layer)"):
+                mk.index("def _kda_layout_ok(layer)")]
+    check("VLLM_SSM_CONV_STATE_LAYOUT=DS" in reason,
+          "the SD reason must name the env that fixes it -- a reason the "
+          "reader cannot act on is the same silence in more words")
+    ok = mk[mk.index("def _kda_layout_ok(layer)"):
+            mk.index("def _kda_ensure_packs")]
+    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok,
+          "a permanent rejection must be logged, once per distinct reason")
+    check("return True" in ok and "_kda_layout_reason(layer)" in ok,
+          "_kda_layout_ok must be the thin wrapper over the reason")
+
+    # 2. arming says so when the process layout will reject every layer
+    arm = mk[mk.index('_ARMED["kda"] = _gate("kda", _selftest_kda)'):]
+    arm = arm[:arm.index("_armed_once")]
+    check("is_conv_state_dim_first" in arm,
+          "the boot must compare the ARMED segment against the process "
+          "layout: the self-test's own fixtures cannot see it")
+
+    # 3. the launcher derives DS rather than asking for two knobs
+    check("VLLM_SSM_CONV_STATE_LAYOUT=DS" in launcher,
+          "the launcher must set the layout MK-KDA indexes")
+    blk = launcher[launcher.index('if [ "${VLLM_GLM53_MEGAKERNEL:-0}" != 0 ]'
+                                  ' && [ "${VLLM_GLM53_MK_KDA:-0}" != 0 ]'):]
+    blk = blk[:blk.index("\nfi\n") + 4]
+    check("ABORT" in blk,
+          "a conflicting layout must abort the boot, not be overridden "
+          "silently -- docker takes the last -e and the operator would never "
+          "see which value won")
+    check(blk.index("ABORT") < blk.index(
+        'ENVV="$ENVV -e VLLM_SSM_CONV_STATE_LAYOUT=DS"'),
+          "the conflict check must run before the -e is appended")
+    print("  kda conv-state layout ......... OK")
+
+
 def test_fused_k_gate_lazy_slot_exists() -> None:
     """The fused indexer forward must not read a slot nobody creates.
 
@@ -8127,5 +8182,6 @@ if __name__ == "__main__":
     test_bracket_runner_contracts()
     test_trace_composition_analyze()
     test_drafter_fc_probe_contracts()
+    test_kda_conv_state_layout_is_the_arming_contract()
     print(f"all OK ({PASS} checks)")
 
