@@ -6441,6 +6441,38 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_osar_wait_is_split_by_message_size() -> None:
+    """The all-reduce's wait is 85% of its cost; name what it is.
+
+    Measured live 2026-09-03 (n=6922): guard 0.6, copy 3.5, wait 38.7,
+    reduce 2.6 us per collective. The wait spins until all three peers'
+    data has landed, so it carries the RDMA transfer as well as any arrival
+    skew -- and at the 256 KiB cap a rank takes in 3 x 256 KiB, which is
+    ~43 us at the fabric's measured 17.8 GB/s (~22 us if both HCAs serve
+    it). Transfer scales with the message and skew does not, so the same
+    counter split by size tells them apart. Two fields, because the peers'
+    rx_base/rxf_base offsets must not move."""
+    cu = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                 "dsv4_oneshot_ar.cu"), encoding="utf-8").read()
+    check("#define SPLIT_BYTES (128 * 1024)" in cu,
+          "the split sits between C=1-shaped traffic (8 tokens = 64 KiB) and "
+          "a full 4-sequence spec batch (32 tokens = 256 KiB)")
+    check("volatile uint64_t t_wait_sm;" in cu
+          and "volatile uint64_t t_calls_sm;" in cu
+          and "uint64_t pad[1];" in cu and "uint64_t pad[3];" not in cu,
+          "the two counters come OUT of the existing padding: anything that "
+          "moved tx/rx would invalidate every peer's registered offsets")
+    check("if (nbytes <= SPLIT_BYTES) {" in cu
+          and "c->t_wait_sm += (uint64_t)(t3 - t2);" in cu,
+          "the small-message wait accumulates from the same t3 - t2 as the "
+          "total, so the two can be subtracted")
+    check("wait by size: <=128KiB n=%llu %.1f, >128KiB n=%llu %.1f" in cu
+          and "last_wait_sm = g_ctrl->t_wait_sm;" in cu,
+          "the proxy reports both halves per interval and carries its own "
+          "high-water marks, like the counters beside it")
+    print("  osar wait is split by message size .. OK")
+
+
 def test_kv_cache_is_pinned_in_tokens() -> None:
     """KV is pinned in tokens, not left to take whatever GMU leaves.
 
@@ -8083,6 +8115,7 @@ if __name__ == "__main__":
     test_boot_stamps_measure_without_changing_the_boot()
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
+    test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
