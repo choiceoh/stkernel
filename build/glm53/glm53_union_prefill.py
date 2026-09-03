@@ -22,6 +22,7 @@ _UNION_ENV = "VLLM_GLM53_UNION_PREFILL"
 _DENSE_PREFIX_ENV = "VLLM_GLM53_DENSE_PREFIX_PREFILL"
 _UNION_SPAN_BUDGET = 512 << 20
 _UNION_WS: dict[tuple, tuple] = {}
+_UNION_DECLINED: set = set()
 
 
 @triton.jit
@@ -345,7 +346,30 @@ def glm53_union_sparse_prefill(
 ) -> torch.Tensor | None:
     """Return exact sparse MLA output, or ``None`` when the budget rejects it."""
     tokens, heads, dim = q.shape
+    # GH = group_size * heads is the kernel's row tile, and every row carries a
+    # [D] fp32 accumulator, so it is capped at 32. The hook above admits only
+    # (16, 512) q, which makes the cap a statement about the WIDTH:
+    #
+    #     group_size 2 -> 32 rows, runs
+    #     group_size 4 -> 64 rows, never runs
+    #
+    # width=4 was the value this lane booted with. It returned None here on
+    # every prefill and the caller quietly used the stock path -- not an
+    # exception, so it did not even show up in the fallback count. Say it
+    # once, so "ARMED width=4" and "ran" stop being different things in
+    # silence.
     if group_size not in (2, 4) or group_size * heads > 32 or dim != 512:
+        reason = (
+            f"group_size={group_size} x heads={heads} = {group_size * heads} "
+            f"exceeds the kernel's 32-row tile" if group_size * heads > 32
+            else f"group_size={group_size} dim={dim} heads={heads}"
+        )
+        if reason not in _UNION_DECLINED:
+            _UNION_DECLINED.add(reason)
+            logger.warning(
+                "union prefill DECLINED and the stock path is serving: %s. "
+                "This model gives 16 heads per rank at TP4, so only "
+                "VLLM_GLM53_UNION_PREFILL=2 can run.", reason)
         return None
     main_tokens = tokens // group_size * group_size
     if main_tokens == 0:

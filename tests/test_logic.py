@@ -2201,6 +2201,22 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
           "shadow serves the stock answer, never the measured one")
     check("_UNION_SHADOW_MAX" in shadow,
           "shadow is bounded -- a long run must not pay for it forever")
+
+    # The kernel tiles group_size x heads rows, each with a [D] fp32
+    # accumulator, and caps that at 32. The hook admits only 16-head q (64
+    # heads at TP4), so width 4 is 64 rows and can NEVER run on this model --
+    # it returns None and the caller quietly uses the stock path. Not an
+    # exception, so it does not even reach the fallback counter. This lane
+    # booted "union prefill: ARMED width=4" for weeks on that.
+    check("q[0].shape[1:] == (16, 512)" in src,
+          "the hook pins 16 heads, which is what makes the cap a width limit")
+    check("group_size * heads > 32" in src, "the row cap is still the gate")
+    decline = src[src.index("if group_size not in (2, 4)"):]
+    decline = decline[:decline.index("return None") + 12]
+    check("_UNION_DECLINED" in decline and "logger.warning" in decline,
+          "a declined width must say so once, not fail silently")
+    check("VLLM_GLM53_UNION_PREFILL=2" in decline,
+          "and must name the width that can actually run")
     print("  union prefill width vs converter tile .. OK")
 
 
