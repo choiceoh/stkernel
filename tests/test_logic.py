@@ -2074,6 +2074,32 @@ def test_glm53_v2_overlay_contracts() -> None:
     print("  glm53 V2/deploy contracts ...... OK")
 
 
+def test_deploy_refusal_is_not_swallowed() -> None:
+    """A refused deploy must stop a boot, not scroll past it.
+
+    deploy-overlays refuses when HEAD is not based on current origin/main --
+    a real guard against booting a stale overlay rollback. On 2026-09-03 three
+    boots came up anyway: the bench script ran it as
+
+        bash launchers/deploy-overlays.sh glm53 2>&1 | tail -1
+
+    and the ABORT is three lines, so `tail -1` printed only the origin/main
+    sha, which reads exactly like a normal status line. Those boots served
+    overlays six commits old while their logs looked healthy, and the arm
+    under test had simply never been deployed.
+
+    The guard itself must stay, and it must exit non-zero so a caller that
+    checks can see it."""
+    text = open(os.path.join(REPO, "launchers/deploy-overlays.sh"),
+                encoding="utf-8").read()
+    check("HEAD is not based on current origin/main" in text,
+          "the stale-rollback guard is the thing that caught this")
+    guard = text[text.index("HEAD is not based on current origin/main"):]
+    check("exit 1" in guard[:400],
+          "the refusal must exit non-zero so a caller can branch on it")
+    print("  deploy refusal exits non-zero .. OK")
+
+
 def test_fp8_dense_nvfp4_scheme_contract() -> None:
     """nvfp4 is opt-in, stacks on fp8, and arms only on a value check.
 
@@ -7706,6 +7732,7 @@ if __name__ == "__main__":
     test_b12x_ep_routing()
     test_b12x_ep_preflight()
     test_b12x_ep_launcher()
+    test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
     test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
