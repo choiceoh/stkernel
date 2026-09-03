@@ -6561,8 +6561,10 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
     check(pth.strip() == "import deneb_boot_stamps; deneb_boot_stamps.install()",
           "the .pth is the additive entry point and does nothing else")
     check("class _PostImport:" in src
-          and 'TARGETS = ("vllm.v1.worker.gpu_worker", '
-              '"vllm.v1.worker.gpu.model_runner")' in src
+          and all(m in src for m in ('"vllm.v1.worker.gpu_worker"',
+                                     '"vllm.v1.worker.gpu.model_runner"',
+                                     '"vllm.model_executor.model_loader.'
+                                     'default_loader"'))
           and "loader.exec_module = exec_module" in src
           and "not isinstance(f, _PostImport)" in src,
           "the patch rides a meta-path post-import hook (an audit hook never "
@@ -6571,6 +6573,19 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
     for phase in ("determine_available_memory", "initialize_from_config",
                   "compile_or_warm_up_model", "profile_run", "capture_model"):
         check(phase in src, f"the {phase} phase is stamped")
+    # `Loading weights took Ns` covers the loader AND the model's
+    # weight_loader. Read 296 s once and 63.5 s the next day on the same
+    # code -- the first was measured while this repo's benches had all four
+    # hosts busy. Timing the generator from both sides puts that in the log.
+    check("def _wrap_weights_iter(cls, name):" in src
+          and '_wrap_weights_iter(cls, "get_all_weights")' in src
+          and "produce += time.monotonic() - t" in src
+          and "apply {max(total - produce, 0.0):.1f}s" in src,
+          "weight loading is stamped as read (inside the generator) vs apply "
+          "(everything else), with bytes, so a slow boot says which half")
+    check("yield item" in src and "raise" in src,
+          "the wrapper stays a passthrough: every tensor is yielded on and a "
+          "raising loader still raises")
     check("return fn(*a, **kw)" in src and "finally:" in src,
           "every wrapper returns the original's value and times it in a "
           "finally, so a raising phase is still measured and still raises")

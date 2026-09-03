@@ -34,6 +34,59 @@ def _log(msg):
     sys.stderr.flush()
 
 
+def _wrap_weights_iter(cls, name):
+    """Split `Loading weights took Ns` into read and apply.
+
+    That one number covers `model.load_weights(get_all_weights(...))`: the
+    loader yields tensors and the model's weight_loader consumes them. On
+    2026-09-02 it read 296 s and looked like the biggest item in the boot;
+    on 2026-09-03 the same code read 63.5 s, because the first was measured
+    while this repo's own benches had all four hosts busy. Timing the
+    generator from both sides makes that visible in the log instead of in a
+    later argument: time inside next() is the loader, wall time minus that
+    is the model.
+    """
+    fn = getattr(cls, name, None)
+    if fn is None or (cls, name) in _ORIG:
+        return
+    _ORIG[(cls, name)] = fn
+
+    def timed(*a, **kw):
+        it = fn(*a, **kw)
+        produce = 0.0
+        nbytes = 0
+        count = 0
+        t_start = time.monotonic()
+        while True:
+            t = time.monotonic()
+            try:
+                item = next(it)
+            except StopIteration:
+                produce += time.monotonic() - t
+                break
+            except Exception:
+                produce += time.monotonic() - t
+                raise
+            produce += time.monotonic() - t
+            count += 1
+            try:
+                tensor = item[1]
+                nbytes += tensor.numel() * tensor.element_size()
+            except Exception:
+                pass
+            yield item
+        total = time.monotonic() - t_start
+        gib = nbytes / float(1 << 30)
+        _log(f"weights: {count} tensors, {gib:.1f} GiB | read {produce:.1f}s "
+             f"({gib / max(produce, 1e-9):.2f} GiB/s) | "
+             f"apply {max(total - produce, 0.0):.1f}s")
+
+    try:
+        setattr(cls, name, timed)
+    except Exception:
+        pass
+
+
 def _wrap(cls, name, label):
     fn = getattr(cls, name, None)
     if fn is None or (cls, name) in _ORIG:
@@ -84,6 +137,12 @@ def _patch():
             cls = getattr(m, cls_name, None)
             if cls is not None:
                 _wrap(cls, fn_name, label)
+    loader = sys.modules.get("vllm.model_executor.model_loader.default_loader")
+    want += 1
+    if loader is not None:
+        cls = getattr(loader, "DefaultModelLoader", None)
+        if cls is not None:
+            _wrap_weights_iter(cls, "get_all_weights")
     if len(_ORIG) >= want and not _DONE:
         _DONE = True
         _log(f"installed, {len(_ORIG)} phases wrapped")
@@ -105,7 +164,8 @@ class _PostImport:
     else falls through untouched by returning None.
     """
 
-    TARGETS = ("vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner")
+    TARGETS = ("vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner",
+               "vllm.model_executor.model_loader.default_loader")
 
     def find_spec(self, name, path=None, target=None):
         if _DONE or name not in self.TARGETS:
