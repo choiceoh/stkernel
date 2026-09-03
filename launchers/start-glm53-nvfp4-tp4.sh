@@ -86,26 +86,35 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # Weight loading is the whole boot: 340 s of an 11 min cold start, of which
 # ~161 s is reading 185 GB at 1.15 GB/s and the rest is per-tensor work. vLLM's
 # "instanttensor" does distributed loading with pipelined prefetch and direct
-# I/O; a deploy report on identical hardware measured 15x. Default since
-# 2026-09-03: this lane reboots many times a day and `auto` was spending five
-# minutes of every one of them on the plain safetensors loader.
+# I/O; a deploy report on identical hardware measured 15x, which would take the
+# boot under 5 min. That report also says it can cause SILENT RANK DEATH in
+# multi-node, so it stays opt-in and every boot that uses it must clear the
+# generation check before its numbers are read.
 #
-# The one failure this lane actually hit -- three ranks dying at once as
-# ncclSystemError "Too many open files" -- was the container's 1024 soft
-# nofile, and the COMMON block below now raises it to 524288.
+# It is NOT in glm53:v13-b12x. Making it the default cost a boot on
+# 2026-09-03: the case below passed the string, the launcher handed
+# --load-format instanttensor to vLLM, and every rank died 75 s in with
 #
-# The residual risk is different in kind and is why the format is echoed on
-# EVERY boot, not just when it is overridden: the deploy report describes
-# SILENT RANK DEATH in multi-node, which does not fail the boot, it corrupts
-# the output. So a boot whose numbers are being read must still clear the
-# generation check, and the log has to say which loader produced them.
-# `LOAD_FORMAT=safetensors bash launchers/...` is the way back.
-LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"
+#     Error: No module named 'instanttensor'
+#     Please install instanttensor via `pip install vllm[instanttensor]`
+#
+# The package exists (0.1.9 on the index) but putting it in the image is its
+# own decision, so validating the STRING is not enough -- the check below asks
+# the image whether it can actually import it, and says so before a boot is
+# spent instead of after.
+LOAD_FORMAT="${LOAD_FORMAT:-auto}"
 case "$LOAD_FORMAT" in
   auto|safetensors|instanttensor) ;;
   *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
 esac
-echo "load-format: $LOAD_FORMAT (default is instanttensor)"
+if [ "$LOAD_FORMAT" = instanttensor ] \
+   && ! docker run --rm --entrypoint python3 "$IMAGE" -c "import instanttensor" 2>/dev/null; then
+  echo "ABORT: LOAD_FORMAT=instanttensor but $IMAGE cannot import it." >&2
+  echo "       vLLM fails 75 s into the boot with 'No module named instanttensor'." >&2
+  echo "       Use LOAD_FORMAT=auto, or build an image with vllm[instanttensor]." >&2
+  exit 2
+fi
+echo "load-format: $LOAD_FORMAT (default is auto)"
 
 ENABLE_EP="${ENABLE_EP:-0}"
 case "$ENABLE_EP" in
