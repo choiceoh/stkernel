@@ -43,6 +43,28 @@ def _mhc_post_kwargs(num_tokens: int) -> dict:
     return {"n_thr": 512, "h_blk": 4096}
 
 
+# deneb fork (glm53_megakernel): resolve the MK_SEG_MHC entry point ONCE.
+# The hook sits on the decode hot path -- one call per layer per step -- and a
+# `from ... import ...` there costs a sys.modules lookup plus two getattrs
+# EVERY call, paid even while the segment is disarmed. This caches the
+# resolved callable, or None when the module is not mounted: a boot without
+# the megakernel is stock and stays stock without retrying the import.
+_MK_HOOK = None
+_MK_HOOK_TRIED = False
+
+
+def _deneb_mk_hook():
+    global _MK_HOOK, _MK_HOOK_TRIED
+    if not _MK_HOOK_TRIED:
+        _MK_HOOK_TRIED = True
+        try:
+            from vllm.model_executor.layers.glm53_megakernel import mhc_hook
+            _MK_HOOK = mhc_hook
+        except Exception:
+            _MK_HOOK = None
+    return _MK_HOOK
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -709,33 +731,25 @@ def mhc_fused_post_pre_tilelang(
     # (hc_mult == 4, hidden == 4096, T <= 32), and V4-Flash's MHC is the same
     # block GLM-5.3 runs (hc_mult 4, hc_sinkhorn_iters 20, hc_eps 1e-6, hidden
     # 4096) behind an identical wrapper signature -- so this is the same hook,
-    # not a port. Arms only after its boot self-test diffs it against the
-    # stock pair below; every miss (unarmed, shape, dtype) falls through, so a
-    # disarmed boot is byte-identical to today, and a stock pair that differs
-    # from GLM's DISARMs instead of serving.
+    # not a port, and the arm-then-call contract lives in the core's
+    # `mhc_hook` where both forks share it. Every miss (module not mounted,
+    # unarmed, shape, dtype) returns None and falls through, and a stock pair
+    # that differs from GLM's DISARMs at the self-test instead of serving.
     #
     # Placed before the gemm_out allocations because the fused kernel has no
-    # gemm_out. The window is the WRAPPER's, not the kernel's: the hook sits
-    # inside `use_small_fma` (T <= 16) while the kernel's own gate is T <= 32,
-    # so at SPEC_TOKENS=5 (6 tokens/seq) only C <= 2 is ever offered to it and
-    # production C=32 (M=192) is nowhere near. 16 < T <= 32 is the stock
-    # post+big_fuse branch; MK is not offered those calls at all -- an open
-    # door, unmeasured.
+    # gemm_out.
+    # The window is the WRAPPER's, not the kernel's: this branch is under
+    # `use_small_fma` (T <= 16) while the kernel gates at T <= 32, so a step's
+    # C x (spec + 1) tokens reach it only at C <= 2. 16 < T <= 32 is the stock
+    # post+big_fuse branch, which MK is never offered -- an open door,
+    # unmeasured.
     if use_small_fma and norm_weight is not None:
-        _mk_mhc = _mk_maybe_arm = None
-        try:  # import only: a boot without the megakernel module is stock
-            from vllm.model_executor.layers.glm53_megakernel import (
-                mhc_fused_post_pre as _mk_mhc,
-                maybe_arm as _mk_maybe_arm,
-            )
-        except Exception:
-            pass
-        if _mk_mhc is not None:
-            _mk_maybe_arm()
-            # armed-shape hits launch here and CANNOT be excepted into the
+        _mk_hook = _deneb_mk_hook()
+        if _mk_hook is not None:
+            # an armed shape LAUNCHES here and cannot be excepted into the
             # stock path (async CUDA failures are uncontainable); every
-            # eligible miss returns None above and falls through.
-            _mk = _mk_mhc(
+            # eligible miss returns None and falls through
+            _mk = _mk_hook(
                 x_flat,
                 residual_flat,
                 post_layer_mix_flat,

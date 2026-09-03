@@ -30,6 +30,11 @@ ENVFILE="$REPO/profiles/$PROFILE.env"
 # Sourced in a subshell: the profile sets serving knobs (VLLM_*) and pulling
 # them into THIS shell would forward the profile's values as the probe's env
 # -- the probe arms its own segments and must not inherit a boot's.
+# Pre-set both names: the subshell inherits `set -e`, so a profile that fails
+# to source produces an empty eval, and without these the next line would die
+# on "PROFILE_IMAGE: unbound variable" instead of naming the real problem.
+PROFILE_IMAGE=""
+TARGET_PREFIX="/opt/venv/lib/python3.12/site-packages/"
 eval "$(
   # shellcheck disable=SC1090
   . "$ENVFILE"
@@ -89,6 +94,26 @@ done
 # VLLM_DSV4_* rides along because this lane's STOCK arm is tuned by three of
 # them (MHC_SMALLM_TUNED / TUNED_R2 / BIGFUSE_TUNED, all default 1): a sweep
 # that wants the untuned reference has to be able to say so.
+# The probe arms itself with os.environ.setdefault, so a forwarded knob WINS.
+# That is what a sweep wants -- and it is also how a probe run measures
+# nothing: profiles/dsv4.env declares VLLM_GLM53_MEGAKERNEL=0, so an operator
+# who sourced the profile in this shell (the normal way to get IMAGE and
+# MODEL_PATH) would ship the master switch OFF into the container, the driver
+# would never arm, and the failure would read as a kernel problem.
+case "${VLLM_GLM53_MEGAKERNEL:-1}" in
+  0|""|false|FALSE)
+    echo "ABORT: VLLM_GLM53_MEGAKERNEL=${VLLM_GLM53_MEGAKERNEL} is set in this" >&2
+    echo "       shell and would be forwarded, leaving the probe disarmed." >&2
+    echo "       unset it (a profile sourced here is the usual cause):" >&2
+    echo "         unset VLLM_GLM53_MEGAKERNEL" >&2
+    exit 1 ;;
+esac
+for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA VLLM_GLM53_MK_MLA; do
+  case "${!_k:-1}" in
+    0|"") echo "WARNING: $_k=0 is set here and will disarm that segment" >&2 ;;
+  esac
+done
+
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
 for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
   envs+=(-e "$v=${!v}")

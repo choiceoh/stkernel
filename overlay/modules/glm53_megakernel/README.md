@@ -107,6 +107,14 @@ cold tax by the share this module covers.
 | MK-MLA | `glm53_mk_mla_wiring` (FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
 | MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
 
+Both MHC wirings call ONE entry point in this module -- `mhc_hook(...)`,
+which arms and then tries -- through a resolver that caches the import once
+(the hook is on the decode hot path, one call per layer per step). The two
+image files are separate forks that no compose rule ties together, so the
+code inside those blocks is kept byte-identical and `test_megakernel_core_is_shared`
+compares them; the comments differ per lane. dsv4 additionally reaches the
+wrapper only while `VLLM_USE_B12X_MHC` is off -- see that module's README.
+
 The kda.py copy came from the image (`/tmp/deployed/kda.py`, extracted
 2026-08-31). If a future image bumps that file, deploy-overlays' preimage
 gate catches it before a boot lies about what it is running.

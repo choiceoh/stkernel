@@ -7276,7 +7276,7 @@ def test_glm53_megakernel_contracts() -> None:
     # -- hook placement: MK precedes ONEPASS in the mhc wrapper
     tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
                                  "tilelang.py"), encoding="utf-8").read()
-    check(tl.index("mhc_fused_post_pre as _mk_mhc")
+    check(tl.index("_mk_hook = _deneb_mk_hook()")
           < tl.index("deneb fork: ONEPASS"),
           "the MK-MHC hook is tried before the ONEPASS experiment")
 
@@ -7425,14 +7425,40 @@ def test_megakernel_core_is_shared() -> None:
     check({"glm53_mhc_tilelang", "glm53_mk_mla_wiring", "glm53_mk_kda_wiring"}
           <= set(glm_mods),
           "glm53 keeps all three of its wirings after the split")
-    for profile, mods in (("glm53", glm_mods), ("dsv4", dsv_mods)):
+    # The core's `requires` used to make compose ABORT when the wiring was
+    # missing. Splitting it moved that guarantee here, so the rule has to hold
+    # for EVERY profile, not the two this test happens to name -- a third
+    # profile mounting the kernel with no hook, or arming a segment whose hook
+    # is not mounted, would log `armed` and route nothing.
+    seg_hook = {"VLLM_GLM53_MK_MHC": None,          # any module with the hook
+                "VLLM_GLM53_MK_GEMM": "glm53_fp8_dense",
+                "VLLM_GLM53_MK_KDA": "glm53_mk_kda_wiring",
+                "VLLM_GLM53_MK_MLA": "glm53_mk_mla_wiring"}
+    for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        profile = os.path.basename(envpath)[:-4]
+        text, mods = _modules(profile)
+        if "glm53_megakernel" not in mods:
+            continue
         hooked = [m for m in mods if any(
-            "mhc_fused_post_pre as _mk_mhc" in
+            "_deneb_mk_hook()" in
             open(os.path.join(REPO, "overlay", "modules", m, f), encoding="utf-8").read()
             for f in os.listdir(os.path.join(REPO, "overlay", "modules", m))
             if f.endswith(".py"))]
         check(hooked, f"{profile} mounts the megakernel core but no module "
                       "carries the MK-MHC hook -- the core would be dead bytes")
+        for knob, module in seg_hook.items():
+            if module is None or re.search(rf"^{knob}=", text, re.M) is None:
+                continue
+            check(module in mods,
+                  f"{profile} declares {knob} but does not mount {module}: "
+                  "the segment would arm on its self-test and then serve "
+                  "nothing, with the boot log saying otherwise")
+
+    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
+                 "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA",
+                 "VLLM_GLM53_MK_MLA"):
+        check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
+              f"glm53 must ship {knob}=0 -- adoption is bracket-only")
 
     # -- dsv4 ships every knob OFF and claims no segment it cannot run
     for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
@@ -7459,15 +7485,57 @@ def test_megakernel_core_is_shared() -> None:
           "the MK branch precedes the gemm_out allocations (the fused kernel "
           "has no gemm_out)")
     blk = fn[fn.index(head):fn.index(alloc)]
-    check("mhc_fused_post_pre as _mk_mhc" in blk
-          and "maybe_arm as _mk_maybe_arm" in blk,
-          "the hook imports the driver's entry point and its arming call")
-    check(blk.index("except Exception:") < blk.index("_mk = _mk_mhc("),
-          "only the IMPORT is excepted -- the launch is not, because an async "
-          "CUDA failure cannot be contained by a python fallback")
+    check("_mk_hook = _deneb_mk_hook()" in blk and "_mk = _mk_hook(" in blk,
+          "the hook goes through the cached resolver and the core's entry "
+          "point, not a fresh import per call")
     check("if _mk is not None:" in blk and "return _mk" in blk,
-          "an unarmed core or an ineligible shape returns None and falls "
-          "through to this lane's swept stock pair")
+          "an unmounted core, an unarmed segment or an ineligible shape "
+          "returns None and falls through to this lane's swept stock pair")
+    blk_code = "\n".join(l for l in blk.splitlines()
+                         if l.strip() and not l.strip().startswith("#"))
+    check("try:" not in blk_code and "except" not in blk_code,
+          "the LAUNCH is not excepted: an async CUDA failure cannot be "
+          "contained by a python fallback (the resolver owns the one "
+          "try/except, around the import)")
+
+    # -- the arm-then-call contract lives in the core, once, for both forks
+    coresrc = open(os.path.join(core, "glm53_megakernel.py"),
+                   encoding="utf-8").read()
+    hook = coresrc[coresrc.index("def mhc_hook("):]
+    hook = hook[:hook.index("\ndef ")]
+    check("maybe_arm()" in hook
+          and hook.index("maybe_arm()") < hook.index("mhc_fused_post_pre("),
+          "mhc_hook arms before it calls -- that pairing is the thing the two "
+          "image forks must not each re-implement")
+    hook_code = "\n".join(l for l in hook.splitlines()
+                          if l.strip() and not l.strip().startswith("#"))
+    hook_code = hook_code[hook_code.index('"""', hook_code.index('"""') + 3):]
+    check("try:" not in hook_code and "except" not in hook_code,
+          "mhc_hook does not swallow the launch either")
+
+    # -- and the two forks stay code-identical (comments may differ)
+    def _mk_shape(path, marker, end):
+        text = open(path, encoding="utf-8").read()
+        i = text.index(marker)
+        seg = text[i:text.index(end, i)]
+        return "\n".join(l for l in seg.splitlines()
+                          if l.strip() and not l.strip().startswith("#"))
+
+    forks = [os.path.join(REPO, "overlay", "modules", "glm53_mhc_tilelang",
+                          "tilelang.py"),
+             os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
+                          "mhc_tilelang.py")]
+    calls = [_mk_shape(f, "    if use_small_fma and norm_weight is not None:",
+                       "\n\n") for f in forks]
+    resolvers = [_mk_shape(f, "def _deneb_mk_hook():", "\n\n\n")
+                 for f in forks]
+    check(calls[0] == calls[1],
+          "the two image forks carry the SAME hook code -- they are separate "
+          "files that no compose rule ties together, so a fix that lands in "
+          "one and not the other is invisible until a lane serves the old "
+          "shape (the T <= 16 correction had to be applied twice)")
+    check(resolvers[0] == resolvers[1],
+          "the cached resolver is the same in both forks too")
 
     # -- the dsv4 launcher now emits profile VLLM_* keys, so it needs the same
     #    EXTRA_ENV guard glm53 has: $COMMON (EXTRA_ENV) renders BEFORE $ENVV
@@ -7552,6 +7620,50 @@ def test_megakernel_core_is_shared() -> None:
     check("for T in (8, 16, 32):" in disp,
           "the dispatch arm spans the wrapper's boundary (16) so the window "
           "shows up as a hit column rather than as an assumption")
+    check("if not any_hit:" in disp and "return False" in disp,
+          "a dispatch run where MK was never offered a call must FAIL: every "
+          "row would be stock against stock, rel 0.0, and the gate would pass "
+          "without the kernel running once")
+    check('armed0 = mk._ARMED["mhc"]' in disp
+          and 'mk._ARMED["mhc"] = armed0' in disp
+          and disp.index("finally:") < disp.index('mk._ARMED["mhc"] = armed0'),
+          "the dispatch arm restores the arm state it flips, not just the "
+          "monkeypatch -- an exception mid-loop would otherwise leave the "
+          "module armed by hand for whatever runs next")
+    check("if hit \\" in disp and "else None" in disp,
+          "no timing pass for an arm that was never offered the call")
+    # -- sinkhorn_repeat: the probe must default to what the models serve
+    check('ap.add_argument("--sinkhorn", type=int, default=20)' in probe,
+          "sinkhorn_repeat defaults to the served hc_sinkhorn_iters (20), not "
+          "the 4 this probe used to hard-code: the loop is a runtime bound in "
+          "BOTH arms and they do not scale with it alike, so a ratio taken at "
+          "4 does not transfer to serving")
+    check("1.0, 1e-6, 4)" not in probe and "1.0, 4, 1e-6," not in probe,
+          "no hard-coded sinkhorn_repeat survives in the MHC arms")
+    check("BASIS NOTE" in probe and "--sinkhorn 4" in probe,
+          "the docstring records that the earlier MEASUREMENTS rows were "
+          "taken at 4 and names the flag that reproduces them")
+    check("sinkhorn_repeat={args.sinkhorn}" in probe
+          and "sinkhorn_repeat={sk}" in probe,
+          "both the run header and the raw arm print the basis they used")
+    check("raw stock arm: mhc_fused(tile_n=2, n_splits=4)" in probe,
+          "the raw arm names the stock config it built -- no profile's "
+          "dispatcher picks it, and on dsv4 it is the pre-sweep config")
+    check('print("--segments selected nothing to run")' in probe
+          and "if not segs:" in probe,
+          "an empty --segments selection must refuse to run: it used to skip "
+          "every probe and print VERDICT: PASS")
+    # -- the wrapper refuses a shell that would disarm the run
+    check("ABORT: VLLM_GLM53_MEGAKERNEL=" in wrap
+          and 'case "${VLLM_GLM53_MEGAKERNEL:-1}" in' in wrap,
+          "a caller shell that sourced the profile carries MEGAKERNEL=0; "
+          "forwarded, it leaves the probe disarmed, so the wrapper refuses "
+          "instead of measuring nothing")
+    check('PROFILE_IMAGE=""' in wrap and wrap.index('PROFILE_IMAGE=""')
+          < wrap.index('eval "$('),
+          "both profile-derived names are pre-set: a profile that fails to "
+          "source would otherwise die on 'unbound variable' instead of the "
+          "ABORT that names the profile")
 
     print("  megakernel core is shared ..... OK")
 

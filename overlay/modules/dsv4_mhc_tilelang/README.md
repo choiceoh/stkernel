@@ -26,6 +26,16 @@ stock pair in this file. An unmounted core, an unset knob, a failed
 self-test or an ineligible shape all fall through to the swept stock path,
 byte-identical to today.
 
+One precondition that is NOT visible from this file: the model reaches this
+wrapper only when `_should_run_b12x_mhc` is false
+(`deepseek_v4/nvidia/model.py`, gated on `VLLM_USE_B12X_MHC`). With that env
+set, `hc_post_pre` returns from `_run_b12x_mhc_post_pre` before the fused
+wrapper is ever called, so the MK hook is unreachable while the boot log
+still says `armed={'mhc': True}` -- the self-test calls the kernel directly
+and passes. The ledger has that knob as structurally unavailable on this
+fleet (three escalations, all compile-host OOM), which is exactly why the
+precondition is worth writing down before it changes.
+
 Two things this hook does NOT claim:
 
 - **The window is the wrapper's, and it is narrower than the kernel's.**

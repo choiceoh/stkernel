@@ -494,6 +494,31 @@ def mhc_fused_post_pre(x, residual, post_layer_mix, comb_res_mix, fn,
             li.view(*outer, hidden))
 
 
+def mhc_hook(x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
+             hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
+             hc_post_mult_value, sinkhorn_repeat, norm_weight, norm_eps):
+    """The whole call-site contract in ONE entry point: arm, then try.
+
+    Every image's MHC wrapper is a separate full-file fork -- GLM's
+    `tilelang.py` and dsv4's `mhc_tilelang.py` cannot share a file. What they
+    CAN share is this module, which both profiles mount. Keeping the
+    arm-then-call pair here means a wiring is five lines that cannot drift
+    from the other lane's five lines, instead of two copies of the same
+    twenty (the T <= 16 window correction had to be applied twice before this
+    existed).
+
+    Returns None for every miss -- unarmed, ineligible shape, wrong dtype --
+    so the caller falls through to its stock path. It does NOT catch: an
+    armed launch that fails is an async CUDA failure and a python fallback
+    cannot contain it (the w4a8 lesson).
+    """
+    maybe_arm()
+    return mhc_fused_post_pre(x, residual, post_layer_mix, comb_res_mix, fn,
+                              hc_scale, hc_base, rms_eps, hc_pre_eps,
+                              hc_sinkhorn_eps, hc_post_mult_value,
+                              sinkhorn_repeat, norm_weight, norm_eps)
+
+
 # ---------------------------------------------------------------------------
 # MK_SEG_KDA
 # ---------------------------------------------------------------------------
