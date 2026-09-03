@@ -6409,6 +6409,39 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
 # ---------------------------------------------------------------------------
+def test_cudagraph_mem_profiling_off_keeps_the_kv_size() -> None:
+    """Disabling the estimator must not silently resize the KV cache.
+
+    vllm computes `available_kv = requested - non_kv - cudagraph_estimate`,
+    so VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 drops the last term and
+    hands that memory to KV. The launcher takes the same share back off GMU,
+    which is why the delta is subtracted from whatever memfree-preflight
+    measured rather than written as a fixed util. vllm's own suggested
+    0.7671 is the OPPOSITE case (estimator kept on, pre-v0.21 KV restored);
+    applying it here too would hand the 0.85 GiB back twice."""
+    src = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"),
+               encoding="utf-8").read()
+    check("VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0" in src
+          and 'CG_MEM_PROFILE="${CG_MEM_PROFILE:-0}"' in src
+          and 'CG_UTIL_DELTA="${CG_UTIL_DELTA:-0.0071}"' in src,
+          "the launcher disables the cudagraph memory estimator by default "
+          "and keeps both the switch and the delta overridable")
+    check("$GMU - $CG_UTIL_DELTA" in src and "GMU=$(awk" in src,
+          "the delta comes OFF GMU, and off the measured GMU -- a fixed util "
+          "would overwrite what memfree-preflight just measured")
+    check(src.index("memfree preflight") < src.index("CG_MEM_PROFILE=")
+          < src.index("SERVE_ARGS="),
+          "the adjustment lands after the preflight sets GMU and before "
+          "SERVE_ARGS bakes it in")
+    code = "\n".join(ln for ln in src.splitlines()
+                     if not ln.lstrip().startswith("#"))
+    check("0.7671" not in code,
+          "vllm's suggested util is for keeping the estimator ON; using it "
+          "here as well would double-count the graph memory (naming it in a "
+          "comment is how the next reader learns that)")
+    print("  cudagraph mem profiling off keeps kv size .. OK")
+
+
 def test_boot_stamps_measure_without_changing_the_boot() -> None:
     """`init engine took 192.52 s` is one number for eight things.
 
@@ -7965,6 +7998,7 @@ if __name__ == "__main__":
     test_cuda_builds_keep_the_arch_specific_target()
     test_self_built_kernels_persist_their_caches()
     test_boot_stamps_measure_without_changing_the_boot()
+    test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
