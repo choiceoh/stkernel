@@ -7160,8 +7160,10 @@ def test_glm53_megakernel_contracts() -> None:
           "a barrier publishes the shared A quant before any block stages "
           "it -- without it a block reads a tile another block has not "
           "written yet, and only sometimes")
-    check("sxs[i] = g_mk_axs[i];" in cu,
-          "the per-row scales come from the same shared quant")
+    check("sxs[i] = g_mk_axs[i] * c.wgs;" in cu,
+          "the per-row scales come from the same shared quant, carrying the "
+          "pack's pow2 normalisation -- folding it here costs one multiply "
+          "in the prologue instead of one per accumulate")
     # -- remainder split-K: leftovers of the last partial round take k
     #    slices instead of leaving grid - rem blocks idle for a whole
     #    tile-time. ksr == 1 must leave the original path untouched.
@@ -7281,8 +7283,15 @@ def test_glm53_megakernel_contracts() -> None:
           and "0x4C484440'3C383000ULL" in cu
           and "__byte_perm(l0, l1, w & 0x7777u)" in cu_code
           and "__byte_perm(l0, l1, (w >> 16) & 0x7777u)" in cu_code
-          and "__vadd4((uint32_t)MK_E2M1_LUT64, eb * 0x01010100u)" in cu_code
-          and "__vadd4((uint32_t)(MK_E2M1_LUT64 >> 32), eb * 0x01010101u)" in cu_code
+          and "__vadd4((uint32_t)lutg, eb * 0x01010100u)" in cu_code
+          and "__vadd4((uint32_t)(lutg >> 32), eb * 0x01010101u)" in cu_code
+          # the scale byte is e4m3, not a bare exponent: its 3-bit mantissa
+          # rides the SAME byte add, and the only correction is +1 on the
+          # three codes whose magnitude mantissa is 1.5, which does not
+          # depend on the mantissa -- so a second constant, not a select
+          # over eight
+          and "0x4D484540'3D383000ULL" in cu
+          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in cu_code
           and "mk_e2m1_to_e4m3[lo & 7]" not in cu_code
           and "__vcmpeq4(mag" not in cu_code,
           "the W4 expansion is a byte-permute table lookup: the raw nibbles "
@@ -7337,22 +7346,23 @@ def test_glm53_megakernel_contracts() -> None:
           "the serving KDA shadow is gated at the e2m1 by-design class (its "
           "MK arm streams W4 packs of the real weights); the fixture keeps "
           "the 2e-2 noise gate on grid-snapped weights")
-    check("mk_w4_dequant(*build_mk_weight_w4(" in pysrc_full
+    check("mk_w4_dequant(_pi[0], _pi[1], KDA_INPROJ_N, _pi[2])" in pysrc_full
           and "in_mk, o_mk = build_mk_weight_w4(f.w_in), build_mk_weight_w4(f.w_o)"
           in pysrc_full,
           "the KDA fixture snaps its weights to the e2m1 grid so both arms "
           "see the same values and the 2e-2 gate measures noise, not e2m1's "
           "by-design error")
-    check("(int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)" in cu_code
+    check("(int8_t)((sc4 >> (8 * g4)) & 0xFFu)) & 0xFFu" in cu_code
           and "__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in cu_code
           and "__byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u)" in cu_code
           and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,
-          "expansion is exponent-field add (in the table) + sign (a second "
+          "expansion is a scale-byte add (in the table) + sign (a second "
           "prmt over nibble bit 3) in registers, never a float multiply and "
           "never a local-memory byte array")
     check("def _selftest_gemm() -> bool:" in pysrc_full
           and "_selftest_w4" not in pysrc_full
-          and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(pack[0], pack[1], n).float().T"
+          and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(\n"
+          "        pack[0], pack[1], n, pack[2]).float().T"
           in pysrc_full and "if e_exact > 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
@@ -7360,7 +7370,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the GEMM self-test gates bit-exact expansion against the torch "
           "twins (kernel activation quant x dequantized pack) and the "
           "by-design error against the stock pair")
-    check("def mk_w4_dequant(wq4, ws4, n_rows):" in pysrc_full
+    check("def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0):" in pysrc_full
           and "def _mk_quant_x_ref(x):" in pysrc_full
           and "torch.float8_e4m3fn" in pysrc_full
           and "torch.exp2(exp.float())" in pysrc_full,
@@ -8118,18 +8128,60 @@ def test_megakernel_w4_layout_functional() -> None:
             return sign * (man / 8.0) * 2.0 ** -6  # denormal region
         return sign * (1.0 + man / 8.0) * 2.0 ** (expf - 7)
 
+    mb = re.search(r"MK_E2M1_LUT64_B = 0x([0-9A-Fa-f']+)ULL", cu)
+    check(mb is not None, "the +1 companion table is present in the .cu")
+    assert mb is not None
+    lut_b = [(int(mb.group(1).replace("'", ""), 16) >> (8 * c)) & 0xFF
+             for c in range(8)]
+    check([lut_b[c] - lut[c] for c in range(8)] == [0, 0, 0, 1, 0, 1, 0, 1],
+          "the companion table is the LUT with +1 on exactly the three codes "
+          "whose e2m1 magnitude mantissa is 1.5 (3, 5, 7)")
+
+    def e4m3_round(x: float) -> float:
+        """round-to-nearest-even onto the e4m3 grid"""
+        if x == 0.0:
+            return 0.0
+        sign = -1.0 if x < 0 else 1.0
+        m, e = abs(x), 0
+        while m >= 2.0:
+            m /= 2.0
+            e += 1
+        while m < 1.0:
+            m *= 2.0
+            e -= 1
+        q = m * 8.0
+        f = int(q)
+        r = q - f
+        if r > 0.5 or (r == 0.5 and f % 2):
+            f += 1
+        if f == 16:
+            f = 8
+            e += 1
+        return sign * (f / 8.0) * 2.0 ** (e + 1) / 2.0
+
     grid = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+    # The scale is e4m3, stored as one byte d = (e << 3) + k, and the
+    # expansion adds d to a table byte. Adding the scale's 3-bit mantissa
+    # IS the multiply -- the e2m1 magnitudes carry a 1-bit mantissa, so the
+    # product needs at most one carry out of the mantissa field and that
+    # carry lands on the exponent field. Sweep every combination; this is
+    # the arithmetic the whole W4 arm rests on.
     for code in range(16):
-        for sexp in (-5, -2, 0, 3, 6):
-            # mirror the kernel's ternary EXACTLY: a zero-magnitude nibble
-            # takes no exponent add (it would wrap the byte); only its sign
-            sig = 0x80 if code & 8 else 0
-            byte = sig if (code & 7) == 0 else                 (lut[code & 7] + (sexp << 3)) | sig
-            want = grid[code & 7] * 2.0 ** sexp * (-1.0 if code & 8 else 1.0)
-            got = e4m3_value(byte)
-            check(abs(got - want) <= 1e-9 * max(1.0, abs(want)),
-                  f"LUT+exp-add is exact: code={code} s={sexp} "
-                  f"{got} == {want}")
+        for sexp in range(-5, 6):
+            for kk in range(8):
+                tbl = lut_b if 1 <= kk <= 5 else lut
+                # mirror the kernel's ternary EXACTLY: a zero-magnitude
+                # nibble takes no add (it would wrap the byte); only its sign
+                sig = 0x80 if code & 8 else 0
+                byte = sig if (code & 7) == 0 else                     ((tbl[code & 7] + (sexp << 3) + kk) & 0xFF) | sig
+                want = e4m3_round(grid[code & 7] * (1.0 + kk / 8.0)
+                                  * 2.0 ** sexp) * (-1.0 if code & 8 else 1.0)
+                got = e4m3_value(byte)
+                check(abs(got - want) <= 1e-9 * max(1.0, abs(want)),
+                      f"table+scale-byte add is exact: code={code} "
+                      f"e={sexp} k={kk} {got} == {want}")
+                check(byte & 0x7F != 0x7F,
+                      f"never the NaN encoding: code={code} e={sexp} k={kk}")
 
     # ---- torch-guarded roundtrip through the REAL packer
     try:
@@ -8161,15 +8213,17 @@ def test_megakernel_w4_layout_functional() -> None:
     # crafted s, so nibbles AND scale bytes must come back identical.
     codes_a = [[6 | (0x8 if rng.randrange(2) else 0)
                 for _ in range(k // 16)] for _ in range(n)]
-    sexps_a = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+    sexps_a = [[rng.randrange(-5, 6) for _ in range(k // 16)]
                for _ in range(n)]
-    wq4, ws4 = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
+    wq4, ws4, _gs = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
                                             lambda r, g: sexps_a[r][g]))
     check(tuple(wq4.shape) == (1, 1, 128, k // 2),
           "wq4 is tile-major [n_pad/128, k/128, 128, 64]")
     check(tuple(ws4.shape) == (1, 1, 128, k // 16),
           "ws4 is tile-major [n_pad/128, k/128, 128, 8]")
     q, sc = wq4.tolist(), ws4.tolist()
+    import math as _math
+    _shift_a = int(round(-_math.log2(_gs)))
 
     # the kernel's index math (stage_raw4 / expand_w4): tile = r // 128,
     # k-block = kk // 128, then row-in-tile and byte / group within it
@@ -8186,24 +8240,33 @@ def test_megakernel_w4_layout_functional() -> None:
             check(code == codes_a[r][kk // 16],
                   f"byte-exact tier: elem {kk} rides byte {kk // 2} "
                   f"half {kk % 2} with the crafted nibble (row {r})")
-            check(sexp_at(r, kk) == sexps_a[r][kk // 16],
-                  "byte-exact tier: scale index follows the 16-group")
+            check(sexp_at(r, kk) == ((sexps_a[r][kk // 16] + _shift_a) << 3),
+                  "byte-exact tier: the stored byte is (e << 3) + mantissa, "
+                  "with e carrying the pack's pow2 normalisation")
 
     # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
     # renormalize a group to its own (s', code') -- legal, the grid is
     # closed under x2 up to 6 -- but the dequantized VALUES must return
     # exactly, unpacked with the KERNEL's index math and the .cu LUT.
     codes_b = [[rng.randrange(16) for _ in range(k // 16)] for _ in range(n)]
-    sexps_b = [[rng.randrange(-5, 7) for _ in range(k // 16)]
+    # The expansion's scale field spans 11 octaves around the pack's pow2
+    # normalisation, and the e2m1 magnitudes themselves already use ~4 of
+    # them (0.5 .. 6), so the crafted exponents get the remaining 7. A
+    # wider spread would clamp -- which is a real property of the format,
+    # not a packer bug, and tier (a) pins the clamp-free case exactly.
+    sexps_b = [[rng.randrange(-3, 4) for _ in range(k // 16)]
                for _ in range(n)]
     wb = craft(lambda r, g: codes_b[r][g], lambda r, g: sexps_b[r][g])
-    wq4, ws4 = mod.build_mk_weight_w4(wb)
+    wq4, ws4, _gs2 = mod.build_mk_weight_w4(wb)
     q, sc = wq4.tolist(), ws4.tolist()
     for r in range(n):
         for kk in range(k):
             byte = nib(r, kk)
             code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
-            val = grid[code & 7] * 2.0 ** sexp_at(r, kk)                 * (-1.0 if code & 8 else 1.0)
+            d = sexp_at(r, kk)
+            val = e4m3_round(grid[code & 7] * (1.0 + (d & 7) / 8.0)
+                             * 2.0 ** (d >> 3)) \
+                * (-1.0 if code & 8 else 1.0) * _gs2
             check(val == wb[r, kk].item(),
                   f"value-exact tier: elem {kk} dequantizes to the original "
                   f"(row {r}: {val} != {wb[r, kk].item()})")

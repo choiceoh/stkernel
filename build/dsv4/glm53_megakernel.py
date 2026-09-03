@@ -303,12 +303,32 @@ def _mk_w4_scale_exp(amax: float) -> int:
 
 def build_mk_weight_w4(weight):
     """(wq4 uint8 [n_pad/128, k/128, 128, 64] nibbles,
-        ws4 int8 [n_pad/128, k/128, 128, 8] exponents) -- tile-major.
+        ws4 int8 [n_pad/128, k/128, 128, 8] scale bytes) -- tile-major.
 
     Nibble layout: low nibble = even element, high = odd. Round-to-nearest
-    on the e2m1 grid {0, .5, 1, 1.5, 2, 3, 4, 6} x 2^s. The kernel expands
-    each nibble to an exact e4m3 byte, so the mma sees precisely these
-    values -- nothing extra is lost downstream of the quantization.
+    on the e2m1 grid {0, .5, 1, 1.5, 2, 3, 4, 6} x scale.
+
+    The scale is an e4m3 scale -- (1 + k/8) * 2^e, k the 3-bit mantissa --
+    stored as the single byte d = (e << 3) + k, the same one byte a pure
+    2^e exponent took. The kernel's expansion adds d to a table byte per
+    lane, which reproduces e4m3(magnitude * scale) EXACTLY: adding the
+    scale's mantissa field to an e4m3 byte is the multiply, because the
+    e2m1 magnitudes carry a 1-bit mantissa and the carry into the exponent
+    field lands where it should. The only correction is +1 on the three
+    codes whose magnitude mantissa is 1.5 (codes 3, 5, 7) when 1 <= k <= 5,
+    and that correction does not depend on k -- so it is a second constant
+    table, not a select over eight (verified exhaustively over all
+    (code, k, e): the byte formula matches e4m3(mag * scale) 504/504).
+
+    Why an e4m3 scale and not the pow2 one this started with: on the real
+    checkpoint it is 29-32% less weight quantization error (q/o_proj,
+    gate/down_proj, layer 1), for +16 SASS instructions per 4 groups in the
+    expansion. A pow2 scale wastes up to 2x of the e2m1 range per group and
+    the e2m1 grid is too coarse to absorb that. The scale is picked to
+    MINIMISE the group's error, not merely to cover its amax: with the
+    cover rule a finer scale grid measured WORSE (it maps the group into
+    the sparse top of the e2m1 grid), which is why the two changes only
+    pay together.
     """
     import torch
 
@@ -316,25 +336,74 @@ def build_mk_weight_w4(weight):
     if k % 128 != 0:
         raise ValueError(f"K={k} not a multiple of 128")
     n_pad = _mk_pad128(n)
-    g = torch.zeros(n_pad, k // 16, 16, dtype=torch.float32,
-                    device=weight.device)
-    g[:n] = weight.float().view(n, k // 16, 16)
-    amax = g.abs().amax(-1)
-    s = torch.zeros_like(amax)
-    pos = amax > 0
-    # vectorized frexp ceil: exponent of the pow2 >= amax/6 (same rule as
-    # _mk_w4_scale_exp; the .clamp guard keeps frexp finite)
-    ratio = (amax / 6.0).clamp(min=1e-30)
-    frac, exp = torch.frexp(ratio)
-    # exact pow2 boundary -> frexp over-picks by one (mirror of the scalar
-    # _mk_w4_scale_exp rule; keeps on-grid weights bit-identical to their
-    # crafted encoding)
-    onb = (ratio == torch.exp2(exp - 1.0))
-    s[pos] = (exp[pos] - onb[pos].float()).clamp(-5, 6)
-    qs = g * torch.exp2(-s).unsqueeze(-1)
-    code = torch.bucketize(qs.abs(), torch.tensor(_E2M1_MIDS,
-                                                   device=weight.device))
-    sign = (qs < 0).to(torch.uint8)
+    kg = k // 16
+    mids = torch.tensor(_E2M1_MIDS, device=weight.device)
+    grid = torch.tensor(_E2M1_GRID, device=weight.device)
+    # Pass 1: where the groups actually live. The expansion is a byte add,
+    # so a group scale can only reach 2^-5 around a magnitude of 1 -- and
+    # GLM-5.3's dense projections sit at 2^-7 (median), 2^-16 (p1). Without
+    # this every production group clamped at the floor and the pack was
+    # ~3x worse than the format allows (0.225 rel vs 0.082 measured on
+    # layers.1 q/k/v/o/gate/up/down). The shift is a power of two, undone
+    # on the kernel's activation scales, so it costs no accuracy.
+    need = torch.empty(n_pad, kg, dtype=torch.float32, device=weight.device)
+    CH = max(128, (((4 << 20) // k) // 128) * 128)  # ~4M elements/chunk
+    for r0 in range(0, n, CH):
+        r1 = min(r0 + CH, n)
+        a = weight[r0:r1].float().view(r1 - r0, kg, 16).abs().amax(-1)
+        need[r0:r1] = torch.ceil(torch.log2((a / 6.0).clamp(min=1e-30)))
+    need[n:] = 0.0
+    live = need[:n]
+    shift = int(-torch.median(live).item()) if n else 0
+    gscale = float(2.0 ** -shift)
+    clamped = float(((live + shift < -5) | (live + shift > 5)).float().mean())
+
+    q_out = torch.zeros(n_pad, kg, 16, dtype=torch.uint8,
+                        device=weight.device)
+    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=weight.device)
+    # Pass 2: row-chunked search. It holds ~4 temporaries the size of the
+    # chunk, and runs at load time next to the fp8 copies -- the boot that
+    # OOM-killed srv3 is what a whole-tensor search would have joined.
+    for r0 in range(0, n_pad, CH):
+        r1 = min(r0 + CH, n_pad)
+        g = torch.zeros(r1 - r0, kg, 16, dtype=torch.float32,
+                        device=weight.device)
+        if r0 < n:
+            src = weight[r0:min(r1, n)].float()
+            g[:src.shape[0]] = src.view(src.shape[0], kg, 16)
+        g *= 2.0 ** shift
+        sign = torch.signbit(g).to(torch.uint8) << 3
+        e0 = need[r0:r1].unsqueeze(-1) + shift
+        best_err = None
+        # Two octaves x 8 mantissas reach the full 72-candidate optimum
+        # exactly on the real weights (q_proj 0.0833 both, down_proj 0.0787).
+        for j in (0.0, 1.0):
+            e = (e0 - j).clamp(-5, 5)
+            for kk in range(8):
+                sc = (1.0 + kk / 8.0) * torch.exp2(e)
+                code = torch.bucketize((g / sc).abs(), mids)
+                # what the kernel's expanded byte actually holds
+                deq = (grid[code] * torch.sign(g) * sc).to(
+                    torch.float8_e4m3fn).float()
+                err = (deq - g).pow(2).sum(-1, keepdim=True)
+                d = (e * 8.0 + kk).to(torch.int8)
+                if best_err is None:
+                    best_err, best_code, best_d = err, code, d
+                else:
+                    take = err < best_err
+                    best_err = torch.where(take, err, best_err)
+                    best_code = torch.where(take, code, best_code)
+                    best_d = torch.where(take, d, best_d)
+        q_out[r0:r1] = best_code.to(torch.uint8) | sign
+        d_out[r0:r1] = best_d.squeeze(-1)
+        del g, sign, e0, best_err, best_code, best_d
+    if clamped > 0.01:
+        # Silent clamping is what made this defect invisible for a campaign:
+        # the self-test's weights are O(1) and never reach the floor.
+        logger.warning("[megakernel] w4 pack %s: %.1f%% of groups clamp even "
+                       "after the 2^%d shift -- the tensor's dynamic range "
+                       "exceeds the 11 octaves a byte-add expansion spans",
+                       tuple(weight.shape), 100 * clamped, shift)
     # Pack PAIRS along k: even k-index -> low nibble, odd -> high. The pair
     # slice must run on the [.., 16] group view. (Found in review: slicing a
     # [.., 8] re-view instead picked elements 0,2,4,6 of each octet AND left
@@ -342,28 +411,28 @@ def build_mk_weight_w4(weight):
     # swallowed it into a silently-stock boot, and the self-test exception
     # disarmed every OTHER segment with it. Shape asserts below make any
     # future layout drift fail loudly at build, not silently at serve.)
-    q = (code.to(torch.uint8) | (sign << 3)).view(n_pad, k // 16, 16)
-    wq4 = (q[..., 0::2] | (q[..., 1::2] << 4)).reshape(n_pad, k // 2)
-    ws4 = s.to(torch.int8).contiguous()
+    wq4 = (q_out[..., 0::2] | (q_out[..., 1::2] << 4)).reshape(n_pad, k // 2)
+    ws4 = d_out.contiguous()
     assert wq4.shape == (n_pad, k // 2), \
         f"wq4 {tuple(wq4.shape)} != {(n_pad, k // 2)}"
     assert ws4.shape == (n_pad, k // 16), \
         f"ws4 {tuple(ws4.shape)} != {(n_pad, k // 16)}"
     # Tile-major, like the fp8 pack (#208): one (tile, k-block) record is
-    # 128 rows x 64 nibble bytes + 128 x 8 exponents, contiguous, so the
+    # 128 rows x 64 nibble bytes + 128 x 8 scale bytes, contiguous, so the
     # kernel's stage_raw4 streams it with cp.async as one 8 KB + 1 KB run
     # instead of touching 128 DRAM pages per tile.
     wq4 = (wq4.view(n_pad // 128, 128, k // 128, 64)
            .permute(0, 2, 1, 3).contiguous())
     ws4 = (ws4.view(n_pad // 128, 128, k // 128, 8)
            .permute(0, 2, 1, 3).contiguous())
-    return wq4, ws4
+    return wq4, ws4, gscale
 
 
-def mk_w4_dequant(wq4, ws4, n_rows):
+def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0):
     """bf16 [n_rows, k] holding exactly the values the kernel's expansion
     feeds the mma for this pack: the pure-torch twin of expand_w4 (nibble
-    -> e2m1 grid value x 2^s, sign from nibble bit 3). Weights already on
+    -> e2m1 grid value x the group's e4m3 scale, rounded into e4m3 the way
+    the kernel's byte add does, sign from nibble bit 3). Weights already on
     the grid round-trip bit-exactly, which is what the exact gate and the
     KDA fixture rely on."""
     import torch
@@ -375,8 +444,13 @@ def mk_w4_dequant(wq4, ws4, n_rows):
     grid = torch.tensor(_E2M1_GRID, device=wq4.device)
     mag = grid[(nib & 7).long()]
     sign = torch.where((nib & 8) != 0, -1.0, 1.0)
-    s = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16).float()
-    w = mag * sign * torch.exp2(s).repeat_interleave(16, dim=1)
+    d = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16).to(torch.int32)
+    # d = (e << 3) + k, k in [0, 7] -- the low three bits are the scale
+    # mantissa for either sign of e, and the arithmetic shift is e.
+    scale = (1.0 + (d & 7).float() / 8.0) * torch.exp2((d >> 3).float())
+    w = mag * sign * scale.repeat_interleave(16, dim=1)
+    # the kernel's table byte IS e4m3(mag * scale); model that rounding
+    w = w.to(torch.float8_e4m3fn).float() * gscale
     return w[:n_rows].to(torch.bfloat16)
 
 
@@ -415,12 +489,13 @@ def _stock_fp8_pair(w):
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
 def _gemm_call(x, mk_pack, n_rows):
-    """mk_pack is (wq4, ws4) from build_mk_weight_w4."""
+    """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4."""
     import torch
 
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
-    _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows)
+    _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
+                  float(mk_pack[2]))
     return out
 
 
@@ -761,7 +836,8 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          ws["convq"].data_ptr(), ws["attn"].data_ptr(),
          _barrier_ptr(ws), onorm_w.data_ptr()],
         [float(layer.kda_lower_bound),
-         float(getattr(layer.o_norm, "eps", 1e-5))],
+         float(getattr(layer.o_norm, "eps", 1e-5)),
+         float(layer._mk_in_pack[2]), float(layer._mk_o_pack[2])],
         [int(meta.num_actual_tokens), int(n_spec),
          int(meta.spec_state_indices_tensor.size(-1)),
          int(delta_variant), int(conv_state.shape[-1])],
@@ -949,7 +1025,14 @@ def _selftest_gemm() -> bool:
     dev = "cuda"
     n, k, m = 1024, 4096, 8
     code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
-    sexp = torch.randint(-5, 7, (n, k // 16, 1), device=dev)
+    # PRODUCTION magnitudes. This gate used to draw sexp in [-5, 6) --
+    # O(1) weights, the one range where the group scale never reached
+    # the expansion's floor -- so it stayed green while every real
+    # dense projection (median 2^-7) clamped and quantised ~3x worse
+    # than the format allows. The pack's pow2 normalisation is what
+    # makes these round-trip bit-exactly; drawing them here is the
+    # guard that it keeps doing so.
+    sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
     grid = torch.tensor(_E2M1_GRID, device=dev)
     w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
         torch.randn_like(code.float()) < 0, -1.0, 1.0)
@@ -957,7 +1040,8 @@ def _selftest_gemm() -> bool:
     x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
     pack = build_mk_weight_w4(w_exact)
     got = _gemm_call(x, pack, n)
-    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(pack[0], pack[1], n).float().T
+    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(
+        pack[0], pack[1], n, pack[2]).float().T
     torch.cuda.synchronize()
     e_exact, n_ulp = _exact_gate(got, ref)
     if e_exact > 1e-3 or n_ulp > 0:
@@ -1018,10 +1102,12 @@ class _KdaFixture:
         # losslessly (W4 is the only MK arm), the stock side quantizes them
         # to its fp8 blocks -- so the diff below is activation / fp8
         # rounding noise (the 2e-2 class), not e2m1's by-design error.
-        self.w_in = mk_w4_dequant(*build_mk_weight_w4(
-            mkw(KDA_INPROJ_N, HIDDEN) * 0.02), KDA_INPROJ_N)
-        self.w_o = mk_w4_dequant(*build_mk_weight_w4(
-            mkw(HIDDEN, KDA_OUT) * 0.02), HIDDEN)
+        _pi = build_mk_weight_w4(mkw(KDA_INPROJ_N, HIDDEN) * 0.02)
+        _po = build_mk_weight_w4(mkw(HIDDEN, KDA_OUT) * 0.02)
+        # explicit, not a splat: the pack carries a third element (its pow2
+        # normalisation) and a splat would land it on n_rows
+        self.w_in = mk_w4_dequant(_pi[0], _pi[1], KDA_INPROJ_N, _pi[2])
+        self.w_o = mk_w4_dequant(_po[0], _po[1], HIDDEN, _po[2])
         self.f_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.g_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.conv_w = mkw(KDA_QKV, 4, dt=torch.float32) * 0.2
