@@ -2151,6 +2151,40 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     print("  fp8-dense nvfp4 scheme contract .. OK")
 
 
+def test_benches_ask_the_server_for_the_model_name() -> None:
+    """No bench may hardcode a served model name as its only source.
+
+    Every one of them defaulted to `deepseek-v4-flash`. On the glm53 server
+    that 404s, and a 404 does not read like a failure here: the caller greps
+    for a SUMMARY line, finds none, and the section reads "measured nothing"
+    rather than "never ran". It silently voided the 9/9 quality gate on this
+    lane -- `gates.sh` ran check-quality every time and it never once reached
+    the model.
+
+    So the literal may only ever be the fallback argument to a resolver that
+    asks /v1/models first."""
+    bench = os.path.join(REPO, "bench")
+    shared = open(os.path.join(bench, "bench_common.py"), encoding="utf-8").read()
+    check("def resolve_model(" in shared and "/v1/models" in shared,
+          "the shared resolver asks the server")
+    check('os.environ.get("BENCH_MODEL")' in shared,
+          "BENCH_MODEL still wins when a caller means a specific name")
+    offenders = []
+    for name in sorted(os.listdir(bench)):
+        if not name.endswith(".py") or name == "bench_common.py":
+            continue
+        text = open(os.path.join(bench, name), encoding="utf-8").read()
+        if "BENCH_MODEL" not in text and "_resolve_model(" not in text:
+            continue          # bench does not talk to the server
+        if re.search(r'MODEL\s*=\s*os\.environ\.get\("BENCH_MODEL"', text):
+            offenders.append(name)
+        if "_resolve_model(" in text and "from bench_common import" not in text:
+            offenders.append(name + " (own copy of the resolver)")
+    check(not offenders,
+          "every bench resolves through bench_common: " + ", ".join(offenders))
+    print("  benches ask the server for the model .. OK")
+
+
 def test_korean_gate_separates_notation_from_damage() -> None:
     """The Korean gate must not fire on the model writing about Korean.
 
@@ -6143,12 +6177,14 @@ def test_bench_resolves_served_model() -> None:
             return _Resp(_json.dumps(body).encode())
         return _open
 
-    for path in ("probes/prefill_ladder.py", "bench/bench-dec.py",
-                 "bench/bench-tp4.py"):
+    # bench/ resolves through one shared copy (bench_common); probes/ keeps
+    # its own, so both spellings are exercised here.
+    for path, fname in (("probes/prefill_ladder.py", "_resolve_model"),
+                        ("bench/bench_common.py", "resolve_model")):
         src = open(path, encoding="utf-8").read()
-        match = re.search(r"^def _resolve_model.*?(?=\n\n\n|\n[^\s#])",
+        match = re.search(rf"^def {fname}.*?(?=\n\n\n|\n[^\s#]|\Z)",
                           src, re.S | re.M)
-        check(match is not None, f"{path} must define _resolve_model")
+        check(match is not None, f"{path} must define {fname}")
         assert match is not None
         for base_name in ("URL", "BASE"):
             if re.search(rf"^{base_name} = ", src, re.M):
@@ -6156,9 +6192,11 @@ def test_bench_resolves_served_model() -> None:
         # Some harnesses call urllib.request.urlopen through the package and
         # some import it locally; hand over the package so both resolve.
         ns: dict = {"os": os, "json": _json, "urllib": _urllib, "re": re,
-                    base_name: "http://localhost:8000/v1/chat/completions"}
+                    base_name: "http://localhost:8000/v1/chat/completions",
+                    # bench_common takes the url as a defaulted argument
+                    "DEFAULT_URL": "http://localhost:8000/v1/chat/completions"}
         exec(compile(match.group(0), path, "exec"), ns)
-        resolve = ns["_resolve_model"]
+        resolve = ns[fname]
 
         saved_open, saved_env = _u.urlopen, os.environ.pop("BENCH_MODEL", None)
         try:
@@ -7845,6 +7883,7 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
+    test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()

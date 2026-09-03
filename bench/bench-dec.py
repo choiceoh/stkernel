@@ -21,35 +21,9 @@ URL = "http://127.0.0.1:8000/v1/chat/completions"
 METRICS = "http://127.0.0.1:8000/metrics"
 # Served name of the model under test. Default keeps every existing
 # invocation and every recorded number pointing at the same target.
-def _resolve_model(default: str) -> str:
-    """The served name, asked of the server, not assumed.
-
-    The literal default is the dsv4 lane's name. Pointed at the glm53 server
-    it 404s, which has silently voided prefill and decode runs in this lane
-    more than once -- the harness raised, the boot script's grep found no
-    SUMMARY line, and the section read as "measured nothing" rather than
-    "never ran". Ask; fall back to the literal only if the server cannot say.
-    """
-    named = os.environ.get("BENCH_MODEL")
-    if named:
-        return named
-    try:
-        import urllib.request as _u
-        base = URL.split("/v1/", 1)[0]
-        with _u.urlopen(f"{base}/v1/models", timeout=5) as r:
-            data = json.loads(r.read().decode())["data"]
-        if len(data) == 1:
-            return data[0]["id"]
-        for entry in data:
-            if entry["id"] == default:
-                return default
-        if data:
-            return data[0]["id"]
-    except Exception:
-        pass
-    return default
-
-
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from bench_common import resolve_model as _resolve_model
 MODEL = _resolve_model("deepseek-v4-flash")
 LONG_OUT = 768
 TOPICS = [

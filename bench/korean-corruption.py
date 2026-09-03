@@ -41,7 +41,10 @@ import unicodedata
 import urllib.request
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-MODEL = os.environ.get("BENCH_MODEL", "glm-5.3-flash")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from bench_common import resolve_model as _resolve_model
+MODEL = _resolve_model("glm-5.3-flash")
 
 PROMPTS = [
     "조력 발전의 원리를 한국어로 자세히 설명해줘.",
