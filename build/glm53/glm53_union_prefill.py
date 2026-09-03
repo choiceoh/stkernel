@@ -23,6 +23,15 @@ _DENSE_PREFIX_ENV = "VLLM_GLM53_DENSE_PREFIX_PREFILL"
 _UNION_SPAN_BUDGET = 512 << 20
 _UNION_WS: dict[tuple, tuple] = {}
 _UNION_DECLINED: set = set()
+# The whole value of this arm is the overlap between adjacent tokens' top-k
+# sets, and that number has never been measured -- the arm never ran. The
+# union kernel already computes it: union_len is |union| per group, against
+# G x per-token length if the tokens shared nothing. Log the ratio for the
+# first few groups so the arm's ceiling stops being an assumption.
+#
+#   saving = 1 - |union| / (G x len)      0 = no overlap, 1 - 1/G = identical
+_UNION_STATS_SEEN: list = [0]
+_UNION_STATS_MAX = 8
 
 
 @triton.jit
@@ -489,6 +498,17 @@ def glm53_union_sparse_prefill(
         num_warps=4,
         num_stages=2,
     )
+    if _UNION_STATS_SEEN[0] < _UNION_STATS_MAX:
+        _UNION_STATS_SEEN[0] += 1
+        per_token = lengths[:main_tokens].float().mean().item()
+        union_mean = union_len.float().mean().item()
+        ideal = per_token * group_size
+        logger.warning(
+            "[union-prefill] #%d groups=%d G=%d per-token-topk=%.0f "
+            "|union|=%.0f (of %.0f if disjoint) -> gather saved %.1f pct",
+            _UNION_STATS_SEEN[0], groups, group_size, per_token, union_mean,
+            ideal, 100.0 * (1.0 - union_mean / ideal) if ideal else 0.0,
+        )
     _base_sparse_prefill(
         q[main_tokens:],
         kv,
