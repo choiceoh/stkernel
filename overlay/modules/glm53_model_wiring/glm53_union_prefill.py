@@ -480,6 +480,12 @@ def glm53_union_sparse_prefill(
 _UNION_REPORTED: set = set()
 
 
+# The column tile triton_convert_req_index_to_global_index defaults to and
+# asserts against. Named here because the width handed to it must be a
+# multiple of it, and the assertion that catches a mismatch is inside vLLM.
+_CONVERT_BLOCK_N = 128
+
+
 def _read_group_size() -> int:
     raw = os.environ.get(_UNION_ENV, "0")
     try:
@@ -531,16 +537,45 @@ def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
 
         tokens = q[0].shape[0]
         # KPool emits a fixed 2048-token selection plus at most three live
-        # tail tokens. Ignore the rounded scratch capacity beyond 2051: those
-        # cells are outside FlashInfer's planned valid length and may retain
-        # data from an older, wider batch.
-        logical = self.topk_indices_buffer[:tokens, :2051]
+        # tail tokens, so 2051 columns carry data. The cells beyond that are
+        # rounded scratch capacity: outside FlashInfer's planned valid length,
+        # and they may retain data from an older, wider batch.
+        #
+        # 2051 cannot be handed to the converter, which tiles columns and
+        # asserts NUM_TOPK_TOKENS % BLOCK_N == 0. 2051 = 7 x 293, so no usable
+        # BLOCK_N divides it, and passing it raised on EVERY prefill:
+        #
+        #     AssertionError: NUM_TOPK_TOKENS (2051) must be divisible by
+        #     BLOCK_N (128)
+        #
+        # caught by the except below, logged, and fallen back to FlashInfer --
+        # 11 prefills, 11 fallbacks, in a boot whose log said "union prefill:
+        # ARMED width=4". This arm has never once run.
+        #
+        # So round the width up to the tile and mark the rounded tail -1,
+        # which the converter documents as "invalid": "Only when
+        # token_indices[...] == -1 do we output -1". The copy is the price of
+        # not mutating a buffer the fallback path also reads -- tokens x 2176
+        # int32, about 0.9 pct of a 32K prefill against the ~12 pct this arm
+        # is supposed to be worth.
+        want = 2051
+        width = -(-want // _CONVERT_BLOCK_N) * _CONVERT_BLOCK_N
+        raw = self.topk_indices_buffer[:tokens]
+        carried = min(want, raw.shape[1])
+        if raw.shape[1] >= width:
+            logical = raw[:, :width].clone()
+        else:
+            logical = raw.new_full((tokens, width), -1)
+            logical[:, :carried] = raw[:, :carried]
+        logical[:, carried:] = -1
+        assert logical.shape[1] % _CONVERT_BLOCK_N == 0
         physical, _ = triton_convert_req_index_to_global_index(
             attn_metadata.req_id_per_token[:tokens],
             attn_metadata.block_table,
             logical,
             BLOCK_SIZE=attn_metadata.block_size,
             NUM_TOPK_TOKENS=logical.shape[1],
+            BLOCK_N=_CONVERT_BLOCK_N,
             return_valid_counts=True,
         )
         flat_kv = kv_cache.view(torch.float8_e4m3fn).reshape(-1, 512)

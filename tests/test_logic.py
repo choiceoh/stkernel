@@ -2151,6 +2151,43 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     print("  fp8-dense nvfp4 scheme contract .. OK")
 
 
+def test_union_prefill_width_matches_the_converter_tile() -> None:
+    """The union arm must hand the converter a width it accepts.
+
+    It did not, for its whole life. The code sliced 2051 columns (2048 KPool
+    selection + at most three live tail tokens) and passed that as
+    NUM_TOPK_TOKENS, but triton_convert_req_index_to_global_index tiles
+    columns and asserts NUM_TOPK_TOKENS % BLOCK_N == 0. 2051 = 7 x 293, so no
+    usable tile divides it, and every prefill raised:
+
+        AssertionError: NUM_TOPK_TOKENS (2051) must be divisible by BLOCK_N (128)
+
+    caught, logged, fallen back to FlashInfer. A boot logging "union prefill:
+    ARMED width=4" ran 11 prefills and took the fallback 11 times.
+
+    The width must round up to the tile, and the rounded tail must be -1 --
+    the converter's documented "invalid", which _topk_length and the >= 0
+    masks downstream both honour."""
+    path = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+                        "glm53_union_prefill.py")
+    src = open(path, encoding="utf-8").read()
+    check("_CONVERT_BLOCK_N = 128" in src,
+          "the converter's column tile is named, not implied")
+    body = src[src.index("tokens = q[0].shape[0]"):]
+    body = body[:body.index("triton_convert_req_index_to_global_index(") + 400]
+    check("-(-want // _CONVERT_BLOCK_N) * _CONVERT_BLOCK_N" in body,
+          "the width rounds UP to the tile instead of passing 2051")
+    check("logical[:, carried:] = -1" in body,
+          "the rounded tail is marked invalid, not left as stale scratch")
+    check("BLOCK_N=_CONVERT_BLOCK_N" in body,
+          "the tile passed to the converter is the one the width used")
+    check(".clone()" in body,
+          "the padded view is a copy -- the fallback path reads that buffer")
+    check("logical.shape[1] % _CONVERT_BLOCK_N == 0" in body,
+          "and the contract is asserted here, not only inside vLLM")
+    print("  union prefill width vs converter tile .. OK")
+
+
 def test_benches_ask_the_server_for_the_model_name() -> None:
     """No bench may hardcode a served model name as its only source.
 
@@ -7883,6 +7920,7 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
+    test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
