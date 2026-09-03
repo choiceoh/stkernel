@@ -52,15 +52,23 @@ def _measure_overlap(physical, group_size, tag):
         rows = physical.shape[0] // group_size * group_size
         if rows == 0:
             return
-        sample = min(rows, 256 * group_size)
-        grouped = physical[:sample].reshape(-1, group_size * physical.shape[1])
+        allg = physical[:rows].reshape(-1, group_size * physical.shape[1])
+        # Sample groups SPREAD across the batch, not the first few. The first
+        # tokens of a prefill have a context shorter than top-k, so each takes
+        # the whole prefix and adjacent tokens overlap ~completely by
+        # construction -- 49.7 pct of a 50 pct ceiling, which says nothing.
+        # The question is what happens where top-k actually selects.
+        want = 256
+        stride = max(1, allg.shape[0] // want)
+        grouped = allg[::stride][:want]
         valid = grouped >= 0
         per_token = valid.sum(dim=1).float() / group_size
-        # The warm-up prefill runs against a nearly empty cache, so top-k
-        # selects almost nothing and the overlap of two near-empty sets says
-        # nothing about serving. Counting those burned the whole sample budget
-        # on `per-token-topk=1` rows. Only measure a real selection.
-        if per_token.mean().item() < 256:
+        # Two degenerate regimes to skip: the warm-up prefill against a nearly
+        # empty cache (top-k = 1), and any group whose context is shorter than
+        # top-k, where the union is the prefix and the overlap is arithmetic
+        # rather than a property of the selector. Only a saturated top-k says
+        # anything about serving.
+        if per_token.mean().item() < 0.9 * 2048:
             return
         _UNION_STATS_SEEN[0] += 1
         # |union| per group, without a span-sized buffer: sort and count the
