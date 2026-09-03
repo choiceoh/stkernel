@@ -92,7 +92,15 @@ _TOL_GEMM_W4 = 0.15
 # --sinkhorn default must be THIS number; test_logic pins them together.
 SINKHORN_SERVED = 20
 
-_TOL_MHC = 1e-3     # fp32 port of the TileLang pair, bf16 rounding only
+# fp32 port of the TileLang pair, bf16 rounding only. CALIBRATED AT
+# sinkhorn_repeat=4 (3 loop iterations) and NOT re-derived at SINKHORN_SERVED:
+# MK runs the 4x4 sinkhorn in one lane's registers, TileLang in a separate
+# kernel with a different reduction order, so normalisation error accumulates
+# per iteration and there are now 6x more of them. The self-test logs the
+# measured rel_errs next to the count -- if MHC disarms, read them and check
+# `--sinkhorn 4` before concluding the kernels diverge: an accumulation
+# artefact and a real divergence look the same in a boolean.
+_TOL_MHC = 1e-3
 _TOL_KDA = 2e-2     # fixture (grid-snapped weights): fp8/activation noise only
 # The serving shadow diffs the MK arm (W4 packs of the layer's bf16 weights)
 # against stock (its fp8 blocks of the same weights): e2m1's by-design error
@@ -860,7 +868,8 @@ def _selftest_mhc() -> bool:
     errs = (_rel_err(rc, res_ref), _rel_err(pmc, pm_ref),
             _rel_err(cmc, cm_ref), _rel_err(li, li_ref))
     ok = all(e <= _TOL_MHC for e in errs)
-    logger.warning("[megakernel] selftest mhc rel_errs=%s -> %s",
+    logger.warning("[megakernel] selftest mhc sinkhorn=%d rel_errs=%s -> %s",
+                   sinkhorn_repeat,
                    ["%.2e" % e for e in errs], "ARM" if ok else "DISARM")
     return ok
 
