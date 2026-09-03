@@ -1869,6 +1869,41 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★★메가커널 23차 — srv3 호스트 OOM: nvfp4 첫 부팅이 덴스 패스 안에서 죽었다 (2026-09-03)
+
+09-03 15:10 스택 4노드 전부 다운. 원점은 srv3 이고, 나머지는 헤드의 TCPStore 가 닫히며 따라 죽었다(srv4 rank3 은 `armed=` 까지 정상 도달 후 `recvValue failed ... Did the remote server shutdown or crash?`).
+
+커널 덤프(srv3, 15:10:31):
+
+```
+Node 0 Normal  managed 119 GiB   free 4.00 GiB   min 4.00 GiB
+               active_anon 55.4 GiB   inactive_anon 2.4   shmem 2.8
+               all_unreclaimable? yes
+oom-kill: constraint=CONSTRAINT_NONE, global_oom
+Killed process 362418 (VLLM::Worker_TP) total-vm:664 GiB anon-rss:3.5 GiB
+```
+
+free 가 min 워터마크와 **같은 값**이고 회수 가능분이 0이다. 스왑 16 GiB 는 GPU 매핑 페이지라 쓰이지 못한다.
+
+**직전 정상 부팅과의 차이는 노브 하나**: `VLLM_GLM53_FP8_DENSE` 가 `w8a8` → `nvfp4`. 그리고 이번 부팅은 **그 패스 안에서** 죽었다 — 패스 끝에 찍히는 `[fp8-dense] ... fingerprint` 줄이 **네 랭크 어디에도 없다**(메가커널 확장은 이미 빌드된 뒤인데도).
+
+GB10 은 CPU/GPU 가 한 풀이다. `--gpu-memory-utilization 0.7529` 가 GPU 쪽에 ~90 GiB 를 예약하므로 같은 램에서 호스트 몫은 **~30 GiB** 뿐이고, 그 안에서 로더와 양자화 사본이 전부 돌아야 한다.
+
+**그 피크에 죽은 사본 둘(#263 에서 제거)**:
+
+| 항목 | 크기/rank | 왜 죽은 사본인가 |
+|---|---|---|
+| MK W4 팩 | ~1.0 GB | 카피 체크·스킴 분기보다 **앞**에서 전 레이어에 빌드. `NvFp4DenseMethod.apply` 는 nvfp4 커널로 직행하고 팩을 한 번도 읽지 않는다 |
+| nvfp4 트리플 2중 | ~1.0 GB | `_quantize_nvfp4` 는 `alpha_scale` 을 읽지 않는데 재시도 루프 안에 있었다. 우변이 재바인딩보다 먼저 만들어져 동일 트리플 2개를 동시 보유 |
+
+**bf16 수명은 레버가 아니다.** 빌드 패스 안에서 놓는 변경은 이미 부팅 하나를 죽였다(`AutoWeightsLoader` 가 체크포인트를 다 훑기 전 자식 `load_weights` 로 들어와 빈 텐서를 만난다 → `IndexError: tuple index out of range`). 그래서 해제가 별도 패스이고, 이제 그 계약은 테스트로 못박혔다.
+
+**부수 발견 — nvfp4 와 메가커널은 상호 배타다.** `NvFp4DenseMethod` / `W4A8DenseMethod` 의 `apply` 는 MK 경로를 타지 않으므로, 그 팔이 가져간 레이어에서는 **MK-GEMM 이 돌지 않는다**. `_kda_ensure_packs` 가 `isinstance(in_m, Fp8DenseMethod)` 를 요구하므로 **MK-KDA 의 in_proj 팩도 함께 사라진다**. 21차 트레이스의 `mk_gemm 7.00 ms/step` 은 `w8a8` 부팅의 값이고, nvfp4 부팅에서는 그 항목이 통째로 없어진다. 이제 핑거프린트가 팩 개수를 세고, 0개면 그렇다고 말한다.
+
+**미측정**: 절감은 추정 ~1~2 GB/rank 이고 이것만으로 OOM 이 걷히는지는 다음 부팅이 답한다. GMU 레버(0.7529)는 그대로 남아 있다.
+
+**교훈**: 22차와 같은 계열이다. 22차는 "무장했는데 안 돈다", 23차는 "안 도는데 값은 치른다". 둘 다 **어떤 코드가 실제로 서빙하는지를 아무도 말해주지 않아서** 생겼다.
+
 ## ★★메가커널 22차 — "무장" 이 "서빙" 을 뜻하지 않았다: KDA 레이아웃 게이트의 침묵 (2026-09-03)
 
 운영자 "해봐"(KDA 무장). 무장 노브를 켜러 갔더니 **이미 켜져 있었고, 그런데도 한 번도 나간 적이 없었다**.

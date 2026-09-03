@@ -2138,18 +2138,18 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     check("mod.quant_method = method" in branch,
           "a failed check leaves the layer on the fp8 copy")
 
-    # The check launches a REAL kernel and this arm touches ~180 linears.
-    # Doing it per layer, times two alpha candidates, killed the first boot
-    # that armed the scheme: nothing raised, the engine timed out at 922 s,
-    # and the host reached load 179 with nothing in D state -- compilation,
-    # not I/O. Two consequences are load-bearing and must not regress.
+    # The check launches a REAL kernel, and this arm touches ~180 linears
+    # inside a build pass that already died once for want of host memory
+    # (23rd entry: srv3 global_oom, no fingerprint on any rank). Two things
+    # keep it affordable and must not regress.
     check('_NVFP4_BACKEND = os.environ.get(' in src
           and '"auto"' not in src[src.index("_NVFP4_BACKEND"):
-                                  src.index("_NVFP4_BACKEND") + 400],
-          "the mm_fp4 backend is pinned -- auto JIT-compiles per shape")
+                                  src.index("_NVFP4_BACKEND") + 500],
+          "the mm_fp4 backend is pinned -- auto JIT-compiles per shape, and "
+          "the first compile measured 73.5 s")
     check("_NVFP4_ALPHA[0] is None" in branch,
-          "the alpha convention is resolved once, not per layer")
-    check("nv_seen < 4 or nv_seen % 16 == 0" in branch,
+          "the alpha convention is resolved once, not twice per layer")
+    check("seen < 4 or seen % 16 == 0" in branch,
           "the per-layer value check is sampled, not run on all ~180")
 
     # It stacks on the fp8 METHOD, so a runtime failure drops one notch.
@@ -2323,6 +2323,69 @@ def test_korean_gate_separates_notation_from_damage() -> None:
     check("hanja_gloss" in ns["INFORMATIONAL"],
           "the gloss count is reported but never gates a response")
     print("  korean gate notation vs damage .. OK")
+
+
+def test_every_module_can_mount_on_an_image_the_repo_can_launch() -> None:
+    """A module no launchable image accepts is a decoy, not a rollback path.
+
+    `b12x_swiglu_clamp` and `flashinfer_b12x_collapse` were kept "for a v9
+    image" after their fixes were baked into the image at v11. Nothing here
+    can launch a v9: every profile and the launcher's own last-resort default
+    name v13-b12x. Worse, all three of their files failed the preimage check
+    against v13, so deploy-overlays.sh would have refused to mount them even
+    if a profile had listed them. Keeping them read as a rollback that did not
+    exist; a real one means checking out a commit from that era, where the
+    whole tree agrees.
+
+    This check is structural, not a sha comparison (that needs the image): a
+    module in overlay/modules must be named by some profile's MODULES, or the
+    profile must say in prose why it is not."""
+    mods_dir = os.path.join(REPO, "overlay", "modules")
+    have = {d for d in os.listdir(mods_dir)
+            if os.path.isdir(os.path.join(mods_dir, d))}
+    used, prose = set(), ""
+    for env in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        text = open(env, encoding="utf-8").read()
+        prose += text
+        for line in text.splitlines():
+            if line.startswith("MODULES="):
+                used |= set(line.split("=", 1)[1].strip().strip('"').split())
+    undocumented = sorted(m for m in have - used if m not in prose)
+    check(not undocumented,
+          "a module no profile mounts must be explained in a profile "
+          f"comment; silent orphans: {', '.join(undocumented)}")
+    print("  every module is mounted or explained .. OK")
+
+
+def test_profile_declares_no_knob_the_code_cannot_read() -> None:
+    """A profile knob nothing reads is worse than no knob.
+
+    `VLLM_GLM53_MK_W4` outlived its lane. The fp8 MK-GEMM path and this knob
+    were deleted when W4 became the only one -- the ledger lists both under
+    "removed", and two tests assert the name is absent from the code -- but
+    the profile kept declaring it, with eight lines describing how to turn the
+    lane on. The launcher forwards every profile VLLM_* key as its own -e, so
+    each container carried it, and an operator reading the profile would
+    reasonably believe setting it did something.
+    """
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    declared = set(re.findall(r"^(VLLM_[A-Z0-9_]+)=", profile, re.M))
+    code = ""
+    for root, _, files in os.walk(os.path.join(REPO, "overlay", "modules")):
+        for f in files:
+            if f.endswith((".py", ".cu")):
+                code += open(os.path.join(root, f), encoding="utf-8",
+                             errors="replace").read()
+    launcher = open(os.path.join(REPO, "launchers",
+                                 "start-glm53-nvfp4-tp4.sh"),
+                    encoding="utf-8").read()
+    unread = sorted(k for k in declared
+                    if k not in code and k not in launcher)
+    check(not unread,
+          "every profile knob is read by overlay code or the launcher; "
+          f"unread: {', '.join(unread)}")
+    print("  profile knobs are all readable .. OK")
 
 
 def test_fp8_dense_free_bf16_contract() -> None:
@@ -6466,6 +6529,69 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     print("  kda conv-state layout ......... OK")
 
 
+def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
+    """The build pass must not hold copies no method will read.
+
+    srv3 was OOM-killed mid-pass on 2026-09-03 (global_oom, free 4.0 GiB
+    against a 4.0 GiB watermark, all_unreclaimable) on the first boot with
+    VLLM_GLM53_FP8_DENSE=nvfp4. Two of the copies at that peak were dead:
+    the MK W4 pack was built for EVERY eligible linear before the scheme
+    branch, and NvFp4DenseMethod.apply never reads one; and the alpha_scale
+    retry re-ran _quantize_nvfp4, which does not take alpha_scale, holding
+    two identical triples at once. The bf16 lifetime is NOT the lever here
+    -- freeing it inside this pass already killed a boot (see the docstring
+    on maybe_free_fp8_dense_bf16).
+    """
+    src = open(
+        "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8"
+    ).read()
+    body = src[src.index("def maybe_build_fp8_dense("):]
+
+    # 1. the pack is attached through the helper, never inline in the loop
+    check("def _attach_mk_pack(" in src,
+          "the pack build must be one helper so every call site is visible")
+    check("build_mk_weight_w4" not in body,
+          "no inline pack build inside the build loop -- it is what ran "
+          "before the scheme branch and paid for every nvfp4 layer")
+
+    # 2. no pack on a path where nvfp4/w4a8 wins the layer
+    nv = body[body.index("if scheme == \"nvfp4\""):]
+    nv = nv[:nv.index("if scheme == \"w4a8\"")]
+    # The refusal path is `if not armed_nv:` since the alpha convention
+    # stopped being resolved per layer; the split it guards is the same one.
+    fallback = nv.index("if not armed_nv:")
+    check("_attach_mk_pack" not in nv[:fallback],
+          "a layer the nvfp4 arm takes must not build an MK pack: "
+          "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
+    check("_attach_mk_pack" in nv[fallback:],
+          "when the nvfp4 arm refuses, fp8 serves and the pack is needed")
+
+    # 3. one quantization per linear, and it happens before anything that
+    # might repeat. _quantize_nvfp4 does not read alpha_scale, so producing a
+    # triple per attempt held two identical ones at the build peak.
+    check(nv.count("_quantize_nvfp4(weight)") == 1,
+          "one quantization per linear, whatever the attempts")
+    check(nv.index("_quantize_nvfp4(weight)") < nv.index("_NVFP4_ALPHA[0]"),
+          "the triple exists before the convention is consulted, not per try")
+
+    # 4. a boot where MK-GEMM is on but nothing carries a pack must say so
+    check("%d MK W4 packs" in body,
+          "the fingerprint must count the packs, or 'MK_GEMM=1 with 0 packs' "
+          "is invisible")
+    check("mutually exclusive" in body and "MK_GEMM=1 but the" in body,
+          "the scheme that wins the layer turns MK-GEMM off for it; silence "
+          "there is how 'armed' stops meaning 'serving'")
+
+    # 5. the bf16 release stays its own pass
+    free = src[src.index("def maybe_free_fp8_dense_bf16("):]
+    free = free[:free.index("def _attach_mk_pack(")]
+    check("mod.weight.data = torch.empty(" in free
+          and "mod.weight.data = torch.empty(" not in body,
+          "the bf16 release must stay outside the build pass: releasing from "
+          "inside it made the early AutoWeightsLoader call destructive")
+    print("  fp8-dense build peak .......... OK")
+
+
 def test_fused_k_gate_lazy_slot_exists() -> None:
     """The fused indexer forward must not read a slot nobody creates.
 
@@ -7092,9 +7218,20 @@ def test_glm53_megakernel_contracts() -> None:
           "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
           "the record it needs")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
-    check("mk_e2m1_to_e4m3[8]" in cu_code
-          and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
+    # Pin the LIVE constant, not a copy of it. This used to check a
+    # `__device__ __constant__ uint8_t[8]` that the funnel-shift immediate
+    # replaced; the array sat unreferenced for as long as the test kept
+    # naming it. Decode the immediate and check the values it actually
+    # encodes.
+    lut = re.search(r"MK_E2M1_LUT64 = 0x([0-9A-Fa-f']+)ULL", cu_code)
+    check(lut is not None, "the e2m1->e4m3 LUT immediate is present")
+    assert lut is not None
+    packed = int(lut.group(1).replace("'", ""), 16)
+    e4m3 = [(packed >> (8 * c)) & 0xFF for c in range(8)]
+    check(e4m3 == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
           "the e2m1->e4m3 LUT covers {0,.5,1,1.5,2,3,4,6} exactly")
+    check("mk_e2m1_to_e4m3" not in cu_code and "mk_e2m1_byte" not in cu_code,
+          "the superseded table and its accessor stay deleted")
     # the expansion reads the packed immediate, not constant memory, and
     # the immediate must be the same table byte for byte
     _lut64 = int("0x4C4844403C383000", 16)
@@ -7910,9 +8047,14 @@ def test_megakernel_w4_layout_functional() -> None:
     mod_dir = os.path.join(REPO, "overlay/modules/glm53_megakernel")
     cu = open(os.path.join(mod_dir, "glm53_megakernel.cu"),
               encoding="utf-8").read()
-    m = re.search(r"mk_e2m1_to_e4m3\[8\] = \{([^}]*)\};", cu, re.S)
+    # The LUT lives as the funnel-shift immediate, not as an array: a
+    # __constant__ load serialises over the distinct addresses in a warp, so
+    # the array it replaced was removed once it had no callers left.
+    m = re.search(r"MK_E2M1_LUT64 = 0x([0-9A-Fa-f']+)ULL", cu)
     check(m is not None, "the e2m1->e4m3 LUT is present in the .cu")
-    lut = [int(x, 16) for x in re.findall(r"0x[0-9A-Fa-f]{2}", m.group(1))]
+    assert m is not None
+    packed = int(m.group(1).replace("'", ""), 16)
+    lut = [(packed >> (8 * c)) & 0xFF for c in range(8)]
     check(lut == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
           f"LUT decodes the e2m1 grid in order (got {[hex(x) for x in lut]})")
 
@@ -8549,6 +8691,8 @@ if __name__ == "__main__":
     test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
+    test_every_module_can_mount_on_an_image_the_repo_can_launch()
+    test_profile_declares_no_knob_the_code_cannot_read()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
@@ -8585,5 +8729,6 @@ if __name__ == "__main__":
     test_trace_composition_analyze()
     test_drafter_fc_probe_contracts()
     test_kda_conv_state_layout_is_the_arming_contract()
+    test_fp8_dense_build_peak_pays_only_for_what_serves()
     print(f"all OK ({PASS} checks)")
 
