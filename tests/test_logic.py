@@ -2151,6 +2151,77 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     print("  fp8-dense nvfp4 scheme contract .. OK")
 
 
+def test_union_prefill_width_matches_the_converter_tile() -> None:
+    """The union arm must hand the converter a width it accepts.
+
+    It did not, for its whole life. The code sliced 2051 columns (2048 KPool
+    selection + at most three live tail tokens) and passed that as
+    NUM_TOPK_TOKENS, but triton_convert_req_index_to_global_index tiles
+    columns and asserts NUM_TOPK_TOKENS % BLOCK_N == 0. 2051 = 7 x 293, so no
+    usable tile divides it, and every prefill raised:
+
+        AssertionError: NUM_TOPK_TOKENS (2051) must be divisible by BLOCK_N (128)
+
+    caught, logged, fallen back to FlashInfer. A boot logging "union prefill:
+    ARMED width=4" ran 11 prefills and took the fallback 11 times.
+
+    The width must round up to the tile, and the rounded tail must be -1 --
+    the converter's documented "invalid", which _topk_length and the >= 0
+    masks downstream both honour."""
+    path = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+                        "glm53_union_prefill.py")
+    src = open(path, encoding="utf-8").read()
+    check("_CONVERT_BLOCK_N = 128" in src,
+          "the converter's column tile is named, not implied")
+    body = src[src.index("tokens = q[0].shape[0]"):]
+    body = body[:body.index("triton_convert_req_index_to_global_index(") + 400]
+    check("-(-want // _CONVERT_BLOCK_N) * _CONVERT_BLOCK_N" in body,
+          "the width rounds UP to the tile instead of passing 2051")
+    check("logical[:, carried:] = -1" in body,
+          "the rounded tail is marked invalid, not left as stale scratch")
+    check("BLOCK_N=_CONVERT_BLOCK_N" in body,
+          "the tile passed to the converter is the one the width used")
+    check(".clone()" in body,
+          "the padded view is a copy -- the fallback path reads that buffer")
+    check("logical.shape[1] % _CONVERT_BLOCK_N == 0" in body,
+          "and the contract is asserted here, not only inside vLLM")
+    print("  union prefill width vs converter tile .. OK")
+
+
+def test_benches_ask_the_server_for_the_model_name() -> None:
+    """No bench may hardcode a served model name as its only source.
+
+    Every one of them defaulted to `deepseek-v4-flash`. On the glm53 server
+    that 404s, and a 404 does not read like a failure here: the caller greps
+    for a SUMMARY line, finds none, and the section reads "measured nothing"
+    rather than "never ran". It silently voided the 9/9 quality gate on this
+    lane -- `gates.sh` ran check-quality every time and it never once reached
+    the model.
+
+    So the literal may only ever be the fallback argument to a resolver that
+    asks /v1/models first."""
+    bench = os.path.join(REPO, "bench")
+    shared = open(os.path.join(bench, "bench_common.py"), encoding="utf-8").read()
+    check("def resolve_model(" in shared and "/v1/models" in shared,
+          "the shared resolver asks the server")
+    check('os.environ.get("BENCH_MODEL")' in shared,
+          "BENCH_MODEL still wins when a caller means a specific name")
+    offenders = []
+    for name in sorted(os.listdir(bench)):
+        if not name.endswith(".py") or name == "bench_common.py":
+            continue
+        text = open(os.path.join(bench, name), encoding="utf-8").read()
+        if "BENCH_MODEL" not in text and "_resolve_model(" not in text:
+            continue          # bench does not talk to the server
+        if re.search(r'MODEL\s*=\s*os\.environ\.get\("BENCH_MODEL"', text):
+            offenders.append(name)
+        if "_resolve_model(" in text and "from bench_common import" not in text:
+            offenders.append(name + " (own copy of the resolver)")
+    check(not offenders,
+          "every bench resolves through bench_common: " + ", ".join(offenders))
+    print("  benches ask the server for the model .. OK")
+
+
 def test_korean_gate_separates_notation_from_damage() -> None:
     """The Korean gate must not fire on the model writing about Korean.
 
@@ -2164,7 +2235,8 @@ def test_korean_gate_separates_notation_from_damage() -> None:
     delimiter. The character BEFORE the jamo is the whole discriminator."""
     ns = load_defs(
         "bench/korean-corruption.py",
-        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "INFORMATIONAL", "scan"},
+        {"SYL", "JAMO", "WELDED_JAMO", "HAN", "HANJA_GLOSS",
+         "INFORMATIONAL", "scan"},
         {"re": re, "unicodedata": __import__("unicodedata")},
     )
     scan = ns["scan"]
@@ -2183,6 +2255,27 @@ def test_korean_gate_separates_notation_from_damage() -> None:
               f"a jamo welded to a syllable is damage: {text}")
     check("jamo_notation" in ns["INFORMATIONAL"],
           "the notation count is reported but never gates a response")
+
+    # Same class of false positive, second detector: these prompts ask about
+    # Korean, and Korean technical writing gives the hanja for a term.
+    #   Clear and crisp weather (천고마비 - 天高馬肥)
+    #   조력 (潮力) refers to tidal power
+    # Both were counted as corruption. A gloss follows its Korean word through
+    # a bracket, dash, colon or comma; damage puts Han where Hangul belonged.
+    gloss = [
+        "Clear and crisp weather (천고마비 - 天高馬肥) - Dry skies",
+        "조력 (潮力) refers to tidal power",
+        "조력 발전(水力發電)의 원리",
+        "변압기 - 變壓器 는 전압을 바꾼다",
+        "조력 발전은 밀물과 썰물을 이용한다.",
+    ]
+    for text in gloss:
+        check(scan(text)["cjk_mixed"] == 0,
+              f"a hanja gloss is not damage: {text[:34]}")
+    check(scan("발전소는 電氣를 만든다")["cjk_mixed"] == 2,
+          "Han standing in for Hangul is damage, counted per character")
+    check("hanja_gloss" in ns["INFORMATIONAL"],
+          "the gloss count is reported but never gates a response")
     print("  korean gate notation vs damage .. OK")
 
 
@@ -6143,12 +6236,14 @@ def test_bench_resolves_served_model() -> None:
             return _Resp(_json.dumps(body).encode())
         return _open
 
-    for path in ("probes/prefill_ladder.py", "bench/bench-dec.py",
-                 "bench/bench-tp4.py"):
+    # bench/ resolves through one shared copy (bench_common); probes/ keeps
+    # its own, so both spellings are exercised here.
+    for path, fname in (("probes/prefill_ladder.py", "_resolve_model"),
+                        ("bench/bench_common.py", "resolve_model")):
         src = open(path, encoding="utf-8").read()
-        match = re.search(r"^def _resolve_model.*?(?=\n\n\n|\n[^\s#])",
+        match = re.search(rf"^def {fname}.*?(?=\n\n\n|\n[^\s#]|\Z)",
                           src, re.S | re.M)
-        check(match is not None, f"{path} must define _resolve_model")
+        check(match is not None, f"{path} must define {fname}")
         assert match is not None
         for base_name in ("URL", "BASE"):
             if re.search(rf"^{base_name} = ", src, re.M):
@@ -6156,9 +6251,11 @@ def test_bench_resolves_served_model() -> None:
         # Some harnesses call urllib.request.urlopen through the package and
         # some import it locally; hand over the package so both resolve.
         ns: dict = {"os": os, "json": _json, "urllib": _urllib, "re": re,
-                    base_name: "http://localhost:8000/v1/chat/completions"}
+                    base_name: "http://localhost:8000/v1/chat/completions",
+                    # bench_common takes the url as a defaulted argument
+                    "DEFAULT_URL": "http://localhost:8000/v1/chat/completions"}
         exec(compile(match.group(0), path, "exec"), ns)
-        resolve = ns["_resolve_model"]
+        resolve = ns[fname]
 
         saved_open, saved_env = _u.urlopen, os.environ.pop("BENCH_MODEL", None)
         try:
@@ -7914,6 +8011,8 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
+    test_union_prefill_width_matches_the_converter_tile()
+    test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()

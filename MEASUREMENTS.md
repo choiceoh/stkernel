@@ -2722,3 +2722,41 @@ GPQA Diamond 90.57% 를 낸다. (2) 그럼에도 recipe.yaml 은 fp4 대상을
 출력을 망가뜨린다. 운영자 확인으로는 그동안 문제가 없었다. 그래도 런처가 매 부팅마다
 load-format 을 무조건 찍게 두어(전에는 auto 가 아닐 때만 찍었다) 나중에 이상한 숫자가
 어느 로더의 것인지 귀속할 수 있게 한다.
+
+## bf16 원본 해제 — 랭크당 3.67 GB, KV 토큰 +39.5% (2026-09-03)
+
+`VLLM_GLM53_FP8_DENSE_FREE_BF16=1`. `quant_method` 가 교체되면 apply() 는 fp8 복사본만
+읽으므로 bf16 원본은 죽은 무게다. 같은 arm 구성에서:
+
+| | KV 메모리 | KV 토큰 | GMU |
+|---|---|---|---|
+| 해제 전 | 26.9 GiB | 3,497,358 | 0.77 |
+| **해제 후** | **29.82 GiB** | **4,880,721** | 0.78 |
+
+`[fp8-dense] ...FREE_BF16=1: released 3.67 GB of bf16 sources (0 linears kept theirs
+for a bias)`. GMU 차이 1.3% 를 빼도 증가분의 대부분이 해제분이다.
+
+**여기까지 오는 데 부팅 세 번을 날렸고, 세 번 다 원인이 달랐다.**
+
+1. **빌드 안에서 해제** → `maybe_build_fp8_dense` 는 이른 호출을 견디도록 쓰였는데
+   (AutoWeightsLoader 가 체크포인트를 다 훑기 전에 자식 load_weights 로 들어온다)
+   해제는 되돌릴 수 없다. `parameter.py:221` 에서 로더가 1차원 빈 텐서를 만나
+   IndexError. → 별도 패스로 분리.
+2. **`GPUModelRunner.load_model` 에서 호출** → `glm53_drop_audit` 은 **어떤 조합에도
+   없는 고아 모듈**이라 죽은 코드였다. 로그에 해제 줄도 예외 줄도 없이 조용히 통과.
+3. **`Glm5NextForCausalLM.forward` 에서 호출** → **그 forward 는 불리지 않는다.**
+   `Glm4vForConditionalGeneration.forward` 가 건너뛰고
+   `self.language_model.model(...)` 을 직접 부른다.
+
+정답은 `Glm5NextForConditionalGeneration.forward` 다 — vLLM 이 실제로 부르고,
+컴파일 영역 위라 일회성 free 가 트레이스 그래프에 안 들어가며, 프로파일 forward 안이라
+그 뒤 KV 산정이 줄어든 용량을 본다. 셋 다 계약 테스트로 고정했다.
+
+**대가**: bias 와 예외 폴백이 사라진다. 이 모듈이 받아들이는 선형 중 bias 를 가진 것은
+없다(로그의 "0 linears kept theirs for a bias" 가 그 확인이다).
+
+## 부팅 시간 901 → 345초 (2026-09-03)
+
+`glm53:v13-b12x-it` + `LOAD_FORMAT=instanttensor`: 가중치 **184 GB 를 58초**에 읽는다
+(평범한 safetensors 로더는 340초, 그 구간만 5.9배). 여기에 다른 세션의 nvcc·osar·
+TileLang 영속 캐시(#248/#249)가 더해져 전체 901 → **345초**.

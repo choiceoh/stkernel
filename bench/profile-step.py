@@ -41,7 +41,10 @@ BASE = "http://127.0.0.1:8000"
 # this tool at any other lane returned 404 from /v1/chat/completions and the
 # capture died after /start_profile had already armed. Same default as
 # bench-dec.py so existing invocations and recorded numbers still line up.
-MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from bench_common import resolve_model as _resolve_model
+MODEL = _resolve_model("deepseek-v4-flash")
 WORDS = [
     "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
     "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",

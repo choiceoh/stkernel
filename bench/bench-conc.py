@@ -9,7 +9,10 @@ import json, time, urllib.request, random, os, sys
 from concurrent.futures import ThreadPoolExecutor
 
 # Served name of the model under test; same env as bench-dec.
-MODEL = os.environ.get("BENCH_MODEL", "deepseek-v4-flash")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from bench_common import resolve_model as _resolve_model
+MODEL = _resolve_model("deepseek-v4-flash")
 
 BASE = "http://localhost:8000/v1/chat/completions"
 W = ["태양광","발전소","인버터","모듈","효율","계통","연계","전압","주파수","모니터링",

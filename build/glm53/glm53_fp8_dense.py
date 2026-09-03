@@ -352,6 +352,10 @@ class NvFp4DenseMethod:
     def apply(self, layer, x, bias=None):
         if bias is not None:
             return self._base.apply(layer, x, bias)
+        if getattr(self, "_bf16_freed", False):
+            return _nvfp4_dense_gemm_op(
+                x, self._wq, self._wsf, self._gs, self._rows, self._alpha
+            )
         try:
             return _nvfp4_dense_gemm_op(
                 x, self._wq, self._wsf, self._gs, self._rows, self._alpha
@@ -382,6 +386,8 @@ class W4A8DenseMethod:
     def apply(self, layer, x, bias=None):
         if bias is not None:
             return self._base.apply(layer, x, bias)
+        if getattr(self, "_bf16_freed", False):
+            return _w4_dense_gemm_op(x, self._wq, self._ws)
         try:
             return _w4_dense_gemm_op(x, self._wq, self._ws)
         except Exception:
@@ -426,6 +432,13 @@ class Fp8DenseMethod:
                 _out = _mk_gemm(x, self._mk, self._rows)
                 if _out is not None:
                     return _out
+        if getattr(self, "_bf16_freed", False):
+            # No net below: the bf16 source was released, so failing loudly
+            # here beats reading an empty tensor or diverging from the other
+            # ranks. See maybe_free_fp8_dense_bf16.
+            return _fp8_dense_gemm_op(
+                x, self._q, self._ws, self._rows, self._cols
+            )
         try:
             return _fp8_dense_gemm_op(
                 x, self._q, self._ws, self._rows, self._cols
@@ -534,6 +547,15 @@ def maybe_free_fp8_dense_bf16(model) -> int:
         freed += weight.numel() * weight.element_size()
         mod.weight.data = torch.empty(
             0, dtype=weight.dtype, device=weight.device)
+        # apply() must stop treating _base as a fallback for this layer: it
+        # would read the empty tensor and produce a wrong-shaped result
+        # instead of an error. Worse, the fp8 path fails on SHAPE, so it can
+        # fail on one rank and not another -- the ranks then take different
+        # code paths, the collectives no longer line up, and the step hangs
+        # rather than raising. A boot went that way on 2026-09-03: generation
+        # fell 44.9 -> 12.8 -> 0 tok/s and the head timed out on
+        # "RPC call to sample_tokens", with no traceback anywhere.
+        method._bf16_freed = True
     logger.warning(
         "[fp8-dense] %s=1: released %.2f GB of bf16 sources (%d linears kept "
         "theirs for a bias); the bias and error fallbacks through the base "

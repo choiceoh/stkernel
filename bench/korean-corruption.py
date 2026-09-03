@@ -24,10 +24,20 @@ What counts as corruption, in order of how sure we can be:
                Notation always leads with a delimiter -- (으)ㄹ, -ㅂ니다, "ㄹ",
                ㄱ부터 -- and damage never does, so the character BEFORE the jamo
                separates them. Reported as jamo_notation, not as a hit.
-  cjk_mixed    Han characters inside a Korean response. The model was asked to
-               answer in Korean, so a stray 漢 is a token id that landed in the
-               wrong part of the vocabulary -- the signature of a bad sample,
-               not of a bad decode.
+  cjk_mixed    Han characters STANDING IN FOR Korean -- one welded to a
+               syllable, or a run that no Korean gloss introduces. A stray 漢
+               is a token id that landed in the wrong part of the vocabulary.
+
+               Not every Han character is that. Korean technical writing gives
+               the hanja for a term, and these prompts invite it:
+
+                   Clear and crisp weather (천고마비 - 天高馬肥)
+                   조력 (潮力) refers to tidal power
+
+               Both were counted as corruption. A gloss follows its Korean
+               word, inside brackets or after a dash, so a Han run introduced
+               that way is the model explaining, not breaking. Reported as
+               hanja_gloss.
   control      C0/C1 controls other than tab/newline.
 
 Prompts are fixed and seeded so two runs compare directly; temperature 0 so a
@@ -41,7 +51,10 @@ import unicodedata
 import urllib.request
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-MODEL = os.environ.get("BENCH_MODEL", "glm-5.3-flash")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from bench_common import resolve_model as _resolve_model
+MODEL = _resolve_model("glm-5.3-flash")
 
 PROMPTS = [
     "조력 발전의 원리를 한국어로 자세히 설명해줘.",
@@ -59,9 +72,15 @@ JAMO = re.compile(r"[ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]")
 # A jamo growing straight out of a syllable, with nothing between them.
 WELDED_JAMO = re.compile(r"[가-힣][ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]")
 HAN = re.compile(r"[一-鿿㐀-䶿]")
+# A Han run that a Korean word introduces: 천고마비 - 天高馬肥, 조력 (潮力).
+# The separator may be a bracket, a dash, a colon or a comma, optionally
+# spaced; what matters is that Hangul comes first on the same line.
+HANJA_GLOSS = re.compile(
+    r"[가-힣]\s*[\(\[［（<〈:：,\-–—~]\s*[一-鿿㐀-䶿]+"
+)
 
 # Counted and printed, but never makes a response "broken".
-INFORMATIONAL = ("jamo_notation",)
+INFORMATIONAL = ("jamo_notation", "hanja_gloss")
 
 
 def scan(text: str, truncated: bool = False) -> dict:
@@ -75,13 +94,15 @@ def scan(text: str, truncated: bool = False) -> dict:
     if truncated and text.endswith("\ufffd"):
         text = text[:-1]
     hits = {"replacement": 0, "lone_jamo": 0, "cjk_mixed": 0, "control": 0,
-            "jamo_notation": 0}
+            "jamo_notation": 0, "hanja_gloss": 0}
     hits["replacement"] = text.count("�")
     welded = len(WELDED_JAMO.findall(text))
     hits["lone_jamo"] = welded
     # every other jamo is the model writing about Korean, not breaking it
     hits["jamo_notation"] = len(JAMO.findall(text)) - welded
-    hits["cjk_mixed"] = len(HAN.findall(text))
+    glossed = sum(len(HAN.findall(m)) for m in HANJA_GLOSS.findall(text))
+    hits["cjk_mixed"] = len(HAN.findall(text)) - glossed
+    hits["hanja_gloss"] = glossed
     hits["control"] = sum(
         1 for c in text
         if unicodedata.category(c) == "Cc" and c not in "\t\n\r"
