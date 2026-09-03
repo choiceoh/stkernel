@@ -35,6 +35,8 @@ import hashlib
 import logging
 import math
 import os
+import shutil
+import time
 
 logger = logging.getLogger("vllm.glm53.megakernel")
 
@@ -124,6 +126,51 @@ _WS = None
 _ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False}
 
 
+def _build_dir(src_md5: str, flags: list) -> str:
+    """Where nvcc builds the extension -- on the PERSISTENT cache mount when
+    the container has one.
+
+    The compile is 34.4 s (ninja log of the 2026-09-02 boot) and it used to
+    land in /root/.mk_build, inside the container, so every restart paid it
+    again: 34 s of a 9-minute boot for a .cu that changes on deploys, not on
+    restarts. TRITON_CACHE_DIR and VLLM_CACHE_ROOT already point at the host
+    mount; this follows them.
+
+    The directory name is a hash of everything the built .so is only valid
+    for: the source, the nvcc flags (the probe's knobs change them), and the
+    torch / CUDA pair (an image bump changes the ABI). Any of those moving
+    picks a fresh directory and an honest recompile -- never a stale .so.
+    """
+    import torch
+
+    root = os.environ.get("VLLM_GLM53_MK_BUILD_ROOT")
+    if not root:
+        for cand in ("/cache", "/root/.cache"):
+            if os.path.isdir(cand) and os.access(cand, os.W_OK):
+                root = os.path.join(cand, "mk_build")
+                break
+        else:
+            root = "/root/.mk_build"  # no mount: container-local, as before
+    key = hashlib.md5("|".join(
+        [src_md5, *flags, torch.__version__, str(torch.version.cuda)]
+    ).encode()).hexdigest()[:12]
+    path = os.path.join(root, key)
+    os.makedirs(path, exist_ok=True)
+    # Siblings are builds of other sources or flag sets, ~2 MB each. Anything
+    # untouched for a week is a deploy or a probe sweep that is not coming
+    # back; a failure to prune is not a reason to fail the build.
+    try:
+        cutoff = time.time() - 7 * 86400
+        for name in os.listdir(root):
+            stale = os.path.join(root, name)
+            if stale != path and os.path.isdir(stale) \
+                    and os.path.getmtime(stale) < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+    except OSError:
+        pass
+    return path
+
+
 def _build():
     import torch
     global _EXT
@@ -138,10 +185,6 @@ def _build():
                         if line.lstrip().startswith("__global__"))
     logger.warning("[megakernel] source md5=%s kernels=%d (%s)",
                    md5, n_kernels, _SRC)
-    os.makedirs("/root/.mk_build", exist_ok=True)
-    _EXT = load(
-        name="glm53_megakernel",
-        sources=[_SRC],
     # -arch=sm_121a is NOT enough here. nvcc accepts it for -cubin and -ptx, but
     # with -c (what cpp_extension uses to build the objects) it emits a plain
     # sm_121 target and ptxas then rejects every ARCHITECTURE-SPECIFIC
@@ -151,14 +194,18 @@ def _build():
     # through -c. Nothing in the kernels needs those two today (e4m3/bf16 mma
     # exist on plain sm_121), so this changes no generated code -- it is what
     # lets the file USE them. Verified 2026-09-03 with a 2x3 flag/mode matrix.
-        extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"] + [
-            # Swept by the probe; the .cu carries the shipped defaults.
-            f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
-            f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
-            f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
-        ] + (["-DMK_PHASE_TS=1"]
-             if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else []),
-        build_directory="/root/.mk_build",
+    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"] + [
+        # Swept by the probe; the .cu carries the shipped defaults.
+        f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
+        f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
+        f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
+    ] + (["-DMK_PHASE_TS=1"]
+         if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
+    _EXT = load(
+        name="glm53_megakernel",
+        sources=[_SRC],
+        extra_cuda_cflags=flags,
+        build_directory=_build_dir(md5, flags),
         verbose=False,
     )
     return _EXT

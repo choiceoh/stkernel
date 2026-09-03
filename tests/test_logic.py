@@ -6278,6 +6278,14 @@ def test_cuda_builds_keep_the_arch_specific_target() -> None:
         i = src.find("extra_cuda_cflags=")
         while i != -1:
             flags = src[i: src.index("]", i) + 1]
+            # `extra_cuda_cflags=<name>,` hands the list to a variable built
+            # just above the call (the megakernel does this so its build
+            # directory can hash the exact flags); follow it to that literal.
+            head = src[i + len("extra_cuda_cflags="):
+                       src.find(",", i + len("extra_cuda_cflags="))].strip()
+            if head.isidentifier():
+                j = src.rindex(f"{head} = [", 0, i)
+                flags = src[j: src.index("]", j) + 1]
             check('"-arch=sm_121a"' not in flags,
                   f"{os.path.basename(rel)}: -arch=sm_121a loses the 'a' suffix under -c; "
                   f"use -gencode arch=compute_121a,code=sm_121a")
