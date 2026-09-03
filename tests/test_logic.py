@@ -2138,6 +2138,20 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     check("mod.quant_method = method" in branch,
           "a failed check leaves the layer on the fp8 copy")
 
+    # The check launches a REAL kernel, and this arm touches ~180 linears
+    # inside a build pass that already died once for want of host memory
+    # (23rd entry: srv3 global_oom, no fingerprint on any rank). Two things
+    # keep it affordable and must not regress.
+    check('_NVFP4_BACKEND = os.environ.get(' in src
+          and '"auto"' not in src[src.index("_NVFP4_BACKEND"):
+                                  src.index("_NVFP4_BACKEND") + 500],
+          "the mm_fp4 backend is pinned -- auto JIT-compiles per shape, and "
+          "the first compile measured 73.5 s")
+    check("_NVFP4_ALPHA[0] is None" in branch,
+          "the alpha convention is resolved once, not twice per layer")
+    check("seen < 4 or seen % 16 == 0" in branch,
+          "the per-layer value check is sampled, not run on all ~180")
+
     # It stacks on the fp8 METHOD, so a runtime failure drops one notch.
     ctor = src[src.index("class NvFp4DenseMethod"):]
     ctor = ctor[:ctor.index("class W4A8DenseMethod")]
@@ -6543,21 +6557,22 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     # 2. no pack on a path where nvfp4/w4a8 wins the layer
     nv = body[body.index("if scheme == \"nvfp4\""):]
     nv = nv[:nv.index("if scheme == \"w4a8\"")]
-    arm = nv[:nv.index("else:")]
-    check("_attach_mk_pack" not in arm,
+    # The refusal path is `if not armed_nv:` since the alpha convention
+    # stopped being resolved per layer; the split it guards is the same one.
+    fallback = nv.index("if not armed_nv:")
+    check("_attach_mk_pack" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
-    check("_attach_mk_pack" in nv[nv.index("else:"):],
+    check("_attach_mk_pack" in nv[fallback:],
           "when the nvfp4 arm refuses, fp8 serves and the pack is needed")
 
-    # 3. the nvfp4 quantization is hoisted out of the alpha_scale retry
-    q = nv.index("_quantize_nvfp4(weight)")
-    loop = nv.index("for alpha_scale in")
-    check(q < loop,
-          "_quantize_nvfp4 does not read alpha_scale; quantizing inside the "
-          "retry loop holds two identical triples for no reason")
+    # 3. one quantization per linear, and it happens before anything that
+    # might repeat. _quantize_nvfp4 does not read alpha_scale, so producing a
+    # triple per attempt held two identical ones at the build peak.
     check(nv.count("_quantize_nvfp4(weight)") == 1,
-          "one quantization per linear, both attempts")
+          "one quantization per linear, whatever the attempts")
+    check(nv.index("_quantize_nvfp4(weight)") < nv.index("_NVFP4_ALPHA[0]"),
+          "the triple exists before the convention is consulted, not per try")
 
     # 4. a boot where MK-GEMM is on but nothing carries a pack must say so
     check("%d MK W4 packs" in body,

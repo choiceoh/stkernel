@@ -196,6 +196,19 @@ def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
 # uses; the format's max magnitude is 6.0 (e2m1's top grid point).
 _NVFP4_BLOCK = 16
 _NVFP4_MAX = 6.0
+# NOT "auto". auto selects among backends per shape and JIT-compiles what it
+# picks. Measured on this part: the first shape costs 73.5 s to compile and
+# every shape after it is 0.1-0.3 ms, so ONE pinned backend is one compile for
+# all ~180 linears, and the launcher's FLASHINFER_WORKSPACE_BASE=/cache keeps
+# even that across boots. "cutlass" was the fastest of the backends that
+# accept these shapes (236.6 TFLOP/s at N=4096).
+_NVFP4_BACKEND = os.environ.get("VLLM_GLM53_NVFP4_BACKEND", "cutlass")
+
+# Which way the two global scales divide back out is a property of the
+# vendored kernel, not of a layer, so it is resolved once and reused. Per
+# layer it meant two real kernel launches on every one of ~180 linears,
+# inside a build pass that already died once for want of host memory.
+_NVFP4_ALPHA: list = [None]
 
 
 def _nvfp4_global_scale(t: torch.Tensor) -> torch.Tensor:
@@ -249,7 +262,7 @@ def _nvfp4_dense_gemm(
         flat.shape[0], out_rows, dtype=torch.bfloat16, device=flat.device
     )
     mm_fp4(xq, wq.T, xsf, wsf.T, alpha, torch.bfloat16, out,
-           _NVFP4_BLOCK, False, "auto")
+           _NVFP4_BLOCK, False, _NVFP4_BACKEND)
     return out.reshape(x.shape[:-1] + (out_rows,))
 
 
@@ -680,26 +693,55 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     wq, wsf, w_gs = _quantize_nvfp4(weight)
                 except Exception:
                     wq = None
-                for alpha_scale in (1.0, -1.0) if wq is not None else ():
-                    try:
-                        nv = NvFp4DenseMethod(
-                            method, wq, wsf, w_gs, rows, alpha_scale)
-                        if _copy_matches_source(
-                                mod, nv, weight,
-                                rtol=4 * _STALE_RTOL,
+                # The convention is settled once, on the first layer that
+                # can carry the scheme; after that every layer reuses it and
+                # only a SAMPLE re-runs the kernel. A wrong convention is
+                # wrong everywhere, and a stale copy is already caught by the
+                # fp8 check above, which every layer still gets.
+                if wq is not None and _NVFP4_ALPHA[0] is None:
+                    for cand in (1.0, -1.0):
+                        try:
+                            if _copy_matches_source(
+                                    mod,
+                                    NvFp4DenseMethod(
+                                        method, wq, wsf, w_gs, rows, cand),
+                                    weight, rtol=4 * _STALE_RTOL,
+                                    got_fn=lambda xx: _nvfp4_dense_gemm(
+                                        xx, wq, wsf, w_gs, rows, cand),
+                            ) is True:
+                                _NVFP4_ALPHA[0] = cand
+                                break
+                        except Exception:
+                            continue
+                    logger.warning(
+                        "[fp8-dense] nvfp4 alpha=%s backend=%s (resolved on "
+                        "%s, reused for the rest)",
+                        _NVFP4_ALPHA[0], _NVFP4_BACKEND, name)
+                armed_nv = False
+                if wq is not None and _NVFP4_ALPHA[0] is not None:
+                    alpha_scale = _NVFP4_ALPHA[0]
+                    nv = NvFp4DenseMethod(
+                        method, wq, wsf, w_gs, rows, alpha_scale)
+                    seen = len(quantized_w4) + len(quantized)
+                    ok = True
+                    if seen < 4 or seen % 16 == 0:
+                        try:
+                            ok = _copy_matches_source(
+                                mod, nv, weight, rtol=4 * _STALE_RTOL,
                                 got_fn=lambda xx: _nvfp4_dense_gemm(
                                     xx, wq, wsf, w_gs, rows, alpha_scale),
-                        ) is True:
-                            # NvFp4DenseMethod.apply goes straight to the
-                            # nvfp4 kernel: it never reads the MK pack, so
-                            # this layer must not build one.
-                            mod.quant_method = nv
-                            quantized_w4.append(name)
-                            params_w4 += weight.numel()
-                            break
-                    except Exception:
-                        continue
-                else:
+                            ) is not False
+                        except Exception:
+                            ok = False
+                    if ok:
+                        # NvFp4DenseMethod.apply goes straight to the nvfp4
+                        # kernel: it never reads the MK pack, so this layer
+                        # must not build one.
+                        mod.quant_method = nv
+                        quantized_w4.append(name)
+                        params_w4 += weight.numel()
+                        armed_nv = True
+                if not armed_nv:
                     if _attach_mk_pack(method, weight, cols):
                         mk_packs += 1
                     mod.quant_method = method
