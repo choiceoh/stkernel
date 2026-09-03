@@ -2138,6 +2138,20 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     check("mod.quant_method = method" in branch,
           "a failed check leaves the layer on the fp8 copy")
 
+    # The check launches a REAL kernel and this arm touches ~180 linears.
+    # Doing it per layer, times two alpha candidates, killed the first boot
+    # that armed the scheme: nothing raised, the engine timed out at 922 s,
+    # and the host reached load 179 with nothing in D state -- compilation,
+    # not I/O. Two consequences are load-bearing and must not regress.
+    check('_NVFP4_BACKEND = os.environ.get(' in src
+          and '"auto"' not in src[src.index("_NVFP4_BACKEND"):
+                                  src.index("_NVFP4_BACKEND") + 400],
+          "the mm_fp4 backend is pinned -- auto JIT-compiles per shape")
+    check("_NVFP4_ALPHA[0] is None" in branch,
+          "the alpha convention is resolved once, not per layer")
+    check("nv_seen < 4 or nv_seen % 16 == 0" in branch,
+          "the per-layer value check is sampled, not run on all ~180")
+
     # It stacks on the fp8 METHOD, so a runtime failure drops one notch.
     ctor = src[src.index("class NvFp4DenseMethod"):]
     ctor = ctor[:ctor.index("class W4A8DenseMethod")]

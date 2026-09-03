@@ -196,6 +196,18 @@ def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
 # uses; the format's max magnitude is 6.0 (e2m1's top grid point).
 _NVFP4_BLOCK = 16
 _NVFP4_MAX = 6.0
+# NOT "auto". auto selects among backends per shape and JIT-compiles what it
+# picks, and this arm touches ~180 distinct linears. The first boot that armed
+# it never finished: no rank raised, nothing was logged, the engine timed out
+# at 922 s and srv4's load average reached 179 with zero processes in D state
+# -- CPU-bound compilation, not I/O. "cutlass" was the fastest of the working
+# backends in the probe (236.6 TFLOP/s at N=4096) and compiles once.
+_NVFP4_BACKEND = os.environ.get("VLLM_GLM53_NVFP4_BACKEND", "cutlass")
+
+# The alpha convention -- which way the two global scales divide back out -- is
+# a property of the vendored kernel, not of a layer. Resolving it per layer
+# meant up to 2 x 180 real kernel launches at build time. Resolve it once.
+_NVFP4_ALPHA: list = [None]
 
 
 def _nvfp4_global_scale(t: torch.Tensor) -> torch.Tensor:
@@ -249,7 +261,7 @@ def _nvfp4_dense_gemm(
         flat.shape[0], out_rows, dtype=torch.bfloat16, device=flat.device
     )
     mm_fp4(xq, wq.T, xsf, wsf.T, alpha, torch.bfloat16, out,
-           _NVFP4_BLOCK, False, "auto")
+           _NVFP4_BLOCK, False, _NVFP4_BACKEND)
     return out.reshape(x.shape[:-1] + (out_rows,))
 
 
@@ -643,41 +655,69 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 stale.append(name)
                 continue
             if scheme == "nvfp4" and weight.shape[1] % _NVFP4_BLOCK == 0:
-                # Same discipline as w4a8 below: an experimental scheme arms
-                # only on a value check that actually RAN, against the bf16
-                # tensor it claims to stand for. The tolerance is 4x the
-                # stale threshold because nvfp4's by-design error on these
-                # projections is 1.3e-1 (measured, probes/nvfp4_dense_
-                # accuracy.py) while an uncorrelated result lands near
-                # sqrt(2) -- the two are still nowhere near each other.
+                # The value check runs a REAL kernel, and this arm touches
+                # ~180 linears. Running it on every one of them, times two
+                # alpha candidates, is what killed the first boot that armed
+                # this scheme: no exception anywhere, the engine timed out at
+                # 922 s, and srv4 hit load 179 with nothing in D state --
+                # compilation, not I/O. So:
                 #
-                # alpha carries both global scales back out of the product.
-                # Which way round that division goes is a property of the
-                # vendored kernel's dequant convention, not something this
-                # file can read, so both are tried and whichever reproduces
-                # bf16 is kept -- exactly how the w4a8 scale layout is
-                # settled.
-                for alpha_scale in (1.0, -1.0):
-                    try:
-                        wq, wsf, w_gs = _quantize_nvfp4(weight)
-                        nv = NvFp4DenseMethod(
-                            method, wq, wsf, w_gs, rows, alpha_scale)
-                        if _copy_matches_source(
-                                mod, nv, weight,
-                                rtol=4 * _STALE_RTOL,
-                                got_fn=lambda xx: _nvfp4_dense_gemm(
-                                    xx, wq, wsf, w_gs, rows, alpha_scale),
-                        ) is True:
-                            mod.quant_method = nv
-                            quantized_w4.append(name)
-                            params_w4 += weight.numel()
-                            break
-                    except Exception:
-                        continue
-                else:
+                #   * the alpha convention is a property of the kernel, not of
+                #     a layer, so it is resolved ONCE (below) and reused;
+                #   * the check then runs on a SAMPLE of layers. A wrong
+                #     convention is wrong everywhere, and a stale copy is
+                #     already caught by the fp8 check above, which every layer
+                #     still gets.
+                try:
+                    wq, wsf, w_gs = _quantize_nvfp4(weight)
+                except Exception:
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
+                    continue
+                if _NVFP4_ALPHA[0] is None:
+                    for cand in (1.0, -1.0):
+                        try:
+                            probe = NvFp4DenseMethod(
+                                method, wq, wsf, w_gs, rows, cand)
+                            if _copy_matches_source(
+                                    mod, probe, weight,
+                                    rtol=4 * _STALE_RTOL,
+                                    got_fn=lambda xx: _nvfp4_dense_gemm(
+                                        xx, wq, wsf, w_gs, rows, cand),
+                            ) is True:
+                                _NVFP4_ALPHA[0] = cand
+                                break
+                        except Exception:
+                            continue
+                    logger.warning(
+                        "[fp8-dense] nvfp4 alpha convention resolved to %s "
+                        "on %s (backend=%s)", _NVFP4_ALPHA[0], name,
+                        _NVFP4_BACKEND)
+                if _NVFP4_ALPHA[0] is None:
+                    mod.quant_method = method
+                    quantized.append(name)
+                    params += weight.numel()
+                    continue
+                nv = NvFp4DenseMethod(
+                    method, wq, wsf, w_gs, rows, _NVFP4_ALPHA[0])
+                # Sample the value check: the first few layers and then one in
+                # sixteen. Enough to catch a systematic break, cheap enough to
+                # finish a boot.
+                nv_seen = len(quantized_w4) + len(quantized)
+                if nv_seen < 4 or nv_seen % 16 == 0:
+                    if _copy_matches_source(
+                            mod, nv, weight, rtol=4 * _STALE_RTOL,
+                            got_fn=lambda xx: _nvfp4_dense_gemm(
+                                xx, wq, wsf, w_gs, rows, _NVFP4_ALPHA[0]),
+                    ) is False:
+                        mod.quant_method = method
+                        quantized.append(name)
+                        params += weight.numel()
+                        continue
+                mod.quant_method = nv
+                quantized_w4.append(name)
+                params_w4 += weight.numel()
                 continue
             if scheme == "w4a8" and weight.shape[1] % 2 == 0:
                 # Stricter than the fp8 path on purpose: an EXPERIMENTAL
