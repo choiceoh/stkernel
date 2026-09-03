@@ -12,6 +12,33 @@
 # (dsv4_mhc_tilelang R1). Decode is the C=1 verdict channel here.
 import os
 
+
+def _deneb_persist_tilelang_cache() -> None:
+    """Point TileLang's JIT cache at the container's PERSISTENT mount.
+
+    TileLang defaults TILELANG_CACHE_DIR to ~/.tilelang/cache, which is
+    inside the container, so every restart re-JITs the MHC pair: the
+    2026-09-02 boot spent 23:29:27-32 and 23:30:09-14 compiling
+    mhc_pre_big_fuse_with_norm (two distinct JIT keys), ~10 s that a warm
+    cache serves from disk. TRITON_CACHE_DIR and VLLM_CACHE_ROOT already
+    live on the mount; this follows them.
+
+    tilelang reads the variable on every access (its EnvVar descriptor is a
+    live os.environ read), so setting it here -- at the import of the module
+    that owns the MHC path -- lands before the first compile even if the
+    tilelang package was imported earlier. An explicit setting always wins,
+    and no writable mount leaves the default alone.
+    """
+    if os.environ.get("TILELANG_CACHE_DIR"):
+        return
+    for cand in ("/cache", "/root/.cache"):
+        if os.path.isdir(cand) and os.access(cand, os.W_OK):
+            os.environ["TILELANG_CACHE_DIR"] = os.path.join(cand, "tilelang")
+            return
+
+
+_deneb_persist_tilelang_cache()
+
 import torch
 
 from vllm.utils.torch_utils import direct_register_custom_op

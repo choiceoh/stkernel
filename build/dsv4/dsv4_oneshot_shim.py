@@ -20,8 +20,10 @@ Modes (VLLM_DSV4_ONESHOT_SHADOW, default 1):
   shadow=0: one-shot IS the real path (goes into the captured decode graph);
             NCCL still serves prefill/large tensors via the size gate.
 """
+import hashlib
 import logging
 import os
+import shutil
 import time
 
 logger = logging.getLogger("vllm.dsv4.osar")
@@ -93,6 +95,52 @@ _boot_agreed = False
 _disabled = not _ENABLED
 
 
+def _build_dir(src_md5: str, flags: list) -> str:
+    """Where nvcc builds the extension -- on the PERSISTENT cache mount when
+    the container has one.
+
+    This build cost 60 s of the 2026-09-02 boot (23:28:27 source md5 ->
+    23:29:27 connected) and it used to land in /root/.osar_build, inside the
+    container, so every restart paid it again for a .cu that changes on
+    deploys, not on restarts. TRITON_CACHE_DIR and VLLM_CACHE_ROOT already
+    point at the host mount; this follows them, as glm53_megakernel does.
+
+    The directory name hashes everything the built .so is only valid for:
+    the source, the nvcc flags (MAXEL rides in them, and an object built for
+    another peer-buffer stride must never be reused), and the torch / CUDA
+    pair (an image bump changes the ABI). Any of those moving picks a fresh
+    directory and an honest recompile.
+    """
+    import torch
+
+    root = os.environ.get("VLLM_DSV4_OSAR_BUILD_ROOT")
+    if not root:
+        for cand in ("/cache", "/root/.cache"):
+            if os.path.isdir(cand) and os.access(cand, os.W_OK):
+                root = os.path.join(cand, "osar_build")
+                break
+        else:
+            root = "/root/.osar_build"  # no mount: container-local, as before
+    key = hashlib.md5("|".join(
+        [src_md5, *flags, torch.__version__, str(torch.version.cuda)]
+    ).encode()).hexdigest()[:12]
+    path = os.path.join(root, key)
+    os.makedirs(path, exist_ok=True)
+    # Siblings are builds of other sources or MAXEL values, ~2 MB each.
+    # Anything untouched for a week is not coming back; failing to prune is
+    # never a reason to fail the build.
+    try:
+        cutoff = time.time() - 7 * 86400
+        for name in os.listdir(root):
+            stale = os.path.join(root, name)
+            if stale != path and os.path.isdir(stale) \
+                    and os.path.getmtime(stale) < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+    except OSError:
+        pass
+    return path
+
+
 def _build():
     from torch.utils.cpp_extension import load
 
@@ -120,13 +168,12 @@ def _build():
     )
 
     cuda_flags = ["-O2", "-arch=sm_121a"]
-    build_directory = "/root/.osar_build"
     if _MAXEL != _MAXEL_DEFAULT:
         cuda_flags.append(f"-DMAXEL={_MAXEL}")
-        # Never reuse an object whose peer-buffer stride was compiled for a
-        # different value, even if torch's extension cache misses the flag.
-        build_directory = f"/root/.osar_build_maxel{_MAXEL}"
-    os.makedirs(build_directory, exist_ok=True)
+    # The key covers MAXEL through the flags: never reuse an object whose
+    # peer-buffer stride was compiled for a different value, even if torch's
+    # extension cache misses the flag.
+    build_directory = _build_dir(_src_md5, cuda_flags)
 
     return load(
         name="dsv4_oneshot_ar",
@@ -159,7 +206,6 @@ def _bootstrap(comm):
         # forever in the all_gather_object that follows.
         ok = 1
         try:
-            os.makedirs("/root/.osar_build", exist_ok=True)
             _ext = _build()
             local_ip = os.environ.get("VLLM_HOST_IP", "").strip()
             if not local_ip:
