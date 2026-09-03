@@ -222,6 +222,22 @@ MOE_CUTOVER="${MOE_CUTOVER:-}"
 GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
+# KV cache size in TOKENS, pinned. The engine otherwise takes whatever GMU
+# leaves after weights and activations, which on 2026-09-03 was 2175 blocks =
+# 4,579,624 tokens: 4.37x max_model_len of headroom for a server that runs
+# MAX_SEQS=4. Pinning it hands the rest back as free unified memory (the KV
+# tensor is allocated from the computed blocks; memory inside the GMU budget
+# that no block claims is simply never touched).
+#
+# tokens -> blocks uses the measured split, not block_size alone: the hybrid
+# reserves whole blocks for the 34 KDA layers' recurrent state, which is per
+# SEQUENCE and does not scale with tokens. Measured live 2026-09-03,
+# num_gpu_blocks=2175 <-> kv_cache_size_tokens=4,579,624 with block_size=2304:
+#   (2175 - 187) * 2304 = 4,580,352, i.e. ~187 blocks of hybrid state.
+# Verify after the first boot -- /metrics carries kv_cache_size_tokens -- and
+# correct KV_HYBRID_BLOCKS if the reserve moved.
+KV_TOKENS="${KV_TOKENS:-2000000}"     # auto/0 = let vLLM size it from GMU
+KV_HYBRID_BLOCKS="${KV_HYBRID_BLOCKS:-187}"
 MAX_LEN="${MAX_LEN:-1048576}"
 SPEC_K="${SPEC_K:-7}"             # the comment above is not advisory
 SSHOPT="-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8"
@@ -472,7 +488,15 @@ if [ "$EAGER" = 1 ]; then
 else
   EAGER_FLAG="--max-cudagraph-capture-size $GRAPH_CAP --compilation-config '$COMPILE_CFG'"
 fi
-KV_FLAG=""; [ "$KV_BYTES" != auto ] && KV_FLAG="--kv-cache-memory $KV_BYTES"
+# --kv-cache-memory is an argparse ABBREVIATION of --kv-cache-memory-bytes and
+# only resolves while no other flag shares the prefix; spell it out.
+KV_FLAG=""; [ "$KV_BYTES" != auto ] && KV_FLAG="--kv-cache-memory-bytes $KV_BYTES"
+if [ "$KV_TOKENS" != auto ] && [ "$KV_TOKENS" != 0 ]; then
+  [ "$KV_BYTES" = auto ] || { echo "ABORT: KV_TOKENS and KV_BYTES both set -- they size the same cache"; exit 1; }
+  KV_BLOCKS=$(awk "BEGIN{printf \"%d\", int(($KV_TOKENS + 2303) / 2304) + $KV_HYBRID_BLOCKS}")
+  KV_FLAG="--num-gpu-blocks-override $KV_BLOCKS"
+  echo "  KV pinned: $KV_TOKENS tokens -> $KV_BLOCKS blocks (2304/block + $KV_HYBRID_BLOCKS hybrid)"
+fi
 # ASYNC_SCHED=0 removes the async scheduler while leaving the drafter in
 # place. vLLM registers bools via BooleanOptionalAction, hence --no-.
 ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
@@ -577,7 +601,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # deleted backend is otherwise invisible until the boot fails.
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
-  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE EAGER GRAPH_CAP GMU MAX_SEQS \
+  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE KV_TOKENS KV_BLOCKS EAGER GRAPH_CAP GMU MAX_SEQS \
             MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE \
             DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
