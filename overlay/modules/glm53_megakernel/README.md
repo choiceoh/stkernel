@@ -103,11 +103,45 @@ cold tax by the share this module covers.
 |---|---|---|
 | MK-MHC | `glm53_mhc_tilelang/tilelang.py` small-M branch | falls through to ONEPASS/stock pair, byte-identical |
 | MK-GEMM | `glm53_fp8_dense` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
-| MK-KDA | this module's `kda.py` overlay (image preimage `ec090aab...` in manifest) | stock forward body verbatim |
+| MK-KDA | `glm53_mk_kda_wiring`'s `kda.py` overlay (image preimage `ec090aab...`) | stock forward body verbatim |
+| MK-MLA | `glm53_mk_mla_wiring` (FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
+| MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
 
 The kda.py copy came from the image (`/tmp/deployed/kda.py`, extracted
 2026-08-31). If a future image bumps that file, deploy-overlays' preimage
 gate catches it before a boot lies about what it is running.
+
+## This module is the core, and it is model-agnostic (2026-09-03)
+
+It binds TWO rows -- `glm53_megakernel.py` and `.cu` -- both new files
+(`absent` preimage) at a target RELATIVE to the profile's `TARGET_PREFIX`
+(`vllm/model_executor/layers/`). Nothing in it names a model directory, no
+row can drift against an image that never shipped these files, and the
+python module imports only stdlib + torch at import time (every vllm import
+is inside a function). `glm5next_kda.py` -- the one row that WAS
+GLM's -- moved to `glm53_mk_kda_wiring`, and the `requires` line went with
+it, to the hook that actually needs the fp8-dense arm.
+
+That is what lets **`profiles/dsv4.env` mount this same module**
+(2026-09-03, every knob 0). DeepSeek-V4-Flash reaches exactly ONE segment:
+
+| segment | dsv4 | why |
+|---|---|---|
+| `MK_SEG_MHC` | **applies** | same MHC geometry (hc_mult 4, sinkhorn 20, hc_eps 1e-6, hidden 4096), identical wrapper signature -- `dsv4_mhc_tilelang` carries the same branch GLM's `tilelang.py` does |
+| `MK_SEG_KDA` | no | the model has no linear-attention layer at all |
+| `MK_SEG_MLA` | no | this kernel is NoPE / kv_lora 512 / topk 2048; V4-Flash has rope 64, topk 512, a compressor and a sliding window |
+| `MK_SEG_GEMM` | no | the lane is W4 (e2m1 packs built from bf16); V4-Flash's dense weights are block-fp8 with no bf16 source. The fp8 W8 arm that WOULD have fit was removed 2026-09-02 (`cfeae2b`) |
+
+The unreachable segments still compile into the extension there; they are
+never launched. Nothing is measured on that model yet -- the window is
+`T <= 32` (C <= 5 at its SPEC_TOKENS=5, never its production C=32), its
+stock MHC pair is already swept, and it is production. The ladder below
+applies unchanged, on that image, before any arm.
+
+The module name still says `glm53`. Renaming it (dir, sources, container
+path, `VLLM_GLM53_MK_*`) is 86 references across 21 files including the
+ledger, which must not be rewritten; it waits for a measured win on the
+second model.
 
 ## Arming
 

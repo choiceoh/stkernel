@@ -388,6 +388,34 @@ docker run --rm --gpus all --entrypoint python3 \
 - 기대값(정직): 지금 스텝 기준 상한 ~0.6 ms = ~0.8%. 은신처가 사라진 뒤엔
   드래프터 노출분의 주성분이라 가치가 커진다.
 
+## EXP-11 — dsv4 에 MK_SEG_MHC (2026-09-03 추가, 1단계만 랜딩)
+
+메가커널 코어를 모델 무관 모듈로 쪼개고 `profiles/dsv4.env` 가 그것을 마운트한다.
+**노브 전부 0, 부팅 0.** V4-Flash 에서 닿는 세그먼트는 MHC 하나뿐이다 — 두 모델의
+하이퍼커넥션 기하가 같고(hc_mult 4 · sinkhorn 20 · hc_eps 1e-6 · hidden 4096)
+`mhc_fused_post_pre_tilelang` 시그니처가 인자 순서까지 같아서, GLM 이 쓰는 훅을
+`dsv4_mhc_tilelang` 에 같은 자리로 넣은 것이 전부다. KDA(선형어텐션 층 없음)·
+MLA(rope 64 · topk 512 · 압축기 · 슬라이딩 윈도)·GEMM(dense 가 블록-fp8, W4 팩을
+만들 bf16 원본 없음)은 해당 없음.
+
+- **1단계 (완료, 이 커밋)**: `glm5next_kda.py` 행과 `requires` 를
+  `glm53_mk_kda_wiring` 으로 분리 → 코어는 상대경로 + `absent` 2행만 남는다.
+  glm53 컴포즈 결과는 전후 **바이트 동일**(매니페스트 행 순서만 이동).
+  dsv4 런처에 프로필 키 EXTRA_ENV 가드 이식(여기선 `$COMMON` 이 `$ENVV` 보다
+  먼저 렌더돼 프로필 값이 무조건 이긴다 — 스윕이 조용히 0 을 측정하는 자리).
+- **2단계 (미착수, 부팅 없음)**: srv2 의 `production-hybrid-1.6` 이미지로 오프라인
+  프로브. `probes/run_megakernel_bench.sh` 는 glm53 전용이다(이미지·`build/glm53`·
+  `glm5next_kda.py`/`tilelang_kernels.py` 마운트 목록 고정) → **프로필 인자화가
+  2단계의 첫 일**이고, dsv4 는 MHC 만 도는 경로가 필요하다(`--skip-kda` 는 있고
+  MHC-only 는 없다). 판정: 이 이미지의 stock 페어 대비 수치(rel 1e-3)와 T=6/12/24 시간.
+- **3단계**: 2단계가 이기면 그때만. 프로덕션이고 리듀스 순서가 바뀌므로
+  품질 9/9 + 한국어 0/16 + C=1/2/4 브래킷, 부팅당 수치 축 하나.
+- **정직한 기대값**: 43층 × 페어 하나 = 0.2~0.3 ms / 43.6 ms 스텝 ≈ 0.5% 급.
+  GLM 의 −16%/−41% 는 **스윕 안 된** stock 상대의 숫자다. 이 레인의 페어는 이미
+  R1/R2/R3 로 스윕돼 있어(per-call 15.6 → 13.1 us) 격차가 더 작을 수 있다.
+- **창**: 커널 게이트가 T ≤ 32 다. SPEC_TOKENS=5 라 스텝 토큰이 C×6 →
+  C ≤ 5 만 닿고 프로덕션 C=32(M=192)는 절대 안 닿는다. 저동시성 레인 전용.
+
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
 `leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로

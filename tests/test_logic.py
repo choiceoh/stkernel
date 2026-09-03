@@ -7197,9 +7197,10 @@ def test_glm53_megakernel_contracts() -> None:
           and "isinstance(in_m, Fp8DenseMethod)" in pysrc_full,
           "KDA packs build themselves and only against a stock fp8-dense arm")
 
-    # -- kda.py overlay keeps the stock body reachable
-    kda = open(os.path.join(REPO, mod, "glm5next_kda.py"),
-               encoding="utf-8").read()
+    # -- kda.py overlay keeps the stock body reachable (its own module since
+    #    the core was made model-agnostic; see test_megakernel_core_is_shared)
+    kda = open(os.path.join(REPO, "overlay/modules/glm53_mk_kda_wiring",
+                            "glm5next_kda.py"), encoding="utf-8").read()
     check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
           "kda.py overlay keeps the stock conv/recurrent path")
     check("deneb fork (glm53_megakernel)" in kda,
@@ -7363,6 +7364,128 @@ def test_glm53_megakernel_contracts() -> None:
     check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
           "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
     print("  glm53 megakernel contracts .. OK")
+
+
+def test_megakernel_core_is_shared() -> None:
+    """The megakernel core carries no model file, so a second profile can mount it.
+
+    The 2026-09-03 split: `glm5next_kda.py` -- the one row that bound a model
+    directory and pinned an image preimage -- moved to `glm53_mk_kda_wiring`,
+    and the core's `requires` went with it. What is left binds only
+    `vllm/model_executor/layers/`, RELATIVE to the profile's TARGET_PREFIX,
+    with both rows `absent`: nothing in the core can fail a deploy gate on an
+    image that has no glm5next/ tree. dsv4 mounts exactly that, every knob 0.
+
+    Composing glm53 before and after the split renders a byte-identical
+    build/glm53 (same three rows, redistributed) -- that equivalence is what
+    test_composed_snapshot_sync keeps true from here on.
+    """
+    core = os.path.join(REPO, "overlay", "modules", "glm53_megakernel")
+    rows = [l.split("\t") for l in
+            open(os.path.join(core, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(len(rows) == 2 and {r[0] for r in rows} ==
+          {"glm53_megakernel.py", "glm53_megakernel.cu"},
+          f"the core is the kernel and its driver, nothing else: {rows}")
+    check(all(r[1].startswith("vllm/model_executor/layers/") for r in rows),
+          "core targets are RELATIVE to TARGET_PREFIX and stay under "
+          "model_executor/layers -- an absolute path or a model directory "
+          "would pin the core to one image")
+    check(all(r[2] == "absent" for r in rows),
+          "both core files are new files: no preimage to drift on an image "
+          "that never shipped them")
+    check(not os.path.exists(os.path.join(core, "requires")),
+          "the core requires nothing -- it is inert without a hook, and a "
+          "requirement on GLM's wiring would follow it into every profile "
+          "that mounts the kernel")
+
+    kw = os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring")
+    krows = [l.split("\t") for l in
+             open(os.path.join(kw, "manifest.tsv"), encoding="utf-8")
+             .read().splitlines() if l and not l.startswith("#")]
+    check(len(krows) == 1
+          and krows[0][1] == "vllm/models/glm5next/nvidia/kda.py"
+          and re.fullmatch(r"[0-9a-f]{64}", krows[0][2]) is not None,
+          f"the KDA hook keeps the model path and its pinned preimage: {krows}")
+    check(open(os.path.join(kw, "requires"), encoding="utf-8").read().split()
+          == ["glm53_megakernel", "glm53_fp8_dense"],
+          "the KDA hook requires the kernel it calls and the fp8-dense arm "
+          "its packs are built from (that requirement used to sit on the core)")
+
+    # -- one core, two profiles; every profile mounting it carries a hook
+    def _modules(profile):
+        text = open(os.path.join(REPO, "profiles", f"{profile}.env"),
+                    encoding="utf-8").read()
+        return text, re.search(r'^MODULES="([^"]+)"', text, re.M).group(1).split()
+
+    glm_text, glm_mods = _modules("glm53")
+    dsv_text, dsv_mods = _modules("dsv4")
+    check("glm53_megakernel" in glm_mods and "glm53_megakernel" in dsv_mods,
+          "both profiles mount the same core module")
+    check({"glm53_mhc_tilelang", "glm53_mk_mla_wiring", "glm53_mk_kda_wiring"}
+          <= set(glm_mods),
+          "glm53 keeps all three of its wirings after the split")
+    for profile, mods in (("glm53", glm_mods), ("dsv4", dsv_mods)):
+        hooked = [m for m in mods if any(
+            "mhc_fused_post_pre as _mk_mhc" in
+            open(os.path.join(REPO, "overlay", "modules", m, f), encoding="utf-8").read()
+            for f in os.listdir(os.path.join(REPO, "overlay", "modules", m))
+            if f.endswith(".py"))]
+        check(hooked, f"{profile} mounts the megakernel core but no module "
+                      "carries the MK-MHC hook -- the core would be dead bytes")
+
+    # -- dsv4 ships every knob OFF and claims no segment it cannot run
+    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
+                 "VLLM_GLM53_MK_PDL"):
+        check(re.search(rf"^{knob}=0$", dsv_text, re.M) is not None,
+              f"dsv4 must ship {knob}=0 (this is production and nothing is "
+              "measured on this model)")
+    for knob in ("VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_MLA"):
+        check(re.search(rf"^{knob}=", dsv_text, re.M) is None,
+              f"dsv4 declares no {knob}: no linear-attention layer, a "
+              "different MLA geometry, and block-fp8 dense weights with no "
+              "bf16 source for the W4 pack")
+
+    # -- the dsv4 hook: same branch, same place, same fall-through
+    tl = open(os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
+                           "mhc_tilelang.py"), encoding="utf-8").read()
+    # scope to the wrapper body: mhc_pre_tilelang allocates a gemm_out of its
+    # own earlier in the file, and an unscoped index would match that one
+    fn = tl[tl.index("def mhc_fused_post_pre_tilelang("):]
+    fn = fn[:fn.index("def _mhc_fused_post_pre_tilelang_fake")]
+    head = "if use_small_fma and norm_weight is not None:"
+    alloc = "gemm_out_mul = torch.empty("
+    check(head in fn and fn.index(head) < fn.index(alloc),
+          "the MK branch precedes the gemm_out allocations (the fused kernel "
+          "has no gemm_out)")
+    blk = fn[fn.index(head):fn.index(alloc)]
+    check("mhc_fused_post_pre as _mk_mhc" in blk
+          and "maybe_arm as _mk_maybe_arm" in blk,
+          "the hook imports the driver's entry point and its arming call")
+    check(blk.index("except Exception:") < blk.index("_mk = _mk_mhc("),
+          "only the IMPORT is excepted -- the launch is not, because an async "
+          "CUDA failure cannot be contained by a python fallback")
+    check("if _mk is not None:" in blk and "return _mk" in blk,
+          "an unarmed core or an ineligible shape returns None and falls "
+          "through to this lane's swept stock pair")
+
+    # -- the dsv4 launcher now emits profile VLLM_* keys, so it needs the same
+    #    EXTRA_ENV guard glm53 has: $COMMON (EXTRA_ENV) renders BEFORE $ENVV
+    #    (profile keys) and docker takes the last -e for a name.
+    hy4 = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    body = hy4[hy4.index("for _kv in ${EXTRA_ENV:-}"):]
+    body = body[:body.index("done")]
+    check("is declared in the profile, so EXTRA_ENV cannot" in body,
+          "start-hy4-tp4.sh must abort when EXTRA_ENV names a profile-declared "
+          "key, or a megakernel sweep silently measures the profile's 0")
+    check("_vllm_keys_sp" in hy4 and "printf '%s ' ${_vllm_keys:-}" in hy4,
+          "the key list is newline-separated; flatten it or the guard never "
+          "matches")
+    check("start-hy4-tp4.sh" in body,
+          "the abort must name THIS launcher in the caller-env command it "
+          "suggests")
+    print("  megakernel core is shared ..... OK")
 
 
 def test_prefill_warmup_contracts() -> None:
@@ -7745,10 +7868,20 @@ def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
 def test_profile_keys_not_passed_via_extra_env() -> None:
     """A profile-declared VLLM_* key cannot be overridden through EXTRA_ENV: the
     launcher aborts. Every documented arming command must use the caller env."""
-    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    keys = set(re.findall(r"^(VLLM_[A-Z0-9_]+)=", profile, re.M))
+    # both profiles: dsv4 declares VLLM_* keys of its own since it mounted the
+    # megakernel core, and its launcher renders EXTRA_ENV even earlier than
+    # glm53's does ($COMMON before $ENVV), so the same trap is live there
+    keys = set()
+    for _profile in ("glm53", "dsv4"):
+        keys |= set(re.findall(
+            r"^(VLLM_[A-Z0-9_]+)=",
+            open(os.path.join(REPO, "profiles", f"{_profile}.env"),
+                 encoding="utf-8").read(), re.M))
     docs = [os.path.join(REPO, "RUNBOOK_KERNEL_CAMPAIGN2.md")]
     docs += sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "glm53_*", "README.md")))
+    docs += sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "dsv4_*", "README.md")))
+    docs += [os.path.join(REPO, "profiles", "dsv4.env"),
+             os.path.join(REPO, "profiles", "glm53.env")]
     offenders = []
     for path in docs:
         for i, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
@@ -8086,6 +8219,7 @@ if __name__ == "__main__":
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
+    test_megakernel_core_is_shared()
     test_glm53_prep_fused_contracts()
     test_launcher_multiline_assignments_have_no_embedded_comments()
     test_launcher_restores_prefill_warmup_from_caller_env()

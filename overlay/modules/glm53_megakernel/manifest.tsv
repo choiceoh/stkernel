@@ -1,4 +1,3 @@
 # source	container_target(relative to TARGET_PREFIX)	base_preimage_sha256
 glm53_megakernel.py	vllm/model_executor/layers/glm53_megakernel.py	absent
 glm53_megakernel.cu	vllm/model_executor/layers/glm53_megakernel.cu	absent
-glm5next_kda.py	vllm/models/glm5next/nvidia/kda.py	ec090aabecc1a63dacc9694ea677b195e95ce0c63648c418a6daaf34b8196125

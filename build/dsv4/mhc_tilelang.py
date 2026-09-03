@@ -703,6 +703,54 @@ def mhc_fused_post_pre_tilelang(
         else:
             n_splits = 1
 
+    # deneb fork (glm53_megakernel): MK_SEG_MHC -- the same small-M fusion in
+    # ONE persistent nvcc launch (48 blocks, no TileLang JIT for decode
+    # shapes). The kernel core is model-agnostic: its gate is geometry only
+    # (hc_mult == 4, hidden == 4096, T <= 32), and V4-Flash's MHC is the same
+    # block GLM-5.3 runs (hc_mult 4, hc_sinkhorn_iters 20, hc_eps 1e-6, hidden
+    # 4096) behind an identical wrapper signature -- so this is the same hook,
+    # not a port. Arms only after its boot self-test diffs it against the
+    # stock pair below; every miss (unarmed, shape, dtype) falls through, so a
+    # disarmed boot is byte-identical to today, and a stock pair that differs
+    # from GLM's DISARMs instead of serving.
+    #
+    # Placed before the gemm_out allocations because the fused kernel has no
+    # gemm_out. The window is small-M only: at SPEC_TOKENS=5 a step carries
+    # C x 6 tokens, so C <= 5 reaches the gate and production C=32 (M=192)
+    # never does.
+    if use_small_fma and norm_weight is not None:
+        _mk_mhc = _mk_maybe_arm = None
+        try:  # import only: a boot without the megakernel module is stock
+            from vllm.model_executor.layers.glm53_megakernel import (
+                mhc_fused_post_pre as _mk_mhc,
+                maybe_arm as _mk_maybe_arm,
+            )
+        except Exception:
+            pass
+        if _mk_mhc is not None:
+            _mk_maybe_arm()
+            # armed-shape hits launch here and CANNOT be excepted into the
+            # stock path (async CUDA failures are uncontainable); every
+            # eligible miss returns None above and falls through.
+            _mk = _mk_mhc(
+                x_flat,
+                residual_flat,
+                post_layer_mix_flat,
+                comb_res_mix_flat,
+                fn.view(hc_mult3, hc_mult, hidden_size),
+                hc_scale,
+                hc_base,
+                rms_eps,
+                hc_pre_eps,
+                hc_sinkhorn_eps,
+                hc_post_mult_value,
+                sinkhorn_repeat,
+                norm_weight,
+                norm_eps,
+            )
+            if _mk is not None:
+                return _mk
+
     gemm_out_mul = torch.empty(
         n_splits,
         num_tokens,
