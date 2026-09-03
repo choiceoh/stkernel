@@ -7284,9 +7284,10 @@ def test_glm53_megakernel_contracts() -> None:
           and "isinstance(in_m, Fp8DenseMethod)" in pysrc_full,
           "KDA packs build themselves and only against a stock fp8-dense arm")
 
-    # -- kda.py overlay keeps the stock body reachable
-    kda = open(os.path.join(REPO, mod, "glm5next_kda.py"),
-               encoding="utf-8").read()
+    # -- kda.py overlay keeps the stock body reachable (its own module since
+    #    the core was made model-agnostic; see test_megakernel_core_is_shared)
+    kda = open(os.path.join(REPO, "overlay/modules/glm53_mk_kda_wiring",
+                            "glm5next_kda.py"), encoding="utf-8").read()
     check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
           "kda.py overlay keeps the stock conv/recurrent path")
     check("deneb fork (glm53_megakernel)" in kda,
@@ -7362,7 +7363,7 @@ def test_glm53_megakernel_contracts() -> None:
     # -- hook placement: MK precedes ONEPASS in the mhc wrapper
     tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
                                  "tilelang.py"), encoding="utf-8").read()
-    check(tl.index("mhc_fused_post_pre as _mk_mhc")
+    check(tl.index("_mk_hook = _deneb_mk_hook()")
           < tl.index("deneb fork: ONEPASS"),
           "the MK-MHC hook is tried before the ONEPASS experiment")
 
@@ -7450,6 +7451,362 @@ def test_glm53_megakernel_contracts() -> None:
     check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
           "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
     print("  glm53 megakernel contracts .. OK")
+
+
+def test_megakernel_core_is_shared() -> None:
+    """The megakernel core carries no model file, so a second profile can mount it.
+
+    The 2026-09-03 split: `glm5next_kda.py` -- the one row that bound a model
+    directory and pinned an image preimage -- moved to `glm53_mk_kda_wiring`,
+    and the core's `requires` went with it. What is left binds only
+    `vllm/model_executor/layers/`, RELATIVE to the profile's TARGET_PREFIX,
+    with both rows `absent`: nothing in the core can fail a deploy gate on an
+    image that has no glm5next/ tree. dsv4 mounts exactly that, every knob 0.
+
+    Composing glm53 before and after the split renders a byte-identical
+    build/glm53 (same three rows, redistributed) -- that equivalence is what
+    test_composed_snapshot_sync keeps true from here on.
+    """
+    core = os.path.join(REPO, "overlay", "modules", "glm53_megakernel")
+    rows = [l.split("\t") for l in
+            open(os.path.join(core, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(len(rows) == 2 and {r[0] for r in rows} ==
+          {"glm53_megakernel.py", "glm53_megakernel.cu"},
+          f"the core is the kernel and its driver, nothing else: {rows}")
+    check(all(r[1].startswith("vllm/model_executor/layers/") for r in rows),
+          "core targets are RELATIVE to TARGET_PREFIX and stay under "
+          "model_executor/layers -- an absolute path or a model directory "
+          "would pin the core to one image")
+    check(all(r[2] == "absent" for r in rows),
+          "both core files are new files: no preimage to drift on an image "
+          "that never shipped them")
+    check(not os.path.exists(os.path.join(core, "requires")),
+          "the core requires nothing -- it is inert without a hook, and a "
+          "requirement on GLM's wiring would follow it into every profile "
+          "that mounts the kernel")
+
+    kw = os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring")
+    krows = [l.split("\t") for l in
+             open(os.path.join(kw, "manifest.tsv"), encoding="utf-8")
+             .read().splitlines() if l and not l.startswith("#")]
+    check(len(krows) == 1
+          and krows[0][1] == "vllm/models/glm5next/nvidia/kda.py"
+          and re.fullmatch(r"[0-9a-f]{64}", krows[0][2]) is not None,
+          f"the KDA hook keeps the model path and its pinned preimage: {krows}")
+    check(open(os.path.join(kw, "requires"), encoding="utf-8").read().split()
+          == ["glm53_megakernel", "glm53_fp8_dense"],
+          "the KDA hook requires the kernel it calls and the fp8-dense arm "
+          "its packs are built from (that requirement used to sit on the core)")
+
+    # -- one core, two profiles; every profile mounting it carries a hook
+    def _modules(profile):
+        text = open(os.path.join(REPO, "profiles", f"{profile}.env"),
+                    encoding="utf-8").read()
+        m = re.search(r'^MODULES="([^"]+)"', text, re.M)
+        # this now runs over EVERY profile, so a malformed one has to fail as
+        # a named check rather than as AttributeError on .group
+        check(m is not None,
+              f"{profile}: MODULES must be a one-line quoted value")
+        return text, m.group(1).split()
+
+    glm_text, glm_mods = _modules("glm53")
+    dsv_text, dsv_mods = _modules("dsv4")
+    check("glm53_megakernel" in glm_mods and "glm53_megakernel" in dsv_mods,
+          "both profiles mount the same core module")
+    check({"glm53_mhc_tilelang", "glm53_mk_mla_wiring", "glm53_mk_kda_wiring"}
+          <= set(glm_mods),
+          "glm53 keeps all three of its wirings after the split")
+    # The core's `requires` used to make compose ABORT when the wiring was
+    # missing. Splitting it moved that guarantee here, so the rule has to hold
+    # for EVERY profile, not the two this test happens to name -- a third
+    # profile mounting the kernel with no hook, or arming a segment whose hook
+    # is not mounted, would log `armed` and route nothing.
+    seg_hook = {"VLLM_GLM53_MK_MHC": None,          # any module with the hook
+                "VLLM_GLM53_MK_GEMM": "glm53_fp8_dense",
+                "VLLM_GLM53_MK_KDA": "glm53_mk_kda_wiring",
+                "VLLM_GLM53_MK_MLA": "glm53_mk_mla_wiring"}
+    for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        profile = os.path.basename(envpath)[:-4]
+        text, mods = _modules(profile)
+        if "glm53_megakernel" not in mods:
+            continue
+        hooked = [m for m in mods if any(
+            "_deneb_mk_hook()" in
+            open(os.path.join(REPO, "overlay", "modules", m, f), encoding="utf-8").read()
+            for f in os.listdir(os.path.join(REPO, "overlay", "modules", m))
+            if f.endswith(".py"))]
+        check(hooked, f"{profile} mounts the megakernel core but no module "
+                      "carries the MK-MHC hook -- the core would be dead bytes")
+        for knob, module in seg_hook.items():
+            if module is None or re.search(rf"^{knob}=", text, re.M) is None:
+                continue
+            check(module in mods,
+                  f"{profile} declares {knob} but does not mount {module}: "
+                  "the segment would arm on its self-test and then serve "
+                  "nothing, with the boot log saying otherwise")
+
+    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
+                 "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA",
+                 "VLLM_GLM53_MK_MLA"):
+        check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
+              f"glm53 must ship {knob}=0 -- adoption is bracket-only")
+
+    # -- dsv4 ships every knob OFF and claims no segment it cannot run
+    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
+                 "VLLM_GLM53_MK_PDL"):
+        check(re.search(rf"^{knob}=0$", dsv_text, re.M) is not None,
+              f"dsv4 must ship {knob}=0 (this is production and nothing is "
+              "measured on this model)")
+    for knob in ("VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_MLA"):
+        check(re.search(rf"^{knob}=", dsv_text, re.M) is None,
+              f"dsv4 declares no {knob}: no linear-attention layer, a "
+              "different MLA geometry, and block-fp8 dense weights with no "
+              "bf16 source for the W4 pack")
+
+    # -- the dsv4 hook: same branch, same place, same fall-through
+    tl = open(os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
+                           "mhc_tilelang.py"), encoding="utf-8").read()
+    # scope to the wrapper body: mhc_pre_tilelang allocates a gemm_out of its
+    # own earlier in the file, and an unscoped index would match that one
+    fn = tl[tl.index("def mhc_fused_post_pre_tilelang("):]
+    fn = fn[:fn.index("def _mhc_fused_post_pre_tilelang_fake")]
+    head = "if use_small_fma and norm_weight is not None:"
+    alloc = "gemm_out_mul = torch.empty("
+    check(head in fn and fn.index(head) < fn.index(alloc),
+          "the MK branch precedes the gemm_out allocations (the fused kernel "
+          "has no gemm_out)")
+    blk = fn[fn.index(head):fn.index(alloc)]
+    check("_mk_hook = _deneb_mk_hook()" in blk and "_mk = _mk_hook(" in blk,
+          "the hook goes through the cached resolver and the core's entry "
+          "point, not a fresh import per call")
+    check("if _mk is not None:" in blk and "return _mk" in blk,
+          "an unmounted core, an unarmed segment or an ineligible shape "
+          "returns None and falls through to this lane's swept stock pair")
+    blk_code = "\n".join(l for l in blk.splitlines()
+                         if l.strip() and not l.strip().startswith("#"))
+    check("try:" not in blk_code and "except" not in blk_code,
+          "the LAUNCH is not excepted: an async CUDA failure cannot be "
+          "contained by a python fallback (the resolver owns the one "
+          "try/except, around the import)")
+
+    # -- the arm-then-call contract lives in the core, once, for both forks
+    coresrc = open(os.path.join(core, "glm53_megakernel.py"),
+                   encoding="utf-8").read()
+    hook = coresrc[coresrc.index("def mhc_hook("):]
+    hook = hook[:hook.index("\ndef ")]
+    check("maybe_arm()" in hook
+          and hook.index("maybe_arm()") < hook.index("mhc_fused_post_pre("),
+          "mhc_hook arms before it calls -- that pairing is the thing the two "
+          "image forks must not each re-implement")
+    hook_code = "\n".join(l for l in hook.splitlines()
+                          if l.strip() and not l.strip().startswith("#"))
+    hook_code = hook_code[hook_code.index('"""', hook_code.index('"""') + 3):]
+    check("try:" not in hook_code and "except" not in hook_code,
+          "mhc_hook does not swallow the launch either")
+
+    # -- and the two forks stay code-identical (comments may differ)
+    def _mk_shape(path, marker):
+        """The block starting at `marker`, ended by DEDENT -- not by the first
+        blank line: a blank line inserted inside the block (the natural thing
+        to do when adding a guard, which is exactly the edit that introduces
+        drift) would otherwise shrink the compared region to a prefix and let
+        the tails differ silently."""
+        text = open(path, encoding="utf-8").read()
+        lines = text[text.index(marker):].splitlines()
+        base = len(lines[0]) - len(lines[0].lstrip())
+        out = [lines[0]]
+        for line in lines[1:]:
+            if line.strip() and (len(line) - len(line.lstrip())) <= base:
+                break
+            out.append(line)
+        return "\n".join(l for l in out
+                          if l.strip() and not l.strip().startswith("#"))
+
+    forks = [os.path.join(REPO, "overlay", "modules", "glm53_mhc_tilelang",
+                          "tilelang.py"),
+             os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
+                          "mhc_tilelang.py")]
+    calls = [_mk_shape(f, "    if use_small_fma and norm_weight is not None:")
+             for f in forks]
+    resolvers = [_mk_shape(f, "def _deneb_mk_hook():") for f in forks]
+    check(calls[0] == calls[1],
+          "the two image forks carry the SAME hook code -- they are separate "
+          "files that no compose rule ties together, so a fix that lands in "
+          "one and not the other is invisible until a lane serves the old "
+          "shape (the T <= 16 correction had to be applied twice)")
+    check(resolvers[0] == resolvers[1],
+          "the cached resolver is the same in both forks too")
+    check("e.name == _MK_MODULE" in resolvers[0]
+          and "_MK_HOOK, _MK_HOOK_TRIED = None, True" in resolvers[0]
+          and "return None" in resolvers[0],
+          "only a PERMANENT answer is cached -- 'this module is not mounted' "
+          "is a fact of the boot, while anything else (a half-initialised "
+          "package during warmup) stays stock for that call and is retried, "
+          "instead of disabling the segment for the worker's life with "
+          "nothing in the log")
+
+    # -- the dsv4 launcher now emits profile VLLM_* keys, so it needs the same
+    #    EXTRA_ENV guard glm53 has: $COMMON (EXTRA_ENV) renders BEFORE $ENVV
+    #    (profile keys) and docker takes the last -e for a name.
+    hy4 = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    body = hy4[hy4.index("for _kv in ${EXTRA_ENV:-}"):]
+    body = body[:body.index("done")]
+    check("is declared in the profile, so EXTRA_ENV cannot" in body,
+          "start-hy4-tp4.sh must abort when EXTRA_ENV names a profile-declared "
+          "key, or a megakernel sweep silently measures the profile's 0")
+    check("_vllm_keys_sp" in hy4 and "printf '%s ' ${_vllm_keys:-}" in hy4,
+          "the key list is newline-separated; flatten it or the guard never "
+          "matches")
+    check("start-hy4-tp4.sh" in body,
+          "the abort must name THIS launcher in the caller-env command it "
+          "suggests")
+    # -- the probe is profile-driven too, or step 2 measures the wrong stack
+    wrap = open(os.path.join(REPO, "probes", "run_megakernel_bench.sh"),
+                encoding="utf-8").read()
+    check("--profile" in wrap and 'PROFILE=${PROFILE:-glm53}' in wrap,
+          "the bench wrapper takes --profile and still defaults to glm53")
+    check("IMAGE=${IMAGE:-$PROFILE_IMAGE}" in wrap
+          and "glm53:v13-b12x" not in wrap,
+          "the image comes from the profile, not a hard-coded default that "
+          "drifts (the profile's is the -it build)")
+    check('MK_PKG_PATH=${TARGET_PREFIX%/}' in wrap,
+          "the probe's package root comes from the profile: GLM's image "
+          "installs to dist-packages, dsv4's to the venv site-packages")
+    check("VLLM_(GLM53|DSV4)_" in wrap,
+          "dsv4's STOCK arm is tuned by VLLM_DSV4_MHC_* knobs; a sweep that "
+          "wants the untuned reference must be able to pass them in")
+    check('cmd="python3 /repo/probes/megakernel_glm53_bench.py"' in wrap
+          and 'megakernel_glm53_bench.py $*' not in wrap,
+          "probe args are appended explicitly -- the old \"$*\" form went "
+          "empty once the wrapper shifted --profile off, which would have "
+          "silently run the defaults while the caller believed otherwise")
+    # every source a recipe names must be a row in that profile's manifest
+    for profile in ("glm53", "dsv4"):
+        m = re.search(rf"^  {profile}\)\n(.*?)^    ;;", wrap, re.M | re.S)
+        check(m is not None, f"the wrapper has no recipe for {profile}")
+        srcs = re.search(r"sources=\(([^)]*)\)", m.group(1), re.S).group(1).split()
+        rows = {l.split("\t")[0] for l in
+                open(os.path.join(REPO, "build", profile, "manifest.tsv"),
+                     encoding="utf-8").read().splitlines()
+                if l and not l.startswith("#")}
+        missing = [x for x in srcs if x not in rows]
+        check(not missing,
+              f"{profile}'s probe recipe names sources its manifest does not "
+              f"have: {missing}")
+        check("glm53_megakernel.py" in srcs and "glm53_megakernel.cu" in srcs,
+              f"{profile}'s recipe must mount the driver and the kernel")
+    dsv4_recipe = re.search(r"^  dsv4\)\n(.*?)^    ;;", wrap, re.M | re.S).group(1)
+    check("--segments mhc" in dsv4_recipe and "--stock both" in dsv4_recipe,
+          "dsv4 runs MHC alone (no kda layer, no e2m1 pack, other MLA) and "
+          "measures both stock arms")
+    for absent in ("glm5next_kda.py", "tilelang_kernels.py", "glm53_fp8_dense.py"):
+        check(absent not in dsv4_recipe,
+              f"dsv4's recipe must not name {absent}: that file has no row in "
+              "its manifest and the mount loop would ABORT")
+
+    probe = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
+                 encoding="utf-8").read()
+    check('os.environ.get("MK_PKG_PATH"' in probe,
+          "the probe imports from the package root the wrapper hands it")
+    check('ap.add_argument("--segments"' in probe
+          and 'ap.add_argument("--stock"' in probe
+          and '"--skip-kda", action="store_true"' in probe,
+          "--segments and --stock exist and --skip-kda still works (the "
+          "campaign's running commands use it)")
+    disp = probe[probe.index("def probe_mhc_dispatch"):probe.index("def main()")]
+    check("mk.maybe_arm()" in disp
+          and disp.index("mk.maybe_arm()") < disp.index('mk._ARMED["mhc"] = False'),
+          "the dispatch arm arms FIRST and only then disarms for the "
+          "reference call -- otherwise the wiring's own maybe_arm re-arms it "
+          "and both arms measure MK")
+    check(disp.count("call(*args, **kw)") >= 4 and "{'hit':>6}" in disp
+          and "hit = served() > before" in disp
+          and "mk._HOOK_SERVED[0]" in disp
+          and "mk.mhc_fused_post_pre = " not in disp,
+          "the dispatch arm calls the wrapper both ways and reads the CORE's "
+          "served counter for the hit column -- patching a private of the "
+          "driver would turn any refactor of mhc_hook into a run-wide false "
+          "FAIL blamed on the lane under test")
+    check("_HOOK_SERVED[0] += 1" in coresrc
+          and coresrc.index("out = mhc_fused_post_pre(")
+          < coresrc.index("_HOOK_SERVED[0] += 1"),
+          "mhc_hook counts the calls it SERVED (armed path only, next to a "
+          "kernel launch), which is what makes that receipt cheap")
+    check("for T in (8, 16, 32):" in disp,
+          "the dispatch arm spans the wrapper's boundary (16) so the window "
+          "shows up as a hit column rather than as an assumption")
+    check("if not any_hit:" in disp and "return False" in disp,
+          "a dispatch run where MK was never offered a call must FAIL: every "
+          "row would be stock against stock, rel 0.0, and the gate would pass "
+          "without the kernel running once")
+    check('armed0 = mk._ARMED["mhc"]' in disp
+          and 'mk._ARMED["mhc"] = armed0' in disp
+          and disp.index("finally:") < disp.index('mk._ARMED["mhc"] = armed0'),
+          "the dispatch arm restores the arm state it flips, not just the "
+          "monkeypatch -- an exception mid-loop would otherwise leave the "
+          "module armed by hand for whatever runs next")
+    check("else None" in disp and "if hit else '-'" in disp,
+          "no timing pass for an arm that was never offered the call, and the "
+          "cell says so instead of printing the stock time under mk_us")
+    # -- sinkhorn_repeat: the probe must default to what the models serve
+    check("SINKHORN_SERVED = 20" in coresrc,
+          "the driver names what the models serve (hc_sinkhorn_iters=20 in "
+          "both configs) in one place")
+    self_test = coresrc[coresrc.index("def _selftest_mhc"):]
+    self_test = self_test[:self_test.index("\ndef ")]
+    check("sinkhorn_repeat = 1.0, SINKHORN_SERVED" in self_test
+          or "SINKHORN_SERVED" in self_test,
+          "the ARMING gate runs the same sinkhorn count serving does -- it "
+          "used to validate 3 loop iterations while production runs 19, so a "
+          "divergence that opens up later armed clean and served wrong")
+    check('ap.add_argument("--sinkhorn", type=int, default=None)' in probe
+          and "mk.SINKHORN_SERVED if args.sinkhorn is None" in probe,
+          "the probe's sinkhorn default IS the driver's constant, not a "
+          "second copy of 20 that can drift from the arming gate. It used to "
+          "be a hard-coded 4, and the loop is a runtime bound in BOTH arms "
+          "that they do not scale with alike, so a ratio taken there does "
+          "not transfer to serving")
+    check("1.0, 1e-6, 4)" not in probe and "1.0, 4, 1e-6," not in probe,
+          "no hard-coded sinkhorn_repeat survives in the MHC arms")
+    check("BASIS NOTE" in probe and "--sinkhorn 4" in probe,
+          "the docstring records that the earlier MEASUREMENTS rows were "
+          "taken at 4 and names the flag that reproduces them")
+    check(probe.count("sinkhorn_repeat={sk}") >= 2
+          and "(driver default)" in probe,
+          "both the run header and the raw arm print the basis they used, "
+          "and the header says when it came from the driver")
+    check("raw stock arm: mhc_fused(tile_n=2, n_splits=4)" in probe,
+          "the raw arm names the stock config it built -- no profile's "
+          "dispatcher picks it, and on dsv4 it is the pre-sweep config")
+    check('print("--segments selected nothing to run")' in probe
+          and "if not segs:" in probe,
+          "an empty --segments selection must refuse to run: it used to skip "
+          "every probe and print VERDICT: PASS")
+    # -- the wrapper refuses a shell that would disarm the run
+    check("ABORT: VLLM_GLM53_MEGAKERNEL=" in wrap
+          and 'case "${VLLM_GLM53_MEGAKERNEL-1}" in' in wrap
+          and '${VLLM_GLM53_MEGAKERNEL:-1}' not in wrap,
+          "a caller shell that sourced the profile carries MEGAKERNEL=0; "
+          "forwarded, it leaves the probe disarmed, so the wrapper refuses "
+          "instead of measuring nothing -- and the guard uses ${VAR-1}, not "
+          "${VAR:-1}, which would rewrite the set-but-EMPTY value (also off "
+          "to the driver's _flag) into 1 and wave it through")
+    check("VLLM_GLM53_MK_PDL" in wrap and '"${!_k-1}"' in wrap,
+          "the forwarded-knob warning covers MK_PDL too: a sourced profile "
+          "carries it at 0 and it is worth 17-19 pct per launch, so it moves "
+          "every number in the table")
+    check('echo "forwarded:${_fwd:- (none)}"' in wrap,
+          "the run prints which knobs actually arrived -- the receipt has to "
+          "be in the output, not in the operator's memory of their shell")
+    check('PROFILE_IMAGE=""' in wrap and wrap.index('PROFILE_IMAGE=""')
+          < wrap.index('eval "$('),
+          "both profile-derived names are pre-set: a profile that fails to "
+          "source would otherwise die on 'unbound variable' instead of the "
+          "ABORT that names the profile")
+
+    print("  megakernel core is shared ..... OK")
 
 
 def test_prefill_warmup_contracts() -> None:
@@ -7832,10 +8189,20 @@ def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
 def test_profile_keys_not_passed_via_extra_env() -> None:
     """A profile-declared VLLM_* key cannot be overridden through EXTRA_ENV: the
     launcher aborts. Every documented arming command must use the caller env."""
-    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    keys = set(re.findall(r"^(VLLM_[A-Z0-9_]+)=", profile, re.M))
+    # both profiles: dsv4 declares VLLM_* keys of its own since it mounted the
+    # megakernel core, and its launcher renders EXTRA_ENV even earlier than
+    # glm53's does ($COMMON before $ENVV), so the same trap is live there
+    keys = set()
+    for _profile in ("glm53", "dsv4"):
+        keys |= set(re.findall(
+            r"^(VLLM_[A-Z0-9_]+)=",
+            open(os.path.join(REPO, "profiles", f"{_profile}.env"),
+                 encoding="utf-8").read(), re.M))
     docs = [os.path.join(REPO, "RUNBOOK_KERNEL_CAMPAIGN2.md")]
     docs += sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "glm53_*", "README.md")))
+    docs += sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "dsv4_*", "README.md")))
+    docs += [os.path.join(REPO, "profiles", "dsv4.env"),
+             os.path.join(REPO, "profiles", "glm53.env")]
     offenders = []
     for path in docs:
         for i, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
@@ -8174,6 +8541,7 @@ if __name__ == "__main__":
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
+    test_megakernel_core_is_shared()
     test_glm53_prep_fused_contracts()
     test_launcher_multiline_assignments_have_no_embedded_comments()
     test_launcher_restores_prefill_warmup_from_caller_env()

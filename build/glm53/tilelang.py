@@ -168,6 +168,40 @@ def _deneb_onepass_ok(hidden_size: int, hc_mult: int) -> bool:
     return n_out <= 32 and hidden_size % 256 == 0
 
 
+# deneb fork (glm53_megakernel): resolve the MK_SEG_MHC entry point ONCE.
+# The hook sits on the decode hot path -- one call per layer per step -- and a
+# `from ... import ...` there costs a sys.modules lookup plus two getattrs
+# EVERY call, paid even while the segment is disarmed. This caches the
+# resolved callable, or None when the module is not mounted: a boot without
+# the megakernel is stock and stays stock without retrying the import.
+_MK_MODULE = "vllm.model_executor.layers.glm53_megakernel"
+_MK_HOOK = None
+_MK_HOOK_TRIED = False
+
+
+def _deneb_mk_hook():
+    """The MK_SEG_MHC entry point, resolved at most once per process.
+
+    A permanent answer is cached; a doubtful one is not. "The module is not
+    mounted" is a fact of this boot (ModuleNotFoundError naming exactly that
+    module), so it caches as None and the lane stays stock without paying an
+    import per call. Anything else -- a half-initialised package during
+    warmup, a transient read on the bind mount -- returns stock for THIS call
+    and is retried on the next, because caching it would disable the segment
+    for the life of the worker with nothing in the log to say so.
+    """
+    global _MK_HOOK, _MK_HOOK_TRIED
+    if not _MK_HOOK_TRIED:
+        try:
+            from vllm.model_executor.layers.glm53_megakernel import mhc_hook
+        except Exception as e:
+            if isinstance(e, ModuleNotFoundError) and e.name == _MK_MODULE:
+                _MK_HOOK, _MK_HOOK_TRIED = None, True
+            return None
+        _MK_HOOK, _MK_HOOK_TRIED = mhc_hook, True
+    return _MK_HOOK
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -703,25 +737,26 @@ def mhc_fused_post_pre_tilelang(
 
     # deneb fork (glm53_megakernel): MK_SEG_MHC -- the same small-M fusion in
     # ONE persistent nvcc launch (48 blocks, no TileLang JIT for decode
-    # shapes). Arms only after its boot self-test diffs it against the stock
-    # pair below; every miss (unarmed, shape, dtype) falls through, so a
-    # disarmed boot is byte-identical to today. Takes precedence over ONEPASS
-    # when both are set: it is the same fusion with fewer launches.
+    # shapes). Arms on the first eligible call, after a self-test that diffs
+    # it against the stock pair below; every miss (module not mounted,
+    # unarmed, shape, dtype) returns None and falls through, so a disarmed
+    # boot is byte-identical to today. Takes precedence over ONEPASS when both
+    # are set: it is the same fusion with fewer launches. The arm-then-call
+    # contract lives in the core's `mhc_hook`, so this block is the same code
+    # dsv4_mhc_tilelang carries -- two image forks, one hook.
+    #
+    # The window is the WRAPPER's, not the kernel's: this branch is under
+    # `use_small_fma` (T <= 16) while the kernel gates at T <= 32, so a step's
+    # C x (spec + 1) tokens reach it only at C <= 2. 16 < T <= 32 is the stock
+    # post+big_fuse branch, which MK is never offered -- an open door,
+    # unmeasured.
     if use_small_fma and norm_weight is not None:
-        _mk_mhc = _mk_maybe_arm = None
-        try:  # import only: a boot without the megakernel module is stock
-            from vllm.model_executor.layers.glm53_megakernel import (
-                mhc_fused_post_pre as _mk_mhc,
-                maybe_arm as _mk_maybe_arm,
-            )
-        except Exception:
-            pass
-        if _mk_mhc is not None:
-            _mk_maybe_arm()
-            # armed-shape hits launch here and CANNOT be excepted into the
+        _mk_hook = _deneb_mk_hook()
+        if _mk_hook is not None:
+            # an armed shape LAUNCHES here and cannot be excepted into the
             # stock path (async CUDA failures are uncontainable); every
-            # eligible miss returns None above and falls through.
-            _mk = _mk_mhc(
+            # eligible miss returns None and falls through
+            _mk = _mk_hook(
                 x_flat,
                 residual_flat,
                 post_layer_mix_flat,

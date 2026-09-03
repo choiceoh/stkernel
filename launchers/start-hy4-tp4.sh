@@ -17,8 +17,9 @@ if [ ! -f "$PROFILE_ENV" ]; then
   echo "         Run this launcher from the checkout, or set PROFILE_ENV explicitly."
 fi
 if [ -f "$PROFILE_ENV" ]; then
-  # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
-  # exits 1 -- which under `set -euo pipefail` ends the script silently.
+  # A profile with no VLLM_* key at all is legitimate (this one had none until
+  # it mounted the megakernel core), and an empty grep exits 1 -- which under
+  # `set -euo pipefail` ends the script silently.
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   _caller=""
   for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
@@ -331,11 +332,28 @@ COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-s
 # contain spaces because this launcher deliberately renders docker flags as a
 # shell word list.
 EXTRA_ENV_FLAGS=""
+# _vllm_keys is newline-separated (grep | sort -u); flatten it so the
+# membership test below can use a space-delimited case pattern.
+_vllm_keys_sp=" $(printf '%s ' ${_vllm_keys:-})"
 for _kv in ${EXTRA_ENV:-}; do
   if [[ ! "$_kv" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
     echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"
     exit 2
   fi
+  # A profile-declared VLLM_* key is emitted as its own -e in ENVV, and the
+  # docker command renders $COMMON (which carries these flags) BEFORE $ENVV --
+  # docker takes the LAST -e for a name, so EXTRA_ENV silently loses to the
+  # profile for exactly the knobs a sweep wants to move, and the boot measures
+  # the profile value while the caller believes otherwise. Same guard the
+  # glm53 launcher already carries; it became reachable here the day this
+  # profile started declaring VLLM_* keys of its own.
+  case "$_vllm_keys_sp" in
+    *" ${_kv%%=*} "*)
+      echo "ABORT: ${_kv%%=*} is declared in the profile, so EXTRA_ENV cannot"
+      echo "       override it (docker takes the last -e). Pass it directly:"
+      echo "         ${_kv%%=*}=${_kv#*=} bash launchers/start-hy4-tp4.sh"
+      exit 2 ;;
+  esac
   EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv"
 done
 if [ -n "$EXTRA_ENV_FLAGS" ]; then

@@ -103,11 +103,62 @@ cold tax by the share this module covers.
 |---|---|---|
 | MK-MHC | `glm53_mhc_tilelang/tilelang.py` small-M branch | falls through to ONEPASS/stock pair, byte-identical |
 | MK-GEMM | `glm53_fp8_dense` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
-| MK-KDA | this module's `kda.py` overlay (image preimage `ec090aab...` in manifest) | stock forward body verbatim |
+| MK-KDA | `glm53_mk_kda_wiring`'s `kda.py` overlay (image preimage `ec090aab...`) | stock forward body verbatim |
+| MK-MLA | `glm53_mk_mla_wiring` (FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
+| MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
+
+Both MHC wirings call ONE entry point in this module -- `mhc_hook(...)`,
+which arms and then tries -- through a resolver that caches the import once
+(the hook is on the decode hot path, one call per layer per step). The two
+image files are separate forks that no compose rule ties together, so the
+code inside those blocks is kept byte-identical and `test_megakernel_core_is_shared`
+compares them; the comments differ per lane. dsv4 additionally reaches the
+wrapper only while `VLLM_USE_B12X_MHC` is off -- see that module's README.
 
 The kda.py copy came from the image (`/tmp/deployed/kda.py`, extracted
 2026-08-31). If a future image bumps that file, deploy-overlays' preimage
 gate catches it before a boot lies about what it is running.
+
+## This module is the core, and it is model-agnostic (2026-09-03)
+
+It binds TWO rows -- `glm53_megakernel.py` and `.cu` -- both new files
+(`absent` preimage) at a target RELATIVE to the profile's `TARGET_PREFIX`
+(`vllm/model_executor/layers/`). Nothing in it names a model directory, no
+row can drift against an image that never shipped these files, and the
+python module imports only stdlib + torch at import time (every vllm import
+is inside a function). `glm5next_kda.py` -- the one row that WAS
+GLM's -- moved to `glm53_mk_kda_wiring`, and the `requires` line went with
+it, to the hook that actually needs the fp8-dense arm.
+
+That is what lets **`profiles/dsv4.env` mount this same module**
+(2026-09-03, every knob 0). DeepSeek-V4-Flash reaches exactly ONE segment:
+
+| segment | dsv4 | why |
+|---|---|---|
+| `MK_SEG_MHC` | **applies** | same MHC geometry (hc_mult 4, sinkhorn 20, hc_eps 1e-6, hidden 4096), identical wrapper signature -- `dsv4_mhc_tilelang` carries the same branch GLM's `tilelang.py` does |
+| `MK_SEG_KDA` | no | the model has no linear-attention layer at all |
+| `MK_SEG_MLA` | no | this kernel is NoPE / kv_lora 512 / topk 2048; V4-Flash has rope 64, topk 512, a compressor and a sliding window |
+| `MK_SEG_GEMM` | no | the lane is W4 (e2m1 packs built from bf16); V4-Flash's dense weights are block-fp8 with no bf16 source. The fp8 W8 arm that WOULD have fit was removed 2026-09-02 (`cfeae2b`) |
+
+The unreachable segments still compile into the extension there; they are
+never launched. Nothing is measured on that model yet, its stock MHC pair is
+already swept (unlike GLM's), and it is production. The ladder below applies
+unchanged, on that image, before any arm.
+
+**The serving window is the wrapper's, not the kernel's** -- true on BOTH
+models and not previously written down: the MHC hook sits inside the
+wrapper's `use_small_fma` branch (`T <= 16`) while the kernel's own gate is
+`T <= 32`. So the hook is offered `C <= 2` on GLM (8 tokens/seq) and `C <= 2`
+on dsv4 (6 tokens/seq); `16 < T <= 32` is the stock post+big_fuse branch,
+which MK never sees. Every T=32 number recorded for MK-MHC is a KERNEL
+measurement (`probes/megakernel_glm53_bench.py` calls `_mhc_call` directly),
+not a served shape. `--stock dispatch` in that probe measures the arm a boot
+would really take and prints a `hit` column that says so.
+
+The module name still says `glm53`. Renaming it (dir, sources, container
+path, `VLLM_GLM53_MK_*`) is 86 references across 21 files including the
+ledger, which must not be rewritten; it waits for a measured win on the
+second model.
 
 ## Arming
 
@@ -225,13 +276,25 @@ watch the KV-cache line and be ready to drop GMU a notch (memfree-preflight
 computes it). If it does not fit, arming MK-GEMM only for the KDA in/out
 projections is the fallback scope (a one-line change in the build attach).
 
+## The sinkhorn basis (2026-09-03)
+
+`SINKHORN_SERVED = 20` in the driver is what both models pass as
+`sinkhorn_repeat` (`hc_sinkhorn_iters`), and it is now the ONE number: the
+boot self-test gates on it and `probes/megakernel_glm53_bench.py` defaults to
+it. It used to be 4 in both, which ran 3 loop iterations where serving runs
+19 -- the first row/col pass places its eps differently from the loop's, so a
+divergence that only opens up later would have armed clean and served wrong.
+The gate is stricter now: if MHC DISARMs on the next boot, that is the finding,
+not a regression (the lane falls back to stock either way).
+
 ## Verification ladder (in order, no skips)
 
 1. `python3 tests/test_logic.py` -- pure logic + .cu/.py geometry parity +
    manifest invariants (this repo, no GPU).
-2. `bash probes/run_megakernel_bench.sh` in a fresh container (srv4, never
-   the serving one; the wrapper binds the composed overlay at its real
-   image paths): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
+2. `bash probes/run_megakernel_bench.sh [--profile glm53|dsv4]` in a fresh
+   container (srv4, never the serving one; the wrapper binds the profile's
+   composed overlay at that image's real paths, and passes its package
+   root as `MK_PKG_PATH`): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
    by-design + 1e-5 exact-grid, 2e-2 KDA outputs and states on grid-snapped
    weights) + CUDA-event timing per segment + a replay-stability
    check (re-launch drift <= 1e-6 over the shared workspace -- the
