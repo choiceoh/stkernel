@@ -520,6 +520,34 @@ if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" !
   fi
 fi
 
+# CUDA graph memory profiling: 12 s of every boot to estimate what the graph
+# pool will take (0.85 GiB estimated, 0.42 GiB actually used on 2026-09-02),
+# which vLLM then subtracts from the KV budget:
+#   available_kv = requested - non_kv - cudagraph_estimate   (gpu_worker.py)
+# Turning it off skips the 12 s AND stops the subtraction, so KV would grow
+# by that 0.85 GiB unless the same share comes off GMU -- which is what the
+# delta below does. Net effect: identical KV cache, 12 s faster, and the
+# graph pool allocates from the memory outside the request as it does when
+# the estimator is on but wrong.
+#
+# NOT vLLM's suggested 0.7671: that number is for keeping the estimator ON
+# and restoring the pre-v0.21 KV size. Applying it here as well would hand
+# the same 0.85 GiB back twice.
+#
+# The delta is a share of total memory, not a fixed util: GMU itself is
+# whatever memfree-preflight measured minutes ago, so this must ride on top
+# of it. 0.85 GiB / 119.7 GiB = 0.0071 at this capture set (4 sizes, max 32);
+# re-measure it if cudagraph_capture_sizes changes -- the boot logs both
+# "Estimated CUDA graph memory" and the util equivalence line.
+CG_MEM_PROFILE="${CG_MEM_PROFILE:-0}"
+CG_UTIL_DELTA="${CG_UTIL_DELTA:-0.0071}"
+if [ "$CG_MEM_PROFILE" = 0 ]; then
+  _gmu_before="$GMU"
+  GMU=$(awk "BEGIN{printf \"%.4f\", $GMU - $CG_UTIL_DELTA}")
+  ENVV="$ENVV -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0"
+  echo "  cudagraph mem profiling off: GMU $_gmu_before -> $GMU (KV unchanged, -12 s boot)"
+fi
+
 PROF_CFG="{\"profiler\":\"torch\",\"torch_profiler_dir\":\"/prof\",\"torch_profiler_with_stack\":false}"
 SERVE_ARGS="$MODEL_PATH \
 --served-model-name $SERVED_NAME \
