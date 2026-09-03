@@ -64,6 +64,32 @@ largest descriptors first.
 
 `out=None` keeps the old clone behaviour for any caller outside a graph.
 
-Base contract from `glm53:v13-b12x`. **Not yet confirmed by measurement** — the
-mechanism explains every observation, but the corruption rate after this change
-has not been measured.
+Base contract from `glm53:v13-b12x`.
+
+## Confirmed by measurement (2026-09-03)
+
+| | corruptions | characters | rate |
+|---|---|---|---|
+| before (recorded impression) | ~1 per 1000 tokens | — | ~500-670 / million chars |
+| after, measured | 1 | 110,843 | **9 / million chars** |
+
+64 responses across two runs (16 x 400 tokens, then 48 x 700), temperature 0,
+`bench/korean-corruption.py`. One U+FFFD in the whole corpus:
+
+    - 무를 채 썰어 양념에 버무리기    - �파, 갓 등 준비
+
+So roughly **50-70x fewer**, against a "before" figure that was an impression
+rather than a count -- treat the ratio as an order of magnitude, not a
+measurement of the fix.
+
+The residue is real but too rare to attribute from here: one event cannot
+separate "the same mechanism, still leaking" from a second one. Chasing it
+needs a corpus several times this size, and at 9 per million characters that
+is a large amount of serving for a small result.
+
+Two things it is NOT. It is not `glm53_union_prefill`: that arm has never run
+on this fleet (a 2051-vs-128 width bug, then a row cap that makes its only
+configured width impossible -- see that module). And it is not the
+`eager_break_during_capture` contract: both decorated functions in this path
+(`sparse_attn_indexer_kpool`, `Glm5NextKDA._forward`) write through
+caller-owned buffers.
