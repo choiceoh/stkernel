@@ -174,19 +174,31 @@ def _deneb_onepass_ok(hidden_size: int, hc_mult: int) -> bool:
 # EVERY call, paid even while the segment is disarmed. This caches the
 # resolved callable, or None when the module is not mounted: a boot without
 # the megakernel is stock and stays stock without retrying the import.
+_MK_MODULE = "vllm.model_executor.layers.glm53_megakernel"
 _MK_HOOK = None
 _MK_HOOK_TRIED = False
 
 
 def _deneb_mk_hook():
+    """The MK_SEG_MHC entry point, resolved at most once per process.
+
+    A permanent answer is cached; a doubtful one is not. "The module is not
+    mounted" is a fact of this boot (ModuleNotFoundError naming exactly that
+    module), so it caches as None and the lane stays stock without paying an
+    import per call. Anything else -- a half-initialised package during
+    warmup, a transient read on the bind mount -- returns stock for THIS call
+    and is retried on the next, because caching it would disable the segment
+    for the life of the worker with nothing in the log to say so.
+    """
     global _MK_HOOK, _MK_HOOK_TRIED
     if not _MK_HOOK_TRIED:
-        _MK_HOOK_TRIED = True
         try:
             from vllm.model_executor.layers.glm53_megakernel import mhc_hook
-            _MK_HOOK = mhc_hook
-        except Exception:
-            _MK_HOOK = None
+        except Exception as e:
+            if isinstance(e, ModuleNotFoundError) and e.name == _MK_MODULE:
+                _MK_HOOK, _MK_HOOK_TRIED = None, True
+            return None
+        _MK_HOOK, _MK_HOOK_TRIED = mhc_hook, True
     return _MK_HOOK
 
 

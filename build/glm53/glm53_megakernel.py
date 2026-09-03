@@ -83,6 +83,15 @@ ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
 # tolerances. The W4 GEMM's by-design (e2m1) error class is 0.02-0.08 rel
 # on row blocks; the exact-grid gate below it is 1e-5.
 _TOL_GEMM_W4 = 0.15
+# What both models pass as `sinkhorn_repeat` (`hc_sinkhorn_iters` in
+# DeepSeek-V4-Flash's and GLM-5.3-Flash's configs alike). The sinkhorn is a
+# RUNTIME loop -- `for it < sinkhorn_repeat - 1` here, `T.serial(...)` in the
+# TileLang pair -- and the first row/col pass places its eps differently from
+# the loop's, so a gate that runs 3 iterations does not exercise what serving
+# runs 19 of. The self-test below and probes/megakernel_glm53_bench.py's
+# --sinkhorn default must be THIS number; test_logic pins them together.
+SINKHORN_SERVED = 20
+
 _TOL_MHC = 1e-3     # fp32 port of the TileLang pair, bf16 rounding only
 _TOL_KDA = 2e-2     # fixture (grid-snapped weights): fp8/activation noise only
 # The serving shadow diffs the MK arm (W4 packs of the layer's bf16 weights)
@@ -494,6 +503,9 @@ def mhc_fused_post_pre(x, residual, post_layer_mix, comb_res_mix, fn,
             li.view(*outer, hidden))
 
 
+_HOOK_SERVED = [0]   # MHC calls mhc_hook actually served (probe receipt)
+
+
 def mhc_hook(x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
              hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
              hc_post_mult_value, sinkhorn_repeat, norm_weight, norm_eps):
@@ -511,12 +523,21 @@ def mhc_hook(x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
     so the caller falls through to its stock path. It does NOT catch: an
     armed launch that fails is an async CUDA failure and a python fallback
     cannot contain it (the w4a8 lesson).
+
+    `_HOOK_SERVED` counts the calls this actually took. It is the receipt a
+    probe needs to tell "MK is faster" from "MK was never offered the call"
+    (the wrapper only offers T <= 16), and it lives here so that reading it
+    does not mean patching a private of this module from outside. The
+    increment is on the armed path only, next to a kernel launch.
     """
     maybe_arm()
-    return mhc_fused_post_pre(x, residual, post_layer_mix, comb_res_mix, fn,
-                              hc_scale, hc_base, rms_eps, hc_pre_eps,
-                              hc_sinkhorn_eps, hc_post_mult_value,
-                              sinkhorn_repeat, norm_weight, norm_eps)
+    out = mhc_fused_post_pre(x, residual, post_layer_mix, comb_res_mix, fn,
+                             hc_scale, hc_base, rms_eps, hc_pre_eps,
+                             hc_sinkhorn_eps, hc_post_mult_value,
+                             sinkhorn_repeat, norm_weight, norm_eps)
+    if out is not None:
+        _HOOK_SERVED[0] += 1
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -812,7 +833,7 @@ def _selftest_mhc() -> bool:
     hc_base = torch.zeros(NOUT, dtype=torch.float32, device=dev)
     nw = torch.randn(HIDDEN, dtype=torch.bfloat16, device=dev)
     rms_eps = pre_eps = sink_eps = norm_eps = 1e-6
-    post_mult, sinkhorn_repeat = 1.0, 4
+    post_mult, sinkhorn_repeat = 1.0, SINKHORN_SERVED
 
     rc, pmc, cmc, li = _mhc_call(
         x, res, pm, cm.reshape(T, HC * HC).contiguous(), fn, hc_scale,

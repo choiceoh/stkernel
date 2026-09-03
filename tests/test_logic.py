@@ -7416,7 +7416,12 @@ def test_megakernel_core_is_shared() -> None:
     def _modules(profile):
         text = open(os.path.join(REPO, "profiles", f"{profile}.env"),
                     encoding="utf-8").read()
-        return text, re.search(r'^MODULES="([^"]+)"', text, re.M).group(1).split()
+        m = re.search(r'^MODULES="([^"]+)"', text, re.M)
+        # this now runs over EVERY profile, so a malformed one has to fail as
+        # a named check rather than as AttributeError on .group
+        check(m is not None,
+              f"{profile}: MODULES must be a one-line quoted value")
+        return text, m.group(1).split()
 
     glm_text, glm_mods = _modules("glm53")
     dsv_text, dsv_mods = _modules("dsv4")
@@ -7514,21 +7519,30 @@ def test_megakernel_core_is_shared() -> None:
           "mhc_hook does not swallow the launch either")
 
     # -- and the two forks stay code-identical (comments may differ)
-    def _mk_shape(path, marker, end):
+    def _mk_shape(path, marker):
+        """The block starting at `marker`, ended by DEDENT -- not by the first
+        blank line: a blank line inserted inside the block (the natural thing
+        to do when adding a guard, which is exactly the edit that introduces
+        drift) would otherwise shrink the compared region to a prefix and let
+        the tails differ silently."""
         text = open(path, encoding="utf-8").read()
-        i = text.index(marker)
-        seg = text[i:text.index(end, i)]
-        return "\n".join(l for l in seg.splitlines()
+        lines = text[text.index(marker):].splitlines()
+        base = len(lines[0]) - len(lines[0].lstrip())
+        out = [lines[0]]
+        for line in lines[1:]:
+            if line.strip() and (len(line) - len(line.lstrip())) <= base:
+                break
+            out.append(line)
+        return "\n".join(l for l in out
                           if l.strip() and not l.strip().startswith("#"))
 
     forks = [os.path.join(REPO, "overlay", "modules", "glm53_mhc_tilelang",
                           "tilelang.py"),
              os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
                           "mhc_tilelang.py")]
-    calls = [_mk_shape(f, "    if use_small_fma and norm_weight is not None:",
-                       "\n\n") for f in forks]
-    resolvers = [_mk_shape(f, "def _deneb_mk_hook():", "\n\n\n")
-                 for f in forks]
+    calls = [_mk_shape(f, "    if use_small_fma and norm_weight is not None:")
+             for f in forks]
+    resolvers = [_mk_shape(f, "def _deneb_mk_hook():") for f in forks]
     check(calls[0] == calls[1],
           "the two image forks carry the SAME hook code -- they are separate "
           "files that no compose rule ties together, so a fix that lands in "
@@ -7536,6 +7550,14 @@ def test_megakernel_core_is_shared() -> None:
           "shape (the T <= 16 correction had to be applied twice)")
     check(resolvers[0] == resolvers[1],
           "the cached resolver is the same in both forks too")
+    check("e.name == _MK_MODULE" in resolvers[0]
+          and "_MK_HOOK, _MK_HOOK_TRIED = None, True" in resolvers[0]
+          and "return None" in resolvers[0],
+          "only a PERMANENT answer is cached -- 'this module is not mounted' "
+          "is a fact of the boot, while anything else (a half-initialised "
+          "package during warmup) stays stock for that call and is retried, "
+          "instead of disabling the segment for the worker's life with "
+          "nothing in the log")
 
     # -- the dsv4 launcher now emits profile VLLM_* keys, so it needs the same
     #    EXTRA_ENV guard glm53 has: $COMMON (EXTRA_ENV) renders BEFORE $ENVV
@@ -7613,10 +7635,18 @@ def test_megakernel_core_is_shared() -> None:
           "reference call -- otherwise the wiring's own maybe_arm re-arms it "
           "and both arms measure MK")
     check(disp.count("call(*args, **kw)") >= 4 and "{'hit':>6}" in disp
-          and 'hit = hits["n"] > 0' in disp,
-          "the dispatch arm calls the wrapper both ways and reports whether "
-          "MK actually served the call (the hook is under use_small_fma, "
-          "T <= 16, while the kernel gates at T <= 32)")
+          and "hit = served() > before" in disp
+          and "mk._HOOK_SERVED[0]" in disp
+          and "mk.mhc_fused_post_pre = " not in disp,
+          "the dispatch arm calls the wrapper both ways and reads the CORE's "
+          "served counter for the hit column -- patching a private of the "
+          "driver would turn any refactor of mhc_hook into a run-wide false "
+          "FAIL blamed on the lane under test")
+    check("_HOOK_SERVED[0] += 1" in coresrc
+          and coresrc.index("out = mhc_fused_post_pre(")
+          < coresrc.index("_HOOK_SERVED[0] += 1"),
+          "mhc_hook counts the calls it SERVED (armed path only, next to a "
+          "kernel launch), which is what makes that receipt cheap")
     check("for T in (8, 16, 32):" in disp,
           "the dispatch arm spans the wrapper's boundary (16) so the window "
           "shows up as a hit column rather than as an assumption")
@@ -7630,22 +7660,36 @@ def test_megakernel_core_is_shared() -> None:
           "the dispatch arm restores the arm state it flips, not just the "
           "monkeypatch -- an exception mid-loop would otherwise leave the "
           "module armed by hand for whatever runs next")
-    check("if hit \\" in disp and "else None" in disp,
-          "no timing pass for an arm that was never offered the call")
+    check("else None" in disp and "if hit else '-'" in disp,
+          "no timing pass for an arm that was never offered the call, and the "
+          "cell says so instead of printing the stock time under mk_us")
     # -- sinkhorn_repeat: the probe must default to what the models serve
-    check('ap.add_argument("--sinkhorn", type=int, default=20)' in probe,
-          "sinkhorn_repeat defaults to the served hc_sinkhorn_iters (20), not "
-          "the 4 this probe used to hard-code: the loop is a runtime bound in "
-          "BOTH arms and they do not scale with it alike, so a ratio taken at "
-          "4 does not transfer to serving")
+    check("SINKHORN_SERVED = 20" in coresrc,
+          "the driver names what the models serve (hc_sinkhorn_iters=20 in "
+          "both configs) in one place")
+    self_test = coresrc[coresrc.index("def _selftest_mhc"):]
+    self_test = self_test[:self_test.index("\ndef ")]
+    check("sinkhorn_repeat = 1.0, SINKHORN_SERVED" in self_test
+          or "SINKHORN_SERVED" in self_test,
+          "the ARMING gate runs the same sinkhorn count serving does -- it "
+          "used to validate 3 loop iterations while production runs 19, so a "
+          "divergence that opens up later armed clean and served wrong")
+    check('ap.add_argument("--sinkhorn", type=int, default=None)' in probe
+          and "mk.SINKHORN_SERVED if args.sinkhorn is None" in probe,
+          "the probe's sinkhorn default IS the driver's constant, not a "
+          "second copy of 20 that can drift from the arming gate. It used to "
+          "be a hard-coded 4, and the loop is a runtime bound in BOTH arms "
+          "that they do not scale with alike, so a ratio taken there does "
+          "not transfer to serving")
     check("1.0, 1e-6, 4)" not in probe and "1.0, 4, 1e-6," not in probe,
           "no hard-coded sinkhorn_repeat survives in the MHC arms")
     check("BASIS NOTE" in probe and "--sinkhorn 4" in probe,
           "the docstring records that the earlier MEASUREMENTS rows were "
           "taken at 4 and names the flag that reproduces them")
-    check("sinkhorn_repeat={args.sinkhorn}" in probe
-          and "sinkhorn_repeat={sk}" in probe,
-          "both the run header and the raw arm print the basis they used")
+    check(probe.count("sinkhorn_repeat={sk}") >= 2
+          and "(driver default)" in probe,
+          "both the run header and the raw arm print the basis they used, "
+          "and the header says when it came from the driver")
     check("raw stock arm: mhc_fused(tile_n=2, n_splits=4)" in probe,
           "the raw arm names the stock config it built -- no profile's "
           "dispatcher picks it, and on dsv4 it is the pre-sweep config")
@@ -7655,10 +7699,20 @@ def test_megakernel_core_is_shared() -> None:
           "every probe and print VERDICT: PASS")
     # -- the wrapper refuses a shell that would disarm the run
     check("ABORT: VLLM_GLM53_MEGAKERNEL=" in wrap
-          and 'case "${VLLM_GLM53_MEGAKERNEL:-1}" in' in wrap,
+          and 'case "${VLLM_GLM53_MEGAKERNEL-1}" in' in wrap
+          and '${VLLM_GLM53_MEGAKERNEL:-1}' not in wrap,
           "a caller shell that sourced the profile carries MEGAKERNEL=0; "
           "forwarded, it leaves the probe disarmed, so the wrapper refuses "
-          "instead of measuring nothing")
+          "instead of measuring nothing -- and the guard uses ${VAR-1}, not "
+          "${VAR:-1}, which would rewrite the set-but-EMPTY value (also off "
+          "to the driver's _flag) into 1 and wave it through")
+    check("VLLM_GLM53_MK_PDL" in wrap and '"${!_k-1}"' in wrap,
+          "the forwarded-knob warning covers MK_PDL too: a sourced profile "
+          "carries it at 0 and it is worth 17-19 pct per launch, so it moves "
+          "every number in the table")
+    check('echo "forwarded:${_fwd:- (none)}"' in wrap,
+          "the run prints which knobs actually arrived -- the receipt has to "
+          "be in the output, not in the operator's memory of their shell")
     check('PROFILE_IMAGE=""' in wrap and wrap.index('PROFILE_IMAGE=""')
           < wrap.index('eval "$('),
           "both profile-derived names are pre-set: a profile that fails to "

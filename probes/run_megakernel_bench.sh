@@ -100,17 +100,29 @@ done
 # who sourced the profile in this shell (the normal way to get IMAGE and
 # MODEL_PATH) would ship the master switch OFF into the container, the driver
 # would never arm, and the failure would read as a kernel problem.
-case "${VLLM_GLM53_MEGAKERNEL:-1}" in
-  0|""|false|FALSE)
-    echo "ABORT: VLLM_GLM53_MEGAKERNEL=${VLLM_GLM53_MEGAKERNEL} is set in this" >&2
-    echo "       shell and would be forwarded, leaving the probe disarmed." >&2
+# ${VAR-1}, NOT ${VAR:-1}: the driver's _flag() reads an EMPTY value as off
+# ("" is in its falsy set) and the loop below forwards a set-but-empty
+# variable as `-e NAME=`, so the colon form -- which substitutes for empty
+# too -- would rewrite exactly the value that disarms the run into "1" and
+# wave it through.
+case "${VLLM_GLM53_MEGAKERNEL-1}" in
+  0|""|false|FALSE|no|off)
+    echo "ABORT: VLLM_GLM53_MEGAKERNEL='${VLLM_GLM53_MEGAKERNEL}' is set in" >&2
+    echo "       this shell and would be forwarded, leaving the probe" >&2
+    echo "       disarmed -- it would measure nothing and say so late." >&2
     echo "       unset it (a profile sourced here is the usual cause):" >&2
     echo "         unset VLLM_GLM53_MEGAKERNEL" >&2
     exit 1 ;;
 esac
-for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA VLLM_GLM53_MK_MLA; do
-  case "${!_k:-1}" in
-    0|"") echo "WARNING: $_k=0 is set here and will disarm that segment" >&2 ;;
+# The rest are legitimate sweep inputs, so they warn rather than abort -- but
+# they are also what a sourced profile carries, and MK_PDL in particular is
+# worth 17-19 pct per launch (module README), so a forwarded 0 changes every
+# number in the table with nothing in it to say why.
+for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA \
+          VLLM_GLM53_MK_MLA VLLM_GLM53_MK_PDL; do
+  case "${!_k-1}" in
+    0|""|false|FALSE|no|off)
+      echo "WARNING: $_k='${!_k}' is set in this shell and will be forwarded" >&2 ;;
   esac
 done
 
@@ -119,8 +131,14 @@ for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
   envs+=(-e "$v=${!v}")
 done
 
+_fwd=""
+for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
+  _fwd="$_fwd $v=${!v}"
+done
 echo "profile=$PROFILE image=$IMAGE pkg=${TARGET_PREFIX%/}" \
      "files=$((${#mounts[@]} / 2)) args=${defaults[*]-}${args[*]+ ${args[*]}}" >&2
+# the forwarded knobs are part of the measurement; print them with it
+echo "forwarded:${_fwd:- (none)}" >&2
 
 # Build the command string explicitly. The old form interpolated "$*" into the
 # -lc string AND passed "$@" after it; once this wrapper consumed --profile

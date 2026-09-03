@@ -276,6 +276,17 @@ watch the KV-cache line and be ready to drop GMU a notch (memfree-preflight
 computes it). If it does not fit, arming MK-GEMM only for the KDA in/out
 projections is the fallback scope (a one-line change in the build attach).
 
+## The sinkhorn basis (2026-09-03)
+
+`SINKHORN_SERVED = 20` in the driver is what both models pass as
+`sinkhorn_repeat` (`hc_sinkhorn_iters`), and it is now the ONE number: the
+boot self-test gates on it and `probes/megakernel_glm53_bench.py` defaults to
+it. It used to be 4 in both, which ran 3 loop iterations where serving runs
+19 -- the first row/col pass places its eps differently from the loop's, so a
+divergence that only opens up later would have armed clean and served wrong.
+The gate is stricter now: if MHC DISARMs on the next boot, that is the finding,
+not a regression (the lane falls back to stock either way).
+
 ## Verification ladder (in order, no skips)
 
 1. `python3 tests/test_logic.py` -- pure logic + .cu/.py geometry parity +

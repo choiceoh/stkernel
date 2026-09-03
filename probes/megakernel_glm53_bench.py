@@ -9,8 +9,11 @@ it replaces on production shapes and times both arms with CUDA events.
     /repo/probes/megakernel_glm53_bench.py [--iters 30] [--skip-kda]
         [--segments mhc] [--stock raw|dispatch|both] [--sinkhorn 20]
 
-BASIS NOTE (2026-09-03): --sinkhorn defaults to 20, the value both models
-serve (`hc_sinkhorn_iters`, passed at the call site as `sinkhorn_repeat`).
+BASIS NOTE (2026-09-03): --sinkhorn defaults to the driver's
+`SINKHORN_SERVED` (20), the value both models serve (`hc_sinkhorn_iters`,
+passed at the call site as `sinkhorn_repeat`) AND the value the boot
+self-test gates on -- one number, so the arming gate and this probe cannot
+disagree about what the segment is.
 It used to be hard-coded to 4, and the MHC rows recorded in MEASUREMENTS
 (4/9/10차) were measured that way -- the sinkhorn is a runtime loop in BOTH
 arms (`for it < sinkhorn_repeat - 1` in the .cu, `T.serial(...)` in the
@@ -389,20 +392,16 @@ def probe_mhc_dispatch(iters: int, sk: int) -> bool:
         tl.mhc_fused_post_pre_tilelang
 
     mk.maybe_arm()  # so _ARMED reflects the self-test, not the first call
-    if not mk._ARMED["mhc"]:
+    armed0 = mk._ARMED["mhc"]
+    if not armed0:
         print("!mhc dispatch: the MHC segment did not arm -- nothing to compare")
         return False
 
-    hits = {"n": 0}
-    real = mk.mhc_fused_post_pre
-    armed0 = mk._ARMED["mhc"]
-
-    def counting(*a, **k):
-        out = real(*a, **k)
-        hits["n"] += out is not None
-        return out
-
-    mk.mhc_fused_post_pre = counting     # mhc_hook resolves it per call
+    # `hit` comes from the core's own served-call counter, not from patching
+    # a private of it: the receipt has to survive a refactor of how mhc_hook
+    # calls through, or every run would FAIL with "never offered a call" and
+    # send the reader after a wiring bug that is not there.
+    served = lambda: mk._HOOK_SERVED[0]   # noqa: E731
     ok = True
     any_hit = False
     try:
@@ -426,10 +425,10 @@ def probe_mhc_dispatch(iters: int, sk: int) -> bool:
             t_ref = _time(lambda: call(*args, **kw), iters, hot=hot)
 
             mk._ARMED["mhc"] = True
-            hits["n"] = 0
+            before = served()
             got = call(*args, **kw)
             torch.cuda.synchronize()
-            hit = hits["n"] > 0
+            hit = served() > before
             any_hit |= hit
             # timing the armed arm when MK was never offered the call would
             # measure the stock path twice and print it under mk_us
@@ -444,7 +443,6 @@ def probe_mhc_dispatch(iters: int, sk: int) -> bool:
                   f"{(f'{t_mk:.1f}' if hit else '-'):>9}"
                   f"{('yes' if hit else 'no'):>6}")
     finally:
-        mk.mhc_fused_post_pre = real
         mk._ARMED["mhc"] = armed0
     if not any_hit:
         # every row compared stock against stock: rel == 0 everywhere and the
@@ -469,11 +467,12 @@ def main() -> int:
     # both  = raw plus the wrapper's real arm (see probe_mhc_dispatch)
     ap.add_argument("--stock", choices=("raw", "dispatch", "both"),
                     default="raw")
-    # what the models pass as sinkhorn_repeat (hc_sinkhorn_iters); see the
-    # BASIS NOTE in the module docstring before changing it
-    ap.add_argument("--sinkhorn", type=int, default=20)
+    # what the models pass as sinkhorn_repeat (hc_sinkhorn_iters); unset
+    # means the driver's SINKHORN_SERVED, which is also what the boot
+    # self-test gates on. See the BASIS NOTE in the module docstring.
+    ap.add_argument("--sinkhorn", type=int, default=None)
     args = ap.parse_args()
-    if args.sinkhorn < 1:
+    if args.sinkhorn is not None and args.sinkhorn < 1:
         print("--sinkhorn must be >= 1")
         return 2
     segs = [s.strip() for s in args.segments.split(",") if s.strip()]
@@ -492,6 +491,7 @@ def main() -> int:
 
     from vllm.model_executor.layers import glm53_megakernel as mk
 
+    sk = mk.SINKHORN_SERVED if args.sinkhorn is None else args.sinkhorn
     torch.cuda.init()
     ext = mk._build()
     major, minor, sms, smem = ext.probe_device()
@@ -499,7 +499,8 @@ def main() -> int:
     assert (major, minor, sms) == (12, 1, 48), "not a GB10"
 
     print(f"segments={','.join(segs)} stock={args.stock} "
-          f"sinkhorn_repeat={args.sinkhorn}")
+          f"sinkhorn_repeat={sk}"
+          f"{' (driver default)' if args.sinkhorn is None else ''}")
     ok = True
     if "gemm" in segs:
         ok &= probe_gemm(args.iters)
@@ -507,9 +508,9 @@ def main() -> int:
         ok &= probe_exact()
     if "mhc" in segs:
         if args.stock in ("raw", "both"):
-            ok &= probe_mhc(args.iters, args.sinkhorn)
+            ok &= probe_mhc(args.iters, sk)
         if args.stock in ("dispatch", "both"):
-            ok &= probe_mhc_dispatch(args.iters, args.sinkhorn)
+            ok &= probe_mhc_dispatch(args.iters, sk)
     if "kda" in segs:
         ok &= probe_kda(args.iters)
     print("VERDICT:", "PASS" if ok else "FAIL (a ! cell disqualifies)")
