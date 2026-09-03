@@ -26,6 +26,10 @@
 // shipped value as the default, but allow a per-build override so the unknown
 // one-shot-vs-NCCL crossover can be measured at higher concurrency. All peers
 // must use the same value because it participates in the remote rx stride.
+// Half the 256 KiB cap: decode messages are hidden(4096) x tokens x 2 B, so
+// this puts C=1-shaped traffic (8 tokens = 64 KiB) on one side and a full
+// 4-sequence spec batch (32 tokens = 256 KiB) on the other.
+#define SPLIT_BYTES (128 * 1024)
 #ifndef MAXEL
 #define MAXEL 131072
 #endif
@@ -72,7 +76,18 @@ struct Ctrl {
   volatile uint64_t t_wait;              // SM cycles spinning for peer flags
   volatile uint64_t t_reduce;            // the summation
   volatile uint64_t t_calls;             // samples behind the four above
-  uint64_t pad[3];
+  // The same wait, counted only for messages at or below SPLIT_BYTES. The
+  // wait is "until all three peers' data landed", so it carries the RDMA
+  // transfer as well as any arrival skew: at the 256 KiB cap a rank takes in
+  // 3 x 256 KiB, which is ~43 us at the fabric's measured 17.8 GB/s and
+  // ~22 us if both HCAs serve it -- against 38.7 us measured. Splitting the
+  // same counter by size separates the two: transfer scales with the
+  // message, skew does not. Large = total - small, so this costs two fields,
+  // which is what the padding has left (the peers' rx_base/rxf_base offsets
+  // must not move).
+  volatile uint64_t t_wait_sm;
+  volatile uint64_t t_calls_sm;
+  uint64_t pad[1];
   bf16 tx[RING][MAXEL];
   bf16 rx[RING][NPEER][MAXEL];
 };
@@ -238,6 +253,10 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
     c->t_wait += (uint64_t)(t3 - t2);
     c->t_reduce += (uint64_t)(t4 - t3);
     c->t_calls += 1;
+    if (nbytes <= SPLIT_BYTES) {
+      c->t_wait_sm += (uint64_t)(t3 - t2);
+      c->t_calls_sm += 1;
+    }
   }
 }
 
@@ -250,7 +269,7 @@ static void *proxy_fn(void *) {
   uint64_t sent = 0, done[64] = {0};
   time_t last_report = 0;
   uint64_t last_guard = 0, last_copy = 0, last_wait = 0, last_reduce = 0,
-           last_calls = 0;
+           last_calls = 0, last_wait_sm = 0, last_calls_sm = 0;
   while (!g_ctrl->stop) {
     g_ctrl->proxy_beat++;
     uint64_t s = g_ctrl->tx_seq;
@@ -316,11 +335,15 @@ static void *proxy_fn(void *) {
       if (last_report == 0) last_report = now;
       if (now - last_report >= REPORT_SEC) {
         uint64_t calls = g_ctrl->t_calls, dn = calls - last_calls;
+        uint64_t dn_sm = g_ctrl->t_calls_sm - last_calls_sm;
+        uint64_t dw_sm = g_ctrl->t_wait_sm - last_wait_sm;
         if (dn > 0) {
           double k = 1.0 / (double)dn / (double)SM_CLK_MHZ;  // cycles -> us
           fprintf(stderr,
                   "[osar] phase us/collective (n=%llu): guard=%.1f copy=%.1f "
-                  "wait=%.1f reduce=%.1f | total=%.1f  @%d MHz assumed\n",
+                  "wait=%.1f reduce=%.1f | total=%.1f  @%d MHz assumed"
+                  " | wait by size: <=128KiB n=%llu %.1f, >128KiB n=%llu %.1f"
+                  "\n",
                   (unsigned long long)dn,
                   (double)(g_ctrl->t_guard - last_guard) * k,
                   (double)(g_ctrl->t_copy - last_copy) * k,
@@ -330,12 +353,22 @@ static void *proxy_fn(void *) {
                            g_ctrl->t_copy - last_copy +
                            g_ctrl->t_wait - last_wait +
                            g_ctrl->t_reduce - last_reduce) * k,
-                  SM_CLK_MHZ);
+                  SM_CLK_MHZ,
+                  (unsigned long long)dn_sm,
+                  dn_sm ? (double)dw_sm / (double)dn_sm / (double)SM_CLK_MHZ
+                        : 0.0,
+                  (unsigned long long)(dn - dn_sm),
+                  (dn - dn_sm)
+                      ? (double)(g_ctrl->t_wait - last_wait - dw_sm) /
+                            (double)(dn - dn_sm) / (double)SM_CLK_MHZ
+                        : 0.0);
           last_guard = g_ctrl->t_guard;
           last_copy = g_ctrl->t_copy;
           last_wait = g_ctrl->t_wait;
           last_reduce = g_ctrl->t_reduce;
           last_calls = calls;
+          last_wait_sm = g_ctrl->t_wait_sm;
+          last_calls_sm = g_ctrl->t_calls_sm;
         }
         last_report = now;
       }
