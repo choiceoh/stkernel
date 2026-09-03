@@ -2311,6 +2311,69 @@ def test_korean_gate_separates_notation_from_damage() -> None:
     print("  korean gate notation vs damage .. OK")
 
 
+def test_every_module_can_mount_on_an_image_the_repo_can_launch() -> None:
+    """A module no launchable image accepts is a decoy, not a rollback path.
+
+    `b12x_swiglu_clamp` and `flashinfer_b12x_collapse` were kept "for a v9
+    image" after their fixes were baked into the image at v11. Nothing here
+    can launch a v9: every profile and the launcher's own last-resort default
+    name v13-b12x. Worse, all three of their files failed the preimage check
+    against v13, so deploy-overlays.sh would have refused to mount them even
+    if a profile had listed them. Keeping them read as a rollback that did not
+    exist; a real one means checking out a commit from that era, where the
+    whole tree agrees.
+
+    This check is structural, not a sha comparison (that needs the image): a
+    module in overlay/modules must be named by some profile's MODULES, or the
+    profile must say in prose why it is not."""
+    mods_dir = os.path.join(REPO, "overlay", "modules")
+    have = {d for d in os.listdir(mods_dir)
+            if os.path.isdir(os.path.join(mods_dir, d))}
+    used, prose = set(), ""
+    for env in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        text = open(env, encoding="utf-8").read()
+        prose += text
+        for line in text.splitlines():
+            if line.startswith("MODULES="):
+                used |= set(line.split("=", 1)[1].strip().strip('"').split())
+    undocumented = sorted(m for m in have - used if m not in prose)
+    check(not undocumented,
+          "a module no profile mounts must be explained in a profile "
+          f"comment; silent orphans: {', '.join(undocumented)}")
+    print("  every module is mounted or explained .. OK")
+
+
+def test_profile_declares_no_knob_the_code_cannot_read() -> None:
+    """A profile knob nothing reads is worse than no knob.
+
+    `VLLM_GLM53_MK_W4` outlived its lane. The fp8 MK-GEMM path and this knob
+    were deleted when W4 became the only one -- the ledger lists both under
+    "removed", and two tests assert the name is absent from the code -- but
+    the profile kept declaring it, with eight lines describing how to turn the
+    lane on. The launcher forwards every profile VLLM_* key as its own -e, so
+    each container carried it, and an operator reading the profile would
+    reasonably believe setting it did something.
+    """
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    declared = set(re.findall(r"^(VLLM_[A-Z0-9_]+)=", profile, re.M))
+    code = ""
+    for root, _, files in os.walk(os.path.join(REPO, "overlay", "modules")):
+        for f in files:
+            if f.endswith((".py", ".cu")):
+                code += open(os.path.join(root, f), encoding="utf-8",
+                             errors="replace").read()
+    launcher = open(os.path.join(REPO, "launchers",
+                                 "start-glm53-nvfp4-tp4.sh"),
+                    encoding="utf-8").read()
+    unread = sorted(k for k in declared
+                    if k not in code and k not in launcher)
+    check(not unread,
+          "every profile knob is read by overlay code or the launcher; "
+          f"unread: {', '.join(unread)}")
+    print("  profile knobs are all readable .. OK")
+
+
 def test_fp8_dense_free_bf16_contract() -> None:
     """Releasing the bf16 sources is exact-opt-in and drops the base fallbacks.
 
@@ -7140,9 +7203,20 @@ def test_glm53_megakernel_contracts() -> None:
           "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
           "the record it needs")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
-    check("mk_e2m1_to_e4m3[8]" in cu_code
-          and "0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C" in cu,
+    # Pin the LIVE constant, not a copy of it. This used to check a
+    # `__device__ __constant__ uint8_t[8]` that the funnel-shift immediate
+    # replaced; the array sat unreferenced for as long as the test kept
+    # naming it. Decode the immediate and check the values it actually
+    # encodes.
+    lut = re.search(r"MK_E2M1_LUT64 = 0x([0-9A-Fa-f']+)ULL", cu_code)
+    check(lut is not None, "the e2m1->e4m3 LUT immediate is present")
+    assert lut is not None
+    packed = int(lut.group(1).replace("'", ""), 16)
+    e4m3 = [(packed >> (8 * c)) & 0xFF for c in range(8)]
+    check(e4m3 == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
           "the e2m1->e4m3 LUT covers {0,.5,1,1.5,2,3,4,6} exactly")
+    check("mk_e2m1_to_e4m3" not in cu_code and "mk_e2m1_byte" not in cu_code,
+          "the superseded table and its accessor stay deleted")
     # the expansion reads the packed immediate, not constant memory, and
     # the immediate must be the same table byte for byte
     _lut64 = int("0x4C4844403C383000", 16)
@@ -7958,9 +8032,14 @@ def test_megakernel_w4_layout_functional() -> None:
     mod_dir = os.path.join(REPO, "overlay/modules/glm53_megakernel")
     cu = open(os.path.join(mod_dir, "glm53_megakernel.cu"),
               encoding="utf-8").read()
-    m = re.search(r"mk_e2m1_to_e4m3\[8\] = \{([^}]*)\};", cu, re.S)
+    # The LUT lives as the funnel-shift immediate, not as an array: a
+    # __constant__ load serialises over the distinct addresses in a warp, so
+    # the array it replaced was removed once it had no callers left.
+    m = re.search(r"MK_E2M1_LUT64 = 0x([0-9A-Fa-f']+)ULL", cu)
     check(m is not None, "the e2m1->e4m3 LUT is present in the .cu")
-    lut = [int(x, 16) for x in re.findall(r"0x[0-9A-Fa-f]{2}", m.group(1))]
+    assert m is not None
+    packed = int(m.group(1).replace("'", ""), 16)
+    lut = [(packed >> (8 * c)) & 0xFF for c in range(8)]
     check(lut == [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C],
           f"LUT decodes the e2m1 grid in order (got {[hex(x) for x in lut]})")
 
@@ -8597,6 +8676,8 @@ if __name__ == "__main__":
     test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
+    test_every_module_can_mount_on_an_image_the_repo_can_launch()
+    test_profile_declares_no_knob_the_code_cannot_read()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()

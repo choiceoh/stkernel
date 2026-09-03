@@ -287,17 +287,14 @@ struct MKGemmCtx {
 // Expansion: byte = LUT[mag] + (s << 3) | sign<<7 -- exact while the build
 // keeps s in [-5, 6] (exp field stays inside [1, 15), never a denormal,
 // never the NaN encoding: LUT mantissas are never 111).
-__device__ __constant__ uint8_t mk_e2m1_to_e4m3[8] = {
-    0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C};
-// The same table as one 64-bit immediate, byte c at bits [8c, 8c+8): the
-// expansion indexes it with a funnel shift instead of a constant-memory
-// load. A __constant__ load serialises over the distinct addresses in the
-// warp -- up to 8 here, 64 lookups per thread per k-block -- which made
-// the W4 expansion cost more than the DRAM time it was meant to hide.
+// The table as one 64-bit immediate, byte c at bits [8c, 8c+8): the expansion
+// indexes it with a funnel shift. It was a __device__ __constant__ uint8_t[8]
+// first, and that cost more than it saved -- a __constant__ load serialises
+// over the distinct addresses in a warp, up to 8 here, 64 lookups per thread
+// per k-block, which made the W4 expansion outweigh the DRAM time it was
+// meant to hide. The array and a uint8_t accessor around this immediate both
+// outlived that change with no callers; they are gone.
 constexpr unsigned long long MK_E2M1_LUT64 = 0x4C484440'3C383000ULL;
-__device__ __forceinline__ uint8_t mk_e2m1_byte(int code3) {
-  return (uint8_t)(MK_E2M1_LUT64 >> (code3 * 8));
-}
 
 // Remainder split-K state. Every block owns one 128-column tile across the
 // whole k range, so a tile count that is not a multiple of the grid pays a
