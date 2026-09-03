@@ -126,15 +126,16 @@ for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA \
   esac
 done
 
+# One pass builds both the docker flags and the receipt printed below: two
+# scans could drift into disagreeing about what the container received, and
+# that receipt is the whole point of printing it.
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
-for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
-  envs+=(-e "$v=${!v}")
-done
-
 _fwd=""
 for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
+  envs+=(-e "$v=${!v}")
   _fwd="$_fwd $v=${!v}"
 done
+
 echo "profile=$PROFILE image=$IMAGE pkg=${TARGET_PREFIX%/}" \
      "files=$((${#mounts[@]} / 2)) args=${defaults[*]-}${args[*]+ ${args[*]}}" >&2
 # the forwarded knobs are part of the measurement; print them with it

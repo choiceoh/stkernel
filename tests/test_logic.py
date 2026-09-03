@@ -7637,14 +7637,21 @@ def test_megakernel_core_is_shared() -> None:
           "shape (the T <= 16 correction had to be applied twice)")
     check(resolvers[0] == resolvers[1],
           "the cached resolver is the same in both forks too")
-    check("e.name == _MK_MODULE" in resolvers[0]
-          and "_MK_HOOK, _MK_HOOK_TRIED = None, True" in resolvers[0]
-          and "return None" in resolvers[0],
-          "only a PERMANENT answer is cached -- 'this module is not mounted' "
-          "is a fact of the boot, while anything else (a half-initialised "
-          "package during warmup) stays stock for that call and is retried, "
-          "instead of disabling the segment for the worker's life with "
-          "nothing in the log")
+    check("except ImportError as e:" in resolvers[0]
+          and "not isinstance(e, ModuleNotFoundError) or e.name == _MK_MODULE"
+          in resolvers[0]
+          and "_MK_HOOK, _MK_HOOK_TRIED = None, True" in resolvers[0],
+          "BOTH permanent import shapes cache: module not mounted "
+          "(ModuleNotFoundError naming it) and mounted-without-the-entry-point "
+          "(a plain ImportError -- an older core beside a newer wiring, which "
+          "the core/wiring split made reachable). Treating the second as "
+          "transient re-runs the import on every decode call forever, which "
+          "is the cost this resolver exists to remove")
+    check("except Exception:" in resolvers[0]
+          and resolvers[0].index("except ImportError")
+          < resolvers[0].index("except Exception:"),
+          "a non-import failure is the only doubtful one: stock for that call, "
+          "retried on the next")
 
     # -- the dsv4 launcher now emits profile VLLM_* keys, so it needs the same
     #    EXTRA_ENV guard glm53 has: $COMMON (EXTRA_ENV) renders BEFORE $ENVV
@@ -7757,10 +7764,15 @@ def test_megakernel_core_is_shared() -> None:
     self_test = coresrc[coresrc.index("def _selftest_mhc"):]
     self_test = self_test[:self_test.index("\ndef ")]
     check("sinkhorn_repeat = 1.0, SINKHORN_SERVED" in self_test
-          or "SINKHORN_SERVED" in self_test,
-          "the ARMING gate runs the same sinkhorn count serving does -- it "
-          "used to validate 3 loop iterations while production runs 19, so a "
-          "divergence that opens up later armed clean and served wrong")
+          and "1.0, 4" not in self_test,
+          "the ARMING gate runs the same sinkhorn count serving does, from "
+          "the constant and not a literal -- it used to validate 3 loop "
+          "iterations while production runs 19, so a divergence that opens "
+          "up later armed clean and served wrong")
+    check("sinkhorn=%d" in self_test,
+          "the gate logs the count it used next to its rel_errs: _TOL_MHC was "
+          "calibrated at 4 and not re-derived at 20, so a DISARM has to be "
+          "readable as accumulation or as divergence")
     check('ap.add_argument("--sinkhorn", type=int, default=None)' in probe
           and "mk.SINKHORN_SERVED if args.sinkhorn is None" in probe,
           "the probe's sinkhorn default IS the driver's constant, not a "
@@ -7806,6 +7818,14 @@ def test_megakernel_core_is_shared() -> None:
           "source would otherwise die on 'unbound variable' instead of the "
           "ABORT that names the profile")
 
+    replay = open(os.path.join(REPO, "probes", "mhc_replay.py"),
+                  encoding="utf-8").read()
+    check('ap.add_argument("--sinkhorn", type=int, default=None)' in replay
+          and "mk.SINKHORN_SERVED if args.sinkhorn is None" in replay
+          and "1.0, 1e-6, 4)" not in replay,
+          "the replay diagnostic runs the same sinkhorn count the bench and "
+          "the gate do -- the bench names it as the tool for a `rep` failure, "
+          "and at a shorter chain a longer chain's drift reproduces as clean")
     print("  megakernel core is shared ..... OK")
 
 

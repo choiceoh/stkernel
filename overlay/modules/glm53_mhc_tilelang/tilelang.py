@@ -182,21 +182,32 @@ _MK_HOOK_TRIED = False
 def _deneb_mk_hook():
     """The MK_SEG_MHC entry point, resolved at most once per process.
 
-    A permanent answer is cached; a doubtful one is not. "The module is not
-    mounted" is a fact of this boot (ModuleNotFoundError naming exactly that
-    module), so it caches as None and the lane stays stock without paying an
-    import per call. Anything else -- a half-initialised package during
-    warmup, a transient read on the bind mount -- returns stock for THIS call
-    and is retried on the next, because caching it would disable the segment
-    for the life of the worker with nothing in the log to say so.
+    A permanent answer is cached; a doubtful one is not. Every ImportError
+    shape is permanent here -- the module is not mounted, or it is mounted
+    without the entry point -- so both cache as None and the lane stays stock
+    without paying an import per call. Only a non-import failure (a
+    half-initialised package during warmup, a transient read on the bind
+    mount) returns stock for THIS call and is retried on the next, because
+    caching that would disable the segment for the life of the worker with
+    nothing in the log to say so.
     """
     global _MK_HOOK, _MK_HOOK_TRIED
     if not _MK_HOOK_TRIED:
         try:
             from vllm.model_executor.layers.glm53_megakernel import mhc_hook
-        except Exception as e:
-            if isinstance(e, ModuleNotFoundError) and e.name == _MK_MODULE:
+        except ImportError as e:
+            # Both shapes are facts of THIS boot rather than transient: the
+            # module is not mounted (ModuleNotFoundError naming it), or it IS
+            # mounted without the entry point (a plain ImportError -- an older
+            # core beside a newer wiring, which the core/wiring split made a
+            # reachable deploy state). Cache both: retrying either would pay
+            # an import per decode call for the life of the worker.
+            if not isinstance(e, ModuleNotFoundError) or e.name == _MK_MODULE:
                 _MK_HOOK, _MK_HOOK_TRIED = None, True
+            return None
+        except Exception:
+            # anything else may be transient (a half-initialised package
+            # during warmup): stay stock for THIS call and retry on the next
             return None
         _MK_HOOK, _MK_HOOK_TRIED = mhc_hook, True
     return _MK_HOOK

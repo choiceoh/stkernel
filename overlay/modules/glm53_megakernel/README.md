@@ -234,7 +234,7 @@ replay needs no reset. Things that measured worse on the way (MEASUREMENTS
 token's last arriver (tails serialize on one block), a 24-value shuffle
 broadcast in the tail (spills under the p1 register pressure).
 
-Bench (srv2, PDL on): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
+Bench (srv2, PDL on, **sinkhorn_repeat=4** -- the basis before 2026-09-03, reproduce with `--sinkhorn 4`): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
 (MEASUREMENTS.md 9차 has the eight experiments that got here).
 
 ## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
@@ -284,8 +284,15 @@ boot self-test gates on it and `probes/megakernel_glm53_bench.py` defaults to
 it. It used to be 4 in both, which ran 3 loop iterations where serving runs
 19 -- the first row/col pass places its eps differently from the loop's, so a
 divergence that only opens up later would have armed clean and served wrong.
-The gate is stricter now: if MHC DISARMs on the next boot, that is the finding,
-not a regression (the lane falls back to stock either way).
+The gate is stricter now: if MHC DISARMs on the next boot, that is a finding
+rather than a regression (the lane falls back to stock either way) -- but read
+the logged rel_errs first. `_TOL_MHC` was calibrated at 4 and has not been
+re-derived at 20, so an accumulation artefact and a real MK/TileLang
+divergence trip the same boolean; `--sinkhorn 4` on the probe separates them.
+
+Every MHC number recorded before that date -- the bench line below, and the
+4/9/10차 rows in MEASUREMENTS -- was taken at 4 and is not comparable to a
+fresh run without that flag.
 
 ## Verification ladder (in order, no skips)
 

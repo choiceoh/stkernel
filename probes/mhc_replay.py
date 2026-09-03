@@ -20,7 +20,21 @@ def _rel(a, b):
 
 
 def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    # The bench's `rep` cell -- the failure this tool exists to pin down -- is
+    # measured at the driver's SINKHORN_SERVED, so walking the same call at a
+    # different count would reproduce a longer sinkhorn chain's drift as
+    # clean. Unset means that constant; pass a number to compare bases.
+    ap.add_argument("--sinkhorn", type=int, default=None)
+    args = ap.parse_args()
+
     from vllm.model_executor.layers import glm53_megakernel as mk
+
+    sk = mk.SINKHORN_SERVED if args.sinkhorn is None else args.sinkhorn
+    print(f"sinkhorn_repeat={sk}"
+          f"{' (driver default)' if args.sinkhorn is None else ''}")
     torch.cuda.init()
     mk._build()
 
@@ -42,7 +56,7 @@ def main() -> int:
         def call():
             return mk._mhc_call(x, res, pm, cm.reshape(T, 16).contiguous(), fn,
                                 mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T,
-                                1e-6, 1e-6, 1e-6, 1.0, 1e-6, 4)
+                                1e-6, 1e-6, 1e-6, 1.0, 1e-6, sk)
 
         base = tuple(g.clone() for g in call())
         torch.cuda.synchronize()
