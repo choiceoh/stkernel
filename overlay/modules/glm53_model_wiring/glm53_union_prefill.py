@@ -48,7 +48,6 @@ def _measure_overlap(physical, group_size, tag):
     """
     if _UNION_STATS_SEEN[0] >= _UNION_STATS_MAX:
         return
-    _UNION_STATS_SEEN[0] += 1
     with torch.no_grad():
         rows = physical.shape[0] // group_size * group_size
         if rows == 0:
@@ -57,6 +56,13 @@ def _measure_overlap(physical, group_size, tag):
         grouped = physical[:sample].reshape(-1, group_size * physical.shape[1])
         valid = grouped >= 0
         per_token = valid.sum(dim=1).float() / group_size
+        # The warm-up prefill runs against a nearly empty cache, so top-k
+        # selects almost nothing and the overlap of two near-empty sets says
+        # nothing about serving. Counting those burned the whole sample budget
+        # on `per-token-topk=1` rows. Only measure a real selection.
+        if per_token.mean().item() < 256:
+            return
+        _UNION_STATS_SEEN[0] += 1
         # |union| per group, without a span-sized buffer: sort and count the
         # value changes. Only the count is needed, so this is cheap.
         keys = torch.where(valid, grouped, torch.full_like(grouped, 2**30))
