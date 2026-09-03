@@ -2228,11 +2228,24 @@ def test_fp8_dense_free_bf16_contract() -> None:
     src_w = open(wiring, encoding="utf-8").read()
     check("maybe_free_fp8_dense_bf16(self)" in src_w,
           "the release is triggered from the composed model wiring")
-    fwd = src_w[src_w.rindex("    def forward("):]
-    check("maybe_free_fp8_dense_bf16(self)" in fwd,
-          "and from a forward -- a forward is proof the weights landed")
+
+    # It must hang off Glm5NextForConditionalGeneration, the class vLLM
+    # actually runs. Glm5NextForCausalLM.forward reads like the right place
+    # and is never called: Glm4vForConditionalGeneration.forward reaches past
+    # it into `self.language_model.model(...)`. A trigger there is dead code,
+    # and two boots came up healthy-looking with the release silently skipped.
+    outer = src_w[src_w.index("class Glm5NextForConditionalGeneration"):]
+    check("maybe_free_fp8_dense_bf16(self)" in outer,
+          "the trigger is on the class vLLM calls, not the bypassed one")
+    inner = src_w[src_w.index("class Glm5NextForCausalLM"):
+                  src_w.index("class Glm5NextForConditionalGeneration")]
+    check("maybe_free_fp8_dense_bf16" not in inner,
+          "Glm5NextForCausalLM.forward is bypassed -- nothing may rely on it")
+    fwd = outer[outer.index("    def forward("):]
     check('getattr(self, "_bf16_released", False)' in fwd,
           "guarded so it runs once, not every step")
+    check("return super().forward(" in fwd,
+          "and it delegates -- the override adds the release, nothing else")
 
     # Every module the release touches must actually be composed; that is the
     # check the dead call site would have failed.

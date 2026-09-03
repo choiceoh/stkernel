@@ -1051,25 +1051,6 @@ class Glm5NextForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
-        # deneb fork: release the bf16 sources of the fp8 dense copies, once,
-        # on the first forward. It cannot go in maybe_build_fp8_dense --
-        # AutoWeightsLoader calls that before the checkpoint is walked and a
-        # freed source breaks the loader's own shape read (parameter.py:221,
-        # IndexError on a 1-D empty tensor) -- and this model file is the only
-        # composed place that runs after loading for certain: a forward is
-        # proof the weights landed. Runs inside the profile forward, so the
-        # KV sizing that follows works from the smaller footprint.
-        # No-op unless VLLM_GLM53_FP8_DENSE_FREE_BF16=1.
-        if not getattr(self, "_bf16_released", False):
-            self._bf16_released = True
-            try:
-                from vllm.model_executor.layers.glm53_fp8_dense import (
-                    maybe_free_fp8_dense_bf16,
-                )
-
-                maybe_free_fp8_dense_bf16(self)
-            except Exception:
-                logger.exception("[fp8-dense] bf16 release skipped")
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs
         )
@@ -1296,6 +1277,38 @@ class Glm5NextForConditionalGeneration(
         config = super().get_encoder_cudagraph_config()
         config.buffer_keys = [k for k in config.buffer_keys if k != "pos_embeds"]
         return config
+
+    def forward(self, *args, **kwargs):
+        """Release the dead bf16 sources on the first forward, then delegate.
+
+        The release cannot live in maybe_build_fp8_dense: AutoWeightsLoader
+        calls that before the checkpoint is walked, and a freed source breaks
+        the loader's own shape read (parameter.py:221, IndexError on a 1-D
+        empty tensor). It needs a point that provably runs after loading, and
+        a forward is proof the weights landed.
+
+        It has to be THIS forward. Glm5NextForCausalLM.forward looks like the
+        obvious place and is never called -- Glm4vForConditionalGeneration.
+        forward reaches past it, straight into `self.language_model.model(...)`
+        -- so a trigger there is dead code, which cost two boots that came up
+        looking healthy with the release silently skipped. This class sits
+        above the compiled region, so the one-time free also stays out of any
+        traced graph.
+
+        Runs inside the profile forward, before KV sizing, so the freed bytes
+        become KV. No-op unless VLLM_GLM53_FP8_DENSE_FREE_BF16=1.
+        """
+        if not getattr(self, "_bf16_released", False):
+            self._bf16_released = True
+            try:
+                from vllm.model_executor.layers.glm53_fp8_dense import (
+                    maybe_free_fp8_dense_bf16,
+                )
+
+                maybe_free_fp8_dense_bf16(self)
+            except Exception:
+                logger.exception("[fp8-dense] bf16 release skipped")
+        return super().forward(*args, **kwargs)
 
 
 def get_spec_layer_idx_from_weight_name(
