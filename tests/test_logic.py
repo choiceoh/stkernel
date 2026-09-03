@@ -6452,6 +6452,68 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     print("  kda conv-state layout ......... OK")
 
 
+def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
+    """The build pass must not hold copies no method will read.
+
+    srv3 was OOM-killed mid-pass on 2026-09-03 (global_oom, free 4.0 GiB
+    against a 4.0 GiB watermark, all_unreclaimable) on the first boot with
+    VLLM_GLM53_FP8_DENSE=nvfp4. Two of the copies at that peak were dead:
+    the MK W4 pack was built for EVERY eligible linear before the scheme
+    branch, and NvFp4DenseMethod.apply never reads one; and the alpha_scale
+    retry re-ran _quantize_nvfp4, which does not take alpha_scale, holding
+    two identical triples at once. The bf16 lifetime is NOT the lever here
+    -- freeing it inside this pass already killed a boot (see the docstring
+    on maybe_free_fp8_dense_bf16).
+    """
+    src = open(
+        "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8"
+    ).read()
+    body = src[src.index("def maybe_build_fp8_dense("):]
+
+    # 1. the pack is attached through the helper, never inline in the loop
+    check("def _attach_mk_pack(" in src,
+          "the pack build must be one helper so every call site is visible")
+    check("build_mk_weight_w4" not in body,
+          "no inline pack build inside the build loop -- it is what ran "
+          "before the scheme branch and paid for every nvfp4 layer")
+
+    # 2. no pack on a path where nvfp4/w4a8 wins the layer
+    nv = body[body.index("if scheme == \"nvfp4\""):]
+    nv = nv[:nv.index("if scheme == \"w4a8\"")]
+    arm = nv[:nv.index("else:")]
+    check("_attach_mk_pack" not in arm,
+          "a layer the nvfp4 arm takes must not build an MK pack: "
+          "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
+    check("_attach_mk_pack" in nv[nv.index("else:"):],
+          "when the nvfp4 arm refuses, fp8 serves and the pack is needed")
+
+    # 3. the nvfp4 quantization is hoisted out of the alpha_scale retry
+    q = nv.index("_quantize_nvfp4(weight)")
+    loop = nv.index("for alpha_scale in")
+    check(q < loop,
+          "_quantize_nvfp4 does not read alpha_scale; quantizing inside the "
+          "retry loop holds two identical triples for no reason")
+    check(nv.count("_quantize_nvfp4(weight)") == 1,
+          "one quantization per linear, both attempts")
+
+    # 4. a boot where MK-GEMM is on but nothing carries a pack must say so
+    check("%d MK W4 packs" in body,
+          "the fingerprint must count the packs, or 'MK_GEMM=1 with 0 packs' "
+          "is invisible")
+    check("mutually exclusive" in body and "MK_GEMM=1 but the" in body,
+          "the scheme that wins the layer turns MK-GEMM off for it; silence "
+          "there is how 'armed' stops meaning 'serving'")
+
+    # 5. the bf16 release stays its own pass
+    free = src[src.index("def maybe_free_fp8_dense_bf16("):]
+    free = free[:free.index("def _attach_mk_pack(")]
+    check("mod.weight.data = torch.empty(" in free
+          and "mod.weight.data = torch.empty(" not in body,
+          "the bf16 release must stay outside the build pass: releasing from "
+          "inside it made the early AutoWeightsLoader call destructive")
+    print("  fp8-dense build peak .......... OK")
+
+
 def test_fused_k_gate_lazy_slot_exists() -> None:
     """The fused indexer forward must not read a slot nobody creates.
 
@@ -8571,5 +8633,6 @@ if __name__ == "__main__":
     test_trace_composition_analyze()
     test_drafter_fc_probe_contracts()
     test_kda_conv_state_layout_is_the_arming_contract()
+    test_fp8_dense_build_peak_pays_only_for_what_serves()
     print(f"all OK ({PASS} checks)")
 
