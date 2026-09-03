@@ -34,6 +34,50 @@ _UNION_STATS_SEEN: list = [0]
 _UNION_STATS_MAX = 8
 
 
+def _measure_overlap(physical, group_size, tag):
+    """The one number that decides whether this arm is worth any kernel work.
+
+    Saving is `1 - |union| / (G x per-token top-k)`: 0 when adjacent tokens
+    pick disjoint slots, `1 - 1/G` when they pick the same ones. It has never
+    been measured, because the arm has never run -- and the arm cannot run
+    until its union builder stops being O(span), which is a real kernel. So
+    measure it here, in plain torch, on the indices the caller already has,
+    BEFORE deciding to write that kernel.
+
+    Sampled and bounded: this is instrumentation, not a serving path.
+    """
+    if _UNION_STATS_SEEN[0] >= _UNION_STATS_MAX:
+        return
+    _UNION_STATS_SEEN[0] += 1
+    with torch.no_grad():
+        rows = physical.shape[0] // group_size * group_size
+        if rows == 0:
+            return
+        sample = min(rows, 256 * group_size)
+        grouped = physical[:sample].reshape(-1, group_size * physical.shape[1])
+        valid = grouped >= 0
+        per_token = valid.sum(dim=1).float() / group_size
+        # |union| per group, without a span-sized buffer: sort and count the
+        # value changes. Only the count is needed, so this is cheap.
+        keys = torch.where(valid, grouped, torch.full_like(grouped, 2**30))
+        keys, _ = keys.sort(dim=1)
+        changed = torch.ones_like(keys, dtype=torch.bool)
+        changed[:, 1:] = keys[:, 1:] != keys[:, :-1]
+        changed &= keys < 2**30
+        union = changed.sum(dim=1).float()
+        ideal = per_token * group_size
+        saved = (1.0 - union / ideal.clamp_min(1.0)).mean().item()
+        logger.warning(
+            "[union-prefill] overlap #%d (%s): groups=%d G=%d "
+            "per-token-topk=%.0f |union|=%.0f of %.0f -> gather saved "
+            "%.1f pct (ceiling %.1f pct)",
+            _UNION_STATS_SEEN[0], tag, grouped.shape[0], group_size,
+            per_token.mean().item(), union.mean().item(),
+            ideal.mean().item(), 100.0 * saved,
+            100.0 * (1.0 - 1.0 / group_size),
+        )
+
+
 @triton.jit
 def _glm53_sparse_prefill_kernel(
     q_ptr,
@@ -690,6 +734,8 @@ def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
             BLOCK_N=_CONVERT_BLOCK_N,
             return_valid_counts=True,
         )
+        if os.environ.get("VLLM_GLM53_UNION_PREFILL_STATS", "") == "1":
+            _measure_overlap(physical, group_size, f"tokens={tokens}")
         flat_kv = kv_cache.view(torch.float8_e4m3fn).reshape(-1, 512)
         output = glm53_union_sparse_prefill(
             q[0],
