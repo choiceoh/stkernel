@@ -575,38 +575,76 @@ def _kda_eligible(meta) -> bool:
     return 0 < meta.num_actual_tokens <= 32
 
 
-def _kda_layout_ok(layer) -> bool:
-    """Static per-boot verdict (cached): state layouts exactly what the
-    kernel indexes, conv state dim-first, kv cache attached."""
+_KDA_LAYOUT_SAID = set()
+
+
+def _kda_layout_reason(layer):
+    """None when the layout is exactly what the kernel indexes, else the
+    first predicate that failed, phrased for the boot log."""
     import torch
 
     kv = getattr(layer, "kv_cache", None)
     if not isinstance(kv, tuple) or len(kv) != 2:
-        return False
+        return "kv_cache is not the (conv, recurrent) pair yet"
     conv_state, rec_state = kv
-    return (layer._merged_conv_weight is not None
-            and layer._merged_conv_weight.dtype == torch.float32
-            and layer._merged_conv_weight.shape == (KDA_QKV, 4)
-            and layer._conv_state_dim_first
-            and layer.A_log.dtype == torch.float32
-            and layer.dt_bias.dtype == torch.float32
-            and conv_state.dtype == torch.float32
-            and conv_state.dim() == 3
-            and conv_state.shape[1] == KDA_QKV
-            # spec-decode allocates the sliding window k-1+num_spec wide;
-            # the kernel uses the runtime width as stride over the active
-            # [0, 3) window, so any width >= 3 is admissible (a hard (QKV,3)
-            # gate never matched production -- review finding).
-            # The width must carry the spec headroom, not just the
-            # kernel history: causal_conv1d_update slides across the
-            # draft-verify tokens and a >= 3 check admitted a buffer
-            # the STOCK arm then read out of bounds.
-            and conv_state.shape[2] == KDA_CONV_STATE_W
-            and conv_state.is_contiguous()
-            and rec_state.dtype == torch.float32
-            and rec_state.dim() == 4
-            and rec_state.shape[1:] == (KDA_H, KDA_D, KDA_D)
-            and rec_state.is_contiguous())
+    w = layer._merged_conv_weight
+    if w is None:
+        # Built lazily by the STOCK forward, so the first eager call always
+        # lands here and the second one does not. Transient, not a fault.
+        return "merged conv weight not built yet (the stock forward builds it)"
+    if w.dtype != torch.float32 or tuple(w.shape) != (KDA_QKV, 4):
+        return "merged conv weight is %s%s, not float32 (%d, 4)" % (
+            w.dtype, tuple(w.shape), KDA_QKV)
+    if not layer._conv_state_dim_first:
+        # The one that cost a campaign: vLLM's DEFAULT is SD, this kernel
+        # indexes DS, and the boot log still said armed={'kda': True}
+        # because _selftest_kda builds its own DS fixtures and passes.
+        return ("process conv-state layout is SD (state_len, dim) but the "
+                "kernel indexes DS (dim, state_len) -- set "
+                "VLLM_SSM_CONV_STATE_LAYOUT=DS to serve MK-KDA")
+    if layer.A_log.dtype != torch.float32 or layer.dt_bias.dtype != torch.float32:
+        return "A_log/dt_bias are not float32"
+    if (conv_state.dtype != torch.float32 or conv_state.dim() != 3
+            or conv_state.shape[1] != KDA_QKV):
+        return "conv state is %s%s, not float32 (blocks, %d, W)" % (
+            conv_state.dtype, tuple(conv_state.shape), KDA_QKV)
+    # spec-decode allocates the sliding window k-1+num_spec wide; the kernel
+    # uses the runtime width as stride over the active [0, 3) window, so any
+    # width >= 3 is admissible (a hard (QKV,3) gate never matched production
+    # -- review finding). The width must carry the spec headroom, not just
+    # the kernel history: causal_conv1d_update slides across the draft-verify
+    # tokens and a >= 3 check admitted a buffer the STOCK arm then read out
+    # of bounds.
+    if conv_state.shape[2] != KDA_CONV_STATE_W:
+        return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
+            conv_state.shape[2], KDA_CONV_STATE_W)
+    if not conv_state.is_contiguous():
+        return "conv state is not contiguous"
+    if (rec_state.dtype != torch.float32 or rec_state.dim() != 4
+            or tuple(rec_state.shape[1:]) != (KDA_H, KDA_D, KDA_D)):
+        return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
+            rec_state.dtype, tuple(rec_state.shape), KDA_H, KDA_D, KDA_D)
+    if not rec_state.is_contiguous():
+        return "recurrent state is not contiguous"
+    return None
+
+
+def _kda_layout_ok(layer) -> bool:
+    """Static per-boot verdict: state layouts exactly what the kernel
+    indexes, conv state dim-first, kv cache attached.
+
+    A rejection here is PERMANENT and used to be silent, which is how
+    armed={'kda': True} came to mean "never ran once" for a whole campaign
+    -- the self-test passes on its own fixtures and every production layer
+    then falls out here. Each distinct reason is said once per process."""
+    reason = _kda_layout_reason(layer)
+    if reason is None:
+        return True
+    if reason not in _KDA_LAYOUT_SAID:
+        _KDA_LAYOUT_SAID.add(reason)
+        logger.warning("[megakernel] kda layout gate: %s -- the layer stays "
+                       "stock", reason)
+    return False
 
 
 def _kda_ensure_packs(layer) -> bool:
@@ -1238,6 +1276,23 @@ def arm() -> None:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
+        if _ARMED["kda"]:
+            # The self-test builds its own DS fixtures, so it says nothing
+            # about the layout the PRODUCTION states are stored in. Without
+            # this line "armed" reads as "serving" and only a profiler trace
+            # (or this comment's author, a day late) can tell the difference.
+            try:
+                from vllm.model_executor.layers.mamba.mamba_utils import (
+                    is_conv_state_dim_first)
+
+                if not is_conv_state_dim_first():
+                    logger.warning(
+                        "[megakernel] kda ARMED but the process conv-state "
+                        "layout is SD; this kernel indexes DS, so EVERY "
+                        "layer will fall back to stock. Set "
+                        "VLLM_SSM_CONV_STATE_LAYOUT=DS.")
+            except Exception:
+                pass
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
                    dict(_ARMED), KDA_SHADOW)
 
