@@ -2311,6 +2311,38 @@ def test_korean_gate_separates_notation_from_damage() -> None:
     print("  korean gate notation vs damage .. OK")
 
 
+def test_every_module_can_mount_on_an_image_the_repo_can_launch() -> None:
+    """A module no launchable image accepts is a decoy, not a rollback path.
+
+    `b12x_swiglu_clamp` and `flashinfer_b12x_collapse` were kept "for a v9
+    image" after their fixes were baked into the image at v11. Nothing here
+    can launch a v9: every profile and the launcher's own last-resort default
+    name v13-b12x. Worse, all three of their files failed the preimage check
+    against v13, so deploy-overlays.sh would have refused to mount them even
+    if a profile had listed them. Keeping them read as a rollback that did not
+    exist; a real one means checking out a commit from that era, where the
+    whole tree agrees.
+
+    This check is structural, not a sha comparison (that needs the image): a
+    module in overlay/modules must be named by some profile's MODULES, or the
+    profile must say in prose why it is not."""
+    mods_dir = os.path.join(REPO, "overlay", "modules")
+    have = {d for d in os.listdir(mods_dir)
+            if os.path.isdir(os.path.join(mods_dir, d))}
+    used, prose = set(), ""
+    for env in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
+        text = open(env, encoding="utf-8").read()
+        prose += text
+        for line in text.splitlines():
+            if line.startswith("MODULES="):
+                used |= set(line.split("=", 1)[1].strip().strip('"').split())
+    undocumented = sorted(m for m in have - used if m not in prose)
+    check(not undocumented,
+          "a module no profile mounts must be explained in a profile "
+          f"comment; silent orphans: {', '.join(undocumented)}")
+    print("  every module is mounted or explained .. OK")
+
+
 def test_profile_declares_no_knob_the_code_cannot_read() -> None:
     """A profile knob nothing reads is worse than no knob.
 
@@ -8644,6 +8676,7 @@ if __name__ == "__main__":
     test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
+    test_every_module_can_mount_on_an_image_the_repo_can_launch()
     test_profile_declares_no_knob_the_code_cannot_read()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
