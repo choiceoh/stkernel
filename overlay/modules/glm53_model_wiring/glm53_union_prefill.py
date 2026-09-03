@@ -342,6 +342,22 @@ def _base_sparse_prefill(
     )
 
 
+def _decline_kernel(reason: str) -> None:
+    """Say why the kernel refused, once, then let the caller serve stock.
+
+    Four `return None`s used to sit here unannotated. Two of them are ordinary
+    (a short tail, an empty batch); two are the arm quietly not applying to
+    the shapes this fleet actually serves. Nothing distinguished them in a
+    log, which is how "ARMED" and "ran" stayed different things.
+    """
+    if reason not in _UNION_DECLINED:
+        _UNION_DECLINED.add(reason)
+        logger.warning(
+            "union prefill DECLINED in the kernel and the stock path is "
+            "serving: %s", reason)
+    return None
+
+
 def glm53_union_sparse_prefill(
     q: torch.Tensor,
     kv: torch.Tensor,
@@ -368,21 +384,17 @@ def glm53_union_sparse_prefill(
     # once, so "ARMED width=4" and "ran" stop being different things in
     # silence.
     if group_size not in (2, 4) or group_size * heads > 32 or dim != 512:
-        reason = (
-            f"group_size={group_size} x heads={heads} = {group_size * heads} "
-            f"exceeds the kernel's 32-row tile" if group_size * heads > 32
-            else f"group_size={group_size} dim={dim} heads={heads}"
-        )
-        if reason not in _UNION_DECLINED:
-            _UNION_DECLINED.add(reason)
-            logger.warning(
-                "union prefill DECLINED and the stock path is serving: %s. "
-                "This model gives 16 heads per rank at TP4, so only "
-                "VLLM_GLM53_UNION_PREFILL=2 can run.", reason)
-        return None
+        if group_size * heads > 32:
+            return _decline_kernel(
+                f"group_size={group_size} x heads={heads} = "
+                f"{group_size * heads} exceeds the kernel's 32-row tile; this "
+                f"model gives 16 heads per rank at TP4, so only "
+                f"VLLM_GLM53_UNION_PREFILL=2 can run")
+        return _decline_kernel(
+            f"group_size={group_size} dim={dim} heads={heads}")
     main_tokens = tokens // group_size * group_size
     if main_tokens == 0:
-        return None
+        return _decline_kernel(f"only {tokens} tokens, fewer than one group")
     q = q.contiguous()
     kv = kv.contiguous()
     logical_indices = logical_indices.contiguous()
@@ -396,11 +408,18 @@ def glm53_union_sparse_prefill(
     maximum = physical_indices[:main_tokens].amax()
     min_slot, max_slot = torch.stack((minimum, maximum)).tolist()
     if max_slot < 0:
-        return None
+        return _decline_kernel("no valid slot in this batch")
     span = max_slot - min_slot + 1
     groups = main_tokens // group_size
     if groups * span * group_size > _UNION_SPAN_BUDGET:
-        return None
+        # The mark buffer is one byte per (group, slot, token), so it scales
+        # with the SPAN of physical slots the batch touches -- not with the
+        # top-k count. A long context whose selected slots are spread across
+        # the cache blows this even though each token still picks only 2048.
+        return _decline_kernel(
+            f"mark buffer would be {groups * span * group_size / 1e6:.0f} MB "
+            f"(groups={groups} x span={span} x G={group_size}), over the "
+            f"{_UNION_SPAN_BUDGET / 1e6:.0f} MB budget")
 
     span_alloc = (span + 4095) // 4096 * 4096
     width = physical_indices.shape[1]

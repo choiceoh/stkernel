@@ -2212,10 +2212,10 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
           "the hook pins 16 heads, which is what makes the cap a width limit")
     check("group_size * heads > 32" in src, "the row cap is still the gate")
     decline = src[src.index("if group_size not in (2, 4)"):]
-    decline = decline[:decline.index("return None") + 12]
-    check("_UNION_DECLINED" in decline and "logger.warning" in decline,
+    decline = decline[:decline.index("\n    tokens_per")] if "\n    tokens_per" in decline else decline[:600]
+    check("_decline_kernel(" in decline,
           "a declined width must say so once, not fail silently")
-    check("VLLM_GLM53_UNION_PREFILL=2" in decline,
+    check("VLLM_GLM53_UNION_PREFILL=2" in src,
           "and must name the width that can actually run")
 
     # Third layer of silence found on 2026-09-03: with the width fixed and set
@@ -2233,6 +2233,21 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
               f"the gate must be able to say '{named}'")
     check("if not group_size:" in gate,
           "an off knob is not a refusal and must stay quiet")
+
+    # Fourth layer: glm53_union_sparse_prefill itself had four bare
+    # `return None`s. Two are ordinary (a short tail, an empty batch); two are
+    # the arm quietly not applying to the shapes this fleet serves -- notably
+    # the span budget, which scales with the SPREAD of physical slots a batch
+    # touches, not with the top-k count. Nothing in a log told them apart.
+    kern = src[src.index("def glm53_union_sparse_prefill("):]
+    kern = kern[:kern.index("\n_UNION_REPORTED")]
+    bare = [ln for ln in kern.splitlines() if ln.strip() == "return None"]
+    check(not bare,
+          f"no bare `return None` may remain in the kernel entry ({len(bare)})")
+    check("_decline_kernel(" in kern,
+          "each refusal goes through the one place that names it")
+    check("mark buffer would be" in src,
+          "the span-budget refusal reports the size it wanted")
     print("  union prefill width vs converter tile .. OK")
 
 
