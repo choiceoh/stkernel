@@ -479,6 +479,24 @@ def glm53_union_sparse_prefill(
 
 _UNION_REPORTED: set = set()
 
+# Shadow: run the union path AND the FlashInfer path, compare, log, and serve
+# FlashInfer's answer. The module has always claimed its output is exact, and
+# that claim had never once been tested on the fleet -- the width bug meant
+# every prefill took the fallback, so "ARMED" and "ran" were different things
+# for the whole life of this arm. The first boot where it actually ran was
+# also the first with a U+FFFD in Korean output, which is either a real
+# coincidence or this arm, and statistics on one event cannot say which.
+#
+# Same idiom as the megakernel's KDA/MLA shadows: cost a step, keep the stock
+# answer, and turn "is it exact?" into a number in the boot log.
+_UNION_SHADOW_ENV = "VLLM_GLM53_UNION_PREFILL_SHADOW"
+_UNION_SHADOW_SEEN: list = [0]
+_UNION_SHADOW_MAX = 32
+
+
+def _union_shadow_enabled() -> bool:
+    return os.environ.get(_UNION_SHADOW_ENV, "").strip() == "1"
+
 
 # The column tile triton_convert_req_index_to_global_index defaults to and
 # asserts against. Named here because the width handed to it must be a
@@ -591,6 +609,25 @@ def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
             os.environ.get(_DENSE_PREFIX_ENV, "0") == "1",
         )
         if output is not None:
+            if _union_shadow_enabled():
+                # The stock answer is the one served; the union answer is only
+                # measured. Bounded so a long run does not pay for it forever.
+                if _UNION_SHADOW_SEEN[0] < _UNION_SHADOW_MAX:
+                    _UNION_SHADOW_SEEN[0] += 1
+                    ref = original(self, q, kv_cache, attn_metadata, layer)
+                    ref_t = ref[0] if isinstance(ref, tuple) else ref
+                    diff = (output.float() - ref_t.float())
+                    denom = ref_t.float().norm().item() or 1.0
+                    logger.warning(
+                        "[union-prefill] shadow #%d rel=%.3e max=%.3e "
+                        "tokens=%d group=%d",
+                        _UNION_SHADOW_SEEN[0],
+                        diff.norm().item() / denom,
+                        diff.abs().amax().item(),
+                        tokens, group_size,
+                    )
+                    return ref
+                return original(self, q, kv_cache, attn_metadata, layer)
             return output, None
     except Exception:
         logger.warning(

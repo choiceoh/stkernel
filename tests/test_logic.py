@@ -2185,6 +2185,22 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
           "the padded view is a copy -- the fallback path reads that buffer")
     check("logical.shape[1] % _CONVERT_BLOCK_N == 0" in body,
           "and the contract is asserted here, not only inside vLLM")
+
+    # The arm claims exact output and never once ran, so the claim is
+    # untested. Shadow makes it a number instead of an argument -- and must
+    # serve the STOCK answer while measuring, or it is not a shadow.
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_UNION_PREFILL_SHADOW=0$", profile, re.M),
+          "the shadow ships off")
+    check('_UNION_SHADOW_ENV, "").strip() == "1"' in src,
+          "exact opt-in for the shadow")
+    shadow = src[src.index("if _union_shadow_enabled():"):]
+    shadow = shadow[:shadow.index("return output, None")]
+    check("ref = original(" in shadow and "return ref" in shadow,
+          "shadow serves the stock answer, never the measured one")
+    check("_UNION_SHADOW_MAX" in shadow,
+          "shadow is bounded -- a long run must not pay for it forever")
     print("  union prefill width vs converter tile .. OK")
 
 
