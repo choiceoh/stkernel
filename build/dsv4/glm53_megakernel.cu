@@ -264,8 +264,8 @@ struct MKGemmCtx {
   int m, n, k, n_orig;
   int grid;  // resident blocks; see MK_GRID_CAP
   int ksr;   // k-split of the leftover tiles, chosen on the host (mk_choose_ksr)
-  // W4 weights: e2m1 nibbles [n, k/2] + per-16-group scale exponents
-  // [n, k/16] (int8, clamped to [-5, 6] at build). The kernel expands each
+  // W4 weights: e2m1 nibbles [n, k/2] + per-16-group e4m3 scale bytes
+  // [n, k/16] (int8 d = (e << 3) + k, e clamped to [-5, 5] at build). The kernel expands each
   // nibble to an EXACT e4m3 byte (1-bit mantissas always fit; the 2^s
   // product is an exponent-field add) and then runs the same e4m3 mma
   // pipeline -- the DRAM bytes halve and the arithmetic is unchanged.
@@ -281,12 +281,30 @@ struct MKGemmCtx {
   // emits the normalized attn straight as fp8 k-groups (one head = one
   // 128-group), which retired ~8 us of prologue from the phase.
   bool a_ready = false;
+  // Per-tensor pow2 the PACK was normalised by, undone here. The expansion
+  // is a byte add, so the group scale can only span the e4m3 exponent
+  // field: d in [-5, 5] around a magnitude of 1. Real weights are nowhere
+  // near 1 -- GLM-5.3's dense projections need group exponents around 2^-7
+  // (median; p1 2^-16) -- so before this every production group clamped at
+  // the floor and the pack quantised ~3x worse than the format allows
+  // (measured 0.225 rel vs 0.082). The build picks the shift, folds 2^shift
+  // into the weights, and passes 2^-shift here; it costs one multiply on
+  // the activation scales in the prologue.
+  float wgs = 1.0f;
 };
 
 // e4m3 encodings of the e2m1 magnitudes {0, .5, 1, 1.5, 2, 3, 4, 6}.
-// Expansion: byte = LUT[mag] + (s << 3) | sign<<7 -- exact while the build
-// keeps s in [-5, 6] (exp field stays inside [1, 15), never a denormal,
-// never the NaN encoding: LUT mantissas are never 111).
+// Expansion: byte = LUT[mag] + d | sign<<7, where d = (e << 3) + k is the
+// group's stored e4m3 SCALE byte -- (1 + k/8) * 2^e. Adding the scale's
+// 3-bit mantissa field to an e4m3 byte IS the multiply: the e2m1
+// magnitudes carry a 1-bit mantissa, so the product needs at most one
+// carry out of the mantissa field and that carry lands on the exponent
+// field exactly where it belongs. The three codes whose magnitude mantissa
+// is 1.5 (3, 5, 7) need +1 when 1 <= k <= 5, and that correction does not
+// depend on k -- hence a second table rather than a select over eight.
+// Exhaustively checked against e4m3(magnitude * scale) over every
+// (code, k, e in [-5, 5]): 504/504, bytes span 0x08..0x6b, so never a
+// denormal, never the sign bit, never the NaN encoding 0x7F.
 // The table as one 64-bit immediate, byte c at bits [8c, 8c+8): the expansion
 // indexes it with a funnel shift. It was a __device__ __constant__ uint8_t[8]
 // first, and that cost more than it saved -- a __constant__ load serialises
@@ -295,6 +313,8 @@ struct MKGemmCtx {
 // meant to hide. The array and a uint8_t accessor around this immediate both
 // outlived that change with no callers; they are gone.
 constexpr unsigned long long MK_E2M1_LUT64 = 0x4C484440'3C383000ULL;
+// same table with +1 on codes 3, 5, 7 (magnitude mantissa 1.5)
+constexpr unsigned long long MK_E2M1_LUT64_B = 0x4D484540'3D383000ULL;
 
 // Remainder split-K state. Every block owns one 128-column tile across the
 // whole k range, so a tile count that is not a multiple of the grid pays a
@@ -496,9 +516,9 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     mk_cp_commit();
   };
   // W4: expand one landed raw record into an e4m3 tile buffer. Thread ->
-  // (row, half): 64 elements = 32 B of nibbles + 4 exponents, written as
-  // 64 B on the 144 B tile pitch. Exact: 1-bit mantissas always fit, 2^s
-  // is an exponent-field add.
+  // (row, half): 64 elements = 32 B of nibbles + 4 scale bytes, written as
+  // 64 B on the 144 B tile pitch. Exact: the table byte plus the scale byte
+  // reproduces e4m3(magnitude * scale) for every code and scale.
   auto expand_w4 = [&](int rawbuf, int expbuf) {
     const int row4 = threadIdx.x & (SMEM_W_ROWS - 1);
     const int half4 = threadIdx.x >> 7;
@@ -529,16 +549,20 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
     // 30 of the W4 loop's 71 us at n=6416 (compute-bound, floor ~61).
 #pragma unroll
     for (int g4 = 0; g4 < 4; ++g4) {  // one 16-group: 2 raw words -> 4 out words
-      const uint32_t eb = (uint32_t)((int8_t)((sc4 >> (8 * g4)) & 0xFFu) << 3)
-                          & 0xFFu;
-      // per-lane adds: a negative exponent is eb >= 0x80 and the byte sum
+      const uint32_t eb =
+          (uint32_t)((int8_t)((sc4 >> (8 * g4)) & 0xFFu)) & 0xFFu;
+      // low three bits are the scale mantissa k for either sign of e, so
+      // the table choice is one predicate on the stored byte
+      const unsigned long long lutg =
+          ((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
+      // per-lane adds: a negative scale byte is eb >= 0x80 and the byte sum
       // wraps (0x30 + 0xF8 = 0x28, the right e4m3 for 0.5 * 2^-1); a plain
       // 32-bit add carried that wrap into the next table byte (accuracy
       // gate FAIL on the first run of this form)
-      const uint32_t l0 =  // codes 0..3: 0x00 0x30 0x38 0x3C, + (s << 3)
-          __vadd4((uint32_t)MK_E2M1_LUT64, eb * 0x01010100u);
+      const uint32_t l0 =  // codes 0..3: 0x00 0x30 0x38 0x3C, + d
+          __vadd4((uint32_t)lutg, eb * 0x01010100u);
       const uint32_t l1 =  // codes 4..7: 0x40 0x44 0x48 0x4C
-          __vadd4((uint32_t)(MK_E2M1_LUT64 >> 32), eb * 0x01010101u);
+          __vadd4((uint32_t)(lutg >> 32), eb * 0x01010101u);
       uint32_t ow[4];
 #pragma unroll
       for (int h = 0; h < 2; ++h) {   // raw word h of the group: elements 8h..8h+7
@@ -659,7 +683,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   }
   MK_TS(2);  // barrier released (or, a_ready: the caller's)
   for (int i = threadIdx.x; i < c.m * KBLK_MAX; i += MK_THREADS)
-    sxs[i] = g_mk_axs[i];
+    sxs[i] = g_mk_axs[i] * c.wgs;  // undo the pack normalisation (ctx)
   __syncthreads();
 
   const int lane = threadIdx.x & 31;
@@ -1387,6 +1411,8 @@ struct MKKdaArgs {
   const __nv_bfloat16* x;  // [T, HIDDEN] normed layer input
   const uint8_t* in_wq4;   // W4 pack of in_proj (see MKGemmCtx)
   const int8_t* in_ws4;
+  float in_wgs = 1.0f;     // pack normalisation, see MKGemmCtx::wgs
+  float o_wgs = 1.0f;
   const __nv_bfloat16* f_b_w;  // [KDA_OUT, KDA_D] bf16
   const __nv_bfloat16* g_b_w;  // [KDA_OUT, KDA_D] bf16
   const float* conv_w;         // [KDA_QKV, CONV_W] fp32
@@ -1438,6 +1464,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.x = a.x;
     c.wq4 = a.in_wq4;
     c.ws4 = a.in_ws4;
+    c.wgs = a.in_wgs;
     c.out = a.qkv;
     c.m = a.num_tokens;
     c.n = KDA_INPROJ_N_PAD;
@@ -1883,6 +1910,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     c.a_ready = true;
     c.wq4 = a.o_wq4;
     c.ws4 = a.o_ws4;
+    c.wgs = a.o_wgs;
     c.out = a.out;
     c.m = a.num_tokens;
     c.n = HIDDEN;
@@ -2424,12 +2452,13 @@ std::vector<int64_t> mk_read_mhc_ts() {
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
-                 torch::Tensor out, int64_t n_orig) {
+                 torch::Tensor out, int64_t n_orig, double wgs) {
   set_kernel_attrs();
   MKGemmCtx c{};
   c.x = (const __nv_bfloat16*)x.data_ptr();
   c.wq4 = (const uint8_t*)wq4.data_ptr();
   c.ws4 = (const int8_t*)ws4.data_ptr();
+  c.wgs = (float)wgs;
   c.out = (__nv_bfloat16*)out.data_ptr();
   c.m = (int)x.size(0);
   c.k = (int)x.size(1);        // k is the ACTIVATION width
@@ -2551,7 +2580,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 2,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 4,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -2562,6 +2591,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.conv_width = (int)ints[4];
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
+  a.in_wgs = (float)scalars[2];
+  a.o_wgs = (float)scalars[3];
   auto stream = c10::cuda::getCurrentCUDAStream();
   a.grid = mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM);
   a.ksr_in = mk_choose_ksr(a.num_tokens, KDA_INPROJ_N_PAD, HIDDEN, a.grid);
