@@ -43,6 +43,51 @@ def _mhc_post_kwargs(num_tokens: int) -> dict:
     return {"n_thr": 512, "h_blk": 4096}
 
 
+# deneb fork (glm53_megakernel): resolve the MK_SEG_MHC entry point ONCE.
+# The hook sits on the decode hot path -- one call per layer per step -- and a
+# `from ... import ...` there costs a sys.modules lookup plus two getattrs
+# EVERY call, paid even while the segment is disarmed. This caches the
+# resolved callable, or None when the module is not mounted: a boot without
+# the megakernel is stock and stays stock without retrying the import.
+_MK_MODULE = "vllm.model_executor.layers.glm53_megakernel"
+_MK_HOOK = None
+_MK_HOOK_TRIED = False
+
+
+def _deneb_mk_hook():
+    """The MK_SEG_MHC entry point, resolved at most once per process.
+
+    A permanent answer is cached; a doubtful one is not. Every ImportError
+    shape is permanent here -- the module is not mounted, or it is mounted
+    without the entry point -- so both cache as None and the lane stays stock
+    without paying an import per call. Only a non-import failure (a
+    half-initialised package during warmup, a transient read on the bind
+    mount) returns stock for THIS call and is retried on the next, because
+    caching that would disable the segment for the life of the worker with
+    nothing in the log to say so.
+    """
+    global _MK_HOOK, _MK_HOOK_TRIED
+    if not _MK_HOOK_TRIED:
+        try:
+            from vllm.model_executor.layers.glm53_megakernel import mhc_hook
+        except ImportError as e:
+            # Both shapes are facts of THIS boot rather than transient: the
+            # module is not mounted (ModuleNotFoundError naming it), or it IS
+            # mounted without the entry point (a plain ImportError -- an older
+            # core beside a newer wiring, which the core/wiring split made a
+            # reachable deploy state). Cache both: retrying either would pay
+            # an import per decode call for the life of the worker.
+            if not isinstance(e, ModuleNotFoundError) or e.name == _MK_MODULE:
+                _MK_HOOK, _MK_HOOK_TRIED = None, True
+            return None
+        except Exception:
+            # anything else may be transient (a half-initialised package
+            # during warmup): stay stock for THIS call and retry on the next
+            return None
+        _MK_HOOK, _MK_HOOK_TRIED = mhc_hook, True
+    return _MK_HOOK
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -702,6 +747,49 @@ def mhc_fused_post_pre_tilelang(
             )
         else:
             n_splits = 1
+
+    # deneb fork (glm53_megakernel): MK_SEG_MHC -- the same small-M fusion in
+    # ONE persistent nvcc launch (48 blocks, no TileLang JIT for decode
+    # shapes). The kernel core is model-agnostic: its gate is geometry only
+    # (hc_mult == 4, hidden == 4096, T <= 32), and V4-Flash's MHC is the same
+    # block GLM-5.3 runs (hc_mult 4, hc_sinkhorn_iters 20, hc_eps 1e-6, hidden
+    # 4096) behind an identical wrapper signature -- so this is the same hook,
+    # not a port, and the arm-then-call contract lives in the core's
+    # `mhc_hook` where both forks share it. Every miss (module not mounted,
+    # unarmed, shape, dtype) returns None and falls through, and a stock pair
+    # that differs from GLM's DISARMs at the self-test instead of serving.
+    #
+    # Placed before the gemm_out allocations because the fused kernel has no
+    # gemm_out.
+    # The window is the WRAPPER's, not the kernel's: this branch is under
+    # `use_small_fma` (T <= 16) while the kernel gates at T <= 32, so a step's
+    # C x (spec + 1) tokens reach it only at C <= 2. 16 < T <= 32 is the stock
+    # post+big_fuse branch, which MK is never offered -- an open door,
+    # unmeasured.
+    if use_small_fma and norm_weight is not None:
+        _mk_hook = _deneb_mk_hook()
+        if _mk_hook is not None:
+            # an armed shape LAUNCHES here and cannot be excepted into the
+            # stock path (async CUDA failures are uncontainable); every
+            # eligible miss returns None and falls through
+            _mk = _mk_hook(
+                x_flat,
+                residual_flat,
+                post_layer_mix_flat,
+                comb_res_mix_flat,
+                fn.view(hc_mult3, hc_mult, hidden_size),
+                hc_scale,
+                hc_base,
+                rms_eps,
+                hc_pre_eps,
+                hc_sinkhorn_eps,
+                hc_post_mult_value,
+                sinkhorn_repeat,
+                norm_weight,
+                norm_eps,
+            )
+            if _mk is not None:
+                return _mk
 
     gemm_out_mul = torch.empty(
         n_splits,

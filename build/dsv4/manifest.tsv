@@ -12,6 +12,8 @@ eager_scratch.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/
 ops_cache_utils.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/cache_utils.py	f778b54009fbf0e422ccc129561b9b715b79af92db1318e90021355844b27bd0
 ops_fused_indexer_q.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/common/ops/fused_indexer_q.py	159f1bc406e835dd07f1a5ef6f88b129ab5b2e3d26fc8bb7389eb0acda4e93e3
 mhc_tilelang.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/kernels/mhc/tilelang.py	c7968ca8b6cdc9681ebcb0c56f855d073867ee7ee238e28f87d6eb25c91c26e4
+glm53_megakernel.py	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/glm53_megakernel.py	absent
+glm53_megakernel.cu	/opt/venv/lib/python3.12/site-packages/vllm/model_executor/layers/glm53_megakernel.cu	absent
 dspark_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/models/deepseek_v4/nvidia/dspark_v2.py	c3a83b0b683da7281c8c87a7c6cce28ad4934aaf2004e04876215595566953d7
 dspark_speculator_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator_v2.py	e96de3fe04d9ec82363ea3fa751bfc8bf01a838344e3fb8749bd98a3a43ca554
 dspark_utils_v2.py	/opt/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dspark/utils_v2.py	67ceb12b594dad2e603fe841cfd7039904f9af1e336b78a912f80425497d202c

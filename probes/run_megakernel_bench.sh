@@ -1,25 +1,80 @@
 #!/usr/bin/env bash
-# Run the GLM53 megakernel probe against the exact composed overlay sources.
-# Ladder step 2 of overlay/modules/glm53_megakernel/README.md -- srv4 scratch
-# container only, never the serving one.
+# Run the megakernel probe against the exact composed overlay sources of a
+# PROFILE. Ladder step 2 of overlay/modules/glm53_megakernel/README.md --
+# srv4 scratch container only, never the serving one.
+#
+#   bash probes/run_megakernel_bench.sh [--profile glm53|dsv4] [probe args...]
+#
+# The profile decides four things, and getting any of them from somewhere else
+# is how a run measures the wrong stack: the IMAGE, the composed build tree,
+# the sources to bind (a profile has no row for a file its model does not
+# have), and the package root the probe imports from (GLM's image installs to
+# dist-packages, dsv4's to the venv site-packages).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=${IMAGE:-glm53:v13-b12x}
-BUILD="$REPO/build/glm53"
+
+PROFILE=${PROFILE:-glm53}
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile) PROFILE=${2:?--profile needs a value}; shift 2 ;;
+    --profile=*) PROFILE=${1#--profile=}; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+
+ENVFILE="$REPO/profiles/$PROFILE.env"
+[ -f "$ENVFILE" ] || { echo "ABORT: no such profile: $ENVFILE" >&2; exit 1; }
+
+# Sourced in a subshell: the profile sets serving knobs (VLLM_*) and pulling
+# them into THIS shell would forward the profile's values as the probe's env
+# -- the probe arms its own segments and must not inherit a boot's.
+# Pre-set both names: the subshell inherits `set -e`, so a profile that fails
+# to source produces an empty eval, and without these the next line would die
+# on "PROFILE_IMAGE: unbound variable" instead of naming the real problem.
+PROFILE_IMAGE=""
+TARGET_PREFIX="/opt/venv/lib/python3.12/site-packages/"
+eval "$(
+  # shellcheck disable=SC1090
+  . "$ENVFILE"
+  printf 'PROFILE_IMAGE=%q\nTARGET_PREFIX=%q\n' \
+    "${PROFILE_IMAGE:-}" "${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/}"
+)"
+IMAGE=${IMAGE:-$PROFILE_IMAGE}
+[ -n "$IMAGE" ] || { echo "ABORT: $PROFILE names no image" >&2; exit 1; }
+
+BUILD="$REPO/build/$PROFILE"
 MANIFEST="$BUILD/manifest.tsv"
 
-bash "$REPO/launchers/compose-overlays.sh" glm53 >&2
+# What the probe needs mounted at its real image path, per profile. The probe
+# drives the driver (.py) which compiles the .cu next to it and diffs against
+# the paths it replaces, so every file a selected segment touches has to be
+# here. Naming a file the profile has no row for ABORTS: a silently skipped
+# mount would measure the image's stock file while the log says otherwise.
+case "$PROFILE" in
+  glm53)
+    sources=(glm53_megakernel.py glm53_megakernel.cu
+             glm5next_kda.py tilelang.py tilelang_kernels.py
+             glm53_fp8_dense.py)
+    defaults=()
+    ;;
+  dsv4)
+    # MHC is the only segment this model reaches: no linear-attention layer
+    # (kda), no e2m1 dense pack (gemm/exact), different MLA geometry. And its
+    # stock pair is SWEPT, so the dispatch arm -- the wrapper's own choice --
+    # is the reference that matters here; raw stays for kernel comparability.
+    sources=(glm53_megakernel.py glm53_megakernel.cu mhc_tilelang.py)
+    defaults=(--segments mhc --stock both)
+    ;;
+  *)
+    echo "ABORT: $PROFILE has no megakernel probe recipe" >&2; exit 1 ;;
+esac
 
-# The probe drives the driver (.py) which compiles the .cu next to it, and
-# diffs against the TileLang pair + fp8-dense stock path -- so it needs the
-# composed driver, the .cu, the mhc tilelang pair and the fp8-dense module
-# mounted at their real image paths, exactly as a serving boot would see
-# them (the probe also re-checks the mounted SHA-256s against the manifest).
+bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
+
 mounts=()
-for source in glm53_megakernel.py glm53_megakernel.cu \
-              glm5next_kda.py tilelang.py tilelang_kernels.py \
-              glm53_fp8_dense.py; do
+for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")
   [ -n "$target" ] \
     || { echo "ABORT: $source is missing from $MANIFEST" >&2; exit 1; }
@@ -36,11 +91,68 @@ done
 # VLLM_GLM53_MK_* knobs set on the host silently do nothing inside the
 # container -- a sweep over them then reports four identical numbers and
 # reads as "the knob had no effect" rather than "the knob never arrived".
-envs=()
-for v in $(compgen -v | grep '^VLLM_GLM53_'); do envs+=(-e "$v=${!v}"); done
+# VLLM_DSV4_* rides along because this lane's STOCK arm is tuned by three of
+# them (MHC_SMALLM_TUNED / TUNED_R2 / BIGFUSE_TUNED, all default 1): a sweep
+# that wants the untuned reference has to be able to say so.
+# The probe arms itself with os.environ.setdefault, so a forwarded knob WINS.
+# That is what a sweep wants -- and it is also how a probe run measures
+# nothing: profiles/dsv4.env declares VLLM_GLM53_MEGAKERNEL=0, so an operator
+# who sourced the profile in this shell (the normal way to get IMAGE and
+# MODEL_PATH) would ship the master switch OFF into the container, the driver
+# would never arm, and the failure would read as a kernel problem.
+# ${VAR-1}, NOT ${VAR:-1}: the driver's _flag() reads an EMPTY value as off
+# ("" is in its falsy set) and the loop below forwards a set-but-empty
+# variable as `-e NAME=`, so the colon form -- which substitutes for empty
+# too -- would rewrite exactly the value that disarms the run into "1" and
+# wave it through.
+case "${VLLM_GLM53_MEGAKERNEL-1}" in
+  0|""|false|FALSE|no|off)
+    echo "ABORT: VLLM_GLM53_MEGAKERNEL='${VLLM_GLM53_MEGAKERNEL}' is set in" >&2
+    echo "       this shell and would be forwarded, leaving the probe" >&2
+    echo "       disarmed -- it would measure nothing and say so late." >&2
+    echo "       unset it (a profile sourced here is the usual cause):" >&2
+    echo "         unset VLLM_GLM53_MEGAKERNEL" >&2
+    exit 1 ;;
+esac
+# The rest are legitimate sweep inputs, so they warn rather than abort -- but
+# they are also what a sourced profile carries, and MK_PDL in particular is
+# worth 17-19 pct per launch (module README), so a forwarded 0 changes every
+# number in the table with nothing in it to say why.
+for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA \
+          VLLM_GLM53_MK_MLA VLLM_GLM53_MK_PDL; do
+  case "${!_k-1}" in
+    0|""|false|FALSE|no|off)
+      echo "WARNING: $_k='${!_k}' is set in this shell and will be forwarded" >&2 ;;
+  esac
+done
+
+# One pass builds both the docker flags and the receipt printed below: two
+# scans could drift into disagreeing about what the container received, and
+# that receipt is the whole point of printing it.
+envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
+_fwd=""
+for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
+  envs+=(-e "$v=${!v}")
+  _fwd="$_fwd $v=${!v}"
+done
+
+echo "profile=$PROFILE image=$IMAGE pkg=${TARGET_PREFIX%/}" \
+     "files=$((${#mounts[@]} / 2)) args=${defaults[*]-}${args[*]+ ${args[*]}}" >&2
+# the forwarded knobs are part of the measurement; print them with it
+echo "forwarded:${_fwd:- (none)}" >&2
+
+# Build the command string explicitly. The old form interpolated "$*" into the
+# -lc string AND passed "$@" after it; once this wrapper consumed --profile
+# with shift, "$*" was empty and every probe argument would have vanished
+# silently -- the run would then measure the default segments and read as if
+# the caller's flags had had no effect.
+cmd="python3 /repo/probes/megakernel_glm53_bench.py"
+for a in ${defaults[@]+"${defaults[@]}"} ${args[@]+"${args[@]}"}; do
+  cmd="$cmd $(printf %q "$a")"
+done
 
 exec docker run --rm --gpus all --entrypoint /bin/bash \
   --mount "type=bind,src=$REPO,dst=/repo,readonly" \
   "${envs[@]}" \
   "${mounts[@]}" \
-  "$IMAGE" -lc "python3 /repo/probes/megakernel_glm53_bench.py $*" _ "$@"
+  "$IMAGE" -lc "$cmd"

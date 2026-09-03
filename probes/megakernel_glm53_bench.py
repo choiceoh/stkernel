@@ -7,11 +7,28 @@ the pre-boot proof. It diffs each persistent segment against the stock path
 it replaces on production shapes and times both arms with CUDA events.
 
     /repo/probes/megakernel_glm53_bench.py [--iters 30] [--skip-kda]
+        [--segments mhc] [--stock raw|dispatch|both] [--sinkhorn 20]
+
+BASIS NOTE (2026-09-03): --sinkhorn defaults to the driver's
+`SINKHORN_SERVED` (20), the value both models serve (`hc_sinkhorn_iters`,
+passed at the call site as `sinkhorn_repeat`) AND the value the boot
+self-test gates on -- one number, so the arming gate and this probe cannot
+disagree about what the segment is.
+It used to be hard-coded to 4, and the MHC rows recorded in MEASUREMENTS
+(4/9/10차) were measured that way -- the sinkhorn is a runtime loop in BOTH
+arms (`for it < sinkhorn_repeat - 1` in the .cu, `T.serial(...)` in the
+TileLang pair) and the two implementations do not scale with it alike, so a
+ratio taken at 4 does not transfer to serving. Pass --sinkhorn 4 to reproduce
+the older rows; the header prints whichever value was used.
 
 or, on srv4, via the wrapper that bind-mounts the composed overlay at its
 real image paths first:
 
-    bash /repo/probes/run_megakernel_bench.sh [--iters 30]
+    bash /repo/probes/run_megakernel_bench.sh [--profile glm53|dsv4] [--iters 30]
+
+The wrapper picks the profile's image, composed build tree, mount list and
+package root; the profile decides which segments can run at all (dsv4
+reaches MHC alone).
 
 Conventions follow the repo's probe rules:
   * rel err > gate marks the cell with `!` and fails the run
@@ -38,7 +55,12 @@ os.environ.setdefault("VLLM_GLM53_MK_KDA", "1")
 # programmatic launches: the mk_x2 column below is where they show
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
-sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
+# The image's package root. GLM's image installs to dist-packages, dsv4's to
+# the venv site-packages -- the wrapper passes the profile's TARGET_PREFIX so
+# a probe run can never import the wrong tree (it would import nothing at all
+# and read as "vllm missing" instead of "wrong profile").
+sys.path.insert(0, os.environ.get("MK_PKG_PATH",
+                                  "/usr/local/lib/python3.12/dist-packages"))
 
 import torch  # noqa: E402
 
@@ -241,11 +263,20 @@ def probe_exact() -> bool:
     return ok
 
 
-def probe_mhc(iters: int) -> bool:
+def probe_mhc(iters: int, sk: int) -> bool:
     from vllm.model_executor.kernels.mhc import tilelang_kernels as tlk
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     ok = True
+    # The reference here is a HAND-ROLLED pair at tile_n=2/n_splits=4: the
+    # kernel instrument, not the arm a boot takes. No profile's dispatcher
+    # picks that config (GLM's heuristic takes tile_n=3 at T=8; dsv4's swept
+    # pair takes 6/4 below T=8 and 4/4 with n_thr=128 to T=10), so reading
+    # this row as "the win over stock" overstates it -- on dsv4 by exactly
+    # the R1/R2 sweep that was already adopted. `--stock dispatch` is the row
+    # that answers the serving question.
+    print(f"raw stock arm: mhc_fused(tile_n=2, n_splits=4) + "
+          f"big_fuse_with_norm(n_splits=4), sinkhorn_repeat={sk}")
     print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}")
 
     def stock(x, res, pm, cm, fn, nw):
@@ -260,7 +291,7 @@ def probe_mhc(iters: int) -> bool:
         li_ref = torch.empty(T, 4096, dtype=torch.bfloat16, device=DEV)
         tlk.mhc_pre_big_fuse_with_norm_tilelang(
             yp, rp, mk.hc_scale_ones(), mk.hc_base_zeros(), res_ref, pm_ref,
-            cm_ref, li_ref, nw, 4096, 1e-6, 1e-6, 1e-6, 1.0, 4, 1e-6,
+            cm_ref, li_ref, nw, 4096, 1e-6, 1e-6, 1e-6, 1.0, sk, 1e-6,
             n_splits=4, hc_mult=4)
         return res_ref, pm_ref, cm_ref, li_ref
 
@@ -274,7 +305,7 @@ def probe_mhc(iters: int) -> bool:
         nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
         got = mk._mhc_call(x, res, pm, cm.reshape(T, 16).contiguous(), fn,
                            mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T,
-                           1e-6, 1e-6, 1e-6, 1.0, 1e-6, 4)
+                           1e-6, 1e-6, 1e-6, 1.0, 1e-6, sk)
         ref = stock(x, res, pm, cm, fn, nw)
         torch.cuda.synchronize()
         r = max(_rel(g, rr) for g, rr in zip(got, ref))
@@ -284,7 +315,7 @@ def probe_mhc(iters: int) -> bool:
         t_mk = _time(lambda: mk._mhc_call(
             x, res, pm, cm.reshape(T, 16).contiguous(), fn,
             mk.hc_scale_ones(), mk.hc_base_zeros(), nw, T, 1e-6, 1e-6, 1e-6,
-            1.0, 1e-6, 4), iters, hot=hot)
+            1.0, 1e-6, sk), iters, hot=hot)
         # Three replays, not one. A single got0-vs-got2 comparison samples a
         # random variable once: p3's sumsq used to drift 0 / 4.1e-05 / 0 /
         # 3.3e-04 call to call, and this gate passed or failed on luck --
@@ -294,7 +325,7 @@ def probe_mhc(iters: int) -> bool:
         for _ in range(3):
             got2 = mk._mhc_call(x, res, pm, cm.reshape(T, 16).contiguous(),
                                 fn, mk.hc_scale_ones(), mk.hc_base_zeros(),
-                                nw, T, 1e-6, 1e-6, 1e-6, 1.0, 1e-6, 4)
+                                nw, T, 1e-6, 1e-6, 1e-6, 1.0, 1e-6, sk)
             torch.cuda.synchronize()
             rep = max(rep, max(_rel(g, g0) for g, g0 in zip(got2, got0)))
         mark = "!" if (r > TOL["mhc"] or rep > 1e-6) else " "
@@ -335,25 +366,152 @@ def probe_kda(iters: int) -> bool:
     return ok
 
 
+def probe_mhc_dispatch(iters: int, sk: int) -> bool:
+    """MHC through the image's OWN wrapper -- the arm a boot actually takes.
+
+    `probe_mhc` above times the MK kernel against a hand-rolled stock pair at
+    tile_n=2 / n_splits=4. That is the right instrument for the KERNEL and it
+    is the basis every recorded MHC number was measured on, but it is NOT
+    what a boot runs:
+
+      * each profile's wrapper picks its own tile config -- dsv4's small-M
+        pair is swept (R1/R2/R3, per-call 15.6 -> 13.1 us), so measuring MK
+        against the unswept config would manufacture the sweep's win twice;
+      * the serving hook sits under `use_small_fma` (T <= 16), even though
+        the kernel's own gate is T <= 32. Above 16 the wrapper takes
+        mhc_post + big_fuse and MK is never offered the call.
+
+    So this arm calls the wrapper twice -- MK disarmed, then armed -- and
+    prints a `hit` column that says whether MK served it. `hit=no` with a
+    0.0 rel err is the receipt for the window, not a passing gate.
+    """
+    from vllm.model_executor.kernels.mhc import tilelang as tl
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    call = getattr(tl, "_mhc_fused_post_pre_tilelang_impl", None) or \
+        tl.mhc_fused_post_pre_tilelang
+
+    mk.maybe_arm()  # so _ARMED reflects the self-test, not the first call
+    armed0 = mk._ARMED["mhc"]
+    if not armed0:
+        print("!mhc dispatch: the MHC segment did not arm -- nothing to compare")
+        return False
+
+    # `hit` comes from the core's own served-call counter, not from patching
+    # a private of it: the receipt has to survive a refactor of how mhc_hook
+    # calls through, or every run would FAIL with "never offered a call" and
+    # send the reader after a wiring bug that is not there.
+    served = lambda: mk._HOOK_SERVED[0]   # noqa: E731
+    ok = True
+    any_hit = False
+    try:
+        print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}"
+              f"{'mk_us':>9}{'hit':>6}")
+        for T in (8, 16, 32):
+            torch.manual_seed(0)
+            x = torch.randn(T, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+            res = torch.randn(T, 4, 4096, dtype=torch.bfloat16, device=DEV) * 0.1
+            pm = torch.rand(T, 4, dtype=torch.float32, device=DEV)
+            cm = torch.rand(T, 4, 4, dtype=torch.float32, device=DEV)
+            fn = torch.randn(24, 16384, dtype=torch.float32, device=DEV) * 0.02
+            nw = torch.randn(4096, dtype=torch.bfloat16, device=DEV)
+            args = (x, res, pm, cm, fn, mk.hc_scale_ones(), mk.hc_base_zeros(),
+                    1e-6, 1e-6, 1e-6, 1.0, sk)
+            kw = {"norm_weight": nw, "norm_eps": 1e-6}
+            hot = (x, res, pm, cm)
+
+            mk._ARMED["mhc"] = False
+            ref = call(*args, **kw)
+            t_ref = _time(lambda: call(*args, **kw), iters, hot=hot)
+
+            mk._ARMED["mhc"] = True
+            before = served()
+            got = call(*args, **kw)
+            torch.cuda.synchronize()
+            hit = served() > before
+            any_hit |= hit
+            # timing the armed arm when MK was never offered the call would
+            # measure the stock path twice and print it under mk_us
+            t_mk = _time(lambda: call(*args, **kw), iters, hot=hot) if hit \
+                else None
+
+            r = max(_rel(g, rr) for g, rr in zip(got, ref))
+            bad = r > TOL["mhc"]
+            ok &= not bad
+            print(f"{'!' if bad else ' '}mhc T={T:<17}{r:>10.2e}"
+                  f"{TOL['mhc']:>8.0e}{t_ref:>10.1f}"
+                  f"{(f'{t_mk:.1f}' if hit else '-'):>9}"
+                  f"{('yes' if hit else 'no'):>6}")
+    finally:
+        mk._ARMED["mhc"] = armed0
+    if not any_hit:
+        # every row compared stock against stock: rel == 0 everywhere and the
+        # gate would have passed without the kernel running once
+        print("!mhc dispatch: MK was never offered a call (hit=no at every T) "
+              "-- nothing was measured, so this is a FAIL, not a PASS")
+        return False
+    return ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=30)
     ap.add_argument("--skip-kda", action="store_true")
+    # Which segments this profile can even run. dsv4 reaches MHC alone: it has
+    # no linear-attention layer (kda), no e2m1 dense pack (gemm/exact) and a
+    # different MLA geometry. Naming a segment a profile cannot serve would
+    # measure an arm nothing will ever run.
+    ap.add_argument("--segments", default="gemm,exact,mhc,kda",
+                    help="comma list of gemm,exact,mhc,kda (default: all)")
+    # raw   = the hand-rolled stock pair (kernel instrument; the recorded basis)
+    # both  = raw plus the wrapper's real arm (see probe_mhc_dispatch)
+    ap.add_argument("--stock", choices=("raw", "dispatch", "both"),
+                    default="raw")
+    # what the models pass as sinkhorn_repeat (hc_sinkhorn_iters); unset
+    # means the driver's SINKHORN_SERVED, which is also what the boot
+    # self-test gates on. See the BASIS NOTE in the module docstring.
+    ap.add_argument("--sinkhorn", type=int, default=None)
     args = ap.parse_args()
+    if args.sinkhorn is not None and args.sinkhorn < 1:
+        print("--sinkhorn must be >= 1")
+        return 2
+    segs = [s.strip() for s in args.segments.split(",") if s.strip()]
+    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda")]
+    if unknown:
+        print(f"unknown segment(s): {unknown}")
+        return 2
+    if args.skip_kda and "kda" in segs:
+        segs.remove("kda")
+    if not segs:
+        # an empty selection used to run nothing and print PASS -- the one
+        # output this probe must never produce, since a green VERDICT is what
+        # authorises the boot bracket
+        print("--segments selected nothing to run")
+        return 2
 
     from vllm.model_executor.layers import glm53_megakernel as mk
 
+    sk = mk.SINKHORN_SERVED if args.sinkhorn is None else args.sinkhorn
     torch.cuda.init()
     ext = mk._build()
     major, minor, sms, smem = ext.probe_device()
     print(f"device cc={major}.{minor} sms={sms} smem_optin={smem}")
     assert (major, minor, sms) == (12, 1, 48), "not a GB10"
 
+    print(f"segments={','.join(segs)} stock={args.stock} "
+          f"sinkhorn_repeat={sk}"
+          f"{' (driver default)' if args.sinkhorn is None else ''}")
     ok = True
-    ok &= probe_gemm(args.iters)
-    ok &= probe_exact()
-    ok &= probe_mhc(args.iters)
-    if not args.skip_kda:
+    if "gemm" in segs:
+        ok &= probe_gemm(args.iters)
+    if "exact" in segs:
+        ok &= probe_exact()
+    if "mhc" in segs:
+        if args.stock in ("raw", "both"):
+            ok &= probe_mhc(args.iters, sk)
+        if args.stock in ("dispatch", "both"):
+            ok &= probe_mhc_dispatch(args.iters, sk)
+    if "kda" in segs:
         ok &= probe_kda(args.iters)
     print("VERDICT:", "PASS" if ok else "FAIL (a ! cell disqualifies)")
     return 0 if ok else 1
