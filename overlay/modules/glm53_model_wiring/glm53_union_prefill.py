@@ -22,6 +22,16 @@ _UNION_ENV = "VLLM_GLM53_UNION_PREFILL"
 _DENSE_PREFIX_ENV = "VLLM_GLM53_DENSE_PREFIX_PREFILL"
 _UNION_SPAN_BUDGET = 512 << 20
 _UNION_WS: dict[tuple, tuple] = {}
+_UNION_DECLINED: set = set()
+# The whole value of this arm is the overlap between adjacent tokens' top-k
+# sets, and that number has never been measured -- the arm never ran. The
+# union kernel already computes it: union_len is |union| per group, against
+# G x per-token length if the tokens shared nothing. Log the ratio for the
+# first few groups so the arm's ceiling stops being an assumption.
+#
+#   saving = 1 - |union| / (G x len)      0 = no overlap, 1 - 1/G = identical
+_UNION_STATS_SEEN: list = [0]
+_UNION_STATS_MAX = 8
 
 
 @triton.jit
@@ -345,7 +355,30 @@ def glm53_union_sparse_prefill(
 ) -> torch.Tensor | None:
     """Return exact sparse MLA output, or ``None`` when the budget rejects it."""
     tokens, heads, dim = q.shape
+    # GH = group_size * heads is the kernel's row tile, and every row carries a
+    # [D] fp32 accumulator, so it is capped at 32. The hook above admits only
+    # (16, 512) q, which makes the cap a statement about the WIDTH:
+    #
+    #     group_size 2 -> 32 rows, runs
+    #     group_size 4 -> 64 rows, never runs
+    #
+    # width=4 was the value this lane booted with. It returned None here on
+    # every prefill and the caller quietly used the stock path -- not an
+    # exception, so it did not even show up in the fallback count. Say it
+    # once, so "ARMED width=4" and "ran" stop being different things in
+    # silence.
     if group_size not in (2, 4) or group_size * heads > 32 or dim != 512:
+        reason = (
+            f"group_size={group_size} x heads={heads} = {group_size * heads} "
+            f"exceeds the kernel's 32-row tile" if group_size * heads > 32
+            else f"group_size={group_size} dim={dim} heads={heads}"
+        )
+        if reason not in _UNION_DECLINED:
+            _UNION_DECLINED.add(reason)
+            logger.warning(
+                "union prefill DECLINED and the stock path is serving: %s. "
+                "This model gives 16 heads per rank at TP4, so only "
+                "VLLM_GLM53_UNION_PREFILL=2 can run.", reason)
         return None
     main_tokens = tokens // group_size * group_size
     if main_tokens == 0:
@@ -465,6 +498,17 @@ def glm53_union_sparse_prefill(
         num_warps=4,
         num_stages=2,
     )
+    if _UNION_STATS_SEEN[0] < _UNION_STATS_MAX:
+        _UNION_STATS_SEEN[0] += 1
+        per_token = lengths[:main_tokens].float().mean().item()
+        union_mean = union_len.float().mean().item()
+        ideal = per_token * group_size
+        logger.warning(
+            "[union-prefill] #%d groups=%d G=%d per-token-topk=%.0f "
+            "|union|=%.0f (of %.0f if disjoint) -> gather saved %.1f pct",
+            _UNION_STATS_SEEN[0], groups, group_size, per_token, union_mean,
+            ideal, 100.0 * (1.0 - union_mean / ideal) if ideal else 0.0,
+        )
     _base_sparse_prefill(
         q[main_tokens:],
         kv,
@@ -478,6 +522,24 @@ def glm53_union_sparse_prefill(
 
 
 _UNION_REPORTED: set = set()
+
+# Shadow: run the union path AND the FlashInfer path, compare, log, and serve
+# FlashInfer's answer. The module has always claimed its output is exact, and
+# that claim had never once been tested on the fleet -- the width bug meant
+# every prefill took the fallback, so "ARMED" and "ran" were different things
+# for the whole life of this arm. The first boot where it actually ran was
+# also the first with a U+FFFD in Korean output, which is either a real
+# coincidence or this arm, and statistics on one event cannot say which.
+#
+# Same idiom as the megakernel's KDA/MLA shadows: cost a step, keep the stock
+# answer, and turn "is it exact?" into a number in the boot log.
+_UNION_SHADOW_ENV = "VLLM_GLM53_UNION_PREFILL_SHADOW"
+_UNION_SHADOW_SEEN: list = [0]
+_UNION_SHADOW_MAX = 32
+
+
+def _union_shadow_enabled() -> bool:
+    return os.environ.get(_UNION_SHADOW_ENV, "").strip() == "1"
 
 
 # The column tile triton_convert_req_index_to_global_index defaults to and
@@ -591,6 +653,25 @@ def _glm53_union_forward_mqa(self, q, kv_cache, attn_metadata, layer):
             os.environ.get(_DENSE_PREFIX_ENV, "0") == "1",
         )
         if output is not None:
+            if _union_shadow_enabled():
+                # The stock answer is the one served; the union answer is only
+                # measured. Bounded so a long run does not pay for it forever.
+                if _UNION_SHADOW_SEEN[0] < _UNION_SHADOW_MAX:
+                    _UNION_SHADOW_SEEN[0] += 1
+                    ref = original(self, q, kv_cache, attn_metadata, layer)
+                    ref_t = ref[0] if isinstance(ref, tuple) else ref
+                    diff = (output.float() - ref_t.float())
+                    denom = ref_t.float().norm().item() or 1.0
+                    logger.warning(
+                        "[union-prefill] shadow #%d rel=%.3e max=%.3e "
+                        "tokens=%d group=%d",
+                        _UNION_SHADOW_SEEN[0],
+                        diff.norm().item() / denom,
+                        diff.abs().amax().item(),
+                        tokens, group_size,
+                    )
+                    return ref
+                return original(self, q, kv_cache, attn_metadata, layer)
             return output, None
     except Exception:
         logger.warning(
