@@ -650,12 +650,14 @@ def _kda_layout_ok(layer) -> bool:
 def _kda_ensure_packs(layer) -> bool:
     """Per-layer MK packs for in_proj/o_proj, cached on the layer.
 
-    Self-sufficient by design: a shadow boot must not depend on the MK-GEMM
-    arm having attached packs through Fp8DenseMethod. Requires the linear to
-    run the W8A8 copy (Fp8DenseMethod) so the stock arm of every comparison
-    is the SAME quantization axis -- against bf16 stock the self-test's 2e-2
-    gate could not tell a broken kernel from quantization noise. Building
-    allocates, so it never runs under graph capture.
+    Requires the linear to carry a quantized method, so the stock arm of
+    every comparison is a quantized axis -- against bf16 stock the
+    self-test's 2e-2 gate could not tell a broken kernel from quantization
+    noise. The method may be WRAPPED (nvfp4 / w4a8 stack on the fp8 one), so
+    unwrap rather than demand Fp8DenseMethod: an isinstance check here was
+    what made MK-KDA and the nvfp4 dense scheme look mutually exclusive when
+    only MK-GEMM ever was. Building allocates, so it never runs under graph
+    capture.
     """
     import torch
 
@@ -665,19 +667,32 @@ def _kda_ensure_packs(layer) -> bool:
         return False  # first eager warmup call builds; capture never does
     try:
         from vllm.model_executor.layers.glm53_fp8_dense import (
-            Fp8DenseMethod)
+            Fp8DenseMethod, NvFp4DenseMethod, W4A8DenseMethod)
 
-        in_m = layer.in_proj_qkvbfg_a.quant_method
-        o_m = layer.o_proj.quant_method
-        if not isinstance(in_m, Fp8DenseMethod) or not isinstance(
-                o_m, Fp8DenseMethod):
+        def _unwrap(m):
+            while isinstance(m, (NvFp4DenseMethod, W4A8DenseMethod)):
+                m = m._base
+            return m if isinstance(m, Fp8DenseMethod) else None
+
+        in_m = _unwrap(layer.in_proj_qkvbfg_a.quant_method)
+        o_m = _unwrap(layer.o_proj.quant_method)
+        if in_m is None or o_m is None:
             return False  # stock in_proj/o_proj is bf16 here -> stay stock
         # The in-kernel in_proj / o_proj GEMMs stream the same W4 packs the
-        # linears serve (built here when MK-GEMM is off and none exists).
+        # linears serve. maybe_build_fp8_dense attaches them for the layers
+        # MK-KDA owns; building one HERE is the fallback, and it only works
+        # while the bf16 source is alive -- this runs on the first eager
+        # forward, which is after maybe_free_fp8_dense_bf16, so a freed
+        # source must refuse loudly instead of packing an empty tensor.
         def _w4_pack(method, weight):
             p = getattr(method, "_mk", None)
             if p is not None and p[0] is not None:
                 return p
+            if getattr(method, "_bf16_freed", False) or weight.numel() == 0:
+                raise RuntimeError(
+                    "no MK pack on this linear and its bf16 source was "
+                    "released; maybe_build_fp8_dense must attach the pack "
+                    "for the layers MK-KDA owns (_kda_owns)")
             return build_mk_weight_w4(weight)
 
         layer._mk_in_pack = _w4_pack(in_m, layer.in_proj_qkvbfg_a.weight)
