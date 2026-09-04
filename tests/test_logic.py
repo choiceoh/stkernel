@@ -5857,9 +5857,13 @@ def test_dsv4_launcher_adoptions() -> None:
               encoding="utf-8").read()
           and "ct_load_profile" in text,
           "a copied launcher must not silently lose profile VLLM_* settings")
-    check("_foreign_stack" in text
-          and "'^(glm53|q38)(-|$)'" in text,
-          "DSV4 must refuse live foreign model stacks on every node")
+    check("ct_refuse_foreign_stacks '^(glm53|q38)(-|$)' DSV4" in text,
+          "DSV4 must refuse live foreign model stacks on every node -- via the "
+          "shared guard, naming the OTHER lanes")
+    check('"$HEAD_IP" $_foreign_wips' in text
+          and 'for _w in $WORKERS; do _foreign_wips=' in text,
+          "the guard must cover the head AND every worker: WORKERS carries "
+          "ip:rank, so the ranks are stripped before they reach it")
     check("OVERLAY_DIGEST" in text
           and "/cache/vllm/torch_compile_cache" in text
           and "for w in $WORKERS" in text,
@@ -9009,6 +9013,26 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "be the one both lanes now get")
     check("docker takes the last -e" in lib,
           "the profile-collision guard moved into the library intact")
+
+    # the foreign-stack guard: one implementation, and BOTH lanes use it. hy4
+    # had it and glm53 did not, so it only protected whichever stack happened
+    # to be started second -- starting glm53 onto a live DSV4 double-books the
+    # same unified memory, which is how a node crosses the 4 GiB watermark.
+    check("ct_refuse_foreign_stacks()" in lib,
+          "the foreign-stack guard belongs in the library, not one lane")
+    check("DRY_RUN:-0" in lib[lib.index("ct_refuse_foreign_stacks()"):],
+          "a dry run creates nothing, so a live stack is not a conflict there")
+    foreign = {
+        "start-hy4-tp4.sh": "ct_refuse_foreign_stacks '^(glm53|q38)(-|$)' DSV4",
+        "start-glm53-nvfp4-tp4.sh": "ct_refuse_foreign_stacks '^(hy4|q38)(-|$)' GLM53",
+    }
+    for name, call in foreign.items():
+        check(call in lanes[name],
+              "%s must refuse the OTHER lanes' stacks: %s" % (name, call))
+    check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
+          and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
+          "a lane must not name ITSELF foreign -- it would refuse to restart "
+          "over its own stale containers, which every boot has")
     print("  common tp4 library ............ OK")
 
 
