@@ -26,6 +26,25 @@ BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
                          # below exits early the moment the API comes up, so a
                          # long grace only delays declaring a truly hung boot.
 fails=0
+
+# Relaunch pacing. A launcher that failed three times running will fail the
+# fourth, and an attempt is not free: bash "$LAUNCHER" runs drop_caches on all
+# four nodes and creates/destroys containers. So a fixed ~2 min retry turns one
+# broken boot into fleet-wide churn -- on srv4, which hosts unrelated tenants
+# (nemotron, solarflow, the SolarFlow DB), it evicts their page cache every two
+# minutes, indefinitely. Observed 2026-09-04: three relaunches in five minutes
+# against a launcher bug (#289), and nothing here would ever have stopped it.
+#
+# Backoff is a NEXT-ALLOWED-TIME rather than a sleep, so the health probe keeps
+# running every 30 s and a stack fixed by hand is still adopted immediately.
+# After LAUNCH_HOLD_AFTER consecutive failures it stops relaunching entirely and
+# says so once: at that point the launcher needs a human, not another attempt.
+launch_fails=0
+next_launch_at=0
+held_logged=0
+LAUNCH_BACKOFF_BASE=60
+LAUNCH_BACKOFF_MAX=1800
+LAUNCH_HOLD_AFTER=5
 log(){ echo "$(date '+%F %T') $*"; }
 
 # --- wait until local docker AND every worker node's docker are up ---
@@ -145,6 +164,10 @@ while :; do
   if api_up && chat_ok; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
+    if [ "$launch_fails" -gt 0 ]; then
+      log "stack healthy again -- clearing $launch_fails launch failure(s)"
+      launch_fails=0; next_launch_at=0; held_logged=0
+    fi
     wedge_check
     maybe_cache_reset
     continue
@@ -152,7 +175,26 @@ while :; do
   fails=$((fails+1))
   log "health check failed ($fails/$FAILS_NEEDED)"
   if [ "$fails" -ge "$FAILS_NEEDED" ]; then
+    if [ "$launch_fails" -ge "$LAUNCH_HOLD_AFTER" ]; then
+      if [ "$held_logged" = 0 ]; then
+        log "HELD after $launch_fails consecutive launch failures -- not relaunching."
+        log "  The launcher needs a human. This loop keeps probing and will adopt"
+        log "  a healthy stack the moment one exists."
+        held_logged=1
+      fi
+      continue
+    fi
+    _now=$(date +%s)
+    [ "$_now" -lt "$next_launch_at" ] && continue
     wait_for_fleet
-    launch || log "relaunch failed; retrying next cycle"
+    if launch; then
+      launch_fails=0; next_launch_at=0
+    else
+      launch_fails=$((launch_fails+1))
+      _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
+      [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
+      next_launch_at=$(( $(date +%s) + _backoff ))
+      log "relaunch failed ($launch_fails/$LAUNCH_HOLD_AFTER); next attempt in ${_backoff}s"
+    fi
   fi
 done
