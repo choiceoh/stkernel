@@ -187,7 +187,7 @@ def probe_gemm(iters: int) -> bool:
     ok = True
     print(f"{'shape':<24}{'rel_err':>8}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
           f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
-          f"{'st_x2':>7}")
+          f"{'st_x2':>7}{'local':>6}")
     # The original four sweep n at k = 4096; the three after them are the
     # per-rank production shapes whose launches sit in the 30-45 us class
     # (86/step, 3.5 ms, 2.4 ms of it exposed on the critical path -- 28차):
@@ -243,10 +243,13 @@ def probe_gemm(iters: int) -> bool:
         # spread = (max - min) / median over the timed launches. A bimodal
         # cell (two clusters inside one process) shows up here where a
         # median alone would hide it behind a plausible number.
+        # which kernel this row ran under the process's knobs (the env's;
+        # a bench shell that exported MK_LOCALQ=2 re-kernels these rows)
+        local = "yes" if mk._EXT.gemm_plan(m, n, k, 0)[3] else "no"
         print(f"{mark}gemm m={m:<3}n={n:<5}k={k:<5}{r:>8.2e}{TOL['gemm']:>8.2f}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}{local:>6}")
     return ok
 
 
@@ -306,7 +309,7 @@ def probe_gemm_sweep(iters: int, stamps: bool, shapes=None) -> bool:
 
     ext = mk._EXT
     ok = True
-    print(f"{'shape':<22}{'lq':>3}{'ksr':>4}{'units':>6}{'lgrid':>6}{'mk_us':>8}"
+    print(f"{'shape':<22}{'local':>6}{'ksr':>4}{'units':>6}{'lgrid':>6}{'mk_us':>8}"
           f"{'spread':>8}{'mk_x2':>7}{'same':>5}{'rel':>9}"
           f"{'  stamps (us)' if stamps else ''}")
     for m, n, k in (shapes or SWEEP_SHAPES):
@@ -318,24 +321,28 @@ def probe_gemm_sweep(iters: int, stamps: bool, shapes=None) -> bool:
         p4b = mk.build_mk_weight_w4(w2)
         del w, w2
         kblk = k // 128
-        ext.set_probe(0, 0, -1)
+        ext.set_probe(0, 0, 0, 0)
         ref = mk._gemm_call(x, p4, n)  # global path, the model's split
         torch.cuda.synchronize()
-        model_ksr = ext.gemm_plan(m, n, k, 0)[1]
+        grid0, model_ksr, units0 = ext.gemm_plan(m, n, k, 0)[:3]
         by_ksr = {}
-        for lq in (0, 2):
-            for ksr in [0] + [r for r in (2, 3, 4, 6, 8, 12, 16)
-                              if r <= kblk and r != model_ksr]:
-                ext.set_probe(ksr, lq, -1)
-                grid, ksr_eff, units, localq, lgrid = ext.gemm_plan(m, n, k, 0)
-                if lq and not localq:
-                    continue  # the plan refuses the local path here
-                if ksr and units == n // 128 and ksr_eff > 1:
-                    continue  # the split gate refused this force: an unsplit run
+        for local in (False, True):
+            lq = 2 if local else 0
+            seen = set()  # (ksr_eff, units) already timed at this knob
+            for ksr in [0] + [r for r in (2, 3, 4, 6, 8, 12, 16) if r <= kblk]:
+                if ksr and units0 > grid0:
+                    continue  # a units > grid control shape: the model's split only
+                ext.set_probe(ksr, lq, 0, 0)
+                grid, ksr_eff, units, localq, lgrid, _bar = ext.gemm_plan(m, n, k, 0)
+                if local and not localq:
+                    continue  # the plan refuses the local kernel here
+                if (ksr_eff, units) in seen:
+                    continue  # the same plan (a refused or redundant force)
+                seen.add((ksr_eff, units))
                 got = mk._gemm_call(x, p4, n)
                 torch.cuda.synchronize()
                 key = ksr_eff
-                if lq == 0:
+                if not local:
                     by_ksr[key] = got
                     same = "-"
                 else:
@@ -361,17 +368,18 @@ def probe_gemm_sweep(iters: int, stamps: bool, shapes=None) -> bool:
                 ok &= rep_ok
                 line = ""
                 if stamps:
+                    ext.read_ts()  # clear: idle blocks of THIS launch must read 0
                     _l2_flush(hot=(x,))
                     mk._gemm_call(x, p4, n)
                     torch.cuda.synchronize()
                     line = "  " + _stamps(ext, grid)
-                mark = " " if (same != "NO" and r <= TOL["gemm"] and rep_ok) else "!"
-                print(f"{mark}m={m:<3}n={n:<5}k={k:<5}{1 if lq else 0:>3}{ksr_eff:>4}"
+                mark = " " if (same != "NO" and r <= TOL_SPLIT and rep_ok) else "!"
+                print(f"{mark}m={m:<3}n={n:<5}k={k:<5}{'yes' if local else 'no':>6}{ksr_eff:>4}"
                       f"{units:>6}{lgrid:>6}"
                       f"{t_mk:>8.1f}{100 * (t_hi - t_lo) / t_mk:>7.1f}%{t_x2:>7.1f}"
                       f"{same:>5}{r:>9.2e}{line}")
         del p4, p4b, by_ksr
-    ext.set_probe(-1, -1, -1)  # back to the env's knobs for the segments after
+    ext.set_probe(-1, -1, 0, 0)  # back to the env's knobs for the segments after
     return ok
 
 
@@ -385,38 +393,23 @@ def probe_exact() -> bool:
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     print(f"{'case':<24}{'rel_err':>10}{'gate':>8}")
-    torch.manual_seed(0)
-    n, k, m = 1024, 4096, 8
-    code = torch.randint(0, 8, (n, k // 16, 16), device=DEV)
-    # PRODUCTION magnitudes, the same draw as the boot self-test
-    # (_selftest_gemm): GLM-5.3's dense projections need group exponents
-    # around 2^-7 (median), 2^-16 (p1). The pack normalises the tensor by
-    # its median pow2 and stores an e4m3 scale whose exponent spans
-    # [-5, 5] around it, so a fixture spanning 11 octaves round-trips
-    # bit-exactly -- and one that draws the O(1) range [-5, 6] this probe
-    # used to draw no longer fits: its 2^6 groups clamp (8.3% of groups),
-    # the roundtrip reads 6.6e-2, and the run FAILs on the fixture, not
-    # on the kernel (2026-09-04, srv2, the first on-device run of #268).
-    sexp = torch.randint(-12, -2, (n, k // 16, 1), device=DEV)
-    grid = torch.tensor(mk._E2M1_GRID, device=DEV)
-    w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
-        torch.randn_like(code.float()) < 0, -1.0, 1.0)
-    w_exact = w_exact.view(n, k).to(torch.bfloat16)
-    x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
-    p4 = mk.build_mk_weight_w4(w_exact)
+    # the boot gate's own fixture and runner (glm53_megakernel.exact_fixture /
+    # run_both_kernels): production magnitudes (sexp in [-12, -2)), the
+    # kernel-quantized activations against the dequantized pack; this probe
+    # once kept an older scale range and FAILed on the fixture, not the
+    # kernel (2026-09-04, srv2, the first on-device run of #268)
+    n, k, m = mk.EXACT_FIXTURE
+    x, p4, w_exact, ref = mk.exact_fixture(DEV)
     w_back = mk.mk_w4_dequant(p4[0], p4[1], n, p4[2])  # p4[2]: 2^-shift
     e_pack = _rel(w_back, w_exact)  # the pack itself must round-trip
-    ref = mk._mk_quant_x_ref(x) @ w_back.float().T
     # BOTH kernels: this fixture is a one-unit-per-block launch, so it is
     # the one shape where the local-quant kernel can be exact-gated -- and
-    # the global kernel must not lose its own gate to that.
-    ext = mk._EXT
-    got = {}
-    for lq in (0, 2):
-        ext.set_probe(-1, lq, -1)
-        got[lq] = mk._gemm_call(x, p4, n)
-    ext.set_probe(-1, -1, -1)
+    # the global kernel must not lose its own gate to that. The plan of the
+    # local pass must say the local kernel ran, or the check is vacuous.
+    got, plans = mk.run_both_kernels(x, p4, n)
     torch.cuda.synchronize()
+    ran_local = plans[2][3] == 1
+    print(f"{' ' if ran_local else '!'}w4 local kernel ran (plan){'yes' if ran_local else 'NO':>12}")
     # the kernel writes bf16: judge against the bf16-rounded reference, no
     # element more than one bf16 ulp off (a different fp32 summation order
     # flips a few by one ulp; a layout bug moves whole rows)
@@ -429,7 +422,7 @@ def probe_exact() -> bool:
         print(f"{' ' if good else '!'}w4 exact grid ({name}){e_exact:>12.2e}"
               f"{1e-3:>8.0e}  over-ulp={n_ulp}")
     same = torch.equal(got[0], got[2])
-    ok &= same
+    ok &= same and ran_local
     print(f"{' ' if same else '!'}w4 local == global (bitwise){'yes' if same else 'NO':>10}")
     return ok
 
@@ -654,7 +647,6 @@ def main() -> int:
     args = ap.parse_args()
     if args.gemm_shapes:
         GEMM_SHAPES[:] = [tuple(int(v) for v in t.split(":")) for t in args.gemm_shapes.split(",")]
-        SWEEP_SHAPES[:] = list(GEMM_SHAPES)
     if args.stamps and not args.gemm_sweep:
         print("--stamps applies to --gemm-sweep only; ignored")
     if args.sinkhorn is not None and args.sinkhorn < 1:
@@ -693,7 +685,8 @@ def main() -> int:
     if "gemm" in segs:
         ok &= probe_gemm(args.iters)
     if args.gemm_sweep:
-        ok &= probe_gemm_sweep(args.iters, args.stamps)
+        ok &= probe_gemm_sweep(args.iters, args.stamps,
+                               list(GEMM_SHAPES) if args.gemm_shapes else None)
     if "exact" in segs:
         ok &= probe_exact()
     if "mhc" in segs:

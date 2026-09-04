@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """The shared expert's two MK GEMMs UNDER the routed MoE kernel -- the way
-the decode step runs them (28차: 86 launches/step in the 30-45 us class,
-3.5 ms, 2.4 ms of it exposed on the critical path).
+the decode step runs them (28차 trace reading: the 30-45 us class, 84-86
+launches/step across the 42 MoE layers, 3.5 ms, 2.4 ms of it exposed).
 
 Serving forks the shared expert (gate_up [1024 x 4096], down [4096 x 512])
 onto an aux stream beside the routed b12x MoE call of the same layer, so a
@@ -15,11 +15,18 @@ with the fork -- stream A: the served b12x wrapper at U=40 (the boot's
 unique-expert count, DRAM-cold: 142 MB a call); stream B: the pair -- in
 both issue orders, and times the union against each part alone:
 
-  exposed = span(moe || pair) - span(moe)      what the step actually pays
+  exposed = span(moe || pair) - span(moe)
 
-for the global path (VLLM_GLM53_MK_LOCALQ=0) and the local-quant kernel
-(2) on its launched grid: `units` blocks (32 here), then 16 and 8
-(VLLM_GLM53_MK_LQ_GRID) -- fewer blocks leave more SMs to the MoE.
+Rows: the global kernel on its 48-block grid; the global kernel on 32
+blocks (the CONTROL: fewer blocks, barrier kept -- separates "fewer blocks"
+from "no barrier"); the local-quant kernel on 32 blocks (= its units, the
+served form), on 48 (the first form: 16 idle blocks leave at once) and on
+16. What differs from the step, and why the x42 line is a projection, not a
+step number: the step's main stream runs the router GEMM + topk before the
+MoE kernel (the pair's first GEMM overlaps those, not the MoE), the
+activation between the two GEMMs is a real kernel here replaced by a copy,
+and one layer replayed back to back stands in for 42 layers each followed
+by a join and attention.
 
     bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py
 """
@@ -42,13 +49,22 @@ import torch  # noqa: E402
 
 # the served b12x fixture -- ONE definition, moe_decode_stream_probe's
 from moe_decode_stream_probe import (  # noqa: E402
-    DEV, E, HID, INTER, T, TOPK, _routing, _weight_set)
+    DEV, E, HID, T, _routing, expert_set, served_wrapper)
 
 U = 40                                    # unique experts a layer (27차)
+MOE_LAYERS = 42                           # layers 3..44 carry a shared expert
 SHARED_N = 1024                           # shared expert gate_up rows / rank
 SHARED_K = 512                            # down-proj K / rank
 REPS = 20
 NREPLAY = 5                               # replays per event bracket
+# (localq knob, lq launch grid, bg control grid) -> row label
+ROWS = (
+    ((0, 0, 0), "global 48"),
+    ((0, 0, 32), "global 32 (control)"),
+    ((1, 0, 0), "local 32 (=units)"),
+    ((1, 48, 0), "local 48 (16 idle)"),
+    ((1, 16, 0), "local 16"),
+)
 
 
 def _capture(fn_a, fn_b, order: str):
@@ -104,23 +120,12 @@ def _time(g, reps: int = REPS) -> float:
 
 
 def main() -> int:
-    from flashinfer.fused_moe import B12xMoEWrapper
-    from vllm.utils.flashinfer import flashinfer_convert_sf_to_mma_layout
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     torch.cuda.init()
-    print(f"device {torch.cuda.get_device_name()} T={T} topk={TOPK} U={U}")
-    wrapper = B12xMoEWrapper(
-        num_experts=E, top_k=TOPK, hidden_size=HID, intermediate_size=INTER,
-        use_cuda_graph=True, max_num_tokens=64, num_local_experts=E,
-        activation="swigluoai_uninterleave", swiglu_alpha=1.0,
-        swiglu_beta=0.0, swiglu_limit=10.0)
-    gen = torch.Generator().manual_seed(1)
-    w13, w2, s13, s2 = _weight_set(gen)
-    sf13 = flashinfer_convert_sf_to_mma_layout(
-        s13.reshape(E * 2 * INTER, HID // 16), m=2 * INTER, k=HID, num_groups=E)
-    sf2 = flashinfer_convert_sf_to_mma_layout(
-        s2.reshape(E * HID, INTER // 16), m=HID, k=INTER, num_groups=E)
+    print(f"device {torch.cuda.get_device_name()} T={T} U={U} layers={MOE_LAYERS}")
+    wrapper = served_wrapper()
+    w13, sf13, w2, sf2 = expert_set(torch.Generator().manual_seed(1))
     ones = torch.ones(E, dtype=torch.float32, device=DEV)
     ids, w = _routing(U)
     x = torch.randn(T, HID, dtype=torch.bfloat16, device=DEV) * 0.5
@@ -152,35 +157,34 @@ def main() -> int:
     def nothing():
         pass
 
-    print(f"{'row':<40}{'us':>9}{'exposed_us':>12}")
-    ext.set_probe(0, 0, -1)
+    print(f"{'row':<44}{'us':>9}{'exposed_us':>12}")
+    ext.set_probe(0, 0, 0, 0)
     t_moe = _time(_capture(moe, nothing, "moe-first"))
-    print(f"{'moe alone (U=40)':<40}{t_moe:>9.1f}")
+    print(f"{'moe alone (U=40)':<44}{t_moe:>9.1f}")
     rows = {}
-    # (localq knob, lq launch-grid cap): the global kernel, then the local
-    # kernel on its units, on 16 and on 8 blocks
-    for lq, cap in ((0, 0), (1, 0), (1, 16), (1, 8)):
-        ext.set_probe(0, lq, cap)
-        plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
-        plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
-        tag = f"lq={lq}" + (f" grid<={cap}" if cap else "")
-        print(f"  plans (grid, ksr, units, localq, lgrid): up={plan_up} "
-              f"down={plan_dn}")
-        t_pair = _time(_capture(nothing, pair, "moe-first"))
-        print(f"{'pair alone ' + tag:<40}{t_pair:>9.1f}")
-        for order in ("moe-first", "pair-first"):
-            t = _time(_capture(moe, pair, order))
-            rows[(lq, cap, order)] = t - t_moe
-            print(f"{'moe || pair ' + tag + ' ' + order:<40}{t:>9.1f}"
-                  f"{t - t_moe:>12.1f}")
-    ext.set_probe(-1, -1, -1)
-    # the number that maps onto the step: 43 layers x the exposed pair
-    for (lq, cap) in ((0, 0), (1, 0), (1, 16), (1, 8)):
-        a = rows[(lq, cap, "moe-first")]
-        b = rows[(lq, cap, "pair-first")]
-        tag = f"lq={lq}" + (f" grid<={cap}" if cap else "")
-        print(f"{tag}: exposed per layer moe-first {a:.1f} / pair-first {b:.1f} us"
-              f" -> x43 = {43 * a / 1e3:.2f} / {43 * b / 1e3:.2f} ms/step")
+    try:
+        for (lq, lqg, bgg), label in ROWS:
+            ext.set_probe(0, lq, lqg, bgg)
+            plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
+            plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
+            print(f"  plans (grid, ksr, units, localq, lgrid, bar): up={plan_up} "
+                  f"down={plan_dn}")
+            t_pair = _time(_capture(nothing, pair, "moe-first"))
+            print(f"{'pair alone ' + label:<44}{t_pair:>9.1f}")
+            for order in ("moe-first", "pair-first"):
+                t = _time(_capture(moe, pair, order))
+                rows[(label, order)] = t - t_moe
+                print(f"{'moe || pair ' + label + ' ' + order:<44}{t:>9.1f}"
+                      f"{t - t_moe:>12.1f}")
+    finally:
+        ext.set_probe(-1, -1, 0, 0)
+    # the projection onto the step: the exposed pair times the MoE layers
+    for _, label in ROWS:
+        a = rows[(label, "moe-first")]
+        b = rows[(label, "pair-first")]
+        print(f"{label}: exposed per layer moe-first {a:.1f} / pair-first {b:.1f} us"
+              f" -> x{MOE_LAYERS} = {MOE_LAYERS * a / 1e3:.2f} / "
+              f"{MOE_LAYERS * b / 1e3:.2f} ms/step (projection, see the docstring)")
     return 0
 
 
