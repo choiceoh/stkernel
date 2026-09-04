@@ -6805,7 +6805,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "shadow) and once per distinct eligibility reason it does not; "
           "prefill steps stay silent (no boot tonight logged a KDA judgement)")
     hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
-    check("smlp lane serving: first fused call" in hook
+    check("smlp lane CAPTURED into the decode graph" in hook
+          and "smlp lane serving: first fused call" in hook
           and hook.count("_smlp_stock(") >= 4
           and "if T < 1 or T > MAX_TOK:\n        return None" in hook,
           "the smlp hook says once when it first serves and once per distinct "

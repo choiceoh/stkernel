@@ -766,15 +766,21 @@ def smlp_forward(mlp, x):
     alpha = float(getattr(act, "alpha", 1.0))
     beta = float(getattr(act, "beta", 0.0))
     _SMLP_FUSED_CALLS += 1
+    capturing = False
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        pass
     if _SMLP_FUSED_CALLS == 1:
-        capturing = False
-        try:
-            capturing = bool(torch.cuda.is_current_stream_capturing())
-        except Exception:
-            pass
         logger.warning("[megakernel] smlp lane serving: first fused call "
                        "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
                        T, k, n_int, n_out, limit, capturing)
+    # the served decode is a graph replay: the capture-time call is the
+    # proof that replays run the fused block (29차 KDA lesson)
+    if capturing and "captured" not in _SMLP_SAID:
+        _SMLP_SAID.add("captured")
+        logger.warning("[megakernel] smlp lane CAPTURED into the decode graph: "
+                       "T=%d n_int=%d", T, n_int)
     return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                       limit, alpha, beta)
 
