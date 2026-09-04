@@ -981,18 +981,52 @@ def _kda_meta(layer):
     return attn_meta.get(layer.prefix)
 
 
-def _kda_eligible(meta) -> bool:
-    """Pure metadata contract: pure spec-verify decode steps only."""
+def _kda_eligible_reason(meta):
+    """Pure metadata contract: pure spec-verify decode steps only. None when
+    the step is eligible, else the predicate that failed (said once per
+    distinct text by kda_takeover -- an armed lane the steps never reach is
+    the 28차 pattern, and the KDA shadow never logged a judgement all night
+    while every boot said armed)."""
     if meta is None:
-        return False
-    if meta.spec_sequence_masks is None or meta.num_spec_decodes <= 0:
-        return False
+        return "no attention metadata for the layer"
+    if getattr(meta, "spec_sequence_masks", None) is None:
+        return "spec_sequence_masks is None (not a spec-verify batch)"
+    if meta.num_spec_decodes <= 0:
+        return "num_spec_decodes <= 0"
     if meta.num_prefills > 0:
-        return False
-    if (meta.non_spec_token_indx is not None
-            and meta.non_spec_token_indx.numel()):
-        return False
-    return 0 < meta.num_actual_tokens <= 32
+        return None if False else "num_prefills > 0 (routine)"
+    nsti = getattr(meta, "non_spec_token_indx", None)
+    if nsti is not None and nsti.numel():
+        return "non-spec tokens in the batch"
+    if not (0 < meta.num_actual_tokens <= 32):
+        return "num_actual_tokens %d outside (0, 32]" % int(meta.num_actual_tokens)
+    return None
+
+
+def _kda_eligible(meta) -> bool:
+    return _kda_eligible_reason(meta) is None
+
+
+_KDA_ELIG_SAID = set()
+_KDA_SERVED = {"n": 0}
+
+
+def _kda_eligible_said(meta) -> bool:
+    """_kda_eligible with the reason logged once per distinct text; prefill
+    steps are routine and stay silent."""
+    reason = _kda_eligible_reason(meta)
+    if reason is None:
+        _KDA_SERVED["n"] += 1
+        if _KDA_SERVED["n"] == 1:
+            logger.warning("[megakernel] kda lane serving: first eligible step "
+                           "T=%d n_spec=%d (%s)", int(meta.num_actual_tokens),
+                           int(meta.num_spec_decodes),
+                           "shadow" if not _ARMED["kda"] else "armed")
+        return True
+    if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
+        _KDA_ELIG_SAID.add(reason)
+        logger.warning("[megakernel] kda lane stock: %s", reason)
+    return False
 
 
 _KDA_LAYOUT_SAID = set()
@@ -1167,7 +1201,7 @@ def kda_takeover(layer) -> bool:
         return False  # shadow-only boot: same GB10 contract, or no launch
     if not _kda_ensure_packs(layer):
         return False
-    return _kda_layout_ok(layer) and _kda_eligible(_kda_meta(layer))
+    return _kda_layout_ok(layer) and _kda_eligible_said(_kda_meta(layer))
 
 
 def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
