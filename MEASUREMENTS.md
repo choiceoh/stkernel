@@ -2062,7 +2062,7 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
    (원래 항목:) 증명 줄을 캡처 제외·512 호출 집계로 고쳐(c62db9c) 체인10 KDAPROOF 팔(기본값 + `MK_KDA=1`,
    디코드 2회)이 `kda lane tally: served=… stock=…` 로 확정한다. 서빙되면 KDA 레인은 살아 있는 것이고 이득 0 이 판정;
    안 되면 `_kda_ensure_packs`/디바이스 게이트의 무로그 거부(이번에 로그 추가)가 답.
-2. **K5 팔**(체인10 두 번째): `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
+2. **K5 팔**(체인10 두 번째) — **부팅 불가**: 05:15 부팅이 45분간 초기화에서 멈춤. 헤드 Worker_TP0 가 `profile_run → _dummy_sampler_run → gumbel_sample` 의 Triton 커널 초기화(`_init_handles`)에 CPU 300%·GPU 96% 로 갇힘, 워커 3개는 유휴. K=5 에서 더미 샘플러 형상이 달라지며 생기는 초기화 병목(컴파일 루프 또는 거대 더미 배치)으로 보이며, K5 레버는 이 초기화를 따로 풀어야 잴 수 있다. 06:00 팔 중단 → PROD 진행. (원래 계획:) `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
    가설: 검증 배치 (k+1) 토큰이 줄면 스텝당 서로 다른 전문가 수가 줄어 스텝이 빨라지고, tok/step 은 조금 준다 —
    one-spark 는 같은 드래프터를 K5 로 서빙(구조화 4.94 tok/step). 판정은 tok/s(step/s × tok/step).
 3. **2.05 bpw 품질 기준점**(one-spark, 1× Spark): srv4 `~/one-spark`(2bd465d) + `~/models/GLM-5.3-Flash-exl3-2.05bpw`
