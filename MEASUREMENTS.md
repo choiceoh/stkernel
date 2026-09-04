@@ -2052,6 +2052,20 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 - (구) KDA 부팅의 8K 프리필 순간 srv2 20 GB+ 일시 사용(두 번의 earlyoom)은 아직 미해명 — 4 노드 5 s 메모리 감시
   (`memwatch.log`) 아래서 다음 KDA 팔이 답한다. 정상 상태에선 KDA 부팅이 rank 0/1 여유를 오히려 17 GB 더 남긴다.
 
+### 12. 후속 세 건(운영자 "그릐라", 04:5x~)
+
+1. **MK-KDA 서빙 증명 재판정**: 증명 줄을 캡처 제외·512 호출 집계로 고쳐(c62db9c) 체인10 KDAPROOF 팔(기본값 + `MK_KDA=1`,
+   디코드 2회)이 `kda lane tally: served=… stock=…` 로 확정한다. 서빙되면 KDA 레인은 살아 있는 것이고 이득 0 이 판정;
+   안 되면 `_kda_ensure_packs`/디바이스 게이트의 무로그 거부(이번에 로그 추가)가 답.
+2. **K5 팔**(체인10 두 번째): `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
+   가설: 검증 배치 (k+1) 토큰이 줄면 스텝당 서로 다른 전문가 수가 줄어 스텝이 빨라지고, tok/step 은 조금 준다 —
+   one-spark 는 같은 드래프터를 K5 로 서빙(구조화 4.94 tok/step). 판정은 tok/s(step/s × tok/step).
+3. **2.05 bpw 품질 기준점**(one-spark, 1× Spark): srv4 `~/one-spark`(2bd465d) + `~/models/GLM-5.3-Flash-exl3-2.05bpw`
+   (turboderp exl3 mul1, 80 GB) + DFlash2. 플릿을 내린 창에서 이미지 빌드(base `vllm/vllm-openai:glm53-flash-arm64-cu130`
+   + ExLlamaV3 e648f1a, MAX_JOBS 8, ~1 h) → `eval.sh`: 우리 게이트(품질 2K/32K·한국어 2×400·디코드 C=1·수용률)를
+   그들 서버(TP1, K5, fp8 KV)에 그대로. 답할 것: 2 bpw 가 우리 품질 게이트를 통과하는가(통과하면 전문가 2~3 bpw 가
+   27 ms 전문가 바닥을 절반으로 만드는 진짜 레버가 된다).
+
 ### 10. 부팅·벤치 병목 대책(운영자 "1,2,5,6 진행", 01:0x~)
 
 | # | 무엇 | 어디 | 효과 |
