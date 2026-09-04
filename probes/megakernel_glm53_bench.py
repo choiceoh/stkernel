@@ -55,7 +55,8 @@ import os
 # measurement, and any DISARM those self-tests logged landed in the MHC run's
 # log as if the lane under test had failed.
 _SEG_KNOB = {"mhc": "VLLM_GLM53_MK_MHC", "gemm": "VLLM_GLM53_MK_GEMM",
-             "exact": "VLLM_GLM53_MK_GEMM", "kda": "VLLM_GLM53_MK_KDA"}
+             "exact": "VLLM_GLM53_MK_GEMM", "kda": "VLLM_GLM53_MK_KDA",
+             "smlp": "VLLM_GLM53_MK_SMLP"}
 
 
 def _arm_env(segs) -> None:
@@ -576,7 +577,7 @@ def main() -> int:
         print("--sinkhorn must be >= 1")
         return 2
     segs = [s.strip() for s in args.segments.split(",") if s.strip()]
-    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda")]
+    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda", "smlp")]
     if unknown:
         print(f"unknown segment(s): {unknown}")
         return 2

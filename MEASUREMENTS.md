@@ -1886,19 +1886,26 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 | KDASHADOW | `MK_KDA=1 KDA_SHADOW=1` | 16.27 (2회) | 2,726 / 2,726 | **레이아웃 게이트가 전 층 거부** (§4) | 서빙 불가 → KDA32 |
 | UNIONSHADOW | `UNION_PREFILL=2 +SHADOW` | 16.1 (2회) | 2,608 / 2,536 | 검증 커널 Triton 컴파일 오류 (§5) | 검증 불가 |
 | UNION | `UNION_PREFILL=2` | 16.24 | **2,474 / 2,492 (−9%)** | 9/9, 한국어 1/16 | **불합격** |
-| NVFP4P | `FP8_DENSE_PREFILL_NVFP4=1` | (기입 대기) | (기입 대기) | | |
-| PDLCLEAN | (기본값, 조용한 srv4) | (기입 대기) | | | |
-| PREP2 / PREP3 | `PREP_FUSED=1` / `SPLITK=1` | (기입 대기) | | | |
-| KDA32SHADOW / KDA32 | `MAMBA_CACHE_DTYPE=float32 MK_KDA=1` | (기입 대기) | | | |
+| NVFP4P | `FP8_DENSE_PREFILL_NVFP4=1` | **부팅 사망** | — | srv3 earlyoom (§8) | JIT 웜 뒤 재부팅 |
+| PDLCLEAN(1) | (기본값) | 부팅 사망 | — | one-shot AR watchdog 오탐 (§8) | 재측정 |
+| **PDLCLEAN2** | (기본값 = PDL on, 조용한 srv4) | **16.15** [15.8, 16.7] | 2,708 / 2,695 | 9/9, 0/16 | PDL 이득 **0** (기준 16.39) |
+| PREP2 | `PREP_FUSED=1` 만 | 디코드 2~3회차 **행** | — | 워커 무응답 → RPC 타임아웃 | **불합격** (§2) |
+| PREP3 | `SPLITK=1` 만 | 16.7 [16.5, 16.8] | 2,687 / 2,686 | 수용률 레그에서 **엔진 사망** | **불합격** |
+| KDA32SHADOW | `MAMBA_CACHE_DTYPE=float32 MK_KDA=1 +SHADOW` | 15.7/16.5 (2회) | 2,7xx | dtype 게이트 통과 → **"not contiguous"** 거부 (§4) | KDA32 건너뜀 |
 
-### 2. EXP-7 의 이득은 진짜였다 — 그리고 C=2 에서 500
+### 2. EXP-7 의 이득은 진짜였다 — 그리고 무장 경로는 행(hang)한다
 
 프리필 사다리는 그대로이고 C=1 스텝만 61.0 → 56.9 ms. 호스트 준비 유휴(9월 1일 트레이스 12%)가
 표적이었고 실측 −4.1 ms 가 그 크기다. 한국어 레그(`korean-corruption.py 2 400`, C=2)에서 서버가 500 을
 냈고 그 부팅의 로그는 다음 부팅에 덮여 원인이 남지 않았다(레그 스크립트가 실패 시 4노드 로그를 스냅샷
 하고 ABORT 하도록 고쳤다). prep-fused 는 "균일 spec-verify + FULL 그래프 + 패딩 없음"에서만 fused 이고
 C=2 는 stock 으로 떨어져야 하므로, 용의자는 그 폴백 경계이거나 같은 부팅에 얹은 split-K(M≤16 라우팅,
-C=2 = M 16)다. PREP2(fused 만)·PREP3(split-K 만)이 가른다.
+C=2 = M 16)다. PREP2(fused 만)·PREP3(split-K 만)이 갈랐다: **둘 다 죽는다.** PREP2 는 C=1 디코드
+2~3회차에서 워커가 무응답(22:50:51 부터 "shared memory broadcast block 없음" 60 s 반복 → `sample_tokens`
+RPC 타임아웃, 워커 로그에 트레이스백 없음 = 커널/집합통신에 갇힘), PREP3 는 수용률 레그(C=1, 온도 0.95)에서
+엔진 사망(워커 큐 dequeue 타임아웃). 같은 main 의 기본값 부팅(PDLCLEAN2)은 전 레그를 완주했으므로 두
+노브 각각의 무장 경로 문제다. 스냅샷 `fail-PREP2-225350/`, `fail-PREP3-231101/`(4노드 로그). 두 모듈 소유
+세션의 수정 항목; 두 노브 모두 0 유지. +7.3% 는 "측정됐지만 미출시".
 
 ### 3. 측정 위생 — srv4 는 rank 3 이다
 
@@ -1915,8 +1922,10 @@ not float32 (blocks, 6144, W) -- the layer stays stock`. vLLM 의 `mamba_cache_d
 모델 dtype(bf16)으로 잡고(순환 상태는 `kda_state_dtype` 이 항상 fp32), 커널은 fp32 를 인덱싱한다. 부팅
 자가진단은 fp32 픽스처라 통과("delta variant 1 matches stock") — 22차와 같은 형태의 함정이다. 런처에
 `MAMBA_CACHE_DTYPE`(프로필 선언, 기본 auto) 을 넣어 `--mamba-cache-dtype float32`(260 MB/rank)로 띄우면
-게이트가 통과할 수 있다(PR #299) — KDA32SHADOW → KDA32 가 그 부팅이다. 커널을 bf16 conv 상태로 포팅하는
-것은 그 다음 선택지.
+게이트가 통과할 수 있다(PR #299). KDA32SHADOW 결과: dtype 게이트는 통과했고 다음 검사 **"conv state is
+not contiguous"** 에서 전 층 거부 — fp32 (1056, 6144, 10) 텐서가 풀의 strided view 다. 커널이
+`slot * 6144 * width` 로 인덱싱하므로 블록 stride 를 인자로 받는 계약이 다음 단계(게이트가 stride 를
+로그하도록 보강). 커널을 bf16 conv 상태로 포팅하는 것은 그 다음 선택지.
 
 ### 5. union 프리필 — 느리고 검증 불가
 
@@ -1931,6 +1940,18 @@ not float32 (blocks, 6144, W) -- the layer stays stock`. vLLM 의 `mamba_cache_d
 mk_gemm 56.7~59.3 µs — 3% 이내. AR 5.4 ms/스텝은 프로토콜 왕복(p10 22.6 µs)과 무작위 지터이지 노드 불균형이
 아니다. 레버 5(융합)와 5′(편차)는 닫는다; 남는 것은 전송 계층(호스트 등록 RDMA 프록시) 뿐이다.
 
+### 8. 죽은 부팅 둘의 원인
+
+- **NVFP4P(22:19)**: nvfp8-dense 패스가 nvfp4 쌍을 만드는 동안 srv3 가용 메모리가 4.2% 까지 떨어져 earlyoom 이
+  pipewire/wireplumber 를 죽이고 워커가 종료됐다 — cutlass `mm_fp4` 의 첫 JIT 컴파일(형상당 ~73 s)이 서빙
+  프로세스 안에서 돌며 호스트 메모리를 먹은 26차형 절벽. 대응: 서빙 밖에서 JIT 를 데우는
+  `probes/nvfp4_prefill_warm.py`(MAX_JOBS=4, 4노드 각자 `/cache` 에 캐시; 4노드 VERDICT PASS, W4A4 by-design
+  rel 1.3e-1) + 패스 안의 메모리 감시 로그. 플릿이 빈 뒤 재부팅.
+- **PDLCLEAN(1)(22:29)**: 첫 AR 에서 `OneShotFatal: one-shot proxy unhealthy` — watchdog 이 연속 두 호출 사이에
+  프록시 스레드의 beat 가 안 움직이면 unhealthy 로 판정하는 구조라 프록시가 CPU 를 잠깐 못 받으면 오탐한다.
+  같은 main 의 다음 부팅들(PREP2 이후)은 모두 통과 → 일회성. 워치독을 "N ms 안에 beat 전진" 으로 바꾸는
+  것이 옳다(osar 모듈 소유 세션 항목).
+
 ### 7. MK 세부 커널 — 남은 표적은 소형 GEMM 의 고정비
 
 디코드 트레이스의 `mk_gemm` 30~45 µs 급이 스텝당 86.7개·3.47 ms, 그중 **2.37 ms 가 다른 스트림에 덮이지
@@ -1940,6 +1961,22 @@ k-블록 ≤ 8 형상의 split 을 거부하고(`mk_choose_ksr`, "8 k-블록 미
 k=2048 실측 규칙) 32 타일을 48 블록에 놓아 16개가 논다. 벤치에 그 형상을 넣고 split 강제 노브
 (`VLLM_GLM53_MK_KSR`)를 붙였다(PR #298); 부팅 핑거프린트가 [N×K]×count 를 찍는다. 벤치는 플릿이 빌 때.
 후보 순서: split r=2 강제 → 2 CTA/SM → 공유 전문가 3연산(gate_up·act·down) 단일 발사.
+
+**MK_SEG_SMLP 첫 GPU 검증(09-04 23:40~23:44, 플릿 비운 srv4, `probes/megakernel_glm53_bench.py --segments smlp`)**:
+활성화를 gate_up 에필로그로 접은 3번안(위상 3→2, 배리어 2→1). e2m1 격자 가중치의 exact 게이트와 3발 체인
+(W4 gate_up → vLLM `SiluAndMulWithClamp` → W4 down) 대조를 세 형상 모두 통과.
+
+| 형상(랭크당) | exact rel | 체인 3발 µs | 융합 1발 µs | 연속(x2) 체인→융합 |
+|---|---|---|---|---|
+| T=8, int=512, k=4096 (공유 전문가) | 3.6e-6 | 77.8 | **45.1 → 43.0**(L2 웜) | 74.6 → 39.0 |
+| T=8, int=3072, k=4096 (dense 층) | 3.1e-6 | 160.8 | **130.1 → 127.0** | 158.1 → 121.9 |
+| T=32, int=512, k=4096 | 3.4e-5 | 90.1 | **59.3 → 57.2** | 86.9 → 52.2 |
+
+- 노브: `KSR_GU=6` 은 기본값과 같고(46.1), `KSR_D=2` 는 손해(51.2/134.1/67.6) → 기본값 유지. down 팩 L2 웜은
+  세 형상 모두 −2 µs 로 일관 → **무조건 켜고 노브 삭제**(규칙 §8).
+- 해석: 융합 45 µs ≈ 단독 GEMM 두 발의 합(26.6 + 18.6). 활성화 런치와 런치 간격은 사라졌지만 GEMM 위상은 단독
+  런치와 같은 속도 — 남은 병목은 위상의 대역폭(92 GB/s = DRAM 의 1/3, 24차 "mk GEMM 정체")이지 융합 구조가 아니다.
+- 스텝 환산 상한: 공유 전문가 42층 × 32~35 µs ≈ **−1.4 ms/스텝(≈ +2%)**. 브래킷(`VLLM_GLM53_MK_SMLP=1`)이 판정.
 
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 

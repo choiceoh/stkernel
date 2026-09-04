@@ -8493,8 +8493,8 @@ def test_glm53_megakernel_contracts() -> None:
     _smlp_k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
     check("prefetch.global.L2" not in _kda_k
           and cu.count("prefetch.global.L2") == _smlp_k.count("prefetch.global.L2")
-          and "if (a.warm_l2) {" in _smlp_k
-          and 'getenv("VLLM_GLM53_MK_SMLP_L2WARM")' in cu
+          and "Warm phase C's first W records in L2" in _smlp_k
+          and "L2WARM" not in cu and "warm_l2" not in cu
           and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
           and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
           "split-K never makes slices shorter than 8 k-blocks; no L2 "

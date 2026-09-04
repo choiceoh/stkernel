@@ -970,7 +970,13 @@ def _kda_layout_reason(layer):
         return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
             conv_state.shape[2], KDA_CONV_STATE_W)
     if not conv_state.is_contiguous():
-        return "conv state is not contiguous"
+        # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype
+        # gate passes and THIS one rejects every layer -- the fp32 (blocks,
+        # 6144, 10) tensor is a strided view of the pool. The kernel indexes
+        # slot * KDA_QKV * width + ...; a block stride is the next contract
+        # to carry. Say the strides so the next boot settles it.
+        return "conv state is not contiguous: shape %s strides %s" % (
+            tuple(conv_state.shape), tuple(conv_state.stride()))
     if (rec_state.dtype != torch.float32 or rec_state.dim() != 4
             or tuple(rec_state.shape[1:]) != (KDA_H, KDA_D, KDA_D)):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
