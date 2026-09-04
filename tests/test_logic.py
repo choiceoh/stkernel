@@ -8830,6 +8830,31 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 k loop: exact ring wait, refill of the stage consumed last "
           "iteration, quant into the A buffer the running mma does not read, "
           "one __syncthreads per k-block")
+    check("int a_ready = 0;\n  int pair_act = 0;" in cu
+          and "__device__ uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];" in cu
+          and "__device__ unsigned int g_mk2_pair_arrive[MK2_TILES_MAX];" in cu
+          and "if (c.a_ready) {  // stage the published group; nothing to quantize" in v2
+          and "if (c.pair_act) pair_finish(nt);  // the tile's final store was just made" in v2
+          and "if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store" in v2
+          and "if (s_pair_last) g_mk2_pair_arrive[pair] = 0u;  // both arrived; rearm" in v2
+          and "void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars," in cu
+          and cu.count("mk_launch_gemm2(") == 4  # def, gemm, smlp2 x2
+          and "g.pair_act = 1; g.n_int = n_int;" in cu and "d.a_ready = 1;" in cu
+          and 'm.def("run_smlp2", &mk_run_smlp2' in cu
+          and "mk_grid_barrier" not in cu[cu.index("void mk_run_smlp2("):cu.index("std::vector<int64_t> mk_gemm2_plan(")],
+          "MK_SEG_SMLP2 is two PDL-chained v2 launches: gate_up's pair epilogue "
+          "emits the fp8 groups, down stages them (a_ready), no grid barrier, "
+          "the pair counter self-rearms")
+    check('ENABLE_SMLP2 = MASTER and _flag("VLLM_GLM53_MK_SMLP2")' in pysrc_full
+          and "def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0," in pysrc_full
+          and "def _selftest_smlp2() -> bool:" in pysrc_full
+          and '_ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)' in pysrc_full
+          and 'if not (_ARMED["smlp"] or _ARMED["smlp2"]):' in pysrc_full
+          and 'if _ARMED["smlp2"]:\n        return _smlp2_call(' in pysrc_full
+          and '"smlp2" if _ARMED["smlp2"] else "smlp"' in pysrc_full,
+          "the driver arms smlp2 behind its own knob with the exact + replay "
+          "gate, the MLP hook prefers it when armed, and the serving line "
+          "names the lane")
     check("template <int RQ>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2

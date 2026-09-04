@@ -65,6 +65,8 @@ def _arm_env(segs) -> None:
     os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
     for seg in segs:
         os.environ.setdefault(_SEG_KNOB[seg], "1")
+    if "smlp" in segs:  # the probe times both fused lanes
+        os.environ.setdefault("VLLM_GLM53_MK_SMLP2", "1")
     # programmatic launches: the mk_x2 column below is where they show
     os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
@@ -469,7 +471,10 @@ def probe_smlp(iters: int) -> bool:
 
     ok = True
     limit = 10.0
-    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}")
+    ext = mk._build()
+    has2 = hasattr(mk, "_smlp2_call") and mk._ARMED.get("smlp2", False)
+    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}"
+          + (f"{'exact2':>10}{'chain2_x2':>10}{'fused2':>10}{'x2_fused2':>10}" if has2 else ""))
     for T, n_int, k, n_out in ((8, 512, 4096, 4096), (8, 3072, 4096, 4096), (32, 512, 4096, 4096)):
         n_gu = 2 * n_int
         torch.manual_seed(0)
@@ -490,6 +495,13 @@ def probe_smlp(iters: int) -> bool:
         torch.cuda.synchronize()
         gate_ok, e_exact, n_ulp = mk._smlp_gate(got, ref)
         ok &= gate_ok
+        e_exact2 = float("nan")
+        if has2:
+            got2 = mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+            torch.cuda.synchronize()
+            gate_ok2, e_exact2, _ = mk._smlp_gate(got2, ref)
+            ok &= gate_ok2
+            gate_ok &= gate_ok2
         # timing on random weights, two pack pairs
         w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05
         w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -519,8 +531,22 @@ def probe_smlp(iters: int) -> bool:
         t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
                                   mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
                          iters, hot=(x,)) / 2
+        extra = ""
+        if has2:
+            # the v2 standalone chain (gate_up v2 -> act -> down v2) and the
+            # two-launch fused lane, back to back on the two pack pairs
+            _lane(ext, 1)
+            t_chain2_v2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)),
+                                iters, hot=(x,)) / 2
+            _lane_restore(ext)
+            t_f2 = _time(lambda: mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                         iters, hot=(x,))
+            t_f2x2 = _time(lambda: (mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                                    mk._smlp2_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
+                           iters, hot=(x,)) / 2
+            extra = f"{e_exact2:>10.2e}{t_chain2_v2:>10.1f}{t_f2:>10.1f}{t_f2x2:>10.1f}"
         mark = " " if gate_ok else "!"
-        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}")
+        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}" + extra)
     return ok
 
 

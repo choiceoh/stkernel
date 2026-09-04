@@ -79,6 +79,12 @@ ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
 # dense layers. Served-numerics unchanged by construction (same packs, same
 # rounding points); the bracket is the gate (29차).
 ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
+# MK_SEG_SMLP2: the same MLP as two PDL-chained v2 (non-persistent) launches --
+# gate_up with the pair-activation epilogue, down on the published fp8 groups
+# -- no grid barrier, so it shares SMs with the routed MoE kernel the way the
+# standalone v2 lane does (30차 §2/§6). Wins the hook over MK_SMLP when both
+# are armed.
+ENABLE_SMLP2 = MASTER and _flag("VLLM_GLM53_MK_SMLP2")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
 # in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
@@ -151,7 +157,8 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False, "smlp": False}
+_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False, "smlp": False,
+          "smlp2": False}
 
 
 def _build_dir(src_md5: str, flags: list) -> str:
@@ -687,6 +694,37 @@ def _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
     return out
 
 
+_SMLP2_GU = None
+
+
+def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
+                beta=0.0):
+    """Two PDL-chained v2 launches: gate_up into a static bf16 scratch
+    (its pair epilogue emits the fp8 A groups), then down on those groups
+    (a_ready). Same packs, same activation, same rounding points as
+    _smlp_call; no grid barrier and no 48-block residency."""
+    import torch
+
+    global _SMLP2_GU
+    if _SMLP2_GU is None or _SMLP2_GU.device != x.device:
+        # one static scratch, strongly held (a captured graph bakes it)
+        _SMLP2_GU = torch.empty(MAX_TOK, SMLP_GU_MAX, dtype=torch.bfloat16,
+                                device=x.device)
+    out = torch.empty(x.shape[0], n_out, dtype=torch.bfloat16, device=x.device)
+    _ar_note(gu_pack[0], gu_pack[1])
+    _EXT.run_smlp2(
+        [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
+         d_pack[0].data_ptr(), d_pack[1].data_ptr(), _SMLP2_GU.data_ptr(),
+         out.data_ptr()],
+        [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
+         float(beta)],
+        [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
+         int(gu_pack[0].shape[0]), int(gu_pack[0].shape[1]),
+         int(d_pack[0].shape[0]), int(d_pack[0].shape[1])],
+    )
+    return out
+
+
 def _smlp_gate(got, ref32):
     """(ok, rel, over_ulp): the exact gate's numbers under a tolerance that
     survives the one place the chain is not bit-reproducible -- the fp32
@@ -737,7 +775,7 @@ def smlp_forward(mlp, x):
     import torch
 
     global _SMLP_FUSED_CALLS
-    if not _ARMED["smlp"]:
+    if not (_ARMED["smlp"] or _ARMED["smlp2"]):
         return None
     if x.dim() != 2 or x.dtype != torch.bfloat16:
         return _smlp_stock("x is %s %s, not a 2-D bf16 row batch"
@@ -772,9 +810,13 @@ def smlp_forward(mlp, x):
             capturing = bool(torch.cuda.is_current_stream_capturing())
         except Exception:
             pass
-        logger.warning("[megakernel] smlp lane serving: first fused call "
+        logger.warning("[megakernel] smlp lane serving (%s): first fused call "
                        "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
+                       "smlp2" if _ARMED["smlp2"] else "smlp",
                        T, k, n_int, n_out, limit, capturing)
+    if _ARMED["smlp2"]:
+        return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
+                           limit, alpha, beta)
     return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                       limit, alpha, beta)
 
@@ -796,6 +838,49 @@ def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
     a = (g * torch.sigmoid(alpha * g) * (u + beta)).to(torch.bfloat16)
     return _mk_quant_x_ref(a) @ mk_w4_dequant(
         d_pack[0], d_pack[1], n_out, d_pack[2]).float().T
+
+
+def _selftest_smlp2() -> bool:
+    """MK_SEG_SMLP2's gate: the exact fixture of _selftest_smlp (e2m1-grid
+    packs at the shared expert's and the dense MLP's geometry) through the
+    two-launch v2 chain, with replay stability."""
+    import torch
+
+    torch.manual_seed(0)
+    dev = "cuda"
+    grid = torch.tensor(_E2M1_GRID, device=dev)
+
+    def exact_weight(n, k):
+        code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
+        sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
+        w = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)
+        return w.view(n, k).to(torch.bfloat16)
+
+    limit = 10.0
+    worst = 0.0
+    for T, n_int, k, n_out in ((8, 512, HIDDEN, HIDDEN), (16, 3072, HIDDEN, HIDDEN),
+                               (32, 512, HIDDEN, HIDDEN)):
+        n_gu = 2 * n_int
+        gu_pack = build_mk_weight_w4(exact_weight(n_gu, k))
+        d_pack = build_mk_weight_w4(exact_weight(n_out, n_int))
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
+        got = _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        ref = _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        ok, e_exact, n_ulp = _smlp_gate(got, ref)
+        worst = max(worst, e_exact)
+        if not ok:
+            logger.warning("[megakernel] selftest smlp2 grid rel=%.2e over-ulp=%d "
+                           "(T=%d n_int=%d) -> DISARM", e_exact, n_ulp, T, n_int)
+            return False
+        again = _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        if _rel_err(got, again) > 1e-6:
+            logger.warning("[megakernel] selftest smlp2 replay drift -> DISARM")
+            return False
+    logger.warning("[megakernel] selftest smlp2 exact=%.2e -> ARM", worst)
+    return True
 
 
 def _selftest_smlp() -> bool:
@@ -1963,6 +2048,8 @@ def arm() -> None:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_SMLP:
         _ARMED["smlp"] = _gate("smlp", _selftest_smlp)
+    if ENABLE_SMLP2:
+        _ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
         if _ARMED["kda"]:

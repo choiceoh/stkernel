@@ -1316,6 +1316,13 @@ constexpr int MK2_PART_ELEMS = 32 * KDA_INPROJ_N_PAD * 4;
 __device__ __align__(16) float g_mk2_partial[MK2_PART_ELEMS];
 // per n-tile slice arrivals, self-rearming like g_mk_tile_arrive
 __device__ unsigned int g_mk2_tile_arrive[MK2_TILES_MAX];
+// MK_SEG_SMLP2 hand-off: the fp8 A groups the gate_up launch's pair
+// epilogue emits and the down launch stages (a_ready), plus the (gate,
+// up) pair arrivals, self-rearming. One set for the device: the same
+// no-overlap contract as the partials above.
+__device__ uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
+__device__ float g_mk2_axs[32 * KBLK_MAX];
+__device__ unsigned int g_mk2_pair_arrive[MK2_TILES_MAX];
 #ifdef MK_PHASE_TS
 constexpr int MK2_UNITS_MAX = MK2_TILES_MAX * MK2_KSR_MAX;  // 512
 // [unit][4]: entry, first record landed, last mma done, exit
@@ -1339,6 +1346,17 @@ struct MKGemm2Ctx {
   float wgs;
   int m, n, k, n_orig;
   int ksr;                 // k-slices per tile; grid = (n / 128) * ksr
+  // MK_SEG_SMLP2 (the shared-expert MLP as two PDL-chained v2 launches, no
+  // grid barrier): the gate_up launch runs with pair_act -- whichever block
+  // stores the SECOND final tile of a (gate, up) pair computes the clamped
+  // SwiGLU over that pair's 128 columns from the just-stored bf16 rows and
+  // emits the fp8 A group + per-row scale into g_mk2_aq / g_mk2_axs -- and
+  // the down launch runs with a_ready, staging those groups instead of
+  // quantizing x. Its griddepcontrol.wait orders it after the gate_up grid.
+  int a_ready = 0;
+  int pair_act = 0;
+  int n_int = 0;               // gate width = up width = the down launch's k
+  float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
 };
 
 
@@ -1413,7 +1431,19 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   const int qrow = qw + MK_WARPS * (ql / LPR);   // this lane's row
   const int qu = ql % LPR;                       // lane within the row group
   uint2 xr[EPL / 4];                             // bf16 x2 per word
+  // a_ready: the A group is already e4m3 in g_mk2_aq (16 B per thread:
+  // row t >> 3, chunk t & 7) with its pow2 scale in g_mk2_axs
+  const int arow = (int)threadIdx.x >> 3, achunk = (int)threadIdx.x & 7;
+  uint4 areg = make_uint4(0u, 0u, 0u, 0u);
+  float asc = 1.0f;
   auto load_x = [&](int kb) {
+    if (c.a_ready) {
+      if (arow < c.m) {
+        areg = *(const uint4*)(g_mk2_aq + ((size_t)kb * 32 + arow) * KSTEP + achunk * 16);
+        if (achunk == 0) asc = g_mk2_axs[arow * KBLK_MAX + kb];
+      }
+      return;
+    }
     if (qrow < c.m) {
       const __nv_bfloat16* src = c.x + (size_t)qrow * c.k + kb * KSTEP + qu * EPL;
 #pragma unroll
@@ -1421,6 +1451,15 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     }
   };
   auto quant_x = [&](int buf) {
+    if (c.a_ready) {  // stage the published group; nothing to quantize
+      if (arow < c.m) {
+        uint8_t* dst = saq + buf * (32 * SMEM_A_PITCH) +
+                       (arow >> 4) * 16 * SMEM_A_PITCH + (arow & 15) * SMEM_A_PITCH;
+        *(uint4*)(dst + mk_swz(arow & 15, achunk * 16)) = areg;
+        if (achunk == 0) sxs[buf * 32 + arow] = asc * c.wgs;
+      }
+      return;
+    }
     float v[EPL];
     float mx = 0.0f;  // rows past m reduce a zero and store nothing
     if (qrow < c.m) {
@@ -1588,6 +1627,63 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   }
   MK2_TS(2);
 
+  // pair_act: this block just stored tile nt's FINAL bf16 rows (a whole
+  // tile, or the fold as the last-arriving slice). Count the pair's
+  // arrival; the block completing the pair reads both tiles' rows back
+  // (__ldcg: the other tile came from another SM) and emits the fp8 A
+  // group for the down launch. Release/acquire as in the slice fold:
+  // fence before the arrival, fence after winning it. The activation is
+  // the persistent lane's (pair_finish in mk_gemm_phase): clamp, fp32
+  // silu x (up + beta), bf16 round -- the rounding the stock chain has --
+  // then the per-row pow2 quant.
+  __shared__ int s_pair_last;
+  auto pair_finish = [&](int tile) {
+    __syncthreads();
+    __threadfence();
+    __syncthreads();
+    const int groups = c.n_int / KSTEP;
+    const int pair = (tile < groups) ? tile : tile - groups;
+    if (threadIdx.x == 0) {
+      const unsigned prev = atomicAdd(&g_mk2_pair_arrive[pair], 1u);
+      s_pair_last = (prev + 1u == 2u);
+      if (s_pair_last) g_mk2_pair_arrive[pair] = 0u;  // both arrived; rearm
+    }
+    __syncthreads();
+    if (s_pair_last) {
+      __threadfence();
+      for (int t = warp; t < c.m; t += MK_WARPS) {  // one warp per row
+        const size_t gb = (size_t)t * c.n_orig + (size_t)pair * KSTEP + lane * 4;
+        const uint2 gr = __ldcg((const uint2*)(c.out + gb));
+        const uint2 ur = __ldcg((const uint2*)(c.out + gb + c.n_int));
+        const __nv_bfloat16* gp = (const __nv_bfloat16*)&gr;
+        const __nv_bfloat16* up = (const __nv_bfloat16*)&ur;
+        float v[4], amax = 0.0f;
+#pragma unroll
+        for (int e = 0; e < 4; ++e) {
+          float gv = __bfloat162float(gp[e]), uv = __bfloat162float(up[e]);
+          if (c.act_limit > 0.0f) {
+            gv = fminf(gv, c.act_limit);
+            uv = fminf(fmaxf(uv, -c.act_limit), c.act_limit);
+          }
+          v[e] = __bfloat162float(__float2bfloat16(
+              gv * mk_sigmoid(c.act_alpha * gv) * (uv + c.act_beta)));
+          amax = fmaxf(amax, fabsf(v[e]));
+        }
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
+        const float sc = mk_pow2_scale(amax);
+        const float rsc = __frcp_rn(sc);  // exact: sc is a power of two
+        uint32_t pack = 0;
+#pragma unroll
+        for (int e = 0; e < 4; ++e)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[e] * rsc) << (8 * e);
+        *(uint32_t*)(g_mk2_aq + ((size_t)pair * 32 + t) * KSTEP + lane * 4) = pack;
+        if (lane == 0) g_mk2_axs[t * KBLK_MAX + pair] = sc;
+      }
+    }
+  };
+
   // ---- epilogue: one walk over the fragment's real rows / cols, two stores
   auto store_tile = [&](auto&& put) {  // put(row, col, value)
 #pragma unroll
@@ -1605,6 +1701,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     store_tile([&](int r, int col, float v) {
       if (col < c.n_orig) c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
     });
+    if (c.pair_act) pair_finish(nt);  // the tile's final store was just made
     MK2_TS(3);
     return;
   }
@@ -1640,6 +1737,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
       if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
     }
+    if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store
   }
   MK2_TS(3);
 }
@@ -3370,6 +3468,17 @@ int mk_choose_ksr2(int m, int n, int k) {
   return ksr;
 }
 
+// One v2 launch: the instantiation follows m (rows quantized per warp).
+void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
+  const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr;
+  if (c2.m <= 8)
+    mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);
+  else if (c2.m <= 16)
+    mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);
+  else
+    mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);
+}
+
 }  // namespace
 
 // Geometry probe -- the driver refuses to arm unless the device is exactly
@@ -3468,13 +3577,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                     && c2.ksr <= c2.k / KSTEP
                     && (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS,
                 "gemm2 plan out of contract");
-    const int grid2 = nblk * c2.ksr;
-    if (c2.m <= 8)
-      mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);
-    else if (c2.m <= 16)
-      mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);
-    else
-      mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch_gemm2(c2, stream);
     return;
   }
   const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);
@@ -3754,6 +3857,58 @@ int64_t mk_mla_grid() {
   return mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
 }
 
+// MK_SEG_SMLP2: the shared-expert / dense MLP as two PDL-chained v2
+// launches -- gate_up with the pair-activation epilogue into the caller's
+// bf16 scratch, down on the a_ready path -- no grid barrier anywhere.
+// ptrs: x, gu_wq4, gu_ws4, d_wq4, d_ws4, gu_scratch, out
+// scalars: gu_wgs, d_wgs, limit, alpha, beta
+// ints: T, k_gu, n_gu, n_int, n_out, gu_tiles_n, gu_tiles_k, d_tiles_n, d_tiles_k
+void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                  std::vector<int64_t> ints) {
+  set_kernel_attrs();
+  TORCH_CHECK(ptrs.size() == 7 && scalars.size() == 5 && ints.size() == 9,
+              "run_smlp2 arg contract");
+  const int T = (int)ints[0], k_gu = (int)ints[1], n_gu = (int)ints[2];
+  const int n_int = (int)ints[3], n_out = (int)ints[4];
+  TORCH_CHECK(T >= 1 && T <= 32, "smlp2: T out of contract");
+  TORCH_CHECK(k_gu % KSTEP == 0 && k_gu <= KBLK_MAX * KSTEP, "smlp2: k_gu out of contract");
+  TORCH_CHECK(n_int % KSTEP == 0 && n_int <= KBLK_MAX * KSTEP, "smlp2: n_int out of contract");
+  TORCH_CHECK(n_gu == 2 * n_int, "smlp2: gate_up width is not 2 x n_int");
+  TORCH_CHECK(((uintptr_t)ptrs[0] & 7) == 0, "smlp2: x must be 8 B aligned");
+  const int n_gu_pad = ((n_gu + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
+  const int n_out_pad = ((n_out + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
+  TORCH_CHECK((int)ints[5] * SMEM_W_ROWS == n_gu_pad && (int)ints[6] == k_gu / KSTEP,
+              "smlp2: gate_up pack tiles disagree with (n_gu, k_gu)");
+  TORCH_CHECK((int)ints[7] * SMEM_W_ROWS == n_out_pad && (int)ints[8] == n_int / KSTEP,
+              "smlp2: down pack tiles disagree with (n_out, n_int)");
+  TORCH_CHECK(n_gu_pad / SMEM_W_ROWS <= MK2_TILES_MAX && n_out_pad / SMEM_W_ROWS <= MK2_TILES_MAX,
+              "smlp2: too many tiles");
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  MKGemm2Ctx g{};  // gate_up -> scratch, the pair epilogue emits the A groups
+  g.x = (const __nv_bfloat16*)ptrs[0];
+  g.wq4 = (const uint8_t*)ptrs[1];
+  g.ws4 = (const int8_t*)ptrs[2];
+  g.wgs = (float)scalars[0];
+  g.out = (__nv_bfloat16*)ptrs[5];
+  g.m = T; g.n = n_gu_pad; g.k = k_gu; g.n_orig = n_gu;
+  g.ksr = mk_choose_ksr2(g.m, g.n, g.k);
+  g.pair_act = 1; g.n_int = n_int;
+  g.act_limit = (float)scalars[2]; g.act_alpha = (float)scalars[3]; g.act_beta = (float)scalars[4];
+  TORCH_CHECK((size_t)g.m * g.n * g.ksr <= (size_t)MK2_PART_ELEMS, "smlp2: gate_up plan out of contract");
+  mk_launch_gemm2(g, stream);
+  MKGemm2Ctx d{};  // down on the published groups
+  d.x = g.x;  // unused on the a_ready path
+  d.wq4 = (const uint8_t*)ptrs[3];
+  d.ws4 = (const int8_t*)ptrs[4];
+  d.wgs = (float)scalars[1];
+  d.out = (__nv_bfloat16*)ptrs[6];
+  d.m = T; d.n = n_out_pad; d.k = n_int; d.n_orig = n_out;
+  d.ksr = mk_choose_ksr2(d.m, d.n, d.k);
+  d.a_ready = 1;
+  TORCH_CHECK((size_t)d.m * d.n * d.ksr <= (size_t)MK2_PART_ELEMS, "smlp2: down plan out of contract");
+  mk_launch_gemm2(d, stream);
+}
+
 // Bench: the v2 plan one launch of (m, n, k) would use -- {on, ksr, units,
 // blocks per SM} -- and the setter behind it (-1 leaves a knob as it is).
 std::vector<int64_t> mk_gemm2_plan(int64_t m, int64_t n, int64_t k) {
@@ -3793,5 +3948,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_smlp", &mk_run_smlp, "MK_SEG_SMLP (gate_up -> SwiGLU -> down, one launch)");
+  m.def("run_smlp2", &mk_run_smlp2, "MK_SEG_SMLP2 (two PDL-chained v2 launches, no barrier)");
   m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");
 }
