@@ -353,7 +353,16 @@ def build_mk_weight_w4(weight):
     # layers.1 q/k/v/o/gate/up/down). The shift is a power of two, undone
     # on the kernel's activation scales, so it costs no accuracy.
     need = torch.empty(n_pad, kg, dtype=torch.float32, device=weight.device)
-    CH = max(128, (((4 << 20) // k) // 128) * 128)  # ~4M elements/chunk
+    # ~1M elements per row chunk. The candidate search below makes a dozen
+    # temporaries per candidate per chunk, and on the unified-memory GB10
+    # the caching allocator (expandable segments) answered that churn by
+    # MAPPING new pages instead of reusing freed blocks: at 4M elements a
+    # [6416, 4096] pack grew torch's reserved memory by 14.5 GiB with the
+    # live set flat (instrumented boot, 2026-09-04), and 180 packs in the
+    # fp8-dense pass took every node under the 4 GiB kernel watermark. A
+    # quarter of the chunk is a quarter of every temporary, and the cache
+    # is handed back at the end of the build (below).
+    CH = max(128, (((1 << 20) // k) // 128) * 128)
     for r0 in range(0, n, CH):
         r1 = min(r0 + CH, n)
         a = weight[r0:r1].float().view(r1 - r0, kg, 16).abs().amax(-1)
@@ -431,6 +440,11 @@ def build_mk_weight_w4(weight):
            .permute(0, 2, 1, 3).contiguous())
     ws4 = (ws4.view(n_pad // 128, 128, k // 128, 8)
            .permute(0, 2, 1, 3).contiguous())
+    # Reserved-but-free blocks are host memory this box has lost; give the
+    # search's churn back before the next pack (see CH above). Also matters
+    # for the KDA packs built inside the first forward, where a reservation
+    # that lingers is subtracted from the KV budget by the memory profiler.
+    torch.cuda.empty_cache()
     return wq4, ws4, gscale
 
 

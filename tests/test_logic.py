@@ -4708,11 +4708,33 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         model_source.index("class Glm5NextForCausalLM"),
     )
     load_source = model_source[load_start : model_source.index("\n\n@", load_start)]
+    # The post-load hooks (fp8 copies, fused K+gate, metadata warmup, kpool)
+    # live in run_post_load and run ONCE from whoever owns the whole
+    # checkpoint walk. AutoWeightsLoader enters a child's load_weights once
+    # per contiguous run of its prefix in the stream, so hooks inline there
+    # ran ~25 s into the load on unloaded weights and again per run -- the
+    # memory cliff of 2026-09-04 (MEASUREMENTS 26차).
     check(
-        "prepare_glm53_prefill_fastpath(self)" in load_source
+        "def run_post_load(self) -> None:" in load_source
+        and "prepare_glm53_prefill_fastpath(self)" in load_source
         and load_source.index("loaded = loader.load_weights(weights)")
+        < load_source.index('if not getattr(self, "_defer_post_load", False):')
+        < load_source.index("self.run_post_load()")
+        < load_source.index("def run_post_load(self) -> None:")
+        < load_source.index("maybe_build_fp8_dense(self)")
         < load_source.index("prepare_glm53_prefill_fastpath(self)"),
-        "fused K+gate buffer is built only after outer checkpoint loading",
+        "the child runs its post-load hooks only when nothing above it owns "
+        "the walk, and the fp8 copies come before the fused K+gate buffer",
+    )
+    wrap_start = model_source.index("class Glm5NextForConditionalGeneration(")
+    wrap_source = model_source[wrap_start:]
+    check(
+        "self.language_model._defer_post_load = True" in wrap_source
+        and "loaded = super().load_weights(weights)" in wrap_source
+        and wrap_source.index("loaded = super().load_weights(weights)")
+        < wrap_source.index('getattr(self.language_model, "run_post_load", None)'),
+        "the wrapper owns the walk: it defers the child's hooks and runs "
+        "them once after its own loader returns",
     )
     module_dir = os.path.join(
         REPO, "overlay", "modules", "glm53_model_wiring"
@@ -6633,7 +6655,18 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
           "'armed' stops meaning 'serving', and an over-broad claim is how "
           "MK-KDA got written off with it")
 
-    # 5. the bf16 release stays its own pass
+    # 5. the transient of every linear goes back to the driver before the
+    #    next one: on unified memory a block the caching allocator keeps
+    #    reserved is host memory the node has lost, and the sum over the
+    #    pass took every node under the 4 GiB kernel watermark (2026-09-04
+    #    instrumented boot: reserved +14.9 GiB after the first linear with
+    #    allocated flat)
+    loop = body[body.index("for name, mod in model.named_modules():"):body.index("logger.warning(\n        \"[fp8-dense] %s (knob %s=%s)")]
+    check("        finally:\n" in loop and "torch.cuda.empty_cache()" in loop
+          and loop.index("        finally:\n") < loop.index("torch.cuda.empty_cache()"),
+          "empty_cache() in the loop's finally: one transient at a time")
+
+    # 6. the bf16 release stays its own pass
     free = src[src.index("def maybe_free_fp8_dense_bf16("):]
     free = free[:free.index("def _attach_mk_pack(")]
     check("mod.weight.data = torch.empty(" in free
