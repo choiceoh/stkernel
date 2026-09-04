@@ -325,6 +325,21 @@ struct MKGemmCtx {
   // into the weights, and passes 2^-shift here; it costs one multiply on
   // the activation scales in the prologue.
   float wgs = 1.0f;
+  // MK_SEG_SMLP (29차 item 3): gate_up's epilogue finishes the MLP's first
+  // half. Tiles come in (gate, up) pairs of the same 128 output columns
+  // (tile nt and nt + n_int/128); whichever block stores a pair's second
+  // final tile computes the clamped SwiGLU over the pair from the just-
+  // stored bf16 rows and emits the fp8 A group + per-row scale the down
+  // phase reads on its a_ready path -- the separate activation phase and
+  // its grid barrier are gone. 0 = plain GEMM (every other caller).
+  int pair_act = 0;
+  int n_int = 0;               // gate width = up width = the down phase's k
+  float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
+  // Dynamic unit hand-out counter: null = the lane's g_mk_unit_next. A
+  // caller chaining two phases under ONE barrier gives the second phase
+  // its own counter (reset before the first phase starts), because the
+  // shared one is still being incremented by blocks finishing the first.
+  unsigned int* unit_ctr = nullptr;
   // Standalone launches: 0 = g_mk_gemm_bar (the resident grid), 1 = the
   // control counter g_mk_gemm_bar_bg (a smaller grid; bench only).
   int bar_id = 0;
@@ -384,6 +399,11 @@ __device__ unsigned long long g_mk_gemm_bar_bg = 0ULL;
 // not equal the standalone gemm grid. Two grids on one ticket counter
 // misalign it and the barrier releases early -- so, two counters.
 __device__ unsigned long long g_mk_kda_bar = 0ULL;
+// MK_SEG_SMLP: its own GEMM-phase barrier and the gate_up scratch ([32 x
+// 8192] bf16: the dense MLP's 2 x 3072 is the widest gate_up per rank).
+__device__ unsigned long long g_mk_smlp_bar = 0ULL;
+constexpr int SMLP_GU_MAX = 8192;
+__device__ __align__(16) __nv_bfloat16 g_mk_smlp_gu[32 * SMLP_GU_MAX];
 __device__ __align__(16) float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // Split-K fold without a grid barrier: every k slice of a leftover tile
 // bumps its tile's counter after publishing its partial, and the slice
@@ -393,6 +413,10 @@ __device__ __align__(16) float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // The stamps priced the barrier + cooperative fold at 5-11 us per launch,
 // most of it blocks that had finished waiting for the one that had not.
 __device__ unsigned int g_mk_tile_arrive[MK_GRID_CAP];
+// MK_SEG_SMLP: (gate, up) pair arrivals for the pair-activation epilogue,
+// self-rearming like g_mk_tile_arrive, and the down phase's own unit counter.
+__device__ unsigned int g_mk_pair_arrive[MK_GRID_CAP];
+__device__ unsigned int g_mk_smlp_unit2 = 0u;
 // Dynamic unit hand-out. Static striding (u += grid) gave every block the
 // same count of units, but the stamps showed a 25% spread in the loop
 // (n=4096: 86..110 us) -- DRAM arbitration is not fair and the slow
@@ -738,6 +762,7 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   }
   if (!c.a_ready) {
     if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
+    if (c.unit_ctr && blockIdx.x == 0 && threadIdx.x == 0) *c.unit_ctr = 0u;
     MK_TS(1);  // A quantized, before the publishing barrier
     mk_grid_barrier(bar, c.grid);
   }
@@ -755,10 +780,68 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   // g_mk_unit_next); the first is static so its W fill could be hoisted.
   auto next_unit = [&]() -> int {
     __syncthreads();  // the previous unit is done with s_unit and smem
-    if (threadIdx.x == 0)
-      s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
+    if (threadIdx.x == 0) {
+      if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);
+      else s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
+    }
     __syncthreads();
     return s_unit;
+  };
+  __shared__ int s_pair_last;
+  // pair_act: this block just stored tile nt's FINAL bf16 rows (a whole
+  // tile, or the fold as the last-arriving slice). Count the pair's
+  // arrival; the block completing the pair reads both tiles' rows back
+  // (__ldcg: the other tile came from another SM) and emits the fp8 A
+  // group for the down phase. Same release/acquire discipline as the tile
+  // fold: fence before the arrival, fence after winning it.
+  auto pair_finish = [&](int nt) {
+    __syncthreads();
+    __threadfence();
+    __syncthreads();
+    const int groups = c.n_int / KSTEP;
+    const int pair = (nt < groups) ? nt : nt - groups;
+    if (threadIdx.x == 0) {
+      const unsigned prev = atomicAdd(&g_mk_pair_arrive[pair], 1u);
+      s_pair_last = (prev + 1u == 2u);
+      if (s_pair_last) g_mk_pair_arrive[pair] = 0u;  // both arrived; rearm
+    }
+    __syncthreads();
+    if (s_pair_last) {
+      __threadfence();
+      for (int t = warp; t < c.m; t += MK_WARPS) {  // one warp per row
+        const size_t gb = (size_t)t * c.n_orig + (size_t)pair * KSTEP + lane * 4;
+        const uint2 gr = __ldcg((const uint2*)(c.out + gb));
+        const uint2 ur = __ldcg((const uint2*)(c.out + gb + c.n_int));
+        const __nv_bfloat16* gp = (const __nv_bfloat16*)&gr;
+        const __nv_bfloat16* up = (const __nv_bfloat16*)&ur;
+        float v[4], amax = 0.0f;
+#pragma unroll
+        for (int q = 0; q < 4; ++q) {
+          float gv = __bfloat162float(gp[q]), uv = __bfloat162float(up[q]);
+          if (c.act_limit > 0.0f) {
+            gv = fminf(gv, c.act_limit);
+            uv = fminf(fmaxf(uv, -c.act_limit), c.act_limit);
+          }
+          // bf16 round first: the stock activation kernel stores bf16 and
+          // the down_proj prologue quantizes THAT
+          v[q] = __bfloat162float(__float2bfloat16(
+              gv * mk_sigmoid(c.act_alpha * gv) * (uv + c.act_beta)));
+          amax = fmaxf(amax, fabsf(v[q]));
+        }
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
+        const float sc = mk_pow2_scale(amax);
+        const float rsc = 1.0f / sc;  // exact: sc is a power of two
+        uint32_t pack = 0;
+#pragma unroll
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[q] * rsc) << (8 * q);
+        *(uint32_t*)(g_mk_aq + ((size_t)pair * 32 + t) * KSTEP + lane * 4) = pack;
+        if (lane == 0) g_mk_axs[t * KBLK_MAX + pair] = sc;
+      }
+    }
+    __syncthreads();  // s_pair_last is reused by the next unit
   };
 #ifdef MK_PHASE_TS
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
@@ -1122,8 +1205,11 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
           if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
           if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
         }
+        if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store
       }
       __syncthreads();  // s_last is reused by the next unit
+    } else if (c.pair_act) {
+      pair_finish(nt);  // a whole tile: its final store was the epilogue above
     }
     if (u == (int)blockIdx.x) MK_TS(6);  // first unit (incl. its epilogue) done
   }
@@ -1981,6 +2067,19 @@ struct MKKdaArgs {
   // runtime width as stride (review finding).
   float* conv_state;
   int conv_width;
+  // Element strides of conv_state over (slot, channel, width). The engine
+  // hands the state out as a VIEW of the hybrid pool: a slot stride wider
+  // than KDA_QKV*width (page alignment), or the SD layout's transposed
+  // view (channel stride 1). KDA32SHADOW (29차) rejected every layer on a
+  // contiguity gate; the kernel addresses through the strides instead and
+  // the Python gate only refuses overlapping or non-positive ones.
+  long long cs_s0, cs_s1, cs_s2;
+  long long rs_s0;             // rec_state elements per slot (>= KDA_H*KDA_D*KDA_D)
+  // conv_state element type: 0 = fp32, 1 = bf16 (the production pool with
+  // --mamba-cache-dtype auto; the recurrent state is fp32 either way).
+  // Loads widen to fp32, stores narrow -- the same rounding point as the
+  // stock causal_conv1d_update writing a bf16 state.
+  int cs_bf16;
   float* rec_state;            // [slots, KDA_H, KDA_D, KDA_D] fp32
   const float* a_log;          // [KDA_H] fp32
   const float* dt_bias;        // [KDA_H*KDA_D] fp32
@@ -2011,6 +2110,15 @@ struct MKKdaArgs {
   int num_tokens;
   float lower_bound, onorm_eps;
 };
+
+__device__ __forceinline__ float kda_cs_load(const MKKdaArgs &a, size_t idx) {
+  return a.cs_bf16 ? __bfloat162float(((const __nv_bfloat16 *)a.conv_state)[idx])
+                   : a.conv_state[idx];
+}
+__device__ __forceinline__ void kda_cs_store(const MKKdaArgs &a, size_t idx, float v) {
+  if (a.cs_bf16) ((__nv_bfloat16 *)a.conv_state)[idx] = __float2bfloat16(v);
+  else a.conv_state[idx] = v;
+}
 
 __global__ void mk_kda_kernel(const MKKdaArgs a) {
   extern __shared__ uint8_t smem[];
@@ -2151,20 +2259,19 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       for (int ch = blockIdx.x * CPB + threadIdx.x;
            ch < KDA_QKV && threadIdx.x < CPB; ch += a.grid * CPB) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
-        const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
-                             (size_t)ch * a.conv_width;
+        const size_t sbase = (size_t)slot * a.cs_s0 + (size_t)ch * a.cs_s1;
         const int keep = a.conv_width - nq_tok;
         // history = state[acc-1 .. acc+1]; kept = state[acc .. acc+keep-1]
         // (keep <= 2 whenever nq_tok >= 8; guard the general case)
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[sbase + (acc - 1) + i];
+          st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);
         float kept[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           kept[i] = (i < keep && acc + i < a.conv_width)
-                        ? a.conv_state[sbase + acc + i]
+                        ? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)
                         : 0.0f;
         float xin[NQ_MAX];
 #pragma unroll
@@ -2199,7 +2306,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 #pragma unroll
             for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;
           }
-          a.conv_state[sbase + i] = v;
+          kda_cs_store(a, sbase + (size_t)i * a.cs_s2, v);
         }
       }
     }
@@ -2293,7 +2400,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         float qd = 0.0f, kd = 0.0f, vd = 0.0f, gd = 0.0f, bt = 0.0f;
         load_tok(t0, qd, kd, vd, gd, bt);
         const float* Sbase =
-            a.rec_state + (((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D);
+            a.rec_state + (size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D;
         // Element (v, k) lives at v * KDA_D + k, matching the stock
         // writer: fused_recurrent.py stores b_h as
         //   p_ht + o_v[:, None] * K + o_k[None, :]
@@ -2385,7 +2492,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
                 sred2[0][vl] + sred2[1][vl] + sred2[2][vl] + sred2[3][vl]);
           if (sj > 0) {
             float* Sj = a.rec_state +
-                        (((size_t)sj * KDA_H + head) * KDA_D * KDA_D) +
+                        (size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D +
                         (size_t)rowhalf * RB * KDA_D;
             for (int idx = threadIdx.x; idx < RB * KDA_D; idx += MK_THREADS)
               Sj[idx] = stg[(idx >> 7) * (KDA_D + 1) + (idx & (KDA_D - 1))];
@@ -2475,6 +2582,123 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
   }
   MK_KDA_TS(11);
 }
+
+// ===========================================================================
+// MK_SEG_SMLP -- one dense MLP (gate_up -> clamped SwiGLU -> down) as ONE
+// persistent launch, T <= 32. GLM-5.3's shared expert is [1024 x 4096] +
+// [4096 x 512] per rank: two 1 MB W4 packs whose stream is 4.5 us each,
+// yet two standalone launches cost ~40 us each (28차/29차: 86 such launches
+// per decode step, 3.5 ms, 2.4 ms of it on the critical path) -- the fixed
+// prologue (x load, quant, publishing barrier, first fill) dominates a
+// 4-8 k-block unit. Here it is paid once: phase A is the gate_up GEMM
+// phase into a scratch, phase B applies the activation and emits the fp8
+// A tiles the way kda's p4 does, phase C is the down GEMM phase on the
+// a_ready path (no x load, no quant, no publishing barrier). Every
+// rounding point of the stock chain is kept: gate_up rounds to bf16, the
+// activation is computed in fp32 and rounded to bf16 (silu_and_mul_with_
+// clamp's output dtype), and that bf16 value is what the fp8 quant sees.
+//
+// Shared state: the two GEMM phases use the lane's A staging (g_mk_aq /
+// g_mk_axs), unit counter, split partials and tile-arrival counters, like
+// every MK GEMM launch does -- so, like them, this launch must never
+// overlap another MK GEMM launch on a different stream. It runs where the
+// shared expert's two launches ran (the MoE side stream, under the routed
+// expert kernel, joined before the next MK launch), so the contract holds
+// by the same stream order that already protected the standalone lane.
+struct MKSmlpArgs {
+  const __nv_bfloat16* x;      // [T, k_gu]
+  const uint8_t* gu_wq4;       // gate_up pack: [n_gu_pad/128][k_gu/128][128][64]
+  const int8_t* gu_ws4;
+  float gu_wgs = 1.0f;
+  const uint8_t* d_wq4;        // down pack: [n_out_pad/128][n_int/128][128][64]
+  const int8_t* d_ws4;
+  float d_wgs = 1.0f;
+  __nv_bfloat16* out;          // [T, n_out]
+  unsigned long long* barrier_ctr;
+  int T, k_gu, n_gu_pad, n_gu, n_int, n_out_pad, n_out;
+  int grid, ksr_gu, ksr_d;
+  float limit, alpha, beta;    // clamp(gate, max=limit) * sigmoid(alpha*gate) * (clamp(up, +-limit) + beta)
+};
+
+__global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a) {
+  extern __shared__ uint8_t smem[];
+  asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
+  // phase C's unit counter: private to it and reset before phase A starts,
+  // so the one barrier below is enough (phase A still increments the
+  // lane's shared counter while late blocks finish)
+  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_smlp_unit2 = 0u;
+
+  {  // phase A: gate_up GEMM into the scratch, bf16 [T, n_gu], and -- in its
+     // epilogue, per completed (gate, up) tile pair -- the clamped SwiGLU
+     // and the fp8 A tiles for phase C (MKGemmCtx::pair_act)
+    MKGemmCtx c;
+    c.x = a.x;
+    c.wq4 = a.gu_wq4;
+    c.ws4 = a.gu_ws4;
+    c.wgs = a.gu_wgs;
+    c.out = g_mk_smlp_gu;
+    c.m = a.T;
+    c.n = a.n_gu_pad;
+    c.k = a.k_gu;
+    c.n_orig = a.n_gu;
+    c.grid = a.grid;
+    c.ksr = a.ksr_gu;
+    c.pair_act = 1;
+    c.n_int = a.n_int;
+    c.act_limit = a.limit;
+    c.act_alpha = a.alpha;
+    c.act_beta = a.beta;
+    mk_gemm_phase(c, smem, &g_mk_smlp_bar);
+  }
+  {  // Warm phase C's first W records in L2 while the grid drains into the
+     // barrier. The down pack does not depend on the activation, and the
+     // block's first unit is static when the phase is unsplit (unit =
+     // blockIdx.x -> tile blockIdx.x, k-blocks from 0), so the lines it
+     // will cp.async first are known here. kda's delta phase lost net to
+     // the same idea (an L2 warm from idle blocks queued a latency chain
+     // behind it, 10차); here nothing latency-bound runs alongside, and the
+     // bench said so: -2 us on all three model shapes (45.1 -> 43.0,
+     // 130.1 -> 127.0, 59.3 -> 57.2 us; 29차), so it is unconditional.
+    const int kblk_d = a.n_int / KSTEP;
+    const int nblk_d = a.n_out_pad / SMEM_W_ROWS;
+    if ((int)blockIdx.x < nblk_d) {
+      const int nrec = kblk_d < 3 ? kblk_d : 3;
+      const size_t rec_bytes = (size_t)SMEM_W_ROWS * 64;
+      const uint8_t* base = a.d_wq4 + ((size_t)blockIdx.x * kblk_d) * rec_bytes;
+      const size_t total = rec_bytes * nrec;
+      for (size_t off = (size_t)threadIdx.x * 128; off < total; off += (size_t)MK_THREADS * 128)
+        asm volatile("prefetch.global.L2 [%0];" ::"l"(base + off));
+      const int8_t* sbase = a.d_ws4 + ((size_t)blockIdx.x * kblk_d) * (SMEM_W_ROWS * 8);
+      const size_t stotal = (size_t)SMEM_W_ROWS * 8 * nrec;
+      for (size_t off = (size_t)threadIdx.x * 128; off < stotal; off += (size_t)MK_THREADS * 128)
+        asm volatile("prefetch.global.L2 [%0];" ::"l"(sbase + off));
+    }
+  }
+  // Rows >= T and k-groups >= n_int/128 of the staging keep whatever phase
+  // A's prologue (or an older launch) left there: the down phase reads
+  // groups < its kblk only and its epilogue stores rows < T only, the same
+  // contract the standalone lane runs under.
+  mk_grid_barrier(a.barrier_ctr, a.grid);
+
+  {  // phase C: down GEMM on the A tiles phase A's epilogue emitted
+    MKGemmCtx c;
+    c.x = a.x;  // unused on the a_ready path (documentation only)
+    c.a_ready = true;
+    c.wq4 = a.d_wq4;
+    c.ws4 = a.d_ws4;
+    c.wgs = a.d_wgs;
+    c.out = a.out;
+    c.m = a.T;
+    c.n = a.n_out_pad;
+    c.k = a.n_int;
+    c.n_orig = a.n_out;
+    c.grid = a.grid;
+    c.ksr = a.ksr_d;
+    c.unit_ctr = &g_mk_smlp_unit2;
+    mk_gemm_phase(c, smem, &g_mk_smlp_bar);
+  }
+}
+
 
 }  // namespace
 
@@ -2864,6 +3088,8 @@ void set_kernel_attrs() {
       &g_mk_sms, cudaDevAttrMultiProcessorCount, 0));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   g_attrs_set = true;
 }
 
@@ -2888,6 +3114,7 @@ int mk_resident_grid(K kernel, int& cache, int smem, int cap = MK_GRID_CAP) {
 int g_gemm_grid = 0;
 int g_gemm_lq_grid = 0;
 int g_kda_grid = 0;
+int g_smlp_grid = 0;
 int g_mla_grid = 0;
 // MK_SEG_MLA keeps its own ticket counter, so it is not bound by the shared
 // 96-block contract the gemm/kda/mhc kernels observe. It still measures 96
@@ -3256,6 +3483,68 @@ void mk_set_probe(int64_t ksr, int64_t localq, int64_t lq_grid,
   g_probe_bg_grid = bg_grid > 0 ? (int)bg_grid : 0;
 }
 
+// MK_SEG_SMLP host entry.
+// ptrs: x, gu_wq4, gu_ws4, d_wq4, d_ws4, out, barrier
+// scalars: gu_wgs, d_wgs, limit, alpha, beta
+// ints: T, k_gu, n_gu, n_int, n_out, gu_tiles_n, gu_tiles_k, d_tiles_n, d_tiles_k
+//       (the packs' first two dims: a stale or mismatched pack is the only
+//       thing between this launch and silently wrong output)
+void mk_run_smlp(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                 std::vector<int64_t> ints) {
+  set_kernel_attrs();
+  TORCH_CHECK(ptrs.size() == 7 && scalars.size() == 5 && ints.size() == 9,
+              "run_smlp arg contract");
+  MKSmlpArgs a{};
+  a.x = (const __nv_bfloat16*)ptrs[0];
+  a.gu_wq4 = (const uint8_t*)ptrs[1];
+  a.gu_ws4 = (const int8_t*)ptrs[2];
+  a.d_wq4 = (const uint8_t*)ptrs[3];
+  a.d_ws4 = (const int8_t*)ptrs[4];
+  a.out = (__nv_bfloat16*)ptrs[5];
+  a.barrier_ctr = (unsigned long long*)ptrs[6];
+  a.gu_wgs = (float)scalars[0];
+  a.d_wgs = (float)scalars[1];
+  a.limit = (float)scalars[2];
+  a.alpha = (float)scalars[3];
+  a.beta = (float)scalars[4];
+  a.T = (int)ints[0];
+  a.k_gu = (int)ints[1];
+  a.n_gu = (int)ints[2];
+  a.n_int = (int)ints[3];
+  a.n_out = (int)ints[4];
+  TORCH_CHECK(a.T >= 1 && a.T <= 32, "smlp: T out of contract");
+  TORCH_CHECK(a.k_gu % KSTEP == 0 && a.k_gu <= KBLK_MAX * KSTEP, "smlp: k_gu out of contract");
+  TORCH_CHECK(a.n_int % KSTEP == 0 && a.n_int <= KBLK_MAX * KSTEP, "smlp: n_int out of contract");
+  TORCH_CHECK(a.n_gu == 2 * a.n_int && a.n_gu <= SMLP_GU_MAX, "smlp: gate_up width is not 2 x n_int");
+  TORCH_CHECK(a.n_gu % 8 == 0 && a.n_int % KSTEP == 0, "smlp: the pair epilogue reads 8 B rows of 128-wide groups");
+  TORCH_CHECK(((uintptr_t)a.x & 7) == 0, "smlp: x must be 8 B aligned");
+  a.n_gu_pad = ((a.n_gu + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
+  a.n_out_pad = ((a.n_out + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
+  TORCH_CHECK((int)ints[5] * SMEM_W_ROWS == a.n_gu_pad && (int)ints[6] == a.k_gu / KSTEP,
+              "smlp: gate_up pack tiles disagree with (n_gu, k_gu)");
+  TORCH_CHECK((int)ints[7] * SMEM_W_ROWS == a.n_out_pad && (int)ints[8] == a.n_int / KSTEP,
+              "smlp: down pack tiles disagree with (n_out, n_int)");
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  a.grid = mk_resident_grid(mk_smlp_kernel, g_smlp_grid, GEMM_SMEM);
+  a.ksr_gu = mk_choose_ksr(a.T, a.n_gu_pad, a.k_gu, a.grid);
+  a.ksr_d = mk_choose_ksr(a.T, a.n_out_pad, a.n_int, a.grid);
+  {  // probe knobs: force either phase's split (0 = the cost model). The
+     // down phase is 32 tiles x 4 k-blocks on 48 blocks with the model's
+     // r=1; r=2 is the bench question the global VLLM_GLM53_MK_KSR cannot
+     // ask without also moving the gate_up phase.
+    static int f_gu = -1, f_d = -1;
+    if (f_gu < 0) {
+      const char* e = getenv("VLLM_GLM53_MK_SMLP_KSR_GU");
+      f_gu = e ? atoi(e) : 0;
+      e = getenv("VLLM_GLM53_MK_SMLP_KSR_D");
+      f_d = e ? atoi(e) : 0;
+    }
+    if (f_gu > 0) a.ksr_gu = f_gu;
+    if (f_d > 0) a.ksr_d = f_d;
+  }
+  mk_launch(mk_smlp_kernel, a.grid, GEMM_SMEM, stream, a);
+}
+
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
 //       pm_out, cm_out, layer_in, yp, rp, sq, pmix, ol_stash, barrier
 // ints: num_tokens, sinkhorn_repeat
@@ -3352,7 +3641,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 4,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 10 && scalars.size() == 4,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -3361,6 +3650,16 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
               "kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)");
   a.delta_variant = (int)ints[3];
   a.conv_width = (int)ints[4];
+  a.cs_s0 = ints[5];
+  a.cs_s1 = ints[6];
+  a.cs_s2 = ints[7];
+  TORCH_CHECK(a.cs_s0 > 0 && a.cs_s1 > 0 && a.cs_s2 > 0,
+              "kda: conv state strides must be positive");
+  a.rs_s0 = ints[8];
+  TORCH_CHECK(a.rs_s0 >= (long long)KDA_H * KDA_D * KDA_D,
+              "kda: recurrent state slot stride is narrower than one slot");
+  a.cs_bf16 = (int)ints[9];
+  TORCH_CHECK(a.cs_bf16 == 0 || a.cs_bf16 == 1, "kda: conv state dtype flag");
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   a.in_wgs = (float)scalars[2];
@@ -3462,5 +3761,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
+  m.def("run_smlp", &mk_run_smlp, "MK_SEG_SMLP (gate_up -> SwiGLU -> down, one launch)");
   m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");
 }

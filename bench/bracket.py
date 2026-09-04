@@ -90,6 +90,58 @@ def step_s_of(tok_s: float, acc_raw, num_spec: int):
     return tok_s / (1.0 + num_spec * acc_raw)
 
 
+class _StepWindows:
+    """Sample the engine's step counter (vllm:iteration_tokens_total_count)
+    every `period` s while a rep runs, in a thread. Each full window gives a
+    step/s sample of its own, so a 40 s rep yields ~10 of them and three
+    reps give the spread six reps used to (29차 item 2: fewer reps, more
+    samples). A window that spans an idle gap (between requests) reads low
+    and is dropped by the `min_frac` rule: fewer steps than min_frac of the
+    rep's median window means the engine was not stepping the whole time."""
+
+    def __init__(self, bd, period: float = 2.0):
+        import threading
+        self.bd, self.period = bd, period
+        self.samples: list[tuple[float, float]] = []   # (t, steps)
+        self._stop = threading.Event()
+        self._th = threading.Thread(target=self._run, daemon=True)
+
+    def _steps(self):
+        import re, urllib.request
+        try:
+            text = urllib.request.urlopen(self.bd.METRICS, timeout=5).read().decode()
+        except Exception:
+            return None
+        m = re.search(r"^vllm:iteration_tokens_total_count\{[^}]*\}\s+([0-9.e+]+)", text, re.M)
+        return float(m.group(1)) if m else None
+
+    def _run(self):
+        import time
+        while not self._stop.is_set():
+            st = self._steps()
+            if st is not None:
+                self.samples.append((time.monotonic(), st))
+            self._stop.wait(self.period)
+
+    def __enter__(self):
+        self._th.start()
+        return self
+
+    def __exit__(self, *a):
+        self._stop.set()
+        self._th.join(timeout=self.period + 5)
+
+    def rates(self, min_frac: float = 0.5) -> list[float]:
+        r = [(self.samples[i + 1][1] - self.samples[i][1])
+             / max(self.samples[i + 1][0] - self.samples[i][0], 1e-6)
+             for i in range(len(self.samples) - 1)]
+        r = [x for x in r if x > 0]
+        if not r:
+            return []
+        med = median(r)
+        return [x for x in r if x >= min_frac * med]
+
+
 def cmd_leg(args) -> int:
     bd = _bench_dec()
     rec = {"ts": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -101,17 +153,25 @@ def cmd_leg(args) -> int:
           f"model={bd.MODEL} git={rec['git']} env={rec['env'] or '{}'}")
     for r in range(args.reps):
         m0 = bd.spec_counters()
-        toks, dt = bd.sweep(args.conc, r + 1 + args.conc * 1000)
+        with _StepWindows(bd) as win:
+            toks, dt = bd.sweep(args.conc, r + 1 + args.conc * 1000)
         legacy, raw = _spec_delta(m0, bd.spec_counters())
         tok_s = toks / dt
         s = step_s_of(tok_s, raw, args.num_spec)
+        rates = win.rates()
         rec["reps"].append({"rep": r + 1, "tok_s": round(tok_s, 2),
                             "acc_legacy": None if legacy is None else round(legacy, 4),
                             "acc_raw": None if raw is None else round(raw, 4),
-                            "step_s": None if s is None else round(s, 2)})
+                            "step_s": None if s is None else round(s, 2),
+                            "win_step_s": [round(x, 2) for x in rates]})
+        wtxt = ""
+        if rates:
+            q = sorted(rates)
+            wtxt = (f", windows n={len(q)} med {median(q):.1f} "
+                    f"[{q[len(q) // 4]:.1f}, {q[(3 * len(q)) // 4]:.1f}]")
         print(f"{args.tag} C={args.conc} rep{r + 1}: {tok_s:.1f} tok/s"
               + (f", raw acc {raw:.1%}" if raw is not None else "")
-              + (f", step/s {s:.1f}" if s is not None else ""), flush=True)
+              + (f", step/s {s:.1f}" if s is not None else "") + wtxt, flush=True)
     with open(args.out, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")
     print(f"[bracket] appended to {args.out}")
@@ -126,9 +186,17 @@ def judge(records: list, conc_judge: int = 1) -> dict:
     for r in records:
         for rep in r.get("reps", []):
             if r.get("conc") == conc_judge:
-                flat.append({"tag": r["tag"], "env": r.get("env", {}),
-                             "tok_s": rep["tok_s"],
-                             "step_s": rep.get("step_s")})
+                wins = rep.get("win_step_s") or []
+                if wins:
+                    # step windows: the engine's own step counter sampled
+                    # through the rep -- one sample per window, many per rep
+                    for w in wins:
+                        flat.append({"tag": r["tag"], "env": r.get("env", {}),
+                                     "tok_s": rep["tok_s"], "step_s": w})
+                else:
+                    flat.append({"tag": r["tag"], "env": r.get("env", {}),
+                                 "tok_s": rep["tok_s"],
+                                 "step_s": rep.get("step_s")})
             else:
                 other += 1
     out: dict = {"ok": True, "conc": conc_judge, "problems": [],
@@ -229,7 +297,7 @@ def main() -> int:
     lg = sub.add_parser("leg", help="살아있는 서버에 rep 를 돌려 기록")
     lg.add_argument("--name", required=True)
     lg.add_argument("--tag", required=True, choices=("base", "cand"))
-    lg.add_argument("--reps", type=int, default=6)
+    lg.add_argument("--reps", type=int, default=3)
     lg.add_argument("--conc", type=int, default=1)
     lg.add_argument("--num-spec", type=int, default=7,
                     help="스페큘레이티브 토큰 수 k (step/s 정규화 계수)")

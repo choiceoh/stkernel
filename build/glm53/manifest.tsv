@@ -35,3 +35,5 @@ deneb_boot_stamps.py	/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.p
 zz_deneb_boot_stamps.pth	/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth	absent
 glm53_dflash_early_fc.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py	absent
 glm53_kda_onepass.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py	absent
+glm53_dev_lab.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py	absent
+glm53_lab_middleware.py	/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py	absent

@@ -68,8 +68,11 @@ def ask(body_text, question):
 
 if __name__ == "__main__":
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 7
+    # QUALITY_CTX=2000,32000 -> the quick leg (an exploration arm skips the
+    # 128K prefill, ~3 min of the 25-min arm); the default is the full ladder
+    ctxs = tuple(int(c) for c in os.environ.get("QUALITY_CTX", "2000,32000,128000").split(","))
     total = ok = 0
-    for ctx in (2_000, 32_000, 128_000):
+    for ctx in ctxs:
         doc = build(ctx, seed + ctx)
         hits = []
         for _, q, expect in FACTS:

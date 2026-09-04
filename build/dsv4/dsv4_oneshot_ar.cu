@@ -96,6 +96,13 @@ struct Ctrl {
   // must not move).
   volatile uint64_t t_wait_sm;
   volatile uint64_t t_calls_sm;
+  // pad[0] doubles as the STALL WORD (29차 §9 hang forensics): block 0's
+  // thread 0 writes it once when a spin passes OSAR_STALL_S seconds --
+  // (seq << 8) | (phase << 6) | (missing-peer mask << 3) | slot -- and the
+  // proxy thread, which is alive while the kernel spins, prints it with
+  // ack_seq / tx_seq / rxf[slot]. After OSAR_STALL_TRAP_S the kernel traps so
+  // the engine dies in seconds with the line above, not after a 5-minute
+  // RPC timeout with nothing. Offsets after it are untouched.
   uint64_t pad[1];
   bf16 tx[RING][MAXEL];
   bf16 rx[RING][NPEER][MAXEL];
@@ -146,6 +153,32 @@ static const char *DEVNAME = "rocep1s0f0";
 #define SPIN_HOT 8
 #define SPIN_NS0 128u
 #define SPIN_NS_MAX 4096u
+#ifndef OSAR_STALL_S
+#define OSAR_STALL_S 3          // seconds of one spin before the stall word is written
+#endif
+#ifndef OSAR_STALL_TRAP_S
+#define OSAR_STALL_TRAP_S 30    // seconds of one spin before the kernel traps (0 = never)
+#endif
+#define OSAR_SM_HZ 1592000000ull
+#define STALL_GUARD 1ull
+#define STALL_WAIT 2ull
+
+// Bounded-spin bookkeeping for the two loops below (block 0 / thread 0 only:
+// it is the timer block and the one writer of pad[0]). Checked every 256
+// backoffs so the hot path pays nothing measurable.
+__device__ __forceinline__ void osar_stall_check(Ctrl *c, int n, long long t_start,
+                                                 uint64_t phase, uint64_t seq, int slot,
+                                                 unsigned missing) {
+  if ((n & 255) != 0) return;
+  const long long el = clock64() - t_start;
+  if (el > (long long)(OSAR_STALL_S * OSAR_SM_HZ) && c->pad[0] == 0) {
+    c->pad[0] = (seq << 8) | (phase << 6) | ((uint64_t)(missing & 7u) << 3) | (uint64_t)slot;
+    __threadfence_system();
+  }
+#if OSAR_STALL_TRAP_S > 0
+  if (el > (long long)(OSAR_STALL_TRAP_S * OSAR_SM_HZ)) __trap();
+#endif
+}
 
 __device__ __forceinline__ void osar_backoff(int &n, unsigned &ns) {
   if (++n <= SPIN_HOT) return;
@@ -231,7 +264,10 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
     const uint64_t want = c->tx_seq + 1;
     int sp = 0;
     unsigned ns = SPIN_NS0;
-    while (want > c->ack_seq + RING) osar_backoff(sp, ns);
+    while (want > c->ack_seq + RING) {
+      osar_backoff(sp, ns);
+      if (timer) osar_stall_check(c, sp, t0, STALL_GUARD, want, (int)(want % RING), 0u);
+    }
   }
   long long t1 = timer ? clock64() : 0;
   __syncthreads();
@@ -314,6 +350,9 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
           --left;
         } else {
           osar_backoff(sp, ns);
+          if (timer)
+            osar_stall_check(c, sp, t2, STALL_WAIT, nxt, slot,
+                             (got[0] ? 0u : 1u) | (got[1] ? 0u : 2u) | (got[2] ? 0u : 4u));
           break;
         }
       }
@@ -465,6 +504,22 @@ static void *proxy_fn(void *) {
     {
       time_t now = time(nullptr);
       if (last_report == 0) last_report = now;
+      // The stall word: the kernel is spinning past OSAR_STALL_S. Say who is
+      // waited for, with the counters the kernel spins on, every 5 s.
+      static time_t last_stall = 0;
+      const uint64_t sw = *(volatile uint64_t *)&g_ctrl->pad[0];
+      if (sw != 0 && now - last_stall >= 5) {
+        last_stall = now;
+        const int slot = (int)(sw & 7u);
+        fprintf(stderr,
+                "[oneshot] STALL rank=%d phase=%s seq=%llu slot=%d missing_peer_mask=0x%x "
+                "tx_seq=%llu ack_seq=%llu rxf[slot]={%llu,%llu,%llu} beat=%llu\n",
+                g_rank, ((sw >> 6) & 3u) == STALL_GUARD ? "guard(ring-space)" : "wait(peer-flags)",
+                (unsigned long long)(sw >> 8), slot, (unsigned)((sw >> 3) & 7u),
+                (unsigned long long)g_ctrl->tx_seq, (unsigned long long)g_ctrl->ack_seq,
+                (unsigned long long)g_ctrl->rxf[slot][0], (unsigned long long)g_ctrl->rxf[slot][1],
+                (unsigned long long)g_ctrl->rxf[slot][2], (unsigned long long)g_ctrl->proxy_beat);
+      }
       if (now - last_report >= REPORT_SEC) {
         uint64_t calls = g_ctrl->t_calls, dn = calls - last_calls;
         uint64_t dn_sm = g_ctrl->t_calls_sm - last_calls_sm;

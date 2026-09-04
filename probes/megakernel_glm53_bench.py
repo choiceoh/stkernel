@@ -55,7 +55,8 @@ import os
 # measurement, and any DISARM those self-tests logged landed in the MHC run's
 # log as if the lane under test had failed.
 _SEG_KNOB = {"mhc": "VLLM_GLM53_MK_MHC", "gemm": "VLLM_GLM53_MK_GEMM",
-             "exact": "VLLM_GLM53_MK_GEMM", "kda": "VLLM_GLM53_MK_KDA"}
+             "exact": "VLLM_GLM53_MK_GEMM", "kda": "VLLM_GLM53_MK_KDA",
+             "smlp": "VLLM_GLM53_MK_SMLP"}
 
 
 def _arm_env(segs) -> None:
@@ -456,6 +457,73 @@ def probe_gemm_sweep(iters: int, stamps: bool, shapes=None) -> bool:
     return ok
 
 
+def probe_smlp(iters: int) -> bool:
+    """MK_SEG_SMLP: the dense MLP as one launch vs the three-launch chain
+    (W4 gate_up, torch clamped SwiGLU, W4 down) on the shared expert's and
+    the dense layers' per-rank geometry. Exact gate on e2m1-grid weights,
+    then timing on random weights, DRAM-cold (a second pack pair per shape
+    for the back-to-back column, as probe_gemm does)."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    ok = True
+    limit = 10.0
+    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}")
+    for T, n_int, k, n_out in ((8, 512, 4096, 4096), (8, 3072, 4096, 4096), (32, 512, 4096, 4096)):
+        n_gu = 2 * n_int
+        torch.manual_seed(0)
+        # exact gate
+        code = torch.randint(0, 8, (n_gu, k // 16, 16), device=DEV)
+        sexp = torch.randint(-12, -2, (n_gu, k // 16, 1), device=DEV)
+        grid = torch.tensor(mk._E2M1_GRID, device=DEV)
+        w_gu = ((grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)).view(n_gu, k).to(torch.bfloat16)
+        code = torch.randint(0, 8, (n_out, n_int // 16, 16), device=DEV)
+        sexp = torch.randint(-12, -2, (n_out, n_int // 16, 1), device=DEV)
+        w_d = ((grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)).view(n_out, n_int).to(torch.bfloat16)
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=DEV)
+        gu_pack, d_pack = mk.build_mk_weight_w4(w_gu), mk.build_mk_weight_w4(w_d)
+        got = mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        ref = mk._smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        gate_ok, e_exact, n_ulp = mk._smlp_gate(got, ref)
+        ok &= gate_ok
+        # timing on random weights, two pack pairs
+        w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05
+        gu_pack, d_pack = mk.build_mk_weight_w4(w_gu), mk.build_mk_weight_w4(w_d)
+        gu_pack2 = mk.build_mk_weight_w4(torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05)
+        d_pack2 = mk.build_mk_weight_w4(torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05)
+
+        # the stock chain's activation is ONE CUDA launch (vLLM's
+        # silu_and_mul_with_clamp); torch's clamp/sigmoid/mul would be five
+        # and flatter the fused arm
+        try:
+            from vllm.model_executor.layers.activation import SiluAndMulWithClamp
+            act = SiluAndMulWithClamp(limit)
+            act_fn = lambda gu: act(gu)  # noqa: E731
+        except Exception:
+            def act_fn(gu):
+                g = gu[:, :n_int].float().clamp(max=limit)
+                u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
+                return (g * torch.sigmoid(g) * u).to(torch.bfloat16)
+
+        def chain(gp, dp):
+            return mk._gemm_call(act_fn(mk._gemm_call(x, gp, n_gu)), dp, n_out)
+
+        t_chain = _time(lambda: chain(gu_pack, d_pack), iters, hot=(x,))
+        t_fused = _time(lambda: mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit), iters, hot=(x,))
+        t_chain2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)), iters, hot=(x,)) / 2
+        t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                                  mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
+                         iters, hot=(x,)) / 2
+        mark = " " if gate_ok else "!"
+        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}")
+    return ok
+
+
+
+
 def probe_stamps2(iters: int) -> bool:
     """v2 unit timeline per shape (needs VLLM_GLM53_MK_PHASE_TS=1 so the
     build stamps g_mk2_ts): entry skew across units, first-record latency,
@@ -686,6 +754,19 @@ def probe_kda(iters: int) -> bool:
         print(f"{mark}kda  acc={acc:<10}{r:>10.2e}{TOL['kda']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}  "
               + " ".join(f"{k}={v:.1e}" for k, v in errs.items()))
+        # 29차 state contract: the engine hands the states out as page-aligned
+        # or transposed VIEWS, and the production conv state is bf16; the
+        # same launch through those must land on the contiguous fp32 result
+        # (bf16 at its own rounding).
+        for lay, tol in (("pad", 1e-6), ("sd", 1e-6), ("bf16", 2e-2)):
+            gl = fx.mk_run(layout=lay)
+            torch.cuda.synchronize()
+            rl = max(_rel(gl[k].float(), got0[k].float()) for k in got0)
+            t_l = _time(lambda: fx.mk_run(layout=lay), iters)
+            mark = "!" if rl > tol else " "
+            ok &= rl <= tol
+            print(f"{mark}kda  acc={acc} {lay:<6}{rl:>10.2e}{tol:>8.0e}"
+                  f"{'':>10}{t_l:>9.1f}  vs the contiguous view")
     return ok
 
 
@@ -827,7 +908,7 @@ def main() -> int:
     segs = [s.strip() for s in args.segments.split(",") if s.strip()]
     if args.gemm_sweep and "gemm" not in segs:
         segs.append("gemm")
-    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda")]
+    unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda", "smlp")]
     if unknown:
         print(f"unknown segment(s): {unknown}")
         return 2
@@ -861,6 +942,8 @@ def main() -> int:
     if args.gemm_sweep:
         ok &= probe_gemm_sweep(args.iters, args.stamps,
                                list(GEMM_SHAPES) if args.gemm_shapes else None)
+    if "smlp" in segs:
+        ok &= probe_smlp(args.iters)
     if "exact" in segs:
         ok &= probe_exact(args.gemm2)
     if args.stamps2 and "gemm" in segs:
