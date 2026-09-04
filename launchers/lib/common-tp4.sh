@@ -161,3 +161,32 @@ ct_refuse_foreign_stacks() {
   done
   return 0
 }
+# --- RoCE GID index ----------------------------------------------------------
+# The RoCE-v2 IPv4 GID index is a PER-NODE, PER-BOOT property: enabling IPv6 on
+# the fabric NIC changes how the GID table is laid out, so the index that means
+# "RoCE v2 over IPv4" differs between machines and moves across reboots. The
+# runbook records srv1 at 3 while srv2 and srv4 read 4.
+#
+# hy4 detected it inside the container, where each rank sees its own node's
+# table -- correct. glm53 shipped `-e NCCL_IB_GID_INDEX=3` from the head, one
+# value for all four nodes, which is wrong on three of them: NCCL then falls
+# back to a GID that is not RoCE-v2/IPv4 and the fabric is not what the boot
+# says it is. A launcher cannot fix this from the head at all, because a single
+# -e cannot carry four different values.
+#
+# So the detection has to run per rank, inside the container, and this is the
+# one copy of it. It is a literal string rather than a function: both lanes
+# deliver their serve command as text (hy4 through a quoted heredoc, glm53
+# through a base64 payload), so what they need to share is source, not a call.
+# Defined through a quoted heredoc so the single quotes in `tr ',' ' '` survive.
+CT_GID_PRELUDE=$(cat <<'GIDEOF'
+# Auto-detect the RoCE-v2 IPv4 GID index (per node, re-numbers across reboots).
+for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
+  for i in $(seq 0 15); do
+    t=$(cat /sys/class/infiniband/$HCA/ports/1/gid_attrs/types/$i 2>/dev/null || true)
+    g=$(cat /sys/class/infiniband/$HCA/ports/1/gids/$i 2>/dev/null || true)
+    case "$t" in *"RoCE v2"*) case "$g" in *0000:0000:0000:0000:0000:ffff:*) export NCCL_IB_GID_INDEX=$i; break 2;; esac;; esac
+  done
+done
+GIDEOF
+)

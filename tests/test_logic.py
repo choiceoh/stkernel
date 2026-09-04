@@ -9169,6 +9169,33 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
     for name, call in foreign.items():
         check(call in lanes[name],
               "%s must refuse the OTHER lanes' stacks: %s" % (name, call))
+    # the RoCE-v2 IPv4 GID index is a per-node, per-boot property, so it has
+    # to be resolved inside the container -- one copy, used by both lanes.
+    # glm53 shipped `-e NCCL_IB_GID_INDEX=3` from the head instead: one value
+    # for four nodes, which no single -e can make right. All four happen to
+    # read 3 today; the runbook records a boot where srv1 read 3 and srv2/srv4
+    # read 4, which is the case a hardcoded index gets silently wrong.
+    check("CT_GID_PRELUDE=$(cat <<'GIDEOF'" in lib,
+          "the prelude must be defined through a QUOTED heredoc, or the single "
+          "quotes in `tr ',' ' '` do not survive into the serve script")
+    check("gid_attrs/types" in lib and "NCCL_IB_GID_INDEX=$i" in lib,
+          "the library holds the detection")
+    for name, src in lanes.items():
+        check("gid_attrs/types" not in src,
+              "%s must not carry its own copy of the GID detection" % name)
+        check('"$CT_GID_PRELUDE"' in src,
+              "%s must emit the shared prelude into its serve command" % name)
+    # glm53 delivers its serve command as a base64 payload: the prelude has to
+    # come FIRST, or the export lands after vllm has already started.
+    g = lanes["start-glm53-nvfp4-tp4.sh"]
+    for var in ("W_B64=", "SERVE_B64="):
+        line = [l for l in g.splitlines() if l.strip().startswith(var)][0]
+        check(line.index('"$CT_GID_PRELUDE"') < line.index("vllm serve"),
+              "%s must put the prelude before the serve line" % var)
+    check("-e NCCL_IB_GID_INDEX=" in g,
+          "glm53 keeps its historical index as the FALLBACK the prelude "
+          "overrides -- belt and suspenders, per the runbook")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
