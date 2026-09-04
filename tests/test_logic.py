@@ -6714,6 +6714,131 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     print("  kda owns its projections ...... OK")
 
 
+def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
+    """27차: the drafter knob is a compile-cache factor and serving is proven.
+
+    vLLM keys torch.compile / AOT artifacts on the env vars registered in
+    vllm.envs, the config and the forward's source -- never on a quant_method
+    swapped in after load -- and loads them with guards off. Every boot with
+    VLLM_DFLASH2_FP8_DENSE=1 served the 09-03 bf16 drafter graph while the
+    fingerprint said 31 linears armed; the bracket measured the eager fc
+    alone. Two pieces close that: the knob registers itself into
+    vllm.envs.environment_variables (compile_factors() hashes every entry),
+    and the loader wraps the drafter's forward to count opaque-op calls,
+    reporting NOT SERVING when a Python-running forward makes fewer than
+    half the expected calls. CUDA-graph replays run no Python and are not
+    judged; a forward under stream capture is definitive.
+    """
+    import sys
+    import types
+
+    msgs = []
+
+    class _Log:
+        def warning(self, fmt, *a):
+            msgs.append(fmt % a if a else fmt)
+
+    ns = load_defs(
+        "overlay/glm53_fp8_dense.py",
+        {"_DRAFTER_ENV", "_DRAFTER_OFF", "_drafter_knob_value",
+         "_register_compile_factor", "_OPAQUE_CALLS", "_stream_capturing",
+         "install_drafter_serving_check"},
+        {"os": os, "re": re, "torch": None, "logger": _Log()},
+    )
+    env = ns["_DRAFTER_ENV"]
+    # -- factor registration against a stub vllm.envs
+    saved = {k: sys.modules.get(k) for k in ("vllm", "vllm.envs")}
+    envs = types.ModuleType("vllm.envs")
+    envs.environment_variables = {}
+    pkg = types.ModuleType("vllm")
+    pkg.envs = envs
+    sys.modules["vllm"], sys.modules["vllm.envs"] = pkg, envs
+    old = os.environ.pop(env, None)
+    try:
+        reg = ns["_register_compile_factor"]
+        assert reg(env, ns["_drafter_knob_value"])
+        assert reg(env, ns["_drafter_knob_value"])  # idempotent
+        assert list(envs.environment_variables) == [env]
+        getter = envs.environment_variables[env]
+        assert getter() == "0"  # unset hashes like off
+        for raw, want in (("1", "1"), ("w8", "w8"), ("off", "0"), ("", "0"),
+                          (" W8 ", "w8"), ("false", "0")):
+            os.environ[env] = raw
+            assert getter() == want, (raw, getter())
+    finally:
+        if old is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = old
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    # -- the serving proof
+    class Drafter:
+        def __init__(self, calls):
+            self.calls = calls
+
+        def forward(self, *a, **k):
+            ns["_OPAQUE_CALLS"] += self.calls
+            return "out"
+
+    install = ns["install_drafter_serving_check"]
+    # serving: 30 of 31 per forward (fc runs outside forward) -> reported
+    # after the window, wrapper gone
+    m = Drafter(30)
+    install(m, 31, forwards=3)
+    assert "forward" in m.__dict__
+    for _ in range(3):
+        assert m.forward() == "out"
+    assert "forward" not in m.__dict__
+    assert any("serving: 30 of 31" in x for x in msgs), msgs
+    assert m.forward() == "out"
+    # replays (0 calls, no capture) are not judged; a captured forward is,
+    # and a stale graph is loud
+    msgs.clear()
+    m = Drafter(0)
+    install(m, 31, forwards=8)
+    for _ in range(3):
+        m.forward()
+    assert not msgs and "forward" in m.__dict__
+    ns["_stream_capturing"] = lambda: True
+    m.forward()
+    assert any("NOT SERVING: 0 of 31" in x for x in msgs), msgs
+    assert "forward" not in m.__dict__
+    ns["_stream_capturing"] = lambda: False
+    # the eager fc alone (1 of 31) is what 27차 served: judged and loud at once
+    msgs.clear()
+    m = Drafter(1)
+    install(m, 31, forwards=8)
+    m.forward()
+    assert any("NOT SERVING: 1 of 31" in x for x in msgs), msgs
+    # never a Python-running forward in the window -> unknown, not a pass
+    msgs.clear()
+    m = Drafter(0)
+    install(m, 31, forwards=2)
+    m.forward()
+    m.forward()
+    assert any("SERVING UNKNOWN" in x for x in msgs), msgs
+    # nothing armed installs nothing
+    m = Drafter(5)
+    install(m, 0)
+    assert "forward" not in m.__dict__
+    # the loader wires the proof behind a True pass, counting opaque methods
+    src = open("overlay/modules/glm53_dflash_loader_fp8/dflash_utils.py",
+               encoding="utf-8").read()
+    assert "if maybe_build_fp8_dense(dflash_model, env=\"VLLM_DFLASH2_FP8_DENSE\"):" in src
+    assert "install_drafter_serving_check(dflash_model, n_opaque)" in src
+    # and the op body counts itself
+    fsrc = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py",
+                encoding="utf-8").read()
+    body = fsrc[fsrc.index("def _mk_or_fp8_dense_gemm("):]
+    body = body[:body.index("\ntry:")]
+    assert "global _OPAQUE_CALLS" in body and "_OPAQUE_CALLS += 1" in body
+    assert "_register_compile_factor(_DRAFTER_ENV, _drafter_knob_value)" in fsrc
+
+
 def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     """The DFlash2 drafter's dense GEMMs under VLLM_DFLASH2_FP8_DENSE.
 
@@ -9477,6 +9602,7 @@ if __name__ == "__main__":
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()
     test_fp8_dense_drafter_patterns_and_opaque_op()
+    test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()
