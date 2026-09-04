@@ -60,7 +60,36 @@ def stream_of(e: dict):
     return e.get("args", {}).get("stream")
 
 
+# Kernels whose source lives in this repo (overlay/modules/**), by symbol.
+# Everything else comes from the image: torch/inductor, vLLM custom ops,
+# flashinfer, deep_gemm, cuBLAS/CUTLASS, or the model's own TileLang code --
+# some of it out of files we overlay, which is a different axis (editable)
+# from who wrote the kernel (see STEP_KERNEL_MAP.md).
+OURS = ("mk_gemm_kernel", "mk_mhc_kernel", "mk_kda_kernel", "mk_mla_kernel",
+        "k_oneshot", "kpool_topk_kernel", "_deneb_gate_partial_kernel",
+        "_glm53_prep_fused_kernel", "_gate_splitk_partial_kernel",
+        "_gate_splitk_reduce_kernel", "_kpool_seed_tail_cache_strided_kernel",
+        "_glm53_sparse_prefill_kernel", "_glm53_union_prefill_kernel")
+
+
+def owner(n: str) -> str:
+    """'ours' when the kernel is compiled from this repo, else 'image'."""
+    return "ours" if any(sym in n for sym in OURS) else "image"
+
+
 def category(n: str) -> str:
+    # our megakernel segments first -- their names contain the substrings the
+    # vendor rules below match ("mhc", "gemm", "mla", "kda")
+    if "mk_gemm_kernel" in n:
+        return "MK GEMM (ours)"
+    if "mk_mhc_kernel" in n:
+        return "MK MHC (ours)"
+    if "mk_mla_kernel" in n:
+        return "MK MLA (ours)"
+    if "mk_kda_kernel" in n:
+        return "MK KDA (ours)"
+    if n.startswith("_glm53_prep_fused"):
+        return "prep fused (ours)"
     if n.startswith("k_oneshot"):
         return "AR k_oneshot"
     if "ncclDevKernel" in n:
