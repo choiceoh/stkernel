@@ -599,8 +599,26 @@ docker cp /tmp/serve-hy4.sh hy4:/tmp/serve.sh
 for w in $WORKERS; do
   ip=${w%%:*}
   ov=$(overlay_dir $ip)
-  ssh $SSHOPT choiceoh@$ip "docker rm -f hy4-worker 2>/dev/null; docker run -d --name hy4-worker $COMMON $RDMA_FLAGS $ENVV -e VLLM_HOST_IP=$ip \
-    $(mounts_for $ov) --entrypoint /bin/bash $IMAGE -c 'sleep infinity' >/dev/null"
+  # The argv is built and quoted HERE, then crosses ssh as escaped text.
+  #
+  # Interpolating $ENVV straight into the ssh string hands the JSON in
+  # -e COMPILE_CFG={...} to a remote shell that parses it FROM SCRATCH, and a
+  # top-level {a,b,c} is brace expansion there. On 2026-09-04 that shattered it
+  # into COMPILE_CFG=cudagraph_mode:..., COMPILE_CFG=custom_ops:[all], ... and
+  # docker read one fragment as the image:
+  #   invalid reference format: repository name (library/COMPILE_CFG=custom_ops)
+  # The head (line ~595) runs locally, where an expanded variable's braces are
+  # NOT re-expanded, so it started fine and only the workers died -- which is
+  # what made this look like a head problem in the log.
+  #
+  # `set +B` on the remote is not the fix: it stops the split but quote removal
+  # still strips the JSON's own quotes, and vLLM gets invalid --compilation-config.
+  # printf %q escapes every token so the remote parses back exactly what was
+  # built here, quotes intact. Verified against a real worker shell.
+  _wrun=$(printf '%q ' docker run -d --name hy4-worker $COMMON $RDMA_FLAGS $ENVV \
+            -e VLLM_HOST_IP=$ip $(mounts_for $ov) \
+            --entrypoint /bin/bash $IMAGE -c 'sleep infinity')
+  ssh $SSHOPT choiceoh@$ip "docker rm -f hy4-worker 2>/dev/null; $_wrun >/dev/null"
   scp $SSHOPT -q /tmp/serve-hy4.sh choiceoh@$ip:/tmp/serve-hy4.sh
   ssh $SSHOPT choiceoh@$ip "docker cp /tmp/serve-hy4.sh hy4-worker:/tmp/serve.sh"
   echo "  $ip container ready"

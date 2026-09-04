@@ -44,16 +44,29 @@ from __future__ import annotations
 import argparse
 import sys
 
-# arm every segment for the probe process only; the serving knobs are the
-# profile's business
 import os
 
-os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
-os.environ.setdefault("VLLM_GLM53_MK_MHC", "1")
-os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
-os.environ.setdefault("VLLM_GLM53_MK_KDA", "1")
-# programmatic launches: the mk_x2 column below is where they show
-os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
+# The driver reads its knobs at ITS import, which main() does after argparse --
+# so arming is a function of the selected segments, not an import-time
+# constant. It used to setdefault every segment here: on dsv4, whose profile
+# reaches MHC alone, arm() then built W4 packs for the GEMM self-test and the
+# two KDA fixture packs (6416x4096, 4096x2048 -- a 16-candidate search per row
+# chunk plus an empty_cache() per pack since #268) before an MHC-only
+# measurement, and any DISARM those self-tests logged landed in the MHC run's
+# log as if the lane under test had failed.
+_SEG_KNOB = {"mhc": "VLLM_GLM53_MK_MHC", "gemm": "VLLM_GLM53_MK_GEMM",
+             "exact": "VLLM_GLM53_MK_GEMM", "kda": "VLLM_GLM53_MK_KDA"}
+
+
+def _arm_env(segs) -> None:
+    """Arm ONLY the selected segments, for this process; a caller's explicit
+    value still wins (setdefault) so a sweep can hold a knob at 0."""
+    os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
+    for seg in segs:
+        os.environ.setdefault(_SEG_KNOB[seg], "1")
+    # programmatic launches: the mk_x2 column below is where they show
+    os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
+
 
 # The image's package root. GLM's image installs to dist-packages, dsv4's to
 # the venv site-packages -- the wrapper passes the profile's TARGET_PREFIX so
@@ -497,6 +510,7 @@ def main() -> int:
         # authorises the boot bracket
         print("--segments selected nothing to run")
         return 2
+    _arm_env(segs)   # before the driver import: it reads the knobs there
 
     from vllm.model_executor.layers import glm53_megakernel as mk
 

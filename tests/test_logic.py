@@ -8493,6 +8493,21 @@ def test_megakernel_core_is_shared() -> None:
     check("raw stock arm: mhc_fused(tile_n=2, n_splits=4)" in probe,
           "the raw arm names the stock config it built -- no profile's "
           "dispatcher picks it, and on dsv4 it is the pre-sweep config")
+    arm_body = probe[probe.index("def _arm_env(segs)"):]
+    arm_body = arm_body[:arm_body.index("\n\n\n")]
+    check(probe.count("os.environ.setdefault(") == arm_body.count("os.environ.setdefault(")
+          and 'os.environ.setdefault(_SEG_KNOB[seg], "1")' in arm_body
+          # the CALL in main (the def near the top matches the bare name too),
+          # and main's driver import, which follows it (probe_gemm has one of
+          # its own earlier in the file)
+          and probe.index("segs = [s.strip()") < probe.index("\n    _arm_env(segs)")
+          < probe.index("from vllm.model_executor.layers import glm53_megakernel as mk",
+                        probe.index("\n    _arm_env(segs)")),
+          "every knob setdefault lives in _arm_env, which arms only the "
+          "selected segments and runs AFTER --segments is parsed and BEFORE "
+          "the driver import that reads the knobs: dsv4's MHC-only run used "
+          "to build GEMM and KDA packs at arm() (seconds since #268) and log "
+          "their DISARMs into an MHC measurement")
     check('print("--segments selected nothing to run")' in probe
           and "if not segs:" in probe,
           "an empty --segments selection must refuse to run: it used to skip "
@@ -9250,9 +9265,15 @@ def test_drafter_fc_probe_contracts() -> None:
                 "functional.linear", "build_mk_weight_w4", "_quantize_fp8_block_padded"):
         check(arm in src, f"arm present: {arm}")
     check("MK_KMAX = 4096" in src and "def _mk_chunks(" in src
-          and "acc += mk._gemm_call(xc[c], packs[c], N).float()" in src,
-          "the MK lane takes K <= 4096, so K=20480 (fc) runs as summed "
-          "K-chunks -- the wrapper's ceiling, not a refusal")
+          and "return mk.build_mk_weight_w4_kchunks(w)" in src
+          and "assert lane_kmax == MK_KMAX" in src
+          and "out = mk._gemm_kchunks(x, packs, N)" in src
+          and "acc += mk._gemm_call(xc[c]" not in src and "xc = [" not in src,
+          "the K-chunk arm is the LANE's chunker and summation "
+          "(build_mk_weight_w4_kchunks / _gemm_kchunks), width asserted "
+          "against MK_GEMM_KMAX -- a second chunk loop here kept measuring "
+          "its own width and pre-sliced x outside the timed region, hiding "
+          "the contiguous copies the served path pays")
     check("mk.maybe_arm()" in src and '_ARMED.get("gemm")' in src,
           "the lane is armed (extension built, self-tests run) before "
           "_gemm_call is timed")
@@ -9606,11 +9627,110 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "too little memory must refuse, so callers fall back to their "
           "configured value the way they already do for an unreachable node")
 
+    # #282 gave the two LAUNCHERS the .. check and stopped there. The same
+    # validation existed in two more places, and one of them is the earliest
+    # producer: compose-overlays.sh glues TARGET_PREFIX onto a relative target,
+    # so a module writing "../../x" satisfies the prefix test while pointing
+    # outside the root. Reproduced -- it composed clean and reached the
+    # manifest. deploy-overlays.sh then distributes that manifest. All four
+    # sites share one implementation now.
+    for name in ("compose-overlays.sh", "deploy-overlays.sh"):
+        src = open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+        check("lib/common-tp4.sh" in src,
+              "%s must source the shared library" % name)
+        check("ct_check_overlay_target" in src,
+              "%s validates manifest targets, so it uses the shared check" % name)
+        check("unsafe character in target" not in src
+              and "outside the profile's package root" not in src
+              and "outside $PROFILE's TARGET_PREFIX" not in src,
+              "%s must not keep its own copy" % name)
+    # compose knows which module bound the target; that diagnostic must survive
+    comp = open(os.path.join(REPO, "launchers", "compose-overlays.sh"),
+                encoding="utf-8").read()
+    check('ct_check_overlay_target "$target" "$TARGET_PREFIX" "$mod' in comp,
+          "compose passes the module as context -- naming the offender is worth "
+          "more than saving an argument")
+    check('_ctx="${3:-}"' in lib,
+          "the context argument is optional, so the launchers need not pass one")
+    # and it must run AFTER the relative-target expansion, or the .. case is
+    # unreachable at the one place that can name the module
+    check(comp.index('target="${TARGET_PREFIX}${target}"')
+          < comp.index("ct_check_overlay_target"),
+          "compose expands a relative target before validating it, which is "
+          "exactly what makes the .. case reachable there")
+
+    # fleet-audit.sh is the runbook's acceptance instrument for "GID index
+    # identical on all four nodes". It dumped the raw table for a human to
+    # eyeball, scanned 0..9 while the launcher scans 0..15, and made no
+    # selection of its own -- so it could neither say which index the engine
+    # would use nor see an entry above 9 that the engine would pick. It now
+    # runs the launchers' own CT_GID_PRELUDE on each node and prints the
+    # result, so the audit cannot disagree with the boot by construction.
+    aud = open(os.path.join(REPO, "launchers", "fleet-audit.sh"), encoding="utf-8").read()
+    check("lib/common-tp4.sh" in aud and "$CT_GID_PRELUDE" in aud,
+          "the audit must run the launchers' selection, not a lookalike")
+    check("for i in $(seq 0 15); do" in aud and "for i in 0 1 2 3 4 5 6 7 8 9; do" not in aud,
+          "the audit scans the same 0..15 the launcher does")
+    check("nccl_gid_index=${NCCL_IB_GID_INDEX:-UNSET}" in aud,
+          "the audit prints the index the engine will export on that node")
+    # the HCA list the prelude reads must be the one the launchers pass, or the
+    # audit answers a different question than the boot asks
+    hca_aud = re.search(r'^AUDIT_GID_HCA="([^"]+)"$', aud, re.M)
+    check(hca_aud is not None, "the audit names its HCA list once, as a variable")
+    for name, src in lanes.items():
+        hca_lane = re.search(r'NCCL_IB_HCA=([A-Za-z0-9_,]+)', src)
+        check(hca_lane is not None and hca_lane.group(1) == hca_aud.group(1),
+              "%s passes NCCL_IB_HCA=%s but the audit probes %s -- they must be "
+              "one list" % (name, hca_lane.group(1) if hca_lane else "?", hca_aud.group(1)))
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
           "over its own stale containers, which every boot has")
     print("  common tp4 library ............ OK")
+
+
+def test_worker_launch_does_not_let_the_remote_reparse_envv() -> None:
+    """A JSON -e value must survive ssh; the remote shell must never re-parse it.
+
+    Interpolating $ENVV into `ssh host "docker run ... $ENVV ..."` hands the
+    value of -e COMPILE_CFG (a JSON blob) to a shell that parses it from
+    scratch, and a top-level {a,b,c} is BRACE EXPANSION there. On 2026-09-04
+    the first production boot on the unified launcher shattered it into
+
+      COMPILE_CFG=cudagraph_mode:FULL_AND_PIECEWISE
+      COMPILE_CFG=custom_ops:[all]
+      COMPILE_CFG=pass_config:fuse_gemm_comms:true
+
+    and docker read a fragment as the image:
+      invalid reference format: repository name (library/COMPILE_CFG=custom_ops)
+
+    The head runs locally, where an expanded variable's braces are NOT
+    re-expanded, so the head container started and only the workers died --
+    which is why the log made it look like a head failure.
+
+    `set +B` on the remote is not a fix: it stops the split but quote removal
+    still strips the JSON's own quotes and vLLM gets an invalid
+    --compilation-config. Quoting the argv with printf %q is the fix.
+    """
+    src = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    check("_wrun=$(printf '%q ' docker run -d --name hy4-worker" in src,
+          "the worker argv must be built and %q-quoted locally, so the remote "
+          "parses back exactly these tokens")
+    check('"docker rm -f hy4-worker 2>/dev/null; $_wrun >/dev/null"' in src,
+          "the ssh payload carries the pre-quoted argv, not raw interpolation")
+    # the load-bearing invariant: no ssh line may interpolate $ENVV
+    offenders = [n for n, line in enumerate(src.splitlines(), 1)
+                 if "ssh " in line and "$ENVV" in line
+                 and not line.lstrip().startswith("#")]
+    check(not offenders,
+          "no ssh command may interpolate $ENVV -- the remote would re-parse "
+          "the JSON (offending lines: %s)" % offenders)
+    # the head path is local and stays direct; changing it is not the fix
+    check("docker run -d --name hy4 $COMMON $RDMA_FLAGS $ENVV" in src,
+          "the head runs locally and needs no quoting -- it was never the bug")
+    print("  worker envv not re-parsed ..... OK")
 
 
 if __name__ == "__main__":
@@ -9718,5 +9838,6 @@ if __name__ == "__main__":
     test_kda_owns_its_projections_across_dense_schemes()
     test_hy4_entrypoint_carries_the_production_knobs()
     test_common_tp4_library_is_the_one_implementation()
+    test_worker_launch_does_not_let_the_remote_reparse_envv()
     print(f"all OK ({PASS} checks)")
 

@@ -340,19 +340,23 @@ ct_apply_custom_ops_axis() {
 # that a bad row fails loudly here instead of silently shadowing a container
 # path. The prefix stays an argument because the lanes require different roots
 # (hy4 demands .../site-packages/vllm/, glm53 the profile's TARGET_PREFIX).
+# The optional third argument is a context label (a module name, say) appended
+# to every message: compose-overlays.sh knows WHICH module bound a bad target,
+# and that diagnostic is worth more than the caller saving an argument.
 ct_check_overlay_target() {
-  local _t="$1" _prefix="$2"
+  local _t="$1" _prefix="$2" _ctx="${3:-}"
+  [ -n "$_ctx" ] && _ctx=" ($_ctx)"
   case "$_t" in
     "$_prefix"*) ;;
-    *) echo "ABORT: overlay target outside the package root: $_t" >&2; exit 1 ;;
+    *) echo "ABORT: overlay target outside the package root: $_t$_ctx" >&2; exit 1 ;;
   esac
   case "$_t" in
     *[!A-Za-z0-9_./-]*)
-      echo "ABORT: unsafe character in overlay target: $_t" >&2; exit 1 ;;
+      echo "ABORT: unsafe character in overlay target: $_t$_ctx" >&2; exit 1 ;;
   esac
   case "/$_t/" in
     */../*)
-      echo "ABORT: overlay target escapes the package root with .. : $_t" >&2
+      echo "ABORT: overlay target escapes the package root with .. : $_t$_ctx" >&2
       exit 1 ;;
   esac
 }
