@@ -133,6 +133,21 @@ if install_glm53_prep_fused is not None:
     except Exception:
         logger.exception("[prep-fused] install failed -> stock path")
 
+# deneb fork (glm53_dflash_early_fc): the drafter's fc under the target head
+# + sampler. Same shape of install as prep_fused: import only, inert unless
+# VLLM_GLM53_DFLASH_EARLY_FC=1, loud on failure, never fatal.
+try:
+    from .glm53_dflash_early_fc import install_glm53_dflash_early_fc
+except ImportError as _e:
+    install_glm53_dflash_early_fc = None
+    if _e.name != f"{__package__}.glm53_dflash_early_fc":
+        logger.exception("[dflash-early-fc] module import failed -> stock path")
+if install_glm53_dflash_early_fc is not None:
+    try:
+        install_glm53_dflash_early_fc()
+    except Exception:
+        logger.exception("[dflash-early-fc] install failed -> stock path")
+
 
 def _validate_decodable_vocab_bound(
     decodable_vocab: int,

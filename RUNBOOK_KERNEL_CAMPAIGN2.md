@@ -540,6 +540,31 @@ b12x 래퍼(같은 기하, 같은 디스패치 오버레이; C=1 은 64 pairs �
   읽기 전용 참조(torch sum) 245 GB/s 와의 20% 는 두 커널 공통의 발사 안 구조 몫이라, 재개 조건은
   "persistent 전문가 타일 스트림 마이크로커널이 240 에 닿는다" 는 2~3일 프로브의 양성이다. 보류.
 
+## EXP-15 — 드래프터 fc 를 타깃 헤드·샘플러 아래로 (`glm53_dflash_early_fc`, 2026-09-04 추가)
+
+디코드 꼬리는 타깃 헤드 → 로짓 AllGather → 거부 샘플러 → 드래프터 순인데, 드래프터의 첫
+GEMM `fc`(aux 은닉 [토큰, 5×4096] → 4096; 레인에서 301 µs)는 타깃 forward 가 끝나는 순간
+입력이 다 있다. stock 은 `propose()` 안에서 샘플러 뒤에 계산한다. 그 사이 구간(AllGather 는
+패브릭, 샘플러는 소형 커널)은 DRAM 이 놀아 fc 가 공짜로 흐른다. 생산자 = `GPUModelRunner.
+execute_model` 래퍼(forward 뒤 side stream 에서 cat + fc, 영속 버퍼 + 이벤트), 소비자 =
+드래프터 오버레이의 `combine_hidden_states`(같은 토큰 수의 대기 결과만, 이벤트 대기 뒤). 소비가
+`precompute_and_store_context_kv` 와 드래프터 그래프보다 앞이라 MK 발사끼리 겹치지 않는다.
+
+- 수치 동일(같은 커널·같은 입력). 노브 `VLLM_GLM53_DFLASH_EARLY_FC=1`, 기본 0, 생산자 실패 시
+  부팅 동안 자동 해제.
+- 상한 ~0.3 ms/스텝(27차 인구조사: fc 만 그 시점에 입력이 준비된 꼬리 GEMM). EXP-10 위에서만
+  의미(fc 가 레인에 있어야 함). 단독 판정 불가 — EXP-10 브래킷의 cand 에 얹는다.
+
+## EXP-16 — 드래프터 메가커널 (제안, 착수 전 승인; 2026-09-04)
+
+27차 인구조사(깨끗한 디코드 스텝): 꼬리 136 커널 중 GEMM 33(EXP-10 뒤 MK 발사 ~31), AR 11,
+`kernel_mha` 5, 글루 ~50개 0.33 ms, 발사 간극 ~0.35 ms. 융합으로 없앨 수 있는 것은 글루 + 간극 +
+MK 발사 고정비(30 × ~10 µs) ≈ **−0.8~1.0 ms(1.2~1.5%)**; AR 0.79 ms 와 mha 는 남는다. 브래킷
+해상도(CV 1.7%) 아래라 단독으로는 판정할 수 없고, 공사는 MK-KDA 급(2주). 설계는 층당 두 발사:
+[norm → conv.prepare → qkv GEMM] 과 [conv.finish → post-norm → mlp_conv.prepare → gate_up →
+act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **운영자 승인 뒤 착수** — 정정된
+상한을 본 뒤의 결정이어야 한다.
+
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
 `leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로

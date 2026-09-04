@@ -39,7 +39,7 @@ ENV_KEYS = (
         "VLLM_GLM53_PREP_FUSED", "VLLM_GLM53_ASYNC_DFLASH",
         "VLLM_GLM53_MHC_SMALLM", "VLLM_DFLASH_PREP_WARMUP",
         "VLLM_GLM53_MK_PDL", "VLLM_GLM53_MK_KSR_OUT",
-        "VLLM_GLM53_AR_PREFETCH",
+        "VLLM_GLM53_AR_PREFETCH", "VLLM_GLM53_DFLASH_EARLY_FC",
     ) if k in os.environ]
     + sorted(k for k in os.environ
              if k.startswith(("VLLM_GLM53_MK_", "VLLM_GLM53_KPOOL")))

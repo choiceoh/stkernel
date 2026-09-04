@@ -6995,7 +6995,7 @@ def test_osar_prefetch_hints_contract() -> None:
                                      "glm5next_model.py"), encoding="utf-8").read()
     cls_at = wiring.index("class Glm5NextForConditionalGeneration(")
     layer_at = wiring.index("class Glm5NextDecoderLayer(")
-    b_at = wiring.index("osar.begin_forward()")
+    b_at = wiring.index('osar.begin_forward("target")')
     check(b_at > cls_at and "osar.end_forward()" in wiring[b_at:]
           and "def _osar_shim():" in wiring
           and 'osar.begin_forward("target")' in wiring,
@@ -7097,6 +7097,138 @@ def test_osar_prefetch_hints_contract() -> None:
           and m.prefetch_hint_table("target") == t,
           "the drafter's collectives keep a table of their own")
     print("  osar prefetch hints contract .. OK")
+
+
+def test_glm53_dflash_early_fc_contracts() -> None:
+    """glm53_dflash_early_fc: the drafter's fc under the target head + sampler.
+
+    Producer = a wrapper on GPUModelRunner.execute_model installed from the
+    GLM model import (inert unless VLLM_GLM53_DFLASH_EARLY_FC=1); consumer =
+    the drafter's combine_hidden_states, which takes a pending result only
+    for this step's token count and waits on the producer's event first --
+    before precompute_and_store_context_kv and the drafter graph, so the fc's
+    megakernel launch never overlaps another one."""
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_dflash_early_fc")
+    src = open(os.path.join(mod_dir, "glm53_dflash_early_fc.py"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_dflash_early_fc" in modules, "glm53 profile mounts glm53_dflash_early_fc")
+    check(re.search(r"^VLLM_GLM53_DFLASH_EARLY_FC=0$", profile, re.M) is not None,
+          "the knob ships off")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_dflash_early_fc.py",
+                    "vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py", "absent"]],
+          f"manifest binds the module as a new file next to the model: {rows}")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check({"glm53_dflash2_fp8_head", "glm53_model_wiring"} <= set(req),
+          "requires names the drafter overlay (consumer) and the wiring (installer)")
+    check('(os.environ.get("VLLM_GLM53_DFLASH_EARLY_FC") or "0").strip() == "1"' in src
+          and "def install_glm53_dflash_early_fc() -> bool:" in src
+          and "Runner.execute_model = _patched_execute_model" in src
+          and "_ORIG_EXECUTE_MODEL = Runner.execute_model" in src,
+          "exact-1 knob; the installer wraps execute_model and keeps the original")
+    prod = src[src.index("def launch_early_fc("):src.index("def take_early_fc(")]
+    check("_STREAM.wait_stream(cur)" in prod and "with torch.cuda.stream(_STREAM):" in prod
+          and "drafter._deneb_early_fc_event.record(_STREAM)" in prod
+          and "torch.cat([a[:n] for a in aux], dim=-1, out=cat_buf[:n])" in prod
+          and "width != int(fc.input_size)" in prod,
+          "the producer runs on a side stream after the forward, into a persistent "
+          "buffer, and refuses a width the stock path would refuse")
+    cons = src[src.index("def take_early_fc("):src.index("def _patched_execute_model(")]
+    check("drafter._deneb_early_fc_pending = None  # consumed once" in cons
+          and "if n != num_tokens:\n        return None" in cons
+          and "torch.cuda.current_stream().wait_event(drafter._deneb_early_fc_event)" in cons,
+          "the consumer takes a result once, only for this token count, after the event")
+    patched = src[src.index("def _patched_execute_model("):src.index("def install_glm53_dflash_early_fc(")]
+    check("out = _ORIG_EXECUTE_MODEL(self, *args, **kwargs)" in patched
+          and "_DISABLED = True" in patched and "return out" in patched,
+          "a producer failure disables the arm for the boot and never breaks the step")
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+                                     "glm5next_model.py"), encoding="utf-8").read()
+    check("from .glm53_dflash_early_fc import install_glm53_dflash_early_fc" in wiring
+          and 'if _e.name != f"{__package__}.glm53_dflash_early_fc":' in wiring
+          and wiring.index("install_glm53_dflash_early_fc()") > wiring.index("install_glm53_prep_fused()"),
+          "installed from the wiring like prep_fused: silent without the module, loud when broken")
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+                                      "qwen3_dflash2.py"), encoding="utf-8").read()
+    body = drafter[drafter.index("def combine_hidden_states(self, hidden_states"):]
+    body = body[:body.index("def verify_selector_loaded")]
+    check("early = _early_fc_take()" in body
+          and "return super().combine_hidden_states(hidden_states)" in body
+          and "from vllm.models.glm5next.nvidia.glm53_dflash_early_fc import" in drafter,
+          "the drafter overlay consumes the pending result and falls back to stock")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_DFLASH_EARLY_FC"' in bracket, "bracket.py snapshots the knob")
+
+    # the producer/consumer protocol on fakes: taken once, only for the same
+    # token count, and never when nothing is pending
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_early_fc_mod", os.path.join(mod_dir, "glm53_dflash_early_fc.py"))
+    import types
+    fake_vllm = types.ModuleType("vllm")
+    fake_logger = types.ModuleType("vllm.logger")
+    fake_logger.init_logger = lambda name: _CapturingLogger()
+    fake_vllm.logger = fake_logger
+    saved = {k: sys.modules.get(k) for k in ("vllm", "vllm.logger")}
+    sys.modules["vllm"] = fake_vllm
+    sys.modules["vllm.logger"] = fake_logger
+    try:
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+    class _Ev:
+        pass
+
+    class _Stream:
+        def wait_event(self, ev):
+            self.waited = ev
+
+    class _Torch:
+        class cuda:
+            _s = _Stream()
+
+            @staticmethod
+            def current_stream():
+                return _Torch.cuda._s
+
+    mod.torch = _Torch  # take_early_fc imports torch lazily; give it the fake
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "torch":
+            return _Torch
+        return real_import(name, *a, **k)
+
+    class _Drafter:
+        pass
+
+    d = _Drafter()
+    d._deneb_early_fc_event = _Ev()
+    d._deneb_early_fc_out = list(range(16))
+    builtins.__import__ = fake_import
+    try:
+        check(mod.take_early_fc(d, 8) is None, "nothing pending -> stock path")
+        d._deneb_early_fc_pending = (8, 1)
+        check(mod.take_early_fc(d, 5) is None and d._deneb_early_fc_pending is None,
+              "a token-count mismatch drops the pending result (stock path)")
+        d._deneb_early_fc_pending = (8, 2)
+        got = mod.take_early_fc(d, 8)
+        check(got == list(range(8)) and _Torch.cuda._s.waited is d._deneb_early_fc_event
+              and d._deneb_early_fc_pending is None,
+              "a match waits on the event, returns the first n rows, and is consumed")
+        check(mod.take_early_fc(d, 8) is None, "consumed once")
+    finally:
+        builtins.__import__ = real_import
+    print("  glm53_dflash_early_fc contracts .. OK")
 
 
 def test_kv_cache_is_pinned_in_tokens() -> None:
@@ -9731,6 +9863,7 @@ if __name__ == "__main__":
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_osar_prefetch_hints_contract()
+    test_glm53_dflash_early_fc_contracts()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
