@@ -598,6 +598,11 @@ act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **�
 이미지 원본이 모든 mhc 커널에서 **둘 다 꺜 두었다** (`tilelang_kernels.py`
 의 `TL_DISABLE_TMA_LOWER: True` · `TL_DISABLE_WARP_SPECIALIZED: True`).
 GB10엔 TMA가 있고(deep_gemm sm120이 실사용) 비활성 사유의 기록이 없다.
+
+**표적 축소(2026-09-05)**: 무장 디코드가 mk_mhc 로 TileLang mhc 179발을
+대체했다(185→14발, 지도 ④). 이 노브의 디코드 몫은 잔여 14발 + **프리필
+big_fuse** 가 주종이다 — 프로브의 pair/onepass 시간은 여전히 유효한
+커널급 A/B 지만 스텝 환산 천장은 mk 이전 수치로 쓰면 안 된다.
 vllm-mhc 쪽 PDL은 다르다 — 이미지가 SM12x에서 "unvalidated + KDA state
 kernel 경합"으로 명시적으로 봉인했다(신규 컨테이너 실측 False, 원장
 2026-09-04). **vllm-mhc PDL 축은 재개 금지.** (MK 자체 PDL=EXP-12 는 별개.)
@@ -636,10 +641,15 @@ EXTRA_ENV="VLLM_GLM53_MHC_PASSES=<승자조합>" \
 동일**. 펜스·done_ctr·48블록 그리드·EXP-13 프리페치 기계장치는 불변.
 16B 미정렬 입력은 shim `_eligible`이 NCCL로 돌린다.
 
-- **기대치는 정직하게**: R1 천장 ~0.6-0.8ms(0.9-1.2%). R2의 본체는 L2 위생
-  (~100 콜렉티브/스텝 × ~256KB = L2 전체 크기급 churn 제거 — #100 중립
-  판정이 예측 못 하는 부류)이나, `__stwt`는 L2 쓰기-결합을 포기해 copy
-  위상 자체를 늦출 수 있다. 위상 로그는 진단, **판정은 C=1 브래킷**.
+- **기대치는 정직하게(2026-09-05 무장 시대 수치로 정정)**: #99 시대의
+  copy+reduce 11.8µs/콜 전제는 낡았다 — 현재 osar 는 45.5µs/콜·4.70ms/스텝
+  (14.5%)이고 고정비 ~22.7µs(two-shot 기각 판정)가 지배하므로 **R1 의 직렬
+  절감 천장은 ~0.2-0.3ms(0.3-0.45%)로 단독 CV 미달**. R2 의 본체는 L2 위생이고
+  **EXP-13 프리페치와의 시너지가 주 판정 근거다**: osar 의 L2 churn(~100콜 ×
+  ~256KB ≈ 26MB/스텝)은 프리페치 예산(12MB, L2 24MB)과 직접 경쟁하는데,
+  `__stwt`/`__ldcs` 로 그 간섭을 제거하면 프리페치가 예열한 라인이 살아남는다.
+  `__stwt` 는 L2 쓰기-결합을 포기해 copy 위상 자체를 늦출 수 있다 — 위상 로그는
+  진단, **판정은 C=1 브래킷(EXP-13 팔과 같은 부팅에서 관찰)**.
 - 검증 순서(귀속 주의): 부팅 osar self-test PASS → 부팅 로그
   `[osar] source md5=b0275622 kernels=1` 지문 확인 → `[osar] phase` 로그에서 R1은 copy/reduce 감소가 기대치,
   R2의 ldcs+팩 변환은 reduce 추가 감소, stwt는 copy에 비용 가능 —
@@ -648,6 +658,12 @@ EXTRA_ENV="VLLM_GLM53_MHC_PASSES=<승자조합>" \
   적용된다. 롤백 = 모듈 리버트 후 재배포(manifest SHA가 게이트한다).
 
 ## EXP-19 — hc 가중치 bf16 (`--hcweight` 프로브 — 수치 축, 후순위)
+
+**사실상 초월(2026-09-05)**: ONEPASS 는 한 번도 채택되지 않았고 무장
+디코드는 mk_mhc 로 pair 를 대체했다(ONEPASS 가 노리던 "두 발을 한 발로"를
+메가커널이 더 깊게 수행). 이 프로브는 이제 **폴백 경로의 커널급 참조 측정**일
+뿐이고, "fp32 weight fp32 플로어"라는 같은 질문을 프로덕션 경로에 하려면
+mk_mhc 쪽이 별도 축이다. (아래 수치는 스톡 체인 기준의 역사 참고.)
 
 mhc onepass 1회 호출의 지배 비용이 `weight_t` fp32 ~1.57MB 읽기(DRAM
 플로어 5.8µs × 90호출 = 0.52ms)다. bf16이면 절반이지만 "hc weights are
