@@ -7617,7 +7617,9 @@ def test_osar_wait_is_split_by_message_size() -> None:
           and "osar_stall_check(c, sp, t0, STALL_GUARD" in cu
           and "osar_stall_check(c, sp, t2, STALL_WAIT" in cu
           and '"[oneshot] STALL rank=%d phase=%s seq=%llu slot=%d missing_peer_mask=0x%x "' in cu
-          and "#define OSAR_STALL_TRAP_S 30" in cu,
+          and "#define OSAR_STALL_TRAP_S 30" in cu
+          and cu.count("if (timer && c->pad[0] != 0) c->pad[0] = 0;") == 2
+          and "if (seq < 16) return;" in cu,
           "the two counters come OUT of the existing padding: anything that "
           "moved tx/rx would invalidate every peer's registered offsets")
     check("if (nbytes <= SPLIT_BYTES) {" in cu
