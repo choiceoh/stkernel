@@ -209,17 +209,9 @@ fi
 # performance default; it only makes the valid vLLM values reachable without
 # editing four copied launchers.
 [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_rope_kvcache_cat_mla":true,"fuse_attn_quant":true}}'
+# Empty means "unset" on this lane, so the axis is only applied when non-empty.
 if [ -n "${CUSTOM_OPS_AXIS:-}" ]; then
-  if [[ ! "$CUSTOM_OPS_AXIS" =~ ^(all|none|[+-][A-Za-z_][A-Za-z0-9_]*)$ ]]; then
-    echo "ABORT: CUSTOM_OPS_AXIS must be all, none, +op or -op (got '$CUSTOM_OPS_AXIS')"
-    exit 2
-  fi
-  case "$COMPILE_CFG" in
-    *'"custom_ops":["all"]'*) ;;
-    *) echo "ABORT: CUSTOM_OPS_AXIS requires COMPILE_CFG custom_ops=[\"all\"]"; exit 2 ;;
-  esac
-  COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed \
-    's/"custom_ops":\["all"\]/"custom_ops":["'"$CUSTOM_OPS_AXIS"'"]/')
+  ct_apply_custom_ops_axis "$CUSTOM_OPS_AXIS" 0
 fi
 case "$COMPILE_CFG" in
   *[[:space:]]*) echo "ABORT: COMPILE_CFG must not contain whitespace"; exit 2 ;;
