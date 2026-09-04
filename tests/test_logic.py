@@ -6925,6 +6925,157 @@ def test_osar_wait_is_split_by_message_size() -> None:
     print("  osar wait is split by message size .. OK")
 
 
+def test_osar_prefetch_hints_contract() -> None:
+    """The one-shot AR's peer wait doubles as an L2 prefetch of the next
+    kernel's weights (VLLM_GLM53_AR_PREFETCH), and what it warms is learned
+    from the megakernel launches that follow each collective.
+
+    Contract: the kernel takes the hints by value (a captured graph bakes
+    them), only warps 1..7 issue them and only inside the wait window (thread
+    0's poll and its timer are untouched, so t_wait keeps measuring the
+    collective), an empty hint is the old kernel; the shim counts EVERY
+    collective of the target forward so NCCL-served prefill calls keep the
+    ordinals aligned, and the driver notes its weights before each launch."""
+    cu = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                 "dsv4_oneshot_ar.cu"), encoding="utf-8").read()
+    check("#define OSAR_MAXHINT 8" in cu and "struct HintArgs {" in cu
+          and "int nbytes, const HintArgs h) {" in cu,
+          "k_oneshot takes up to 8 (ptr, bytes) hints by value")
+    check(cu.count('asm volatile("prefetch.global.L2 [%0];"') == 1
+          and cu.index('asm volatile("prefetch.global.L2')
+          > cu.index("__device__ __forceinline__ void osar_prefetch("),
+          "one prefetch instruction, inside osar_prefetch")
+    call_at = cu.find("} else if (h.n > 0 && threadIdx.x >= 32) {\n"
+                      "    osar_prefetch(h, &s_landed);")
+    t2_at = cu.find("long long t2 = timer ? clock64() : 0;")
+    t3_at = cu.find("long long t3 = timer ? clock64() : 0;")
+    check(0 < t2_at < call_at < t3_at,
+          "the prefetch runs only in the peer-wait window, on warps 1..7, "
+          "while thread 0 polls")
+    check("    s_landed = 1;\n  } else if (h.n > 0" in cu,
+          "owning blocks release their prefetch warps the moment the peers "
+          "land")
+    check("k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,"
+          in cu and "(int)(n * 2), h);" in cu,
+          "the fixed-geometry launch carries the hints")
+    check('m.def("oneshot_ar_hint", &py_oneshot_hint);' in cu
+          and 'm.def("phase_counters", &py_phase_counters);' in cu
+          and 'm.def("oneshot_ar", &py_oneshot);' in cu,
+          "hint and counter bindings beside the unchanged plain entry")
+
+    shim_path = os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                   "dsv4_oneshot_shim.py")
+    shim = open(shim_path, encoding="utf-8").read()
+    check("_PREFETCH_BUDGET = _resolve_prefetch_budget()" in shim
+          and "def begin_forward():" in shim and "def end_forward():" in shim
+          and "def note_consumer(tensors):" in shim,
+          "the shim learns the hint table per target forward")
+    mar = shim[shim.index("def maybe_all_reduce("):]
+    check(mar.index("_ordinal += 1") < mar.index("if _disabled:"),
+          "every collective advances the ordinal before any path decision")
+    check("hint = _table.get(_ordinal) if _in_forward else None" in mar
+          and "_ext.oneshot_ar_hint(" in mar and "_ext.oneshot_ar(input_)" in mar,
+          "hints apply only inside a target forward; the plain path stays")
+
+    drv = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                  "glm53_megakernel.py"), encoding="utf-8").read()
+    for site, note, launch in (
+            ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
+            ("mhc", "_ar_note(fn)", "_EXT.run_mhc("),
+            ("kda", "_ar_note(layer._mk_in_pack[0], layer._mk_in_pack[1])",
+             "_EXT.run_kda(")):
+        n_at, l_at = drv.find(note), drv.find(launch)
+        check(0 < n_at < l_at, f"{site} launch notes its weights first")
+
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+                                     "glm5next_model.py"), encoding="utf-8").read()
+    cls_at = wiring.index("class Glm5NextForConditionalGeneration(")
+    layer_at = wiring.index("class Glm5NextDecoderLayer(")
+    b_at = wiring.index("osar.begin_forward()")
+    check(b_at > cls_at and "osar.end_forward()" in wiring[b_at:]
+          and "def _osar_shim():" in wiring,
+          "the forward boundary comes from the class above the compiled region")
+    check("begin_forward" not in wiring[layer_at:cls_at],
+          "no hint call inside the traced decoder layer")
+
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=0$", profile, re.M) is not None,
+          "the prefetch knob is declared off in the profile")
+    check(re.search(r"^VLLM_GLM53_MK_PDL=1$", profile, re.M) is not None,
+          "PDL is the profile default for the MK launches (2026-09-04)")
+    ab = open(os.path.join(REPO, "launchers", "ab-glm53.sh"),
+              encoding="utf-8").read()
+    check("VLLM_GLM53_MK_PDL=1" in ab.split("cand)", 1)[1].split("\n", 1)[0],
+          "the A/B cand arm names MK_PDL explicitly")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"),
+                   encoding="utf-8").read()
+    check('"VLLM_GLM53_AR_PREFETCH"' in bracket,
+          "bracket.py snapshots the prefetch knob")
+
+    # the budget parser and the learning protocol, on the real module
+    import importlib.util
+
+    def load(env: str, tag: str):
+        old = os.environ.get("VLLM_GLM53_AR_PREFETCH")
+        os.environ["VLLM_GLM53_AR_PREFETCH"] = env
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"_osar_shim_{tag}", shim_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        finally:
+            if old is None:
+                os.environ.pop("VLLM_GLM53_AR_PREFETCH", None)
+            else:
+                os.environ["VLLM_GLM53_AR_PREFETCH"] = old
+        return mod
+
+    check(load("0", "a")._PREFETCH_BUDGET == 0
+          and load("1", "b")._PREFETCH_BUDGET == 12 << 20
+          and load("8", "c")._PREFETCH_BUDGET == 8 << 20
+          and load("40", "d")._PREFETCH_BUDGET == 0
+          and load("x", "e")._PREFETCH_BUDGET == 0,
+          "budget: 0 off, 1 = 12 MB, N = N MB in 1..20, else off")
+
+    class _T:
+        is_cuda = True
+
+        def __init__(self, ptr, nbytes):
+            self._p, self._n = ptr, nbytes
+
+        def numel(self):
+            return self._n
+
+        def element_size(self):
+            return 1
+
+        def data_ptr(self):
+            return self._p
+
+    m = load("1", "f")
+    m.begin_forward()
+    m.note_consumer([_T(0x10, 100)])           # before any collective: dropped
+    m._ordinal = 1
+    m.note_consumer([_T(0x1000, 10 << 20), _T(0x2000, 10 << 20)])
+    m._ordinal = 2
+    m.note_consumer([_T(0x3000, 64)])
+    m.end_forward()
+    t = m.prefetch_hint_table()
+    check(0 not in t and t.get(1) == [(0x1000, 10 << 20), (0x2000, 2 << 20)]
+          and t.get(2) == [(0x3000, 64)],
+          "notes file under the preceding collective, capped at the budget")
+    m.begin_forward()
+    m._ordinal = 1
+    m.note_consumer([_T(0x9000, 8)])
+    m.end_forward()
+    check(m.prefetch_hint_table() == t,
+          "a forward with fewer notes (prefill-shaped) does not replace the "
+          "table")
+    check(m._in_forward is False, "end_forward closes the window")
+    print("  osar prefetch hints contract .. OK")
+
+
 def test_kv_cache_is_pinned_in_tokens() -> None:
     """KV is pinned in tokens, not left to take whatever GMU leaves.
 
@@ -9556,6 +9707,7 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
+    test_osar_prefetch_hints_contract()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()

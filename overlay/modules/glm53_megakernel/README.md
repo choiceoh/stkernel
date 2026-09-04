@@ -96,8 +96,11 @@ cold tax by the share this module covers.
   waits before its first read of the previous kernel's output, so the next
   MK launch starts on the SMs this one frees and pulls its first W tiles
   during this one's tail. Two launches back to back measure 17-19% less
-  per launch than one alone. Behind `VLLM_GLM53_MK_PDL=1` (default off
-  until the serving bracket; the probe sets it).
+  per launch than one alone. Behind `VLLM_GLM53_MK_PDL=1` -- on in
+  `profiles/glm53.env` and in `ab-glm53.sh`'s cand arm since 2026-09-04;
+  until then serving had never carried it (the driver reads the env, only
+  the bench probe set it), so every armed boot ran the lane without PDL.
+  The captured-chain form is checked by `probes/mk_pdl_graph_check.py`.
 - Fixed 48-block grid everywhere; the never-reset monotonic ticket barrier
   is what keeps CUDA-graph replay with baked pointers exact (the osar
   `done_ctr` trick). A larger grid deadlocked on this part (#150).

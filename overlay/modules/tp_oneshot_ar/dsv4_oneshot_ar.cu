@@ -15,6 +15,7 @@
 #include <infiniband/verbs.h>
 #include <pthread.h>
 #include <sched.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -146,8 +147,48 @@ __device__ __forceinline__ void osar_backoff(int &n, unsigned &ns) {
 #endif
 }
 
+// L2 prefetch hints for the peer-wait window (VLLM_GLM53_AR_PREFETCH): byte
+// ranges of the weights the NEXT kernel after this collective streams. The
+// wait is 20-40 us of idle DRAM on every rank (MEASUREMENTS 19차: wait 38.7
+// of 45.5 us per collective, ~100 per step); warps 1..7 of every block walk
+// these ranges with prefetch.global.L2 while thread 0 polls the peer flags,
+// so the consumer finds its first megabytes in L2 (24 MB on this part).
+// Passed by value: a CUDA-graph capture bakes the hint with the launch, and
+// the shim learns the ranges from the consumers that follow each collective
+// during the eager warmups that precede capture. n == 0 is exactly the old
+// kernel -- no branch of it touches memory.
+#define OSAR_MAXHINT 8
+struct HintArgs {
+  unsigned long long ptr[OSAR_MAXHINT];
+  unsigned int len[OSAR_MAXHINT];
+  int n;
+};
+
+__device__ __forceinline__ void osar_prefetch(const HintArgs &h,
+                                              volatile int *landed) {
+  // One 32 B sector index space over the concatenated ranges, interleaved
+  // across the grid: block b, thread t takes sectors b*224 + (t-32) + k*10752,
+  // so every block warms a uniform slice of every range. A prefix walk warms
+  // a few blocks' tiles of the consumer and leaves its slowest block cold
+  // (MEASUREMENTS 11차). Owning blocks stop as soon as the peers landed; the
+  // work is bounded either way (budget <= 20 MB is ~2 us of issue per block).
+  const int tid = (int)threadIdx.x - 32;
+  const int stride = ARGRID * (ARTHREADS - 32);
+  int idx = (int)blockIdx.x * (ARTHREADS - 32) + tid;
+  for (int r = 0; r < h.n; ++r) {
+    const unsigned long long base = h.ptr[r];
+    const int nsec = (int)((h.len[r] + 31u) >> 5);
+    for (; idx < nsec; idx += stride) {
+      asm volatile("prefetch.global.L2 [%0];" ::"l"(
+          base + ((unsigned long long)idx << 5)));
+      if (*landed) return;
+    }
+    idx -= nsec;
+  }
+}
+
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                          int nbytes) {
+                          int nbytes, const HintArgs h) {
   // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
   // the smallest plain call has n = hidden and many blocks fall entirely past
   // the payload: with blockDim 256 and n 4096, blocks 16..47 copy nothing and
@@ -212,6 +253,16 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // Peer wait: rxf is only ever written by the peers' NICs, never by a block
   // of this kernel -- same independence argument as the guard above. Fence
   // stays where it always was: after the wait, before reading peer data.
+  // The prefetch hints ride the wait: thread 0 polls, warps 1..7 warm L2
+  // with the next kernel's weights until the peers land (s_landed) or their
+  // slice is done. A non-owning block has no flag to wait for and simply
+  // issues its slice; warp 0's other lanes go straight to the barrier. The
+  // phase timer below still brackets thread 0's poll alone, so t_wait keeps
+  // measuring the collective -- and shows any DRAM contention the prefetch
+  // puts on the NIC's writes.
+  __shared__ volatile int s_landed;
+  if (threadIdx.x == 0) s_landed = 0;
+  __syncthreads();
   long long t2 = timer ? clock64() : 0;
   if (owns && threadIdx.x == 0) {
     // The old form re-read every peer's flag on every pass, including peers
@@ -233,6 +284,9 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
         }
       }
     }
+    s_landed = 1;
+  } else if (h.n > 0 && threadIdx.x >= 32) {
+    osar_prefetch(h, &s_landed);
   }
   long long t3 = timer ? clock64() : 0;
   __syncthreads();
@@ -548,23 +602,54 @@ static void py_connect(std::vector<std::string> all) {
   pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
   g_started = true;
 }
-static torch::Tensor py_oneshot(torch::Tensor input) {
+static torch::Tensor py_oneshot_impl(torch::Tensor input,
+                                     const std::vector<int64_t> &ptrs,
+                                     const std::vector<int64_t> &lens) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kBFloat16);
   TORCH_CHECK(input.is_contiguous());
   int64_t n = input.numel();
   TORCH_CHECK(n <= MAXEL, "oneshot: tensor too large");
+  TORCH_CHECK(ptrs.size() == lens.size() && ptrs.size() <= OSAR_MAXHINT,
+              "oneshot: hint lists must pair up, at most OSAR_MAXHINT");
   auto out = torch::empty_like(input);
   const bf16 *src = reinterpret_cast<const bf16 *>(input.data_ptr());
   bf16 *dst = reinterpret_cast<bf16 *>(out.data_ptr());
   cudaStream_t st = c10::cuda::getCurrentCUDAStream();
+  // Prefetch hints: (device pointer, bytes) pairs the shim learned for this
+  // collective's ordinal. Baked into the launch, so a captured graph replays
+  // them without any host code.
+  HintArgs h;
+  h.n = 0;
+  for (size_t i = 0; i < ptrs.size(); ++i) {
+    if (ptrs[i] == 0 || lens[i] <= 0) continue;
+    h.ptr[h.n] = (unsigned long long)ptrs[i];
+    h.len[h.n] = (unsigned int)std::min<int64_t>(lens[i], 0x7fffffff);
+    ++h.n;
+  }
   // One launch, and the grid is FIXED at ARGRID however small n is: the
   // last-block detection in k_oneshot is (done_ctr % ARGRID == ARGRID-1),
   // which is only sound if every launch contributes exactly ARGRID
   // increments. The 48-block grid fills GB10 once and covers MAXEL through
   // the kernel's grid-stride loops; empty decode blocks only sync/increment.
   k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
-                                          (int)(n * 2));
+                                          (int)(n * 2), h);
   return out;
+}
+static torch::Tensor py_oneshot(torch::Tensor input) {
+  return py_oneshot_impl(input, {}, {});
+}
+static torch::Tensor py_oneshot_hint(torch::Tensor input,
+                                     std::vector<int64_t> ptrs,
+                                     std::vector<int64_t> lens) {
+  return py_oneshot_impl(input, ptrs, lens);
+}
+// The phase counters (SM cycles, monotonic) for a probe that wants the wait
+// per collective with and without hints: [guard, copy, wait, reduce, calls].
+static std::vector<int64_t> py_phase_counters() {
+  if (!g_ctrl) return {};
+  return {(int64_t)g_ctrl->t_guard, (int64_t)g_ctrl->t_copy,
+          (int64_t)g_ctrl->t_wait, (int64_t)g_ctrl->t_reduce,
+          (int64_t)g_ctrl->t_calls};
 }
 static bool py_healthy() {
   if (!g_started) return false;
@@ -586,6 +671,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("local_infos", &py_local_infos);
   m.def("connect", &py_connect);
   m.def("oneshot_ar", &py_oneshot);
+  m.def("oneshot_ar_hint", &py_oneshot_hint);
+  m.def("phase_counters", &py_phase_counters);
   m.def("healthy", &py_healthy);
   m.def("shutdown", &py_shutdown);
 }
