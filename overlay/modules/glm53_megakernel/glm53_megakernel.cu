@@ -1017,6 +1017,14 @@ __global__ void mk_gemm_kernel(const MKGemmCtx c) {
 // expanded tiles. ksr > 1 slices go to an fp32 partial and the last slice
 // to arrive folds the tile in fixed slice order (the persistent kernel's
 // leftover fold, applied to every tile): deterministic, no zero pass.
+//
+// Shared state: the partials and the per-tile arrival counters below are
+// one set for the whole device, like the persistent lane's A tiles and
+// unit counter -- so, like every MK GEMM launch, a v2 launch must never
+// overlap another MK GEMM launch on a different stream (two launches
+// folding the same tile index would sum each other's slices). Serving
+// keeps that by stream order: the side-stream pair is joined before the
+// next main-stream GEMM.
 // ===========================================================================
 // v2 raw-record ring depth (VLLM_GLM53_MK_NBUF2; 2..4 keep two blocks per SM)
 #ifndef MK_NBUF2_DEF
@@ -1112,7 +1120,12 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     const uint8_t* ssrc = (const uint8_t*)c.ws4 +
         ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
     uint8_t* d = sraw + buf * W4_RAW_BYTES;
-    for (int t = (int)threadIdx.x; t < SMEM_W_ROWS * 4; t += MK_THREADS) {
+    // two chunks per thread, unrolled: the swizzled destinations are
+    // per-thread constants (a runtime loop recomputed them every k-block)
+    static_assert((SMEM_W_ROWS * 4) % MK_THREADS == 0, "chunks per thread");
+#pragma unroll
+    for (int u = 0; u < (SMEM_W_ROWS * 4) / MK_THREADS; ++u) {
+      const int t = (int)threadIdx.x + u * MK_THREADS;
       const int r = t >> 2, ch = t & 3;
       mk_cp_async16(d + r * W4_RAW_PITCH + ((ch ^ ((r >> 1) & 3)) << 4),
                     nsrc + (size_t)t * 16);
@@ -1153,7 +1166,10 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       for (int off = 16; off; off >>= 1)
         mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
       const float sc = mk_pow2_scale(mx);
-      const float rsc = 1.0f / sc;  // exact: sc is a power of two
+      // sc is a power of two, so rcp.rn is exact -- the same rsc as the
+      // shared prologue's 1.0f / sc, without the IEEE divide's slow-path
+      // call that the SASS showed on every row of every k-block
+      const float rsc = __frcp_rn(sc);
       uint32_t pack = 0;
 #pragma unroll
       for (int q = 0; q < 4; ++q)
@@ -1289,28 +1305,24 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   }
   MK2_TS(2);
 
-  // ---- epilogue
-  if (ksr == 1) {  // whole tile: bf16 out, real rows / cols only
+  // ---- epilogue: one walk over the fragment's real rows / cols, two stores
+  auto store_tile = [&](auto&& put) {  // put(row, col, value)
 #pragma unroll
-    for (int i = 0; i < mtiles; ++i) {
+    for (int i = 0; i < 2; ++i) {  // static index: a runtime bound put acc in local memory
+      if (i >= mtiles) break;
 #pragma unroll
       for (int j = 0; j < 2; ++j) {
         const int r0 = i * 16 + g, r1 = r0 + 8;
         const int cb = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
-        if (r0 < c.m) {
-          if (cb < c.n_orig)
-            c.out[(size_t)r0 * c.n_orig + cb] = __float2bfloat16(acc[i][j][0]);
-          if (cb + 1 < c.n_orig)
-            c.out[(size_t)r0 * c.n_orig + cb + 1] = __float2bfloat16(acc[i][j][1]);
-        }
-        if (r1 < c.m) {
-          if (cb < c.n_orig)
-            c.out[(size_t)r1 * c.n_orig + cb] = __float2bfloat16(acc[i][j][2]);
-          if (cb + 1 < c.n_orig)
-            c.out[(size_t)r1 * c.n_orig + cb + 1] = __float2bfloat16(acc[i][j][3]);
-        }
+        if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }
+        if (r1 < c.m) { put(r1, cb, acc[i][j][2]); put(r1, cb + 1, acc[i][j][3]); }
       }
     }
+  };
+  if (ksr == 1) {  // whole tile: bf16 out
+    store_tile([&](int r, int col, float v) {
+      if (col < c.n_orig) c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
+    });
     MK2_TS(3);
     return;
   }
@@ -1318,22 +1330,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // arrival, and let the last slice fold the tile in slice order.
   {
     float* pb = g_mk2_partial + (size_t)sp * c.m * c.n;
-#pragma unroll
-    for (int i = 0; i < mtiles; ++i) {
-#pragma unroll
-      for (int j = 0; j < 2; ++j) {
-        const int r0 = i * 16 + g, r1 = r0 + 8;
-        const int cb = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
-        if (r0 < c.m) {
-          pb[(size_t)r0 * c.n + cb] = acc[i][j][0];
-          pb[(size_t)r0 * c.n + cb + 1] = acc[i][j][1];
-        }
-        if (r1 < c.m) {
-          pb[(size_t)r1 * c.n + cb] = acc[i][j][2];
-          pb[(size_t)r1 * c.n + cb + 1] = acc[i][j][3];
-        }
-      }
-    }
+    store_tile([&](int r, int col, float v) { pb[(size_t)r * c.n + col] = v; });
   }
   __syncthreads();
   __threadfence();  // release: the slice is visible device-wide first
@@ -2664,6 +2661,7 @@ bool g_attrs_set = false;
 // resident blocks per SM the device reports for mk_gemm2_kernel (2 by
 // construction of GEMM2_SMEM; the v2 unit rule sizes its grid from it)
 int g_gemm2_bps = 0;
+int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
 void set_kernel_attrs() {
   if (g_attrs_set) return;
@@ -2680,6 +2678,8 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM));
   if (g_gemm2_bps < 1) g_gemm2_bps = 1;
+  MK_CHECK_CUDA(cudaDeviceGetAttribute(
+      &g_mk_sms, cudaDevAttrMultiProcessorCount, 0));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
   g_attrs_set = true;
@@ -2797,12 +2797,18 @@ bool mk_gemm2_on() {
   }
   return g_probe_gemm2 == 1;
 }
-// k-slices per tile for one v2 launch. Enough units for two waves of the
-// resident slots (blocks/SM x 48 SMs), so the scheduler has something to
-// balance the tail with, but no slice shorter than 4 k-blocks (a unit's
-// ring fill and quant are paid once per unit). Then the contract clamps:
-// ksr <= kblk (every slice non-empty), ksr <= MK2_KSR_MAX, and the fp32
-// partial must fit (m x n x ksr floats).
+// k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
+// 4/6/8 on every production shape, single and back-to-back): what wins is
+// ONE exact wave of the resident slots (blocks/SM x SMs = 96 on GB10) --
+// 48 tiles x 2, 32 x 3, 16 x 6 measured best on every k -- or, when the
+// tile count does not divide the slots, the longest slices that still fit
+// one wave (8 tiles x 8 = 64 units); a small SECOND wave is the worst case
+// (51 tiles x 2 = 102 units: +30 us for the six stragglers), so a tile
+// count above half the slots takes the finest slices instead (51 x 8 = 408,
+// 86 us; x 3 = 153, 87; x 1 = 51, 97). No slice shorter than 4 k-blocks (a
+// unit's ring fill and first quant are paid per unit; k = 512 stays whole).
+// Then the contract clamps: ksr <= kblk (every slice non-empty), ksr <=
+// MK2_KSR_MAX, and the fp32 partial must fit (m x n x ksr floats).
 int mk_choose_ksr2(int m, int n, int k) {
   const int nblk = n / SMEM_W_ROWS, kblk = k / KSTEP;
   if (g_probe_ksr2 < 0) {
@@ -2813,10 +2819,17 @@ int mk_choose_ksr2(int m, int n, int k) {
   if (g_probe_ksr2 > 0) {
     ksr = g_probe_ksr2;
   } else {
-    const int slots = (g_gemm2_bps > 0 ? g_gemm2_bps : 2) * 48;
-    ksr = (2 * slots + nblk - 1) / nblk;
-    const int kmax = kblk / 4;
-    if (ksr > kmax) ksr = kmax;
+    const int slots = (g_gemm2_bps > 0 ? g_gemm2_bps : 2) *
+                      (g_mk_sms > 0 ? g_mk_sms : 48);
+    const int kmax = kblk / 4 > 1 ? kblk / 4 : 1;
+    if (slots % nblk == 0 && slots / nblk <= kmax) {
+      ksr = slots / nblk;               // one exact wave
+    } else if (nblk * 2 > slots) {
+      ksr = kmax;                       // would leave a short second wave: slice fine
+    } else {
+      ksr = slots / nblk;               // under one wave, the longest slices
+      if (ksr > kmax) ksr = kmax;
+    }
   }
   if (ksr < 1) ksr = 1;
   if (ksr > kblk) ksr = kblk;
@@ -2840,18 +2853,27 @@ std::vector<int64_t> mk_probe_device() {
           (int64_t)prop.sharedMemPerBlockOptin};
 }
 
+#ifdef MK_PHASE_TS
+// Read a device stamp array into a host vector and clear it (every probe
+// reader below): synchronize first -- the stamps are written by the launch
+// the caller just issued.
+template <size_t N>
+std::vector<int64_t> mk_read_and_clear(unsigned long long (&sym)[N]) {
+  std::vector<unsigned long long> h(N);
+  MK_CHECK_CUDA(cudaDeviceSynchronize());
+  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), sym, sizeof(unsigned long long) * N));
+  void* p = nullptr;
+  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, sym));
+  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * N));
+  return std::vector<int64_t>(h.begin(), h.end());
+}
+#endif
+
 // Phase timestamps of the last gemm launch, [MK_GRID_CAP][8] ns, then
 // cleared. Empty unless built with -DMK_PHASE_TS=1.
 std::vector<int64_t> mk_read_ts() {
 #ifdef MK_PHASE_TS
-  std::vector<unsigned long long> h(MK_GRID_CAP * 8);
-  MK_CHECK_CUDA(cudaDeviceSynchronize());
-  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_ts,
-                                     sizeof(unsigned long long) * h.size()));
-  void* p = nullptr;
-  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_ts));
-  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
-  return std::vector<int64_t>(h.begin(), h.end());
+  return mk_read_and_clear(g_mk_ts);
 #else
   return {};
 #endif
@@ -2861,13 +2883,7 @@ std::vector<int64_t> mk_read_ts() {
 // p2 done, barrier, p3 done, barrier, p4 done.
 std::vector<int64_t> mk_read_kda_ts() {
 #ifdef MK_PHASE_TS
-  std::vector<unsigned long long> h(MK_GRID_CAP * 16);
-  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_kda_ts,
-                                     sizeof(unsigned long long) * h.size()));
-  void* p = nullptr;
-  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_kda_ts));
-  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
-  return std::vector<int64_t>(h.begin(), h.end());
+  return mk_read_and_clear(g_mk_kda_ts);
 #else
   return {};
 #endif
@@ -2875,14 +2891,7 @@ std::vector<int64_t> mk_read_kda_ts() {
 
 std::vector<int64_t> mk_read_mhc_ts() {
 #ifdef MK_PHASE_TS
-  std::vector<unsigned long long> h(MK_MHC_GRID_CAP * 8);
-  MK_CHECK_CUDA(cudaDeviceSynchronize());
-  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk_mhc_ts,
-                                     sizeof(unsigned long long) * h.size()));
-  void* p = nullptr;
-  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk_mhc_ts));
-  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
-  return std::vector<int64_t>(h.begin(), h.end());
+  return mk_read_and_clear(g_mk_mhc_ts);
 #else
   return {};
 #endif
@@ -3119,14 +3128,7 @@ void mk_set_gemm2(int64_t on, int64_t ksr) {
 // v2 unit timestamps of the last launch, [MK2_UNITS_MAX][4] ns, then cleared.
 std::vector<int64_t> mk_read_ts2() {
 #ifdef MK_PHASE_TS
-  std::vector<unsigned long long> h(MK2_UNITS_MAX * 4);
-  MK_CHECK_CUDA(cudaDeviceSynchronize());
-  MK_CHECK_CUDA(cudaMemcpyFromSymbol(h.data(), g_mk2_ts,
-                                     sizeof(unsigned long long) * h.size()));
-  void* p = nullptr;
-  MK_CHECK_CUDA(cudaGetSymbolAddress(&p, g_mk2_ts));
-  MK_CHECK_CUDA(cudaMemset(p, 0, sizeof(unsigned long long) * h.size()));
-  return std::vector<int64_t>(h.begin(), h.end());
+  return mk_read_and_clear(g_mk2_ts);
 #else
   return {};
 #endif

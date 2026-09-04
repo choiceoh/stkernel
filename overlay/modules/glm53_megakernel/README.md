@@ -82,8 +82,24 @@ which frees the 32 KB of expanded tiles: **37 KB of smem, two blocks per
 SM** (`__launch_bounds__(256, 2)`). One `__syncthreads` per k-block. ksr
 > 1 slices assign an fp32 partial and the last slice to arrive folds the
 tile in fixed order (deterministic, no zero pass). The slice rule
-(`mk_choose_ksr2`) wants two waves of the resident slots and no slice
-shorter than 4 k-blocks; `VLLM_GLM53_MK_KSR2` forces it for sweeps.
+(`mk_choose_ksr2`, from the 30차 sweeps) takes ONE exact wave of the
+device's resident slots (blocks/SM x SMs = 96: 48 tiles x 2, 32 x 3,
+16 x 6), the longest slices that fit one wave when the tile count does
+not divide it (8 x 8), and the finest slices (>= 4 k-blocks) above half
+the slots, where a short second wave is the worst case (51 tiles x 2 =
+102 units measured +30 us); `VLLM_GLM53_MK_KSR2` forces it for sweeps.
+With that rule v2 matches or beats the persistent lane on every m <= 16
+shape back to back (in_proj 79.4 vs 80.4 us, [4096x4096] 49.7 vs 56.3,
+[4096x3072] 39.9 vs 46.1, shared expert 21.5/14.8 vs 22.5/15.4); m = 32
+still trails (45.1 vs 37.9 on [2048x4096]: the per-block x quant scales
+with m), so the lane is for C=1 until that path is fixed.
+
+Contract, inherited from the persistent lane: v2's partials and per-tile
+arrival counters are one device-wide set, so a v2 launch must never
+overlap another MK GEMM launch on a different stream (two launches
+folding the same tile index would sum each other's slices). Serving
+keeps it by stream order -- the side-stream pair is joined before the
+next main-stream GEMM.
 
 Gates and numbers: the boot self-test's exact-grid gate runs on whichever
 lane the boot serves and the fingerprint names it (`lane v2, in_proj plan

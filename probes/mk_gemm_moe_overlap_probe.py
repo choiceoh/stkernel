@@ -39,34 +39,15 @@ sys.path.insert(0, os.environ.get("MK_PKG_PATH",
 
 import torch  # noqa: E402
 
-DEV = "cuda"
-E, TOPK, HID, INTER = 288, 8, 4096, 512   # per-rank GLM-5.3 TP=4 geometry
-T = 8                                     # C=1 verify batch (k=7 + 1)
+# the served MoE fixture -- routing, weight sets, geometry -- is the go/no-go
+# probe's; one definition of the C=1 decode MoE call for both probes
+from moe_decode_stream_probe import (  # noqa: E402
+    DEV, E, HID, INTER, T, TOPK, _routing, _weight_set)
+
 U = 40                                    # unique experts a layer (27차)
 SHARED_N = 1024                           # shared expert gate_up rows / rank
 SHARED_K = 512                            # down-proj K / rank
 REPS = 20
-
-
-def _routing(U: int):
-    gen = torch.Generator().manual_seed(U)
-    pool = torch.randperm(E, generator=gen)[:U]
-    flat = torch.arange(T * TOPK) % U
-    ids = pool[flat].view(T, TOPK).to(torch.int32)
-    w = torch.rand(T, TOPK, generator=gen, dtype=torch.float32)
-    w = w / w.sum(dim=1, keepdim=True)
-    return ids.to(DEV), w.to(DEV)
-
-
-def _weight_set(gen):
-    w13 = torch.randint(0, 256, (E, 2 * INTER, HID // 2), dtype=torch.uint8,
-                        generator=gen).to(DEV)
-    w2 = torch.randint(0, 256, (E, HID, INTER // 2), dtype=torch.uint8,
-                       generator=gen).to(DEV)
-    s13 = (torch.rand(E, 2 * INTER, HID // 16, generator=gen) * 0.05 + 0.01)
-    s2 = (torch.rand(E, HID, INTER // 16, generator=gen) * 0.05 + 0.01)
-    return (w13, w2, s13.to(torch.float8_e4m3fn).to(DEV),
-            s2.to(torch.float8_e4m3fn).to(DEV))
 
 
 def _capture(fn_a, fn_b, order: str):
@@ -136,11 +117,14 @@ def main() -> int:
     ones = torch.ones(E, dtype=torch.float32, device=DEV)
     ids, w = _routing(U)
     x = torch.randn(T, HID, dtype=torch.bfloat16, device=DEV) * 0.5
-    out = torch.empty(T, HID, dtype=torch.bfloat16, device=DEV)
+    # the wrapper returns its output; the `out=` keyword exists only on the
+    # deployed b12x overlay, and this probe runs against whichever wrapper
+    # the container has (the bench runner mounts the megakernel files only)
+    print(f"wrapper {type(wrapper).__module__}")
 
     def moe():
         wrapper.run(x, w13, sf13, w2, sf2, ids, w, w1_alpha=ones,
-                    w2_alpha=ones, fc2_input_scale=ones, out=out)
+                    w2_alpha=ones, fc2_input_scale=ones)
 
     mk.maybe_arm()
     assert mk._ARMED["gemm"], "MK-GEMM did not arm"

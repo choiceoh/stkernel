@@ -8534,7 +8534,8 @@ def test_glm53_megakernel_contracts() -> None:
           "the raw nibble chunks land XOR-swizzled at copy time and the "
           "fragment loads read through the same swizzle (eight rows on a 64 B "
           "pitch would otherwise share two bank groups)")
-    check("pb[(size_t)r0 * c.n + cb] = acc[i][j][0];" in v2
+    check("store_tile([&](int r, int col, float v) { pb[(size_t)r * c.n + col] = v; });" in v2
+          and "if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }" in v2
           and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
           and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
           and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
@@ -8548,16 +8549,22 @@ def test_glm53_megakernel_contracts() -> None:
           and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
               < cu.index("c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);")
           and "int mk_choose_ksr2(int m, int n, int k)" in cu
+          and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
+          and "&g_mk_sms, cudaDevAttrMultiProcessorCount, 0));" in cu
+          and "if (slots % nblk == 0 && slots / nblk <= kmax) {" in cu
+          and "} else if (nblk * 2 > slots) {" in cu
           and "if (ksr > kblk) ksr = kblk;" in cu
           and "while (ksr > 1 && (size_t)m * n * ksr > (size_t)MK2_PART_ELEMS) --ksr;" in cu
           and consts["MK2_PART_ELEMS"] >= 32 * consts["KDA_INPROJ_N_PAD"] * 4,
           "the v2 lane is a kill-switched dispatch ahead of the persistent "
-          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule keeps "
-          "every slice non-empty and the fp32 partial inside its buffer at "
-          "the widest per-rank linear")
+          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule takes one "
+          "exact wave of the device's resident slots (SM count from the device, "
+          "not a constant), fine slices above half the slots, and keeps every "
+          "slice non-empty and the fp32 partial inside its buffer")
     check('"-DMK_NBUF2_DEF=" in pysrc_full' if False else "-DMK_NBUF2_DEF=" in pysrc_full
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
-          and 'ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")' in bench
+          and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
+          and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
           and "ext.set_gemm2(on, ksr)" in bench
           and "same = bool(torch.equal(got2, got))" in bench,
           "the driver builds v2's ring depth in, the boot fingerprint names "
@@ -8746,7 +8753,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the build attaches the W4 pack next to the deepgemm pair on every "
           "eligible linear, no arm knob")
     check("def probe_exact(gemm2: str = \"both\") -> bool:" in bench
-          and "def _probe_exact_lane(mk, tag: str) -> bool:" in bench
+          and "def _probe_exact_lane(mk, tag: str, x, p4, ref, n: int) -> bool:" in bench
           and "probe_w4" not in bench
           and "run_gemm_w4" not in bench and "build_mk_weight(" not in bench
           and "VLLM_GLM53_MK_W4" not in bench

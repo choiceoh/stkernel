@@ -595,9 +595,11 @@ deep_gemm 은 독립 블록이라 같은 GEMM 을 MoE 꼬리 안에서 끝냈다
 두 레인 × ksr 5종).
 
 **오프라인 게이트(부팅 전, srv2 GPU 창)**: `run_megakernel_bench.sh --segments exact,gemm
---gemm2 both --ksr2-sweep 1,2,4,6,8` 전 행 PASS + v2 열이 v1 열보다 형상마다 빠름(특히
-[6144×4096]·[4096×512]·[1024×4096]) + `mk_gemm_moe_overlap_probe.py` 의 v2 노출이 v1 의
-28 µs/층보다 작음. 상한: 스텝 −2.5 ms(메인 −1.5, aux 노출 −1.0), 트레이스 mk 합 14.1 → ~7.
+--gemm2 both`(기본 `--gemm2 env` 는 서빙 레인만 판정한다) 전 행 PASS + v2 열이 v1 열보다
+형상마다 같거나 빠름 + `mk_gemm_moe_overlap_probe.py` 의 v2 노출이 v1 의 28 µs/층보다 작음.
+상태(09-05 01:11, 원장 30차 §4~5): exact PASS(두 레인 × ksr 5종), 규칙 확정 뒤 m ≤ 16 전
+형상 v2 ≥ v1(x2), m = 32 는 뒤짐(C=1 전용 팔) — 노출 프로브·스탬프 대기. 상한: 스텝 −2.5 ms
+(메인 −1.5, aux 노출 −1.0), 트레이스 mk 합 14.1 → ~7.
 
 **부팅 게이트**: base(기본값) → cand(`VLLM_GLM53_MK_GEMM2=1`) 브래킷, step/s(acc 정규화)
 + 프리필 동반 + 품질 9/9 + 한국어 0/16 + pos-1 ±2 pct. 통과하면 프로필 기본 1 로 올리고
