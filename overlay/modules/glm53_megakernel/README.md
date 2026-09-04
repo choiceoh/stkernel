@@ -55,6 +55,38 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
+## Barrier-free small-shape path (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
+
+The lane's fixed cost per launch is what the 30-45 us class of the decode
+step is made of: the shared expert's gate_up `[1024 x 4096]` and down
+`[4096 x 512]` -- 86 launches a step, 3.5 ms, 2.4 ms of it not covered by
+another stream (28차) -- move 1-2 MB each, i.e. 5-12 us of DRAM at the
+lane's rate, and take 30-45. Both run with at most ONE unit per block (32
+units on the 48-block grid). On such a launch the kernel now takes a
+barrier-free path: every block quantizes the A k-blocks of ITS unit straight
+into smem, from x in L2, as it stages them (the load goes out where the
+global copy's did, the reduce + convert + store where its smem store did),
+instead of the grid-wide prologue -- one k-block per block into `g_mk_aq`,
+a grid barrier, `sxs` from `g_mk_axs`. The A bytes are the same (same amax
+per row and k-block, same pow2 scale, same SATFINITE conversion), so the
+output is **bitwise** the global path's at the same split; what goes is the
+publishing barrier and its skew (every block held for the slowest x load,
+which queued behind the hoisted W fill: the prologue's 8-10 us median in the
+4차 stamps), the global round trip, and the idle blocks' part in all of it
+-- they exit at once and hand their SMs to the PDL successor.
+
+The host picks it (`mk_localq_for`: units <= grid, `mk_units` is the
+phase's own unit rule) and the phase re-derives the condition, so a drift
+degrades to the global path. Launches with several k-walks per block
+(n=4096 and up at k=4096, the KDA in_proj) keep the once-per-launch quant,
+and the KDA kernel's two inlined phases always take it (`mk_gemm_phase` is
+the `<false>` instantiation; its o_proj arrives with `a_ready`). Knob
+`VLLM_GLM53_MK_LOCALQ=0` is the kill switch; the bench's `--gemm-sweep`
+times both paths over the split (`VLLM_GLM53_MK_KSR`) with a bitwise check,
+and `--stamps` adds the phase stamps of a `VLLM_GLM53_MK_PHASE_TS=1` build.
+Numbers: MEASUREMENTS.md (this section is written before they exist; the
+ledger, not this file, says what it bought).
+
 ## What it absorbs (and what it cannot)
 
 The 2026-09-01 step decomposition fixes the budget: C=1 step = 66.0 ms, of
@@ -187,6 +219,8 @@ VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
+VLLM_GLM53_MK_LOCALQ=1      # gemm: barrier-free path for one-unit-per-block
+                            # launches, default 1 (0 = the global-quant path)
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc

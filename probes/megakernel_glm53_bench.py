@@ -249,6 +249,118 @@ def probe_gemm(iters: int) -> bool:
     return ok
 
 
+# The one-unit-per-block shapes (the 30-45 us class) plus one of each
+# neighbour: n=2048 (48 units at the model's ksr=3) and the o_proj [4096 x
+# 4096] (96 units: the global path, a control row that must not move).
+SWEEP_SHAPES = [(8, 1024, 4096), (8, 4096, 512), (8, 2048, 4096),
+                (16, 1024, 4096), (32, 1024, 4096), (32, 4096, 512),
+                (8, 4096, 4096)]
+
+
+def _stamps(ext, grid: int) -> str:
+    """One line from the last launch's phase stamps (MK_PHASE_TS builds):
+    medians over the blocks that finished, ns -> us, relative to entry.
+    Slots: 1 = A quant done (global: before the barrier; local: first
+    k-block), 2 = prologue done (global: barrier released), 6 = first unit
+    done, 4 = block done; 3/5/7 = accumulated mma / pipeline-wait / expand.
+    Idle blocks of the local path never stamp 4 and are left out."""
+    ts = ext.read_ts()
+    if not ts:
+        return "(no stamps: build with VLLM_GLM53_MK_PHASE_TS=1)"
+    rows = [ts[b * 8:(b + 1) * 8] for b in range(grid)]
+    act = [r for r in rows if r[4] > 0 and r[0] > 0]
+    if not act:
+        return "(no active blocks stamped)"
+
+    def med(vals):
+        vals = sorted(vals)
+        return vals[len(vals) // 2] / 1e3
+
+    t0 = min(r[0] for r in act)
+    skew = (max(r[0] for r in act) - t0) / 1e3
+    rel = lambda s: med([r[s] - r[0] for r in act])  # noqa: E731
+    span = max(r[4] for r in act) - t0
+    return (f"act={len(act):<2} skew={skew:4.1f} q={rel(1):5.1f} pro={rel(2):5.1f}"
+            f" u1={rel(6):5.1f} end={rel(4):5.1f} span={span / 1e3:5.1f}"
+            f" | mma={med([r[3] for r in act]):4.1f}"
+            f" wait={med([r[5] for r in act]):4.1f}"
+            f" exp={med([r[7] for r in act]):4.1f}")
+
+
+def probe_gemm_sweep(iters: int, stamps: bool) -> bool:
+    """The standalone lane under its two probe knobs, per shape: the
+    barrier-free local-quant path (VLLM_GLM53_MK_LOCALQ) against the
+    global path, over the split (VLLM_GLM53_MK_KSR, 0 = the cost model).
+    `same` = the local path's output is BITWISE the global path's at the
+    same split (it must be: same bytes into the same mma); rel = against
+    the global path at the model's split (a different split changes the
+    fp32 summation order, so that one is a tolerance, not equality)."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    ext = mk._EXT
+    ok = True
+    print(f"{'shape':<22}{'lq':>3}{'ksr':>4}{'units':>6}{'mk_us':>8}"
+          f"{'spread':>8}{'mk_x2':>7}{'same':>5}{'rel':>9}"
+          f"{'  stamps (us)' if stamps else ''}")
+    for m, n, k in SWEEP_SHAPES:
+        torch.manual_seed(0)
+        w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        w2 = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
+        p4 = mk.build_mk_weight_w4(w)
+        p4b = mk.build_mk_weight_w4(w2)
+        del w, w2
+        kblk = k // 128
+        ext.set_probe(0, 0)
+        ref = mk._gemm_call(x, p4, n)  # global path, the model's split
+        torch.cuda.synchronize()
+        by_ksr = {}
+        for lq in (0, 1):
+            for ksr in [0] + [r for r in (2, 3, 4, 6, 8, 12, 16) if r <= kblk]:
+                ext.set_probe(ksr, lq)
+                grid, ksr_eff, units, localq = ext.gemm_plan(m, n, k)
+                if lq == 1 and not localq:
+                    continue  # the plan refuses the local path here
+                if ksr and ksr_eff != ksr:
+                    continue  # the model's split (0 row) already covers it
+                got = mk._gemm_call(x, p4, n)
+                torch.cuda.synchronize()
+                key = ksr_eff
+                if lq == 0:
+                    by_ksr[key] = got
+                    same = "-"
+                else:
+                    g0 = by_ksr.get(key)
+                    same_b = g0 is not None and torch.equal(got, g0)
+                    same = "yes" if same_b else "NO"
+                    ok &= same_b
+                r = _rel(got, ref)
+                ok &= r <= TOL["gemm"]
+                t_mk, t_lo, t_hi = _time_stats(
+                    lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
+                t_x2 = _time(lambda: (mk._gemm_call(x, p4, n),
+                                      mk._gemm_call(x, p4b, n)),
+                             iters, hot=(x,)) / 2
+                # replay stability on this knob setting
+                again = mk._gemm_call(x, p4, n)
+                torch.cuda.synchronize()
+                rep_ok = torch.equal(again, got)
+                ok &= rep_ok
+                line = ""
+                if stamps:
+                    _l2_flush(hot=(x,))
+                    mk._gemm_call(x, p4, n)
+                    torch.cuda.synchronize()
+                    line = "  " + _stamps(ext, grid)
+                mark = " " if (same != "NO" and r <= TOL["gemm"] and rep_ok) else "!"
+                print(f"{mark}m={m:<3}n={n:<5}k={k:<5}{lq:>3}{ksr_eff:>4}{units:>6}"
+                      f"{t_mk:>8.1f}{100 * (t_hi - t_lo) / t_mk:>7.1f}%{t_x2:>7.1f}"
+                      f"{same:>5}{r:>9.2e}{line}")
+        del p4, p4b, by_ksr
+    ext.set_probe(0, 1)  # back to the env defaults' meaning
+    return ok
+
+
 def probe_exact() -> bool:
     """The load-bearing W4 gate: weights ON the e2m1 grid pack losslessly,
     so the kernel must reproduce a torch fp32 matmul of the kernel-
@@ -490,6 +602,11 @@ def main() -> int:
     ap.add_argument("--gemm-shapes", default=None,
                     help="m:n:k,... (default: the decode sweep + the production small shapes)")
     ap.add_argument("--skip-kda", action="store_true")
+    # the standalone lane's knob sweep (local-quant path x split) on the
+    # one-unit-per-block shapes; --stamps adds the phase stamps of a build
+    # with VLLM_GLM53_MK_PHASE_TS=1 (a plain build prints a note instead)
+    ap.add_argument("--gemm-sweep", action="store_true")
+    ap.add_argument("--stamps", action="store_true")
     # Which segments this profile can even run. dsv4 reaches MHC alone: it has
     # no linear-attention layer (kda), no e2m1 dense pack (gemm/exact) and a
     # different MLA geometry. Naming a segment a profile cannot serve would
@@ -511,6 +628,8 @@ def main() -> int:
         print("--sinkhorn must be >= 1")
         return 2
     segs = [s.strip() for s in args.segments.split(",") if s.strip()]
+    if args.gemm_sweep and "gemm" not in segs:
+        segs.append("gemm")
     unknown = [s for s in segs if s not in ("gemm", "exact", "mhc", "kda")]
     if unknown:
         print(f"unknown segment(s): {unknown}")
@@ -538,8 +657,10 @@ def main() -> int:
           f"sinkhorn_repeat={sk}"
           f"{' (driver default)' if args.sinkhorn is None else ''}")
     ok = True
-    if "gemm" in segs:
+    if "gemm" in segs and not args.gemm_sweep:
         ok &= probe_gemm(args.iters)
+    if args.gemm_sweep:
+        ok &= probe_gemm_sweep(args.iters, args.stamps)
     if "exact" in segs:
         ok &= probe_exact()
     if "mhc" in segs:

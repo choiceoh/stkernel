@@ -8032,7 +8032,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 4  # def, gemm, kda in/out
+          and cu.count("mk_choose_ksr(") == 5  # def, gemm, kda in/out, bench plan
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -8078,10 +8078,37 @@ def test_glm53_megakernel_contracts() -> None:
     # the reset ahead of every block's first take.
     check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
           < cu.index("mk_grid_barrier(bar, c.grid);")
-          and "for (int u = blockIdx.x; u < units; u = next_unit())" in cu
+          and "for (int u = blockIdx.x; u < units; u = local_q ? units : next_unit())" in cu
           and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
           "dynamic unit hand-out: first unit static (hoisted fill), the "
           "rest from a counter re-armed ahead of the publish barrier")
+    # -- barrier-free path (2026-09-04): a launch with at most one unit per
+    #    block (the shared expert's two GEMMs, 86 launches a step) has every
+    #    block quantize ITS unit's A k-blocks into smem as it stages them --
+    #    no grid-wide prologue, no barrier, idle blocks exit at once. The
+    #    host picks it and the phase re-derives the condition, so a drift
+    #    degrades to the global path; MK_LOCALQ=0 is the kill switch.
+    check("const bool local_q = LQ && !c.a_ready && (units <= c.grid);" in cu
+          and "if (!has_u0) return;" in cu
+          and "int mk_units(int m, int n, int grid, int ksr)" in cu
+          and "return mk_probe_localq() != 0 && mk_units(m, n, grid, ksr) <= grid;" in cu
+          and "c.localq = mk_localq_for(c.m, c.n, c.grid, c.ksr);" in cu
+          and 'mk_env_int("VLLM_GLM53_MK_LOCALQ", 1)' in cu,
+          "the barrier-free path is host-chosen for units <= grid, re-derived "
+          "in the phase, default on behind VLLM_GLM53_MK_LOCALQ")
+    _lq = cu.index("if (local_q) {", cu.index("auto stage_a_store = [&](int kb) {"))
+    _lq_end = cu.index("return;", _lq)
+    check("mk_pow2_scale(mxq)" in cu[_lq:_lq_end]
+          and "mk_f32_to_e4m3(vq[q] * rsc)" in cu[_lq:_lq_end]
+          and "__shfl_xor_sync(0xffffffffu, mxq, off)" in cu[_lq:_lq_end]
+          and "sxs[r * KBLK_MAX + kb] = sc * c.wgs;" in cu[_lq:_lq_end],
+          "local A quant: the same pow2 scale, conversion and wgs fold as "
+          "quant_store -- the output must be bitwise the global path's")
+    check("template <bool LQ>" in cu
+          and "mk_gemm_phase_t<false>(c, smem, bar);" in cu
+          and cu.count("mk_gemm_phase_t<true>(") == 1,
+          "the kda-facing mk_gemm_phase is the global-path instantiation; "
+          "only the standalone kernel dispatches to the local one")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The
@@ -8169,7 +8196,8 @@ def test_glm53_megakernel_contracts() -> None:
           and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
           and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
           and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
-          and "mk_gemm_phase(c, smem, &g_mk_gemm_bar);" in cu,
+          and "mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar);" in cu
+          and "mk_gemm_phase_t<false>(c, smem, &g_mk_gemm_bar);" in cu,
           "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
           "or entry point remains in the .cu")
     check("def build_mk_weight(" not in pysrc_full
@@ -8259,7 +8287,7 @@ def test_glm53_megakernel_contracts() -> None:
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
+          and cu.count("(c, smem, &g_mk_gemm_bar)") == 2  # the two instantiations
           and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
