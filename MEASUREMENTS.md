@@ -4020,19 +4020,39 @@ docker run --rm --gpus all --entrypoint python3 glm53:v13-b12x -c \
 
 _원장 번호: 이 작업은 29차로 적혀 있었으나 그 사이 29차(메가커널 로컬 양자화, PR #307)와
 30차(비상주 v2 레인, PR #305)가 먼저 머지돼 31차로 옮겼다 — 28차의 선례("원장 번호 27 은
-PR #290 이 쓰고 있어 28 로 적는다")와 같은 처리다. 측정 자체는 손대지 않았다._
+PR #290 이 쓰고 있어 28 로 적는다")와 같은 처리다. 아래는 PR #304 리뷰(15건) 반영 뒤 09-05 에
+다시 잰 최종 수치다(프로브 11 = 조용한 GPU, 12 = KDAPROOF3 부팅 창); 첫 판과 무엇이 왜
+달라졌는지는 "방법 정정"에 적었다._
 
 "소소한 이익 묶음"(R2 선례) 방식으로 네 축을 한 캠페인 창에 묶는다. 각 축은 킬스위치
 노브(프로필 기본 0)이고, 판정은 오프라인 수치 게이트 + 인그래프 물리확인 + e2e 무회귀.
 프로브 `probes/run_micro_fusion_check.sh`(fresh container, 그래프 리플레이, 층마다 다른
 가중치/상태). 09-04 18:42 rank3 트레이스(무장 세트, 스텝 64.8 ms, 1,548 커널) 기준.
 
-| 축 | 노브 | 런치 −/스텝 | 수치 | 그래프 리플레이(층당 us, 조용한 GPU) | 스텝 Δ |
+| 축 | 노브 | 런치 −/스텝 | 수치 | 그래프 리플레이(층당 us, 조용한 GPU, 붙여 돌린 두 리플레이의 둘째) | 스텝 Δ |
 |---|---|---|---|---|---|
 | 게이트 top-k epilogue (`moe_gate_sm121`, 마지막 도착 블록) | (기각, 트리에 없음) | 42 | **bit-exact**(logits·ids·weights 568행, 동률 포함; `FusedTopKBiasRouter` 훅 서빙 경로 포함) | M=8 28.2 → **31.3**, M=16 28.1 → 45.6, M=32 34.3 → 86.8 | **+0.13 / +0.74 / +2.2 ms — 기각** |
-| f_b+g_b 듀얼 GEMM (`glm53_kda_onepass`) | `VLLM_GLM53_KDA_DUAL_GEMM` | 34 | M≤16 **bit-exact**(cuBLAS 16x16 wmma 와 동일), M=32 는 cuBLAS 가 다른 커널을 골라 10/131,072 원소 1 ulp | 10.7 → 8.1 (M=8), 10.7 → 8.2 (M=16), 9.7 → 8.2 (M=32) | −0.09 / −0.09 / −0.05 ms |
-| KDA 원패스 conv+복사4+recurrent+norm (`glm53_kda_onepass`) | `VLLM_GLM53_KDA_ONEPASS` | 204 (층당 7→1) | conv 상태·recurrent 상태·출력 **bit-exact**(acc 1/3/5/8, SD/DS 레이아웃, varlen T=[8,3,8,1]; 두 번째 발사도 동일) | C=1: 74.1 → 69.9 (BV=8) / 69.7 (BV=16); C=4: 231.9 → 221.6 | −0.14 (C=1) / −0.35 (C=4) ms |
-| kpool 갱신 int64 positions 직접 (`glm53_kpool_tail_select`) | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS` | 11 | 캐시 쓰기 **bit-exact** | 7.3 → 6.0 | −0.015 ms |
+| f_b+g_b 듀얼 GEMM (`glm53_kda_onepass`, BLOCK_N=32) | `VLLM_GLM53_KDA_DUAL_GEMM` | 34 | M≤16 **bit-exact**(cuBLAS 16x16 wmma 와 동일, N 타일 폭에 무관), M=32 는 cuBLAS 가 다른 커널을 골라 ≤10/131,072 원소 1 ulp | 10.0 → 6.4 (M=8), 10.1 → 6.2 (M=16), 8.8 → 6.7 (M=32) | −0.12 / −0.13 / −0.07 ms |
+| KDA 원패스 conv+복사4+recurrent+norm (`glm53_kda_onepass`) | `VLLM_GLM53_KDA_ONEPASS` | 204 (층당 7→1) | conv 상태·recurrent 상태·출력 **bit-exact**(acc 1/3/5/8, SD/DS 레이아웃, bf16/fp32 conv 상태, varlen T=[8,3,8,1], 같은 카운터로 두 번째 발사, 2스텝 사슬 8 케이스; 부팅 자가진단 3 케이스 PASS) | C=1: 68.8 → 67.6 (BV=8; BV=16/32 는 72.0/73.3 으로 손해); C=4: 228.4 → 221.5 | −0.04 (C=1) / −0.23 (C=4) ms |
+| kpool 갱신 int64 positions 직접 (`glm53_kpool_tail_select`) | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS` | 11 | 캐시 쓰기 **bit-exact**(47행) | 6.9 → 5.6 | −0.014 ms |
+
+**방법 정정 — 첫 판(원패스 −0.14, 듀얼 −0.09)과 다른 이유.** (1) 첫 판의 stock KDA 체인은
+타이밍 그래프 *안에서* 입력을 clone 했다(stock conv 가 in-place 라서). clone 노드가 stock
+쪽에만 얹혀 stock 74.1 us 가 부풀었고, clone 을 그래프 밖에서 미리 해 두니 stock 68.8 /
+원패스 67.6 — 이득은 −0.14 가 아니라 **−0.04 ms** 다. (2) 시간은 붙여 돌린 두 리플레이의
+둘째("gpu")와 유휴에서 한 번 돌린 것("+launch")을 따로 적는데 둘이 거의 같다(제출이 실행과
+겹친다): 이 묶음의 스텝 이득은 런치 간극이 아니라 커널 시간 자체에서 온다. (3) 듀얼 GEMM 은
+BLOCK_N 을 128/64/32 로 쓸어 32 를 택했다(M=8: 7.6 → 6.7 → 6.4 us; 수치 등급은 N 타일에
+무관). (4) 원패스는 fp32 conv 상태(`MAMBA_CACHE_DTYPE=float32`, MK-KDA 부팅)를 stock 커널처럼
+받고, stock 세 커널의 스킵 조건을 따로 둔다(conv 는 spec 슬롯 0 이 널 블록이 아닐 때만,
+recurrent 는 재개 슬롯이 유효할 때만, 둘 다 아니면 즉시 반환). (5) 교차 프로그램 의존
+둘(헤드의 conv 상태 갱신, norm 꼬리)은 단조 카운터의 마지막 도착자(NV 의 배수, NV 는 2의
+거듭제곱)로 풀어 리셋이 없고 int32 랩이 무해하며, 카운터 버퍼(256 요청 × 16 헤드)를 넘는
+배치는 raise 가 아니라 stock 으로 내린다. (6) 부팅의 첫 eager forward(프로필 런)에서
+자가진단(stock 체인 vs 원패스, 플릿 형상 3 케이스 bit 비교)이 돌고 불일치면 그 부팅은
+`[kda-onepass] self-test FAIL ... DISARMED` — 아래 레이아웃 함정의 회귀 감시다. (7) 배선
+(`glm5next_kda.py`)은 모듈의 `resolve()/gate_gemms()/spec_onepass()` 만 부르고, 노브·가드·
+로그·카운터는 전부 모듈 안에 있다; `_forward` 가 o_norm 을 스스로 적용한다(플래그 없음).
 
 **게이트 top-k 의 비트 일치는 소스가 아니라 프로브가 정했다.** 커널 소스
 (`single_group_topk_block_kernel`)는 `sigmoid_accurate = 0.5f*tanhf(0.5f*x)+0.5f` 와
@@ -4059,24 +4079,32 @@ stock 의 `single_group_topk_block_kernel` 은 토큰마다 CTA 하나(256 스�
 수 있어 쓰지 않는다. 코드는 트리에 두지 않고(운영자 규칙) 비트 일치 요령만 남긴다 —
 MoE 를 persistent 세그먼트로 접는 날 top-k 는 이 요령대로 그 안에 들어가면 된다.
 
-**정직한 합계(C=1, 조용한 GPU 그래프 리플레이 기준)**: 듀얼 −0.09 + 원패스 −0.14 + kpool
-−0.015 ≈ **−0.25 ms/스텝(0.4%)**, 런치 −249/1,548(16%); C=4 는 −0.05 −0.35 −0.015 ≈ −0.4 ms.
+**정직한 합계(C=1, 조용한 GPU 그래프 리플레이 기준)**: 듀얼 −0.12 + 원패스 −0.04 + kpool
+−0.014 ≈ **−0.18 ms/스텝(0.3%)**, 런치 −249/1,548(16%); C=4 는 −0.07 −0.23 −0.014 ≈ −0.3 ms.
 
-_정정(32차 §11 뒤): 이 합계는 **오프라인 픽스처** 기준이다. 원패스는 `use_spec` 에서만
-도는데 이 V2 러너는 `spec_sequence_masks` 를 만들지 않으므로(체인9) 프로덕션에서는 −204 런치
-−0.14 ms 가 발생하지 않는다. 지금 브래킷에 오를 수 있는 몫은 듀얼 GEMM + kpool = 런치 −45,
-≈ −0.105 ms/스텝뿐이다._
+_재정정(2026-09-05): 09-05 07:04~07:11 의 정정("원패스는 `use_spec` 에서만 도는데 이 V2 러너는
+`spec_sequence_masks` 를 만들지 않으므로 프로덕션에서는 −204 런치가 발생하지 않는다")은 32차 §11 의
+**정정 전 가설**에 기댔다. §11 의 04:50 정정(`mamba_hybrid.prepare_attn` 이 정상 스텝에
+`num_decode_draft_tokens_cpu` 를 채운다)과 체인12 KDAPROOF3(`kda lane CAPTURED into the decode
+graph: T=32 n_spec=4` — 같은 spec-verify 전제의 MK-KDA 레인이 캡처됐다)이 그 가설을 철회했고,
+이미지 코드(`build_for_cudagraph_capture` 가 `query_start_loc` 차분에서 spec 행을 만든다)로
+유니폼 디코드 그래프의 캡처 형상이 곧 순수 spec-verify 배치임을 확인했다. 따라서 오프라인 합계는
+프로덕션에서 도달 가능한 몫이다(섞인 스텝은 스텝 단위로 stock). 단, 증명은 캡처 시점의
+`one-pass KDA serving` 줄이며, 그 줄이 없는 부팅은 원패스 축만 보류하고 듀얼 + kpool(런치 −45,
+≈ −0.13 ms)로 판정한다._
 브래킷 해상도(CV 1.7%) 아래 — R2 규칙(bit-exact + 트레이스 소멸 + 무회귀)으로 채택 판정한다.
 원패스의 GPU 시간 이득이 작은 이유: recurrent 는 토큰 8개의 직렬 지연 사슬(상태 슬롯 8 MB
 쓰기 포함)이라 conv·복사·norm 을 그 사슬에 접어 넣어도 사라지는 것은 작은 커널 시간과
-런치 간극뿐이고, 마지막 도착 블록의 norm 꼬리(토큰 8개 직렬)가 되돌려 준다.
+런치 간극뿐이고, 마지막 도착 블록의 norm 꼬리(토큰 8개 직렬)가 되돌려 준다. C=4 에서
+커지는 것은 그 꼬리가 헤드 병렬로 겹치기 때문이다.
 
 **경합 주의**: srv4 는 rank 3 노드다. 다른 세션 체인의 decode 레그 중 프로브(00:00)를 돌리다
 죽였고, 이후 프로브는 스크래치 `gpu_window.sh` 로 boot/idle 창에서만 돌렸다. 경합 창의
-수치(stock 원패스 체인 139 us/층)는 원장에 쓰지 않았다.
+수치(첫 판 stock 체인 139 us/층; 프로브 12 의 KDAPROOF3 부팅 창 stock 105.5/520.7 us/층)는
+수치 게이트(전부 PASS)에만 쓰고 시간은 원장에 쓰지 않았다.
 
-- 다음(32차 §11 뒤 정정): PR → 운영자 승인 뒤 묶음 부팅(base → cand **두 노브**: 듀얼 GEMM +
-  kpool → base, 프리필 2048/8192 동반) → cand 트레이스에서 `_dual_gate_gemm_kernel` 34 /
-  인덱서 `direct_copy` −11 확인 → 채택 시 프로필 기본값. **원패스는 브래킷에서 뺀다**:
-  `use_spec` 이 이 러너에서 참이 되지 않으므로 `_kda_onepass_spec_kernel` 등장과
-  conv/norm 커널 소멸은 만족될 수 없는 게이트다(그 셋을 요구하면 실패할 부팅에 창을 쓴다).
+- 다음: 리뷰 반영 PR(#316) 머지 → 운영자 승인 뒤 묶음 부팅(base → cand 세 노브 → base, 프리필
+  2048/8192 동반) → cand 부팅 로그 `[kda-onepass] self-test PASS ... ARMED` 와 캡처 시점의
+  `one-pass KDA serving` + 트레이스에서 `_causal_conv1d_update_kernel` 0 /
+  `layer_norm_gated_fwd_kernel` 0 / `_kda_onepass_spec_kernel` 34 / `_dual_gate_gemm_kernel` 34 /
+  인덱서 `direct_copy` −11 확인 → 채택 시 프로필 기본값. 캡처 줄이 없으면 원패스만 보류(위 재정정).
