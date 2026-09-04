@@ -58,11 +58,16 @@ logger = init_logger(__name__)
 # `mlp.experts`/`mlp.shared_experts`, which these patterns do not match), and
 # the low-rank pieces of the KDA merge ride inside `in_proj_qkvbfg_a`, whose
 # padded copy covers them.
+# The shared expert's pair runs on the aux stream beside the routed MoE
+# (glm5next's MoE runner forks it); the megakernel lane treats those two
+# launches as background (its local-quant kernel on as many blocks as it
+# has units, VLLM_GLM53_MK_LOCALQ=1) -- hence the name.
+_SHARED_EXPERT_RE = re.compile(r"\.mlp\.shared_experts\.(gate_up_proj|down_proj)$")
 _INCLUDE = (
     re.compile(
         r"\.self_attn\.(in_proj_qkvbfg_a|fused_qkv_a_proj|q_proj|k_proj"
         r"|v_proj|o_proj|out_proj)$"),
-    re.compile(r"\.mlp\.shared_experts\.(gate_up_proj|down_proj)$"),
+    _SHARED_EXPERT_RE,
     re.compile(r"\.mlp\.(gate_up_proj|down_proj)$"),
 )
 
@@ -686,7 +691,8 @@ class Fp8DenseMethod:
                 pass
             if _mk_gemm is not None:
                 _mk_arm()
-                _out = _mk_gemm(x, self._mk, self._rows)
+                _out = _mk_gemm(x, self._mk, self._rows,
+                                bg=getattr(self, "_mk_bg", False))
                 if _out is not None:
                     return _out
         if getattr(self, "_bf16_freed", False):
@@ -1013,6 +1019,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             shapes[tuple(weight.shape)] = shapes.get(tuple(weight.shape), 0) + 1
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
+            method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))
             # the drafter's forward is torch.compiled: its GEMMs must be
             # one opaque op each (see _mk_or_fp8_dense_gemm)
             method._opaque = env == _DRAFTER_ENV
