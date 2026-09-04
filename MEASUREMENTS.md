@@ -2006,6 +2006,57 @@ k=2048 실측 규칙) 32 타일을 48 블록에 놓아 16개가 논다. 벤치�
   훅에 "smlp lane serving: first fused call / smlp lane stock: <이유>" 줄을 넣었고(1회 출력), 다음 팔이 판정.
   기본값 `VLLM_GLM53_MK_SMLP=0` 유지.
 
+## ★스텝 커널 지도 최신화 — 무장 부팅의 인구조사, 그리고 도구가 세고 있던 남의 커널 (2026-09-04 밤, 무부팅)
+
+운영자 "스텝 커널 지도 최신화". 부팅 없이 기존 캡처로 `STEP_KERNEL_MAP.md` 를 현재 기본값 쪽으로 끌어왔다.
+쓴 트레이스는 srv2 `~/vllm-prof/` 의 rank 0 셋 — 08-31 스톡, 09-01 스톡, **09-04 18:42 무장**(28차 §3 이
+프로파일한 18:25 cand 부팅: MK MHC+GEMM 무장, MK-MLA off, 드래프터는 fc 만 W4, 서빙 PDL 없음).
+
+| | 스톡 08-31 | 무장 09-04 |
+|---|---|---|
+| 커널/스텝 | 1,886 | **1,582** (−304) |
+| 이 리포에서 컴파일되는 커널 | 144 (7.6%) | **402 (25.4%)** |
+| 밀집 GEMM 구간 | deep_gemm 197 발 **14.06 ms**(09-01) | mk_gemm 185 발 **14.13 ms** |
+| MHC | 185 발 **2.54 ms**(09-01) | mk_mhc 89 + 잔여 7 발 **2.07 ms** |
+| `per_token_group_quant` | 179 발 | **2 발** (MK GEMM 이 커널 안에서 양자화) |
+| MoE 글루 | 331 발 **2.71 ms**(09-01) | 136 발 **1.20 ms** |
+| GPU 유휴(스트림 합집합) | 9.24 ms(09-01) | 8.18 ms |
+
+**판정**: 개수 축은 크게 움직였고(−304) 시간은 두 자리에서만 움직였다 — 양자화가 GEMM 안으로 들어간
+자리(−1.5 ms)와 MHC 두 발이 한 발이 된 자리(−0.5 ms). 밀집 GEMM 은 발 수가 197 → 185 인데 시간은
+제자리다. 두 트레이스는 **다른 부팅**이라 브래킷이 아니고 종단 판정은 28차 §8 의 기본값 부팅이 갖는다.
+지도의 "커널 하나 5.4 µs" 상한은 이 규모에서 다시 낙관으로 확인됐다 — 무장 스텝의 elementwise 481 발
+총점유는 **1.00 ms(1.4%)**, 발당 ~2 µs.
+
+**꼬리**(신규 도구 `tools/trace_step_tail.py`: 준비 커널로 스텝을 자르고 마지막 MoE 전문가 커널로 다시
+자름): 스텝 69.25 = forward 61.88 + 꼬리 **7.37 ms**, 꼬리의 93% 가 바쁘다. 드래프터 층 bf16 cutlass
+2.88 ms/34 발 + lm_head 둘 1.66 ms/2 발 + AllGather 0.63 + 드래프터 AR 0.54/12 발 + fc(이미 MK W4)
+0.50/6 발 + `kernel_mha` 0.11/5 발. 25차의 꼬리 그림이 무장 트레이스에서 그대로 재현된다.
+
+**도구 결함 셋을 고쳤다.**
+
+1. **`census.py` 가 남의 커널을 우리 것으로 세고 있었다** — osar 그룹 패턴의 `k_reduce` 가 앵커 없이
+   deep_gemm `sm120_split_k_reduce_impl` **42 발/스텝**을 잡았다. 지도의 "우리 소유 186 개(9.9%)" 는
+   **144 개(7.6%)** 로 정정. 우리 osar 모듈의 `__global__` 은 `k_oneshot` 하나(102 발/스텝)이고, 문서
+   안 구조표(102)와 그룹표(144)가 어긋나 있던 것이 신호였다. 위 "커널 개수의 실측 가격" 표는 같은 부팅을
+   **148(AR 104 + 게이트 44)** 로 적고 있었다 — 원장이 맞았고 지도만 186 이었다. **정규식 그룹은 계약이
+   아니다 — 앵커 없이 쓰면 남의 커널이 우리 칸에 들어온다.**
+2. **분류기가 코드보다 늦어 있었다** — `tools/trace_common.py::category()` 가 메가커널을 몰라
+   mk_gemm+mk_mhc **274 발 14.5 ms** 를 `other` 로 흘렸다(첫 실행의 1 위 범주가 "기타"였다). MK
+   GEMM/MHC/MLA/KDA·prep_fused 범주와, 리포에서 컴파일되는 커널을 판정하는 `owner()` 를 추가했다.
+   새 커널을 만들면 `OURS` 에 심볼을 넣어야 지도가 그것을 우리 것으로 센다.
+3. **`census.py` 가 부팅 중인 노드에서 위험했다** — `json.load` 로 트레이스를 통째로 올려 40 MB 캡처에
+   수 GB 를 썼다. 이번에 다른 세션의 콜드 부팅(23:11)과 겹쳐 내가 중단시켰다(그쪽 부팅은 무사; 26차의
+   메모리 절벽 구간에서 MemAvailable 26 GiB). 이벤트 하나씩 흘려보내는 파서로 교체 — 최대 RSS
+   **17 MB**, 08-31 트레이스 출력은 이전 판과 **비트 동일**, 실행 시간은 오히려 짧다.
+
+**미실측 — 다음 캡처에서 볼 세 줄**: 오늘의 기본값은 이 트레이스보다 앞서 있다(드래프터 W4 전량 19:38,
+`MK_SEG_MLA=1` 19:55, 서빙 PDL PR #290). (1) `mk_mla_kernel` 11 발/스텝이 있는가, (2) cutlass bf16
+201 → ~171 인가, (3) mk_gemm 185 → ~215 인가. 셋이 맞아야 "오늘의 기본값이 서빙된다" 가 트레이스로
+증명된다 — 22차의 "무장 ≠ 서빙" 은 문서에도 적용된다.
+
+**테스트**: `tests/test_logic.py` 에 소유 축·스트리밍 파서·꼬리 절단 계약 3 건 추가 (44,611 checks OK).
+
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 
 운영자 "glm flash 커널개선작업" → 25차 승인분 드래프터 W4 브래킷을 26차 수정 위에서 완주시키는 날이었다.
@@ -3486,3 +3537,50 @@ for a bias)`. GMU 차이 1.3% 를 빼도 증가분의 대부분이 해제분이�
 `glm53:v13-b12x-it` + `LOAD_FORMAT=instanttensor`: 가중치 **184 GB 를 58초**에 읽는다
 (평범한 safetensors 로더는 340초, 그 구간만 5.9배). 여기에 다른 세션의 nvcc·osar·
 TileLang 영속 캐시(#248/#249)가 더해져 전체 901 → **345초**.
+
+## ★osar 에필로그 융합(AR+residual+norm+quant) — 인접성 실측으로 기각 (2026-09-04, 무부팅)
+
+제안: k_oneshot 각각 뒤에 residual add → norm → quant 체인이 붙는다는 전제로,
+이를 AR 커널 에필로그에 접어 콜렉티브당 2-3개씩 200-300개(≈1.7-2.4%)를 없애는
+축. 벤더 `fuse_allreduce_rms`의 sm_121 런타임 게이트와 무관하게 osar는 우리
+커널이라 게이트를 직접 만들 수 있다는 것이 근거였다.
+
+**기각 — 전제인 "AR 직후 체인"이 이 모델에 존재하지 않는다.**
+
+소스(정본): MHC 45층 전부에서 attn AR(o_proj)의 소비자는 norm 이 내장된
+`hc_fused_post_pre` 단일 TileLang 커널이고(`glm5next_model.py`), MoE AR 의
+소비자는 다음 층의 같은 커널이다. 비-MHC(MTP) 경로의 add+norm 도 이미
+인듀서가 한 커널로 융합한다. 트레이스 교차확인(08-31 스톡 체인 트레이스,
+`census.py --after k_oneshot`): +1번째 커널 = mhc_fused 84.0(82.4%) ·
+인듀서 fused_add_rms_norm 8.0 · mhc_post 6.0 · 단발 4.0 — 흡수 가능 천장
+≈ 10개/스텝 ≈ 0.08%. +2/+3의 quant·게이트는 mhc 커널 뒤라 osar 에필로그가
+아니며, quant 축은 기존 판정(소유 가능분 mhc_pre 에필로그 ~0.15ms)이 닫았다.
+
+스코핑 주의: 위 수치는 08-31 **스톡 체인** 트레이스 기준이다. 메가커널
+세그먼트가 AR 소비자인 부팅(EXP-6 계열)에서는 인접 성분이 다를 수 있으니
+MK 팔에서 이 결론을 재인용하기 전에 `census.py --after k_oneshot` 으로 다시
+셀 것. 도구(신규): `census.py <trace> --after REGEX [--depth N]`.
+
+교훈: 일반 vLLM 레이어 구조에서 이식한 추정이 glm5-next 의 MHC 융합 구조와
+충돌한 사례 — "그룹 합계는 소스를 읽기 전까지 의문점"과 같은 부류다.
+
+## ★PDL은 vllm-mhc 쪽에서 이미지가 봉인 — pdl_sync/trigger는 dead code (2026-09-04, 신규 컨테이너 실측)
+
+mhc TileLang 커널의 `T.pdl_sync`/`T.pdl_trigger`는
+`ENABLE_PDL = current_platform.is_arch_support_pdl()` 조건부인데, 신규
+컨테이너 실측으로 이 값이 **False**다(GB10). 이미지 구현이 사유를 명시한다
+(`vllm/platforms/cuda.py`): "PDL lowering is unvalidated on SM12x (GB10) and
+races on KDA state kernels there; keep it to Hopper/Blackwell-datacenter."
+(`major in (9,10)`). 즉 **vllm mhc 체인의 PDL 재활성은 저자가 경합 사유로
+봉인한 축** — 이 게이트를 우회하는 실험 금지.
+
+**스코프**: 이 판정은 vllm/TileLang mhc 커널의 플랫폼 게이트 이야기다.
+메가커널 자체 발사의 PDL(EXP-12, `VLLM_GLM53_MK_PDL`)은 우리 커널의 런치
+속성으로 직접 켜는 별개 축이며 이 판정과 무관하다.
+
+재현 (srv4, 서빙 컨테이너 미접촉):
+
+```bash
+docker run --rm --gpus all --entrypoint python3 glm53:v13-b12x -c \
+  "from vllm.platforms import current_platform; print(current_platform.is_arch_support_pdl())"
+```

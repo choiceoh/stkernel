@@ -1,18 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-# deneb fork (2026-08-31, glm53_mhc_tilelang): byte-identical to the
+# deneb fork (2026-08-31, glm53_mhc_tilelang): based on the
 # glm53:v13-b12x image's vllm/model_executor/kernels/mhc/tilelang_kernels.py
 # (preimage sha256 03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24)
-# EXCEPT the appended mhc_onepass_tilelang kernel at the bottom: the decode
-# (num_tokens <= 16) pair mhc_fused_tilelang -> mhc_pre_big_fuse_with_norm
-# folded into ONE launch per layer (grid = one CTA per token, tile covers all
-# n_out). Removes a launch + the gemm_out global roundtrip on 45 layers/step
-# (185 kernels/step per the #108 census). Stock kernels untouched; armed per
-# call by the dispatcher's VLLM_GLM53_MHC_ONEPASS gate (default off). The math
-# is a line-by-line transcription of the two stock kernels -- formula
-# equivalence is pinned by tests/test_logic.py test_mhc_onepass_math.
+# with two deltas vs that file, both ours:
+#   1. (2026-08-31) the appended mhc_onepass_tilelang kernel at the bottom:
+#      the decode (num_tokens <= 16) pair mhc_fused_tilelang ->
+#      mhc_pre_big_fuse_with_norm folded into ONE launch per layer (grid =
+#      one CTA per token, tile covers all n_out). Removes a launch + the
+#      gemm_out global roundtrip on 45 layers/step (185 kernels/step per the
+#      #108 census). Stock kernels untouched; armed per call by the
+#      dispatcher's VLLM_GLM53_MHC_ONEPASS gate (default off). The math is a
+#      line-by-line transcription of the two stock kernels -- formula
+#      equivalence is pinned by tests/test_logic.py test_mhc_onepass_math.
+#   2. (2026-09-04) the VLLM_GLM53_MHC_PASSES block below the imports: an
+#      import-time, default-off override of the pass_configs dict the image
+#      ships with both TMA lowering and warp specialization disabled. Unset
+#      or unparseable keeps the stock dict, so kernels compile exactly as
+#      the image's unless the knob deliberately says otherwise.
+# The stock kernel bodies are otherwise untouched.
 import contextlib
 import math
+import os
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
@@ -46,6 +55,57 @@ else:
 ENABLE_PDL = current_platform.is_arch_support_pdl() and current_platform.is_cuda()
 
 
+# deneb fork: opt-in TileLang pass-config re-enable (VLLM_GLM53_MHC_PASSES).
+# The image disables BOTH TMA lowering and warp specialization for every mhc
+# kernel with no recorded reason, while GB10 does have TMA (deep_gemm's sm120
+# impls lean on CUtensorMap loads; see KERNEL_CAMPAIGN's GB10 dossier). This
+# knob is the offline A/B for that choice: unset or unparseable = exactly the
+# stock dict (compiled kernels byte-identical to the image's), while "tma" /
+# "ws" / "tma,ws" flip the matching TL_DISABLE_* to False for EVERY kernel in
+# this module (stock pair + onepass alike). Frozen at import like the other
+# MHC knobs -- the serving process sets env before import, and a captured
+# decode graph cannot branch on an env read.
+_MHC_PASSES_ENV = "VLLM_GLM53_MHC_PASSES"
+
+
+def _deneb_parse_mhc_passes(raw: str):
+    """Parse a subset of "tma,ws" (or "none") -> (tma, ws), or None.
+
+    "none" is the explicit stock combo -- distinct from unset only in that
+    the knob logs, which is what the wrapper's reference pass needs."""
+    tokens = [t.strip().lower() for t in raw.split(",") if t.strip()]
+    if not tokens:
+        return None
+    if tokens == ["none"]:
+        return False, False
+    picked = {"tma": False, "ws": False}
+    for t in tokens:
+        if t not in picked:
+            return None
+        picked[t] = True
+    return picked["tma"], picked["ws"]
+
+
+_raw_mhc_passes = (os.environ.get(_MHC_PASSES_ENV) or "").strip()
+_DENEB_MHC_PASSES = (
+    _deneb_parse_mhc_passes(_raw_mhc_passes) if _raw_mhc_passes else None
+)
+
+if _DENEB_MHC_PASSES is not None:
+    # Boot-log anchor so a bracket boot can prove which pass set compiled
+    # (engine-confirmed value discipline -- the env alone proves nothing).
+    import logging
+
+    logging.getLogger("vllm.glm53.mhc").warning(
+        "[deneb] %s=%s -> TL_DISABLE_TMA_LOWER=%s "
+        "TL_DISABLE_WARP_SPECIALIZED=%s (every mhc kernel this process)",
+        _MHC_PASSES_ENV,
+        _raw_mhc_passes,
+        not _DENEB_MHC_PASSES[0],
+        not _DENEB_MHC_PASSES[1],
+    )
+
+
 @cache
 def compute_num_split(block_k: int, k: int | None, grid_size: int) -> int:
     device_props = torch.cuda.get_device_properties(0)
@@ -63,6 +123,15 @@ pass_configs: dict[tilelang.PassConfigKey, Any] = {
     tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True,
     tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER: True,
 }
+
+if _DENEB_MHC_PASSES is not None:
+    # Mutable-dict write before the first @tilelang.jit below reads it; every
+    # decorator binds this same dict object, so one flip arms them all.
+    _deneb_tma_on, _deneb_ws_on = _DENEB_MHC_PASSES
+    if _deneb_tma_on:
+        pass_configs[tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER] = False
+    if _deneb_ws_on:
+        pass_configs[tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED] = False
 
 if current_platform.is_cuda():
     pass_configs[tilelang.PassConfigKey.TL_PTXAS_REGISTER_USAGE_LEVEL] = 10
