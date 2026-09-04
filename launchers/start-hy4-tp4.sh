@@ -560,10 +560,16 @@ echo "=== [1.6/5] size GPU_MEM against measured free memory ==="
 # from free memory, not a floor from what the model needs -- adopting a lower
 # one could starve KV, which on the glm53 lane surfaced as "No available memory
 # for the cache blocks". Below the configured value it warns and leaves it.
+#
+# Margin 10 GiB, same as the glm53 launcher since #270. These boxes carry a
+# 4.0 GiB kernel min watermark (/etc/sysctl.d/99-mem-safety.conf) and the
+# fleet earlyoom floor sits at 6 GiB: a boot that "raises" GPU_MEM against a
+# 3 GiB margin lands the host inside the kill zone, which on 09-04 wedged
+# srv1/srv2/srv3 (sshd accepted TCP, could not fork for 2.5 hours).
 PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ]; then
   _nodes="$HEAD_IP"; for w in $WORKERS; do _nodes="$_nodes ${w%%:*}"; done
-  if GPU_MEM_SAFE=$("$PREFLIGHT" 3 $_nodes); then
+  if GPU_MEM_SAFE=$("$PREFLIGHT" 10 $_nodes); then
     if [ "${_GPU_MEM_PINNED:-}" = 1 ]; then
       echo "  GPU_MEM=$GPU_MEM 은 호출자 지정 — 실측값 $GPU_MEM_SAFE 을 적용하지 않습니다"
     elif awk "BEGIN{exit !($GPU_MEM_SAFE > $GPU_MEM)}" 2>/dev/null; then

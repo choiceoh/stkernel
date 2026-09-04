@@ -2412,6 +2412,12 @@ def test_fp8_dense_free_bf16_contract() -> None:
           "the memfree preflight reserves 10 GiB, not 3: these boxes carry a "
           "4.0 GiB kernel min watermark and the fp8-dense pass peaks several "
           "GiB above steady state, so a 3 GiB margin is inside the kill zone")
+    hy4 = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    check('"$PREFLIGHT" 10 ' in hy4 and '"$PREFLIGHT" 3 ' not in hy4,
+          "the production launcher reserves the same 10 GiB: it only ever "
+          "raises GPU_MEM, so a 3 GiB margin is the same kill zone the "
+          "supervisor would relaunch into after every reboot")
     check('os.environ.get(_FREE_BF16_ENV, "").strip() == "1"' in src,
           "exact opt-in: only the string 1 releases the bf16 sources")
     check('if getattr(mod, "bias", None) is not None:' in src,
