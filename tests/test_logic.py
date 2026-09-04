@@ -7055,6 +7055,38 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
 
 
+def test_spec_k_compile_factor() -> None:
+    """29차: num_speculative_tokens must be part of the compile-cache key --
+    the launcher forwards SPEC_K as VLLM_GLM53_SPEC_K and the fp8-dense
+    module registers it as a compile factor (a K=5 boot's drafter artifacts
+    killed the following K=7 boot)."""
+    import os
+    fd = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"), encoding="utf-8").read()
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    check('_register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)' in fd
+          and 'ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"' in launcher,
+          "SPEC_K reaches the container and keys the compile cache")
+    print("  spec_k compile factor .. OK")
+
+
+def test_sampler_profile_skip_contract() -> None:
+    """29차: VLLM_GLM53_SKIP_SAMPLER_PROFILE=1 replaces the profile-time dummy
+    sampler run with a loud no-op (the K5 boot's 45-minute Triton init);
+    the profile ships it off and the installer applies it before its own
+    mode check so an 'off' prep-fused boot still gets it."""
+    import os
+    pf = open(os.path.join(REPO, "overlay/modules/glm53_prep_fused/glm53_prep_fused.py"), encoding="utf-8").read()
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    inst = pf[pf.index("def install_glm53_prep_fused()"):]
+    check("GPUModelRunner._dummy_sampler_run = _skip" in pf
+          and "profile-time dummy sampler run SKIPPED" in pf
+          and inst.index("_maybe_skip_sampler_profile()") < inst.index("mode = prep_fused_mode()")
+          and re.search(r"^VLLM_GLM53_SKIP_SAMPLER_PROFILE=0$", prof, re.M) is not None,
+          "the sampler-profile skip is env-gated, loud, applied before the mode "
+          "check, and off in the profile")
+    print("  sampler profile skip contract .. OK")
+
+
 def test_dev_lab_contracts() -> None:
     """32차 item 5: the boot-free kernel loop. The worker module remembers
     the served FULL descriptor and serves replay/reload/recapture through
@@ -11125,6 +11157,8 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_spec_k_compile_factor()
+    test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()

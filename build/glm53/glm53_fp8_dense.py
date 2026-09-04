@@ -149,6 +149,16 @@ def _register_compile_factor(env: str, getter) -> bool:
 _register_compile_factor(_DRAFTER_ENV, _drafter_knob_value)
 
 
+def _spec_k_value() -> str:
+    # num_speculative_tokens (the launcher forwards SPEC_K): the drafter's
+    # compiled graphs are shaped by it, and a K=5 boot's artifacts killed the
+    # next K=7 boot ('expected size 7==5', 29차). Unset = "7" (the default).
+    return (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()
+
+
+_register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)
+
+
 def _include_patterns(env: str = "VLLM_GLM53_FP8_DENSE") -> tuple:
     """Base patterns, plus the drafter set under the drafter knob, plus the
     b-projection arm when its gate is armed."""

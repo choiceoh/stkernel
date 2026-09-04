@@ -40,7 +40,12 @@ else
 fi
 echo "== [$ARM] wait for health $(date +%T) =="
 up=0
-for i in $(seq 1 200); do
+# HEALTH_BUDGET_S: a boot on NEW shapes (SPEC_K != 7, a new drafter, a wiped
+# cache) JIT-compiles deep_gemm/Triton/cutlass variants serially inside the
+# worker at ~1 min each (29차 K5: 45+ min); the caches under /cache persist,
+# so a second boot resumes where the first stopped. Default 50 min.
+HEALTH_BUDGET_S=${HEALTH_BUDGET_S:-3000}
+for i in $(seq 1 $((HEALTH_BUDGET_S / 15))); do
   if [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:8000/health")" = 200 ]; then
     echo "up after $((i*15))s"; up=1; break
   fi
