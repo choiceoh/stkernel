@@ -592,6 +592,11 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+# 29차 item 5: the dev lab's API route rides on --middleware (the worker side
+# installs itself from the megakernel driver when the knob is on)
+if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then
+  SERVE_ARGS="$SERVE_ARGS --middleware vllm.glm53_lab_middleware.lab"
+fi
 
 # DRY_RUN=1 prints what the knobs resolved to and stops -- before the cache
 # reclaim, before any container. A default that points at a deleted image or a

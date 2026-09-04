@@ -7038,6 +7038,51 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
 
 
+def test_dev_lab_contracts() -> None:
+    """29차 item 5: the boot-free kernel loop. The worker module remembers
+    the served FULL descriptor and serves replay/reload/recapture through
+    Worker.glm53_lab; the API route is a --middleware the launcher adds only
+    when the knob is on; the driver installs the worker side from arm() and
+    can rebuild the extension from another .cu; the profile ships it off."""
+    import os
+    mod = os.path.join(REPO, "overlay/modules/glm53_dev_lab")
+    lab = open(os.path.join(mod, "glm53_dev_lab.py"), encoding="utf-8").read()
+    mw = open(os.path.join(mod, "glm53_lab_middleware.py"), encoding="utf-8").read()
+    man = open(os.path.join(mod, "manifest.tsv"), encoding="utf-8").read()
+    req = open(os.path.join(mod, "requires"), encoding="utf-8").read()
+    mk = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/glm53_megakernel.py"), encoding="utf-8").read()
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    check("CudaGraphManager.run_fullgraph = run_fullgraph" in lab
+          and "Worker.glm53_lab = _lab" in lab
+          and all(f'op == "{o}"' in lab for o in ("info", "replay", "reload", "recapture"))
+          and "mgr.run_fullgraph(desc)" in lab and "e0.elapsed_time(e1)" in lab
+          and "mk.rebuild(src)" in lab and "runner.capture_model()" in lab
+          and "mgr.graphs.clear()" in lab,
+          "the worker lab remembers the served FULL descriptor, replays it "
+          "with CUDA events, rebuilds the extension and recaptures")
+    check('request.url.path != "/glm53/lab"' in mw
+          and 'collective_rpc("glm53_lab"' in mw and "status_code=500" in mw,
+          "the API side is a pass-through middleware that fans the op out "
+          "over collective_rpc and says errors")
+    check("glm53_dev_lab.py\tvllm/model_executor/layers/glm53_dev_lab.py\tabsent" in man
+          and "glm53_lab_middleware.py\tvllm/glm53_lab_middleware.py\tabsent" in man
+          and req.strip() == "glm53_megakernel",
+          "manifest places both files as new; the module requires the driver")
+    check("def rebuild(src_path: str) -> dict:" in mk
+          and 'name=f"glm53_megakernel_{md5}"' in mk and "_armed_once = False" in mk
+          and 'if _flag("VLLM_GLM53_DEV_LAB"):' in mk and "glm53_dev_lab.install()" in mk,
+          "the driver rebuilds under a per-md5 name, re-arms, and installs "
+          "the lab from arm() behind the knob")
+    check(re.search(r"^VLLM_GLM53_DEV_LAB=0$", prof, re.M) is not None
+          and "glm53_dev_lab" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
+          and 'if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then' in launcher
+          and "--middleware vllm.glm53_lab_middleware.lab" in launcher,
+          "the profile enrols the module OFF; the launcher adds the "
+          "middleware only when the knob is on")
+    print("  dev lab contracts .. OK")
+
+
 def test_mk_smlp_hook_and_contracts() -> None:
     """MK_SEG_SMLP (29차): the dense MLP as one launch, wired without risk.
 
@@ -10677,6 +10722,7 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()

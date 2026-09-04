@@ -2014,6 +2014,15 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 - 필요한 계측(osar 모듈 소유 세션): 정지 시 어느 랭크가 어느 집합통신 번호에서 기다리는지 덤프하는 스톨
   리포터. 없으면 위 세 노브(+7.3% 의 PREP 포함)는 계속 "측정됐지만 미출시" 로 남는다.
 
+### 10. 부팅·벤치 병목 대책(운영자 "1,2,5,6 진행", 01:0x~)
+
+| # | 무엇 | 어디 | 효과 |
+|---|---|---|---|
+| 1 | 탐색/승격 레그 행렬: `LEGS=decode,prefill8k QUALITY_CTX=2000,32000`(탐색) vs 전부(승격) | `bench/ab-lever.sh`(srv2 `ab-lever2.sh`), `bench/check-quality.py` | 팔당 ~10 분 절감 |
+| 2 | 디코드 3회 기본 + 스텝 창 표본: 엔진 `iteration_tokens_total_count` 를 2 s 마다 샘플 → 창마다 step/s, 판정기는 창 단위 | `bench/bracket.py` (`_StepWindows`, `--reps` 3) | 6회→3회, 표본 수는 증가 |
+| 5 | **개발 랩**(부팅 없는 커널 루프): `POST /glm53/lab` → 4 랭크 collective_rpc — `replay`(서빙 디코드 그래프 n 회 재생, us/step), `reload`(새 .cu 로 확장 재빌드 + 셀프테스트), `recapture`(그래프 재캡처) | `overlay/modules/glm53_dev_lab`, 드라이버 `rebuild()`, 런처 `--middleware`, 프로필 `VLLM_GLM53_DEV_LAB=0` | 커널 반복 25 분 → 1~2 분 (개발 부팅 검증 대기) |
+| 6 | 시간 측정 섀도: KDA 판정기(CUDA 이벤트, `kda shadow timing … ms/step`), MLA 1회 판정(`mla shadow timing`), prep-fused(`[prep-fused] on timing` 호스트 시간) | 각 모듈 | 프로덕션 로그에서 첫 판정, 브래킷 전 |
+
 ### 7. MK 세부 커널 — 남은 표적은 소형 GEMM 의 고정비
 
 디코드 트레이스의 `mk_gemm` 30~45 µs 급이 스텝당 86.7개·3.47 ms, 그중 **2.37 ms 가 다른 스트림에 덮이지

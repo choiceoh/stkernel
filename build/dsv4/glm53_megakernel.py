@@ -241,6 +241,37 @@ def _build():
     return _EXT
 
 
+def rebuild(src_path: str) -> dict:
+    """29차 item 5 (dev lab): build the extension from another .cu, swap it
+    in and re-run the self-tests. The kernels already baked into captured
+    graphs stay until a recapture; every eager call sees the new module."""
+    import torch
+    global _EXT, _armed_once
+    from torch.utils.cpp_extension import load
+
+    with open(src_path, "rb") as f:
+        md5 = hashlib.md5(f.read()).hexdigest()[:8]
+    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"] + [
+        f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
+        f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
+        f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
+        f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+    ]
+    t0 = time.perf_counter()
+    ext = load(name=f"glm53_megakernel_{md5}", sources=[src_path],
+               extra_cuda_cflags=flags, build_directory=_build_dir(md5, flags),
+               verbose=False)
+    _EXT = ext
+    for k in _ARMED:
+        _ARMED[k] = False
+    _armed_once = False
+    arm()
+    logger.warning("[megakernel] dev-lab rebuild md5=%s in %.0f s armed=%s",
+                   md5, time.perf_counter() - t0, dict(_ARMED))
+    return {"md5": md5, "build_s": round(time.perf_counter() - t0, 1),
+            "armed": dict(_ARMED)}
+
+
 def _ensure_workspace(device):
     """One static workspace, strongly held (the b12x lesson: prefill cache
     growth must never invalidate CUDA-graph addresses baked at capture)."""
@@ -1851,6 +1882,12 @@ def arm() -> None:
                 pass
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
                    dict(_ARMED), KDA_SHADOW)
+    if _flag("VLLM_GLM53_DEV_LAB"):
+        try:   # 29차 item 5: the boot-free kernel loop (dev boots only)
+            from vllm.model_executor.layers import glm53_dev_lab
+            glm53_dev_lab.install()
+        except Exception:
+            logger.exception("[megakernel] dev lab install failed")
 
 
 _armed_once = False
