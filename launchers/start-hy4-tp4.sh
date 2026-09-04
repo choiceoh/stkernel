@@ -24,6 +24,7 @@ if [ -f "$PROFILE_ENV" ]; then
   _caller=""
   for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
             EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
+            DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD \
             $_vllm_keys; do
     if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
@@ -94,6 +95,22 @@ if [ -n "$OSAR_MAXEL" ]; then
   fi
 fi
 SPEC_TOKENS="${SPEC_TOKENS:-5}"
+# Serving knobs the production copy (srv2:~/start-hy4-tp4.sh, 08-30) carried and
+# the refactor dropped. Restored at their production values so unifying the entry
+# point changes nothing the engine does -- the parity check in tests/test_logic.py
+# holds this file's -e set and serve flags against that copy.
+#
+# SPEC_METHOD selects how the speculative config is built inside the serve
+# script: "dspark" is the production path and needs no draft model; anything
+# else is a draft-model method and reads DRAFT_PATH/DRAFT_KV. Hardcoding dspark
+# here removed the draft-model lane entirely.
+SPEC_METHOD="${SPEC_METHOD:-dspark}"
+DRAFT_PATH="${DRAFT_PATH:-}"
+DRAFT_KV="${DRAFT_KV:-}"
+DRAFT_BLOCK="${DRAFT_BLOCK:-}"
+# --long-prefill-token-threshold. Production runs 2048; dropping the flag hands
+# long prefills back to the default scheduler path, which is a serving change.
+LONG_PREFILL="${LONG_PREFILL:-2048}"
 MODEL_VOCAB_SIZE=129280
 FP8HEAD="${FP8HEAD:-0}"
 # MARKOV_TOPK=512 adopted 2026-08-10: two independent boots reproduce
@@ -244,8 +261,8 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
 -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
--e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
--e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED \
+-e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e SPEC_METHOD=$SPEC_METHOD -e DRAFT_PATH=$DRAFT_PATH -e DRAFT_KV=$DRAFT_KV -e VLLM_DFLASH_DRAFT_BLOCK_SIZE=$DRAFT_BLOCK -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
+-e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED -e LONG_PREFILL=$LONG_PREFILL \
 -e GRAPH_CAP=$GRAPH_CAP -e COMPILE_CFG=$COMPILE_CFG -e LOAD_FORMAT=$LOAD_FORMAT -e ASYNC_SCHED=1 -e MASTER_ADDR=$HEAD_IP -e MOE=${MOE:-b12x} -e IDXFREQ=${IDXFREQ:-} -e VLLM_DSV4_INDEXER_SP=${IDXSP:-1} -e VLLM_B12X_INDEXER_STREAM=${IDXSTREAM:-} -e VLLM_B12X_KV_STREAM=${KVSTREAM:-} -e VLLM_B12X_MLA_CKV_GATHER=${CKVG:-} -e VLLM_B12X_CUDAGRAPH_PIECEWISE_PREWARM=${PREWARM:-0} \
 -e VLLM_TORCH_PROFILER_DIR=/prof \
 -e VLLM_SERVER_DEV_MODE=${DEVMODE:-1} -e VLLM_ENGINE_READY_TIMEOUT_S=3600"
@@ -597,7 +614,19 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
     case "$t" in *"RoCE v2"*) case "$g" in *0000:0000:0000:0000:0000:ffff:*) export NCCL_IB_GID_INDEX=$i; break 2;; esac;; esac
   done
 done
-echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=dspark/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
+SPEC_METHOD="${SPEC_METHOD:-dspark}"
+if [ "$SPEC_METHOD" = "dspark" ]; then
+  SPEC_JSON='{"method":"dspark","num_speculative_tokens":'"${SPEC_TOKENS}"',"draft_sample_method":"probabilistic"}'
+else
+  SPEC_JSON='{"method":"'"${SPEC_METHOD}"'","model":"'"${DRAFT_PATH:-}"'","num_speculative_tokens":'"${SPEC_TOKENS}"
+  # plain if, not `[ ] &&` -- a false test there would trip set -e
+  if [ -n "${DRAFT_KV:-}" ]; then
+    SPEC_JSON=${SPEC_JSON}',"draft_kv_cache_dtype":"'${DRAFT_KV}'"'
+  fi
+  SPEC_JSON=${SPEC_JSON}'}'
+fi
+echo "[hy4] NODE_RANK=${NODE_RANK} SPEC=${SPEC_METHOD}/${SPEC_TOKENS} GID=${NCCL_IB_GID_INDEX:-unset}"
+echo "[hy4] spec-config=${SPEC_JSON}"
 echo "[hy4] compile-cfg=${COMPILE_CFG} load-format=${LOAD_FORMAT} osar-maxel=${VLLM_DSV4_OSAR_MAXEL:-131072(built-in)}"
 echo "[hy4] DSpark speed FP8_HEAD=${VLLM_DSPARK_FP8_DRAFT_HEAD:-0} TOPK=${VLLM_DSPARK_DRAFT_TOPK:-0} REFINE=${VLLM_DSPARK_REFINE_PASS:-0} SIDELOAD=${VLLM_DSPARK_MARKOV_SIDELOAD:-none}"
 if [ "${ASYNC_SCHED:-1}" = "1" ]; then ASYNC_ARG="--async-scheduling"; else ASYNC_ARG="--no-async-scheduling"; fi
@@ -609,6 +638,7 @@ exec vllm serve "${MODEL_PATH}" \
   --gpu-memory-utilization "${GPU_MEM}" \
   --max-model-len "${MAX_MODEL_LEN}" --max-num-seqs "${MAX_NUM_SEQS}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
+  ${LONG_PREFILL:+--long-prefill-token-threshold "${LONG_PREFILL}"} \
   --max-cudagraph-capture-size "${GRAPH_CAP}" \
   --compilation-config "${COMPILE_CFG}" \
   ${ASYNC_ARG} --no-scheduler-reserve-full-isl \
@@ -622,7 +652,7 @@ exec vllm serve "${MODEL_PATH}" \
   --disable-custom-all-reduce \
   --nnodes 4 --node-rank "${NODE_RANK}" --master-addr "${MASTER_ADDR}" --master-port 25000 \
   ${HEADLESS:+--headless} \
-  --speculative-config "{\"method\":\"dspark\",\"num_speculative_tokens\":${SPEC_TOKENS},\"draft_sample_method\":\"probabilistic\"}"
+  --speculative-config "${SPEC_JSON}"
 SERVEEOF
 chmod +x /tmp/serve-hy4.sh
 
