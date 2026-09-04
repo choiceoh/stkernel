@@ -1073,10 +1073,18 @@ __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   // grid's tail and waits (griddepcontrol.wait) before reading anything
   // this grid writes. Harmless when the next launch is not programmatic.
   asm volatile("griddepcontrol.launch_dependents;");
-  if (c.localq)
-    mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar);
-  else
-    mk_gemm_phase_t<false>(c, smem, &g_mk_gemm_bar);
+  mk_gemm_phase(c, smem, &g_mk_gemm_bar);
+}
+
+// The barrier-free instantiation as its OWN kernel, not a branch inside
+// mk_gemm_kernel: one kernel holding both paths allocates registers for the
+// union (80 -> 128 on ptxas) and the global path's code is then no longer
+// the binary it was measured as. Same budget, same resident grid (the host
+// checks), same ticket counter argument (unused on this path).
+__global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {
+  extern __shared__ uint8_t smem[];
+  asm volatile("griddepcontrol.launch_dependents;");
+  mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar);
 }
 
 // ===========================================================================
@@ -2382,6 +2390,9 @@ void set_kernel_attrs() {
       mk_gemm_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
       GEMM_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm_lq_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+      GEMM_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
@@ -2407,6 +2418,7 @@ int mk_resident_grid(K kernel, int& cache, int smem, int cap = MK_GRID_CAP) {
 }
 
 int g_gemm_grid = 0;
+int g_gemm_lq_grid = 0;
 int g_kda_grid = 0;
 int g_mla_grid = 0;
 // MK_SEG_MLA keeps its own ticket counter, so it is not bound by the shared
@@ -2620,7 +2632,16 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);
   c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
   c.localq = mk_localq_for(c.m, c.n, c.grid, c.ksr);
-  mk_launch(mk_gemm_kernel, c.grid, GEMM_SMEM, stream, c);
+  // the local kernel must resolve to the same resident grid (same smem
+  // budget, so it does); a drift falls back to the global kernel rather
+  // than launching units sized for another grid
+  if (c.localq && mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid,
+                                   GEMM_SMEM) != c.grid)
+    c.localq = false;
+  if (c.localq)
+    mk_launch(mk_gemm_lq_kernel, c.grid, GEMM_SMEM, stream, c);
+  else
+    mk_launch(mk_gemm_kernel, c.grid, GEMM_SMEM, stream, c);
 }
 
 // Bench: the plan one launch of (m, n, k) would use -- {grid, ksr, units,

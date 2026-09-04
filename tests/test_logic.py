@@ -7993,11 +7993,11 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 4
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, kda, mhc, mla) triggers its dependents "
+          "every segment kernel (gemm, gemm-lq, kda, mhc, mla) triggers its dependents "
           "at entry and is launched programmatically behind the MK_PDL knob "
           "(default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
@@ -8106,9 +8106,12 @@ def test_glm53_megakernel_contracts() -> None:
           "quant_store -- the output must be bitwise the global path's")
     check("template <bool LQ>" in cu
           and "mk_gemm_phase_t<false>(c, smem, bar);" in cu
-          and cu.count("mk_gemm_phase_t<true>(") == 1,
-          "the kda-facing mk_gemm_phase is the global-path instantiation; "
-          "only the standalone kernel dispatches to the local one")
+          and cu.count("mk_gemm_phase_t<true>(") == 1
+          and "__global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {" in cu
+          and "mk_launch(mk_gemm_lq_kernel, c.grid, GEMM_SMEM, stream, c);" in cu
+          and "mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid," in cu,
+          "the local path is its own kernel (mk_gemm_kernel's binary is the "
+          "measured one); kda's mk_gemm_phase is the global instantiation")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The
@@ -8196,8 +8199,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
           and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
           and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
-          and "mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar);" in cu
-          and "mk_gemm_phase_t<false>(c, smem, &g_mk_gemm_bar);" in cu,
+          and "mk_gemm_phase(c, smem, &g_mk_gemm_bar);" in cu,
           "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
           "or entry point remains in the .cu")
     check("def build_mk_weight(" not in pysrc_full
@@ -8287,7 +8289,8 @@ def test_glm53_megakernel_contracts() -> None:
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("(c, smem, &g_mk_gemm_bar)") == 2  # the two instantiations
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar)") == 1
           and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
