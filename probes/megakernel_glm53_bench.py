@@ -249,6 +249,71 @@ def probe_gemm(iters: int) -> bool:
     return ok
 
 
+def probe_smlp(iters: int) -> bool:
+    """MK_SEG_SMLP: the dense MLP as one launch vs the three-launch chain
+    (W4 gate_up, torch clamped SwiGLU, W4 down) on the shared expert's and
+    the dense layers' per-rank geometry. Exact gate on e2m1-grid weights,
+    then timing on random weights, DRAM-cold (a second pack pair per shape
+    for the back-to-back column, as probe_gemm does)."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    ok = True
+    limit = 10.0
+    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}")
+    for T, n_int, k, n_out in ((8, 512, 4096, 4096), (8, 3072, 4096, 4096), (32, 512, 4096, 4096)):
+        n_gu = 2 * n_int
+        torch.manual_seed(0)
+        # exact gate
+        code = torch.randint(0, 8, (n_gu, k // 16, 16), device=DEV)
+        sexp = torch.randint(-12, -2, (n_gu, k // 16, 1), device=DEV)
+        grid = torch.tensor(mk._E2M1_GRID, device=DEV)
+        w_gu = ((grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)).view(n_gu, k).to(torch.bfloat16)
+        code = torch.randint(0, 8, (n_out, n_int // 16, 16), device=DEV)
+        sexp = torch.randint(-12, -2, (n_out, n_int // 16, 1), device=DEV)
+        w_d = ((grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)).view(n_out, n_int).to(torch.bfloat16)
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=DEV)
+        gu_pack, d_pack = mk.build_mk_weight_w4(w_gu), mk.build_mk_weight_w4(w_d)
+        got = mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        ref = mk._smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        gate_ok, e_exact, n_ulp = mk._smlp_gate(got, ref)
+        ok &= gate_ok
+        # timing on random weights, two pack pairs
+        w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05
+        gu_pack, d_pack = mk.build_mk_weight_w4(w_gu), mk.build_mk_weight_w4(w_d)
+        gu_pack2 = mk.build_mk_weight_w4(torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05)
+        d_pack2 = mk.build_mk_weight_w4(torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05)
+
+        # the stock chain's activation is ONE CUDA launch (vLLM's
+        # silu_and_mul_with_clamp); torch's clamp/sigmoid/mul would be five
+        # and flatter the fused arm
+        try:
+            from vllm.model_executor.layers.activation import SiluAndMulWithClamp
+            act = SiluAndMulWithClamp(limit)
+            act_fn = lambda gu: act(gu)  # noqa: E731
+        except Exception:
+            def act_fn(gu):
+                g = gu[:, :n_int].float().clamp(max=limit)
+                u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
+                return (g * torch.sigmoid(g) * u).to(torch.bfloat16)
+
+        def chain(gp, dp):
+            return mk._gemm_call(act_fn(mk._gemm_call(x, gp, n_gu)), dp, n_out)
+
+        t_chain = _time(lambda: chain(gu_pack, d_pack), iters, hot=(x,))
+        t_fused = _time(lambda: mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit), iters, hot=(x,))
+        t_chain2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)), iters, hot=(x,)) / 2
+        t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                                  mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
+                         iters, hot=(x,)) / 2
+        mark = " " if gate_ok else "!"
+        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}")
+    return ok
+
+
 def probe_exact() -> bool:
     """The load-bearing W4 gate: weights ON the e2m1 grid pack losslessly,
     so the kernel must reproduce a torch fp32 matmul of the kernel-
@@ -540,6 +605,8 @@ def main() -> int:
     ok = True
     if "gemm" in segs:
         ok &= probe_gemm(args.iters)
+    if "smlp" in segs:
+        ok &= probe_smlp(args.iters)
     if "exact" in segs:
         ok &= probe_exact()
     if "mhc" in segs:

@@ -74,6 +74,11 @@ ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
+# MK_SEG_SMLP: the dense MLP (gate_up -> clamped SwiGLU -> down) as one
+# launch, T <= 32 -- the shared expert of every MoE layer and the three
+# dense layers. Served-numerics unchanged by construction (same packs, same
+# rounding points); the bracket is the gate (29차).
+ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
 # in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
@@ -146,7 +151,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False}
+_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False, "smlp": False}
 
 
 def _build_dir(src_md5: str, flags: list) -> str:
@@ -257,6 +262,7 @@ def _ensure_workspace(device):
         # kernels run 48, and the ticket barrier only releases correctly
         # when the counter is aligned to THIS launch's grid.
         "barrier_mla": z(8, dt=torch.int32),
+        "barrier_smlp": z(8, dt=torch.int32),
         "yp": z(NCHUNK * MAX_TOK * NOUT),
         "rp": z(NCHUNK * MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
@@ -613,6 +619,179 @@ def _gemm_kchunks(x, packs, n_rows):
                          n_rows)
         acc = out.float() if acc is None else acc.add_(out.float())
     return acc.to(torch.bfloat16)
+
+
+# ---------------------------------------------------------------------------
+# MK_SEG_SMLP
+# ---------------------------------------------------------------------------
+SMLP_GU_MAX = 8192
+
+
+def _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
+               beta=0.0):
+    """One launch: x [T, k] bf16 -> out [T, n_out] bf16 through the gate_up
+    pack, the clamped SwiGLU and the down pack (packs from
+    build_mk_weight_w4: (wq4, ws4, gscale))."""
+    import torch
+
+    out = torch.empty(x.shape[0], n_out, dtype=torch.bfloat16, device=x.device)
+    ws = _ensure_workspace(x.device)
+    _ar_note(gu_pack[0], gu_pack[1])
+    _EXT.run_smlp(
+        [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
+         d_pack[0].data_ptr(), d_pack[1].data_ptr(), out.data_ptr(),
+         ws["barrier_smlp"].data_ptr()],
+        [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
+         float(beta)],
+        [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
+         int(gu_pack[0].shape[0]), int(gu_pack[0].shape[1]),
+         int(d_pack[0].shape[0]), int(d_pack[0].shape[1])],
+    )
+    return out
+
+
+def _smlp_gate(got, ref32):
+    """(ok, rel, over_ulp): the exact gate's numbers under a tolerance that
+    survives the one place the chain is not bit-reproducible -- the fp32
+    sigmoid (expf in the kernel, torch's exp in the twin) differs by an ulp
+    or two before the bf16 round, and a flipped bf16 bit there moves one
+    fp8 input. A layout / expansion / hand-off bug is 1e-1 and up."""
+    e, n_ulp = _exact_gate(got, ref32)
+    return (e <= 2e-3 and n_ulp <= max(8, got.numel() // 256)), e, n_ulp
+
+
+def _smlp_packs(mlp):
+    """(gu_pack, d_pack) when both linears carry a single MK W4 pack."""
+    packs = []
+    for lin in (mlp.gate_up_proj, mlp.down_proj):
+        m = getattr(lin, "quant_method", None)
+        while m is not None and not hasattr(m, "_mk") and hasattr(m, "_base"):
+            m = m._base
+        pk = getattr(m, "_mk", None)
+        if pk is None or isinstance(pk, list) or pk[0] is None:
+            return None
+        packs.append(pk)
+    return packs[0], packs[1]
+
+
+def smlp_forward(mlp, x):
+    """Glm5NextMLP.forward hook: the fused launch, or None (stock runs).
+
+    Eligible when the segment is armed, x is a 2-D bf16 [T <= 32, k] row
+    batch, both linears carry single W4 packs (k <= 4096 each) and the
+    gate_up width is 2 x the down input. The activation's clamp comes from
+    the module (SiluAndMulWithClamp: swiglu_limit, alpha, beta; SiluAndMul
+    is limit 0 / alpha 1 / beta 0). No reduction here: the caller keeps
+    its own reduce_results contract."""
+    import torch
+
+    if not _ARMED["smlp"] or x.dim() != 2 or x.dtype != torch.bfloat16:
+        return None
+    T, k = x.shape
+    if T < 1 or T > MAX_TOK or k % 128 != 0 or k > MK_GEMM_KMAX:
+        return None
+    packs = _smlp_packs(mlp)
+    if packs is None:
+        return None
+    gu_pack, d_pack = packs
+    n_gu = int(mlp.gate_up_proj.output_size_per_partition)
+    n_int = int(mlp.down_proj.input_size_per_partition)
+    n_out = int(mlp.down_proj.output_size)
+    if (n_gu != 2 * n_int or n_int % 128 != 0 or n_int > MK_GEMM_KMAX
+            or n_gu > SMLP_GU_MAX
+            or gu_pack[0].shape[1] != k // 128
+            or d_pack[0].shape[1] != n_int // 128):
+        return None
+    act = getattr(mlp, "act_fn", None)
+    limit = float(getattr(act, "swiglu_limit", 0.0) or 0.0)
+    alpha = float(getattr(act, "alpha", 1.0))
+    beta = float(getattr(act, "beta", 0.0))
+    return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
+                      limit, alpha, beta)
+
+
+def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
+              beta=0.0):
+    """Pure-torch twin of the fused launch: fp32 matmuls of the kernel-
+    quantized activations against the dequantized packs, bf16 at the same
+    rounding points."""
+    import torch
+
+    gu = (_mk_quant_x_ref(x) @ mk_w4_dequant(
+        gu_pack[0], gu_pack[1], n_gu, gu_pack[2]).float().T).to(torch.bfloat16)
+    g = gu[:, :n_int].float()
+    u = gu[:, n_int:].float()
+    if limit > 0:
+        g = g.clamp(max=limit)
+        u = u.clamp(min=-limit, max=limit)
+    a = (g * torch.sigmoid(alpha * g) * (u + beta)).to(torch.bfloat16)
+    return _mk_quant_x_ref(a) @ mk_w4_dequant(
+        d_pack[0], d_pack[1], n_out, d_pack[2]).float().T
+
+
+def _selftest_smlp() -> bool:
+    """Exact gate on e2m1-grid weights (both packs) at the shared expert's
+    and the dense MLP's geometry, then a by-design check on random weights
+    against the three-launch chain the fused launch replaces."""
+    import torch
+
+    torch.manual_seed(0)
+    dev = "cuda"
+    grid = torch.tensor(_E2M1_GRID, device=dev)
+
+    def exact_weight(n, k):
+        code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
+        sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
+        w = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)
+        return w.view(n, k).to(torch.bfloat16)
+
+    limit = 10.0
+    for T, n_int, k, n_out in ((8, 512, HIDDEN, HIDDEN), (16, 3072, HIDDEN, HIDDEN),
+                               (32, 512, HIDDEN, HIDDEN)):
+        n_gu = 2 * n_int
+        w_gu = exact_weight(n_gu, k)
+        w_d = exact_weight(n_out, n_int)
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
+        gu_pack = build_mk_weight_w4(w_gu)
+        d_pack = build_mk_weight_w4(w_d)
+        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        ref = _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        ok, e_exact, n_ulp = _smlp_gate(got, ref)
+        if not ok:
+            logger.warning("[megakernel] selftest smlp grid rel=%.2e over-ulp=%d "
+                           "(T=%d n_int=%d) -> DISARM", e_exact, n_ulp, T, n_int)
+            return False
+        # replay stability over the shared workspace
+        again = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        if _rel_err(got, again) > 1e-6:
+            logger.warning("[megakernel] selftest smlp replay drift -> DISARM")
+            return False
+    # by-design: random weights, the fused launch vs the three-launch chain
+    # (two W4 GEMM launches + the clamped SwiGLU in torch)
+    worst = 0.0
+    for T, n_int in ((8, 512), (8, 3072)):
+        n_gu, k, n_out = 2 * n_int, HIDDEN, HIDDEN
+        w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=dev) * 0.05
+        w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=dev) * 0.05
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
+        gu_pack = build_mk_weight_w4(w_gu)
+        d_pack = build_mk_weight_w4(w_d)
+        gu = _gemm_call(x, gu_pack, n_gu)
+        g = gu[:, :n_int].float().clamp(max=limit)
+        u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
+        a = (g * torch.sigmoid(g) * u).to(torch.bfloat16)
+        ref = _gemm_call(a, d_pack, n_out)
+        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        worst = max(worst, _rel_err(got.float(), ref.float()))
+    if worst > 1e-2:
+        logger.warning("[megakernel] selftest smlp vs three-launch chain rel=%.2e -> DISARM", worst)
+        return False
+    logger.warning("[megakernel] selftest smlp grid + chain rel=%.2e -> ARM", worst)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1473,6 +1652,8 @@ def arm() -> None:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
+    if ENABLE_SMLP:
+        _ARMED["smlp"] = _gate("smlp", _selftest_smlp)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
         if _ARMED["kda"]:

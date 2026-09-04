@@ -6794,6 +6794,97 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
 
 
+def test_mk_smlp_hook_and_contracts() -> None:
+    """MK_SEG_SMLP (29차): the dense MLP as one launch, wired without risk.
+
+    smlp_forward is the Glm5NextMLP.forward hook: None (stock) unless the
+    segment is armed, x is a 2-D bf16 decode batch (T <= 32, k a multiple
+    of 128 <= 4096), both linears carry single W4 packs whose k-tiles match,
+    and gate_up is 2 x the down input. The activation's clamp/alpha/beta
+    come from the module (SiluAndMulWithClamp; SiluAndMul = 0/1/0). The
+    kernel keeps the stock rounding points and reuses kda's a_ready
+    hand-off; the hook never reduces (the linear's reduce_results contract
+    stays with the caller).
+    """
+    calls = []
+    ns = load_defs(
+        "overlay/glm53_megakernel.py",
+        {"_ARMED", "MAX_TOK", "MK_GEMM_KMAX", "SMLP_GU_MAX", "_smlp_packs",
+         "smlp_forward"},
+        {"os": os, "re": re,
+         "_smlp_call": lambda *a: calls.append(a) or "fused"},
+    )
+    import types
+    torch_stub = types.ModuleType("torch")
+    torch_stub.bfloat16 = "bf16"
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    try:
+        class _X:
+            def __init__(self, m, k, dtype="bf16"):
+                self.shape = (m, k); self.dtype = dtype
+            def dim(self): return 2
+            def contiguous(self): return self
+        class _Pack:
+            def __init__(self, ntiles, ktiles):
+                self.shape = (ntiles, ktiles, 128, 64)
+        def linear(pack, out_size=None, in_size=None):
+            q = types.SimpleNamespace(_mk=pack)
+            return types.SimpleNamespace(quant_method=q, output_size_per_partition=out_size,
+                                         input_size_per_partition=in_size, output_size=out_size)
+        gu = (_Pack(8, 32), "ws", 1.0)      # [1024 x 4096]
+        d = (_Pack(32, 4), "ws", 1.0)       # [4096 x 512]
+        mlp = types.SimpleNamespace(
+            gate_up_proj=linear(gu, out_size=1024),
+            down_proj=linear(d, out_size=4096, in_size=512),
+            act_fn=types.SimpleNamespace(swiglu_limit=10.0, alpha=1.0, beta=0.0))
+        f = ns["smlp_forward"]
+        ns["_ARMED"]["smlp"] = False
+        assert f(mlp, _X(8, 4096)) is None            # not armed
+        ns["_ARMED"]["smlp"] = True
+        assert f(mlp, _X(8, 4096)) == "fused"
+        args = calls[-1]
+        assert args[3:] == (1024, 512, 4096, 10.0, 1.0, 0.0), args[3:]
+        assert f(mlp, _X(33, 4096)) is None           # T beyond the lane
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None
+        assert f(mlp, _X(8, 4160)) is None            # k not a multiple of 128
+        # a K-chunked (list) pack or a missing pack -> stock
+        mlp.gate_up_proj.quant_method._mk = [gu, gu]
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.gate_up_proj.quant_method._mk = gu
+        mlp.down_proj.quant_method._mk = None
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.down_proj.quant_method._mk = d
+        # a wrapped method (nvfp4 / w4a8 stack on the fp8 one) is unwrapped
+        mlp.down_proj.quant_method = types.SimpleNamespace(_base=types.SimpleNamespace(_mk=d))
+        assert f(mlp, _X(8, 4096)) == "fused"
+        # gate_up must be 2 x the down input; pack k-tiles must match
+        mlp.down_proj = linear(d, out_size=4096, in_size=384)
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.down_proj = linear((_Pack(32, 5), "ws", 1.0), out_size=4096, in_size=512)
+        assert f(mlp, _X(8, 4096)) is None
+        # plain SiluAndMul: no limit attribute -> 0 / 1 / 0
+        mlp.down_proj = linear(d, out_size=4096, in_size=512)
+        mlp.act_fn = types.SimpleNamespace()
+        assert f(mlp, _X(16, 4096)) == "fused" and calls[-1][6:] == (0.0, 1.0, 0.0)
+    finally:
+        if saved is None:
+            sys.modules.pop("torch", None)
+        else:
+            sys.modules["torch"] = saved
+    cu = open("overlay/modules/glm53_megakernel/glm53_megakernel.cu", encoding="utf-8").read()
+    k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
+    assert k.count("mk_gemm_phase(c, smem, &g_mk_smlp_bar);") == 2, "two GEMM phases on the segment's own barrier"
+    assert "c.a_ready = true;" in k and "g_mk_unit_next = 0u;" in k, "down rides the a_ready path with the counter reset under the barrier"
+    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 2
+    assert "__float2bfloat16(" in k and "fminf(g, a.limit)" in k and "(u + a.beta)" in k, "clamped SwiGLU at the stock rounding point"
+    assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
+    wiring = open("overlay/modules/glm53_model_wiring/glm5next_model.py", encoding="utf-8").read()
+    assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring
+    prof = open("profiles/glm53.env", encoding="utf-8").read()
+    assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 29차 bracket"
+
+
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
     """28차: the MLA split scratch never moves under a captured graph.
 
@@ -7993,13 +8084,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 4
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, kda, mhc, mla) triggers its dependents "
-          "at entry and is launched programmatically behind the MK_PDL knob "
-          "(default off)")
+          "every segment kernel (gemm, kda, mhc, mla, smlp) triggers its "
+          "dependents at entry and is launched programmatically behind the "
+          "MK_PDL knob")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -8032,7 +8123,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 4  # def, gemm, kda in/out
+          and cu.count("mk_choose_ksr(") == 6  # def, gemm, kda in/out, smlp gate_up/down
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -10223,6 +10314,7 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_mk_smlp_hook_and_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()

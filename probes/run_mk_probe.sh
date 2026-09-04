@@ -59,6 +59,19 @@ case "${VLLM_GLM53_MEGAKERNEL-1}" in
 esac
 
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
+# PROBE_CACHE=1: the serving boot's persistent caches (the launcher mounts
+# $HOME/glm53-cache at /cache and points flashinfer / triton / vLLM at it),
+# so a probe that JIT-compiles -- probes/nvfp4_prefill_warm.py builds the
+# cutlass mm_fp4 kernels the NVFP4P boot otherwise compiles inside the serve
+# process, where it cost srv3 its memory (29차) -- warms the cache the next
+# serve boot reads. MAX_JOBS bounds the parallel nvcc jobs on this host.
+if [ "${PROBE_CACHE:-0}" = 1 ]; then
+  CACHE_HOST=${CACHE_HOST:-$HOME/glm53-cache}
+  [ -d "$CACHE_HOST" ] || { echo "ABORT: PROBE_CACHE=1 but no $CACHE_HOST" >&2; exit 1; }
+  mounts+=(--mount "type=bind,src=$CACHE_HOST,dst=/cache")
+  envs+=(-e FLASHINFER_WORKSPACE_BASE=/cache -e VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR=/cache/flashinfer_autotune
+         -e TRITON_CACHE_DIR=/cache/triton -e VLLM_CACHE_ROOT=/cache/vllm -e "MAX_JOBS=${MAX_JOBS:-4}")
+fi
 _fwd=""
 for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_'); do
   envs+=(-e "$v=${!v}")
