@@ -105,6 +105,22 @@ launch(){
   log "boot grace exceeded (${BOOT_GRACE}s)"; return 1
 }
 
+# EVERY launcher invocation goes through here. The hold counts ATTEMPTS, not
+# launch() returns: launch() returns 0 on api_up alone and /v1/models answers
+# 200 from a corpse (see chat_ok), so crediting its return reset the counter
+# every round and the hold was unreachable in the one failure mode this pacing
+# exists for. Only a confirmed generation (the health branch) clears it. Three
+# callers -- the boot, the health loop, the wedge watchdog -- and an uncounted
+# one buys a destructive relaunch beyond LAUNCH_HOLD_AFTER.
+attempt_launch(){
+  launch || true
+  launch_fails=$((launch_fails+1))
+  _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
+  [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
+  next_launch_at=$(( $(date +%s) + _backoff ))
+  log "launch attempt $launch_fails/$LAUNCH_HOLD_AFTER done; no another for ${_backoff}s unless it goes healthy"
+}
+
 log "=== dsv4-tp4 supervisor start ==="
 
 # --- engine-wedge watchdog + daily cache hygiene (MEASUREMENTS.md 08-09) ---
@@ -128,7 +144,7 @@ wedge_check(){
     if [ "$_wedge" -ge "$WEDGE_CYCLES" ]; then
       log "WEDGE: $running request(s) running, generation static for $((WEDGE_CYCLES*30))s — recycling"
       forensics
-      launch || log "wedge relaunch failed; health loop will retry"
+      attempt_launch
       _wedge=0; _gen_last="-1"
       return 0
     fi
@@ -160,12 +176,9 @@ wait_for_fleet
 if api_up && chat_ok; then
   log "existing stack healthy — adopting"
 else
-  # same accounting as a loop relaunch, or a failed boot would buy an extra
-  # attempt on top of LAUNCH_HOLD_AFTER; the health loop clears it 30 s later
-  # if this one really came up, so a good boot costs nothing.
-  launch || log "initial launch failed; will retry via health loop"
-  launch_fails=1
-  next_launch_at=$(( $(date +%s) + LAUNCH_BACKOFF_BASE ))
+  # counted like any relaunch, or a failed boot buys one past the cap; the
+  # health loop clears it 30 s later if this one really came up.
+  attempt_launch
 fi
 
 while :; do
@@ -196,16 +209,6 @@ while :; do
     _now=$(date +%s)
     [ "$_now" -lt "$next_launch_at" ] && continue
     wait_for_fleet
-    # Count the ATTEMPT, and let only a real generation clear it (the health
-    # branch above). launch() returns 0 on api_up alone, and /v1/models answers
-    # 200 from a corpse (see chat_ok) -- crediting that as success reset the
-    # counter every round, so the hold was never reached in the one failure
-    # mode this pacing exists for: relaunch, API up, chat still dead, repeat.
-    launch || true
-    launch_fails=$((launch_fails+1))
-    _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
-    [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
-    next_launch_at=$(( $(date +%s) + _backoff ))
-    log "relaunch $launch_fails/$LAUNCH_HOLD_AFTER done; no another for ${_backoff}s unless it goes healthy"
+    attempt_launch   # counted; only the health branch above clears it
   fi
 done

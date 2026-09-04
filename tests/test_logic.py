@@ -10705,13 +10705,12 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     check("launch_fails=0; next_launch_at=0; held_logged=0" in sup,
           "recovery must clear the hold -- a supervisor that gives up "
           "permanently is a worse failure than the churn it replaced")
-    # ...and ONLY a confirmed generation may clear it. launch() returns 0
-    # on api_up alone, and /v1/models answers 200 from a corpse, so the
-    # first cut credited every corpse relaunch as a success and reset the
-    # counter: the hold was unreachable in the one failure mode the pacing
-    # exists for (simulated: 293 launcher runs and no hold, vs 5 and a hold).
-    check("launch || true" in sup
-          and "if launch; then" not in sup,
+    # ...and ONLY a confirmed generation may clear it. launch() returns 0 on
+    # api_up alone, and /v1/models answers 200 from a corpse, so crediting its
+    # return reset the counter every round and the hold was unreachable in the
+    # one failure mode the pacing exists for (simulated against a corpse API:
+    # 293 launcher runs and no hold, vs 5 and a hold).
+    check("if launch; then" not in sup,
           "a relaunch counts as an ATTEMPT -- api_up alone is not health, "
           "so launch()'s return must not clear the counter")
     check(sup.count("launch_fails=0") == 2,
@@ -10720,12 +10719,22 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     clear_at = sup.index("launch_fails=0; next_launch_at=0; held_logged=0")
     check("if api_up && chat_ok; then" in sup[:clear_at].rsplit("while :;", 1)[-1],
           "the clear sits under a real generation probe, not under api_up")
-    # the boot attempt is accounted like any other, or a failed boot buys
-    # one relaunch beyond LAUNCH_HOLD_AFTER (6 launcher runs for a cap of 5)
-    check("  launch_fails=1\n" in sup
-          and "next_launch_at=$(( $(date +%s) + LAUNCH_BACKOFF_BASE ))" in sup,
-          "the initial launch goes through the same accounting as a "
-          "loop relaunch")
+    # The root cause, not the three symptoms: launch() has three callers (boot,
+    # health loop, wedge watchdog) and each one that skips the accounting buys a
+    # destructive relaunch past the cap -- the boot and the watchdog each did.
+    # One counted path, so a fourth caller cannot reintroduce it silently.
+    check(sup.count("launch_fails=$((launch_fails+1))") == 1
+          and "attempt_launch(){" in sup,
+          "exactly one place counts an attempt, and it is attempt_launch")
+    bare = [n for n, line in enumerate(sup.splitlines(), 1)
+            if line.strip().startswith("launch")
+            and not line.strip().startswith(("launch(){", "launch_fails"))]
+    check(len(bare) == 1,
+          "launch() is invoked from exactly one place (inside attempt_launch); "
+          "every caller goes through the accounting (offending lines: %s)" % bare)
+    check(sup.count("attempt_launch") == 4,
+          "attempt_launch is defined once and called by all three sites: the "
+          "boot, the health loop and the wedge watchdog")
     print("  supervisor relaunch pacing .... OK")
 
 
