@@ -1923,6 +1923,8 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 | KDA32SHADOW3 | `MAMBA_CACHE_DTYPE=float32 MK_KDA=1 +SHADOW` (0eefdf7: 두 상태 stride 계약) | 16.5 / 17.5 (2회) | 사망 | **게이트 통과(전 층 무장)** → 8K 프리필 중 srv2 earlyoom 이 Worker_TP0 사살 | 섀도 판정기가 층마다 conv(260 MB)+rec(2.2 GB) 풀을 통째로 2벌 복제 → 통합 메모리 고갈. 판정기를 사용 슬롯만 복제하도록 수정 |
 | **PREPDEF** | (기본값 = **PREP_FUSED=1** + MK 세트 + MLA, 0eefdf7) | 16.3·17.6 / **17.0·17.3·17.1·17.4** | 2,637 / 2,715 | 3.45 tok/step, 9/9, 한국어 1/16; prep-fused `fused_steps=4096 drift=0` | **+4~6%** (기준 16.39) — 프로덕션 후보, 스톨 없음 |
 | KDA32SHADOW4 | `float32 MK_KDA=1 +SHADOW` (05985b4: 압축 판정기 + 시간 섀도) | 16.3 / 17.6 (창 중앙 17.7 / 17.9) | 사망 | 8K 프리필 중 srv2 earlyoom 재발(Worker_TP0 RSS 7 GB) — srv3 10%, srv4 8% 여유 | 판정기 복제는 원인 아님; KDA 부팅이 기본값보다 ~12 GB 더 쓰는 원인 조사(§11). MLA 시간 섀도 첫 출력: T=9 **mk 99.8 µs vs 래퍼 1,707 µs** |
+| **PROD(체인7)** | (기본값, c487603: prep-fused on + gemm2/lq 머지) | 17.9·17.8·17.0 (창 중앙 17.9·18.0·17.4) | 2,621 / 2,713 | 3.69 tok/step, 9/9, **한국어 0/16**, 스톨 없음 | 프로덕션 확정치 — 기준 16.39 대비 **+6~9%** |
+| DEVLAB | `DEV_LAB=1` (c487603) | 17.0 (창 18.4) | — | 랩 op 실주행(§10) | 개발 부팅 |
 | PREP2 | `PREP_FUSED=1` 만 | 디코드 2~3회차 **행** | — | 워커 무응답 → RPC 타임아웃 | **불합격** (§2) |
 | PREP3 | `SPLITK=1` 만 | 16.7 [16.5, 16.8] | 2,687 / 2,686 | 수용률 레그에서 **엔진 사망** | **불합격** |
 | KDA32SHADOW | `MAMBA_CACHE_DTYPE=float32 MK_KDA=1 +SHADOW` | 15.7/16.5 (2회) | 2,7xx | dtype 게이트 통과 → **"not contiguous"** 거부 (§4) | KDA32 건너뜀 |
@@ -2040,7 +2042,7 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 |---|---|---|---|
 | 1 | 탐색/승격 레그 행렬: `LEGS=decode,prefill8k QUALITY_CTX=2000,32000`(탐색) vs 전부(승격) | `bench/ab-lever.sh`(srv2 `ab-lever2.sh`), `bench/check-quality.py` | 팔당 ~10 분 절감 |
 | 2 | 디코드 3회 기본 + 스텝 창 표본: 엔진 `iteration_tokens_total_count` 를 2 s 마다 샘플 → 창마다 step/s, 판정기는 창 단위 | `bench/bracket.py` (`_StepWindows`, `--reps` 3) | 6회→3회, 표본 수는 증가 |
-| 5 | **개발 랩**(부팅 없는 커널 루프): `POST /glm53/lab` → 4 랭크 collective_rpc — `replay`(서빙 디코드 그래프 n 회 재생, us/step), `reload`(새 .cu 로 확장 재빌드 + 셀프테스트), `recapture`(그래프 재캡처) | `overlay/modules/glm53_dev_lab`, 드라이버 `rebuild()`, 런처 `--middleware`, 프로필 `VLLM_GLM53_DEV_LAB=0` | 커널 반복 25 분 → 1~2 분. **검증(01:48, DEVLAB 부팅)**: `info` 가 서빙 FULL 그래프(8 토큰)를 기억, `replay` 50회 **53.5 ms/step**·200회 57.1 ms(서빙 스텝 58 ms 중 타깃 그래프 몫), 4 랭크 동시 |
+| 5 | **개발 랩**(부팅 없는 커널 루프): `POST /glm53/lab` → 4 랭크 collective_rpc — `replay`(서빙 디코드 그래프 n 회 재생, us/step), `reload`(새 .cu 로 확장 재빌드 + 셀프테스트), `recapture`(그래프 재캡처) | `overlay/modules/glm53_dev_lab`, 드라이버 `rebuild()`, 런처 `--middleware`, 프로필 `VLLM_GLM53_DEV_LAB=0` | 커널 반복 25 분 → 1~2 분. **검증(01:48, DEVLAB 부팅)**: `info` 가 서빙 FULL 그래프(8 토큰)를 기억, `replay` 50회 **53.5 ms/step**·200회 57.1 ms(서빙 스텝 58 ms 중 타깃 그래프 몫), 4 랭크 동시(±1 µs); `reload` 38~60 s 재빌드·재무장; `recapture` 는 드래프터 매니저를 안 비워 단언 → 수정(9a98f45) |
 | 6 | 시간 측정 섀도: KDA 판정기(CUDA 이벤트, `kda shadow timing … ms/step`), MLA 1회 판정(`mla shadow timing`), prep-fused(`[prep-fused] on timing` 호스트 시간) | 각 모듈 | 프로덕션 로그에서 첫 판정, 브래킷 전 |
 
 ### 7. MK 세부 커널 — 남은 표적은 소형 GEMM 의 고정비
