@@ -6,35 +6,24 @@
 # shapes — expect a LONG warmup; watchdog-disable envs carried over. RUN ON srv2.
 set -euo pipefail
 
+# Shared machinery for both TP=4 lanes. Everything it holds was implemented
+# twice, once here and once in start-glm53-nvfp4-tp4.sh, and the copies drifted
+# -- see the file header for what that drift cost.
+# shellcheck source=lib/common-tp4.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
+
 # Identity comes from the profile; compose-overlays.sh and deploy-overlays.sh
 # already read the same file, so this removes the second copy rather than adding
 # one. Behaviour is unchanged today -- the profile's image, model path and
 # served name are character-for-character what was hardcoded here. Caller env
 # still wins, as everywhere else.
-PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env}"
-if [ ! -f "$PROFILE_ENV" ]; then
-  echo "WARNING: profile not found at $PROFILE_ENV -- using built-in defaults."
-  echo "         Run this launcher from the checkout, or set PROFILE_ENV explicitly."
-fi
-if [ -f "$PROFILE_ENV" ]; then
-  # A profile with no VLLM_* key at all is legitimate (this one had none until
-  # it mounted the megakernel core), and an empty grep exits 1 -- which under
-  # `set -euo pipefail` ends the script silently.
-  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
-  _caller=""
-  for _v in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
-            EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
-            DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD \
-            $_vllm_keys; do
-    if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
-  done
-  # shellcheck disable=SC1090
-  . "$PROFILE_ENV"
-  [ -n "$_caller" ] && eval "$_caller"
-  IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
-  MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
-  SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
-fi
+ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env" \
+  IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
+  EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
+  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD
+IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
+MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
+SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
 
 IMAGE="${IMAGE:-aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6}"
 EXPECTED_IMAGE_ID="sha256:b763d81b57f7611378a514fa0faf859c3b0d0ec1010f8c5115bea11a60d49ec3"
@@ -70,10 +59,7 @@ esac
 # on multi-node bring-up. Keep auto as the production default and require the
 # normal generation/rank-liveness gate for any instanttensor result.
 LOAD_FORMAT="${LOAD_FORMAT:-auto}"
-case "$LOAD_FORMAT" in
-  auto|safetensors|instanttensor) ;;
-  *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)"; exit 2 ;;
-esac
+ct_check_load_format
 
 # one-shot AllReduce's built-in 131072-element gate covers only 32 hidden-4096
 # tokens (DSpark C<=5). Larger values are an unmeasured latency-vs-bandwidth
@@ -259,7 +245,7 @@ ENVV="-e CUDA_VISIBLE_DEVICES=0 -e CUDA_DEVICE_ORDER=PCI_BUS_ID -e CUTE_DSL_ARCH
 -e VLLM_DSV4_FREE_BF16_LM_HEAD=${HEADFREE:-0} -e VLLM_DSV4_FREE_BF16_COMPRESSOR=${COMPFREE:-0} \
 -e VLLM_DSPARK_FP8_DRAFT_HEAD=$FP8HEAD -e VLLM_DSPARK_DRAFT_TOPK=$MARKOV_TOPK \
 -e VLLM_DSPARK_REFINE_PASS=$REFINE -e VLLM_DSPARK_MARKOV_SIDELOAD=$MARKOV_SIDELOAD \
--e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=0 \
+-e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 -e TORCH_NCCL_DUMP_ON_TIMEOUT=0 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=$CT_NCCL_ASYNC_ERR \
 -e MODEL_PATH=$MODEL_PATH -e SERVED_MODEL_NAME=$SERVED_NAME -e PORT=8000 -e TP_SIZE=$TP_SIZE \
 -e GPU_MEM=$GPU_MEM -e SPEC_TOKENS=$SPEC_TOKENS -e SPEC_METHOD=$SPEC_METHOD -e DRAFT_PATH=$DRAFT_PATH -e DRAFT_KV=$DRAFT_KV -e VLLM_DFLASH_DRAFT_BLOCK_SIZE=$DRAFT_BLOCK -e TEMPERATURE=${TEMP:-0.8} -e REASONING_EFFORT=${EFFORT:-} \
 -e MAX_MODEL_LEN=$MAX_MODEL_LEN -e MAX_NUM_SEQS=$MAX_NUM_SEQS -e MAX_NUM_BATCHED_TOKENS=$MAX_NUM_BATCHED -e LONG_PREFILL=$LONG_PREFILL \
@@ -348,35 +334,8 @@ COMMON="--runtime nvidia --gpus all --network host --ipc host --restart unless-s
 # One-boot diagnostics, applied identically to head and workers. Values cannot
 # contain spaces because this launcher deliberately renders docker flags as a
 # shell word list.
-EXTRA_ENV_FLAGS=""
-# _vllm_keys is newline-separated (grep | sort -u); flatten it so the
-# membership test below can use a space-delimited case pattern.
-_vllm_keys_sp=" $(printf '%s ' ${_vllm_keys:-})"
-for _kv in ${EXTRA_ENV:-}; do
-  if [[ ! "$_kv" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
-    echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"
-    exit 2
-  fi
-  # A profile-declared VLLM_* key is emitted as its own -e in ENVV, and the
-  # docker command renders $COMMON (which carries these flags) BEFORE $ENVV --
-  # docker takes the LAST -e for a name, so EXTRA_ENV silently loses to the
-  # profile for exactly the knobs a sweep wants to move, and the boot measures
-  # the profile value while the caller believes otherwise. Same guard the
-  # glm53 launcher already carries; it became reachable here the day this
-  # profile started declaring VLLM_* keys of its own.
-  case "$_vllm_keys_sp" in
-    *" ${_kv%%=*} "*)
-      echo "ABORT: ${_kv%%=*} is declared in the profile, so EXTRA_ENV cannot"
-      echo "       override it (docker takes the last -e). Pass it directly:"
-      echo "         ${_kv%%=*}=${_kv#*=} bash launchers/start-hy4-tp4.sh"
-      exit 2 ;;
-  esac
-  EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv"
-done
-if [ -n "$EXTRA_ENV_FLAGS" ]; then
-  echo "extra env:$EXTRA_ENV_FLAGS"
-  COMMON="$COMMON $EXTRA_ENV_FLAGS"
-fi
+ct_extra_env_flags launchers/start-hy4-tp4.sh
+COMMON="$COMMON $EXTRA_ENV_FLAGS"
 
 MANIFEST_NAME=manifest.tsv
 HEAD_OV=/home/choiceoh/hybrid-stack/overlay-b12x
