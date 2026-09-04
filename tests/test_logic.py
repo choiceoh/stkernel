@@ -6780,9 +6780,15 @@ def test_earlyoom_is_fireable_on_unified_memory() -> None:
           "the node can still fork")
     check(re.search(r"(^|\s)-m \d", args) is None,
           "no percentage memory threshold: 2% of 121 GB was under the watermark")
-    check("-s 100" in args,
-          "swap must be non-binding (-s 100): pinned GPU pages never swap, so "
-          "any swap threshold below 100% makes the kill condition unreachable")
+    check("-s 100,100" in args,
+          "swap must be non-binding for BOTH stages (-s 100,100): pinned GPU "
+          "pages never swap, and earlyoom defaults the SIGKILL swap threshold "
+          "to half the SIGTERM one -- the first install logged 'SIGKILL when "
+          "swap <= 50%', a condition this fleet never meets")
+    kl = re.search(r"-M \d+,(\d+)", args)
+    check(kl is not None and 4 * 1048576 < int(kl.group(1)) < int(fl.group(1)),
+          "the SIGKILL floor is explicit, below SIGTERM and still above the "
+          "4.0 GiB watermark -- the derived default (half of 6 GiB) was under it")
     check("--prefer" in args and re.search(r"--prefer '[^']*vllm", args),
           "the engine is the preferred kill: when the floor is crossed it is "
           "the runaway, and losing the node loses it anyway")
