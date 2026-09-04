@@ -1,0 +1,33 @@
+# /etc/default/earlyoom -- fleet-wide, all four GB10 nodes.
+#
+# Install on each node, then: sudo systemctl enable --now earlyoom
+#
+# Why every value here is what it is (2026-09-04, after three nodes wedged):
+#
+# GB10 is unified memory. NVRM allocates the model against MemFree and those
+# pages are PINNED -- neither droppable nor swappable. So on a loaded node
+# the kernel sees ~55 GiB of unreclaimable anon, ~150 MB of file cache, and
+# a 16 GiB swap that never fills. Two consequences shape this file:
+#
+# 1. A PERCENTAGE swap threshold can never be met. earlyoom kills only when
+#    memory AND swap are both below their thresholds; with SwapFree pinned
+#    at ~100% the AND is false forever. The previous "-m 2 -s 2" was
+#    unfireable by construction. -s 100 makes swap non-binding so memory
+#    alone decides.
+#
+# 2. The kernel min watermark on these boxes is 4.0 GiB (srv3's OOM dump:
+#    "free:4.00 GiB min:4.00 GiB all_unreclaimable? yes"). Below it, fork()
+#    blocks in direct reclaim with nothing to reclaim, sshd stops opening
+#    sessions, and the node is lost to everything but a power cycle. The
+#    floor here is ABSOLUTE and sits above that line: 6 GiB. It is also
+#    below what a healthy boot leaves -- the launcher's memfree preflight
+#    reserves 10 GiB -- so a good boot never crosses it. "-m 2" (2.4 GiB)
+#    was under the watermark: by the time it could fire, it could not fork.
+#
+# Kill target: the engine, on purpose. When the floor IS crossed the engine
+# is the runaway, and the alternative is losing the node, which loses the
+# engine anyway. The ledger's earlier "--avoid vllm" was the right call
+# against PERCENTAGE thresholds that fired on healthy resident models; an
+# absolute floor below healthy steady state removes that failure mode, so
+# the preference flips. The management plane stays protected.
+EARLYOOM_ARGS="-M 6291456 -s 100 -r 60 -n --prefer '(VLLM::Worker|vllm|pt_main_thread|python3)' --avoid '(sshd|systemd|dockerd|containerd|tailscaled|deneb-gateway|sparkfleet|earlyoom)'"
