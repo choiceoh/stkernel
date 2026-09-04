@@ -222,6 +222,8 @@ def _build():
         f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
         f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
         f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
+        # the v2 (non-persistent) lane's ring depth; 2..4 keep two blocks/SM
+        f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
     ] + (["-DMK_PHASE_TS=1"]
          if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
     _EXT = load(
@@ -1216,6 +1218,17 @@ def _selftest_gemm() -> bool:
                    "bitwise same) -> ARM; bg [1024x4096] plan: ksr=%d "
                    "units=%d localq=%d lgrid=%d", e_exact, plan[1], plan[2],
                    plan[3], plan[4])
+    # which lane the boot serves, in the fingerprint: v2 is the non-
+    # persistent kernel (VLLM_GLM53_MK_GEMM2), plan = (on, ksr, units,
+    # blocks/SM) for the in_proj shape. A boot log without this line is
+    # a boot whose GEMM lane nobody can name from the log.
+    try:
+        plan2 = list(_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN))
+    except Exception:
+        plan2 = None
+    logger.warning("[megakernel] selftest gemm exact=%.2e -> ARM (lane %s, "
+                   "in_proj plan on/ksr/units/bps=%s)", e_exact,
+                   "v2" if plan2 and plan2[0] else "v1", plan2)
     return True
 
 

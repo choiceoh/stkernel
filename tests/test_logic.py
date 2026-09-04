@@ -2614,6 +2614,81 @@ def test_mhc_smallm_knob() -> None:
             os.environ[env_name] = saved
 
 
+def test_mhc_passes_knob() -> None:
+    """VLLM_GLM53_MHC_PASSES: parse strictly; unset/invalid = stock passes.
+
+    The knob flips TileLang pass configs (TMA lowering / warp specialization)
+    for EVERY mhc kernel at import -- an ambiguous value must leave the
+    compiled kernels identical to the image's (both TL_DISABLE_* stay True),
+    same fail-safe shape as the sibling MHC knobs.
+    """
+    env_name = "VLLM_GLM53_MHC_PASSES"
+    saved = os.environ.pop(env_name, None)
+
+    def load():
+        return load_defs(
+            "overlay/tilelang_kernels.py",
+            {
+                "_MHC_PASSES_ENV",
+                "_deneb_parse_mhc_passes",
+                "_raw_mhc_passes",
+                "_DENEB_MHC_PASSES",
+            },
+            {"os": os},
+        )
+
+    try:
+        os.environ.pop(env_name, None)
+        ns = load()
+        parse = ns["_deneb_parse_mhc_passes"]
+        check(ns["_DENEB_MHC_PASSES"] is None,
+              "env unset: knob is None (stock pass configs)")
+
+        check(parse("tma") == (True, False), "parse tma only")
+        check(parse("WS") == (False, True), "parse ws, case-insensitive")
+        check(parse("tma,ws") == (True, True), "parse both")
+        check(parse("ws,tma") == (True, True), "parse both, order-free")
+        check(parse(" tma , ws ") == (True, True), "parse whitespace")
+        check(parse("tma,tma") == (True, False), "duplicate token tolerates")
+        check(parse("none") == (False, False),
+              "'none' is the explicit stock combo (probe reference pass)")
+        check(parse("") is None and parse(",") is None, "empty -> None")
+        check(parse("tma,xyz") is None, "unknown token -> None (stock)")
+        check(parse("all") is None, "'all' is not a token -> None (stock)")
+
+        os.environ[env_name] = "tma"
+        ns = load()
+        check(ns["_DENEB_MHC_PASSES"] == (True, False),
+              "env set: knob frozen at import")
+        os.environ[env_name] = "bogus"
+        ns = load()
+        check(ns["_DENEB_MHC_PASSES"] is None,
+              "invalid value falls back to stock, never a partial arm")
+
+        # Wiring: the parsed value must reach the dict the decorators bind,
+        # before the first @tilelang.jit reads it. load_defs cannot exec the
+        # flips themselves (they need tilelang), so pin them at source level.
+        # The decorator match is line-anchored: this module's own comments
+        # mention "@tilelang.jit", and a bare substring search would find the
+        # comment instead of the decorator (this test's first draft did).
+        src = open(_overlay_source("overlay/tilelang_kernels.py"),
+                   encoding="utf-8").read()
+        first_jit = re.search(r"^@tilelang\.jit", src, re.M).start()
+        check("pass_configs[tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER] = False"
+              in src, "tma flip is wired into pass_configs")
+        check("pass_configs[tilelang.PassConfigKey."
+              "TL_DISABLE_WARP_SPECIALIZED] = False" in src,
+              "ws flip is wired into pass_configs")
+        check(src.index("TL_DISABLE_TMA_LOWER] = False") < first_jit
+              and src.index("TL_DISABLE_WARP_SPECIALIZED] = False") < first_jit,
+              "flips precede the first @tilelang.jit that binds the dict")
+    finally:
+        if saved is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = saved
+
+
 # ---------------------------------------------------------------------------
 # EP stock top-k token chunks: strict opt-in above the preserved #146 fallback.
 # ---------------------------------------------------------------------------
@@ -5448,6 +5523,141 @@ def test_census_kda_group() -> None:
 
 
 
+def test_census_owner_axis() -> None:
+    """census/trace_common: who owns a kernel, and the anchors that decide it.
+
+    The 08-31 map said "우리 소유 186 개(9.9%)". 42 of those were deep_gemm's
+    `sm120_split_k_reduce_impl`: the osar group pattern had an unanchored
+    `k_reduce`. Our osar module defines exactly one __global__ (k_oneshot), so
+    a name that merely contains "k_reduce" must never land in our column.
+    """
+    ns = load_defs("census.py", {"GROUPS", "group"}, {"re": re})
+    group = ns["group"]
+    check(group("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>")
+          == "cutlass/cublas GEMM",
+          "deep_gemm's split-K reduce is a GEMM kernel, not our all-reduce")
+    check(group("k_oneshot(Ctrl*, __nv_bfloat16 const*)") == "우리 · osar AR",
+          "our one-shot AR still groups as ours")
+    for n in ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+              "(anonymous namespace)::mk_mhc_kernel((anonymous namespace)::MKMhcArgs)",
+              "mk_mla_kernel(MKMlaArgs)", "mk_kda_kernel(MKKdaArgs)"):
+        check(group(n) == "우리 · 메가커널 세그먼트",
+              f"{n[:40]!r} is a megakernel segment, not a vendor GEMM/MHC/MLA")
+    check(group("_glm53_prep_fused_kernel") == "우리 · 준비/인덱서"
+          and group("_gate_splitk_partial_kernel") == "우리 · 준비/인덱서",
+          "prep-fused and the split-K head gate are ours when they are armed")
+
+    tc = load_defs("tools/trace_common.py", {"OURS", "owner"}, {})
+    owner = tc["owner"]
+    ours = ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+            "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
+            "mk_kda_kernel(MKKdaArgs)", "k_oneshot(Ctrl*)",
+            "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
+            "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel")
+    for n in ours:
+        check(owner(n) == "ours", f"{n[:40]!r} is compiled from this repo")
+    theirs = ("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>",
+              "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm>",
+              "mhc_pre_big_fuse_with_norm_tilelang_kernel",
+              "per_token_group_quant_8bit_packed_register_kernel",
+              "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "ncclDevKernel_AllGather_RING_LL")
+    for n in theirs:
+        check(owner(n) == "image", f"{n[:40]!r} comes from the image, not us")
+    print("  census owner axis .............. OK")
+
+
+def test_census_streaming_events() -> None:
+    """census: the streaming reader survives braces inside kernel names.
+
+    json.load on a 40 MB trace costs GBs, and a loading node's MemAvailable
+    drops to single-digit GiB (26차) -- a big python there is earlyoom bait.
+    The streaming cut has to track string state, because inductor/at::native
+    names carry `{lambda(int)#1}` and `}` of their own.
+    """
+    import gzip
+    import json
+    import tempfile
+
+    ns = load_defs("census.py", {"iter_events"}, {"gzip": gzip, "json": json})
+    braces = ("void at::native::elementwise_kernel<128, 4, "
+              "{lambda(int)#1}>(int, {lambda(int)#1})")
+    doc = {"schemaVersion": 1, "deviceProperties": [{"id": 0, "name": "GB10"}],
+           "traceEvents": [
+               {"ph": "M", "name": "process_labels", "pid": 1},
+               {"ph": "X", "cat": "kernel", "name": braces, "ts": 1.0, "dur": 2.5,
+                "args": {"stream": 210, "grid": [8, 32, 1]}},
+               {"ph": "X", "cat": "kernel", "name": "k_oneshot(Ctrl*)",
+                "ts": 4.0, "dur": 40.0, "args": {"stream": 210}},
+               {"ph": "X", "cat": "cuda_runtime", "name": "cudaLaunchKernel",
+                "ts": 3.0, "dur": 1.0}]}
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "t.json.gz")
+        with gzip.open(path, "wt") as fh:
+            json.dump(doc, fh, indent=2)
+        evs = list(ns["iter_events"](path))
+    kernels = [e for e in evs
+               if e.get("ph") == "X" and "kernel" in (e.get("cat") or "")]
+    check(len(kernels) == 2, f"two kernel events survive the cut (got {len(kernels)})")
+    check(kernels[0]["name"] == braces,
+          "a name containing {lambda(int)#1} is not split at its braces")
+    check(kernels[0]["args"]["grid"] == [8, 32, 1],
+          "nested args objects come back whole")
+    check(sum(e["dur"] for e in kernels) == 42.5, "durations survive")
+    src = open(os.path.join(REPO, "census.py"), encoding="utf-8").read()
+    check("json.load(" not in src,
+          "census must not load a whole trace into memory (fleet nodes boot)")
+    print("  census streaming reader ....... OK")
+
+
+def test_trace_step_tail_analyze() -> None:
+    """tools/trace_step_tail.py: the tail is what follows the step's last MoE
+    expert kernel -- the region 25차 found the drafter's GEMMs in."""
+    import importlib.util
+    import json
+    import tempfile
+
+    spec = importlib.util.spec_from_file_location(
+        "tst", os.path.join(REPO, "tools", "trace_step_tail.py"))
+    tst = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tst)
+
+    evs = []
+    for i in range(14):
+        base = i * 10000
+        evs.append({"ph": "X", "cat": "kernel", "name": "_gather_block_tables_kernel",
+                    "ts": base, "dur": 50, "args": {"stream": 210}})
+        evs.append({"ph": "X", "cat": "kernel",
+                    "name": "kernel_..._moecute_dslblackwell_sm12x_moe",
+                    "ts": base + 100, "dur": 400, "args": {"stream": 210}})
+        # 꼬리: 드래프터 bf16 GEMM 둘 + AR 하나, 사이에 100 us 유휴
+        evs.append({"ph": "X", "cat": "kernel",
+                    "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_x>",
+                    "ts": base + 600, "dur": 200, "args": {"stream": 210}})
+        evs.append({"ph": "X", "cat": "kernel",
+                    "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_x>",
+                    "ts": base + 800, "dur": 200, "args": {"stream": 210}})
+        evs.append({"ph": "X", "cat": "kernel", "name": "k_oneshot(Ctrl*)",
+                    "ts": base + 1100, "dur": 100, "args": {"stream": 210}})
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "tail.json")
+        open(path, "w").write(json.dumps({"traceEvents": evs}))
+        r = tst.analyze(path)
+    check(r["steps"] == 8, f"14 anchors -> 8 analysed windows (got {r['steps']})")
+    check(abs(r["fwd_ms"] - 0.5) < 1e-9,
+          "forward = prep .. end of the last MoE kernel = 0.5 ms")
+    check(abs(r["tail_ms"] - 0.7) < 1e-9,
+          "tail = 500 us .. 1200 us after the step start = 0.7 ms")
+    check(abs(r["tail_busy_ms"] - 0.5) < 1e-9,
+          "tail union busy 0.5 ms -- the 100 us gap is idle, not counted")
+    check(r["cats"]["bf16/cublas GEMM + head gate"]["cnt"] == 2
+          and abs(r["cats"]["bf16/cublas GEMM + head gate"]["ms"] - 0.4) < 1e-9,
+          "the drafter's two bf16 GEMMs are attributed to the tail")
+    check(r["cats"]["AR k_oneshot"]["cnt"] == 1,
+          "the drafter's all-reduce is in the tail, not the forward")
+    print("  trace step tail cut ........... OK")
+
+
 def test_dflash_warmup_buckets() -> None:
     """The DFlash input-prep warmup sweeps every BLOCK_SIZE bucket, or none.
 
@@ -7993,13 +8203,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 6
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, gemm-lq, kda, mhc, mla) triggers its dependents "
-          "at entry and is launched programmatically behind the MK_PDL knob "
-          "(default off)")
+          "every segment kernel (gemm, gemm-lq, gemm2, kda, mhc, mla) triggers "
+          "its dependents at entry and is launched programmatically behind "
+          "the MK_PDL knob (default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -8380,10 +8590,93 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 2,
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
+          and "&g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
-          "merely run slowly")
+          "merely run slowly (the third query is the v2 lane's blocks per SM, "
+          "which sizes its grid and is not a residency contract)")
+
+    # -- MK-GEMM v2 (30차): the same GEMM as a NON-persistent grid. The
+    #    persistent kernel's 48 x 69.6 KB blocks cannot share an SM with the
+    #    routed MoE kernel (90 KB), so the shared expert's side-stream
+    #    launches queued behind it and the publish barrier held every landed
+    #    block for the last one (down [4096 x 512]: 18 us alone, 135 us in
+    #    the 09-04 armed trace, 5.7 of the lane's 14.1 ms). v2 has no
+    #    barrier, no shared A staging, expands W4 in registers into the mma
+    #    fragments, and fits TWICE per SM.
+    v2 = cu[cu.index("mk_gemm2_kernel(const MKGemm2Ctx c)"):cu.index("MK_SEG_MHC --")]
+    check(consts.get("W4_RAW_NBUF2", 0) >= 2
+          and 2 * (consts["GEMM2_SMEM"] + 1024) <= 102400
+          and 'static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");' in cu
+          and "__launch_bounds__(MK_THREADS, 2)" in cu,
+          "the v2 block's smem (with the SM's ~1 KB per-block reserve) fits "
+          "two per SM and its register budget is bounded to match -- one "
+          "resident block would make it the persistent kernel without the "
+          "barrier, not a co-scheduling kernel")
+    check("mk_grid_barrier" not in v2 and "g_mk_unit_next" not in v2
+          and "g_mk_aq" not in v2,
+          "v2 has no grid barrier, no unit counter and no shared A tiles: "
+          "every block quantizes the A k-blocks of its own slice")
+    check("stage_raw(kb0 + d, (kb0 + d) % NB)" in v2
+          and v2.index("stage_raw(kb0 + d, (kb0 + d) % NB)")
+              < v2.index('asm volatile("griddepcontrol.wait;"')
+              < v2.index("load_x(kb0);") < v2.index("quant_x(0);"),
+          "v2 prologue order: the W ring first (independent of the previous "
+          "kernel, in flight during its tail under PDL), the PDL wait, then x")
+    check("mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));" in v2
+          and "if (kb + DIST < kbn) stage_raw(kb + DIST, (kb + DIST) % NB);" in v2
+          and "quant_x((kb + 1 - kb0) & 1);" in v2
+          and v2.count("__syncthreads();", v2.index("for (int kb = kb0;;"),
+                       v2.index("MK2_TS(2);")) == 1,
+          "v2 k loop: exact ring wait, refill of the stage consumed last "
+          "iteration, quant into the A buffer the running mma does not read, "
+          "one __syncthreads per k-block")
+    check("__device__ __forceinline__ uint32_t mk_w4x4(uint32_t w16, uint32_t eb)" in cu
+          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in cu_code[cu_code.index("mk_w4x4"):]
+          and "__byte_perm(l0, l1, w16 & 0x7777u)" in cu_code
+          and "__byte_perm(0x8000u, 0u, (w16 >> 3) & 0x1111u)" in cu_code
+          and "const uint32_t b0 = mk_w4x4(w0, e0);" in v2
+          and "const uint32_t b1 = mk_w4x4(w1, e1);" in v2
+          and "expand_w4" not in v2,
+          "v2 expands the e2m1 nibbles into the B fragments per lane with the "
+          "SAME table lookup as expand_w4 (same two LUT immediates, same sign "
+          "prmt), so the bytes the mma sees are the persistent kernel's")
+    check("((ch ^ ((r >> 1) & 3)) << 4)" in v2
+          and "((ks ^ ((nrow >> 1) & 3)) << 4)" in v2,
+          "the raw nibble chunks land XOR-swizzled at copy time and the "
+          "fragment loads read through the same swizzle (eight rows on a 64 B "
+          "pitch would otherwise share two bank groups)")
+    check("pb[(size_t)r0 * c.n + cb] = acc[i][j][0];" in v2
+          and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
+          and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
+          and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
+          and "atomicAdd(&g_mk2_partial" not in cu
+          and "g_mk2_partial[i] = 0.0f;" not in cu,
+          "v2 split slices are assigned (no zero pass), counted per tile with "
+          "a self-rearming counter, and folded by the last slice in fixed "
+          "order -- deterministic, no atomics on the partials")
+    check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
+          and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
+          and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
+              < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);")
+          and "int mk_choose_ksr2(int m, int n, int k)" in cu
+          and "if (ksr > kblk) ksr = kblk;" in cu
+          and "while (ksr > 1 && (size_t)m * n * ksr > (size_t)MK2_PART_ELEMS) --ksr;" in cu
+          and consts["MK2_PART_ELEMS"] >= 32 * consts["KDA_INPROJ_N_PAD"] * 4,
+          "the v2 lane is a kill-switched dispatch ahead of the persistent "
+          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule keeps "
+          "every slice non-empty and the fp32 partial inside its buffer at "
+          "the widest per-rank linear")
+    check('"-DMK_NBUF2_DEF=" in pysrc_full' if False else "-DMK_NBUF2_DEF=" in pysrc_full
+          and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
+          and 'ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")' in bench
+          and "ext.set_gemm2(on, ksr)" in bench
+          and "same = bool(torch.equal(got2, got))" in bench,
+          "the driver builds v2's ring depth in, the boot fingerprint names "
+          "the served lane and its in_proj plan, and the bench times both "
+          "lanes side by side with v2's output diffed against the persistent "
+          "lane's")
     # Two grid sizes must never share a ticket counter. The barrier computes
     # (t / grid + 1) * grid, so it is only correct when the counter is
     # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
@@ -8565,7 +8858,10 @@ def test_glm53_megakernel_contracts() -> None:
           and "VLLM_GLM53_MK_W4" not in fp8,
           "the build attaches the W4 pack next to the deepgemm pair on every "
           "eligible linear, no arm knob")
-    check("def probe_exact() -> bool:" in bench and "probe_w4" not in bench
+    check("def probe_exact(gemm2: str = \"both\") -> bool:" in bench
+          and "def _probe_exact_lane(mk, x, p4, n, ref, tag: str) -> bool:" in bench
+          and "x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
+          and "probe_w4" not in bench
           and "run_gemm_w4" not in bench and "build_mk_weight(" not in bench
           and "VLLM_GLM53_MK_W4" not in bench
           and 'TOL = {"mhc": 1e-3, "gemm": 0.15, "kda": 2e-2}' in bench,
@@ -10313,11 +10609,15 @@ if __name__ == "__main__":
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
+    test_mhc_passes_knob()
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_smallm_split_ownership()
     test_mhc_bigfuse_knob()
     test_census_kda_group()
+    test_census_owner_axis()
+    test_census_streaming_events()
+    test_trace_step_tail_analyze()
     test_dflash_warmup_buckets()
     test_dsv4_spec_warmup_contract()
     test_dsv4_ue8m0_host_guard()

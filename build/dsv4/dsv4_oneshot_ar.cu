@@ -36,6 +36,14 @@
 #endif
 #define ARGRID 48     // GB10 / SM121a has exactly 48 SMs
 #define ARTHREADS 256
+// 16B (8 x bf16) vector lanes for the copy/reduce phases. #99's phase timers
+// put copy+reduce at ~11.8us of the ~100us collective with 2-byte scalar
+// accesses. VECITER bounds the per-thread vector trip count: n <= MAXEL and
+// the grid is fixed at ARGRID x ARTHREADS (the done_ctr protocol), so
+// ceil((MAXEL/8)/(ARGRID*ARTHREADS)) == 2 covers every launch this build can
+// issue. That bound is what lets the reduce phase reuse the values a thread
+// copied (identical mapping in both loops) instead of re-reading src.
+#define VECITER ((MAXEL / 8 + ARGRID * ARTHREADS - 1) / (ARGRID * ARTHREADS))
 #define PROXY_CORE 18
 // clock64() counts SM cycles. The SM clock is pinned at 1592 MHz on this
 // fleet (nvidia-smi clocks.sm, flat across load), so one constant converts.
@@ -191,8 +199,13 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                           int nbytes, const HintArgs h) {
   // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
   // the smallest plain call has n = hidden and many blocks fall entirely past
-  // the payload: with blockDim 256 and n 4096, blocks 16..47 copy nothing and
-  // reduce nothing. They still pay the launch/sync/counter cost.
+  // the payload. The 16B lanes make this starker: with blockDim 256 and
+  // n = 4096 there are only nv = 512 vectors, so threads 0..511 (blocks 0-1)
+  // do all the copying and blocks 2..47 copy nothing. `owns` below is still
+  // ELEMENT-granular (blockIdx.x * blockDim.x < n), so it stays conservative:
+  // blocks 2..15 own per the formula yet carry no lanes, and they still pay
+  // the launch/sync/counter cost (and a vacuous fence). Correctness is
+  // unaffected -- a block with no lanes has nothing to order either way.
   //
   // The peer wait is the expensive one. Data-owning blocks polling the same
   // three volatile flags for the whole RDMA latency window generate traffic
@@ -224,7 +237,28 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   __syncthreads();
   uint64_t nxt = c->tx_seq + 1;
   int slot = (int)(nxt % RING);
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+  // Vector phase: 16B lanes, own values stashed per thread for the reduce.
+  // Alignment is guaranteed ring-side by construction (MAXEL and every rx/tx
+  // stride are multiples of 8 bf16) and source-side by a 16B check in
+  // py_oneshot_impl; the scalar tail below covers n % 8.
+  const uint4 *src4 = reinterpret_cast<const uint4 *>(src);
+  uint4 *tx4 = reinterpret_cast<uint4 *>(c->tx[slot]);
+  const int nv = n >> 3;
+  uint4 mine[VECITER];
+  for (int v = blockIdx.x * blockDim.x + threadIdx.x, k = 0; v < nv;
+       v += gridDim.x * blockDim.x, k++) {
+    // Round 2 cache policy: __ldg is the read-only path for the producer's
+    // L2-hot output; __stwt writes tx THROUGH instead of allocating L2 lines
+    // -- the GPU never re-reads tx (the host proxy and our NIC, as the DMA
+    // source of the RDMA write, are the readers, both from host memory), so
+    // 64KB/collective stops churning the 24MB L2 the rest of the step
+    // depends on, and a through-store may drain at the protocol fence for
+    // free.
+    uint4 val = __ldg(&src4[v]);
+    __stwt(&tx4[v], val);
+    mine[k] = val;
+  }
+  for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x)
     c->tx[slot][i] = src[i];
   // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
@@ -292,7 +326,47 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   __syncthreads();
   if (owns)
     __threadfence_system();
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+  // Reduce on the same 16B lanes: own values come from the registers filled
+  // during the copy (identical mapping), peers' from the rx ring read with
+  // __ldcs -- each rx line is consumed exactly once per collective and
+  // overwritten by the NIC four collectives later, so evict-first streaming
+  // keeps 192KB/collective out of L2. Conversions pack bf16x2 -> float2
+  // (half the convert instructions); per-element op order and rn rounding
+  // are unchanged, so results are bitwise identical to the scalar original.
+  const uint4 *rx4[NPEER] = {
+      reinterpret_cast<const uint4 *>(c->rx[slot][0]),
+      reinterpret_cast<const uint4 *>(c->rx[slot][1]),
+      reinterpret_cast<const uint4 *>(c->rx[slot][2]),
+  };
+  uint4 *dst4 = reinterpret_cast<uint4 *>(dst);
+  for (int v = blockIdx.x * blockDim.x + threadIdx.x, k = 0; v < nv;
+       v += gridDim.x * blockDim.x, k++) {
+    union {
+      uint4 v4;
+      __nv_bfloat162 b2[4];
+    } a, r0, r1, r2, o;
+    a.v4 = mine[k];
+    r0.v4 = __ldcs(&rx4[0][v]);
+    r1.v4 = __ldcs(&rx4[1][v]);
+    r2.v4 = __ldcs(&rx4[2][v]);
+#pragma unroll
+    for (int p = 0; p < 4; p++) {
+      float2 fa = __bfloat1622float2(a.b2[p]);
+      float2 f0 = __bfloat1622float2(r0.b2[p]);
+      float2 f1 = __bfloat1622float2(r1.b2[p]);
+      float2 f2 = __bfloat1622float2(r2.b2[p]);
+      float2 acc;
+      acc.x = fa.x + f0.x;
+      acc.x += f1.x;
+      acc.x += f2.x;
+      acc.y = fa.y + f0.y;
+      acc.y += f1.y;
+      acc.y += f2.y;
+      o.b2[p] = __float22bfloat162_rn(acc);
+    }
+    dst4[v] = o.v4;
+  }
+  for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     float acc = __bfloat162float(src[i]) +
                 __bfloat162float(c->rx[slot][0][i]) +
@@ -612,6 +686,12 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
                                      const std::vector<int64_t> &lens) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kBFloat16);
   TORCH_CHECK(input.is_contiguous());
+  // The copy/reduce phases use 16B vectors; the ring side is aligned by
+  // construction (every stride is a multiple of 8 bf16), the tensor side by
+  // this check. The shim's eligibility check routes odd shapes to NCCL
+  // before we get here, so this is a last-resort guard.
+  TORCH_CHECK((reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "oneshot: input not 16B aligned");
   int64_t n = input.numel();
   TORCH_CHECK(n <= MAXEL, "oneshot: tensor too large");
   TORCH_CHECK(ptrs.size() == lens.size() && ptrs.size() <= OSAR_MAXHINT,
