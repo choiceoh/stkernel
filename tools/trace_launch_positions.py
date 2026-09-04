@@ -75,29 +75,49 @@ def main() -> int:
         keep = {k: a[k] for k in ("stream", "registers per thread", "shared memory", "grid", "block")
                 if k in a}
         print(f"ATTR {e['name'][:56]:<56} {json.dumps(keep)}")
+    # Steps analysed: every anchored interval, minus a warm-up interval when
+    # there is one -- the profiler's first interval holds a prefill and the
+    # first decode (4.5 s against 70 ms steps in the repo's traces). It is
+    # skipped only when detected (span > 3x the median of the others and at
+    # least three intervals), never by position: a trace that starts with
+    # decode keeps its first step, and a two-anchor trace keeps its only one.
+    spans = [ev[b - 1]["ts"] + ev[b - 1]["dur"] - ev[a]["ts"]
+             for a, b in zip(starts[:-1], starts[1:])]
+    first = 1 if (len(spans) >= 3 and spans[0] > 3 * statistics.median(spans[1:])) else 0
+    if first:
+        print(f"step 0 skipped as warm-up ({spans[0] / 1e3:.0f} ms vs median {statistics.median(spans[1:]) / 1e3:.0f} ms)")
+    step_ranges = list(zip(starts[first:-1], starts[first + 1:]))
     # the main stream is the one carrying the model's forward: the stream
-    # with the most kernel TIME (the routed MoE kernels alone are ~half the
-    # step). A kernel-count heuristic picks the glue stream, and the step
-    # anchor's stream is not it either -- the 09-01 stock trace has the prep
-    # kernels and the shared-expert pair on 17 and the forward on 210, the
-    # armed 09-04 trace the other way round.
+    # with the most kernel TIME over the analysed steps (the routed MoE
+    # kernels alone are ~half a step). A kernel-count heuristic picks the
+    # glue stream, the step anchor's stream is not it either -- the 09-01
+    # stock trace has the prep kernels and the shared-expert pair on 17 and
+    # the forward on 210, the armed 09-04 trace the other way round -- and
+    # the whole trace would let a long initialisation kernel on another
+    # stream win, so only the analysed steps count.
     busy = collections.Counter()
-    for e in ev:
-        busy[stream_of(e)] += e["dur"]
+    nkern = collections.Counter()
+    for a, b in step_ranges:
+        for e in ev[a:b]:
+            busy[stream_of(e)] += e["dur"]
+            nkern[stream_of(e)] += 1
+    if not busy:
+        print("no kernels in the analysed steps")
+        return 1
     main_stream = busy.most_common(1)[0][0]
-    print("streams (kernels, busy ms over the trace): "
-          + ", ".join(f"{k}: {sum(1 for e in ev if stream_of(e) == k)}, {v / 1e3:.0f}"
-                      for k, v in busy.most_common()))
+    print("streams (kernels, busy ms over the analysed steps): "
+          + ", ".join(f"{k}: {nkern[k]}, {v / 1e3:.0f}" for k, v in busy.most_common()))
     rows = []
     # per step, per kernel family: exposed us; a family absent from a step
     # contributes 0 to that step (a median over occurrences only would let a
     # single prefill step dominate, as it did for the MoE kernels)
     exposed_by = collections.defaultdict(dict)
     nsteps = 0
-    # step 0 is the profiler's warm-up (a prefill and the first decode): skip
-    for si, (a, b) in enumerate(zip(starts[1:-1], starts[2:]), start=1):
-        nsteps += 1
+    for si, (a, b) in enumerate(step_ranges, start=first):
         seg = ev[a:b]
+        if not seg:  # adjacent anchors / a truncated trace: nothing to attribute
+            continue
+        nsteps += 1
         seg_ts = [e["ts"] for e in seg]
         lookback = max(e["dur"] for e in seg)  # any kernel still running at s0
         by_stream = collections.defaultdict(list)

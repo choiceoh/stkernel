@@ -149,8 +149,10 @@ the slots, where a short second wave is the worst case (51 tiles x 2 =
 With that rule v2 matches or beats the persistent lane on every m <= 16
 shape back to back (in_proj 79.4 vs 80.4 us, [4096x4096] 49.7 vs 56.3,
 [4096x3072] 39.9 vs 46.1, shared expert 21.5/14.8 vs 22.5/15.4); m = 32
-still trails (45.1 vs 37.9 on [2048x4096]: the per-block x quant scales
-with m), so the lane is for C=1 until that path is fixed.
+is level (38.9 vs 37.9 on [2048x4096]; the per-block x quant scales
+with m). Under the routed MoE kernel the shared-expert pair exposes 18.6-
+28.6 us a layer on v2 against 47.3-47.7 on the persistent lane (the
+overlap probe, 30차 §6): -0.8 to -1.2 ms a step from that pair alone.
 
 Contract, inherited from the persistent lane: v2's partials and per-tile
 arrival counters are one device-wide set, so a v2 launch must never
