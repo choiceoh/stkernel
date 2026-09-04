@@ -10696,7 +10696,7 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     check("sleep $_backoff" not in sup and "sleep \"$_backoff\"" not in sup,
           "sleeping the backoff would blind the health probe for up to 30 min")
     # and it must eventually stop and say so
-    check("HELD after $launch_fails consecutive launch failures" in sup,
+    check("HELD after $launch_fails relaunches with no healthy stack" in sup,
           "after the cap it stops relaunching and states why once")
     held = sup[sup.index("LAUNCH_HOLD_AFTER"):]
     check("held_logged=1" in held and 'held_logged" = 0' in held,
@@ -10705,6 +10705,27 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     check("launch_fails=0; next_launch_at=0; held_logged=0" in sup,
           "recovery must clear the hold -- a supervisor that gives up "
           "permanently is a worse failure than the churn it replaced")
+    # ...and ONLY a confirmed generation may clear it. launch() returns 0
+    # on api_up alone, and /v1/models answers 200 from a corpse, so the
+    # first cut credited every corpse relaunch as a success and reset the
+    # counter: the hold was unreachable in the one failure mode the pacing
+    # exists for (simulated: 293 launcher runs and no hold, vs 5 and a hold).
+    check("launch || true" in sup
+          and "if launch; then" not in sup,
+          "a relaunch counts as an ATTEMPT -- api_up alone is not health, "
+          "so launch()'s return must not clear the counter")
+    check(sup.count("launch_fails=0") == 2,
+          "the only two places that zero the counter are its declaration "
+          "and the api_up && chat_ok recovery branch")
+    clear_at = sup.index("launch_fails=0; next_launch_at=0; held_logged=0")
+    check("if api_up && chat_ok; then" in sup[:clear_at].rsplit("while :;", 1)[-1],
+          "the clear sits under a real generation probe, not under api_up")
+    # the boot attempt is accounted like any other, or a failed boot buys
+    # one relaunch beyond LAUNCH_HOLD_AFTER (6 launcher runs for a cap of 5)
+    check("  launch_fails=1\n" in sup
+          and "next_launch_at=$(( $(date +%s) + LAUNCH_BACKOFF_BASE ))" in sup,
+          "the initial launch goes through the same accounting as a "
+          "loop relaunch")
     print("  supervisor relaunch pacing .... OK")
 
 

@@ -157,7 +157,16 @@ maybe_cache_reset(){
 
 wait_for_fleet
 # Adopt an already-healthy stack instead of stomping it (manual launches, restarts).
-if api_up && chat_ok; then log "existing stack healthy — adopting"; else launch || log "initial launch failed; will retry via health loop"; fi
+if api_up && chat_ok; then
+  log "existing stack healthy — adopting"
+else
+  # same accounting as a loop relaunch, or a failed boot would buy an extra
+  # attempt on top of LAUNCH_HOLD_AFTER; the health loop clears it 30 s later
+  # if this one really came up, so a good boot costs nothing.
+  launch || log "initial launch failed; will retry via health loop"
+  launch_fails=1
+  next_launch_at=$(( $(date +%s) + LAUNCH_BACKOFF_BASE ))
+fi
 
 while :; do
   sleep 30
@@ -165,7 +174,7 @@ while :; do
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
     if [ "$launch_fails" -gt 0 ]; then
-      log "stack healthy again -- clearing $launch_fails launch failure(s)"
+      log "stack healthy again -- clearing $launch_fails launch attempt(s)"
       launch_fails=0; next_launch_at=0; held_logged=0
     fi
     wedge_check
@@ -177,7 +186,7 @@ while :; do
   if [ "$fails" -ge "$FAILS_NEEDED" ]; then
     if [ "$launch_fails" -ge "$LAUNCH_HOLD_AFTER" ]; then
       if [ "$held_logged" = 0 ]; then
-        log "HELD after $launch_fails consecutive launch failures -- not relaunching."
+        log "HELD after $launch_fails relaunches with no healthy stack -- not relaunching."
         log "  The launcher needs a human. This loop keeps probing and will adopt"
         log "  a healthy stack the moment one exists."
         held_logged=1
@@ -187,14 +196,16 @@ while :; do
     _now=$(date +%s)
     [ "$_now" -lt "$next_launch_at" ] && continue
     wait_for_fleet
-    if launch; then
-      launch_fails=0; next_launch_at=0
-    else
-      launch_fails=$((launch_fails+1))
-      _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
-      [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
-      next_launch_at=$(( $(date +%s) + _backoff ))
-      log "relaunch failed ($launch_fails/$LAUNCH_HOLD_AFTER); next attempt in ${_backoff}s"
-    fi
+    # Count the ATTEMPT, and let only a real generation clear it (the health
+    # branch above). launch() returns 0 on api_up alone, and /v1/models answers
+    # 200 from a corpse (see chat_ok) -- crediting that as success reset the
+    # counter every round, so the hold was never reached in the one failure
+    # mode this pacing exists for: relaunch, API up, chat still dead, repeat.
+    launch || true
+    launch_fails=$((launch_fails+1))
+    _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
+    [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
+    next_launch_at=$(( $(date +%s) + _backoff ))
+    log "relaunch $launch_fails/$LAUNCH_HOLD_AFTER done; no another for ${_backoff}s unless it goes healthy"
   fi
 done
