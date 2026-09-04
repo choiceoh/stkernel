@@ -2065,7 +2065,7 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 2. **K5 팔**(체인10 두 번째) — **부팅 불가**: 05:15 부팅이 45분간 초기화에서 멈춤. 헤드 Worker_TP0 가 `profile_run → _dummy_sampler_run → gumbel_sample` 의 Triton 커널 초기화(`_init_handles`)에 CPU 300%·GPU 96% 로 갇힘, 워커 3개는 유휴. K=5 에서 더미 샘플러 형상이 달라지며 생기는 초기화 병목(컴파일 루프 또는 거대 더미 배치)으로 보이며, K5 레버는 이 초기화를 따로 풀어야 잴 수 있다. 06:00 팔 중단 → PROD 진행. (원래 계획:) `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
    가설: 검증 배치 (k+1) 토큰이 줄면 스텝당 서로 다른 전문가 수가 줄어 스텝이 빨라지고, tok/step 은 조금 준다 —
    one-spark 는 같은 드래프터를 K5 로 서빙(구조화 4.94 tok/step). 판정은 tok/s(step/s × tok/step).
-3. **2.05 bpw 품질 기준점**(one-spark, 1× Spark): srv4 `~/one-spark`(2bd465d) + `~/models/GLM-5.3-Flash-exl3-2.05bpw`
+3. ~~**2.05 bpw 품질 기준점**(one-spark, 1× Spark)~~ — **취소(06:25, 운영자 "원스파크 빌드 평가는 하지마")**. 체크포인트(80 GB)와 저장소는 srv4 에 보관만, 빌드·서빙·평가 없음. (원래 계획:) srv4 `~/one-spark`(2bd465d) + `~/models/GLM-5.3-Flash-exl3-2.05bpw`
    (turboderp exl3 mul1, 80 GB) + DFlash2. 플릿을 내린 창에서 이미지 빌드(base `vllm/vllm-openai:glm53-flash-arm64-cu130`
    + ExLlamaV3 e648f1a, MAX_JOBS 8, ~1 h) → `eval.sh`: 우리 게이트(품질 2K/32K·한국어 2×400·디코드 C=1·수용률)를
    그들 서버(TP1, K5, fp8 KV)에 그대로. 답할 것: 2 bpw 가 우리 품질 게이트를 통과하는가(통과하면 전문가 2~3 bpw 가
