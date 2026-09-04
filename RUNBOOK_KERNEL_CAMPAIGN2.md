@@ -32,7 +32,7 @@
 | 2 | custom_ops 융합 | 부팅 대기 | ✅ | `CUSTOM_OPS_AXIS=all` · 기대값 하향: 글루 481발 전부 합쳐 1.00 ms |
 | 13 | AR 프리페치 | 브래킷 대기 | ✅ | `AR_PREFETCH=0` · 상한 −0.4~0.6 ms(27차 정정), EXP-6+12 위에만 |
 | 18 | osar 벡터화 + 캐시정책 | 브래킷 대기 | ✅ | 코드 반영 완료. 직렬 절감 단독은 ~0.2~0.3 ms 로 CV 미달 — **EXP-13 팔과 같은 부팅**에서 L2 위생 시너지로 판정(#303 정정) |
-| 20 | 미세 융합 묶음 2 (KDA 원패스·듀얼 GEMM·kpool) | 브래킷 대기 | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS, 런치 −249/1,548, **−0.25 ms/스텝**(C=1) · C=4 −0.4(31차). 게이트 epilogue 축은 오프라인 기각 |
+| 20 | 미세 융합 묶음 2 (듀얼 GEMM·kpool / 원패스는 막힘) | 브래킷 대기(축소) | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS(31차). **이 러너에서 도달 가능한 몫은 듀얼 GEMM + kpool 뿐 — 런치 −45, ≈ −0.1 ms/스텝**. 원패스(−204 런치, −0.14 ms)는 `use_spec` 게이트라 32차 §11(`spec_sequence_masks is None`)에 막혀 프로덕션에서 안 돈다 — MK-KDA 와 같은 비-spec 메타데이터 재설계가 선행. 게이트 epilogue 축은 오프라인 기각 |
 | 9 | 인덱서 head-gate split-K | 얹기 대기 | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
 | 4 | b_proj/indexer fp8 | 대기 | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
@@ -705,6 +705,15 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 cuBLAS 가 다른 커널을 골라 1 ulp 소수). kpool 은 값 동일.
 
 MK_SEG_KDA(`VLLM_GLM53_MK_KDA=1`)가 서빙되면 KDA 두 축은 무효(메가커널 분기가 먼저).
+
+**원패스는 지금 이 러너에서 안 돈다(32차 §11 뒤 정정).** 진입 조건이 `use_spec`
+(`glm5next_kda.py`: `use_spec = spec_sequence_masks is not None and num_spec_decodes > 0`)
+인데, 체인9 의 증명 줄이 이 V2 러너의 KDA 메타데이터는 항상 `spec_sequence_masks is None`
+임을 확정했다(`build_attn_metadata` 가 `num_decode_draft_tokens_cpu` 를 넘기지 않아 spec
+마스크가 만들어지지 않는다). 즉 "순수 spec-verify 스텝"이 애초에 발생하지 않는다 — MK-KDA
+레인이 한 번도 서빙되지 않은 것과 **같은 원인**이고, 같은 비-spec 메타데이터 글루 재설계가
+선행되어야 한다. 오프라인 픽스처의 −204 런치/−0.14 ms 는 그 재설계 뒤에나 브래킷에 오른다.
+**브래킷에 지금 올릴 수 있는 몫은 듀얼 GEMM(−34, −0.09 ms)과 kpool(−11, −0.015 ms)뿐이다.**
 "kpool 원패스 11층→1" 은 층간 데이터 의존(층 L 의 갱신은 층 L 의 K 를 먹고 같은 층의
 logits 가 그 캐시를 읽음) 때문에 플래그 대기 persistent 커널 없이는 불가 — 스텝 내내
 SM 을 점유하는 그 형태는 채택 대상이 아니라서 캐스트 복사 제거로 축소했다.
