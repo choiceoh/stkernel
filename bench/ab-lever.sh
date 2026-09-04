@@ -3,7 +3,7 @@
 # given caller env, then the legs. Usage: ab-lever.sh <NAME> "<caller env>" [reps]
 #   SKIP_BOOT=1 reuses the live boot. Records --name NAME --tag cand.
 #   LEGS=decode,prefill,accept,quality,korean (default: all) picks the legs --
-#   the 29차 leg matrix: an EXPLORATION arm (a decode-kernel change) runs
+#   the 32차 leg matrix: an EXPLORATION arm (a decode-kernel change) runs
 #   LEGS=decode,prefill8k QUALITY_CTX=2000,32000 (boot + ~5 min), a PROMOTION
 #   arm runs everything. SHORT=1 is the old alias for decode,prefill.
 #   REPS default 3: bench/bracket.py samples the engine's step counter in

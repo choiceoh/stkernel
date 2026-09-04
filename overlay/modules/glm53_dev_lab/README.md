@@ -1,4 +1,4 @@
-# glm53_dev_lab — 부팅 없는 커널 반복 루프 (29차 item 5)
+# glm53_dev_lab — 부팅 없는 커널 반복 루프 (32차 item 5)
 
 `VLLM_GLM53_DEV_LAB=1` 로 부팅한 **개발용** 플릿에서:
 

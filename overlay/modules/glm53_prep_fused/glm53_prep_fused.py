@@ -989,7 +989,7 @@ def _verify(runner, st: _State, fused, scheduler_output, batch_req_state, batch_
                              slot_mappings, runner.attn_groups, runner.kv_cache_config, False)
     st.t_stock_host += time.perf_counter() - t0
     st.n_timed += 1
-    if st.n_timed % 64 == 0:   # 29차 item 6: the shadow says what it buys
+    if st.n_timed % 64 == 0:   # 32차 item 6: the shadow says what it buys
         logger.warning("[prep-fused] %s timing (n=%d): fused host=%.0f us stock chain host=%.0f us per step",
                        st.mode, st.n_timed, 1e6 * st.t_fused_host / max(st.steps_fused, 1),
                        1e6 * st.t_stock_host / st.n_timed)

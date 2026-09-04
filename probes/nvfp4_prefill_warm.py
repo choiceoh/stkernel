@@ -2,7 +2,7 @@
 """Warm flashinfer's mm_fp4 JIT (the cutlass backend) for the fleet's dense
 prefill shapes OUTSIDE a serving boot, with a bounded compile parallelism.
 
-Why: the first NVFP4P boot (28차/29차) built the nvfp4 pairs inside the
+Why: the first NVFP4P boot (28차/32차) built the nvfp4 pairs inside the
 serve process and srv3 went from ~25 GiB free to 5 GiB (earlyoom) while
 the first mm_fp4 shape compiled -- a 26차-class cliff. The JIT cache lives
 under FLASHINFER_WORKSPACE_BASE (/cache), so one warm per node makes the

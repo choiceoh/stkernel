@@ -480,7 +480,7 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
             ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
             ev[2].record()
             torch.cuda.synchronize()
-            # 29차 item 6: the one-shot judge also times both paths on the
+            # 32차 item 6: the one-shot judge also times both paths on the
             # same rows (an eager prefill chunk, not the captured decode)
             logger.warning("[megakernel] mla shadow timing (T=%d): mk=%.1f us wrapper=%.1f us",
                            q_nope.shape[0], 1e3 * ev[0].elapsed_time(ev[1]), 1e3 * ev[1].elapsed_time(ev[2]))

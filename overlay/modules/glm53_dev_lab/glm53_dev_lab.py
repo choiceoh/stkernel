@@ -1,4 +1,4 @@
-"""29차 item 5 -- the dev lab: a kernel iteration loop that needs no boot.
+"""32차 item 5 -- the dev lab: a kernel iteration loop that needs no boot.
 
 Worker side. A boot with VLLM_GLM53_DEV_LAB=1 installs, in every rank:
   * a wrapper on CudaGraphManager.run_fullgraph that remembers the last FULL
