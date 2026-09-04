@@ -96,7 +96,7 @@ struct Ctrl {
   // must not move).
   volatile uint64_t t_wait_sm;
   volatile uint64_t t_calls_sm;
-  // pad[0] doubles as the STALL WORD (29차 §9 hang forensics): block 0's
+  // pad[0] doubles as the STALL WORD (32차 §9 hang forensics): block 0's
   // thread 0 writes it once when a spin passes OSAR_STALL_S seconds --
   // (seq << 8) | (phase << 6) | (missing-peer mask << 3) | slot -- and the
   // proxy thread, which is alive while the kernel spins, prints it with
