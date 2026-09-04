@@ -137,9 +137,15 @@ CT_NCCL_ASYNC_ERR="${NCCL_ASYNC_ERR:-1}"
 # a slow degradation -- it is the 09-04 wedge: the host crosses the 4 GiB kernel
 # watermark, sshd stops forking, and the node needs a power cycle.
 #
-# hy4 carried this guard and glm53 did not, so the asymmetry only protected the
-# lane that was less likely to be started second. Both call it now, each naming
-# the OTHER lanes as foreign.
+# Correction (2026-09-04): #277 introduced this saying glm53 had no such guard.
+# That was wrong -- glm53 had an equivalent check written differently
+# (`run 'docker ps ... grep -qE "^(hy4|q38)"'`) inside its per-node loop, and
+# the survey behind #277 grepped for hy4's function name and missed it. What
+# was actually true is that the two were written twice, ran at different points
+# and used different anchors (glm53's lacked the trailing (-|$), so it also
+# matched an unrelated container merely starting with the name). Both call this
+# one now, each naming the OTHER lanes as foreign, and glm53's inline copy is
+# gone.
 #
 # DRY_RUN skips it: a dry run creates nothing, so a live stack is not a conflict.
 ct_refuse_foreign_stacks() {
@@ -190,3 +196,44 @@ for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
 done
 GIDEOF
 )
+
+# --- image uniformity --------------------------------------------------------
+# ct_verify_image_uniform <ssh opts> <image> <expected id | ""> <head ip> <worker ip>...
+#
+# Sets CT_IMAGE_ID to the head's image ID once every node agrees on it.
+#
+# hy4 compared each worker's image ID against the head's and refused on skew.
+# glm53 only asked whether the tag RESOLVED on each node -- and its tags are
+# locally built (glm53:v13-b12x-it), not registry digests, so the same tag can
+# name a different build per node. Nothing else covered the gap: the overlay
+# attestation compares HOST files, and the manifest preimage check runs a
+# container on the HEAD only. A node carrying a different base image passed
+# every one of those and then ran different kernels inside a TP=4 collective,
+# with the boot log saying nothing.
+#
+# expected id is hy4's EXPECTED_IMAGE_ID pin; glm53 passes "" because its tag
+# moves by design, so there it enforces agreement without pinning a value.
+ct_verify_image_uniform() {
+  local _sshopt="$1" _image="$2" _expect="$3" _head="$4"; shift 4
+  local _hid _wid _ip
+  _hid=$(docker image inspect "$_image" --format '{{.Id}}' 2>/dev/null || true)
+  [ -n "$_hid" ] || { echo "ABORT: $_head has no image $_image" >&2; exit 1; }
+  if [ -n "$_expect" ] && [ "$_hid" != "$_expect" ]; then
+    echo "ABORT: $_image ID drifted on $_head" >&2
+    echo "  expected: $_expect" >&2
+    echo "  actual:   $_hid" >&2
+    exit 1
+  fi
+  for _ip in "$@"; do
+    _wid=$(ssh $_sshopt "choiceoh@$_ip" \
+             "docker image inspect $_image --format '{{.Id}}'" 2>/dev/null || true)
+    [ -n "$_wid" ] || { echo "ABORT: $_ip has no image $_image" >&2; exit 1; }
+    if [ "$_wid" != "$_hid" ]; then
+      echo "ABORT: $_image differs on $_ip -- the ranks would run different builds" >&2
+      echo "  $_head: $_hid" >&2
+      echo "  $_ip: $_wid" >&2
+      exit 1
+    fi
+  done
+  CT_IMAGE_ID="$_hid"
+}

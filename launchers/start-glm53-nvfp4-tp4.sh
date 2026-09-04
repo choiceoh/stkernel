@@ -269,6 +269,13 @@ else
   load_overlay_manifest "$OVERLAY_MANIFEST"
 fi
 
+# Every node must resolve $IMAGE to the SAME build. This lane's tags are built
+# locally, so one tag can name different images per node; the overlay
+# attestation below compares host files and the manifest preimage check runs on
+# the head only, so neither covers it. Without this a rank can run different
+# kernels inside the collective and nothing says so.
+[ "${DRY_RUN:-0}" = 1 ] || ct_verify_image_uniform "$SSHOPT" "$IMAGE" "" "$HEAD_IP" "${WORKER_IPS[@]}"
+
 [ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/config.json"
 [ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
   echo "ABORT: chat_template_mm.jinja missing in model dir (copy from ~/glm53-4x/)"; exit 1; }
@@ -277,15 +284,12 @@ fi
 # the machines about themselves, which a config print has no use for.
 for ip in $([ "${DRY_RUN:-0}" = 1 ] || echo "$HEAD_IP ${WORKER_IPS[@]}"); do
   run() { if [ "$ip" = "$HEAD_IP" ]; then bash -c "$1"; else ssh $SSHOPT choiceoh@"$ip" "$1"; fi; }
-  if run 'docker ps --format "{{.Names}}"|grep -qE "^(hy4|q38)"'; then
-    echo "ABORT: $ip runs hy4/q38 — stop production/experiment first"; exit 1; fi
   run "test -f $MODEL_HOST_PATH/config.json" || { echo "ABORT: $ip missing weights"; exit 1; }
   if (( ${#OVFILES[@]} )); then
     _sum=$(cd "$OVERLAY_DIR" && sha256sum manifest.tsv "${OVFILES[@]}" 2>/dev/null)
     [ "$(run "cd $OVERLAY_DIR && sha256sum manifest.tsv ${OVFILES[*]} 2>/dev/null")" = "$_sum" ] \
       || { echo "ABORT: $ip overlays differ from head -- run deploy-overlays.sh glm53"; exit 1; }
   fi
-  run "docker image inspect $IMAGE >/dev/null 2>&1" || { echo "ABORT: $ip missing image"; exit 1; }
 done
 
 # The manifest pins each target's sha256 as the image ships it. A mismatch means

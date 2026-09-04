@@ -9155,7 +9155,9 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "the profile-collision guard moved into the library intact")
 
     # the foreign-stack guard: one implementation, and BOTH lanes use it. hy4
-    # had it and glm53 did not, so it only protected whichever stack happened
+    # was written twice with different anchors and ran at different points (the
+    # claim in #277 that glm53 had none was wrong -- it had an inline copy the
+    # survey missed), so it only reliably protected whichever stack happened
     # to be started second -- starting glm53 onto a live DSV4 double-books the
     # same unified memory, which is how a node crosses the 4 GiB watermark.
     check("ct_refuse_foreign_stacks()" in lib,
@@ -9195,6 +9197,39 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
     check("-e NCCL_IB_GID_INDEX=" in g,
           "glm53 keeps its historical index as the FALLBACK the prelude "
           "overrides -- belt and suspenders, per the runbook")
+
+    # exactly one foreign check per lane -- #277 left glm53 running two
+    check(g.count("hy4|q38") == 1,
+          "glm53 must carry ONE foreign check: #277 added the shared call "
+          "beside an inline copy it had not noticed")
+
+    # every node must resolve $IMAGE to the same build. hy4 compared worker IDs
+    # to the head's; glm53 only asked whether the tag resolved, and its tags are
+    # built locally, so one tag can name different images per node. The overlay
+    # attestation compares HOST files and the manifest preimage check runs on
+    # the head only, so neither closed that gap.
+    check("ct_verify_image_uniform()" in lib and "CT_IMAGE_ID=" in lib,
+          "the image check belongs in the library")
+    check("the ranks would run different builds" in lib,
+          "the abort must say what skew actually costs")
+    # assert the COMPARISON, not just the message: replacing the condition with
+    # a constant leaves the abort text in place and the guard doing nothing.
+    check('[ "$_wid" != "$_hid" ]' in lib,
+          "the worker ID must actually be compared against the head's")
+    check('[ -n "$_expect" ] && [ "$_hid" != "$_expect" ]' in lib,
+          "the pinned ID, when given, must actually be compared")
+    for name, src in lanes.items():
+        check("ct_verify_image_uniform" in src,
+              "%s must verify the image is uniform across nodes" % name)
+        check("docker image inspect" not in src,
+              "%s must not keep its own image inspection" % name)
+    check('ct_verify_image_uniform "$SSHOPT" "$IMAGE" "$EXPECTED_IMAGE_ID"'
+          in lanes["start-hy4-tp4.sh"],
+          "hy4 keeps its pinned ID as the expected value")
+    check('ct_verify_image_uniform "$SSHOPT" "$IMAGE" ""'
+          in lanes["start-glm53-nvfp4-tp4.sh"],
+          "glm53 pins no value -- its tag moves by design -- but still requires "
+          "the four nodes to agree")
 
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],

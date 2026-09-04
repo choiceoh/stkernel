@@ -399,13 +399,11 @@ mounts_for() {
 }
 
 echo "=== [0/5] preflight: image + model + overlays on all nodes ==="
-HID=$(docker image inspect "$IMAGE" --format '{{.Id}}')
-[ "$HID" = "$EXPECTED_IMAGE_ID" ] || {
-  echo "ABORT: production-hybrid-1.6 image ID drifted"
-  echo "  expected: $EXPECTED_IMAGE_ID"
-  echo "  actual:   $HID"
-  exit 1
-}
+# Pin AND cross-node agreement, in one shared check (lib/common-tp4.sh).
+_img_wips=""
+for _w in $WORKERS; do _img_wips="$_img_wips ${_w%%:*}"; done
+ct_verify_image_uniform "$SSHOPT" "$IMAGE" "$EXPECTED_IMAGE_ID" "$HEAD_IP" $_img_wips
+HID="$CT_IMAGE_ID"
 # The manifest pins the unmounted base preimage for every replaced file and
 # explicitly marks newly-created targets absent. Check before any bind mount
 # can hide the image bytes.
@@ -457,8 +455,6 @@ if [ -n "$MARKOV_SIDELOAD" ] && [ ! -f "$MARKOV_SIDELOAD" ]; then
 fi
 for w in $WORKERS; do
   ip=${w%%:*}
-  WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
-  [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
   WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && sha256sum $MANIFEST_NAME ${OVFILES[*]}" 2>/dev/null || true)
   [ "$WOVSUM" = "$HEAD_OVSUM" ] || { echo "ABORT: overlay missing/skewed on $ip ($(overlay_dir $ip)-b12x)"; exit 1; }
   ssh $SSHOPT choiceoh@$ip "test -f $MODEL_PATH/config.json && mkdir -p ~/.cache/huggingface ~/.cache/vllm-hybrid ~/.cache/tilelang-hybrid ~/vllm-prof" \
