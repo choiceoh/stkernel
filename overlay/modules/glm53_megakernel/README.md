@@ -55,6 +55,46 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
+## The v2 lane: the same GEMM as a non-persistent grid (2026-09-05, 30차)
+
+The persistent kernel is right for a kernel that owns the GPU and wrong
+for one that shares it. The 09-04 armed trace, read per launch position,
+put 5.7 of the lane's 14.1 ms/step on ONE shape: the shared expert's down
+[4096 x 512], 18 us alone and 135 us in the step. Its 48 x 69.6 KB blocks
+cannot share an SM with the routed MoE kernel (90 KB, 48 blocks; the SM
+has 102,400 B), so on the side stream they land one at a time as MoE
+blocks retire and the publish barrier holds every landed block for the
+last one -- which lands when MoE ends. deep_gemm (92 KB, also 1/SM) ran
+the same GEMM inside the MoE tail because its blocks are independent
+(09-01 stock trace: 36 us, all of it under the MoE kernel). On the main
+stream the once-per-launch prologue and the static first-unit assignment
+cost 15-35 us a launch (dense gate_up [6144 x 4096]: 119 us for 62 us of
+bytes -- 48 tiles on 48 blocks, nothing to balance them).
+
+`mk_gemm2_kernel` (`VLLM_GLM53_MK_GEMM2=1`, default off; the persistent
+kernel stays as the kill-switched lane) is the same W4A8 GEMM as grid =
+(n/128) x ksr independent blocks: no grid barrier, no shared A tiles
+(each block quantizes the A k-blocks of its own slice from x in L2 --
+same amax, same pow2 scale, same conversion, so the mma sees the bytes
+the persistent kernel sees), the e2m1 expansion done in registers
+straight into the mma B fragments with the same table lookup (`mk_w4x4`),
+which frees the 32 KB of expanded tiles: **37 KB of smem, two blocks per
+SM** (`__launch_bounds__(256, 2)`). One `__syncthreads` per k-block. ksr
+> 1 slices assign an fp32 partial and the last slice to arrive folds the
+tile in fixed order (deterministic, no zero pass). The slice rule
+(`mk_choose_ksr2`) wants two waves of the resident slots and no slice
+shorter than 4 k-blocks; `VLLM_GLM53_MK_KSR2` forces it for sweeps.
+
+Gates and numbers: the boot self-test's exact-grid gate runs on whichever
+lane the boot serves and the fingerprint names it (`lane v2, in_proj plan
+on/ksr/units/bps=...`). The bench times both lanes side by side
+(`--gemm2 both`: v2's output is bit-identical to the persistent lane's on
+unsplit shapes and differs only by slice summation order on split ones;
+`--ksr2-sweep 1,2,4,6,8`), the exact gate runs on both lanes at five
+slice counts, and `probes/mk_gemm_moe_overlap_probe.py` measures the
+shared-expert pair's exposure under the MoE kernel for both lanes.
+MEASUREMENTS.md 30차 carries the trace analysis and the numbers.
+
 ## What it absorbs (and what it cannot)
 
 The 2026-09-01 step decomposition fixes the budget: C=1 step = 66.0 ms, of
