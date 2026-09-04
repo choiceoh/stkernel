@@ -77,7 +77,7 @@ def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
     tree = ast.parse(open(path).read())
     body = []
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name in names:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names:
             body.append(node)
         elif isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id in names for t in node.targets
@@ -93,7 +93,7 @@ def load_defs(relpath: str, names: set[str], ns: dict) -> dict:
             and node.target.id in names
         ):
             body.append(node)
-    got = {n.name for n in body if isinstance(n, ast.FunctionDef)} | {
+    got = {n.name for n in body if isinstance(n, (ast.FunctionDef, ast.ClassDef))} | {
         t.id
         for n in body
         if isinstance(n, ast.Assign)
@@ -6713,6 +6713,87 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     print("  kda owns its projections ...... OK")
 
 
+def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
+    """Lever 7 (28차): prefill rows take the nvfp4 pair, decode keeps the lane.
+
+    The nvfp4 SCHEME replaces the method and so turns the MK W4 lane off for
+    every layer it takes (#263). The prefill pair is attached to the fp8
+    method instead: apply() routes M > _NVFP4_PREFILL_MIN_M (the MK lane's
+    32) to mm_fp4, everything at or below it goes on to the lane / fp8 pair
+    untouched, the opaque (drafter) path never sees it, and a failing pair
+    drops that layer's prefill to the fp8 pair for good.
+    """
+    calls = []
+
+    class _Log:
+        def warning(self, fmt, *a):
+            calls.append(("log", fmt % a if a else fmt))
+
+    class _X:
+        def __init__(self, m, k=4096):
+            self.shape = (m, k)
+
+        def numel(self):
+            return self.shape[0] * self.shape[1]
+
+    ns = load_defs(
+        "overlay/glm53_fp8_dense.py",
+        {"Fp8DenseMethod", "_NVFP4_PREFILL_MIN_M", "_PREFILL_NVFP4_ENV",
+         "_prefill_nvfp4_enabled"},
+        {"os": os, "re": re, "logger": _Log(),
+         "_nvfp4_dense_gemm_op": lambda x, *nv: calls.append(("nvfp4", x.shape[0], nv)) or "nv",
+         "_fp8_dense_gemm_op": lambda x, *a: calls.append(("fp8", x.shape[0])) or "fp8",
+         "_mk_or_fp8_dense_gemm_op": lambda x, *a: calls.append(("opaque", x.shape[0])) or "op"},
+    )
+    assert ns["_NVFP4_PREFILL_MIN_M"] == 32
+    M = ns["Fp8DenseMethod"]
+    base = types.SimpleNamespace(apply=lambda layer, x, bias: "bf16")
+    m = M(base, "q", "ws", 4096, 4096)
+    assert m._nvfp4 is None
+    layer = types.SimpleNamespace()
+    # no pair: rows go to the fp8 pair (no MK pack attached here)
+    assert m.apply(layer, _X(64)) == "fp8"
+    # with the pair: prefill rows -> nvfp4, decode rows -> fp8 pair
+    m._nvfp4 = ("wq", "wsf", "gs", 4096, 1.0)
+    calls.clear()
+    assert m.apply(layer, _X(64)) == "nv" and calls[-1][0] == "nvfp4"
+    assert m.apply(layer, _X(33)) == "nv"
+    assert m.apply(layer, _X(32)) == "fp8" and calls[-1][0] == "fp8"
+    assert m.apply(layer, _X(8)) == "fp8"
+    # bias keeps the base path; the opaque drafter path never reads the pair
+    assert m.apply(layer, _X(64), bias="b") == "bf16"
+    m._opaque = True
+    assert m.apply(layer, _X(64)) == "op" and calls[-1][0] == "opaque"
+    m._opaque = False
+    # a failing pair drops to fp8 for good, loudly
+    ns["_nvfp4_dense_gemm_op"] = lambda x, *nv: (_ for _ in ()).throw(RuntimeError("mm_fp4"))
+    calls.clear()
+    assert m.apply(layer, _X(64)) == "fp8"
+    assert m._nvfp4 is None and any("nvfp4 prefill pair failed" in c[1] for c in calls if c[0] == "log")
+    assert m.apply(layer, _X(64)) == "fp8"
+    # the knob is target-only and exact
+    env = ns["_PREFILL_NVFP4_ENV"]
+    old = os.environ.pop(env, None)
+    try:
+        assert not ns["_prefill_nvfp4_enabled"]("VLLM_GLM53_FP8_DENSE")
+        os.environ[env] = "1"
+        assert ns["_prefill_nvfp4_enabled"]("VLLM_GLM53_FP8_DENSE")
+        assert not ns["_prefill_nvfp4_enabled"]("VLLM_DFLASH2_FP8_DENSE")
+        os.environ[env] = "w8"
+        assert not ns["_prefill_nvfp4_enabled"]("VLLM_GLM53_FP8_DENSE")
+    finally:
+        if old is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = old
+    # build wiring and the profile default
+    src = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8").read()
+    assert 'prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"' in src
+    assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
+    prof = open("profiles/glm53.env", encoding="utf-8").read()
+    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
+
+
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
     """28차: the MLA split scratch never moves under a captured graph.
 
@@ -10142,6 +10223,7 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_osar_prefetch_hints_contract()
