@@ -173,26 +173,50 @@ def _time(fn, iters: int, hot=()) -> float:
 
 
 GEMM_SHAPES = [(8, 6416, 4096), (16, 4096, 4096), (32, 2048, 4096), (32, 1024, 4096),
-               (8, 1024, 4096), (8, 4096, 512), (8, 4096, 4096)]
+               (8, 1024, 4096), (8, 4096, 512), (8, 4096, 4096),
+               # the rest of the per-rank decode histogram at C=1 (boot
+               # fingerprint, 09-04): kda o_proj, mla qkv_a, dense gate_up / down
+               (8, 4096, 2048), (8, 2048, 4096), (8, 6144, 4096), (8, 4096, 3072)]
 
 
-def probe_gemm(iters: int) -> bool:
+def _lane(ext, on: int, ksr: int = 0) -> None:
+    """Route the standalone launches through the v2 (non-persistent) lane
+    (on=1) or the persistent one (on=0); ksr > 0 forces v2's slice count."""
+    ext.set_gemm2(on, ksr)
+
+
+def _lane_restore(ext) -> None:
+    _lane(ext, 1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0)
+
+
+def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
     """MK-GEMM (the W4 lane) against the stock quant+deepgemm pair on the
     decode shapes: by-design error (e2m1, gated at 0.15), single-launch
-    and back-to-back timings, replay stability."""
+    and back-to-back timings, replay stability.
+
+    gemm2: "0" times the persistent kernel in the mk columns, "1" the v2
+    (non-persistent) kernel, "both" the persistent one in the mk columns
+    and v2 in the mk2 columns after them, with v2's output diffed against
+    the persistent lane's (bit = identical; a split shape sums its k
+    slices in a different order and shows the rel instead) and v2's plan
+    (ksr, units). sweep: ksr values to force on v2 per shape."""
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
     from vllm.model_executor.layers import glm53_megakernel as mk
 
+    ext = mk._build()
     ok = True
     print(f"{'shape':<24}{'rel_err':>8}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
           f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
-          f"{'st_x2':>7}")
+          f"{'st_x2':>7}"
+          + (f"{'mk2_us':>8}{'mk2_x2':>8}{'mk2_GBps':>9}{'v2-v1':>9}  plan"
+             if gemm2 == "both" else ""))
     # The original four sweep n at k = 4096; the three after them are the
     # per-rank production shapes whose launches sit in the 30-45 us class
     # (86/step, 3.5 ms, 2.4 ms of it exposed on the critical path -- 28차):
     # the shared expert's gate_up [1024 x 4096] and down [4096 x 512], and
     # o_proj [4096 x 4096]. Override with --gemm-shapes m:n:k,...
     for m, n, k in GEMM_SHAPES:
+        _lane(ext, 1 if gemm2 == "1" else 0)
         torch.manual_seed(0)
         w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
         x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
@@ -242,23 +266,141 @@ def probe_gemm(iters: int) -> bool:
         # spread = (max - min) / median over the timed launches. A bimodal
         # cell (two clusters inside one process) shows up here where a
         # median alone would hide it behind a plausible number.
+        extra = ""
+        if gemm2 == "both":
+            _lane(ext, 1)
+            got2 = mk._gemm_call(x, p4, n)
+            torch.cuda.synchronize()
+            r2 = _rel(got2, ref)
+            same = bool(torch.equal(got2, got))
+            t_mk2 = _time(lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
+            t_x2b = _time(lambda: (mk._gemm_call(x, p4, n),
+                                   mk._gemm_call(x, p4b, n)),
+                          iters, hot=(x,)) / 2
+            again2 = mk._gemm_call(x, p4, n)
+            torch.cuda.synchronize()
+            rep2 = _rel(got2, again2)
+            plan = list(ext.gemm2_plan(m, n, k))
+            ok &= r2 <= TOL["gemm"] and rep2 <= 1e-6
+            if r2 > TOL["gemm"] or rep2 > 1e-6:
+                mark = "!"
+            extra = (f"{t_mk2:>8.1f}{t_x2b:>8.1f}{nb_mk / t_mk2 / 1e3:>9.0f}"
+                     f"{'bit' if same else f'{_rel(got2, got):.1e}':>9}"
+                     f"  ksr={plan[1]} u={plan[2]}")
+            _lane(ext, 0)
         print(f"{mark}gemm m={m:<3}n={n:<5}k={k:<5}{r:>8.2e}{TOL['gemm']:>8.2f}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
-              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
+              f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}"
+              + extra)
+    if sweep:
+        # v2 slice-count sweep: the unit rule against the alternatives, per
+        # shape, single launch and back-to-back on two weights
+        print(f"{'v2 ksr sweep':<24}" + "".join(f"{'ksr=' + str(r):>14}" for r in sweep))
+        for m, n, k in GEMM_SHAPES:
+            torch.manual_seed(0)
+            w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+            w2 = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+            x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
+            p4, p4b = mk.build_mk_weight_w4(w), mk.build_mk_weight_w4(w2)
+            del w, w2
+            cells = []
+            for r in sweep:
+                if r > k // 128:
+                    cells.append(f"{'-':>14}")
+                    continue
+                _lane(ext, 1, r)
+                t1 = _time(lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
+                t2 = _time(lambda: (mk._gemm_call(x, p4, n),
+                                    mk._gemm_call(x, p4b, n)), iters,
+                           hot=(x,)) / 2
+                cells.append(f"{t1:>7.1f}/{t2:<6.1f}")
+            print(f" gemm m={m:<3}n={n:<5}k={k:<5}" + "".join(cells))
+        _lane(ext, 0, 0)
+    _lane_restore(ext)
     return ok
 
 
-def probe_exact() -> bool:
+def probe_stamps2(iters: int) -> bool:
+    """v2 unit timeline per shape (needs VLLM_GLM53_MK_PHASE_TS=1 so the
+    build stamps g_mk2_ts): entry skew across units, first-record latency,
+    loop time, tail (last exit - median exit) and the event span, from one
+    cold-L2 launch after warm-up. Tells whether a shape's ksr leaves a
+    balance tail or pays too many ring fills."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    ext = mk._build()
+    _lane(ext, 1)
+    print(f"{'v2 stamps':<24}{'units':>6}{'ksr':>4}{'skew':>7}{'first':>7}"
+          f"{'loop':>7}{'tail':>7}{'span':>7}{'ev_us':>7}")
+    for m, n, k in GEMM_SHAPES:
+        torch.manual_seed(0)
+        w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
+        p4 = mk.build_mk_weight_w4(w)
+        del w
+        plan = list(ext.gemm2_plan(m, n, k))
+        units = plan[2]
+        for _ in range(3):
+            mk._gemm_call(x, p4, n)
+        torch.cuda.synchronize()
+        ext.read_ts2()  # clear
+        _l2_flush(hot=(x,))
+        s = torch.cuda.Event(enable_timing=True)
+        e = torch.cuda.Event(enable_timing=True)
+        s.record()
+        mk._gemm_call(x, p4, n)
+        e.record()
+        torch.cuda.synchronize()
+        ev = s.elapsed_time(e) * 1e3
+        ts = list(ext.read_ts2())
+        if not ts:
+            print("  (no stamps: build with VLLM_GLM53_MK_PHASE_TS=1)")
+            return True
+        rows = [ts[u * 4:u * 4 + 4] for u in range(units)]
+        rows = [r for r in rows if all(v > 0 for v in r)]
+        if not rows:
+            print(f" gemm m={m:<3}n={n:<5}k={k:<5}  no complete unit stamps")
+            continue
+        t0 = min(r[0] for r in rows)
+        ent = sorted(r[0] - t0 for r in rows)
+        first = sorted(r[1] - r[0] for r in rows)
+        loop = sorted(r[2] - r[1] for r in rows)
+        exits = sorted(r[3] - t0 for r in rows)
+        med = lambda a: a[len(a) // 2] / 1e3
+        print(f" gemm m={m:<3}n={n:<5}k={k:<5}{units:>6}{plan[1]:>4}"
+              f"{ent[-1] / 1e3:>7.1f}{med(first):>7.1f}{med(loop):>7.1f}"
+              f"{(exits[-1] - exits[len(exits) // 2]) / 1e3:>7.1f}"
+              f"{exits[-1] / 1e3:>7.1f}{ev:>7.1f}")
+    _lane_restore(ext)
+    return True
+
+
+def probe_exact(gemm2: str = "both") -> bool:
     """The load-bearing W4 gate: weights ON the e2m1 grid pack losslessly,
     so the kernel must reproduce a torch fp32 matmul of the kernel-
     quantized activations against the dequantized pack to accumulation
     noise. It proves nibble / exponent / swizzle / expansion bit-for-bit
     (there is no fp8 MK arm left to diff against; the pure-torch twins
-    mk_w4_dequant and _mk_quant_x_ref are the reference)."""
+    mk_w4_dequant and _mk_quant_x_ref are the reference). Both lanes when
+    gemm2 is "both": the v2 kernel's register expansion and per-slice
+    quant must pass the same gate on the same fixture, on every slice
+    count the sweep can ask for."""
     from vllm.model_executor.layers import glm53_megakernel as mk
 
+    ext = mk._build()
+    lanes = {"0": [(0, 0)], "1": [(1, 0)],
+             "both": [(0, 0)] + [(1, r) for r in (0, 1, 2, 3, 5, 8)]}[gemm2]
+    ok = True
     print(f"{'case':<24}{'rel_err':>10}{'gate':>8}")
+    for on, ksr in lanes:
+        _lane(ext, on, ksr)
+        ok &= _probe_exact_lane(mk, f"v{on + 1}" + (f" ksr={ksr}" if ksr else ""))
+    _lane_restore(ext)
+    return ok
+
+
+def _probe_exact_lane(mk, tag: str) -> bool:
     torch.manual_seed(0)
     n, k, m = 1024, 4096, 8
     code = torch.randint(0, 8, (n, k // 16, 16), device=DEV)
@@ -290,7 +432,7 @@ def probe_exact() -> bool:
     ok = e_pack == 0.0 and e_exact <= 1e-3 and n_ulp == 0
     mark = "!" if not ok else " "
     print(f"{mark}w4 pack roundtrip{e_pack:>17.2e}{0:>8.0e}")
-    print(f"{mark}w4 exact grid{e_exact:>21.2e}{1e-3:>8.0e}  over-ulp={n_ulp}")
+    print(f"{mark}{('w4 exact grid ' + tag):<24}{e_exact:>10.2e}{1e-3:>8.0e}  over-ulp={n_ulp}")
     return ok
 
 
@@ -504,6 +646,14 @@ def main() -> int:
     # means the driver's SINKHORN_SERVED, which is also what the boot
     # self-test gates on. See the BASIS NOTE in the module docstring.
     ap.add_argument("--sinkhorn", type=int, default=None)
+    # the GEMM lane under test: 0 = the persistent kernel, 1 = the v2
+    # non-persistent kernel, both = persistent in the mk columns and v2 in
+    # the mk2 columns (diffed against each other)
+    ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")
+    ap.add_argument("--ksr2-sweep", default=None,
+                    help="comma list of v2 slice counts to force per shape, e.g. 1,2,4,6,8")
+    ap.add_argument("--stamps2", action="store_true",
+                    help="v2 per-unit timeline (VLLM_GLM53_MK_PHASE_TS=1 build)")
     args = ap.parse_args()
     if args.gemm_shapes:
         GEMM_SHAPES[:] = [tuple(int(v) for v in t.split(":")) for t in args.gemm_shapes.split(",")]
@@ -538,10 +688,14 @@ def main() -> int:
           f"sinkhorn_repeat={sk}"
           f"{' (driver default)' if args.sinkhorn is None else ''}")
     ok = True
+    sweep = ([int(v) for v in args.ksr2_sweep.split(",")]
+             if args.ksr2_sweep else None)
     if "gemm" in segs:
-        ok &= probe_gemm(args.iters)
+        ok &= probe_gemm(args.iters, args.gemm2, sweep)
     if "exact" in segs:
-        ok &= probe_exact()
+        ok &= probe_exact(args.gemm2)
+    if args.stamps2 and "gemm" in segs:
+        ok &= probe_stamps2(args.iters)
     if "mhc" in segs:
         if args.stock in ("raw", "both"):
             ok &= probe_mhc(args.iters, sk)

@@ -8203,13 +8203,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 4
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, kda, mhc, mla) triggers its dependents "
-          "at entry and is launched programmatically behind the MK_PDL knob "
-          "(default off)")
+          "every segment kernel (gemm, gemm2, kda, mhc, mla) triggers its "
+          "dependents at entry and is launched programmatically behind the "
+          "MK_PDL knob (default off)")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -8477,10 +8477,93 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 2,
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
+          and "&g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
-          "merely run slowly")
+          "merely run slowly (the third query is the v2 lane's blocks per SM, "
+          "which sizes its grid and is not a residency contract)")
+
+    # -- MK-GEMM v2 (30차): the same GEMM as a NON-persistent grid. The
+    #    persistent kernel's 48 x 69.6 KB blocks cannot share an SM with the
+    #    routed MoE kernel (90 KB), so the shared expert's side-stream
+    #    launches queued behind it and the publish barrier held every landed
+    #    block for the last one (down [4096 x 512]: 18 us alone, 135 us in
+    #    the 09-04 armed trace, 5.7 of the lane's 14.1 ms). v2 has no
+    #    barrier, no shared A staging, expands W4 in registers into the mma
+    #    fragments, and fits TWICE per SM.
+    v2 = cu[cu.index("mk_gemm2_kernel(const MKGemm2Ctx c)"):cu.index("MK_SEG_MHC --")]
+    check(consts.get("W4_RAW_NBUF2", 0) >= 2
+          and 2 * (consts["GEMM2_SMEM"] + 1024) <= 102400
+          and 'static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");' in cu
+          and "__launch_bounds__(MK_THREADS, 2)" in cu,
+          "the v2 block's smem (with the SM's ~1 KB per-block reserve) fits "
+          "two per SM and its register budget is bounded to match -- one "
+          "resident block would make it the persistent kernel without the "
+          "barrier, not a co-scheduling kernel")
+    check("mk_grid_barrier" not in v2 and "g_mk_unit_next" not in v2
+          and "g_mk_aq" not in v2,
+          "v2 has no grid barrier, no unit counter and no shared A tiles: "
+          "every block quantizes the A k-blocks of its own slice")
+    check("stage_raw(kb0 + d, (kb0 + d) % NB)" in v2
+          and v2.index("stage_raw(kb0 + d, (kb0 + d) % NB)")
+              < v2.index('asm volatile("griddepcontrol.wait;"')
+              < v2.index("load_x(kb0);") < v2.index("quant_x(0);"),
+          "v2 prologue order: the W ring first (independent of the previous "
+          "kernel, in flight during its tail under PDL), the PDL wait, then x")
+    check("mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));" in v2
+          and "if (kb + DIST < kbn) stage_raw(kb + DIST, (kb + DIST) % NB);" in v2
+          and "quant_x((kb + 1 - kb0) & 1);" in v2
+          and v2.count("__syncthreads();", v2.index("for (int kb = kb0;;"),
+                       v2.index("MK2_TS(2);")) == 1,
+          "v2 k loop: exact ring wait, refill of the stage consumed last "
+          "iteration, quant into the A buffer the running mma does not read, "
+          "one __syncthreads per k-block")
+    check("__device__ __forceinline__ uint32_t mk_w4x4(uint32_t w16, uint32_t eb)" in cu
+          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in cu_code[cu_code.index("mk_w4x4"):]
+          and "__byte_perm(l0, l1, w16 & 0x7777u)" in cu_code
+          and "__byte_perm(0x8000u, 0u, (w16 >> 3) & 0x1111u)" in cu_code
+          and "const uint32_t b0 = mk_w4x4(w0, e0);" in v2
+          and "const uint32_t b1 = mk_w4x4(w1, e1);" in v2
+          and "expand_w4" not in v2,
+          "v2 expands the e2m1 nibbles into the B fragments per lane with the "
+          "SAME table lookup as expand_w4 (same two LUT immediates, same sign "
+          "prmt), so the bytes the mma sees are the persistent kernel's")
+    check("((ch ^ ((r >> 1) & 3)) << 4)" in v2
+          and "((ks ^ ((nrow >> 1) & 3)) << 4)" in v2,
+          "the raw nibble chunks land XOR-swizzled at copy time and the "
+          "fragment loads read through the same swizzle (eight rows on a 64 B "
+          "pitch would otherwise share two bank groups)")
+    check("pb[(size_t)r0 * c.n + cb] = acc[i][j][0];" in v2
+          and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
+          and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
+          and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
+          and "atomicAdd(&g_mk2_partial" not in cu
+          and "g_mk2_partial[i] = 0.0f;" not in cu,
+          "v2 split slices are assigned (no zero pass), counted per tile with "
+          "a self-rearming counter, and folded by the last slice in fixed "
+          "order -- deterministic, no atomics on the partials")
+    check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
+          and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
+          and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
+              < cu.index("c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);")
+          and "int mk_choose_ksr2(int m, int n, int k)" in cu
+          and "if (ksr > kblk) ksr = kblk;" in cu
+          and "while (ksr > 1 && (size_t)m * n * ksr > (size_t)MK2_PART_ELEMS) --ksr;" in cu
+          and consts["MK2_PART_ELEMS"] >= 32 * consts["KDA_INPROJ_N_PAD"] * 4,
+          "the v2 lane is a kill-switched dispatch ahead of the persistent "
+          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule keeps "
+          "every slice non-empty and the fp32 partial inside its buffer at "
+          "the widest per-rank linear")
+    check('"-DMK_NBUF2_DEF=" in pysrc_full' if False else "-DMK_NBUF2_DEF=" in pysrc_full
+          and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
+          and 'ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")' in bench
+          and "ext.set_gemm2(on, ksr)" in bench
+          and "same = bool(torch.equal(got2, got))" in bench,
+          "the driver builds v2's ring depth in, the boot fingerprint names "
+          "the served lane and its in_proj plan, and the bench times both "
+          "lanes side by side with v2's output diffed against the persistent "
+          "lane's")
     # Two grid sizes must never share a ticket counter. The barrier computes
     # (t / grid + 1) * grid, so it is only correct when the counter is
     # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
@@ -8662,7 +8745,9 @@ def test_glm53_megakernel_contracts() -> None:
           and "VLLM_GLM53_MK_W4" not in fp8,
           "the build attaches the W4 pack next to the deepgemm pair on every "
           "eligible linear, no arm knob")
-    check("def probe_exact() -> bool:" in bench and "probe_w4" not in bench
+    check("def probe_exact(gemm2: str = \"both\") -> bool:" in bench
+          and "def _probe_exact_lane(mk, tag: str) -> bool:" in bench
+          and "probe_w4" not in bench
           and "run_gemm_w4" not in bench and "build_mk_weight(" not in bench
           and "VLLM_GLM53_MK_W4" not in bench
           and 'TOL = {"mhc": 1e-3, "gemm": 0.15, "kda": 2e-2}' in bench,
