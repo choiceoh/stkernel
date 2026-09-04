@@ -240,14 +240,23 @@ def probe_exact() -> bool:
     torch.manual_seed(0)
     n, k, m = 1024, 4096, 8
     code = torch.randint(0, 8, (n, k // 16, 16), device=DEV)
-    sexp = torch.randint(-5, 7, (n, k // 16, 1), device=DEV)
+    # PRODUCTION magnitudes, the same draw as the boot self-test
+    # (_selftest_gemm): GLM-5.3's dense projections need group exponents
+    # around 2^-7 (median), 2^-16 (p1). The pack normalises the tensor by
+    # its median pow2 and stores an e4m3 scale whose exponent spans
+    # [-5, 5] around it, so a fixture spanning 11 octaves round-trips
+    # bit-exactly -- and one that draws the O(1) range [-5, 6] this probe
+    # used to draw no longer fits: its 2^6 groups clamp (8.3% of groups),
+    # the roundtrip reads 6.6e-2, and the run FAILs on the fixture, not
+    # on the kernel (2026-09-04, srv2, the first on-device run of #268).
+    sexp = torch.randint(-12, -2, (n, k // 16, 1), device=DEV)
     grid = torch.tensor(mk._E2M1_GRID, device=DEV)
     w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
         torch.randn_like(code.float()) < 0, -1.0, 1.0)
     w_exact = w_exact.view(n, k).to(torch.bfloat16)
     x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
     p4 = mk.build_mk_weight_w4(w_exact)
-    w_back = mk.mk_w4_dequant(p4[0], p4[1], n)
+    w_back = mk.mk_w4_dequant(p4[0], p4[1], n, p4[2])  # p4[2]: 2^-shift
     e_pack = _rel(w_back, w_exact)  # the pack itself must round-trip
     got = mk._gemm_call(x, p4, n)
     ref = mk._mk_quant_x_ref(x) @ w_back.float().T

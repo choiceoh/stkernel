@@ -40,6 +40,21 @@ W4 packs, so the KDA shadow diff against stock is gated at the e2m1
 by-design class (0.15), not the 2e-2 noise class the fixture uses (the
 fixture snaps its weights to the grid so both arms see the same values).
 
+## K-chunked lane (2026-09-04)
+
+The kernel's K contract is one launch of `MK_GEMM_KMAX` = 4096 (KBLK_MAX =
+32 k-blocks: the A-quant tiles and the per-row scale stage in smem). The
+DFlash2 drafter's `fc` is `[4096, 5 x 4096]` -- the single largest GEMM of
+the decode tail (168 MB bf16, 792 us at 212 GB/s in the armed 09-03 trace)
+and the one dense projection no quantized arm could take. Rather than widen
+KBLK_MAX (and the smem budget of the 173 launches/step that already serve at
+the W4 stream floor), `build_mk_weight_w4_kchunks` packs one W4 pack per
+4096-column chunk and `gemm_w4a8` runs one launch per chunk with the
+partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
+(`probes/drafter_fc_check.py`, srv2). A chunk that fails the per-launch
+contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
+the chunked pack automatically for any admitted linear wider than the lane.
+
 ## What it absorbs (and what it cannot)
 
 The 2026-09-01 step decomposition fixes the budget: C=1 step = 66.0 ms, of

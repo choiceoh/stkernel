@@ -2487,7 +2487,8 @@ def test_fp8_dense_bproj() -> None:
     """
     ns = load_defs(
         "overlay/glm53_fp8_dense.py",
-        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns"},
+        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns",
+         "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
         {"os": os, "re": re},
     )
     base = ns["_INCLUDE"]
@@ -6602,10 +6603,15 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     # The refusal path is `if not armed_nv:` since the alpha convention
     # stopped being resolved per layer; the split it guards is the same one.
     fallback = nv.index("if not armed_nv:")
-    check("_attach_mk_pack" not in nv[:fallback],
+    # the call sites go through `attach_mk`, which is _attach_mk_pack or,
+    # under the "w8" scheme (fp8 pair only), a no-op -- one axis per boot
+    check("attach_mk = _attach_mk_pack if raw not in" in body
+          and "lambda method, weight, cols: False" in body,
+          "attach_mk is the helper or the w8 no-op, bound once per pass")
+    check("attach_mk(" not in nv[:fallback] and "_attach_mk_pack(" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
-    check("_attach_mk_pack" in nv[fallback:],
+    check("attach_mk(" in nv[fallback:],
           "when the nvfp4 arm refuses, fp8 serves and the pack is needed")
 
     # 3. one quantization per linear, and it happens before anything that
@@ -6670,9 +6676,117 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
           "ownership is decided BEFORE any low-precision arm bids, or the "
           "layer pays for a copy nothing reads")
     branch = body[owns_at:nv_at]
-    check("_attach_mk_pack" in branch and "continue" in branch,
+    check("attach_mk(" in branch and "continue" in branch,
           "an owned layer attaches the pack and skips the arm")
     print("  kda owns its projections ...... OK")
+
+
+def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
+    """The DFlash2 drafter's dense GEMMs under VLLM_DFLASH2_FP8_DENSE.
+
+    The armed 09-03 trace ends every decode step in a 7.5-8.5 ms tail the
+    forward's annotation never covered: target head, then the drafter --
+    fc 792 us bf16 (K = 20480, replicated), five layers of sharded bf16
+    projections, the draft head. The base pattern set lists q/k/v_proj and
+    the target's fused names, never the drafter's MERGED qkv_proj, its fc,
+    or its conv kernel_projections, so the drafter knob covered o/gate_up/
+    down and left 43% of the drafter's bytes bf16. And the drafter's forward
+    is torch.compiled, so its GEMMs must be one opaque op each: dynamo
+    cannot trace the lane's eligibility test or the extension call.
+    """
+    src = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py",
+               encoding="utf-8").read()
+    ns = load_defs(
+        "overlay/glm53_fp8_dense.py",
+        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns",
+         "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
+        {"os": os, "re": re},
+    )
+    include = ns["_include_patterns"]
+    matches = lambda pats, name: any(p.search(name) for p in pats)
+    drafter_names = [
+        "model.layers.0.self_attn.qkv_proj", "model.layers.4.self_attn.o_proj",
+        "model.layers.2.mlp.gate_up_proj", "model.layers.2.mlp.down_proj",
+        "model.layers.1.attention_conv.kernel_projection",
+        "model.layers.1.mlp_conv.kernel_projection", "model.fc",
+    ]
+    saved = os.environ.pop("VLLM_GLM53_FP8_DENSE_BPROJ", None)
+    try:
+        tgt, drf = include(), include(ns["_DRAFTER_ENV"])
+        check(ns["_DRAFTER_ENV"] == "VLLM_DFLASH2_FP8_DENSE",
+              "the drafter set keys on the drafter's own knob")
+        check(all(matches(drf, n) for n in drafter_names),
+              "drafter knob: every drafter dense linear matches, fc included")
+        check(len(drf) == len(tgt) + len(ns["_DRAFTER_INCLUDE"]),
+              "drafter knob: base patterns plus the drafter set, nothing else")
+        for n in ("model.layers.0.self_attn.qkv_proj", "model.fc",
+                  "model.layers.1.attention_conv.kernel_projection"):
+            check(not matches(tgt, n), f"target knob must NOT match {n}")
+        for n in ("candidate_selector.hidden_projection", "model.fc_norm",
+                  "model.layers.0.self_attn.attn"):
+            check(not matches(drf, n), f"drafter knob must NOT match {n}")
+    finally:
+        if saved is not None:
+            os.environ["VLLM_GLM53_FP8_DENSE_BPROJ"] = saved
+
+    body = src[src.index("def maybe_build_fp8_dense("):]
+    check("_include_patterns(env)" in body,
+          "the build pass selects its pattern set by the knob it runs under")
+    check("method._opaque = env == _DRAFTER_ENV" in body,
+          "drafter methods are marked opaque: the drafter forward is compiled")
+    check('raw not in ("w8", "fp8", "w8a8")' in body,
+          "w8 = the fp8 pair and nothing lower -- one numerics axis per boot")
+
+    # the opaque op: one custom op that decides MK-or-fp8 at run time
+    check('"glm53_fp8_dense::gemm_mk_or_fp8"' in src
+          and "def _mk_or_fp8_dense_gemm(" in src
+          and "def _mk_or_fp8_dense_gemm_fake(" in src,
+          "the MK-or-fp8 choice is one registered custom op with a fake")
+    op = src[src.index("def _mk_or_fp8_dense_gemm("):src.index("def _mk_or_fp8_dense_gemm_fake(")]
+    check("gemm_w4a8 as _mk_gemm" in op and "maybe_arm as _mk_arm" in op
+          and "return _fp8_dense_gemm(x, q, ws, orig_rows, orig_cols)" in op
+          and "packs[0] if len(packs) == 1 else packs" in op,
+          "inside the op: arm, try the lane (single or K-chunked pack), "
+          "fall back to the verified fp8 pair")
+    apply = src[src.index("    def apply(self, layer, x, bias=None):\n        if bias is not None:\n            return self._base.apply(layer, x, bias)\n        if self._opaque:"):]
+    apply = apply[:apply.index("        if getattr(self, \"_bf16_freed\", False):")]
+    check("_mk_or_fp8_dense_gemm_op(" in apply and "self._mk_args" in apply
+          and "isinstance(mk, list)" in apply,
+          "an opaque method routes apply() through the op with its pack "
+          "flattened once (single or chunked)")
+
+    # the pack attach: K-chunks past the lane's K
+    attach = src[src.index("def _attach_mk_pack("):src.index("def _kda_owns(")]
+    check("if cols > _mkmod.MK_GEMM_KMAX:" in attach
+          and "build_mk_weight_w4_kchunks(weight)" in attach,
+          "a linear wider than the lane's K gets one pack per K-chunk")
+
+    # the lane side
+    mksrc = open("overlay/modules/glm53_megakernel/glm53_megakernel.py",
+                 encoding="utf-8").read()
+    check("MK_GEMM_KMAX = 4096" in mksrc
+          and "0 < k <= MK_GEMM_KMAX" in mksrc
+          and "def build_mk_weight_w4_kchunks(weight):" in mksrc
+          and "def _gemm_kchunks(x, packs, n_rows):" in mksrc
+          and "if isinstance(mk_pack, list):\n        return _gemm_kchunks(x, mk_pack, n_rows)" in mksrc,
+          "the lane's K contract is one constant; a chunked pack is a list "
+          "gemm_w4a8 sums in fp32")
+    kch = mksrc[mksrc.index("def _gemm_kchunks("):mksrc.index("# MK_SEG_MHC")]
+    check("if len(packs) != -(-k // MK_GEMM_KMAX):" in kch
+          and "_mk_gemm_eligible(m, kc, p[0].shape[0] * 128)" in kch
+          and "acc.add_(out.float())" in kch and "acc.to(torch.bfloat16)" in kch,
+          "chunked lane: every chunk passes the per-launch contract or the "
+          "whole linear stays stock; partials summed in fp32, bf16 out")
+
+    # the offline path check exists and covers the compiled contract
+    chk = open(os.path.join(REPO, "probes", "drafter_dense_path_check.py"),
+               encoding="utf-8").read()
+    check("fullgraph=True" in chk and "dynamic=True" in chk
+          and "torch.cuda.graph(" in chk and 'os.environ[DRAFTER_ENV] = "w8"' in chk
+          and "gemm_w4a8(x, q._mk, q._rows)" in chk,
+          "the path probe gates compile (fullgraph, dynamic), capture, the "
+          "lane serving bitwise, and the w8 arm")
+    print("  fp8-dense drafter patterns + opaque op .. OK")
 
 
 def test_ab_runner_measures_both_channels() -> None:
@@ -7033,7 +7147,7 @@ def test_glm53_megakernel_contracts() -> None:
     mod = "overlay/modules/glm53_megakernel"
     ns = load_defs(
         f"{mod}/glm53_megakernel.py",
-        {"_mk_pow2_scale", "_mk_pad128", "_mk_gemm_eligible",
+        {"_mk_pow2_scale", "_mk_pad128", "_mk_gemm_eligible", "MK_GEMM_KMAX",
          "_mk_mhc_eligible", "_mk_w4_scale_exp"},
         {"math": _math},
     )
@@ -8852,28 +8966,54 @@ def test_trace_composition_analyze() -> None:
 
 
 def test_drafter_fc_probe_contracts() -> None:
-    """probes/drafter_fc_check.py: fleet shape, cold-weight method, every arm
-    the image already has, and the W4-bound verdict line."""
+    """probes/drafter_fc_check.py: the drafter's fleet shapes at their
+    per-rank sharding, DRAM-cold timing by weight cycling, every arm the
+    image already has (bf16 / fp8 / fp4 / MK W4 with K-chunks past the lane's
+    K contract), class gates, and the per-step sum against the armed trace's
+    66 ms step."""
     src = open(os.path.join(REPO, "probes", "drafter_fc_check.py"),
                encoding="utf-8").read()
-    check("DEF_LAYERS, DEF_HIDDEN, DEF_M = 5, 4096, 7" in src,
-          "fleet drafter defaults: 5 layers x hidden 4096, decode M=7")
+    check("DEF_LAYERS, DEF_HIDDEN, DEF_M = 5, 4096, 7" in src
+          and "DEF_HEADS, DEF_KV_HEADS, DEF_HEAD_DIM, DEF_INTER = 32, 8, 128, 12288" in src,
+          "fleet drafter defaults: 5 layers x hidden 4096, 32/8 heads of 128, "
+          "intermediate 12288, decode M=7 (the checkpoint's config.json)")
     check("--config" in src and "num_hidden_layers" in src
-          and "hidden_size" in src,
+          and "hidden_size" in src and "num_key_value_heads" in src
+          and "intermediate_size" in src and "conv_group_size" in src,
           "#231's lesson: the fleet shape is read from config, not assumed")
-    check("NW = 6" in src and "24 MB" in src,
-          "cold weights by graph cycling (6 x 42 MB >> L2 24 MB)")
-    for arm in ("_fp8_fp4_dense_gemm", "torch.mm(x, w.t())",
-                "functional.linear", "build_mk_weight_w4"):
+    check('("fc", h, L * h, 1)' in src and "(nh + 2 * nkv) * hd // tp" in src
+          and '("o_proj", h, nh * hd // tp, L)' in src
+          and '("gate_up_proj", 2 * inter // tp, h, L)' in src
+          and '("down_proj", h, inter // tp, L)' in src
+          and '("kernel_projection", kproj_n, h, 2 * L)' in src,
+          "shapes are the drafter's PER-RANK shapes: column-parallel shards N, "
+          "row-parallel shards K, fc and the conv kernel_projections are "
+          "replicated -- the 09-03 boot ran the drafter at TP=4")
+    check("MIN_STREAM = 96 << 20" in src and "L2_BYTES = 24 << 20" in src
+          and "-(-MIN_STREAM // (N * K // 2))" in src and "NW_MIN, NW_MAX = 6, 48" in src,
+          "cold weights by graph cycling: enough copies that the SMALLEST "
+          "arm's bytes overflow the 24 MB L2 (ledger trap 4)")
+    for arm in ("_fp8_fp4_dense_gemm", "_fp8_dense_gemm(x, q, s, rows, cols)",
+                "functional.linear", "build_mk_weight_w4", "_quantize_fp8_block_padded"):
         check(arm in src, f"arm present: {arm}")
-    check("SKIP" in src,
-          "mk_w4 refusing K=20480 is a SKIP line, not a failure")
-    check("0.15" in src and "e2m1" in src,
-          "e2m1 arms gated at the MK bench's by-design 0.15")
-    check("W4_GBPS" in src and "W4 stream bound" in src,
-          "the verdict compares against the ledger's W4 stream bound")
-    check("step_ms" in src and "71" in src,
-          "prize math against the ledger's 71 ms step")
+    check("MK_KMAX = 4096" in src and "def _mk_chunks(" in src
+          and "acc += mk._gemm_call(xc[c], packs[c], N).float()" in src,
+          "the MK lane takes K <= 4096, so K=20480 (fc) runs as summed "
+          "K-chunks -- the wrapper's ceiling, not a refusal")
+    check("mk.maybe_arm()" in src and '_ARMED.get("gemm")' in src,
+          "the lane is armed (extension built, self-tests run) before "
+          "_gemm_call is timed")
+    check("SKIP" in src and "_launch_bitwise" in src,
+          "an arm that raises is a SKIP line; replay determinism is checked")
+    check('TOL = {"bf16": 5e-2, "fp8": 5e-2, "fp4": 0.15, "mk_w4": 0.15}' in src
+          and "e2m1" in src,
+          "gates by class: e2m1 arms at the MK bench's by-design 0.15")
+    check("STEP_MS = 66.0" in src and "per-step drafter GEMM sum" in src
+          and "of the step vs bf16" in src,
+          "the prize is the per-step sum over the drafter's launches against "
+          "the armed trace's 66 ms step")
+    check("lm_head" in src and "--head" in src and "reference only" in src,
+          "the head shape is reference only: the served head is another lane")
     print("  drafter fc probe contracts .. OK")
 
 
@@ -9119,6 +9259,7 @@ if __name__ == "__main__":
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()
+    test_fp8_dense_drafter_patterns_and_opaque_op()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()

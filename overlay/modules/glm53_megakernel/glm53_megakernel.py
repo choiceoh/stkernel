@@ -124,9 +124,15 @@ def _mk_pad128(n: int) -> int:
     return -(-n // 128) * 128
 
 
+# The lane's K contract per launch: KBLK_MAX = 32 blocks of 128 in the
+# kernel (A quant tiles, the per-row scale stage in smem). A wider linear
+# runs as K-chunks -- build_mk_weight_w4_kchunks / gemm_w4a8 below.
+MK_GEMM_KMAX = 4096
+
+
 def _mk_gemm_eligible(m: int, k: int, n_pad: int) -> bool:
     """MK_SEG_GEMM shape contract (decode M only; prefill stays deepgemm)."""
-    return (0 < m <= 32 and k % 128 == 0 and 0 < k <= 4096
+    return (0 < m <= 32 and k % 128 == 0 and 0 < k <= MK_GEMM_KMAX
             and n_pad % 128 == 0)
 
 
@@ -488,6 +494,29 @@ def _stock_fp8_pair(w):
 # ---------------------------------------------------------------------------
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
+def build_mk_weight_w4_kchunks(weight):
+    """[(wq4, ws4, gscale), ...]: one W4 pack per MK_GEMM_KMAX-wide column
+    chunk of a [n, k] weight whose k exceeds the lane's per-launch K.
+
+    The DFlash2 drafter's fc is [4096, 5 x 4096]: the aux hidden states of
+    five target layers, concatenated. In the armed 09-03 trace it is the
+    single largest GEMM of the decode tail -- 168 MB of bf16 read once per
+    step, 792 us at 212 GB/s -- and the lane refused it at the eligibility
+    test, so it stayed the one dense projection of the drafter that no
+    quantized arm could take. Chunking the weight along k instead of
+    widening the kernel keeps KBLK_MAX and the smem budget of the 173
+    launches/step that already serve at the W4 stream floor untouched; the
+    price is len(chunks) launches plus an fp32 sum of the partials
+    (gemm_w4a8), and the probe (probes/drafter_fc_check.py) times exactly
+    that.
+    """
+    n, k = weight.shape
+    if k % 128 != 0:
+        raise ValueError(f"K={k} not a multiple of 128")
+    return [build_mk_weight_w4(weight[:, c:c + MK_GEMM_KMAX].contiguous())
+            for c in range(0, k, MK_GEMM_KMAX)]
+
+
 def _gemm_call(x, mk_pack, n_rows):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4."""
     import torch
@@ -507,6 +536,8 @@ def gemm_w4a8(x, mk_pack, n_rows):
     to by construction."""
     if not _ARMED["gemm"] or x.dim() != 2 or mk_pack is None:
         return None
+    if isinstance(mk_pack, list):
+        return _gemm_kchunks(x, mk_pack, n_rows)
     if mk_pack[0] is None:
         return None
     # the pack is tile-major [n_pad/128, k/128, 128, 64]: the padded n is
@@ -517,6 +548,31 @@ def gemm_w4a8(x, mk_pack, n_rows):
                              mk_pack[0].shape[0] * 128):
         return None
     return _gemm_call(x, mk_pack, n_rows)
+
+
+def _gemm_kchunks(x, packs, n_rows):
+    """K-chunked lane (build_mk_weight_w4_kchunks): one launch per
+    MK_GEMM_KMAX columns of x, partials summed in fp32, bf16 out. None when
+    any chunk fails the per-launch contract (stock runs the whole linear)."""
+    import torch
+
+    m, k = x.shape
+    if not packs or any(p[0] is None for p in packs):
+        return None
+    if len(packs) != -(-k // MK_GEMM_KMAX):
+        return None
+    for c, p in enumerate(packs):
+        kc = min(MK_GEMM_KMAX, k - c * MK_GEMM_KMAX)
+        if not _mk_gemm_eligible(m, kc, p[0].shape[0] * 128):
+            return None
+    acc = None
+    for c, p in enumerate(packs):
+        # _gemm_call takes the slice contiguous: m x 4096 bf16, a copy the
+        # size of one tile row -- the weight stream is the cost here
+        out = _gemm_call(x[:, c * MK_GEMM_KMAX:(c + 1) * MK_GEMM_KMAX], p,
+                         n_rows)
+        acc = out.float() if acc is None else acc.add_(out.float())
+    return acc.to(torch.bfloat16)
 
 
 # ---------------------------------------------------------------------------
