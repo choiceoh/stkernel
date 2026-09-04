@@ -9,6 +9,12 @@
 # WORKER-FIRST, head last.
 set -euo pipefail
 
+# Shared machinery for both TP=4 lanes. Everything it holds was implemented
+# twice, once here and once in start-hy4-tp4.sh, and the copies drifted --
+# see the file header for what that drift cost.
+# shellcheck source=lib/common-tp4.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
+
 # Whether GMU was pinned by the caller, recorded before the profile and the
 # default below can fill it in. The preflight adopts its measured value only
 # when it was not.
@@ -17,34 +23,13 @@ _GMU_PINNED=${GMU:+1}
 # Defaults come from the profile; compose-overlays.sh reads the same file, so
 # the serving knobs have one home. Caller env wins over it -- a bare source
 # would clobber an explicit override, which is how the diagnostic runs are made.
-PROFILE_ENV="${PROFILE_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env}"
-# Running a copy of this script from somewhere other than the repo resolves
-# PROFILE_ENV to a path that does not exist, and every profile value -- the
-# module list's env knobs included -- silently falls back to the literals below.
-# That is the failure this whole session kept finding, so it says so.
-if [ ! -f "$PROFILE_ENV" ]; then
-  echo "WARNING: profile not found at $PROFILE_ENV -- using built-in defaults."
-  echo "         Run launchers/start-glm53-nvfp4-tp4.sh from the checkout, or set PROFILE_ENV."
-fi
-if [ -f "$PROFILE_ENV" ]; then
-  # The profile's VLLM_* knobs are read from the file rather than a fixed list,
-  # so a knob added to a profile reaches the container without editing this.
-  # No VLLM_* in the profile is normal (dsv4 has none), and an empty grep
-  # exits 1 -- which under `set -euo pipefail` ends the script silently.
-  _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
-  _caller=""
-  for _v in IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
-            GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
-            MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-            EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE \
-            PREFILL_WARMUP PREFILL_WARMUP_LENS $_vllm_keys; do
-    if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
-  done
-  # shellcheck disable=SC1090
-  . "$PROFILE_ENV"
-  [ -n "$_caller" ] && eval "$_caller"
-  IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
-fi
+ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53.env" \
+  IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
+  GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
+  MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE \
+  PREFILL_WARMUP PREFILL_WARMUP_LENS
+IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
 IMAGE="${IMAGE:-glm53:v13-b12x}"
 NAME_HEAD=glm53
@@ -100,10 +85,7 @@ MOE_BACKEND="${MOE_BACKEND:-flashinfer_b12x}"
 # validating anything, so the check below asks whichever image is actually in
 # play whether it can import it, before a boot is spent instead of after.
 LOAD_FORMAT="${LOAD_FORMAT:-instanttensor}"
-case "$LOAD_FORMAT" in
-  auto|safetensors|instanttensor) ;;
-  *) echo "ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor (got $LOAD_FORMAT)" >&2; exit 2 ;;
-esac
+ct_check_load_format
 if [ "$LOAD_FORMAT" = instanttensor ] \
    && ! docker run --rm --entrypoint python3 "$IMAGE" -c "import instanttensor" 2>/dev/null; then
   echo "ABORT: LOAD_FORMAT=instanttensor but $IMAGE cannot import it." >&2
@@ -351,7 +333,7 @@ ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_O
 -e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
 -e NCCL_NVLS_ENABLE=0 -e NCCL_IGNORE_CPU_AFFINITY=1 -e NCCL_DEBUG=WARN \
 -e NCCL_MIN_NCHANNELS=16 -e NCCL_MAX_NCHANNELS=16 -e NCCL_NCHANNELS_PER_NET_PEER=4 \
--e TORCH_NCCL_ASYNC_ERROR_HANDLING=1"
+-e TORCH_NCCL_ASYNC_ERROR_HANDLING=$CT_NCCL_ASYNC_ERR"
 
 # Profile-declared VLLM_* knobs. Until now the profile set them and nothing
 # carried them, so every module they gate ran its stock path.
@@ -383,39 +365,7 @@ fi
 # failure to its real launch site instead of surfacing at the next sync
 # (this lane has now lost two boots to that signature). Production knobs
 # belong in the profile, not here.
-EXTRA_ENV_FLAGS=""
-# _vllm_keys is newline-separated (grep | sort -u); flatten it so the
-# membership test below can use a space-delimited case pattern.
-_vllm_keys_sp=" $(printf '%s ' ${_vllm_keys:-})"
-for _kv in ${EXTRA_ENV:-}; do
-  case "$_kv" in
-    # A comma-joined list is the natural mistake, and it passes the KEY=VALUE
-    # shape: the whole string lands in ONE -e whose value is
-    # "1,NEXT_KEY=1,..." -- so every knob reads as off and the boot measures
-    # the baseline while the log says the knobs were set. Refuse it here.
-    [A-Za-z_]*=*,[A-Za-z_]*=*)
-      echo "ABORT: EXTRA_ENV is space-separated, not comma-separated: $_kv"
-      echo "       use EXTRA_ENV=\"A=1 B=2\""
-      exit 1 ;;
-    [A-Za-z_]*=*)
-      # A profile-declared VLLM_* key is emitted as its own -e further down,
-      # and docker takes the LAST -e for a name. So EXTRA_ENV silently loses
-      # to the profile for exactly the knobs a sweep wants to move, and the
-      # boot measures the profile value while the caller believes otherwise.
-      # Pass those as caller environment variables instead: the _caller
-      # restore above re-applies them after the profile is sourced.
-      case "$_vllm_keys_sp" in
-        *" ${_kv%%=*} "*)
-          echo "ABORT: ${_kv%%=*} is declared in the profile, so EXTRA_ENV cannot"
-          echo "       override it (docker takes the last -e). Pass it directly:"
-          echo "         ${_kv%%=*}=${_kv#*=} bash launchers/start-glm53-nvfp4-tp4.sh"
-          exit 1 ;;
-      esac
-      EXTRA_ENV_FLAGS="$EXTRA_ENV_FLAGS -e $_kv" ;;
-    *) echo "ABORT: EXTRA_ENV entry is not KEY=VALUE: $_kv"; exit 1 ;;
-  esac
-done
-[ -n "$EXTRA_ENV_FLAGS" ] && echo "extra env:$EXTRA_ENV_FLAGS"
+ct_extra_env_flags launchers/start-glm53-nvfp4-tp4.sh
 
 # Docker defaults the soft nofile to 1024 while the host allows 500k and the
 # image permits 524288. NCCL opens a socket per peer connection and a loader

@@ -5781,9 +5781,16 @@ def _launcher_caller_passthrough(text: str) -> set[str]:
     grows, so an adjacency string ties the contract to today's ordering and
     breaks the next time a knob is inserted.
     """
-    start = text.index("for _v in ")
-    body = text[start:text.index("; do", start)]
-    return {w for w in body.replace("\\\n", " ").split()
+    # The list moved from an inline `for _v in ...` loop to the argument list
+    # of ct_load_profile when both lanes started sharing launchers/lib/
+    # common-tp4.sh; it is still line-continued and still grows.
+    start = text.index("ct_load_profile ")
+    body = ""
+    for line in text[start:].splitlines():
+        body += " " + line
+        if not line.rstrip().endswith("\\"):
+            break
+    return {w for w in body.replace("\\", " ").split()
             if w.isupper() or w.startswith("$")}
 
 
@@ -5809,8 +5816,13 @@ def test_launcher_load_format_gate() -> None:
           "the availability check needs IMAGE, so it runs after IMAGE is set")
     check("No module named instanttensor" in text,
           "the abort names the failure a boot would otherwise hit at 75 s")
+    # The shared validation lives in the library both lanes source now.
+    _lib = open(os.path.join(REPO, "launchers", "lib", "common-tp4.sh"),
+                encoding="utf-8").read()
+    check("ct_check_load_format" in text,
+          "the launcher must call the shared validation")
     check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor"
-          in text,
+          in _lib,
           "an unknown format must abort, not reach vLLM as a typo")
     check("--load-format $LOAD_FORMAT" in text,
           "the value must actually reach the serve command")
@@ -5831,14 +5843,19 @@ def test_dsv4_launcher_adoptions() -> None:
     text = open("launchers/start-hy4-tp4.sh", encoding="utf-8").read()
     check('LOAD_FORMAT="${LOAD_FORMAT:-auto}"' in text,
           "DSV4 load-format default must remain auto")
-    check("ABORT: LOAD_FORMAT must be auto, safetensors or instanttensor" in text
+    check("ct_check_load_format" in text
           and '--load-format "${LOAD_FORMAT}"' in text
           and "-e LOAD_FORMAT=$LOAD_FORMAT" in text,
-          "validated DSV4 LOAD_FORMAT must reach the container and serve CLI")
+          "validated DSV4 LOAD_FORMAT must reach the container and serve CLI "
+          "-- the validation itself now lives in launchers/lib/common-tp4.sh, "
+          "which both lanes source")
     check("silent rank death" in text,
           "instanttensor's multi-node risk must stay beside its opt-in knob")
 
-    check("WARNING: profile not found" in text,
+    check("WARNING: profile not found" in open(
+              os.path.join(REPO, "launchers", "lib", "common-tp4.sh"),
+              encoding="utf-8").read()
+          and "ct_load_profile" in text,
           "a copied launcher must not silently lose profile VLLM_* settings")
     check("_foreign_stack" in text
           and "'^(glm53|q38)(-|$)'" in text,
@@ -6468,7 +6485,11 @@ def test_extra_env_rejects_comma_list() -> None:
     have been reported as "knobs on, no effect". A value that merely contains
     commas (LIST=a,b,c) is legitimate and must still pass.
     """
-    text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
+    # The guard moved into launchers/lib/common-tp4.sh when both lanes stopped
+    # carrying their own copy -- hy4's copy lacked the comma arm entirely, which
+    # is why sharing the better implementation was the point.
+    text = open(os.path.join(REPO, "launchers", "lib", "common-tp4.sh"),
+                encoding="utf-8").read()
     body = text[text.index("for _kv in ${EXTRA_ENV:-}"):]
     body = body[:body.index("done")]
     check("space-separated, not comma-separated" in body,
@@ -7960,17 +7981,24 @@ def test_megakernel_core_is_shared() -> None:
     #    (profile keys) and docker takes the last -e for a name.
     hy4 = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
                encoding="utf-8").read()
-    body = hy4[hy4.index("for _kv in ${EXTRA_ENV:-}"):]
+    # The guard moved into the library both lanes source; hy4 names itself
+    # through the ct_extra_env_flags argument.
+    _lib_src = open(os.path.join(REPO, "launchers", "lib", "common-tp4.sh"),
+                    encoding="utf-8").read()
+    body = _lib_src[_lib_src.index("for _kv in ${EXTRA_ENV:-}"):]
     body = body[:body.index("done")]
+    check("ct_extra_env_flags launchers/start-hy4-tp4.sh" in hy4,
+          "hy4 must pass its own path so the abort names THIS launcher")
     check("is declared in the profile, so EXTRA_ENV cannot" in body,
           "start-hy4-tp4.sh must abort when EXTRA_ENV names a profile-declared "
           "key, or a megakernel sweep silently measures the profile's 0")
-    check("_vllm_keys_sp" in hy4 and "printf '%s ' ${_vllm_keys:-}" in hy4,
+    check("_vllm_keys_sp" in _lib_src and "printf '%s ' ${_vllm_keys:-}" in _lib_src,
           "the key list is newline-separated; flatten it or the guard never "
           "matches")
-    check("start-hy4-tp4.sh" in body,
+    check("bash $_launcher" in body,
           "the abort must name THIS launcher in the caller-env command it "
-          "suggests")
+          "suggests -- the shared guard takes the caller's path as $_launcher, "
+          "and hy4 passing its own is checked above")
     # -- the probe is profile-driven too, or step 2 measures the wrong stack
     wrap = open(os.path.join(REPO, "probes", "run_megakernel_bench.sh"),
                 encoding="utf-8").read()
@@ -8557,9 +8585,17 @@ def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
     not on it, so a caller's =1 was silently clobbered back to 0 and the
     2026-09-03 warm-prefill boot ran cold with no prefill-warmup.log at all."""
     src = open(os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
-    head = src[: src.index('. "$PROFILE_ENV"')]
-    check("PREFILL_WARMUP PREFILL_WARMUP_LENS $_vllm_keys" in head,
+    # The restore list is ct_load_profile's argument list now, and the library
+    # appends $_vllm_keys to it; the profile is sourced inside that function.
+    names = _launcher_caller_passthrough(src)
+    check({"PREFILL_WARMUP", "PREFILL_WARMUP_LENS"} <= names,
           "PREFILL_WARMUP and PREFILL_WARMUP_LENS are on the launcher's caller-env restore list")
+    lib = open(os.path.join(REPO, "launchers", "lib", "common-tp4.sh"),
+               encoding="utf-8").read()
+    check('for _v in "$@" $_vllm_keys; do' in lib
+          and lib.index('for _v in "$@" $_vllm_keys; do') < lib.index('. "$PROFILE_ENV"'),
+          "the shared loader captures the caller's values BEFORE sourcing the "
+          "profile, or the restore has nothing to restore")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check(re.search(r"^PREFILL_WARMUP=0$", prof, re.M) is not None,
           "profile still ships PREFILL_WARMUP=0 (warm boots are opt-in)")
@@ -8898,8 +8934,7 @@ def test_hy4_entrypoint_carries_the_production_knobs() -> None:
           "second -e and docker keeps the last one")
 
     # 5. caller env still wins over the profile for the restored names
-    preserve = launcher[launcher.index("for _v in IMAGE MODEL_PATH"):]
-    preserve = preserve[:preserve.index("$_vllm_keys; do")]
+    preserve = " ".join(sorted(_launcher_caller_passthrough(launcher)))
     for var in ("DRAFT_BLOCK", "DRAFT_KV", "DRAFT_PATH", "LONG_PREFILL",
                 "SPEC_METHOD"):
         check(var in preserve,
@@ -8913,6 +8948,68 @@ def test_hy4_entrypoint_carries_the_production_knobs() -> None:
           "recorded after the profile loads, so this is what keeps the memfree "
           "preflight from raising 0.60 to ~0.744 unmeasured")
     print("  hy4 entry point parity ........ OK")
+
+
+
+
+def test_common_tp4_library_is_the_one_implementation() -> None:
+    """Both TP=4 lanes share one copy of the machinery they used to duplicate.
+
+    start-hy4-tp4.sh and start-glm53-nvfp4-tp4.sh implemented profile loading,
+    the EXTRA_ENV guard, LOAD_FORMAT validation and the torch/NCCL error mode
+    twice, and every one of those copies had drifted:
+
+      memfree margin   hy4 sat at 3 while #270 moved glm53 to 10 -- the same
+                       bug fixed twice, and the margin-3 boot in between
+                       wedged three nodes (09-04).
+      EXTRA_ENV guard  glm53 rejected a comma-joined list; hy4 did not, so
+                       EXTRA_ENV="A=1,B=2" became one -e and every knob read
+                       as off while the log said they were set.
+      ASYNC_ERROR_     hy4 ran 0, glm53 ran 1, neither with a reason. 0 is why
+        HANDLING       the 09-04 wedge could not clear itself: the ring broke
+                       and the workers held ~55 GiB for twelve hours because
+                       nothing tore them down.
+
+    The rule: one concern, one implementation, and the better one wins.
+    """
+    lib_path = os.path.join(REPO, "launchers", "lib", "common-tp4.sh")
+    check(os.path.exists(lib_path), "the shared library must exist")
+    lib = open(lib_path, encoding="utf-8").read()
+    lanes = {
+        name: open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+        for name in ("start-hy4-tp4.sh", "start-glm53-nvfp4-tp4.sh")
+    }
+
+    for name, src in lanes.items():
+        check("lib/common-tp4.sh" in src, "%s must source the shared library" % name)
+        for fn in ("ct_load_profile", "ct_extra_env_flags", "ct_check_load_format"):
+            check(fn in src, "%s must call %s rather than inline its own copy" % (name, fn))
+        # the extracted bodies must be GONE from the lanes, or the drift is back
+        check("_vllm_keys=$(grep -oE" not in src,
+              "%s must not re-implement profile key discovery" % name)
+        check("EXTRA_ENV entry is not KEY=VALUE" not in src,
+              "%s must not re-implement the EXTRA_ENV guard" % name)
+        check("LOAD_FORMAT must be auto" not in src,
+              "%s must not re-implement LOAD_FORMAT validation" % name)
+        # the error mode is the library's default, not a per-lane literal
+        check("TORCH_NCCL_ASYNC_ERROR_HANDLING=$CT_NCCL_ASYNC_ERR" in src,
+              "%s must take the shared torch/NCCL error mode" % name)
+        for literal in ("TORCH_NCCL_ASYNC_ERROR_HANDLING=0",
+                        "TORCH_NCCL_ASYNC_ERROR_HANDLING=1"):
+            check(literal not in src,
+                  "%s must not hardcode %s -- that divergence is the bug" % (name, literal))
+
+    # the library holds the values, and TearDown is the one that frees a node
+    check(re.search(r'^CT_NCCL_ASYNC_ERR="\$\{NCCL_ASYNC_ERR:-1\}"$', lib, re.M) is not None,
+          "the shared default is 1 (TearDown): 0 leaves a broken ring holding "
+          "the node's memory until someone power-cycles it, which is exactly "
+          "what 09-04 cost. NCCL_ASYNC_ERR=0 still rolls it back per boot")
+    check("space-separated, not comma-separated" in lib,
+          "the comma guard is the better of the two implementations and must "
+          "be the one both lanes now get")
+    check("docker takes the last -e" in lib,
+          "the profile-collision guard moved into the library intact")
+    print("  common tp4 library ............ OK")
 
 
 if __name__ == "__main__":
@@ -9016,5 +9113,6 @@ if __name__ == "__main__":
     test_fp8_dense_build_peak_pays_only_for_what_serves()
     test_kda_owns_its_projections_across_dense_schemes()
     test_hy4_entrypoint_carries_the_production_knobs()
+    test_common_tp4_library_is_the_one_implementation()
     print(f"all OK ({PASS} checks)")
 
