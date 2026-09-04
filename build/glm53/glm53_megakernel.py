@@ -810,7 +810,7 @@ def smlp_forward(mlp, x):
             capturing = bool(torch.cuda.is_current_stream_capturing())
         except Exception:
             pass
-        logger.warning("[megakernel] smlp lane serving (%s): first fused call "
+        logger.warning("[megakernel] smlp lane serving: first fused call (%s) "
                        "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
                        "smlp2" if _ARMED["smlp2"] else "smlp",
                        T, k, n_int, n_out, limit, capturing)

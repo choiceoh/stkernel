@@ -8851,6 +8851,7 @@ def test_glm53_megakernel_contracts() -> None:
           and '_ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)' in pysrc_full
           and 'if not (_ARMED["smlp"] or _ARMED["smlp2"]):' in pysrc_full
           and 'if _ARMED["smlp2"]:\n        return _smlp2_call(' in pysrc_full
+          and 'first fused call (%s) ' in pysrc_full
           and '"smlp2" if _ARMED["smlp2"] else "smlp"' in pysrc_full,
           "the driver arms smlp2 behind its own knob with the exact + replay "
           "gate, the MLP hook prefers it when armed, and the serving line "
