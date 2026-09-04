@@ -154,6 +154,18 @@ with m). Under the routed MoE kernel the shared-expert pair exposes 18.6-
 28.6 us a layer on v2 against 47.3-47.7 on the persistent lane (the
 overlap probe, 30차 §6): -0.8 to -1.2 ms a step from that pair alone.
 
+Round 3 (2026-09-05): the kernel is instantiated per m class (rows
+quantized per warp 1 / 2 / 4 for m <= 8 / 16 / 32 -- the m-tiles and the
+x lane mapping at compile time; the m = 32 quant is one 8-lane shuffle
+chain over four rows instead of four 32-lane chains), and the mma's k
+axis is a per-lane permutation of the k-block: lane q of a quad owns
+natural elements [32q, 32q + 32) (W's raw chunk q, e2m1 groups 2q and
+2q+1) and feeds the word (ks + q) & 3 of them at step ks, so a lane
+builds two LUT pairs per W row per k-block instead of eight (216 of the
+~670 instructions per warp per k-block on the SASS) and the quad's four
+raw loads land on four different banks. ptxas: 96 / 96 / 117 registers,
+no spills, no stack.
+
 Contract, inherited from the persistent lane: v2's partials and per-tile
 arrival counters are one device-wide set, so a v2 launch must never
 overlap another MK GEMM launch on a different stream (two launches
@@ -164,8 +176,9 @@ next main-stream GEMM.
 Gates and numbers: the boot self-test's exact-grid gate runs on whichever
 lane the boot serves and the fingerprint names it (`lane v2, in_proj plan
 on/ksr/units/bps=...`). The bench times both lanes side by side
-(`--gemm2 both`: v2's output is bit-identical to the persistent lane's on
-unsplit shapes and differs only by slice summation order on split ones;
+(`--gemm2 both`: v2's output differs from the persistent lane's only by
+summation order -- the round-3 lane k-permutation inside each mma step
+and, on split shapes, the slice order -- and the exact gate is the gate;
 `--ksr2-sweep 1,2,4,6,8`), the exact gate runs on both lanes at five
 slice counts, and `probes/mk_gemm_moe_overlap_probe.py` measures the
 shared-expert pair's exposure under the MoE kernel for both lanes.

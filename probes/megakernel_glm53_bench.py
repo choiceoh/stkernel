@@ -199,9 +199,11 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
     gemm2: "0" times the persistent kernel in the mk columns, "1" the v2
     (non-persistent) kernel, "both" the persistent one in the mk columns
     and v2 in the mk2 columns after them, with v2's output diffed against
-    the persistent lane's (bit = identical; a split shape sums its k
-    slices in a different order and shows the rel instead) and v2's plan
-    (ksr, units). sweep: ksr values to force on v2 per shape."""
+    the persistent lane's (bit = identical; since the round-3 lane
+    k-permutation the in-mma summation order differs, so the column shows
+    a ~1e-7 rel on every shape and the exact gate is the numerics
+    contract) and v2's plan (ksr, units). sweep: ksr values to force on
+    v2 per shape."""
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
     from vllm.model_executor.layers import glm53_megakernel as mk
 

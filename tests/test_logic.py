@@ -8789,7 +8789,7 @@ def test_glm53_megakernel_contracts() -> None:
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
-          and "&g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM" in cu,
+          and "&g_gemm2_bps, mk_gemm2_kernel<4>, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
           "merely run slowly (the third query is the v2 lane's blocks per SM, "
@@ -8830,18 +8830,34 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 k loop: exact ring wait, refill of the stage consumed last "
           "iteration, quant into the A buffer the running mma does not read, "
           "one __syncthreads per k-block")
-    check("__device__ __forceinline__ uint32_t mk_w4x4(uint32_t w16, uint32_t eb)" in cu
-          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in cu_code[cu_code.index("mk_w4x4"):]
-          and "__byte_perm(l0, l1, w16 & 0x7777u)" in cu_code
-          and "__byte_perm(0x8000u, 0u, (w16 >> 3) & 0x1111u)" in cu_code
-          and "const uint32_t b0 = mk_w4x4(w0, e0);" in v2
-          and "const uint32_t b1 = mk_w4x4(w1, e1);" in v2
-          and "expand_w4" not in v2,
+    check("template <int RQ>" in cu
+          and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
+          and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
+          and "for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group" in v2
+          and "mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);" in cu,
+          "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
+          "m-tiles and the x lane mapping at compile time) and the host picks "
+          "the instantiation from m")
+    check("((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
+          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
+          and "l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);" in v2
+          and "l1b[j] = __vadd4((uint32_t)(lb >> 32), eb * 0x01010101u);" in v2
+          and "__byte_perm(l0, l1, w & 0x7777u)" in v2
+          and "__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in v2
+          and "__byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u)" in v2
+          and "const int wsel = (ks + q) & 3;" in v2
+          and "const int koff = 32 * q + 8 * wsel;" in v2
+          and "expand_w4" not in v2 and "mk_w4x4" not in cu_code,
           "v2 expands the e2m1 nibbles into the B fragments per lane with the "
           "SAME table lookup as expand_w4 (same two LUT immediates, same sign "
-          "prmt), so the bytes the mma sees are the persistent kernel's")
+          "prmt) -- two LUT pairs per W row per k-block (lane q owns natural "
+          "elements [32q, 32q+32), groups 2q and 2q+1) and the rotated word "
+          "(ks + q) & 3 keeps the quad's raw loads on distinct banks")
     check("((ch ^ ((r >> 1) & 3)) << 4)" in v2
-          and "((ks ^ ((nrow >> 1) & 3)) << 4)" in v2,
+          and "slot[j] = nrow * W4_RAW_PITCH + ((q ^ ((nrow >> 1) & 3)) << 4);" in v2
+          and "*(const uint32_t*)(rr + slot[j] + 4 * wsel);" in v2,
           "the raw nibble chunks land XOR-swizzled at copy time and the "
           "fragment loads read through the same swizzle (eight rows on a 64 B "
           "pitch would otherwise share two bank groups)")
