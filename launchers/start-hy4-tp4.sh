@@ -557,14 +557,12 @@ cat > /tmp/serve-hy4.sh <<'SERVEEOF'
 set -euo pipefail
 unset NCCL_GRAPH_FILE NCCL_GRAPH_DUMP_FILE VLLM_B12X_MLA_EXTEND_MAX_CHUNKS 2>/dev/null || true
 export VLLM_ENABLE_PCIE_ALLREDUCE=0 VLLM_PCIE_ALLREDUCE_BACKEND=cpp
-# Auto-detect the RoCE-v2 IPv4 GID index (re-numbers across reboots).
-for HCA in $(echo "${NCCL_IB_HCA}" | tr ',' ' '); do
-  for i in $(seq 0 15); do
-    t=$(cat /sys/class/infiniband/$HCA/ports/1/gid_attrs/types/$i 2>/dev/null || true)
-    g=$(cat /sys/class/infiniband/$HCA/ports/1/gids/$i 2>/dev/null || true)
-    case "$t" in *"RoCE v2"*) case "$g" in *0000:0000:0000:0000:0000:ffff:*) export NCCL_IB_GID_INDEX=$i; break 2;; esac;; esac
-  done
-done
+SERVEEOF
+# The GID detection is shared source, not a call: glm53 delivers its serve
+# command as a base64 payload and this one as a quoted heredoc, so the only
+# thing the two can share is the text. Same copy, same behaviour, one file.
+printf '%s\n' "$CT_GID_PRELUDE" >> /tmp/serve-hy4.sh
+cat >> /tmp/serve-hy4.sh <<'SERVEEOF'
 SPEC_METHOD="${SPEC_METHOD:-dspark}"
 if [ "$SPEC_METHOD" = "dspark" ]; then
   SPEC_JSON='{"method":"dspark","num_speculative_tokens":'"${SPEC_TOKENS}"',"draft_sample_method":"probabilistic"}'

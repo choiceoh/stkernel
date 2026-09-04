@@ -636,7 +636,9 @@ fi
 # Workers first (rank 1..3), head last — their documented order.
 rank=1
 for ip in "${WORKER_IPS[@]}"; do
-  W_B64=$(printf '%s' "vllm serve $SERVE_ARGS --node-rank $rank --headless > /glmlogs/glm53.log 2>&1" | base64 -w0)
+  # Prelude first: the RoCE-v2 IPv4 GID index is per-node, so it has to be
+  # resolved inside the container. The -e below is only the fallback.
+  W_B64=$(printf '%s\n' "$CT_GID_PRELUDE" "vllm serve $SERVE_ARGS --node-rank $rank --headless > /glmlogs/glm53.log 2>&1" | base64 -w0)
   ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof; docker rm -f $NAME_WORKER 2>/dev/null; \
     docker run --name $NAME_WORKER ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$ip \
     --entrypoint /bin/bash $IMAGE -c 'echo $W_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh'"
@@ -645,7 +647,7 @@ for ip in "${WORKER_IPS[@]}"; do
 done
 sleep 8
 docker rm -f $NAME_HEAD 2>/dev/null || true
-SERVE_B64=$(printf '%s' "vllm serve $SERVE_ARGS --node-rank 0 > /glmlogs/glm53.log 2>&1" | base64 -w0)
+SERVE_B64=$(printf '%s\n' "$CT_GID_PRELUDE" "vllm serve $SERVE_ARGS --node-rank 0 > /glmlogs/glm53.log 2>&1" | base64 -w0)
 docker run --name $NAME_HEAD ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$HEAD_IP \
   --entrypoint /bin/bash $IMAGE -c "echo $SERVE_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh"
 echo "head rank=0 launched — poll :$PORT/v1/models (cold boot ~15min)"
