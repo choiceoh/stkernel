@@ -634,7 +634,7 @@ bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 
 14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
 
 12. **EXP-11 (dsv4 에 MK_SEG_MHC)** — 2단계는 **부팅 없음**: srv2 에서 서빙 컨테이너가
-13. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
+15. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
     비었을 때(`docker ps`) `bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20`.
     판정은 rel 1e-3 + T=8/16 의 dispatch 행(`hit=yes` 인 행만 의미가 있다). 이기면
     3단계 브래킷인데 그건 **프로덕션 dsv4 의 다운타임 창**이고 EXP-10 의 GLM 브래킷과
