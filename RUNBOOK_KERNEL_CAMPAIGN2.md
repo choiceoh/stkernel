@@ -604,8 +604,12 @@ VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 VLLM_GLM53_KPOOL_UPDATE_DIRE
   bash launchers/start-glm53-nvfp4-tp4.sh   # cand
 ```
 
-- 부팅 로그 앵커: `[kda-onepass] dual gate GEMM serving`, `[kda-onepass] one-pass KDA serving`.
-  `-> stock` 줄이 있으면 그 축은 안 돈 것이다.
+- 부팅 로그 앵커: `[kda-onepass] self-test PASS (...) -> one-pass ARMED`(자가진단, 첫 eager
+  forward), `[kda-onepass] dual gate GEMM serving`, `[kda-onepass] one-pass KDA serving`.
+  경고 줄 `decode shape not admitted -> stock two GEMMs` / `tensors not admitted -> stock chain` /
+  `self-test FAIL ... DISARMED` 가 있으면 그 축은 안 돈 것이다. 프리필·프로필 런(M>32)은 설계상
+  stock 이고 로그되지 않는다. conv 상태 dtype 은 bf16·fp32 둘 다 받으므로 MK-KDA 의
+  `MAMBA_CACHE_DTYPE=float32` 부팅에서도 돈다(MK 가 서빙하면 MK 분기가 먼저 반환해 무효).
 - 물리확인: cand 트레이스에서 `_causal_conv1d_update_kernel` 0, `layer_norm_gated_fwd_kernel` 0,
   KDA 층당 `_kda_onepass_spec_kernel` 1, `_dual_gate_gemm_kernel` 1, 인덱서 층당 `direct_copy`
   −1. 스텝의 GDN 창 시간(트레이스 도구)으로 ms 를 잰다.
