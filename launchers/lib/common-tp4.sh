@@ -126,3 +126,38 @@ ct_check_load_format() {
 # longest real prefill measured here is ~170 s at 430K, so the margin is wide.
 # Roll back per-boot with NCCL_ASYNC_ERR=0, or per-lane in the profile.
 CT_NCCL_ASYNC_ERR="${NCCL_ASYNC_ERR:-1}"
+
+# --- foreign stacks ----------------------------------------------------------
+# ct_refuse_foreign_stacks <foreign-name-regex> <lane label> <ssh opts> \
+#                          <head ip> <worker ip>...
+#
+# A bring-up stack from another lane keeps tens of GiB of weights resident under
+# its own container names. Sizing a second engine's UMA/KV pool while one is
+# alive double-books the same memory, which on these unified-memory boxes is not
+# a slow degradation -- it is the 09-04 wedge: the host crosses the 4 GiB kernel
+# watermark, sshd stops forking, and the node needs a power cycle.
+#
+# hy4 carried this guard and glm53 did not, so the asymmetry only protected the
+# lane that was less likely to be started second. Both call it now, each naming
+# the OTHER lanes as foreign.
+#
+# DRY_RUN skips it: a dry run creates nothing, so a live stack is not a conflict.
+ct_refuse_foreign_stacks() {
+  local _re="$1" _lane="$2" _sshopt="$3" _head="$4"; shift 4
+  [ "${DRY_RUN:-0}" = 1 ] && return 0
+  local _ip _hits
+  _hits=$(docker ps --format '{{.Names}}' | grep -E "$_re" | tr '\n' ' ' || true)
+  if [ -n "$_hits" ]; then
+    echo "ABORT: $_head runs a foreign stack ($_hits) -- stop it before starting $_lane" >&2
+    exit 1
+  fi
+  for _ip in "$@"; do
+    _hits=$(ssh $_sshopt "choiceoh@$_ip" \
+              "docker ps --format '{{.Names}}' | grep -E '$_re' | tr '\n' ' '" 2>/dev/null || true)
+    if [ -n "$_hits" ]; then
+      echo "ABORT: $_ip runs a foreign stack ($_hits) -- stop it before starting $_lane" >&2
+      exit 1
+    fi
+  done
+  return 0
+}

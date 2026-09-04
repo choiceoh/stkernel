@@ -224,6 +224,12 @@ MAX_LEN="${MAX_LEN:-1048576}"
 SPEC_K="${SPEC_K:-7}"             # the comment above is not advisory
 SSHOPT="-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8"
 
+# A live DSV4/Q38 stack holds tens of GiB under its own container names, and
+# sizing this engine's pool on top of it double-books the same memory. hy4 has
+# refused to start in that situation for a while; this lane did not, so the
+# guard only ever protected whichever stack happened to be started second.
+ct_refuse_foreign_stacks '^(hy4|q38)(-|$)' GLM53 "$SSHOPT" "$HEAD_IP" "${WORKER_IPS[@]}"
+
 # Overlays come from the profile's composed manifest, put on every node by
 # launchers/deploy-overlays.sh. This used to be a single hardcoded bind while
 # the profile named eleven modules.

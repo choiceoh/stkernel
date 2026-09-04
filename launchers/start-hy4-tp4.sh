@@ -447,24 +447,16 @@ HEAD_OVSUM=$(cd "$HEAD_OV" && sha256sum "$MANIFEST_NAME" "${OVFILES[@]}") \
 
 # A GLM/Q38 bring-up stack can retain tens of GiB of weights under different
 # container names. Refuse to size DSV4's UMA/KV pool while one is alive.
-_foreign_stack() {
-  docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)(-|$)'
-}
-if [ "${DRY_RUN:-0}" != 1 ] && _foreign_stack; then
-  echo "ABORT: $HEAD_IP runs a glm53/q38 stack — stop it before starting DSV4"
-  exit 1
-fi
+# Head and every worker, one shared implementation (launchers/lib/common-tp4.sh).
+_foreign_wips=""
+for _w in $WORKERS; do _foreign_wips="$_foreign_wips ${_w%%:*}"; done
+ct_refuse_foreign_stacks '^(glm53|q38)(-|$)' DSV4 "$SSHOPT" "$HEAD_IP" $_foreign_wips
 if [ -n "$MARKOV_SIDELOAD" ] && [ ! -f "$MARKOV_SIDELOAD" ]; then
   echo "ABORT: MARKOV_SIDELOAD missing on head ($MARKOV_SIDELOAD)"
   exit 1
 fi
 for w in $WORKERS; do
   ip=${w%%:*}
-  if [ "${DRY_RUN:-0}" != 1 ] && ssh $SSHOPT choiceoh@$ip \
-      "docker ps --format '{{.Names}}' | grep -qE '^(glm53|q38)(-|$)'"; then
-    echo "ABORT: $ip runs a glm53/q38 stack — stop it before starting DSV4"
-    exit 1
-  fi
   WID=$(ssh $SSHOPT choiceoh@$ip "docker image inspect $IMAGE --format '{{.Id}}'" 2>/dev/null || true)
   [ "$WID" = "$HID" ] || { echo "ABORT: image missing/skewed on $ip"; exit 1; }
   WOVSUM=$(ssh $SSHOPT choiceoh@$ip "cd $(overlay_dir $ip)-b12x && sha256sum $MANIFEST_NAME ${OVFILES[*]}" 2>/dev/null || true)
