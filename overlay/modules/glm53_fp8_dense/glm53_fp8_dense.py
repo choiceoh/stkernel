@@ -968,6 +968,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         [], [], [], [], 0, 0)
     mk_packs = 0
     kda_owned = 0
+    shapes: dict = {}   # (N, K) -> count, for the boot log: which launches are which
     prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"
     nv_prefill = 0
     for name, mod in model.named_modules():
@@ -998,6 +999,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             skipped.append(name)
             continue
         try:
+            shapes[tuple(weight.shape)] = shapes.get(tuple(weight.shape), 0) + 1
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
             # the drafter's forward is torch.compiled: its GEMMs must be
@@ -1175,6 +1177,11 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         kda_owned, nv_prefill,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    if shapes:
+        # [N x K] x count: the map from a decode trace's launch classes to
+        # linears (28차: the 30-45 us class is [1024 x 4096] and [4096 x 512])
+        logger.warning("[fp8-dense] %s shapes: %s", type(model).__name__,
+                       ", ".join(f"[{n}x{k}]x{c}" for (n, k), c in sorted(shapes.items(), key=lambda kv: -kv[1])))
     if mk_packs == 0 and quantized_w4:
         # The scheme that wins the layer decides which kernel serves it, and
         # nothing else said so: NvFp4DenseMethod/W4A8DenseMethod.apply never

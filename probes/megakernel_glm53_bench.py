@@ -172,6 +172,10 @@ def _time(fn, iters: int, hot=()) -> float:
     return _time_stats(fn, iters, hot)[0]
 
 
+GEMM_SHAPES = [(8, 6416, 4096), (16, 4096, 4096), (32, 2048, 4096), (32, 1024, 4096),
+               (8, 1024, 4096), (8, 4096, 512), (8, 4096, 4096)]
+
+
 def probe_gemm(iters: int) -> bool:
     """MK-GEMM (the W4 lane) against the stock quant+deepgemm pair on the
     decode shapes: by-design error (e2m1, gated at 0.15), single-launch
@@ -180,20 +184,25 @@ def probe_gemm(iters: int) -> bool:
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     ok = True
-    print(f"{'shape':<22}{'rel_err':>10}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
+    print(f"{'shape':<24}{'rel_err':>8}{'gate':>8}{'stock_us':>10}{'mk_us':>9}"
           f"{'mk_GBps':>9}{'st_GBps':>9}{'mk_spread':>10}{'mk_x2':>7}"
           f"{'st_x2':>7}")
-    for m, n in ((8, 6416), (16, 4096), (32, 2048), (32, 1024)):
+    # The original four sweep n at k = 4096; the three after them are the
+    # per-rank production shapes whose launches sit in the 30-45 us class
+    # (86/step, 3.5 ms, 2.4 ms of it exposed on the critical path -- 28차):
+    # the shared expert's gate_up [1024 x 4096] and down [4096 x 512], and
+    # o_proj [4096 x 4096]. Override with --gemm-shapes m:n:k,...
+    for m, n, k in GEMM_SHAPES:
         torch.manual_seed(0)
-        w = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
-        x = torch.randn(m, 4096, dtype=torch.bfloat16, device=DEV)
+        w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
         sq, sws, srows, scols = mk._stock_fp8_pair(w)
         p4 = mk.build_mk_weight_w4(w)
         # a SECOND weight for the back-to-back pair: two launches on the
         # same weight leave the second one reading L2 (4 MB at n=1024 is
         # entirely resident after the first), which is not what a decode
         # step's run of different projections sees. Pair = w then w2.
-        w2 = torch.randn(n, 4096, dtype=torch.bfloat16, device=DEV) * 0.05
+        w2 = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
         p4b = mk.build_mk_weight_w4(w2)
         del w2
@@ -233,7 +242,7 @@ def probe_gemm(iters: int) -> bool:
         # spread = (max - min) / median over the timed launches. A bimodal
         # cell (two clusters inside one process) shows up here where a
         # median alone would hide it behind a plausible number.
-        print(f"{mark}gemm m={m:<4}n={n:<8}{r:>10.2e}{TOL['gemm']:>8.2f}"
+        print(f"{mark}gemm m={m:<3}n={n:<5}k={k:<5}{r:>8.2e}{TOL['gemm']:>8.2f}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}"
               f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
               f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}")
@@ -478,6 +487,8 @@ def probe_mhc_dispatch(iters: int, sk: int) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=30)
+    ap.add_argument("--gemm-shapes", default=None,
+                    help="m:n:k,... (default: the decode sweep + the production small shapes)")
     ap.add_argument("--skip-kda", action="store_true")
     # Which segments this profile can even run. dsv4 reaches MHC alone: it has
     # no linear-attention layer (kda), no e2m1 dense pack (gemm/exact) and a
@@ -494,6 +505,8 @@ def main() -> int:
     # self-test gates on. See the BASIS NOTE in the module docstring.
     ap.add_argument("--sinkhorn", type=int, default=None)
     args = ap.parse_args()
+    if args.gemm_shapes:
+        GEMM_SHAPES[:] = [tuple(int(v) for v in t.split(":")) for t in args.gemm_shapes.split(",")]
     if args.sinkhorn is not None and args.sinkhorn < 1:
         print("--sinkhorn must be >= 1")
         return 2
