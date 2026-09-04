@@ -2040,7 +2040,8 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   bf16 로 내린다(`cs_bf16` 런치 플래그; 스톡 `causal_conv1d_update` 와 같은 반올림 지점). 게이트는 fp32/bf16 둘 다
   허용, 셀프테스트·벤치에 "bf16" 레이아웃(허용 2e-2). 노브 없이 기본값 부팅에서 KDA 를 켤 수 있다(체인8).
 - **bf16 conv 섀도 부팅(체인8 KDABF16SHADOW, 02:04)은 8K 프리필을 살아 넘겼다** — 4 노드 5 s 감시 최소 여유 19~24 GB(fp32 팔은 8~10%). fp32 mamba 캐시가 (conv 260 MB 이상으로) 풀 배치를 바꾸는 쪽이 유력. 단, 이 부팅에서도 `kda shadow #N` 판정 줄이 없다 → 층 게이트는 통과했지만 스텝 적격성이 조용히 거부한 것(§9 SMLP 와 같은 무장≠서빙). 적격성 사유 로그 + "kda lane serving" 증명 줄을 넣어 다음 팔이 판정.
-- **★판정(체인9, 02:41)**: 증명 줄이 답했다 — 프로덕션 디코드 스텝의 KDA 메타데이터는 `spec_sequence_masks is None`.
+- **판정 보류(체인9, 02:41 → 04:50 정정)**: 증명 줄 `spec_sequence_masks is None` 은 프리필 직후 **첫 디코드 스텝(드래프트 없음)** 에만 해당하고, "first eligible step" 은 캡처 더미에서 먼저 발화해 실제 스텝을 증명하지 못했다. V2 러너(`mamba_hybrid.prepare_attn`)는 정상 스텝(스케줄 8 = 드래프트 7 + 1)에 `num_decode_draft_tokens_cpu` 를 채우므로 spec 마스크는 정상 상태에서 존재한다. 남는 의문은 섀도 판정 줄이 한 번도 안 찍힌 것(`_kda_ensure_packs`/디바이스 게이트의 무로그 거부 가능). 증명 줄을 캡처 제외 + 512 호출마다 served/stock 집계로 고쳐 다음 팔이 확정한다. (아래 문단은 정정 전 가설.)
+- (정정 전) 프로덕션 디코드 스텝의 KDA 메타데이터는 `spec_sequence_masks is None`.
   이미지의 `GDNAttentionMetadataBuilder.build` 는 `num_decode_draft_tokens_cpu` 가 넘어올 때만 spec 마스크를 만드는데
   이 V2 러너의 `build_attn_metadata` 경로는 그 인자를 **아무도 넘기지 않는다** → 스톡 KDA 는 항상 비-spec(varlen)
   경로로 q=8 을 처리하고, MK-KDA 레인의 적격성·런치 계약(spec_query_start_loc·spec_state_indices·num_accepted)은

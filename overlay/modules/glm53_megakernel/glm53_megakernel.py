@@ -1008,25 +1008,42 @@ def _kda_eligible(meta) -> bool:
 
 
 _KDA_ELIG_SAID = set()
-_KDA_SERVED = {"n": 0}
+_KDA_SERVED = {"n": 0, "stock": 0, "capture": 0}
 
 
 def _kda_eligible_said(meta) -> bool:
     """_kda_eligible with the reason logged once per distinct text; prefill
-    steps are routine and stay silent."""
+    steps are routine and stay silent. Graph-capture steps are counted apart
+    and never claim the first-serving line (the 29차 chain-9 line fired on
+    the capture dummy and said nothing about real steps); every 512 real
+    calls the served/stock tally is said so the steady state is readable."""
+    import torch
+
     reason = _kda_eligible_reason(meta)
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        capturing = False
+    if capturing:
+        _KDA_SERVED["capture"] += 1
+        return reason is None
     if reason is None:
         _KDA_SERVED["n"] += 1
         if _KDA_SERVED["n"] == 1:
-            logger.warning("[megakernel] kda lane serving: first eligible step "
+            logger.warning("[megakernel] kda lane serving: first eligible REAL step "
                            "T=%d n_spec=%d (%s)", int(meta.num_actual_tokens),
                            int(meta.num_spec_decodes),
-                           "shadow" if not _ARMED["kda"] else "armed")
-        return True
-    if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
-        _KDA_ELIG_SAID.add(reason)
-        logger.warning("[megakernel] kda lane stock: %s", reason)
-    return False
+                           "shadow" if KDA_SHADOW else "armed")
+    else:
+        _KDA_SERVED["stock"] += 1
+        if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
+            _KDA_ELIG_SAID.add(reason)
+            logger.warning("[megakernel] kda lane stock: %s", reason)
+    total = _KDA_SERVED["n"] + _KDA_SERVED["stock"]
+    if total % 512 == 0:
+        logger.warning("[megakernel] kda lane tally: served=%d stock=%d capture=%d",
+                       _KDA_SERVED["n"], _KDA_SERVED["stock"], _KDA_SERVED["capture"])
+    return reason is None
 
 
 _KDA_LAYOUT_SAID = set()
@@ -1147,7 +1164,13 @@ def _kda_ensure_packs(layer) -> bool:
         in_m = _unwrap(layer.in_proj_qkvbfg_a.quant_method)
         o_m = _unwrap(layer.o_proj.quant_method)
         if in_m is None or o_m is None:
-            return False  # stock in_proj/o_proj is bf16 here -> stay stock
+            # stock in_proj/o_proj is bf16 here -> stay stock; said once (a
+            # silent False here reads as "armed" in the boot log, 29차)
+            if "packs" not in _KDA_ELIG_SAID:
+                _KDA_ELIG_SAID.add("packs")
+                logger.warning("[megakernel] kda lane stock: in_proj/o_proj carry "
+                               "no fp8-dense method -> no W4 packs for the lane")
+            return False
         # The in-kernel in_proj / o_proj GEMMs stream the same W4 packs the
         # linears serve. maybe_build_fp8_dense attaches them for the layers
         # MK-KDA owns; building one HERE is the fallback, and it only works

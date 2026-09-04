@@ -6792,7 +6792,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "slot stride; the gate names the recurrent strides it refuses")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
     kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
-    check("kda lane serving: first eligible step" in kt
+    check("kda lane serving: first eligible REAL step" in kt
+          and "is_current_stream_capturing()" in kt and "kda lane tally: served=%d stock=%d capture=%d" in kt
           and "kda lane stock: %s" in kt and '"(routine)" not in reason' in kt
           and "_kda_eligible_said(_kda_meta(layer))" in mk,
           "the KDA takeover says once when a step first serves (armed or "
