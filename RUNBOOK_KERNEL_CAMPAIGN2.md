@@ -688,10 +688,10 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 행 `bracket-lever.jsonl` name MKG2BASE/MKG2 — judge 는 acc 정규화 step/s 를 두 이름으로 직접 비교).
 (b) 3라운드 커널(브랜치 `claude/mk-gemm-v2-round3`): m 별 인스턴스(RQ 1/2/4)와 레인 k 순열로 LUT
 쌍 16 → 4(warp·k-블록당 명령 −27% 추정), 레지스터 124 → 96/96/117, GPU 검증은 srv2 `gap_bench4.sh`
-(`g2.r3.out`, `g2.r3stamps.out`). (c) SMLP 를 v2 구조 위에 짓는 설계: gate_up 유닛 + down 유닛을 한
-비상주 grid 에 넣고(낮은 blockIdx = gate_up), down 블록은 자기 타일 쌍의 도착 카운터를 스핀 대기 —
-블록 디스패치가 id 순서라는 가정(프로그래밍 모델이 보장하지 않음)에 기대므로, 쌍 노출이 이미 19~29
-µs/층(DRAM 바닥 15)인 지금은 기대 이득 0.2~0.4 ms/스텝에 교착 위험을 지는 셈. 브래킷 결과 뒤 재평가.
+(`g2.r3.out`, `g2.r3stamps.out`). (c) **SMLP2 구현**(원장 30차 §7): 한 grid 의 스핀 대기 대신 **PDL 체인된 v2 발사 둘**(gate_up 의
+쌍 에필로그가 fp8 그룹을 방출, down 은 a_ready) — 교착 위험 없이 act_and_mul 42발과 down 의
+양자화를 없앤다. 노브 `VLLM_GLM53_MK_SMLP2`(기본 0), 자가진단 exact 3종 + 리플레이. 벤치
+`--segments smlp --gemm2 both` 가 29차 SMLP·v2 체인·smlp2 를 나란히 잰다.
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)

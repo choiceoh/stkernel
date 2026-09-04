@@ -166,6 +166,17 @@ builds two LUT pairs per W row per k-block instead of eight (216 of the
 raw loads land on four different banks. ptxas: 96 / 96 / 117 registers,
 no spills, no stack.
 
+MK_SEG_SMLP2 (`VLLM_GLM53_MK_SMLP2`, default off): the shared-expert /
+dense MLP as two PDL-chained v2 launches -- gate_up with the pair-
+activation epilogue (the block storing the second final tile of a (gate,
+up) pair computes the clamped SwiGLU over those 128 columns and emits
+the e4m3 group + row scale), down on the a_ready path (it stages those
+groups instead of quantizing x). No grid barrier and no 48-block
+residency, unlike the persistent MK_SEG_SMLP launch, so it shares SMs
+with the routed MoE kernel the way the standalone v2 lane does; it also
+retires the act_and_mul launch and the down GEMM's own quant. The hook
+in Glm5NextMLP.forward prefers it over MK_SMLP when both are armed.
+
 Contract, inherited from the persistent lane: v2's partials and per-tile
 arrival counters are one device-wide set, so a v2 launch must never
 overlap another MK GEMM launch on a different stream (two launches
