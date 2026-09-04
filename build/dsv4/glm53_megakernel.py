@@ -1047,6 +1047,7 @@ def _kda_eligible_said(meta) -> bool:
 
 
 _KDA_LAYOUT_SAID = set()
+_KDA_LAYOUT_REPEAT: dict = {}
 
 
 def _kda_layout_reason(layer):
@@ -1055,8 +1056,13 @@ def _kda_layout_reason(layer):
     import torch
 
     kv = getattr(layer, "kv_cache", None)
-    if not isinstance(kv, tuple) or len(kv) != 2:
-        return "kv_cache is not the (conv, recurrent) pair yet"
+    # tuple OR list: the runner binds a list, the stock forward unpacks it
+    # either way, and a tuple-only test here repeated the same "not yet"
+    # text on every real step -- said once, then silent for the boot
+    # (KDAPROOF 05:13: no tally line in 47k calls). 29차.
+    if not isinstance(kv, (tuple, list)) or len(kv) != 2:
+        return "kv_cache is not the (conv, recurrent) pair yet (type=%s len=%s)" % (
+            type(kv).__name__, len(kv) if hasattr(kv, "__len__") else "-")
     conv_state, rec_state = kv
     w = layer._merged_conv_weight
     if w is None:
@@ -1131,6 +1137,13 @@ def _kda_layout_ok(layer) -> bool:
         _KDA_LAYOUT_SAID.add(reason)
         logger.warning("[megakernel] kda layout gate: %s -- the layer stays "
                        "stock", reason)
+    # a "transient" reason that keeps coming back is a permanent rejection
+    # wearing a temporary name: say so once more, with a count
+    n = _KDA_LAYOUT_REPEAT.get(reason, 0) + 1
+    _KDA_LAYOUT_REPEAT[reason] = n
+    if n == 2000:
+        logger.warning("[megakernel] kda layout gate: '%s' has rejected %d calls "
+                       "-- this is the lane's steady state, not a warm-up", reason, n)
     return False
 
 

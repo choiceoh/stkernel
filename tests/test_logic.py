@@ -6775,7 +6775,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     # so the gate no longer rejects a process layout (SD arrives as a
     # transposed view) or a non-contiguous view (page-aligned slots); it
     # refuses only overlapping / non-positive strides, and says them.
-    check("_conv_state_dim_first" not in reason
+    check("isinstance(kv, (tuple, list))" in reason
+          and "_conv_state_dim_first" not in reason
           and "conv_state.is_contiguous()" not in reason
           and "conv state strides %s overlap or are not positive" in reason
           and "slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1" in reason,
@@ -6820,7 +6821,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "against the contiguous result")
     ok = mk[mk.index("def _kda_layout_ok(layer)"):
             mk.index("def _kda_ensure_packs")]
-    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok,
+    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok
+          and "has rejected %d calls" in ok,
           "a permanent rejection must be logged, once per distinct reason")
     check("return True" in ok and "_kda_layout_reason(layer)" in ok,
           "_kda_layout_ok must be the thin wrapper over the reason")
