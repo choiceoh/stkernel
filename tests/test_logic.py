@@ -10885,6 +10885,80 @@ def test_micro_fusion_bundle_contracts() -> None:
     print("  micro-fusion bundle 2 contracts .. OK")
 
 
+def test_supervisor_paces_and_stops_relaunching() -> None:
+    """A launcher that keeps failing must not churn the fleet forever.
+
+    The relaunch loop fired every ~2 min with no backoff and no cap, and an
+    attempt is not free: bash "$LAUNCHER" runs drop_caches on ALL FOUR nodes
+    and creates/destroys containers. srv4 hosts unrelated tenants (nemotron,
+    solarflow, the SolarFlow DB), so a persistently broken launcher evicts
+    their page cache every two minutes, indefinitely. Observed 2026-09-04:
+    three relaunches in five minutes against a launcher bug (#289), stopped
+    only because a human noticed.
+
+    Simulated with an always-failing launcher: 5 attempts in 110 minutes
+    instead of ~55, then a hold.
+    """
+    sup = open(os.path.join(REPO, "launchers", "dsv4-tp4-supervisor.sh"),
+               encoding="utf-8").read()
+    for var in ("launch_fails=0", "next_launch_at=0", "LAUNCH_BACKOFF_MAX=1800",
+                "LAUNCH_HOLD_AFTER=5"):
+        check(var in sup, "the supervisor must declare %s" % var)
+    check("_backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))" in sup,
+          "consecutive failures must back off exponentially, not retry flat")
+    check("[ \"$_backoff\" -gt \"$LAUNCH_BACKOFF_MAX\" ] && _backoff=$LAUNCH_BACKOFF_MAX" in sup,
+          "the backoff needs a ceiling")
+    # a NEXT-ALLOWED-TIME, not a sleep: the probe must keep running so a stack
+    # someone fixes by hand is adopted at once instead of after the backoff.
+    check("next_launch_at=$(( $(date +%s) + _backoff ))" in sup
+          and '[ "$_now" -lt "$next_launch_at" ] && continue' in sup,
+          "backoff must gate the next attempt by timestamp, leaving the health "
+          "probe free to adopt a recovered stack immediately")
+    check("sleep $_backoff" not in sup and "sleep \"$_backoff\"" not in sup,
+          "sleeping the backoff would blind the health probe for up to 30 min")
+    # and it must eventually stop and say so
+    check("HELD after $launch_fails relaunches with no healthy stack" in sup,
+          "after the cap it stops relaunching and states why once")
+    held = sup[sup.index("LAUNCH_HOLD_AFTER"):]
+    check("held_logged=1" in held and 'held_logged" = 0' in held,
+          "the hold is announced once, not every cycle")
+    # the hold must be clearable, or a fixed stack would never be adopted
+    check("launch_fails=0; next_launch_at=0; held_logged=0" in sup,
+          "recovery must clear the hold -- a supervisor that gives up "
+          "permanently is a worse failure than the churn it replaced")
+    # ...and ONLY a confirmed generation may clear it. launch() returns 0 on
+    # api_up alone, and /v1/models answers 200 from a corpse, so crediting its
+    # return reset the counter every round and the hold was unreachable in the
+    # one failure mode the pacing exists for (simulated against a corpse API:
+    # 293 launcher runs and no hold, vs 5 and a hold).
+    check("if launch; then" not in sup,
+          "a relaunch counts as an ATTEMPT -- api_up alone is not health, "
+          "so launch()'s return must not clear the counter")
+    check(sup.count("launch_fails=0") == 2,
+          "the only two places that zero the counter are its declaration "
+          "and the api_up && chat_ok recovery branch")
+    clear_at = sup.index("launch_fails=0; next_launch_at=0; held_logged=0")
+    check("if api_up && chat_ok; then" in sup[:clear_at].rsplit("while :;", 1)[-1],
+          "the clear sits under a real generation probe, not under api_up")
+    # The root cause, not the three symptoms: launch() has three callers (boot,
+    # health loop, wedge watchdog) and each one that skips the accounting buys a
+    # destructive relaunch past the cap -- the boot and the watchdog each did.
+    # One counted path, so a fourth caller cannot reintroduce it silently.
+    check(sup.count("launch_fails=$((launch_fails+1))") == 1
+          and "attempt_launch(){" in sup,
+          "exactly one place counts an attempt, and it is attempt_launch")
+    bare = [n for n, line in enumerate(sup.splitlines(), 1)
+            if line.strip().startswith("launch")
+            and not line.strip().startswith(("launch(){", "launch_fails"))]
+    check(len(bare) == 1,
+          "launch() is invoked from exactly one place (inside attempt_launch); "
+          "every caller goes through the accounting (offending lines: %s)" % bare)
+    check(sup.count("attempt_launch") == 4,
+          "attempt_launch is defined once and called by all three sites: the "
+          "boot, the health loop and the wedge watchdog")
+    print("  supervisor relaunch pacing .... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -11001,5 +11075,6 @@ if __name__ == "__main__":
     test_hy4_entrypoint_carries_the_production_knobs()
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()
+    test_supervisor_paces_and_stops_relaunching()
     print(f"all OK ({PASS} checks)")
 
