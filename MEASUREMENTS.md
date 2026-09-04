@@ -3708,3 +3708,62 @@ races on KDA state kernels there; keep it to Hopper/Blackwell-datacenter."
 docker run --rm --gpus all --entrypoint python3 glm53:v13-b12x -c \
   "from vllm.platforms import current_platform; print(current_platform.is_arch_support_pdl())"
 ```
+
+## ★31차 — 자체 소유 미세 융합 묶음 2 (EXP-20): 오프라인 게이트 결과 (2026-09-04~05, srv4)
+
+_원장 번호: 이 작업은 29차로 적혀 있었으나 그 사이 29차(메가커널 로컬 양자화, PR #307)와
+30차(비상주 v2 레인, PR #305)가 먼저 머지돼 31차로 옮겼다 — 28차의 선례("원장 번호 27 은
+PR #290 이 쓰고 있어 28 로 적는다")와 같은 처리다. 측정 자체는 손대지 않았다._
+
+"소소한 이익 묶음"(R2 선례) 방식으로 네 축을 한 캠페인 창에 묶는다. 각 축은 킬스위치
+노브(프로필 기본 0)이고, 판정은 오프라인 수치 게이트 + 인그래프 물리확인 + e2e 무회귀.
+프로브 `probes/run_micro_fusion_check.sh`(fresh container, 그래프 리플레이, 층마다 다른
+가중치/상태). 09-04 18:42 rank3 트레이스(무장 세트, 스텝 64.8 ms, 1,548 커널) 기준.
+
+| 축 | 노브 | 런치 −/스텝 | 수치 | 그래프 리플레이(층당 us, 조용한 GPU) | 스텝 Δ |
+|---|---|---|---|---|---|
+| 게이트 top-k epilogue (`moe_gate_sm121`, 마지막 도착 블록) | (기각, 트리에 없음) | 42 | **bit-exact**(logits·ids·weights 568행, 동률 포함; `FusedTopKBiasRouter` 훅 서빙 경로 포함) | M=8 28.2 → **31.3**, M=16 28.1 → 45.6, M=32 34.3 → 86.8 | **+0.13 / +0.74 / +2.2 ms — 기각** |
+| f_b+g_b 듀얼 GEMM (`glm53_kda_onepass`) | `VLLM_GLM53_KDA_DUAL_GEMM` | 34 | M≤16 **bit-exact**(cuBLAS 16x16 wmma 와 동일), M=32 는 cuBLAS 가 다른 커널을 골라 10/131,072 원소 1 ulp | 10.7 → 8.1 (M=8), 10.7 → 8.2 (M=16), 9.7 → 8.2 (M=32) | −0.09 / −0.09 / −0.05 ms |
+| KDA 원패스 conv+복사4+recurrent+norm (`glm53_kda_onepass`) | `VLLM_GLM53_KDA_ONEPASS` | 204 (층당 7→1) | conv 상태·recurrent 상태·출력 **bit-exact**(acc 1/3/5/8, SD/DS 레이아웃, varlen T=[8,3,8,1]; 두 번째 발사도 동일) | C=1: 74.1 → 69.9 (BV=8) / 69.7 (BV=16); C=4: 231.9 → 221.6 | −0.14 (C=1) / −0.35 (C=4) ms |
+| kpool 갱신 int64 positions 직접 (`glm53_kpool_tail_select`) | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS` | 11 | 캐시 쓰기 **bit-exact** | 7.3 → 6.0 | −0.015 ms |
+
+**게이트 top-k 의 비트 일치는 소스가 아니라 프로브가 정했다.** 커널 소스
+(`single_group_topk_block_kernel`)는 `sigmoid_accurate = 0.5f*tanhf(0.5f*x)+0.5f` 와
+`cg::reduce` 합을 쓰지만 이미지 빌드의 비트는 (1) sigmoid = `1/(1+exp(-x))`(Triton exp +
+IEEE 나눗셈; 0/2048 — libdevice tanh 형태는 절반이 1~2 ulp 어긋남, fast-math 빌드 추정),
+(2) 재정규화 합 = 순위순 순차 합 + `div_rn(scale, s+1e-20)`(0/4096; 헤더가 시사하는
+xor-butterfly 순서는 1/3 행에서 1~3 ulp)이었다. 선택은 편향 점수 내림차순·동률 낮은
+인덱스(packed 64-bit key 로 한 랭크당 축약 1회).
+
+**KDA 원패스의 bit-exact 는 루프 모양에 달렸다.** stock 커널 세 개를 op 순서 그대로 옮기고
+conv 출력을 bf16 으로 반올림하면 상태·출력이 비트 일치한다. 그러나 토큰 루프의 [K] 피연산자를
+prefetch/hoist 하거나 norm 꼬리를 [8,128] 2-D 타일로 바꾸면 Triton 의 레이아웃 배정이
+커널 전체에서 바뀌어 l2norm 축약 트리가 달라지고 recurrent 상태가 ~3% 원소에서 1 ulp
+어긋난다(세 변형 모두 같은 74,353 원소). 그 변형들은 3~5 us/층 빨랐지만(64.4 vs 69.8)
+비트 일치를 택했다. 남은 후보: `tl.static_range` 1-D 꼬리(레이아웃 불변 가정)는 미검증.
+
+**게이트 epilogue 는 기각이다 — 수치가 아니라 병렬성 때문에.** 1판([8,512] fp32 타일 6개를
+동시에 든 채 랭크당 축약 3회)은 레지스터 스필로 커널 전체가 4배 느려졌고(111 vs 27.5 us/층,
+경합 GPU), 2판(packed 64-bit key = 점수 비트<<32 | 65535−expert 로 랭크당 `tl.max` 1회 +
+`tl.gather`, 4행 청크)도 조용한 GPU 에서 M=8 28.2 → 31.3, M=16 → 45.6, M=32 → 86.8 us/층.
+stock 의 `single_group_topk_block_kernel` 은 토큰마다 CTA 하나(256 스레드, 워프 bitonic)를
+쓰는데 epilogue 는 마지막 도착 CTA 하나가 전 행을 직렬로 고른다. 그리드 배리어(스핀)로
+18 블록에 나누면 되지만 같은 스트림에서 MK 의 48블록 배리어 커널과 SM 을 나눠 잡다 교착할
+수 있어 쓰지 않는다. 코드는 트리에 두지 않고(운영자 규칙) 비트 일치 요령만 남긴다 —
+MoE 를 persistent 세그먼트로 접는 날 top-k 는 이 요령대로 그 안에 들어가면 된다.
+
+**정직한 합계(C=1, 조용한 GPU 그래프 리플레이 기준)**: 듀얼 −0.09 + 원패스 −0.14 + kpool
+−0.015 ≈ **−0.25 ms/스텝(0.4%)**, 런치 −249/1,548(16%); C=4 는 −0.05 −0.35 −0.015 ≈ −0.4 ms.
+브래킷 해상도(CV 1.7%) 아래 — R2 규칙(bit-exact + 트레이스 소멸 + 무회귀)으로 채택 판정한다.
+원패스의 GPU 시간 이득이 작은 이유: recurrent 는 토큰 8개의 직렬 지연 사슬(상태 슬롯 8 MB
+쓰기 포함)이라 conv·복사·norm 을 그 사슬에 접어 넣어도 사라지는 것은 작은 커널 시간과
+런치 간극뿐이고, 마지막 도착 블록의 norm 꼬리(토큰 8개 직렬)가 되돌려 준다.
+
+**경합 주의**: srv4 는 rank 3 노드다. 다른 세션 체인의 decode 레그 중 프로브(00:00)를 돌리다
+죽였고, 이후 프로브는 스크래치 `gpu_window.sh` 로 boot/idle 창에서만 돌렸다. 경합 창의
+수치(stock 원패스 체인 139 us/층)는 원장에 쓰지 않았다.
+
+- 다음: PR → 운영자 승인 뒤 묶음 부팅(base → cand 세 노브 → base, 프리필 2048/8192 동반)
+  → cand 트레이스에서 `_causal_conv1d_update_kernel` 0 / `layer_norm_gated_fwd_kernel` 0 /
+  `_kda_onepass_spec_kernel` 34 / `_dual_gate_gemm_kernel` 34 / 인덱서 `direct_copy` −11 확인
+  → 채택 시 프로필 기본값.

@@ -10553,6 +10553,117 @@ def test_worker_launch_does_not_let_the_remote_reparse_envv() -> None:
     print("  worker envv not re-parsed ..... OK")
 
 
+def test_micro_fusion_bundle_contracts() -> None:
+    """Launch-count bundle 2 (RUNBOOK EXP-20): three kill-switched micro-fusions.
+
+    dual f_b/g_b GEMM + one-pass KDA (glm53_kda_onepass, wired from
+    glm53_mk_kda_wiring) and the kpool update on int64 positions
+    (glm53_kpool_tail_select). Every knob reads the exact string 1, ships 0 in
+    the profile, and the stock path is what runs on any doubt. The gate top-k
+    epilogue that was the fourth axis is not in the tree (MEASUREMENTS 31차:
+    bit-exact, slower than the kernel it replaced); nothing may reference it."""
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_kda_onepass" in modules, "glm53 profile mounts glm53_kda_onepass")
+    for knob in ("VLLM_GLM53_KDA_DUAL_GEMM", "VLLM_GLM53_KDA_ONEPASS",
+                 "VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS"):
+        check(re.search(rf"^{knob}=0$", profile, re.M) is not None,
+              f"profile ships {knob}=0 (stock by default; the bundle boot arms it as caller env)")
+    gate = open(os.path.join(REPO, "overlay", "modules", "moe_gate_sm121", "moe_gate_sm121.py"),
+                encoding="utf-8").read()
+    check("VLLM_MOE_GATE_TOPK" not in profile and "VLLM_MOE_GATE_TOPK" not in gate
+          and "_deneb_gate_topk_kernel" not in gate,
+          "the rejected top-k epilogue stays out of the gate module and the profile")
+
+    # --- glm53_kda_onepass: module shape ---
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_kda_onepass")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_kda_onepass.py",
+                    "vllm/model_executor/layers/glm53_kda_onepass.py", "absent"]],
+          f"manifest adds the kernel file next to the layers (absent preimage): {rows}")
+    check(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().strip() == "",
+          "self-contained: the KDA wiring optionally imports it, not the reverse")
+    kern = open(os.path.join(mod_dir, "glm53_kda_onepass.py"), encoding="utf-8").read()
+    check('os.environ.get(DUAL_GEMM_ENV, "").strip() == "1"' in kern
+          and 'os.environ.get(ONEPASS_ENV, "").strip() == "1"' in kern
+          and 'DUAL_GEMM_ENV = "VLLM_GLM53_KDA_DUAL_GEMM"' in kern
+          and 'ONEPASS_ENV = "VLLM_GLM53_KDA_ONEPASS"' in kern,
+          "both knobs arm on the exact string 1 only")
+    check("tl.atomic_add(ctr_ptr + i_nh, 1, sem=\"acq_rel\", scope=\"gpu\")" in kern
+          and "tl.atomic_add(ctr_ptr + nh_total + i_nh, 1, sem=\"acq_rel\", scope=\"gpu\")" in kern
+          and kern.count("tl.atomic_xchg(") == 2,
+          "two last-arriver counters (conv-state write, norm), each reset by the kernel")
+    check("tl.debug_barrier()\n    arrived = tl.atomic_add" in kern
+          and "tl.debug_barrier()\n    done = tl.atomic_add" in kern,
+          "the CTA barrier precedes each arrival (every thread's reads/stores are done)")
+    check('cache_modifier=".cg"' in kern, "the norm tail reads the other programs' rows past L1")
+    check("acc.to(tl.bfloat16).to(tl.float32)" in kern,
+          "conv output rounded to bf16 where the stock chain stores it (recurrence bit-exact)")
+    check("b_q = b_q / tl.sqrt(tl.sum(b_q * b_q) + 1e-6)" in kern
+          and "b_gk = LOWER_BOUND / (1.0 + tl.exp(-(b_a_log * b_gk)))" in kern
+          and "b_h *= tl.exp(b_gk[None, :])" in kern
+          and "b_v -= tl.sum(b_h * b_k[None, :], 1)" in kern
+          and "b_beta = tl.sigmoid(b_beta)" in kern
+          and "b_h += b_v[:, None] * b_k[None, :]" in kern
+          and "b_o = tl.sum(b_h * b_q[None, :], 1)" in kern,
+          "the recurrence is the stock fused_recurrent kernel's op order")
+    check("state_idx = tl.load(idx_ptr + i_n * stride_idx_seq + n_acc - 1)" in kern
+          and "final_idx = tl.load(idx_ptr + i_n * stride_idx_seq + t)" in kern
+          and "if final_idx > 0:" in kern and "if (line == 0) | (state_idx <= 0):" in kern,
+          "state-index contract: resume from [n, acc-1], store per token to [n, t], skip null")
+    check("VAL: tl.constexpr = STATE_LEN - SEQLEN" in kern and "if j - VAL < T:" in kern
+          and "src = cs_line + (tok_off + 1 + j) * stride_cs_tok" in kern,
+          "conv-state roll: 2 old slots from acc+j, then the block's tokens, per-request T")
+    check("b_var = tl.sum(b_x * b_x, axis=0) / V" in kern
+          and "b_rstd = 1 / tl.sqrt(b_var + eps)" in kern and "b_y = b_y * tl.sigmoid(b_g)" in kern,
+          "gated RMSNorm in the stock op order (sigmoid gate)")
+    check("_MAX_DUAL_M = 32" in kern and "0 < x_fg.shape[0] <= _MAX_DUAL_M" in kern
+          and "x_fg.shape[1] != 2 * kd" in kern and "n_out % 128 != 0" in kern,
+          "dual GEMM admits decode M only and the adjacent f_a|g_a slice shape")
+    check("num_warps=1" in kern and "num_stages=3" in kern,
+          "the one-pass keeps the stock recurrent launch geometry (single-warp programs)")
+    readme = open(os.path.join(mod_dir, "README.md"), encoding="utf-8").read()
+    check("not bit-exact" in readme and "[kda-onepass]" in readme
+          and "VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 bash launchers/" in readme
+          and "6416" in readme and "run_micro_fusion_check.sh" in readme,
+          "README: numerics caveat, caller-env arming, checkpoint shape, log anchor, probe")
+
+    # --- wiring in glm53_mk_kda_wiring ---
+    kda = open(os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring", "glm5next_kda.py"),
+               encoding="utf-8").read()
+    check('_KDA_ONEPASS_MODULE = "vllm.model_executor.layers.glm53_kda_onepass"' in kda
+          and "isinstance(e, ModuleNotFoundError) and e.name == _KDA_ONEPASS_MODULE" in kda,
+          "the wiring imports the module lazily and tolerates only 'not mounted' silently")
+    check('_os.environ.get("VLLM_GLM53_KDA_DUAL_GEMM", "").strip() == "1"' in kda
+          and '_os.environ.get("VLLM_GLM53_KDA_ONEPASS", "").strip() == "1"' in kda,
+          "the wiring reads the same exact-1 knobs")
+    check("if _normed is not True:\n            core_attn_out = self.o_norm(core_attn_out, g2)" in kda,
+          "o_norm is skipped only when _forward reports the in-place norm")
+    check("and attn_metadata_narrowed.num_prefills == 0\n            and attn_metadata_narrowed.num_decodes == 0" in kda
+          and "and (non_spec_token_indx is None or non_spec_token_indx.numel() == 0)" in kda
+          and 'and self.o_norm.activation == "sigmoid"' in kda and "and self.kda_safe_gate" in kda,
+          "one-pass only on a pure spec-verify step with the bounded gate and sigmoid norm")
+    check("if _g1 is None:\n            _g1 = self.f_b_proj(f_a)[0]\n            _gp = self.g_b_proj(g_a)[0]" in kda,
+          "the stock two GEMMs remain the fallback of the dual path")
+    check(kda.index("_fus = _kda_fusion_state()\n        if (") > kda.index("conv_bias = self.q_conv1d.bias"),
+          "the one-pass branch sits after the merged conv weight exists")
+
+    # --- kpool direct positions ---
+    kp = open(os.path.join(REPO, "overlay", "modules", "glm53_kpool_tail_select",
+                           "sparse_attn_indexer_kpool.py"), encoding="utf-8").read()
+    check('os.environ.get("VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS", "").strip() == "1"' in kp,
+          "kpool knob arms on the exact string 1")
+    check("dec_pos = positions[:num_decode_tokens].view(shape2)" in kp
+          and "dec_pos = positions[:num_decode_tokens].to(torch.int32).view(shape2)" in kp,
+          "uniform path passes int64 positions under the knob, the cast copy otherwise")
+    check(kp.count("_KPOOL_UPDATE_DIRECT_POS and") == 1
+          and "_scatter_decode_tokens_by_request(\n                    positions[:num_decode_tokens].to(torch.int32)," in kp,
+          "the padded non-uniform path keeps the scatter of the int32 cast")
+
+    print("  micro-fusion bundle 2 contracts .. OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -10648,6 +10759,7 @@ if __name__ == "__main__":
     test_osar_wait_is_split_by_message_size()
     test_osar_prefetch_hints_contract()
     test_glm53_dflash_early_fc_contracts()
+    test_micro_fusion_bundle_contracts()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()

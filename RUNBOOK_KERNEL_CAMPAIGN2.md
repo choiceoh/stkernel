@@ -681,6 +681,46 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 **주의**: SMLP(EXP-20 계열, 상주+배리어)를 같은 자리에 켜면 이 진단의 직렬화가 되살아난다 —
 공유 전문가 융합은 v2 구조(독립 블록 + 타일 도착 의존) 위에 다시 지어야 한다.
 
+
+## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
+
+개별로는 브래킷 해상도(CV 1.7%) 아래라 판정 불가한 네 축을 R2 선례(MEASUREMENTS
+"R2 — mhc 라운치 구성 2차 묶음")대로 **한 캠페인 창에 묶어** 채택 판정한다:
+오프라인 수치 게이트 + 인그래프 물리확인(트레이스에서 대상 커널 소멸) + e2e 무회귀.
+09-04 18:42 rank3 트레이스(무장 세트, 스텝 64.8 ms, 커널 1,548개) 기준 대상:
+
+| 축 | 노브 | 제거 런치/스텝 | 근사 |
+|---|---|---|---|
+| ~~게이트 체인 완결~~ — epilogue top-k 는 bit-exact 였지만 한 CTA 의 직렬 선택이 대체한 커널보다 느렸다(M=8 28.2→31.3 us/층). **오프라인 기각, 트리에 없음**(31차) | — | (42) | — |
+| f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | ~0.15 ms |
+| KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로 | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | 0.5~0.7 ms |
+| kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | ~0.03 ms |
+
+수치 등급: KDA 상태(conv·recurrent)와 출력은 프로브의 플릿 형상 6 케이스에서 **bit-exact**
+(gated norm 의 128-합 트리가 stock 커널과 달라 등급은 reduce-order 로 선언) → 묶음 부팅은
+품질 9/9 + 한국어 0/16 + 수용률 ±2 pct 게이트를 진다. 듀얼 GEMM 은 M≤16 bit-exact(M=32 는
+cuBLAS 가 다른 커널을 골라 1 ulp 소수). kpool 은 값 동일.
+
+MK_SEG_KDA(`VLLM_GLM53_MK_KDA=1`)가 서빙되면 KDA 두 축은 무효(메가커널 분기가 먼저).
+"kpool 원패스 11층→1" 은 층간 데이터 의존(층 L 의 갱신은 층 L 의 K 를 먹고 같은 층의
+logits 가 그 캐시를 읽음) 때문에 플래그 대기 persistent 커널 없이는 불가 — 스텝 내내
+SM 을 점유하는 그 형태는 채택 대상이 아니라서 캐스트 복사 제거로 축소했다.
+
+```bash
+bash probes/run_micro_fusion_check.sh            # 오프라인 게이트 (fresh container)
+VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1 \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+```
+
+- 부팅 로그 앵커: `[kda-onepass] dual gate GEMM serving`, `[kda-onepass] one-pass KDA serving`.
+  `-> stock` 줄이 있으면 그 축은 안 돈 것이다.
+- 물리확인: cand 트레이스에서 `_causal_conv1d_update_kernel` 0, `layer_norm_gated_fwd_kernel` 0,
+  KDA 층당 `_kda_onepass_spec_kernel` 1, `_dual_gate_gemm_kernel` 1, 인덱서 층당 `direct_copy`
+  −1. 스텝의 GDN 창 시간(트레이스 도구)으로 ms 를 잰다.
+- 브래킷: base → cand(네 노브) → base, C=1 step/s + 프리필 2048/8192 동반. 채택 뒤
+  프로필 기본값으로 올린다(운영자 규칙: 이득이 확인된 개선은 기본값).
+
+
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
 `leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로
@@ -818,6 +858,9 @@ ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight
    커널 32블록 대조군(이득이 "배리어 없음"인지 "블록 수"인지)과 행 술어화 판의 단독
    손해가 먼저. 이기면 EXP-6 브래킷의 cand 팔에 `VLLM_GLM53_MK_LOCALQ=1`(투영 −0.66
    ms/스텝 ≈ 1%, 브래킷 해상도 안쪽이라 세트로만). 단독 부팅 없음.
+
+8. **EXP-20 (미세 융합 묶음 2)** — 오프라인 게이트 뒤 세 노브를 한 cand 로 브래킷.
+   개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각.
 
 **승인이 필요한 것**
 

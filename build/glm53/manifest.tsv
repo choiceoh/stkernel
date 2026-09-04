@@ -34,3 +34,4 @@ glm53_indexer_gate.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5ne
 deneb_boot_stamps.py	/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py	absent
 zz_deneb_boot_stamps.pth	/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth	absent
 glm53_dflash_early_fc.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py	absent
+glm53_kda_onepass.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py	absent
