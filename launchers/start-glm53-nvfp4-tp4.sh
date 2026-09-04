@@ -545,7 +545,20 @@ if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" !
   echo "== memfree preflight =="
   # Report goes to stderr (straight to the terminal); the computed GMU is the
   # only thing on stdout, so $(...) captures it alone.
-  if GMU_SAFE=$("$PREFLIGHT" 3); then
+  # Margin 10 GiB, not 3. Two measurements set it. (a) These boxes carry a
+  # 4.0 GiB kernel min watermark -- srv3's OOM dump on 09-03 read
+  # "free:4.00 GiB min:4.00 GiB all_unreclaimable? yes", so anything at or
+  # under ~4 is the kill point, not merely tight. (b) A margin-3 boot on
+  # 09-04 landed the fleet at 3 GiB free and wedged srv1 and srv2: sshd could
+  # not fork a session, and only breaking the collective got them back.
+  # The fp8-dense pass also peaks several GiB above steady state (bf16 source
+  # + fp8 pair + W4 pack held at once), and that peak is where srv3 died.
+  #
+  # Note the interaction with KV_TOKENS: a clean node measures ~110 GiB free,
+  # which at margin 3 computes a GMU ABOVE the profile's, and with KV pinned
+  # by --num-gpu-blocks-override the extra buys no cache -- it is reserved
+  # and the host starves for it. Margin 10 lands next to the profile value.
+  if GMU_SAFE=$("$PREFLIGHT" 10); then
     if [ "${_GMU_PINNED:-}" = 1 ]; then
       if awk "BEGIN{exit !($GMU > $GMU_SAFE)}" 2>/dev/null; then
         echo "  ! GMU=$GMU 를 호출자가 지정했고 실측 상한($GMU_SAFE)을 넘습니다 — 그대로 진행"

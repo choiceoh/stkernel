@@ -2395,12 +2395,23 @@ def test_fp8_dense_free_bf16_contract() -> None:
     tensor is dead: 2.94 GB/rank at TP4 against 1.47 GB of fp8 pack and 0.82
     GB of the megakernel's W4 pack (computed from the checkpoint's shapes).
     Freeing it also removes the bias and exception fallbacks through the base
-    method, which is why it is knob-gated and off by default."""
+    method, which is why it stayed knob-gated. It is ON by default since
+    2026-09-04: the memory it holds is not spare. With it off the fleet boots
+    at ~3 GiB free of 121, against a 4.0 GiB kernel min watermark -- srv3 was
+    OOM-killed on 09-03 and srv1/srv2 wedged on 09-04. A default that costs a
+    node is not a safe default."""
     src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
                encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_FP8_DENSE_FREE_BF16=0$", profile, re.M) is not None,
-          "profile ships the bf16 release off")
+    check(re.search(r"^VLLM_GLM53_FP8_DENSE_FREE_BF16=1$", profile, re.M) is not None,
+          "profile ships the bf16 release ON -- holding it cost two wedged "
+          "nodes and an OOM kill")
+    launcher = open(os.path.join(REPO, "launchers",
+                                 "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    check('"$PREFLIGHT" 10' in launcher,
+          "the memfree preflight reserves 10 GiB, not 3: these boxes carry a "
+          "4.0 GiB kernel min watermark and the fp8-dense pass peaks several "
+          "GiB above steady state, so a 3 GiB margin is inside the kill zone")
     check('os.environ.get(_FREE_BF16_ENV, "").strip() == "1"' in src,
           "exact opt-in: only the string 1 releases the bf16 sources")
     check('if getattr(mod, "bias", None) is not None:' in src,
