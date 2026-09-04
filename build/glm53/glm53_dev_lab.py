@@ -106,10 +106,22 @@ def _lab(worker, op: str = "info", **kw) -> dict:
         if op == "recapture":
             if mgr is None:
                 raise RuntimeError("no cudagraph manager")
-            mgr.graphs.clear()
-            for attr in ("_graphs_captured",):
-                if hasattr(mgr, attr):
-                    setattr(mgr, attr, False)
+            # every manager that capture_model() re-captures must be emptied:
+            # the target's, and the speculator's own (DEVLAB 01:48: the target
+            # re-captured, then the drafter's manager asserted "already
+            # captured" because only the target's dict had been cleared)
+            managers = [mgr]
+            spec = getattr(runner, "speculator", None)
+            for name in dir(spec) if spec is not None else []:
+                if name.endswith("cudagraph_manager"):
+                    m2 = getattr(spec, name, None)
+                    if m2 is not None and hasattr(m2, "graphs"):
+                        managers.append(m2)
+            for m2 in managers:
+                m2.graphs.clear()
+                if hasattr(m2, "_graphs_captured"):
+                    m2._graphs_captured = False
+            out["managers_cleared"] = len(managers)
             t0 = time.perf_counter()
             runner.capture_model()
             out.update(graphs=len(mgr.graphs), seconds=round(time.perf_counter() - t0, 1))

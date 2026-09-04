@@ -6784,6 +6784,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     launch = mk[mk.index("def _kda_launch("):mk.index("def kda_block(")]
     check("int(conv_state.stride(0)), int(conv_state.stride(1))" in launch
           and "int(conv_state.stride(2)), int(rec_state.stride(0))" in launch
+          and "int(conv_state.dtype == torch.bfloat16)" in launch
+          and "torch.float32, torch.bfloat16" in reason
           and "rec_state.is_contiguous()" not in reason
           and "recurrent state strides %s are not" in reason,
           "the launch carries the three conv-state strides and the recurrent "
@@ -6805,7 +6807,7 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "the KDA shadow judge clones only the slots the step touches, with "
           "the indices remapped into the compact buffers (whole-pool clones "
           "emptied unified memory: KDA32SHADOW3 earlyoom, 29차)")
-    check('fx.mk_run(v, layout=lay)' in st and '("pad", "sd")' in st,
+    check('fx.mk_run(v, layout=lay)' in st and '("bf16", 2e-2)' in st,
           "the self-test runs the padded-slot and SD-transposed views "
           "against the contiguous result")
     ok = mk[mk.index("def _kda_layout_ok(layer)"):
@@ -7058,7 +7060,7 @@ def test_dev_lab_contracts() -> None:
           and all(f'op == "{o}"' in lab for o in ("info", "replay", "reload", "recapture"))
           and "mgr.run_fullgraph(desc)" in lab and "e0.elapsed_time(e1)" in lab
           and "mk.rebuild(src)" in lab and "runner.capture_model()" in lab
-          and "mgr.graphs.clear()" in lab,
+          and "m2.graphs.clear()" in lab and "managers_cleared" in lab,
           "the worker lab remembers the served FULL descriptor, replays it "
           "with CUDA events, rebuilds the extension and recaptures")
     check('request.url.path != "/glm53/lab"' in mw
@@ -7601,7 +7603,11 @@ def test_osar_wait_is_split_by_message_size() -> None:
           "a full 4-sequence spec batch (32 tokens = 256 KiB)")
     check("volatile uint64_t t_wait_sm;" in cu
           and "volatile uint64_t t_calls_sm;" in cu
-          and "uint64_t pad[1];" in cu and "uint64_t pad[3];" not in cu,
+          and "uint64_t pad[1];" in cu and "uint64_t pad[3];" not in cu
+          and "osar_stall_check(c, sp, t0, STALL_GUARD" in cu
+          and "osar_stall_check(c, sp, t2, STALL_WAIT" in cu
+          and '"[oneshot] STALL rank=%d phase=%s seq=%llu slot=%d missing_peer_mask=0x%x "' in cu
+          and "#define OSAR_STALL_TRAP_S 30" in cu,
           "the two counters come OUT of the existing padding: anything that "
           "moved tx/rx would invalidate every peer's registered offsets")
     check("if (nbytes <= SPLIT_BYTES) {" in cu
@@ -8890,7 +8896,10 @@ def test_glm53_megakernel_contracts() -> None:
           and "sbase + (size_t)i * a.cs_s2" in cu
           and "sbase + (size_t)(acc + i) * a.cs_s2" in cu
           and "slot * KDA_QKV * a.conv_width" not in cu
-          and "ints.size() == 9" in cu
+          and "ints.size() == 10" in cu
+          and "kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2)" in cu
+          and "kda_cs_store(a, sbase + (size_t)i * a.cs_s2, v)" in cu
+          and "a.cs_bf16 = (int)ints[9];" in cu
           and "conv state strides must be positive" in cu
           and "(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
           and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
@@ -8899,7 +8908,7 @@ def test_glm53_megakernel_contracts() -> None:
           "carried by the launch, computed once as sbase and used by every "
           "read and write (the engine hands out page-aligned / transposed "
           "views; a contiguity gate rejected every production layer, 29차)")
-    check("st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];" in cu
+    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
           and "a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i]" not in cu,
           "the convolution's pos<0 history starts at the accepted boundary "
           "(state[acc - 1 .. acc + 1], the stock spec kernel's prior_tokens) "
@@ -8930,7 +8939,7 @@ def test_glm53_megakernel_contracts() -> None:
     # -- the state-index contract, taken from the stock kernels: the conv
     #    history starts at the accepted boundary, the recurrence resumes
     #    from slot [r, acc - 1] and stores after every token into [r, j]
-    check("st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];" in cu
+    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
           and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
           and "if (slot0 <= 0 || t1 <= t0) continue;" in cu
           and "const int sj = a.state_idx[r * a.mql + j];" in cu

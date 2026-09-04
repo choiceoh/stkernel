@@ -747,6 +747,19 @@ def probe_kda(iters: int) -> bool:
         print(f"{mark}kda  acc={acc:<10}{r:>10.2e}{TOL['kda']:>8.0e}"
               f"{t_ref:>10.1f}{t_mk:>9.1f}  "
               + " ".join(f"{k}={v:.1e}" for k, v in errs.items()))
+        # 29차 state contract: the engine hands the states out as page-aligned
+        # or transposed VIEWS, and the production conv state is bf16; the
+        # same launch through those must land on the contiguous fp32 result
+        # (bf16 at its own rounding).
+        for lay, tol in (("pad", 1e-6), ("sd", 1e-6), ("bf16", 2e-2)):
+            gl = fx.mk_run(layout=lay)
+            torch.cuda.synchronize()
+            rl = max(_rel(gl[k].float(), got0[k].float()) for k in got0)
+            t_l = _time(lambda: fx.mk_run(layout=lay), iters)
+            mark = "!" if rl > tol else " "
+            ok &= rl <= tol
+            print(f"{mark}kda  acc={acc} {lay:<6}{rl:>10.2e}{tol:>8.0e}"
+                  f"{'':>10}{t_l:>9.1f}  vs the contiguous view")
     return ok
 
 

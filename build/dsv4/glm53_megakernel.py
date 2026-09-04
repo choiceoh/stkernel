@@ -1022,9 +1022,12 @@ def _kda_layout_reason(layer):
     # kernel no longer assumes DS addressing.
     if layer.A_log.dtype != torch.float32 or layer.dt_bias.dtype != torch.float32:
         return "A_log/dt_bias are not float32"
-    if (conv_state.dtype != torch.float32 or conv_state.dim() != 3
-            or conv_state.shape[1] != KDA_QKV):
-        return "conv state is %s%s, not float32 (blocks, %d, W)" % (
+    # The production pool (--mamba-cache-dtype auto) stores the conv state
+    # in bf16; the kernel widens on load and narrows on store, so both serve
+    # and the fp32 knob is no longer a KDA precondition (29차).
+    if (conv_state.dtype not in (torch.float32, torch.bfloat16)
+            or conv_state.dim() != 3 or conv_state.shape[1] != KDA_QKV):
+        return "conv state is %s%s, not float32/bfloat16 (blocks, %d, W)" % (
             conv_state.dtype, tuple(conv_state.shape), KDA_QKV)
     # spec-decode allocates the sliding window k-1+num_spec wide; the kernel
     # uses the runtime width as stride over the active [0, 3) window, so any
@@ -1201,7 +1204,8 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          int(meta.spec_state_indices_tensor.size(-1)),
          int(delta_variant), int(conv_state.shape[-1]),
          int(conv_state.stride(0)), int(conv_state.stride(1)),
-         int(conv_state.stride(2)), int(rec_state.stride(0))],
+         int(conv_state.stride(2)), int(rec_state.stride(0)),
+         int(conv_state.dtype == torch.bfloat16)],
     )
 
 
@@ -1710,6 +1714,8 @@ class _KdaFixture:
         slots, w = src.shape[0], src.shape[2]
         if layout == "ds":
             return src.clone()
+        if layout == "bf16":
+            return src.to(torch.bfloat16)   # the production pool's dtype
         if layout == "pad":
             per = KDA_QKV * w + 4096
             buf = torch.zeros(slots * per, dtype=torch.float32, device="cuda")
@@ -1873,16 +1879,18 @@ def _selftest_kda() -> bool:
     # fixtures must land on the contiguous result. A layout bug is garbage
     # (rel ~1), so the tolerance below only has to absorb split-K order.
     base = fx.mk_run(v)
-    for lay in ("pad", "sd"):
+    # bf16 conv state: the rounding the production pool applies on every
+    # store, so its rows differ from the fp32 run at bf16 precision
+    for lay, tol in (("pad", 1e-5), ("sd", 1e-5), ("bf16", 2e-2)):
         got = fx.mk_run(v, layout=lay)
         for key in ("out", "conv_state", "rec_state"):
-            rel = _rel_err(got[key], base[key])
-            if not rel <= 1e-5:
+            rel = _rel_err(got[key].float(), base[key].float())
+            if not rel <= tol:
                 logger.warning("[megakernel] selftest kda layout %s: %s rel=%.2e "
-                               "vs the contiguous run -> DISARM", lay, key, rel)
+                               "(tol %.0e) vs the contiguous run -> DISARM", lay, key, rel, tol)
                 return False
-    logger.warning("[megakernel] selftest kda: padded-slot and SD-transposed "
-                   "views match the contiguous run -> ARM")
+    logger.warning("[megakernel] selftest kda: padded-slot, SD-transposed and "
+                   "bf16-conv views match the contiguous run -> ARM")
     _KDA_VARIANT = v
     return True
 

@@ -2078,6 +2078,11 @@ struct MKKdaArgs {
   // the Python gate only refuses overlapping or non-positive ones.
   long long cs_s0, cs_s1, cs_s2;
   long long rs_s0;             // rec_state elements per slot (>= KDA_H*KDA_D*KDA_D)
+  // conv_state element type: 0 = fp32, 1 = bf16 (the production pool with
+  // --mamba-cache-dtype auto; the recurrent state is fp32 either way).
+  // Loads widen to fp32, stores narrow -- the same rounding point as the
+  // stock causal_conv1d_update writing a bf16 state.
+  int cs_bf16;
   float* rec_state;            // [slots, KDA_H, KDA_D, KDA_D] fp32
   const float* a_log;          // [KDA_H] fp32
   const float* dt_bias;        // [KDA_H*KDA_D] fp32
@@ -2108,6 +2113,15 @@ struct MKKdaArgs {
   int num_tokens;
   float lower_bound, onorm_eps;
 };
+
+__device__ __forceinline__ float kda_cs_load(const MKKdaArgs &a, size_t idx) {
+  return a.cs_bf16 ? __bfloat162float(((const __nv_bfloat16 *)a.conv_state)[idx])
+                   : a.conv_state[idx];
+}
+__device__ __forceinline__ void kda_cs_store(const MKKdaArgs &a, size_t idx, float v) {
+  if (a.cs_bf16) ((__nv_bfloat16 *)a.conv_state)[idx] = __float2bfloat16(v);
+  else a.conv_state[idx] = v;
+}
 
 __global__ void mk_kda_kernel(const MKKdaArgs a) {
   extern __shared__ uint8_t smem[];
@@ -2255,12 +2269,12 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];
+          st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);
         float kept[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           kept[i] = (i < keep && acc + i < a.conv_width)
-                        ? a.conv_state[sbase + (size_t)(acc + i) * a.cs_s2]
+                        ? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)
                         : 0.0f;
         float xin[NQ_MAX];
 #pragma unroll
@@ -2295,7 +2309,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 #pragma unroll
             for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;
           }
-          a.conv_state[sbase + (size_t)i * a.cs_s2] = v;
+          kda_cs_store(a, sbase + (size_t)i * a.cs_s2, v);
         }
       }
     }
@@ -3618,7 +3632,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 9 && scalars.size() == 4,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 10 && scalars.size() == 4,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -3635,6 +3649,8 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.rs_s0 = ints[8];
   TORCH_CHECK(a.rs_s0 >= (long long)KDA_H * KDA_D * KDA_D,
               "kda: recurrent state slot stride is narrower than one slot");
+  a.cs_bf16 = (int)ints[9];
+  TORCH_CHECK(a.cs_bf16 == 0 || a.cs_bf16 == 1, "kda: conv state dtype flag");
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   a.in_wgs = (float)scalars[2];

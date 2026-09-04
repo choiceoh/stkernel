@@ -2014,6 +2014,25 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   srv4 에 `srv4-foreign.log`(10 s 마다 임베딩 요청 수·GPU util)를 남겨 레그마다 오염 여부를 표기한다.
 - 필요한 계측(osar 모듈 소유 세션): 정지 시 어느 랭크가 어느 집합통신 번호에서 기다리는지 덤프하는 스톨
   리포터. 없으면 위 세 노브(+7.3% 의 PREP 포함)는 계속 "측정됐지만 미출시" 로 남는다.
+- **★첫 진짜 스톨 덤프(01:29:27, PROD 기본값 팔 디코드 초반, 토큰 1,042)**: 4 랭크 모두 드래프터 메타데이터
+  빌드의 GPU 동기화(`seq_lens_cpu`)에서 대기, **GPU 96% 스핀** — 커널 안 교착. 정지 직전 10 s 창의 AR 대기가
+  rank 0/1/2 모두 36 → **152 µs** 로 늘었고(rank 3 은 48), 그 뒤 영구 정지. 프록시 오류 줄(`[oneshot] WC error`)은
+  없음. 4 노드 RoCE f0 포트의 `out_of_sequence` 수천·`packet_seq_err` 수백~수천(누적) = 패브릭 재전송(QP 타임아웃
+  14 = 67 ms 단위) — 대기 증가와 맞는 서명. 어느 위상(링 가드/피어 플래그)에서 굳는지는 커널이 말해야 한다.
+- **계측 투입(01:45)**: `k_oneshot` 의 두 스핀 루프에 상한 — 3 s 를 넘으면 block 0 이 Ctrl 의 남은 pad 한 칸에
+  (seq·위상·안 온 피어 마스크·슬롯)을 쓰고 프록시 스레드가 5 s 마다 `[oneshot] STALL rank=… phase=… seq=…
+  missing_peer_mask=… tx_seq/ack_seq/rxf[slot]` 로 출력, 30 s 면 `__trap()` 으로 즉시 사망(5 분 침묵 대신). 다음
+  스톨이 원인을 찍는다. 컴파일 확인(이미지 nvcc).
+
+
+### 11. KDA — fp32 노브 제거(bf16 conv 상태 직접 지원)와 남은 메모리 의문
+
+- 프로덕션 mamba 캐시는 conv 상태 bf16(`auto`), 재귀 상태 fp32. MK-KDA 커널이 fp32 conv 만 받아 `MAMBA_CACHE_DTYPE=float32`
+  가 KDA 팔의 전제였다 — 비용은 conv 130→260 MB/랭크로 작다. 커널이 이제 bf16 conv 를 로드 시 fp32 로 올리고 저장 시
+  bf16 로 내린다(`cs_bf16` 런치 플래그; 스톡 `causal_conv1d_update` 와 같은 반올림 지점). 게이트는 fp32/bf16 둘 다
+  허용, 셀프테스트·벤치에 "bf16" 레이아웃(허용 2e-2). 노브 없이 기본값 부팅에서 KDA 를 켤 수 있다(체인8).
+- KDA 부팅의 8K 프리필 순간 srv2 20 GB+ 일시 사용(두 번의 earlyoom)은 아직 미해명 — 4 노드 5 s 메모리 감시
+  (`memwatch.log`) 아래서 다음 KDA 팔이 답한다. 정상 상태에선 KDA 부팅이 rank 0/1 여유를 오히려 17 GB 더 남긴다.
 
 ### 10. 부팅·벤치 병목 대책(운영자 "1,2,5,6 진행", 01:0x~)
 
@@ -2021,7 +2040,7 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 |---|---|---|---|
 | 1 | 탐색/승격 레그 행렬: `LEGS=decode,prefill8k QUALITY_CTX=2000,32000`(탐색) vs 전부(승격) | `bench/ab-lever.sh`(srv2 `ab-lever2.sh`), `bench/check-quality.py` | 팔당 ~10 분 절감 |
 | 2 | 디코드 3회 기본 + 스텝 창 표본: 엔진 `iteration_tokens_total_count` 를 2 s 마다 샘플 → 창마다 step/s, 판정기는 창 단위 | `bench/bracket.py` (`_StepWindows`, `--reps` 3) | 6회→3회, 표본 수는 증가 |
-| 5 | **개발 랩**(부팅 없는 커널 루프): `POST /glm53/lab` → 4 랭크 collective_rpc — `replay`(서빙 디코드 그래프 n 회 재생, us/step), `reload`(새 .cu 로 확장 재빌드 + 셀프테스트), `recapture`(그래프 재캡처) | `overlay/modules/glm53_dev_lab`, 드라이버 `rebuild()`, 런처 `--middleware`, 프로필 `VLLM_GLM53_DEV_LAB=0` | 커널 반복 25 분 → 1~2 분 (개발 부팅 검증 대기) |
+| 5 | **개발 랩**(부팅 없는 커널 루프): `POST /glm53/lab` → 4 랭크 collective_rpc — `replay`(서빙 디코드 그래프 n 회 재생, us/step), `reload`(새 .cu 로 확장 재빌드 + 셀프테스트), `recapture`(그래프 재캡처) | `overlay/modules/glm53_dev_lab`, 드라이버 `rebuild()`, 런처 `--middleware`, 프로필 `VLLM_GLM53_DEV_LAB=0` | 커널 반복 25 분 → 1~2 분. **검증(01:48, DEVLAB 부팅)**: `info` 가 서빙 FULL 그래프(8 토큰)를 기억, `replay` 50회 **53.5 ms/step**·200회 57.1 ms(서빙 스텝 58 ms 중 타깃 그래프 몫), 4 랭크 동시 |
 | 6 | 시간 측정 섀도: KDA 판정기(CUDA 이벤트, `kda shadow timing … ms/step`), MLA 1회 판정(`mla shadow timing`), prep-fused(`[prep-fused] on timing` 호스트 시간) | 각 모듈 | 프로덕션 로그에서 첫 판정, 브래킷 전 |
 
 ### 7. MK 세부 커널 — 남은 표적은 소형 GEMM 의 고정비
