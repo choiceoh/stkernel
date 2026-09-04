@@ -3973,7 +3973,8 @@ _정정(32차 §11 뒤): 이 합계는 **오프라인 픽스처** 기준이다. 
 죽였고, 이후 프로브는 스크래치 `gpu_window.sh` 로 boot/idle 창에서만 돌렸다. 경합 창의
 수치(stock 원패스 체인 139 us/층)는 원장에 쓰지 않았다.
 
-- 다음: PR → 운영자 승인 뒤 묶음 부팅(base → cand 세 노브 → base, 프리필 2048/8192 동반)
-  → cand 트레이스에서 `_causal_conv1d_update_kernel` 0 / `layer_norm_gated_fwd_kernel` 0 /
-  `_kda_onepass_spec_kernel` 34 / `_dual_gate_gemm_kernel` 34 / 인덱서 `direct_copy` −11 확인
-  → 채택 시 프로필 기본값.
+- 다음(32차 §11 뒤 정정): PR → 운영자 승인 뒤 묶음 부팅(base → cand **두 노브**: 듀얼 GEMM +
+  kpool → base, 프리필 2048/8192 동반) → cand 트레이스에서 `_dual_gate_gemm_kernel` 34 /
+  인덱서 `direct_copy` −11 확인 → 채택 시 프로필 기본값. **원패스는 브래킷에서 뺀다**:
+  `use_spec` 이 이 러너에서 참이 되지 않으므로 `_kda_onepass_spec_kernel` 등장과
+  conv/norm 커널 소멸은 만족될 수 없는 게이트다(그 셋을 요구하면 실패할 부팅에 창을 쓴다).
