@@ -6714,6 +6714,94 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     print("  kda owns its projections ...... OK")
 
 
+def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
+    """27차: the MLA split scratch never moves under a captured graph.
+
+    _mla_workspace used to grow on demand -- cap = max(need, 2*MAX_TOK),
+    re-allocated (old tensors freed) when a larger call came. A captured
+    decode graph bakes the address, and v5 routes prefill rows through the
+    same entry point: the first request of a boot (37-token prompt, 48
+    splits, 1,776 rows) freed the scratch under every decode graph, whose
+    partials then landed in whatever the allocator handed out next -- two
+    serving deaths. Now the scratch is one fixed allocation of MLA_WS_ROWS
+    and mla_splits() never asks for more: the decode shapes keep their
+    measured splits, rows the rule would split 48 ways take the direct path.
+    """
+    import sys
+    import types
+
+    class _Zeros:
+        def __init__(self, n):
+            self.n = n
+
+    torch_stub = types.ModuleType("torch")
+    torch_stub.float32 = "f32"
+    torch_stub.zeros = lambda n, dtype=None, device=None: _Zeros(n)
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    old_forced = os.environ.pop("VLLM_GLM53_MK_MLA_SPLITS", None)
+    try:
+        ns = load_defs(
+            "overlay/glm53_megakernel.py",
+            {"MLA_H", "MLA_D", "MLA_SPLITS_MAX", "MLA_MAX_SPLIT_ROWS",
+             "MLA_WS_ROWS", "_MLA_WS", "_mla_workspace", "mla_splits"},
+            {"os": os, "_EXT": types.SimpleNamespace(mla_grid=lambda: 48)},
+        )
+        splits, rows = ns["mla_splits"], ns["MLA_WS_ROWS"]
+        assert rows == 3 * ns["MLA_MAX_SPLIT_ROWS"] == 192
+        # the measured decode rule is untouched
+        for T, want in ((8, 6), (16, 3), (24, 2), (32, 3), (64, 3)):
+            assert splits(T) == want, (T, splits(T))
+        # every split-eligible T fits the fixed scratch
+        for T in range(1, ns["MLA_MAX_SPLIT_ROWS"] + 1):
+            s_ = splits(T)
+            assert 1 <= s_ <= ns["MLA_SPLITS_MAX"] and T * s_ <= rows, (T, s_)
+        # the rows the old rule split 48 ways now take the direct path
+        assert splits(37) == 1 and splits(40) == 1 and splits(56) == 1
+        assert splits(65) == 1 and splits(8192) == 1 and splits(0) == 1
+        # the probe knob is clamped to the budget too
+        os.environ["VLLM_GLM53_MK_MLA_SPLITS"] = "64"
+        assert splits(8) == 24 and splits(64) == 3
+        os.environ.pop("VLLM_GLM53_MK_MLA_SPLITS")
+        # one allocation, held for good: same object back, never re-sized
+        ws = ns["_mla_workspace"]
+        w1 = ws("cuda", 8, 6)
+        assert w1["cap"] == rows
+        assert w1["part"].n == rows * ns["MLA_H"] * ns["MLA_D"]
+        assert w1["pml"].n == rows * ns["MLA_H"] * 2
+        w2 = ws("cuda", 64, 3)
+        assert w2 is w1 and w2["part"] is w1["part"]
+        try:
+            ws("cuda", 37, 48)
+        except RuntimeError as e:
+            assert "1776" in str(e)
+        else:
+            raise AssertionError("an over-budget call must raise, not re-allocate")
+        assert ns["_mla_workspace"]("cuda", 8, 6) is w1
+    finally:
+        if saved is None:
+            sys.modules.pop("torch", None)
+        else:
+            sys.modules["torch"] = saved
+        if old_forced is not None:
+            os.environ["VLLM_GLM53_MK_MLA_SPLITS"] = old_forced
+    # mla_decode refuses a split plan the scratch cannot hold, and the boot
+    # self-test now covers the direct path (40 and 100 rows) too
+    src = open("overlay/modules/glm53_megakernel/glm53_megakernel.py",
+               encoding="utf-8").read()
+    assert "assert splits == 1 or T * splits <= MLA_WS_ROWS" in src
+    assert "(40, 2048, True), (100, 2048, True)" in src
+    # the serving shadow judges real rows, not the empty-KV dummy
+    wsrc = open("overlay/modules/glm53_mk_mla_wiring/flashinfer_mla_sparse_sm90.py",
+                encoding="utf-8").read()
+    body = wsrc[wsrc.index("def _mk_mla_run("):wsrc.index("class FlashInferMLASparseSM90Impl")]
+    assert "rows = int(valid_counts.max().item())" in body
+    assert "rows >= _MK_MLA_SHADOW_MIN_ROWS" in body
+    assert "den < _MK_MLA_SHADOW_MIN_NORM" in body and "inconclusive" in body
+    assert "SHADOW FAIL" in body and 'm._ARMED["mla"] = False' in body
+    assert "q_nope.shape[0] <= 64" not in body
+
+
 def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
     """27차: the drafter knob is a compile-cache factor and serving is proven.
 
@@ -8024,9 +8112,12 @@ def test_glm53_megakernel_contracts() -> None:
           "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
     check("num_tokens > _MK_MLA_MAX_T" in wsrc and "_MK_MLA_MAX_T = 1 << 20" in wsrc,
           "mk_mla_wiring routes decode AND prefill (v5: splits==1 needs no scratch)")
-    check("q_nope.shape[0] <= 64" in wsrc,
-          "the one-shot wrapper shadow stays on a decode-sized call (a prefill "
-          "shadow would allocate a second 134 MB output)")
+    check("q_nope.shape[0] <= _MK_MLA_SHADOW_MAX_T" in wsrc
+          and "_MK_MLA_SHADOW_MAX_T = 4096" in wsrc
+          and "rows >= _MK_MLA_SHADOW_MIN_ROWS" in wsrc,
+          "the one-shot wrapper shadow judges the first eager call whose rows "
+          "read real KV (a prefill chunk of <= 4096 rows: a 64 MB transient "
+          "output once), not the empty-KV dummy that passed with rel=0 (27차)")
     check("if T > MLA_MAX_SPLIT_ROWS:" in pysrc_full and "return 1" in pysrc_full,
           "prefill row counts take splits == 1 (a [T][splits][H][D] fp32 scratch "
           "would be 268 MB at T=8192)")
@@ -8040,15 +8131,17 @@ def test_glm53_megakernel_contracts() -> None:
           "the MK branch precedes the wrapper tail in forward_mqa")
     check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
           "the builder still plans every step (prefill and T>32 use the wrapper)")
-    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
-          and "is_current_stream_capturing()" in wsrc,
-          "one-shot shadow vs the wrapper on the first EAGER call; drift or non-finite output DISARMs")
+    check('m._ARMED["mla"] = False' in wsrc and "num / den > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "is_current_stream_capturing()" in wsrc and "SHADOW FAIL" in wsrc,
+          "one-shot shadow vs the wrapper on the first EAGER call with real rows; drift or non-finite output DISARMs, loudly")
     check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
           "mk_mla_wiring requires the megakernel module")
     check("glm53_megakernel glm53_mk_mla_wiring" in open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(),
           "profile mounts the wiring right after the megakernel")
-    check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
-          "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
+    check("for s in range(1, budget + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full
+          and "budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))" in pysrc_full,
+          "mla split policy: smallest s with T*s a multiple of the resident grid (measured), "
+          "bounded by the fixed scratch (T*s <= MLA_WS_ROWS; 27차)")
     print("  glm53 megakernel contracts .. OK")
 
 
@@ -9603,6 +9696,7 @@ if __name__ == "__main__":
     test_earlyoom_is_fireable_on_unified_memory()
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
+    test_mk_mla_workspace_is_fixed_and_splits_bounded()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()

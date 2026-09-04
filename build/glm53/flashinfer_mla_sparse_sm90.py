@@ -394,6 +394,9 @@ logger = init_logger(__name__)
 # the wrapper -- prefill attention is 25% of a 32K prefill.
 _MK_MLA_MAX_T = 1 << 20
 _MK_MLA_SHADOW = {"checked": False}
+_MK_MLA_SHADOW_MAX_T = 4096     # judge on a prefill chunk, not a 1M-row one
+_MK_MLA_SHADOW_MIN_ROWS = 16    # rows must read real slots, not the dummy's
+_MK_MLA_SHADOW_MIN_NORM = 1e-3  # an all-zero reference proves nothing
 
 
 def _mk_mla_mod():
@@ -451,23 +454,35 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
     if lens.dtype != torch.int32:
         lens = lens.to(torch.int32)
     out = m.mla_decode(q, kv_c_and_k_pe_cache.view(torch.uint8), slots, lens, impl.scale, ckv_scale)
-    if (not _MK_MLA_SHADOW["checked"] and q_nope.shape[0] <= 64
-            and not torch.cuda.is_current_stream_capturing()):
-        # one-shot shadow on the first eager call: the kernel against the
-        # wrapper on the same bytes. vLLM warms up eagerly before capture,
-        # so this lands before any graph bakes the MK launch in.
-        _MK_MLA_SHADOW["checked"] = True
-        ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
-        torch.cuda.synchronize()
-        num = (out.float() - ref.float()).norm().item()
-        den = max(ref.float().norm().item(), 1e-6)
-        rel = num / den
-        finite = bool(torch.isfinite(out).all().item())
-        if not finite or rel > 2e-2:
-            m._ARMED["mla"] = False
-            logger.warning("[megakernel] mla shadow vs wrapper rel=%.2e finite=%s -> DISARM", rel, finite)
-            return None
-        logger.warning("[megakernel] mla shadow vs wrapper rel=%.2e (T=%d) -> ARMED for decode", rel, q_nope.shape[0])
+    if (not _MK_MLA_SHADOW["checked"]
+            and not torch.cuda.is_current_stream_capturing()
+            and q_nope.shape[0] <= _MK_MLA_SHADOW_MAX_T):
+        # One-shot shadow against the wrapper on the same bytes -- on rows
+        # that read REAL cache. The profile/warm-up dummy runs with an empty
+        # KV: both sides return zeros and rel = 0/1e-6 = 0.00e+00, the
+        # "pass" that armed the kernel for nothing on 09-03 (27차). The
+        # first eager call with real rows is a request's prefill chunk. The
+        # decode graphs captured at boot already bake the launch, so a
+        # failure here cannot un-capture them: it disarms every eager call
+        # and says so loudly enough for the bracket fingerprint to fail.
+        rows = int(valid_counts.max().item())
+        if rows >= _MK_MLA_SHADOW_MIN_ROWS:
+            ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
+            torch.cuda.synchronize()
+            den = ref.float().norm().item()
+            num = (out.float() - ref.float()).norm().item()
+            finite = bool(torch.isfinite(out).all().item())
+            T = q_nope.shape[0]
+            if den < _MK_MLA_SHADOW_MIN_NORM:
+                logger.warning("[megakernel] mla shadow inconclusive: |ref|=%.2e (T=%d, rows<=%d) -- waiting for real KV", den, T, rows)
+            elif not finite or num / den > 2e-2:
+                _MK_MLA_SHADOW["checked"] = True
+                m._ARMED["mla"] = False
+                logger.warning("[megakernel] mla SHADOW FAIL vs wrapper rel=%.2e finite=%s (T=%d, rows<=%d, real KV) -> DISARM eager; decode graphs captured before this call still bake the kernel -- this boot is invalid", num / den, finite, T, rows)
+                return None
+            else:
+                _MK_MLA_SHADOW["checked"] = True
+                logger.warning("[megakernel] mla shadow vs wrapper rel=%.2e (T=%d, rows<=%d, real KV) -> ARMED", num / den, T, rows)
     return out
 
 
