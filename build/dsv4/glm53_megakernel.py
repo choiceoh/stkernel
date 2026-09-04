@@ -1030,9 +1030,10 @@ def _kda_eligible_said(meta) -> bool:
     if reason is None:
         _KDA_SERVED["n"] += 1
         if _KDA_SERVED["n"] == 1:
-            logger.warning("[megakernel] kda lane serving: first eligible REAL step "
-                           "T=%d n_spec=%d (%s)", int(meta.num_actual_tokens),
-                           int(meta.num_spec_decodes),
+            logger.warning("[megakernel] kda lane serving: first eligible eager step "
+                           "T=%d n_spec=%d (%s; profile/warm-up runs count -- the "
+                           "served decode is a graph replay, see 'CAPTURED')",
+                           int(meta.num_actual_tokens), int(meta.num_spec_decodes),
                            "shadow" if KDA_SHADOW else "armed")
     else:
         _KDA_SERVED["stock"] += 1
@@ -1279,11 +1280,30 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
     )
 
 
+_KDA_CAPTURED = {"n": 0, "eager": 0}
+
+
 def kda_block(layer, hidden_states, positions):
     """Whole linear-attention block, one launch + the boundary AR."""
     import torch
 
     meta = _kda_meta(layer)
+    # The served decode step is a FULL cudagraph REPLAY: no Python runs, so
+    # the only proof that this lane serves is that it was CAPTURED. Say so
+    # once per boot, with the batch the graph was captured on (29차: every
+    # tally/first-step line above is blind to replays).
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        capturing = False
+    if capturing:
+        _KDA_CAPTURED["n"] += 1
+        if _KDA_CAPTURED["n"] == 1:
+            logger.warning("[megakernel] kda lane CAPTURED into the decode graph: "
+                           "T=%d n_spec=%d (every replay of this graph runs the MK "
+                           "block)", int(meta.num_actual_tokens), int(meta.num_spec_decodes))
+    else:
+        _KDA_CAPTURED["eager"] += 1
     out = torch.empty(meta.num_actual_tokens, layer.hidden_size,
                       dtype=torch.bfloat16, device=hidden_states.device)
     conv_state, rec_state = layer.kv_cache
