@@ -9418,6 +9418,30 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "compose expands a relative target before validating it, which is "
           "exactly what makes the .. case reachable there")
 
+    # fleet-audit.sh is the runbook's acceptance instrument for "GID index
+    # identical on all four nodes". It dumped the raw table for a human to
+    # eyeball, scanned 0..9 while the launcher scans 0..15, and made no
+    # selection of its own -- so it could neither say which index the engine
+    # would use nor see an entry above 9 that the engine would pick. It now
+    # runs the launchers' own CT_GID_PRELUDE on each node and prints the
+    # result, so the audit cannot disagree with the boot by construction.
+    aud = open(os.path.join(REPO, "launchers", "fleet-audit.sh"), encoding="utf-8").read()
+    check("lib/common-tp4.sh" in aud and "$CT_GID_PRELUDE" in aud,
+          "the audit must run the launchers' selection, not a lookalike")
+    check("for i in $(seq 0 15); do" in aud and "for i in 0 1 2 3 4 5 6 7 8 9; do" not in aud,
+          "the audit scans the same 0..15 the launcher does")
+    check("nccl_gid_index=${NCCL_IB_GID_INDEX:-UNSET}" in aud,
+          "the audit prints the index the engine will export on that node")
+    # the HCA list the prelude reads must be the one the launchers pass, or the
+    # audit answers a different question than the boot asks
+    hca_aud = re.search(r'^AUDIT_GID_HCA="([^"]+)"$', aud, re.M)
+    check(hca_aud is not None, "the audit names its HCA list once, as a variable")
+    for name, src in lanes.items():
+        hca_lane = re.search(r'NCCL_IB_HCA=([A-Za-z0-9_,]+)', src)
+        check(hca_lane is not None and hca_lane.group(1) == hca_aud.group(1),
+              "%s passes NCCL_IB_HCA=%s but the audit probes %s -- they must be "
+              "one list" % (name, hca_lane.group(1) if hca_lane else "?", hca_aud.group(1)))
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
