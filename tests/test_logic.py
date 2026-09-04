@@ -8075,9 +8075,10 @@ def test_glm53_megakernel_contracts() -> None:
     # -- MK_SEG_MLA: correct-but-not-adopted sparse MLA decode. The contract
     #    that matters is that nothing routes to it and the pipeline keeps a
     #    fixed in-flight group count (a short row read stale smem without it).
-    check("VLLM_GLM53_MK_MLA=0" in open(os.path.join(REPO, "profiles/glm53.env"),
+    check("VLLM_GLM53_MK_MLA=1" in open(os.path.join(REPO, "profiles/glm53.env"),
                                         encoding="utf-8").read(),
-          "profile ships MK_SEG_MLA off")
+          "profile ships MK_SEG_MLA on within the megakernel set (28차: bracket "
+          "passed twice with the fixed scratch; the master gate still decides)")
     check(cu.count("else mk_cp_commit();") >= 2
           and "for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {" in cu,
           "mla: empty commits keep cp.async groups aligned with wait_group, "
@@ -8241,7 +8242,7 @@ def test_megakernel_core_is_shared() -> None:
 
     for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
                  "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA",
-                 "VLLM_GLM53_MK_MLA"):
+                 ):
         check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
               f"glm53 must ship {knob}=0 -- adoption is bracket-only")
 

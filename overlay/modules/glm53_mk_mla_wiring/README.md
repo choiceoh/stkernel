@@ -32,7 +32,10 @@ wrapper backend vLLM selects on sm_12x) with two hunks:
   the first request of a boot: two serving deaths on 2026-09-04 (a gather
   index out of bounds at the 4th request; an illegal memory access on all
   ranks right after a 23K prefill). Both boots with the segment off survived
-  the same bracket. Measured with the fix: see MEASUREMENTS 28차.
+  the same bracket. With the fix the MLA-on arm passed the bracket twice
+  (C=1 step/s 16.4 vs 16.235 off; 23K prefill 2,700 vs 2,300 tok/s, TTFT
+  10.0 -> 8.5 s; quality 9/9, Korean 0/16, pos-1 67.0% vs 64.5%) and the
+  profile ships `VLLM_GLM53_MK_MLA=1` within the megakernel set (28차).
 
 Numerics: bf16 q, bf16 latent (e4m3 -> bf16 is lossless), bf16 P, fp32
 accumulation -- the same class as the FA2 path (rel 3.4e-3 between the two,
