@@ -682,6 +682,17 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 **주의**: SMLP(EXP-20 계열, 상주+배리어)를 같은 자리에 켜면 이 진단의 직렬화가 되살아난다 —
 공유 전문가 융합은 v2 구조(독립 블록 + 타일 도착 의존) 위에 다시 지어야 한다.
 
+**진행 상태(2026-09-05 07:0x, 운영자 "진행")**: (a) 브래킷은 srv2 `~/glm53-logs/lever-chain-mkg2.sh` 가
+다른 세션의 chain12 뒤에 자동 실행(origin/main 배포 → `ab-lever2.sh MKG2BASE ""` → `MKG2
+"VLLM_GLM53_MK_GEMM2=1"`, 탐색 팔 LEGS=decode,prefill8k · 3 reps; 결과 `lever-chain-mkg2.out`,
+행 `bracket-lever.jsonl` name MKG2BASE/MKG2 — judge 는 acc 정규화 step/s 를 두 이름으로 직접 비교).
+(b) 3라운드 커널(브랜치 `claude/mk-gemm-v2-round3`): m 별 인스턴스(RQ 1/2/4)와 레인 k 순열로 LUT
+쌍 16 → 4(warp·k-블록당 명령 −27% 추정), 레지스터 124 → 96/96/117, GPU 검증은 srv2 `gap_bench4.sh`
+(`g2.r3.out`, `g2.r3stamps.out`). (c) SMLP 를 v2 구조 위에 짓는 설계: gate_up 유닛 + down 유닛을 한
+비상주 grid 에 넣고(낮은 blockIdx = gate_up), down 블록은 자기 타일 쌍의 도착 카운터를 스핀 대기 —
+블록 디스패치가 id 순서라는 가정(프로그래밍 모델이 보장하지 않음)에 기대므로, 쌍 노출이 이미 19~29
+µs/층(DRAM 바닥 15)인 지금은 기대 이득 0.2~0.4 ms/스텝에 교착 위험을 지는 셈. 브래킷 결과 뒤 재평가.
+
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
 
