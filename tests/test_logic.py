@@ -6796,6 +6796,15 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "the smlp hook says once when it first serves and once per distinct "
           "reason it does not (armed != serving, 28차); prefill rows are "
           "routine and silent")
+    judge = mk[mk.index("class KdaShadowArm"):mk.index("_DRAIN_BUF = None")]
+    check("self.conv_mk[1:] = conv_state[used]" in judge
+          and "self.rec_mk[1:] = rec_state[used]" in judge
+          and "spec_state_indices_tensor=sidx_c.contiguous()" in judge
+          and "conv_state[self.used]" in judge and "rec_state[self.used]" in judge
+          and "conv_state.clone()" not in judge and "rec_state.clone()" not in judge,
+          "the KDA shadow judge clones only the slots the step touches, with "
+          "the indices remapped into the compact buffers (whole-pool clones "
+          "emptied unified memory: KDA32SHADOW3 earlyoom, 29차)")
     check('fx.mk_run(v, layout=lay)' in st and '("pad", "sd")' in st,
           "the self-test runs the padded-slot and SD-transposed views "
           "against the contiguous result")

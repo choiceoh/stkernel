@@ -1199,14 +1199,39 @@ class KdaShadowArm:
         if meta is None:
             return
         conv_state, rec_state = layer.kv_cache
-        self.conv_ref = conv_state.clone()
-        self.rec_ref = rec_state.clone()
+        # KDA32SHADOW3 (29차): cloning the whole pools -- conv 260 MB + rec
+        # 2.2 GB, twice, per judged layer -- emptied unified memory under an
+        # 8K prefill and earlyoom shot the head's worker. The step touches
+        # only the slots in spec_state_indices_tensor: gather those rows
+        # into compact (k+1)-slot buffers (slot 0 stays the kernel's
+        # "skip" slot) and run the MK kernel with the indices remapped.
+        import types
+
+        n_spec = int(meta.num_spec_decodes)
+        sidx = meta.spec_state_indices_tensor[:n_spec]
+        used = torch.unique(sidx[sidx > 0])
+        remap = torch.zeros(int(conv_state.shape[0]), dtype=sidx.dtype,
+                            device=sidx.device)
+        remap[used] = torch.arange(1, used.numel() + 1, dtype=sidx.dtype,
+                                   device=sidx.device)
+        sidx_c = torch.where(sidx > 0, remap[sidx.clamp(min=0)], sidx)
+        self.used = used
+        self.conv_mk = torch.zeros((used.numel() + 1,) + tuple(conv_state.shape[1:]),
+                                   dtype=conv_state.dtype, device=conv_state.device)
+        self.rec_mk = torch.zeros((used.numel() + 1,) + tuple(rec_state.shape[1:]),
+                                  dtype=rec_state.dtype, device=rec_state.device)
+        self.conv_mk[1:] = conv_state[used]
+        self.rec_mk[1:] = rec_state[used]
+        meta_c = types.SimpleNamespace(
+            num_actual_tokens=meta.num_actual_tokens,
+            num_spec_decodes=n_spec,
+            spec_query_start_loc=meta.spec_query_start_loc,
+            spec_state_indices_tensor=sidx_c.contiguous(),
+            num_accepted_tokens=meta.num_accepted_tokens)
         self.out = torch.empty(meta.num_actual_tokens, layer.hidden_size,
                                dtype=torch.bfloat16,
                                device=hidden_states.device)
-        self.conv_mk = conv_state.clone()
-        self.rec_mk = rec_state.clone()
-        _kda_launch(layer, hidden_states.contiguous(), meta, self.conv_mk,
+        _kda_launch(layer, hidden_states.contiguous(), meta_c, self.conv_mk,
                     self.rec_mk, self.out)
         # same out-of-place contract: shadow compares against the REDUCED
         # tensor, not this rank's partial (review finding)
@@ -1222,8 +1247,8 @@ class KdaShadowArm:
         drift (same cadence discipline as the vocab-mask audit)."""
         conv_state, rec_state = self.layer.kv_cache
         errs = {"out": _rel_err(self.out, stock_out),
-                "conv_state": _rel_err(self.conv_mk, conv_state),
-                "rec_state": _rel_err(self.rec_mk, rec_state)}
+                "conv_state": _rel_err(self.conv_mk[1:], conv_state[self.used]),
+                "rec_state": _rel_err(self.rec_mk[1:], rec_state[self.used])}
         drift = any(not (v <= _TOL_KDA_SHADOW) or math.isnan(v)
                     for v in errs.values())
         KdaShadowArm._n_calls += 1
