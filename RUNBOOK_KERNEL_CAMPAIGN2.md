@@ -574,6 +574,38 @@ MK 발사 고정비(30 × ~10 µs) ≈ **−0.8~1.0 ms(1.2~1.5%)**; AR 0.79 ms �
 act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **운영자 승인 뒤 착수** — 정정된
 상한을 본 뒤의 결정이어야 한다.
 
+## EXP-17 — 작은 형상 GEMM 의 배리어 없는 로컬 양자화 경로 (`VLLM_GLM53_MK_LOCALQ`, 2026-09-04 추가)
+
+28차의 30~45 µs 클래스 — 공유 전문가의 gate_up `[1024 × 4096]` 과 down `[4096 × 512]`, 스텝당
+86발, 3.5 ms, 그중 2.4 ms 가 다른 스트림에 덮이지 않는 임계경로 — 는 바이트로는 1~2 MB(레인 속도로
+5~12 µs)인데 발사당 30~45 µs 다. 남는 것은 발사 고정비: grid-wide A 양자화(블록당 k-블록 하나를
+`g_mk_aq` 로) + 공표 배리어와 그 스큐(x 로드가 호이스트된 W 채움 뒤에 줄을 선다, 4차 스탬프
+프롤로그 중앙값 8~10 µs) + `sxs` 왕복 + 그 전부를 기다리는 유휴 16 블록. 게다가 서빙은 이 두
+발사를 라우팅 MoE 커널 옆 aux 스트림에 띄우므로 48블록 persistent 발사는 MoE 블록이 물러나는
+대로 SM 을 얻고, 배리어는 마지막 블록이 들어올 때까지 상주 블록 전부를 잡아둔다.
+
+- 변경: 유닛 ≤ grid(블록당 최대 1 유닛)인 발사는 `mk_gemm_lq_kernel` — 각 블록이 자기 유닛의
+  A k-블록을 x(L2)에서 직접 양자화해 smem 에 넣는다. 배리어·전역 타일 없음, 유휴 블록 즉시 퇴장.
+  산술이 `quant_store` 와 같아 출력은 같은 split 에서 **비트 동일**(벤치 `same` 열). 큰 형상과
+  KDA 인라인 phase 는 종전 경로·종전 바이너리(`mk_gemm_kernel` 80 레지스터 그대로).
+- 게이트(순서대로): (1) `tests/test_logic.py`, (2) srv2 빈 창에서 아래 셋 — 스윕의 `same` 전부 yes
+  + exact 게이트 PASS + 리플레이 안정, 표준 표에서 큰 형상(n=6416/4096, 전역 경로)이 main 과 같을 것,
+  (3) MoE 아래 동시 실행 프로브의 `exposed per layer` 가 lq=1 에서 줄 것(스텝에 매핑되는 수치),
+  (4) 플릿 브래킷은 EXP-6 위에 얹는다(수치 불변 → step/s 만; PDL 전례).
+- 상한: 86발 × (고정비 절감 5~15 µs) = −0.4~1.3 ms/스텝(0.6~2%); 동시 실행에서의 노출분은
+  프로브가 정한다. 단독 부팅 금지.
+- 스윕 노브: `VLLM_GLM53_MK_KSR`(0 = 비용 모델) — 로컬 경로에서는 "슬라이스 ≥ 8 k-블록" 규칙이
+  다시 열린다(그 규칙은 k=2048 의 KDA o_proj 에서 잰 것).
+
+```bash
+bash probes/run_megakernel_bench.sh --segments gemm,exact --iters 20      # 표준 표 + exact 게이트
+bash probes/run_megakernel_bench.sh --gemm-sweep --iters 20               # local × split, same 열
+VLLM_GLM53_MK_PHASE_TS=1 bash probes/run_megakernel_bench.sh --gemm-sweep --stamps --iters 10
+bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 아래 동시 실행
+```
+
+**결과**: 미측정(2026-09-04 밤 기준 플릿 4 GPU 가 브래킷으로 점유; srv2 빈 창 대기 중).
+
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
 `leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로
@@ -598,6 +630,7 @@ act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **�
 10. **EXP-7 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 11. **EXP-10 (드래프터 GEMM → MK W4)** — **닫힘, 기본값(2026-09-04, 28차)**: 서빙된 브래킷 C=1 step/s 15.95 → 16.235(+1.8%), 수용률·품질·한국어·프리필 게이트 통과. 첫 브래킷의 0 은 컴파일 캐시가 옛 bf16 그래프를 서빙한 탓 — 노브는 이제 캐시 키이고 부팅 로그가 `drafter lane serving: 30 of 31` 로 증명한다. MK-MLA 서빙 사망(스크래치 재할당)도 같은 항목에서 수정.
 12. **EXP-12 (서빙 PDL)** — 프로브(그래프 체인) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
+13. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
 13. **EXP-13 (AR 프리페치)** — 컴파일 → 4랭크 disttest → 브래킷(EXP-6+12 위). 수치 불변.
 14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
 
