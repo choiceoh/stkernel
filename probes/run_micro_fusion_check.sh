@@ -46,7 +46,9 @@ done
 # The probe arms every bundle knob itself (setdefault); a caller's explicit
 # value wins so a sweep can hold one at 0.
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
-for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4|MOE)_'); do
+# `|| true`: with pipefail a shell that carries no VLLM_* knob must not abort
+# the probe (grep exits 1 on no match)
+for v in $(compgen -v | grep -E '^VLLM_(GLM53|DSV4)_' || true); do
   envs+=(-e "$v=${!v}")
 done
 echo "profile=$PROFILE image=$IMAGE files=${#sources[@]} args=$*" >&2

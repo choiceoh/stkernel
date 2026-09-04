@@ -315,6 +315,11 @@ def _kda_onepass_spec_kernel(
     if T == 0:
         return
     n_acc = tl.load(acc_ptr + i_n).to(tl.int64)
+    # num_accepted_tokens is >= 1 by the spec-decode contract (the bonus
+    # token); anything else would index slot acc-1 < 0, so treat it as a
+    # null request (per-request, hence uniform across the head's programs).
+    if n_acc <= 0:
+        return
     # The stock conv runs iff the request's line at spec slot 0 is not the
     # null block; the stock recurrence iff its resume slot [n, acc-1] is
     # valid. Both are per-request, so all NV programs of a (request, head)
