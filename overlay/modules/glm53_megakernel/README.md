@@ -55,6 +55,64 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
+## The shared expert's pair: the barrier-free local-quant kernel (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
+
+The decode step's 30-45 us class is the shared expert's gate_up `[1024 x
+4096]` and down `[4096 x 512]` -- two launches in each of the 42 MoE layers
+(the 28차 trace reading counted 86), 3.5 ms, 2.4 ms of it not covered by
+another stream -- 1-2 MB each, i.e. 5-12 us of DRAM at the lane's rate.
+Both are one-unit-per-block launches (32 units on the 48-block grid), and
+serving forks them onto the aux stream beside the routed MoE call of the
+same layer.
+
+`mk_gemm_lq_kernel` (`mk_gemm_phase_t<true>`, a compile-time instantiation
+that carries none of the barrier path) is the lane's kernel for them:
+every block quantizes the A k-blocks of ITS unit straight into smem from x
+in L2 as it stages them (x loaded two k-blocks ahead in a register ring,
+the reduce + convert ahead of the mma, only the smem stores behind the
+barrier), instead of the grid-wide prologue (one k-block per block into
+`g_mk_aq`, a grid barrier, `sxs` from `g_mk_axs`). The three A quantizers
+of the lane -- that prologue, this path, KDA p4 -- share one set of helpers
+(`mk_warp_amax`, `mk_pow2_scale`, `mk_pow2_rcp`, `mk_pack4`), so the bytes
+are the same by construction; the boot self-test runs the exact e2m1
+fixture through BOTH kernels, checks the plan really took the local one,
+and requires the two outputs bitwise equal. It is launched on as many
+blocks as it has units (`mk_lq_launch_grid`), has no grid barrier, and a
+block with nothing to do leaves before the PDL wait. A host/kernel drift on
+the unit rule traps (it must never run the barrier path on a launch sized
+to the units).
+
+What the 29차 probes say (srv2): **standalone it is slower than the global
+kernel** -- the prologue it skips costs ~5 us on the stamps and the in-loop
+quant cost more than that back (the first form +4 us at m=8, +12 at m=32;
+the 32-block v2 form +8 us on the pair; the ring/row-bound form of this
+text is unmeasured). **Under the routed MoE kernel**
+(`probes/mk_gemm_concurrent_probe.py`: one graph, the pair on a forked
+stream beside a U=40 b12x call, 5 back-to-back replays per bracket) the
+global kernel's pair is exposed whole in either issue order (47.4 us a
+layer); the local kernel on 32 blocks is exposed 36.2 (MoE issued first) /
+31.8 (pair first, serving's order). x42 layers that is a *projection* of
+about -0.66 ms/step, not a step number -- the probe's main stream holds
+only the MoE kernel, serving runs the router + topk there first. Whether
+the difference is the missing barrier or the smaller grid is what the
+probe's control row (the global kernel on 32 blocks, its own ticket
+counter) separates -- pending.
+
+Knob: `VLLM_GLM53_MK_LOCALQ` = 0 (default, declared in `profiles/glm53.env`
+so the launcher forwards it) / 1 = the launches the fp8-dense hook marks
+background (`_mk_bg`: `mlp.shared_experts.*` -- by module name, which
+assumes the runner keeps forking the shared expert onto its aux stream) /
+2 = every one-unit-per-block launch (the bench's sweep). The lq launch
+grid and the fewer-blocks control are the bench's only, through
+`set_probe` -- no env surface. `mk_gemm_kernel` stays at 80 registers (one
+kernel with both paths allocated for the union, 128), but its prologue's
+quantizer changed with the shared helpers (SASS 3,360 -> 3,240 lines), so
+the n=6416/4096 control rows are re-measured, not assumed. The
+host's plan (`mk_gemm_plan_for`: `mk_units` <= grid on the phase's own
+`mk_split_ok` gate, the lq kernel's resident grid) decides the kernel and
+the bench's `gemm_plan` prints that same plan. Probes: `--gemm-sweep`
+(local x split, bitwise `same`, replay), `--stamps` (phase stamps of a
+`VLLM_GLM53_MK_PHASE_TS=1` build), the concurrent probe above.
 ## The v2 lane: the same GEMM as a non-persistent grid (2026-09-05, 30차)
 
 The persistent kernel is right for a kernel that owns the GPU and wrong
@@ -237,6 +295,8 @@ VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
+VLLM_GLM53_MK_LOCALQ=1      # gemm: the local-quant kernel for the shared
+                            # expert's pair (bg), default 0; 2 = all small
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc

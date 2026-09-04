@@ -608,6 +608,53 @@ MK 발사 고정비(30 × ~10 µs) ≈ **−0.8~1.0 ms(1.2~1.5%)**; AR 0.79 ms �
 act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **운영자 승인 뒤 착수** — 정정된
 상한을 본 뒤의 결정이어야 한다.
 
+## EXP-22 — 작은 형상 GEMM 의 배리어 없는 로컬 양자화 경로 (`VLLM_GLM53_MK_LOCALQ`, 2026-09-04 추가)
+
+28차의 30~45 µs 클래스 — 공유 전문가의 gate_up `[1024 × 4096]` 과 down `[4096 × 512]`, 스텝당
+86발, 3.5 ms, 그중 2.4 ms 가 다른 스트림에 덮이지 않는 임계경로 — 는 바이트로는 1~2 MB(레인 속도로
+5~12 µs)인데 발사당 30~45 µs 다. 남는 것은 발사 고정비: grid-wide A 양자화(블록당 k-블록 하나를
+`g_mk_aq` 로) + 공표 배리어와 그 스큐(x 로드가 호이스트된 W 채움 뒤에 줄을 선다, 4차 스탬프
+프롤로그 중앙값 8~10 µs) + `sxs` 왕복 + 그 전부를 기다리는 유휴 16 블록. 게다가 서빙은 이 두
+발사를 라우팅 MoE 커널 옆 aux 스트림에 띄우므로 48블록 persistent 발사는 MoE 블록이 물러나는
+대로 SM 을 얻고, 배리어는 마지막 블록이 들어올 때까지 상주 블록 전부를 잡아둔다.
+
+- 변경: 호출 측이 bg 로 표시한 발사(fp8-dense 훅의 `mlp.shared_experts.*`; 노브 1) — 또는 벤치의
+  노브 2 로 유닛 ≤ grid 인 모든 발사 — 는 `mk_gemm_lq_kernel` 을 **유닛 수만큼의 블록**으로 띄운다:
+  각 블록이 자기 유닛의 A k-블록을 x(L2)에서 직접 양자화해 smem 에 넣고(두 k-블록 앞서 로드, mma
+  앞에서 축약), 배리어·전역 타일 없음. 산술이 `quant_store` 와 같은 헬퍼(`mk_pack4`·`mk_warp_amax`·
+  `mk_pow2_scale`)라 출력은 같은 split 에서 **비트 동일**(자가진단이 두 커널을 exact + 비트 동일로
+  검사, 벤치 `same` 열). 큰 형상과 KDA 인라인 phase 는 전역 커널(`mk_gemm_kernel`, 80 레지스터).
+- 게이트(순서대로): (1) `tests/test_logic.py`, (2) srv2 빈 창에서 아래 셋 — 스윕의 `same` 전부 yes
+  + exact 게이트 PASS + 리플레이 안정, 표준 표에서 큰 형상(n=6416/4096, 전역 경로)이 main 과 같을 것,
+  (3) MoE 아래 동시 실행 프로브의 `exposed per layer` 가 lq=1 에서 줄 것(스텝에 매핑되는 수치),
+  (4) 플릿 브래킷은 EXP-6 위에 얹는다(수치 불변 → step/s 만; PDL 전례).
+- 상한(29차로 정정): 단독으론 없다 — 전역 프롤로그(x 로드+양자화+배리어)는 정상 상태 스탬프로
+  5.5 µs 뿐이고 로컬 경로의 루프 안 양자화가 그만큼 되돌려준다(첫 판 +4~12 µs, v2 32블록 쌍 +8 µs,
+  행 술어화 판 미실측). 남는 것은 MoE 아래 **노출분**: 동시 실행 프로브가 정한다(전역 47.4 → 로컬
+  32블록 31.8 µs/층, ×42 층 ≈ −0.66 ms/스텝의 *투영*; 프로브와 스텝의 형태 차이는 프로브 docstring).
+  단독 부팅 금지.
+- 스윕 노브: `VLLM_GLM53_MK_KSR`(0 = 비용 모델; 비용 모델은 경로와 무관하게 같다 — 29차 스윕에서
+  로컬 경로도 모델의 선택(n=1024 ksr 4)이 최선이었다). 발사 그리드(로컬 32/48/16, 전역 32 대조군)는
+  벤치 전용 `set_probe` 로만 바꾼다 — env 표면 없음.
+
+```bash
+bash probes/run_megakernel_bench.sh --segments gemm,exact --iters 20      # 표준 표 + exact 게이트
+bash probes/run_megakernel_bench.sh --gemm-sweep --iters 20               # local × split, same 열
+VLLM_GLM53_MK_PHASE_TS=1 bash probes/run_megakernel_bench.sh --gemm-sweep --stamps --iters 10
+bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 아래 동시 실행
+```
+
+**결과(2026-09-04 23:36~42, srv2 빈 창, 29차)**: 첫 판(48블록 발사, 양자화가 sync 구간 안)은 **단독으로 손해**
+— 같은 split 에서 lq0 → lq1 이 m=8 n=1024 24.7 → 28.7, m=32 n=1024 32.6 → 45.0 µs; 스탬프로 보면 전역
+경로의 프롤로그(x 로드+양자화+배리어)는 5.5 µs 뿐이고 로컬 경로는 k-블록마다 ~0.85 µs 를 루프에
+더한다(4차의 "8~10 µs" 는 콜드 첫 발사 값). 비트 동일·exact·리플레이는 전부 통과. **MoE 아래 동시
+실행**(`mk_gemm_concurrent_probe.py`, U=40 740 µs): 전역 경로는 두 순서 모두 쌍 전체가 노출(43.8/44.9 µs
+= 쌍 단독 40.5 + 발사), 로컬 경로는 moe-first 17.3 / pair-first 41.8 — 이득의 정체는 양자화가 아니라
+"배리어 없음"이고, pair-first(서빙의 aux 스트림 순서)에선 48 블록이 SM 을 다 잡아 MoE 가 기다린다.
+→ v2: 로컬 커널을 유닛 수(32)만큼만, 또는 더 적게(`VLLM_GLM53_MK_LQ_GRID`) 띄우고 양자화를 wait 앞으로;
+호출 측이 공유 전문가 선형을 bg 로 표시(`VLLM_GLM53_MK_LOCALQ=1` = bg 만, 2 = 유닛 ≤ grid 전부).
+v2 의 동시 실행 수치는 원장 29차.
+
 ## EXP-21 — MK-GEMM v2: 비상주 GEMM 레인 (`VLLM_GLM53_MK_GEMM2`, 2026-09-05 추가)
 
 **근거**: 원장 30차. 무장 트레이스(09-04 18:42)의 mk_gemm 185발 14.13 ms 중 5.7 ms 는
@@ -762,6 +809,13 @@ ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight
    elementwise 481 발을 **전부** 없애도 1.00 ms(1.4%)다.
 6. **EXP-4 (b_proj/indexer fp8)** — 천장 0.9%. 표적(저랭크 뒤쪽 절반 ~112 발)은
    무장 뒤에도 그대로 남아 있으니 창이 남을 때 얹는다.
+
+7. **EXP-22 (공유 전문가 GEMM 의 로컬 양자화 커널)** — 29차: 단독 손해, MoE 아래 노출
+   v1 48블록 17.3(moe-first)/41.8(pair-first) → v2 32블록 36.2/**31.8**(전역 47.4).
+   EXP-21(비상주 v2 레인)과 같은 진단의 다른 처방이라 **같은 창에서 나란히 잰다**: 전역
+   커널 32블록 대조군(이득이 "배리어 없음"인지 "블록 수"인지)과 행 술어화 판의 단독
+   손해가 먼저. 이기면 EXP-6 브래킷의 cand 팔에 `VLLM_GLM53_MK_LOCALQ=1`(투영 −0.66
+   ms/스텝 ≈ 1%, 브래킷 해상도 안쪽이라 세트로만). 단독 부팅 없음.
 
 **승인이 필요한 것**
 

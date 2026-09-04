@@ -558,19 +558,23 @@ def _ar_note(*tensors) -> None:
         _AR_NOTE(tensors)
 
 
-def _gemm_call(x, mk_pack, n_rows):
-    """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4."""
+def _gemm_call(x, mk_pack, n_rows, bg=False):
+    """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4. `bg`: the
+    caller marks the launch background -- the shared expert's pair, which
+    serving forks onto the aux stream beside the routed MoE -- and the lane
+    may then take its barrier-free kernel on as few blocks as it has units
+    (VLLM_GLM53_MK_LOCALQ=1; README, 29차)."""
     import torch
 
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
     _ar_note(mk_pack[0], mk_pack[1])
     _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
-                  float(mk_pack[2]))
+                  float(mk_pack[2]), 1 if bg else 0)
     return out
 
 
-def gemm_w4a8(x, mk_pack, n_rows):
+def gemm_w4a8(x, mk_pack, n_rows, bg=False):
     """Fp8DenseMethod.apply hook: None = not armed/eligible (stock runs).
 
     The lane is W4 or stock: a self-test failure disarms MK-GEMM for
@@ -579,7 +583,7 @@ def gemm_w4a8(x, mk_pack, n_rows):
     if not _ARMED["gemm"] or x.dim() != 2 or mk_pack is None:
         return None
     if isinstance(mk_pack, list):
-        return _gemm_kchunks(x, mk_pack, n_rows)
+        return _gemm_kchunks(x, mk_pack, n_rows, bg)
     if mk_pack[0] is None:
         return None
     # the pack is tile-major [n_pad/128, k/128, 128, 64]: the padded n is
@@ -589,10 +593,10 @@ def gemm_w4a8(x, mk_pack, n_rows):
     if not _mk_gemm_eligible(x.shape[0], x.shape[1],
                              mk_pack[0].shape[0] * 128):
         return None
-    return _gemm_call(x, mk_pack, n_rows)
+    return _gemm_call(x, mk_pack, n_rows, bg)
 
 
-def _gemm_kchunks(x, packs, n_rows):
+def _gemm_kchunks(x, packs, n_rows, bg=False):
     """K-chunked lane (build_mk_weight_w4_kchunks): one launch per
     MK_GEMM_KMAX columns of x, partials summed in fp32, bf16 out. None when
     any chunk fails the per-launch contract (stock runs the whole linear)."""
@@ -612,7 +616,7 @@ def _gemm_kchunks(x, packs, n_rows):
         # _gemm_call takes the slice contiguous: m x 4096 bf16, a copy the
         # size of one tile row -- the weight stream is the cost here
         out = _gemm_call(x[:, c * MK_GEMM_KMAX:(c + 1) * MK_GEMM_KMAX], p,
-                         n_rows)
+                         n_rows, bg)
         acc = out.float() if acc is None else acc.add_(out.float())
     return acc.to(torch.bfloat16)
 
@@ -1103,6 +1107,52 @@ def _selftest_mhc() -> bool:
     return ok
 
 
+# The exact e2m1 fixture of the boot gate AND the bench's probe_exact -- one
+# builder, so the two cannot drift apart again (the bench once kept an older
+# scale range and FAILed on the fixture, not the kernel: 25차).
+EXACT_FIXTURE = (1024, 4096, 8)  # n, k, m: 8 tiles -> 32 units, both kernels
+
+
+def exact_fixture(dev="cuda"):
+    """(x, pack, w_exact, ref): weights ON the e2m1 x 2^s grid at PRODUCTION
+    magnitudes (sexp in [-12, -2): the group scale of real dense projections
+    is ~2^-7 median; O(1) weights never reached the expansion's floor and hid
+    the clamp of 24차), the kernel-quantized activations against the
+    dequantized pack as the fp32 reference."""
+    import torch
+
+    torch.manual_seed(0)
+    n, k, m = EXACT_FIXTURE
+    code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
+    sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
+    grid = torch.tensor(_E2M1_GRID, device=dev)
+    w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+        torch.randn_like(code.float()) < 0, -1.0, 1.0)
+    w_exact = w_exact.view(n, k).to(torch.bfloat16)
+    x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
+    pack = build_mk_weight_w4(w_exact)
+    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(
+        pack[0], pack[1], n, pack[2]).float().T
+    return x, pack, w_exact, ref
+
+
+def run_both_kernels(x, pack, n):
+    """The lane's output on the global kernel (knob 0) and on the local one
+    (knob 2, the model's split, its own launched grid), with the plan each
+    ran under -- {0: out, 2: out}, {0: plan, 2: plan}. The knobs are forced
+    through the process globals and put back to the env's whatever happens;
+    the caller checks plans[2][3] == 1 (the local kernel really ran)."""
+    got, plans = {}, {}
+    try:
+        for lq in (0, 2):
+            _EXT.set_probe(0, lq, 0, 0)
+            plans[lq] = _EXT.gemm_plan(x.shape[0], n, x.shape[1], 0)
+            got[lq] = _gemm_call(x, pack, n)
+    finally:
+        _EXT.set_probe(-1, -1, 0, 0)  # back to the env's knobs
+    return got, plans
+
+
 def _selftest_gemm() -> bool:
     """Two gates for the W4 lane:
 
@@ -1121,32 +1171,33 @@ def _selftest_gemm() -> bool:
 
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
 
-    torch.manual_seed(0)
     dev = "cuda"
-    n, k, m = 1024, 4096, 8
-    code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
-    # PRODUCTION magnitudes. This gate used to draw sexp in [-5, 6) --
-    # O(1) weights, the one range where the group scale never reached
-    # the expansion's floor -- so it stayed green while every real
-    # dense projection (median 2^-7) clamped and quantised ~3x worse
-    # than the format allows. The pack's pow2 normalisation is what
-    # makes these round-trip bit-exactly; drawing them here is the
-    # guard that it keeps doing so.
-    sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
-    grid = torch.tensor(_E2M1_GRID, device=dev)
-    w_exact = (grid[code] * torch.exp2(sexp.float())) * torch.where(
-        torch.randn_like(code.float()) < 0, -1.0, 1.0)
-    w_exact = w_exact.view(n, k).to(torch.bfloat16)
-    x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
-    pack = build_mk_weight_w4(w_exact)
-    got = _gemm_call(x, pack, n)
-    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(
-        pack[0], pack[1], n, pack[2]).float().T
+    n, k, m = EXACT_FIXTURE
+    x, pack, w_exact, ref = exact_fixture(dev)
+    # BOTH kernels, whatever the knob: this fixture (8 tiles, 32 units) is
+    # a one-unit-per-block launch, so under the local-quant knob it would
+    # gate only mk_gemm_lq_kernel and the global kernel -- every launch with
+    # units > grid -- would keep no 1-ulp gate at all. The two must also be
+    # bitwise the same: the local quant is quant_store's arithmetic.
+    got, plans = run_both_kernels(x, pack, n)
     torch.cuda.synchronize()
-    e_exact, n_ulp = _exact_gate(got, ref)
-    if e_exact > 1e-3 or n_ulp > 0:
-        logger.warning("[megakernel] selftest gemm EXACT rel=%.2e over-ulp=%d "
-                       "-> DISARM (expansion is not bit-exact)", e_exact, n_ulp)
+    if plans[2][3] != 1:
+        logger.warning("[megakernel] selftest gemm: the plan refused the local "
+                       "kernel on the exact fixture (%s) -> DISARM (the gate "
+                       "would compare the global kernel with itself)", plans[2])
+        return False
+    e_exact = 0.0
+    for lq in (0, 2):
+        e, n_ulp = _exact_gate(got[lq], ref)
+        e_exact = max(e_exact, e)
+        if e > 1e-3 or n_ulp > 0:
+            logger.warning("[megakernel] selftest gemm EXACT (%s) rel=%.2e "
+                           "over-ulp=%d -> DISARM (expansion is not bit-exact)",
+                           "local" if lq else "global", e, n_ulp)
+            return False
+    if not torch.equal(got[0], got[2]):
+        logger.warning("[megakernel] selftest gemm local vs global paths "
+                       "differ -> DISARM (the local quant must be quant_store's)")
         return False
     for m, n in ((8, KDA_INPROJ_N), (16, HIDDEN), (32, 1024)):
         w = torch.randn(n, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.05
@@ -1160,17 +1211,24 @@ def _selftest_gemm() -> bool:
             logger.warning("[megakernel] selftest gemm m=%d n=%d by-design "
                            "rel=%.2e -> DISARM", m, n, e)
             return False
+    # the served plan of the shared expert's gate_up under THIS process's
+    # knobs (the extension's reading of the env, not the raw string)
+    plan = _EXT.gemm_plan(8, 1024, HIDDEN, 1)
+    logger.warning("[megakernel] selftest gemm exact=%.2e (both kernels, "
+                   "bitwise same) -> ARM; bg [1024x4096] plan: ksr=%d "
+                   "units=%d localq=%d lgrid=%d", e_exact, plan[1], plan[2],
+                   plan[3], plan[4])
     # which lane the boot serves, in the fingerprint: v2 is the non-
     # persistent kernel (VLLM_GLM53_MK_GEMM2), plan = (on, ksr, units,
     # blocks/SM) for the in_proj shape. A boot log without this line is
     # a boot whose GEMM lane nobody can name from the log.
     try:
-        plan = list(_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN))
+        plan2 = list(_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN))
     except Exception:
-        plan = None
+        plan2 = None
     logger.warning("[megakernel] selftest gemm exact=%.2e -> ARM (lane %s, "
                    "in_proj plan on/ksr/units/bps=%s)", e_exact,
-                   "v2" if plan and plan[0] else "v1", plan)
+                   "v2" if plan2 and plan2[0] else "v1", plan2)
     return True
 
 

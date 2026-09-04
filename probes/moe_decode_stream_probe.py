@@ -102,31 +102,42 @@ def _weight_set(gen):
     return w13, w2, s13.to(torch.float8_e4m3fn).to(DEV), s2.to(torch.float8_e4m3fn).to(DEV)
 
 
-def main() -> int:
+def served_wrapper():
+    """The b12x wrapper serving constructs: exact GLM TP geometry, static
+    workspace only. ONE definition -- the concurrent probe builds on it."""
     from flashinfer.fused_moe import B12xMoEWrapper
+
+    return B12xMoEWrapper(
+        num_experts=E, top_k=TOPK, hidden_size=HID, intermediate_size=INTER,
+        use_cuda_graph=True, max_num_tokens=64, num_local_experts=E,
+        activation="swigluoai_uninterleave", swiglu_alpha=1.0,
+        swiglu_beta=0.0, swiglu_limit=10.0)
+
+
+def expert_set(gen):
+    """One DRAM-cold set of expert weights in the wrapper's layouts:
+    (w13, sf13, w2, sf2)."""
     from vllm.utils.flashinfer import flashinfer_convert_sf_to_mma_layout
+
+    w13, w2, s13, s2 = _weight_set(gen)
+    sf13 = flashinfer_convert_sf_to_mma_layout(
+        s13.reshape(E * 2 * INTER, HID // 16), m=2 * INTER, k=HID,
+        num_groups=E)
+    sf2 = flashinfer_convert_sf_to_mma_layout(
+        s2.reshape(E * HID, INTER // 16), m=HID, k=INTER, num_groups=E)
+    return w13, sf13, w2, sf2
+
+
+def main() -> int:
     from vllm.model_executor.layers import glm53_megakernel as mk
 
     torch.cuda.init()
     print(f"device {torch.cuda.get_device_name()} sets={SETS} T={T} topk={TOPK}")
     stream = torch.cuda.Stream()
 
-    # ---- the served wrapper: exact GLM TP geometry, static workspace only
-    wrapper = B12xMoEWrapper(
-        num_experts=E, top_k=TOPK, hidden_size=HID, intermediate_size=INTER,
-        use_cuda_graph=True, max_num_tokens=64, num_local_experts=E,
-        activation="swigluoai_uninterleave", swiglu_alpha=1.0,
-        swiglu_beta=0.0, swiglu_limit=10.0)
+    wrapper = served_wrapper()
     gen = torch.Generator().manual_seed(1)
-    sets = []
-    for _ in range(SETS):
-        w13, w2, s13, s2 = _weight_set(gen)
-        sf13 = flashinfer_convert_sf_to_mma_layout(
-            s13.reshape(E * 2 * INTER, HID // 16), m=2 * INTER, k=HID,
-            num_groups=E)
-        sf2 = flashinfer_convert_sf_to_mma_layout(
-            s2.reshape(E * HID, INTER // 16), m=HID, k=INTER, num_groups=E)
-        sets.append((w13, sf13, w2, sf2))
+    sets = [expert_set(gen) for _ in range(SETS)]
     ones = torch.ones(E, dtype=torch.float32, device=DEV)
     x = torch.randn(T, HID, dtype=torch.bfloat16, device=DEV) * 0.5
     out = torch.empty(T, HID, dtype=torch.bfloat16, device=DEV)
