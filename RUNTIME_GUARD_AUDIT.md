@@ -7,8 +7,12 @@ Scope: `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` as deployed by 
 
 **Pinned production image: FAIL — `PASS=0 FAIL=7 UNKNOWN=0`.**
 
-The eleven files in `overlay/manifest.tsv` do not replace the sampler or MoE
-files where token/expert IDs become table indices. We reconstructed the exact
+The eleven files this repository overlaid at the time do not replace the
+sampler or MoE files where token/expert IDs become table indices. (Layout note,
+2026-09: overlays are modules now and the manifest is composed per profile into
+`build/<profile>/manifest.tsv` -- dsv4 23 rows. The verdict below is about the
+image, so growing the overlay set does not change it; re-running the audit is
+what would.) We reconstructed the exact
 sources from the registry layers of the pinned image and ran this repository's
 audit over them. All seven semantic checks failed: prod1.6 does not contain the
 requested upper/lower protections.

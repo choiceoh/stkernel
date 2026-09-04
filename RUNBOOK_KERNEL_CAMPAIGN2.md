@@ -207,14 +207,21 @@ standalone probe는 base-image config inventory를 스윕할 뿐 full-engine ini
 sm_121a 계약(mma.sync e4m3 · 클러스터/WGMMA 금지 · 48블록 고정)과 그래프
 안전 바리어(단조 티켓, osar done_ctr 방식)를 따른다. 세그먼트:
 
-| 세그먼트 | 흡수 | 스톡→MK (런치/스텝) |
-|---|---|---|
-| MK-MHC | hc post+pre (수학은 소유 TileLang 소스의 비트 충실 포팅) | 179 → 45 |
-| MK-GEMM | per-token quant + W8A8 GEMM, M≤32 | ~360 → ~180 |
-| MK-KDA | KDA 블록 전체(in_proj→conv→recurrent→norm→o_proj) | ~510 → 34 |
+| 세그먼트 | 흡수 | 예측 (런치/스텝) | **실측** (09-04 무장 트레이스) |
+|---|---|---|---|
+| MK-MHC | hc post+pre (수학은 소유 TileLang 소스의 비트 충실 포팅) | 179 → 45 | **179 → 89** + stock 잔여 7 · 2.54 → 2.07 ms |
+| MK-GEMM | per-token quant + W8A8 GEMM, M≤32 | ~360 → ~180 | **376 → 187** (deep_gemm 197 + quant 179 → mk_gemm 185 + lm_head 2) · 밀집 GEMM 시간 14.06 → 14.13 ms(제자리), 양자화 몫 −1.5 ms |
+| MK-KDA | KDA 블록 전체(in_proj→conv→recurrent→norm→o_proj) | ~510 → 34 | **미무장** (`MK_SEG_KDA=0`) — KDA 102 발 그대로 |
+| MK-MLA | sparse MLA 디코드 (NoPE, fp8 KV) | — | 28차부터 기본 on · 디코드 +1.0%, 프리필 +15~18% |
 
-천장: 5.4µs/커널(약화 중인 상한) × 약 900개 ≈ **4.9 ms = 스텝의 7.4%**. 실측은
-그 이하일 공산이고, **측정 전까지 어떤 수치도 원장에 들어가지 않는다.**
+**세트는 2026-09-04 20:35 부터 프로덕션 기본값**이다(28차 §8: MEGAKERNEL·MK_MHC·
+MK_GEMM·MK_MLA=1, KDA 0). 남은 세그먼트는 KDA 하나이고, conv 상태 dtype 계약을 여는
+`MAMBA_CACHE_DTYPE` 노브가 붙어 있다.
+
+천장이었던 "5.4µs/커널 × 약 900개 ≈ 4.9 ms" 는 **낙관으로 확인됐다**: 세트가 커널을
+304 발 지웠는데 스텝에서 시간이 준 자리는 MHC(−0.5 ms)와 양자화(−1.5 ms) 둘뿐이고,
+밀집 GEMM 자체는 제자리였다(STEP_KERNEL_MAP 보충 분해 5 · ⑥). **개수가 아니라 합쳐진
+일이 시간을 준다** — 다음 세그먼트 후보를 발사 수로 정렬하지 말 것.
 
 사다리(순서대로, 건너뛰기 없음):
 

@@ -64,17 +64,27 @@ launches + glue + AR, and the kernel census prices launches at 5.4 us each
 (an upper bound that has been weakening). The megakernel attacks the launch
 and glue component only; the bytes it reads are the same bytes.
 
-| segment | replaces (per step, census counts) | stock | MK |
-|---|---|---|---|
-| `MK_SEG_MHC` | mhc_fused + pre_big_fuse_with_norm | 179 | 45 |
-| `MK_SEG_GEMM` | per_token_group_quant + deepgemm, M<=32 | ~360 | ~180 |
-| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 |
+| segment | replaces (per step, census counts) | stock | MK (planned) | **measured** (09-04 armed trace) |
+|---|---|---|---|---|
+| `MK_SEG_MHC` | mhc_fused + pre_big_fuse_with_norm | 179 | 45 | **89** + 7 stock leftovers · 2.54 -> 2.07 ms |
+| `MK_SEG_GEMM` | per_token_group_quant + deepgemm, M<=32 | ~360 | ~180 | **187** (mk_gemm 185 + 2 lm_heads) · dense GEMM time flat, quant share -1.5 ms |
+| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 | not armed (`MK_SEG_KDA=0`) |
+| `MK_SEG_MLA` | sparse MLA decode (NoPE, fp8 KV) | 22 | 11 | default since 28차 -- decode +1.0%, prefill +15~18% |
 
 Ceiling if all three hold: ~900 launches x 5.4 us = **4.9 ms (7.4% of the
 step)**. The honest expectation is BELOW that (5.4 us is an upper bound,
 and the MK kernels' own phases add barrier cost), which is why adoption is
-bracket-only: **none of these numbers is a measurement** until the EXP
-bracket in RUNBOOK_KERNEL_CAMPAIGN2.md runs. Prefill is untouched in v1
+bracket-only.
+
+**What the armed trace says (2026-09-04, STEP_KERNEL_MAP.md supplement 5).**
+The set removed **304 launches/step** (1,886 -> 1,582) and moved the repo's
+share of the step's kernels from 7.6% to 25.4%. Step time moved in exactly
+two places: MHC (-0.5 ms, two launches folded into one per site) and the
+quantization the GEMM now does inside itself (-1.5 ms). The dense GEMM
+region itself did not move -- 197 deep_gemm launches at 14.06 ms became 185
+mk_gemm launches at 14.13 ms. **Launch count is not the currency; folded
+work is.** The end-to-end verdict stays the ledger's (28차 §8), not this
+README's. Prefill is untouched in v1
 (deepgemm and the big-fuse path stay; M > 32 always falls back). The one
 prefill-side claim that CAN be made from construction: armed decode shapes
 stop JIT-ing TileLang/deepgemm kernels at cold boot, shrinking the 11-41%
