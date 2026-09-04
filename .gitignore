@@ -3,3 +3,8 @@ __pycache__/
 
 # Other agent sessions create worktrees here; they are never ours to commit.
 .claude/
+
+# bench/bracket.py leg writes runs/bracket.jsonl next to the checkout by
+# default; deploy-overlays.sh refuses a dirty checkout, so the records must
+# not count as changes.
+runs/

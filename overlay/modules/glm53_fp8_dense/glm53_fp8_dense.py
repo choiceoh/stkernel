@@ -954,6 +954,20 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         except Exception as e:
             logger.warning("[fp8-dense] %s stayed bf16: %r", name, e)
             skipped.append(name)
+        finally:
+            # Return the transient to the driver after EVERY linear. On the
+            # unified-memory GB10 a block the caching allocator keeps
+            # reserved is host memory the node has lost: the 09-04
+            # instrumented boot measured torch reserved +14.9 GiB after the
+            # first linear (in_proj, 52 MB bf16) and +4.8 GiB after the
+            # second, with allocated flat -- transients of the per-linear
+            # steps that the allocator held instead of reusing -- and the
+            # sum over the pass took every node from ~50 GiB available to
+            # under the 4 GiB kernel watermark ~25 s into weight loading.
+            # That was the 09-03 srv3 OOM and both 09-04 wedges; with
+            # earlyoom (09-04) it became a deterministic SIGKILL. Freeing the
+            # cache per linear bounds the pass at ONE transient at a time.
+            torch.cuda.empty_cache()
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "

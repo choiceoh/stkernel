@@ -1134,17 +1134,36 @@ class Glm5NextForCausalLM(
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
         loaded = loader.load_weights(weights)
+        # deneb fork: the post-load work (fp8 copies, prefill fastpath, kpool)
+        # runs from whoever owns the WHOLE checkpoint walk. Served under the
+        # multimodal wrapper, that is Glm5NextForConditionalGeneration, which
+        # sets _defer_post_load and calls run_post_load() once its own loader
+        # returns; this method is then entered once per contiguous run of
+        # `language_model.*` names in the checkpoint stream (AutoWeightsLoader
+        # groups a streaming iterator with itertools.groupby), NOT once at the
+        # end -- see run_post_load for what running the hooks here cost.
+        if not getattr(self, "_defer_post_load", False):
+            self.run_post_load()
+        return loaded
 
-        # deneb fork: fp8 block copies of the bf16 dense projections. This has
-        # to sit HERE and not in Glm5NextModel.load_weights: that is a child
-        # hook, AutoWeightsLoader may enter it before the checkpoint is fully
-        # walked, and the copy is a snapshot -- once quant_method is swapped
-        # the bf16 tensor is never read again, so an early copy is served for
-        # the life of the boot. It happened: a copy taken 30 s into a 294 s
-        # load shipped, and the target accepted 0 of 51,786 draft tokens.
-        # This call runs after loader.load_weights returns, and rebuilds any
-        # copy an earlier caller may already have made.
-        # No-op unless VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer.
+    def run_post_load(self) -> None:
+        """Everything that must see the fully loaded checkpoint, exactly once.
+
+        This used to run inline in load_weights, which the comment there
+        believed was "after the checkpoint is fully walked". It was not: the
+        wrapper's AutoWeightsLoader calls this module's load_weights once per
+        contiguous run of its prefix in the stream, so the fp8-dense pass ran
+        ~25 s into the load on unloaded weights, and again after every run.
+        Each early pass quantised 180 linears, built 180 MK W4 packs and ran
+        360 verification GEMMs on garbage, and its transients left the
+        caching allocator holding tens of GiB on every node -- the memory
+        cliff behind the 09-03 srv3 OOM and the 09-04 wedges (MEASUREMENTS,
+        instrumented boot 2026-09-04). The design that tolerated the early
+        call ("a later call rebuilds the copy") was correct about numerics
+        and blind to memory.
+        """
+        # fp8 block copies of the bf16 dense projections. No-op unless
+        # VLLM_GLM53_FP8_DENSE=1; failures disarm per-layer.
         try:
             from vllm.model_executor.layers.glm53_fp8_dense import (
                 maybe_build_fp8_dense,
@@ -1180,8 +1199,6 @@ class Glm5NextForCausalLM(
             prepare_glm53_kpool_topk()
         except Exception:
             pass
-
-        return loaded
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -1264,6 +1281,17 @@ class Glm5NextForConditionalGeneration(
                 prefix=maybe_prefix(prefix, "language_model"),
                 architectures=["Glm5NextForCausalLM"],
             )
+        # deneb fork: this wrapper owns the checkpoint walk, so the language
+        # model's post-load hooks run from load_weights below, once -- not
+        # from its own load_weights, which the loader enters per prefix run.
+        self.language_model._defer_post_load = True
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        loaded = super().load_weights(weights)
+        run = getattr(self.language_model, "run_post_load", None)
+        if callable(run):
+            run()
+        return loaded
 
         # Glm5NextForCausalLM does not implement make_empty_intermediate_tensors,
         # so pipeline parallelism is gated off (consistent with the text-only
