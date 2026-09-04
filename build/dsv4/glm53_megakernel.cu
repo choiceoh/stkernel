@@ -3084,8 +3084,13 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM));
   if (g_gemm2_bps < 1) g_gemm2_bps = 1;
-  MK_CHECK_CUDA(cudaDeviceGetAttribute(
-      &g_mk_sms, cudaDevAttrMultiProcessorCount, 0));
+  {  // the CURRENT device, the one the occupancy above and the launches
+     // use -- not ordinal 0 (mk_probe_device asks the same way)
+    int dev = 0;
+    MK_CHECK_CUDA(cudaGetDevice(&dev));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(
+        &g_mk_sms, cudaDevAttrMultiProcessorCount, dev));
+  }
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(

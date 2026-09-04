@@ -8871,7 +8871,8 @@ def test_glm53_megakernel_contracts() -> None:
               < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);")
           and "int mk_choose_ksr2(int m, int n, int k)" in cu
           and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
-          and "&g_mk_sms, cudaDevAttrMultiProcessorCount, 0));" in cu
+          and "MK_CHECK_CUDA(cudaGetDevice(&dev));" in cu
+          and "&g_mk_sms, cudaDevAttrMultiProcessorCount, dev));" in cu
           and "if (slots % nblk == 0 && slots / nblk <= kmax) {" in cu
           and "} else if (nblk * 2 > slots) {" in cu
           and "if (ksr > kblk) ksr = kblk;" in cu
