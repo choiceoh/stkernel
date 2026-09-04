@@ -6783,8 +6783,11 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "refuses -- a contiguity gate rejected every production layer")
     launch = mk[mk.index("def _kda_launch("):mk.index("def kda_block(")]
     check("int(conv_state.stride(0)), int(conv_state.stride(1))" in launch
-          and "int(conv_state.stride(2))" in launch,
-          "the launch carries the three conv-state strides")
+          and "int(conv_state.stride(2)), int(rec_state.stride(0))" in launch
+          and "rec_state.is_contiguous()" not in reason
+          and "recurrent state strides %s are not" in reason,
+          "the launch carries the three conv-state strides and the recurrent "
+          "slot stride; the gate names the recurrent strides it refuses")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
     hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
     check("smlp lane serving: first fused call" in hook
@@ -8637,8 +8640,11 @@ def test_glm53_megakernel_contracts() -> None:
           and "sbase + (size_t)i * a.cs_s2" in cu
           and "sbase + (size_t)(acc + i) * a.cs_s2" in cu
           and "slot * KDA_QKV * a.conv_width" not in cu
-          and "ints.size() == 8" in cu
-          and "conv state strides must be positive" in cu,
+          and "ints.size() == 9" in cu
+          and "conv state strides must be positive" in cu
+          and "(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "recurrent state slot stride is narrower than one slot" in cu,
           "conv state is addressed through (slot, channel, width) strides "
           "carried by the launch, computed once as sbase and used by every "
           "read and write (the engine hands out page-aligned / transposed "
@@ -8657,12 +8663,12 @@ def test_glm53_megakernel_contracts() -> None:
           "the state update writes the WHOLE window: causal_conv1d_update "
           "keeps conv_width - nq old values starting at `acc` and appends "
           "every query token")
-    check("(((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D)" in cu
-          and "(((size_t)sj * KDA_H + head) * KDA_D * KDA_D)" in cu
+    check("(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
           and "const int head = blockIdx.x >> 1, rowhalf = blockIdx.x & 1;" in cu
           and "(size_t)rowhalf * RB * KDA_D;" in cu,
-          "recurrent state slot stride is H*D*D for both the resume slot "
-          "and the per-position store slots")
+          "recurrent state slot stride is the launch-carried rs_s0 (>= H*D*D) "
+          "for both the resume slot and the per-position store slots")
 
     # -- driver-side guards from the same review
     check("SLOT = 1" in pysrc_full

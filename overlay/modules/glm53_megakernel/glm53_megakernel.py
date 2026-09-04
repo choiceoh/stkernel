@@ -1015,8 +1015,13 @@ def _kda_layout_reason(layer):
             or tuple(rec_state.shape[1:]) != (KDA_H, KDA_D, KDA_D)):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
             rec_state.dtype, tuple(rec_state.shape), KDA_H, KDA_D, KDA_D)
-    if not rec_state.is_contiguous():
-        return "recurrent state is not contiguous"
+    # The recurrent state is the pool's other strided view (KDA32SHADOW2
+    # rejected every layer here, 29차): a padded slot stride is fine, the
+    # (head, row, col) block must be dense -- the kernel walks it as one.
+    r0, r1, r2, r3 = (int(v) for v in rec_state.stride())
+    if (r1, r2, r3) != (KDA_D * KDA_D, KDA_D, 1) or r0 < KDA_H * KDA_D * KDA_D:
+        return "recurrent state strides %s are not (>= %d, %d, %d, 1)" % (
+            (r0, r1, r2, r3), KDA_H * KDA_D * KDA_D, KDA_D * KDA_D, KDA_D)
     return None
 
 
@@ -1159,7 +1164,7 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          int(meta.spec_state_indices_tensor.size(-1)),
          int(delta_variant), int(conv_state.shape[-1]),
          int(conv_state.stride(0)), int(conv_state.stride(1)),
-         int(conv_state.stride(2))],
+         int(conv_state.stride(2)), int(rec_state.stride(0))],
     )
 
 
@@ -1515,7 +1520,7 @@ class _KdaFixture:
         import torch
 
         la, meta = self._layer_stand_in()
-        conv_mk, rec_mk = self._conv_view(layout), self.rec_st.clone()
+        conv_mk, rec_mk = self._conv_view(layout), self._rec_view(layout)
         out = torch.empty(self.T, HIDDEN, dtype=torch.bfloat16,
                           device="cuda")
         if drain:
@@ -1552,6 +1557,22 @@ class _KdaFixture:
             view.copy_(src)
             return view
         raise ValueError(layout)
+
+    def _rec_view(self, layout):
+        """The recurrent state contiguous ("ds", "sd") or with a page-aligned
+        slot stride ("pad"); same values."""
+        import torch
+
+        src = self.rec_st
+        if layout != "pad":
+            return src.clone()
+        slots = src.shape[0]
+        per = KDA_H * KDA_D * KDA_D + 2048
+        buf = torch.zeros(slots * per, dtype=torch.float32, device="cuda")
+        view = buf.as_strided((slots, KDA_H, KDA_D, KDA_D),
+                              (per, KDA_D * KDA_D, KDA_D, 1))
+        view.copy_(src)
+        return view
 
     def pick_variant(self):
         """First delta variant whose output AND states match the stock op

@@ -1516,6 +1516,7 @@ struct MKKdaArgs {
   // contiguity gate; the kernel addresses through the strides instead and
   // the Python gate only refuses overlapping or non-positive ones.
   long long cs_s0, cs_s1, cs_s2;
+  long long rs_s0;             // rec_state elements per slot (>= KDA_H*KDA_D*KDA_D)
   float* rec_state;            // [slots, KDA_H, KDA_D, KDA_D] fp32
   const float* a_log;          // [KDA_H] fp32
   const float* dt_bias;        // [KDA_H*KDA_D] fp32
@@ -1827,7 +1828,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         float qd = 0.0f, kd = 0.0f, vd = 0.0f, gd = 0.0f, bt = 0.0f;
         load_tok(t0, qd, kd, vd, gd, bt);
         const float* Sbase =
-            a.rec_state + (((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D);
+            a.rec_state + (size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D;
         // Element (v, k) lives at v * KDA_D + k, matching the stock
         // writer: fused_recurrent.py stores b_h as
         //   p_ht + o_v[:, None] * K + o_k[None, :]
@@ -1919,7 +1920,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
                 sred2[0][vl] + sred2[1][vl] + sred2[2][vl] + sred2[3][vl]);
           if (sj > 0) {
             float* Sj = a.rec_state +
-                        (((size_t)sj * KDA_H + head) * KDA_D * KDA_D) +
+                        (size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D +
                         (size_t)rowhalf * RB * KDA_D;
             for (int idx = threadIdx.x; idx < RB * KDA_D; idx += MK_THREADS)
               Sj[idx] = stg[(idx >> 7) * (KDA_D + 1) + (idx & (KDA_D - 1))];
@@ -2863,7 +2864,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 8 && scalars.size() == 4,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 9 && scalars.size() == 4,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -2877,6 +2878,9 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.cs_s2 = ints[7];
   TORCH_CHECK(a.cs_s0 > 0 && a.cs_s1 > 0 && a.cs_s2 > 0,
               "kda: conv state strides must be positive");
+  a.rs_s0 = ints[8];
+  TORCH_CHECK(a.rs_s0 >= (long long)KDA_H * KDA_D * KDA_D,
+              "kda: recurrent state slot stride is narrower than one slot");
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   a.in_wgs = (float)scalars[2];
