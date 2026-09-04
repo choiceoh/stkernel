@@ -2010,6 +2010,20 @@ top-k 슬롯이 2048 고정이라 장문맥에서도 디코드 이득은 ~1% 천
 - 하네스: srv4 `~/stkernel` 이 19:23 에 통째로 사라졌다(원인 미상; 같은 시각 deneb 자율 상태 갱신).
   브랜치가 origin 에 있어 `~/stkernel-glmfix` 에 재클론해 이어갔다 — 작업 전 push 가 보험이다.
 
+### 8. 운영자 지시(20:10) — 드래프터 bf16 원본 해제, 메가커널 세트를 프로덕션 기본값으로
+
+"드래프터 bf16 원본 해제. 해체하고 마스터 메가커널 기본으로." 두 가지를 한 PR 로 올린다.
+
+- **드래프터 bf16 해제**: `load_dflash_model` 이 패스·증명 설치 뒤 `maybe_free_fp8_dense_bf16(dflash_model,
+  label="drafter")` 를 부른다(타깃과 같은 노브 `VLLM_GLM53_FP8_DENSE_FREE_BF16=1`). 안전 근거: 체크포인트
+  걷기는 끝났고(`get_model` 반환 뒤), `_build_fused_kv_buffers` 는 `qkv_proj.weight` 의 k/v 반쪽을
+  `torch.cat` 으로 이미 복사했으며, 컴파일된 forward 는 opaque op 로 fp8 사본·W4 팩만 읽고, 바이어스
+  선형이 없다. 회수분은 KV 산정 전에 돌아온다(핑거프린트 `[fp8-dense] drafter: ... released 0.73 GB`).
+- **메가커널 세트 기본값**: `VLLM_GLM53_MEGAKERNEL=1`, `MK_MHC=1`, `MK_GEMM=1`(MLA 는 이미 1), KDA 0 유지.
+  브래킷된 "cand" 구성 = 프로덕션 기본. `ab-glm53.sh` 의 base 팔은 `MEGAKERNEL=0` 을 명시해 stock 을
+  뜻하게 했다(안 그러면 base 가 조용히 MK 세트가 된다).
+- **적용 부팅**: 환경변수 없이 프로필 기본값만으로 부팅해 핑거프린트로 확인 — (부팅 확인 대기).
+
 ## ★★★26차 — 부팅의 메모리 절벽: fp8-dense 패스가 로드 중에 여러 번 돌았고, W4 팩 빌더가 예약 메모리를 흘렸다 (2026-09-04, 4노드 계측)
 
 드래프터 W4 브래킷(25차 승인)을 띄우자 base 팔 첫 부팅이 로드 시작 13초 뒤 죽었다. srv1 은

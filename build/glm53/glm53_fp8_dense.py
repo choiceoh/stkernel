@@ -733,7 +733,7 @@ def _free_bf16_enabled() -> bool:
     return os.environ.get(_FREE_BF16_ENV, "").strip() == "1"
 
 
-def maybe_free_fp8_dense_bf16(model) -> int:
+def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:
     """Release the bf16 sources. Call ONLY when weight loading is finished.
 
     This cannot live inside `maybe_build_fp8_dense`. That function is written
@@ -782,10 +782,10 @@ def maybe_free_fp8_dense_bf16(model) -> int:
         # "RPC call to sample_tokens", with no traceback anywhere.
         method._bf16_freed = True
     logger.warning(
-        "[fp8-dense] %s=1: released %.2f GB of bf16 sources (%d linears kept "
+        "[fp8-dense] %s%s=1: released %.2f GB of bf16 sources (%d linears kept "
         "theirs for a bias); the bias and error fallbacks through the base "
         "method are gone with them",
-        _FREE_BF16_ENV, freed / 1e9, kept_bias)
+        (label + ": ") if label else "", _FREE_BF16_ENV, freed / 1e9, kept_bias)
     return freed
 
 def _attach_mk_pack(method, weight, cols) -> bool:

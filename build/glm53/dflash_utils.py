@@ -53,6 +53,7 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
             Fp8DenseMethod,
             install_drafter_serving_check,
             maybe_build_fp8_dense,
+            maybe_free_fp8_dense_bf16,
         )
 
         if maybe_build_fp8_dense(dflash_model, env="VLLM_DFLASH2_FP8_DENSE"):
@@ -67,6 +68,15 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
                 and getattr(m.quant_method, "_opaque", False)
             )
             install_drafter_serving_check(dflash_model, n_opaque)
+            # The bf16 sources go now, at load, under the target's knob
+            # (VLLM_GLM53_FP8_DENSE_FREE_BF16): the checkpoint walk is
+            # finished (get_model returned), _build_fused_kv_buffers has
+            # already torch.cat'ed the k/v halves of qkv_proj.weight into
+            # its own buffer, the compiled forward reads the fp8 copies and
+            # W4 packs through the opaque op, and no drafter linear carries
+            # a bias that would keep it on the base path. ~0.73 GB/rank
+            # back before KV sizing (28차, operator).
+            maybe_free_fp8_dense_bf16(dflash_model, label="drafter")
     except Exception:
         pass
 

@@ -25,7 +25,7 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 HEAD=${HEAD_IP:-10.10.10.2}
 
 case "$ARM" in
-  base) ARM_ENV="" ;;
+  base) ARM_ENV="VLLM_GLM53_MEGAKERNEL=0" ;;   # stock: the profile ships the set ON since 28차
   cand) ARM_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1 VLLM_GLM53_MK_GEMM=1 VLLM_GLM53_MK_MLA=1" ;;
   *) echo "ABORT: arm must be base or cand"; exit 1 ;;
 esac
