@@ -690,14 +690,15 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 오프라인 수치 게이트 + 인그래프 물리확인(트레이스에서 대상 커널 소멸) + e2e 무회귀.
 09-04 18:42 rank3 트레이스(무장 세트, 스텝 64.8 ms, 커널 1,548개) 기준 대상:
 
-| 축 | 노브 | 제거 런치/스텝 | 근사 |
+| 축 | 노브 | 제거 런치/스텝 | 스텝 Δ(31차 측정, 조용한 GPU) |
 |---|---|---|---|
 | ~~게이트 체인 완결~~ — epilogue top-k 는 bit-exact 였지만 한 CTA 의 직렬 선택이 대체한 커널보다 느렸다(M=8 28.2→31.3 us/층). **오프라인 기각, 트리에 없음**(31차) | — | (42) | — |
-| f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | ~0.15 ms |
-| KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로 | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | 0.5~0.7 ms |
-| kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | ~0.03 ms |
+| f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | −0.12 ms (M=8, BLOCK_N=32) |
+| KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로 | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | −0.04 ms (C=1) / −0.23 ms (C=4) |
+| kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | −0.014 ms |
 
-수치 등급: KDA 상태(conv·recurrent)와 출력은 프로브의 플릿 형상 6 케이스에서 **bit-exact**
+수치 등급: KDA 상태(conv·recurrent)와 출력은 프로브의 플릿 형상 8 케이스(bf16/fp32 conv 상태,
+2스텝 사슬 포함)와 부팅 자가진단 3 케이스에서 **bit-exact**
 (gated norm 의 128-합 트리가 stock 커널과 달라 등급은 reduce-order 로 선언) → 묶음 부팅은
 품질 9/9 + 한국어 0/16 + 수용률 ±2 pct 게이트를 진다. 듀얼 GEMM 은 M≤16 bit-exact(M=32 는
 cuBLAS 가 다른 커널을 골라 1 ulp 소수). kpool 은 값 동일.
