@@ -9266,6 +9266,39 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           and '${CUSTOM_OPS_AXIS+x}' in lanes["start-glm53-nvfp4-tp4.sh"],
           "glm53 keeps set-but-empty as its fusion arm (+x, allow-empty=1)")
 
+    # overlay target containment. Both lanes enforced "inside the package root"
+    # with a PREFIX test plus a character class that allows "." -- which is not
+    # containment. Verified against each lane's own case statements before the
+    # change: a target of
+    #   <root>/../../../../etc/cron.d/evil
+    # satisfies the prefix, uses only allowed characters, and was ACCEPTED by
+    # both. The target becomes a docker bind-mount destination, so that row
+    # would have mounted over a path outside the root the check exists to
+    # protect. Neither lane had the guard, so this is not drift -- and the
+    # ABORT-set diff that found the other asymmetries could not surface it.
+    check("ct_check_overlay_target()" in lib,
+          "target validation belongs in the library")
+    tgt_fn = lib[lib.index("ct_check_overlay_target()"):]
+    check('*/../*)' in tgt_fn,
+          "the .. escape must be rejected: a prefix test alone is not "
+          "containment, and the target is a bind-mount destination")
+    check('case "/$_t/" in' in tgt_fn,
+          "the .. test must wrap the value in slashes, or a component that "
+          "merely starts or ends with .. is missed")
+    for name, src in lanes.items():
+        check("ct_check_overlay_target" in src,
+              "%s must use the shared target validation" % name)
+        check("outside the package root" not in src
+              and "unsafe overlay target in manifest" not in src,
+              "%s must not keep its own target case statement" % name)
+    # the root differs per lane by design: glm53 overlays reach outside vllm/
+    # (flashinfer), hy4 does not, so hy4 demands the stricter root.
+    check('ct_check_overlay_target "$target" "/opt/venv/lib/python3.12/site-packages/vllm/"'
+          in lanes["start-hy4-tp4.sh"],
+          "hy4 keeps the stricter vllm/ root")
+    check('ct_check_overlay_target "$target" "${TARGET_PREFIX:-' in lanes["start-glm53-nvfp4-tp4.sh"],
+          "glm53 derives its root from the profile's TARGET_PREFIX")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "

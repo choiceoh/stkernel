@@ -248,11 +248,7 @@ load_overlay_manifest() {
     [ -n "$target" ] && [ -n "$base" ] && [ -z "${extra:-}" ] \
       || { echo "ABORT: malformed overlay manifest row: $source $target $base ${extra:-}"; exit 1; }
     case "$source" in *[!A-Za-z0-9._-]*|.*) echo "ABORT: unsafe overlay source: $source"; exit 1;; esac
-    case "$target" in
-      "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}"*) ;;
-      *) echo "ABORT: overlay target outside the package root: $target"; exit 1;;
-    esac
-    case "$target" in *[!A-Za-z0-9_./-]*) echo "ABORT: unsafe character in target: $target"; exit 1;; esac
+    ct_check_overlay_target "$target" "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}"
     [ "$base" = absent ] || [[ "$base" =~ ^[0-9a-f]{64}$ ]] \
       || { echo "ABORT: invalid base contract for $source: $base"; exit 1; }
     for seen in ${OVFILES[@]+"${OVFILES[@]}"}; do
