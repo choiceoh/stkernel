@@ -9,6 +9,17 @@ env, never through `EXTRA_ENV`:
 VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
+> **`KDA_ONEPASS` does nothing on this runner (MEASUREMENTS 32차 §11).** The
+> one-pass path is behind `use_spec = spec_sequence_masks is not None and
+> num_spec_decodes > 0`, and this V2 runner never builds the spec masks
+> (`build_attn_metadata` does not pass `num_decode_draft_tokens_cpu`), so a
+> "pure spec-verify step" never occurs and the arm silently keeps the stock
+> chain -- the same root cause that kept the MK-KDA lane from ever serving.
+> Arm it for the offline probe, not for a fleet bracket: its acceptance gate
+> (`_kda_onepass_spec_kernel` appearing, conv/norm kernels vanishing) cannot
+> pass until the non-spec metadata glue is redesigned. `KDA_DUAL_GEMM` is
+> unaffected -- it runs ahead of that gate, on every layer.
+
 Checkpoint shape this was written for (`glm53-redhat-nvfp4`, TP=4):
 `linear_num_heads 64 -> 16 local`, `head_dim 128`, `short_conv_kernel_size 4`,
 verify block `SPEC_K 7 -> 8` tokens, so the merged `in_proj_qkvbfg_a` row is

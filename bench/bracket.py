@@ -94,7 +94,7 @@ class _StepWindows:
     """Sample the engine's step counter (vllm:iteration_tokens_total_count)
     every `period` s while a rep runs, in a thread. Each full window gives a
     step/s sample of its own, so a 40 s rep yields ~10 of them and three
-    reps give the spread six reps used to (29차 item 2: fewer reps, more
+    reps give the spread six reps used to (32차 item 2: fewer reps, more
     samples). A window that spans an idle gap (between requests) reads low
     and is dropped by the `min_frac` rule: fewer steps than min_frac of the
     rep's median window means the engine was not stepping the whole time."""
