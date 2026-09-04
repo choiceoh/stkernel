@@ -10826,11 +10826,13 @@ def test_micro_fusion_bundle_contracts() -> None:
     """Launch-count bundle 2 (RUNBOOK EXP-20): three kill-switched micro-fusions.
 
     dual f_b/g_b GEMM + one-pass KDA (glm53_kda_onepass, wired from
-    glm53_mk_kda_wiring) and the kpool update on int64 positions
-    (glm53_kpool_tail_select). Every knob reads the exact string 1, ships 0 in
-    the profile, and the stock path is what runs on any doubt. The gate top-k
-    epilogue that was the fourth axis is not in the tree (MEASUREMENTS 31차:
-    bit-exact, slower than the kernel it replaced); nothing may reference it."""
+    glm53_mk_kda_wiring through resolve()/gate_gemms()/spec_onepass()) and
+    the kpool update on int64 positions (glm53_kpool_tail_select). Every knob
+    reads the exact string 1, ships 0 in the profile, and the stock path is
+    what runs on any doubt: the module self-tests against the stock chain on
+    the first eager forward and DISARMs on a mismatch. The gate top-k epilogue
+    that was the fourth axis is not in the tree (MEASUREMENTS 31차: bit-exact,
+    slower than the kernel it replaced); nothing may reference it."""
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
     check("glm53_kda_onepass" in modules, "glm53 profile mounts glm53_kda_onepass")
@@ -10854,19 +10856,47 @@ def test_micro_fusion_bundle_contracts() -> None:
     check(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().strip() == "",
           "self-contained: the KDA wiring optionally imports it, not the reverse")
     kern = open(os.path.join(mod_dir, "glm53_kda_onepass.py"), encoding="utf-8").read()
-    check('os.environ.get(DUAL_GEMM_ENV, "").strip() == "1"' in kern
-          and 'os.environ.get(ONEPASS_ENV, "").strip() == "1"' in kern
-          and 'DUAL_GEMM_ENV = "VLLM_GLM53_KDA_DUAL_GEMM"' in kern
-          and 'ONEPASS_ENV = "VLLM_GLM53_KDA_ONEPASS"' in kern,
-          "both knobs arm on the exact string 1 only")
-    check("tl.atomic_add(ctr_ptr + i_nh, 1, sem=\"acq_rel\", scope=\"gpu\")" in kern
-          and "tl.atomic_add(ctr_ptr + nh_total + i_nh, 1, sem=\"acq_rel\", scope=\"gpu\")" in kern
-          and kern.count("tl.atomic_xchg(") == 2,
-          "two last-arriver counters (conv-state write, norm), each reset by the kernel")
-    check("tl.debug_barrier()\n    arrived = tl.atomic_add" in kern
-          and "tl.debug_barrier()\n    done = tl.atomic_add" in kern,
+    # knobs: exact "1", read in one place (the module), executed here
+    knob_nodes = [n for n in ast.parse(kern).body
+                  if (isinstance(n, ast.FunctionDef) and n.name in ("dual_gemm_enabled", "onepass_enabled"))
+                  or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name)
+                      and t.id in ("DUAL_GEMM_ENV", "ONEPASS_ENV") for t in n.targets))]
+    check(len(knob_nodes) == 4, "ENV constants and the two knob readers are top-level definitions")
+    ns: dict = {"os": os}
+    exec(compile(ast.Module(body=knob_nodes, type_ignores=[]), "glm53_kda_onepass", "exec"), ns)
+    saved = {k: os.environ.pop(k, None) for k in ("VLLM_GLM53_KDA_DUAL_GEMM", "VLLM_GLM53_KDA_ONEPASS")}
+    try:
+        for fn, env in ((ns["dual_gemm_enabled"], "VLLM_GLM53_KDA_DUAL_GEMM"),
+                        (ns["onepass_enabled"], "VLLM_GLM53_KDA_ONEPASS")):
+            check(fn() is False, f"{env} unset keeps stock")
+            for v, want in (("0", False), ("1", True), (" 1 ", True), ("on", False),
+                            ("true", False), ("2", False), ("shadow", False), ("", False)):
+                os.environ[env] = v
+                check(fn() is want, f"{env}={v!r} must map to {want} (only the exact string 1 arms)")
+            os.environ.pop(env, None)
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+    # last-arriver protocol: monotonic counters, power-of-two NV, no reset
+    check(kern.count('tl.atomic_add(ctr_ptr + i_nh, 1, sem="acq_rel", scope="gpu")') == 1
+          and kern.count('tl.atomic_add(ctr_ptr + nh_total + i_nh, 1, sem="acq_rel", scope="gpu")') == 1
+          and kern.count("((arrived + 1) & (NV - 1)) == 0") == 1
+          and kern.count("((done + 1) & (NV - 1)) == 0") == 1
+          and "tl.atomic_xchg" not in kern,
+          "two monotonic last-arriver counters (conv-state write, norm), nothing resets them")
+    check("(nv & (nv - 1)) != 0" in kern and "_MAX_REQ_HEADS" in kern
+          and "num_spec_decodes * h > _MAX_REQ_HEADS" in kern,
+          "applicability pins NV to a power of two and declines (never raises) past the counter buffer")
+    check(re.search(r"tl\.debug_barrier\(\)\s+arrived = tl\.atomic_add", kern) is not None
+          and re.search(r"tl\.debug_barrier\(\)\s+done = tl\.atomic_add", kern) is not None,
           "the CTA barrier precedes each arrival (every thread's reads/stores are done)")
     check('cache_modifier=".cg"' in kern, "the norm tail reads the other programs' rows past L1")
+    # stock skip semantics kept separately
+    check("do_conv = line != 0" in kern and "do_rec = state_idx > 0" in kern
+          and "if (line == 0) & (state_idx <= 0):" in kern and "if do_conv:" in kern
+          and "if do_rec:" in kern and "tl.where(do_conv, _conv_taps(q0, q1, q2, q3, wq0, wq1, wq2, wq3)," in kern,
+          "conv runs iff the conv line is valid, recurrence iff the resume slot is; a skipped conv feeds raw rows")
     check("acc.to(tl.bfloat16).to(tl.float32)" in kern,
           "conv output rounded to bf16 where the stock chain stores it (recurrence bit-exact)")
     check("b_q = b_q / tl.sqrt(tl.sum(b_q * b_q) + 1e-6)" in kern
@@ -10879,44 +10909,75 @@ def test_micro_fusion_bundle_contracts() -> None:
           "the recurrence is the stock fused_recurrent kernel's op order")
     check("state_idx = tl.load(idx_ptr + i_n * stride_idx_seq + n_acc - 1)" in kern
           and "final_idx = tl.load(idx_ptr + i_n * stride_idx_seq + t)" in kern
-          and "if final_idx > 0:" in kern and "if (line == 0) | (state_idx <= 0):" in kern,
+          and "if final_idx > 0:" in kern,
           "state-index contract: resume from [n, acc-1], store per token to [n, t], skip null")
-    check("VAL: tl.constexpr = STATE_LEN - SEQLEN" in kern and "if j - VAL < T:" in kern
+    check("VAL: tl.constexpr = STATE_LEN - SEQLEN" in kern and "elif j - VAL < T:" in kern
           and "src = cs_line + (tok_off + 1 + j) * stride_cs_tok" in kern,
           "conv-state roll: 2 old slots from acc+j, then the block's tokens, per-request T")
     check("b_var = tl.sum(b_x * b_x, axis=0) / V" in kern
           and "b_rstd = 1 / tl.sqrt(b_var + eps)" in kern and "b_y = b_y * tl.sigmoid(b_g)" in kern,
-          "gated RMSNorm in the stock op order (sigmoid gate)")
+          "gated RMSNorm in the stock op order (sigmoid gate), one 1-D row at a time")
+    # guards on the real tensors: rows the kernel touches, both cache dtypes, dim-first view
+    check("num_actual_tokens: int" in kern and "if n <= 0 or n > projected.shape[0]:" in kern
+          and "if g1.numel() < n * proj or g2.numel() < n * proj:" in kern
+          and "if out.numel() < n * proj:" in kern,
+          "applicability sizes out/g1/g2 on the actual token count, not the padded projection rows")
+    check("conv_state.dtype not in (torch.bfloat16, torch.float32)" in kern
+          and "if conv_state.shape[1] != 3 * proj or conv_state.shape[2] < state_len:" in kern
+          and "spec_state_indices.stride(1) != 1" in kern,
+          "conv state: bf16 or fp32 (MK-KDA's cache dtype too), dim-first view, unit-stride indices")
     check("_MAX_DUAL_M = 32" in kern and "0 < x_fg.shape[0] <= _MAX_DUAL_M" in kern
-          and "x_fg.shape[1] != 2 * kd" in kern and "n_out % 128 != 0" in kern,
-          "dual GEMM admits decode M only and the adjacent f_a|g_a slice shape")
+          and "if kd != 128 or x_fg.shape[1] != 2 * kd:" in kern,
+          "dual GEMM admits decode M only and the one validated KD")
+    check("if x_fg.shape[0] <= _MAX_DUAL_M and announce_pending(\"dual-stock\"):" in kern,
+          "a stock decline is announced for decode shapes only (prefill keeps stock by design)")
     check("num_warps=1" in kern and "num_stages=3" in kern,
           "the one-pass keeps the stock recurrent launch geometry (single-warp programs)")
+    # boot self-test and resolve
+    check("def selftest(device: torch.device) -> tuple[bool, str]:" in kern
+          and "def resolve(device: torch.device | None = None) -> dict:" in kern
+          and "torch.cuda.is_current_stream_capturing()" in kern
+          and "self-test FAIL (%s) -> one-pass DISARMED" in kern
+          and "torch.float32)" in kern.split("def selftest(")[1].split("try:")[0],
+          "resolve() self-tests both cache dtypes against the stock chain and disarms on mismatch")
+    check("def run_stock_chain(" in kern and "def make_fixture(" in kern and "def run_onepass(" in kern,
+          "one fixture + one stock reference chain, shared by the self-test and the probe")
     readme = open(os.path.join(mod_dir, "README.md"), encoding="utf-8").read()
     check("not bit-exact" in readme and "[kda-onepass]" in readme
           and "VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 bash launchers/" in readme
-          and "6416" in readme and "run_micro_fusion_check.sh" in readme,
-          "README: numerics caveat, caller-env arming, checkpoint shape, log anchor, probe")
+          and "6416" in readme and "run_micro_fusion_check.sh" in readme
+          and "self-test" in readme and "[8, 128]" not in readme,
+          "README: numerics caveat, caller-env arming, checkpoint shape, log anchor, probe, no stale tile")
 
-    # --- wiring in glm53_mk_kda_wiring ---
+    # --- wiring in glm53_mk_kda_wiring: a guarded import and two calls ---
     kda = open(os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring", "glm5next_kda.py"),
                encoding="utf-8").read()
+    fusion_state = kda.split("def _kda_fusion_state")[1].split("class Glm5NextLinearAttention")[0]
     check('_KDA_ONEPASS_MODULE = "vllm.model_executor.layers.glm53_kda_onepass"' in kda
-          and "isinstance(e, ModuleNotFoundError) and e.name == _KDA_ONEPASS_MODULE" in kda,
-          "the wiring imports the module lazily and tolerates only 'not mounted' silently")
-    check('_os.environ.get("VLLM_GLM53_KDA_DUAL_GEMM", "").strip() == "1"' in kda
-          and '_os.environ.get("VLLM_GLM53_KDA_ONEPASS", "").strip() == "1"' in kda,
-          "the wiring reads the same exact-1 knobs")
-    check("if _normed is not True:\n            core_attn_out = self.o_norm(core_attn_out, g2)" in kda,
-          "o_norm is skipped only when _forward reports the in-place norm")
-    check("and attn_metadata_narrowed.num_prefills == 0\n            and attn_metadata_narrowed.num_decodes == 0" in kda
+          and "isinstance(e, ModuleNotFoundError) and e.name == _KDA_ONEPASS_MODULE" in fusion_state
+          and 'if not any(_os.environ.get(k, "").strip() == "1" for k in _KDA_ONEPASS_ENVS):' in fusion_state
+          and fusion_state.count('strip() == "1"') == 1
+          and "resolved = mod.resolve()" in fusion_state
+          and 'st["dual"] = bool(resolved["dual"])' in fusion_state
+          and 'st["onepass"] = bool(resolved["onepass"])' in fusion_state
+          and "dual_gemm_enabled" not in fusion_state and "onepass_enabled" not in fusion_state,
+          "the wiring imports the module only when a knob is armed (exact 1: the profile's 0 costs no import), "
+          "tolerates only 'not mounted' silently and takes both verdicts from resolve()")
+    check('_fus["mod"].gate_gemms(' in kda and "_pair = (self.f_b_proj(f_a)[0], self.g_b_proj(g_a)[0])" in kda,
+          "the dual path is one call; the stock two GEMMs remain the fallback")
+    check('_fus["mod"].spec_onepass(' in kda and "num_actual_tokens=num_actual_tokens" in kda
+          and "and attn_metadata_narrowed.num_prefills == 0" in kda
+          and "and attn_metadata_narrowed.num_decodes == 0" in kda
           and "and (non_spec_token_indx is None or non_spec_token_indx.numel() == 0)" in kda
           and 'and self.o_norm.activation == "sigmoid"' in kda and "and self.kda_safe_gate" in kda,
           "one-pass only on a pure spec-verify step with the bounded gate and sigmoid norm")
-    check("if _g1 is None:\n            _g1 = self.f_b_proj(f_a)[0]\n            _gp = self.g_b_proj(g_a)[0]" in kda,
-          "the stock two GEMMs remain the fallback of the dual path")
-    check(kda.index("_fus = _kda_fusion_state()\n        if (") > kda.index("conv_bias = self.q_conv1d.bias"),
-          "the one-pass branch sits after the merged conv weight exists")
+    fwd = kda.split("    def _forward(")[1]
+    check("_normed" not in kda and "g2: torch.Tensor," in fwd.split(") -> None:")[0]
+          and fwd.count("self.o_norm(core_attn_out, g2)") == 2
+          and "self.o_norm(" not in kda.split("    def forward(")[1].split("    def _forward(")[0],
+          "_forward owns the gated norm on every path (profile run, stock chain); forward applies none")
+    check(kda.index('_fus["mod"].spec_onepass(') > kda.index("conv_bias = self.q_conv1d.bias"),
+          "the one-pass call sits after the merged conv weight exists")
 
     # --- kpool direct positions ---
     kp = open(os.path.join(REPO, "overlay", "modules", "glm53_kpool_tail_select",
@@ -10929,7 +10990,6 @@ def test_micro_fusion_bundle_contracts() -> None:
     check(kp.count("_KPOOL_UPDATE_DIRECT_POS and") == 1
           and "_scatter_decode_tokens_by_request(\n                    positions[:num_decode_tokens].to(torch.int32)," in kp,
           "the padded non-uniform path keeps the scatter of the int32 cast")
-
     print("  micro-fusion bundle 2 contracts .. OK")
 
 
