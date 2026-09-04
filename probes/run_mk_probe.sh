@@ -63,7 +63,7 @@ envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
 # $HOME/glm53-cache at /cache and points flashinfer / triton / vLLM at it),
 # so a probe that JIT-compiles -- probes/nvfp4_prefill_warm.py builds the
 # cutlass mm_fp4 kernels the NVFP4P boot otherwise compiles inside the serve
-# process, where it cost srv3 its memory (29차) -- warms the cache the next
+# process, where it cost srv3 its memory (32차) -- warms the cache the next
 # serve boot reads. MAX_JOBS bounds the parallel nvcc jobs on this host.
 if [ "${PROBE_CACHE:-0}" = 1 ]; then
   CACHE_HOST=${CACHE_HOST:-$HOME/glm53-cache}

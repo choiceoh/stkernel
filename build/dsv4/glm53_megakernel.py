@@ -77,7 +77,7 @@ ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
 # MK_SEG_SMLP: the dense MLP (gate_up -> clamped SwiGLU -> down) as one
 # launch, T <= 32 -- the shared expert of every MoE layer and the three
 # dense layers. Served-numerics unchanged by construction (same packs, same
-# rounding points); the bracket is the gate (29차).
+# rounding points); the bracket is the gate (32차).
 ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
@@ -242,7 +242,7 @@ def _build():
 
 
 def rebuild(src_path: str) -> dict:
-    """29차 item 5 (dev lab): build the extension from another .cu, swap it
+    """32차 item 5 (dev lab): build the extension from another .cu, swap it
     in and re-run the self-tests. The kernels already baked into captured
     graphs stay until a recapture; every eager call sees the new module."""
     import torch
@@ -1058,7 +1058,7 @@ def _kda_layout_reason(layer):
         return "A_log/dt_bias are not float32"
     # The production pool (--mamba-cache-dtype auto) stores the conv state
     # in bf16; the kernel widens on load and narrows on store, so both serve
-    # and the fp32 knob is no longer a KDA precondition (29차).
+    # and the fp32 knob is no longer a KDA precondition (32차).
     if (conv_state.dtype not in (torch.float32, torch.bfloat16)
             or conv_state.dim() != 3 or conv_state.shape[1] != KDA_QKV):
         return "conv state is %s%s, not float32/bfloat16 (blocks, %d, W)" % (
@@ -1073,7 +1073,7 @@ def _kda_layout_reason(layer):
     if conv_state.shape[2] != KDA_CONV_STATE_W:
         return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
             conv_state.shape[2], KDA_CONV_STATE_W)
-    # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype gate
+    # KDA32SHADOW (32차): with --mamba-cache-dtype float32 the dtype gate
     # passed and a contiguity gate rejected every layer -- the fp32 (blocks,
     # 6144, 10) tensor is a strided view of the hybrid pool. The kernel now
     # addresses through (slot, channel, width) strides; what it cannot take
@@ -1090,7 +1090,7 @@ def _kda_layout_reason(layer):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
             rec_state.dtype, tuple(rec_state.shape), KDA_H, KDA_D, KDA_D)
     # The recurrent state is the pool's other strided view (KDA32SHADOW2
-    # rejected every layer here, 29차): a padded slot stride is fine, the
+    # rejected every layer here, 32차): a padded slot stride is fine, the
     # (head, row, col) block must be dense -- the kernel walks it as one.
     r0, r1, r2, r3 = (int(v) for v in rec_state.stride())
     if (r1, r2, r3) != (KDA_D * KDA_D, KDA_D, 1) or r0 < KDA_H * KDA_D * KDA_D:
@@ -1261,7 +1261,7 @@ def kda_block(layer, hidden_states, positions):
 
 
 class _LaneTimer:
-    """29차 item 6 -- a timed shadow: the served (stock) path and the MK
+    """32차 item 6 -- a timed shadow: the served (stock) path and the MK
     path both run under a shadow arm, so time them there with CUDA events
     and say the per-layer delta every `every` judged calls. A bracket boot
     is 25 minutes; this line lands in the production log for free."""
@@ -1304,7 +1304,7 @@ class KdaShadowArm:
         if meta is None:
             return
         conv_state, rec_state = layer.kv_cache
-        # KDA32SHADOW3 (29차): cloning the whole pools -- conv 260 MB + rec
+        # KDA32SHADOW3 (32차): cloning the whole pools -- conv 260 MB + rec
         # 2.2 GB, twice, per judged layer -- emptied unified memory under an
         # 8K prefill and earlyoom shot the head's worker. The step touches
         # only the slots in spec_state_indices_tensor: gather those rows
@@ -1983,7 +1983,7 @@ def arm() -> None:
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
                    dict(_ARMED), KDA_SHADOW)
     if _flag("VLLM_GLM53_DEV_LAB"):
-        try:   # 29차 item 5: the boot-free kernel loop (dev boots only)
+        try:   # 32차 item 5: the boot-free kernel loop (dev boots only)
             from vllm.model_executor.layers import glm53_dev_lab
             glm53_dev_lab.install()
         except Exception:
