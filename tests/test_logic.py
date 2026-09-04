@@ -6875,9 +6875,15 @@ def test_mk_smlp_hook_and_contracts() -> None:
     cu = open("overlay/modules/glm53_megakernel/glm53_megakernel.cu", encoding="utf-8").read()
     k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
     assert k.count("mk_gemm_phase(c, smem, &g_mk_smlp_bar);") == 2, "two GEMM phases on the segment's own barrier"
-    assert "c.a_ready = true;" in k and "g_mk_unit_next = 0u;" in k, "down rides the a_ready path with the counter reset under the barrier"
-    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 2
-    assert "__float2bfloat16(" in k and "fminf(g, a.limit)" in k and "(u + a.beta)" in k, "clamped SwiGLU at the stock rounding point"
+    assert "c.a_ready = true;" in k and "c.unit_ctr = &g_mk_smlp_unit2;" in k and "g_mk_smlp_unit2 = 0u;" in k, \
+        "down rides the a_ready path on its own unit counter, reset before phase A"
+    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 1, "one barrier: the activation lives in gate_up's epilogue"
+    assert "c.pair_act = 1;" in k and "c.n_int = a.n_int;" in k
+    ph = cu[cu.index("__device__ void mk_gemm_phase"):cu.index("__global__ void mk_gemm_kernel")]
+    assert "auto pair_finish = [&](int nt) {" in ph and ph.count("pair_finish(nt);") == 2, "both final-store paths finish the pair"
+    assert "__float2bfloat16(" in ph and "fminf(gv, c.act_limit)" in ph and "(uv + c.act_beta)" in ph, "clamped SwiGLU at the stock rounding point"
+    assert "if (s_pair_last) g_mk_pair_arrive[pair] = 0u;" in ph, "pair counters rearm like tile counters"
+    assert "if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);" in ph
     assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
     wiring = open("overlay/modules/glm53_model_wiring/glm5next_model.py", encoding="utf-8").read()
     assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring

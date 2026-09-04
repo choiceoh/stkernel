@@ -291,6 +291,21 @@ struct MKGemmCtx {
   // into the weights, and passes 2^-shift here; it costs one multiply on
   // the activation scales in the prologue.
   float wgs = 1.0f;
+  // MK_SEG_SMLP (29차 item 3): gate_up's epilogue finishes the MLP's first
+  // half. Tiles come in (gate, up) pairs of the same 128 output columns
+  // (tile nt and nt + n_int/128); whichever block stores a pair's second
+  // final tile computes the clamped SwiGLU over the pair from the just-
+  // stored bf16 rows and emits the fp8 A group + per-row scale the down
+  // phase reads on its a_ready path -- the separate activation phase and
+  // its grid barrier are gone. 0 = plain GEMM (every other caller).
+  int pair_act = 0;
+  int n_int = 0;               // gate width = up width = the down phase's k
+  float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
+  // Dynamic unit hand-out counter: null = the lane's g_mk_unit_next. A
+  // caller chaining two phases under ONE barrier gives the second phase
+  // its own counter (reset before the first phase starts), because the
+  // shared one is still being incremented by blocks finishing the first.
+  unsigned int* unit_ctr = nullptr;
 };
 
 // e4m3 encodings of the e2m1 magnitudes {0, .5, 1, 1.5, 2, 3, 4, 6}.
@@ -349,6 +364,10 @@ __device__ __align__(16) float g_mk_gemm_partial[MK_SPLIT_ELEMS];
 // The stamps priced the barrier + cooperative fold at 5-11 us per launch,
 // most of it blocks that had finished waiting for the one that had not.
 __device__ unsigned int g_mk_tile_arrive[MK_GRID_CAP];
+// MK_SEG_SMLP: (gate, up) pair arrivals for the pair-activation epilogue,
+// self-rearming like g_mk_tile_arrive, and the down phase's own unit counter.
+__device__ unsigned int g_mk_pair_arrive[MK_GRID_CAP];
+__device__ unsigned int g_mk_smlp_unit2 = 0u;
 // Dynamic unit hand-out. Static striding (u += grid) gave every block the
 // same count of units, but the stamps showed a 25% spread in the loop
 // (n=4096: 86..110 us) -- DRAM arbitration is not fair and the slow
@@ -683,6 +702,7 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   }
   if (!c.a_ready) {
     if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
+    if (c.unit_ctr && blockIdx.x == 0 && threadIdx.x == 0) *c.unit_ctr = 0u;
     MK_TS(1);  // A quantized, before the publishing barrier
     mk_grid_barrier(bar, c.grid);
   }
@@ -699,10 +719,68 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
   // g_mk_unit_next); the first is static so its W fill could be hoisted.
   auto next_unit = [&]() -> int {
     __syncthreads();  // the previous unit is done with s_unit and smem
-    if (threadIdx.x == 0)
-      s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
+    if (threadIdx.x == 0) {
+      if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);
+      else s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);
+    }
     __syncthreads();
     return s_unit;
+  };
+  __shared__ int s_pair_last;
+  // pair_act: this block just stored tile nt's FINAL bf16 rows (a whole
+  // tile, or the fold as the last-arriving slice). Count the pair's
+  // arrival; the block completing the pair reads both tiles' rows back
+  // (__ldcg: the other tile came from another SM) and emits the fp8 A
+  // group for the down phase. Same release/acquire discipline as the tile
+  // fold: fence before the arrival, fence after winning it.
+  auto pair_finish = [&](int nt) {
+    __syncthreads();
+    __threadfence();
+    __syncthreads();
+    const int groups = c.n_int / KSTEP;
+    const int pair = (nt < groups) ? nt : nt - groups;
+    if (threadIdx.x == 0) {
+      const unsigned prev = atomicAdd(&g_mk_pair_arrive[pair], 1u);
+      s_pair_last = (prev + 1u == 2u);
+      if (s_pair_last) g_mk_pair_arrive[pair] = 0u;  // both arrived; rearm
+    }
+    __syncthreads();
+    if (s_pair_last) {
+      __threadfence();
+      for (int t = warp; t < c.m; t += MK_WARPS) {  // one warp per row
+        const size_t gb = (size_t)t * c.n_orig + (size_t)pair * KSTEP + lane * 4;
+        const uint2 gr = __ldcg((const uint2*)(c.out + gb));
+        const uint2 ur = __ldcg((const uint2*)(c.out + gb + c.n_int));
+        const __nv_bfloat16* gp = (const __nv_bfloat16*)&gr;
+        const __nv_bfloat16* up = (const __nv_bfloat16*)&ur;
+        float v[4], amax = 0.0f;
+#pragma unroll
+        for (int q = 0; q < 4; ++q) {
+          float gv = __bfloat162float(gp[q]), uv = __bfloat162float(up[q]);
+          if (c.act_limit > 0.0f) {
+            gv = fminf(gv, c.act_limit);
+            uv = fminf(fmaxf(uv, -c.act_limit), c.act_limit);
+          }
+          // bf16 round first: the stock activation kernel stores bf16 and
+          // the down_proj prologue quantizes THAT
+          v[q] = __bfloat162float(__float2bfloat16(
+              gv * mk_sigmoid(c.act_alpha * gv) * (uv + c.act_beta)));
+          amax = fmaxf(amax, fabsf(v[q]));
+        }
+#pragma unroll
+        for (int off = 16; off; off >>= 1)
+          amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
+        const float sc = mk_pow2_scale(amax);
+        const float rsc = 1.0f / sc;  // exact: sc is a power of two
+        uint32_t pack = 0;
+#pragma unroll
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(v[q] * rsc) << (8 * q);
+        *(uint32_t*)(g_mk_aq + ((size_t)pair * 32 + t) * KSTEP + lane * 4) = pack;
+        if (lane == 0) g_mk_axs[t * KBLK_MAX + pair] = sc;
+      }
+    }
+    __syncthreads();  // s_pair_last is reused by the next unit
   };
 #ifdef MK_PHASE_TS
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
@@ -970,8 +1048,11 @@ __device__ void mk_gemm_phase(const MKGemmCtx& c, uint8_t* smem,
           if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
           if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
         }
+        if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store
       }
       __syncthreads();  // s_last is reused by the next unit
+    } else if (c.pair_act) {
+      pair_finish(nt);  // a whole tile: its final store was the epilogue above
     }
     if (u == (int)blockIdx.x) MK_TS(6);  // first unit (incl. its epilogue) done
   }
@@ -1969,8 +2050,14 @@ struct MKSmlpArgs {
 __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a) {
   extern __shared__ uint8_t smem[];
   asm volatile("griddepcontrol.launch_dependents;");  // see mk_gemm_kernel
+  // phase C's unit counter: private to it and reset before phase A starts,
+  // so the one barrier below is enough (phase A still increments the
+  // lane's shared counter while late blocks finish)
+  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_smlp_unit2 = 0u;
 
-  {  // phase A: gate_up GEMM into the scratch, bf16 [T, n_gu]
+  {  // phase A: gate_up GEMM into the scratch, bf16 [T, n_gu], and -- in its
+     // epilogue, per completed (gate, up) tile pair -- the clamped SwiGLU
+     // and the fp8 A tiles for phase C (MKGemmCtx::pair_act)
     MKGemmCtx c;
     c.x = a.x;
     c.wq4 = a.gu_wq4;
@@ -1983,63 +2070,23 @@ __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a)
     c.n_orig = a.n_gu;
     c.grid = a.grid;
     c.ksr = a.ksr_gu;
+    c.pair_act = 1;
+    c.n_int = a.n_int;
+    c.act_limit = a.limit;
+    c.act_alpha = a.alpha;
+    c.act_beta = a.beta;
     mk_gemm_phase(c, smem, &g_mk_smlp_bar);
-  }
-  mk_grid_barrier(a.barrier_ctr, a.grid);
-
-  {  // phase B: act(gate, up) -> bf16 -> fp8 A tiles + per-(row, 128-group)
-     // pow2 scales, one warp per (token, k-group), lane = 4 consecutive
-     // columns (the a_ready layout mk_gemm_phase reads; kda's p4 is the
-     // template). n_int/128 groups per token, T tokens.
-    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
-    const int groups = a.n_int / KSTEP;
-    const int items = a.T * groups;
-    const int nwarps = a.grid * MK_WARPS;
-    for (int i = blockIdx.x * MK_WARPS + warp; i < items; i += nwarps) {
-      const int t = i / groups, kb = i - t * groups;
-      const size_t gbase = (size_t)t * a.n_gu + (size_t)kb * KSTEP + lane * 4;
-      const uint2 gr = *(const uint2*)(g_mk_smlp_gu + gbase);
-      const uint2 ur = *(const uint2*)(g_mk_smlp_gu + gbase + a.n_int);
-      const __nv_bfloat16* gp = (const __nv_bfloat16*)&gr;
-      const __nv_bfloat16* up = (const __nv_bfloat16*)&ur;
-      float v[4], amax = 0.0f;
-#pragma unroll
-      for (int q = 0; q < 4; ++q) {
-        float g = __bfloat162float(gp[q]), u = __bfloat162float(up[q]);
-        if (a.limit > 0.0f) {
-          g = fminf(g, a.limit);
-          u = fminf(fmaxf(u, -a.limit), a.limit);
-        }
-        // bf16 round first: the stock activation kernel stores bf16 and the
-        // down_proj prologue quantizes THAT, so the fp8 bytes stay what
-        // they were on the three-launch path
-        v[q] = __bfloat162float(__float2bfloat16(
-            g * mk_sigmoid(a.alpha * g) * (u + a.beta)));
-        amax = fmaxf(amax, fabsf(v[q]));
-      }
-#pragma unroll
-      for (int off = 16; off; off >>= 1)
-        amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
-      const float sc = mk_pow2_scale(amax);
-      const float rsc = 1.0f / sc;  // exact: sc is a power of two
-      uint32_t pack = 0;
-#pragma unroll
-      for (int q = 0; q < 4; ++q)
-        pack |= (uint32_t)mk_f32_to_e4m3(v[q] * rsc) << (8 * q);
-      *(uint32_t*)(g_mk_aq + ((size_t)kb * 32 + t) * KSTEP + lane * 4) = pack;
-      if (lane == 0) g_mk_axs[t * KBLK_MAX + kb] = sc;
-    }
   }
   if (a.warm_l2) {
      // Bench knob (VLLM_GLM53_MK_SMLP_L2WARM, off by default): warm phase
-     // C's first W records in L2 while the grid drains into the second
-     // barrier. The down pack does not depend on the activation, and the
-     // block's first unit is static when the phase is unsplit (unit =
-     // blockIdx.x -> tile blockIdx.x, k-blocks from 0), so the lines it will
-     // cp.async first are known here. Unmeasured: kda's delta phase lost
-     // net to the same idea (an L2 warm from idle blocks queued a latency
-     // chain behind it, 10차); here nothing latency-bound runs alongside,
-     // but the bench decides, not the argument.
+     // C's first W records in L2 while the grid drains into the barrier.
+     // The down pack does not depend on the activation, and the block's
+     // first unit is static when the phase is unsplit (unit = blockIdx.x
+     // -> tile blockIdx.x, k-blocks from 0), so the lines it will cp.async
+     // first are known here. Unmeasured: kda's delta phase lost net to the
+     // same idea (an L2 warm from idle blocks queued a latency chain
+     // behind it, 10차); here nothing latency-bound runs alongside, but
+     // the bench decides, not the argument.
     const int kblk_d = a.n_int / KSTEP;
     const int nblk_d = a.n_out_pad / SMEM_W_ROWS;
     if ((int)blockIdx.x < nblk_d) {
@@ -2059,13 +2106,9 @@ __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a)
   // A's prologue (or an older launch) left there: the down phase reads
   // groups < its kblk only and its epilogue stores rows < T only, the same
   // contract the standalone lane runs under.
-  // phase C's dynamic unit hand-out starts from 0; the prologue that used
-  // to reset the counter is skipped (a_ready), so reset it under THIS
-  // barrier (kda's p4 -> p5 discipline)
-  if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;
   mk_grid_barrier(a.barrier_ctr, a.grid);
 
-  {  // phase C: down GEMM on the A tiles phase B emitted
+  {  // phase C: down GEMM on the A tiles phase A's epilogue emitted
     MKGemmCtx c;
     c.x = a.x;  // unused on the a_ready path (documentation only)
     c.a_ready = true;
@@ -2079,6 +2122,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a)
     c.n_orig = a.n_out;
     c.grid = a.grid;
     c.ksr = a.ksr_d;
+    c.unit_ctr = &g_mk_smlp_unit2;
     mk_gemm_phase(c, smem, &g_mk_smlp_bar);
   }
 }
@@ -2690,6 +2734,7 @@ void mk_run_smlp(std::vector<int64_t> ptrs, std::vector<double> scalars,
   TORCH_CHECK(a.k_gu % KSTEP == 0 && a.k_gu <= KBLK_MAX * KSTEP, "smlp: k_gu out of contract");
   TORCH_CHECK(a.n_int % KSTEP == 0 && a.n_int <= KBLK_MAX * KSTEP, "smlp: n_int out of contract");
   TORCH_CHECK(a.n_gu == 2 * a.n_int && a.n_gu <= SMLP_GU_MAX, "smlp: gate_up width is not 2 x n_int");
+  TORCH_CHECK(a.n_gu % 8 == 0 && a.n_int % KSTEP == 0, "smlp: the pair epilogue reads 8 B rows of 128-wide groups");
   TORCH_CHECK(((uintptr_t)a.x & 7) == 0, "smlp: x must be 8 B aligned");
   a.n_gu_pad = ((a.n_gu + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
   a.n_out_pad = ((a.n_out + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
