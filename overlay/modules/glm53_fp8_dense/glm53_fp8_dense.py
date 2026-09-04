@@ -87,13 +87,35 @@ _BPROJ_INCLUDE = (
 
 _BPROJ_ON = ("1", "true", "yes", "on")
 
+# The DFlash2 drafter (Qwen3-style, glm53_dflash_loader_fp8 calls this pass
+# under its own knob) names its projections differently from the target:
+# a MERGED qkv_proj (the base patterns list q/k/v_proj and the target's
+# fused names, never qkv_proj), the aux-hidden fc ([hidden, 5 x hidden],
+# ReplicatedLinear -- K = 20480, read whole on every rank), and two conv
+# kernel_projections per layer ([1024, hidden], replicated). With the base
+# patterns alone the drafter knob covered o_proj/gate_up/down and left
+# 43% of the drafter's bytes bf16 -- the fc alone is 23% (armed 09-03
+# trace: fc 792 us, qkv 5 x ~50 us, kernel_projection 10 x ~60 us per
+# step). These extend the set for the drafter knob only; the target's
+# pattern set is untouched.
+_DRAFTER_ENV = "VLLM_DFLASH2_FP8_DENSE"
+_DRAFTER_INCLUDE = (
+    re.compile(r"\.self_attn\.qkv_proj$"),
+    re.compile(r"(^|\.)fc$"),
+    re.compile(r"\.(attention_conv|mlp_conv)\.kernel_projection$"),
+)
 
-def _include_patterns() -> tuple:
-    """Base patterns, plus the b-projection arm when its gate is armed."""
+
+def _include_patterns(env: str = "VLLM_GLM53_FP8_DENSE") -> tuple:
+    """Base patterns, plus the drafter set under the drafter knob, plus the
+    b-projection arm when its gate is armed."""
+    pats = _INCLUDE
+    if env == _DRAFTER_ENV:
+        pats = pats + _DRAFTER_INCLUDE
     raw = (os.environ.get("VLLM_GLM53_FP8_DENSE_BPROJ") or "").strip().lower()
     if raw in _BPROJ_ON:
-        return _INCLUDE + _BPROJ_INCLUDE
-    return _INCLUDE
+        pats = pats + _BPROJ_INCLUDE
+    return pats
 
 
 def _quantize_fp8_block_padded(
@@ -312,6 +334,68 @@ except Exception:
     _fp8_dense_gemm_op = _fp8_dense_gemm
 
 
+def _mk_or_fp8_dense_gemm(
+    x: torch.Tensor,
+    q: torch.Tensor,
+    ws: torch.Tensor,
+    orig_rows: int,
+    orig_cols: int,
+    wq4s: list[torch.Tensor],
+    ws4s: list[torch.Tensor],
+    gscales: list[float],
+) -> torch.Tensor:
+    """The megakernel W4 lane when it is armed and the shape is eligible,
+    the deepgemm fp8 pair otherwise -- decided at RUN time, inside one
+    opaque op.
+
+    Fp8DenseMethod.apply makes the same choice in Python for the target,
+    whose forward is eager. The DFlash2 drafter's forward is torch.compiled
+    (@support_torch_compile on DFlashQwen3Model), and there the Python
+    choice is not an option: dynamo would trace the lane's eligibility test
+    (a guard on the token count), the arming import and the extension call
+    -- a pybind function it cannot trace. So for a compiled caller the whole
+    decision moves behind this boundary, where it runs exactly as it does in
+    eager: the lane can DISARM at run time and the fallback is the fp8 pair
+    the copy check verified. wq4s/ws4s/gscales carry the MK pack -- one
+    entry, or one per K-chunk of a linear wider than the lane's K (the
+    drafter's fc) -- and empty lists mean fp8 only.
+    """
+    if wq4s:
+        _mk_gemm = _mk_arm = None
+        try:  # import only: a boot without the megakernel module is fp8
+            from vllm.model_executor.layers.glm53_megakernel import (
+                gemm_w4a8 as _mk_gemm,
+                maybe_arm as _mk_arm,
+            )
+        except Exception:
+            pass
+        if _mk_gemm is not None:
+            _mk_arm()
+            packs = [(a, b, g) for a, b, g in zip(wq4s, ws4s, gscales)]
+            out = _mk_gemm(x, packs[0] if len(packs) == 1 else packs,
+                           orig_rows)
+            if out is not None:
+                return out
+    return _fp8_dense_gemm(x, q, ws, orig_rows, orig_cols)
+
+
+try:
+    _mk_or_fp8_dense_gemm_op = torch.library.custom_op(
+        "glm53_fp8_dense::gemm_mk_or_fp8", mutates_args=()
+    )(_mk_or_fp8_dense_gemm)
+
+    @_mk_or_fp8_dense_gemm_op.register_fake
+    def _mk_or_fp8_dense_gemm_fake(
+        x, q, ws, orig_rows: int, orig_cols: int, wq4s, ws4s, gscales
+    ) -> torch.Tensor:
+        return torch.empty(
+            x.shape[:-1] + (orig_rows,), dtype=torch.bfloat16,
+            device=x.device,
+        )
+except Exception:
+    _mk_or_fp8_dense_gemm_op = _mk_or_fp8_dense_gemm
+
+
 try:
     _w4_dense_gemm_op = torch.library.custom_op(
         "glm53_fp8_dense::gemm_w4a8", mutates_args=()
@@ -423,10 +507,31 @@ class Fp8DenseMethod:
         # None until maybe_build_fp8_dense attaches one; apply() then keeps
         # stock.
         self._mk = None
+        # True for a torch.compiled caller (the DFlash2 drafter): apply()
+        # then routes through ONE opaque op that makes the MK-or-fp8 choice
+        # at run time (_mk_or_fp8_dense_gemm), instead of the Python
+        # choice below that dynamo cannot trace.
+        self._opaque = False
+        self._mk_args = None
 
     def apply(self, layer, x, bias=None):
         if bias is not None:
             return self._base.apply(layer, x, bias)
+        if self._opaque:
+            args = self._mk_args
+            if args is None:
+                mk = self._mk
+                if mk is None:
+                    args = ([], [], [])
+                elif isinstance(mk, list):
+                    args = ([p[0] for p in mk], [p[1] for p in mk],
+                            [float(p[2]) for p in mk])
+                else:
+                    args = ([mk[0]], [mk[1]], [float(mk[2])])
+                self._mk_args = args
+            return _mk_or_fp8_dense_gemm_op(
+                x, self._q, self._ws, self._rows, self._cols, *args
+            )
         # deneb fork (glm53_megakernel): one persistent 48-block launch for
         # decode M<=32 (quant fused into the GEMM). Ineligible shapes return
         # None and run the stock pair below. No try/except around an armed
@@ -597,7 +702,12 @@ def _attach_mk_pack(method, weight, cols) -> bool:
         from vllm.model_executor.layers import glm53_megakernel as _mkmod
 
         if _mkmod.ENABLE_GEMM and cols % 128 == 0:
-            method._mk = _mkmod.build_mk_weight_w4(weight)
+            if cols > _mkmod.MK_GEMM_KMAX:
+                # wider than one launch of the lane (the drafter's fc,
+                # K = 5 x hidden): a pack per K-chunk, summed by gemm_w4a8
+                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight)
+            else:
+                method._mk = _mkmod.build_mk_weight_w4(weight)
             return method._mk is not None
     except Exception:
         method._mk = None
@@ -660,12 +770,19 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         scheme = "w4a8"
     else:
         scheme = "w8a8"
+    # "w8": the fp8 pair and NOTHING lower -- no MK W4 pack, so an armed
+    # MK-GEMM leaves these linears on deepgemm fp8. One numerics axis per
+    # boot: the drafter knob wants to be bracketed at the block-fp8 class
+    # (the one this fleet already serves the target in) separately from
+    # the W4 class the megakernel lane carries.
+    attach_mk = _attach_mk_pack if raw not in ("w8", "fp8", "w8a8") else \
+        (lambda method, weight, cols: False)
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
     kda_owned = 0
     for name, mod in model.named_modules():
-        if not any(p.search(name) for p in _include_patterns()):
+        if not any(p.search(name) for p in _include_patterns(env)):
             continue
         weight = getattr(mod, "weight", None)
         base = getattr(mod, "quant_method", None)
@@ -694,6 +811,9 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         try:
             q, ws, rows, cols = _quantize_fp8_block_padded(weight)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
+            # the drafter's forward is torch.compiled: its GEMMs must be
+            # one opaque op each (see _mk_or_fp8_dense_gemm)
+            method._opaque = env == _DRAFTER_ENV
             if _copy_matches_source(
                 mod, method, weight,
                 got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
@@ -706,7 +826,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 # dense scheme does not bid for it: an nvfp4/w4a8 copy here
                 # would be built, verified and never read. What MK-KDA does
                 # read is the W4 pack, and it must be attached now.
-                if _attach_mk_pack(method, weight, cols):
+                if attach_mk(method, weight, cols):
                     mk_packs += 1
                     kda_owned += 1
                 mod.quant_method = method
@@ -787,7 +907,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                         params_w4 += weight.numel()
                         armed_nv = True
                 if not armed_nv:
-                    if _attach_mk_pack(method, weight, cols):
+                    if attach_mk(method, weight, cols):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
@@ -819,14 +939,14 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
-                    if _attach_mk_pack(method, weight, cols):
+                    if attach_mk(method, weight, cols):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
                     continue
                 continue
-            if _attach_mk_pack(method, weight, cols):
+            if attach_mk(method, weight, cols):
                 mk_packs += 1
             mod.quant_method = method
             quantized.append(name)

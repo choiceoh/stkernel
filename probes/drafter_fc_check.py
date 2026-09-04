@@ -1,59 +1,87 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""glm53 drafter fc projection: stock timing vs reachable alternatives.
+"""glm53 DFlash2 drafter GEMMs: what the tail of a decode step pays, arm by arm.
 
-STEP_KERNEL_MAP supplementary decomposition 3 names the drafter fc GEMM as a
-split-K candidate: [M, K=5*hidden] x [K, N=hidden], one call per decode step,
-deep_gemm fp8xfp4 in the current boot at 809 us -- 42 MB of fp4 weights read
-at 52-104 GB/s, a quarter to a half of the W4 stream's measured floor
-(~190 GB/s effective, megakernel ledger). While the host-idle hiding of the
-2026-09-01 trace lasts it is off the critical path; the moment EXP-7 removes
-that hiding it is the main body of the ~6% drafter exposure. This probe
-measures the real shape cold-weights and every arm that already exists in the
-fleet image, so the kernel-building decision is made on numbers, not on the
-CUPTI figure.
+Where the number comes from. The armed 2026-09-03 trace (srv2, rank 0,
+MK-GEMM/MHC/MLA armed) cut at the runner's prep kernel: a decode step is a
+~59 ms target forward plus a 7.5-8.5 ms TAIL that the forward's own
+annotation does not cover -- target head 836 us + AllGather 0.4 ms, then the
+DFlash2 drafter: fc 792 us (bf16 cutlass, [7 x 20480] x [20480 x 4096],
+replicated, 168 MB at 212 GB/s), five layers of sharded bf16 projections
+(~560 us of GEMM per layer, at the bf16 DRAM floor), eleven one-shot
+all-reduces, and the fp8 draft head 812 us. The drafter runs TP=4 in that
+boot (the all-reduce after o_proj/down_proj and the 12 MB qkv streams say so),
+so its per-rank weight bytes are a quarter of the checkpoint's. The GPU is
+95% busy through the tail and the next step's prep starts when it ends, so
+every microsecond of it is step time: the drafter's bf16 bytes (~3.6 ms of a
+66 ms step, 733 MB/rank) are the largest kernel-side lever left in decode.
 
-Arms:
-  stock    -- the production pair, glm53_fp8_dense._fp8_fp4_dense_gemm
-              (per-token fp8 activation quant + deep_gemm fp8_fp4_gemm_nt)
-  bf16 mm  -- torch.mm on the bf16 weight (the 168 MB eager path the 09-01
-              trace caught in another boot)
-  linear   -- F.linear NT layout of the same
-  mk_w4    -- the megakernel W4 lane at this shape, best-effort: the lane was
-              built and VERDICT-PASSed on K=4096 shapes; if it refuses
-              K=20480 the SKIP line is the answer, not a failure
+What this probe does. At the fleet shapes (read from the drafter config, TP
+from --tp) it times every arm the image already has, per shape and summed
+per step:
 
-The weights here are built from a bf16 matrix by the same packer the dense
-path uses -- by-design e2m1 error, so numerics are gated at the MK bench's
-0.15, and TIMING is the deliverable. Run inside a glm53 image with the repo
-mounted at /repo (deployment commit):
+  bf16    F.linear on the bf16 weight -- what serves today (cutlass wmma)
+  fp8     the target's production pair: _quantize_fp8_block_padded +
+          _fp8_dense_gemm (deepgemm, fp8 x fp8, 128x128 block scales)
+  fp4     _quantize_w4 + _fp8_fp4_dense_gemm (deepgemm, fp8 x e2m1)
+  mk_w4   the megakernel W4 lane, build_mk_weight_w4 + _gemm_call. The lane
+          takes K <= 4096, so the fc (K = 20480) runs as K-chunks of 4096
+          summed in fp32: five launches where a K = 20480 kernel would be one
+          (the chunked number is the ceiling of the wrapper, not the lane)
 
-    docker run --rm --gpus all --entrypoint python3 \
-      --mount type=bind,src=$REPO,dst=/repo,readonly glm53:v13-b12x \
-      /repo/probes/drafter_fc_check.py [--config /models/.../config.json]
+Weights are cycled -- NW distinct copies, enough that even the smallest arm's
+bytes overflow the 24 MB L2 -- inside one replayed CUDA graph, so every
+launch streams from DRAM the way a step's run of layers does (ledger trap 4:
+back-to-back launches on ONE weight time the L2, not the kernel). Numerics
+are the relative error against an fp32 matmul of the same bf16 weight, gated
+by class (bf16 / fp8 5e-2, e2m1 0.15); the deliverable is TIMING. Any
+drafter arm's adoption gate is acceptance (pos-1 within 2 pct of control),
+and only a boot measures that.
+
+Run inside the glm53 image with the composed overlays mounted; the megakernel
+bench runner already does exactly that, so point it at this file:
+
+    sed 's#megakernel_glm53_bench.py#drafter_fc_check.py#' \\
+        probes/run_megakernel_bench.sh > /tmp/run_drafter.sh
+    bash /tmp/run_drafter.sh [--tp 4] [--ms 7] [--config /models/.../config.json]
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
+import os
 import sys
 
 import torch
 
 sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
 
-# Fleet checkpoint defaults (glm53-redhat-nvfp4 drafter): 5 draft layers of
-# hidden 4096 concatenated into one fc projection. #231's lesson: measure the
-# fleet shape, never a synthetic stand-in -- pass --config to override.
+# The megakernel driver reads its knobs at import; the runner forwards a
+# caller's VLLM_GLM53_* but sets none itself, so the lane arms here unless
+# the caller says otherwise (same convention as megakernel_glm53_bench.py).
+os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
+os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
+os.environ.setdefault("VLLM_GLM53_MK_MHC", "0")
+os.environ.setdefault("VLLM_GLM53_MK_KDA", "0")
+os.environ.setdefault("VLLM_GLM53_MK_MLA", "0")
+os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
+
+# Fleet checkpoint (glm53-redhat-nvfp4's GLM-5.3-Flash-DFlash2 drafter):
+# hidden 4096, 5 layers, 32 q / 8 kv heads of 128, intermediate 12288,
+# conv kernel_projection [1024, 4096] x2 per layer, fc [4096, 5 x 4096].
+# #231's lesson: measure the fleet shape, never a synthetic stand-in --
+# --config overrides every one of these from the drafter's config.json.
 DEF_LAYERS, DEF_HIDDEN, DEF_M = 5, 4096, 7
-STEP_MS = 71.0   # ledger 09-01 trace median; --step-ms overrides
-NW = 6           # weights cycled inside one replayed graph: 6 x 42 MB fp4
-                 # = 252 MB, an order past GB10's 24 MB L2, so every launch
-                 # streams from DRAM like a decode step's run of layers does
-W4_GBPS = 190.0  # megakernel ledger: W4 stream effective DRAM rate
-E2M1_TOL = 0.15  # MK bench's by-design gate for the e2m1 arms
-BF16_TOL = 5e-2
+DEF_HEADS, DEF_KV_HEADS, DEF_HEAD_DIM, DEF_INTER = 32, 8, 128, 12288
+DEF_CONV_GROUP, DEF_CONV_TAPS = 16, 2   # kernel_projection: hidden/group x taps x 2
+DEF_VOCAB = 154880
+STEP_MS = 66.0   # armed 09-03 trace, prep-anchor cut, median of the two clean steps
+L2_BYTES = 24 << 20
+MIN_STREAM = 96 << 20  # cycled bytes per arm must be at least this, 4x the L2
+NW_MIN, NW_MAX = 6, 48
+MK_KMAX = 4096   # the lane's K contract (_mk_gemm_eligible)
+TOL = {"bf16": 5e-2, "fp8": 5e-2, "fp4": 0.15, "mk_w4": 0.15}  # e2m1: by-design 0.15
 
 
 def _load_overlay():
@@ -63,17 +91,16 @@ def _load_overlay():
             print(f"!! {name} not mounted in this image -- nothing to measure")
             sys.exit(2)
     from vllm.model_executor.layers import glm53_megakernel as mk
-    from vllm.model_executor.layers.glm53_fp8_dense import (
-        _fp8_fp4_dense_gemm, _quantize_w4)
-    return mk, _fp8_fp4_dense_gemm, _quantize_w4
+    from vllm.model_executor.layers import glm53_fp8_dense as fd
+    return mk, fd
 
 
-def _graph_us(fn_of_i, n: int = NW, reps: int = 20) -> float:
+def _graph_us(fn_of_i, n: int, reps: int) -> float:
     """Mean us/launch over `reps` replays of a graph holding n launches, one
     per cycled weight. A replay returns nothing, so bitwise determinism is
     checked on live launches by the caller."""
     for i in range(3):
-        fn_of_i(i)
+        fn_of_i(i % n)
     torch.cuda.synchronize()
     g = torch.cuda.CUDAGraph()
     st = torch.cuda.Stream()
@@ -109,45 +136,82 @@ def _rel(got: torch.Tensor, ref: torch.Tensor) -> float:
     return float((got.float() - ref.float()).norm() / den)
 
 
+def _shapes(cfg: dict, tp: int, with_head: bool) -> list[tuple[str, int, int, int]]:
+    """(name, N, K, count per step) at the per-rank shapes of a TP=tp drafter.
+    Column-parallel linears shard N, row-parallel ones shard K, and the
+    replicated ones (fc, the conv kernel_projections) are read whole."""
+    h, L = cfg["hidden"], cfg["layers"]
+    hd, nh, nkv, inter = cfg["head_dim"], cfg["heads"], cfg["kv_heads"], cfg["inter"]
+    kproj_n = h // cfg["conv_group"] * cfg["conv_taps"] * 2
+    out = [
+        ("fc", h, L * h, 1),
+        ("qkv_proj", (nh + 2 * nkv) * hd // tp, h, L),
+        ("o_proj", h, nh * hd // tp, L),
+        ("gate_up_proj", 2 * inter // tp, h, L),
+        ("down_proj", h, inter // tp, L),
+        ("kernel_projection", kproj_n, h, 2 * L),
+    ]
+    if with_head:
+        out.append(("lm_head", cfg["vocab"] // tp, h, 1))
+    return out
+
+
+def _mk_chunks(mk, w: torch.Tensor):
+    """W4 packs of the K-chunks of w (one when K <= 4096)."""
+    K = w.shape[1]
+    nchunk = -(-K // MK_KMAX)
+    return [mk.build_mk_weight_w4(w[:, c * MK_KMAX:(c + 1) * MK_KMAX].contiguous())
+            for c in range(nchunk)]
+
+
+def _pack_bytes(p) -> int:
+    return sum(t.numel() * t.element_size() for t in p if isinstance(t, torch.Tensor))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None,
-                    help="drafter config.json (hidden_size, num_hidden_layers)")
-    ap.add_argument("--K", type=int, default=DEF_LAYERS * DEF_HIDDEN)
-    ap.add_argument("--N", type=int, default=DEF_HIDDEN)
+                    help="drafter config.json (hidden_size, num_hidden_layers, heads...)")
+    ap.add_argument("--tp", type=int, default=4,
+                    help="drafter tensor parallel size (the 09-03 boot ran 4)")
     ap.add_argument("--ms", type=int, nargs="*", default=[DEF_M],
-                    help="M values to time, e.g. --ms 1 2 4 7 8 16 32")
+                    help="M values to time, e.g. --ms 7 8 16")
     ap.add_argument("--step-ms", type=float, default=STEP_MS)
     ap.add_argument("--iters", type=int, default=20)
+    ap.add_argument("--shapes", default=None,
+                    help="comma list to restrict, e.g. fc,gate_up_proj")
+    ap.add_argument("--head", action="store_true",
+                    help="also time the vocab/tp head shape (reference only: "
+                         "the served head is the fp8_lm_head W8A16 lane)")
     args = ap.parse_args()
-    N, K = args.N, args.K
+    cfg = {"hidden": DEF_HIDDEN, "layers": DEF_LAYERS, "heads": DEF_HEADS,
+           "kv_heads": DEF_KV_HEADS, "head_dim": DEF_HEAD_DIM, "inter": DEF_INTER,
+           "conv_group": DEF_CONV_GROUP, "conv_taps": DEF_CONV_TAPS, "vocab": DEF_VOCAB}
     if args.config:
         c = json.load(open(args.config))
         c = c.get("text_config", c)
-        hidden = int(c["hidden_size"])
-        layers = int(c.get("num_hidden_layers", DEF_LAYERS))
-        N, K = hidden, layers * hidden
+        cfg.update(hidden=int(c["hidden_size"]),
+                   layers=int(c.get("num_hidden_layers", DEF_LAYERS)),
+                   heads=int(c.get("num_attention_heads", DEF_HEADS)),
+                   kv_heads=int(c.get("num_key_value_heads", DEF_KV_HEADS)),
+                   head_dim=int(c.get("head_dim", DEF_HEAD_DIM)),
+                   inter=int(c.get("intermediate_size", DEF_INTER)),
+                   vocab=int(c.get("vocab_size", DEF_VOCAB)))
+        dc = c.get("dflash_config") or {}
+        cfg.update(conv_group=int(dc.get("conv_group_size", DEF_CONV_GROUP)),
+                   conv_taps=int(dc.get("conv_kernel_size", DEF_CONV_TAPS)))
     torch.manual_seed(0)
     dev = "cuda"
-    mk, fp8_fp4_gemm, quantize_w4 = _load_overlay()
-    print(f"shape: M x K={K} @ K x N={N} (drafter fc, one call/step); "
-          f"{N * K // 2 / 1e6:.0f} MB fp4 / {N * K * 2 / 1e6:.0f} MB bf16")
+    mk, fd = _load_overlay()
+    mk.maybe_arm()
+    mk_armed = bool(mk._ARMED.get("gemm"))
+    print(f"drafter tp={args.tp} hidden={cfg['hidden']} layers={cfg['layers']} "
+          f"mk_gemm armed={mk_armed}")
 
-    # One bf16 matrix as the packers' common source. The timed arms read the
-    # packs; the bf16 arms keep their own full copy.
-    w = (torch.randn(N, K, dtype=torch.float32, device=dev) * 0.02
-         ).to(torch.bfloat16)
-    ref_w = w.float()
-    packs = []
-    for packed_sf in (True, False):
-        try:
-            packs.append(quantize_w4(w, packed_sf=packed_sf))
-        except Exception as e:
-            print(f"  fp4 pack packed_sf={packed_sf}: unavailable ({e!r})")
-    if not packs:
-        print("!! no fp4 pack could be built -- stock arm impossible")
-        return 2
-
+    shapes = _shapes(cfg, args.tp, args.head)
+    if args.shapes:
+        keep = set(args.shapes.split(","))
+        shapes = [s for s in shapes if s[0] in keep]
     fails = []
 
     def check(cond, msg):
@@ -155,62 +219,104 @@ def main() -> int:
         if not cond:
             fails.append(msg)
 
-    print(f"{'M':>4} {'arm':<16}{'us':>9}{'GB/s':>7}  rel_err")
-    rows = []
+    print(f"{'shape':<18}{'N':>6}{'K':>6}{'M':>3} {'arm':<7}{'us':>8}{'GB/s':>6}"
+          f"  rel_err  (x per step)")
+    per_step = {}  # (m, arm) -> us summed over the step's launches
+    for name, N, K, count in shapes:
+        w_bytes = {"bf16": N * K * 2, "fp8": N * K + (N // 128 + 1) * (K // 128 + 1) * 4,
+                   "fp4": N * K // 2 + N * (K // 16), "mk_w4": None}
+        # cycle enough copies that the SMALLEST arm's bytes overflow L2
+        nw = max(NW_MIN, min(NW_MAX, -(-MIN_STREAM // (N * K // 2))))
+        ws = [(torch.randn(N, K, dtype=torch.float32, device=dev) * 0.02
+               ).to(torch.bfloat16) for _ in range(nw)]
+        fp8 = [fd._quantize_fp8_block_padded(w) for w in ws]
+        fp4 = []
+        for packed_sf in (True, False):
+            try:
+                fp4 = [fd._quantize_w4(w, packed_sf=packed_sf) for w in ws]
+                break
+            except Exception as e:
+                print(f"  fp4 pack packed_sf={packed_sf}: unavailable ({e!r})"[:120])
+        mkp = []
+        if mk_armed:
+            try:
+                mkp = [_mk_chunks(mk, w) for w in ws]
+                w_bytes["mk_w4"] = sum(_pack_bytes(p) for p in mkp[0])
+            except Exception as e:
+                print(f"  mk_w4 pack: unavailable ({e!r})"[:120])
+        for m in args.ms:
+            x = (torch.randn(m, K, device=dev) * 1.5).to(torch.bfloat16)
+            xc = [x[:, c * MK_KMAX:(c + 1) * MK_KMAX].contiguous()
+                  for c in range(-(-K // MK_KMAX))]
+            ref = x.float() @ ws[0].float().t()
+            arms = []
+
+            def a_bf16(i):
+                return torch.nn.functional.linear(x, ws[i])
+
+            def a_fp8(i):
+                q, s, rows, cols = fp8[i]
+                return fd._fp8_dense_gemm(x, q, s, rows, cols)
+
+            def a_fp4(i):
+                return fd._fp8_fp4_dense_gemm(x, fp4[i][0], fp4[i][1])
+
+            def a_mk(i):
+                packs = mkp[i]
+                if len(packs) == 1:
+                    return mk._gemm_call(xc[0], packs[0], N)
+                acc = mk._gemm_call(xc[0], packs[0], N).float()
+                for c in range(1, len(packs)):
+                    acc += mk._gemm_call(xc[c], packs[c], N).float()
+                return acc.to(torch.bfloat16)
+
+            cands = [("bf16", a_bf16)]
+            cands.append(("fp8", a_fp8))
+            if fp4:
+                cands.append(("fp4", a_fp4))
+            if mkp:
+                cands.append(("mk_w4", a_mk))
+            for label, fn in cands:
+                try:
+                    r = _rel(fn(0), ref)
+                except Exception as e:
+                    print(f"{name:<18}{N:>6}{K:>6}{m:>3} {label:<7}{'SKIP':>8}  -- {e!r}"[:118])
+                    continue
+                check(r <= TOL[label], f"{name} M={m} {label} rel_err {r:.2e} <= {TOL[label]}")
+                bit = _launch_bitwise(lambda: fn(0))
+                if not bit:
+                    fails.append(f"{name} M={m} {label} not launch-bitwise")
+                t = _graph_us(fn, nw, args.iters)
+                nb = w_bytes[label] + x.numel() * 2 + m * N * 2
+                chunk = f" [{len(mkp[0])}xK]" if label == "mk_w4" and len(mkp[0]) > 1 else ""
+                print(f"{name:<18}{N:>6}{K:>6}{m:>3} {label:<7}{t:>8.1f}{nb / t / 1e3:>6.0f}"
+                      f"  {r:.2e}  (x{count}){chunk}{'' if bit else ' [LAUNCH DIFFERS!]'}")
+                arms.append((label, t))
+                per_step[(m, label)] = per_step.get((m, label), 0.0) + t * count
+            if name == "lm_head":
+                # not part of the drafter sum: the served head is another lane
+                for label, t in arms:
+                    per_step[(m, label)] -= t * count
+        del ws, fp8, fp4, mkp
+        torch.cuda.empty_cache()
+
+    print(f"\nper-step drafter GEMM sum ({cfg['layers']} layers x (qkv, o, gate_up, "
+          f"down, 2 x kernel_projection) + fc), vs a {args.step_ms:.0f} ms step:")
     for m in args.ms:
-        x = (torch.randn(m, K, device=dev) * 1.5).to(torch.bfloat16)
-        ref = torch.mm(x.float(), ref_w)
-        arms = []
-
-        def arm_stock():
-            return fp8_fp4_gemm(x, packs[0][0], packs[0][1])
-
-        r = _rel(arm_stock(), ref)
-        check(r <= E2M1_TOL, f"M={m} stock fp8xfp4 rel_err {r:.2e} <= {E2M1_TOL} (e2m1)")
-        t = _graph_us(arm_stock, reps=args.iters)
-        nb = N * K // 2 + x.numel() * 2 + m * N * 2
-        bit = _launch_bitwise(arm_stock)
-        print(f"{m:>4} {'stock fp8xfp4':<16}{t:>9.1f}{nb / t / 1e3:>7.0f}  {r:.2e}"
-              f"{' [launch bitwise]' if bit else ' [LAUNCH DIFFERS!]'}")
-        if not bit:
-            fails.append(f"M={m} stock not launch-bitwise")
-        arms.append(("stock fp8xfp4", t, nb))
-
-        for label, fn in (
-                ("bf16 mm", lambda: torch.mm(x, w.t())),
-                ("linear NT", lambda: torch.nn.functional.linear(x, w))):
-            r = _rel(fn(), ref)
-            check(r <= BF16_TOL, f"M={m} {label} rel_err {r:.2e} <= {BF16_TOL} (bf16)")
-            t = _graph_us(fn, reps=args.iters)
-            nb = N * K * 2 + x.numel() * 2 + m * N * 2
-            print(f"{m:>4} {label:<16}{t:>9.1f}{nb / t / 1e3:>7.0f}  {r:.2e}")
-            arms.append((label, t, nb))
-
-        try:
-            p4 = mk.build_mk_weight_w4(w)
-            arm_mk = lambda: mk._gemm_call(x, p4, N)  # noqa: E731
-            r = _rel(arm_mk(), ref)
-            check(r <= E2M1_TOL, f"M={m} mk_w4 rel_err {r:.2e} <= {E2M1_TOL} (e2m1)")
-            t = _graph_us(arm_mk, reps=args.iters)
-            nb = p4[0].numel() + p4[1].numel() + x.numel() * 2 + m * N * 2
-            print(f"{m:>4} {'mk_w4':<16}{t:>9.1f}{nb / t / 1e3:>7.0f}  {r:.2e}")
-            arms.append(("mk_w4", t, nb))
-        except Exception as e:
-            print(f"{m:>4} {'mk_w4':<16}{'SKIP':>9}  -- lane refuses K={K}: {e!r}"[:110])
-
-        name, t, _ = min(arms, key=lambda kv: kv[1])
-        rows.append((m, name, t, arms[0][1]))
-
-    print("\nverdict (stock vs best arm; W4 DRAM bound "
-          f"{N * K // 2 / W4_GBPS / 1e3:.0f} us at {W4_GBPS:.0f} GB/s):")
-    for m, name, t, ts in rows:
-        prize = ts - t
-        tag = (" -- best arm is AT the W4 stream bound; a new split-K kernel "
-               "has nothing left to take"
-               if t <= N * K // 2 / W4_GBPS / 1e3 * 1.05 else "")
-        print(f"  M={m}: stock {ts:.1f} us vs best {name} {t:.1f} us -> "
-              f"{prize:.1f} us = {prize / (args.step_ms * 1000) * 100:.2f}% "
-              f"of a {args.step_ms:.0f} ms step{tag}")
+        base = per_step.get((m, "bf16"))
+        if base is None:
+            continue
+        for label in ("bf16", "fp8", "fp4", "mk_w4"):
+            t = per_step.get((m, label))
+            if t is None:
+                continue
+            prize = base - t
+            print(f"  M={m} {label:<7}{t / 1000:7.2f} ms/step"
+                  + (f"  ({prize / 1000:+.2f} ms = {100 * prize / (args.step_ms * 1000):+.1f}%"
+                     f" of the step vs bf16)" if label != "bf16" else "  (serves today)"))
+    if fails:
+        print("\nFAIL:", *fails, sep="\n  ")
+    print("VERDICT:", "FAIL" if fails else "PASS")
     return 1 if fails else 0
 
 
