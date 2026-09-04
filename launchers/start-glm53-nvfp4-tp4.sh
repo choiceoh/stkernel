@@ -28,7 +28,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
   EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE \
-  PREFILL_WARMUP PREFILL_WARMUP_LENS
+  PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
 IMAGE="${IMAGE:-glm53:v13-b12x}"
@@ -205,6 +205,12 @@ MOE_CUTOVER="${MOE_CUTOVER:-}"
 # staying quiet is not a clean bill of health. Very verbose; diagnostic only.
 GRAPH_DEBUG="${GRAPH_DEBUG:-0}"
 KV_DTYPE="${KV_DTYPE:-fp8_e4m3}"   # auto = bf16, for isolating KV quantization
+# KDA conv-state dtype (the recurrent state is fp32 whatever this says --
+# MambaStateDtypeCalculator.kda_state_dtype). auto = the model dtype, bf16.
+# float32 is what MK_SEG_KDA indexes: with auto its layout gate rejects
+# every layer for the whole boot ("conv state is torch.bfloat16(...)",
+# 28차), so the segment armed and never served. 260 MB/rank at fp32.
+MAMBA_CACHE_DTYPE="${MAMBA_CACHE_DTYPE:-auto}"
 KV_BYTES="${KV_BYTES:-auto}"          # auto = let vLLM profile per node
 # KV cache size in TOKENS, pinned. The engine otherwise takes whatever GMU
 # leaves after weights and activations, which on 2026-09-03 was 2175 blocks =
@@ -578,6 +584,7 @@ $PREFIX_CACHE_FLAG \
 ${EP_FLAG:+$EP_FLAG }\
 $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
+--mamba-cache-dtype $MAMBA_CACHE_DTYPE \
 $ASYNC_FLAG \
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT' \
@@ -591,7 +598,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # deleted backend is otherwise invisible until the boot fails.
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
-  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE KV_TOKENS KV_BLOCKS EAGER GRAPH_CAP GMU MAX_SEQS \
+  for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE MAMBA_CACHE_DTYPE KV_TOKENS KV_BLOCKS EAGER GRAPH_CAP GMU MAX_SEQS \
             MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE \
             DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
