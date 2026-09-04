@@ -55,6 +55,104 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
+## The shared expert's pair: the barrier-free local-quant kernel (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
+
+The decode step's 30-45 us class is the shared expert's gate_up `[1024 x
+4096]` and down `[4096 x 512]` -- two launches in each of the 42 MoE layers
+(the 28차 trace reading counted 86), 3.5 ms, 2.4 ms of it not covered by
+another stream -- 1-2 MB each, i.e. 5-12 us of DRAM at the lane's rate.
+Both are one-unit-per-block launches (32 units on the 48-block grid), and
+serving forks them onto the aux stream beside the routed MoE call of the
+same layer.
+
+`mk_gemm_lq_kernel` (`mk_gemm_phase_t<true>`, a compile-time instantiation
+that carries none of the barrier path) is the lane's kernel for them:
+every block quantizes the A k-blocks of ITS unit straight into smem from x
+in L2 as it stages them (x loaded two k-blocks ahead in a register ring,
+the reduce + convert ahead of the mma, only the smem stores behind the
+barrier), instead of the grid-wide prologue (one k-block per block into
+`g_mk_aq`, a grid barrier, `sxs` from `g_mk_axs`). The three A quantizers
+of the lane -- that prologue, this path, KDA p4 -- share one set of helpers
+(`mk_warp_amax`, `mk_pow2_scale`, `mk_pow2_rcp`, `mk_pack4`), so the bytes
+are the same by construction; the boot self-test runs the exact e2m1
+fixture through BOTH kernels, checks the plan really took the local one,
+and requires the two outputs bitwise equal. It is launched on as many
+blocks as it has units (`mk_lq_launch_grid`), has no grid barrier, and a
+block with nothing to do leaves before the PDL wait. A host/kernel drift on
+the unit rule traps (it must never run the barrier path on a launch sized
+to the units).
+
+What the 29차 probes say (srv2): **standalone it is slower than the global
+kernel** -- the prologue it skips costs ~5 us on the stamps and the in-loop
+quant cost more than that back (the first form +4 us at m=8, +12 at m=32;
+the 32-block v2 form +8 us on the pair; the ring/row-bound form of this
+text is unmeasured). **Under the routed MoE kernel**
+(`probes/mk_gemm_concurrent_probe.py`: one graph, the pair on a forked
+stream beside a U=40 b12x call, 5 back-to-back replays per bracket) the
+global kernel's pair is exposed whole in either issue order (47.4 us a
+layer); the local kernel on 32 blocks is exposed 36.2 (MoE issued first) /
+31.8 (pair first, serving's order). x42 layers that is a *projection* of
+about -0.66 ms/step, not a step number -- the probe's main stream holds
+only the MoE kernel, serving runs the router + topk there first. Whether
+the difference is the missing barrier or the smaller grid is what the
+probe's control row (the global kernel on 32 blocks, its own ticket
+counter) separates -- pending.
+
+Knob: `VLLM_GLM53_MK_LOCALQ` = 0 (default, declared in `profiles/glm53.env`
+so the launcher forwards it) / 1 = the launches the fp8-dense hook marks
+background (`_mk_bg`: `mlp.shared_experts.*` -- by module name, which
+assumes the runner keeps forking the shared expert onto its aux stream) /
+2 = every one-unit-per-block launch (the bench's sweep). The lq launch
+grid and the fewer-blocks control are the bench's only, through
+`set_probe` -- no env surface. `mk_gemm_kernel` stays at 80 registers (one
+kernel with both paths allocated for the union, 128), but its prologue's
+quantizer changed with the shared helpers (SASS 3,360 -> 3,240 lines), so
+the n=6416/4096 control rows are re-measured, not assumed. The
+host's plan (`mk_gemm_plan_for`: `mk_units` <= grid on the phase's own
+`mk_split_ok` gate, the lq kernel's resident grid) decides the kernel and
+the bench's `gemm_plan` prints that same plan. Probes: `--gemm-sweep`
+(local x split, bitwise `same`, replay), `--stamps` (phase stamps of a
+`VLLM_GLM53_MK_PHASE_TS=1` build), the concurrent probe above.
+## The v2 lane: the same GEMM as a non-persistent grid (2026-09-05, 30차)
+
+The persistent kernel is right for a kernel that owns the GPU and wrong
+for one that shares it. The 09-04 armed trace, read per launch position,
+put 5.7 of the lane's 14.1 ms/step on ONE shape: the shared expert's down
+[4096 x 512], 18 us alone and 135 us in the step. Its 48 x 69.6 KB blocks
+cannot share an SM with the routed MoE kernel (90 KB, 48 blocks; the SM
+has 102,400 B), so on the side stream they land one at a time as MoE
+blocks retire and the publish barrier holds every landed block for the
+last one -- which lands when MoE ends. deep_gemm (92 KB, also 1/SM) ran
+the same GEMM inside the MoE tail because its blocks are independent
+(09-01 stock trace: 36 us, all of it under the MoE kernel). On the main
+stream the once-per-launch prologue and the static first-unit assignment
+cost 15-35 us a launch (dense gate_up [6144 x 4096]: 119 us for 62 us of
+bytes -- 48 tiles on 48 blocks, nothing to balance them).
+
+`mk_gemm2_kernel` (`VLLM_GLM53_MK_GEMM2=1`, default off; the persistent
+kernel stays as the kill-switched lane) is the same W4A8 GEMM as grid =
+(n/128) x ksr independent blocks: no grid barrier, no shared A tiles
+(each block quantizes the A k-blocks of its own slice from x in L2 --
+same amax, same pow2 scale, same conversion, so the mma sees the bytes
+the persistent kernel sees), the e2m1 expansion done in registers
+straight into the mma B fragments with the same table lookup (`mk_w4x4`),
+which frees the 32 KB of expanded tiles: **37 KB of smem, two blocks per
+SM** (`__launch_bounds__(256, 2)`). One `__syncthreads` per k-block. ksr
+> 1 slices assign an fp32 partial and the last slice to arrive folds the
+tile in fixed order (deterministic, no zero pass). The slice rule
+(`mk_choose_ksr2`) wants two waves of the resident slots and no slice
+shorter than 4 k-blocks; `VLLM_GLM53_MK_KSR2` forces it for sweeps.
+
+Gates and numbers: the boot self-test's exact-grid gate runs on whichever
+lane the boot serves and the fingerprint names it (`lane v2, in_proj plan
+on/ksr/units/bps=...`). The bench times both lanes side by side
+(`--gemm2 both`: v2's output is bit-identical to the persistent lane's on
+unsplit shapes and differs only by slice summation order on split ones;
+`--ksr2-sweep 1,2,4,6,8`), the exact gate runs on both lanes at five
+slice counts, and `probes/mk_gemm_moe_overlap_probe.py` measures the
+shared-expert pair's exposure under the MoE kernel for both lanes.
+MEASUREMENTS.md 30차 carries the trace analysis and the numbers.
+
 ## What it absorbs (and what it cannot)
 
 The 2026-09-01 step decomposition fixes the budget: C=1 step = 66.0 ms, of
@@ -64,17 +162,27 @@ launches + glue + AR, and the kernel census prices launches at 5.4 us each
 (an upper bound that has been weakening). The megakernel attacks the launch
 and glue component only; the bytes it reads are the same bytes.
 
-| segment | replaces (per step, census counts) | stock | MK |
-|---|---|---|---|
-| `MK_SEG_MHC` | mhc_fused + pre_big_fuse_with_norm | 179 | 45 |
-| `MK_SEG_GEMM` | per_token_group_quant + deepgemm, M<=32 | ~360 | ~180 |
-| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 |
+| segment | replaces (per step, census counts) | stock | MK (planned) | **measured** (09-04 armed trace) |
+|---|---|---|---|---|
+| `MK_SEG_MHC` | mhc_fused + pre_big_fuse_with_norm | 179 | 45 | **89** + 7 stock leftovers · 2.54 -> 2.07 ms |
+| `MK_SEG_GEMM` | per_token_group_quant + deepgemm, M<=32 | ~360 | ~180 | **187** (mk_gemm 185 + 2 lm_heads) · dense GEMM time flat, quant share -1.5 ms |
+| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 | not armed (`MK_SEG_KDA=0`) |
+| `MK_SEG_MLA` | sparse MLA decode (NoPE, fp8 KV) | 22 | 11 | default since 28차 -- decode +1.0%, prefill +15~18% |
 
 Ceiling if all three hold: ~900 launches x 5.4 us = **4.9 ms (7.4% of the
 step)**. The honest expectation is BELOW that (5.4 us is an upper bound,
 and the MK kernels' own phases add barrier cost), which is why adoption is
-bracket-only: **none of these numbers is a measurement** until the EXP
-bracket in RUNBOOK_KERNEL_CAMPAIGN2.md runs. Prefill is untouched in v1
+bracket-only.
+
+**What the armed trace says (2026-09-04, STEP_KERNEL_MAP.md supplement 5).**
+The set removed **304 launches/step** (1,886 -> 1,582) and moved the repo's
+share of the step's kernels from 7.6% to 25.4%. Step time moved in exactly
+two places: MHC (-0.5 ms, two launches folded into one per site) and the
+quantization the GEMM now does inside itself (-1.5 ms). The dense GEMM
+region itself did not move -- 197 deep_gemm launches at 14.06 ms became 185
+mk_gemm launches at 14.13 ms. **Launch count is not the currency; folded
+work is.** The end-to-end verdict stays the ledger's (28차 §8), not this
+README's. Prefill is untouched in v1
 (deepgemm and the big-fuse path stay; M > 32 always falls back). The one
 prefill-side claim that CAN be made from construction: armed decode shapes
 stop JIT-ing TileLang/deepgemm kernels at cold boot, shrinking the 11-41%
@@ -187,6 +295,8 @@ VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
+VLLM_GLM53_MK_LOCALQ=1      # gemm: the local-quant kernel for the shared
+                            # expert's pair (bg), default 0; 2 = all small
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc

@@ -17,7 +17,7 @@ DelegatingParser, 프로토콜 직렬화, tool_choice/response_format, OpenAI·A
 | # | 표면 | 판정 | 조치 |
 |---|---|---|---|
 | 1 | 외부 PR#17 (tool_calls:[] 스트리밍 픽스) | **도입 불필요** | 우리 이미지는 프로토콜 레이어에서 이미 상위 수정 |
-| 2 | 인코딩/래퍼 — 공식 레퍼런스 drift 5건 + 와이어 위생 2건 | **수정·머지됨** | PR #13 (오버레이 4파일+manifest+런처) — **배포 대기** |
+| 2 | 인코딩/래퍼 — 공식 레퍼런스 drift 5건 + 와이어 위생 2건 | **수정·머지됨** | PR #13 (오버레이 4파일+manifest+런처) — ~~배포 대기~~ → **배포됨**(아래 상태 주) |
 | 3 | 리즈닝 체인 (R1/base/DelegatingParser) | 건강 | 잔여 저영향 2건 보류 (§3) |
 | 4 | tool_choice named/required | **미강제 (라이브 실증)** | 개선 대기 — 옵션 3안 (§4) |
 | 5 | response_format (json_object/json_schema/structural_tag) | 문법 배선 정상 | 프롬프트 힌트 훅 미사용은 업스트림 관례 — 보류 |
@@ -61,6 +61,13 @@ DelegatingParser, 프로토콜 직렬화, tool_choice/response_format, OpenAI·A
 7픽스처(plain chat/think, 비툴 멀티턴, effort 미지정, 무system tools 등)는 스톡과
 **바이트 동일** 어서션; 스트리밍 시뮬(인자 재조립·continuation 위생·EOS finalize)
 green. 배포 후 A/B: MEASUREMENTS.md 신규 A/B 큐 3(EFFORT)·4(tools 위치 품질 확인).
+
+> **상태 주 (2026-09-05)**: 이 문서는 2026-08-11 시점의 감사다. 그 뒤 확인된 것 하나 —
+> 2번의 인코딩/래퍼 오버레이는 `dsv4_tokenizer` 모듈로 프로필에 실려 있고 4노드에
+> **배포돼 있다**(srv2 `~/hybrid-stack/overlay-b12x/` 에 `tok_deepseek_v4.py` ·
+> `tok_deepseek_v4_encoding.py` 존재). 나머지 열린 항목(4번 tool_choice 등)의 상태는
+> 재확인하지 않았다 — 판정을 갱신하려면 이 문서의 하네스를 다시 돌려야 하고, 그
+> 결과는 원장에 들어간다.
 
 ## 3. 리즈닝 체인 — 건강, 잔여 저영향 2건 보류
 
