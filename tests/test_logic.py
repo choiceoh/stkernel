@@ -9299,6 +9299,32 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
     check('ct_check_overlay_target "$target" "${TARGET_PREFIX:-' in lanes["start-glm53-nvfp4-tp4.sh"],
           "glm53 derives its root from the profile's TARGET_PREFIX")
 
+    # profile-declared VLLM_* values ride an UNQUOTED expansion into docker:
+    #   ENVV="$ENVV -e $_k=${!_k}" ... docker run $COMMON $ENVV ...
+    # The word splitting is what makes separate -e arguments, so the mechanism
+    # cannot carry whitespace. Reproduced with VLLM_A={"x":"a b"}: the value is
+    # truncated at the space AND the remainder becomes a stray docker argument.
+    # hy4 already refuses whitespace in COMPILE_CFG for this exact reason; the
+    # general mechanism with the same shape had no guard on either lane.
+    check("ct_check_profile_env_values()" in lib,
+          "profile values must be validated where the profile is loaded")
+    check("ct_check_profile_env_values" in lib[:lib.index("ct_check_profile_env_values()")],
+          "ct_load_profile must CALL it, not merely define it -- a validator "
+          "nothing invokes is the silence it was written to remove")
+    vfn = lib[lib.index("ct_check_profile_env_values()"):]
+    check("*[[:space:]]*)" in vfn,
+          "whitespace is the condition that breaks the -e mechanism")
+    # empty is NOT an error: glm53's profile declares six knobs as "" to
+    # document that they exist while leaving them unset, and warning on each
+    # would fire six times per healthy boot.
+    check("WARNING" not in vfn,
+          "an empty declaration is an idiom here, not a fault -- glm53 uses it "
+          "six times, so flagging it would train the operator to ignore output")
+    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(len(re.findall(r'^VLLM_[A-Z0-9_]+=""$', prof, re.M)) >= 5,
+          "that idiom is real and load-bearing -- if it stops being used, the "
+          "no-warning decision above should be revisited")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
