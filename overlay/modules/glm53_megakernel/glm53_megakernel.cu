@@ -1962,6 +1962,7 @@ struct MKSmlpArgs {
   unsigned long long* barrier_ctr;
   int T, k_gu, n_gu_pad, n_gu, n_int, n_out_pad, n_out;
   int grid, ksr_gu, ksr_d;
+  int warm_l2;                 // bench knob: warm phase C's first W records in L2 during phase B
   float limit, alpha, beta;    // clamp(gate, max=limit) * sigmoid(alpha*gate) * (clamp(up, +-limit) + beta)
 };
 
@@ -2029,12 +2030,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a)
       if (lane == 0) g_mk_axs[t * KBLK_MAX + kb] = sc;
     }
   }
-  {  // Warm phase C's first W records in L2 while the grid drains into
-     // the second barrier: the down pack does not depend on the activation,
-     // and the block's first unit is static (unit = blockIdx.x -> tile
-     // blockIdx.x, k-blocks from 0), so the lines it will cp.async first
-     // are known here. 9 KB per (tile, k-block) record, up to the pipeline
-     // depth of them; 128 B per prefetch, one line per thread per pass.
+  if (a.warm_l2) {
+     // Bench knob (VLLM_GLM53_MK_SMLP_L2WARM, off by default): warm phase
+     // C's first W records in L2 while the grid drains into the second
+     // barrier. The down pack does not depend on the activation, and the
+     // block's first unit is static when the phase is unsplit (unit =
+     // blockIdx.x -> tile blockIdx.x, k-blocks from 0), so the lines it will
+     // cp.async first are known here. Unmeasured: kda's delta phase lost
+     // net to the same idea (an L2 warm from idle blocks queued a latency
+     // chain behind it, 10차); here nothing latency-bound runs alongside,
+     // but the bench decides, not the argument.
     const int kblk_d = a.n_int / KSTEP;
     const int nblk_d = a.n_out_pad / SMEM_W_ROWS;
     if ((int)blockIdx.x < nblk_d) {
@@ -2709,6 +2714,9 @@ void mk_run_smlp(std::vector<int64_t> ptrs, std::vector<double> scalars,
     }
     if (f_gu > 0) a.ksr_gu = f_gu;
     if (f_d > 0) a.ksr_d = f_d;
+    static int f_warm = -1;
+    if (f_warm < 0) { const char* e = getenv("VLLM_GLM53_MK_SMLP_L2WARM"); f_warm = e ? atoi(e) : 0; }
+    a.warm_l2 = f_warm > 0 ? 1 : 0;
   }
   mk_launch(mk_smlp_kernel, a.grid, GEMM_SMEM, stream, a);
 }

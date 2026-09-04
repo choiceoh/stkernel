@@ -8484,11 +8484,16 @@ def test_glm53_megakernel_contracts() -> None:
     # -- kda: the split-K model keeps >= 8 k-blocks per slice (warming L2
     #    with the o_proj pack from the idle blocks measured a net loss:
     #    p5 -5.6 us, p3 +12)
-    check("prefetch.global.L2" not in cu
+    _smlp_k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
+    check("prefetch.global.L2" not in _kda_k
+          and cu.count("prefetch.global.L2") == _smlp_k.count("prefetch.global.L2")
+          and "if (a.warm_l2) {" in _smlp_k
+          and 'getenv("VLLM_GLM53_MK_SMLP_L2WARM")' in cu
           and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
           and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
           "split-K never makes slices shorter than 8 k-blocks; no L2 "
-          "prefetch under the delta rule (net loss)")
+          "prefetch under the delta rule (net loss) -- the fused MLP's warm "
+          "of its down pack is a bench knob, off by default")
     # -- kda gates: a tensor-core GEMM (cp.async weight tiles, bf16 mma)
     check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
           and "constexpr int GT_TILES = 2 * KDA_OUT / GT_ROWS;" in cu
