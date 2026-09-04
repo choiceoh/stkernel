@@ -1869,6 +1869,78 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★★★29차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
+
+운영자 "2~7"(28차 목록의 EXP-7·PDL/AR/early-fc·MK-KDA·AR 융합·union 프리필·nvfp4 프리필). 프로덕션 기본값
+(MK 세트 + MLA + W4 드래프터) 위에 팔 하나씩 부팅하는 체인(`ab-lever.sh`, 기록 `bracket-lever.jsonl`)으로
+돌렸다. 기준 = 28차 mla 팔 **16.39 step/s** [16.02, 16.64].
+
+### 1. 판정표
+
+| 팔 | 노브 | step/s (6회 중앙값) | 23K 프리필 cold/warm | 게이트 | 판정 |
+|---|---|---|---|---|---|
+| PREPSHADOW | `PREP_FUSED=shadow` (C=1 짧게) | 14.9 (섀도는 두 경로 실행) | 2,724 / 2,726 | fused 624 스텝 drift=0, preimage 17 ok | 섀도 통과 |
+| PDL | (기본값 = PR #290 의 `MK_PDL=1`) | 오염 (§3) | 오염 | — | PDLCLEAN 재측정 |
+| **PREP** | `PREP_FUSED=1 SPLITK=1` | **17.59** [16.90, 17.87] | 2,711 / 2,710 | 품질 9/9, pos-1 76.4%, **한국어 레그 HTTP 500** | 디코드 +7.3% 이나 **불합격** — 원인 분리(PREP2/3) |
+| ARPF | `AR_PREFETCH=1 EARLY_FC=1` | 16.44 [rep1 9.1 = 첫 요청 JIT] | 2,499 / 2,675 | 9/9 | **0** — 기본 off 유지 |
+| KDASHADOW | `MK_KDA=1 KDA_SHADOW=1` | 16.27 (2회) | 2,726 / 2,726 | **레이아웃 게이트가 전 층 거부** (§4) | 서빙 불가 → KDA32 |
+| UNIONSHADOW | `UNION_PREFILL=2 +SHADOW` | 16.1 (2회) | 2,608 / 2,536 | 검증 커널 Triton 컴파일 오류 (§5) | 검증 불가 |
+| UNION | `UNION_PREFILL=2` | 16.24 | **2,474 / 2,492 (−9%)** | 9/9, 한국어 1/16 | **불합격** |
+| NVFP4P | `FP8_DENSE_PREFILL_NVFP4=1` | (기입 대기) | (기입 대기) | | |
+| PDLCLEAN | (기본값, 조용한 srv4) | (기입 대기) | | | |
+| PREP2 / PREP3 | `PREP_FUSED=1` / `SPLITK=1` | (기입 대기) | | | |
+| KDA32SHADOW / KDA32 | `MAMBA_CACHE_DTYPE=float32 MK_KDA=1` | (기입 대기) | | | |
+
+### 2. EXP-7 의 이득은 진짜였다 — 그리고 C=2 에서 500
+
+프리필 사다리는 그대로이고 C=1 스텝만 61.0 → 56.9 ms. 호스트 준비 유휴(9월 1일 트레이스 12%)가
+표적이었고 실측 −4.1 ms 가 그 크기다. 한국어 레그(`korean-corruption.py 2 400`, C=2)에서 서버가 500 을
+냈고 그 부팅의 로그는 다음 부팅에 덮여 원인이 남지 않았다(레그 스크립트가 실패 시 4노드 로그를 스냅샷
+하고 ABORT 하도록 고쳤다). prep-fused 는 "균일 spec-verify + FULL 그래프 + 패딩 없음"에서만 fused 이고
+C=2 는 stock 으로 떨어져야 하므로, 용의자는 그 폴백 경계이거나 같은 부팅에 얹은 split-K(M≤16 라우팅,
+C=2 = M 16)다. PREP2(fused 만)·PREP3(split-K 만)이 가른다.
+
+### 3. 측정 위생 — srv4 는 rank 3 이다
+
+PDL 팔 디코드 rep 2~5 가 9.1~12.0 step/s 로 떨어졌고 rank 0 의 AR 대기가 53 → 890~950 µs/collective 로
+뛰었다. 같은 시각 나는 srv4 에서 테스트 스위트(단일 코어 45 s)를 돌리고 있었다 — srv4 는 TP rank 3 노드다.
+워커의 스텝당 호스트 작업이 밀리면 매 AR 마다 ~0.9 ms 늦게 도착하고 네 랭크가 같이 기다린다. 이후
+레그 중에는 가벼운 폴링만 했고 무거운 일은 부팅 창에서 `nice -n 19 taskset` 으로 돌렸다. PDL 팔의
+프리필(1,395 tok/s)도 같은 시각 srv2 에서 돌린 트레이스 분석이 오염시켰다. → PDLCLEAN 재측정.
+
+### 4. MK-KDA 가 서빙에서 한 번도 안 돈 다섯 번째 이유 — conv 상태 dtype
+
+`armed={'kda': True} shadow_kda=True` 뒤에 `kda layout gate: conv state is torch.bfloat16(1056, 6144, 10),
+not float32 (blocks, 6144, W) -- the layer stays stock`. vLLM 의 `mamba_cache_dtype=auto` 는 conv 상태를
+모델 dtype(bf16)으로 잡고(순환 상태는 `kda_state_dtype` 이 항상 fp32), 커널은 fp32 를 인덱싱한다. 부팅
+자가진단은 fp32 픽스처라 통과("delta variant 1 matches stock") — 22차와 같은 형태의 함정이다. 런처에
+`MAMBA_CACHE_DTYPE`(프로필 선언, 기본 auto) 을 넣어 `--mamba-cache-dtype float32`(260 MB/rank)로 띄우면
+게이트가 통과할 수 있다(PR #299) — KDA32SHADOW → KDA32 가 그 부팅이다. 커널을 bf16 conv 상태로 포팅하는
+것은 그 다음 선택지.
+
+### 5. union 프리필 — 느리고 검증 불가
+
+섀도의 검증 커널(`glm53_union_prefill.py:126` `tl.range`)이 이미지의 Triton 3.7.1 에서 컴파일 오류를 내
+"exact" 주장이 여전히 검증되지 않았고, 무장 팔의 23K 프리필은 2,474 tok/s 로 기본값(2,700)보다 9% 느렸다.
+불합격, 기본 0 유지. 모듈 소유 세션의 수정 항목.
+
+### 6. AR 편차 귀속 — 고정 지각 랭크는 없다 (레버 5 대체)
+
+랭크별 phase 리포트(PR #297): 정상 디코드 창에서 네 랭크의 wait 가 48~51 µs 로 대칭(스프레드 2.9 µs ×
+102 = 0.3 ms). rank 1 의 22.7 µs 는 부팅 구간 값이었다. 랭크별 커널 시간(같은 캡처 4 랭크): MoE 761~773 µs,
+mk_gemm 56.7~59.3 µs — 3% 이내. AR 5.4 ms/스텝은 프로토콜 왕복(p10 22.6 µs)과 무작위 지터이지 노드 불균형이
+아니다. 레버 5(융합)와 5′(편차)는 닫는다; 남는 것은 전송 계층(호스트 등록 RDMA 프록시) 뿐이다.
+
+### 7. MK 세부 커널 — 남은 표적은 소형 GEMM 의 고정비
+
+디코드 트레이스의 `mk_gemm` 30~45 µs 급이 스텝당 86.7개·3.47 ms, 그중 **2.37 ms 가 다른 스트림에 덮이지
+않는 임계경로**(스트림 17/210 반반). 형상은 공유 전문가 gate_up [1024×4096]·down [4096×512](각 1 MB 팩)
+— 1 MB 를 230 GB/s 로 읽으면 4.5 µs 인데 발사가 40 µs 니 **발사당 ~25 µs 가 고정비**다. 비용 모델은
+k-블록 ≤ 8 형상의 split 을 거부하고(`mk_choose_ksr`, "8 k-블록 미만 슬라이스는 파이프라인이 안 뜬다"는
+k=2048 실측 규칙) 32 타일을 48 블록에 놓아 16개가 논다. 벤치에 그 형상을 넣고 split 강제 노브
+(`VLLM_GLM53_MK_KSR`)를 붙였다(PR #298); 부팅 핑거프린트가 [N×K]×count 를 찍는다. 벤치는 플릿이 빌 때.
+후보 순서: split r=2 강제 → 2 CTA/SM → 공유 전문가 3연산(gate_up·act·down) 단일 발사.
+
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 
 운영자 "glm flash 커널개선작업" → 25차 승인분 드래프터 W4 브래킷을 26차 수정 위에서 완주시키는 날이었다.
