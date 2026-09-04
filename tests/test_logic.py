@@ -6627,9 +6627,8 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     fallback = nv.index("if not armed_nv:")
     # the call sites go through `attach_mk`, which is _attach_mk_pack or,
     # under the "w8" scheme (fp8 pair only), a no-op -- one axis per boot
-    check("attach_mk = _attach_mk_pack if raw not in" in body
-          and "lambda method, weight, cols: False" in body,
-          "attach_mk is the helper or the w8 no-op, bound once per pass")
+    check("attach_mk = _attach_mk_pack\n" in body,
+          "attach_mk is the helper, bound once per pass")
     check("attach_mk(" not in nv[:fallback] and "_attach_mk_pack(" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
@@ -6714,6 +6713,219 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     print("  kda owns its projections ...... OK")
 
 
+def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
+    """28차: the MLA split scratch never moves under a captured graph.
+
+    _mla_workspace used to grow on demand -- cap = max(need, 2*MAX_TOK),
+    re-allocated (old tensors freed) when a larger call came. A captured
+    decode graph bakes the address, and v5 routes prefill rows through the
+    same entry point: the first request of a boot (37-token prompt, 48
+    splits, 1,776 rows) freed the scratch under every decode graph, whose
+    partials then landed in whatever the allocator handed out next -- two
+    serving deaths. Now the scratch is one fixed allocation of MLA_WS_ROWS
+    and mla_splits() never asks for more: the decode shapes keep their
+    measured splits, rows the rule would split 48 ways take the direct path.
+    """
+    import sys
+    import types
+
+    class _Zeros:
+        def __init__(self, n):
+            self.n = n
+
+    torch_stub = types.ModuleType("torch")
+    torch_stub.float32 = "f32"
+    torch_stub.zeros = lambda n, dtype=None, device=None: _Zeros(n)
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    old_forced = os.environ.pop("VLLM_GLM53_MK_MLA_SPLITS", None)
+    try:
+        ns = load_defs(
+            "overlay/glm53_megakernel.py",
+            {"MLA_H", "MLA_D", "MLA_SPLITS_MAX", "MLA_MAX_SPLIT_ROWS",
+             "MLA_WS_ROWS", "_MLA_WS", "_mla_workspace", "mla_splits"},
+            {"os": os, "_EXT": types.SimpleNamespace(mla_grid=lambda: 48)},
+        )
+        splits, rows = ns["mla_splits"], ns["MLA_WS_ROWS"]
+        assert rows == 3 * ns["MLA_MAX_SPLIT_ROWS"] == 192
+        # the measured decode rule is untouched
+        for T, want in ((8, 6), (16, 3), (24, 2), (32, 3), (64, 3)):
+            assert splits(T) == want, (T, splits(T))
+        # every split-eligible T fits the fixed scratch
+        for T in range(1, ns["MLA_MAX_SPLIT_ROWS"] + 1):
+            s_ = splits(T)
+            assert 1 <= s_ <= ns["MLA_SPLITS_MAX"] and T * s_ <= rows, (T, s_)
+        # the rows the old rule split 48 ways now take the direct path
+        assert splits(37) == 1 and splits(40) == 1 and splits(56) == 1
+        assert splits(65) == 1 and splits(8192) == 1 and splits(0) == 1
+        # the probe knob is clamped to the budget too
+        os.environ["VLLM_GLM53_MK_MLA_SPLITS"] = "64"
+        assert splits(8) == 24 and splits(64) == 3
+        os.environ.pop("VLLM_GLM53_MK_MLA_SPLITS")
+        # one allocation, held for good: same object back, never re-sized
+        ws = ns["_mla_workspace"]
+        w1 = ws("cuda", 8, 6)
+        assert w1["cap"] == rows
+        assert w1["part"].n == rows * ns["MLA_H"] * ns["MLA_D"]
+        assert w1["pml"].n == rows * ns["MLA_H"] * 2
+        w2 = ws("cuda", 64, 3)
+        assert w2 is w1 and w2["part"] is w1["part"]
+        try:
+            ws("cuda", 37, 48)
+        except RuntimeError as e:
+            assert "1776" in str(e)
+        else:
+            raise AssertionError("an over-budget call must raise, not re-allocate")
+        assert ns["_mla_workspace"]("cuda", 8, 6) is w1
+    finally:
+        if saved is None:
+            sys.modules.pop("torch", None)
+        else:
+            sys.modules["torch"] = saved
+        if old_forced is not None:
+            os.environ["VLLM_GLM53_MK_MLA_SPLITS"] = old_forced
+    # mla_decode refuses a split plan the scratch cannot hold, and the boot
+    # self-test now covers the direct path (40 and 100 rows) too
+    src = open("overlay/modules/glm53_megakernel/glm53_megakernel.py",
+               encoding="utf-8").read()
+    assert "assert splits == 1 or T * splits <= MLA_WS_ROWS" in src
+    assert "(40, 2048, True), (100, 2048, True)" in src
+    # the serving shadow judges real rows, not the empty-KV dummy
+    wsrc = open("overlay/modules/glm53_mk_mla_wiring/flashinfer_mla_sparse_sm90.py",
+                encoding="utf-8").read()
+    body = wsrc[wsrc.index("def _mk_mla_run("):wsrc.index("class FlashInferMLASparseSM90Impl")]
+    assert "rows = int(valid_counts.max().item())" in body
+    assert "rows >= _MK_MLA_SHADOW_MIN_ROWS" in body
+    assert "den < _MK_MLA_SHADOW_MIN_NORM" in body and "inconclusive" in body
+    assert "SHADOW FAIL" in body and 'm._ARMED["mla"] = False' in body
+    assert "q_nope.shape[0] <= 64" not in body
+
+
+def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
+    """28차: the drafter knob is a compile-cache factor and serving is proven.
+
+    vLLM keys torch.compile / AOT artifacts on the env vars registered in
+    vllm.envs, the config and the forward's source -- never on a quant_method
+    swapped in after load -- and loads them with guards off. Every boot with
+    VLLM_DFLASH2_FP8_DENSE=1 served the 09-03 bf16 drafter graph while the
+    fingerprint said 31 linears armed; the bracket measured the eager fc
+    alone. Two pieces close that: the knob registers itself into
+    vllm.envs.environment_variables (compile_factors() hashes every entry),
+    and the loader wraps the drafter's forward to count opaque-op calls,
+    reporting NOT SERVING when a Python-running forward makes fewer than
+    half the expected calls. CUDA-graph replays run no Python and are not
+    judged; a forward under stream capture is definitive.
+    """
+    import sys
+    import types
+
+    msgs = []
+
+    class _Log:
+        def warning(self, fmt, *a):
+            msgs.append(fmt % a if a else fmt)
+
+    ns = load_defs(
+        "overlay/glm53_fp8_dense.py",
+        {"_DRAFTER_ENV", "_DRAFTER_OFF", "_drafter_knob_value",
+         "_register_compile_factor", "_OPAQUE_CALLS", "_stream_capturing",
+         "install_drafter_serving_check"},
+        {"os": os, "re": re, "torch": None, "logger": _Log()},
+    )
+    env = ns["_DRAFTER_ENV"]
+    # -- factor registration against a stub vllm.envs
+    saved = {k: sys.modules.get(k) for k in ("vllm", "vllm.envs")}
+    envs = types.ModuleType("vllm.envs")
+    envs.environment_variables = {}
+    pkg = types.ModuleType("vllm")
+    pkg.envs = envs
+    sys.modules["vllm"], sys.modules["vllm.envs"] = pkg, envs
+    old = os.environ.pop(env, None)
+    try:
+        reg = ns["_register_compile_factor"]
+        assert reg(env, ns["_drafter_knob_value"])
+        assert reg(env, ns["_drafter_knob_value"])  # idempotent
+        assert list(envs.environment_variables) == [env]
+        getter = envs.environment_variables[env]
+        assert getter() == "0"  # unset hashes like off
+        for raw, want in (("1", "1"), ("w8", "w8"), ("off", "0"), ("", "0"),
+                          (" W8 ", "w8"), ("false", "0")):
+            os.environ[env] = raw
+            assert getter() == want, (raw, getter())
+    finally:
+        if old is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = old
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    # -- the serving proof
+    class Drafter:
+        def __init__(self, calls):
+            self.calls = calls
+
+        def forward(self, *a, **k):
+            ns["_OPAQUE_CALLS"] += self.calls
+            return "out"
+
+    install = ns["install_drafter_serving_check"]
+    # serving: 30 of 31 per forward (fc runs outside forward) -> reported
+    # after the window, wrapper gone
+    m = Drafter(30)
+    install(m, 31, forwards=3)
+    assert "forward" in m.__dict__
+    for _ in range(3):
+        assert m.forward() == "out"
+    assert "forward" not in m.__dict__
+    assert any("serving: 30 of 31" in x for x in msgs), msgs
+    assert m.forward() == "out"
+    # replays (0 calls, no capture) are not judged; a captured forward is,
+    # and a stale graph is loud
+    msgs.clear()
+    m = Drafter(0)
+    install(m, 31, forwards=8)
+    for _ in range(3):
+        m.forward()
+    assert not msgs and "forward" in m.__dict__
+    ns["_stream_capturing"] = lambda: True
+    m.forward()
+    assert any("NOT SERVING: 0 of 31" in x for x in msgs), msgs
+    assert "forward" not in m.__dict__
+    ns["_stream_capturing"] = lambda: False
+    # the eager fc alone (1 of 31) is what 28차 served: judged and loud at once
+    msgs.clear()
+    m = Drafter(1)
+    install(m, 31, forwards=8)
+    m.forward()
+    assert any("NOT SERVING: 1 of 31" in x for x in msgs), msgs
+    # never a Python-running forward in the window -> unknown, not a pass
+    msgs.clear()
+    m = Drafter(0)
+    install(m, 31, forwards=2)
+    m.forward()
+    m.forward()
+    assert any("SERVING UNKNOWN" in x for x in msgs), msgs
+    # nothing armed installs nothing
+    m = Drafter(5)
+    install(m, 0)
+    assert "forward" not in m.__dict__
+    # the loader wires the proof behind a True pass, counting opaque methods
+    src = open("overlay/modules/glm53_dflash_loader_fp8/dflash_utils.py",
+               encoding="utf-8").read()
+    assert "if maybe_build_fp8_dense(dflash_model, env=\"VLLM_DFLASH2_FP8_DENSE\"):" in src
+    assert "install_drafter_serving_check(dflash_model, n_opaque)" in src
+    # and the op body counts itself
+    fsrc = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py",
+                encoding="utf-8").read()
+    body = fsrc[fsrc.index("def _mk_or_fp8_dense_gemm("):]
+    body = body[:body.index("\ntry:")]
+    assert "global _OPAQUE_CALLS" in body and "_OPAQUE_CALLS += 1" in body
+    assert "_register_compile_factor(_DRAFTER_ENV, _drafter_knob_value)" in fsrc
+
+
 def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     """The DFlash2 drafter's dense GEMMs under VLLM_DFLASH2_FP8_DENSE.
 
@@ -6767,8 +6979,10 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
           "the build pass selects its pattern set by the knob it runs under")
     check("method._opaque = env == _DRAFTER_ENV" in body,
           "drafter methods are marked opaque: the drafter forward is compiled")
-    check('raw not in ("w8", "fp8", "w8a8")' in body,
-          "w8 = the fp8 pair and nothing lower -- one numerics axis per boot")
+    check("attach_mk = _attach_mk_pack\n" in body and '"w8"' not in body,
+          "one lane below fp8: no fp8-only arm to remember (operator rule "
+          "2026-09-04 -- a proven improvement is the default, the other side "
+          "goes)")
 
     # the opaque op: one custom op that decides MK-or-fp8 at run time
     check('"glm53_fp8_dense::gemm_mk_or_fp8"' in src
@@ -6815,10 +7029,10 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     chk = open(os.path.join(REPO, "probes", "drafter_dense_path_check.py"),
                encoding="utf-8").read()
     check("fullgraph=True" in chk and "dynamic=True" in chk
-          and "torch.cuda.graph(" in chk and 'os.environ[DRAFTER_ENV] = "w8"' in chk
+          and "torch.cuda.graph(" in chk and 'os.environ[DRAFTER_ENV] = "w8"' not in chk
           and "gemm_w4a8(x, q._mk, q._rows)" in chk,
-          "the path probe gates compile (fullgraph, dynamic), capture, the "
-          "lane serving bitwise, and the w8 arm")
+          "the path probe gates compile (fullgraph, dynamic), capture, and "
+          "the lane serving bitwise")
     print("  fp8-dense drafter patterns + opaque op .. OK")
 
 
@@ -7861,9 +8075,10 @@ def test_glm53_megakernel_contracts() -> None:
     # -- MK_SEG_MLA: correct-but-not-adopted sparse MLA decode. The contract
     #    that matters is that nothing routes to it and the pipeline keeps a
     #    fixed in-flight group count (a short row read stale smem without it).
-    check("VLLM_GLM53_MK_MLA=0" in open(os.path.join(REPO, "profiles/glm53.env"),
+    check("VLLM_GLM53_MK_MLA=1" in open(os.path.join(REPO, "profiles/glm53.env"),
                                         encoding="utf-8").read(),
-          "profile ships MK_SEG_MLA off")
+          "profile ships MK_SEG_MLA on within the megakernel set (28차: bracket "
+          "passed twice with the fixed scratch; the master gate still decides)")
     check(cu.count("else mk_cp_commit();") >= 2
           and "for (int ti = 0; ti < MLA_NSTAGE - 1; ++ti) {" in cu,
           "mla: empty commits keep cp.async groups aligned with wait_group, "
@@ -7899,9 +8114,12 @@ def test_glm53_megakernel_contracts() -> None:
           "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
     check("num_tokens > _MK_MLA_MAX_T" in wsrc and "_MK_MLA_MAX_T = 1 << 20" in wsrc,
           "mk_mla_wiring routes decode AND prefill (v5: splits==1 needs no scratch)")
-    check("q_nope.shape[0] <= 64" in wsrc,
-          "the one-shot wrapper shadow stays on a decode-sized call (a prefill "
-          "shadow would allocate a second 134 MB output)")
+    check("q_nope.shape[0] <= _MK_MLA_SHADOW_MAX_T" in wsrc
+          and "_MK_MLA_SHADOW_MAX_T = 4096" in wsrc
+          and "rows >= _MK_MLA_SHADOW_MIN_ROWS" in wsrc,
+          "the one-shot wrapper shadow judges the first eager call whose rows "
+          "read real KV (a prefill chunk of <= 4096 rows: a 64 MB transient "
+          "output once), not the empty-KV dummy that passed with rel=0 (28차)")
     check("if T > MLA_MAX_SPLIT_ROWS:" in pysrc_full and "return 1" in pysrc_full,
           "prefill row counts take splits == 1 (a [T][splits][H][D] fp32 scratch "
           "would be 268 MB at T=8192)")
@@ -7915,15 +8133,17 @@ def test_glm53_megakernel_contracts() -> None:
           "the MK branch precedes the wrapper tail in forward_mqa")
     check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
           "the builder still plans every step (prefill and T>32 use the wrapper)")
-    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
-          and "is_current_stream_capturing()" in wsrc,
-          "one-shot shadow vs the wrapper on the first EAGER call; drift or non-finite output DISARMs")
+    check('m._ARMED["mla"] = False' in wsrc and "num / den > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "is_current_stream_capturing()" in wsrc and "SHADOW FAIL" in wsrc,
+          "one-shot shadow vs the wrapper on the first EAGER call with real rows; drift or non-finite output DISARMs, loudly")
     check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
           "mk_mla_wiring requires the megakernel module")
     check("glm53_megakernel glm53_mk_mla_wiring" in open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(),
           "profile mounts the wiring right after the megakernel")
-    check("for s in range(1, MLA_SPLITS_MAX + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full,
-          "mla split policy: smallest s with T*s a multiple of the resident grid (measured)")
+    check("for s in range(1, budget + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full
+          and "budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))" in pysrc_full,
+          "mla split policy: smallest s with T*s a multiple of the resident grid (measured), "
+          "bounded by the fixed scratch (T*s <= MLA_WS_ROWS; 28차)")
     print("  glm53 megakernel contracts .. OK")
 
 
@@ -8022,7 +8242,7 @@ def test_megakernel_core_is_shared() -> None:
 
     for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
                  "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA",
-                 "VLLM_GLM53_MK_MLA"):
+                 ):
         check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
               f"glm53 must ship {knob}=0 -- adoption is bracket-only")
 
@@ -9597,6 +9817,8 @@ if __name__ == "__main__":
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()
     test_fp8_dense_drafter_patterns_and_opaque_op()
+    test_fp8_dense_drafter_compile_factor_and_serving_proof()
+    test_mk_mla_workspace_is_fixed_and_splits_bounded()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()

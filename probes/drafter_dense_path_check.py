@@ -22,7 +22,6 @@ Gates:
   compile   torch.compile(fullgraph=True) and dynamic=True of a function
             calling apply(): no graph break, output == eager bitwise
   capture   CUDA-graph replay == eager bitwise
-  w8        VLLM_DFLASH2_FP8_DENSE=w8: no pack attached, fp8 pair serves
 
 Run inside the glm53 image with the composed overlays mounted (the
 megakernel bench runner does exactly that):
@@ -253,18 +252,6 @@ def main() -> int:
     except Exception as e:
         check(False, f"CUDA-graph capture raised: {e!r}"[:200])
 
-    # --- w8: fp8 pair only, no pack
-    os.environ[DRAFTER_ENV] = "w8"
-    model8 = Drafter(base)
-    fd.maybe_build_fp8_dense(model8, env=DRAFTER_ENV)
-    meth8 = [(n, m.quant_method) for n, m in _linears(model8)]
-    check(all(isinstance(q, fd.Fp8DenseMethod) and q._mk is None for _, q in meth8),
-          "w8: every drafter linear is fp8 with NO MK pack")
-    n, mod = _linears(model8)[0]
-    q = mod.quant_method
-    x = (torch.randn(8, mod.weight.shape[1], device="cuda") * 1.5).to(torch.bfloat16)
-    check(torch.equal(q.apply(mod, x), fd._fp8_dense_gemm(x, q._q, q._ws, q._rows, q._cols)),
-          "w8: apply() is the fp8 pair bitwise")
     os.environ[DRAFTER_ENV] = "0"
 
     if fails:

@@ -66,12 +66,34 @@ Two things are different about the drafter:
   carries one pack per K-chunk (`build_mk_weight_w4_kchunks`) and `gemm_w4a8`
   runs five launches summed in fp32 — 301 µs against 682 bf16 / 489 fp8.
 
-Values: `1` = fp8 pair + MK W4 packs (W4 numerics when MK-GEMM is armed);
-`w8` = fp8 pair only, never a pack — one numerics axis per boot. Offline gate:
-`probes/drafter_dense_path_check.py` (build → lane serves bitwise → fullgraph
-and dynamic compile → CUDA-graph capture → w8). Adoption gate: acceptance
-(pos-1 within 2 pct of the same-boot control) with prefill measured in the
-same boot; rollback = the env. The drafter's bf16 sources are NOT released
-(+~0.57 GB/rank over today): `_build_fused_kv_buffers` copies the k/v halves
-of `qkv_proj.weight` at load, so a release looks safe, but it is a separate
-change with its own boot.
+**Default on since 2026-09-04 (28차).** The bracket (same image, MK-MLA off
+on both arms, W4 drafter actually served -- see below): C=1 step/s 15.95 →
+16.235 (+1.8%, six reps each), pos-1 acceptance 64.5% vs 61.6%, quality 9/9,
+Korean 0/16, prefill unchanged (2,300 tok/s at 23K both arms). The fp8-only
+`w8` arm is gone: the operator's rule is that a proven improvement becomes
+the default and the other side is removed, not kept as a second setting.
+Offline gate: `probes/drafter_dense_path_check.py` (build → lane serves
+bitwise → fullgraph and dynamic compile → CUDA-graph capture). Rollback =
+`VLLM_DFLASH2_FP8_DENSE=0`.
+
+**Armed is not served -- the compile cache.** vLLM keys its torch.compile
+cache, and under `VLLM_USE_AOT_COMPILE=1` the whole AOT artifact, on the env
+vars registered in `vllm.envs`, the vllm config and the forward's source,
+then loads it with guard checks off. A `quant_method` swapped in after load
+is no part of that key, so every boot with the knob on served the drafter
+from the artifact of the first boot that ever compiled it (09-03: bf16
+`F.linear` on all 30 layer projections) while the fingerprint reported 31
+linears armed; only the eager fc reached the lane, and the first bracket
+measured exactly nothing. Two pieces close that: the knob registers itself
+into `vllm.envs.environment_variables` (`_register_compile_factor`, so each
+value is its own artifact), and `install_drafter_serving_check` counts
+opaque-op calls over the drafter's first forwards and writes the verdict
+into the boot log -- `[fp8-dense] drafter lane serving: 30 of 31 opaque GEMM
+calls per forward` (the fc runs outside the compiled forward) or
+`drafter lane NOT SERVING`. A CUDA-graph replay runs no Python and is not
+judged; a forward under stream capture is definitive.
+
+The drafter's bf16 sources are NOT released (+~0.57 GB/rank):
+`_build_fused_kv_buffers` copies the k/v halves of `qkv_proj.weight` at
+load, so a release looks safe, but it is a separate change with its own
+boot.

@@ -50,10 +50,23 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
     # out on its own knob.
     try:
         from vllm.model_executor.layers.glm53_fp8_dense import (
+            Fp8DenseMethod,
+            install_drafter_serving_check,
             maybe_build_fp8_dense,
         )
 
-        maybe_build_fp8_dense(dflash_model, env="VLLM_DFLASH2_FP8_DENSE")
+        if maybe_build_fp8_dense(dflash_model, env="VLLM_DFLASH2_FP8_DENSE"):
+            # Armed is not served: the drafter's forward is torch.compiled
+            # and vLLM's compile cache does not key on the swap above (the
+            # 09-03 bf16 artifact was served under this knob until 28차).
+            # Count the opaque op per forward and say so in the fingerprint.
+            n_opaque = sum(
+                1
+                for m in dflash_model.modules()
+                if isinstance(getattr(m, "quant_method", None), Fp8DenseMethod)
+                and getattr(m.quant_method, "_opaque", False)
+            )
+            install_drafter_serving_check(dflash_model, n_opaque)
     except Exception:
         pass
 

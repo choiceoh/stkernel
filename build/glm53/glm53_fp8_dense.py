@@ -105,6 +105,44 @@ _DRAFTER_INCLUDE = (
     re.compile(r"\.(attention_conv|mlp_conv)\.kernel_projection$"),
 )
 
+# vLLM keys its torch.compile cache -- and under VLLM_USE_AOT_COMPILE=1 the
+# whole AOT artifact -- on the env vars registered in vllm.envs, the vllm
+# config and the forward's source, then loads the artifact with guard
+# checks disabled. A quant_method swapped in AFTER load is no part of that
+# key. So every boot with the drafter knob on served the drafter from the
+# artifact of the first boot that ever compiled it (09-03: bf16 F.linear on
+# all 30 layer projections), and only the eager fc reached the lane -- the
+# bracket measured a 1-of-31 candidate (28차). Registering the knob makes
+# each value its own artifact; the getter folds the off-spellings together
+# so "0", "", "off" share one.
+_DRAFTER_OFF = ("", "0", "false", "no", "off")
+
+
+def _drafter_knob_value() -> str:
+    raw = (os.environ.get(_DRAFTER_ENV) or "0").strip().lower()
+    return "0" if raw in _DRAFTER_OFF else raw
+
+
+def _register_compile_factor(env: str, getter) -> bool:
+    """Make `env` part of vLLM's torch.compile / AOT cache key.
+
+    vllm.envs.compile_factors() hashes every entry of
+    vllm.envs.environment_variables (minus an ignore list) by calling its
+    getter, so an entry added here is hashed like a stock knob. Idempotent;
+    False when vllm.envs is not importable (offline probes)."""
+    try:
+        import vllm.envs as _envs
+
+        table = _envs.environment_variables
+    except Exception:
+        return False
+    if env not in table:
+        table[env] = getter
+    return True
+
+
+_register_compile_factor(_DRAFTER_ENV, _drafter_knob_value)
+
 
 def _include_patterns(env: str = "VLLM_GLM53_FP8_DENSE") -> tuple:
     """Base patterns, plus the drafter set under the drafter knob, plus the
@@ -334,6 +372,12 @@ except Exception:
     _fp8_dense_gemm_op = _fp8_dense_gemm
 
 
+# Calls of the opaque op, counted in Python: a compiled graph executes the
+# op's Python body, a CUDA-graph replay executes nothing here. The drafter
+# serving proof (install_drafter_serving_check) reads it per forward.
+_OPAQUE_CALLS = 0
+
+
 def _mk_or_fp8_dense_gemm(
     x: torch.Tensor,
     q: torch.Tensor,
@@ -360,6 +404,8 @@ def _mk_or_fp8_dense_gemm(
     entry, or one per K-chunk of a linear wider than the lane's K (the
     drafter's fc) -- and empty lists mean fp8 only.
     """
+    global _OPAQUE_CALLS
+    _OPAQUE_CALLS += 1
     if wq4s:
         _mk_gemm = _mk_arm = None
         try:  # import only: a boot without the megakernel module is fp8
@@ -394,6 +440,67 @@ try:
         )
 except Exception:
     _mk_or_fp8_dense_gemm_op = _mk_or_fp8_dense_gemm
+
+
+def _stream_capturing() -> bool:
+    try:
+        return bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        return False
+
+
+def install_drafter_serving_check(model, expected: int, forwards: int = 8) -> None:
+    """Prove that the drafter's served graph reaches the opaque op.
+
+    Wraps `model.forward` for its first `forwards` calls and counts opaque
+    GEMM calls per forward. A CUDA-graph replay runs no Python and counts
+    0, so a forward is judged only when it ran Python: it made calls, or it
+    was recorded under stream capture (capture executes the compiled
+    graph's ops, so it is definitive and judged at once). A judged forward
+    below half of `expected` means the served graph bypasses the swapped
+    quant_method -- the stale compile artifact of 28차 -- and is reported
+    once, as a WARNING the boot fingerprint carries. The wrapper removes
+    itself after the verdict."""
+    if expected <= 0 or forwards <= 0:
+        return
+    orig = model.forward
+    state = {"left": forwards, "low": None, "done": False}
+
+    def _report(seen):
+        state["done"] = True
+        model.__dict__.pop("forward", None)
+        if seen is None:
+            logger.warning(
+                "[fp8-dense] drafter lane: no forward ran Python in the "
+                "first %d calls -- SERVING UNKNOWN", forwards)
+        elif seen * 2 < expected:
+            logger.warning(
+                "[fp8-dense] drafter lane NOT SERVING: %d of %d opaque GEMM "
+                "calls in a forward -- the served graph bypasses the swapped "
+                "quant_method (stale compile artifact?)", seen, expected)
+        else:
+            logger.warning(
+                "[fp8-dense] drafter lane serving: %d of %d opaque GEMM "
+                "calls per forward", seen, expected)
+
+    def forward(*args, **kwargs):
+        if state["done"]:
+            return orig(*args, **kwargs)
+        capturing = _stream_capturing()
+        before = _OPAQUE_CALLS
+        out = orig(*args, **kwargs)
+        seen = _OPAQUE_CALLS - before
+        state["left"] -= 1
+        if seen > 0 or capturing:
+            state["low"] = seen if state["low"] is None else min(state["low"], seen)
+            if capturing or seen * 2 < expected:
+                _report(state["low"])
+                return out
+        if state["left"] <= 0:
+            _report(state["low"])
+        return out
+
+    model.forward = forward
 
 
 try:
@@ -770,13 +877,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         scheme = "w4a8"
     else:
         scheme = "w8a8"
-    # "w8": the fp8 pair and NOTHING lower -- no MK W4 pack, so an armed
-    # MK-GEMM leaves these linears on deepgemm fp8. One numerics axis per
-    # boot: the drafter knob wants to be bracketed at the block-fp8 class
-    # (the one this fleet already serves the target in) separately from
-    # the W4 class the megakernel lane carries.
-    attach_mk = _attach_mk_pack if raw not in ("w8", "fp8", "w8a8") else \
-        (lambda method, weight, cols: False)
+    # One lane below fp8: the MK W4 pack rides every fp8 copy when MK-GEMM
+    # is armed. The fp8-only (no pack) arm that briefly existed for
+    # the drafter bracket is gone -- the bracket picked W4 and the operator's
+    # rule is that a proven improvement becomes the default and the other
+    # side is removed, not kept as a second setting to remember.
+    attach_mk = _attach_mk_pack
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
