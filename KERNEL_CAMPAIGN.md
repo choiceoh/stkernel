@@ -11,6 +11,16 @@ Goal: attack the prefill MFU gap (~25-30% of blended fp8/W4A16 ceiling) at the
 kernel level. Decode is OFF the table — its dominant kernels measure at the
 273 GB/s LPDDR floor (ledger), where no kernel can win; only byte-diet applies.
 
+> **후속 (2026-09) — 이 문서는 1차 캠페인의 기록이다.** 두 결론이 그 뒤 뒤집혔다.
+> (1) "overlay-ownable 타깃 없음" — `glm53_megakernel` 이 콜렉티브 사이 구간을
+> 통째로 접수해 스텝 커널의 **7.6% → 25.4%** 가 이 리포 소유가 됐다
+> ([STEP_KERNEL_MAP.md](STEP_KERNEL_MAP.md) 보충 분해 5). (2) "디코드는 논외" —
+> 바이트 다이어트가 실제로 이겼다: W8A8 밀집 −6.9 ms(+10.4%), 드래프터 W4
+> +1.8%, MK-MLA 프리필 +15~18%. 다만 그 위의 **MoE 전문가 읽기(스텝의 47%)는
+> 여전히 대역폭 바닥**이라 이 문서의 물리 판정 자체는 유효하다.
+> 진행 중인 실험 절차는 [RUNBOOK_KERNEL_CAMPAIGN2.md](RUNBOOK_KERNEL_CAMPAIGN2.md),
+> 판정은 [MEASUREMENTS.md](MEASUREMENTS.md).
+
 ## GB10 architecture dossier (2026-08-10 — local evidence + Chips&Cheese + backend.ai)
 
 **What it is**: a consumer Blackwell die of the RTX 5070 class (GB205 lineage,

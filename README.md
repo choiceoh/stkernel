@@ -71,23 +71,33 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/` | **단일 `manifest.tsv` + 프로덕션 오버레이 16파일** (업스트림 포팅 + TP4/GB10 전용 슬리밍 + DSpark opt-in 가속 + 인코딩·파서 정합) |
-| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 |
-| `bench/` | 검증·측정 도구 |
-| `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
+| `overlay/modules/<name>/` | 오버레이 **모듈** 42개 — 각자 소스 · `manifest.tsv` · `README.md`(42/42) · 의존 선언 `requires`(16개) |
+| `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · glm53 25 · qwen38 1 모듈 |
+| `build/<profile>/` | `compose-overlays.sh` 가 렌더한 평평한 디렉터리 + 합성 매니페스트 — 배포기·런처가 보는 것 (생성물, 손으로 고치지 않는다) |
+| `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 + A/B 하네스(`ab-glm53.sh`) |
+| `bench/` | 검증·측정 도구 (아래 표) |
 | `probes/` | 계측 빌드 (CUDA 이벤트 단계 분해, `DENEB_ATTN_PROF=1`) — 원본 + 계측 diff만: `attn_prof`/`fi_prof`는 오버레이 현행본 기준(`diff overlay/… probes/…`로 검증 가능), `moe_prof`/`oproj_prof`/`sai_probe`는 이미지 원본 기준 |
-| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식 |
+| `tools/` · `census.py` | 트레이스 분석 — 커널 인구조사·스텝 시간 구성·꼬리 절단 (아래 `tools/` 절) |
+| `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`, 44.6K checks) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식·도구 계약 |
+| `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
+| `STEP_KERNEL_MAP.md` | 디코드 스텝의 커널 지도 — 무엇이 몇 발 돌고 누가 소유하며 어디가 레버인지 |
+| `RUNBOOK_KERNEL_CAMPAIGN2.md` | 부팅이 필요한 실험(EXP-1~19)의 절차·게이트·중단 기준 |
 
-## 단일 overlay manifest · 런타임 경계 감사
+## 매니페스트 합성 · 런타임 경계 감사
 
-`overlay/manifest.tsv`가 **파일 목록·컨테이너 마운트 목적지·베이스 preimage의
-유일한 원본**이다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는
-새 파일의 `absent` 계약이다.
+**매니페스트가 파일 목록·컨테이너 마운트 목적지·베이스 preimage의 유일한 원본**이다.
+모듈마다 `overlay/modules/<name>/manifest.tsv` 를 갖고, `compose-overlays.sh <profile>`
+가 프로필의 `MODULES=` 를 합쳐 `build/<profile>/manifest.tsv` 하나로 렌더한다(dsv4 23행 ·
+glm53 36행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
+는 더 이상 없다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는 새 파일의
+`absent` 계약이다.
 배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,
 런처도 같은 manifest를 읽어 바인드 마운트와 기동 전 스큐 검사를 만든다.
 고정된 image ID를 확인한 뒤 **마운트되지 않은 이미지 원본**의 모든 preimage를
 대조하므로, 태그·API·소스가 어긋나면 기존 컨테이너를 내리기 전에 중단한다.
-새 오버레이는 shell 스크립트 두 곳을 수정하지 않고 manifest 한 줄만 추가한다.
+새 오버레이는 shell 스크립트를 고치지 않고 **모듈 하나(디렉터리 + manifest 행) 추가 +
+프로필의 `MODULES=` 한 단어**로 들어간다. 두 모듈이 같은 소스 파일명이나 같은 컨테이너
+경로를 주장하면 합성이 중단된다 — 그게 모듈이 정말 독립인지 검사하는 자리다.
 
 고정한 베이스 이미지의 registry layer에서 sampler/hash-MoE/expert-map 실제
 소스를 복원해 감사한 결과는 **PASS=0, FAIL=7, UNKNOWN=0**이다. 즉 요청한
@@ -419,14 +429,25 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 
 ## 배포 레이아웃
 
-| 노드 | 오버레이 경로 |
-|---|---|
-| srv2(head)·srv3 | `~/hybrid-stack/overlay-b12x/` |
-| srv1·srv4 | `~/hybrid-stack-port/overlay-b12x/` |
+스택마다 경로가 다르고, `dsv4` 는 노드마다 또 다르다(런처
+`start-hy4-tp4.sh:220` 의 `overlay_dir()` 가 정본).
 
-- 기동: `launchers/start-hy4-tp4.sh` (srv2에서; 워커 3대는 ssh로 원격 기동)
-- 상시 운영: `dsv4-tp4.service`(user unit) → `dsv4-tp4-supervisor.sh`
-  — 부팅 시 자동 기동, 실생성 헬스프로브 3연속 실패 시 포렌식 덤프 후 재기동
+| 스택 | 노드 | 오버레이 경로 |
+|---|---|---|
+| `dsv4` (hy4) | srv2(head) · srv3 | `~/hybrid-stack/overlay-b12x/` |
+| `dsv4` (hy4) | srv1 · srv4 | `~/hybrid-stack-port/overlay-b12x/` |
+| `glm53` | 4노드 동일 | `~/overlays/glm53/` (런처 `OVERLAY_DIR` 기본값) |
+
+- 기동: `launchers/start-hy4-tp4.sh` · `launchers/start-glm53-nvfp4-tp4.sh`
+  (둘 다 srv2에서; 워커 3대는 ssh로 원격 기동)
+- 상시 운영(dsv4): `dsv4-tp4.service`(user unit) → `dsv4-tp4-supervisor.sh`
+  — 부팅 시 자동 기동, 실생성 헬스프로브 3연속 실패 시 포렌식 덤프 후 재기동.
+  **수동 A/B 전에는 supervisor 를 멈춘다**(안 그러면 부팅 중에 개입한다)
+- A/B: `launchers/ab-glm53.sh` — base 팔이 `VLLM_GLM53_MEGAKERNEL=0` 을 **명시**한다
+  (프로필 기본값이 메가커널 세트라, 명시하지 않으면 base 가 조용히 cand 가 된다)
+- 배포: `launchers/deploy-overlays.sh <profile>` 가 합성본을 4노드에 복사하고
+  SHA-256 을 대조한다. **재배포는 서빙 코드 교체이므로 재기동의 일부가 아니라
+  브래킷 대상**이다 — 재기동 기본은 이미 배포된 상태 그대로다
 - **롤백**: 런처의 해당 `-v ...:ro` 마운트 한 줄 제거 → 재기동. 오버레이가 없으면 이미지 원본 그대로.
 
 ## bench/ — 측정 도구와 함정
@@ -452,6 +473,31 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 MoE 24.2 · comms 23.4(대역폭 바닥) · GEMM 18.6 · attn 12.5 · mHC ~16%.
 과거 "미귀속 ~49%"는 comms+mHC+GEMM 일부로 전량 귀속됐고, Amdahl f≈0.57의
 정체는 comms(TP 무관)+mHC(랭크 복제)였다.
+
+## tools/ · census.py — 트레이스 분석
+
+프로파일 캡처(`start_profile`)로 뜬 torch 트레이스에서 **커널이 몇 발 돌고 어디에
+시간이 가는지**를 뽑는다. 무엇을 믿을지의 규칙은 하나다 — **개수는 정본, 시간은 같은
+트레이스 안에서만 상대 비교**(CUPTI 가 GPU 바쁜 시간을 부풀린다).
+
+| 도구 | 용도 | 함정 |
+|---|---|---|
+| `census.py` | 커널/스텝 · 그룹별 분포 · **소유권(우리 리포 vs 이미지)** · 상위 25 커널 | 스텝 분모를 세지 않고 추정하면 틀린다(그래서 `_get_num_sampled_and_rejected` 로 센다). 그룹 정규식은 계약이 아니다 — 앵커 없는 패턴이 남의 커널을 우리 칸에 넣은 전례(`k_reduce` ← deep_gemm `split_k_reduce`) |
+| `census.py --after REGEX [--depth N]` | **인접성** — 지목한 커널 직후 같은 스트림에서 무엇이 도는지 | "AR 뒤에 이 체인이 붙는다" 류 전제를 소스 추정 대신 트레이스로 확정한다. 다른 스트림의 커널은 '직후'가 아니다 |
+| `tools/trace_step_composition.py` | 깨끗한 스텝의 범주별 ms/발 중앙값, **유휴는 스트림 합집합** | 단일 스트림 합산은 유휴를 과소 계산한다(9.24 vs 5.65 ms 오차 전력). `--diff` 는 두 트레이스를 나란히 놓지만 **개수 채널이 정본**이고 시간은 부팅이 다르면 브래킷이 아니다 |
+| `tools/trace_step_tail.py` | 스텝을 forward / 꼬리(마지막 MoE 전문가 커널 뒤 = 헤드·샘플러·드래프터)로 자르고 꼬리를 분해 | 꼬리는 GPU 93% 바쁜 임계경로다 — "드래프터는 공짜" 는 호스트가 병목이던 시절의 값 |
+| `tools/trace_common.py` | 위 도구들의 공용 로더·스텝 절단·범주·**소유 판정** | 새 커널을 만들면 `OURS` 에 심볼을 넣어야 지도가 우리 것으로 센다. 분류기가 코드보다 늦으면 1위 범주가 "기타"가 된다 |
+
+```bash
+python3 census.py ~/vllm-prof/dp0_pp0_tp0_dcp0_ep0_rank0.*.pt.trace.json.gz
+python3 tools/trace_step_composition.py <trace.gz> [--diff <cand.gz>]
+python3 tools/trace_step_tail.py <trace.gz>
+```
+
+**플릿 규율**: 이 분석들은 rank 노드의 CPU 를 쓴다. 디코드 레그가 도는 동안 돌리지
+말고(단일 코어 파이썬이 step/s 15.2 → 9.1 로 떨어뜨린 전력), 부팅 창에서
+`nice -n 19 taskset -c 19` 로. 메모리는 문제가 아니다 — 파서가 이벤트를 흘려보내므로
+40 MB 캡처에도 RSS 17 MB 다. 결과 지도는 [`STEP_KERNEL_MAP.md`](STEP_KERNEL_MAP.md).
 
 ## 미채택 포팅 (파일은 제거, 근거 보존 — 복원: git history `e95f82f`)
 
