@@ -134,7 +134,8 @@ def _cast_sigmoid(x: torch.Tensor) -> torch.Tensor:
 # deneb fork (glm53_kda_onepass, launch-count bundle 2): two opt-in Triton
 # paths for the stock KDA chain. Everything -- knobs, guards, the boot
 # self-test, announce lines, arrival counters -- lives in that module; this
-# file only imports it once a knob asks for it and makes two calls.
+# file only imports it once a knob is armed (the exact string 1; the
+# profile's default 0 costs no import) and makes two calls.
 _KDA_ONEPASS_MODULE = "vllm.model_executor.layers.glm53_kda_onepass"
 _KDA_ONEPASS_ENVS = ("VLLM_GLM53_KDA_DUAL_GEMM", "VLLM_GLM53_KDA_ONEPASS")
 _kda_fusion: dict = {"resolved": False, "mod": None, "dual": False, "onepass": False}
@@ -149,7 +150,7 @@ def _kda_fusion_state() -> dict:
     st["resolved"] = True
     import os as _os
 
-    if not any(_os.environ.get(k) for k in _KDA_ONEPASS_ENVS):
+    if not any(_os.environ.get(k, "").strip() == "1" for k in _KDA_ONEPASS_ENVS):
         return st
     try:
         import importlib

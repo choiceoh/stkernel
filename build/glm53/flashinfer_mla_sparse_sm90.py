@@ -453,6 +453,10 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
     lens = valid_counts.contiguous()
     if lens.dtype != torch.int32:
         lens = lens.to(torch.int32)
+    if torch.cuda.is_current_stream_capturing() and not _MK_MLA_SHADOW.get("captured"):
+        _MK_MLA_SHADOW["captured"] = True
+        logger.warning("[megakernel] mla lane CAPTURED into the decode graph: T=%d "
+                       "(every replay runs mk_mla_kernel)", q_nope.shape[0])
     timing = (not _MK_MLA_SHADOW["checked"] and not torch.cuda.is_current_stream_capturing())
     if timing:
         ev = [torch.cuda.Event(enable_timing=True) for _ in range(3)]
@@ -476,7 +480,7 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
             ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
             ev[2].record()
             torch.cuda.synchronize()
-            # 29차 item 6: the one-shot judge also times both paths on the
+            # 32차 item 6: the one-shot judge also times both paths on the
             # same rows (an eager prefill chunk, not the captured decode)
             logger.warning("[megakernel] mla shadow timing (T=%d): mk=%.1f us wrapper=%.1f us",
                            q_nope.shape[0], 1e3 * ev[0].elapsed_time(ev[1]), 1e3 * ev[1].elapsed_time(ev[2]))

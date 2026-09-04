@@ -9,13 +9,28 @@ env, never through `EXTRA_ENV`:
 VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
+> **When the one-pass serves.** It runs on a pure spec-verify step
+> (`use_spec`, no prefill, no non-spec decode row) -- exactly the shape the
+> uniform decode CUDA graph is captured at: the image's
+> `mamba_hybrid.prepare_attn` fills `num_decode_draft_tokens_cpu` per row on
+> real steps (drafts > 0 and exactly one non-draft token scheduled), and
+> `GDNAttentionMetadataBuilder.build_for_cudagraph_capture` derives it from
+> `query_start_loc`. A mixed step (a request on its first decode step is a
+> `-1` row) takes the stock chain for that step. Served decode is a FULL
+> graph replay, so the Python branch runs at capture: the proof is the
+> capture-time `[kda-onepass] one-pass KDA serving` line and the trace, not
+> a per-step log (MEASUREMENTS 32차 §12). An earlier note here that the knob
+> "does nothing on this runner" rested on the chain-9 hypothesis that the V2
+> runner never builds spec masks; 32차 §11's 04:50 correction and KDAPROOF3
+> (`kda lane CAPTURED ... n_spec=4`) retracted it.
+
 Checkpoint shape this was written for (`glm53-redhat-nvfp4`, TP=4):
 `linear_num_heads 64 -> 16 local`, `head_dim 128`, `short_conv_kernel_size 4`,
 verify block `SPEC_K 7 -> 8` tokens, so the merged `in_proj_qkvbfg_a` row is
 `q|k|v (3 x 2048) | beta (16) | f_a (128) | g_a (128) = 6416` columns and the
 conv state holds `3 + 7 = 10` slots per line. The model overlay
 (`glm53_mk_kda_wiring/glm5next_kda.py`) only imports this module when a knob
-is set, calls `resolve()` once and then `gate_gemms()` / `spec_onepass()`;
+is armed (the exact string `1`; the profile's `0` costs no import), calls `resolve()` once and then `gate_gemms()` / `spec_onepass()`;
 every knob, guard, self-test, log line and counter lives here.
 
 ## `resolve()` -- knobs, counters, boot self-test

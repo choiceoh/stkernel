@@ -77,7 +77,7 @@ ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
 # MK_SEG_SMLP: the dense MLP (gate_up -> clamped SwiGLU -> down) as one
 # launch, T <= 32 -- the shared expert of every MoE layer and the three
 # dense layers. Served-numerics unchanged by construction (same packs, same
-# rounding points); the bracket is the gate (29차).
+# rounding points); the bracket is the gate (32차).
 ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
@@ -242,7 +242,7 @@ def _build():
 
 
 def rebuild(src_path: str) -> dict:
-    """29차 item 5 (dev lab): build the extension from another .cu, swap it
+    """32차 item 5 (dev lab): build the extension from another .cu, swap it
     in and re-run the self-tests. The kernels already baked into captured
     graphs stay until a recapture; every eager call sees the new module."""
     import torch
@@ -766,15 +766,21 @@ def smlp_forward(mlp, x):
     alpha = float(getattr(act, "alpha", 1.0))
     beta = float(getattr(act, "beta", 0.0))
     _SMLP_FUSED_CALLS += 1
+    capturing = False
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        pass
     if _SMLP_FUSED_CALLS == 1:
-        capturing = False
-        try:
-            capturing = bool(torch.cuda.is_current_stream_capturing())
-        except Exception:
-            pass
         logger.warning("[megakernel] smlp lane serving: first fused call "
                        "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
                        T, k, n_int, n_out, limit, capturing)
+    # the served decode is a graph replay: the capture-time call is the
+    # proof that replays run the fused block (29차 KDA lesson)
+    if capturing and "captured" not in _SMLP_SAID:
+        _SMLP_SAID.add("captured")
+        logger.warning("[megakernel] smlp lane CAPTURED into the decode graph: "
+                       "T=%d n_int=%d", T, n_int)
     return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                       limit, alpha, beta)
 
@@ -1008,28 +1014,47 @@ def _kda_eligible(meta) -> bool:
 
 
 _KDA_ELIG_SAID = set()
-_KDA_SERVED = {"n": 0}
+_KDA_SERVED = {"n": 0, "stock": 0, "capture": 0}
 
 
 def _kda_eligible_said(meta) -> bool:
     """_kda_eligible with the reason logged once per distinct text; prefill
-    steps are routine and stay silent."""
+    steps are routine and stay silent. Graph-capture steps are counted apart
+    and never claim the first-serving line (the 29차 chain-9 line fired on
+    the capture dummy and said nothing about real steps); every 512 real
+    calls the served/stock tally is said so the steady state is readable."""
+    import torch
+
     reason = _kda_eligible_reason(meta)
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        capturing = False
+    if capturing:
+        _KDA_SERVED["capture"] += 1
+        return reason is None
     if reason is None:
         _KDA_SERVED["n"] += 1
         if _KDA_SERVED["n"] == 1:
-            logger.warning("[megakernel] kda lane serving: first eligible step "
-                           "T=%d n_spec=%d (%s)", int(meta.num_actual_tokens),
-                           int(meta.num_spec_decodes),
-                           "shadow" if not _ARMED["kda"] else "armed")
-        return True
-    if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
-        _KDA_ELIG_SAID.add(reason)
-        logger.warning("[megakernel] kda lane stock: %s", reason)
-    return False
+            logger.warning("[megakernel] kda lane serving: first eligible eager step "
+                           "T=%d n_spec=%d (%s; profile/warm-up runs count -- the "
+                           "served decode is a graph replay, see 'CAPTURED')",
+                           int(meta.num_actual_tokens), int(meta.num_spec_decodes),
+                           "shadow" if KDA_SHADOW else "armed")
+    else:
+        _KDA_SERVED["stock"] += 1
+        if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
+            _KDA_ELIG_SAID.add(reason)
+            logger.warning("[megakernel] kda lane stock: %s", reason)
+    total = _KDA_SERVED["n"] + _KDA_SERVED["stock"]
+    if total % 512 == 0:
+        logger.warning("[megakernel] kda lane tally: served=%d stock=%d capture=%d",
+                       _KDA_SERVED["n"], _KDA_SERVED["stock"], _KDA_SERVED["capture"])
+    return reason is None
 
 
 _KDA_LAYOUT_SAID = set()
+_KDA_LAYOUT_REPEAT: dict = {}
 
 
 def _kda_layout_reason(layer):
@@ -1038,8 +1063,13 @@ def _kda_layout_reason(layer):
     import torch
 
     kv = getattr(layer, "kv_cache", None)
-    if not isinstance(kv, tuple) or len(kv) != 2:
-        return "kv_cache is not the (conv, recurrent) pair yet"
+    # tuple OR list: the runner binds a list, the stock forward unpacks it
+    # either way, and a tuple-only test here repeated the same "not yet"
+    # text on every real step -- said once, then silent for the boot
+    # (KDAPROOF 05:13: no tally line in 47k calls). 29차.
+    if not isinstance(kv, (tuple, list)) or len(kv) != 2:
+        return "kv_cache is not the (conv, recurrent) pair yet (type=%s len=%s)" % (
+            type(kv).__name__, len(kv) if hasattr(kv, "__len__") else "-")
     conv_state, rec_state = kv
     w = layer._merged_conv_weight
     if w is None:
@@ -1058,7 +1088,7 @@ def _kda_layout_reason(layer):
         return "A_log/dt_bias are not float32"
     # The production pool (--mamba-cache-dtype auto) stores the conv state
     # in bf16; the kernel widens on load and narrows on store, so both serve
-    # and the fp32 knob is no longer a KDA precondition (29차).
+    # and the fp32 knob is no longer a KDA precondition (32차).
     if (conv_state.dtype not in (torch.float32, torch.bfloat16)
             or conv_state.dim() != 3 or conv_state.shape[1] != KDA_QKV):
         return "conv state is %s%s, not float32/bfloat16 (blocks, %d, W)" % (
@@ -1073,7 +1103,7 @@ def _kda_layout_reason(layer):
     if conv_state.shape[2] != KDA_CONV_STATE_W:
         return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
             conv_state.shape[2], KDA_CONV_STATE_W)
-    # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype gate
+    # KDA32SHADOW (32차): with --mamba-cache-dtype float32 the dtype gate
     # passed and a contiguity gate rejected every layer -- the fp32 (blocks,
     # 6144, 10) tensor is a strided view of the hybrid pool. The kernel now
     # addresses through (slot, channel, width) strides; what it cannot take
@@ -1090,7 +1120,7 @@ def _kda_layout_reason(layer):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
             rec_state.dtype, tuple(rec_state.shape), KDA_H, KDA_D, KDA_D)
     # The recurrent state is the pool's other strided view (KDA32SHADOW2
-    # rejected every layer here, 29차): a padded slot stride is fine, the
+    # rejected every layer here, 32차): a padded slot stride is fine, the
     # (head, row, col) block must be dense -- the kernel walks it as one.
     r0, r1, r2, r3 = (int(v) for v in rec_state.stride())
     if (r1, r2, r3) != (KDA_D * KDA_D, KDA_D, 1) or r0 < KDA_H * KDA_D * KDA_D:
@@ -1114,6 +1144,13 @@ def _kda_layout_ok(layer) -> bool:
         _KDA_LAYOUT_SAID.add(reason)
         logger.warning("[megakernel] kda layout gate: %s -- the layer stays "
                        "stock", reason)
+    # a "transient" reason that keeps coming back is a permanent rejection
+    # wearing a temporary name: say so once more, with a count
+    n = _KDA_LAYOUT_REPEAT.get(reason, 0) + 1
+    _KDA_LAYOUT_REPEAT[reason] = n
+    if n == 2000:
+        logger.warning("[megakernel] kda layout gate: '%s' has rejected %d calls "
+                       "-- this is the lane's steady state, not a warm-up", reason, n)
     return False
 
 
@@ -1147,7 +1184,13 @@ def _kda_ensure_packs(layer) -> bool:
         in_m = _unwrap(layer.in_proj_qkvbfg_a.quant_method)
         o_m = _unwrap(layer.o_proj.quant_method)
         if in_m is None or o_m is None:
-            return False  # stock in_proj/o_proj is bf16 here -> stay stock
+            # stock in_proj/o_proj is bf16 here -> stay stock; said once (a
+            # silent False here reads as "armed" in the boot log, 29차)
+            if "packs" not in _KDA_ELIG_SAID:
+                _KDA_ELIG_SAID.add("packs")
+                logger.warning("[megakernel] kda lane stock: in_proj/o_proj carry "
+                               "no fp8-dense method -> no W4 packs for the lane")
+            return False
         # The in-kernel in_proj / o_proj GEMMs stream the same W4 packs the
         # linears serve. maybe_build_fp8_dense attaches them for the layers
         # MK-KDA owns; building one HERE is the fallback, and it only works
@@ -1243,11 +1286,30 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
     )
 
 
+_KDA_CAPTURED = {"n": 0, "eager": 0}
+
+
 def kda_block(layer, hidden_states, positions):
     """Whole linear-attention block, one launch + the boundary AR."""
     import torch
 
     meta = _kda_meta(layer)
+    # The served decode step is a FULL cudagraph REPLAY: no Python runs, so
+    # the only proof that this lane serves is that it was CAPTURED. Say so
+    # once per boot, with the batch the graph was captured on (29차: every
+    # tally/first-step line above is blind to replays).
+    try:
+        capturing = bool(torch.cuda.is_current_stream_capturing())
+    except Exception:
+        capturing = False
+    if capturing:
+        _KDA_CAPTURED["n"] += 1
+        if _KDA_CAPTURED["n"] == 1:
+            logger.warning("[megakernel] kda lane CAPTURED into the decode graph: "
+                           "T=%d n_spec=%d (every replay of this graph runs the MK "
+                           "block)", int(meta.num_actual_tokens), int(meta.num_spec_decodes))
+    else:
+        _KDA_CAPTURED["eager"] += 1
     out = torch.empty(meta.num_actual_tokens, layer.hidden_size,
                       dtype=torch.bfloat16, device=hidden_states.device)
     conv_state, rec_state = layer.kv_cache
@@ -1261,7 +1323,7 @@ def kda_block(layer, hidden_states, positions):
 
 
 class _LaneTimer:
-    """29차 item 6 -- a timed shadow: the served (stock) path and the MK
+    """32차 item 6 -- a timed shadow: the served (stock) path and the MK
     path both run under a shadow arm, so time them there with CUDA events
     and say the per-layer delta every `every` judged calls. A bracket boot
     is 25 minutes; this line lands in the production log for free."""
@@ -1304,7 +1366,7 @@ class KdaShadowArm:
         if meta is None:
             return
         conv_state, rec_state = layer.kv_cache
-        # KDA32SHADOW3 (29차): cloning the whole pools -- conv 260 MB + rec
+        # KDA32SHADOW3 (32차): cloning the whole pools -- conv 260 MB + rec
         # 2.2 GB, twice, per judged layer -- emptied unified memory under an
         # 8K prefill and earlyoom shot the head's worker. The step touches
         # only the slots in spec_state_indices_tensor: gather those rows
@@ -1983,7 +2045,7 @@ def arm() -> None:
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
                    dict(_ARMED), KDA_SHADOW)
     if _flag("VLLM_GLM53_DEV_LAB"):
-        try:   # 29차 item 5: the boot-free kernel loop (dev boots only)
+        try:   # 32차 item 5: the boot-free kernel loop (dev boots only)
             from vllm.model_executor.layers import glm53_dev_lab
             glm53_dev_lab.install()
         except Exception:

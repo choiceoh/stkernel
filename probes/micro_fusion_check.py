@@ -83,9 +83,11 @@ def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
 
     gpu_ms: the second of two back-to-back replays -- its host submission is
     hidden behind the first replay's execution, so the events bracket device
-    time only. launch_ms: a single replay recorded from an idle stream, i.e.
-    device time plus cudaGraphLaunch submission (node-count proportional).
-    Medians over ``iters``.
+    time only. launch_ms: a single replay recorded from an idle stream. The
+    events are stream-side, so this is not a CPU timing of cudaGraphLaunch:
+    it is device time plus the idle gap the stream sees while the launch is
+    being submitted (node-count proportional) -- what a step pays when the
+    graph is not already queued behind other work. Medians over ``iters``.
     """
     s = torch.cuda.Stream()
     s.wait_stream(torch.cuda.current_stream())
