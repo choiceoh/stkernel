@@ -6756,6 +6756,45 @@ def test_kv_cache_is_pinned_in_tokens() -> None:
     print("  kv cache is pinned in tokens ... OK")
 
 
+def test_earlyoom_is_fireable_on_unified_memory() -> None:
+    """earlyoom on GB10 must use an absolute floor, ignore swap, and target the engine.
+
+    Three nodes wedged on 2026-09-04 (sshd could not fork; only a power cycle
+    or a broken collective got them back) with earlyoom inactive and, had it
+    been active, unfireable: "-m 2 -s 2" requires SwapFree < 2% too, and on
+    unified memory the model's pages are pinned so swap never fills -- the
+    AND is false forever. And 2% of 121 GB is under the 4.0 GiB kernel
+    watermark, past which fork() itself blocks.
+    """
+    cfg = open(os.path.join(REPO, "launchers", "earlyoom.default"),
+               encoding="utf-8").read()
+    m = re.search(r'^EARLYOOM_ARGS="(.*)"$', cfg, re.M)
+    check(m is not None, "launchers/earlyoom.default defines EARLYOOM_ARGS")
+    assert m is not None
+    args = m.group(1)
+    fl = re.search(r"-M (\d+)", args)
+    check(fl is not None and 4 * 1048576 < int(fl.group(1)) <= 10 * 1048576,
+          "the memory floor is ABSOLUTE (-M KiB) and sits above the 4.0 GiB "
+          "kernel watermark but below the 10 GiB the preflight reserves -- "
+          "so a healthy boot never crosses it and a runaway is caught while "
+          "the node can still fork")
+    check(re.search(r"(^|\s)-m \d", args) is None,
+          "no percentage memory threshold: 2% of 121 GB was under the watermark")
+    check("-s 100" in args,
+          "swap must be non-binding (-s 100): pinned GPU pages never swap, so "
+          "any swap threshold below 100% makes the kill condition unreachable")
+    check("--prefer" in args and re.search(r"--prefer '[^']*vllm", args),
+          "the engine is the preferred kill: when the floor is crossed it is "
+          "the runaway, and losing the node loses it anyway")
+    check(re.search(r"--avoid '[^']*sshd", args) and "tailscaled" in args
+          and "dockerd" in args,
+          "the management plane (sshd, docker, tailscale) stays protected")
+    check(re.search(r"--avoid '[^']*(vllm|VLLM)", args) is None,
+          "the engine must not ALSO be on the avoid list -- that was the "
+          "srv2/srv3 config that made earlyoom shoot bystanders")
+    print("  earlyoom fireable on UMA ...... OK")
+
+
 def test_cudagraph_mem_profiling_off_keeps_the_kv_size() -> None:
     """Disabling the estimator must not silently resize the KV cache.
 
@@ -8841,6 +8880,7 @@ if __name__ == "__main__":
     test_boot_stamps_measure_without_changing_the_boot()
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
+    test_earlyoom_is_fireable_on_unified_memory()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
