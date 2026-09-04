@@ -75,8 +75,6 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 |---|---|---:|:---:|:---:|:---:|:---:|
 | `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | · |
 | `tp_oneshot_ar` | 어느 모델이든 | 2 | ✓ | ● | ● | ● |
-| `b12x_swiglu_clamp` | flashinfer 0.6.18 b12x (어느 프로필에도 없음, v9 이미지용 보존) | 2 | — | · | · | · |
-| `flashinfer_b12x_collapse` | flashinfer 0.6.18 b12x (어느 프로필에도 없음, 보존) | 1 | — | · | · | · |
 | `glm53_megakernel` | sm_121a 디코드 커널 코어 (opt-in; dsv4 는 MK_SEG_MHC 만 해당) | 2 | ✓ | ○ | ○ | · |
 | `mla_indexer` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |

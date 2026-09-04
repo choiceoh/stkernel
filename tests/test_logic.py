@@ -8273,6 +8273,21 @@ def test_megakernel_core_is_shared() -> None:
     check("raw stock arm: mhc_fused(tile_n=2, n_splits=4)" in probe,
           "the raw arm names the stock config it built -- no profile's "
           "dispatcher picks it, and on dsv4 it is the pre-sweep config")
+    arm_body = probe[probe.index("def _arm_env(segs)"):]
+    arm_body = arm_body[:arm_body.index("\n\n\n")]
+    check(probe.count("os.environ.setdefault(") == arm_body.count("os.environ.setdefault(")
+          and 'os.environ.setdefault(_SEG_KNOB[seg], "1")' in arm_body
+          # the CALL in main (the def near the top matches the bare name too),
+          # and main's driver import, which follows it (probe_gemm has one of
+          # its own earlier in the file)
+          and probe.index("segs = [s.strip()") < probe.index("\n    _arm_env(segs)")
+          < probe.index("from vllm.model_executor.layers import glm53_megakernel as mk",
+                        probe.index("\n    _arm_env(segs)")),
+          "every knob setdefault lives in _arm_env, which arms only the "
+          "selected segments and runs AFTER --segments is parsed and BEFORE "
+          "the driver import that reads the knobs: dsv4's MHC-only run used "
+          "to build GEMM and KDA packs at arm() (seconds since #268) and log "
+          "their DISARMs into an MHC measurement")
     check('print("--segments selected nothing to run")' in probe
           and "if not segs:" in probe,
           "an empty --segments selection must refuse to run: it used to skip "
@@ -9030,9 +9045,15 @@ def test_drafter_fc_probe_contracts() -> None:
                 "functional.linear", "build_mk_weight_w4", "_quantize_fp8_block_padded"):
         check(arm in src, f"arm present: {arm}")
     check("MK_KMAX = 4096" in src and "def _mk_chunks(" in src
-          and "acc += mk._gemm_call(xc[c], packs[c], N).float()" in src,
-          "the MK lane takes K <= 4096, so K=20480 (fc) runs as summed "
-          "K-chunks -- the wrapper's ceiling, not a refusal")
+          and "return mk.build_mk_weight_w4_kchunks(w)" in src
+          and "assert lane_kmax == MK_KMAX" in src
+          and "out = mk._gemm_kchunks(x, packs, N)" in src
+          and "acc += mk._gemm_call(xc[c]" not in src and "xc = [" not in src,
+          "the K-chunk arm is the LANE's chunker and summation "
+          "(build_mk_weight_w4_kchunks / _gemm_kchunks), width asserted "
+          "against MK_GEMM_KMAX -- a second chunk loop here kept measuring "
+          "its own width and pre-sliced x outside the timed region, hiding "
+          "the contiguous copies the served path pays")
     check("mk.maybe_arm()" in src and '_ARMED.get("gemm")' in src,
           "the lane is armed (extension built, self-tests run) before "
           "_gemm_call is timed")

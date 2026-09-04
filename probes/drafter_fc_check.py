@@ -157,11 +157,17 @@ def _shapes(cfg: dict, tp: int, with_head: bool) -> list[tuple[str, int, int, in
 
 
 def _mk_chunks(mk, w: torch.Tensor):
-    """W4 packs of the K-chunks of w (one when K <= 4096)."""
-    K = w.shape[1]
-    nchunk = -(-K // MK_KMAX)
-    return [mk.build_mk_weight_w4(w[:, c * MK_KMAX:(c + 1) * MK_KMAX].contiguous())
-            for c in range(nchunk)]
+    """W4 packs of the K-chunks of w (one when K <= 4096) -- built by the
+    LANE's own chunker, not a copy of it. This probe is the number the
+    K-chunked lane was adopted on, so its packs and its chunk width have to
+    be the served ones; a second chunk loop here would keep measuring an old
+    width after the driver moved (build_mk_weight_w4_kchunks / MK_GEMM_KMAX),
+    with the table still labelled MK W4. The width is asserted, not assumed:
+    the x-slicing below (xc) has to agree with it."""
+    lane_kmax = getattr(mk, "MK_GEMM_KMAX", MK_KMAX)
+    assert lane_kmax == MK_KMAX, (
+        f"the lane's K contract is {lane_kmax}, this probe slices at {MK_KMAX}")
+    return mk.build_mk_weight_w4_kchunks(w)
 
 
 def _pack_bytes(p) -> int:
@@ -246,8 +252,6 @@ def main() -> int:
                 print(f"  mk_w4 pack: unavailable ({e!r})"[:120])
         for m in args.ms:
             x = (torch.randn(m, K, device=dev) * 1.5).to(torch.bfloat16)
-            xc = [x[:, c * MK_KMAX:(c + 1) * MK_KMAX].contiguous()
-                  for c in range(-(-K // MK_KMAX))]
             ref = x.float() @ ws[0].float().t()
             arms = []
 
@@ -264,11 +268,17 @@ def main() -> int:
             def a_mk(i):
                 packs = mkp[i]
                 if len(packs) == 1:
-                    return mk._gemm_call(xc[0], packs[0], N)
-                acc = mk._gemm_call(xc[0], packs[0], N).float()
-                for c in range(1, len(packs)):
-                    acc += mk._gemm_call(xc[c], packs[c], N).float()
-                return acc.to(torch.bfloat16)
+                    # serving routes a single pack straight to the kernel
+                    return mk._gemm_call(x, packs[0], N)
+                # the served multi-chunk path: one launch per chunk, the
+                # column slices taken contiguous INSIDE the timed region (the
+                # lane pays that copy; a pre-sliced xc hid it) and the fp32
+                # sum the lane does -- not a re-implementation of it
+                out = mk._gemm_kchunks(x, packs, N)
+                if out is None:
+                    raise RuntimeError("the lane refused these chunks "
+                                       "(_gemm_kchunks returned None)")
+                return out
 
             cands = [("bf16", a_bf16)]
             cands.append(("fp8", a_fp8))
