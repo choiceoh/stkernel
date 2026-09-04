@@ -21,6 +21,7 @@ from vllm.compilation.breakable_cudagraph import eager_break_during_capture
 from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.distributed import divide
 from vllm.forward_context import get_forward_context
+from vllm.logger import init_logger
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     MergedColumnParallelLinear,
@@ -53,6 +54,8 @@ from vllm.third_party.flash_linear_attention.ops.kda import (
 )
 from vllm.transformers_utils.configs.kimi_linear import KimiLinearConfig
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
+
+logger = init_logger(__name__)
 
 
 class _Glm5NextMergedColumnParallelLinear(MergedColumnParallelLinear):
@@ -126,6 +129,48 @@ class _Glm5NextMergedColumnParallelLinear(MergedColumnParallelLinear):
 def _cast_sigmoid(x: torch.Tensor) -> torch.Tensor:
     """Fuse the fp32 cast + sigmoid into one Inductor kernel."""
     return x.float().sigmoid()
+
+
+# deneb fork (glm53_kda_onepass, launch-count bundle 2): two opt-in Triton
+# paths for the stock KDA chain, resolved once per process. Both knobs read
+# the exact string "1"; a boot without the module mounted stays stock and
+# says so once when a knob asked for it.
+_KDA_ONEPASS_MODULE = "vllm.model_executor.layers.glm53_kda_onepass"
+_kda_fusion: dict = {"resolved": False, "mod": None, "dual": False, "onepass": False}
+
+
+def _kda_fusion_state() -> dict:
+    st = _kda_fusion
+    if st["resolved"]:
+        return st
+    st["resolved"] = True
+    import os as _os
+
+    want_dual = _os.environ.get("VLLM_GLM53_KDA_DUAL_GEMM", "").strip() == "1"
+    want_one = _os.environ.get("VLLM_GLM53_KDA_ONEPASS", "").strip() == "1"
+    if not (want_dual or want_one):
+        return st
+    try:
+        import importlib
+
+        mod = importlib.import_module(_KDA_ONEPASS_MODULE)
+    except ImportError as e:
+        if isinstance(e, ModuleNotFoundError) and e.name == _KDA_ONEPASS_MODULE:
+            logger.warning(
+                "[kda-onepass] knob set (dual=%s onepass=%s) but %s is not "
+                "mounted -> stock KDA chain", want_dual, want_one, _KDA_ONEPASS_MODULE)
+        else:
+            logger.exception("[kda-onepass] import failed -> stock KDA chain")
+        return st
+    st["mod"] = mod
+    st["dual"] = want_dual and mod.dual_gemm_enabled()
+    st["onepass"] = want_one and mod.onepass_enabled()
+    if st["onepass"] and torch.cuda.is_available():
+        # off-capture allocation of the kernel's arrival counters (the first
+        # forward is the eager profile run); a capture-time allocation would
+        # tie the buffer to one graph's pool
+        mod.prepare_counters(torch.device("cuda", torch.cuda.current_device()))
+    return st
 
 
 class Glm5NextLinearAttention(GatedDeltaNetAttention):
@@ -371,10 +416,31 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         # / spec-verify steps then skip the _cast_sigmoid kernel and its fp32
         # intermediate entirely.
         beta = beta_raw.unsqueeze(0)
-        g1 = self.f_b_proj(f_a)[0]
-        g1 = g1.reshape(1, -1, self.local_num_heads, self.head_dim)
+        # deneb fork (glm53_kda_onepass): f_b and g_b read adjacent 128-column
+        # slices of the same merged row -- one launch for both when armed.
+        _fus = _kda_fusion_state()
+        _g1 = _gp = None
+        if _fus["dual"]:
+            _off = 3 * self.local_projection_size + self.local_num_heads
+            _x_fg = projected[:, _off : _off + 2 * self.head_dim]
+            _wf = self.f_b_proj.weight
+            _wg = self.g_b_proj.weight
+            if _fus["mod"].dual_gemm_applicable(_x_fg, _wf, _wg):
+                _g1, _gp = _fus["mod"].dual_gate_gemm(_x_fg, _wf, _wg)
+                _fus["mod"].announce_once(
+                    "dual", f"dual gate GEMM serving: x{tuple(_x_fg.shape)} "
+                    f"w{tuple(_wf.shape)} -> one launch per layer")
+            else:
+                _fus["mod"].announce_once(
+                    "dual-stock", f"dual gate GEMM: shape not admitted "
+                    f"(x{tuple(_x_fg.shape)} {_x_fg.dtype} stride {_x_fg.stride()}, "
+                    f"w{tuple(_wf.shape)} {_wf.dtype}) -> stock two GEMMs")
+        if _g1 is None:
+            _g1 = self.f_b_proj(f_a)[0]
+            _gp = self.g_b_proj(g_a)[0]
+        g1 = _g1.reshape(1, -1, self.local_num_heads, self.head_dim)
 
-        g_proj_states = self.g_b_proj(g_a)[0]
+        g_proj_states = _gp
         # Must stay 3D: rms_norm_gated reads H from g.shape[-2].
         g2 = g_proj_states.reshape(-1, self.local_num_heads, self.head_dim)
 
@@ -390,13 +456,18 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         # routing through it lets the host-branching prefill body be
         # Inductor-compiled + stream-captured under PIECEWISE -> stale garbage.
         # qkv stays merged through the short-conv (one conv call, not three).
-        self._forward(
+        _normed = self._forward(
             qkv_proj_states=qkv,
             g1=g1,
             beta=beta,
             core_attn_out=core_attn_out,
+            projected=projected,
+            g2_flat=g_proj_states,
         )
-        core_attn_out = self.o_norm(core_attn_out, g2)
+        # deneb fork (glm53_kda_onepass): the one-pass kernel normalizes in
+        # place; the stock chain still needs o_norm here.
+        if _normed is not True:
+            core_attn_out = self.o_norm(core_attn_out, g2)
         core_attn_out = core_attn_out.reshape(core_attn_out.size(1), -1)
         out = self.o_proj(core_attn_out)[0]
         # deneb fork (glm53_megakernel): shadow epilogue -- diff the stock
@@ -413,13 +484,15 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         g1: torch.Tensor,
         beta: torch.Tensor,
         core_attn_out: torch.Tensor,
-    ) -> None:
+        projected: torch.Tensor | None = None,
+        g2_flat: torch.Tensor | None = None,
+    ) -> bool | None:
         forward_context = get_forward_context()
         attn_metadata_raw = forward_context.attn_metadata
 
         if attn_metadata_raw is None:
             #     # V1 profile run
-            return
+            return None
 
         assert isinstance(attn_metadata_raw, dict)
         attn_metadata_narrowed = attn_metadata_raw[self.prefix]
@@ -476,6 +549,58 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
             ).contiguous()
         conv_weights = self._merged_conv_weight
         conv_bias = self.q_conv1d.bias
+
+        # deneb fork (glm53_kda_onepass): a pure spec-verify step -- every
+        # token belongs to a draft-verify block, no prefill and no plain
+        # decode rows -- runs conv + recurrence + gated norm as ONE launch
+        # straight from the merged projection rows (no q/k/v/beta copies).
+        # Anything else keeps the stock chain below. Returns True so the
+        # caller skips o_norm (already applied in place).
+        _fus = _kda_fusion_state()
+        if (
+            _fus["onepass"]
+            and use_spec
+            and projected is not None
+            and g2_flat is not None
+            and attn_metadata_narrowed.num_prefills == 0
+            and attn_metadata_narrowed.num_decodes == 0
+            and (non_spec_token_indx is None or non_spec_token_indx.numel() == 0)
+            and self.kda_safe_gate
+            and self.o_norm.activation == "sigmoid"
+            and self.o_norm.weight is not None
+        ):
+            _mod = _fus["mod"]
+            _mql = spec_state_indices_tensor.size(-1)
+            _out = core_attn_out[0, :num_actual_tokens]
+            if _mod.onepass_applicable(
+                projected, g1, g2_flat, conv_weights, conv_bias, conv_state,
+                recurrent_state, spec_query_start_loc, spec_state_indices_tensor,
+                num_accepted_tokens, _out,
+                local_num_heads=self.local_num_heads, head_dim=self.head_dim,
+                conv_size=self.conv_size, max_query_len=_mql,
+            ):
+                _mod.kda_onepass_spec(
+                    projected, g1, g2_flat, conv_weights, conv_state,
+                    recurrent_state,
+                    spec_query_start_loc[: num_spec_decodes + 1],
+                    spec_state_indices_tensor, num_accepted_tokens,
+                    self.A_log, self.dt_bias, self.o_norm.weight, _out,
+                    num_spec_decodes=num_spec_decodes,
+                    local_num_heads=self.local_num_heads,
+                    head_dim=self.head_dim, max_query_len=_mql,
+                    lower_bound=float(lower_bound), eps=float(self.o_norm.eps),
+                )
+                _mod.announce_once(
+                    "onepass", f"one-pass KDA serving: {num_spec_decodes} "
+                    f"requests x {_mql} verify tokens, heads {self.local_num_heads} "
+                    f"x {self.head_dim} -> conv+recurrent+norm in one launch")
+                return True
+            _mod.announce_once(
+                "onepass-stock", "one-pass KDA: tensors not admitted "
+                f"(projected {tuple(projected.shape)} {projected.dtype}, conv_state "
+                f"{tuple(conv_state.shape)} {conv_state.dtype}, recurrent "
+                f"{tuple(recurrent_state.shape)} {recurrent_state.dtype}, "
+                f"indices {tuple(spec_state_indices_tensor.shape)}) -> stock chain")
 
         # Split projections / gating into spec (draft-verify) and non-spec token
         # groups when speculative decoding is active. Spec tokens carry

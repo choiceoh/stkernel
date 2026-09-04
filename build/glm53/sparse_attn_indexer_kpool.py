@@ -58,6 +58,16 @@ _KPOOL_TAIL_CACHE_ENABLED = (
 _KPOOL_DECODE_WRITE_ENABLED = (
     os.environ.get("VLLM_KPOOL_SKIP_DECODE_WRITE") != "1"
 )
+# deneb fork (launch-count bundle 2): hand the batched kpool update kernel
+# the runner's int64 positions directly instead of a per-layer int32 cast
+# copy (11 `direct_copy` launches per decode step, one before each
+# `_kpool_decode_update_batched_kernel`). The kernel's position arithmetic
+# is value-identical in int64 (positions are far below 2^31), so the cache
+# writes are bit-identical; only the launch goes. Exact "1" arms; the
+# uniform decode path only (the padded non-uniform path keeps the scatter).
+_KPOOL_UPDATE_DIRECT_POS = (
+    os.environ.get("VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS", "").strip() == "1"
+)
 _GLM53_PREFILL_WRITE_PLAN_CACHE = "glm53_kpool_prefill_write_plans"
 
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
@@ -1148,7 +1158,13 @@ def sparse_attn_indexer_kpool(
                 dec_k = k[:num_decode_tokens].view(*shape2, head_dim)
                 dec_gate = gate_score[:num_decode_tokens].view(*shape2, head_dim)
                 dec_slot = slot_mapping[:num_decode_tokens].view(shape2)
-                dec_pos = positions[:num_decode_tokens].to(torch.int32).view(shape2)
+                if _KPOOL_UPDATE_DIRECT_POS and positions.dtype in (
+                    torch.int64, torch.int32
+                ):
+                    # int64 straight into the kernel: no cast launch
+                    dec_pos = positions[:num_decode_tokens].view(shape2)
+                else:
+                    dec_pos = positions[:num_decode_tokens].to(torch.int32).view(shape2)
             tail_meta = (
                 attn_metadata.get(_resolve_layer_name(tail_prefix))
                 if tail_prefix is not None
