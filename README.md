@@ -460,8 +460,14 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 | `check-quality.py` | 2K/32K/128K에 사실 3개를 25/50/75% 깊이로 심고 리트리벌 | 인덱스 stride 버그가 산문 열화가 아닌 **검색 실패**로 드러남 |
 | `bench-conc.py` | 동시성 스윕 C=1/2/4 | 한 스윕 내 C값들은 상관 표본 — 단독 스윕으로 판정 금지 |
 | `profile-step.py` | **미귀속 잔차 귀속** — torch profiler로 NCCL·융합 커널 포함 전 커널 버킷팅 + top-N 테이블(mHC 커널 식별용). srv2에서 실행 | `VLLM_TORCH_PROFILER_DIR` 반영 재기동 1회 필요 · 캡처 중 오버헤드로 절대값 부풀음(비율로 판단) · 멀티스트림 중첩 시 합계>벽시계 · 서빙 트래픽·supervisor 프로브가 섞일 수 있어 한가할 때 실행 |
+| `korean-corruption.py` | **채택 게이트** — 한국어 출력 손상을 세어 "간헐적"을 비율로 만든다 (0/16) | n=16 의 잡음이 1/16 급이다(28차: base 팔에서 1/16 이 나왔고 판정에 쓰지 않았다) |
+| `check-quality.py` · `needle-256k.py` | **채택 게이트** — 2K/32K/128K 리트리벌 9/9 · 같은 패턴의 256K needle | 인덱스 stride 버그는 산문 열화가 아니라 검색 실패로 드러난다 |
+| `bracket.py` | base→cand→base 브래킷의 기록·판정 도구 (판정 규칙 자체는 원장) | 도구가 판정을 대신하지 않는다 — 게이트 통과 여부는 사람이 원장에 적는다 |
+| `streamgap.py` | 동시 수용 매끄러움 — 디코드 스트리밍 중에 34K 프리필을 끼얹는다 | 서빙 품질 축이라 step/s 와 다른 신호다 |
+| `pp-ctx-benchy.py` · `tg-llama-benchy.py` | llama-benchy 호환 축(pp2048 프리필 · ctx_tg@dN · tg128) — 외부 수치와 견줄 때 | 우리 브래킷 채널(C=1 step/s)과 정의가 다르다. 비교용이지 판정용이 아니다 |
+| `bench_common.py` | 위 도구들의 공용 하네스(엔드포인트·프롬프트·수용률 델타 읽기) | |
 
-## probes/ — 계측 빌드
+## probes/ — 계측 빌드 · 오프라인 프로브
 
 `DENEB_ATTN_PROF=1` + 해당 파일을 마운트하면 단계별 CUDA 이벤트 타이밍이 로그로 나온다
 (`[deneb-prof]`/`[deneb-prep]`/`[deneb-fi]`). 캡처 가드(`is_current_stream_capturing`) 필수 —
@@ -473,6 +479,37 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 MoE 24.2 · comms 23.4(대역폭 바닥) · GEMM 18.6 · attn 12.5 · mHC ~16%.
 과거 "미귀속 ~49%"는 comms+mHC+GEMM 일부로 전량 귀속됐고, Amdahl f≈0.57의
 정체는 comms(TP 무관)+mHC(랭크 복제)였다.
+
+### 오프라인 프로브 — 부팅을 아끼는 자리
+
+캠페인 항목(EXP-\*)의 대부분은 **부팅 전에 프로브가 먼저 답한다**. 전부 서빙
+컨테이너가 아니라 **새 컨테이너**에서 돈다 — 서빙 컨테이너의 docker-exec CUDA 는
+TP 콜렉티브를 세운 전력이 있다. 래퍼가 합성 오버레이를 실제 이미지 경로에 바인드해
+"리포의 소스 그대로" 를 보장한다:
+
+```bash
+bash probes/run_mk_probe.sh probes/<probe>.py       # 아무 프로브나, 합성 소스로
+bash probes/run_megakernel_bench.sh                 # 메가커널 수치+타이밍 일괄
+bash probes/run_mhc_glm53_bench.sh                  # MHC 발사설정 스윕
+bash probes/run_prep_fused_check.sh                 # prep-fused 수치·발사 수
+```
+
+| 축 | 프로브 | 무엇을 답하나 |
+|---|---|---|
+| 메가커널 | `megakernel_glm53_bench.py` · `mk_pdl_graph_check.py` · `osar_build_check.py` | 세그먼트 수치·발사당 µs · 그래프 캡처 아래 PDL 이 실제로 걸리는가 · 확장이 프리페치 바인딩을 갖고 빌드되는가 |
+| GEMM/양자화 | `gemm_fuse_bench.py` · `fp8_scale_granularity.py` · `nvfp4_dense_accuracy.py` · `mla_q_precision_check.py` | 작은 M 융합이 대역폭을 되찾나 · 128블록 스케일 계약값 · nvfp4/e4m3 강등의 오차 대가 |
+| MoE | `moe_decode_stream_probe.py` · `moe_gate_tile_sweep.py` | **서빙되는** b12x 커널이 디코드 형상에서 내는 GB/s(EXP-14 를 닫은 프로브) · 라우터 게이트 타일 |
+| MLA/인덱서 | `mk_mla_bench.py` · `mk_mla_prefill_check.py` · `indexer_gate_check.py` · `kda_conv_state_map.py` | MK-MLA 대 FlashInfer(수치·GPU 시간·호스트 계획) · head-gate split-K · KDA conv 상태 슬롯 출처 |
+| 드래프터 | `drafter_fc_check.py` · `drafter_dense_path_check.py` · `head_w4_check.py` · `accept_profile.py` | 꼬리가 무엇을 지불하나(팔별) · 밀집 경로가 실제로 서빙되나 · W4 보캡 헤드의 로짓 영향 · 위치별 수용률 |
+| 프리필 | `prefill_ladder.py` · `kda_prefill_bench.py` · `glm53_prefill_profile.sh` | 길이 사다리로 후보 분리 · KDA 청크 발사설정 스윕 · 32K 한 번 캡처 후 census |
+| 통신 | `oneshot_ar_disttest.py` · `nccl_fingerprint.py` · `uma_datapath.cu` | 4랭크 정합 · 부팅 로그의 NCCL 지문 · RDMA 등록 메모리를 GPU 가 읽나 |
+| 하드웨어 상한 | `gb10_mma_rates.cu` · `gb10_gather_roof.cu` | sm_121a 텐서코어가 포맷별로 실제 발행하는 양 · LPDDR gather 천장 |
+| 트레이스 보조 | `trace_precise.py` · `gap_concurrent.py` | 정밀 구간 · **가장 큰 공백 동안 다른 스트림에서 무엇이 도나**(그래프 안 커널이 임계경로인지 가르는 질문) |
+| 재현 진단 | `mhc_replay.py`(+`run_mhc_replay.sh`) · `refine_ab.py` | 그래프 리플레이에서만 나는 MHC 불안정을 좁힌다 · REFINE_PASS A/B 하네스(판정은 기각) |
+
+**규율**: 프로브 숫자는 원장에 그대로 들어가지 않는다 — 오프라인 값은 상한이거나
+형상이 다르고(27차: 상한이 프로브 하나에 절반으로 줄었다), 서빙 판정은 브래킷이다.
+프로브가 하는 일은 **부팅할 가치가 있는지**를 먼저 가르는 것이다.
 
 ## tools/ · census.py — 트레이스 분석
 
