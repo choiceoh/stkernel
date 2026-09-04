@@ -9547,8 +9547,10 @@ def test_glm53_prep_fused_contracts() -> None:
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
     check("glm53_prep_fused" in modules, "glm53 profile must mount glm53_prep_fused")
-    check(re.search(r"^VLLM_GLM53_PREP_FUSED=0$", profile, re.M) is not None,
-          "profile must ship VLLM_GLM53_PREP_FUSED=0 (kill switch default off)")
+    check(re.search(r"^VLLM_GLM53_PREP_FUSED=1$", profile, re.M) is not None
+          and "0 stays the kill switch" in profile,
+          "profile ships VLLM_GLM53_PREP_FUSED=1 (29차 operator decision: the "
+          "+7.3% lever is on; 0 stays the kill switch)")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
     check(rows == [["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"]],
