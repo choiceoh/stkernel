@@ -1488,7 +1488,7 @@ MLA_MAX_SPLIT_ROWS = 64   # beyond this the split path's fp32 scratch is silly
 # v5 routed prefill rows through the same entry point, so the first
 # request of a boot -- a 37-token prompt, 48 splits, 1,776 rows -- did
 # exactly that, and the decode graphs then wrote their partials into
-# whatever the allocator handed out next (27차: two serving deaths, a
+# whatever the allocator handed out next (28차: two serving deaths, a
 # gather index out of bounds and an illegal memory access). So the budget
 # is fixed here and mla_splits() never asks for more rows than it holds:
 # T * splits <= MLA_WS_ROWS for every T it splits.

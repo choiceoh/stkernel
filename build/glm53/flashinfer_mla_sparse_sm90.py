@@ -460,7 +460,7 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
         # One-shot shadow against the wrapper on the same bytes -- on rows
         # that read REAL cache. The profile/warm-up dummy runs with an empty
         # KV: both sides return zeros and rel = 0/1e-6 = 0.00e+00, the
-        # "pass" that armed the kernel for nothing on 09-03 (27차). The
+        # "pass" that armed the kernel for nothing on 09-03 (28차). The
         # first eager call with real rows is a request's prefill chunk. The
         # decode graphs captured at boot already bake the launch, so a
         # failure here cannot un-capture them: it disarms every eager call

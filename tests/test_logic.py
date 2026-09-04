@@ -6627,9 +6627,8 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     fallback = nv.index("if not armed_nv:")
     # the call sites go through `attach_mk`, which is _attach_mk_pack or,
     # under the "w8" scheme (fp8 pair only), a no-op -- one axis per boot
-    check("attach_mk = _attach_mk_pack if raw not in" in body
-          and "lambda method, weight, cols: False" in body,
-          "attach_mk is the helper or the w8 no-op, bound once per pass")
+    check("attach_mk = _attach_mk_pack\n" in body,
+          "attach_mk is the helper, bound once per pass")
     check("attach_mk(" not in nv[:fallback] and "_attach_mk_pack(" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
@@ -6715,7 +6714,7 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
 
 
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
-    """27차: the MLA split scratch never moves under a captured graph.
+    """28차: the MLA split scratch never moves under a captured graph.
 
     _mla_workspace used to grow on demand -- cap = max(need, 2*MAX_TOK),
     re-allocated (old tensors freed) when a larger call came. A captured
@@ -6803,7 +6802,7 @@ def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
 
 
 def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
-    """27차: the drafter knob is a compile-cache factor and serving is proven.
+    """28차: the drafter knob is a compile-cache factor and serving is proven.
 
     vLLM keys torch.compile / AOT artifacts on the env vars registered in
     vllm.envs, the config and the forward's source -- never on a quant_method
@@ -6896,7 +6895,7 @@ def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
     assert any("NOT SERVING: 0 of 31" in x for x in msgs), msgs
     assert "forward" not in m.__dict__
     ns["_stream_capturing"] = lambda: False
-    # the eager fc alone (1 of 31) is what 27차 served: judged and loud at once
+    # the eager fc alone (1 of 31) is what 28차 served: judged and loud at once
     msgs.clear()
     m = Drafter(1)
     install(m, 31, forwards=8)
@@ -6980,8 +6979,10 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
           "the build pass selects its pattern set by the knob it runs under")
     check("method._opaque = env == _DRAFTER_ENV" in body,
           "drafter methods are marked opaque: the drafter forward is compiled")
-    check('raw not in ("w8", "fp8", "w8a8")' in body,
-          "w8 = the fp8 pair and nothing lower -- one numerics axis per boot")
+    check("attach_mk = _attach_mk_pack\n" in body and '"w8"' not in body,
+          "one lane below fp8: no fp8-only arm to remember (operator rule "
+          "2026-09-04 -- a proven improvement is the default, the other side "
+          "goes)")
 
     # the opaque op: one custom op that decides MK-or-fp8 at run time
     check('"glm53_fp8_dense::gemm_mk_or_fp8"' in src
@@ -7028,10 +7029,10 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     chk = open(os.path.join(REPO, "probes", "drafter_dense_path_check.py"),
                encoding="utf-8").read()
     check("fullgraph=True" in chk and "dynamic=True" in chk
-          and "torch.cuda.graph(" in chk and 'os.environ[DRAFTER_ENV] = "w8"' in chk
+          and "torch.cuda.graph(" in chk and 'os.environ[DRAFTER_ENV] = "w8"' not in chk
           and "gemm_w4a8(x, q._mk, q._rows)" in chk,
-          "the path probe gates compile (fullgraph, dynamic), capture, the "
-          "lane serving bitwise, and the w8 arm")
+          "the path probe gates compile (fullgraph, dynamic), capture, and "
+          "the lane serving bitwise")
     print("  fp8-dense drafter patterns + opaque op .. OK")
 
 
@@ -8117,7 +8118,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "rows >= _MK_MLA_SHADOW_MIN_ROWS" in wsrc,
           "the one-shot wrapper shadow judges the first eager call whose rows "
           "read real KV (a prefill chunk of <= 4096 rows: a 64 MB transient "
-          "output once), not the empty-KV dummy that passed with rel=0 (27차)")
+          "output once), not the empty-KV dummy that passed with rel=0 (28차)")
     check("if T > MLA_MAX_SPLIT_ROWS:" in pysrc_full and "return 1" in pysrc_full,
           "prefill row counts take splits == 1 (a [T][splits][H][D] fp32 scratch "
           "would be 268 MB at T=8192)")
@@ -8141,7 +8142,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("for s in range(1, budget + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full
           and "budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))" in pysrc_full,
           "mla split policy: smallest s with T*s a multiple of the resident grid (measured), "
-          "bounded by the fixed scratch (T*s <= MLA_WS_ROWS; 27차)")
+          "bounded by the fixed scratch (T*s <= MLA_WS_ROWS; 28차)")
     print("  glm53 megakernel contracts .. OK")
 
 

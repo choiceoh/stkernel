@@ -112,7 +112,7 @@ _DRAFTER_INCLUDE = (
 # key. So every boot with the drafter knob on served the drafter from the
 # artifact of the first boot that ever compiled it (09-03: bf16 F.linear on
 # all 30 layer projections), and only the eager fc reached the lane -- the
-# bracket measured a 1-of-31 candidate (27차). Registering the knob makes
+# bracket measured a 1-of-31 candidate (28차). Registering the knob makes
 # each value its own artifact; the getter folds the off-spellings together
 # so "0", "", "off" share one.
 _DRAFTER_OFF = ("", "0", "false", "no", "off")
@@ -458,7 +458,7 @@ def install_drafter_serving_check(model, expected: int, forwards: int = 8) -> No
     was recorded under stream capture (capture executes the compiled
     graph's ops, so it is definitive and judged at once). A judged forward
     below half of `expected` means the served graph bypasses the swapped
-    quant_method -- the stale compile artifact of 27차 -- and is reported
+    quant_method -- the stale compile artifact of 28차 -- and is reported
     once, as a WARNING the boot fingerprint carries. The wrapper removes
     itself after the verdict."""
     if expected <= 0 or forwards <= 0:
@@ -877,13 +877,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         scheme = "w4a8"
     else:
         scheme = "w8a8"
-    # "w8": the fp8 pair and NOTHING lower -- no MK W4 pack, so an armed
-    # MK-GEMM leaves these linears on deepgemm fp8. One numerics axis per
-    # boot: the drafter knob wants to be bracketed at the block-fp8 class
-    # (the one this fleet already serves the target in) separately from
-    # the W4 class the megakernel lane carries.
-    attach_mk = _attach_mk_pack if raw not in ("w8", "fp8", "w8a8") else \
-        (lambda method, weight, cols: False)
+    # One lane below fp8: the MK W4 pack rides every fp8 copy when MK-GEMM
+    # is armed. The fp8-only (no pack) arm that briefly existed for
+    # the drafter bracket is gone -- the bracket picked W4 and the operator's
+    # rule is that a proven improvement becomes the default and the other
+    # side is removed, not kept as a second setting to remember.
+    attach_mk = _attach_mk_pack
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
