@@ -382,9 +382,13 @@ static void *proxy_fn(void *) {
     // full-decode cudagraph the Python entry runs once at capture and never
     // again, while the kernel keeps accumulating on every replay. The proxy
     // is the only host code that runs per collective for the life of the boot.
-    // Rank 0 only, every REPORT_SEC seconds, deltas since the last report so a
-    // slow warmup does not smear the steady state.
-    if (g_rank == 0) {
+    // Every rank, every REPORT_SEC seconds, deltas since the last report so a
+    // slow warmup does not smear the steady state. Every rank, not rank 0
+    // only: a rank's wait is the time from its own arrival to the last
+    // arrival, so the rank whose wait is smallest is the one the others
+    // wait for -- the per-rank line is the skew attribution (28차, AR
+    // critical path 5.4 ms/step of which ~1.7 ms is arrival spread).
+    {
       time_t now = time(nullptr);
       if (last_report == 0) last_report = now;
       if (now - last_report >= REPORT_SEC) {
@@ -394,10 +398,11 @@ static void *proxy_fn(void *) {
         if (dn > 0) {
           double k = 1.0 / (double)dn / (double)SM_CLK_MHZ;  // cycles -> us
           fprintf(stderr,
-                  "[osar] phase us/collective (n=%llu): guard=%.1f copy=%.1f "
+                  "[osar] phase rank=%d us/collective (n=%llu): guard=%.1f copy=%.1f "
                   "wait=%.1f reduce=%.1f | total=%.1f  @%d MHz assumed"
                   " | wait by size: <=128KiB n=%llu %.1f, >128KiB n=%llu %.1f"
                   "\n",
+                  g_rank,
                   (unsigned long long)dn,
                   (double)(g_ctrl->t_guard - last_guard) * k,
                   (double)(g_ctrl->t_copy - last_copy) * k,
