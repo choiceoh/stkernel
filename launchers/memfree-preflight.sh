@@ -40,8 +40,24 @@ TOTAL_GIB=${TOTAL_GIB:-119.69}  # per-node MemTotal as vLLM reports it
 
 EXPORT=0
 if [ "${1:-}" = "--export" ]; then EXPORT=1; shift; fi
-MARGIN=${1:-3}
-shift 2>/dev/null || true
+# Default 10, not 3. Both launchers pass 10 explicitly, so this default is only
+# reached by a direct call -- and 3 is the exact margin whose boot left the
+# fleet at ~3 GiB free against a 4.0 GiB kernel watermark and wedged three
+# nodes on 2026-09-04. A stale default is a trap for the next caller.
+#
+# The margin is only consumed when it LOOKS like one. The usage line calls it
+# optional, but `MARGIN=${1:-10}; shift` took the first argument unconditionally,
+# so `memfree-preflight.sh 10.10.10.2 10.10.10.1` used "10.10.10.2" AS THE
+# MARGIN -- awk read it as 10.10 -- and dropped that node from the list it was
+# meant to measure. Both launchers pass the margin first so they never hit it;
+# a human following the usage line does. A bare number is a margin, anything
+# else (an address) is a node.
+if [[ "${1:-}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  MARGIN=$1
+  shift
+else
+  MARGIN=10
+fi
 NODES=("$@")
 [ ${#NODES[@]} -eq 0 ] && NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no"
@@ -82,6 +98,27 @@ if awk "BEGIN{exit !(${HI%%:*} - ${LO%%:*} > 5)}"; then
 fi
 
 USABLE=$(awk "BEGIN{printf \"%.1f\", $MIN - $BOOT_COST - $MARGIN}")
-GMU=$(awk "BEGIN{v=$USABLE/$TOTAL_GIB; if(v<0.40)v=0.40; printf \"%.2f\", v}")
+
+# This number is an UPPER BOUND from free memory, never a floor from what the
+# model needs -- weights and activations come out of the same budget, so KV is
+# (GMU x total - overhead) and a small GMU drives it negative. The old code
+# clamped a too-small result up to 0.40 and returned it as if it were measured.
+# That is the worst of both: 0.40 x 119.69 = 47.9 GiB against ~78 GiB of
+# weights and activations per rank, i.e. KV about -30 GiB and a boot that dies
+# on "No available memory for the cache blocks".
+#
+# hy4 never adopts a lower value so the clamp was inert there, but glm53 adopts
+# in BOTH directions, so on a node with an unexpected tenant it would have
+# taken the fabricated 0.40. Refusing instead makes every caller fall back to
+# its configured value, which is what both already do on an unreachable node.
+GMU=$(awk "BEGIN{printf \"%.2f\", $USABLE/$TOTAL_GIB}")
+if awk "BEGIN{exit !($GMU < 0.40)}"; then
+  echo "  ! usable $USABLE GiB gives GMU $GMU -- refusing to size this low." >&2
+  echo "    This is an upper bound from free memory, not a floor from what the" >&2
+  echo "    model needs: at this budget KV goes negative and the boot dies on" >&2
+  echo "    'No available memory for the cache blocks'. Free memory on the" >&2
+  echo "    tightest node, or pin GMU deliberately." >&2
+  exit 1
+fi
 echo "  min=$MIN  -boot=$BOOT_COST  -margin=$MARGIN  => usable $USABLE GiB => GMU $GMU" >&2
 if [ "$EXPORT" = 1 ]; then echo "export GMU_SAFE=$GMU"; else echo "$GMU"; fi

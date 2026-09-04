@@ -9325,6 +9325,34 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "that idiom is real and load-bearing -- if it stops being used, the "
           "no-warning decision above should be revisited")
 
+    # memfree-preflight.sh is shared by both lanes and sizes the number whose
+    # wrong value wedged the fleet. Three faults, all found by running it:
+    pre = open(os.path.join(REPO, "launchers", "memfree-preflight.sh"),
+               encoding="utf-8").read()
+    # 1. the default margin was 3 -- the exact value whose boot left ~3 GiB
+    #    free against a 4.0 GiB watermark. Both launchers pass 10, so the
+    #    default is only reached by a direct call, which is where a trap hurts.
+    check("MARGIN=${1:-3}" not in pre,
+          "the margin default must not be the value that wedged the fleet")
+    check("MARGIN=10" in pre,
+          "the default margin matches what both launchers pass")
+    # 2. the margin was consumed unconditionally, so passing only node
+    #    addresses made the FIRST ADDRESS the margin (awk read 10.10.10.2 as
+    #    10.10) and dropped that node from the measurement.
+    check('[[ "${1:-}" =~ ^[0-9]+([.][0-9]+)?$ ]]' in pre,
+          "a bare number is a margin; an address is a node. The usage line "
+          "calls the margin optional, so it has to actually be optional")
+    # 3. a too-small result was clamped up to 0.40 and returned as if measured.
+    #    hy4 never adopts a lower value so it was inert there, but glm53 adopts
+    #    in BOTH directions: 0.40 x 119.69 = 47.9 GiB against ~78 GiB of
+    #    weights and activations is KV about -30 GiB and a dead boot.
+    check("if(v<0.40)v=0.40" not in pre,
+          "a fabricated floor is worse than refusing: the caller cannot tell "
+          "it from a measurement")
+    check("refusing to size this low" in pre,
+          "too little memory must refuse, so callers fall back to their "
+          "configured value the way they already do for an unreachable node")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
