@@ -946,13 +946,11 @@ def _kda_layout_reason(layer):
     if w.dtype != torch.float32 or tuple(w.shape) != (KDA_QKV, 4):
         return "merged conv weight is %s%s, not float32 (%d, 4)" % (
             w.dtype, tuple(w.shape), KDA_QKV)
-    if not layer._conv_state_dim_first:
-        # The one that cost a campaign: vLLM's DEFAULT is SD, this kernel
-        # indexes DS, and the boot log still said armed={'kda': True}
-        # because _selftest_kda builds its own DS fixtures and passes.
-        return ("process conv-state layout is SD (state_len, dim) but the "
-                "kernel indexes DS (dim, state_len) -- set "
-                "VLLM_SSM_CONV_STATE_LAYOUT=DS to serve MK-KDA")
+    # Both process layouts serve: the wiring hands the kernel a (blocks,
+    # dim, W) view either way (SD arrives transposed, channel stride 1) and
+    # the launch carries the three strides. The old hard SD rejection is
+    # the one that cost a campaign -- it is gone WITH its reason: the
+    # kernel no longer assumes DS addressing.
     if layer.A_log.dtype != torch.float32 or layer.dt_bias.dtype != torch.float32:
         return "A_log/dt_bias are not float32"
     if (conv_state.dtype != torch.float32 or conv_state.dim() != 3
@@ -969,14 +967,18 @@ def _kda_layout_reason(layer):
     if conv_state.shape[2] != KDA_CONV_STATE_W:
         return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
             conv_state.shape[2], KDA_CONV_STATE_W)
-    if not conv_state.is_contiguous():
-        # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype
-        # gate passes and THIS one rejects every layer -- the fp32 (blocks,
-        # 6144, 10) tensor is a strided view of the pool. The kernel indexes
-        # slot * KDA_QKV * width + ...; a block stride is the next contract
-        # to carry. Say the strides so the next boot settles it.
-        return "conv state is not contiguous: shape %s strides %s" % (
-            tuple(conv_state.shape), tuple(conv_state.stride()))
+    # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype gate
+    # passed and a contiguity gate rejected every layer -- the fp32 (blocks,
+    # 6144, 10) tensor is a strided view of the hybrid pool. The kernel now
+    # addresses through (slot, channel, width) strides; what it cannot take
+    # is a view whose slots or channels overlap, or a non-positive stride.
+    s0, s1, s2 = (int(v) for v in conv_state.stride())
+    cw = int(conv_state.shape[2])
+    slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1
+    if (min(s0, s1, s2) < 1 or not (s1 >= s2 * cw or s2 >= s1 * KDA_QKV)
+            or s0 < slot_extent):
+        return "conv state strides %s overlap or are not positive (shape %s)" % (
+            (s0, s1, s2), tuple(conv_state.shape))
     if (rec_state.dtype != torch.float32 or rec_state.dim() != 4
             or tuple(rec_state.shape[1:]) != (KDA_H, KDA_D, KDA_D)):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
@@ -1123,7 +1125,9 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          float(layer._mk_in_pack[2]), float(layer._mk_o_pack[2])],
         [int(meta.num_actual_tokens), int(n_spec),
          int(meta.spec_state_indices_tensor.size(-1)),
-         int(delta_variant), int(conv_state.shape[-1])],
+         int(delta_variant), int(conv_state.shape[-1]),
+         int(conv_state.stride(0)), int(conv_state.stride(1)),
+         int(conv_state.stride(2))],
     )
 
 
@@ -1466,7 +1470,7 @@ class _KdaFixture:
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
-    def mk_run(self, delta_variant=None, drain=False):
+    def mk_run(self, delta_variant=None, drain=False, layout="ds"):
         """MK arm on cloned states -> dict(out, conv_state, rec_state).
 
         delta_variant sweeps the retrieval/write operand order (see the .cu
@@ -1479,7 +1483,7 @@ class _KdaFixture:
         import torch
 
         la, meta = self._layer_stand_in()
-        conv_mk, rec_mk = self.conv_st.clone(), self.rec_st.clone()
+        conv_mk, rec_mk = self._conv_view(layout), self.rec_st.clone()
         out = torch.empty(self.T, HIDDEN, dtype=torch.bfloat16,
                           device="cuda")
         if drain:
@@ -1492,6 +1496,30 @@ class _KdaFixture:
                     delta_variant=delta_variant)
         torch.cuda.synchronize()
         return {"out": out, "conv_state": conv_mk, "rec_state": rec_mk}
+
+    def _conv_view(self, layout):
+        """The fixture's conv state in the three layouts the engine can hand
+        out: a contiguous (slots, dim, W) block ("ds"), the same with a
+        page-aligned slot stride ("pad"), and the SD pool's transposed view
+        ("sd", channel stride 1). Same values in all three."""
+        import torch
+
+        src = self.conv_st
+        slots, w = src.shape[0], src.shape[2]
+        if layout == "ds":
+            return src.clone()
+        if layout == "pad":
+            per = KDA_QKV * w + 4096
+            buf = torch.zeros(slots * per, dtype=torch.float32, device="cuda")
+            view = buf.as_strided((slots, KDA_QKV, w), (per, w, 1))
+            view.copy_(src)
+            return view
+        if layout == "sd":
+            view = torch.empty(slots, w, KDA_QKV, dtype=torch.float32,
+                               device="cuda").transpose(1, 2)
+            view.copy_(src)
+            return view
+        raise ValueError(layout)
 
     def pick_variant(self):
         """First delta variant whose output AND states match the stock op
@@ -1622,6 +1650,21 @@ def _selftest_kda() -> bool:
     v = fx.pick_variant()
     if v is None:
         return False
+    # The production state is a strided view (page-aligned slots; the SD
+    # pool's transpose): the same run through the padded and transposed
+    # fixtures must land on the contiguous result. A layout bug is garbage
+    # (rel ~1), so the tolerance below only has to absorb split-K order.
+    base = fx.mk_run(v)
+    for lay in ("pad", "sd"):
+        got = fx.mk_run(v, layout=lay)
+        for key in ("out", "conv_state", "rec_state"):
+            rel = _rel_err(got[key], base[key])
+            if not rel <= 1e-5:
+                logger.warning("[megakernel] selftest kda layout %s: %s rel=%.2e "
+                               "vs the contiguous run -> DISARM", lay, key, rel)
+                return False
+    logger.warning("[megakernel] selftest kda: padded-slot and SD-transposed "
+                   "views match the contiguous run -> ARM")
     _KDA_VARIANT = v
     return True
 
@@ -1671,12 +1714,10 @@ def arm() -> None:
                 from vllm.model_executor.layers.mamba.mamba_utils import (
                     is_conv_state_dim_first)
 
-                if not is_conv_state_dim_first():
-                    logger.warning(
-                        "[megakernel] kda ARMED but the process conv-state "
-                        "layout is SD; this kernel indexes DS, so EVERY "
-                        "layer will fall back to stock. Set "
-                        "VLLM_SSM_CONV_STATE_LAYOUT=DS.")
+                logger.warning(
+                    "[megakernel] kda armed; process conv-state layout is %s "
+                    "(served through the launch strides either way)",
+                    "DS" if is_conv_state_dim_first() else "SD")
             except Exception:
                 pass
     logger.warning("[megakernel] armed=%s shadow_kda=%s",

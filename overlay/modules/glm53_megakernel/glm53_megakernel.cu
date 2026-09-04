@@ -1509,6 +1509,13 @@ struct MKKdaArgs {
   // runtime width as stride (review finding).
   float* conv_state;
   int conv_width;
+  // Element strides of conv_state over (slot, channel, width). The engine
+  // hands the state out as a VIEW of the hybrid pool: a slot stride wider
+  // than KDA_QKV*width (page alignment), or the SD layout's transposed
+  // view (channel stride 1). KDA32SHADOW (29차) rejected every layer on a
+  // contiguity gate; the kernel addresses through the strides instead and
+  // the Python gate only refuses overlapping or non-positive ones.
+  long long cs_s0, cs_s1, cs_s2;
   float* rec_state;            // [slots, KDA_H, KDA_D, KDA_D] fp32
   const float* a_log;          // [KDA_H] fp32
   const float* dt_bias;        // [KDA_H*KDA_D] fp32
@@ -1679,20 +1686,19 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
       for (int ch = blockIdx.x * CPB + threadIdx.x;
            ch < KDA_QKV && threadIdx.x < CPB; ch += a.grid * CPB) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
-        const size_t sbase = (size_t)slot * KDA_QKV * a.conv_width +
-                             (size_t)ch * a.conv_width;
+        const size_t sbase = (size_t)slot * a.cs_s0 + (size_t)ch * a.cs_s1;
         const int keep = a.conv_width - nq_tok;
         // history = state[acc-1 .. acc+1]; kept = state[acc .. acc+keep-1]
         // (keep <= 2 whenever nq_tok >= 8; guard the general case)
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
-          st[i] = a.conv_state[sbase + (acc - 1) + i];
+          st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];
         float kept[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           kept[i] = (i < keep && acc + i < a.conv_width)
-                        ? a.conv_state[sbase + acc + i]
+                        ? a.conv_state[sbase + (size_t)(acc + i) * a.cs_s2]
                         : 0.0f;
         float xin[NQ_MAX];
 #pragma unroll
@@ -1727,7 +1733,7 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
 #pragma unroll
             for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;
           }
-          a.conv_state[sbase + i] = v;
+          a.conv_state[sbase + (size_t)i * a.cs_s2] = v;
         }
       }
     }
@@ -2857,7 +2863,7 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.attn = (__nv_bfloat16*)ptrs[20];
   a.barrier_ctr = (unsigned long long*)ptrs[21];
   a.onorm_w = (const __nv_bfloat16*)ptrs[22];
-  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 5 && scalars.size() == 4,
+  TORCH_CHECK(ptrs.size() == 23 && ints.size() == 8 && scalars.size() == 4,
               "run_kda arg contract");
   a.num_tokens = (int)ints[0];
   a.n_spec = (int)ints[1];
@@ -2866,6 +2872,11 @@ void mk_run_kda(std::vector<int64_t> ptrs, std::vector<double> scalars,
               "kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)");
   a.delta_variant = (int)ints[3];
   a.conv_width = (int)ints[4];
+  a.cs_s0 = ints[5];
+  a.cs_s1 = ints[6];
+  a.cs_s2 = ints[7];
+  TORCH_CHECK(a.cs_s0 > 0 && a.cs_s1 > 0 && a.cs_s2 > 0,
+              "kda: conv state strides must be positive");
   a.lower_bound = (float)scalars[0];
   a.onorm_eps = (float)scalars[1];
   a.in_wgs = (float)scalars[2];

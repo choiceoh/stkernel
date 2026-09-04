@@ -6561,9 +6561,24 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "the layout gate must be able to say which predicate failed")
     reason = mk[mk.index("def _kda_layout_reason(layer)"):
                 mk.index("def _kda_layout_ok(layer)")]
-    check("VLLM_SSM_CONV_STATE_LAYOUT=DS" in reason,
-          "the SD reason must name the env that fixes it -- a reason the "
-          "reader cannot act on is the same silence in more words")
+    # 29차: the kernel addresses the state through launch-carried strides,
+    # so the gate no longer rejects a process layout (SD arrives as a
+    # transposed view) or a non-contiguous view (page-aligned slots); it
+    # refuses only overlapping / non-positive strides, and says them.
+    check("_conv_state_dim_first" not in reason
+          and "conv_state.is_contiguous()" not in reason
+          and "conv state strides %s overlap or are not positive" in reason
+          and "slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1" in reason,
+          "the layout gate admits strided views and names the strides it "
+          "refuses -- a contiguity gate rejected every production layer")
+    launch = mk[mk.index("def _kda_launch("):mk.index("def kda_block(")]
+    check("int(conv_state.stride(0)), int(conv_state.stride(1))" in launch
+          and "int(conv_state.stride(2))" in launch,
+          "the launch carries the three conv-state strides")
+    st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
+    check('fx.mk_run(v, layout=lay)' in st and '("pad", "sd")' in st,
+          "the self-test runs the padded-slot and SD-transposed views "
+          "against the contiguous result")
     ok = mk[mk.index("def _kda_layout_ok(layer)"):
             mk.index("def _kda_ensure_packs")]
     check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok,
@@ -8392,12 +8407,17 @@ def test_glm53_megakernel_contracts() -> None:
     # -- state slot addressing: [slots, ...] buffers need the per-slot
     #    element count in the stride (a slot-0-only self-test once passed
     #    while the conv stride was missing it -- found in review)
-    check(cu.count("slot * KDA_QKV * a.conv_width") >= 1
-          and "sbase + i" in cu and "sbase + acc + i" in cu,
-          "conv state slot stride is KDA_QKV*conv_width, computed once as "
-          "sbase and used by every read and write "
-          "(spec allocates a wider window; runtime width is the stride)")
-    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+    check(cu.count("slot * a.cs_s0 + (size_t)ch * a.cs_s1") >= 1
+          and "sbase + (size_t)i * a.cs_s2" in cu
+          and "sbase + (size_t)(acc + i) * a.cs_s2" in cu
+          and "slot * KDA_QKV * a.conv_width" not in cu
+          and "ints.size() == 8" in cu
+          and "conv state strides must be positive" in cu,
+          "conv state is addressed through (slot, channel, width) strides "
+          "carried by the launch, computed once as sbase and used by every "
+          "read and write (the engine hands out page-aligned / transposed "
+          "views; a contiguity gate rejected every production layer, 29차)")
+    check("st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];" in cu
           and "a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i]" not in cu,
           "the convolution's pos<0 history starts at the accepted boundary "
           "(state[acc - 1 .. acc + 1], the stock spec kernel's prior_tokens) "
@@ -8428,7 +8448,7 @@ def test_glm53_megakernel_contracts() -> None:
     # -- the state-index contract, taken from the stock kernels: the conv
     #    history starts at the accepted boundary, the recurrence resumes
     #    from slot [r, acc - 1] and stores after every token into [r, j]
-    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+    check("st[i] = a.conv_state[sbase + (size_t)(acc - 1 + i) * a.cs_s2];" in cu
           and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
           and "if (slot0 <= 0 || t1 <= t0) continue;" in cu
           and "const int sj = a.state_idx[r * a.mql + j];" in cu
