@@ -584,6 +584,79 @@ act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **�
 
 ---
 
+---
+
+## EXP-17 — MHC TileLang 패스설정 A/B: TMA lowering · warp specialization (2026-09-04 추가)
+
+이미지 원본이 모든 mhc 커널에서 **둘 다 꺜 두었다** (`tilelang_kernels.py`
+의 `TL_DISABLE_TMA_LOWER: True` · `TL_DISABLE_WARP_SPECIALIZED: True`).
+GB10엔 TMA가 있고(deep_gemm sm120이 실사용) 비활성 사유의 기록이 없다.
+vllm-mhc 쪽 PDL은 다르다 — 이미지가 SM12x에서 "unvalidated + KDA state
+kernel 경합"으로 명시적으로 봉인했다(신규 컨테이너 실측 False, 원장
+2026-09-04). **vllm-mhc PDL 축은 재개 금지.** (MK 자체 PDL=EXP-12 는 별개.)
+
+1단계 — 프로브 (srv4 새 컨테이너):
+
+```bash
+ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --passes'
+```
+
+- 4콤보(none/tma/ws/tma,ws) 각각 **독립 컨테이너**(패스설정은 import 시
+  컴파일에 굳는다). stock 조합이 참조를 저장(`--ref-save`)하고 나머지가
+  대조(`--ref-load`, 게이트 rel≤1e-4). ONEPASS도 함께 켜 각 조합에서
+  pair+onepass 둘 다 잰다. 조합이 컴파일에 실패하면 그 자체가 그 조합의
+  판정으로 기록되고 스윕은 계속된다.
+- 시간 승자가 없거나 rel 게이트 깨지면 "비활성은 필요했다"로 축 종결.
+
+2단계 — 브래킷 (승자가 있는 경우만):
+
+```bash
+EXTRA_ENV="VLLM_GLM53_MHC_PASSES=<승자조합>" \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+```
+
+- 부팅 로그의 `[deneb] VLLM_GLM53_MHC_PASSES=... TL_DISABLE_...=...` 라인으로
+  engine-confirmed 값을 확인한다. 게이트: 9/9 + 한국어 0/16 + C=1 step/s.
+
+## EXP-18 — osar copy/reduce 16B 벡터화 + 캐시정책 (코드 반영 완료, 브래킷 대기)
+
+#99 위상 실측의 직렬 성분(copy 6.6µs + reduce 5.2µs/콜렉티브)을 2라운드로
+절감했다. **R1(벡터화)**: copy/reduce를 16B(8×bf16) 렌으로 — 발행 명령 8배
+감소, reduce의 `src` 재독기를 레지스터 스태시로 제거, warp 요청 64B→128B.
+**R2(캐시정책·팩 변환)**: `tx` 저장 `__stwt`(쓰기-스루), 피어 `rx` 로드
+`__ldcs`(evict-first), 변환 `__bfloat1622float2`/`__float22bfloat162_rn` 팩.
+요소별 연산 순서와 rn 반올림이 불변이라 **출력은 스칼라 원조까지 비트
+동일**. 펜스·done_ctr·48블록 그리드·EXP-13 프리페치 기계장치는 불변.
+16B 미정렬 입력은 shim `_eligible`이 NCCL로 돌린다.
+
+- **기대치는 정직하게**: R1 천장 ~0.6-0.8ms(0.9-1.2%). R2의 본체는 L2 위생
+  (~100 콜렉티브/스텝 × ~256KB = L2 전체 크기급 churn 제거 — #100 중립
+  판정이 예측 못 하는 부류)이나, `__stwt`는 L2 쓰기-결합을 포기해 copy
+  위상 자체를 늦출 수 있다. 위상 로그는 진단, **판정은 C=1 브래킷**.
+- 검증 순서(귀속 주의): 부팅 osar self-test PASS → 부팅 로그
+  `[osar] source md5=b0275622 kernels=1` 지문 확인 → `[osar] phase` 로그에서 R1은 copy/reduce 감소가 기대치,
+  R2의 ldcs+팩 변환은 reduce 추가 감소, stwt는 copy에 비용 가능 —
+  → C=1 step/s 브래킷 + 9/9 + 한국어.
+- 게이트 없는 코드 반영이므로 다음 배포부터 dsv4·glm53 양 프로필 모두에
+  적용된다. 롤백 = 모듈 리버트 후 재배포(manifest SHA가 게이트한다).
+
+## EXP-19 — hc 가중치 bf16 (`--hcweight` 프로브 — 수치 축, 후순위)
+
+mhc onepass 1회 호출의 지배 비용이 `weight_t` fp32 ~1.57MB 읽기(DRAM
+플로어 5.8µs × 90호출 = 0.52ms)다. bf16이면 절반이지만 "hc weights are
+fp32 by design"이라 품질 축이다. 프로브는 오류 두 종류를 분리한다:
+대조군(같은 반올림 가중치를 fp32로 먹인 스톡 onepass) 대조 ≤1e-4는 **전위
+오류 게이트**, 스톡-fp32 대조 오차는 양자화 비용으로 **보고만** 한다.
+
+```bash
+ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight'
+```
+
+- 시간 승자 + 양자화 오차가 수용 가능해 보여도 채택은 별도 작업이다:
+  바인딩 시점 가중치 캐스팅 배선 + 풀 품질 게이트(9/9 + 한국어 + 브래킷).
+
+---
+
 ## 순서와 근거
 
 1. **EXP-1 (EP)** — 기대값 최대. 실패해도 부팅 하나로 원장에 정리된다.
@@ -600,6 +673,9 @@ act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **�
 12. **EXP-12 (서빙 PDL)** — 프로브(그래프 체인) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
 13. **EXP-13 (AR 프리페치)** — 컴파일 → 4랭크 disttest → 브래킷(EXP-6+12 위). 수치 불변.
 14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
+15. **EXP-17 (MHC 패스설정)** — 프로브 4컨테이너 무부팅 판정, 승자면 브래킷 1회.
+16. **EXP-18 (osar 벡터화+캐시정책)** — 코드 반영 완료, 다음 부팅 브래킷에서 자동 판정.
+17. **EXP-19 (hc bf16)** — 수치 축, 승자여도 배선+품질 게이트가 별도.
 
 12. **EXP-11 (dsv4 에 MK_SEG_MHC)** — 2단계는 **부팅 없음**: srv2 에서 서빙 컨테이너가
     비었을 때(`docker ps`) `bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20`.
@@ -609,6 +685,10 @@ act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **�
     다리는 통제군과 같아야 정상이다. 2단계에서 지면 여기서 닫고 러너북에 숫자만 남긴다.
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
+
+추가(2026-09-04): **vllm-mhc 체인의 PDL 재활성** — 이미지가 "SM12x
+unvalidated + KDA state kernel 경합"으로 봉인(원장 2026-09-04). MK 자체
+PDL(EXP-12)은 별개 축.
 
 W4A8 기본화(#110), drafter 측 비용(#104), FP4 CUTLASS 패딩(출력 파손),
 업스트림 b12x EP(#3383), ROCm 전용 융합 3종, `fuse_allreduce_rms`(sm_121 키

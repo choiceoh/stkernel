@@ -2614,6 +2614,81 @@ def test_mhc_smallm_knob() -> None:
             os.environ[env_name] = saved
 
 
+def test_mhc_passes_knob() -> None:
+    """VLLM_GLM53_MHC_PASSES: parse strictly; unset/invalid = stock passes.
+
+    The knob flips TileLang pass configs (TMA lowering / warp specialization)
+    for EVERY mhc kernel at import -- an ambiguous value must leave the
+    compiled kernels identical to the image's (both TL_DISABLE_* stay True),
+    same fail-safe shape as the sibling MHC knobs.
+    """
+    env_name = "VLLM_GLM53_MHC_PASSES"
+    saved = os.environ.pop(env_name, None)
+
+    def load():
+        return load_defs(
+            "overlay/tilelang_kernels.py",
+            {
+                "_MHC_PASSES_ENV",
+                "_deneb_parse_mhc_passes",
+                "_raw_mhc_passes",
+                "_DENEB_MHC_PASSES",
+            },
+            {"os": os},
+        )
+
+    try:
+        os.environ.pop(env_name, None)
+        ns = load()
+        parse = ns["_deneb_parse_mhc_passes"]
+        check(ns["_DENEB_MHC_PASSES"] is None,
+              "env unset: knob is None (stock pass configs)")
+
+        check(parse("tma") == (True, False), "parse tma only")
+        check(parse("WS") == (False, True), "parse ws, case-insensitive")
+        check(parse("tma,ws") == (True, True), "parse both")
+        check(parse("ws,tma") == (True, True), "parse both, order-free")
+        check(parse(" tma , ws ") == (True, True), "parse whitespace")
+        check(parse("tma,tma") == (True, False), "duplicate token tolerates")
+        check(parse("none") == (False, False),
+              "'none' is the explicit stock combo (probe reference pass)")
+        check(parse("") is None and parse(",") is None, "empty -> None")
+        check(parse("tma,xyz") is None, "unknown token -> None (stock)")
+        check(parse("all") is None, "'all' is not a token -> None (stock)")
+
+        os.environ[env_name] = "tma"
+        ns = load()
+        check(ns["_DENEB_MHC_PASSES"] == (True, False),
+              "env set: knob frozen at import")
+        os.environ[env_name] = "bogus"
+        ns = load()
+        check(ns["_DENEB_MHC_PASSES"] is None,
+              "invalid value falls back to stock, never a partial arm")
+
+        # Wiring: the parsed value must reach the dict the decorators bind,
+        # before the first @tilelang.jit reads it. load_defs cannot exec the
+        # flips themselves (they need tilelang), so pin them at source level.
+        # The decorator match is line-anchored: this module's own comments
+        # mention "@tilelang.jit", and a bare substring search would find the
+        # comment instead of the decorator (this test's first draft did).
+        src = open(_overlay_source("overlay/tilelang_kernels.py"),
+                   encoding="utf-8").read()
+        first_jit = re.search(r"^@tilelang\.jit", src, re.M).start()
+        check("pass_configs[tilelang.PassConfigKey.TL_DISABLE_TMA_LOWER] = False"
+              in src, "tma flip is wired into pass_configs")
+        check("pass_configs[tilelang.PassConfigKey."
+              "TL_DISABLE_WARP_SPECIALIZED] = False" in src,
+              "ws flip is wired into pass_configs")
+        check(src.index("TL_DISABLE_TMA_LOWER] = False") < first_jit
+              and src.index("TL_DISABLE_WARP_SPECIALIZED] = False") < first_jit,
+              "flips precede the first @tilelang.jit that binds the dict")
+    finally:
+        if saved is None:
+            os.environ.pop(env_name, None)
+        else:
+            os.environ[env_name] = saved
+
+
 # ---------------------------------------------------------------------------
 # EP stock top-k token chunks: strict opt-in above the preserved #146 fallback.
 # ---------------------------------------------------------------------------
@@ -10335,6 +10410,7 @@ if __name__ == "__main__":
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
     test_mhc_smallm_knob()
+    test_mhc_passes_knob()
     test_mhc_probe_contracts()
     test_mhc_onepass_math()
     test_mhc_smallm_split_ownership()

@@ -69,3 +69,30 @@ bindings; `probes/oneshot_ar_disttest.py` times a 12 MB hint against none and
 reads `t_wait` for both, which is where any DRAM contention with the NIC's
 writes would show. Ceiling on the critical rank (its wait is the transfer,
 ~20 us = 4.6 MB at 230 GB/s): ~1.5-2.5 ms/step. Fleet bracket only.
+
+## 16B vector lanes + cache policy in copy/reduce (2026-09-04)
+
+`k_oneshot`'s copy and reduce phases moved from 2-byte scalar accesses to
+16-byte (8 x bf16) vectors, with explicit cache policy on top. #99's phase
+timers put copy+reduce at ~11.8us of the ~100us collective; the guaranteed
+wins are 8x fewer issued instructions, the reduce's `src` re-read eliminated
+(register stash -- the copy and reduce mappings are identical, and the
+per-thread trip count is bounded by `VECITER` = 2), and warp requests 2x
+wider (64B -> 128B). Cache policy: `tx` stores go `__stwt` (write-through --
+the GPU never re-reads tx; the host proxy and our NIC, as the RDMA DMA
+source, are the readers, both from host memory), peer `rx` loads go `__ldcs`
+(evict-first streaming -- consumed once, NIC-overwritten four collectives
+later), and the reduce's bf16<->fp32 conversions pack through
+`__bfloat1622float2`/`__float22bfloat162_rn`. Per-element op order and rn
+rounding are untouched, so outputs are bitwise identical to the scalar
+original; the publish protocol (fences, `done_ctr`, fixed grid) and the
+peer-wait prefetch machinery are untouched too. 16B-misaligned tensors are
+routed to NCCL by the shim's eligibility check (rank-consistent: same
+producer code everywhere, caching-allocator blocks are 512B-aligned).
+
+The L2-hygiene story: ~100 collectives/step push ~26MB/step through the
+24MB L2; making osar L2-transparent helps whatever shares the cache -- an
+effect the #100 wait-neutrality precedent does not predict (it reduces
+interference, not osar's own latency). Honest counterweight: `__stwt` gives
+up L2 write-combining and may slow t_copy itself; the phase log is the
+diagnostic and the C=1 bracket is the arbiter.

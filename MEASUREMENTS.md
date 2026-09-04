@@ -3400,3 +3400,50 @@ for a bias)`. GMU 차이 1.3% 를 빼도 증가분의 대부분이 해제분이�
 `glm53:v13-b12x-it` + `LOAD_FORMAT=instanttensor`: 가중치 **184 GB 를 58초**에 읽는다
 (평범한 safetensors 로더는 340초, 그 구간만 5.9배). 여기에 다른 세션의 nvcc·osar·
 TileLang 영속 캐시(#248/#249)가 더해져 전체 901 → **345초**.
+
+## ★osar 에필로그 융합(AR+residual+norm+quant) — 인접성 실측으로 기각 (2026-09-04, 무부팅)
+
+제안: k_oneshot 각각 뒤에 residual add → norm → quant 체인이 붙는다는 전제로,
+이를 AR 커널 에필로그에 접어 콜렉티브당 2-3개씩 200-300개(≈1.7-2.4%)를 없애는
+축. 벤더 `fuse_allreduce_rms`의 sm_121 런타임 게이트와 무관하게 osar는 우리
+커널이라 게이트를 직접 만들 수 있다는 것이 근거였다.
+
+**기각 — 전제인 "AR 직후 체인"이 이 모델에 존재하지 않는다.**
+
+소스(정본): MHC 45층 전부에서 attn AR(o_proj)의 소비자는 norm 이 내장된
+`hc_fused_post_pre` 단일 TileLang 커널이고(`glm5next_model.py`), MoE AR 의
+소비자는 다음 층의 같은 커널이다. 비-MHC(MTP) 경로의 add+norm 도 이미
+인듀서가 한 커널로 융합한다. 트레이스 교차확인(08-31 스톡 체인 트레이스,
+`census.py --after k_oneshot`): +1번째 커널 = mhc_fused 84.0(82.4%) ·
+인듀서 fused_add_rms_norm 8.0 · mhc_post 6.0 · 단발 4.0 — 흡수 가능 천장
+≈ 10개/스텝 ≈ 0.08%. +2/+3의 quant·게이트는 mhc 커널 뒤라 osar 에필로그가
+아니며, quant 축은 기존 판정(소유 가능분 mhc_pre 에필로그 ~0.15ms)이 닫았다.
+
+스코핑 주의: 위 수치는 08-31 **스톡 체인** 트레이스 기준이다. 메가커널
+세그먼트가 AR 소비자인 부팅(EXP-6 계열)에서는 인접 성분이 다를 수 있으니
+MK 팔에서 이 결론을 재인용하기 전에 `census.py --after k_oneshot` 으로 다시
+셀 것. 도구(신규): `census.py <trace> --after REGEX [--depth N]`.
+
+교훈: 일반 vLLM 레이어 구조에서 이식한 추정이 glm5-next 의 MHC 융합 구조와
+충돌한 사례 — "그룹 합계는 소스를 읽기 전까지 의문점"과 같은 부류다.
+
+## ★PDL은 vllm-mhc 쪽에서 이미지가 봉인 — pdl_sync/trigger는 dead code (2026-09-04, 신규 컨테이너 실측)
+
+mhc TileLang 커널의 `T.pdl_sync`/`T.pdl_trigger`는
+`ENABLE_PDL = current_platform.is_arch_support_pdl()` 조건부인데, 신규
+컨테이너 실측으로 이 값이 **False**다(GB10). 이미지 구현이 사유를 명시한다
+(`vllm/platforms/cuda.py`): "PDL lowering is unvalidated on SM12x (GB10) and
+races on KDA state kernels there; keep it to Hopper/Blackwell-datacenter."
+(`major in (9,10)`). 즉 **vllm mhc 체인의 PDL 재활성은 저자가 경합 사유로
+봉인한 축** — 이 게이트를 우회하는 실험 금지.
+
+**스코프**: 이 판정은 vllm/TileLang mhc 커널의 플랫폼 게이트 이야기다.
+메가커널 자체 발사의 PDL(EXP-12, `VLLM_GLM53_MK_PDL`)은 우리 커널의 런치
+속성으로 직접 켜는 별개 축이며 이 판정과 무관하다.
+
+재현 (srv4, 서빙 컨테이너 미접촉):
+
+```bash
+docker run --rm --gpus all --entrypoint python3 glm53:v13-b12x -c \
+  "from vllm.platforms import current_platform; print(current_platform.is_arch_support_pdl())"
+```
