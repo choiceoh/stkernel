@@ -11,7 +11,10 @@ lane config, not a precision experiment.
 
 Quantized once after `load_weights` (the call site lives in `glm53_model_wiring`)
 and before compile/capture, by swapping each Linear's `quant_method`; the bf16
-originals stay for fallback. Armed by `VLLM_GLM53_FP8_DENSE=1` (default off).
+originals stay for fallback. Armed by `VLLM_GLM53_FP8_DENSE=1` -- off when the
+env is unset, and **the glm53 profile ships it 1**, so serving always has it. A
+module's default and what the fleet runs are different statements; profiles/README.md
+carries the second one.
 The kernel pair is the one `fp8_lm_head` already runs under capture here.
 
 ## b-projection arm — `VLLM_GLM53_FP8_DENSE_BPROJ` (default off)
