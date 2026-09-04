@@ -2385,6 +2385,15 @@ int mk_choose_ksr(int m, int n, int k, int grid) {
       if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }
     }
   }
+  {  // probe knob: force the standalone lane's split (0 = the cost model).
+     // Bench only -- the shapes the model refuses to split (k-blocks <= 8:
+     // the shared expert's down [4096 x 512] runs 32 tiles on 48 blocks
+     // with 16 idle) are the 30-45 us class of 28차, and the "no slice
+     // under 8 k-blocks" rule was measured at k = 2048, not there.
+    static int f = -1;
+    if (f < 0) { const char* e = getenv("VLLM_GLM53_MK_KSR"); f = e ? atoi(e) : 0; }
+    if (f > 0 && full == 0 && rem > 0 && m <= 32) ksr = f < kblk ? f : kblk;
+  }
   return ksr;
 }
 
