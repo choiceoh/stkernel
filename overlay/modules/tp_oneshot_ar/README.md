@@ -38,3 +38,34 @@ the existing all-rank bootstrap vote, so every rank stays on NCCL. The fixed
 graph behavior. A block barrier between each thread's system fence and thread
 0's completion atomic also guarantees that the last block cannot publish a
 partially copied RDMA payload.
+
+## L2 prefetch during the peer wait (2026-09-04, `VLLM_GLM53_AR_PREFETCH`)
+
+The collective's wait is 38.7 of its 45.5 us (MEASUREMENTS 19차), ~100 times
+per decode step, and during it DRAM is idle on every rank. `k_oneshot` now
+takes `HintArgs` -- up to 8 (pointer, bytes) ranges of the weights the NEXT
+kernel streams -- and warps 1..7 of every block walk them with
+`prefetch.global.L2` (32 B sectors, interleaved across the grid so every
+consumer block gets a uniform slice) while thread 0 polls the peer flags.
+Owning blocks stop the moment the peers land; the budget (default 12 MB,
+knob value = MB, 1..20; L2 is 24 MB) bounds the work either way. `n == 0` is
+the old kernel byte for byte.
+
+What to warm is LEARNED, not declared. The megakernel driver's launches
+(`_gemm_call`, `_mhc_call`, `_kda_launch`) call `note_consumer(tensors)`;
+the shim files the note under the ordinal of the most recent collective of
+the current target forward; `begin_forward`/`end_forward` come from
+`Glm5NextForConditionalGeneration.forward`, the class above the compiled
+region (the drafter is a different class and never sees the table). A
+forward that noted more consumers than the adopted table replaces it -- a
+decode-shaped eager warmup does, a prefill forward (M > 32, stock GEMMs)
+does not -- and the captured launches bake the adopted table's ranges into
+their `HintArgs`. Every collective of the forward advances the ordinal,
+whichever path serves it, so NCCL-served prefill collectives keep the keys
+aligned. Needs MK-GEMM armed to have anything to learn.
+
+`oneshot_ar_hint(x, ptrs, lens)` and `phase_counters()` are the probe-facing
+bindings; `probes/oneshot_ar_disttest.py` times a 12 MB hint against none and
+reads `t_wait` for both, which is where any DRAM contention with the NIC's
+writes would show. Ceiling on the critical rank (its wait is the transfer,
+~20 us = 4.6 MB at 230 GB/s): ~1.5-2.5 ms/step. Fleet bracket only.

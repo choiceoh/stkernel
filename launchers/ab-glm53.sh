@@ -26,7 +26,10 @@ HEAD=${HEAD_IP:-10.10.10.2}
 
 case "$ARM" in
   base) ARM_ENV="VLLM_GLM53_MEGAKERNEL=0" ;;   # stock: the profile ships the set ON since 28차
-  cand) ARM_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1 VLLM_GLM53_MK_GEMM=1 VLLM_GLM53_MK_MLA=1" ;;
+  # MK_PDL rides with the segments: the launch form the kernels were tuned
+  # for (17-19 pct per launch, bench probe), and the profile default since
+  # 2026-09-04 -- named here so an older profile cannot drop it silently.
+  cand) ARM_ENV="VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MHC=1 VLLM_GLM53_MK_GEMM=1 VLLM_GLM53_MK_MLA=1 VLLM_GLM53_MK_PDL=1" ;;
   *) echo "ABORT: arm must be base or cand"; exit 1 ;;
 esac
 

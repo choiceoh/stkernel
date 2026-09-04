@@ -271,6 +271,44 @@ class CandidateSelector(nn.Module):
 
 
 
+_EARLY_FC = None
+
+
+def _early_fc_take():
+    """`take_early_fc` of glm53_dflash_early_fc, resolved once; None when that
+    module is not mounted (stock projection every step)."""
+    global _EARLY_FC
+    if _EARLY_FC is None:
+        try:
+            from vllm.models.glm5next.nvidia.glm53_dflash_early_fc import (
+                take_early_fc,
+            )
+
+            _EARLY_FC = take_early_fc
+        except Exception:
+            _EARLY_FC = False
+    return _EARLY_FC or None
+
+
+_OSAR = None
+
+
+def _osar_shim():
+    """The one-shot AR shim, resolved once; None when it is not mounted or
+    predates the prefetch hints (the same resolver the target model uses)."""
+    global _OSAR
+    if _OSAR is None:
+        try:
+            from vllm.distributed.device_communicators import (
+                dsv4_oneshot_shim as shim,
+            )
+
+            _OSAR = shim if hasattr(shim, "begin_forward") else False
+        except Exception:
+            _OSAR = False
+    return _OSAR or None
+
+
 def dflash2_selector_load_verdict(stats):
     """Did the path selector's weights actually load? Pure predicate.
 
@@ -350,6 +388,43 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             ),
         )
 
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # AR prefetch hints for the drafter's own collectives (tp_oneshot_ar,
+        # VLLM_GLM53_AR_PREFETCH): the drafter runs TP=4 with two collectives
+        # per layer, and each one can warm the next GEMM's W4 pack while it
+        # waits for the peers. The shim keys its learned hints by "which
+        # collective of which model's forward", so the boundary has to come
+        # from THIS class -- above the compiled DFlashQwen3Model, like the
+        # target's boundary sits above its compiled region -- and under its
+        # own scope, so the target's richer table never overwrites the
+        # drafter's. No-op unless the knob is set or the shim is not mounted.
+        osar = _osar_shim()
+        if osar is not None:
+            osar.begin_forward("drafter")
+        try:
+            return super().forward(input_ids, positions, inputs_embeds)
+        finally:
+            if osar is not None:
+                osar.end_forward()
+
+    def combine_hidden_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # deneb fork (glm53_dflash_early_fc): the fc may already have run on a
+        # side stream under the target's head + sampler. Take that result for
+        # this step's token count, else the stock projection. Waits on the
+        # producer's event first, before precompute_and_store_context_kv and
+        # the drafter graph -- no megakernel launch overlaps the fc's.
+        early = _early_fc_take()
+        if early is not None and hidden_states.dim() == 2:
+            got = early(self, int(hidden_states.shape[0]))
+            if got is not None:
+                return got
+        return super().combine_hidden_states(hidden_states)
 
     def verify_selector_loaded(self) -> None:
         """Say out loud whether the path selector's weights actually arrived.

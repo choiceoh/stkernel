@@ -483,6 +483,97 @@ MLA(rope 64 · topk 512 · 압축기 · 슬라이딩 윈도)·GEMM(dense 가 블
   프로브의 `--stock dispatch` 가 부팅이 실제로 타는 팔을 재고 `hit` 열로 그걸
   말한다.
 
+## EXP-12 — 서빙 PDL (`VLLM_GLM53_MK_PDL=1`, 2026-09-04 추가)
+
+메가커널 발사는 PDL(programmatic dependent launch)로 튜닝돼 있다 — 다음 MK 커널이
+앞 커널이 비운 SM 에서 시작해 꼬리 동안 첫 W 타일을 당긴다(연속 2발 발사당
+−17~19%, 2차). 그런데 드라이버는 env 를 읽고 **프로브만 그것을 켰다**: 프로필에도
+`ab-glm53.sh` 의 cand 팔에도 없었으므로 지금까지의 무장 부팅은 전부 PDL 없이
+돌았다(173발/스텝). EXP-6 종단 무효과의 용의자 1번.
+
+- 수치 불변: 모든 MK 커널이 앞 커널 출력을 읽기 전에 `griddepcontrol.wait` 하고,
+  wait 앞의 채움은 가중치뿐(mk_gemm_phase 의 hoist). 그래프 캡처 안 체인 형태는
+  `probes/mk_pdl_graph_check.py` 가 판정한다(gemm→gemm→gemm, mhc→gemm 리플레이
+  비트 동일 + PDL on/off 발사당 µs).
+- 배선: `profiles/glm53.env` 기본 1, `ab-glm53.sh` cand 팔에 명시. 세그먼트가
+  하나도 무장되지 않으면 무효(inert).
+- 상한: 173발 × 5~10 µs = −0.9~1.7 ms/스텝. 단독 부팅 금지 — EXP-6 브래킷의 cand
+  팔에 얹는다(수치 축 하나 규칙: PDL 은 속도만 바꾼다).
+
+```bash
+bash probes/run_mk_probe.sh probes/mk_pdl_graph_check.py                     # PDL=1
+VLLM_GLM53_MK_PDL=0 bash probes/run_mk_probe.sh probes/mk_pdl_graph_check.py # 대조
+```
+
+**결과(2026-09-04, srv2, 27차)**: 체인 리플레이 비트 동일(on/off 모두), 24발 그래프 off 58.0 →
+on 53.6 µs/발사(−7.6%). 프로필 기본 1. 남은 것 = EXP-6 브래킷의 cand 팔.
+
+## EXP-13 — AR 대기 중 다음 커널 가중치 L2 프리페치 (`VLLM_GLM53_AR_PREFETCH`, 2026-09-04 추가)
+
+`k_oneshot` 의 대기(회당 38.7/45.5 µs, 스텝당 ~100회)는 모든 랭크에서 DRAM 이
+노는 시간이다. 커널이 `HintArgs`(최대 8개 (포인터, 바이트))를 받아 워프 1~7 이
+`prefetch.global.L2` 로 걷고 스레드 0 은 그대로 플래그를 돈다. 힌트는 **학습**:
+MK 드라이버의 발사(`_gemm_call`·`_mhc_call`·`_kda_launch`)가 읽을 가중치를
+`note_consumer` 로 알리고, shim 이 "타깃 forward 의 몇 번째 콜렉티브 뒤인가" 로
+파일해 두었다가 캡처 시 발사에 굳힌다. forward 경계는 컴파일 영역 위의
+`Glm5NextForConditionalGeneration.forward`. MK-GEMM 이 무장돼야 배울 것이 있다.
+
+- 게이트(순서대로): (1) `probes/osar_build_check.py` — 새 명령의 ptxas 통과(실패면
+  부팅이 NCCL 로 조용히 떨어진다), (2) `probes/oneshot_ar_disttest.py` 4랭크 —
+  12 MB 힌트/무힌트의 `t_wait` 와 maxerr 0(힌트가 NIC 쓰기를 밀어 대기를 늘리면
+  손해), (3) `moe_decode_stream_probe.py` 의 `gemm cold` vs `gemm L2-warm` 행 —
+  소비자 쪽 이득의 단위, (4) 플릿 브래킷: EXP-6+12 위에 `VLLM_GLM53_AR_PREFETCH=1`
+  (caller env). 수치 불변 → step/s 만. 부팅 로그에 `[osar] prefetch hints learned:
+  N collectives, X MB` 가 없으면 무장이 아니다.
+- 상한: 임계 랭크의 대기 ≈ 전송 ~20 µs = 4.6 MB → −1.5~2.5 ms/스텝(전략 문서).
+- 예산 노브: 1 = 12 MB/콜렉티브, N = N MB(1..20; L2 24 MB).
+- **결과(2026-09-04, 27차)**: 게이트 1 PASS(빌드), 게이트 3 = n=6416 W4 GEMM cold 86.0 → L2-warm
+  79.9 µs(−7%): 소비자가 DRAM 바운드가 아니라 상한은 **−0.4~0.6 ms/스텝**으로 내려갔다(전략 문서의
+  −1.5~2.5 는 철회). 단독 판정 불가 — EXP-6+12 위에 얹어서만. 게이트 2(4랭크 disttest)는 부팅.
+
+## EXP-14 — MK_SEG_MOE go/no-go (2026-09-04 추가, 프로브만)
+
+21차의 "MoE 는 대역폭 바닥" 은 190 GB/s 를 **추정한 고유 전문가 수 ~40** 에서
+역산한 값이라 순환이다. `probes/moe_decode_stream_probe.py` 가 서빙이 만드는
+b12x 래퍼(같은 기하, 같은 디스패치 오버레이; C=1 은 64 pairs 라 static 백엔드)를
+디코드 형상(8토큰·top-8)에서 고유 전문가 U=8..64 별로, 가중치 DRAM-cold(8 세트
+순환), 그래프 리플레이로 재고 같은 바이트를 MK W4 레인이 스트리밍하는 속도(팩
+12개 연속, PDL)와 견준다.
+
+- 판정 규칙: b12x 가 레인의 90% 이상이면 축을 닫는다(원장에 기록). 아래면
+  (레인 − b12x) 비율 × 31 ms 가 세그먼트의 상한이고, 설계는 전략 문서 4장(48블록
+  persistent, FC1 (전문가, n타일) 유닛 → 전문가별 완료 카운터로 열리는 FC2 동적
+  큐, 공유 전문가 = 41번째 전문가, b12x nvfp4 레이아웃 제자리 읽기, A4→A8).
+- 실제 서빙 U 는 다음 부팅에서 로그 한 줄로 확정한다(프로브는 U 별 곡선만 준다).
+- **결과(2026-09-04, 27차)**: b12x static U=40 = 197 GB/s, 레인 n=6416 = 196 GB/s → **103%, 닫힘**.
+  읽기 전용 참조(torch sum) 245 GB/s 와의 20% 는 두 커널 공통의 발사 안 구조 몫이라, 재개 조건은
+  "persistent 전문가 타일 스트림 마이크로커널이 240 에 닿는다" 는 2~3일 프로브의 양성이다. 보류.
+
+## EXP-15 — 드래프터 fc 를 타깃 헤드·샘플러 아래로 (`glm53_dflash_early_fc`, 2026-09-04 추가)
+
+디코드 꼬리는 타깃 헤드 → 로짓 AllGather → 거부 샘플러 → 드래프터 순인데, 드래프터의 첫
+GEMM `fc`(aux 은닉 [토큰, 5×4096] → 4096; 레인에서 301 µs)는 타깃 forward 가 끝나는 순간
+입력이 다 있다. stock 은 `propose()` 안에서 샘플러 뒤에 계산한다. 그 사이 구간(AllGather 는
+패브릭, 샘플러는 소형 커널)은 DRAM 이 놀아 fc 가 공짜로 흐른다. 생산자 = `GPUModelRunner.
+execute_model` 래퍼(forward 뒤 side stream 에서 cat + fc, 영속 버퍼 + 이벤트), 소비자 =
+드래프터 오버레이의 `combine_hidden_states`(같은 토큰 수의 대기 결과만, 이벤트 대기 뒤). 소비가
+`precompute_and_store_context_kv` 와 드래프터 그래프보다 앞이라 MK 발사끼리 겹치지 않는다.
+
+- 수치 동일(같은 커널·같은 입력). 노브 `VLLM_GLM53_DFLASH_EARLY_FC=1`, 기본 0, 생산자 실패 시
+  부팅 동안 자동 해제.
+- 상한 ~0.3 ms/스텝(27차 인구조사: fc 만 그 시점에 입력이 준비된 꼬리 GEMM). EXP-10 위에서만
+  의미(fc 가 레인에 있어야 함). 단독 판정 불가 — EXP-10 브래킷의 cand 에 얹는다.
+
+## EXP-16 — 드래프터 메가커널 (제안, 착수 전 승인; 2026-09-04)
+
+27차 인구조사(깨끗한 디코드 스텝): 꼬리 136 커널 중 GEMM 33(EXP-10 뒤 MK 발사 ~31), AR 11,
+`kernel_mha` 5, 글루 ~50개 0.33 ms, 발사 간극 ~0.35 ms. 융합으로 없앨 수 있는 것은 글루 + 간극 +
+MK 발사 고정비(30 × ~10 µs) ≈ **−0.8~1.0 ms(1.2~1.5%)**; AR 0.79 ms 와 mha 는 남는다. 브래킷
+해상도(CV 1.7%) 아래라 단독으로는 판정할 수 없고, 공사는 MK-KDA 급(2주). 설계는 층당 두 발사:
+[norm → conv.prepare → qkv GEMM] 과 [conv.finish → post-norm → mlp_conv.prepare → gate_up →
+act → mlp_conv.finish → down], 어텐션(`kernel_mha`)은 stock 유지. **운영자 승인 뒤 착수** — 정정된
+상한을 본 뒤의 결정이어야 한다.
+
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
 `leg`(살아있는 서버에 rep 기록) + `judge`(기록 판정) 2중 명령. 원장 규율을 코드로
@@ -506,6 +597,9 @@ MLA(rope 64 · topk 512 · 압축기 · 슬라이딩 윈도)·GEMM(dense 가 블
 9. **EXP-9 (head-gate split-K)** — 단독 부팅 금지, EXP-7 부팅에 얹는다.
 10. **EXP-7 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 11. **EXP-10 (드래프터 GEMM → MK W4)** — **닫힘, 기본값(2026-09-04, 28차)**: 서빙된 브래킷 C=1 step/s 15.95 → 16.235(+1.8%), 수용률·품질·한국어·프리필 게이트 통과. 첫 브래킷의 0 은 컴파일 캐시가 옛 bf16 그래프를 서빙한 탓 — 노브는 이제 캐시 키이고 부팅 로그가 `drafter lane serving: 30 of 31` 로 증명한다. MK-MLA 서빙 사망(스크래치 재할당)도 같은 항목에서 수정.
+12. **EXP-12 (서빙 PDL)** — 프로브(그래프 체인) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
+13. **EXP-13 (AR 프리페치)** — 컴파일 → 4랭크 disttest → 브래킷(EXP-6+12 위). 수치 불변.
+14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
 
 12. **EXP-11 (dsv4 에 MK_SEG_MHC)** — 2단계는 **부팅 없음**: srv2 에서 서빙 컨테이너가
     비었을 때(`docker ps`) `bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20`.

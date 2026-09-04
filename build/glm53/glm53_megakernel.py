@@ -531,12 +531,38 @@ def build_mk_weight_w4_kchunks(weight):
             for c in range(0, k, MK_GEMM_KMAX)]
 
 
+_AR_NOTE = None
+
+
+def _ar_note(*tensors) -> None:
+    """Tell the one-shot AR shim which weights this launch streams.
+
+    The shim (tp_oneshot_ar) attributes the note to the collective that
+    preceded this launch and, on the next capture, has that collective's
+    kernel warm these bytes into L2 while it waits for the peers
+    (VLLM_GLM53_AR_PREFETCH). Resolved once; a lane without the shim
+    mounted, or with the knob off, pays one attribute read per launch.
+    Only the eager Python of a launch runs this -- graph replay never does.
+    """
+    global _AR_NOTE
+    if _AR_NOTE is None:
+        try:
+            from vllm.distributed.device_communicators import (
+                dsv4_oneshot_shim as _shim)
+            _AR_NOTE = _shim.note_consumer
+        except Exception:
+            _AR_NOTE = False
+    if _AR_NOTE:
+        _AR_NOTE(tensors)
+
+
 def _gemm_call(x, mk_pack, n_rows):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4."""
     import torch
 
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
+    _ar_note(mk_pack[0], mk_pack[1])
     _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
                   float(mk_pack[2]))
     return out
@@ -606,6 +632,7 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     layer_input_cur = torch.empty(num_tokens, hidden, dtype=torch.bfloat16,
                                   device=x_flat.device)
     ws = _ensure_workspace(x_flat.device)
+    _ar_note(fn)
     _EXT.run_mhc(
         [x_flat.data_ptr(), residual_flat.data_ptr(), pm_flat.data_ptr(),
          cm_flat.data_ptr(), fn.data_ptr(), hc_scale.data_ptr(),
@@ -887,6 +914,7 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
     ow = getattr(layer.o_norm, "weight", None)
     onorm_w = ow if isinstance(ow, torch.Tensor) else torch.ones(
         KDA_D, dtype=torch.bfloat16, device=hidden_states.device)
+    _ar_note(layer._mk_in_pack[0], layer._mk_in_pack[1])
     _EXT.run_kda(
         [hidden_states.data_ptr(),
          layer._mk_in_pack[0].data_ptr(),

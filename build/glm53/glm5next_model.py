@@ -133,6 +133,21 @@ if install_glm53_prep_fused is not None:
     except Exception:
         logger.exception("[prep-fused] install failed -> stock path")
 
+# deneb fork (glm53_dflash_early_fc): the drafter's fc under the target head
+# + sampler. Same shape of install as prep_fused: import only, inert unless
+# VLLM_GLM53_DFLASH_EARLY_FC=1, loud on failure, never fatal.
+try:
+    from .glm53_dflash_early_fc import install_glm53_dflash_early_fc
+except ImportError as _e:
+    install_glm53_dflash_early_fc = None
+    if _e.name != f"{__package__}.glm53_dflash_early_fc":
+        logger.exception("[dflash-early-fc] module import failed -> stock path")
+if install_glm53_dflash_early_fc is not None:
+    try:
+        install_glm53_dflash_early_fc()
+    except Exception:
+        logger.exception("[dflash-early-fc] install failed -> stock path")
+
 
 def _validate_decodable_vocab_bound(
     decodable_vocab: int,
@@ -1336,7 +1351,39 @@ class Glm5NextForConditionalGeneration(
                 maybe_free_fp8_dense_bf16(self)
             except Exception:
                 logger.exception("[fp8-dense] bf16 release skipped")
-        return super().forward(*args, **kwargs)
+        # AR prefetch hints (tp_oneshot_ar, VLLM_GLM53_AR_PREFETCH): the shim
+        # keys its learned hints by "which collective of the target forward",
+        # so the forward boundary has to come from here -- the same reason
+        # the release above lives here: this class is above the compiled
+        # region, and the drafter is a different class, so its collectives
+        # never see the target's table. No-op unless the knob is set.
+        osar = _osar_shim()
+        if osar is not None:
+            osar.begin_forward("target")
+        try:
+            return super().forward(*args, **kwargs)
+        finally:
+            if osar is not None:
+                osar.end_forward()
+
+
+_OSAR = None
+
+
+def _osar_shim():
+    """The one-shot AR shim, resolved once; None when it is not mounted or
+    predates the prefetch hints."""
+    global _OSAR
+    if _OSAR is None:
+        try:
+            from vllm.distributed.device_communicators import (
+                dsv4_oneshot_shim as shim,
+            )
+
+            _OSAR = shim if hasattr(shim, "begin_forward") else False
+        except Exception:
+            _OSAR = False
+    return _OSAR or None
 
 
 def get_spec_layer_idx_from_weight_name(

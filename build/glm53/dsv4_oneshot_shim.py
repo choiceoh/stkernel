@@ -374,13 +374,131 @@ def _eligible(t):
     )
 
 
+# ---- L2 prefetch hints for the peer wait (VLLM_GLM53_AR_PREFETCH) ----------
+# The collective's wait (38.7 of 45.5 us, MEASUREMENTS 19차, ~100 per decode
+# step) is idle DRAM on every rank. The kernel can spend it pulling the NEXT
+# kernel's weights into L2 (k_oneshot's HintArgs); what it should pull is
+# learned here, not declared: every weight-streaming launch of the megakernel
+# driver notes the tensors it reads, the note is attributed to the most
+# recent collective of the current target forward, and the table so learned
+# in the eager warmups is what the captured launches bake in. Nothing here
+# runs inside a compiled region: begin/end come from the model class above
+# the traced graph, and the notes come from custom-op bodies that execute
+# eagerly during capture.
+def _resolve_prefetch_budget() -> int:
+    """Bytes of the next consumer's weights one collective may warm. 0 = off
+    (the kernel is byte-identical to before), 1 = 12 MB, or an integer MB in
+    1..20 -- L2 is 24 MB and the consumer's activations must fit beside it."""
+    raw = (os.environ.get("VLLM_GLM53_AR_PREFETCH") or "0").strip().lower()
+    if raw in ("", "0", "false", "off", "no"):
+        return 0
+    if raw == "1":
+        return 12 << 20
+    try:
+        mb = int(raw)
+    except ValueError:
+        logger.warning(
+            "[osar] VLLM_GLM53_AR_PREFETCH=%r is not 0, 1 or an MB count; off",
+            raw,
+        )
+        return 0
+    if not 1 <= mb <= 20:
+        logger.warning(
+            "[osar] VLLM_GLM53_AR_PREFETCH=%d MB is outside 1..20; off", mb
+        )
+        return 0
+    return mb << 20
+
+
+_PREFETCH_BUDGET = _resolve_prefetch_budget()
+_HINT_MAX = 8  # OSAR_MAXHINT in the .cu
+_in_forward = False
+_scope = "target"  # which model's forward: "target" or "drafter"
+_ordinal = 0  # collectives seen so far in the current forward
+# scope -> ordinal -> [(ptr, nbytes)], adopted; what capture bakes. One table
+# per model: the drafter's ten collectives have their own consumers, and a
+# shared table would let the richer target forward overwrite them (or the
+# drafter's ordinals read the target's rows).
+_tables: dict = {}
+_cand: dict = {}  # the current forward's candidate, ordinal -> ranges
+_cand_bytes: dict = {}
+
+
+def begin_forward(scope: str = "target"):
+    """Called by a model class above its compiled region, once per forward
+    (eager warmup and capture alike). This forward's collectives use the
+    scope's adopted table; the consumers noting themselves build the
+    candidate. `scope` names the model -- the target and the drafter each
+    keep their own table."""
+    global _in_forward, _scope, _ordinal, _cand, _cand_bytes
+    if not _PREFETCH_BUDGET:
+        return
+    _in_forward = True
+    _scope = scope
+    _ordinal = 0
+    _cand = {}
+    _cand_bytes = {}
+
+
+def end_forward():
+    global _in_forward
+    if not _PREFETCH_BUDGET:
+        return
+    _in_forward = False
+    table = _tables.get(_scope, {})
+    if sum(len(v) for v in _cand.values()) > sum(len(v) for v in table.values()):
+        # a decode-shaped forward saw more consumers than the last one did
+        # (a prefill forward routes M > 32 to stock and notes nothing)
+        _tables[_scope] = _cand
+        logger.warning(
+            "[osar] prefetch hints learned (%s): %d collectives, %.1f MB in total",
+            _scope,
+            len(_cand),
+            sum(sum(n for _, n in v) for v in _cand.values()) / 1e6,
+        )
+
+
+def note_consumer(tensors):
+    """A weight-streaming launch reports the tensors it is about to read.
+    Attributed to the most recent collective of this forward, up to the
+    budget; the first notes after a collective are the ones that count."""
+    if not _PREFETCH_BUDGET or not _in_forward or _ordinal == 0:
+        return
+    lst = _cand.setdefault(_ordinal, [])
+    used = _cand_bytes.get(_ordinal, 0)
+    for t in tensors:
+        if t is None or len(lst) >= _HINT_MAX or used >= _PREFETCH_BUDGET:
+            break
+        try:
+            if not t.is_cuda:
+                continue
+            nb = t.numel() * t.element_size()
+        except AttributeError:
+            continue
+        if nb <= 0:
+            continue
+        take = min(nb, _PREFETCH_BUDGET - used)
+        lst.append((int(t.data_ptr()), int(take)))
+        used += take
+    _cand_bytes[_ordinal] = used
+
+
+def prefetch_hint_table(scope: str = "target"):
+    """The adopted table of one scope, for probes and the boot log."""
+    return dict(_tables.get(scope, {}))
+
+
 def maybe_all_reduce(comm, input_, orig):
     """Return a reduced tensor if handled here, else None (caller uses NCCL).
 
     One-shot only ever serves in REAL mode (shadow=0), where it replaces NCCL
     at exactly the AR call sites — 4-rank lockstep is automatic. shadow=1 runs
     the boot self-test then stays permanently on NCCL (observe-only)."""
-    global _disabled
+    global _disabled, _ordinal
+    if _in_forward:
+        # every collective of the forward counts, whichever path serves it:
+        # the ordinal is the key the learned hints are filed under
+        _ordinal += 1
     if _disabled:
         return None
     if not _connected:
@@ -397,6 +515,10 @@ def maybe_all_reduce(comm, input_, orig):
             "rank-local NCCL fallback"
         )
     try:
+        hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None
+        if hint:
+            return _ext.oneshot_ar_hint(  # real path + L2 hints, graph + eager
+                input_, [p for p, _ in hint], [n for _, n in hint])
         return _ext.oneshot_ar(input_)  # real path (works in graph + eager)
     except Exception as e:
         raise OneShotFatal(

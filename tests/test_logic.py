@@ -7139,6 +7139,312 @@ def test_osar_wait_is_split_by_message_size() -> None:
     print("  osar wait is split by message size .. OK")
 
 
+def test_osar_prefetch_hints_contract() -> None:
+    """The one-shot AR's peer wait doubles as an L2 prefetch of the next
+    kernel's weights (VLLM_GLM53_AR_PREFETCH), and what it warms is learned
+    from the megakernel launches that follow each collective.
+
+    Contract: the kernel takes the hints by value (a captured graph bakes
+    them), only warps 1..7 issue them and only inside the wait window (thread
+    0's poll and its timer are untouched, so t_wait keeps measuring the
+    collective), an empty hint is the old kernel; the shim counts EVERY
+    collective of the target forward so NCCL-served prefill calls keep the
+    ordinals aligned, and the driver notes its weights before each launch."""
+    cu = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                 "dsv4_oneshot_ar.cu"), encoding="utf-8").read()
+    check("#define OSAR_MAXHINT 8" in cu and "struct HintArgs {" in cu
+          and "int nbytes, const HintArgs h) {" in cu,
+          "k_oneshot takes up to 8 (ptr, bytes) hints by value")
+    check(cu.count('asm volatile("prefetch.global.L2 [%0];"') == 1
+          and cu.index('asm volatile("prefetch.global.L2')
+          > cu.index("__device__ __forceinline__ void osar_prefetch("),
+          "one prefetch instruction, inside osar_prefetch")
+    call_at = cu.find("} else if (h.n > 0 && threadIdx.x >= 32) {\n"
+                      "    osar_prefetch(h, &s_landed);")
+    t2_at = cu.find("long long t2 = timer ? clock64() : 0;")
+    t3_at = cu.find("long long t3 = timer ? clock64() : 0;")
+    check(0 < t2_at < call_at < t3_at,
+          "the prefetch runs only in the peer-wait window, on warps 1..7, "
+          "while thread 0 polls")
+    check("    s_landed = 1;\n  } else if (h.n > 0" in cu,
+          "owning blocks release their prefetch warps the moment the peers "
+          "land")
+    check("k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,"
+          in cu and "(int)(n * 2), h);" in cu,
+          "the fixed-geometry launch carries the hints")
+    check('m.def("oneshot_ar_hint", &py_oneshot_hint);' in cu
+          and 'm.def("phase_counters", &py_phase_counters);' in cu
+          and 'm.def("oneshot_ar", &py_oneshot);' in cu,
+          "hint and counter bindings beside the unchanged plain entry")
+
+    shim_path = os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
+                                   "dsv4_oneshot_shim.py")
+    shim = open(shim_path, encoding="utf-8").read()
+    check("_PREFETCH_BUDGET = _resolve_prefetch_budget()" in shim
+          and 'def begin_forward(scope: str = "target"):' in shim
+          and "def end_forward():" in shim
+          and "def note_consumer(tensors):" in shim
+          and "_tables[_scope] = _cand" in shim,
+          "the shim learns one hint table per model forward (scope)")
+    mar = shim[shim.index("def maybe_all_reduce("):]
+    check(mar.index("_ordinal += 1") < mar.index("if _disabled:"),
+          "every collective advances the ordinal before any path decision")
+    check("hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None"
+          in mar and "_ext.oneshot_ar_hint(" in mar
+          and "_ext.oneshot_ar(input_)" in mar,
+          "hints apply only inside a forward, from that model's own table; "
+          "the plain path stays")
+
+    drv = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                  "glm53_megakernel.py"), encoding="utf-8").read()
+    for site, note, launch in (
+            ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
+            ("mhc", "_ar_note(fn)", "_EXT.run_mhc("),
+            ("kda", "_ar_note(layer._mk_in_pack[0], layer._mk_in_pack[1])",
+             "_EXT.run_kda(")):
+        n_at, l_at = drv.find(note), drv.find(launch)
+        check(0 < n_at < l_at, f"{site} launch notes its weights first")
+
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+                                     "glm5next_model.py"), encoding="utf-8").read()
+    cls_at = wiring.index("class Glm5NextForConditionalGeneration(")
+    layer_at = wiring.index("class Glm5NextDecoderLayer(")
+    b_at = wiring.index('osar.begin_forward("target")')
+    check(b_at > cls_at and "osar.end_forward()" in wiring[b_at:]
+          and "def _osar_shim():" in wiring
+          and 'osar.begin_forward("target")' in wiring,
+          "the forward boundary comes from the class above the compiled region")
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+                                      "qwen3_dflash2.py"), encoding="utf-8").read()
+    d_cls = drafter.index("class DFlash2Qwen3ForCausalLM(")
+    d_b = drafter.index('osar.begin_forward("drafter")')
+    check(d_b > d_cls and "osar.end_forward()" in drafter[d_b:]
+          and "def _osar_shim():" in drafter
+          and "class DFlash2Qwen3Model(DFlashQwen3Model)" in drafter
+          and 'begin_forward' not in drafter[drafter.index("class DFlash2Qwen3Model("):d_cls],
+          "the drafter's boundary sits on its ForCausalLM class (above the "
+          "compiled DFlashQwen3Model) under its own scope")
+    check("begin_forward" not in wiring[layer_at:cls_at],
+          "no hint call inside the traced decoder layer")
+
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
+                   encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=0$", profile, re.M) is not None,
+          "the prefetch knob is declared off in the profile")
+    check(re.search(r"^VLLM_GLM53_MK_PDL=1$", profile, re.M) is not None,
+          "PDL is the profile default for the MK launches (2026-09-04)")
+    ab = open(os.path.join(REPO, "launchers", "ab-glm53.sh"),
+              encoding="utf-8").read()
+    check("VLLM_GLM53_MK_PDL=1" in ab.split("cand)", 1)[1].split("\n", 1)[0],
+          "the A/B cand arm names MK_PDL explicitly")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"),
+                   encoding="utf-8").read()
+    check('"VLLM_GLM53_AR_PREFETCH"' in bracket,
+          "bracket.py snapshots the prefetch knob")
+
+    # the budget parser and the learning protocol, on the real module
+    import importlib.util
+
+    def load(env: str, tag: str):
+        old = os.environ.get("VLLM_GLM53_AR_PREFETCH")
+        os.environ["VLLM_GLM53_AR_PREFETCH"] = env
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"_osar_shim_{tag}", shim_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        finally:
+            if old is None:
+                os.environ.pop("VLLM_GLM53_AR_PREFETCH", None)
+            else:
+                os.environ["VLLM_GLM53_AR_PREFETCH"] = old
+        return mod
+
+    check(load("0", "a")._PREFETCH_BUDGET == 0
+          and load("1", "b")._PREFETCH_BUDGET == 12 << 20
+          and load("8", "c")._PREFETCH_BUDGET == 8 << 20
+          and load("40", "d")._PREFETCH_BUDGET == 0
+          and load("x", "e")._PREFETCH_BUDGET == 0,
+          "budget: 0 off, 1 = 12 MB, N = N MB in 1..20, else off")
+
+    class _T:
+        is_cuda = True
+
+        def __init__(self, ptr, nbytes):
+            self._p, self._n = ptr, nbytes
+
+        def numel(self):
+            return self._n
+
+        def element_size(self):
+            return 1
+
+        def data_ptr(self):
+            return self._p
+
+    m = load("1", "f")
+    m.begin_forward("target")
+    m.note_consumer([_T(0x10, 100)])           # before any collective: dropped
+    m._ordinal = 1
+    m.note_consumer([_T(0x1000, 10 << 20), _T(0x2000, 10 << 20)])
+    m._ordinal = 2
+    m.note_consumer([_T(0x3000, 64)])
+    m.end_forward()
+    t = m.prefetch_hint_table()
+    check(0 not in t and t.get(1) == [(0x1000, 10 << 20), (0x2000, 2 << 20)]
+          and t.get(2) == [(0x3000, 64)],
+          "notes file under the preceding collective, capped at the budget")
+    m.begin_forward("target")
+    m._ordinal = 1
+    m.note_consumer([_T(0x9000, 8)])
+    m.end_forward()
+    check(m.prefetch_hint_table() == t,
+          "a forward with fewer notes (prefill-shaped) does not replace the "
+          "table")
+    check(m._in_forward is False, "end_forward closes the window")
+    # the drafter's forward learns into ITS table; the target's is untouched
+    m.begin_forward("drafter")
+    m._ordinal = 1
+    m.note_consumer([_T(0x7000, 8)])
+    m.end_forward()
+    check(m.prefetch_hint_table("drafter") == {1: [(0x7000, 8)]}
+          and m.prefetch_hint_table("target") == t,
+          "the drafter's collectives keep a table of their own")
+    print("  osar prefetch hints contract .. OK")
+
+
+def test_glm53_dflash_early_fc_contracts() -> None:
+    """glm53_dflash_early_fc: the drafter's fc under the target head + sampler.
+
+    Producer = a wrapper on GPUModelRunner.execute_model installed from the
+    GLM model import (inert unless VLLM_GLM53_DFLASH_EARLY_FC=1); consumer =
+    the drafter's combine_hidden_states, which takes a pending result only
+    for this step's token count and waits on the producer's event first --
+    before precompute_and_store_context_kv and the drafter graph, so the fc's
+    megakernel launch never overlaps another one."""
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_dflash_early_fc")
+    src = open(os.path.join(mod_dir, "glm53_dflash_early_fc.py"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_dflash_early_fc" in modules, "glm53 profile mounts glm53_dflash_early_fc")
+    check(re.search(r"^VLLM_GLM53_DFLASH_EARLY_FC=0$", profile, re.M) is not None,
+          "the knob ships off")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_dflash_early_fc.py",
+                    "vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py", "absent"]],
+          f"manifest binds the module as a new file next to the model: {rows}")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check({"glm53_dflash2_fp8_head", "glm53_model_wiring"} <= set(req),
+          "requires names the drafter overlay (consumer) and the wiring (installer)")
+    check('(os.environ.get("VLLM_GLM53_DFLASH_EARLY_FC") or "0").strip() == "1"' in src
+          and "def install_glm53_dflash_early_fc() -> bool:" in src
+          and "Runner.execute_model = _patched_execute_model" in src
+          and "_ORIG_EXECUTE_MODEL = Runner.execute_model" in src,
+          "exact-1 knob; the installer wraps execute_model and keeps the original")
+    prod = src[src.index("def launch_early_fc("):src.index("def take_early_fc(")]
+    check("_STREAM.wait_stream(cur)" in prod and "with torch.cuda.stream(_STREAM):" in prod
+          and "drafter._deneb_early_fc_event.record(_STREAM)" in prod
+          and "torch.cat([a[:n] for a in aux], dim=-1, out=cat_buf[:n])" in prod
+          and "width != int(fc.input_size)" in prod,
+          "the producer runs on a side stream after the forward, into a persistent "
+          "buffer, and refuses a width the stock path would refuse")
+    cons = src[src.index("def take_early_fc("):src.index("def _patched_execute_model(")]
+    check("drafter._deneb_early_fc_pending = None  # consumed once" in cons
+          and "if n != num_tokens:\n        return None" in cons
+          and "torch.cuda.current_stream().wait_event(drafter._deneb_early_fc_event)" in cons,
+          "the consumer takes a result once, only for this token count, after the event")
+    patched = src[src.index("def _patched_execute_model("):src.index("def install_glm53_dflash_early_fc(")]
+    check("out = _ORIG_EXECUTE_MODEL(self, *args, **kwargs)" in patched
+          and "_DISABLED = True" in patched and "return out" in patched,
+          "a producer failure disables the arm for the boot and never breaks the step")
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+                                     "glm5next_model.py"), encoding="utf-8").read()
+    check("from .glm53_dflash_early_fc import install_glm53_dflash_early_fc" in wiring
+          and 'if _e.name != f"{__package__}.glm53_dflash_early_fc":' in wiring
+          and wiring.index("install_glm53_dflash_early_fc()") > wiring.index("install_glm53_prep_fused()"),
+          "installed from the wiring like prep_fused: silent without the module, loud when broken")
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+                                      "qwen3_dflash2.py"), encoding="utf-8").read()
+    body = drafter[drafter.index("def combine_hidden_states(self, hidden_states"):]
+    body = body[:body.index("def verify_selector_loaded")]
+    check("early = _early_fc_take()" in body
+          and "return super().combine_hidden_states(hidden_states)" in body
+          and "from vllm.models.glm5next.nvidia.glm53_dflash_early_fc import" in drafter,
+          "the drafter overlay consumes the pending result and falls back to stock")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_DFLASH_EARLY_FC"' in bracket, "bracket.py snapshots the knob")
+
+    # the producer/consumer protocol on fakes: taken once, only for the same
+    # token count, and never when nothing is pending
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_early_fc_mod", os.path.join(mod_dir, "glm53_dflash_early_fc.py"))
+    import types
+    fake_vllm = types.ModuleType("vllm")
+    fake_logger = types.ModuleType("vllm.logger")
+    fake_logger.init_logger = lambda name: _CapturingLogger()
+    fake_vllm.logger = fake_logger
+    saved = {k: sys.modules.get(k) for k in ("vllm", "vllm.logger")}
+    sys.modules["vllm"] = fake_vllm
+    sys.modules["vllm.logger"] = fake_logger
+    try:
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+    class _Ev:
+        pass
+
+    class _Stream:
+        def wait_event(self, ev):
+            self.waited = ev
+
+    class _Torch:
+        class cuda:
+            _s = _Stream()
+
+            @staticmethod
+            def current_stream():
+                return _Torch.cuda._s
+
+    mod.torch = _Torch  # take_early_fc imports torch lazily; give it the fake
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "torch":
+            return _Torch
+        return real_import(name, *a, **k)
+
+    class _Drafter:
+        pass
+
+    d = _Drafter()
+    d._deneb_early_fc_event = _Ev()
+    d._deneb_early_fc_out = list(range(16))
+    builtins.__import__ = fake_import
+    try:
+        check(mod.take_early_fc(d, 8) is None, "nothing pending -> stock path")
+        d._deneb_early_fc_pending = (8, 1)
+        check(mod.take_early_fc(d, 5) is None and d._deneb_early_fc_pending is None,
+              "a token-count mismatch drops the pending result (stock path)")
+        d._deneb_early_fc_pending = (8, 2)
+        got = mod.take_early_fc(d, 8)
+        check(got == list(range(8)) and _Torch.cuda._s.waited is d._deneb_early_fc_event
+              and d._deneb_early_fc_pending is None,
+              "a match waits on the event, returns the first n rows, and is consumed")
+        check(mod.take_early_fc(d, 8) is None, "consumed once")
+    finally:
+        builtins.__import__ = real_import
+    print("  glm53_dflash_early_fc contracts .. OK")
+
+
 def test_kv_cache_is_pinned_in_tokens() -> None:
     """KV is pinned in tokens, not left to take whatever GMU leaves.
 
@@ -9838,6 +10144,8 @@ if __name__ == "__main__":
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
+    test_osar_prefetch_hints_contract()
+    test_glm53_dflash_early_fc_contracts()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
     test_megakernel_w4_layout_functional()
