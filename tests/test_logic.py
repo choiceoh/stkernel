@@ -8240,11 +8240,28 @@ def test_megakernel_core_is_shared() -> None:
                   "the segment would arm on its self-test and then serve "
                   "nothing, with the boot log saying otherwise")
 
-    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
-                 "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA",
-                 ):
+    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_KDA_SHADOW"):
         check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
-              f"glm53 must ship {knob}=0 -- adoption is bracket-only")
+              f"glm53 must ship {knob}=0 -- MK-KDA never served (layout gate, "
+              "open state-index contract); adoption is bracket-only")
+    for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
+                 "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_MLA"):
+        check(re.search(rf"^{knob}=1$", glm_text, re.M) is not None,
+              f"glm53 ships {knob}=1 -- the bracketed megakernel set is the "
+              "production default (28차, operator)")
+    ab = open(os.path.join(REPO, "launchers/ab-glm53.sh"), encoding="utf-8").read()
+    check('base) ARM_ENV="VLLM_GLM53_MEGAKERNEL=0"' in ab,
+          "ab-glm53 base arm pins the master OFF now that the profile ships it on")
+    du = open(os.path.join(REPO, "overlay/modules/glm53_dflash_loader_fp8/dflash_utils.py"),
+              encoding="utf-8").read()
+    check('maybe_free_fp8_dense_bf16(dflash_model, label="drafter")' in du
+          and du.index("install_drafter_serving_check(dflash_model, n_opaque)")
+          < du.index('maybe_free_fp8_dense_bf16(dflash_model, label="drafter")'),
+          "the drafter's bf16 sources are released at load, after the pass and the proof")
+    fd = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+              encoding="utf-8").read()
+    check('def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:' in fd,
+          "the release names its model in the log line")
 
     # -- dsv4 ships every knob OFF and claims no segment it cannot run
     for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",

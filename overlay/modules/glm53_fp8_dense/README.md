@@ -93,7 +93,11 @@ calls per forward` (the fc runs outside the compiled forward) or
 `drafter lane NOT SERVING`. A CUDA-graph replay runs no Python and is not
 judged; a forward under stream capture is definitive.
 
-The drafter's bf16 sources are NOT released (+~0.57 GB/rank):
-`_build_fused_kv_buffers` copies the k/v halves of `qkv_proj.weight` at
-load, so a release looks safe, but it is a separate change with its own
-boot.
+The drafter's bf16 sources are released at load under the target's knob
+(`VLLM_GLM53_FP8_DENSE_FREE_BF16=1`, 28차): the checkpoint walk is finished
+when the pass runs, `_build_fused_kv_buffers` has already `torch.cat`'ed the
+k/v halves of `qkv_proj.weight` into its own buffer, the compiled forward
+reads the fp8 copies and W4 packs through the opaque op, and no drafter
+linear carries a bias. `[fp8-dense] drafter: VLLM_GLM53_FP8_DENSE_FREE_BF16=1:
+released 0.73 GB of bf16 sources` is the line; the bytes come back before KV
+sizing.
