@@ -25,7 +25,7 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 HEAD=${HEAD_IP:-10.10.10.2}
 
 case "$ARM" in
-  base) ARM_ENV="" ;;
+  base) ARM_ENV="VLLM_GLM53_MEGAKERNEL=0" ;;   # stock: the profile ships the set ON since 28차
   # MK_PDL rides with the segments: the launch form the kernels were tuned
   # for (17-19 pct per launch, bench probe), and the profile default since
   # 2026-09-04 -- named here so an older profile cannot drop it silently.

@@ -181,7 +181,7 @@ second model.
 ## Arming
 
 ```
-VLLM_GLM53_MEGAKERNEL=1     # master, default 0
+VLLM_GLM53_MEGAKERNEL=1     # master, default 1 since 28차 (MHC+GEMM+MLA on, KDA off)
 VLLM_GLM53_MK_MHC=1         # per segment, each default 0
 VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)

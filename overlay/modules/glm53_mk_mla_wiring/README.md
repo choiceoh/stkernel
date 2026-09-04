@@ -13,10 +13,29 @@ wrapper backend vLLM selects on sm_12x) with two hunks:
   at splits == 1**, where the kernel normalises in place and needs no fp32
   partial scratch. The builder's per-step `plan()` still runs -- it is on the
   builder, not this call -- so the wrapper stays a working fallback.
-* a one-shot shadow on the first eager call: kernel vs wrapper on the same
-  bytes, `rel > 2e-2` or a non-finite output DISARMs the segment for the boot
-  (`[megakernel] mla shadow vs wrapper rel=... -> ARMED for decode` is the
-  arming line to look for).
+* a one-shot shadow on the first eager call **whose rows read real KV**
+  (`valid_counts.max() >= 16`, `|ref| >= 1e-3`, T <= 4096 -- a request's
+  prefill chunk): kernel vs wrapper on the same bytes, `rel > 2e-2` or a
+  non-finite output DISARMs every later eager call and logs
+  `mla SHADOW FAIL ... this boot is invalid`. The decode graphs captured at
+  boot still bake the kernel, so a failed boot is a failed boot, not a
+  fallback. Until 28차 the shadow ran on the profile dummy, whose KV is
+  empty: both sides returned zeros and `rel=0.00e+00` armed the kernel on
+  all four ranks for nothing. `[megakernel] mla shadow vs wrapper rel=...
+  (T=.., rows<=.., real KV) -> ARMED` is the line to look for; the boot
+  self-test (`selftest mla`) covers the direct path (40 and 100 rows) too.
+* the split path's fp32 scratch is one fixed allocation (`MLA_WS_ROWS` =
+  192 rows, 6.3 MB) and `mla_splits()` never asks for more. It used to grow
+  on demand, freeing the old tensors under every decode graph captured
+  before the first larger call -- and v5 routes prefill rows through the
+  same entry point, so a 37-token prompt (48 splits, 1,776 rows) did that on
+  the first request of a boot: two serving deaths on 2026-09-04 (a gather
+  index out of bounds at the 4th request; an illegal memory access on all
+  ranks right after a 23K prefill). Both boots with the segment off survived
+  the same bracket. With the fix the MLA-on arm passed the bracket twice
+  (C=1 step/s 16.4 vs 16.235 off; 23K prefill 2,700 vs 2,300 tok/s, TTFT
+  10.0 -> 8.5 s; quality 9/9, Korean 0/16, pos-1 67.0% vs 64.5%) and the
+  profile ships `VLLM_GLM53_MK_MLA=1` within the megakernel set (28차).
 
 Numerics: bf16 q, bf16 latent (e4m3 -> bf16 is lossless), bf16 P, fp32
 accumulation -- the same class as the FA2 path (rel 3.4e-3 between the two,

@@ -1509,23 +1509,36 @@ _MLA_WS = None
 
 
 MLA_MAX_SPLIT_ROWS = 64   # beyond this the split path's fp32 scratch is silly
+# The split path's scratch is ONE allocation for the life of the process. A
+# captured decode graph bakes its address, and the grow-on-demand this
+# started with (cap = max(need, 2*MAX_TOK), re-allocated when a larger call
+# came) freed the old tensors under every graph captured before that call.
+# v5 routed prefill rows through the same entry point, so the first
+# request of a boot -- a 37-token prompt, 48 splits, 1,776 rows -- did
+# exactly that, and the decode graphs then wrote their partials into
+# whatever the allocator handed out next (28차: two serving deaths, a
+# gather index out of bounds and an illegal memory access). So the budget
+# is fixed here and mla_splits() never asks for more rows than it holds:
+# T * splits <= MLA_WS_ROWS for every T it splits.
+MLA_WS_ROWS = 3 * MLA_MAX_SPLIT_ROWS   # 192 rows: 6.3 MB of fp32 partials
 
 
 def _mla_workspace(device, T: int, splits: int):
-    """Split partials + (m, l), grown once and then strongly held: a captured
-    graph bakes these addresses, so they must never be reallocated."""
+    """Split partials + (m, l): allocated once at MLA_WS_ROWS, never grown."""
     global _MLA_WS
     import torch
 
+    if _MLA_WS is None:
+        _MLA_WS = {
+            "cap": MLA_WS_ROWS,
+            "part": torch.zeros(MLA_WS_ROWS * MLA_H * MLA_D, dtype=torch.float32, device=device),
+            "pml": torch.zeros(MLA_WS_ROWS * MLA_H * 2, dtype=torch.float32, device=device),
+        }
     need = T * splits
-    if _MLA_WS is not None and _MLA_WS["cap"] >= need:
-        return _MLA_WS
-    cap = max(need, MAX_TOK * 2)
-    _MLA_WS = {
-        "cap": cap,
-        "part": torch.zeros(cap * MLA_H * MLA_D, dtype=torch.float32, device=device),
-        "pml": torch.zeros(cap * MLA_H * 2, dtype=torch.float32, device=device),
-    }
+    if need > _MLA_WS["cap"]:
+        raise RuntimeError(
+            f"mla: T={T} x splits={splits} = {need} rows exceed the fixed "
+            f"workspace of {MLA_WS_ROWS}; mla_splits() must bound T*splits")
     return _MLA_WS
 
 
@@ -1536,7 +1549,12 @@ def mla_splits(T: int) -> int:
     T*s a multiple of the resident grid -- every block then gets the same
     number of items and the same slot count per item. T=8 -> 6 (94 us),
     16 -> 3 (162), 24 -> 2 (235), 32 -> 3 (330; 1 and 2 leave a third of the
-    blocks walking a second item alone and cost 40%)."""
+    blocks walking a second item alone and cost 40%).
+
+    Bounded by the fixed scratch: T*s <= MLA_WS_ROWS. The decode shapes
+    above are untouched (48/48/48/96 rows); rows that the rule would have
+    split 48 ways (T=37: 1,776 rows for 43 slots a split) take the direct
+    path instead, which is what they are -- a prefill chunk."""
     if _EXT is None or T <= 0:
         return 1
     if T > MLA_MAX_SPLIT_ROWS:
@@ -1544,13 +1562,14 @@ def mla_splits(T: int) -> int:
         # and no [T][splits][H][D] fp32 scratch exists (268 MB at T=8192)
         return 1
     grid = int(_EXT.mla_grid())
+    budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))
     forced = os.environ.get("VLLM_GLM53_MK_MLA_SPLITS")   # probe knob, never set in serving
     if forced:
-        return max(1, min(MLA_SPLITS_MAX, int(forced)))
-    for s in range(1, MLA_SPLITS_MAX + 1):
+        return max(1, min(budget, int(forced)))
+    for s in range(1, budget + 1):
         if (T * s) % grid == 0:
             return s
-    return max(1, min(MLA_SPLITS_MAX, round(grid / T)))
+    return max(1, min(budget, round(grid / T)))
 
 
 def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
@@ -1569,8 +1588,7 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
     ws = _ensure_workspace(q_nope.device)
     splits = mla_splits(T)
-    # size the scratch by the splits this shape actually uses, not the cap:
-    # MLA_SPLITS_MAX is 64 and sizing by it reserved 134 MB where 25 is used
+    assert splits == 1 or T * splits <= MLA_WS_ROWS, (T, splits)
     mw = (_mla_workspace(q_nope.device, T, splits) if splits > 1
           else {"part": ws["barrier"], "pml": ws["barrier"]})   # unused when splits == 1
     if out is None:
@@ -1616,7 +1634,10 @@ def _selftest_mla() -> bool:
     torch.manual_seed(0)
     dev = "cuda"
     worst = 0.0
-    for T, W, ragged in ((8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False)):
+    # 40 and 100 rows take the direct path (splits == 1: v5's prefill
+    # store), which the decode shapes never exercise.
+    for T, W, ragged in ((8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
+                         (40, 2048, True), (100, 2048, True)):
         num_slots = 4096
         q = torch.randn(T, MLA_H, MLA_D, dtype=torch.bfloat16, device=dev) * 0.3
         cache = (torch.randn(num_slots, MLA_D, device=dev) * 0.5).to(torch.float8_e4m3fn)
