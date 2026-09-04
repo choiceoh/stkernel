@@ -271,6 +271,25 @@ class CandidateSelector(nn.Module):
 
 
 
+_OSAR = None
+
+
+def _osar_shim():
+    """The one-shot AR shim, resolved once; None when it is not mounted or
+    predates the prefetch hints (the same resolver the target model uses)."""
+    global _OSAR
+    if _OSAR is None:
+        try:
+            from vllm.distributed.device_communicators import (
+                dsv4_oneshot_shim as shim,
+            )
+
+            _OSAR = shim if hasattr(shim, "begin_forward") else False
+        except Exception:
+            _OSAR = False
+    return _OSAR or None
+
+
 def dflash2_selector_load_verdict(stats):
     """Did the path selector's weights actually load? Pure predicate.
 
@@ -350,6 +369,30 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             ),
         )
 
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # AR prefetch hints for the drafter's own collectives (tp_oneshot_ar,
+        # VLLM_GLM53_AR_PREFETCH): the drafter runs TP=4 with two collectives
+        # per layer, and each one can warm the next GEMM's W4 pack while it
+        # waits for the peers. The shim keys its learned hints by "which
+        # collective of which model's forward", so the boundary has to come
+        # from THIS class -- above the compiled DFlashQwen3Model, like the
+        # target's boundary sits above its compiled region -- and under its
+        # own scope, so the target's richer table never overwrites the
+        # drafter's. No-op unless the knob is set or the shim is not mounted.
+        osar = _osar_shim()
+        if osar is not None:
+            osar.begin_forward("drafter")
+        try:
+            return super().forward(input_ids, positions, inputs_embeds)
+        finally:
+            if osar is not None:
+                osar.end_forward()
 
     def verify_selector_loaded(self) -> None:
         """Say out loud whether the path selector's weights actually arrived.

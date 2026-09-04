@@ -1344,7 +1344,7 @@ class Glm5NextForConditionalGeneration(
         # never see the target's table. No-op unless the knob is set.
         osar = _osar_shim()
         if osar is not None:
-            osar.begin_forward()
+            osar.begin_forward("target")
         try:
             return super().forward(*args, **kwargs)
         finally:

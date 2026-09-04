@@ -413,38 +413,48 @@ def _resolve_prefetch_budget() -> int:
 _PREFETCH_BUDGET = _resolve_prefetch_budget()
 _HINT_MAX = 8  # OSAR_MAXHINT in the .cu
 _in_forward = False
-_ordinal = 0  # collectives seen so far in the current target forward
-_table: dict = {}  # ordinal -> [(ptr, nbytes)], adopted; what capture bakes
-_cand: dict = {}  # the same, being learned in this forward
+_scope = "target"  # which model's forward: "target" or "drafter"
+_ordinal = 0  # collectives seen so far in the current forward
+# scope -> ordinal -> [(ptr, nbytes)], adopted; what capture bakes. One table
+# per model: the drafter's ten collectives have their own consumers, and a
+# shared table would let the richer target forward overwrite them (or the
+# drafter's ordinals read the target's rows).
+_tables: dict = {}
+_cand: dict = {}  # the current forward's candidate, ordinal -> ranges
 _cand_bytes: dict = {}
 
 
-def begin_forward():
-    """Called by the target model above the compiled region, once per forward
+def begin_forward(scope: str = "target"):
+    """Called by a model class above its compiled region, once per forward
     (eager warmup and capture alike). This forward's collectives use the
-    adopted table; the consumers noting themselves build the candidate."""
-    global _in_forward, _ordinal, _cand, _cand_bytes
+    scope's adopted table; the consumers noting themselves build the
+    candidate. `scope` names the model -- the target and the drafter each
+    keep their own table."""
+    global _in_forward, _scope, _ordinal, _cand, _cand_bytes
     if not _PREFETCH_BUDGET:
         return
     _in_forward = True
+    _scope = scope
     _ordinal = 0
     _cand = {}
     _cand_bytes = {}
 
 
 def end_forward():
-    global _in_forward, _table
+    global _in_forward
     if not _PREFETCH_BUDGET:
         return
     _in_forward = False
-    if sum(len(v) for v in _cand.values()) > sum(len(v) for v in _table.values()):
+    table = _tables.get(_scope, {})
+    if sum(len(v) for v in _cand.values()) > sum(len(v) for v in table.values()):
         # a decode-shaped forward saw more consumers than the last one did
         # (a prefill forward routes M > 32 to stock and notes nothing)
-        _table = _cand
+        _tables[_scope] = _cand
         logger.warning(
-            "[osar] prefetch hints learned: %d collectives, %.1f MB in total",
-            len(_table),
-            sum(sum(n for _, n in v) for v in _table.values()) / 1e6,
+            "[osar] prefetch hints learned (%s): %d collectives, %.1f MB in total",
+            _scope,
+            len(_cand),
+            sum(sum(n for _, n in v) for v in _cand.values()) / 1e6,
         )
 
 
@@ -473,9 +483,9 @@ def note_consumer(tensors):
     _cand_bytes[_ordinal] = used
 
 
-def prefetch_hint_table():
-    """The adopted table, for probes and the boot log."""
-    return dict(_table)
+def prefetch_hint_table(scope: str = "target"):
+    """The adopted table of one scope, for probes and the boot log."""
+    return dict(_tables.get(scope, {}))
 
 
 def maybe_all_reduce(comm, input_, orig):
@@ -505,7 +515,7 @@ def maybe_all_reduce(comm, input_, orig):
             "rank-local NCCL fallback"
         )
     try:
-        hint = _table.get(_ordinal) if _in_forward else None
+        hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None
         if hint:
             return _ext.oneshot_ar_hint(  # real path + L2 hints, graph + eager
                 input_, [p for p, _ in hint], [n for _, n in hint])

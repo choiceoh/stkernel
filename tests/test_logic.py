@@ -6967,15 +6967,19 @@ def test_osar_prefetch_hints_contract() -> None:
                                    "dsv4_oneshot_shim.py")
     shim = open(shim_path, encoding="utf-8").read()
     check("_PREFETCH_BUDGET = _resolve_prefetch_budget()" in shim
-          and "def begin_forward():" in shim and "def end_forward():" in shim
-          and "def note_consumer(tensors):" in shim,
-          "the shim learns the hint table per target forward")
+          and 'def begin_forward(scope: str = "target"):' in shim
+          and "def end_forward():" in shim
+          and "def note_consumer(tensors):" in shim
+          and "_tables[_scope] = _cand" in shim,
+          "the shim learns one hint table per model forward (scope)")
     mar = shim[shim.index("def maybe_all_reduce("):]
     check(mar.index("_ordinal += 1") < mar.index("if _disabled:"),
           "every collective advances the ordinal before any path decision")
-    check("hint = _table.get(_ordinal) if _in_forward else None" in mar
-          and "_ext.oneshot_ar_hint(" in mar and "_ext.oneshot_ar(input_)" in mar,
-          "hints apply only inside a target forward; the plain path stays")
+    check("hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None"
+          in mar and "_ext.oneshot_ar_hint(" in mar
+          and "_ext.oneshot_ar(input_)" in mar,
+          "hints apply only inside a forward, from that model's own table; "
+          "the plain path stays")
 
     drv = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
                                   "glm53_megakernel.py"), encoding="utf-8").read()
@@ -6993,8 +6997,19 @@ def test_osar_prefetch_hints_contract() -> None:
     layer_at = wiring.index("class Glm5NextDecoderLayer(")
     b_at = wiring.index("osar.begin_forward()")
     check(b_at > cls_at and "osar.end_forward()" in wiring[b_at:]
-          and "def _osar_shim():" in wiring,
+          and "def _osar_shim():" in wiring
+          and 'osar.begin_forward("target")' in wiring,
           "the forward boundary comes from the class above the compiled region")
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+                                      "qwen3_dflash2.py"), encoding="utf-8").read()
+    d_cls = drafter.index("class DFlash2Qwen3ForCausalLM(")
+    d_b = drafter.index('osar.begin_forward("drafter")')
+    check(d_b > d_cls and "osar.end_forward()" in drafter[d_b:]
+          and "def _osar_shim():" in drafter
+          and "class DFlash2Qwen3Model(DFlashQwen3Model)" in drafter
+          and 'begin_forward' not in drafter[drafter.index("class DFlash2Qwen3Model("):d_cls],
+          "the drafter's boundary sits on its ForCausalLM class (above the "
+          "compiled DFlashQwen3Model) under its own scope")
     check("begin_forward" not in wiring[layer_at:cls_at],
           "no hint call inside the traced decoder layer")
 
@@ -7054,7 +7069,7 @@ def test_osar_prefetch_hints_contract() -> None:
             return self._p
 
     m = load("1", "f")
-    m.begin_forward()
+    m.begin_forward("target")
     m.note_consumer([_T(0x10, 100)])           # before any collective: dropped
     m._ordinal = 1
     m.note_consumer([_T(0x1000, 10 << 20), _T(0x2000, 10 << 20)])
@@ -7065,7 +7080,7 @@ def test_osar_prefetch_hints_contract() -> None:
     check(0 not in t and t.get(1) == [(0x1000, 10 << 20), (0x2000, 2 << 20)]
           and t.get(2) == [(0x3000, 64)],
           "notes file under the preceding collective, capped at the budget")
-    m.begin_forward()
+    m.begin_forward("target")
     m._ordinal = 1
     m.note_consumer([_T(0x9000, 8)])
     m.end_forward()
@@ -7073,6 +7088,14 @@ def test_osar_prefetch_hints_contract() -> None:
           "a forward with fewer notes (prefill-shaped) does not replace the "
           "table")
     check(m._in_forward is False, "end_forward closes the window")
+    # the drafter's forward learns into ITS table; the target's is untouched
+    m.begin_forward("drafter")
+    m._ordinal = 1
+    m.note_consumer([_T(0x7000, 8)])
+    m.end_forward()
+    check(m.prefetch_hint_table("drafter") == {1: [(0x7000, 8)]}
+          and m.prefetch_hint_table("target") == t,
+          "the drafter's collectives keep a table of their own")
     print("  osar prefetch hints contract .. OK")
 
 
