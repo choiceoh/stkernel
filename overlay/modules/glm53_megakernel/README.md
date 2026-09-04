@@ -55,37 +55,53 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
-## Barrier-free small-shape path (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
+## The shared expert's pair: the barrier-free local-quant kernel (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
 
-The lane's fixed cost per launch is what the 30-45 us class of the decode
-step is made of: the shared expert's gate_up `[1024 x 4096]` and down
-`[4096 x 512]` -- 86 launches a step, 3.5 ms, 2.4 ms of it not covered by
-another stream (28차) -- move 1-2 MB each, i.e. 5-12 us of DRAM at the
-lane's rate, and take 30-45. Both run with at most ONE unit per block (32
-units on the 48-block grid). On such a launch the kernel now takes a
-barrier-free path: every block quantizes the A k-blocks of ITS unit straight
-into smem, from x in L2, as it stages them (the load goes out where the
-global copy's did, the reduce + convert + store where its smem store did),
-instead of the grid-wide prologue -- one k-block per block into `g_mk_aq`,
-a grid barrier, `sxs` from `g_mk_axs`. The A bytes are the same (same amax
-per row and k-block, same pow2 scale, same SATFINITE conversion), so the
-output is **bitwise** the global path's at the same split; what goes is the
-publishing barrier and its skew (every block held for the slowest x load,
-which queued behind the hoisted W fill: the prologue's 8-10 us median in the
-4차 stamps), the global round trip, and the idle blocks' part in all of it
--- they exit at once and hand their SMs to the PDL successor.
+The decode step's 30-45 us class is the shared expert's gate_up `[1024 x
+4096]` and down `[4096 x 512]` -- 86 launches a step, 3.5 ms, 2.4 ms of it
+not covered by another stream (28차 trace reading) -- 1-2 MB each, i.e.
+5-12 us of DRAM at the lane's rate. Both are one-unit-per-block launches (32
+units on the 48-block grid), and serving forks them onto the aux stream
+beside the routed MoE call of the same layer.
 
-The host picks it (`mk_localq_for`: units <= grid, `mk_units` is the
-phase's own unit rule) and the phase re-derives the condition, so a drift
-degrades to the global path. Launches with several k-walks per block
-(n=4096 and up at k=4096, the KDA in_proj) keep the once-per-launch quant,
-and the KDA kernel's two inlined phases always take it (`mk_gemm_phase` is
-the `<false>` instantiation; its o_proj arrives with `a_ready`). Knob
-`VLLM_GLM53_MK_LOCALQ=0` is the kill switch; the bench's `--gemm-sweep`
-times both paths over the split (`VLLM_GLM53_MK_KSR`) with a bitwise check,
-and `--stamps` adds the phase stamps of a `VLLM_GLM53_MK_PHASE_TS=1` build.
-Numbers: MEASUREMENTS.md (this section is written before they exist; the
-ledger, not this file, says what it bought).
+`mk_gemm_lq_kernel` (`mk_gemm_phase_t<true>`) is the lane's kernel for
+them: every block quantizes the A k-blocks of ITS unit straight into smem,
+from x in L2, as it stages them (the load a whole iteration ahead, the
+reduce + convert before the pipeline wait, only the smem stores behind the
+barrier), instead of the grid-wide prologue -- one k-block per block into
+`g_mk_aq`, a grid barrier, `sxs` from `g_mk_axs`. The A bytes are the same
+(same amax per row and k-block, same pow2 scale, same SATFINITE
+conversion), so the output is **bitwise** the global kernel's at the same
+split -- the boot self-test gates BOTH kernels on the exact e2m1 fixture
+and requires them equal. It is launched on as many blocks as it has units
+(`mk_lq_launch_grid`; `VLLM_GLM53_MK_LQ_GRID` caps it lower), not the full
+grid, and it has no grid barrier, so its blocks neither wait for each other
+nor hold SMs the MoE kernel could use.
+
+What the 29차 probes say (srv2, same process, same split): **standalone it
+is a wash or a loss** -- the global prologue it skips costs ~5 us (x load +
+quant + barrier, stamps) and the in-loop quant costs about that back; the
+first form (48 blocks, quant inside the sync section, per-row exit before
+the shuffles) lost 4 us at m=8 and 12 us at m=32, which v2 above addresses.
+**Under the routed MoE kernel** (`probes/mk_gemm_concurrent_probe.py`: one
+graph, the pair on a forked stream beside a U=40 b12x call) the global
+kernel's pair is exposed whole in either issue order (44 us a layer = the
+pair alone + launch); the local kernel on 48 blocks hid most of it when the
+MoE was issued first (17 us) and none when the pair was (42 us: 48 blocks
+take every SM and the MoE waits). The launched-grid form is the fix for
+that order -- its numbers are in MEASUREMENTS.md 29차.
+
+Knob: `VLLM_GLM53_MK_LOCALQ` = 0 (default, declared in `profiles/glm53.env`
+so the launcher forwards it) / 1 = the launches the fp8-dense hook marks
+background (`_mk_bg`: `mlp.shared_experts.*`) / 2 = every one-unit-per-block
+launch (the bench's sweep). `mk_gemm_kernel` keeps its 80-register binary
+(one kernel with both paths allocated for the union, 128). The host's plan
+(`mk_gemm_plan_for`: `mk_units` <= grid, the same `mk_split_ok` gate the
+phase uses, the lq kernel's resident grid) decides the kernel and the bench's
+`gemm_plan` prints that same plan; the phase re-derives the condition, so a
+drift degrades to the global path. Probes: `--gemm-sweep` (local x split,
+bitwise `same`, replay), `--stamps` (phase stamps of a
+`VLLM_GLM53_MK_PHASE_TS=1` build), the concurrent probe above.
 
 ## What it absorbs (and what it cannot)
 
@@ -219,8 +235,8 @@ VLLM_GLM53_MK_GEMM=1
 VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
 VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
-VLLM_GLM53_MK_LOCALQ=1      # gemm: barrier-free path for one-unit-per-block
-                            # launches, default 1 (0 = the global-quant path)
+VLLM_GLM53_MK_LOCALQ=1      # gemm: the local-quant kernel for the shared
+                            # expert's pair (bg), default 0; 2 = all small
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc

@@ -291,21 +291,6 @@ struct MKGemmCtx {
   // into the weights, and passes 2^-shift here; it costs one multiply on
   // the activation scales in the prologue.
   float wgs = 1.0f;
-  // Barrier-free path (VLLM_GLM53_MK_LOCALQ, default on; mk_gemm_plan on the
-  // host, re-checked in the phase). When the launch has at most ONE unit per
-  // block -- the 30-45 us class of 28차: the shared expert's gate_up
-  // [1024 x 4096] (32 units) and down [4096 x 512] (32 units), 86 launches a
-  // step -- every block quantizes the A k-blocks of ITS unit straight into
-  // smem, from x in L2, instead of one k-block each into the global tiles
-  // behind a grid barrier. The bytes the mma reads are the same (same amax,
-  // same pow2 scale, same conversion), so the output is bitwise the global
-  // path's; what goes is the publishing barrier and its skew (every block
-  // held for the slowest x load, which queued behind the hoisted W fill),
-  // the g_mk_aq / g_mk_axs round trip, and the idle blocks' part in all of
-  // it -- they exit at once and free their SMs to the PDL successor. The
-  // large shapes (units > grid: several k-walks per block) keep the global
-  // quant: there the once-per-launch quant is the cheaper one.
-  bool localq = false;
 };
 
 // e4m3 encodings of the e2m1 magnitudes {0, .5, 1, 1.5, 2, 3, 4, 6}.
@@ -342,9 +327,17 @@ constexpr unsigned long long MK_E2M1_LUT64_B = 0x4D484540'3D383000ULL;
 // in the ctx so neither host entry point nor the pybind signature changes.
 // ksr * rem <= grid no longer holds (see the ksr choice below), so the
 // accumulator is sized for the unit cap, not for one round.
-constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP;               // 96
+constexpr int MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP;               // 192 at the 96 cap
 constexpr int MK_SPLIT_MAXCOL = (MK_GRID_CAP - 1) * 128;          // 6016
-constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 1.5 MB
+constexpr int MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX; // 786,432 (3 MB)
+// The split gate, ONE function for the phase and the host's unit count
+// (mk_units): a leftover-tile split is taken when the partial accumulator
+// holds it.
+__host__ __device__ __forceinline__ bool mk_split_ok(int m, int pcols,
+                                                     int ksr) {
+  return (ksr > 1) && (m <= 32) && (pcols <= MK_SPLIT_MAXCOL) &&
+         ((size_t)m * pcols * ksr <= MK_SPLIT_ELEMS);
+}
 __device__ unsigned long long g_mk_gemm_bar = 0ULL;
 // kda inlines mk_gemm_phase twice per launch on ITS grid, which need
 // not equal the standalone gemm grid. Two grids on one ticket counter
@@ -460,9 +453,7 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   const int pcols = rem * 128;
   // Guard on the accumulator directly rather than on a column count that
   // only bounds it when ksr * rem <= c.grid -- which no longer holds.
-  const bool split = (ksr > 1) && (c.m <= 32) &&
-                     (rem * 128 <= MK_SPLIT_MAXCOL) &&
-                     ((size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS);
+  const bool split = mk_split_ok(c.m, pcols, ksr);
   // One slice per split, summed in a FIXED order below. An atomicAdd
   // accumulator is order-nondeterministic, so back-to-back launches of the
   // same call return bitwise-different results -- the probe's replay-
@@ -496,10 +487,11 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   __shared__ int s_unit;  // next dynamically taken unit, broadcast
 
   const int units = split ? (full + rem * ksr) : nblk;
-  // Barrier-free local-quant path: the LQ instantiation, one unit per block
-  // at most (ctx.localq). Re-derived here from the same numbers the host
-  // used, so a host/kernel drift degrades to the global path, never to a
-  // block quantizing k-blocks nobody published.
+  // Barrier-free local-quant path: the LQ instantiation (mk_gemm_lq_kernel,
+  // chosen by the host's plan on the same rule), one unit per block at most.
+  // Re-derived here from the same numbers the host used, so a host/kernel
+  // drift degrades to the global path, never to a block quantizing k-blocks
+  // nobody published.
   const bool local_q = LQ && !c.a_ready && (units <= c.grid);
   // unit -> (n-tile, k range). Whole tiles first, then the leftover tiles'
   // k slices, ksr per tile.
@@ -631,12 +623,16 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   // above went out during that kernel's tail. From here on it reads x (the
   // previous kernel's output) and touches the shared counters, so it waits
   // for that grid to complete and flush. A no-op for a plain launch.
+  // Local path, a block without a unit: nothing to read from the previous
+  // kernel, nothing to publish -- it leaves BEFORE the PDL wait, or it would
+  // squat on an SM (69 KB of smem) for the predecessor's whole tail, on the
+  // SMs the kernel on the other stream is competing for. (The launched grid
+  // is sized to the units, so this is the cap/drift case only.)
+  if (local_q && !has_u0) return;
   asm volatile("griddepcontrol.wait;" ::: "memory");
   if (local_q) {
     // No grid-wide A quant, no barrier: the unit loop below quantizes each
-    // k-block of this block's unit from x as it stages it. A block without a
-    // unit has nothing to publish and nothing to wait for.
-    if (!has_u0) return;
+    // k-block of this block's unit from x as it stages it.
     MK_TS(2);  // prologue done (no barrier on this path)
   } else {
   // x -> registers, after the wait, one unconditional 8 B load per row
@@ -732,10 +728,13 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
   unsigned long long twait = 0ull;  // ns inside the W pipeline waits
   unsigned long long tmma = 0ull, texp = 0ull;  // ns in mma_fold / expand (W4)
 #endif
-  // (local path: units <= grid, so the static first unit is the only one
-  // and the hand-out counter -- reset under the barrier this path skips --
-  // is never read)
-  for (int u = blockIdx.x; u < units; u = local_q ? units : next_unit()) {
+  // (local path: no hand-out counter -- it is reset under the barrier this
+  // path skips -- the block strides over the units with the LAUNCHED grid,
+  // which the host sizes to the units, or below: every unit still has a
+  // block, and the SMs the launch leaves alone go to the kernel sharing
+  // the GPU on the other stream -- the routed MoE beside the shared expert)
+  for (int u = blockIdx.x; u < units;
+       u = local_q ? u + (int)gridDim.x : next_unit()) {
     int nt, kb0, kbn;
     decode_unit(u, nt, kb0, kbn);
     const bool to_partial = split && (u >= full);
@@ -760,18 +759,22 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
     constexpr int A_WORDS = KSTEP / 4;
     constexpr int A_PER_THREAD = 32 * A_WORDS / MK_THREADS;  // 4 at m = 32
     uint32_t areg[A_PER_THREAD];
-    // Local path: the warp's rows of x for one k-block, 8 B a lane (the
-    // same vector the global prologue loads), quantized in place. The load
-    // goes out where the global copy's does (top of the previous
-    // iteration), the reduce + convert + store where its smem store does.
+    // Local path: the warp's rows of x for one k-block, 8 B a lane -- the
+    // vector the global prologue loads, rows past m clamped to row m-1 the
+    // same way (loaded, reduced, never stored). The load goes out where the
+    // global copy's does (top of the previous iteration); lq_quant below
+    // reduces and converts BEFORE the pipeline wait, so that work sits in
+    // the DMA slack rather than in the sync-to-sync section that already
+    // holds the expansion; only the smem stores stay behind the barrier.
     uint2 xq[RPW];
+    uint32_t apk[RPW];  // the rows' e4m3 packs
+    float asc[RPW];     // the rows' wgs-folded scales
     auto stage_a_load = [&](int kb) {
       if (local_q) {
 #pragma unroll
         for (int i = 0; i < RPW; ++i) {
-          const int r = qw + i * MK_WARPS;
-          if (r < c.m)
-            xq[i] = *(const uint2*)(c.x + (size_t)r * c.k + kb * KSTEP + ql * 4);
+          const int r = min(qw + i * MK_WARPS, c.m - 1);
+          xq[i] = *(const uint2*)(c.x + (size_t)r * c.k + kb * KSTEP + ql * 4);
         }
         return;
       }
@@ -784,36 +787,52 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
               g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + e);
       }
     };
+    // quant_store's arithmetic, every row unconditionally (the clamped rows
+    // past m are reduced and dropped, exactly as the prologue does with
+    // them): the amax is the warp max of the same four |v| per lane in the
+    // same butterfly, the scale the same pow2, the bytes the same SATFINITE
+    // conversion -- so the tile is byte for byte what the global prologue
+    // would have published, and sxs gets the same wgs-folded scale. A
+    // per-row early exit here serialised the RPW shuffle chains (the
+    // compiler cannot hoist convergent shuffles across it): m=32 measured
+    // +12 us a launch on the first form.
+    auto lq_quant = [&]() {
+      float vq[RPW][4], mxq[RPW];
+#pragma unroll
+      for (int i = 0; i < RPW; ++i) {
+        const __nv_bfloat16* pv = (const __nv_bfloat16*)&xq[i];
+#pragma unroll
+        for (int q = 0; q < 4; ++q) vq[i][q] = __bfloat162float(pv[q]);
+        mxq[i] = fmaxf(fmaxf(fabsf(vq[i][0]), fabsf(vq[i][1])),
+                       fmaxf(fabsf(vq[i][2]), fabsf(vq[i][3])));
+      }
+#pragma unroll
+      for (int off = 16; off; off >>= 1)
+#pragma unroll
+        for (int i = 0; i < RPW; ++i)
+          mxq[i] = fmaxf(mxq[i], __shfl_xor_sync(0xffffffffu, mxq[i], off));
+#pragma unroll
+      for (int i = 0; i < RPW; ++i) {
+        const float sc = mk_pow2_scale(mxq[i]);
+        const float rsc = 1.0f / sc;  // exact: sc is a power of two
+        uint32_t pack = 0;
+#pragma unroll
+        for (int q = 0; q < 4; ++q)
+          pack |= (uint32_t)mk_f32_to_e4m3(vq[i][q] * rsc) << (8 * q);
+        apk[i] = pack;
+        asc[i] = sc * c.wgs;
+      }
+    };
     auto stage_a_store = [&](int kb) {
       if (local_q) {
-        // quant_store's arithmetic, row by row: the amax is the warp max of
-        // the same four |v| per lane, the scale the same pow2, the bytes the
-        // same SATFINITE conversion -- so the tile is byte for byte what the
-        // global prologue would have published, and sxs gets the same
-        // wgs-folded scale.
 #pragma unroll
         for (int i = 0; i < RPW; ++i) {
           const int r = qw + i * MK_WARPS;
           if (r >= c.m) break;  // rows ascend with i (warp-uniform)
-          const __nv_bfloat16* pv = (const __nv_bfloat16*)&xq[i];
-          float vq[4];
-#pragma unroll
-          for (int q = 0; q < 4; ++q) vq[q] = __bfloat162float(pv[q]);
-          float mxq = fmaxf(fmaxf(fabsf(vq[0]), fabsf(vq[1])),
-                            fmaxf(fabsf(vq[2]), fabsf(vq[3])));
-#pragma unroll
-          for (int off = 16; off; off >>= 1)
-            mxq = fmaxf(mxq, __shfl_xor_sync(0xffffffffu, mxq, off));
-          const float sc = mk_pow2_scale(mxq);
-          const float rsc = 1.0f / sc;  // exact: sc is a power of two
-          uint32_t pack = 0;
-#pragma unroll
-          for (int q = 0; q < 4; ++q)
-            pack |= (uint32_t)mk_f32_to_e4m3(vq[q] * rsc) << (8 * q);
           uint8_t* dst = saq + (r >> 4) * 16 * SMEM_A_PITCH +
                          (r & 15) * SMEM_A_PITCH;
-          *(uint32_t*)(dst + mk_swz(r & 15, ql * 4)) = pack;
-          if (ql == 0) sxs[r * KBLK_MAX + kb] = sc * c.wgs;
+          *(uint32_t*)(dst + mk_swz(r & 15, ql * 4)) = apk[i];
+          if (ql == 0) sxs[r * KBLK_MAX + kb] = asc[i];
         }
         return;
       }
@@ -830,7 +849,6 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
       // rows >= m keep stale bytes: their output rows are never written and
       // finite e4m3 cannot poison other rows of the same mma.
     };
-    auto stage_a = [&](int kb) { stage_a_load(kb); stage_a_store(kb); };
 
     // mma + per-k-block activation-scale fold (the weight group scales
     // are already inside the expanded e4m3 bytes).
@@ -921,16 +939,18 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
       // one tile in flight and 128 DRAM pages per tile -- and did 37 GB/s
       // where the W8 arm did 84 at the same shape, on 0.56x the bytes.
       if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);
-      stage_a(kb0);
-      if (local_q) MK_TS(1);  // first k-block of A quantized (local path)
+      stage_a_load(kb0);  // both paths: the loads go out, they land under the wait
       if (!prefilled) {
 #pragma unroll
         for (int d = 1; d < RAW_DIST; ++d)
           if (kb0 + d < kbn) stage_raw4(nt, kb0 + d, (kb0 + d) % W4_RAW_NBUF);
       }
+      if (local_q) lq_quant();
+      if (local_q) MK_TS(1);  // first k-block of A quantized (local path)
       mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb0 - 1));
       __syncthreads();
       expand_w4(kb0 % W4_RAW_NBUF, kb0 % 2);  // the loop reads (kb % 2)
+      stage_a_store(kb0);  // the A tile lands beside the expanded W tile
       __syncthreads();
       if (u == (int)blockIdx.x) MK_TS(3);
       for (int kb = kb0;; ++kb) {
@@ -943,6 +963,7 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
         mma_fold(sw4t, kb);  // the group scales are inside the bytes
         MK_TS_ACC_END(tmma, tm);
         if (kb + 1 >= kbn) break;
+        if (local_q) lq_quant();  // kb+1's rows: loaded above, reduced here
         // raw(kb+1) landed: the groups still allowed in flight are the
         // ones issued after it, min(RAW_DIST - 1, kbn - kb - 2).
         MK_TS_ACC_BEGIN(tw);
@@ -1076,11 +1097,16 @@ __global__ void mk_gemm_kernel(const MKGemmCtx c) {
   mk_gemm_phase(c, smem, &g_mk_gemm_bar);
 }
 
-// The barrier-free instantiation as its OWN kernel, not a branch inside
-// mk_gemm_kernel: one kernel holding both paths allocates registers for the
-// union (80 -> 128 on ptxas) and the global path's code is then no longer
-// the binary it was measured as. Same budget, same resident grid (the host
-// checks), same ticket counter argument (unused on this path).
+// The barrier-free local-quant path (VLLM_GLM53_MK_LOCALQ, README) as its
+// OWN kernel, not a branch inside mk_gemm_kernel: one kernel holding both
+// paths allocates registers for the union (80 -> 128 on ptxas) and the
+// global path's code is then no longer the binary it was measured as. Same
+// budget, same resident grid (the host's plan checks), same ticket counter
+// argument (unused on this path). Launched with as many blocks as it has
+// units (mk_lq_launch_grid), not the full grid: standalone that is a wash
+// (the prologue it skips is ~5 us and its in-loop quant costs about that),
+// under the routed MoE kernel on the other stream it is the difference
+// between the pair being exposed whole (44 us a layer, 29차) and hidden.
 __global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {
   extern __shared__ uint8_t smem[];
   asm volatile("griddepcontrol.launch_dependents;");
@@ -2443,24 +2469,48 @@ bool mk_pdl_enabled() {
   return v == 1;
 }
 
-// Probe knobs of the standalone lane, read from the env once and settable
-// from the bench (set_probe) so one process can sweep them: the split of a
-// full == 0 shape (VLLM_GLM53_MK_KSR, 0 = the cost model) and the
-// barrier-free path (VLLM_GLM53_MK_LOCALQ, default 1).
+// Knobs of the standalone lane, read from the env once (a value outside the
+// knob's range reads as its default) and settable from the bench
+// (set_probe; -1 = back to the env) so one process can sweep them:
+//   VLLM_GLM53_MK_KSR      split of a full == 0 shape, 0 = the cost model
+//   VLLM_GLM53_MK_LOCALQ   0 (default) never; 1 = the launches the caller
+//                          marks background (bg: the shared expert's pair
+//                          beside the routed MoE); 2 = every launch with
+//                          units <= grid (the bench's sweep)
+//   VLLM_GLM53_MK_LQ_GRID  blocks of a local launch: 0 (default) = exactly
+//                          its units, N = min(units, N)
+// Serving carries only the keys the profile declares (the launcher forwards
+// those), so the kill switch is the profile line, not a shell export.
 int g_probe_ksr = -1;
 int g_probe_localq = -1;
-int mk_env_int(const char* name, int def) {
+int g_probe_lq_grid = -1;
+int mk_env_int(const char* name, int def, int lo, int hi) {
   const char* e = getenv(name);
-  return e ? atoi(e) : def;
+  if (!e) return def;
+  const int v = atoi(e);
+  return (v < lo || v > hi) ? def : v;
 }
 int mk_probe_ksr() {
-  if (g_probe_ksr < 0) g_probe_ksr = mk_env_int("VLLM_GLM53_MK_KSR", 0);
+  if (g_probe_ksr < 0)
+    g_probe_ksr = mk_env_int("VLLM_GLM53_MK_KSR", 0, 0, KBLK_MAX);
   return g_probe_ksr;
 }
 int mk_probe_localq() {
   if (g_probe_localq < 0)
-    g_probe_localq = mk_env_int("VLLM_GLM53_MK_LOCALQ", 1);
+    g_probe_localq = mk_env_int("VLLM_GLM53_MK_LOCALQ", 0, 0, 2);
   return g_probe_localq;
+}
+int mk_probe_lq_grid() {
+  if (g_probe_lq_grid < 0)
+    g_probe_lq_grid = mk_env_int("VLLM_GLM53_MK_LQ_GRID", 0, 0, MK_GRID_CAP);
+  return g_probe_lq_grid;
+}
+// the launched grid of a local launch of `units` units
+int mk_lq_launch_grid(int units, int grid) {
+  const int cap = mk_probe_lq_grid();
+  int g = units < grid ? units : grid;
+  if (cap > 0 && cap < g) g = cap;
+  return g > 0 ? g : 1;
 }
 
 template <typename K, typename A>
@@ -2519,23 +2569,38 @@ int mk_choose_ksr(int m, int n, int k, int grid) {
   return ksr;
 }
 
-// Host twin of the phase's unit count (its `split` rule and `units`), so the
-// launch can pick the barrier-free path; the phase re-derives it.
+// Host twin of the phase's unit count (mk_split_ok is the phase's own gate),
+// so the launch can pick the barrier-free path; the phase re-derives it.
 int mk_units(int m, int n, int grid, int ksr) {
   const int nblk = n / 128;
   const int rem = nblk % grid, full = nblk - rem;
   const int pcols = rem * 128;
-  const bool split = (ksr > 1) && (m <= 32) && (pcols <= MK_SPLIT_MAXCOL) &&
-                     ((size_t)m * pcols * ksr <= MK_SPLIT_ELEMS);
+  const bool split = mk_split_ok(m, pcols, ksr);
   return split ? (full + rem * ksr) : nblk;
 }
 
-// VLLM_GLM53_MK_LOCALQ (default 1): the standalone lane's barrier-free path
-// for launches with at most one unit per block (MKGemmCtx::localq). 0 is
-// the kill switch -- the global-quant path for every shape, byte for byte
-// the kernel before it.
-bool mk_localq_for(int m, int n, int grid, int ksr) {
-  return mk_probe_localq() != 0 && mk_units(m, n, grid, ksr) <= grid;
+// The plan of one launch -- ONE function for mk_run_gemm and the bench's
+// gemm_plan, so what the bench prints is what the launch did. n is the
+// pack's padded n. `bg`: the caller marks the launch background (the
+// shared expert's pair, on the aux stream beside the routed MoE).
+struct MKGemmPlan {
+  int grid, ksr, units, lgrid;
+  bool localq;
+};
+MKGemmPlan mk_gemm_plan_for(int m, int n, int k, bool bg) {
+  MKGemmPlan p{};
+  p.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);
+  p.ksr = mk_choose_ksr(m, n, k, p.grid);
+  p.units = mk_units(m, n, p.grid, p.ksr);
+  const int lq = mk_probe_localq();
+  // the local kernel must resolve to the same resident grid (same smem
+  // budget, so it does); a drift keeps the global kernel rather than
+  // launching units sized for another grid
+  p.localq = (lq == 2 || (lq == 1 && bg)) && p.units <= p.grid &&
+             mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid, GEMM_SMEM)
+                 == p.grid;
+  p.lgrid = p.localq ? mk_lq_launch_grid(p.units, p.grid) : p.grid;
+  return p;
 }
 
 }  // namespace
@@ -2602,7 +2667,7 @@ std::vector<int64_t> mk_read_mhc_ts() {
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
-                 torch::Tensor out, int64_t n_orig, double wgs) {
+                 torch::Tensor out, int64_t n_orig, double wgs, int64_t bg) {
   set_kernel_attrs();
   MKGemmCtx c{};
   c.x = (const __nv_bfloat16*)x.data_ptr();
@@ -2629,34 +2694,30 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK((int)wq4.size(1) == c.k / KSTEP, "wq4 k-tiles disagree with x");
   TORCH_CHECK(c.m <= 32, "m out of contract");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  c.grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);
-  c.ksr = mk_choose_ksr(c.m, c.n, c.k, c.grid);
-  c.localq = mk_localq_for(c.m, c.n, c.grid, c.ksr);
-  // the local kernel must resolve to the same resident grid (same smem
-  // budget, so it does); a drift falls back to the global kernel rather
-  // than launching units sized for another grid
-  if (c.localq && mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid,
-                                   GEMM_SMEM) != c.grid)
-    c.localq = false;
-  if (c.localq)
-    mk_launch(mk_gemm_lq_kernel, c.grid, GEMM_SMEM, stream, c);
+  const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);
+  c.grid = p.grid;
+  c.ksr = p.ksr;
+  if (p.localq)
+    mk_launch(mk_gemm_lq_kernel, p.lgrid, GEMM_SMEM, stream, c);
   else
     mk_launch(mk_gemm_kernel, c.grid, GEMM_SMEM, stream, c);
 }
 
-// Bench: the plan one launch of (m, n, k) would use -- {grid, ksr, units,
-// localq} -- and the knob setter behind it (-1 leaves a knob as it is).
-std::vector<int64_t> mk_gemm_plan(int64_t m, int64_t n, int64_t k) {
+// Bench: the plan one launch of (m, n, k, bg) takes -- {grid, ksr, units,
+// localq, launched grid} -- n padded as the pack pads it -- and the knob
+// setter behind it (-1 = back to the env's value).
+std::vector<int64_t> mk_gemm_plan(int64_t m, int64_t n, int64_t k,
+                                  int64_t bg) {
   set_kernel_attrs();
-  const int grid = mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM);
-  const int ksr = mk_choose_ksr((int)m, (int)n, (int)k, grid);
-  return {(int64_t)grid, (int64_t)ksr,
-          (int64_t)mk_units((int)m, (int)n, grid, ksr),
-          (int64_t)mk_localq_for((int)m, (int)n, grid, ksr)};
+  const int n_pad = (int)((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS * SMEM_W_ROWS);
+  const MKGemmPlan p = mk_gemm_plan_for((int)m, n_pad, (int)k, bg != 0);
+  return {(int64_t)p.grid, (int64_t)p.ksr, (int64_t)p.units,
+          (int64_t)p.localq, (int64_t)p.lgrid};
 }
-void mk_set_probe(int64_t ksr, int64_t localq) {
-  if (ksr >= 0) g_probe_ksr = (int)ksr;
-  if (localq >= 0) g_probe_localq = (int)localq;
+void mk_set_probe(int64_t ksr, int64_t localq, int64_t lq_grid) {
+  g_probe_ksr = ksr >= 0 ? (int)ksr : -1;
+  g_probe_localq = localq >= 0 ? (int)localq : -1;
+  g_probe_lq_grid = lq_grid >= 0 ? (int)lq_grid : -1;
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -2833,8 +2894,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
   m.def("read_kda_ts", &mk_read_kda_ts, "kda phase timestamps");
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
-  m.def("gemm_plan", &mk_gemm_plan, "bench: {grid, ksr, units, localq}");
-  m.def("set_probe", &mk_set_probe, "bench: force ksr / localq (-1 = keep)");
+  m.def("gemm_plan", &mk_gemm_plan,
+        "bench: {grid, ksr, units, localq, launched grid} of (m, n, k, bg)");
+  m.def("set_probe", &mk_set_probe,
+        "bench: force ksr / localq / lq launch grid (-1 = back to the env)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");

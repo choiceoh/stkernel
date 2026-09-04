@@ -8,14 +8,18 @@ Serving forks the shared expert (gate_up [1024 x 4096], down [4096 x 512])
 onto an aux stream beside the routed b12x MoE call of the same layer, so a
 persistent 48-block MK launch competes with the MoE kernel for SMs: its
 blocks trickle in as MoE blocks retire, and on the global-quant path the
-grid barrier then holds every resident block for the last one to arrive.
-The standalone bench cannot show that. This probe captures ONE graph with
-the fork -- stream A: the served b12x wrapper at U=40 (the boot's unique-
-expert count, DRAM-cold: 142 MB a call); stream B: the pair -- in both issue
-orders, and times the union span against each part alone, for the local
-(VLLM_GLM53_MK_LOCALQ=1) and global (0) paths:
+grid barrier then holds every resident block for the last one to arrive;
+launched first, its 48 blocks hold every SM until they are done and the MoE
+waits. The standalone bench cannot show that. This probe captures ONE graph
+with the fork -- stream A: the served b12x wrapper at U=40 (the boot's
+unique-expert count, DRAM-cold: 142 MB a call); stream B: the pair -- in
+both issue orders, and times the union against each part alone:
 
   exposed = span(moe || pair) - span(moe)      what the step actually pays
+
+for the global path (VLLM_GLM53_MK_LOCALQ=0) and the local-quant kernel
+(2) on its launched grid: `units` blocks (32 here), then 16 and 8
+(VLLM_GLM53_MK_LQ_GRID) -- fewer blocks leave more SMs to the MoE.
 
     bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py
 """
@@ -32,37 +36,19 @@ os.environ.setdefault("VLLM_GLM53_MK_MLA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 sys.path.insert(0, os.environ.get("MK_PKG_PATH",
                                   "/usr/local/lib/python3.12/dist-packages"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import torch  # noqa: E402
 
-DEV = "cuda"
-E, TOPK, HID, INTER = 288, 8, 4096, 512   # per-rank GLM-5.3 TP=4 geometry
-T = 8                                     # C=1 verify batch (k=7 + 1)
+# the served b12x fixture -- ONE definition, moe_decode_stream_probe's
+from moe_decode_stream_probe import (  # noqa: E402
+    DEV, E, HID, INTER, T, TOPK, _routing, _weight_set)
+
 U = 40                                    # unique experts a layer (27차)
 SHARED_N = 1024                           # shared expert gate_up rows / rank
 SHARED_K = 512                            # down-proj K / rank
 REPS = 20
-
-
-def _routing(U: int):
-    gen = torch.Generator().manual_seed(U)
-    pool = torch.randperm(E, generator=gen)[:U]
-    flat = torch.arange(T * TOPK) % U
-    ids = pool[flat].view(T, TOPK).to(torch.int32)
-    w = torch.rand(T, TOPK, generator=gen, dtype=torch.float32)
-    w = w / w.sum(dim=1, keepdim=True)
-    return ids.to(DEV), w.to(DEV)
-
-
-def _weight_set(gen):
-    w13 = torch.randint(0, 256, (E, 2 * INTER, HID // 2), dtype=torch.uint8,
-                        generator=gen).to(DEV)
-    w2 = torch.randint(0, 256, (E, HID, INTER // 2), dtype=torch.uint8,
-                       generator=gen).to(DEV)
-    s13 = (torch.rand(E, 2 * INTER, HID // 16, generator=gen) * 0.05 + 0.01)
-    s2 = (torch.rand(E, HID, INTER // 16, generator=gen) * 0.05 + 0.01)
-    return (w13, w2, s13.to(torch.float8_e4m3fn).to(DEV),
-            s2.to(torch.float8_e4m3fn).to(DEV))
+NREPLAY = 5                               # replays per event bracket
 
 
 def _capture(fn_a, fn_b, order: str):
@@ -70,7 +56,6 @@ def _capture(fn_a, fn_b, order: str):
     issue order inside the capture (A first or B first)."""
     a = torch.cuda.Stream()
     b = torch.cuda.Stream()
-    cur = torch.cuda.current_stream()
     # warm both paths outside the capture (allocations, the MK arm, PDL attrs)
     for _ in range(2):
         fn_a()
@@ -93,11 +78,13 @@ def _capture(fn_a, fn_b, order: str):
         join.record(b)
         a.wait_event(join)
     torch.cuda.synchronize()
-    del cur
     return g
 
 
 def _time(g, reps: int = REPS) -> float:
+    """us per replay, median over reps of NREPLAY back-to-back replays: the
+    graph-launch gap (which grows with the node count) amortises instead of
+    sitting whole inside a bracket around one replay on an idle stream."""
     for _ in range(3):
         g.replay()
     torch.cuda.synchronize()
@@ -105,11 +92,13 @@ def _time(g, reps: int = REPS) -> float:
     e = torch.cuda.Event(enable_timing=True)
     ts = []
     for _ in range(reps):
+        g.replay()  # the stream is busy when the start event lands
         s.record()
-        g.replay()
+        for _ in range(NREPLAY):
+            g.replay()
         e.record()
         torch.cuda.synchronize()
-        ts.append(s.elapsed_time(e) * 1e3)
+        ts.append(s.elapsed_time(e) * 1e3 / NREPLAY)
     ts.sort()
     return ts[len(ts) // 2]
 
@@ -146,7 +135,8 @@ def main() -> int:
     ext = mk._EXT
     # the shared expert's pair: gate_up [1024 x 4096] on x, then down
     # [4096 x 512] on the (untouched: the activation is not the point)
-    # first 512 columns of that output
+    # first 512 columns of that output. bg=True: the serving call site
+    # marks these launches background, which is what LOCALQ=1 keys on.
     p_up = mk.build_mk_weight_w4(
         torch.randn(SHARED_N, HID, dtype=torch.bfloat16, device=DEV) * 0.05)
     p_dn = mk.build_mk_weight_w4(
@@ -155,36 +145,42 @@ def main() -> int:
     h = torch.empty(T, SHARED_K, dtype=torch.bfloat16, device=DEV)
 
     def pair():
-        up = mk._gemm_call(xs, p_up, SHARED_N)
+        up = mk._gemm_call(xs, p_up, SHARED_N, bg=True)
         h.copy_(up[:, :SHARED_K])
-        mk._gemm_call(h, p_dn, HID)
+        mk._gemm_call(h, p_dn, HID, bg=True)
 
     def nothing():
         pass
 
-    plan_up = ext.gemm_plan(T, SHARED_N, HID)
-    plan_dn = ext.gemm_plan(T, HID, SHARED_K)
-    print(f"plans (grid, ksr, units, localq): up={plan_up} down={plan_dn}")
-    print(f"{'row':<34}{'us':>9}{'exposed_us':>12}")
-    rows = {}
+    print(f"{'row':<40}{'us':>9}{'exposed_us':>12}")
+    ext.set_probe(0, 0, -1)
     t_moe = _time(_capture(moe, nothing, "moe-first"))
-    print(f"{'moe alone (U=40)':<34}{t_moe:>9.1f}")
-    for lq in (0, 1):
-        ext.set_probe(0, lq)
+    print(f"{'moe alone (U=40)':<40}{t_moe:>9.1f}")
+    rows = {}
+    # (localq knob, lq launch-grid cap): the global kernel, then the local
+    # kernel on its units, on 16 and on 8 blocks
+    for lq, cap in ((0, 0), (1, 0), (1, 16), (1, 8)):
+        ext.set_probe(0, lq, cap)
+        plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
+        plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
+        tag = f"lq={lq}" + (f" grid<={cap}" if cap else "")
+        print(f"  plans (grid, ksr, units, localq, lgrid): up={plan_up} "
+              f"down={plan_dn}")
         t_pair = _time(_capture(nothing, pair, "moe-first"))
-        print(f"{'pair alone lq=' + str(lq):<34}{t_pair:>9.1f}")
+        print(f"{'pair alone ' + tag:<40}{t_pair:>9.1f}")
         for order in ("moe-first", "pair-first"):
             t = _time(_capture(moe, pair, order))
-            rows[(lq, order)] = t - t_moe
-            print(f"{'moe || pair lq=' + str(lq) + ' ' + order:<34}{t:>9.1f}"
+            rows[(lq, cap, order)] = t - t_moe
+            print(f"{'moe || pair ' + tag + ' ' + order:<40}{t:>9.1f}"
                   f"{t - t_moe:>12.1f}")
-    ext.set_probe(0, 1)
+    ext.set_probe(-1, -1, -1)
     # the number that maps onto the step: 43 layers x the exposed pair
-    for lq in (0, 1):
-        worst = max(rows[(lq, o)] for o in ("moe-first", "pair-first"))
-        best = min(rows[(lq, o)] for o in ("moe-first", "pair-first"))
-        print(f"lq={lq}: exposed per layer {best:.1f}..{worst:.1f} us -> "
-              f"x43 = {43 * best / 1e3:.2f}..{43 * worst / 1e3:.2f} ms/step")
+    for (lq, cap) in ((0, 0), (1, 0), (1, 16), (1, 8)):
+        a = rows[(lq, cap, "moe-first")]
+        b = rows[(lq, cap, "pair-first")]
+        tag = f"lq={lq}" + (f" grid<={cap}" if cap else "")
+        print(f"{tag}: exposed per layer moe-first {a:.1f} / pair-first {b:.1f} us"
+              f" -> x43 = {43 * a / 1e3:.2f} / {43 * b / 1e3:.2f} ms/step")
     return 0
 
 

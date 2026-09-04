@@ -2487,8 +2487,8 @@ def test_fp8_dense_bproj() -> None:
     """
     ns = load_defs(
         "overlay/glm53_fp8_dense.py",
-        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns",
-         "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
+        {"_SHARED_EXPERT_RE", "_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON",
+         "_include_patterns", "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
         {"os": os, "re": re},
     )
     base = ns["_INCLUDE"]
@@ -7024,8 +7024,8 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
                encoding="utf-8").read()
     ns = load_defs(
         "overlay/glm53_fp8_dense.py",
-        {"_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON", "_include_patterns",
-         "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
+        {"_SHARED_EXPERT_RE", "_INCLUDE", "_BPROJ_INCLUDE", "_BPROJ_ON",
+         "_include_patterns", "_DRAFTER_ENV", "_DRAFTER_INCLUDE"},
         {"os": os, "re": re},
     )
     include = ns["_include_patterns"]
@@ -7095,8 +7095,8 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     check("MK_GEMM_KMAX = 4096" in mksrc
           and "0 < k <= MK_GEMM_KMAX" in mksrc
           and "def build_mk_weight_w4_kchunks(weight):" in mksrc
-          and "def _gemm_kchunks(x, packs, n_rows):" in mksrc
-          and "if isinstance(mk_pack, list):\n        return _gemm_kchunks(x, mk_pack, n_rows)" in mksrc,
+          and "def _gemm_kchunks(x, packs, n_rows, bg=False):" in mksrc
+          and "if isinstance(mk_pack, list):\n        return _gemm_kchunks(x, mk_pack, n_rows, bg)" in mksrc,
           "the lane's K contract is one constant; a chunked pack is a list "
           "gemm_w4a8 sums in fp32")
     kch = mksrc[mksrc.index("def _gemm_kchunks("):mksrc.index("# MK_SEG_MHC")]
@@ -7977,7 +7977,7 @@ def test_glm53_megakernel_contracts() -> None:
           "__threadfence drains its own outstanding copies -- with the "
           "fill hoisted above the barrier that turned into a 6-12 us wait")
     _w_at = cu_code.index("stage_raw4(nt, kb0,")
-    check(_w_at < cu_code.index("stage_a(kb0);", _w_at),
+    check(_w_at < cu_code.index("stage_a_load(kb0);", _w_at),
           "W(kb0) starts flying before A(kb0) is staged. kb0, not 0: a "
           "block may own a k SLICE of a tile.")
     # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
@@ -8032,7 +8032,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 5  # def, gemm, kda in/out, bench plan
+          and cu.count("mk_choose_ksr(") == 4  # def, the gemm plan, kda in/out
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -8047,11 +8047,13 @@ def test_glm53_megakernel_contracts() -> None:
           in cu,
           "with no whole tiles the k-split is the cost-minimising one, not "
           "the truncated grid / rem")
-    check("const bool split = (ksr > 1)" in cu,
-          "ksr == 1 must fall through to the single-pass path unchanged")
+    check("const bool split = mk_split_ok(c.m, pcols, ksr);" in cu
+          and "return (ksr > 1) && (m <= 32) && (pcols <= MK_SPLIT_MAXCOL) &&" in cu,
+          "ksr == 1 must fall through to the single-pass path unchanged (the "
+          "gate is mk_split_ok, shared with the host's unit count)")
     # The accumulator no longer follows from ksr * rem <= grid, so the
     # size guard has to be on the accumulator itself.
-    check("(size_t)c.m * pcols * ksr <= MK_SPLIT_ELEMS" in cu
+    check("((size_t)m * pcols * ksr <= MK_SPLIT_ELEMS)" in cu
           and "MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX" in cu,
           "the split gate bounds the partial accumulator directly")
     # The one surviving barrier must stand between the slice writes and the
@@ -8078,7 +8080,7 @@ def test_glm53_megakernel_contracts() -> None:
     # the reset ahead of every block's first take.
     check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
           < cu.index("mk_grid_barrier(bar, c.grid);")
-          and "for (int u = blockIdx.x; u < units; u = local_q ? units : next_unit())" in cu
+          and "u = local_q ? u + (int)gridDim.x : next_unit()) {" in cu
           and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
           "dynamic unit hand-out: first unit static (hoisted fill), the "
           "rest from a counter re-armed ahead of the publish barrier")
@@ -8089,29 +8091,61 @@ def test_glm53_megakernel_contracts() -> None:
     #    host picks it and the phase re-derives the condition, so a drift
     #    degrades to the global path; MK_LOCALQ=0 is the kill switch.
     check("const bool local_q = LQ && !c.a_ready && (units <= c.grid);" in cu
-          and "if (!has_u0) return;" in cu
+          and "if (local_q && !has_u0) return;" in cu
+          and cu.index("if (local_q && !has_u0) return;")
+              < cu.index('asm volatile("griddepcontrol.wait;" ::: "memory");')
           and "int mk_units(int m, int n, int grid, int ksr)" in cu
-          and "return mk_probe_localq() != 0 && mk_units(m, n, grid, ksr) <= grid;" in cu
-          and "c.localq = mk_localq_for(c.m, c.n, c.grid, c.ksr);" in cu
-          and 'mk_env_int("VLLM_GLM53_MK_LOCALQ", 1)' in cu,
-          "the barrier-free path is host-chosen for units <= grid, re-derived "
-          "in the phase, default on behind VLLM_GLM53_MK_LOCALQ")
-    _lq = cu.index("if (local_q) {", cu.index("auto stage_a_store = [&](int kb) {"))
-    _lq_end = cu.index("return;", _lq)
-    check("mk_pow2_scale(mxq)" in cu[_lq:_lq_end]
-          and "mk_f32_to_e4m3(vq[q] * rsc)" in cu[_lq:_lq_end]
-          and "__shfl_xor_sync(0xffffffffu, mxq, off)" in cu[_lq:_lq_end]
-          and "sxs[r * KBLK_MAX + kb] = sc * c.wgs;" in cu[_lq:_lq_end],
+          and "p.localq = (lq == 2 || (lq == 1 && bg)) && p.units <= p.grid &&" in cu
+          and "const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);" in cu
+          and 'mk_env_int("VLLM_GLM53_MK_LOCALQ", 0, 0, 2)' in cu
+          and cu.count("mk_gemm_plan_for(") == 3,  # def, the launch, the bench pybind
+          "the barrier-free path is chosen by ONE host plan (launch and bench "
+          "pybind alike) for units <= grid and a background caller, re-derived "
+          "in the phase, default OFF behind VLLM_GLM53_MK_LOCALQ (0/1 bg/2 all)")
+    _lq = cu.index("auto lq_quant = [&]() {")
+    _lq_end = cu.index("auto stage_a_store = [&](int kb) {", _lq)
+    check("mk_pow2_scale(mxq[i])" in cu[_lq:_lq_end]
+          and "mk_f32_to_e4m3(vq[i][q] * rsc)" in cu[_lq:_lq_end]
+          and "__shfl_xor_sync(0xffffffffu, mxq[i], off)" in cu[_lq:_lq_end]
+          and "asc[i] = sc * c.wgs;" in cu[_lq:_lq_end]
+          and "sxs[r * KBLK_MAX + kb] = asc[i];" in cu
+          and cu.index("if (local_q) lq_quant();  // kb+1's rows")
+              < cu.index("mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));"),
           "local A quant: the same pow2 scale, conversion and wgs fold as "
-          "quant_store -- the output must be bitwise the global path's")
+          "quant_store, every row (no per-row exit before the shuffles), run "
+          "before the pipeline wait -- the output must be bitwise the global "
+          "path's")
     check("template <bool LQ>" in cu
           and "mk_gemm_phase_t<false>(c, smem, bar);" in cu
           and cu.count("mk_gemm_phase_t<true>(") == 1
           and "__global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {" in cu
-          and "mk_launch(mk_gemm_lq_kernel, c.grid, GEMM_SMEM, stream, c);" in cu
-          and "mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid," in cu,
+          and "mk_launch(mk_gemm_lq_kernel, p.lgrid, GEMM_SMEM, stream, c);" in cu
+          and "mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid," in cu
+          and "int mk_lq_launch_grid(int units, int grid)" in cu,
           "the local path is its own kernel (mk_gemm_kernel's binary is the "
-          "measured one); kda's mk_gemm_phase is the global instantiation")
+          "measured one), launched on as many blocks as it has units; kda's "
+          "mk_gemm_phase is the global instantiation")
+    # the boot's exact gate runs BOTH kernels and requires them bitwise equal
+    check("for lq in (0, 2):" in pysrc_full
+          and "_EXT.set_probe(-1, lq, -1)" in pysrc_full
+          and "_EXT.set_probe(-1, -1, -1)  # back to the env's knobs" in pysrc_full
+          and "if not torch.equal(got[0], got[2]):" in pysrc_full,
+          "the boot self-test exact-gates the global AND the local kernel and "
+          "requires their outputs bitwise equal, then restores the env's knobs")
+    fd_src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+                  encoding="utf-8").read()
+    check("method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))" in fd_src
+          and "bg=getattr(self, \"_mk_bg\", False)" in fd_src,
+          "the fp8-dense hook marks the shared expert's linears background "
+          "(the aux-stream pair beside the routed MoE) for the lane")
+    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=0$", prof, re.M) is not None,
+          "the profile DECLARES the local-quant knob (off until its bracket): "
+          "the launcher forwards only declared keys, so an undeclared knob "
+          "could not be flipped at all")
+    br = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_MK_LOCALQ"' in br,
+          "bracket.py snapshots the local-quant knob")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The
@@ -8212,7 +8246,7 @@ def test_glm53_megakernel_contracts() -> None:
           "knob (VLLM_GLM53_MK_NBUF); the W4 arm knob and the probe-skip "
           "switch are gone")
     check("mk_pack[0].shape[0] * 128" in pysrc_full
-          and "def gemm_w4a8(x, mk_pack, n_rows):" in pysrc_full,
+          and "def gemm_w4a8(x, mk_pack, n_rows, bg=False):" in pysrc_full,
           "eligibility derives n_pad from the tile-major pack's first dim x "
           "128 (the tile count itself failed n_pad % 128 on every real shape "
           "and the lane silently stayed stock)")
@@ -8255,7 +8289,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_selftest_w4" not in pysrc_full
           and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(\n"
           "        pack[0], pack[1], n, pack[2]).float().T"
-          in pysrc_full and "if e_exact > 1e-3 or n_ulp > 0:" in pysrc_full
+          in pysrc_full and "if e > 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
           and "_TOL_GEMM_W4 = 0.15" in pysrc_full,

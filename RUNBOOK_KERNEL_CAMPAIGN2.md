@@ -604,7 +604,16 @@ VLLM_GLM53_MK_PHASE_TS=1 bash probes/run_megakernel_bench.sh --gemm-sweep --stam
 bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 아래 동시 실행
 ```
 
-**결과**: 미측정(2026-09-04 밤 기준 플릿 4 GPU 가 브래킷으로 점유; srv2 빈 창 대기 중).
+**결과(2026-09-04 23:36~42, srv2 빈 창, 29차)**: 첫 판(48블록 발사, 양자화가 sync 구간 안)은 **단독으로 손해**
+— 같은 split 에서 lq0 → lq1 이 m=8 n=1024 24.7 → 28.7, m=32 n=1024 32.6 → 45.0 µs; 스탬프로 보면 전역
+경로의 프롤로그(x 로드+양자화+배리어)는 5.5 µs 뿐이고 로컬 경로는 k-블록마다 ~0.85 µs 를 루프에
+더한다(4차의 "8~10 µs" 는 콜드 첫 발사 값). 비트 동일·exact·리플레이는 전부 통과. **MoE 아래 동시
+실행**(`mk_gemm_concurrent_probe.py`, U=40 740 µs): 전역 경로는 두 순서 모두 쌍 전체가 노출(43.8/44.9 µs
+= 쌍 단독 40.5 + 발사), 로컬 경로는 moe-first 17.3 / pair-first 41.8 — 이득의 정체는 양자화가 아니라
+"배리어 없음"이고, pair-first(서빙의 aux 스트림 순서)에선 48 블록이 SM 을 다 잡아 MoE 가 기다린다.
+→ v2: 로컬 커널을 유닛 수(32)만큼만, 또는 더 적게(`VLLM_GLM53_MK_LQ_GRID`) 띄우고 양자화를 wait 앞으로;
+호출 측이 공유 전문가 선형을 bg 로 표시(`VLLM_GLM53_MK_LOCALQ=1` = bg 만, 2 = 유닛 ≤ grid 전부).
+v2 의 동시 실행 수치는 원장 29차.
 
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
@@ -634,12 +643,13 @@ bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 
 14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
 
 12. **EXP-11 (dsv4 에 MK_SEG_MHC)** — 2단계는 **부팅 없음**: srv2 에서 서빙 컨테이너가
-15. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
     비었을 때(`docker ps`) `bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20`.
     판정은 rel 1e-3 + T=8/16 의 dispatch 행(`hit=yes` 인 행만 의미가 있다). 이기면
     3단계 브래킷인데 그건 **프로덕션 dsv4 의 다운타임 창**이고 EXP-10 의 GLM 브래킷과
     다른 스택이라 창을 다투지 않는다 — 다만 창은 C ≤ 2 뿐이라(래퍼의 T ≤ 16) C=4
     다리는 통제군과 같아야 정상이다. 2단계에서 지면 여기서 닫고 러너북에 숫자만 남긴다.
+15. **EXP-17 (공유 전문가 GEMM 의 로컬 양자화 커널)** — 29차 프로브(단독 −2~12 µs 손해, MoE 아래 노출 44 → 17 µs 는 moe-first 순서에서만) 뒤 v2(유닛 수만큼만 발사, bg 게이트)를 동시 실행 프로브로 재고, 이기면 EXP-6 브래킷의 cand 팔에 `VLLM_GLM53_MK_LOCALQ=1` 로 얹는다. 단독 부팅 없음.
+
 
 ## 금지 (기존 판정 유지 — 재조사하지 않는다)
 
