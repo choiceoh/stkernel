@@ -10766,13 +10766,23 @@ def test_worker_launch_does_not_let_the_remote_reparse_envv() -> None:
           "parses back exactly these tokens")
     check('"docker rm -f hy4-worker 2>/dev/null; $_wrun >/dev/null"' in src,
           "the ssh payload carries the pre-quoted argv, not raw interpolation")
-    # the load-bearing invariant: no ssh line may interpolate $ENVV
-    offenders = [n for n, line in enumerate(src.splitlines(), 1)
-                 if "ssh " in line and "$ENVV" in line
-                 and not line.lstrip().startswith("#")]
-    check(not offenders,
-          "no ssh command may interpolate $ENVV -- the remote would re-parse "
-          "the JSON (offending lines: %s)" % offenders)
+    # The load-bearing invariant, and it belongs to BOTH lanes. glm53 had the
+    # identical shape and boots only because nothing in its ENVV carries braces
+    # today -- its COMPILE_CFG rides SERVE_ARGS inside the base64 payload,
+    # single-quoted. But the profile's VLLM_* keys are forwarded verbatim, and
+    # a brace-bearing one would not crash there: {"m":1,"n":2} reaches the
+    # worker as two valid -e args (last wins) while the head keeps the whole
+    # value, so the ranks silently disagree. Verified against a real worker.
+    for name in ("start-hy4-tp4.sh", "start-glm53-nvfp4-tp4.sh"):
+        lane = open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+        offenders = [n for n, line in enumerate(lane.splitlines(), 1)
+                     if "ssh " in line and "$ENVV" in line
+                     and not line.lstrip().startswith("#")]
+        check(not offenders,
+              "%s: no ssh command may interpolate $ENVV -- the remote re-parses "
+              "it (offending lines: %s)" % (name, offenders))
+        check("printf '%q ' docker run" in lane,
+              "%s must build its worker argv with printf %%q" % name)
     # the head path is local and stays direct; changing it is not the fix
     check("docker run -d --name hy4 $COMMON $RDMA_FLAGS $ENVV" in src,
           "the head runs locally and needs no quoting -- it was never the bug")
