@@ -26,6 +26,25 @@ BOOT_GRACE=3600          # cold/invalidated kernel+AOT recompile (e.g. after an
                          # below exits early the moment the API comes up, so a
                          # long grace only delays declaring a truly hung boot.
 fails=0
+
+# Relaunch pacing. A launcher that failed three times running will fail the
+# fourth, and an attempt is not free: bash "$LAUNCHER" runs drop_caches on all
+# four nodes and creates/destroys containers. So a fixed ~2 min retry turns one
+# broken boot into fleet-wide churn -- on srv4, which hosts unrelated tenants
+# (nemotron, solarflow, the SolarFlow DB), it evicts their page cache every two
+# minutes, indefinitely. Observed 2026-09-04: three relaunches in five minutes
+# against a launcher bug (#289), and nothing here would ever have stopped it.
+#
+# Backoff is a NEXT-ALLOWED-TIME rather than a sleep, so the health probe keeps
+# running every 30 s and a stack fixed by hand is still adopted immediately.
+# After LAUNCH_HOLD_AFTER consecutive failures it stops relaunching entirely and
+# says so once: at that point the launcher needs a human, not another attempt.
+launch_fails=0
+next_launch_at=0
+held_logged=0
+LAUNCH_BACKOFF_BASE=60
+LAUNCH_BACKOFF_MAX=1800
+LAUNCH_HOLD_AFTER=5
 log(){ echo "$(date '+%F %T') $*"; }
 
 # --- wait until local docker AND every worker node's docker are up ---
@@ -86,6 +105,22 @@ launch(){
   log "boot grace exceeded (${BOOT_GRACE}s)"; return 1
 }
 
+# EVERY launcher invocation goes through here. The hold counts ATTEMPTS, not
+# launch() returns: launch() returns 0 on api_up alone and /v1/models answers
+# 200 from a corpse (see chat_ok), so crediting its return reset the counter
+# every round and the hold was unreachable in the one failure mode this pacing
+# exists for. Only a confirmed generation (the health branch) clears it. Three
+# callers -- the boot, the health loop, the wedge watchdog -- and an uncounted
+# one buys a destructive relaunch beyond LAUNCH_HOLD_AFTER.
+attempt_launch(){
+  launch || true
+  launch_fails=$((launch_fails+1))
+  _backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
+  [ "$_backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && _backoff=$LAUNCH_BACKOFF_MAX
+  next_launch_at=$(( $(date +%s) + _backoff ))
+  log "launch attempt $launch_fails/$LAUNCH_HOLD_AFTER done; no another for ${_backoff}s unless it goes healthy"
+}
+
 log "=== dsv4-tp4 supervisor start ==="
 
 # --- engine-wedge watchdog + daily cache hygiene (MEASUREMENTS.md 08-09) ---
@@ -109,7 +144,7 @@ wedge_check(){
     if [ "$_wedge" -ge "$WEDGE_CYCLES" ]; then
       log "WEDGE: $running request(s) running, generation static for $((WEDGE_CYCLES*30))s — recycling"
       forensics
-      launch || log "wedge relaunch failed; health loop will retry"
+      attempt_launch
       _wedge=0; _gen_last="-1"
       return 0
     fi
@@ -138,13 +173,23 @@ maybe_cache_reset(){
 
 wait_for_fleet
 # Adopt an already-healthy stack instead of stomping it (manual launches, restarts).
-if api_up && chat_ok; then log "existing stack healthy — adopting"; else launch || log "initial launch failed; will retry via health loop"; fi
+if api_up && chat_ok; then
+  log "existing stack healthy — adopting"
+else
+  # counted like any relaunch, or a failed boot buys one past the cap; the
+  # health loop clears it 30 s later if this one really came up.
+  attempt_launch
+fi
 
 while :; do
   sleep 30
   if api_up && chat_ok; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
     fails=0
+    if [ "$launch_fails" -gt 0 ]; then
+      log "stack healthy again -- clearing $launch_fails launch attempt(s)"
+      launch_fails=0; next_launch_at=0; held_logged=0
+    fi
     wedge_check
     maybe_cache_reset
     continue
@@ -152,7 +197,18 @@ while :; do
   fails=$((fails+1))
   log "health check failed ($fails/$FAILS_NEEDED)"
   if [ "$fails" -ge "$FAILS_NEEDED" ]; then
+    if [ "$launch_fails" -ge "$LAUNCH_HOLD_AFTER" ]; then
+      if [ "$held_logged" = 0 ]; then
+        log "HELD after $launch_fails relaunches with no healthy stack -- not relaunching."
+        log "  The launcher needs a human. This loop keeps probing and will adopt"
+        log "  a healthy stack the moment one exists."
+        held_logged=1
+      fi
+      continue
+    fi
+    _now=$(date +%s)
+    [ "$_now" -lt "$next_launch_at" ] && continue
     wait_for_fleet
-    launch || log "relaunch failed; retrying next cycle"
+    attempt_launch   # counted; only the health branch above clears it
   fi
 done
