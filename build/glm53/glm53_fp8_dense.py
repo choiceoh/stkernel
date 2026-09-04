@@ -826,6 +826,17 @@ def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:
         (label + ": ") if label else "", _FREE_BF16_ENV, freed / 1e9, kept_bias)
     return freed
 
+def _host_mem_available() -> str:
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return "%.1f GiB" % (int(line.split()[1]) / 2**20)
+    except Exception:
+        pass
+    return "?"
+
+
 def _nvfp4_pair_for(mod, method, weight, rows, name, seen):
     """The nvfp4 pair for a PREFILL route on an fp8 method, or None.
 
@@ -1153,6 +1164,15 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 if pair is not None:
                     method._nvfp4 = pair
                     nv_prefill += 1
+                if nv_prefill % 20 == 1:
+                    # memory watch: the first NVFP4P boot took srv3 from
+                    # ~25 GiB free to 5 GiB (earlyoom) inside this pass
+                    free, total = torch.cuda.mem_get_info()
+                    logger.warning(
+                        "[fp8-dense] nvfp4 prefill pair #%d (%s): cuda free "
+                        "%.1f/%.1f GiB, host MemAvailable %s",
+                        nv_prefill, name, free / 2**30, total / 2**30,
+                        _host_mem_available())
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()

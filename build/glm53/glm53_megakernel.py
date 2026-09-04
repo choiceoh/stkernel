@@ -74,6 +74,11 @@ ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
+# MK_SEG_SMLP: the dense MLP (gate_up -> clamped SwiGLU -> down) as one
+# launch, T <= 32 -- the shared expert of every MoE layer and the three
+# dense layers. Served-numerics unchanged by construction (same packs, same
+# rounding points); the bracket is the gate (29차).
+ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
 # in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
@@ -146,7 +151,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False}
+_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False, "smlp": False}
 
 
 def _build_dir(src_md5: str, flags: list) -> str:
@@ -236,6 +241,37 @@ def _build():
     return _EXT
 
 
+def rebuild(src_path: str) -> dict:
+    """29차 item 5 (dev lab): build the extension from another .cu, swap it
+    in and re-run the self-tests. The kernels already baked into captured
+    graphs stay until a recapture; every eager call sees the new module."""
+    import torch
+    global _EXT, _armed_once
+    from torch.utils.cpp_extension import load
+
+    with open(src_path, "rb") as f:
+        md5 = hashlib.md5(f.read()).hexdigest()[:8]
+    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"] + [
+        f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
+        f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
+        f"-DMK_NBUF_DEF={os.environ.get('VLLM_GLM53_MK_NBUF', '3')}",
+        f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+    ]
+    t0 = time.perf_counter()
+    ext = load(name=f"glm53_megakernel_{md5}", sources=[src_path],
+               extra_cuda_cflags=flags, build_directory=_build_dir(md5, flags),
+               verbose=False)
+    _EXT = ext
+    for k in _ARMED:
+        _ARMED[k] = False
+    _armed_once = False
+    arm()
+    logger.warning("[megakernel] dev-lab rebuild md5=%s in %.0f s armed=%s",
+                   md5, time.perf_counter() - t0, dict(_ARMED))
+    return {"md5": md5, "build_s": round(time.perf_counter() - t0, 1),
+            "armed": dict(_ARMED)}
+
+
 def _ensure_workspace(device):
     """One static workspace, strongly held (the b12x lesson: prefill cache
     growth must never invalidate CUDA-graph addresses baked at capture)."""
@@ -259,6 +295,7 @@ def _ensure_workspace(device):
         # kernels run 48, and the ticket barrier only releases correctly
         # when the counter is aligned to THIS launch's grid.
         "barrier_mla": z(8, dt=torch.int32),
+        "barrier_smlp": z(8, dt=torch.int32),
         "yp": z(NCHUNK * MAX_TOK * NOUT),
         "rp": z(NCHUNK * MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
@@ -622,6 +659,211 @@ def _gemm_kchunks(x, packs, n_rows, bg=False):
 
 
 # ---------------------------------------------------------------------------
+# MK_SEG_SMLP
+# ---------------------------------------------------------------------------
+SMLP_GU_MAX = 8192
+
+
+def _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
+               beta=0.0):
+    """One launch: x [T, k] bf16 -> out [T, n_out] bf16 through the gate_up
+    pack, the clamped SwiGLU and the down pack (packs from
+    build_mk_weight_w4: (wq4, ws4, gscale))."""
+    import torch
+
+    out = torch.empty(x.shape[0], n_out, dtype=torch.bfloat16, device=x.device)
+    ws = _ensure_workspace(x.device)
+    _ar_note(gu_pack[0], gu_pack[1])
+    _EXT.run_smlp(
+        [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
+         d_pack[0].data_ptr(), d_pack[1].data_ptr(), out.data_ptr(),
+         ws["barrier_smlp"].data_ptr()],
+        [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
+         float(beta)],
+        [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
+         int(gu_pack[0].shape[0]), int(gu_pack[0].shape[1]),
+         int(d_pack[0].shape[0]), int(d_pack[0].shape[1])],
+    )
+    return out
+
+
+def _smlp_gate(got, ref32):
+    """(ok, rel, over_ulp): the exact gate's numbers under a tolerance that
+    survives the one place the chain is not bit-reproducible -- the fp32
+    sigmoid (expf in the kernel, torch's exp in the twin) differs by an ulp
+    or two before the bf16 round, and a flipped bf16 bit there moves one
+    fp8 input. A layout / expansion / hand-off bug is 1e-1 and up."""
+    e, n_ulp = _exact_gate(got, ref32)
+    return (e <= 2e-3 and n_ulp <= max(8, got.numel() // 256)), e, n_ulp
+
+
+def _smlp_packs(mlp):
+    """(gu_pack, d_pack) when both linears carry a single MK W4 pack."""
+    packs = []
+    for lin in (mlp.gate_up_proj, mlp.down_proj):
+        m = getattr(lin, "quant_method", None)
+        while m is not None and not hasattr(m, "_mk") and hasattr(m, "_base"):
+            m = m._base
+        pk = getattr(m, "_mk", None)
+        if pk is None or isinstance(pk, list) or pk[0] is None:
+            return None
+        packs.append(pk)
+    return packs[0], packs[1]
+
+
+_SMLP_SAID = set()
+_SMLP_FUSED_CALLS = 0
+
+
+def _smlp_stock(reason):
+    """None for the hook, and the reason once per distinct text: an armed
+    segment that the served forward never reaches is the 28차 pattern
+    ("armed" read as "serving"); the boot log must be able to tell."""
+    if reason not in _SMLP_SAID:
+        _SMLP_SAID.add(reason)
+        logger.warning("[megakernel] smlp lane stock: %s", reason)
+    return None
+
+
+def smlp_forward(mlp, x):
+    """Glm5NextMLP.forward hook: the fused launch, or None (stock runs).
+
+    Eligible when the segment is armed, x is a 2-D bf16 [T <= 32, k] row
+    batch, both linears carry single W4 packs (k <= 4096 each) and the
+    gate_up width is 2 x the down input. The activation's clamp comes from
+    the module (SiluAndMulWithClamp: swiglu_limit, alpha, beta; SiluAndMul
+    is limit 0 / alpha 1 / beta 0). No reduction here: the caller keeps
+    its own reduce_results contract."""
+    import torch
+
+    global _SMLP_FUSED_CALLS
+    if not _ARMED["smlp"]:
+        return None
+    if x.dim() != 2 or x.dtype != torch.bfloat16:
+        return _smlp_stock("x is %s %s, not a 2-D bf16 row batch"
+                           % (tuple(x.shape), x.dtype))
+    T, k = x.shape
+    if T < 1 or T > MAX_TOK:
+        return None   # prefill rows: routine, not a reason to say
+    if k % 128 != 0 or k > MK_GEMM_KMAX:
+        return _smlp_stock("k=%d is not a multiple of 128 <= %d" % (k, MK_GEMM_KMAX))
+    packs = _smlp_packs(mlp)
+    if packs is None:
+        return _smlp_stock("gate_up/down carry no single MK W4 pack")
+    gu_pack, d_pack = packs
+    n_gu = int(mlp.gate_up_proj.output_size_per_partition)
+    n_int = int(mlp.down_proj.input_size_per_partition)
+    n_out = int(mlp.down_proj.output_size)
+    if (n_gu != 2 * n_int or n_int % 128 != 0 or n_int > MK_GEMM_KMAX
+            or n_gu > SMLP_GU_MAX
+            or gu_pack[0].shape[1] != k // 128
+            or d_pack[0].shape[1] != n_int // 128):
+        return _smlp_stock("geometry n_gu=%d n_int=%d k=%d packs %s/%s"
+                           % (n_gu, n_int, k, tuple(gu_pack[0].shape),
+                              tuple(d_pack[0].shape)))
+    act = getattr(mlp, "act_fn", None)
+    limit = float(getattr(act, "swiglu_limit", 0.0) or 0.0)
+    alpha = float(getattr(act, "alpha", 1.0))
+    beta = float(getattr(act, "beta", 0.0))
+    _SMLP_FUSED_CALLS += 1
+    if _SMLP_FUSED_CALLS == 1:
+        capturing = False
+        try:
+            capturing = bool(torch.cuda.is_current_stream_capturing())
+        except Exception:
+            pass
+        logger.warning("[megakernel] smlp lane serving: first fused call "
+                       "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
+                       T, k, n_int, n_out, limit, capturing)
+    return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
+                      limit, alpha, beta)
+
+
+def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
+              beta=0.0):
+    """Pure-torch twin of the fused launch: fp32 matmuls of the kernel-
+    quantized activations against the dequantized packs, bf16 at the same
+    rounding points."""
+    import torch
+
+    gu = (_mk_quant_x_ref(x) @ mk_w4_dequant(
+        gu_pack[0], gu_pack[1], n_gu, gu_pack[2]).float().T).to(torch.bfloat16)
+    g = gu[:, :n_int].float()
+    u = gu[:, n_int:].float()
+    if limit > 0:
+        g = g.clamp(max=limit)
+        u = u.clamp(min=-limit, max=limit)
+    a = (g * torch.sigmoid(alpha * g) * (u + beta)).to(torch.bfloat16)
+    return _mk_quant_x_ref(a) @ mk_w4_dequant(
+        d_pack[0], d_pack[1], n_out, d_pack[2]).float().T
+
+
+def _selftest_smlp() -> bool:
+    """Exact gate on e2m1-grid weights (both packs) at the shared expert's
+    and the dense MLP's geometry, then a by-design check on random weights
+    against the three-launch chain the fused launch replaces."""
+    import torch
+
+    torch.manual_seed(0)
+    dev = "cuda"
+    grid = torch.tensor(_E2M1_GRID, device=dev)
+
+    def exact_weight(n, k):
+        code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
+        sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
+        w = (grid[code] * torch.exp2(sexp.float())) * torch.where(
+            torch.randn_like(code.float()) < 0, -1.0, 1.0)
+        return w.view(n, k).to(torch.bfloat16)
+
+    limit = 10.0
+    for T, n_int, k, n_out in ((8, 512, HIDDEN, HIDDEN), (16, 3072, HIDDEN, HIDDEN),
+                               (32, 512, HIDDEN, HIDDEN)):
+        n_gu = 2 * n_int
+        w_gu = exact_weight(n_gu, k)
+        w_d = exact_weight(n_out, n_int)
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
+        gu_pack = build_mk_weight_w4(w_gu)
+        d_pack = build_mk_weight_w4(w_d)
+        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        ref = _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        ok, e_exact, n_ulp = _smlp_gate(got, ref)
+        if not ok:
+            logger.warning("[megakernel] selftest smlp grid rel=%.2e over-ulp=%d "
+                           "(T=%d n_int=%d) -> DISARM", e_exact, n_ulp, T, n_int)
+            return False
+        # replay stability over the shared workspace
+        again = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        if _rel_err(got, again) > 1e-6:
+            logger.warning("[megakernel] selftest smlp replay drift -> DISARM")
+            return False
+    # by-design: random weights, the fused launch vs the three-launch chain
+    # (two W4 GEMM launches + the clamped SwiGLU in torch)
+    worst = 0.0
+    for T, n_int in ((8, 512), (8, 3072)):
+        n_gu, k, n_out = 2 * n_int, HIDDEN, HIDDEN
+        w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=dev) * 0.05
+        w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=dev) * 0.05
+        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
+        gu_pack = build_mk_weight_w4(w_gu)
+        d_pack = build_mk_weight_w4(w_d)
+        gu = _gemm_call(x, gu_pack, n_gu)
+        g = gu[:, :n_int].float().clamp(max=limit)
+        u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
+        a = (g * torch.sigmoid(g) * u).to(torch.bfloat16)
+        ref = _gemm_call(a, d_pack, n_out)
+        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+        torch.cuda.synchronize()
+        worst = max(worst, _rel_err(got.float(), ref.float()))
+    if worst > 1e-2:
+        logger.warning("[megakernel] selftest smlp vs three-launch chain rel=%.2e -> DISARM", worst)
+        return False
+    logger.warning("[megakernel] selftest smlp grid + chain rel=%.2e -> ARM", worst)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # MK_SEG_MHC
 # ---------------------------------------------------------------------------
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
@@ -739,18 +981,52 @@ def _kda_meta(layer):
     return attn_meta.get(layer.prefix)
 
 
-def _kda_eligible(meta) -> bool:
-    """Pure metadata contract: pure spec-verify decode steps only."""
+def _kda_eligible_reason(meta):
+    """Pure metadata contract: pure spec-verify decode steps only. None when
+    the step is eligible, else the predicate that failed (said once per
+    distinct text by kda_takeover -- an armed lane the steps never reach is
+    the 28차 pattern, and the KDA shadow never logged a judgement all night
+    while every boot said armed)."""
     if meta is None:
-        return False
-    if meta.spec_sequence_masks is None or meta.num_spec_decodes <= 0:
-        return False
+        return "no attention metadata for the layer"
+    if getattr(meta, "spec_sequence_masks", None) is None:
+        return "spec_sequence_masks is None (not a spec-verify batch)"
+    if meta.num_spec_decodes <= 0:
+        return "num_spec_decodes <= 0"
     if meta.num_prefills > 0:
-        return False
-    if (meta.non_spec_token_indx is not None
-            and meta.non_spec_token_indx.numel()):
-        return False
-    return 0 < meta.num_actual_tokens <= 32
+        return None if False else "num_prefills > 0 (routine)"
+    nsti = getattr(meta, "non_spec_token_indx", None)
+    if nsti is not None and nsti.numel():
+        return "non-spec tokens in the batch"
+    if not (0 < meta.num_actual_tokens <= 32):
+        return "num_actual_tokens %d outside (0, 32]" % int(meta.num_actual_tokens)
+    return None
+
+
+def _kda_eligible(meta) -> bool:
+    return _kda_eligible_reason(meta) is None
+
+
+_KDA_ELIG_SAID = set()
+_KDA_SERVED = {"n": 0}
+
+
+def _kda_eligible_said(meta) -> bool:
+    """_kda_eligible with the reason logged once per distinct text; prefill
+    steps are routine and stay silent."""
+    reason = _kda_eligible_reason(meta)
+    if reason is None:
+        _KDA_SERVED["n"] += 1
+        if _KDA_SERVED["n"] == 1:
+            logger.warning("[megakernel] kda lane serving: first eligible step "
+                           "T=%d n_spec=%d (%s)", int(meta.num_actual_tokens),
+                           int(meta.num_spec_decodes),
+                           "shadow" if not _ARMED["kda"] else "armed")
+        return True
+    if "(routine)" not in reason and reason not in _KDA_ELIG_SAID:
+        _KDA_ELIG_SAID.add(reason)
+        logger.warning("[megakernel] kda lane stock: %s", reason)
+    return False
 
 
 _KDA_LAYOUT_SAID = set()
@@ -773,18 +1049,19 @@ def _kda_layout_reason(layer):
     if w.dtype != torch.float32 or tuple(w.shape) != (KDA_QKV, 4):
         return "merged conv weight is %s%s, not float32 (%d, 4)" % (
             w.dtype, tuple(w.shape), KDA_QKV)
-    if not layer._conv_state_dim_first:
-        # The one that cost a campaign: vLLM's DEFAULT is SD, this kernel
-        # indexes DS, and the boot log still said armed={'kda': True}
-        # because _selftest_kda builds its own DS fixtures and passes.
-        return ("process conv-state layout is SD (state_len, dim) but the "
-                "kernel indexes DS (dim, state_len) -- set "
-                "VLLM_SSM_CONV_STATE_LAYOUT=DS to serve MK-KDA")
+    # Both process layouts serve: the wiring hands the kernel a (blocks,
+    # dim, W) view either way (SD arrives transposed, channel stride 1) and
+    # the launch carries the three strides. The old hard SD rejection is
+    # the one that cost a campaign -- it is gone WITH its reason: the
+    # kernel no longer assumes DS addressing.
     if layer.A_log.dtype != torch.float32 or layer.dt_bias.dtype != torch.float32:
         return "A_log/dt_bias are not float32"
-    if (conv_state.dtype != torch.float32 or conv_state.dim() != 3
-            or conv_state.shape[1] != KDA_QKV):
-        return "conv state is %s%s, not float32 (blocks, %d, W)" % (
+    # The production pool (--mamba-cache-dtype auto) stores the conv state
+    # in bf16; the kernel widens on load and narrows on store, so both serve
+    # and the fp32 knob is no longer a KDA precondition (29차).
+    if (conv_state.dtype not in (torch.float32, torch.bfloat16)
+            or conv_state.dim() != 3 or conv_state.shape[1] != KDA_QKV):
+        return "conv state is %s%s, not float32/bfloat16 (blocks, %d, W)" % (
             conv_state.dtype, tuple(conv_state.shape), KDA_QKV)
     # spec-decode allocates the sliding window k-1+num_spec wide; the kernel
     # uses the runtime width as stride over the active [0, 3) window, so any
@@ -796,14 +1073,29 @@ def _kda_layout_reason(layer):
     if conv_state.shape[2] != KDA_CONV_STATE_W:
         return "conv state width is %d, not %d (conv_kernel-1+num_spec)" % (
             conv_state.shape[2], KDA_CONV_STATE_W)
-    if not conv_state.is_contiguous():
-        return "conv state is not contiguous"
+    # KDA32SHADOW (29차): with --mamba-cache-dtype float32 the dtype gate
+    # passed and a contiguity gate rejected every layer -- the fp32 (blocks,
+    # 6144, 10) tensor is a strided view of the hybrid pool. The kernel now
+    # addresses through (slot, channel, width) strides; what it cannot take
+    # is a view whose slots or channels overlap, or a non-positive stride.
+    s0, s1, s2 = (int(v) for v in conv_state.stride())
+    cw = int(conv_state.shape[2])
+    slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1
+    if (min(s0, s1, s2) < 1 or not (s1 >= s2 * cw or s2 >= s1 * KDA_QKV)
+            or s0 < slot_extent):
+        return "conv state strides %s overlap or are not positive (shape %s)" % (
+            (s0, s1, s2), tuple(conv_state.shape))
     if (rec_state.dtype != torch.float32 or rec_state.dim() != 4
             or tuple(rec_state.shape[1:]) != (KDA_H, KDA_D, KDA_D)):
         return "recurrent state is %s%s, not float32 (blocks, %d, %d, %d)" % (
             rec_state.dtype, tuple(rec_state.shape), KDA_H, KDA_D, KDA_D)
-    if not rec_state.is_contiguous():
-        return "recurrent state is not contiguous"
+    # The recurrent state is the pool's other strided view (KDA32SHADOW2
+    # rejected every layer here, 29차): a padded slot stride is fine, the
+    # (head, row, col) block must be dense -- the kernel walks it as one.
+    r0, r1, r2, r3 = (int(v) for v in rec_state.stride())
+    if (r1, r2, r3) != (KDA_D * KDA_D, KDA_D, 1) or r0 < KDA_H * KDA_D * KDA_D:
+        return "recurrent state strides %s are not (>= %d, %d, %d, 1)" % (
+            (r0, r1, r2, r3), KDA_H * KDA_D * KDA_D, KDA_D * KDA_D, KDA_D)
     return None
 
 
@@ -909,7 +1201,7 @@ def kda_takeover(layer) -> bool:
         return False  # shadow-only boot: same GB10 contract, or no launch
     if not _kda_ensure_packs(layer):
         return False
-    return _kda_layout_ok(layer) and _kda_eligible(_kda_meta(layer))
+    return _kda_layout_ok(layer) and _kda_eligible_said(_kda_meta(layer))
 
 
 def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
@@ -944,7 +1236,10 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          float(layer._mk_in_pack[2]), float(layer._mk_o_pack[2])],
         [int(meta.num_actual_tokens), int(n_spec),
          int(meta.spec_state_indices_tensor.size(-1)),
-         int(delta_variant), int(conv_state.shape[-1])],
+         int(delta_variant), int(conv_state.shape[-1]),
+         int(conv_state.stride(0)), int(conv_state.stride(1)),
+         int(conv_state.stride(2)), int(rec_state.stride(0)),
+         int(conv_state.dtype == torch.bfloat16)],
     )
 
 
@@ -965,6 +1260,36 @@ def kda_block(layer, hidden_states, positions):
     return tensor_model_parallel_all_reduce(out)
 
 
+class _LaneTimer:
+    """29차 item 6 -- a timed shadow: the served (stock) path and the MK
+    path both run under a shadow arm, so time them there with CUDA events
+    and say the per-layer delta every `every` judged calls. A bracket boot
+    is 25 minutes; this line lands in the production log for free."""
+
+    def __init__(self, lane: str, every: int = 64):
+        self.lane, self.every = lane, every
+        self.n = 0
+        self.t_mk = 0.0
+        self.t_stock = 0.0
+
+    def add(self, mk_ms: float, stock_ms: float, layers_per_step: int = 1):
+        self.n += 1
+        self.t_mk += mk_ms
+        self.t_stock += stock_ms
+        if self.n % self.every == 0:
+            mk_us = 1e3 * self.t_mk / self.n
+            st_us = 1e3 * self.t_stock / self.n
+            logger.warning("[megakernel] %s shadow timing (n=%d): mk=%.1f us "
+                           "stock=%.1f us per call, delta=%.1f us x %d/step = "
+                           "%.2f ms/step", self.lane, self.n, mk_us, st_us,
+                           mk_us - st_us, layers_per_step,
+                           (mk_us - st_us) * layers_per_step / 1e3)
+
+
+_KDA_TIMER = _LaneTimer("kda")
+KDA_LAYERS_PER_STEP = 34   # rank-local KDA blocks in one decode step
+
+
 class KdaShadowArm:
     """Eager two-arm run: MK into cloned states, stock into the real ones.
 
@@ -979,19 +1304,47 @@ class KdaShadowArm:
         if meta is None:
             return
         conv_state, rec_state = layer.kv_cache
-        self.conv_ref = conv_state.clone()
-        self.rec_ref = rec_state.clone()
+        # KDA32SHADOW3 (29차): cloning the whole pools -- conv 260 MB + rec
+        # 2.2 GB, twice, per judged layer -- emptied unified memory under an
+        # 8K prefill and earlyoom shot the head's worker. The step touches
+        # only the slots in spec_state_indices_tensor: gather those rows
+        # into compact (k+1)-slot buffers (slot 0 stays the kernel's
+        # "skip" slot) and run the MK kernel with the indices remapped.
+        import types
+
+        n_spec = int(meta.num_spec_decodes)
+        sidx = meta.spec_state_indices_tensor[:n_spec]
+        used = torch.unique(sidx[sidx > 0])
+        remap = torch.zeros(int(conv_state.shape[0]), dtype=sidx.dtype,
+                            device=sidx.device)
+        remap[used] = torch.arange(1, used.numel() + 1, dtype=sidx.dtype,
+                                   device=sidx.device)
+        sidx_c = torch.where(sidx > 0, remap[sidx.clamp(min=0)], sidx)
+        self.used = used
+        self.conv_mk = torch.zeros((used.numel() + 1,) + tuple(conv_state.shape[1:]),
+                                   dtype=conv_state.dtype, device=conv_state.device)
+        self.rec_mk = torch.zeros((used.numel() + 1,) + tuple(rec_state.shape[1:]),
+                                  dtype=rec_state.dtype, device=rec_state.device)
+        self.conv_mk[1:] = conv_state[used]
+        self.rec_mk[1:] = rec_state[used]
+        meta_c = types.SimpleNamespace(
+            num_actual_tokens=meta.num_actual_tokens,
+            num_spec_decodes=n_spec,
+            spec_query_start_loc=meta.spec_query_start_loc,
+            spec_state_indices_tensor=sidx_c.contiguous(),
+            num_accepted_tokens=meta.num_accepted_tokens)
         self.out = torch.empty(meta.num_actual_tokens, layer.hidden_size,
                                dtype=torch.bfloat16,
                                device=hidden_states.device)
-        self.conv_mk = conv_state.clone()
-        self.rec_mk = rec_state.clone()
-        _kda_launch(layer, hidden_states.contiguous(), meta, self.conv_mk,
+        self.ev = [torch.cuda.Event(enable_timing=True) for _ in range(3)]
+        self.ev[0].record()
+        _kda_launch(layer, hidden_states.contiguous(), meta_c, self.conv_mk,
                     self.rec_mk, self.out)
         # same out-of-place contract: shadow compares against the REDUCED
         # tensor, not this rank's partial (review finding)
         from vllm.distributed import tensor_model_parallel_all_reduce
         self.out = tensor_model_parallel_all_reduce(self.out)
+        self.ev[1].record()   # the stock forward runs between ev[1] and ev[2]
         self.layer, self.ok = layer, True
 
     _n_calls = 0
@@ -1000,10 +1353,16 @@ class KdaShadowArm:
         """Called by the overlay after the stock forward: diffs outputs and
         the states the next step would read. Logs every 64th call and on any
         drift (same cadence discipline as the vocab-mask audit)."""
+        self.ev[2].record()
         conv_state, rec_state = self.layer.kv_cache
         errs = {"out": _rel_err(self.out, stock_out),
-                "conv_state": _rel_err(self.conv_mk, conv_state),
-                "rec_state": _rel_err(self.rec_mk, rec_state)}
+                "conv_state": _rel_err(self.conv_mk[1:], conv_state[self.used]),
+                "rec_state": _rel_err(self.rec_mk[1:], rec_state[self.used])}
+        try:   # _rel_err synchronised; both spans are complete
+            _KDA_TIMER.add(self.ev[0].elapsed_time(self.ev[1]),
+                           self.ev[1].elapsed_time(self.ev[2]), KDA_LAYERS_PER_STEP)
+        except Exception:
+            pass
         drift = any(not (v <= _TOL_KDA_SHADOW) or math.isnan(v)
                     for v in errs.values())
         KdaShadowArm._n_calls += 1
@@ -1351,7 +1710,7 @@ class _KdaFixture:
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
-    def mk_run(self, delta_variant=None, drain=False):
+    def mk_run(self, delta_variant=None, drain=False, layout="ds"):
         """MK arm on cloned states -> dict(out, conv_state, rec_state).
 
         delta_variant sweeps the retrieval/write operand order (see the .cu
@@ -1364,7 +1723,7 @@ class _KdaFixture:
         import torch
 
         la, meta = self._layer_stand_in()
-        conv_mk, rec_mk = self.conv_st.clone(), self.rec_st.clone()
+        conv_mk, rec_mk = self._conv_view(layout), self._rec_view(layout)
         out = torch.empty(self.T, HIDDEN, dtype=torch.bfloat16,
                           device="cuda")
         if drain:
@@ -1377,6 +1736,48 @@ class _KdaFixture:
                     delta_variant=delta_variant)
         torch.cuda.synchronize()
         return {"out": out, "conv_state": conv_mk, "rec_state": rec_mk}
+
+    def _conv_view(self, layout):
+        """The fixture's conv state in the three layouts the engine can hand
+        out: a contiguous (slots, dim, W) block ("ds"), the same with a
+        page-aligned slot stride ("pad"), and the SD pool's transposed view
+        ("sd", channel stride 1). Same values in all three."""
+        import torch
+
+        src = self.conv_st
+        slots, w = src.shape[0], src.shape[2]
+        if layout == "ds":
+            return src.clone()
+        if layout == "bf16":
+            return src.to(torch.bfloat16)   # the production pool's dtype
+        if layout == "pad":
+            per = KDA_QKV * w + 4096
+            buf = torch.zeros(slots * per, dtype=torch.float32, device="cuda")
+            view = buf.as_strided((slots, KDA_QKV, w), (per, w, 1))
+            view.copy_(src)
+            return view
+        if layout == "sd":
+            view = torch.empty(slots, w, KDA_QKV, dtype=torch.float32,
+                               device="cuda").transpose(1, 2)
+            view.copy_(src)
+            return view
+        raise ValueError(layout)
+
+    def _rec_view(self, layout):
+        """The recurrent state contiguous ("ds", "sd") or with a page-aligned
+        slot stride ("pad"); same values."""
+        import torch
+
+        src = self.rec_st
+        if layout != "pad":
+            return src.clone()
+        slots = src.shape[0]
+        per = KDA_H * KDA_D * KDA_D + 2048
+        buf = torch.zeros(slots * per, dtype=torch.float32, device="cuda")
+        view = buf.as_strided((slots, KDA_H, KDA_D, KDA_D),
+                              (per, KDA_D * KDA_D, KDA_D, 1))
+        view.copy_(src)
+        return view
 
     def pick_variant(self):
         """First delta variant whose output AND states match the stock op
@@ -1507,6 +1908,23 @@ def _selftest_kda() -> bool:
     v = fx.pick_variant()
     if v is None:
         return False
+    # The production state is a strided view (page-aligned slots; the SD
+    # pool's transpose): the same run through the padded and transposed
+    # fixtures must land on the contiguous result. A layout bug is garbage
+    # (rel ~1), so the tolerance below only has to absorb split-K order.
+    base = fx.mk_run(v)
+    # bf16 conv state: the rounding the production pool applies on every
+    # store, so its rows differ from the fp32 run at bf16 precision
+    for lay, tol in (("pad", 1e-5), ("sd", 1e-5), ("bf16", 2e-2)):
+        got = fx.mk_run(v, layout=lay)
+        for key in ("out", "conv_state", "rec_state"):
+            rel = _rel_err(got[key].float(), base[key].float())
+            if not rel <= tol:
+                logger.warning("[megakernel] selftest kda layout %s: %s rel=%.2e "
+                               "(tol %.0e) vs the contiguous run -> DISARM", lay, key, rel, tol)
+                return False
+    logger.warning("[megakernel] selftest kda: padded-slot, SD-transposed and "
+                   "bf16-conv views match the contiguous run -> ARM")
     _KDA_VARIANT = v
     return True
 
@@ -1543,6 +1961,8 @@ def arm() -> None:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
+    if ENABLE_SMLP:
+        _ARMED["smlp"] = _gate("smlp", _selftest_smlp)
     if ENABLE_KDA:
         _ARMED["kda"] = _gate("kda", _selftest_kda)
         if _ARMED["kda"]:
@@ -1554,16 +1974,20 @@ def arm() -> None:
                 from vllm.model_executor.layers.mamba.mamba_utils import (
                     is_conv_state_dim_first)
 
-                if not is_conv_state_dim_first():
-                    logger.warning(
-                        "[megakernel] kda ARMED but the process conv-state "
-                        "layout is SD; this kernel indexes DS, so EVERY "
-                        "layer will fall back to stock. Set "
-                        "VLLM_SSM_CONV_STATE_LAYOUT=DS.")
+                logger.warning(
+                    "[megakernel] kda armed; process conv-state layout is %s "
+                    "(served through the launch strides either way)",
+                    "DS" if is_conv_state_dim_first() else "SD")
             except Exception:
                 pass
     logger.warning("[megakernel] armed=%s shadow_kda=%s",
                    dict(_ARMED), KDA_SHADOW)
+    if _flag("VLLM_GLM53_DEV_LAB"):
+        try:   # 29차 item 5: the boot-free kernel loop (dev boots only)
+            from vllm.model_executor.layers import glm53_dev_lab
+            glm53_dev_lab.install()
+        except Exception:
+            logger.exception("[megakernel] dev lab install failed")
 
 
 _armed_once = False

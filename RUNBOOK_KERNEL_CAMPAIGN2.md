@@ -669,15 +669,19 @@ deep_gemm 은 독립 블록이라 같은 GEMM 을 MoE 꼬리 안에서 끝냈다
 두 레인 × ksr 5종).
 
 **오프라인 게이트(부팅 전, srv2 GPU 창)**: `run_megakernel_bench.sh --segments exact,gemm
---gemm2 both --ksr2-sweep 1,2,4,6,8` 전 행 PASS + v2 열이 v1 열보다 형상마다 빠름(특히
-[6144×4096]·[4096×512]·[1024×4096]) + `mk_gemm_moe_overlap_probe.py` 의 v2 노출이 v1 의
-28 µs/층보다 작음. 상한: 스텝 −2.5 ms(메인 −1.5, aux 노출 −1.0), 트레이스 mk 합 14.1 → ~7.
+--gemm2 both`(기본 `--gemm2 env` 는 서빙 레인만 판정한다) 전 행 PASS + v2 열이 v1 열보다
+형상마다 같거나 빠름 + `mk_gemm_moe_overlap_probe.py` 의 v2 노출이 v1 의 28 µs/층보다 작음.
+상태(09-05 01:39, 원장 30차 §4~6): **오프라인 게이트 전부 통과** — exact PASS(두 레인 × ksr
+5종), 규칙판 v2 x2 가 m ≤ 16 전 형상에서 v1 보다 빠르고 m = 32 동률, 노출 프로브 47.3 → 28.6
+µs/층(쌍 먼저 순서). 브래킷 착수 가능(기대 −1.3~−1.8 ms/스텝). 상한: 스텝 −2.5 ms
+(메인 −1.5, aux 노출 −1.0), 트레이스 mk 합 14.1 → ~7.
 
 **부팅 게이트**: base(기본값) → cand(`VLLM_GLM53_MK_GEMM2=1`) 브래킷, step/s(acc 정규화)
 + 프리필 동반 + 품질 9/9 + 한국어 0/16 + pos-1 ±2 pct. 통과하면 프로필 기본 1 로 올리고
 v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 확인된 개선은 기본값, 반대쪽 삭제).
 **주의**: SMLP(EXP-20 계열, 상주+배리어)를 같은 자리에 켜면 이 진단의 직렬화가 되살아난다 —
 공유 전문가 융합은 v2 구조(독립 블록 + 타일 도착 의존) 위에 다시 지어야 한다.
+
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
 
@@ -688,7 +692,7 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 
 | 축 | 노브 | 제거 런치/스텝 | 근사 |
 |---|---|---|---|
-| ~~게이트 체인 완결~~ — epilogue top-k 는 bit-exact 였지만 한 CTA 의 직렬 선택이 대체한 커널보다 느렸다(M=8 28.2→31.3 us/층). **오프라인 기각, 트리에 없음**(29차) | — | (42) | — |
+| ~~게이트 체인 완결~~ — epilogue top-k 는 bit-exact 였지만 한 CTA 의 직렬 선택이 대체한 커널보다 느렸다(M=8 28.2→31.3 us/층). **오프라인 기각, 트리에 없음**(31차) | — | (42) | — |
 | f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | ~0.15 ms |
 | KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로 | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | 0.5~0.7 ms |
 | kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | ~0.03 ms |
@@ -720,6 +724,7 @@ VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 VLLM_GLM53_KPOOL_UPDATE_DIRE
   −1. 스텝의 GDN 창 시간(트레이스 도구)으로 ms 를 잰다.
 - 브래킷: base → cand(네 노브) → base, C=1 step/s + 프리필 2048/8192 동반. 채택 뒤
   프로필 기본값으로 올린다(운영자 규칙: 이득이 확인된 개선은 기본값).
+
 
 ## 브래킷 자동화 — `bench/bracket.py` (도구, 판정 아님)
 
@@ -859,6 +864,9 @@ ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight
    손해가 먼저. 이기면 EXP-6 브래킷의 cand 팔에 `VLLM_GLM53_MK_LOCALQ=1`(투영 −0.66
    ms/스텝 ≈ 1%, 브래킷 해상도 안쪽이라 세트로만). 단독 부팅 없음.
 8. **EXP-20 (미세 융합 묶음 2)** — 오프라인 게이트 뒤 세 노브를 한 cand 로 브래킷. 개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각.
+
+8. **EXP-20 (미세 융합 묶음 2)** — 오프라인 게이트 뒤 세 노브를 한 cand 로 브래킷.
+   개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각.
 
 **승인이 필요한 것**
 

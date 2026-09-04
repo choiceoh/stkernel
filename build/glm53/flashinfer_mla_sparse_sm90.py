@@ -453,7 +453,13 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
     lens = valid_counts.contiguous()
     if lens.dtype != torch.int32:
         lens = lens.to(torch.int32)
+    timing = (not _MK_MLA_SHADOW["checked"] and not torch.cuda.is_current_stream_capturing())
+    if timing:
+        ev = [torch.cuda.Event(enable_timing=True) for _ in range(3)]
+        ev[0].record()
     out = m.mla_decode(q, kv_c_and_k_pe_cache.view(torch.uint8), slots, lens, impl.scale, ckv_scale)
+    if timing:
+        ev[1].record()
     if (not _MK_MLA_SHADOW["checked"]
             and not torch.cuda.is_current_stream_capturing()
             and q_nope.shape[0] <= _MK_MLA_SHADOW_MAX_T):
@@ -468,7 +474,12 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
         rows = int(valid_counts.max().item())
         if rows >= _MK_MLA_SHADOW_MIN_ROWS:
             ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
+            ev[2].record()
             torch.cuda.synchronize()
+            # 29차 item 6: the one-shot judge also times both paths on the
+            # same rows (an eager prefill chunk, not the captured decode)
+            logger.warning("[megakernel] mla shadow timing (T=%d): mk=%.1f us wrapper=%.1f us",
+                           q_nope.shape[0], 1e3 * ev[0].elapsed_time(ev[1]), 1e3 * ev[1].elapsed_time(ev[2]))
             den = ref.float().norm().item()
             num = (out.float() - ref.float()).norm().item()
             finite = bool(torch.isfinite(out).all().item())

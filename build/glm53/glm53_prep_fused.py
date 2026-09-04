@@ -71,6 +71,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+import time
 import numpy as np
 import torch
 
@@ -622,6 +623,9 @@ class _State:
     plan: PrepPlan | None = None
     plan_failed: bool = False
     metadata_cache: dict[tuple[int, int], dict[str, Any]] = field(default_factory=dict)
+    t_fused_host: float = 0.0
+    t_stock_host: float = 0.0
+    n_timed: int = 0
     steps_fused: int = 0
     steps_stock: int = 0
     checks_ok: int = 0
@@ -882,7 +886,9 @@ def _fused_prepare_inputs(runner, st: _State, scheduler_output, batch_req_state,
     num_reqs = len(req_ids)
     num_tokens = num_reqs * q
     idx_mapping_np = batch_req_state.idx_mapping_np
+    t0 = time.perf_counter()
     idx_mapping = plan.launch(idx_mapping_np, num_reqs)
+    st.t_fused_host += time.perf_counter() - t0   # host time is what this lever buys
     o = plan.owned
     query_start_loc_np = np.arange(num_reqs + 1, dtype=np.int32) * q
     num_computed_np = runner.req_states.num_computed_tokens_np[idx_mapping_np]
@@ -976,11 +982,18 @@ def _verify(runner, st: _State, fused, scheduler_output, batch_req_state, batch_
     assert plan is not None
     num_reqs = fused.num_reqs
     snap = plan.snapshot(num_reqs)
+    t0 = time.perf_counter()
     stock = _ORIG["prepare_inputs"](runner, scheduler_output, batch_req_state, batch_desc)
-    bad = _compare_input_batches(fused, stock)
     block_tables, slot_mappings = _ORIG["prepare_attn"](runner, stock)
     _ORIG["ms_prepare_attn"](runner.model_state, stock, batch_desc.cg_mode, block_tables,
                              slot_mappings, runner.attn_groups, runner.kv_cache_config, False)
+    st.t_stock_host += time.perf_counter() - t0
+    st.n_timed += 1
+    if st.n_timed % 64 == 0:   # 29차 item 6: the shadow says what it buys
+        logger.warning("[prep-fused] %s timing (n=%d): fused host=%.0f us stock chain host=%.0f us per step",
+                       st.mode, st.n_timed, 1e6 * st.t_fused_host / max(st.steps_fused, 1),
+                       1e6 * st.t_stock_host / st.n_timed)
+    bad = _compare_input_batches(fused, stock)
     bad += plan.diff(snap, num_reqs)
     try:
         plan.tail_ok()

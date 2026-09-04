@@ -163,6 +163,16 @@ def _validate_decodable_vocab_bound(
     return decodable_vocab
 
 
+def _mk_smlp(mlp, x):
+    """MK_SEG_SMLP hook: import only, a boot without the megakernel module
+    (or with the segment off) is stock. An armed launch stays loud."""
+    try:
+        from vllm.model_executor.layers.glm53_megakernel import smlp_forward
+    except Exception:
+        return None
+    return smlp_forward(mlp, x)
+
+
 class Glm5NextMLP(nn.Module):
     def __init__(
         self,
@@ -210,6 +220,18 @@ class Glm5NextMLP(nn.Module):
             self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        # deneb fork (glm53_megakernel MK_SEG_SMLP): the whole MLP as one
+        # launch when the segment is armed and the row batch is a decode
+        # batch; None means stock. The fused path returns this rank's
+        # partial like down_proj would before its reduction, so the
+        # linear's reduce_results contract is honoured here.
+        out = _mk_smlp(self, x)
+        if out is not None:
+            if getattr(self.down_proj, "reduce_results", False):
+                from vllm.distributed import tensor_model_parallel_all_reduce
+
+                out = tensor_model_parallel_all_reduce(out)
+            return out
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)

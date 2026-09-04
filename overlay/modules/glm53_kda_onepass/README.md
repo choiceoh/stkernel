@@ -116,7 +116,7 @@ applicability guard's admit/decline cases), the kpool update, and times
 each pair as CUDA-graph replays of a decode step's worth of layers with
 distinct weights and states -- reporting device time (second of two
 back-to-back replays) and launch-inclusive time separately. Numbers live
-in MEASUREMENTS (29차); this README does not repeat them.
+in MEASUREMENTS (31차); this README does not repeat them.
 
 ## Log anchors
 

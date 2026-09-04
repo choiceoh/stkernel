@@ -6771,9 +6771,52 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "the layout gate must be able to say which predicate failed")
     reason = mk[mk.index("def _kda_layout_reason(layer)"):
                 mk.index("def _kda_layout_ok(layer)")]
-    check("VLLM_SSM_CONV_STATE_LAYOUT=DS" in reason,
-          "the SD reason must name the env that fixes it -- a reason the "
-          "reader cannot act on is the same silence in more words")
+    # 29차: the kernel addresses the state through launch-carried strides,
+    # so the gate no longer rejects a process layout (SD arrives as a
+    # transposed view) or a non-contiguous view (page-aligned slots); it
+    # refuses only overlapping / non-positive strides, and says them.
+    check("_conv_state_dim_first" not in reason
+          and "conv_state.is_contiguous()" not in reason
+          and "conv state strides %s overlap or are not positive" in reason
+          and "slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1" in reason,
+          "the layout gate admits strided views and names the strides it "
+          "refuses -- a contiguity gate rejected every production layer")
+    launch = mk[mk.index("def _kda_launch("):mk.index("def kda_block(")]
+    check("int(conv_state.stride(0)), int(conv_state.stride(1))" in launch
+          and "int(conv_state.stride(2)), int(rec_state.stride(0))" in launch
+          and "int(conv_state.dtype == torch.bfloat16)" in launch
+          and "torch.float32, torch.bfloat16" in reason
+          and "rec_state.is_contiguous()" not in reason
+          and "recurrent state strides %s are not" in reason,
+          "the launch carries the three conv-state strides and the recurrent "
+          "slot stride; the gate names the recurrent strides it refuses")
+    st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
+    kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
+    check("kda lane serving: first eligible step" in kt
+          and "kda lane stock: %s" in kt and '"(routine)" not in reason' in kt
+          and "_kda_eligible_said(_kda_meta(layer))" in mk,
+          "the KDA takeover says once when a step first serves (armed or "
+          "shadow) and once per distinct eligibility reason it does not; "
+          "prefill steps stay silent (no boot tonight logged a KDA judgement)")
+    hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
+    check("smlp lane serving: first fused call" in hook
+          and hook.count("_smlp_stock(") >= 4
+          and "if T < 1 or T > MAX_TOK:\n        return None" in hook,
+          "the smlp hook says once when it first serves and once per distinct "
+          "reason it does not (armed != serving, 28차); prefill rows are "
+          "routine and silent")
+    judge = mk[mk.index("class KdaShadowArm"):mk.index("_DRAIN_BUF = None")]
+    check("self.conv_mk[1:] = conv_state[used]" in judge
+          and "self.rec_mk[1:] = rec_state[used]" in judge
+          and "spec_state_indices_tensor=sidx_c.contiguous()" in judge
+          and "conv_state[self.used]" in judge and "rec_state[self.used]" in judge
+          and "conv_state.clone()" not in judge and "rec_state.clone()" not in judge,
+          "the KDA shadow judge clones only the slots the step touches, with "
+          "the indices remapped into the compact buffers (whole-pool clones "
+          "emptied unified memory: KDA32SHADOW3 earlyoom, 29차)")
+    check('fx.mk_run(v, layout=lay)' in st and '("bf16", 2e-2)' in st,
+          "the self-test runs the padded-slot and SD-transposed views "
+          "against the contiguous result")
     ok = mk[mk.index("def _kda_layout_ok(layer)"):
             mk.index("def _kda_ensure_packs")]
     check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok,
@@ -7002,6 +7045,157 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
     prof = open("profiles/glm53.env", encoding="utf-8").read()
     assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
+
+
+def test_dev_lab_contracts() -> None:
+    """29차 item 5: the boot-free kernel loop. The worker module remembers
+    the served FULL descriptor and serves replay/reload/recapture through
+    Worker.glm53_lab; the API route is a --middleware the launcher adds only
+    when the knob is on; the driver installs the worker side from arm() and
+    can rebuild the extension from another .cu; the profile ships it off."""
+    import os
+    mod = os.path.join(REPO, "overlay/modules/glm53_dev_lab")
+    lab = open(os.path.join(mod, "glm53_dev_lab.py"), encoding="utf-8").read()
+    mw = open(os.path.join(mod, "glm53_lab_middleware.py"), encoding="utf-8").read()
+    man = open(os.path.join(mod, "manifest.tsv"), encoding="utf-8").read()
+    req = open(os.path.join(mod, "requires"), encoding="utf-8").read()
+    mk = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/glm53_megakernel.py"), encoding="utf-8").read()
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    check("CudaGraphManager.run_fullgraph = run_fullgraph" in lab
+          and "Worker.glm53_lab = _lab" in lab
+          and all(f'op == "{o}"' in lab for o in ("info", "replay", "reload", "recapture"))
+          and "mgr.run_fullgraph(desc)" in lab and "e0.elapsed_time(e1)" in lab
+          and "mk.rebuild(src)" in lab and "runner.capture_model()" in lab
+          and "m2.graphs.clear()" in lab and "managers_cleared" in lab,
+          "the worker lab remembers the served FULL descriptor, replays it "
+          "with CUDA events, rebuilds the extension and recaptures")
+    check('request.url.path != "/glm53/lab"' in mw
+          and 'collective_rpc("glm53_lab"' in mw and "status_code=500" in mw,
+          "the API side is a pass-through middleware that fans the op out "
+          "over collective_rpc and says errors")
+    check("glm53_dev_lab.py\tvllm/model_executor/layers/glm53_dev_lab.py\tabsent" in man
+          and "glm53_lab_middleware.py\tvllm/glm53_lab_middleware.py\tabsent" in man
+          and req.strip() == "glm53_megakernel",
+          "manifest places both files as new; the module requires the driver")
+    check("def rebuild(src_path: str) -> dict:" in mk
+          and 'name=f"glm53_megakernel_{md5}"' in mk and "_armed_once = False" in mk
+          and 'if _flag("VLLM_GLM53_DEV_LAB"):' in mk and "glm53_dev_lab.install()" in mk,
+          "the driver rebuilds under a per-md5 name, re-arms, and installs "
+          "the lab from arm() behind the knob")
+    check(re.search(r"^VLLM_GLM53_DEV_LAB=0$", prof, re.M) is not None
+          and "glm53_dev_lab" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
+          and 'if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then' in launcher
+          and "--middleware vllm.glm53_lab_middleware.lab" in launcher,
+          "the profile enrols the module OFF; the launcher adds the "
+          "middleware only when the knob is on")
+    print("  dev lab contracts .. OK")
+
+
+def test_mk_smlp_hook_and_contracts() -> None:
+    """MK_SEG_SMLP (29차): the dense MLP as one launch, wired without risk.
+
+    smlp_forward is the Glm5NextMLP.forward hook: None (stock) unless the
+    segment is armed, x is a 2-D bf16 decode batch (T <= 32, k a multiple
+    of 128 <= 4096), both linears carry single W4 packs whose k-tiles match,
+    and gate_up is 2 x the down input. The activation's clamp/alpha/beta
+    come from the module (SiluAndMulWithClamp; SiluAndMul = 0/1/0). The
+    kernel keeps the stock rounding points and reuses kda's a_ready
+    hand-off; the hook never reduces (the linear's reduce_results contract
+    stays with the caller).
+    """
+    import types
+    calls, said = [], []
+    ns = load_defs(
+        "overlay/glm53_megakernel.py",
+        {"_ARMED", "MAX_TOK", "MK_GEMM_KMAX", "SMLP_GU_MAX", "_smlp_packs",
+         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
+        {"os": os, "re": re,
+         "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
+         "_smlp_call": lambda *a: calls.append(a) or "fused"},
+    )
+    import types
+    torch_stub = types.ModuleType("torch")
+    torch_stub.bfloat16 = "bf16"
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    try:
+        class _X:
+            def __init__(self, m, k, dtype="bf16"):
+                self.shape = (m, k); self.dtype = dtype
+            def dim(self): return 2
+            def contiguous(self): return self
+        class _Pack:
+            def __init__(self, ntiles, ktiles):
+                self.shape = (ntiles, ktiles, 128, 64)
+        def linear(pack, out_size=None, in_size=None):
+            q = types.SimpleNamespace(_mk=pack)
+            return types.SimpleNamespace(quant_method=q, output_size_per_partition=out_size,
+                                         input_size_per_partition=in_size, output_size=out_size)
+        gu = (_Pack(8, 32), "ws", 1.0)      # [1024 x 4096]
+        d = (_Pack(32, 4), "ws", 1.0)       # [4096 x 512]
+        mlp = types.SimpleNamespace(
+            gate_up_proj=linear(gu, out_size=1024),
+            down_proj=linear(d, out_size=4096, in_size=512),
+            act_fn=types.SimpleNamespace(swiglu_limit=10.0, alpha=1.0, beta=0.0))
+        f = ns["smlp_forward"]
+        ns["_ARMED"]["smlp"] = False
+        assert f(mlp, _X(8, 4096)) is None            # not armed
+        ns["_ARMED"]["smlp"] = True
+        assert f(mlp, _X(8, 4096)) == "fused"
+        args = calls[-1]
+        assert args[3:] == (1024, 512, 4096, 10.0, 1.0, 0.0), args[3:]
+        assert f(mlp, _X(33, 4096)) is None           # T beyond the lane
+        # the proof lines: the first fused call says so once; a distinct
+        # stock reason says itself once; prefill rows are silent
+        assert any("smlp lane serving: first fused call" in a[0] for a in said), said
+        n_said = len(said)
+        assert f(mlp, _X(33, 4096)) is None and len(said) == n_said
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None
+        assert f(mlp, _X(8, 4160)) is None            # k not a multiple of 128
+        # a K-chunked (list) pack or a missing pack -> stock
+        mlp.gate_up_proj.quant_method._mk = [gu, gu]
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.gate_up_proj.quant_method._mk = gu
+        mlp.down_proj.quant_method._mk = None
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.down_proj.quant_method._mk = d
+        # a wrapped method (nvfp4 / w4a8 stack on the fp8 one) is unwrapped
+        mlp.down_proj.quant_method = types.SimpleNamespace(_base=types.SimpleNamespace(_mk=d))
+        assert f(mlp, _X(8, 4096)) == "fused"
+        # gate_up must be 2 x the down input; pack k-tiles must match
+        mlp.down_proj = linear(d, out_size=4096, in_size=384)
+        assert f(mlp, _X(8, 4096)) is None
+        mlp.down_proj = linear((_Pack(32, 5), "ws", 1.0), out_size=4096, in_size=512)
+        assert f(mlp, _X(8, 4096)) is None
+        # plain SiluAndMul: no limit attribute -> 0 / 1 / 0
+        mlp.down_proj = linear(d, out_size=4096, in_size=512)
+        mlp.act_fn = types.SimpleNamespace()
+        assert f(mlp, _X(16, 4096)) == "fused" and calls[-1][6:] == (0.0, 1.0, 0.0)
+    finally:
+        if saved is None:
+            sys.modules.pop("torch", None)
+        else:
+            sys.modules["torch"] = saved
+    cu = open("overlay/modules/glm53_megakernel/glm53_megakernel.cu", encoding="utf-8").read()
+    k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
+    assert k.count("mk_gemm_phase(c, smem, &g_mk_smlp_bar);") == 2, "two GEMM phases on the segment's own barrier"
+    assert "c.a_ready = true;" in k and "c.unit_ctr = &g_mk_smlp_unit2;" in k and "g_mk_smlp_unit2 = 0u;" in k, \
+        "down rides the a_ready path on its own unit counter, reset before phase A"
+    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 1, "one barrier: the activation lives in gate_up's epilogue"
+    assert "c.pair_act = 1;" in k and "c.n_int = a.n_int;" in k
+    ph = cu[cu.index("__device__ void mk_gemm_phase"):cu.index("__global__ void mk_gemm_kernel")]
+    assert "auto pair_finish = [&](int nt) {" in ph and ph.count("pair_finish(nt);") == 2, "both final-store paths finish the pair"
+    assert "__float2bfloat16(" in ph and "fminf(gv, c.act_limit)" in ph and "(uv + c.act_beta)" in ph, "clamped SwiGLU at the stock rounding point"
+    assert "if (s_pair_last) g_mk_pair_arrive[pair] = 0u;" in ph, "pair counters rearm like tile counters"
+    assert "if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);" in ph
+    assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
+    wiring = open("overlay/modules/glm53_model_wiring/glm5next_model.py", encoding="utf-8").read()
+    assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring
+    prof = open("profiles/glm53.env", encoding="utf-8").read()
+    assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 29차 bracket"
 
 
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
@@ -7416,7 +7610,11 @@ def test_osar_wait_is_split_by_message_size() -> None:
           "a full 4-sequence spec batch (32 tokens = 256 KiB)")
     check("volatile uint64_t t_wait_sm;" in cu
           and "volatile uint64_t t_calls_sm;" in cu
-          and "uint64_t pad[1];" in cu and "uint64_t pad[3];" not in cu,
+          and "uint64_t pad[1];" in cu and "uint64_t pad[3];" not in cu
+          and "osar_stall_check(c, sp, t0, STALL_GUARD" in cu
+          and "osar_stall_check(c, sp, t2, STALL_WAIT" in cu
+          and '"[oneshot] STALL rank=%d phase=%s seq=%llu slot=%d missing_peer_mask=0x%x "' in cu
+          and "#define OSAR_STALL_TRAP_S 30" in cu,
           "the two counters come OUT of the existing padding: anything that "
           "moved tx/rx would invalidate every peer's registered offsets")
     check("if (nbytes <= SPLIT_BYTES) {" in cu
@@ -8203,13 +8401,13 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 6
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, gemm-lq, gemm2, kda, mhc, mla) triggers "
+          "every segment kernel (gemm, gemm-lq, gemm2, kda, mhc, mla, smlp) triggers "
           "its dependents at entry and is launched programmatically behind "
-          "the MK_PDL knob (default off)")
+          "the MK_PDL knob")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
           and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
           "the unit loop must not re-issue the tiles the hoist already "
@@ -8242,7 +8440,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 5  # def, the gemm plan (+ its bg control), kda in/out
+          and cu.count("mk_choose_ksr(") == 7  # def, the gemm plan (+ its bg control), kda in/out, smlp gate_up/down
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -8647,7 +8845,8 @@ def test_glm53_megakernel_contracts() -> None:
           "the raw nibble chunks land XOR-swizzled at copy time and the "
           "fragment loads read through the same swizzle (eight rows on a 64 B "
           "pitch would otherwise share two bank groups)")
-    check("pb[(size_t)r0 * c.n + cb] = acc[i][j][0];" in v2
+    check("store_tile([&](int r, int col, float v) { pb[(size_t)r * c.n + col] = v; });" in v2
+          and "if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }" in v2
           and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
           and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
           and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
@@ -8661,16 +8860,23 @@ def test_glm53_megakernel_contracts() -> None:
           and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
               < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);")
           and "int mk_choose_ksr2(int m, int n, int k)" in cu
+          and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
+          and "MK_CHECK_CUDA(cudaGetDevice(&dev));" in cu
+          and "&g_mk_sms, cudaDevAttrMultiProcessorCount, dev));" in cu
+          and "if (slots % nblk == 0 && slots / nblk <= kmax) {" in cu
+          and "} else if (nblk * 2 > slots) {" in cu
           and "if (ksr > kblk) ksr = kblk;" in cu
           and "while (ksr > 1 && (size_t)m * n * ksr > (size_t)MK2_PART_ELEMS) --ksr;" in cu
           and consts["MK2_PART_ELEMS"] >= 32 * consts["KDA_INPROJ_N_PAD"] * 4,
           "the v2 lane is a kill-switched dispatch ahead of the persistent "
-          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule keeps "
-          "every slice non-empty and the fp32 partial inside its buffer at "
-          "the widest per-rank linear")
+          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule takes one "
+          "exact wave of the device's resident slots (SM count from the device, "
+          "not a constant), fine slices above half the slots, and keeps every "
+          "slice non-empty and the fp32 partial inside its buffer")
     check('"-DMK_NBUF2_DEF=" in pysrc_full' if False else "-DMK_NBUF2_DEF=" in pysrc_full
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
-          and 'ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")' in bench
+          and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
+          and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
           and "ext.set_gemm2(on, ksr)" in bench
           and "same = bool(torch.equal(got2, got))" in bench,
           "the driver builds v2's ring depth in, the boot fingerprint names "
@@ -8701,12 +8907,23 @@ def test_glm53_megakernel_contracts() -> None:
     # -- state slot addressing: [slots, ...] buffers need the per-slot
     #    element count in the stride (a slot-0-only self-test once passed
     #    while the conv stride was missing it -- found in review)
-    check(cu.count("slot * KDA_QKV * a.conv_width") >= 1
-          and "sbase + i" in cu and "sbase + acc + i" in cu,
-          "conv state slot stride is KDA_QKV*conv_width, computed once as "
-          "sbase and used by every read and write "
-          "(spec allocates a wider window; runtime width is the stride)")
-    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+    check(cu.count("slot * a.cs_s0 + (size_t)ch * a.cs_s1") >= 1
+          and "sbase + (size_t)i * a.cs_s2" in cu
+          and "sbase + (size_t)(acc + i) * a.cs_s2" in cu
+          and "slot * KDA_QKV * a.conv_width" not in cu
+          and "ints.size() == 10" in cu
+          and "kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2)" in cu
+          and "kda_cs_store(a, sbase + (size_t)i * a.cs_s2, v)" in cu
+          and "a.cs_bf16 = (int)ints[9];" in cu
+          and "conv state strides must be positive" in cu
+          and "(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "recurrent state slot stride is narrower than one slot" in cu,
+          "conv state is addressed through (slot, channel, width) strides "
+          "carried by the launch, computed once as sbase and used by every "
+          "read and write (the engine hands out page-aligned / transposed "
+          "views; a contiguity gate rejected every production layer, 29차)")
+    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
           and "a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i]" not in cu,
           "the convolution's pos<0 history starts at the accepted boundary "
           "(state[acc - 1 .. acc + 1], the stock spec kernel's prior_tokens) "
@@ -8720,12 +8937,12 @@ def test_glm53_megakernel_contracts() -> None:
           "the state update writes the WHOLE window: causal_conv1d_update "
           "keeps conv_width - nq old values starting at `acc` and appends "
           "every query token")
-    check("(((size_t)slot0 * KDA_H + head) * KDA_D * KDA_D)" in cu
-          and "(((size_t)sj * KDA_H + head) * KDA_D * KDA_D)" in cu
+    check("(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
+          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
           and "const int head = blockIdx.x >> 1, rowhalf = blockIdx.x & 1;" in cu
           and "(size_t)rowhalf * RB * KDA_D;" in cu,
-          "recurrent state slot stride is H*D*D for both the resume slot "
-          "and the per-position store slots")
+          "recurrent state slot stride is the launch-carried rs_s0 (>= H*D*D) "
+          "for both the resume slot and the per-position store slots")
 
     # -- driver-side guards from the same review
     check("SLOT = 1" in pysrc_full
@@ -8737,7 +8954,7 @@ def test_glm53_megakernel_contracts() -> None:
     # -- the state-index contract, taken from the stock kernels: the conv
     #    history starts at the accepted boundary, the recurrence resumes
     #    from slot [r, acc - 1] and stores after every token into [r, j]
-    check("st[i] = a.conv_state[sbase + (acc - 1) + i];" in cu
+    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
           and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
           and "if (slot0 <= 0 || t1 <= t0) continue;" in cu
           and "const int sj = a.state_idx[r * a.mql + j];" in cu
@@ -8799,11 +9016,16 @@ def test_glm53_megakernel_contracts() -> None:
     # -- kda: the split-K model keeps >= 8 k-blocks per slice (warming L2
     #    with the o_proj pack from the idle blocks measured a net loss:
     #    p5 -5.6 us, p3 +12)
-    check("prefetch.global.L2" not in cu
+    _smlp_k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
+    check("prefetch.global.L2" not in _kda_k
+          and cu.count("prefetch.global.L2") == _smlp_k.count("prefetch.global.L2")
+          and "Warm phase C's first W records in L2" in _smlp_k
+          and "L2WARM" not in cu and "warm_l2" not in cu
           and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
           and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
           "split-K never makes slices shorter than 8 k-blocks; no L2 "
-          "prefetch under the delta rule (net loss)")
+          "prefetch under the delta rule (net loss) -- the fused MLP's warm "
+          "of its down pack is a bench knob, off by default")
     # -- kda gates: a tensor-core GEMM (cp.async weight tiles, bf16 mma)
     check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
           and "constexpr int GT_TILES = 2 * KDA_OUT / GT_ROWS;" in cu
@@ -9602,8 +9824,10 @@ def test_glm53_prep_fused_contracts() -> None:
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
     check("glm53_prep_fused" in modules, "glm53 profile must mount glm53_prep_fused")
-    check(re.search(r"^VLLM_GLM53_PREP_FUSED=0$", profile, re.M) is not None,
-          "profile must ship VLLM_GLM53_PREP_FUSED=0 (kill switch default off)")
+    check(re.search(r"^VLLM_GLM53_PREP_FUSED=1$", profile, re.M) is not None
+          and "0 stays the kill switch" in profile,
+          "profile ships VLLM_GLM53_PREP_FUSED=1 (29차 operator decision: the "
+          "+7.3% lever is on; 0 stays the kill switch)")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
     check(rows == [["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"]],
@@ -10533,13 +10757,23 @@ def test_worker_launch_does_not_let_the_remote_reparse_envv() -> None:
           "parses back exactly these tokens")
     check('"docker rm -f hy4-worker 2>/dev/null; $_wrun >/dev/null"' in src,
           "the ssh payload carries the pre-quoted argv, not raw interpolation")
-    # the load-bearing invariant: no ssh line may interpolate $ENVV
-    offenders = [n for n, line in enumerate(src.splitlines(), 1)
-                 if "ssh " in line and "$ENVV" in line
-                 and not line.lstrip().startswith("#")]
-    check(not offenders,
-          "no ssh command may interpolate $ENVV -- the remote would re-parse "
-          "the JSON (offending lines: %s)" % offenders)
+    # The load-bearing invariant, and it belongs to BOTH lanes. glm53 had the
+    # identical shape and boots only because nothing in its ENVV carries braces
+    # today -- its COMPILE_CFG rides SERVE_ARGS inside the base64 payload,
+    # single-quoted. But the profile's VLLM_* keys are forwarded verbatim, and
+    # a brace-bearing one would not crash there: {"m":1,"n":2} reaches the
+    # worker as two valid -e args (last wins) while the head keeps the whole
+    # value, so the ranks silently disagree. Verified against a real worker.
+    for name in ("start-hy4-tp4.sh", "start-glm53-nvfp4-tp4.sh"):
+        lane = open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+        offenders = [n for n, line in enumerate(lane.splitlines(), 1)
+                     if "ssh " in line and "$ENVV" in line
+                     and not line.lstrip().startswith("#")]
+        check(not offenders,
+              "%s: no ssh command may interpolate $ENVV -- the remote re-parses "
+              "it (offending lines: %s)" % (name, offenders))
+        check("printf '%q ' docker run" in lane,
+              "%s must build its worker argv with printf %%q" % name)
     # the head path is local and stays direct; changing it is not the fix
     check("docker run -d --name hy4 $COMMON $RDMA_FLAGS $ENVV" in src,
           "the head runs locally and needs no quoting -- it was never the bug")
@@ -10555,7 +10789,7 @@ def test_micro_fusion_bundle_contracts() -> None:
     reads the exact string 1, ships 0 in the profile, and the stock path is
     what runs on any doubt: the module self-tests against the stock chain on
     the first eager forward and DISARMs on a mismatch. The gate top-k epilogue
-    that was the fourth axis is not in the tree (MEASUREMENTS 29차: bit-exact,
+    that was the fourth axis is not in the tree (MEASUREMENTS 31차: bit-exact,
     slower than the kernel it replaced); nothing may reference it."""
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
@@ -10711,6 +10945,80 @@ def test_micro_fusion_bundle_contracts() -> None:
     print("  micro-fusion bundle 2 contracts .. OK")
 
 
+def test_supervisor_paces_and_stops_relaunching() -> None:
+    """A launcher that keeps failing must not churn the fleet forever.
+
+    The relaunch loop fired every ~2 min with no backoff and no cap, and an
+    attempt is not free: bash "$LAUNCHER" runs drop_caches on ALL FOUR nodes
+    and creates/destroys containers. srv4 hosts unrelated tenants (nemotron,
+    solarflow, the SolarFlow DB), so a persistently broken launcher evicts
+    their page cache every two minutes, indefinitely. Observed 2026-09-04:
+    three relaunches in five minutes against a launcher bug (#289), stopped
+    only because a human noticed.
+
+    Simulated with an always-failing launcher: 5 attempts in 110 minutes
+    instead of ~55, then a hold.
+    """
+    sup = open(os.path.join(REPO, "launchers", "dsv4-tp4-supervisor.sh"),
+               encoding="utf-8").read()
+    for var in ("launch_fails=0", "next_launch_at=0", "LAUNCH_BACKOFF_MAX=1800",
+                "LAUNCH_HOLD_AFTER=5"):
+        check(var in sup, "the supervisor must declare %s" % var)
+    check("_backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))" in sup,
+          "consecutive failures must back off exponentially, not retry flat")
+    check("[ \"$_backoff\" -gt \"$LAUNCH_BACKOFF_MAX\" ] && _backoff=$LAUNCH_BACKOFF_MAX" in sup,
+          "the backoff needs a ceiling")
+    # a NEXT-ALLOWED-TIME, not a sleep: the probe must keep running so a stack
+    # someone fixes by hand is adopted at once instead of after the backoff.
+    check("next_launch_at=$(( $(date +%s) + _backoff ))" in sup
+          and '[ "$_now" -lt "$next_launch_at" ] && continue' in sup,
+          "backoff must gate the next attempt by timestamp, leaving the health "
+          "probe free to adopt a recovered stack immediately")
+    check("sleep $_backoff" not in sup and "sleep \"$_backoff\"" not in sup,
+          "sleeping the backoff would blind the health probe for up to 30 min")
+    # and it must eventually stop and say so
+    check("HELD after $launch_fails relaunches with no healthy stack" in sup,
+          "after the cap it stops relaunching and states why once")
+    held = sup[sup.index("LAUNCH_HOLD_AFTER"):]
+    check("held_logged=1" in held and 'held_logged" = 0' in held,
+          "the hold is announced once, not every cycle")
+    # the hold must be clearable, or a fixed stack would never be adopted
+    check("launch_fails=0; next_launch_at=0; held_logged=0" in sup,
+          "recovery must clear the hold -- a supervisor that gives up "
+          "permanently is a worse failure than the churn it replaced")
+    # ...and ONLY a confirmed generation may clear it. launch() returns 0 on
+    # api_up alone, and /v1/models answers 200 from a corpse, so crediting its
+    # return reset the counter every round and the hold was unreachable in the
+    # one failure mode the pacing exists for (simulated against a corpse API:
+    # 293 launcher runs and no hold, vs 5 and a hold).
+    check("if launch; then" not in sup,
+          "a relaunch counts as an ATTEMPT -- api_up alone is not health, "
+          "so launch()'s return must not clear the counter")
+    check(sup.count("launch_fails=0") == 2,
+          "the only two places that zero the counter are its declaration "
+          "and the api_up && chat_ok recovery branch")
+    clear_at = sup.index("launch_fails=0; next_launch_at=0; held_logged=0")
+    check("if api_up && chat_ok; then" in sup[:clear_at].rsplit("while :;", 1)[-1],
+          "the clear sits under a real generation probe, not under api_up")
+    # The root cause, not the three symptoms: launch() has three callers (boot,
+    # health loop, wedge watchdog) and each one that skips the accounting buys a
+    # destructive relaunch past the cap -- the boot and the watchdog each did.
+    # One counted path, so a fourth caller cannot reintroduce it silently.
+    check(sup.count("launch_fails=$((launch_fails+1))") == 1
+          and "attempt_launch(){" in sup,
+          "exactly one place counts an attempt, and it is attempt_launch")
+    bare = [n for n, line in enumerate(sup.splitlines(), 1)
+            if line.strip().startswith("launch")
+            and not line.strip().startswith(("launch(){", "launch_fails"))]
+    check(len(bare) == 1,
+          "launch() is invoked from exactly one place (inside attempt_launch); "
+          "every caller goes through the accounting (offending lines: %s)" % bare)
+    check(sup.count("attempt_launch") == 4,
+          "attempt_launch is defined once and called by all three sites: the "
+          "boot, the health loop and the wedge watchdog")
+    print("  supervisor relaunch pacing .... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -10801,6 +11109,8 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_dev_lab_contracts()
+    test_mk_smlp_hook_and_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
@@ -10825,5 +11135,6 @@ if __name__ == "__main__":
     test_hy4_entrypoint_carries_the_production_knobs()
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()
+    test_supervisor_paces_and_stops_relaunching()
     print(f"all OK ({PASS} checks)")
 

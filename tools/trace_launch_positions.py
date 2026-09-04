@@ -75,12 +75,51 @@ def main() -> int:
         keep = {k: a[k] for k in ("stream", "registers per thread", "shared memory", "grid", "block")
                 if k in a}
         print(f"ATTR {e['name'][:56]:<56} {json.dumps(keep)}")
-    main_stream = collections.Counter(stream_of(e) for e in ev).most_common(1)[0][0]
+    # Steps analysed: every anchored interval, minus a warm-up interval when
+    # there is one -- the profiler's first interval holds a prefill and the
+    # first decode (4.5 s against 70 ms steps in the repo's traces). It is
+    # skipped only when detected (span > 3x the median of the others and at
+    # least three intervals), never by position: a trace that starts with
+    # decode keeps its first step, and a two-anchor trace keeps its only one.
+    spans = [ev[b - 1]["ts"] + ev[b - 1]["dur"] - ev[a]["ts"]
+             for a, b in zip(starts[:-1], starts[1:])]
+    first = 1 if (len(spans) >= 3 and spans[0] > 3 * statistics.median(spans[1:])) else 0
+    if first:
+        print(f"step 0 skipped as warm-up ({spans[0] / 1e3:.0f} ms vs median {statistics.median(spans[1:]) / 1e3:.0f} ms)")
+    step_ranges = list(zip(starts[first:-1], starts[first + 1:]))
+    # the main stream is the one carrying the model's forward: the stream
+    # with the most kernel TIME over the analysed steps (the routed MoE
+    # kernels alone are ~half a step). A kernel-count heuristic picks the
+    # glue stream, the step anchor's stream is not it either -- the 09-01
+    # stock trace has the prep kernels and the shared-expert pair on 17 and
+    # the forward on 210, the armed 09-04 trace the other way round -- and
+    # the whole trace would let a long initialisation kernel on another
+    # stream win, so only the analysed steps count.
+    busy = collections.Counter()
+    nkern = collections.Counter()
+    for a, b in step_ranges:
+        for e in ev[a:b]:
+            busy[stream_of(e)] += e["dur"]
+            nkern[stream_of(e)] += 1
+    if not busy:
+        print("no kernels in the analysed steps")
+        return 1
+    main_stream = busy.most_common(1)[0][0]
+    print("streams (kernels, busy ms over the analysed steps): "
+          + ", ".join(f"{k}: {nkern[k]}, {v / 1e3:.0f}" for k, v in busy.most_common()))
     rows = []
-    exposed_by = collections.defaultdict(list)
-    for si, (a, b) in enumerate(zip(starts[:-1], starts[1:])):
+    # per step, per kernel family: exposed us; a family absent from a step
+    # contributes 0 to that step (a median over occurrences only would let a
+    # single prefill step dominate, as it did for the MoE kernels)
+    exposed_by = collections.defaultdict(dict)
+    nsteps = 0
+    for si, (a, b) in enumerate(step_ranges, start=first):
         seg = ev[a:b]
+        if not seg:  # adjacent anchors / a truncated trace: nothing to attribute
+            continue
+        nsteps += 1
         seg_ts = [e["ts"] for e in seg]
+        lookback = max(e["dur"] for e in seg)  # any kernel still running at s0
         by_stream = collections.defaultdict(list)
         for e in seg:
             by_stream[stream_of(e)].append(e)
@@ -95,13 +134,13 @@ def main() -> int:
             if stream_of(e) != main_stream:
                 expo[e["name"][:30]] += _exposed(main_ivs, e["ts"], e["ts"] + e["dur"])
         for k, v in expo.items():
-            exposed_by[k].append(v)
+            exposed_by[k][si] = v
         gemms = [e for e in seg if pat in e["name"]]
         for gi, e in enumerate(gemms):
             p = prev[id(e)]
-            gap = e["ts"] - (p["ts"] + p["dur"]) if p else float("nan")
+            gap = e["ts"] - (p["ts"] + p["dur"]) if p else None  # first on its stream
             s0, e0 = e["ts"], e["ts"] + e["dur"]
-            lo = bisect.bisect_left(seg_ts, s0 - 5000)
+            lo = bisect.bisect_left(seg_ts, s0 - lookback)
             hi = bisect.bisect_right(seg_ts, e0)
             ov = ov_moe = 0.0
             for o in seg[lo:hi]:
@@ -113,7 +152,8 @@ def main() -> int:
                     if "moecute" in o["name"] or "moe_static" in o["name"]:
                         ov_moe += x
             rows.append({"step": si, "idx": gi, "dur": e["dur"], "stream": stream_of(e),
-                         "gap": round(gap, 1), "ov_moe": round(ov_moe, 1),
+                         "gap": round(gap, 1) if gap is not None else None,
+                         "ov_moe": round(ov_moe, 1),
                          "ov_other": round(ov - ov_moe, 1),
                          "prev": p["name"][:40] if p else ""})
     if not rows:
@@ -141,16 +181,20 @@ def main() -> int:
         d = sorted(r["dur"] for r in rs)
         md = statistics.median(d)
         tot += md
+        gaps = [r["gap"] for r in rs if r["gap"] is not None]
+        mg = statistics.median(gaps) if gaps else float("nan")
         print(f"{i:3d} {md:8.1f} {d[len(d) // 10]:7.1f} {d[len(d) * 9 // 10]:7.1f} "
-              f"{statistics.median(r['gap'] for r in rs):8.1f} "
+              f"{mg:8.1f} "
               f"{statistics.median(r['ov_moe'] for r in rs):7.1f} "
               f"{statistics.median(r['ov_other'] for r in rs):7.1f} "
               f"{collections.Counter(r['stream'] for r in rs).most_common(1)[0][0]:>4}  "
               f"{collections.Counter(r['prev'] for r in rs).most_common(1)[0][0]}")
     print(f"sum of per-position medians = {tot / 1e3:.2f} ms/step")
     print(f"\nnon-main-stream kernels (main = stream {main_stream}): exposed us/step, median over steps")
-    for k, v in sorted(exposed_by.items(), key=lambda kv: -statistics.median(kv[1]))[:12]:
-        print(f"  {statistics.median(v):8.1f}  {k}")
+    def _med(d):
+        return statistics.median(list(d.values()) + [0.0] * (nsteps - len(d)))
+    for k, v in sorted(exposed_by.items(), key=lambda kv: -_med(kv[1]))[:12]:
+        print(f"  {_med(v):8.1f}  {k}")
     return 0
 
 

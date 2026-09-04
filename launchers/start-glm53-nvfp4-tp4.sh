@@ -592,6 +592,11 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+# 29차 item 5: the dev lab's API route rides on --middleware (the worker side
+# installs itself from the megakernel driver when the knob is on)
+if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then
+  SERVE_ARGS="$SERVE_ARGS --middleware vllm.glm53_lab_middleware.lab"
+fi
 
 # DRY_RUN=1 prints what the knobs resolved to and stops -- before the cache
 # reclaim, before any container. A default that points at a deleted image or a
@@ -648,9 +653,21 @@ for ip in "${WORKER_IPS[@]}"; do
   # Prelude first: the RoCE-v2 IPv4 GID index is per-node, so it has to be
   # resolved inside the container. The -e below is only the fallback.
   W_B64=$(printf '%s\n' "$CT_GID_PRELUDE" "vllm serve $SERVE_ARGS --node-rank $rank --headless > /glmlogs/glm53.log 2>&1" | base64 -w0)
-  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof; docker rm -f $NAME_WORKER 2>/dev/null; \
-    docker run --name $NAME_WORKER ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$ip \
-    --entrypoint /bin/bash $IMAGE -c 'echo $W_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh'"
+  # Same reason as the hy4 launcher (#289): interpolating $ENVV into the ssh
+  # string hands every -e value to a remote shell that parses it from scratch.
+  # This lane has no JSON in ENVV today -- COMPILE_CFG rides SERVE_ARGS inside
+  # the base64 payload, single-quoted -- so it boots. But the profile's VLLM_*
+  # keys are forwarded verbatim by the _vllm_keys loop, and the day one of them
+  # carries braces the workers break WITHOUT a crash: {"m":1,"n":2} arrives as
+  # two separate valid -e args (VLLM_X=m:1 then VLLM_X=n:2, last one winning)
+  # while the head keeps the whole value. That is silent rank divergence, which
+  # is worse than #289 -- that one only failed loudly because a fragment
+  # happened to look like an image name. Quote the argv here instead.
+  _wrun=$(printf '%q ' docker run --name $NAME_WORKER \
+            ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$ip \
+            --entrypoint /bin/bash $IMAGE \
+            -c "echo $W_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh")
+  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof; docker rm -f $NAME_WORKER 2>/dev/null; $_wrun"
   echo "worker rank=$rank @$ip launched"
   rank=$((rank+1))
 done
