@@ -7,6 +7,10 @@
 # with another was not as independent as its README claims, and letting one win
 # would bury that.
 set -euo pipefail
+# Shared manifest/target validation -- one implementation for the launchers,
+# the composer and the deployer.
+# shellcheck source=lib/common-tp4.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 PROFILE=${1:?usage: compose-overlays.sh <profile>}
@@ -54,13 +58,10 @@ for mod in $MODULES; do
       /*) ;;
       *) target="${TARGET_PREFIX}${target}" ;;
     esac
-    case "$target" in
-      "$TARGET_PREFIX"*) ;;
-      *) echo "ABORT: $mod binds $target, outside $PROFILE's TARGET_PREFIX ($TARGET_PREFIX)"; exit 1 ;;
-    esac
-    case "$target" in
-      *[!A-Za-z0-9_./-]*) echo "ABORT: unsafe character in target: $target"; exit 1 ;;
-    esac
+    # Validated AFTER the relative-target expansion above, which is what makes
+    # the .. case reachable here: a module writing "../../x" gets the prefix
+    # glued on, so it satisfies the prefix test while pointing outside the root.
+    ct_check_overlay_target "$target" "$TARGET_PREFIX" "$mod in $PROFILE"
     src="$REPO/overlay/modules/$mod/$source"
     [ -f "$src" ] || { echo "ABORT: $src missing"; exit 1; }
     install -m 0644 "$src" "$OUT/$source"

@@ -4,6 +4,10 @@
 # checkout; restart afterwards (systemctl --user restart dsv4-tp4, or run the
 # launcher directly).
 set -euo pipefail
+# Shared manifest/target validation -- one implementation for the launchers,
+# the composer and the deployer.
+# shellcheck source=lib/common-tp4.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 
@@ -77,14 +81,8 @@ load_overlay_manifest() {
       *[!A-Za-z0-9._-]*|.*)
         echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
     esac
-    case "$target" in
-      "${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/}"*) ;;
-      *) echo "ABORT: overlay target outside the profile's package root: $target"; exit 1 ;;
-    esac
-    case "$target" in
-      *[!A-Za-z0-9_./-]*)
-        echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
-    esac
+    ct_check_overlay_target "$target" \
+      "${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/}" "$MANIFEST"
     if [ "$base_contract" != "absent" ] \
         && [[ ! "$base_contract" =~ ^[0-9a-f]{64}$ ]]; then
       echo "ABORT: invalid base preimage contract for $source: $base_contract"
