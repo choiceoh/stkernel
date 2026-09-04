@@ -1185,6 +1185,36 @@ def kda_block(layer, hidden_states, positions):
     return tensor_model_parallel_all_reduce(out)
 
 
+class _LaneTimer:
+    """29차 item 6 -- a timed shadow: the served (stock) path and the MK
+    path both run under a shadow arm, so time them there with CUDA events
+    and say the per-layer delta every `every` judged calls. A bracket boot
+    is 25 minutes; this line lands in the production log for free."""
+
+    def __init__(self, lane: str, every: int = 64):
+        self.lane, self.every = lane, every
+        self.n = 0
+        self.t_mk = 0.0
+        self.t_stock = 0.0
+
+    def add(self, mk_ms: float, stock_ms: float, layers_per_step: int = 1):
+        self.n += 1
+        self.t_mk += mk_ms
+        self.t_stock += stock_ms
+        if self.n % self.every == 0:
+            mk_us = 1e3 * self.t_mk / self.n
+            st_us = 1e3 * self.t_stock / self.n
+            logger.warning("[megakernel] %s shadow timing (n=%d): mk=%.1f us "
+                           "stock=%.1f us per call, delta=%.1f us x %d/step = "
+                           "%.2f ms/step", self.lane, self.n, mk_us, st_us,
+                           mk_us - st_us, layers_per_step,
+                           (mk_us - st_us) * layers_per_step / 1e3)
+
+
+_KDA_TIMER = _LaneTimer("kda")
+KDA_LAYERS_PER_STEP = 34   # rank-local KDA blocks in one decode step
+
+
 class KdaShadowArm:
     """Eager two-arm run: MK into cloned states, stock into the real ones.
 
@@ -1231,12 +1261,15 @@ class KdaShadowArm:
         self.out = torch.empty(meta.num_actual_tokens, layer.hidden_size,
                                dtype=torch.bfloat16,
                                device=hidden_states.device)
+        self.ev = [torch.cuda.Event(enable_timing=True) for _ in range(3)]
+        self.ev[0].record()
         _kda_launch(layer, hidden_states.contiguous(), meta_c, self.conv_mk,
                     self.rec_mk, self.out)
         # same out-of-place contract: shadow compares against the REDUCED
         # tensor, not this rank's partial (review finding)
         from vllm.distributed import tensor_model_parallel_all_reduce
         self.out = tensor_model_parallel_all_reduce(self.out)
+        self.ev[1].record()   # the stock forward runs between ev[1] and ev[2]
         self.layer, self.ok = layer, True
 
     _n_calls = 0
@@ -1245,10 +1278,16 @@ class KdaShadowArm:
         """Called by the overlay after the stock forward: diffs outputs and
         the states the next step would read. Logs every 64th call and on any
         drift (same cadence discipline as the vocab-mask audit)."""
+        self.ev[2].record()
         conv_state, rec_state = self.layer.kv_cache
         errs = {"out": _rel_err(self.out, stock_out),
                 "conv_state": _rel_err(self.conv_mk[1:], conv_state[self.used]),
                 "rec_state": _rel_err(self.rec_mk[1:], rec_state[self.used])}
+        try:   # _rel_err synchronised; both spans are complete
+            _KDA_TIMER.add(self.ev[0].elapsed_time(self.ev[1]),
+                           self.ev[1].elapsed_time(self.ev[2]), KDA_LAYERS_PER_STEP)
+        except Exception:
+            pass
         drift = any(not (v <= _TOL_KDA_SHADOW) or math.isnan(v)
                     for v in errs.values())
         KdaShadowArm._n_calls += 1
