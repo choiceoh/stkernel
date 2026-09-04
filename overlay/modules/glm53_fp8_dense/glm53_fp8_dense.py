@@ -256,6 +256,20 @@ def _quantize_w4(weight: torch.Tensor, packed_sf: bool):
 # uses; the format's max magnitude is 6.0 (e2m1's top grid point).
 _NVFP4_BLOCK = 16
 _NVFP4_MAX = 6.0
+# Lever 7 (28차): the nvfp4 pair as a PREFILL route on the fp8 method. Rows
+# above the MK lane's M (MAX_TOK = 32) take mm_fp4 (2.3x the fp8 GEMM at
+# prefill shapes, half the weight bytes); decode keeps the W4 lane. Knob-
+# gated -- A4 activations are a served-numerics change (quality 9/9, Korean
+# 0/16, acceptance profile, prefill ladder) -- and target-only.
+_PREFILL_NVFP4_ENV = "VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4"
+_NVFP4_PREFILL_MIN_M = 32
+
+
+def _prefill_nvfp4_enabled(env: str) -> bool:
+    if env != "VLLM_GLM53_FP8_DENSE":
+        return False
+    raw = (os.environ.get(_PREFILL_NVFP4_ENV) or "0").strip().lower()
+    return raw in ("1", "true", "on", "yes")
 # NOT "auto". auto selects among backends per shape and JIT-compiles what it
 # picks. Measured on this part: the first shape costs 73.5 s to compile and
 # every shape after it is 0.1-0.3 ms, so ONE pinned backend is one compile for
@@ -620,6 +634,9 @@ class Fp8DenseMethod:
         # choice below that dynamo cannot trace.
         self._opaque = False
         self._mk_args = None
+        # (wq, wsf, w_gs, rows, alpha): the nvfp4 pair for prefill rows, or
+        # None. Built by maybe_build_fp8_dense under _PREFILL_NVFP4_ENV.
+        self._nvfp4 = None
 
     def apply(self, layer, x, bias=None):
         if bias is not None:
@@ -639,6 +656,21 @@ class Fp8DenseMethod:
             return _mk_or_fp8_dense_gemm_op(
                 x, self._q, self._ws, self._rows, self._cols, *args
             )
+        # Lever 7: prefill rows on the nvfp4 pair when one was built. The MK
+        # lane below owns M <= 32, so the pair is never read for decode. A
+        # failure drops this layer's prefill to the fp8 pair for the rest of
+        # the boot -- loudly, and on every rank the same way (the fp8 pair
+        # is shape-agnostic, so ranks cannot diverge on it).
+        nv = self._nvfp4
+        if nv is not None and x.numel() // x.shape[-1] > _NVFP4_PREFILL_MIN_M:
+            try:
+                return _nvfp4_dense_gemm_op(x, *nv)
+            except Exception as e:
+                self._nvfp4 = None
+                logger.warning(
+                    "[fp8-dense] nvfp4 prefill pair failed (M=%d): %r -> fp8 "
+                    "pair for the rest of the boot",
+                    x.numel() // x.shape[-1], e)
         # deneb fork (glm53_megakernel): one persistent 48-block launch for
         # decode M<=32 (quant fused into the GEMM). Ineligible shapes return
         # None and run the stock pair below. No try/except around an armed
@@ -788,6 +820,55 @@ def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:
         (label + ": ") if label else "", _FREE_BF16_ENV, freed / 1e9, kept_bias)
     return freed
 
+def _nvfp4_pair_for(mod, method, weight, rows, name, seen):
+    """The nvfp4 pair for a PREFILL route on an fp8 method, or None.
+
+    Same discipline as the nvfp4 scheme: the alpha (dequant) convention is
+    settled once on the first layer that can carry it, by whichever sign
+    reproduces bf16; then every layer reuses it and a SAMPLE (the first
+    four, then one in 16) re-runs the value check. A layer whose check
+    fails keeps the fp8 pair for prefill."""
+    try:
+        wq, wsf, w_gs = _quantize_nvfp4(weight)
+    except Exception as e:
+        logger.warning("[fp8-dense] nvfp4 prefill pair skipped on %s: %r", name, e)
+        return None
+    if _NVFP4_ALPHA[0] is None:
+        for cand in (1.0, -1.0):
+            try:
+                if _copy_matches_source(
+                        mod, NvFp4DenseMethod(method, wq, wsf, w_gs, rows, cand),
+                        weight, rtol=4 * _STALE_RTOL,
+                        got_fn=lambda xx: _nvfp4_dense_gemm(
+                            xx, wq, wsf, w_gs, rows, cand),
+                ) is True:
+                    _NVFP4_ALPHA[0] = cand
+                    break
+            except Exception:
+                continue
+        logger.warning(
+            "[fp8-dense] nvfp4 alpha=%s backend=%s (resolved on %s for the "
+            "prefill pair, reused for the rest)",
+            _NVFP4_ALPHA[0], _NVFP4_BACKEND, name)
+    alpha = _NVFP4_ALPHA[0]
+    if alpha is None:
+        return None
+    if seen < 4 or seen % 16 == 0:
+        try:
+            ok = _copy_matches_source(
+                mod, NvFp4DenseMethod(method, wq, wsf, w_gs, rows, alpha),
+                weight, rtol=4 * _STALE_RTOL,
+                got_fn=lambda xx: _nvfp4_dense_gemm(
+                    xx, wq, wsf, w_gs, rows, alpha),
+            ) is not False
+        except Exception:
+            ok = False
+        if not ok:
+            logger.warning("[fp8-dense] nvfp4 prefill pair refused on %s (value check)", name)
+            return None
+    return (wq, wsf, w_gs, rows, alpha)
+
+
 def _attach_mk_pack(method, weight, cols) -> bool:
     """Attach the megakernel's W4 pack to an fp8 method that will SERVE.
 
@@ -887,6 +968,8 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         [], [], [], [], 0, 0)
     mk_packs = 0
     kda_owned = 0
+    prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"
+    nv_prefill = 0
     for name, mod in model.named_modules():
         if not any(p.search(name) for p in _include_patterns(env)):
             continue
@@ -1054,6 +1137,13 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 continue
             if attach_mk(method, weight, cols):
                 mk_packs += 1
+            if prefill_nv and weight.shape[1] % _NVFP4_BLOCK == 0:
+                pair = _nvfp4_pair_for(
+                    mod, method, weight, rows, name,
+                    len(quantized_w4) + len(quantized))
+                if pair is not None:
+                    method._nvfp4 = pair
+                    nv_prefill += 1
             mod.quant_method = method
             quantized.append(name)
             params += weight.numel()
@@ -1077,12 +1167,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
-        "copy check, %d MK W4 packs (%d held for MK-KDA)%s -- fingerprint for "
-        "the boot log",
+        "copy check, %d MK W4 packs (%d held for MK-KDA), %d nvfp4 prefill "
+        "pairs%s -- fingerprint for the boot log",
         type(model).__name__, env, scheme,
         len(quantized_w4), params_w4 * 2 / 1e9,
         len(quantized), params * 2 / 1e9, len(skipped), len(stale), mk_packs,
-        kda_owned,
+        kda_owned, nv_prefill,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
     if mk_packs == 0 and quantized_w4:

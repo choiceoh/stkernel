@@ -101,3 +101,16 @@ reads the fp8 copies and W4 packs through the opaque op, and no drafter
 linear carries a bias. `[fp8-dense] drafter: VLLM_GLM53_FP8_DENSE_FREE_BF16=1:
 released 0.73 GB of bf16 sources` is the line; the bytes come back before KV
 sizing.
+
+## Prefill on the nvfp4 pair — `VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4` (lever 7, 28차)
+
+The nvfp4 scheme (`VLLM_GLM53_FP8_DENSE=nvfp4`) replaces the method and so
+turns the MK lane off for every layer it takes (#263). This knob keeps the
+fp8 method and its W4 pack and ATTACHES an nvfp4 pair to it: rows above the
+MK lane's M (32) route to `mm_fp4` in `Fp8DenseMethod.apply`, decode keeps
+the W4 lane, the fp8 pair stays the fallback. The alpha convention is settled
+once and a sample of layers re-runs the value check, exactly as the scheme
+does; a failed check keeps that layer's prefill on fp8. Cost ~+1 GB/rank of
+copies. Target only (the drafter's forward never sees prefill rows). Gate:
+prefill ladder (dense GEMM is 14% of a 32K prefill; expect ~-8%) plus the
+served-numerics gates, since A4 activations are a quality change.
