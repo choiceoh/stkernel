@@ -54,7 +54,46 @@ ct_load_profile() {
   # shellcheck disable=SC1090
   . "$PROFILE_ENV"
   [ -n "$_caller" ] && eval "$_caller"
+  ct_check_profile_env_values
   return 0
+}
+
+# Both lanes hand profile-declared VLLM_* keys to docker as
+#   ENVV="$ENVV -e $_k=${!_k}"        ... docker run $COMMON $ENVV ...
+# with ENVV expanded UNQUOTED, because the word splitting is what turns it into
+# separate -e arguments. That mechanism cannot carry a value containing
+# whitespace, and it says nothing when it fails to. Reproduced with
+# VLLM_A={"x":"a b"}:
+#
+#   arg2 [VLLM_A={"x":"a]     <- the value is silently truncated
+#   arg3 [b"}]                <- and the remainder becomes a stray argument
+#                                to docker run
+#
+# hy4 already refuses whitespace in COMPILE_CFG for exactly this reason; the
+# general mechanism with the same shape had no guard on either lane. So: abort,
+# and name the value.
+#
+# The empty case is deliberately NOT flagged. The emit loop skips empty values
+# (`[ -n "${!_k:-}" ]`), and glm53's profile leans on that as an idiom: six
+# knobs are declared `=""` to document that they exist while leaving them
+# unset (B12X_FORCE_BACKEND, the three MAC ladders, STATIC_CUTOVER_PAIRS,
+# DECODABLE_VOCAB). A warning there would fire six times on every healthy boot,
+# which teaches the operator to ignore warnings -- worse than the silence.
+ct_check_profile_env_values() {
+  local _k _v
+  for _k in ${_vllm_keys:-}; do
+    [ -n "${!_k+x}" ] || continue
+    _v="${!_k}"
+    case "$_v" in
+      *[[:space:]]*)
+        echo "ABORT: $_k contains whitespace, which the -e mechanism cannot carry" >&2
+        echo "       value: $_v" >&2
+        echo "       ENVV is expanded unquoted so the value would be truncated at" >&2
+        echo "       the first space and the remainder passed to docker as a" >&2
+        echo "       stray argument." >&2
+        exit 2 ;;
+    esac
+  done
 }
 
 # --- EXTRA_ENV ---------------------------------------------------------------
