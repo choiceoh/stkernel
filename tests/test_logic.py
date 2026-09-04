@@ -6775,7 +6775,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     # so the gate no longer rejects a process layout (SD arrives as a
     # transposed view) or a non-contiguous view (page-aligned slots); it
     # refuses only overlapping / non-positive strides, and says them.
-    check("_conv_state_dim_first" not in reason
+    check("isinstance(kv, (tuple, list))" in reason
+          and "_conv_state_dim_first" not in reason
           and "conv_state.is_contiguous()" not in reason
           and "conv state strides %s overlap or are not positive" in reason
           and "slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1" in reason,
@@ -6792,14 +6793,20 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "slot stride; the gate names the recurrent strides it refuses")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
     kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
-    check("kda lane serving: first eligible step" in kt
+    kb = mk[mk.index("def kda_block(layer, hidden_states, positions)"):mk.index("class KdaShadowArm")]
+    check("kda lane CAPTURED into the decode graph" in kb and "_KDA_CAPTURED" in kb,
+          "kda_block says once when it is captured into the decode graph -- "
+          "the served step is a replay, no other line can see it")
+    check("kda lane serving: first eligible eager step" in kt
+          and "is_current_stream_capturing()" in kt and "kda lane tally: served=%d stock=%d capture=%d" in kt
           and "kda lane stock: %s" in kt and '"(routine)" not in reason' in kt
           and "_kda_eligible_said(_kda_meta(layer))" in mk,
           "the KDA takeover says once when a step first serves (armed or "
           "shadow) and once per distinct eligibility reason it does not; "
           "prefill steps stay silent (no boot tonight logged a KDA judgement)")
     hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
-    check("smlp lane serving: first fused call" in hook
+    check("smlp lane CAPTURED into the decode graph" in hook
+          and "smlp lane serving: first fused call" in hook
           and hook.count("_smlp_stock(") >= 4
           and "if T < 1 or T > MAX_TOK:\n        return None" in hook,
           "the smlp hook says once when it first serves and once per distinct "
@@ -6819,7 +6826,8 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "against the contiguous result")
     ok = mk[mk.index("def _kda_layout_ok(layer)"):
             mk.index("def _kda_ensure_packs")]
-    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok,
+    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok
+          and "has rejected %d calls" in ok,
           "a permanent rejection must be logged, once per distinct reason")
     check("return True" in ok and "_kda_layout_reason(layer)" in ok,
           "_kda_layout_ok must be the thin wrapper over the reason")
@@ -7614,7 +7622,9 @@ def test_osar_wait_is_split_by_message_size() -> None:
           and "osar_stall_check(c, sp, t0, STALL_GUARD" in cu
           and "osar_stall_check(c, sp, t2, STALL_WAIT" in cu
           and '"[oneshot] STALL rank=%d phase=%s seq=%llu slot=%d missing_peer_mask=0x%x "' in cu
-          and "#define OSAR_STALL_TRAP_S 30" in cu,
+          and "#define OSAR_STALL_TRAP_S 30" in cu
+          and cu.count("if (timer && c->pad[0] != 0) c->pad[0] = 0;") == 2
+          and "if (seq < 16) return;" in cu,
           "the two counters come OUT of the existing padding: anything that "
           "moved tx/rx would invalidate every peer's registered offsets")
     check("if (nbytes <= SPLIT_BYTES) {" in cu

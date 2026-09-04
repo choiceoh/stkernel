@@ -453,6 +453,10 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
     lens = valid_counts.contiguous()
     if lens.dtype != torch.int32:
         lens = lens.to(torch.int32)
+    if torch.cuda.is_current_stream_capturing() and not _MK_MLA_SHADOW.get("captured"):
+        _MK_MLA_SHADOW["captured"] = True
+        logger.warning("[megakernel] mla lane CAPTURED into the decode graph: T=%d "
+                       "(every replay runs mk_mla_kernel)", q_nope.shape[0])
     timing = (not _MK_MLA_SHADOW["checked"] and not torch.cuda.is_current_stream_capturing())
     if timing:
         ev = [torch.cuda.Event(enable_timing=True) for _ in range(3)]

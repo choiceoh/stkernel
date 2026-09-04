@@ -1930,6 +1930,11 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 | KDABF16SHADOW2(체인9) | (기본값 + `MK_KDA=1 +SHADOW`, e18751e 증명 줄) | 15.4 / 17.5 (창 17.5 / 17.9) | 생존 | **`kda lane serving: first eligible step T=32 n_spec=4`(캡처 더미 1회) → `kda lane stock: spec_sequence_masks is None (not a spec-verify batch)`** | **MK-KDA 는 프로덕션 스텝을 한 번도 서빙한 적 없음**(§11) |
 | KDABF16(체인9) | (기본값 + `MK_KDA=1`) | 16.9·17.2·16.9 (창 17.9·17.4·17.0) | 2,7xx | 완주 | = 기본값(서빙 안 됨) |
 | PROD(체인9, 03:10) | (기본값, e18751e) | 16.6·17.0·16.9 (창 17.9·17.4·16.9) | — | 완주, 스톨 없음 | **현재 프로덕션** |
+| KDAPROOF(체인10) | (기본값 + `MK_KDA=1`, c62db9c 집계 줄) | 16.2 / 17.4 (창 18.0 / 17.9) | — | 실제 스텝 집계 없음 | 러너의 list kv_cache 를 tuple 게이트가 거부(§12) |
+| K5(체인10) | `SPEC_K=5 SPEC_K_FORCE=1` | **부팅 불가** | — | 프로파일 런 샘플러 Triton 초기화 45분 정지 | K5 레버 미측정(§12) |
+| KDAPROOF2(체인11) | (기본값 + `MK_KDA=1`, a2eb3c2 list 허용) | 16.8 / 17.5 (창 17.9 / 17.9) | — | 여전히 집계 없음 → **그래프 재생 맹점** 확인(§12) | 캡처 증명 줄 407cfa3 → 체인12 |
+| PROD(체인11, 06:45) | (기본값, 00a3d3c) | 16.4·17.5·16.9 (창 17.5·17.5·17.2) | 2,628 / 2,709 | 3.83 tok/step, 9/9, 한국어 0/16 | 프로덕션 |
+| KDAPROOF3(체인12) | (기본값 + `MK_KDA=1`, e453bd7 캡처 줄) | (1회) | — | **`kda lane CAPTURED` + `mla lane CAPTURED`** | KDA 는 서빙 중이었고 이득 0 → 기본값 0 확정(§12) |
 | DEVLAB | `DEV_LAB=1` (c487603) | 17.0 (창 18.4) | — | 랩 op 실주행(§10) | 개발 부팅 |
 | PREP2 | `PREP_FUSED=1` 만 | 디코드 2~3회차 **행** | — | 워커 무응답 → RPC 타임아웃 | **불합격** (§2) |
 | PREP3 | `SPLITK=1` 만 | 16.7 [16.5, 16.8] | 2,687 / 2,686 | 수용률 레그에서 **엔진 사망** | **불합격** |
@@ -2027,6 +2032,16 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   rank 0/1/2 모두 36 → **152 µs** 로 늘었고(rank 3 은 48), 그 뒤 영구 정지. 프록시 오류 줄(`[oneshot] WC error`)은
   없음. 4 노드 RoCE f0 포트의 `out_of_sequence` 수천·`packet_seq_err` 수백~수천(누적) = 패브릭 재전송(QP 타임아웃
   14 = 67 ms 단위) — 대기 증가와 맞는 서명. 어느 위상(링 가드/피어 플래그)에서 굳는지는 커널이 말해야 한다.
+- **★최종 진단(07:03, 체인12 PROD 팔 한국어 레그, 계측 적중)**: rank 0·1·2 가 모두 `STALL phase=wait(peer-flags)
+  seq=284417 slot=1 missing_peer_mask=0x4 rxf[slot]={284417,284417,284413}` — 세 랭크가 같은 한 피어(rank 3 = srv4)의
+  플래그를 기다리고, 그 플래그는 4 시퀀스 전(284413)에 멈춤. rank 3 은 스톨 줄이 없음 = **AR 커널에 진입조차 못함**(AR 앞
+  커널에서 정지). 직전 10 s 창: rank 0 AR 대기 58 → **693 µs**, rank 3 자체의 copy 3.7 → 10.1 µs·guard 2.8 → 5.0(자기
+  GPU 일이 느려짐). 같은 창 srv4 `nemotron-vllm`: **06:58~07:04 임베딩 31건, 프롬프트 15,000 tok/s**(무거운 배치), GPU
+  96%. Xid·OOM 없음. → **rank 3 이 외부 임베딩 부하의 GPU 시분할에 굶겨져 AR 에 못 들어오고, 세 피어는 그 플래그를
+  기다리며 스핀** — 밤새 행 4건의 기전. 30 s 트랩이 5분 침묵 대신 즉시 엔진을 죽였다(`unspecified launch failure`).
+  처방은 운영: srv4 의 외부 GPU 서버를 내리거나 옮긴다. 코드로는 트랩 상한(`-DOSAR_STALL_TRAP_S`)만 남는다 — 굶주림
+  자체는 AR 이 고칠 수 없다.
+- **계측 오탐 수정(05:35)**: K5 부팅에서 `[oneshot] STALL rank=3 seq=2` 가 20 분간 5 s 마다 찍힘 — 부트스트랩의 정당한 피어 접속 대기가 워드를 쓰고 지워지지 않은 것(tx_seq/rxf 는 진행 중). 스핀 종료 시 워드 초기화 + seq<16 제외(f5f6456).
 - **계측 투입(01:45)**: `k_oneshot` 의 두 스핀 루프에 상한 — 3 s 를 넘으면 block 0 이 Ctrl 의 남은 pad 한 칸에
   (seq·위상·안 온 피어 마스크·슬롯)을 쓰고 프록시 스레드가 5 s 마다 `[oneshot] STALL rank=… phase=… seq=…
   missing_peer_mask=… tx_seq/ack_seq/rxf[slot]` 로 출력, 30 s 면 `__trap()` 으로 즉시 사망(5 분 침묵 대신). 다음
@@ -2040,7 +2055,8 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   bf16 로 내린다(`cs_bf16` 런치 플래그; 스톡 `causal_conv1d_update` 와 같은 반올림 지점). 게이트는 fp32/bf16 둘 다
   허용, 셀프테스트·벤치에 "bf16" 레이아웃(허용 2e-2). 노브 없이 기본값 부팅에서 KDA 를 켤 수 있다(체인8).
 - **bf16 conv 섀도 부팅(체인8 KDABF16SHADOW, 02:04)은 8K 프리필을 살아 넘겼다** — 4 노드 5 s 감시 최소 여유 19~24 GB(fp32 팔은 8~10%). fp32 mamba 캐시가 (conv 260 MB 이상으로) 풀 배치를 바꾸는 쪽이 유력. 단, 이 부팅에서도 `kda shadow #N` 판정 줄이 없다 → 층 게이트는 통과했지만 스텝 적격성이 조용히 거부한 것(§9 SMLP 와 같은 무장≠서빙). 적격성 사유 로그 + "kda lane serving" 증명 줄을 넣어 다음 팔이 판정.
-- **★판정(체인9, 02:41)**: 증명 줄이 답했다 — 프로덕션 디코드 스텝의 KDA 메타데이터는 `spec_sequence_masks is None`.
+- **판정 보류(체인9, 02:41 → 04:50 정정)**: 증명 줄 `spec_sequence_masks is None` 은 프리필 직후 **첫 디코드 스텝(드래프트 없음)** 에만 해당하고, "first eligible step" 은 캡처 더미에서 먼저 발화해 실제 스텝을 증명하지 못했다. V2 러너(`mamba_hybrid.prepare_attn`)는 정상 스텝(스케줄 8 = 드래프트 7 + 1)에 `num_decode_draft_tokens_cpu` 를 채우므로 spec 마스크는 정상 상태에서 존재한다. 남는 의문은 섀도 판정 줄이 한 번도 안 찍힌 것(`_kda_ensure_packs`/디바이스 게이트의 무로그 거부 가능). 증명 줄을 캡처 제외 + 512 호출마다 served/stock 집계로 고쳐 다음 팔이 확정한다. (아래 문단은 정정 전 가설.)
+- (정정 전) 프로덕션 디코드 스텝의 KDA 메타데이터는 `spec_sequence_masks is None`.
   이미지의 `GDNAttentionMetadataBuilder.build` 는 `num_decode_draft_tokens_cpu` 가 넘어올 때만 spec 마스크를 만드는데
   이 V2 러너의 `build_attn_metadata` 경로는 그 인자를 **아무도 넘기지 않는다** → 스톡 KDA 는 항상 비-spec(varlen)
   경로로 q=8 을 처리하고, MK-KDA 레인의 적격성·런치 계약(spec_query_start_loc·spec_state_indices·num_accepted)은
@@ -2050,6 +2066,33 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   그대로 쓰인다.
 - (구) KDA 부팅의 8K 프리필 순간 srv2 20 GB+ 일시 사용(두 번의 earlyoom)은 아직 미해명 — 4 노드 5 s 메모리 감시
   (`memwatch.log`) 아래서 다음 KDA 팔이 답한다. 정상 상태에선 KDA 부팅이 rank 0/1 여유를 오히려 17 GB 더 남긴다.
+
+### 12. 후속 세 건(운영자 "그릐라", 04:5x~)
+
+1. **MK-KDA 서빙 증명 재판정** — 체인10 KDAPROOF(05:07): "first eligible step T=24" 는 메모리 프로파일 더미, 실제 트래픽에선
+   47k 호출 동안 **집계 줄이 한 번도 없음** = 적격성 검사 앞에서 잘림. 원인: `_kda_layout_reason` 이 `layer.kv_cache` 를
+   tuple 로만 인정하는데 러너는 **list** 로 바인딩 → "not the pair yet" 문구가 매 스텝 반복되며 1회 로그 뒤 침묵(무장≠서빙
+   5건째의 진짜 기전). tuple/list 허용 + 같은 사유 2,000회 반복 시 경고(a2eb3c2) → 체인11 KDAPROOF2 가 판정.
+   → 체인11 KDAPROOF2: **여전히 집계 없음, 반복 경고도 없음.** 진짜 답: 서빙 디코드 스텝은 **FULL CUDA 그래프 재생**이라
+   파이썬 훅이 아예 돌지 않는다. 훅은 캡처 시점(과 eager 인 프로파일·프리필 스텝)에만 실행되므로 레인이 서빙되는지는
+   "캡처 때 그래프에 박혔는가"로만 알 수 있고, 섀도 판정기는 캡처를 건너뛰도록 설계돼 디코드를 한 번도 판정할 수 없었다
+   (오늘 밤 KDA 팔 9개의 침묵 전부 이것). `kda_block` 에 캡처 시점 "kda lane CAPTURED" 줄 추가(407cfa3) → 체인12
+   KDAPROOF3 이 최종 판정. 교훈: 그래프 아래 레인의 증명은 캡처 로그다 — 이후 모든 레인(SMLP·MLA 포함)에 같은 줄을 둔다.
+   → **체인12 KDAPROOF3(06:51) 최종**: `kda lane CAPTURED into the decode graph: T=32 n_spec=4` + `mla lane CAPTURED: T=32`.
+   **MK-KDA 는 서빙되고 있었다** — 그리고 디코드는 기본값과 같다(KDABF16 16.9·17.2·16.9 vs PROD 16.4~17.9). 판정: **KDA
+   레인 서빙 이득 ≈ 0**, 기본값 0 유지(SMLP 와 같은 결론). 밤새의 "서빙 안 됨" 가설은 철회. 남는 사실: stride·bf16 계약,
+   압축 판정기, 캡처 증명 줄은 유효; 34 층 KDA 블록의 스톡 체인이 이미 충분히 짧아 융합 이득이 브래킷 해상도 아래.
+   (원래 항목:) 증명 줄을 캡처 제외·512 호출 집계로 고쳐(c62db9c) 체인10 KDAPROOF 팔(기본값 + `MK_KDA=1`,
+   디코드 2회)이 `kda lane tally: served=… stock=…` 로 확정한다. 서빙되면 KDA 레인은 살아 있는 것이고 이득 0 이 판정;
+   안 되면 `_kda_ensure_packs`/디바이스 게이트의 무로그 거부(이번에 로그 추가)가 답.
+2. **K5 팔**(체인10 두 번째) — **부팅 불가**: 05:15 부팅이 45분간 초기화에서 멈춤. 헤드 Worker_TP0 가 `profile_run → _dummy_sampler_run → gumbel_sample` 의 Triton 커널 초기화(`_init_handles`)에 CPU 300%·GPU 96% 로 갇힘, 워커 3개는 유휴. K=5 에서 더미 샘플러 형상이 달라지며 생기는 초기화 병목(컴파일 루프 또는 거대 더미 배치)으로 보이며, K5 레버는 이 초기화를 따로 풀어야 잴 수 있다. 06:00 팔 중단 → PROD 진행. (원래 계획:) `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
+   가설: 검증 배치 (k+1) 토큰이 줄면 스텝당 서로 다른 전문가 수가 줄어 스텝이 빨라지고, tok/step 은 조금 준다 —
+   one-spark 는 같은 드래프터를 K5 로 서빙(구조화 4.94 tok/step). 판정은 tok/s(step/s × tok/step).
+3. ~~**2.05 bpw 품질 기준점**(one-spark, 1× Spark)~~ — **취소(06:25, 운영자 "원스파크 빌드 평가는 하지마")**. 체크포인트(80 GB)와 저장소는 srv4 에 보관만, 빌드·서빙·평가 없음. (원래 계획:) srv4 `~/one-spark`(2bd465d) + `~/models/GLM-5.3-Flash-exl3-2.05bpw`
+   (turboderp exl3 mul1, 80 GB) + DFlash2. 플릿을 내린 창에서 이미지 빌드(base `vllm/vllm-openai:glm53-flash-arm64-cu130`
+   + ExLlamaV3 e648f1a, MAX_JOBS 8, ~1 h) → `eval.sh`: 우리 게이트(품질 2K/32K·한국어 2×400·디코드 C=1·수용률)를
+   그들 서버(TP1, K5, fp8 KV)에 그대로. 답할 것: 2 bpw 가 우리 품질 게이트를 통과하는가(통과하면 전문가 2~3 bpw 가
+   27 ms 전문가 바닥을 절반으로 만드는 진짜 레버가 된다).
 
 ### 10. 부팅·벤치 병목 대책(운영자 "1,2,5,6 진행", 01:0x~)
 

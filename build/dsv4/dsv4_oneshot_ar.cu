@@ -170,6 +170,9 @@ __device__ __forceinline__ void osar_stall_check(Ctrl *c, int n, long long t_sta
                                                  uint64_t phase, uint64_t seq, int slot,
                                                  unsigned missing) {
   if ((n & 255) != 0) return;
+  // The bootstrap collectives wait for peers to connect (seconds, legitimately):
+  // no verdict before the protocol has run a few rounds.
+  if (seq < 16) return;
   const long long el = clock64() - t_start;
   if (el > (long long)(OSAR_STALL_S * OSAR_SM_HZ) && c->pad[0] == 0) {
     c->pad[0] = (seq << 8) | (phase << 6) | ((uint64_t)(missing & 7u) << 3) | (uint64_t)slot;
@@ -268,6 +271,9 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
       osar_backoff(sp, ns);
       if (timer) osar_stall_check(c, sp, t0, STALL_GUARD, want, (int)(want % RING), 0u);
     }
+    // a spin that ended is not a stall: clear the word so the proxy stops
+    // repeating a bootstrap-era wait (K5 boot 05:28: seq=2 printed for 20 min)
+    if (timer && c->pad[0] != 0) c->pad[0] = 0;
   }
   long long t1 = timer ? clock64() : 0;
   __syncthreads();
@@ -357,6 +363,7 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
         }
       }
     }
+    if (timer && c->pad[0] != 0) c->pad[0] = 0;
     s_landed = 1;
   } else if (h.n > 0 && threadIdx.x >= 32) {
     osar_prefetch(h, &s_landed);
