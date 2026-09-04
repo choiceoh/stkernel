@@ -237,3 +237,46 @@ ct_verify_image_uniform() {
   done
   CT_IMAGE_ID="$_hid"
 }
+
+# --- custom_ops axis ---------------------------------------------------------
+# ct_apply_custom_ops_axis <axis> <allow-empty 0|1>
+#
+# Rewrites COMPILE_CFG's custom_ops list to the requested axis. Both lanes did
+# this with sed; glm53's was unguarded and unanchored, and both gaps produce a
+# boot that measures the CONTROL arm while the caller believes the axis is set:
+#
+#   silent no-op    `sed 's/"all"/.../'` against a caller-supplied COMPILE_CFG
+#                   with no custom_ops matches nothing, and the launcher went
+#                   on to boot. Reproduced: the config comes out byte-identical.
+#   wrong field     the pattern was bare "all", and sed replaces the FIRST
+#                   match. With the built-in configs custom_ops IS first, so
+#                   they are safe; a caller config carrying "all" earlier gets
+#                   that other field rewritten instead. Reproduced.
+#
+# hy4 already refused both. This is that refusal, shared.
+#
+# allow-empty is a real lane difference, not an oversight: glm53 uses
+# CUSTOM_OPS_AXIS="" as its fusion arm (custom_ops:[""] removes the inductor
+# walls), so empty is a value there and merely unset in hy4. Anchored and bare
+# substitutions agree on that case -- verified -- so the arm is unchanged.
+ct_apply_custom_ops_axis() {
+  local _axis="$1" _allow_empty="${2:-0}"
+  if [ -z "$_axis" ]; then
+    if [ "$_allow_empty" != 1 ]; then
+      echo "ABORT: CUSTOM_OPS_AXIS must not be empty on this lane" >&2
+      exit 2
+    fi
+  elif [[ ! "$_axis" =~ ^(all|none|[+-][A-Za-z_][A-Za-z0-9_]*)$ ]]; then
+    echo "ABORT: CUSTOM_OPS_AXIS must be all, none, +op or -op (got '$_axis')" >&2
+    exit 2
+  fi
+  case "$COMPILE_CFG" in
+    *'"custom_ops":["all"]'*) ;;
+    *) echo "ABORT: CUSTOM_OPS_AXIS is set but COMPILE_CFG has no" >&2
+       echo "       \"custom_ops\":[\"all\"] to replace -- the substitution would be a" >&2
+       echo "       silent no-op and the boot would measure the control arm." >&2
+       exit 2 ;;
+  esac
+  COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed \
+    's/"custom_ops":\["all"\]/"custom_ops":["'"$_axis"'"]/')
+}

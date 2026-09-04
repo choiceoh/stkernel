@@ -9231,6 +9231,41 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "glm53 pins no value -- its tag moves by design -- but still requires "
           "the four nodes to agree")
 
+    # custom_ops axis: one substitution, anchored, and it refuses to be a no-op.
+    # glm53's copy was `sed 's/"all"/.../'` with no guard at all, which fails two
+    # ways against a caller-supplied COMPILE_CFG -- both reproduced before the
+    # consolidation: a config without custom_ops left the axis silently
+    # unapplied (the boot then measures the CONTROL arm while the caller
+    # believes otherwise), and a config carrying "all" ahead of custom_ops got
+    # that other field rewritten instead, because sed replaces the FIRST match.
+    check("ct_apply_custom_ops_axis()" in lib,
+          "the axis rewrite belongs in the library")
+    check('"custom_ops":\\["all"\\]' in lib,
+          "the substitution must be ANCHORED on custom_ops, not bare \"all\" -- "
+          "sed takes the first match and a caller config can carry it earlier")
+    check("silent no-op" in lib,
+          "the abort must name the failure it prevents")
+    axis_fn = lib[lib.index("ct_apply_custom_ops_axis()"):]
+    check('*\'"custom_ops":["all"]\'*) ;;' in axis_fn,
+          "the anchor must be CHECKED before substituting, or the rewrite is a "
+          "silent no-op when it is absent")
+    for name, src in lanes.items():
+        check("ct_apply_custom_ops_axis" in src,
+              "%s must use the shared axis rewrite" % name)
+        # neither the bare pattern glm53 used nor the anchored one may remain
+        # in a lane: the rewrite has exactly one home now.
+        check("""s/\\"all\\"/""" not in src,
+              "%s must not keep the bare \"all\" substitution" % name)
+        check('"custom_ops":\\["all"\\]/' not in src,
+              "%s must not keep its own anchored substitution either" % name)
+    # empty is a VALUE on glm53 (its fusion arm) and merely unset on hy4
+    check('ct_apply_custom_ops_axis "$CUSTOM_OPS_AXIS" 0' in lanes["start-hy4-tp4.sh"]
+          and '${CUSTOM_OPS_AXIS:-}' in lanes["start-hy4-tp4.sh"],
+          "hy4 applies the axis only when non-empty and disallows empty")
+    check('ct_apply_custom_ops_axis "${CUSTOM_OPS_AXIS:-}" 1' in lanes["start-glm53-nvfp4-tp4.sh"]
+          and '${CUSTOM_OPS_AXIS+x}' in lanes["start-glm53-nvfp4-tp4.sh"],
+          "glm53 keeps set-but-empty as its fusion arm (+x, allow-empty=1)")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "

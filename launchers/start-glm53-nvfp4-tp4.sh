@@ -137,13 +137,15 @@ if [ "${PIECEWISE:-0}" = 1 ]; then
   # CUSTOM_OPS_AXIS="" removes the walls entirely (fusion arm);
   # the default "all" is the control arm. One boot decides.
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true}}'
+  # Set-but-empty is this lane's fusion arm, so the test is +x, not :-.
   if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
-    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+    ct_apply_custom_ops_axis "${CUSTOM_OPS_AXIS:-}" 1
   fi
 else
   [ -n "${COMPILE_CFG:-}" ] || COMPILE_CFG='{"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["all"],"pass_config":{"fuse_gemm_comms":true,"fuse_allreduce_rms":true,"fuse_attn_quant":true}}'
+  # Set-but-empty is this lane's fusion arm, so the test is +x, not :-.
   if [ -n "${CUSTOM_OPS_AXIS+x}" ]; then
-    COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed 's/\"all\"/'"\"${CUSTOM_OPS_AXIS:-}\""'/')
+    ct_apply_custom_ops_axis "${CUSTOM_OPS_AXIS:-}" 1
   fi
 fi
 # Compact drops dummy slots when tokens*top_k > 640. That path is eager and
