@@ -6644,6 +6644,33 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     print("  kda owns its projections ...... OK")
 
 
+def test_ab_runner_measures_both_channels() -> None:
+    """The A/B arm runner must not be able to skip prefill.
+
+    Decode-only measurement has hidden prefill regressions in this lane more
+    than once, and prefill is TTFT -- what a user feels. The operator has
+    asked for both together repeatedly; a flag would let it be forgotten
+    again, so the script runs both unconditionally.
+    """
+    p = os.path.join(REPO, "launchers", "ab-glm53.sh")
+    src = open(p, encoding="utf-8").read()
+    check(os.access(p, os.X_OK), "ab-glm53.sh is executable")
+    check("bench/bracket.py" in src and "prefill_ladder.py" in src,
+          "one arm runs BOTH the decode leg and the prefill ladder")
+    check(src.index("bracket.py") < src.index("prefill_ladder.py"),
+          "decode first, prefill second, same boot")
+    body = src[src.index("== decode"):]
+    check("if" not in body.split("prefill_ladder.py")[0].split("== prefill")[0],
+          "prefill is unconditional -- no flag, no branch, no way to skip it")
+    check("step/s" in src and "tok/s" in src,
+          "the script states why step/s is the judgment channel: tok/s "
+          "carries the acceptance draw (30.9-43.0 vs 14.5-15.3 on 09-04)")
+    check("armed=" in src and "MK W4 packs" in src,
+          "each arm records the boot's own fingerprint -- the next boot "
+          "truncates the log, so an unrecorded arm is unauditable later")
+    print("  ab runner measures both ....... OK")
+
+
 def test_fused_k_gate_lazy_slot_exists() -> None:
     """The fused indexer forward must not read a slot nobody creates.
 
@@ -8887,6 +8914,7 @@ if __name__ == "__main__":
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()
+    test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()
