@@ -674,6 +674,20 @@ def _smlp_packs(mlp):
     return packs[0], packs[1]
 
 
+_SMLP_SAID = set()
+_SMLP_FUSED_CALLS = 0
+
+
+def _smlp_stock(reason):
+    """None for the hook, and the reason once per distinct text: an armed
+    segment that the served forward never reaches is the 28차 pattern
+    ("armed" read as "serving"); the boot log must be able to tell."""
+    if reason not in _SMLP_SAID:
+        _SMLP_SAID.add(reason)
+        logger.warning("[megakernel] smlp lane stock: %s", reason)
+    return None
+
+
 def smlp_forward(mlp, x):
     """Glm5NextMLP.forward hook: the fused launch, or None (stock runs).
 
@@ -685,14 +699,20 @@ def smlp_forward(mlp, x):
     its own reduce_results contract."""
     import torch
 
-    if not _ARMED["smlp"] or x.dim() != 2 or x.dtype != torch.bfloat16:
+    global _SMLP_FUSED_CALLS
+    if not _ARMED["smlp"]:
         return None
+    if x.dim() != 2 or x.dtype != torch.bfloat16:
+        return _smlp_stock("x is %s %s, not a 2-D bf16 row batch"
+                           % (tuple(x.shape), x.dtype))
     T, k = x.shape
-    if T < 1 or T > MAX_TOK or k % 128 != 0 or k > MK_GEMM_KMAX:
-        return None
+    if T < 1 or T > MAX_TOK:
+        return None   # prefill rows: routine, not a reason to say
+    if k % 128 != 0 or k > MK_GEMM_KMAX:
+        return _smlp_stock("k=%d is not a multiple of 128 <= %d" % (k, MK_GEMM_KMAX))
     packs = _smlp_packs(mlp)
     if packs is None:
-        return None
+        return _smlp_stock("gate_up/down carry no single MK W4 pack")
     gu_pack, d_pack = packs
     n_gu = int(mlp.gate_up_proj.output_size_per_partition)
     n_int = int(mlp.down_proj.input_size_per_partition)
@@ -701,11 +721,23 @@ def smlp_forward(mlp, x):
             or n_gu > SMLP_GU_MAX
             or gu_pack[0].shape[1] != k // 128
             or d_pack[0].shape[1] != n_int // 128):
-        return None
+        return _smlp_stock("geometry n_gu=%d n_int=%d k=%d packs %s/%s"
+                           % (n_gu, n_int, k, tuple(gu_pack[0].shape),
+                              tuple(d_pack[0].shape)))
     act = getattr(mlp, "act_fn", None)
     limit = float(getattr(act, "swiglu_limit", 0.0) or 0.0)
     alpha = float(getattr(act, "alpha", 1.0))
     beta = float(getattr(act, "beta", 0.0))
+    _SMLP_FUSED_CALLS += 1
+    if _SMLP_FUSED_CALLS == 1:
+        capturing = False
+        try:
+            capturing = bool(torch.cuda.is_current_stream_capturing())
+        except Exception:
+            pass
+        logger.warning("[megakernel] smlp lane serving: first fused call "
+                       "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
+                       T, k, n_int, n_out, limit, capturing)
     return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                       limit, alpha, beta)
 

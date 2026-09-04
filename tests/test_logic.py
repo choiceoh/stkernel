@@ -6576,6 +6576,13 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           and "int(conv_state.stride(2))" in launch,
           "the launch carries the three conv-state strides")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
+    hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
+    check("smlp lane serving: first fused call" in hook
+          and hook.count("_smlp_stock(") >= 4
+          and "if T < 1 or T > MAX_TOK:\n        return None" in hook,
+          "the smlp hook says once when it first serves and once per distinct "
+          "reason it does not (armed != serving, 28차); prefill rows are "
+          "routine and silent")
     check('fx.mk_run(v, layout=lay)' in st and '("pad", "sd")' in st,
           "the self-test runs the padded-slot and SD-transposed views "
           "against the contiguous result")
@@ -6821,12 +6828,14 @@ def test_mk_smlp_hook_and_contracts() -> None:
     hand-off; the hook never reduces (the linear's reduce_results contract
     stays with the caller).
     """
-    calls = []
+    import types
+    calls, said = [], []
     ns = load_defs(
         "overlay/glm53_megakernel.py",
         {"_ARMED", "MAX_TOK", "MK_GEMM_KMAX", "SMLP_GU_MAX", "_smlp_packs",
-         "smlp_forward"},
+         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
         {"os": os, "re": re,
+         "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
          "_smlp_call": lambda *a: calls.append(a) or "fused"},
     )
     import types
@@ -6861,6 +6870,13 @@ def test_mk_smlp_hook_and_contracts() -> None:
         args = calls[-1]
         assert args[3:] == (1024, 512, 4096, 10.0, 1.0, 0.0), args[3:]
         assert f(mlp, _X(33, 4096)) is None           # T beyond the lane
+        # the proof lines: the first fused call says so once; a distinct
+        # stock reason says itself once; prefill rows are silent
+        assert any("smlp lane serving: first fused call" in a[0] for a in said), said
+        n_said = len(said)
+        assert f(mlp, _X(33, 4096)) is None and len(said) == n_said
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
+        assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
         assert f(mlp, _X(8, 4096, dtype="fp16")) is None
         assert f(mlp, _X(8, 4160)) is None            # k not a multiple of 128
         # a K-chunked (list) pack or a missing pack -> stock
