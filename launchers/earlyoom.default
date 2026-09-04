@@ -24,10 +24,17 @@
 #    reserves 10 GiB -- so a good boot never crosses it. "-m 2" (2.4 GiB)
 #    was under the watermark: by the time it could fire, it could not fork.
 #
+# Both stages are set explicitly. earlyoom derives the SIGKILL thresholds as
+# HALF of the SIGTERM ones when they are not given, which on the first
+# install produced "SIGKILL when mem <= 2.47% and swap <= 50.00%" -- a swap
+# condition this fleet never meets (see above) and a memory line under the
+# watermark. So: SIGTERM at 6 GiB, SIGKILL at 4.5 GiB (still above the
+# 4.0 GiB line), swap non-binding for both.
+#
 # Kill target: the engine, on purpose. When the floor IS crossed the engine
 # is the runaway, and the alternative is losing the node, which loses the
 # engine anyway. The ledger's earlier "--avoid vllm" was the right call
 # against PERCENTAGE thresholds that fired on healthy resident models; an
 # absolute floor below healthy steady state removes that failure mode, so
 # the preference flips. The management plane stays protected.
-EARLYOOM_ARGS="-M 6291456 -s 100 -r 60 -n --prefer '(VLLM::Worker|vllm|pt_main_thread|python3)' --avoid '(sshd|systemd|dockerd|containerd|tailscaled|deneb-gateway|sparkfleet|earlyoom)'"
+EARLYOOM_ARGS="-M 6291456,4718592 -s 100,100 -r 60 -n --prefer '(VLLM::Worker|vllm|pt_main_thread|python3)' --avoid '(sshd|systemd|dockerd|containerd|tailscaled|deneb-gateway|sparkfleet|earlyoom)'"
