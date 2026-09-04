@@ -630,11 +630,11 @@ bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 
 10. **EXP-7 이 붙은 뒤 드래프터 D 를 다시 잰다** — 9월 1일 트레이스에서 드래프터 ~4.3 ms 는 다음 스텝의 호스트 준비 유휴 뒤에 숨어 있었다(그래서 D≈0). 은신처가 사라지면 임계경로에 올라온다(천장 ~6%; fc GEMM 809 us 는 K=20480 직렬 스케줄이라 split-K 후보). #104 를 지금 재론하는 것이 아니라 조건이 바뀐 뒤의 재측정이다. 오프라인으로 닫을 >1% 레버는 더 없다(STEP_KERNEL_MAP 보충 분해 3).
 11. **EXP-10 (드래프터 GEMM → MK W4)** — **닫힘, 기본값(2026-09-04, 28차)**: 서빙된 브래킷 C=1 step/s 15.95 → 16.235(+1.8%), 수용률·품질·한국어·프리필 게이트 통과. 첫 브래킷의 0 은 컴파일 캐시가 옛 bf16 그래프를 서빙한 탓 — 노브는 이제 캐시 키이고 부팅 로그가 `drafter lane serving: 30 of 31` 로 증명한다. MK-MLA 서빙 사망(스크래치 재할당)도 같은 항목에서 수정.
 12. **EXP-12 (서빙 PDL)** — 프로브(그래프 체인) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
-13. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
 13. **EXP-13 (AR 프리페치)** — 컴파일 → 4랭크 disttest → 브래킷(EXP-6+12 위). 수치 불변.
 14. **EXP-14 (MK_SEG_MOE go/no-go)** — 프로브 하나가 착수 여부를 정한다. 90% 규칙.
 
 12. **EXP-11 (dsv4 에 MK_SEG_MHC)** — 2단계는 **부팅 없음**: srv2 에서 서빙 컨테이너가
+13. **EXP-17 (로컬 양자화 경로)** — srv2 빈 창 프로브 셋(스윕 `same`·exact·동시 실행) 뒤 EXP-6 브래킷의 cand 팔에 얹는다. 단독 부팅 없음.
     비었을 때(`docker ps`) `bash probes/run_megakernel_bench.sh --profile dsv4 --iters 20`.
     판정은 rel 1e-3 + T=8/16 의 dispatch 행(`hit=yes` 인 행만 의미가 있다). 이기면
     3단계 브래킷인데 그건 **프로덕션 dsv4 의 다운타임 창**이고 EXP-10 의 GLM 브래킷과
