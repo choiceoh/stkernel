@@ -9386,6 +9386,38 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
           "too little memory must refuse, so callers fall back to their "
           "configured value the way they already do for an unreachable node")
 
+    # #282 gave the two LAUNCHERS the .. check and stopped there. The same
+    # validation existed in two more places, and one of them is the earliest
+    # producer: compose-overlays.sh glues TARGET_PREFIX onto a relative target,
+    # so a module writing "../../x" satisfies the prefix test while pointing
+    # outside the root. Reproduced -- it composed clean and reached the
+    # manifest. deploy-overlays.sh then distributes that manifest. All four
+    # sites share one implementation now.
+    for name in ("compose-overlays.sh", "deploy-overlays.sh"):
+        src = open(os.path.join(REPO, "launchers", name), encoding="utf-8").read()
+        check("lib/common-tp4.sh" in src,
+              "%s must source the shared library" % name)
+        check("ct_check_overlay_target" in src,
+              "%s validates manifest targets, so it uses the shared check" % name)
+        check("unsafe character in target" not in src
+              and "outside the profile's package root" not in src
+              and "outside $PROFILE's TARGET_PREFIX" not in src,
+              "%s must not keep its own copy" % name)
+    # compose knows which module bound the target; that diagnostic must survive
+    comp = open(os.path.join(REPO, "launchers", "compose-overlays.sh"),
+                encoding="utf-8").read()
+    check('ct_check_overlay_target "$target" "$TARGET_PREFIX" "$mod' in comp,
+          "compose passes the module as context -- naming the offender is worth "
+          "more than saving an argument")
+    check('_ctx="${3:-}"' in lib,
+          "the context argument is optional, so the launchers need not pass one")
+    # and it must run AFTER the relative-target expansion, or the .. case is
+    # unreachable at the one place that can name the module
+    check(comp.index('target="${TARGET_PREFIX}${target}"')
+          < comp.index("ct_check_overlay_target"),
+          "compose expands a relative target before validating it, which is "
+          "exactly what makes the .. case reachable there")
+
     check("hy4" not in foreign["start-hy4-tp4.sh"].split("'")[1]
           and "glm53" not in foreign["start-glm53-nvfp4-tp4.sh"].split("'")[1],
           "a lane must not name ITSELF foreign -- it would refuse to restart "
