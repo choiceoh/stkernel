@@ -371,6 +371,13 @@ def _eligible(t):
         and t.is_cuda
         and t.is_contiguous()
         and t.numel() <= _MAXEL
+        # k_oneshot's copy/reduce phases run 16B vector lanes; an unaligned
+        # tensor would trip the extension's alignment TORCH_CHECK (fatal in
+        # real mode), so route it to NCCL instead. Rank-consistent like the
+        # shape checks above: every rank runs the same producer code, and the
+        # caching allocator's blocks are 512B-aligned, so alignment is a
+        # property of the (identical) view chain, not of allocator state.
+        and t.data_ptr() % 16 == 0
     )
 
 

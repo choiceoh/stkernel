@@ -101,3 +101,23 @@ ssh srv4 'docker rm -f tmp-src 2>/dev/null; \
 # the hash must equal the manifest's third column
 scp srv4:/tmp/glm53_tilelang.py .
 ```
+
+## TileLang pass-config re-enable — `VLLM_GLM53_MHC_PASSES` (default off, 2026-09-04)
+
+The image's `tilelang_kernels.py` disables BOTH `TL_DISABLE_TMA_LOWER` and
+`TL_DISABLE_WARP_SPECIALIZED` for every mhc kernel with no recorded reason,
+while GB10 does have TMA (the deep_gemm sm120 impls use CUtensorMap loads).
+`VLLM_GLM53_MHC_PASSES` is the offline A/B for that choice:
+
+- `"tma"` / `"ws"` / `"tma,ws"` flip the matching `TL_DISABLE_*` to False for
+  EVERY kernel in the module (stock pair + onepass) at import; `"none"` is the
+  explicit stock combo. Unset or unparseable = byte-identical stock dict.
+- The value compiles in at import (like the sibling knobs); an armed boot logs
+  `[deneb] VLLM_GLM53_MHC_PASSES=... TL_DISABLE_...=...` for engine-confirmed
+  verification.
+- `probes/run_mhc_glm53_bench.sh --passes` loops the four combos, each in its
+  own container (pass configs freeze at import), with the stock combo saving
+  the numerics reference and the others gated at rel ≤ 1e-4 against it.
+- Contrast PDL: `ENABLE_PDL` is dead here on purpose — the image seals PDL on
+  SM12x ("unvalidated, races on KDA state kernels", `platforms/cuda.py`), so
+  that axis is closed, not merely untried.

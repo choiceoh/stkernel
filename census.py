@@ -3,10 +3,14 @@
 
 CUPTI 의 절대 시간은 못 믿는다 -- 앞선 세션에서 GPU 바쁜 시간이 136ms 로
 부풀려졌다(실측 스텝 47.6ms). 개수는 프로파일링 오버헤드와 무관하므로 개수를
-정본으로 쓰고, 시간은 참고로만 병기한다.
+정본으로 쓰고 시간은 참고로만 병기한다.
 
 분모: 스텝당 정확히 1회 도는 커널(리젝션 샘플러). 앞선 인구조사가 스텝 수를
 추정해서 틀렸다.
+
+인접성 모드 (--after REGEX): 특정 커널(예: k_oneshot) 직후 같은 스트림에서
+몇 번째 커널이 도는지 센다. "AR 뒤에 무엇이 붙는다"류 주장을 소스 추정이
+아니라 트레이스로 확정할 때 쓴다 -- 그룹 합계는 소스를 읽기 전까지 의문점이다.
 """
 import gzip, json, os, re, sys
 from collections import defaultdict
@@ -56,15 +60,38 @@ def iter_events(path):
                 return
 
 
-path = sys.argv[1]
+# ---- args: [trace] [--after REGEX] [--depth N] --------------------------
+_path = None
+after = None
+depth = 2
+_args = sys.argv[1:]
+_i = 0
+while _i < len(_args):
+    _a = _args[_i]
+    if _a == "--after" and _i + 1 < len(_args):
+        after = _args[_i + 1]; _i += 2
+    elif _a == "--depth" and _i + 1 < len(_args):
+        depth = int(_args[_i + 1]); _i += 2
+    elif _path is None:
+        _path = _a; _i += 1
+    else:
+        print(f"?? 인수 무시: {_a}"); _i += 1
+if not _path:
+    print("usage: census.py <trace.json.gz> [--after REGEX] [--depth N]")
+    sys.exit(1)
+path = _path
+
 cnt, dur = defaultdict(int), defaultdict(float)
 n_ev = 0
+evs = [] if after else None   # 인접성 모드만 (pid,tid,ts,name) 을 모은다
 for e in iter_events(path):
     if e.get("ph") != "X" or "kernel" not in (e.get("cat") or ""):
         continue
     n_ev += 1
     n = e.get("name", "?")
     cnt[n] += 1; dur[n] += e.get("dur", 0.0)
+    if evs is not None:
+        evs.append((e.get("pid"), e.get("tid"), e.get("ts", 0), n))
 if not cnt:
     print("!! kernel 이벤트 없음 — 캡처 실패"); sys.exit(1)
 
@@ -82,6 +109,38 @@ if steps:
 else:
     print("# !! 스텝 분모 커널을 못 찾음 — 아래는 총계이고 스텝당이 아니다")
     steps = 1
+
+# ---- 인접성 모드: 매칭 커널 직후 같은 (pid,tid) 스트림에서 도는 커널 ----
+if after:
+    pat = re.compile(after)
+    # 토치 프로파일러 커널 이벤트는 pid=디바이스, tid=스트림이므로 (pid,tid) 가
+    # 스트림 식별자다. 다른 스트림의 커널은 '직후'가 아니다(profile-step.py 와
+    # 같은 규율).
+    streams = defaultdict(list)
+    for pid, tid, ts, n in evs:
+        streams[(pid, tid)].append((ts, n))
+    for s in streams.values():
+        s.sort(key=lambda t: t[0])
+    succ = [defaultdict(int) for _ in range(depth + 1)]
+    anchors = 0
+    for s in streams.values():
+        for idx, (_ts, n) in enumerate(s):
+            if not pat.search(n):
+                continue
+            anchors += 1
+            for d in range(1, depth + 1):
+                if idx + d < len(s):
+                    succ[d][s[idx + d][1]] += 1
+    print(f"\n# 인접성: /{after}/ 매칭 {anchors}회 ({anchors/steps:.1f}/스텝)")
+    if anchors == 0:
+        print("!! 매칭 0 — 정규식 확인"); sys.exit(0)
+    for d in range(1, depth + 1):
+        tot = sum(succ[d].values())
+        print(f"\n## +{d}번째 커널 (총 {tot}, {tot/anchors*100:.0f}%가 매칭에 뒤따름)")
+        for n, c in sorted(succ[d].items(), key=lambda x: -x[1])[:15]:
+            print(f"  {c/anchors*100:5.1f}%  {c/steps:7.1f}/step  {n[:96]}")
+    print("\n# ⚠ 개수는 정본, us 는 왜곡 — census 본문 주석과 동일 규율.")
+    sys.exit(0)
 
 # 그룹핑 규칙 (우리 소유 / 남의 것)
 GROUPS = [
