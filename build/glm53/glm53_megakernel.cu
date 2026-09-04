@@ -769,13 +769,18 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
     uint2 xq[RPW];
     uint32_t apk[RPW];  // the rows' e4m3 packs
     float asc[RPW];     // the rows' wgs-folded scales
+    // rows this warp owns that exist: 1 at m = 8 (C=1), 4 at m = 32. A
+    // block-uniform bound, so the unrolled loops below stay convergent and
+    // the m=8 launch does a quarter of the m=32 work (the first v2 form
+    // clamped every row like the prologue and paid 4x at m=8).
+    const int nrows = (c.m - qw + MK_WARPS - 1) / MK_WARPS;  // rows qw+8i < m
     auto stage_a_load = [&](int kb) {
       if (local_q) {
 #pragma unroll
-        for (int i = 0; i < RPW; ++i) {
-          const int r = min(qw + i * MK_WARPS, c.m - 1);
-          xq[i] = *(const uint2*)(c.x + (size_t)r * c.k + kb * KSTEP + ql * 4);
-        }
+        for (int i = 0; i < RPW; ++i)
+          if (i < nrows)
+            xq[i] = *(const uint2*)(c.x + (size_t)(qw + i * MK_WARPS) * c.k +
+                                    kb * KSTEP + ql * 4);
         return;
       }
 #pragma unroll
@@ -810,9 +815,11 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
       for (int off = 16; off; off >>= 1)
 #pragma unroll
         for (int i = 0; i < RPW; ++i)
-          mxq[i] = fmaxf(mxq[i], __shfl_xor_sync(0xffffffffu, mxq[i], off));
+          if (i < nrows)  // block-uniform: every lane takes the same branch
+            mxq[i] = fmaxf(mxq[i], __shfl_xor_sync(0xffffffffu, mxq[i], off));
 #pragma unroll
       for (int i = 0; i < RPW; ++i) {
+        if (i >= nrows) break;
         const float sc = mk_pow2_scale(mxq[i]);
         const float rsc = 1.0f / sc;  // exact: sc is a power of two
         uint32_t pack = 0;
