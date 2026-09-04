@@ -321,6 +321,61 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
     return ok
 
 
+def probe_stamps2(iters: int) -> bool:
+    """v2 unit timeline per shape (needs VLLM_GLM53_MK_PHASE_TS=1 so the
+    build stamps g_mk2_ts): entry skew across units, first-record latency,
+    loop time, tail (last exit - median exit) and the event span, from one
+    cold-L2 launch after warm-up. Tells whether a shape's ksr leaves a
+    balance tail or pays too many ring fills."""
+    from vllm.model_executor.layers import glm53_megakernel as mk
+
+    ext = mk._build()
+    _lane(ext, 1)
+    print(f"{'v2 stamps':<24}{'units':>6}{'ksr':>4}{'skew':>7}{'first':>7}"
+          f"{'loop':>7}{'tail':>7}{'span':>7}{'ev_us':>7}")
+    for m, n, k in GEMM_SHAPES:
+        torch.manual_seed(0)
+        w = torch.randn(n, k, dtype=torch.bfloat16, device=DEV) * 0.05
+        x = torch.randn(m, k, dtype=torch.bfloat16, device=DEV)
+        p4 = mk.build_mk_weight_w4(w)
+        del w
+        plan = list(ext.gemm2_plan(m, n, k))
+        units = plan[2]
+        for _ in range(3):
+            mk._gemm_call(x, p4, n)
+        torch.cuda.synchronize()
+        ext.read_ts2()  # clear
+        _l2_flush(hot=(x,))
+        s = torch.cuda.Event(enable_timing=True)
+        e = torch.cuda.Event(enable_timing=True)
+        s.record()
+        mk._gemm_call(x, p4, n)
+        e.record()
+        torch.cuda.synchronize()
+        ev = s.elapsed_time(e) * 1e3
+        ts = list(ext.read_ts2())
+        if not ts:
+            print("  (no stamps: build with VLLM_GLM53_MK_PHASE_TS=1)")
+            return True
+        rows = [ts[u * 4:u * 4 + 4] for u in range(units)]
+        rows = [r for r in rows if all(v > 0 for v in r)]
+        if not rows:
+            print(f" gemm m={m:<3}n={n:<5}k={k:<5}  no complete unit stamps")
+            continue
+        t0 = min(r[0] for r in rows)
+        ent = sorted(r[0] - t0 for r in rows)
+        first = sorted(r[1] - r[0] for r in rows)
+        loop = sorted(r[2] - r[1] for r in rows)
+        exits = sorted(r[3] - t0 for r in rows)
+        med = lambda a: a[len(a) // 2] / 1e3
+        print(f" gemm m={m:<3}n={n:<5}k={k:<5}{units:>6}{plan[1]:>4}"
+              f"{ent[-1] / 1e3:>7.1f}{med(first):>7.1f}{med(loop):>7.1f}"
+              f"{(exits[-1] - exits[len(exits) // 2]) / 1e3:>7.1f}"
+              f"{exits[-1] / 1e3:>7.1f}{ev:>7.1f}")
+    _lane_restore(ext)
+    return True
+
+
 def probe_exact(gemm2: str = "both") -> bool:
     """The load-bearing W4 gate: weights ON the e2m1 grid pack losslessly,
     so the kernel must reproduce a torch fp32 matmul of the kernel-
@@ -597,6 +652,8 @@ def main() -> int:
     ap.add_argument("--gemm2", choices=("0", "1", "both"), default="both")
     ap.add_argument("--ksr2-sweep", default=None,
                     help="comma list of v2 slice counts to force per shape, e.g. 1,2,4,6,8")
+    ap.add_argument("--stamps2", action="store_true",
+                    help="v2 per-unit timeline (VLLM_GLM53_MK_PHASE_TS=1 build)")
     args = ap.parse_args()
     if args.gemm_shapes:
         GEMM_SHAPES[:] = [tuple(int(v) for v in t.split(":")) for t in args.gemm_shapes.split(",")]
@@ -637,6 +694,8 @@ def main() -> int:
         ok &= probe_gemm(args.iters, args.gemm2, sweep)
     if "exact" in segs:
         ok &= probe_exact(args.gemm2)
+    if args.stamps2 and "gemm" in segs:
+        ok &= probe_stamps2(args.iters)
     if "mhc" in segs:
         if args.stock in ("raw", "both"):
             ok &= probe_mhc(args.iters, sk)
