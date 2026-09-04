@@ -8837,6 +8837,84 @@ def test_drafter_fc_probe_contracts() -> None:
     print("  drafter fc probe contracts .. OK")
 
 
+def test_hy4_entrypoint_carries_the_production_knobs() -> None:
+    """One launcher, and it must not quietly serve differently than the fork it replaces.
+
+    srv2 ran a 481-line fork of this launcher (~/start-hy4-tp4.sh, dated
+    08-30) while the repo copy was refactored to 655. Unifying on the repo
+    copy is right -- the fork has no memfree preflight, no overlay
+    attestation, no EXTRA_ENV collision guard -- but the refactor had
+    dropped five things the fork was still passing, and deploying it as-is
+    would have changed serving with nothing saying so:
+
+      --long-prefill-token-threshold   (fork: 2048; repo: flag absent)
+      SPEC_METHOD switch               (fork: dspark|draft-model; repo: dspark hardcoded)
+      VLLM_INTERACTIVE_RESERVE         (fork: 0)
+      VLLM_INTERACTIVE_BULK_CHUNK      (fork: 1024)
+      VLLM_DSPARK_CONFIDENCE_*         (fork: off / 0.0 / 0)
+
+    The knobs live in profiles/dsv4.env now. This holds the entry point
+    against the fork so the same silent divergence cannot come back.
+    """
+    launcher = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+                    encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "dsv4.env"),
+                   encoding="utf-8").read()
+
+    # 1. long prefill: the flag is conditional, so both halves must be present
+    check('${LONG_PREFILL:+--long-prefill-token-threshold' in launcher,
+          "--long-prefill-token-threshold must stay conditional on LONG_PREFILL: "
+          "dropping the flag hands long prefills to the default scheduler path")
+    check(re.search(r"^LONG_PREFILL=2048$", profile, re.M) is not None,
+          "the profile carries the production long-prefill threshold")
+
+    # 2. the speculative method is a switch again, not a hardcoded string
+    check('SPEC_METHOD="${SPEC_METHOD:-dspark}"' in launcher,
+          "SPEC_METHOD selects the speculative lane; hardcoding dspark in the "
+          "serve script removed the draft-model path entirely")
+    check('--speculative-config "${SPEC_JSON}"' in launcher,
+          "the serve command reads the JSON the branch built, not a literal")
+    check('draft_kv_cache_dtype' in launcher and 'DRAFT_PATH' in launcher,
+          "the draft-model arm still reads DRAFT_PATH/DRAFT_KV")
+
+    # 3. every knob the fork passed reaches the container
+    for var in ("SPEC_METHOD", "DRAFT_PATH", "DRAFT_KV",
+                "VLLM_DFLASH_DRAFT_BLOCK_SIZE", "LONG_PREFILL"):
+        check("-e %s=" % var in launcher,
+              "%s must be passed to the container -- the serve script reads it "
+              "from the environment" % var)
+
+    # 4. profile-declared VLLM_* keys ride the _vllm_keys loop; these are the
+    #    ones the fork passed by hand.
+    for key in ("VLLM_INTERACTIVE_RESERVE", "VLLM_INTERACTIVE_BULK_CHUNK",
+                "VLLM_DSPARK_CONFIDENCE_SCHEDULER",
+                "VLLM_DSPARK_CONFIDENCE_THRESHOLD", "VLLM_DSPARK_TOPK_GATHER"):
+        check(re.search(r"^%s=" % key, profile, re.M) is not None,
+              "%s belongs to the profile now that the fork is gone" % key)
+    check("-e VLLM_DFLASH_DRAFT_BLOCK_SIZE=" in launcher
+          and re.search(r"^VLLM_DFLASH_DRAFT_BLOCK_SIZE=", profile, re.M) is None,
+          "VLLM_DFLASH_DRAFT_BLOCK_SIZE is plumbed from DRAFT_BLOCK, so the "
+          "profile must NOT also declare it -- the _vllm_keys loop would add a "
+          "second -e and docker keeps the last one")
+
+    # 5. caller env still wins over the profile for the restored names
+    preserve = launcher[launcher.index("for _v in IMAGE MODEL_PATH"):]
+    preserve = preserve[:preserve.index("$_vllm_keys; do")]
+    for var in ("DRAFT_BLOCK", "DRAFT_KV", "DRAFT_PATH", "LONG_PREFILL",
+                "SPEC_METHOD"):
+        check(var in preserve,
+              "%s must be in the caller-precedence list, or a one-off "
+              "`%s=... bash launchers/start-hy4-tp4.sh` loses to the profile" % (var, var))
+
+    # 6. GPU_MEM is pinned in the profile, which is what stops the preflight
+    #    from trading host headroom for KV on a production boot nobody measured.
+    check(re.search(r"^GPU_MEM=0\.60$", profile, re.M) is not None,
+          "GPU_MEM stays pinned at the production value: _GPU_MEM_PINNED is "
+          "recorded after the profile loads, so this is what keeps the memfree "
+          "preflight from raising 0.60 to ~0.744 unmeasured")
+    print("  hy4 entry point parity ........ OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -8937,5 +9015,6 @@ if __name__ == "__main__":
     test_kda_conv_state_layout_is_the_arming_contract()
     test_fp8_dense_build_peak_pays_only_for_what_serves()
     test_kda_owns_its_projections_across_dense_schemes()
+    test_hy4_entrypoint_carries_the_production_knobs()
     print(f"all OK ({PASS} checks)")
 
