@@ -2027,6 +2027,7 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
   rank 0/1/2 모두 36 → **152 µs** 로 늘었고(rank 3 은 48), 그 뒤 영구 정지. 프록시 오류 줄(`[oneshot] WC error`)은
   없음. 4 노드 RoCE f0 포트의 `out_of_sequence` 수천·`packet_seq_err` 수백~수천(누적) = 패브릭 재전송(QP 타임아웃
   14 = 67 ms 단위) — 대기 증가와 맞는 서명. 어느 위상(링 가드/피어 플래그)에서 굳는지는 커널이 말해야 한다.
+- **계측 오탐 수정(05:35)**: K5 부팅에서 `[oneshot] STALL rank=3 seq=2` 가 20 분간 5 s 마다 찍힘 — 부트스트랩의 정당한 피어 접속 대기가 워드를 쓰고 지워지지 않은 것(tx_seq/rxf 는 진행 중). 스핀 종료 시 워드 초기화 + seq<16 제외(f5f6456).
 - **계측 투입(01:45)**: `k_oneshot` 의 두 스핀 루프에 상한 — 3 s 를 넘으면 block 0 이 Ctrl 의 남은 pad 한 칸에
   (seq·위상·안 온 피어 마스크·슬롯)을 쓰고 프록시 스레드가 5 s 마다 `[oneshot] STALL rank=… phase=… seq=…
   missing_peer_mask=… tx_seq/ack_seq/rxf[slot]` 로 출력, 30 s 면 `__trap()` 으로 즉시 사망(5 분 침묵 대신). 다음
@@ -2054,7 +2055,11 @@ C=1 디코드 스텝: NVFP4P2 의 nvfp4 경로(M>32)는 그 스텝에 없었다)
 
 ### 12. 후속 세 건(운영자 "그릐라", 04:5x~)
 
-1. **MK-KDA 서빙 증명 재판정**: 증명 줄을 캡처 제외·512 호출 집계로 고쳐(c62db9c) 체인10 KDAPROOF 팔(기본값 + `MK_KDA=1`,
+1. **MK-KDA 서빙 증명 재판정** — 체인10 KDAPROOF(05:07): "first eligible step T=24" 는 메모리 프로파일 더미, 실제 트래픽에선
+   47k 호출 동안 **집계 줄이 한 번도 없음** = 적격성 검사 앞에서 잘림. 원인: `_kda_layout_reason` 이 `layer.kv_cache` 를
+   tuple 로만 인정하는데 러너는 **list** 로 바인딩 → "not the pair yet" 문구가 매 스텝 반복되며 1회 로그 뒤 침묵(무장≠서빙
+   5건째의 진짜 기전). tuple/list 허용 + 같은 사유 2,000회 반복 시 경고(a2eb3c2) → 체인11 KDAPROOF2 가 판정.
+   (원래 항목:) 증명 줄을 캡처 제외·512 호출 집계로 고쳐(c62db9c) 체인10 KDAPROOF 팔(기본값 + `MK_KDA=1`,
    디코드 2회)이 `kda lane tally: served=… stock=…` 로 확정한다. 서빙되면 KDA 레인은 살아 있는 것이고 이득 0 이 판정;
    안 되면 `_kda_ensure_packs`/디바이스 게이트의 무로그 거부(이번에 로그 추가)가 답.
 2. **K5 팔**(체인10 두 번째): `SPEC_K=5 SPEC_K_FORCE=1`(런처의 실험용 탈출구), 탐색 레그(디코드 3회·프리필 8K·수용률).
