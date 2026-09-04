@@ -9470,6 +9470,49 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
     print("  common tp4 library ............ OK")
 
 
+def test_worker_launch_does_not_let_the_remote_reparse_envv() -> None:
+    """A JSON -e value must survive ssh; the remote shell must never re-parse it.
+
+    Interpolating $ENVV into `ssh host "docker run ... $ENVV ..."` hands the
+    value of -e COMPILE_CFG (a JSON blob) to a shell that parses it from
+    scratch, and a top-level {a,b,c} is BRACE EXPANSION there. On 2026-09-04
+    the first production boot on the unified launcher shattered it into
+
+      COMPILE_CFG=cudagraph_mode:FULL_AND_PIECEWISE
+      COMPILE_CFG=custom_ops:[all]
+      COMPILE_CFG=pass_config:fuse_gemm_comms:true
+
+    and docker read a fragment as the image:
+      invalid reference format: repository name (library/COMPILE_CFG=custom_ops)
+
+    The head runs locally, where an expanded variable's braces are NOT
+    re-expanded, so the head container started and only the workers died --
+    which is why the log made it look like a head failure.
+
+    `set +B` on the remote is not a fix: it stops the split but quote removal
+    still strips the JSON's own quotes and vLLM gets an invalid
+    --compilation-config. Quoting the argv with printf %q is the fix.
+    """
+    src = open(os.path.join(REPO, "launchers", "start-hy4-tp4.sh"),
+               encoding="utf-8").read()
+    check("_wrun=$(printf '%q ' docker run -d --name hy4-worker" in src,
+          "the worker argv must be built and %q-quoted locally, so the remote "
+          "parses back exactly these tokens")
+    check('"docker rm -f hy4-worker 2>/dev/null; $_wrun >/dev/null"' in src,
+          "the ssh payload carries the pre-quoted argv, not raw interpolation")
+    # the load-bearing invariant: no ssh line may interpolate $ENVV
+    offenders = [n for n, line in enumerate(src.splitlines(), 1)
+                 if "ssh " in line and "$ENVV" in line
+                 and not line.lstrip().startswith("#")]
+    check(not offenders,
+          "no ssh command may interpolate $ENVV -- the remote would re-parse "
+          "the JSON (offending lines: %s)" % offenders)
+    # the head path is local and stays direct; changing it is not the fix
+    check("docker run -d --name hy4 $COMMON $RDMA_FLAGS $ENVV" in src,
+          "the head runs locally and needs no quoting -- it was never the bug")
+    print("  worker envv not re-parsed ..... OK")
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -9573,5 +9616,6 @@ if __name__ == "__main__":
     test_kda_owns_its_projections_across_dense_schemes()
     test_hy4_entrypoint_carries_the_production_knobs()
     test_common_tp4_library_is_the_one_implementation()
+    test_worker_launch_does_not_let_the_remote_reparse_envv()
     print(f"all OK ({PASS} checks)")
 
