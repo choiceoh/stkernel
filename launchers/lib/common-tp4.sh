@@ -280,3 +280,40 @@ ct_apply_custom_ops_axis() {
   COMPILE_CFG=$(printf '%s' "$COMPILE_CFG" | sed \
     's/"custom_ops":\["all"\]/"custom_ops":["'"$_axis"'"]/')
 }
+
+# --- overlay target validation -----------------------------------------------
+# ct_check_overlay_target <target> <required prefix>
+#
+# The manifest's target becomes a docker bind-mount destination
+# (`-v <host file>:<target>:ro`), so "inside the package root" is the property
+# the check exists to enforce. Both lanes enforced it with a PREFIX test plus a
+# character class that allows "." -- and a prefix test is not containment:
+#
+#   /opt/venv/lib/python3.12/site-packages/vllm/../../../../etc/cron.d/evil
+#
+# starts with the required prefix and uses only allowed characters, so BOTH
+# lanes accepted it and would have mounted over a path outside the package
+# root. Verified by running each lane's own case statements against it.
+#
+# Neither lane had this, so it is not drift -- the guard simply did not cover
+# the classic escape. The manifest is a repo file rather than untrusted input,
+# so this is a malformed-manifest guard, not a security boundary; the value is
+# that a bad row fails loudly here instead of silently shadowing a container
+# path. The prefix stays an argument because the lanes require different roots
+# (hy4 demands .../site-packages/vllm/, glm53 the profile's TARGET_PREFIX).
+ct_check_overlay_target() {
+  local _t="$1" _prefix="$2"
+  case "$_t" in
+    "$_prefix"*) ;;
+    *) echo "ABORT: overlay target outside the package root: $_t" >&2; exit 1 ;;
+  esac
+  case "$_t" in
+    *[!A-Za-z0-9_./-]*)
+      echo "ABORT: unsafe character in overlay target: $_t" >&2; exit 1 ;;
+  esac
+  case "/$_t/" in
+    */../*)
+      echo "ABORT: overlay target escapes the package root with .. : $_t" >&2
+      exit 1 ;;
+  esac
+}

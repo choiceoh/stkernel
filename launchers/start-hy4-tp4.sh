@@ -348,14 +348,10 @@ load_overlay_manifest() {
       *[!A-Za-z0-9._-]*|.*)
         echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
     esac
-    case "$target" in
-      /opt/venv/lib/python3.12/site-packages/vllm/*) ;;
-      *) echo "ABORT: unsafe overlay target in manifest: $target"; exit 1 ;;
-    esac
-    case "$target" in
-      *[!A-Za-z0-9_./-]*)
-        echo "ABORT: unsafe character in overlay target: $target"; exit 1 ;;
-    esac
+    # Prefix, characters, and .. escape -- see lib/common-tp4.sh. This lane
+    # demands the vllm/ package specifically, which is stricter than the
+    # profile's TARGET_PREFIX, so the root is passed rather than derived.
+    ct_check_overlay_target "$target" "/opt/venv/lib/python3.12/site-packages/vllm/"
     if [ "$base_contract" != "absent" ] \
         && [[ ! "$base_contract" =~ ^[0-9a-f]{64}$ ]]; then
       echo "ABORT: invalid base preimage contract for $source: $base_contract"
