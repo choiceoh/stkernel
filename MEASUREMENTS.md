@@ -1974,6 +1974,55 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★★37차 — "컴파일 엄청 오래 걸리네": 부팅 예산 귀속, 5분 공백은 일과성, 컴파일이 아니다 (2026-09-06, 로그 판독 + 계측 추가, 무재부팅)
+
+**운영자 지시 "컴파일 엄청 오래 걸리네."** 현 프로덕션 부팅(28차 체인 PROD, 로그 UTC 09-05 19:30 = KST 09-06 04:30)의 4 랭크 로그를
+`[boot-stamp]` 줄과 각 컴포넌트의 자기 로그로 귀속하고, 같은 소스로 뜬 앞선 두 부팅(다른 세션의 실패 부팅 보관본
+`~/glm53-logs/fail-K5-060547/`, `fail-GEMM2-091630/`: UTC 09-04 20:16, 09-05 00:03)과 나란히 놓았다. 재부팅·배포 없음.
+
+### §1 부팅 예산 (rank 3 = srv4, 인터프리터 시작 기준 초)
+
+| 구간 | 09-05 19:30 부팅 (690 s) | 09-04 20:16 부팅 (345 s 급) | 성격 |
+|---|---|---|---|
+| EngineCore 초기화 → TP 그룹 통신기 | 26 s | 26 s | 고정 |
+| **TP 그룹 → EP 그룹(`initialize_model_parallel` 내부)** | **302 s, 4 랭크 모두 무로그** | **1 s** | **일과성** — 원인 불명 |
+| 모델 로드 | 118 s (읽기 33 + 적용 21 + fp8-dense 폴드/팩 로드 ~45 + 드래프터 15) | 110 s | 고정 |
+| profile-run | 146 s | 25 s | 아래 §2 |
+| torch.compile(드래프터 두 그래프만) + 캡처 + 워밍업 | 20 s | 20 s | 고정 |
+
+**본 모델은 torch.compile 대상이 아니다** (`torch.compile is turned on, but the model … does not support it`, 매 부팅 로그). Inductor 가
+만드는 것은 `dflash_head`·`dflash2_candidate_selector` 두 그래프뿐이고 콜드 15 s, 캐시 2.5 s. 런처는 오버레이 매니페스트 sha 가
+바뀌면 `/cache/vllm/torch_compile_cache` 를 지우므로(`start-glm53-nvfp4-tp4.sh` "overlays changed -> clearing") 배포마다 이 15 s 를
+다시 내지만 그뿐이다. **"k 를 바꾸면 컴파일 때문에 오래 걸린다"는 진단은 틀렸다**: `speculative_config` 가 컴파일 해시에 들어가
+드래프터 15 s 를 다시 내는 것이 전부이고, K5 부팅이 45 분 멈춘 것은 컴파일이 아니라 헤드 `profile_run → _dummy_sampler_run`
+정지였다(체인 10 기록 §12, 그때 `[oneshot] STALL` 은 오탐으로 정정됨).
+
+### §2 profile-run 146 s 의 정체 — 배포당 1회 재빌드 110 s + 고정 35 s
+
+| 항목 | 이번 부팅 | 소스 불변 부팅 | 캐시 |
+|---|---|---|---|
+| osar 확장 nvcc (`[osar] source md5` → `connected`) | 69 s (md5 e3fa4435 신규) | 1 s | `/cache/osar_build/<md5·flags·torch>` 영속 ✓ |
+| 메가커널 확장 nvcc + 자체시험 (`source md5` → `armed=`) | 43 s (md5 39540acf 신규; 자체시험은 ~2 s) | 1~2 s | `/cache/mk_build/<key>` 영속 ✓ |
+| b12x CuTe-DSL MoE 커널 (`Invalidating stale … Compiling … Persisted`) | 9 s (소스 해시 바뀜) | 0 s | flashinfer `cached_ops/b12x_moe_sm121a_cute_dsl` 영속 ✓ |
+| TileLang(mHC) | 0 s | 0 s | 오버레이 shim 이 `TILELANG_CACHE_DIR=/cache/tilelang` 로 돌림 ✓ (`0.1.12/cuda-binaries` 5 cubin) |
+| 나머지 (b12x 래퍼, dflash2 selector, 헤드 shm 대기) | ~25 s | ~22 s | — |
+
+→ 캐시가 안 붙는 컴포넌트는 **없다**. 재빌드 110 s 는 소스가 바뀐 배포의 첫 부팅에만 들고, 같은 소스의 재부팅은 profile-run 25 s.
+2026-09-03 "부팅 901 → 345초" 기록과 맞다: 345 + 302(일과성) + 43(재빌드) ≈ 690.
+
+### §3 조치 — 공백은 서서 잡는다 (PR, 부팅 검증 대기)
+
+1. `deneb_boot_stamps`(추가 전용 .pth 모듈)에 **분산 초기화 스탬프**: `init_device`, `init_distributed_environment`(dist-world),
+   `init_model_parallel_group`(그룹 이름별 `dist-group tp/pp/dp/ep`), `initialize_model_parallel`. 302 s 가 재발하면 어느 그룹인지 줄로 남는다.
+2. **느린 구간 스택 워치독**: 스탬프된 구간이 `DENEB_BOOT_STAMP_SLOW`(기본 60) 초마다 아직 돌고 있으면 그 스레드의 파이썬 스택을
+   로그에 찍는다(구간당 최대 10회, 데몬 스레드, `finally` 에서 종료). 컨테이너에 py-spy 도 ptrace 도 없으므로 이것이 유일한 현장 스택이다.
+   가짜 vLLM 모듈로 11 구간 래핑·반환값 통과·워치독 발화를 확인했다(`tests/test_logic.py` 핀 추가).
+3. `[fp8-dense] … megakernel packs: … in N s` — 모델 로드 118 s 중 귀속 안 되던 ~45 s(팩 캐시 로드·폴드 패스)에 시간을 붙였다.
+
+**남은 레버(운영자 판단)**: (a) 배포 스크립트가 **구 컨테이너가 서빙 중인 동안** 새 소스의 osar·메가커널 확장을 `nice` 로 미리 빌드하면
+배포당 다운타임 −110 s(빌드 디렉터리가 md5 키라 그대로 맞물린다); (b) 302 s 는 다음 재발 때 §3 줄로 판독 — 09-04·09-05 의 세 부팅 중
+한 번만 났다; (c) k 변경 부팅은 컴파일 예산이 아니라 K5 정지(체인 10)의 재현 여부가 관건.
+
 ## ★★★36차 — 다음 레버를 숫자로 고르기: C>1 처리량, 128K 프리필 지도, 하니스 결함 둘 (2026-09-06 07:00~07:15 KST, 프로덕션 부팅 위 무재부팅 측정)
 
 **운영자 지시 "4·5·6 진행."** 모두 현 프로덕션 부팅(v3 정적 MoE + GPTQ 팩)에서 재부팅 없이 쟀다.
