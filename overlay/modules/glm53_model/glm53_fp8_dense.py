@@ -896,7 +896,7 @@ def _nvfp4_pair_for(mod, method, weight, rows, name, seen):
     return (wq, wsf, w_gs, rows, alpha)
 
 
-def _attach_mk_pack(method, weight, cols) -> bool:
+def _attach_mk_pack(method, weight, cols, name=None) -> bool:
     """Attach the megakernel's W4 pack to an fp8 method that will SERVE.
 
     deneb fork (glm53_megakernel): W4 is e2m1 x per-16 pow2 scale, expanded
@@ -922,14 +922,29 @@ def _attach_mk_pack(method, weight, cols) -> bool:
         wants = (_mkmod.ENABLE_GEMM or getattr(_mkmod, "ENABLE_SMLP", False)
                  or getattr(_mkmod, "ENABLE_SMLP2", False))
         if wants and cols % 128 == 0:
+            # the opaque op (the drafter's torch.compiled forward) passes the
+            # kernel the 3-field pack only: its packs carry the shift as wgs
+            # (per-tensor), never as per-row scales the op cannot hand over
+            per_row = False if getattr(method, "_opaque", False) else None
             if cols > _mkmod.MK_GEMM_KMAX:
                 # wider than one launch of the lane (the drafter's fc,
                 # K = 5 x hidden): a pack per K-chunk, summed by gemm_w4a8
-                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight)
+                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight, name=name,
+                                                               per_row=per_row)
             else:
-                method._mk = _mkmod.build_mk_weight_w4(weight)
+                method._mk = _mkmod.build_mk_weight_w4(weight, name=name,
+                                                       per_row=per_row)
+            # the calibration pass (33차 lever 2) keys its Hessians on the
+            # linear's name; the pack itself carries no name
+            note = getattr(_mkmod, "note_pack_name", None)
+            if note is not None:
+                note(method._mk, name)
             return method._mk is not None
-    except Exception:
+    except Exception as e:
+        # loud: a linear without a pack serves the stock pair in silence
+        # otherwise, and 135 of 180 did exactly that on the 33차 GPTQ boot
+        logger.warning("[fp8-dense] MK W4 pack build FAILED for %s %s: %r -> stock pair",
+                       name, tuple(weight.shape), e)
         method._mk = None
     return False
 
@@ -1050,7 +1065,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 # dense scheme does not bid for it: an nvfp4/w4a8 copy here
                 # would be built, verified and never read. What MK-KDA does
                 # read is the W4 pack, and it must be attached now.
-                if attach_mk(method, weight, cols):
+                if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                     mk_packs += 1
                     kda_owned += 1
                 mod.quant_method = method
@@ -1131,7 +1146,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                         params_w4 += weight.numel()
                         armed_nv = True
                 if not armed_nv:
-                    if attach_mk(method, weight, cols):
+                    if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
@@ -1163,14 +1178,14 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
-                    if attach_mk(method, weight, cols):
+                    if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
                     continue
                 continue
-            if attach_mk(method, weight, cols):
+            if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                 mk_packs += 1
             if prefill_nv and weight.shape[1] % _NVFP4_BLOCK == 0:
                 pair = _nvfp4_pair_for(
@@ -1219,6 +1234,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         kda_owned, nv_prefill,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    try:  # 33차: how the W4 packs were made (rtn / gptq / cached / low-rank)
+        from vllm.model_executor.layers import glm53_megakernel as _mkmod2
+        logger.warning("[fp8-dense] %s megakernel %s", type(model).__name__,
+                       _mkmod2.pack_stats_line())
+    except Exception:
+        pass
     if shapes:
         # [N x K] x count: the map from a decode trace's launch classes to
         # linears (28차: the 30-45 us class is [1024 x 4096] and [4096 x 512])

@@ -3,7 +3,7 @@ MoEStaticKernelV3 -- v2 with FC1 streamed as two 64-wide N halves over
 256-wide K stages, so every w13 TMA box row is 128 B (a full L2 line)
 instead of the 64 B half line the stock kernel and v2 read.
 
-Why (33차 §7 stamps): in v2 the FC1 phase streams w13 at 4.5 GB/s per CTA
+Why (35차 §7 stamps): in v2 the FC1 phase streams w13 at 4.5 GB/s per CTA
 (216 GB/s aggregate) while the FC2 phase streams w2 at 5.05 GB/s per CTA
 (242 GB/s) with the same pipeline structure. w13 rows are 2,048 B apart and
 each k-tile box takes 64 B of every row; w2's 256 B rows are read whole by

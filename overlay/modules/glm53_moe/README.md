@@ -194,7 +194,7 @@ deploy loudly instead of silently dropping the patch.
 Only glm53 mounts this module (dsv4's MoE path does not go through
 b12x_shared_workspace).
 
-## Static v2 / v3 (33차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
+## Static v2 / v3 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
 
 `VLLM_GLM53_B12X_STATIC_V2` (profile default `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
@@ -235,4 +235,4 @@ any other kernel file.
 
 Measured by `probes/b12x_static_probe.py` (stock vs v2, DRAM-cold, graph
 replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the
-kernel's TMA access pattern vs a linear read, plain CUDA). Ledger: 33차.
+kernel's TMA access pattern vs a linear read, plain CUDA). Ledger: 35차.

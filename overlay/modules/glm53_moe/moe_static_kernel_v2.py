@@ -197,7 +197,7 @@ def _ld_shared_i32(addr, *, loc=None, ip=None):
 def _ld_shared_i32_volatile(addr, *, loc=None, ip=None):
     """A shared load the compiler must re-issue every time (the claim slot and
     the ring are rewritten by another warp between reads; the plain load has
-    no side effects and was hoisted out of the item loop -- 33차 §8)."""
+    no side effects and was hoisted out of the item loop -- 35차 §8)."""
     return Int32(
         llvm.inline_asm(
             T.i32(),

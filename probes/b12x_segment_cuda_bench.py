@@ -4,7 +4,7 @@
 thousands of loads in flight (no cp.async, no TMA, no torch kernels): the
 instrument the two earlier benches were not.
 
-Why: the v2 static MoE kernel's stamps (33차 §7) show FC1 streaming w13 at
+Why: the v2 static MoE kernel's stamps (35차 §7) show FC1 streaming w13 at
 4.5 GB/s per CTA (64 B out of every 2,048 B row per TMA box) while FC2
 streams w2 at 5.05 GB/s per CTA (the 4 slice-CTAs read the 4 adjacent 64 B
 chunks of each 256 B row, so DRAM sees whole rows). If DRAM itself pays for
