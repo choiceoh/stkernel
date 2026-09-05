@@ -229,7 +229,15 @@ box row is a full 128 B line -- the v2 stamps put FC1 at 216 GB/s against
 FC2's 242 with the same pipeline, and a vectorized-load streamer measured
 DRAM at 167 GB/s for 64 B row segments, 202 for 128 B, 222 for 256 B; FC2
 and the intermediate layout are v2's, tile_m 32, static schedule, FC2 3
-stages by default). The cache key and on-disk kernel name carry the config; the source file
+stages by default), and `e` (v3 only, even waves: the routing phase counts the
+items -- one m-tile per 32 rows of an expert, times the 4 intermediate
+slices -- into `next_item[0]`, and after the second grid barrier every CTA
+picks the CTA count in {48, 44, 40, 36, 32} whose last wave leaves the fewest
+empty item slots (ties to the larger); CTAs beyond it exit. U=40 experts =
+160 items run as 40 CTAs x 4 full waves instead of 48 x 3.33, whose last
+third-of-a-wave streamed at 16 CTAs' worth of bandwidth; multiples of 4 keep
+an expert's 4 slice-CTAs co-scheduled so DRAM still sees whole w2 rows). The
+cache key and on-disk kernel name carry the config; the source file
 is in `_kernel_source_files()`, so an edit invalidates the module cache like
 any other kernel file.
 

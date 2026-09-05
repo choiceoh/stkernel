@@ -34,6 +34,56 @@ def _log(msg):
     sys.stderr.flush()
 
 
+# 2026-09-06 (37차): a phase that runs long gets its stack logged while it
+# runs. The 2026-09-05 19:30 boot spent 302 s between the TP group and the
+# EP group inside initialize_model_parallel with nothing logged on any rank
+# (the 2026-09-04 20:16 and 2026-09-05 00:03 boots: 1 s), and a gap with
+# no marker cannot be attributed afterwards. Every DENEB_BOOT_STAMP_SLOW
+# seconds (default 60; 0 disables) that a stamped phase is still running,
+# the calling thread's stack goes to the log, at most _SLOW_MAX_DUMPS times
+# per phase. The watcher is a daemon thread that only reads frames.
+try:
+    _SLOW = float(os.environ.get("DENEB_BOOT_STAMP_SLOW", "60") or 0)
+except ValueError:
+    _SLOW = 60.0
+_SLOW_MAX_DUMPS = 10
+
+
+def _dump_stack(label, t_start, tid):
+    import traceback
+
+    frame = sys._current_frames().get(tid)
+    where = ("".join(traceback.format_stack(frame)[-14:]) if frame is not None
+             else "<thread frame not found>\n")
+    _log(f"{label} still running after {time.monotonic() - t_start:.0f}s; "
+         f"its thread is at:\n{where.rstrip()}")
+
+
+def _watch(label, t_start, tid, done):
+    n = 0
+    while not done.wait(_SLOW) and n < _SLOW_MAX_DUMPS:
+        n += 1
+        try:
+            _dump_stack(label, t_start, tid)
+        except Exception:
+            return
+
+
+def _start_watch(label, t_start):
+    """The Event that ends the watcher, or None when watching is off."""
+    if _SLOW <= 0:
+        return None
+    try:
+        import threading
+
+        done = threading.Event()
+        threading.Thread(target=_watch, name="boot-stamp-watch", daemon=True,
+                         args=(label, t_start, threading.get_ident(), done)).start()
+        return done
+    except Exception:
+        return None
+
+
 def _wrap_weights_iter(cls, name):
     """Split `Loading weights took Ns` into read and apply.
 
@@ -95,11 +145,18 @@ def _wrap(cls, name, label):
 
     def timed(*a, **kw):
         t = time.monotonic()
+        lab = label
+        group = kw.get("group_name")  # init_model_parallel_group(..., group_name="tp")
+        if group:
+            lab = f"{label} {group}"
+        done = _start_watch(lab, t)
         try:
             return fn(*a, **kw)
         finally:
+            if done is not None:
+                done.set()
             now = time.monotonic()
-            _log(f"{label} took {now - t:.1f}s "
+            _log(f"{lab} took {now - t:.1f}s "
                  f"(at {now - _T0:.1f}s since interpreter start)")
 
     try:
@@ -118,7 +175,15 @@ def _patch():
     global _DONE
     want = 0
     for mod, pairs in (
+        ("vllm.distributed.parallel_state", (
+            # module-level functions (cls None = the module itself): the
+            # world group, then every model-parallel group by name
+            (None, "init_distributed_environment", "dist-world"),
+            (None, "init_model_parallel_group", "dist-group"),
+            (None, "initialize_model_parallel", "dist-model-parallel"),
+        )),
         ("vllm.v1.worker.gpu_worker", (
+            ("Worker", "init_device", "init-device"),
             ("Worker", "load_model", "load-model"),
             ("Worker", "determine_available_memory", "profile/determine-memory"),
             ("Worker", "initialize_from_config", "kv-cache-alloc"),
@@ -134,7 +199,7 @@ def _patch():
         if m is None:
             continue
         for cls_name, fn_name, label in pairs:
-            cls = getattr(m, cls_name, None)
+            cls = m if cls_name is None else getattr(m, cls_name, None)
             if cls is not None:
                 _wrap(cls, fn_name, label)
     loader = sys.modules.get("vllm.model_executor.model_loader.default_loader")
@@ -164,7 +229,8 @@ class _PostImport:
     else falls through untouched by returning None.
     """
 
-    TARGETS = ("vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner",
+    TARGETS = ("vllm.distributed.parallel_state",
+               "vllm.v1.worker.gpu_worker", "vllm.v1.worker.gpu.model_runner",
                "vllm.model_executor.model_loader.default_loader")
 
     def find_spec(self, name, path=None, target=None):

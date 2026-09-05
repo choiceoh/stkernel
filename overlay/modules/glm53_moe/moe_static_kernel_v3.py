@@ -68,6 +68,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_kernel_v2 import (
+    STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
     STAMP_MMA_END,
@@ -106,6 +107,7 @@ class MoEStaticKernelV3:
         fc1_stages: int = 2,
         fc2_stages: int = 3,
         stamps: bool = False,
+        even: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -133,6 +135,11 @@ class MoEStaticKernelV3:
         self.fc1_stages = int(fc1_stages)
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
+        # even waves: only the largest CTA count in {48, 44, 40, 36, 32} that
+        # leaves the fewest empty item slots takes items, so the last wave is
+        # full (U=40: 40 CTAs x 4 items instead of 48 x 3.33). The item total
+        # is accumulated in next_item[0] by the routing phase.
+        self.even = bool(even)
         # FC1: (32, 64, 256); FC2 and the intermediate: (32, 128, 128)
         self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
         self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
@@ -361,7 +368,7 @@ class MoEStaticKernelV3:
         token_map: cute.Tensor,
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
-        next_item: cute.Tensor,   # unused (v2 signature compatibility)
+        next_item: cute.Tensor,   # even: item total (else unused)
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -457,6 +464,7 @@ class MoEStaticKernelV3:
             token_map,
             token_weights,
             stamps,
+            next_item,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -513,6 +521,7 @@ class MoEStaticKernelV3:
         token_map: cute.Tensor,
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
+        next_item: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -707,6 +716,8 @@ class MoEStaticKernelV3:
             i += flat_stride
         if flat_tid == Int32(0):
             active_expert_count[Int32(0)] = Int32(0)
+            if cutlass.const_expr(self.even):
+                next_item[Int32(0)] = Int32(0)
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
@@ -716,6 +727,12 @@ class MoEStaticKernelV3:
         self._resident_grid_barrier(
             barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
         )
+        if cutlass.const_expr(self.stamps):
+            if Int32(tidx) == Int32(0):
+                _st_global_i64(
+                    get_ptr_as_int64(stamps, stamp_row + Int32(STAMP_BARRIER1)),
+                    cute.arch.globaltimer(),
+                )
 
         pair_idx = Int32(bidz)
         while pair_idx < total_pairs:
@@ -754,6 +771,12 @@ class MoEStaticKernelV3:
                     get_ptr_as_int64(row_counts, local_expert_id),
                     Int32(1),
                 )
+                if cutlass.const_expr(self.even):
+                    if row % Int32(_TILE_M) == Int32(0):
+                        atomic_add_global_i32(
+                            get_ptr_as_int64(next_item, Int32(0)),
+                            Int32(self.output_tile_count_n),
+                        )
                 map_idx = local_expert_id * max_rows + row
                 st_global_i32(get_ptr_as_int64(token_map, map_idx), token_idx)
                 st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
@@ -826,6 +849,25 @@ class MoEStaticKernelV3:
                     get_ptr_as_int64(stamps, stamp_row + Int32(1)),
                     cute.arch.globaltimer(),
                 )
+        # Item striding: n_active CTAs, the rest exit after the frontend. With
+        # `even`, the candidate leaving the fewest empty slots in its last
+        # wave wins (ties: the largest); every candidate still saturates DRAM
+        # (32 CTAs need 7.5 GB/s each; a lone CTA streams ~10).
+        n_active = Int32(gdim_z)
+        start_work_idx = Int32(bidz)
+        if cutlass.const_expr(self.even):
+            total_items = next_item[Int32(0)]
+            best_waste = Int32(0x7FFFFFFF)
+            for cand in (48, 44, 40, 36, 32):
+                n_c = Int32(cand)
+                if n_c <= Int32(gdim_z):
+                    waves = (total_items + n_c - Int32(1)) // n_c
+                    waste = waves * n_c - total_items
+                    if waste < best_waste:
+                        best_waste = waste
+                        n_active = n_c
+            if Int32(bidz) >= n_active:
+                start_work_idx = Int32(0x3FFFFFFF)   # decodes as no work
 
         # ------------------------------------------------------------------
         # Tiled views and TMA partitions
@@ -1100,7 +1142,7 @@ class MoEStaticKernelV3:
             sA2_u8 = cute.recast_tensor(sA2[None, None, 0], cutlass.Uint8)
             sf_blocks_per_half = Int32(_FC1_TILE_N // self.sf_vec_size)   # 4
 
-            num_persistent_clusters = Int32(gdim_z)
+            num_persistent_clusters = n_active
             cluster_shape_mn = (
                 Int32(self.cluster_shape_mn[0]),
                 Int32(self.cluster_shape_mn[1]),
@@ -1110,7 +1152,7 @@ class MoEStaticKernelV3:
                 Int32(bidy % cluster_shape_mn[1]),
                 Int32(0),
             )
-            current_work_linear_idx = Int32(bidz)
+            current_work_linear_idx = start_work_idx
             current_local_expert_idx = Int32(0)
             accum_tile_m = Int32(0)
             item_no = Int32(0)
@@ -1649,7 +1691,7 @@ class MoEStaticKernelV3:
         elif warp_idx == self.tma_load_warp_id:
             cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
-            num_persistent_clusters = Int32(gdim_z)
+            num_persistent_clusters = n_active
             cluster_shape_mn = (
                 Int32(self.cluster_shape_mn[0]),
                 Int32(self.cluster_shape_mn[1]),
@@ -1659,7 +1701,7 @@ class MoEStaticKernelV3:
                 Int32(bidy % cluster_shape_mn[1]),
                 Int32(0),
             )
-            current_work_linear_idx = Int32(bidz)
+            current_work_linear_idx = start_work_idx
             current_local_expert_idx = Int32(0)
             accum_tile_m = Int32(0)
             item_no = Int32(0)

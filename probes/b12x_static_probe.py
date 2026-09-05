@@ -158,6 +158,13 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
                 dma_lead.append((f1 - d1) / 1e3)   # MMA FC1 done after DMA issued
     tail = [(kernel_end - int(t_end[b])) / 1e3 for b in range(grid)]
     front = [(int(t1[b]) - int(t0[b])) / 1e3 for b in range(grid)]
+    tb1 = s[:, k2.STAMP_BARRIER1] if s.shape[1] > k2.STAMP_BARRIER1 else None
+    if tb1 is not None and int(tb1.min()) > 0:
+        ph0 = [(int(tb1[b]) - int(t0[b])) / 1e3 for b in range(grid)]
+        ph1 = [(int(t1[b]) - int(tb1[b])) / 1e3 for b in range(grid)]
+        print(f"  stamps[{label}] frontend split (med us): phase 0 + barrier 1 "
+              f"{statistics.median(ph0):.1f} | routing/quant + barrier 2 "
+              f"{statistics.median(ph1):.1f}")
     start_skew = [(int(t0[b]) - base) / 1e3 for b in range(grid)]
     med = statistics.median
     counts = sorted(int(x) for x in n_items.tolist())

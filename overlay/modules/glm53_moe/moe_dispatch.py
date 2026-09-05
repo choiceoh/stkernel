@@ -293,7 +293,7 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
 _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
-    "wide": False,
+    "wide": False, "even": False,
 }
 
 
@@ -322,10 +322,15 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
             if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
                 cfg["fc2"] = 3
             continue
+        if token == "e":
+            # v3 even waves: only the CTA count (48/44/40/36/32) whose last
+            # wave is fullest takes items (U=40: 40 CTAs x 4 items)
+            cfg["even"] = True
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
-                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d] cells (got {raw!r})"
+                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d][,w][,e] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -343,6 +348,8 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
         raise ValueError(
             f"{_GLM53_B12X_STATIC_V2_ENV}: w (v3) is tile_m 32, a_rows 32, static schedule"
         )
+    if cfg["even"] and not cfg["wide"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: e (even waves) needs w (v3)")
     return cfg
 
 
@@ -1520,6 +1527,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config["stamps"]),
         bool(config.get("dynamic", False)),
         bool(config.get("wide", False)),
+        bool(config.get("even", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1603,6 +1611,7 @@ def _get_static_kernel_v2(
             fc1_stages=int(config["fc1"]),
             fc2_stages=int(config["fc2"]),
             stamps=bool(config["stamps"]),
+            even=bool(config.get("even", False)),
             fast_math=fast_math,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -1713,7 +1722,7 @@ def _get_static_kernel_v2(
         f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
-        f"{'w' if config.get('wide') else ''}"
+        f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,

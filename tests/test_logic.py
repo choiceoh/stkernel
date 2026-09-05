@@ -3564,10 +3564,11 @@ def test_b12x_static_v2_controls() -> None:
     check(parse("1") == default and parse("1") is not default,
           "'1' must be a copy of the default config")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
-                      "dynamic": False, "wide": False},
+                      "dynamic": False, "wide": False, "even": False},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
-                                 "stamps": False, "dynamic": False, "wide": False},
+                                 "stamps": False, "dynamic": False, "wide": False,
+                                 "even": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3575,6 +3576,15 @@ def test_b12x_static_v2_controls() -> None:
     check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
           "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
     check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
+    even = parse("w,e")
+    check(even["even"] and even["wide"] and even["fc2"] == 3,
+          "e selects the v3 even-wave striding on top of w")
+    check(not parse("w")["even"], "w alone keeps every CTA striding")
+    try:
+        parse("m32,f2,g4,e")
+        check(False, "e without w must be rejected")
+    except ValueError:
+        pass
     for raw in ("w,m64", "w,d", "w,a64"):
         try:
             parse(raw)
