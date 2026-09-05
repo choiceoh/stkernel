@@ -472,7 +472,9 @@ def probe_smlp(iters: int) -> bool:
     ok = True
     limit = 10.0
     ext = mk._build()
-    has2 = hasattr(mk, "_smlp2_call") and mk._ARMED.get("smlp2", False)
+    # the probe drives the extension directly (no arm()), so the lane is
+    # "present" when the driver and the binding have it, not when armed
+    has2 = hasattr(mk, "_smlp2_call") and hasattr(ext, "run_smlp2")
     print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}"
           + (f"{'exact2':>10}{'chain2_x2':>10}{'fused2':>10}{'x2_fused2':>10}" if has2 else ""))
     for T, n_int, k, n_out in ((8, 512, 4096, 4096), (8, 3072, 4096, 4096), (32, 512, 4096, 4096)):
