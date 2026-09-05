@@ -173,7 +173,10 @@ slots the fastest mains free -- the 4-9 us DRAM-arbitration tail of a
 96-unit launch (30차 §6) is then work for blocks that would otherwise
 idle. Each slice becomes two partials folded in fixed order; the rule
 takes it only when every slice keeps at least `tail` k-blocks. Swept by
-`--ktail2-sweep`; off until the sweep says which tail wins.
+`--ktail2-sweep` (30차 §11): -5.6% on [1024x4096] and -2% on [6144x4096]
+at tail=1, 5-17% worse on m=32, [4096x2048] and in_proj -- the second
+partial and the short unit's ring fill cost more than the 4-9 us tail they
+absorb. Stays off.
 
 MK_SEG_SMLP2 (`VLLM_GLM53_MK_SMLP2`, default off): the shared-expert /
 dense MLP as two PDL-chained v2 launches -- gate_up with the pair-
