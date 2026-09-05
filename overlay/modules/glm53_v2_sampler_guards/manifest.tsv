@@ -1,2 +1,0 @@
-# source	container_target(relative)	base_preimage_sha256
-sampler.py	vllm/v1/worker/gpu/sample/sampler.py	76070739447fc9f7563ef164ef80c0777208d1ea07dec3a6f6d2a0755188d7ae
