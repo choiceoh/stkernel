@@ -81,10 +81,13 @@ def _routings(U: int, T: int = T):
     out = []
     for r in range(rot):
         pool = perm[r * U:(r + 1) * U]
-        rows = []
-        for t in range(T):
-            rows.append(pool[torch.randperm(U, generator=gen)[:TOPK]])
-        ids = torch.stack(rows).to(torch.int32)
+        # every one of the U experts must be routed (random draws leave
+        # ~U(1-e^(-64/U)) of them unused): walk the pool cyclically, 8 per
+        # token -- consecutive entries of a cycle of length U >= 8 are
+        # distinct, so each token still sees 8 different experts
+        pool = pool[torch.randperm(U, generator=gen)]
+        flat = torch.arange(T * TOPK) % U
+        ids = pool[flat].view(T, TOPK).to(torch.int32)
         w = torch.rand(T, TOPK, generator=gen, dtype=torch.float32)
         w = w / w.sum(dim=1, keepdim=True)
         out.append((ids.to(DEV), w.to(DEV)))
@@ -264,6 +267,15 @@ def main() -> int:
         try:
             md._STATIC_V2_OVERRIDE = cfg
             md._STATIC_V2_KERNEL_CACHE.clear()
+            # "armed is not serving" (22차/28차): prove the v2 lane ran
+            eager_out(ids40, w40)
+            if not md._STATIC_V2_KERNEL_CACHE:
+                print(f"{label} NOT TAKEN: the dispatcher kept the stock kernel "
+                      f"(geometry gate?) -- rows below would be stock; skipping")
+                continue
+            print(f"{label} lane taken: "
+                  + ", ".join(k[0] + ":" + "/".join(str(x) for x in k[1:6])
+                              for k in md._STATIC_V2_KERNEL_CACHE))
             for case, ids_, w_, xx, oo in cases:
                 ref_a, noise, scale = refs[case]
                 v2_out = eager_out(ids_, w_, xx, oo)
@@ -271,6 +283,15 @@ def main() -> int:
                 verdict = "PASS" if diff <= max(4 * noise, 1e-2 * scale) else "FAIL"
                 print(f"numerics {label} vs stock [{case}] max|diff| {diff:.3e} "
                       f"-> {verdict}")
+                if verdict == "FAIL":
+                    # where does it differ: per token row, per 128-column block
+                    d = (v2_out.float() - ref_a.float()).abs()
+                    rows = d.max(dim=1).values.tolist()
+                    cols = d.view(d.shape[0], -1, 128).amax(dim=(0, 2)).tolist()
+                    print("   per-row max: " + " ".join(f"{r:.2e}" for r in rows[:16]))
+                    print("   per-128-col max: " + " ".join(f"{c:.1e}" for c in cols))
+                    print(f"   v2 zeros {int((v2_out == 0).sum())} / stock zeros "
+                          f"{int((ref_a == 0).sum())} of {v2_out.numel()}")
             sweep = us_list if spec in full else [u for u in (40, 64) if u in routings]
             for U in sweep:
                 r = bench(U)

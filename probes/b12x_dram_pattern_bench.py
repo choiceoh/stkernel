@@ -28,6 +28,12 @@ linear rate, pipeline depth is the lever; if neither moves, the ceiling is
 elsewhere (frontend, tail, atomics) and the stamps in b12x_static_probe.py
 decide.
 
+CAVEAT (first run, 2026-09-05): this cp.async loop is issue-bound at
+~105-137 GB/s for every pattern and depth (the megakernel campaign's
+"~145 GB/s cp.async stream wall", MEASUREMENTS 2차/4차), so it cannot rank
+DRAM patterns; b12x_segment_bench.py (torch reduction over strided views,
+every SM busy) is the instrument for the access-granularity question.
+
     bash probes/run_mk_probe.sh probes/b12x_dram_pattern_bench.py
 """
 from __future__ import annotations
@@ -216,9 +222,10 @@ def main() -> int:
                     if rep >= 3:
                         times.append(us)
                 med = statistics.median(times)
-                results[(names[pattern], depth, grid)] = mb * 1e6 / med / 1e9
+                gbs = mb * 1e3 / med   # MB per us = GB/s x 1e3
+                results[(names[pattern], depth, grid)] = gbs
                 print(f"{names[pattern]:<8}{depth:>6}{grid:>6}{med:>10.1f}"
-                      f"{mb * 1e6 / med / 1e9:>8.0f}{min(times):>8.1f}{max(times):>8.1f}")
+                      f"{gbs:>8.0f}{min(times):>8.1f}{max(times):>8.1f}")
     # the two numbers the verdict rule needs
     k2 = results.get(("box64", 2, 48))
     lin = max(v for (n, d, g), v in results.items() if n == "linear")

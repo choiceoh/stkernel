@@ -413,12 +413,21 @@ def _is_glm53_b12x_tp_geometry(
     activation: str | None,
     swiglu_limit: float | None,
 ) -> bool:
-    """Admit only the deployed GLM-5.3 TP-sharded NVFP4 MoE geometry."""
+    """Admit only the deployed GLM-5.3 TP-sharded NVFP4 MoE geometry.
+
+    The intermediate size arrives in two spellings: the model's 2048 at the
+    wrapper level and the PER-RANK 512 (2048 / TP4) that
+    ``launch_sm120_static_moe`` derives from the sharded weights and passes
+    down. Until 2026-09-05 only 2048 was admitted, so every launch-time
+    reader of this gate (the forced backend, the cutover, the MAC ladders and
+    the static v2 lane) silently kept the stock path -- the first v2 probe
+    measured the stock kernel six times over.
+    """
     return (
         num_experts == 288
         and num_local_experts == 288
         and hidden_size == 4096
-        and intermediate_size == 2048
+        and intermediate_size in (512, 2048)
         and num_topk == 8
         and quant_mode == "nvfp4"
         and activation == "swigluoai_uninterleave"

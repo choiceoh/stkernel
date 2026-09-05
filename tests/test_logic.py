@@ -3459,7 +3459,9 @@ def test_glm53_b12x_tuning_controls() -> None:
         "num_experts": 72,
         "num_local_experts": 72,
         "hidden_size": 2048,
-        "intermediate_size": 512,
+        # 512 is the per-rank spelling the launcher passes (admitted since
+        # 2026-09-05); 1024 (a TP2 shard) is not a deployed geometry
+        "intermediate_size": 1024,
         "num_topk": 1,
         "quant_mode": "mxfp4",
         "activation": "silu",
@@ -3594,6 +3596,12 @@ def test_b12x_static_v2_controls() -> None:
           "the env config applies to the exact GLM TP geometry")
     check(config_for(activation_precision="bf16", **geometry) is None,
           "W4A16 (bf16 activations) never takes the NVFP4 v2 kernel")
+    # launch_sm120_static_moe passes the PER-RANK intermediate (2048 / TP4 =
+    # 512); the first probe run measured the stock kernel six times because
+    # the gate only knew the full 2048 (no static2_ compile, no proof line)
+    per_rank = dict(geometry, intermediate_size=512)
+    check(config_for(activation_precision="fp4", **per_rank) == default,
+          "the geometry gate must admit the per-rank intermediate the launcher passes")
     drift = dict(geometry, num_local_experts=72)
     check(config_for(activation_precision="fp4", **drift) is None,
           "EP geometry (E=72 local) keeps the stock kernel")
