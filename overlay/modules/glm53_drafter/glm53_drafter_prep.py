@@ -85,6 +85,19 @@ _STATS = {"calls": 0, "full": 0, "served": 0, "stock": 0, "drift": 0, "scalar": 
 _ANNOUNCED: set = set()
 LOG_EVERY = 256
 TALLY_EVERY = 1024
+# mode 1 audits itself: every SELFCHECK_EVERY served replays the stock build
+# runs once more and is compared against the cached dict (the shadow check,
+# inside the armed boot). Drift beyond the per-step scalars DISARMs the boot,
+# loudly. 0 disables the audit.
+ENV_SELFCHECK_EVERY = "VLLM_GLM53_DRAFTER_PREP_SELFCHECK_EVERY"
+
+
+def selfcheck_every() -> int:
+    raw = (os.environ.get(ENV_SELFCHECK_EVERY) or "256").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 256
 
 
 def drafter_prep_mode() -> str:
@@ -247,9 +260,22 @@ def _patched_build(self, num_reqs, num_reqs_padded, num_tokens_padded,
                  "from the next step", k, num_reqs, num_tokens_padded, step)
             return md
         _STATS["served"] += 1
+        every = selfcheck_every()
+        if every and _STATS["served"] % every == 0:
+            # the armed boot's own shadow: rebuild once, compare, DISARM on drift
+            fresh = _ORIG_BUILD(self, *args, **kw)
+            d, sc = compare(md, fresh)
+            _STATS["scalar"] += int(sc > 0)
+            if d:
+                _DISABLED = True
+                _STATS["drift"] += 1
+                logger.warning("[drafter-prep] selfcheck DRIFT at served=%d key=%s (%d fields) -> "
+                               "DISARM: stock build for the rest of the boot", _STATS["served"], k, d)
+                return fresh
         if _STATS["served"] % TALLY_EVERY == 0:
-            logger.warning("[drafter-prep] tally: served=%d (build skipped) stock=%d keys=%d",
-                           _STATS["served"], _STATS["stock"], len(_CACHE))
+            logger.warning("[drafter-prep] tally: served=%d (build skipped) stock=%d keys=%d "
+                           "selfchecks clean (every %d)", _STATS["served"], _STATS["stock"],
+                           len(_CACHE), every)
         return md
     except Exception:
         _DISABLED = True

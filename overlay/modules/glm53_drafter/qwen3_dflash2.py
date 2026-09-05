@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
+from vllm import _custom_ops as ops
 from vllm.compilation.backends import set_model_tag
 from vllm.compilation.decorators import support_torch_compile
 from vllm.config import CacheConfig, VllmConfig
@@ -369,6 +372,74 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return super().embed_input_ids(input_ids) * self.input_embedding_scale
+
+    # deneb fork (34차, EXP-24 item 6): the context K/V projection of
+    # `precompute_and_store_context_kv` -- one fused bf16 GEMM over the five
+    # layers' k/v rows ([L x 2 x kv, hidden] = [2560 x 4096] per rank, 21 MB)
+    # -- was the drafter's last linear outside the W4 lane ("30 of 31"): 101 us
+    # per step in the 09-05 trace. With VLLM_GLM53_DRAFTER_CTX_KV_W4=1 the
+    # fused weight gets a W4 pack at buffer-build time and decode-sized
+    # batches (M <= 32) run it on the lane; larger batches (prefill) and a
+    # disarmed lane keep the stock F.linear. The query path's k/v rows already
+    # serve from the same kind of pack (VLLM_DFLASH2_FP8_DENSE=1), so this
+    # makes the context K/V numerics match the query K/V numerics. Drafter
+    # only (acceptance profile is the gate; the target reads none of this).
+    def _build_fused_kv_buffers(self) -> None:
+        super()._build_fused_kv_buffers()
+        self._deneb_ctx_kv_pack = None
+        if (os.environ.get("VLLM_GLM53_DRAFTER_CTX_KV_W4") or "0").strip() != "1":
+            return
+        try:
+            from vllm.model_executor.layers import glm53_megakernel as _mk
+
+            w = self._fused_kv_weight
+            if (getattr(self, "_fused_kv_bias", None) is None and w.dim() == 2
+                    and w.dtype == torch.bfloat16 and w.shape[1] % 128 == 0
+                    and w.shape[1] <= _mk.MK_GEMM_KMAX):
+                self._deneb_ctx_kv_pack = _mk.build_mk_weight_w4(w)
+                logger.warning("[drafter-ctx-kv] W4 pack built for the context K/V "
+                               "projection [%d x %d]; decode batches take the lane",
+                               int(w.shape[0]), int(w.shape[1]))
+            else:
+                logger.warning("[drafter-ctx-kv] shape/bias not admitted -> stock bf16 "
+                               "F.linear (bias=%s shape=%s)",
+                               getattr(self, "_fused_kv_bias", None) is not None,
+                               tuple(w.shape))
+        except Exception:
+            self._deneb_ctx_kv_pack = None
+            logger.exception("[drafter-ctx-kv] pack build failed -> stock bf16 F.linear")
+
+    def _project_context_kv(
+        self,
+        context_states: torch.Tensor,
+        num_ctx: int,
+        num_layers: int,
+        num_kv_heads: int,
+        head_dim: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        pack = getattr(self, "_deneb_ctx_kv_pack", None)
+        if pack is None:
+            return super()._project_context_kv(
+                context_states, num_ctx, num_layers, num_kv_heads, head_dim)
+        from vllm.model_executor.layers import glm53_megakernel as _mk
+
+        normed = torch.empty_like(context_states)
+        ops.rms_norm(normed, context_states, self._hidden_norm_weight, self._rms_norm_eps)
+        _mk.maybe_arm()
+        all_kv_flat = _mk.gemm_w4a8(normed, pack, int(self._fused_kv_weight.shape[0]))
+        if all_kv_flat is None:
+            # prefill-sized batch or a disarmed lane: the stock projection
+            all_kv_flat = F.linear(normed, self._fused_kv_weight, None)
+        elif not getattr(self, "_deneb_ctx_kv_said", False):
+            self._deneb_ctx_kv_said = True
+            logger.warning("[drafter-ctx-kv] serving: context K/V projection on the W4 "
+                           "lane (rows=%d, was bf16 F.linear)", int(num_ctx))
+        all_kv = (
+            all_kv_flat.view(num_ctx, num_layers, 2, num_kv_heads, head_dim)
+            .permute(2, 1, 0, 3, 4)
+            .contiguous()
+        )
+        return all_kv[0], all_kv[1]
 
 
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):

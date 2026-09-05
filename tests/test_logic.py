@@ -11319,6 +11319,44 @@ def test_indexer_decode_fused_contracts() -> None:
     print("  indexer decode fused contracts .. OK")
 
 
+
+def test_glm53_drafter_ctx_kv_w4_contracts() -> None:
+    """34차 EXP-24 item 6: the drafter's context K/V projection on the W4 lane.
+
+    `precompute_and_store_context_kv` ran one fused bf16 GEMM over the five
+    layers' k/v rows (21 MB, 101 us/step) -- the last drafter linear outside
+    the lane. The overlay builds a pack at buffer-build time (exact-1 knob),
+    serves decode-sized batches through gemm_w4a8 and keeps F.linear for
+    everything the lane declines (prefill rows, a disarmed lane, a bias)."""
+    path = os.path.join(REPO, "overlay/modules/glm53_drafter/qwen3_dflash2.py")
+    src = open(path, encoding="utf-8").read()
+    check('(os.environ.get("VLLM_GLM53_DRAFTER_CTX_KV_W4") or "0").strip() != "1"' in src,
+          "exact-1 knob, read once when the fused buffers are built")
+    build = src[src.index("    def _build_fused_kv_buffers(self) -> None:"):src.index("    def _project_context_kv(")]
+    check("super()._build_fused_kv_buffers()" in build
+          and "self._deneb_ctx_kv_pack = _mk.build_mk_weight_w4(w)" in build
+          and 'getattr(self, "_fused_kv_bias", None) is None' in build
+          and "w.shape[1] % 128 == 0" in build and "w.shape[1] <= _mk.MK_GEMM_KMAX" in build
+          and "logger.exception" in build,
+          "the pack is built after the stock buffers, only for a bias-free bf16 weight the "
+          "lane admits, and a build failure logs and keeps stock")
+    proj = src[src.index("    def _project_context_kv("):src.index("class DFlash2Qwen3ForCausalLM(")]
+    check("if pack is None:\n            return super()._project_context_kv(" in proj
+          and "ops.rms_norm(normed, context_states, self._hidden_norm_weight, self._rms_norm_eps)" in proj
+          and "_mk.gemm_w4a8(normed, pack, int(self._fused_kv_weight.shape[0]))" in proj
+          and "all_kv_flat = F.linear(normed, self._fused_kv_weight, None)" in proj
+          and ".permute(2, 1, 0, 3, 4)" in proj
+          and "[drafter-ctx-kv] serving:" in proj,
+          "the projection keeps the stock norm and layout, takes the lane when it answers, "
+          "falls back to F.linear when it declines, and says so once")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(len(re.findall(r"^VLLM_GLM53_DRAFTER_CTX_KV_W4=", profile, re.M)) == 1
+          and re.search(r"^VLLM_GLM53_DRAFTER_CTX_KV_W4=0$", profile, re.M) is not None,
+          "the knob is declared once and ships off")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_DRAFTER_CTX_KV_W4"' in bracket, "bracket.py snapshots the knob")
+    print("  drafter ctx-KV W4 contracts ..... OK")
+
 def test_trace_step_nodes_tool() -> None:
     """tools/trace_step_nodes.py + trace_common.cut_steps (34차).
 
@@ -11574,6 +11612,7 @@ if __name__ == "__main__":
     test_glm53_dflash_early_fc_contracts()
     test_glm53_drafter_prep_contracts()
     test_indexer_decode_fused_contracts()
+    test_glm53_drafter_ctx_kv_w4_contracts()
     test_trace_step_nodes_tool()
     test_micro_fusion_bundle_contracts()
     test_glm53_megakernel_contracts()
