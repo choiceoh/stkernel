@@ -609,10 +609,15 @@ def _mk_rank() -> int:
 _CALIB_OVERRIDE = None   # probes: (H, ntok) handed straight to the packer
 
 
-def _calib_hessian_for(name):
+def _calib_hessian_for(name, k=None):
     """The calibration Hessian dumped for this linear on this rank, or None
     (no calibration boot yet, or the knob is off). Read on the pack path
-    only; VLLM_GLM53_MK_PACK_GPTQ=0 keeps the packer RTN whatever is on disk."""
+    only; VLLM_GLM53_MK_PACK_GPTQ=0 keeps the packer RTN whatever is on disk.
+    `name` is "<ModelClass>/<module name>" (the fp8-dense attach namespaces
+    it: the drafter's `model.layers.N.mlp.down_proj` is not the target's --
+    on the first calibration boot the drafter read the target's dumps by the
+    bare name, 33차 chain 24). A Hessian whose size is not this linear's k is
+    ignored, loudly."""
     if not name or _w4_lever("VLLM_GLM53_MK_PACK_GPTQ", "1") != "1":
         return None
     if _CALIB_OVERRIDE is not None:
@@ -625,7 +630,12 @@ def _calib_hessian_for(name):
     try:
         import torch
         blob = torch.load(p, map_location="cpu")
-        return blob["H"], int(blob["ntok"])
+        H = blob["H"]
+        if k is not None and tuple(H.shape) != (k, k):
+            logger.warning("[megakernel] calib: %s is %s, this linear's k is %d "
+                           "-> RTN", p, tuple(H.shape), k)
+            return None
+        return H, int(blob["ntok"])
     except Exception as e:
         logger.warning("[megakernel] calib: %s unreadable (%r) -> RTN", p, e)
         return None
@@ -707,7 +717,7 @@ def build_mk_weight_w4(weight, name=None):
     n_pad = _mk_pad128(n)
     kg = k // 16
     per_row = _w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
-    calib = _calib_hessian_for(name)
+    calib = _calib_hessian_for(name, k)
     try:
         lr_rank = int(_w4_lever("VLLM_GLM53_MK_PACK_LORC", "0"))
     except ValueError:
@@ -739,12 +749,23 @@ def build_mk_weight_w4(weight, name=None):
     mids = torch.tensor(_E2M1_MIDS, device=weight.device)
     grid = torch.tensor(_E2M1_GRID, device=weight.device)
     need, shift, clamped = _w4_row_shift(weight, n_pad, kg, per_row)
+    H = None
     if calib is not None:
         H, ntok = calib
-        q_flat, d_out = _w4_gptq_codes(weight, shift, need, H, mids, grid)
-        _PACK_STATS["gptq"] += 1
+        try:
+            q_flat, d_out = _w4_gptq_codes(weight, shift, need, H, mids, grid)
+            _PACK_STATS["gptq"] += 1
+        except Exception as e:
+            # a calibration problem must never cost the linear its pack (the
+            # lane would silently serve stock); RTN, and say why
+            logger.warning("[megakernel] w4 pack %s %s: GPTQ failed (%r) -> RTN",
+                           name, tuple(weight.shape), e)
+            _PACK_STATS["gptq_failed"] += 1
+            H = None
+            torch.cuda.empty_cache()
+            q_flat, d_out = _w4_rtn_codes(weight, shift, need, mids, grid)
+            _PACK_STATS["rtn"] += 1
     else:
-        H = None
         q_flat, d_out = _w4_rtn_codes(weight, shift, need, mids, grid)
         _PACK_STATS["rtn"] += 1
     if clamped > 0.01:
@@ -812,15 +833,15 @@ def build_mk_weight_w4(weight, name=None):
     return pk
 
 
-_PACK_STATS = {"rtn": 0, "gptq": 0, "cached": 0, "lorc": 0, "lorc_cap": 0.0,
-               "build_s": 0.0}
+_PACK_STATS = {"rtn": 0, "gptq": 0, "gptq_failed": 0, "cached": 0, "lorc": 0,
+               "lorc_cap": 0.0, "build_s": 0.0}
 
 
 def pack_stats_line() -> str:
     """One boot-log line: how the packs of this process were made."""
     s = _PACK_STATS
     cap = (s["lorc_cap"] / s["lorc"]) if s["lorc"] else 0.0
-    return (f"packs: rtn={s['rtn']} gptq={s['gptq']} cached={s['cached']} "
+    return (f"packs: rtn={s['rtn']} gptq={s['gptq']} gptq_failed={s['gptq_failed']} cached={s['cached']} "
             f"lorc={s['lorc']} (mean captured error energy {cap:.2f}) "
             f"build {s['build_s']:.0f}s; levers rowshift="
             f"{_w4_lever('VLLM_GLM53_MK_PACK_ROWSHIFT', '1')} gptq="
@@ -965,6 +986,15 @@ def _calib_observe(x, pack) -> None:
     if name is None:
         return
     x32 = x.detach().float()
+    # the batch's padded rows (the token count rounded up to the graph's
+    # size) hold whatever memory was there: every k >= 2048 Hessian of the
+    # first calibration boot was NaN through them (chain 24) -- keep the
+    # finite rows only, and count only those
+    finite = torch.isfinite(x32).all(dim=1)
+    if not bool(finite.all()):
+        x32 = x32[finite]
+        if x32.shape[0] == 0:
+            return
     H = _CALIB["H"].get(key)
     if H is None:
         H = torch.zeros(x.shape[1], x.shape[1], dtype=torch.float32,
@@ -973,7 +1003,7 @@ def _calib_observe(x, pack) -> None:
         _CALIB["ntok"][key] = 0
         _CALIB["meta"][key] = (name, (int(pack[0].shape[0]) * 128, int(x.shape[1])))
     H.addmm_(x32.T, x32)
-    _CALIB["ntok"][key] += int(x.shape[0])
+    _CALIB["ntok"][key] += int(x32.shape[0])
     # every served linear sees every token, so any pack's count is the
     # budget's progress; the max keeps a late-attached pack from stalling it
     _CALIB["seen"] = max(_CALIB["seen"], _CALIB["ntok"][key])
@@ -991,8 +1021,13 @@ def _calib_dump() -> None:
     n = 0
     for key, H in _CALIB["H"].items():
         name, shape = _CALIB["meta"][key]
+        if not bool(torch.isfinite(H).all()):
+            logger.warning("[megakernel] calib: %s Hessian is not finite -> not dumped", name)
+            continue
+        path = os.path.join(root, name + ".pt")   # "<Model>/<linear>.pt"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save({"H": H.cpu(), "ntok": _CALIB["ntok"][key], "shape": shape,
-                    "name": name}, os.path.join(root, name + ".pt"))
+                    "name": name}, path)
         n += 1
     logger.warning("[megakernel] calib: dumped %d Hessians to %s (%d tokens "
                    "seen); the next boot's packer uses them (GPTQ)", n, root,

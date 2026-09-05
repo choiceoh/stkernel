@@ -9182,6 +9182,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("gemm_w4a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
           "Fp8DenseMethod.apply routes through the megakernel driver")
     check("method._mk = _mkmod.build_mk_weight_w4(weight, name=name)" in fp8
+          and fp8.count('attach_mk(method, weight, cols, f"{type(model).__name__}/{name}")') == 4
           and "ENABLE_W4" not in fp8 and "build_mk_weight(" not in fp8
           and "VLLM_GLM53_MK_W4" not in fp8,
           "the build attaches the W4 pack next to the deepgemm pair on every "
@@ -9966,22 +9967,26 @@ def test_megakernel_w4_layout_functional() -> None:
         mod._CALIB["seen"] = 0; mod._CALIB["budget"] = 40
         os.environ["VLLM_GLM53_MK_CALIB_DIR"] = td
         pk_c = mod.build_mk_weight_w4(w_a)
-        mod.note_pack_name(pk_c, "layers.1.self_attn.q_proj")
+        mod.note_pack_name(pk_c, "Glm5Next/layers.1.self_attn.q_proj")
         xs = torch.randn(24, k)
-        mod._calib_observe(xs, pk_c)
+        xs_pad = torch.cat([xs, torch.full((4, k), float("nan"))])   # padded rows
+        mod._calib_observe(xs_pad, pk_c)
         check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
-              "calibration: 24 rows seen, budget 40 not reached")
+              "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
         mod._calib_observe(xs, pk_c)
         check(mod._CALIB["dumped"], "calibration: the budget dumps")
-        got_c = mod._calib_hessian_for("layers.1.self_attn.q_proj")
+        got_c = mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k)
         check(got_c is not None and int(got_c[1]) == 48
               and torch.allclose(got_c[0], 2 * (xs.T @ xs), atol=1e-3),
               "calibration: the dumped Hessian is sum x^T x over the seen rows, "
               "keyed by the linear's name and rank 0")
-        check(mod._calib_hessian_for("layers.1.self_attn.k_proj") is None,
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.k_proj", k) is None,
               "calibration: an unknown linear packs RTN")
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", 2 * k) is None,
+              "calibration: a Hessian of another k is ignored (the drafter's "
+              "linear must never read the target's dump)")
         os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "0"
-        check(mod._calib_hessian_for("layers.1.self_attn.q_proj") is None,
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k) is None,
               "calibration: VLLM_GLM53_MK_PACK_GPTQ=0 ignores the dump")
         os.environ.pop("VLLM_GLM53_MK_PACK_GPTQ", None)
         os.environ.pop("VLLM_GLM53_MK_CALIB_DIR", None)

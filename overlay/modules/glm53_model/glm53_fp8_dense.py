@@ -934,7 +934,11 @@ def _attach_mk_pack(method, weight, cols, name=None) -> bool:
             if note is not None:
                 note(method._mk, name)
             return method._mk is not None
-    except Exception:
+    except Exception as e:
+        # loud: a linear without a pack serves the stock pair in silence
+        # otherwise, and 135 of 180 did exactly that on the 33차 GPTQ boot
+        logger.warning("[fp8-dense] MK W4 pack build FAILED for %s %s: %r -> stock pair",
+                       name, tuple(weight.shape), e)
         method._mk = None
     return False
 
@@ -1055,7 +1059,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 # dense scheme does not bid for it: an nvfp4/w4a8 copy here
                 # would be built, verified and never read. What MK-KDA does
                 # read is the W4 pack, and it must be attached now.
-                if attach_mk(method, weight, cols, name):
+                if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                     mk_packs += 1
                     kda_owned += 1
                 mod.quant_method = method
@@ -1136,7 +1140,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                         params_w4 += weight.numel()
                         armed_nv = True
                 if not armed_nv:
-                    if attach_mk(method, weight, cols, name):
+                    if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
@@ -1168,14 +1172,14 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
-                    if attach_mk(method, weight, cols, name):
+                    if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
                     continue
                 continue
-            if attach_mk(method, weight, cols, name):
+            if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
                 mk_packs += 1
             if prefill_nv and weight.shape[1] % _NVFP4_BLOCK == 0:
                 pair = _nvfp4_pair_for(
