@@ -6793,6 +6793,11 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "slot stride; the gate names the recurrent strides it refuses")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
     kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
+    gl = mk[mk.index("def gemm_w4a8(x, mk_pack, n_rows, bg=False)"):]
+    gl = gl[:gl.index("\ndef ", 1)]
+    check("gemm lane CAPTURED into the decode graph" in gl and "plan grid=%d ksr=%d localq=%d gemm2=%d" in gl
+          and "_EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)" in gl,
+          "the GEMM lane says once at capture which variant the graph bakes")
     kb = mk[mk.index("def kda_block(layer, hidden_states, positions)"):mk.index("class KdaShadowArm")]
     check("kda lane CAPTURED into the decode graph" in kb and "_KDA_CAPTURED" in kb,
           "kda_block says once when it is captured into the decode graph -- "
