@@ -39,6 +39,10 @@ from .moe_dynamic_kernel import (
 )
 from .moe_micro_kernel import MoEMicroKernel
 from .moe_static_kernel import MoEStaticKernel
+from .moe_static_kernel_v2 import (
+    MoEStaticKernelV2,
+    STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS,
+)
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
     _W4A16_ALLOWED_ROUTED_SIZES,
@@ -277,6 +281,96 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
     os.environ.get(_GLM53_B12X_DYNAMIC_MAC_LADDER_ENV),
     _GLM53_B12X_DYNAMIC_MAC_LADDER_ENV,
 )
+
+# The decode-streaming static kernel (moe_static_kernel_v2). Admitted for the
+# exact GLM-5.3 TP geometry only; every other shape keeps the stock kernel.
+# Value: unset/""/"0" = off; "1" = the default configuration; or a
+# comma-separated spec of `m<tile_m>` (32|64|128), `f<fc1 stages>`,
+# `g<fc2 stages>`, `a<A box rows>` (multiple of tile_m, <= 128) and `s`
+# (per-CTA %globaltimer stamps, probe only). Parsed once at import.
+_GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
+_STATIC_V2_DEFAULT = {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False}
+
+
+def _parse_glm53_static_v2(raw: str | None) -> dict | None:
+    """Parse the v2 static-kernel spec; None keeps the stock kernel."""
+    if raw is None:
+        return None
+    value = raw.strip()
+    if value in ("", "0", "off"):
+        return None
+    if value == "1":
+        return dict(_STATIC_V2_DEFAULT)
+    cfg = dict(_STATIC_V2_DEFAULT)
+    for token in value.split(","):
+        token = token.strip()
+        if token == "s":
+            cfg["stamps"] = True
+            continue
+        if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
+            raise ValueError(
+                f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
+                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s] cells (got {raw!r})"
+            )
+        key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
+        cfg[key] = int(token[1:])
+    if cfg["tile_m"] not in (32, 64, 128):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: tile_m must be 32, 64 or 128")
+    if "a" not in "".join(t.strip()[:1] for t in value.split(",")):
+        cfg["a_rows"] = cfg["tile_m"]
+    if cfg["a_rows"] % cfg["tile_m"] != 0 or cfg["a_rows"] > 128:
+        raise ValueError(
+            f"{_GLM53_B12X_STATIC_V2_ENV}: a_rows must be a multiple of tile_m, <= 128"
+        )
+    if cfg["fc1"] < 1 or cfg["fc2"] < 1:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
+    return cfg
+
+
+_GLM53_B12X_STATIC_V2 = _parse_glm53_static_v2(os.environ.get(_GLM53_B12X_STATIC_V2_ENV))
+# Probe hook: a config dict overrides the import-time env value; module-level
+# (a monkeypatch target), never read from the environment at launch time.
+_STATIC_V2_OVERRIDE: dict | None = None
+_STATIC_V2_STAMPS: Dict[Tuple[int, str], "torch.Tensor"] = {}
+
+
+def _static_v2_config_for(
+    *,
+    num_experts: int,
+    num_local_experts: int,
+    hidden_size: int,
+    intermediate_size: int,
+    num_topk: int,
+    quant_mode: str,
+    activation: str,
+    swiglu_limit: float | None,
+    activation_precision: str,
+) -> dict | None:
+    """The v2 config to launch, or None for the stock static kernel."""
+    cfg = _STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None else _GLM53_B12X_STATIC_V2
+    if cfg is None or activation_precision != "fp4":
+        return None
+    if not _is_glm53_b12x_tp_geometry(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_topk=num_topk,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+    ):
+        return None
+    return cfg
+
+
+def _static_v2_stamps_tensor(mac: int, device: "torch.device") -> "torch.Tensor":
+    key = (int(mac), str(device))
+    tensor = _STATIC_V2_STAMPS.get(key)
+    if tensor is None:
+        tensor = torch.zeros((int(mac), _STATIC_V2_STAMP_SLOTS), dtype=torch.int64, device=device)
+        _STATIC_V2_STAMPS[key] = tensor
+    return tensor
 
 
 def _lookup_mac_ladder(
@@ -933,12 +1027,14 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_dynamic_kernel,
         moe_micro_kernel,
         moe_static_kernel,
+        moe_static_kernel_v2,
     )
 
     return (
         __file__,
         moe_activation.__file__,
         moe_static_kernel.__file__,
+        moe_static_kernel_v2.__file__,
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1364,6 +1460,235 @@ def _get_static_kernel(
 
     result = (compiled, mac)
     _STATIC_KERNEL_CACHE[cache_key] = result
+    return result
+
+
+_STATIC_V2_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
+
+
+def _static_v2_cache_key(config: dict, **fields) -> Tuple:
+    """Cache key of a v2 static kernel: the stock static key plus its config."""
+    cfg = (
+        "static_v2",
+        int(config["tile_m"]),
+        int(config["fc1"]),
+        int(config["fc2"]),
+        int(config["a_rows"]),
+        bool(config["stamps"]),
+    )
+    return cfg + _static_kernel_cache_key(**fields)
+
+
+def _get_static_kernel_v2(
+    state_E: int,
+    weight_E: int,
+    m: int,
+    k: int,
+    n: int,
+    num_topk: int,
+    max_rows: int,
+    *,
+    config: dict,
+    topk_ids_dtype: torch.dtype = torch.int32,
+    input_scales_are_reciprocal: bool = False,
+    fast_math: bool = True,
+    mac_override: int | None = None,
+    activation: str = "silu",
+    swiglu_alpha: float = 1.702,
+    swiglu_beta: float = 1.0,
+    swiglu_limit: float | None = None,
+    activation_precision: str = "fp4",
+    quant_mode: str = "nvfp4",
+):
+    """Compile (or retrieve cached) the decode-streaming static MoE kernel.
+
+    Same fake-tensor contract as :func:`_get_static_kernel` plus the stamps
+    tensor ([mac, STAMP_SLOTS] int64) the kernel writes when
+    ``config["stamps"]`` is set (and ignores otherwise).
+    """
+    activation_precision = _normalize_activation_precision(activation_precision)
+    if activation_precision != "fp4":
+        raise ValueError("static v2 is the NVFP4 lane")
+    quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
+    sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
+    if sf_vec_size != 16:
+        raise ValueError("static v2 is the NVFP4 (sf_vec_size=16) lane")
+    sm_count = get_num_sm(torch.device("cuda"))
+    mac = (
+        mac_override
+        if mac_override is not None
+        else min(get_max_active_clusters(1), sm_count)
+    )
+    mma_tiler_mn = (int(config["tile_m"]), 128)
+    cache_key = _static_v2_cache_key(
+        config,
+        activation_precision=activation_precision,
+        quant_mode=quant_mode,
+        state_E=state_E,
+        weight_E=weight_E,
+        m=m,
+        k=k,
+        n=n,
+        num_topk=num_topk,
+        max_rows=max_rows,
+        mac=mac,
+        mma_tiler_mn=mma_tiler_mn,
+        topk_ids_dtype=topk_ids_dtype,
+        input_scales_are_reciprocal=input_scales_are_reciprocal,
+        fast_math=fast_math,
+        activation=activation,
+        swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit,
+    )
+    cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    ab_dtype = cutlass.Float4E2M1FN
+    weight_dtype = cutlass.Float4E2M1FN
+    a_dtype = cutlass.BFloat16
+    alpha_dtype = cutlass.Float32
+
+    output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
+    kernel: Any = MoEStaticKernelV2(
+        sf_vec_size=sf_vec_size,
+        mma_tiler_mn=mma_tiler_mn,
+        output_tile_count_n=output_tile_count_n,
+        fc1_stages=int(config["fc1"]),
+        fc2_stages=int(config["fc2"]),
+        a_rows=int(config["a_rows"]),
+        stamps=bool(config["stamps"]),
+        fast_math=fast_math,
+        activation=activation,
+        swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit,
+        input_scales_are_reciprocal=input_scales_are_reciprocal,
+    )
+
+    w1_rows = 2 * n
+    rows_pad_k = _align_up(max_rows, 128)
+    cols_pad_k = _align_up(k // sf_vec_size, 4)
+
+    a_input_fake = cute.runtime.make_fake_compact_tensor(
+        a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+    )
+    topk_ids_cutlass_dtype = (
+        cutlass.Int32 if topk_ids_dtype == torch.int32 else cutlass.Int64
+    )
+    topk_ids_align = 4 if topk_ids_dtype == torch.int32 else 8
+    topk_ids_fake = cute.runtime.make_fake_compact_tensor(
+        topk_ids_cutlass_dtype, (m * num_topk,), assumed_align=topk_ids_align
+    )
+    topk_weights_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Float32, (m * num_topk,), assumed_align=4
+    )
+    packed_a_fake = cute.runtime.make_fake_compact_tensor(
+        ab_dtype, (max_rows, k, state_E), stride_order=(1, 0, 2), assumed_align=16
+    )
+    sfa_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
+    packed_a_storage_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Uint8, (state_E * max_rows * (k // 2),), assumed_align=16
+    )
+    scale_storage_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Uint8, (state_E * rows_pad_k * cols_pad_k,), assumed_align=16
+    )
+    barrier_count_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (1,), assumed_align=4
+    )
+    barrier_epoch_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (1,), assumed_align=4
+    )
+    b_w13_fake = cute.runtime.make_fake_compact_tensor(
+        weight_dtype, (w1_rows, k, weight_E), stride_order=(1, 0, 2), assumed_align=16
+    )
+    sfb_w13_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
+    b_down_fake = cute.runtime.make_fake_compact_tensor(
+        weight_dtype, (k, n, weight_E), stride_order=(1, 0, 2), assumed_align=16
+    )
+    sfb_down_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
+    row_counts_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (state_E,), assumed_align=4
+    )
+    active_expert_count_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (1,), assumed_align=4
+    )
+    weight_expert_ids_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (state_E,), assumed_align=4
+    )
+    global_to_local_expert_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (weight_E,), assumed_align=4
+    )
+    input_gs_fake = cute.runtime.make_fake_compact_tensor(
+        alpha_dtype, (weight_E,), assumed_align=16
+    )
+    alpha_fake = cute.runtime.make_fake_compact_tensor(
+        alpha_dtype, (weight_E,), assumed_align=16
+    )
+    down_alpha_fake = cute.runtime.make_fake_compact_tensor(
+        alpha_dtype, (weight_E,), assumed_align=16
+    )
+    global_scale_fake = cute.runtime.make_fake_compact_tensor(
+        alpha_dtype, (weight_E,), assumed_align=16
+    )
+    scatter_fake = cute.runtime.make_fake_compact_tensor(
+        a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+    )
+    token_map_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4
+    )
+    token_weights_fake = cute.runtime.make_fake_compact_tensor(
+        alpha_dtype, (state_E, max_rows), stride_order=(1, 0), assumed_align=16
+    )
+    stamps_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int64, (mac, _STATIC_V2_STAMP_SLOTS), stride_order=(1, 0), assumed_align=8
+    )
+    stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
+    name = (
+        f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
+        f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
+        f"{'s' if config['stamps'] else ''}"
+    )
+    compiled = build_and_load_cute_dsl_kernel(
+        _CUTE_DSL_MODULE,
+        _disk_kernel_name(name, cache_key),
+        lambda: cute.compile(
+            kernel,
+            a_input_fake,
+            topk_ids_fake,
+            topk_weights_fake,
+            packed_a_fake,
+            sfa_fake,
+            packed_a_storage_fake,
+            scale_storage_fake,
+            barrier_count_fake,
+            barrier_epoch_fake,
+            b_w13_fake,
+            sfb_w13_fake,
+            b_down_fake,
+            sfb_down_fake,
+            row_counts_fake,
+            active_expert_count_fake,
+            weight_expert_ids_fake,
+            global_to_local_expert_fake,
+            input_gs_fake,
+            alpha_fake,
+            down_alpha_fake,
+            global_scale_fake,
+            scatter_fake,
+            token_map_fake,
+            token_weights_fake,
+            stamps_fake,
+            mac,
+            stream_fake,
+            options="--opt-level 2 --enable-tvm-ffi",
+        ),
+        extra_key_files=_kernel_source_files(),
+    )
+
+    result = (compiled, mac)
+    _STATIC_V2_KERNEL_CACHE[cache_key] = result
     return result
 
 
@@ -1959,6 +2284,8 @@ def launch_sm120_static_moe(
     static_mac = min(tuned_static_mac or base_mac, base_mac)
     if activation_precision == "fp4" and not use_micro and routed_rows < 40:
         static_mac = min(static_mac, 64)
+    # set only when the v2 static kernel launches (it takes one extra tensor)
+    static_v2_stamps = None
 
     if use_micro:
         assert flat_ids.numel() <= workspace.compact_topk_ids.numel(), (
@@ -2046,25 +2373,59 @@ def launch_sm120_static_moe(
             quant_mode=quant_mode,
         )
     else:
-        compiled, mac = _get_static_kernel(
-            workspace.state_E,
-            num_experts,
-            num_tokens,
-            k,
-            n,
-            top_k,
-            workspace.max_rows,
-            topk_ids_dtype=torch.int32,
-            input_scales_are_reciprocal=input_scales_are_reciprocal,
-            fast_math=fast_math,
-            mac_override=static_mac,
+        static_v2_config = _static_v2_config_for(
+            num_experts=num_experts,
+            num_local_experts=workspace.state_E,
+            hidden_size=k,
+            intermediate_size=n,
+            num_topk=top_k,
+            quant_mode=quant_mode,
             activation=activation,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_beta=swiglu_beta,
             swiglu_limit=swiglu_limit,
             activation_precision=activation_precision,
-            quant_mode=quant_mode,
         )
+        if static_v2_config is not None:
+            compiled, mac = _get_static_kernel_v2(
+                workspace.state_E,
+                num_experts,
+                num_tokens,
+                k,
+                n,
+                top_k,
+                workspace.max_rows,
+                config=static_v2_config,
+                topk_ids_dtype=torch.int32,
+                input_scales_are_reciprocal=input_scales_are_reciprocal,
+                fast_math=fast_math,
+                mac_override=static_mac,
+                activation=activation,
+                swiglu_alpha=swiglu_alpha,
+                swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit,
+                activation_precision=activation_precision,
+                quant_mode=quant_mode,
+            )
+            static_v2_stamps = _static_v2_stamps_tensor(mac, a.device)
+        else:
+            compiled, mac = _get_static_kernel(
+                workspace.state_E,
+                num_experts,
+                num_tokens,
+                k,
+                n,
+                top_k,
+                workspace.max_rows,
+                topk_ids_dtype=torch.int32,
+                input_scales_are_reciprocal=input_scales_are_reciprocal,
+                fast_math=fast_math,
+                mac_override=static_mac,
+                activation=activation,
+                swiglu_alpha=swiglu_alpha,
+                swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit,
+                activation_precision=activation_precision,
+                quant_mode=quant_mode,
+            )
         launch_ids = flat_ids
 
     # Pointer arguments must be passed as raw ints (data_ptr()) at runtime.
@@ -2098,6 +2459,8 @@ def launch_sm120_static_moe(
         workspace.token_map,
         workspace.token_weights,
     )
+    if static_v2_stamps is not None:
+        runtime_args = runtime_args + (static_v2_stamps,)
     compiled(*runtime_args)
 
     return scatter_output
