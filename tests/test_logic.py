@@ -5541,6 +5541,7 @@ def test_census_owner_axis() -> None:
     check(group("k_oneshot(Ctrl*, __nv_bfloat16 const*)") == "우리 · osar AR",
           "our one-shot AR still groups as ours")
     for n in ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+              "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
               "(anonymous namespace)::mk_mhc_kernel((anonymous namespace)::MKMhcArgs)",
               "mk_mla_kernel(MKMlaArgs)", "mk_kda_kernel(MKKdaArgs)"):
         check(group(n) == "우리 · 메가커널 세그먼트",
@@ -5552,6 +5553,7 @@ def test_census_owner_axis() -> None:
     tc = load_defs("tools/trace_common.py", {"OURS", "owner"}, {})
     owner = tc["owner"]
     ours = ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+            "void (anonymous namespace)::mk_gemm2_kernel<4>((anonymous namespace)::MKGemm2Ctx)",
             "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
             "mk_kda_kernel(MKKdaArgs)", "k_oneshot(Ctrl*)",
             "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
