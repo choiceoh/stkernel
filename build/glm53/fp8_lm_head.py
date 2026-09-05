@@ -283,6 +283,25 @@ def _fp8_gemm(
     return out
 
 
+def _mk_head_logits(lm_head, hidden_states, mk_env: str):
+    """The W4 head on the megakernel's v2 lane (30차 §13), or None: the lane
+    is not armed, this batch is outside its contract, or the endpoint was
+    disarmed by its first-call gate (the megakernel module says which)."""
+    try:
+        from vllm.model_executor.layers import glm53_megakernel as mk
+    except Exception:
+        return None
+    fn = getattr(mk, "head_logits", None)
+    if fn is None:
+        return None
+    endpoint = "draft" if "DRAFT" in mk_env else "target"
+    flat = hidden_states.reshape(-1, hidden_states.shape[-1])
+    out = fn(flat, lm_head, endpoint)
+    if out is None:
+        return None
+    return out.view(*hidden_states.shape[:-1], -1)
+
+
 def build_fp8_lm_head_weight(head) -> bool:
     """Quantize one head at most once. Returns whether an fp8 copy exists."""
     cached = (
@@ -356,10 +375,15 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
         fp8_env: str = "VLLM_SPEC_FP8_LM_HEAD",
         valid_vocab_size: int | None = None,
         selector_top_k: int | None = None,
+        mk_env: str | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self._deneb_fp8_env = fp8_env
+        # W4 head on the megakernel's v2 lane (30차 §13): its own knob per
+        # endpoint, asked before the fp8 copy; None = this endpoint never asks
+        self._deneb_mk_env = mk_env
+        self._deneb_mk_said = False
         if valid_vocab_size is not None and valid_vocab_size <= 0:
             raise ValueError("valid_vocab_size must be positive when provided")
         if valid_vocab_size is not None and valid_vocab_size > self.org_vocab_size:
@@ -368,6 +392,36 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
             )
         _validate_decodable_top_k(valid_vocab_size, selector_top_k)
         self._deneb_valid_vocab_size = valid_vocab_size
+
+    def _mk_fidelity_line(self, lm_head, hidden_states, out, dg_w) -> None:
+        """Once per endpoint, on the first call the W4 head served: the same
+        rows through the head this boot would otherwise serve (the fp8 copy
+        when it exists, else bf16) -- argmax agreement and the logit delta
+        in units of each row's logit spread. A number in the boot log for
+        the bracket to be read against; it never changes what is served."""
+        try:
+            if torch.cuda.is_current_stream_capturing():
+                return
+            flat = hidden_states.reshape(-1, hidden_states.shape[-1])
+            if dg_w is not None:
+                ref = _fp8_gemm(flat, dg_w, lm_head._deneb_fp8_ws)
+                against = "fp8 head"
+            else:
+                ref = LogitsProcessor._apply_head(self, lm_head, flat, None)
+                against = "bf16 head"
+            o = out.reshape(flat.shape[0], -1).float()
+            r = ref.reshape(flat.shape[0], -1).float()
+            agree = int((o.argmax(-1) == r.argmax(-1)).sum())
+            spread = r.std(dim=-1, keepdim=True).clamp(min=1e-6)
+            d = (o - r).abs() / spread
+            logger.warning(
+                "fp8 lm_head: W4 head lane (%s) vs %s on its first served call: "
+                "argmax agree %d/%d rows, |delta| mean %.4f / max %.3f of the "
+                "row's logit std",
+                self._deneb_mk_env, against, agree, int(o.shape[0]),
+                float(d.mean()), float(d.max()))
+        except Exception as e:
+            logger.warning("fp8 lm_head: W4 head fidelity line failed: %r", e)
 
     def _apply_head(self, lm_head, hidden_states, embedding_bias):
         # The target and drafter may share one lm_head object.  The FP8 copy is
@@ -379,7 +433,22 @@ class Fp8HeadLogitsProcessor(LogitsProcessor):
         if dg_w is None and use_fp8 and not attempted:
             if build_fp8_lm_head_weight(lm_head):
                 dg_w = getattr(lm_head, "_deneb_fp8_w", None)
+        out = None
+        mk_env = self._deneb_mk_env
         if (
+            mk_env
+            and _read_bool_env(mk_env)
+            and embedding_bias is None
+            and (self.head_dtype is None
+                 or self.head_dtype == hidden_states.dtype)
+        ):
+            out = _mk_head_logits(lm_head, hidden_states, mk_env)
+            if out is not None and not self._deneb_mk_said:
+                self._deneb_mk_said = True
+                self._mk_fidelity_line(lm_head, hidden_states, out, dg_w)
+        if out is not None:
+            pass
+        elif (
             dg_w is None
             or embedding_bias is not None
             or (self.head_dtype is not None

@@ -731,7 +731,34 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 lever-chain14(GEMM2 팔, 09:02~)가 실행 중 — 결과 `ab-lever-GEMM2.log`.
 (f) **트레이스 확인**(원장 30차 §12, 09-05 15:07 프로덕션 캡처, 246 스텝): 같은 185발 13.86 → 7.78 ms(−44%),
 aux 쌍 노출 1.16 → 0.15 ms; 스텝 55.3 ms 에서 GEMM 16%, MoE 52%, AR 10%. SMLP2 탐색 팔은 기대 ≤ 0.3 ms(노출이
-0.15 ms 뿐)라 해상도 아래 → 보류. 레인의 다음 후보는 LM 헤드 2발(deep_gemm 835 µs/발, 대역 39%) → v2.
+0.15 ms 뿐)라 해상도 아래 → 보류. 레인의 다음 후보는 LM 헤드 2발(deep_gemm fp8 835 µs/발 — fp8 바이트로는 이미 대역 바닥; §12 의 "39%" 는
+fp4 오가정의 정정 대상, 원장 §13) → W4 팩 + v2 = EXP-22.
+
+
+## EXP-22 — W4 어휘 헤드를 v2 레인에 (`VLLM_GLM53_MK_HEAD_DRAFT` / `_TARGET`, 2026-09-06 추가)
+
+**근거**: 원장 30차 §12~13. 스텝의 LM 헤드 2발(타깃 verify m=8, 드래프트 후보 m=7)은 deep_gemm
+fp8×fp8(W8A8; 커널 이름 `sm120_fp8_fp4` 의 FP4 플래그 셋은 전부 false) 158 MB/rank 를 ~190 GB/s 로
+읽어 835 µs/발 = 1.67 ms/스텝(3%) — fp8 바이트로는 이미 대역 바닥. 33차가 같은 형상에서 잰 참고치
+bf16 1306 / fp8 918 / MK W4(v1 레인) 418 µs 가 바이트 절반의 값이고, v2 는 303 타일(3.2 웨이브)로
+~420 µs 예상 → 두 발 −0.8 ms/스텝(1.5%), 드래프트 헤드만이면 −0.4 ms(0.75%).
+
+**팔**: `VLLM_GLM53_MK_HEAD_DRAFT=1`(기본 0) 먼저 — 거친 드래프트 헤드는 수용률만 움직인다(acc 정규화
+step/s, pos-1 ±2 pct, quality 9/9, 한국어 0/16). `VLLM_GLM53_MK_HEAD_TARGET`(기본 0)은 서빙 로짓 —
+`VLLM_TARGET_LM_HEAD_FP8` 의 운영자 결정과 같은 축이 한 단계 더 거칠어지는 것이라 운영자 결정 뒤에만.
+둘 다 MK_GEMM=1·MK_GEMM2=1 필요(GEMM2 off 면 헤드 레인이 스스로 해제하고 로그).
+
+**오프라인 게이트**: `run_megakernel_bench.sh --segments gemm --gemm-shapes 8:38720:4096,7:38720:4096
+--gemm2 both --ksr2-sweep 1,2` — exact PASS + stock 열(= 서빙 fp8 헤드, 836) 대비 mk2 열, ksr 1 vs 2 로
+규칙 확정(현재 규칙: 타일이 두 웨이브 이상이면 1).
+
+**부팅 증명 줄**(없으면 무장≠서빙): `[megakernel] head pack built (draft endpoint first): weight
+(38720, 4096) -> 303 tiles`, `[megakernel] head lane serving: draft endpoint, first eligible call m=…
+plan(on/ksr/units/bps/tail)=[1, 1, 303, 2, 0], exact gate worst rel=… PASS`, `fp8 lm_head: W4 head lane
+(VLLM_GLM53_MK_HEAD_DRAFT) vs fp8 head on its first served call: argmax agree N/N rows, |delta| mean …`.
+트레이스에선 `mk_gemm2_kernel<1>` 이 스텝당 +2(타깃·드래프트) 하고 deep_gemm 헤드 발사가 사라진다.
+
+**상태**: 구현(브랜치 `claude/mk-gemm-v2-lmhead`, 원장 §13) — GPU 벤치와 드래프트 헤드 브래킷은 플릿 창 대기.
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)

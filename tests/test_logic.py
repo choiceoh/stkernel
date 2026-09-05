@@ -7433,6 +7433,127 @@ def test_mk_smlp_hook_and_contracts() -> None:
     assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 32차 bracket"
 
 
+def test_mk_head_lane_contracts() -> None:
+    """The vocab head on the v2 lane (30차 §13, EXP-22): wired so that an
+    unarmed or failed lane serves the fp8/bf16 head exactly as before.
+
+    head_logits is None unless the GEMM segment is armed, the batch is a
+    2-D decode batch (m <= 32), the v2 lane is on (the persistent kernel
+    was never sized for 303 tiles) and the head object carries a pack; a
+    disarmed endpoint stays disarmed for the boot. The processor asks the
+    lane before its fp8 copy, and each construction site names its own
+    endpoint knob. The kernel's tile cap covers 38,720 / 128 = 303 tiles
+    and the partial bound is a split's contract only.
+    """
+    import types
+    said = []
+
+    class _T:
+        def __init__(self, shape, dtype="bf16"):
+            self.shape, self.dtype = shape, dtype
+        def dim(self):
+            return len(self.shape)
+    PACK = (_T((303, 32, 128, 64)), _T((303, 32, 128, 8)), 1.0)
+    ns = load_defs(
+        "overlay/glm53_megakernel.py",
+        {"_ARMED", "_HEAD", "_head_disarm", "head_pack", "head_logits",
+         "MK_GEMM_KMAX", "_flag"},
+        {"os": os,
+         "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
+         "build_mk_weight_w4": lambda w, name=None: PACK,
+         "note_pack_name": lambda p, n: None,
+         "gemm_w4a8": lambda x, p, n: "served",
+         "_EXT": types.SimpleNamespace(gemm2_plan=lambda m, n, k: [1, 1, 303, 2, 0]),
+         "_head_first_call_gate": lambda x, p, n, out: 1e-5,
+         "MKPack": tuple, "mk_pack_twin": None, "_exact_gate": None})
+    head_logits, head_pack = ns["head_logits"], ns["head_pack"]
+    torch_stub = types.ModuleType("torch")
+    torch_stub.bfloat16, torch_stub.float16 = "bf16", "fp16"
+    torch_stub.cuda = types.SimpleNamespace(is_current_stream_capturing=lambda: False)
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    try:
+        class _Head:
+            weight = _T((38720, 4096))
+        x = _T((8, 4096))
+        ns["_ARMED"]["gemm"] = False
+        check(head_logits(x, _Head(), "draft") is None,
+              "an unarmed GEMM segment never serves the head")
+        ns["_ARMED"]["gemm"] = True
+        check(head_logits(_T((8, 4096, 1)), _Head(), "draft") is None
+              and head_logits(_T((33, 4096)), _Head(), "draft") is None,
+              "a non-2-D or m > 32 batch is outside the lane's contract")
+        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
+        check(head_logits(x, _Head(), "draft") is None
+              and "draft" in ns["_HEAD"]["disarmed"]
+              and "GEMM2" in ns["_HEAD"]["disarmed"]["draft"],
+              "with the v2 lane off the head disarms itself (v1 was never sized for 303 tiles)")
+        ns["_HEAD"]["disarmed"].clear()
+        os.environ["VLLM_GLM53_MK_GEMM2"] = "1"
+        h = _Head()
+        check(head_logits(x, h, "draft") == "served"
+              and h._mk_head_pack is PACK
+              and "draft" in ns["_HEAD"]["said"]
+              and any("head lane serving" in a[0] for a in said),
+              "armed + v2 + pack: the lane serves and says so once")
+        n_said = len(said)
+        check(head_logits(x, h, "draft") == "served" and len(said) == n_said,
+              "the serving line is printed once per endpoint")
+        bad = _Head()
+        bad.weight = _T((38720, 4096), dtype="fp32")
+        check(head_pack(bad, "target") is None and bad._mk_head_pack_attempted
+              and head_pack(bad, "target") is None,
+              "a weight outside the contract fails the pack build once and latches")
+        check(head_logits(x, bad, "target") is None
+              and "target" in ns["_HEAD"]["disarmed"],
+              "no pack: the endpoint disarms and the fp8/bf16 head serves")
+        wide = _Head()
+        wide.weight = _T((38720, 8192))
+        check(head_pack(wide, "target") is None,
+              "K beyond one launch of the lane is refused (no k-chunk path for the head)")
+    finally:
+        if saved is not None:
+            sys.modules["torch"] = saved
+        else:
+            sys.modules.pop("torch", None)
+        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
+
+    fp8_source = open(_overlay_source("overlay/fp8_lm_head.py")).read()
+    tree = ast.parse(fp8_source)
+    cls = next(n for n in tree.body
+               if isinstance(n, ast.ClassDef) and n.name == "Fp8HeadLogitsProcessor")
+    apply_src = ast.get_source_segment(fp8_source, next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_apply_head"))
+    init_src = ast.get_source_segment(fp8_source, next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"))
+    check("mk_env: str | None = None" in init_src
+          and "self._deneb_mk_env = mk_env" in init_src,
+          "the processor takes its endpoint's MK knob name, None = never asks")
+    mk_at = apply_src.index("_mk_head_logits(lm_head, hidden_states, mk_env)")
+    fp8_at = apply_src.index("_fp8_gemm(flat, dg_w, lm_head._deneb_fp8_ws)")
+    check(mk_at < fp8_at and "if out is not None:\n            pass" in apply_src
+          and "embedding_bias is None" in apply_src[:mk_at],
+          "the lane is asked before the fp8 copy, only without a bias, and None falls through unchanged")
+    check("_read_bool_env(mk_env)" in apply_src,
+          "an endpoint whose knob is off never asks the lane (the knob, not the other endpoint's)")
+    model_src = open(_overlay_source("overlay/glm5next_model.py")).read()
+    draft_src = open(_overlay_source("overlay/qwen3_dflash2.py")).read()
+    check('mk_env="VLLM_GLM53_MK_HEAD_TARGET"' in model_src
+          and 'mk_env="VLLM_GLM53_MK_HEAD_DRAFT"' in draft_src,
+          "target and draft heads name their own knobs")
+    env = open(os.path.join(REPO, "profiles/glm53.env")).read()
+    check("VLLM_GLM53_MK_HEAD_DRAFT=0\n" in env and "VLLM_GLM53_MK_HEAD_TARGET=0\n" in env,
+          "both head knobs are declared off in the profile (the launcher forwards declared keys only)")
+    cu = open(_overlay_source("overlay/glm53_megakernel.cu")).read()
+    m = re.search(r"constexpr int MK2_TILES_MAX = (\d+);", cu)
+    check(m is not None and int(m.group(1)) >= -(-38720 // 128),
+          "the v2 tile cap covers the vocab head (38,720 / 128 = 303 tiles)")
+    check("} else if (nblk >= 2 * slots) {" in cu
+          and "(c2.ksr == 1 && c2.tail == 0)" in cu,
+          "the ksr rule takes one slice for >= 2 waves of tiles and the partial bound is a split's contract only")
+    print("  mk head lane contracts .......... OK")
+
+
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
     """28차: the MLA split scratch never moves under a captured graph.
 
@@ -11903,6 +12024,7 @@ if __name__ == "__main__":
     test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
+    test_mk_head_lane_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()

@@ -1063,6 +1063,9 @@ class Glm5NextForCausalLM(
             self.config.vocab_size,
             scale=logit_scale,
             fp8_env="VLLM_TARGET_LM_HEAD_FP8",
+            # W4 head on the megakernel's v2 lane (30차 §13): the served
+            # logits, so its own knob, off until the operator arms it
+            mk_env="VLLM_GLM53_MK_HEAD_TARGET",
         )
         # LM head rows the tokenizer cannot decode are live argmax candidates
         # (see _decodable_vocab_size). Mask them in compute_logits.
