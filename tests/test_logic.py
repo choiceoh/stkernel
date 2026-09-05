@@ -8318,8 +8318,33 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "fires for a module already in sys.modules) and skips itself when "
           "resolving, so it cannot recurse")
     for phase in ("determine_available_memory", "initialize_from_config",
-                  "compile_or_warm_up_model", "profile_run", "capture_model"):
+                  "compile_or_warm_up_model", "profile_run", "capture_model",
+                  "init_device"):
         check(phase in src, f"the {phase} phase is stamped")
+    # 37차: the 2026-09-05 19:30 boot spent 302 s between the TP and EP
+    # groups of initialize_model_parallel with no line on any rank (1 s in
+    # the 09-04 20:16 and 09-05 00:03 boots). So the distributed groups are
+    # stamped by name, and a phase still running after DENEB_BOOT_STAMP_SLOW
+    # seconds gets its thread's stack logged -- a gap with no marker cannot
+    # be attributed afterwards.
+    check('"vllm.distributed.parallel_state"' in src
+          and '(None, "init_model_parallel_group", "dist-group")' in src
+          and '(None, "initialize_model_parallel", "dist-model-parallel")' in src
+          and '(None, "init_distributed_environment", "dist-world")' in src
+          and "cls = m if cls_name is None else getattr(m, cls_name, None)" in src
+          and 'group = kw.get("group_name")' in src,
+          "the world group and every model-parallel group are stamped by "
+          "name (module-level functions, cls None = the module)")
+    check('os.environ.get("DENEB_BOOT_STAMP_SLOW", "60")' in src
+          and "sys._current_frames().get(tid)" in src
+          and "while not done.wait(_SLOW) and n < _SLOW_MAX_DUMPS:" in src
+          and "done = _start_watch(lab, t)" in src
+          and "done.set()" in src
+          and "daemon=True" in src,
+          "a phase still running after DENEB_BOOT_STAMP_SLOW seconds logs its "
+          "thread's stack from a daemon watcher that is ended in finally, so "
+          "the gap is attributed while it happens and the watcher never "
+          "outlives the phase")
     # `Loading weights took Ns` covers the loader AND the model's
     # weight_loader. Read 296 s once and 63.5 s the next day on the same
     # code -- the first was measured while this repo's benches had all four
