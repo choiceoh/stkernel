@@ -2027,6 +2027,17 @@ dsv4 와 공유하는 `tp_oneshot_ar`·`moe_gate_sm121`·`glm53_megakernel` 은 
 미판정), `DECODABLE_VOCAB`·`VOCAB_MASK_AUDIT`(한국어 품질 도구), `glm53_tail_slot_persistent` 행(잠들어 있지만
 prep-fused 가 그 파일의 preimage 를 고정 — 지우면 이미지 원본으로 바뀌어 DISARM).
 
+### 9. 체인24 — EXP-24 브래킷 (srv2 `lever-chain24-fusion.sh`, 배포 = 접기 브랜치; 결과는 아래 표에)
+
+팔 셋, 팔마다 전체 다리(디코드 3회·프리필·수용률·품질·한국어) + 한국어 2회 추가. 첫 부팅은 오버레이 sha 변경으로
+컴파일 캐시가 비워진 콜드 부팅. 판정은 창 통계(`judge_windows.py`, 32차 §13 형식)와 `judge_lever.py` 의 게이트 줄.
+
+| 팔 | env | 디코드 창(중앙·q1·q3, n) | rep step/s | 프리필 | 품질 | 한국어 ×3 | 증명 줄 | 판정 |
+|---|---|---|---|---|---|---|---|---|
+| PRODT | 기본값 + `DRAFTER_PREP=time` | (대기) | | | | | `[drafter-prep] stock build host us` | 기준 + 호스트 µs 실측 |
+| FUSION3 | `DRAFTER_PREP=1 INDEXER_DECODE_FUSED=1 INDEXER_GATE_SPLITK=1 DFLASH_EARLY_FC=1 KDA_ONEPASS=1 KDA_DUAL_GEMM=1 KPOOL_UPDATE_DIRECT_POS=1 MK_SMLP2=1 DRAFTER_CTX_KV_W4=1` | (대기) | | | | | `serving: FULL replay`, `tail-select fused`, `-> split-K`, `one-pass KDA serving`, `drafter-ctx-kv] serving`, smlp2 캡처 | |
+| ARPF1 | `AR_PREFETCH=1` | (대기) | | | | | prefetch hints learned | 한국어 3회가 판정 |
+
 _이 항목의 측정: 캡처 1회(체인22 PRODSET 부팅 유휴 시, 다른 세션 레그와 겹치지 않음), 분석은 srv4 에서
 `nice -n 19 taskset -c 19`(rank 3 규칙; 부팅 창). GPU 프로브·전체 테스트는 플릿이 조용한 창에서._
 
