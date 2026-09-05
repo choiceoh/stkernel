@@ -530,3 +530,60 @@ fallback. Its per-layer exposure and x42 projection are not a serving gain.
    C=1 step/s, quality 9/9, Korean 0/16, pos-1 acceptance within 2 pct.
 
 Rollback is one env line per segment; unmounted hooks are inert imports.
+
+## 33차 — W4 pack accuracy levers (same bytes, same kernel)
+
+The operator's brief: raise the GEMM lane's accuracy without touching its
+speed. Four levers, three of them pack-time; the served bytes per weight
+and the inner loop are unchanged.
+
+1. **Exact activation scale** (unconditional, kernel). The prologue's
+   per-row, per-128-k scale is `amax * fp32(1/448)` instead of the pow2
+   `2^frexp_exp(amax/448)`, which wasted up to one of e4m3's three mantissa
+   bits on every activation row. The torch twin `_mk_quant_x_ref` does the
+   same three fp32 ops in the same FORM (torch divides by a scalar as a
+   multiply by its fp32 reciprocal; an IEEE divide in the kernel failed the
+   exact gate at 4e-3, over-ulp 1526). Every activation quantizer feeding
+   a W4 pack -- the GEMM prologues (global, local-quant, v2), the SMLP pair
+   emitters, KDA p4 -- uses it.
+2. **Per-row shift** (`VLLM_GLM53_MK_PACK_ROWSHIFT=1`, default). The shift
+   that keeps the group exponents inside the byte-add expansion's 11
+   octaves is per output row (median of the row's covering exponents),
+   undone on the output column at the bf16 store (`MKPack.rgs`, fp32
+   [n_pad]) instead of on the activation scales. The 1.5% of clamped
+   groups on the production [6416, 4096] in_proj were rows octaves away
+   from the tensor median; they no longer clamp.
+3. **GPTQ error-feedback rounding** (`VLLM_GLM53_MK_PACK_GPTQ=1`, default,
+   effective only with a calibration dump). A calibration boot
+   (`VLLM_GLM53_MK_CALIB=1`; drive it with `bench/mk-calib-run.py`) makes
+   every W4 launch's Python entry accumulate `H = sum x x^T` per pack until
+   `VLLM_GLM53_MK_CALIB_TOKENS` rows, then each rank dumps
+   `<VLLM_GLM53_MK_CALIB_DIR>/rank<r>/<linear>.pt`. The next boot's packer
+   finds the dump by the linear's name and rounds each column with the
+   error of the previous columns fed forward through the inverse Hessian
+   (OBQ/GPTQ, blocks of 128, group scales re-derived on the updated
+   weights). The pack is cached under `VLLM_GLM53_MK_PACK_CACHE` (weight
+   md5 + shape + levers + `MK_PACK_VERSION`), so the solve is paid once per
+   rank.
+4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
+   8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
+   from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`
+   and the served product is `x W_q^T + (x B^T) A^T` (the correction on the
+   unquantized x; `mk_pack_twin` is the reference). The v2 kernel's `LR`
+   instantiation adds it -- the plain instantiation carries none of the
+   code: `LR_CTAS` extra blocks at the front of the grid reduce `t = x B^T`
+   into a per-stream scratch and raise a flag (they are the lowest block
+   indices, dispatched first; on the stamps they publish by 10-15 us); a
+   tile's final store waits for the flag, stages t and the tile's 128 rows
+   of A in the freed smem rings, computes the correction tile once, adds it
+   per store, and the launch's last final store rearms the scratch (graph
+   replay reuses it). v1 / KDA / SMLP lanes serve such a pack WITHOUT the
+   correction (said once on stderr).
+
+Gates: the exact fixture (weights on the grid: the correction is zero, the
+per-row shift is byte-exact, the twin is the reference) and the by-design
+fixture, both in `_selftest_gemm`; `probes/megakernel_glm53_bench.py
+--segments exact,gemm`; and `probes/mk_pack_accuracy.py`, which ranks the
+arms against the bf16 truth (the bench's rel_err is the gap to the stock
+fp8 pair, two quantized arms disagreeing, and cannot rank them).
+
