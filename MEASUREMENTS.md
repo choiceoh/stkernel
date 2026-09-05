@@ -2399,6 +2399,60 @@ dsv4 와 공유하는 `tp_oneshot_ar`·`moe_gate_sm121`·`glm53_megakernel` 은 
 `MODULES` 위 주석에 옛→새 대응표를 뒀다. 테스트 스위트의 모듈별 검사는 묶음 안의 행·파일을 찾도록 고쳤다
 (정확 행 비교 4건은 포함 비교로).
 
+### 7. 운영자 "1~3,6,7" (2026-09-05 오후 2)
+
+- **3번(MoE aux 체인 순서 조정)은 접었다.** 이미지 러너(`fused_moe/runner/shared_experts.py`)를 읽으니 공유 전문가
+  쌍은 aux 스트림에서 게이트 앞 동기점에만 의존한다 — 그래프 재생에서 쌍과 게이트가 동시에 준비되고(사실상 "쌍 먼저"),
+  MoE 커널은 topk 뒤에 뜬다. 오늘 서빙의 노출은 게이트 경합 7~9 µs + MoE 시작 지연 ~2.5 µs = 층당 ~10 µs 로, 30차
+  프로브의 두 순서(MoE 먼저 18.6 / 쌍 먼저 28.6)보다 이미 낫다: 게이트+topk 25 µs 가 쌍 35 µs 를 거의 다 가린다.
+  순서를 바꿔 쌍을 MoE 뒤로 보내면 쌍 꼬리가 MoE 끝을 넘어 노출되고(18.6), topk 뒤로 보내면 쌍 블록이 MoE 블록의
+  SM 을 잡아 MoE 끝이 늦어진다. 남는 처방은 하나 — MoE 블록(smem 90 KB, 40.8K 레지스터)과 한 SM 에 앉을 수 있는
+  **공존형 배경 GEMM**(smem ≤ 10 KB, 블록당 ≤ 24K 레지스터: ksr 8 로 A 슬라이스 4 KB, 128 스레드) — 그러면 쌍이
+  MoE 그늘에서 통째로 돌아 층당 ~10 µs(스텝 0.4 ms, 0.7%). 커널 작업이라 이번 묶음에서 뺀다.
+- **6번**: 드래프터의 문맥 K/V 사영(`precompute_and_store_context_kv` 의 융합 bf16 GEMM [2560×4096], 21 MB, 101 µs)을
+  W4 레인으로 — `VLLM_GLM53_DRAFTER_CTX_KV_W4=1`(기본 0). 드래프터 overlay 가 버퍼 빌드 때 팩을 만들고 디코드 크기
+  배치는 `gemm_w4a8`, 그 외는 스톡 `F.linear`. 쿼리 경로의 k/v 행은 이미 같은 종류의 팩으로 서빙되므로 문맥 K/V 수치가
+  쿼리 K/V 와 같은 종류가 된다. 상한 −75 µs/스텝(0.13%), 드래프터 수치만 바뀜(수용률 프로파일이 게이트). 층당 글루
+  8발(norm·conv prepare/finish·rotary·cache)은 이미 inductor 가 한 발씩으로 접어 둔 것이라 더 접을 것이 거의 없다.
+- **1·2번**: 체인24(srv2 `lever-chain24.sh`) = PRODT(기본값 + `DRAFTER_PREP=time`, 호스트 µs 실측) → FUSION3(신규 노브
+  셋 + EXP-9·15·20·SMLP2 전부) → ARPF1(`AR_PREFETCH=1` 단독), 팔마다 전체 다리 + 한국어 3회. 플릿이 다른 세션의
+  컨테이너로 바쁜 동안은 대기.
+- **7번**: 일몰 후보 표는 §8.
+
+### 8. 노브·코드 일몰 후보 (운영자 판정 요청 — 삭제는 승인 뒤)
+
+규칙(28차): 이득이 확인된 개선은 기본값으로 올리고 반대쪽을 지운다; 이득 0 이나 기각은 경로째 지운다. 아래는 원장·런북의
+판정이 끝난 것들이다. "범위"는 지울 파일·노브·테스트.
+
+| # | 후보 | 판정 근거 | 범위 | 비고 |
+|---|---|---|---|---|
+| 1 | `MK_SMLP`(v1 상주 SMLP 커널) | 32차 §7: 서빙 이득 0, 한국어 1~2/16; SMLP2(PDL 체인 v2)가 대체 | `.cu` 의 `mk_smlp_kernel`·`run_smlp`, 드라이버 `smlp_forward` v1 분기, 노브, 벤치 `--segments smlp` v1 열 | SMLP2 는 EXP-24 팔에서 판정 |
+| 2 | `MK_KTAIL`(v2 꼬리 유닛) | 30차 §11: 전 셀 검증, 기본값 없음, 두 형상 잡음·나머지 5~17% 손해 | `.cu` 꼬리 유닛 경로, 노브, 벤치 `--ktail2-sweep`, `set_gemm2` 인자 | |
+| 3 | `MK_LOCALQ`(29차 로컬 양자화 커널) | 단독 손해, 서빙 이득 0(체인14 LOCALQ), 세트 승격 뒤 되돌림(#322) | `mk_gemm_lq_kernel`·`mk_gemm_phase_t<LQ>`, 플랜 `localq`, 노브, 벤치 `--gemm-sweep` local 열 | v2 레인이 같은 진단의 채택된 처방 |
+| 4 | `UNION_PREFILL`·`_SHADOW`·`DENSE_PREFIX_PREFILL` + `glm53_union_prefill.py` | 32차 §5: 프리필 −9%, 검증 커널 컴파일 오류 | 파일 1, 노브 3, 모델 배선의 분기, 테스트 | |
+| 5 | `SM121_MLA_PREFILL` + `flash_attn.py` overlay | 기본 off "브래킷 clean 까지"; MK-MLA v5 가 프리필 행을 이미 라우팅(+17%) | 파일 1(행 1), 노브, 테스트 `test_glm53_sm121_mla_prefill_gate` | 겹치는 표적인지 확인 뒤 |
+| 6 | `KDA_PREFILL_REGIME` + `kda.py`·`chunk_delta_h.py` overlay | "성능 결과 없음"; 마운트만으로 Triton ABI 가 바뀌어 0 이어도 재컴파일 비용 | 파일 2(행 2), 노브, 테스트 | 지우면 프리필 첫 부팅 JIT 하나 줄어듦 |
+| 7 | `FUSED_K_GATE`, `KPOOL_FUSED_TOPK` + `glm53_kpool_topk.cu/.py` | 둘 다 opt-in, 서빙 판정 없음(런북 상태표에 없음) | 파일 2(행 2), 노브 2 | 원장에서 판정 기록을 먼저 찾을 것 |
+| 8 | ~~EP 계열~~ — **철회(운영자 "EP 종결 안 됐잖아")**. 08-30 의 "종결(불가)"는 flashinfer 자체 EP(진입점 하드 거부)에 대한 판정이고, 그 뒤 #115·#120~122 가 리포의 로컬 전용 래퍼 EP 경로를 구현해 EXP-1 은 "구현 완료, 부팅 측정만 남음"(런북 상태표)이다 | 후보 아님 | — | 판정은 EXP-1 부팅 뒤 |
+| 9 | `MHC_ONEPASS`·`MHC_SMALLM`(디코드 쪽) | mk_mhc 가 쌍을 대체해 전제 소멸(런북 EXP-19 "초월") | 노브 2, `tilelang.py` 의 분기 | `MHC_PASSES`·`MHC_BIGFUSE` 는 프리필 big_fuse 표적이라 유지 |
+| 10 | `SKIP_SAMPLER_PROFILE` | K5 탐색용, K5 는 보류 | 노브 1, 러너 패치 1 | K5 재개 전까지 불필요 |
+| 11 | 고아 모듈 `glm53_drop_audit`·`glm53_sparse_q` | 어느 프로필도 안 실음(프로필 주석으로 설명됨) | 디렉터리 2 | 설명 절이 "은퇴"면 삭제 |
+
+유지(후보 아님): EP 계열 4 노브 + 마이크로커널 2파일(EXP-1 미측정 — 위 8번 철회), `MK_KDA`·`MK_KDA_SHADOW`(레인은 서빙되고 진단이 남아 있음), `FP8_DENSE_PREFILL_NVFP4`(프리필 레버,
+미판정), `DECODABLE_VOCAB`·`VOCAB_MASK_AUDIT`(한국어 품질 도구), `glm53_tail_slot_persistent` 행(잠들어 있지만
+prep-fused 가 그 파일의 preimage 를 고정 — 지우면 이미지 원본으로 바뀌어 DISARM).
+
+### 9. 체인24 — EXP-24 브래킷 (srv2 `lever-chain24-fusion.sh`, 배포 = 접기 브랜치; 결과는 아래 표에)
+
+팔 셋, 팔마다 전체 다리(디코드 3회·프리필·수용률·품질·한국어) + 한국어 2회 추가. 첫 부팅은 오버레이 sha 변경으로
+컴파일 캐시가 비워진 콜드 부팅. 판정은 창 통계(`judge_windows.py`, 32차 §13 형식)와 `judge_lever.py` 의 게이트 줄.
+
+| 팔 | env | 디코드 창(중앙·q1·q3, n) | rep step/s | 프리필 | 품질 | 한국어 ×3 | 증명 줄 | 판정 |
+|---|---|---|---|---|---|---|---|---|
+| PRODT | 기본값 + `DRAFTER_PREP=time` | (대기) | | | | | `[drafter-prep] stock build host us` | 기준 + 호스트 µs 실측 |
+| FUSION3 | `DRAFTER_PREP=1 INDEXER_DECODE_FUSED=1 INDEXER_GATE_SPLITK=1 DFLASH_EARLY_FC=1 KDA_ONEPASS=1 KDA_DUAL_GEMM=1 KPOOL_UPDATE_DIRECT_POS=1 MK_SMLP2=1 DRAFTER_CTX_KV_W4=1` | (대기) | | | | | `serving: FULL replay`, `tail-select fused`, `-> split-K`, `one-pass KDA serving`, `drafter-ctx-kv] serving`, smlp2 캡처 | |
+| ARPF1 | `AR_PREFETCH=1` | (대기) | | | | | prefetch hints learned | 한국어 3회가 판정 |
+
 _이 항목의 측정: 캡처 1회(체인22 PRODSET 부팅 유휴 시, 다른 세션 레그와 겹치지 않음), 분석은 srv4 에서
 `nice -n 19 taskset -c 19`(rank 3 규칙; 부팅 창). GPU 프로브·전체 테스트는 플릿이 조용한 창에서._
 
