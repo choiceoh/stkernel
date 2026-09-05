@@ -166,6 +166,15 @@ builds two LUT pairs per W row per k-block instead of eight (216 of the
 raw loads land on four different banks. ptxas: 96 / 96 / 117 registers,
 no spills, no stack.
 
+Tail units (`VLLM_GLM53_MK_KTAIL=<k-blocks>`, default off): every slice
+gives its last k-blocks to a second unit placed at the end of the grid, so
+the main units fill one wave and the tail units are dispatched into the
+slots the fastest mains free -- the 4-9 us DRAM-arbitration tail of a
+96-unit launch (30차 §6) is then work for blocks that would otherwise
+idle. Each slice becomes two partials folded in fixed order; the rule
+takes it only when every slice keeps at least `tail` k-blocks. Swept by
+`--ktail2-sweep`; off until the sweep says which tail wins.
+
 MK_SEG_SMLP2 (`VLLM_GLM53_MK_SMLP2`, default off): the shared-expert /
 dense MLP as two PDL-chained v2 launches -- gate_up with the pair-
 activation epilogue (the block storing the second final tile of a (gate,

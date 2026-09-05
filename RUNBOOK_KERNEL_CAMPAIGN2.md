@@ -695,6 +695,10 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 쌍 에필로그가 fp8 그룹을 방출, down 은 a_ready) — 교착 위험 없이 act_and_mul 42발과 down 의
 양자화를 없앤다. 노브 `VLLM_GLM53_MK_SMLP2`(기본 0), 자가진단 exact 3종 + 리플레이. 벤치
 `--segments smlp --gemm2 both` 가 29차 SMLP·v2 체인·smlp2 를 나란히 잰다.
+(d) **꼬리 유닛** `VLLM_GLM53_MK_KTAIL`(기본 0): 슬라이스의 마지막 k-블록을 grid 끝의 두 번째 유닛으로 —
+96유닛 발사의 DRAM 중재 꼬리 4~9 µs 를 먼저 끝난 블록이 흡수. 스윕 `--ktail2-sweep 0,1,2,4` 뒤 채택.
+(e) 3라운드 GPU 결과(원장 §8): v2 x2 가 v1 대비 전 형상 −7~−24%. PR #318. 브래킷은 다른 세션의
+lever-chain14(GEMM2 팔, 09:02~)가 실행 중 — 결과 `ab-lever-GEMM2.log`.
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
