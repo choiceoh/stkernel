@@ -95,7 +95,13 @@ items from a global counter the kernel zeroes in its phase 0 and hands the
 coordinates to the MMA warps through a smem ring published by each item's
 first FC1 stage barrier; a sentinel stage ends the loop) and `s` (per-CTA
 `%globaltimer` stamps into an int64 `[grid, STAMP_SLOTS]` tensor -- probe
-only; the serving spec must not carry `s`). The cache key and on-disk kernel name carry the config; the source file
+only; the serving spec must not carry `s`), and `w` (`moe_static_kernel_v3.py`:
+FC1 streamed as two 64-wide halves over 256-wide K stages so every w13 TMA
+box row is a full 128 B line -- the v2 stamps put FC1 at 216 GB/s against
+FC2's 242 with the same pipeline, and a vectorized-load streamer measured
+DRAM at 167 GB/s for 64 B row segments, 202 for 128 B, 222 for 256 B; FC2
+and the intermediate layout are v2's, tile_m 32, static schedule, FC2 3
+stages by default). The cache key and on-disk kernel name carry the config; the source file
 is in `_kernel_source_files()`, so an edit invalidates the module cache like
 any other kernel file.
 
