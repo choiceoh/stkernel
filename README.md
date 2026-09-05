@@ -71,8 +71,8 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/modules/<name>/` | 오버레이 **모듈** 42개 — 각자 소스 · `manifest.tsv` · `README.md`(42/42) · 의존 선언 `requires`(16개) |
-| `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · glm53 25 · qwen38 1 모듈 |
+| `overlay/modules/<name>/` | 오버레이 **모듈** 25개 — 각자 소스 · `manifest.tsv` · `README.md`(25/25) · 의존 선언 `requires`. glm53 전용 25개는 34차(2026-09-05)에 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접혔다 — 행·계약·노브 불변 |
+| `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · glm53 8 · qwen38 1 모듈 |
 | `build/<profile>/` | `compose-overlays.sh` 가 렌더한 평평한 디렉터리 + 합성 매니페스트 — 배포기·런처가 보는 것 (생성물, 손으로 고치지 않는다) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 + A/B 하네스(`ab-glm53.sh`) |
 | `bench/` | 검증·측정 도구 (아래 표) |
@@ -88,7 +88,7 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 **매니페스트가 파일 목록·컨테이너 마운트 목적지·베이스 preimage의 유일한 원본**이다.
 모듈마다 `overlay/modules/<name>/manifest.tsv` 를 갖고, `compose-overlays.sh <profile>`
 가 프로필의 `MODULES=` 를 합쳐 `build/<profile>/manifest.tsv` 하나로 렌더한다(dsv4 23행 ·
-glm53 36행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
+glm53 40행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
 는 더 이상 없다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는 새 파일의
 `absent` 계약이다.
 배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,

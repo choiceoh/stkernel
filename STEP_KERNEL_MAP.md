@@ -333,7 +333,7 @@ self `copy_`는 ATen 쇼트서킷으로 커널 미발생. conv→recurrent 융�
 mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`arange`·`index`×2·
 `copy_`×5 를 내고(트레이스의 4회 반복 패턴), indexer 빌더가 `floor_divide`×3·
 `diff`·fill·`_prepare_uniform_decode`·deep_gemm 스케줄을 낸다. 전부 이미지 파일이고
-오버레이돼 있지 않다. 접수 방식은 `overlay/modules/glm53_prep_fused`(EXP-7):
+오버레이돼 있지 않다. 접수 방식은 `overlay/modules/glm53_runtime`(EXP-7):
 파일을 덮지 않고 러너 메서드를 패치하며 preimage 를 고정한다.
 
 **그래프 안 글루 605개의 정체**(같은 트레이스, 위치 귀속):
@@ -512,6 +512,61 @@ MLA 는 또 공허 무장이다), (2) cutlass bf16 201 → ~171 인가, (3) mk_g
    까지 떨어지고(26차) 그 상태의 큰 파이썬 프로세스는 earlyoom 감이다. 이벤트 하나씩
    흘려보내는 파서로 바꿨다 — **최대 RSS 17 MB**, 08-31 트레이스 출력은 이전 판과
    **비트 동일**, 실행 시간은 오히려 짧다.
+
+## 보충 분해 6 (2026-09-05 — 프로덕션 부팅의 첫 노드 인구조사, 34차)
+
+체인22 PRODSET 부팅(v2 레인 + prep-fused + MK-MLA + 드래프터 W4 + 서빙 PDL; 그 부팅은 KDA·
+LOCALQ·AR 프리페치까지 켠 팔이었다)에서 `bench/profile-step.py decode:600` 으로 rank 0·3 을
+캡처했다(245 스텝, 프로파일러 아래 55.8 ms/스텝). 새 도구 `tools/trace_step_nodes.py` 는
+스트리밍이라 부팅 중 노드에서도 안전하고(RSS 수십 MB), 커널 수가 최빈값인 "깨끗한 스텝"
+239개의 중앙값을 낸다.
+
+| | 09-04 무장 | **09-05 프로덕션** |
+|---|---|---|
+| 커널/스텝 | 1,582 | **1,166** (−416) |
+| 유휴(스트림 합집합) | 8.18 ms | **1.20 ms** (prep-fused) |
+| 밀집 GEMM | mk_gemm 185 발 14.13 | **mk_gemm2 147 발 3.52** (KDA 레인이 in/o_proj 68 발을 삼킴, v2 발당 24 µs) |
+| bf16 cutlass/cublas | 201 발 6.39 | **103 발 3.34** (드래프터 30 발이 W4 로; 남은 22 × 67 µs = MLA 층의 q_b·wq_b) |
+| mk_mla | 0 | **11** (보충 5 의 "다음 캡처 3줄" 중 첫째 확인) |
+| MoE 전문가 | 42 발 32.5 | 42 발 29.4 |
+| elementwise 글루 | 481 발 1.00 | 318 발 0.68 |
+
+보충 분해 5 가 미실측으로 남긴 세 줄: (1) `mk_mla_kernel` 11 발/스텝 **있다**, (2) cutlass bf16
+201 → **103**, (3) mk_gemm 185 → v2 레인 **147**(KDA 레인 on 이라 −68) — 셋 다 오늘의 기본값이
+서빙되는 것으로 확인됐다.
+
+**프로파일러 자신의 두 가지 왜곡**(전 범주 이벤트 창 `--gap` 으로 확인): (a) 스텝 시작의
+타깃 그래프 `cudaGraphLaunch` 가 rank 0 에서 2.8 ms(안에 CUPTI "Activity Buffer Request" 1.6 ms)
+— 스텝 시작 갭 1.7 ms 는 프로파일러 값이고 rank 3 은 0.4 ms; 31차의 "그래프당 7~10 µs" 가
+프로파일러 없는 값이다. (b) 호스트 파이썬도 부풀어 아래 드래프터 갭의 절대값은 상한이다.
+
+**드래프터 앞 갭**(스텝의 유일한 GPU 유휴 덩어리): `precompute_and_store_context_kv` 의 마지막
+`reshape_and_cache` 뒤 `Memcpy DtoH (Device -> Pageable)` 3.6 µs + `cudaStreamSynchronize` →
+파이썬 ~290 µs(rank 0)/~460 µs(rank 3) → 드래프터 그래프 `cudaGraphLaunch`(192/259 µs) → 첫
+커널. rank 0 의 드래프터 첫 `k_oneshot` 이 245 µs = rank 3 의 더 긴 갭을 기다리는 시간. 정체는
+`DFlashSpeculator.propose` 의 `_build_draft_attn_metadata`(FlashInfer 빌더가 비인과 어텐션이라
+`seq_lens.cpu()` 를 읽고 FULL 재생이 안 읽는 dict 를 만든다) — `glm53_drafter_prep` 이 처방.
+
+**MLA 층 한 개의 노드 열(rank 0, 중앙 스텝)**: mk_mhc 19 → qkv_a(mk_gemm2) 24 → q/k norm 2 →
+**q_b 67 → wq_b 66**(cutlass bf16 128x1, 12.6 MB 씩) → wk_weights_proj 10+2 → 복사 3.5 → **head gate
+`gemmSN` 89** → layer_norm 1.8 → fwht_quant 5.4 → mul 1.2 → gate_score 8+2 → fill 1.1 → 복사 1.7 →
+kpool_decode_update 9.3 → mqa_logits 4.6 → [seq_len·tail 강제 10 발 ≈ 18] → topk 2.5+23.3 →
+expand 1.2 → 복사 1.9 → concat_and_cache 3.3 → **q·W_UK 26.5** → fill·fill·convert·복사 7 →
+mk_mla 41 → **W_UV 22** → o_proj(mk_gemm2) 51 → k_oneshot. 층당 ~500 µs 가 한 스트림에 직렬이고
+그중 bf16 GEMM 4발 200 µs(EXP-4 의 자리), head-gate 89(EXP-9), 글루 12발 ~30(EXP-24 융합).
+
+**MoE 층의 두 스트림**: aux 스트림에 gate_partial 20 → topk 3.8 → MoE 655~1,000 → add 1.8 →
+k_oneshot 이 직렬(임계경로), 메인 스트림에는 공유 전문가 쌍(v2 25 + act 1.9 + v2 8)뿐이라
+1.2~1.4 ms 씩 논다. gate_partial 은 공유 gate_up 과 겹쳐 20~23 µs(단독 콜드 13.6).
+
+**꼬리(드래프터)**: 층당 norm 2.5 → kernel_projection(mk_gemm2) 15.5 → conv 글루 2.4 → qkv 13.3 →
+q/k norm 1.6 → rotary 2.4 → cache 3.2 → kernel_mha 31 → o_proj 31 → k_oneshot 64 → post norm 6.8
+→ kernel_projection 13 → 글루 2 → gate_up 41 → act 2.2 → down 50 → k_oneshot 51 ≈ 335 µs × 5.
+드래프터 GEMM 은 전부 v2 레인(EXP-10 이 서빙된다). 앞의 fc 5 청크(mk_gemm2 60~75 + 청크 사이
+글루 ~10) 390 µs 가 EXP-15 의 자리, `precompute_and_store_context_kv` 의 bf16 GEMM 101 µs(K/V
+문맥 사영, 레인 밖 "1 of 31")가 남는다.
+
+재현: `python3 tools/trace_step_nodes.py <trace.gz> --dump step.txt --gap 52400,53200`.
 
 ## 재현
 

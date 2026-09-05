@@ -36,7 +36,7 @@ NW = 46  # weights cycled inside one graph so every launch streams from DRAM
 
 def _load_kernel():
     spec = importlib.util.spec_from_file_location(
-        "glm53_indexer_gate", "/repo/overlay/modules/glm53_indexer_gate_splitk/glm53_indexer_gate.py")
+        "glm53_indexer_gate", "/repo/overlay/modules/glm53_model/glm53_indexer_gate.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m

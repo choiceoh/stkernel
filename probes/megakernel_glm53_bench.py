@@ -239,11 +239,11 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None, ktail_sweep=None) ->
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
         p4b = mk.build_mk_weight_w4(w2)
         del w2
-        if sweep or ktail_sweep:
-            kept[(m, n, k)] = (x, p4, p4b, got)  # got: this run's lane output, the sweeps' reference
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, p4, n)
         torch.cuda.synchronize()
+        if sweep or ktail_sweep:
+            kept[(m, n, k)] = (x, p4, p4b, got)  # got: this run's lane output, the sweeps' reference
         r = _rel(got, ref)
         t_ref = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols),
                       iters, hot=(x,))

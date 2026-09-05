@@ -1951,7 +1951,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
 // ===========================================================================
 // MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MAX_TOK.
 // Port of mhc_fused_tilelang + mhc_pre_big_fuse_with_norm_tilelang
-// (overlay/modules/glm53_mhc_tilelang/tilelang_kernels.py). Every rounding
+// (overlay/modules/glm53_kernels/tilelang_kernels.py). Every rounding
 // point is kept: residual_out rounds the fp32 rnew to bf16 while the sqrsum
 // uses the fp32 value, and the pre-norm activation is stashed as bf16 before
 // the norm consumes it.
