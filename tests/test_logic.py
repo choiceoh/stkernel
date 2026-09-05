@@ -9721,6 +9721,13 @@ def test_prefill_warmup_contracts() -> None:
     check(len(short) == 300,
           "short tokenization tops up before trimming (exact N guaranteed)")
 
+    src = open(os.path.join(REPO, "launchers", "prefill-warmup.py"),
+               encoding="utf-8").read()
+    check('"prompt": ids' in src and "prompt_token_ids\": ids" not in src,
+          "the completions payload sends token ids as the prompt list -- this "
+          "fork's /v1/completions 400s a top-level prompt_token_ids (the "
+          "33차 first armed boot warmed nothing and died on request 1)")
+
     launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"),
                     encoding="utf-8").read()
     check('PREFILL_WARMUP:-0' in launcher,
