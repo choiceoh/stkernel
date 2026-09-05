@@ -2,7 +2,9 @@
 # One lever arm on the PRODUCTION defaults (profiles/glm53.env): boot with the
 # given caller env, then the legs. Usage: ab-lever.sh <NAME> "<caller env>" [reps]
 #   SKIP_BOOT=1 reuses the live boot. Records --name NAME --tag cand.
-#   LEGS=decode,prefill,accept,quality,korean (default: all) picks the legs --
+#   LEGS=decode,prefill,accept,quality,korean (default: all) picks the legs;
+#   LEGS=onepass runs bench/onepass.py instead (all five gates from one
+#   workload, ~12 min; 35차) --
 #   the 32차 leg matrix: an EXPLORATION arm (a decode-kernel change) runs
 #   LEGS=decode,prefill8k QUALITY_CTX=2000,32000 (boot + ~5 min), a PROMOTION
 #   arm runs everything. SHORT=1 is the old alias for decode,prefill.
@@ -87,6 +89,12 @@ fi
 if has korean; then
   echo "== [$ARM] korean $(date +%T) =="
   python3 bench/korean-corruption.py 2 400 > /tmp/leg.$$ 2>&1; tail -12 /tmp/leg.$$; chk korean /tmp/leg.$$
+fi
+if has onepass; then
+  # 35차 (operator): every gate from one workload -- the quality documents are
+  # the prefill ladder, the Korean prompts are the decode stream (~12 min)
+  echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} =="
+  python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk onepass /tmp/leg.$$
 fi
 rm -f /tmp/leg.$$
 echo "== [$ARM] gate lines after traffic =="
