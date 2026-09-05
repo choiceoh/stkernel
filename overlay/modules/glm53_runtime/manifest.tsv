@@ -1,0 +1,13 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_prep_fused
+glm53_prep_fused.py	vllm/models/glm5next/nvidia/glm53_prep_fused.py	absent
+# -- glm53_v2_sampler_guards
+sampler.py	vllm/v1/worker/gpu/sample/sampler.py	76070739447fc9f7563ef164ef80c0777208d1ea07dec3a6f6d2a0755188d7ae
+# -- glm53_boot_stamps
+deneb_boot_stamps.py	deneb_boot_stamps.py	absent
+zz_deneb_boot_stamps.pth	zz_deneb_boot_stamps.pth	absent
+# -- glm53_dev_lab
+glm53_dev_lab.py	vllm/model_executor/layers/glm53_dev_lab.py	absent
+glm53_lab_middleware.py	vllm/glm53_lab_middleware.py	absent
+# -- glm53_oneshot_wiring
+cuda_communicator.py	vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757

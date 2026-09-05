@@ -333,7 +333,7 @@ self `copy_`는 ATen 쇼트서킷으로 커널 미발생. conv→recurrent 융�
 mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`arange`·`index`×2·
 `copy_`×5 를 내고(트레이스의 4회 반복 패턴), indexer 빌더가 `floor_divide`×3·
 `diff`·fill·`_prepare_uniform_decode`·deep_gemm 스케줄을 낸다. 전부 이미지 파일이고
-오버레이돼 있지 않다. 접수 방식은 `overlay/modules/glm53_prep_fused`(EXP-7):
+오버레이돼 있지 않다. 접수 방식은 `overlay/modules/glm53_runtime`(EXP-7):
 파일을 덮지 않고 러너 메서드를 패치하며 preimage 를 고정한다.
 
 **그래프 안 글루 605개의 정체**(같은 트레이스, 위치 귀속):

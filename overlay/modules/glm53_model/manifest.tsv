@@ -1,0 +1,16 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_model_wiring
+glm5next_model.py	vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
+glm53_prefill_fastpath.py	vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py	absent
+glm53_union_prefill.py	vllm/models/glm5next/nvidia/glm53_union_prefill.py	absent
+# -- glm53_indexer_gate_splitk
+glm5next_attention.py	vllm/models/glm5next/nvidia/attention.py	a0870c317287ab444a4639ad418964e981efafb5386592540f85eb38d534c369
+glm53_indexer_gate.py	vllm/models/glm5next/nvidia/glm53_indexer_gate.py	absent
+# -- glm53_mk_kda_wiring
+glm5next_kda.py	vllm/models/glm5next/nvidia/kda.py	ec090aabecc1a63dacc9694ea677b195e95ce0c63648c418a6daaf34b8196125
+# -- glm53_mk_mla_wiring
+flashinfer_mla_sparse_sm90.py	vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py	4449ea25921dcae1ec7988581ff26a6ff5a9e5d6d4a0ac4a68a0017ea108f136
+# -- glm53_kda_onepass
+glm53_kda_onepass.py	vllm/model_executor/layers/glm53_kda_onepass.py	absent
+# -- glm53_fp8_dense
+glm53_fp8_dense.py	vllm/model_executor/layers/glm53_fp8_dense.py	absent
