@@ -248,6 +248,27 @@ def _deneb_mk_hook():
     return _MK_HOOK
 
 
+# 37차: the pre-only entry point (layer 0's standalone pre-mix), resolved the
+# same way and cached separately -- a core without it disables THIS hook only.
+_MK_PRE_HOOK = None
+_MK_PRE_HOOK_TRIED = False
+
+
+def _deneb_mk_pre_hook():
+    global _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED
+    if not _MK_PRE_HOOK_TRIED:
+        try:
+            from vllm.model_executor.layers.glm53_megakernel import mhc_pre_hook
+        except ImportError as e:
+            if not isinstance(e, ModuleNotFoundError) or e.name == _MK_MODULE:
+                _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED = None, True
+            return None
+        except Exception:
+            return None
+        _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED = mhc_pre_hook, True
+    return _MK_PRE_HOOK
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -404,6 +425,36 @@ def mhc_pre_tilelang(
 
     residual_flat = residual.view(-1, hc_mult, hidden_size)
     num_tokens = residual_flat.shape[0]
+
+    # deneb fork (glm53_megakernel), 37차: layer 0's standalone pre-mix in
+    # the MHC segment (the fused kernel under identity post coefficients),
+    # the same T <= 16 window as the fused wrapper's hook. Every miss returns
+    # None and falls through to the stock GEMM + big-fuse pair below, so a
+    # disarmed boot is byte-identical to before; an armed launch is not
+    # excepted into the stock path (async CUDA failures are uncontainable).
+    if num_tokens <= 16 and norm_weight is not None:
+        _mk_pre_hook = _deneb_mk_pre_hook()
+        if _mk_pre_hook is not None:
+            _mk_pre = _mk_pre_hook(
+                residual_flat,
+                fn.view(hc_mult3, hc_mult, hidden_size),
+                hc_scale,
+                hc_base,
+                rms_eps,
+                hc_pre_eps,
+                hc_sinkhorn_eps,
+                hc_post_mult_value,
+                sinkhorn_repeat,
+                norm_weight,
+                norm_eps,
+            )
+            if _mk_pre is not None:
+                _pm, _cm, _li = _mk_pre
+                return (
+                    _pm.view(*outer_shape, hc_mult, 1),
+                    _cm.view(*outer_shape, hc_mult, hc_mult),
+                    _li.view(*outer_shape, hidden_size),
+                )
 
     from vllm.utils.deep_gemm import is_deep_gemm_supported
 

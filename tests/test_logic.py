@@ -8552,6 +8552,51 @@ def test_self_built_kernels_persist_their_caches() -> None:
           "the prenorm GEMM's three call sites route through the M<8 padding "
           "wrapper (def + 3 calls); the raw deep_gemm call appears only "
           "inside the wrapper")
+    # 37차 "1+2": layer 0's standalone pre-mix is the one call of a decode
+    # step that still reached deep_gemm (every other layer's pre rides in the
+    # fused hook). The fused kernel's post step is v = pm*x + sum cm*res in
+    # fp32, so pm = 0, cm = I make it the identity and the same armed kernel
+    # serves the standalone pre with no kernel change. Static coefficient
+    # buffers at T_max, sliced per call; a self-test that checks the identity
+    # bitwise and the outputs against the stock pair, at T=8 and -- only when
+    # the boot's spec k is not 7 -- at T=k+1, so a production boot never runs
+    # a T it never serves; its own arm flag under the MHC segment's.
+    mkp = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                  "glm53_megakernel.py"), encoding="utf-8").read()
+    check('ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")' in mkp
+          and '_ARMED = {"mhc": False, "mhc_pre": False, ' in mkp
+          and "def mhc_pre_only(" in mkp and "def mhc_pre_hook(" in mkp
+          and "def _selftest_mhc_pre() -> bool:" in mkp
+          and 'if ENABLE_MHC_PRE and _ARMED["mhc"]:' in mkp
+          and '_ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)' in mkp,
+          "the pre-only MHC hook has its own knob (default on), arm flag and "
+          "self-test, gated under the fused segment's arm")
+    check("cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)" in mkp
+          and "x0[:num_tokens], residual.reshape(-1, hc_mult, hidden)," in mkp
+          and "pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base," in mkp
+          and "identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))" in mkp
+          and 'spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()' in mkp
+          and "ts.append(int(spec_k) + 1)" in mkp,
+          "identity post coefficients from static buffers sliced per call; "
+          "the self-test proves the identity bitwise and adds T=k+1 only on "
+          "a non-7 spec boot")
+    check("_HOOK_SERVED_PRE[0] += 1" in mkp
+          and "[megakernel] mhc-pre hook serving (T=%d)" in mkp
+          and mkp.index("maybe_arm()", mkp.index("def mhc_pre_hook(")) < mkp.index("out = mhc_pre_only(", mkp.index("def mhc_pre_hook(")),
+          "mhc_pre_hook arms before it calls and logs a serving receipt once")
+    pre_start = tl.index("def mhc_pre_tilelang(")
+    pre_end = tl.index("\ndef ", pre_start + 10)
+    pre = tl[pre_start:pre_end]
+    check("def _deneb_mk_pre_hook():" in tl
+          and "from vllm.model_executor.layers.glm53_megakernel import mhc_pre_hook" in tl
+          and "if num_tokens <= 16 and norm_weight is not None:" in pre
+          and "_mk_pre_hook = _deneb_mk_pre_hook()" in pre
+          and pre.index("_mk_pre_hook = _deneb_mk_pre_hook()") < pre.index("use_deep_gemm = is_deep_gemm_supported()")
+          and "_pm.view(*outer_shape, hc_mult, 1)," in pre
+          and tl.count("_mk_pre_hook = _deneb_mk_pre_hook()") == 1,
+          "the standalone pre wrapper offers the MK pre hook (T <= 16, with "
+          "norm) before any GEMM, returning the stock wrapper's shapes; the "
+          "fused wrapper's own hook block is untouched")
     print("  self-built kernels persist their caches .. OK")
 
 

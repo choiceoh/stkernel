@@ -2053,6 +2053,17 @@ torch/CUDA 키라 부팅이 그대로 물려받는다. 300 s 상한, 실패해�
 **프리놈 프로브**(`hc_prenorm_probe.py`, M=8 대조 → M=6, 각 240 s 상한, 헤드의 일회용 GPU 컨테이너)를 넣어 "M=6 에서 정말 멈추는가" 를 먼저 적는다.
 체인은 `FLEET-free-for-glmfix.done` 과 `K5FIX-merged.done` 둘 다 있어야 출발한다.
 
+**운영자 "딥젬 말고 mkgemm 써서는 못하나" → "1+2"(08:30)**. 디코드에서 deep_gemm 에 닿는 호출은 **첫 층의 단독 pre-mix 하나**뿐임을 확인했다
+(`hc_pre` → `mhc_pre_tilelang`: 소형 분기 없음; 나머지 층의 pre 는 융합 post+pre 훅(T≤16)이, 마지막 post 는 GEMM 없이 처리). 그래서 **2 = pre-only 훅**:
+융합 커널의 post 단계는 fp32 로 `v = pm[j]·x + Σ_k cm[k][j]·res[k]` 라 **pm=0, cm=I 를 주면 residual_out == residual 이 비트 단위로 같고** pre 부분이
+원래 residual 위에서 돌아간다 — 이미 무장된 커널로 단독 pre 를 받는다(커널 수정 0). 정적 계수 버퍼(T_max=32: x 0 [32×4096] bf16 256 KB, pm 0,
+cm I)를 자체시험 때 한 번 만들어 호출마다 접두 슬라이스로 넘긴다(그래프 캡처 안 할당 없음). 자체시험 `_selftest_mhc_pre`: T=8 에서 (1) 항등 검사
+`torch.equal(rc, res)`, (2) pm/cm/layer_input 을 stock 쌍(`mhc_fused_tilelang` + `mhc_pre_big_fuse_with_norm_tilelang`)과 대조(≤1e-3); 부팅의
+`VLLM_GLM53_SPEC_K`≠7 이면 T=k+1 도 검사한다(k=7 프로덕션은 서빙하지 않는 T 를 절대 돌리지 않는다). 무장 키 `mhc_pre`(MHC 세그먼트 무장 아래),
+노브 `VLLM_GLM53_MK_MHC_PRE`(기본 1). 서빙 증명: `[megakernel] mhc-pre hook serving (T=…)` 첫 호출 1회 + `_HOOK_SERVED_PRE`. 배선은
+`mhc_pre_tilelang` 의 GEMM 앞(T≤16, norm 있음), 미스는 stock 으로 낙하. CPU 스텁 시험(계수·슬라이스·형상·영수증·미스) 통과; GPU 검증은 K5 체인의
+부팅 로그(`selftest mhc-pre T=[8, 6] identity=True … -> ARM`)와 k=7 복귀 부팅에서 본다. 속도 이득은 주장하지 않는다(T=8 에서 MK≈stock).
+
 (b) 302 s 는 다음 재발 때 §3 줄로 판독 — 09-04·09-05 의 세 부팅 중 한 번만 났다.
 
 ## ★★★36차 — 다음 레버를 숫자로 고르기: C>1 처리량, 128K 프리필 지도, 하니스 결함 둘 (2026-09-06 07:00~07:15 KST, 프로덕션 부팅 위 무재부팅 측정)
