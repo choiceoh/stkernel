@@ -8901,12 +8901,24 @@ def test_glm53_megakernel_contracts() -> None:
           and "if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }" in v2
           and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
           and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
-          and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
+          and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
           and "atomicAdd(&g_mk2_partial" not in cu
           and "g_mk2_partial[i] = 0.0f;" not in cu,
           "v2 split slices are assigned (no zero pass), counted per tile with "
           "a self-rearming counter, and folded by the last slice in fixed "
           "order -- deterministic, no atomics on the partials")
+    check('getenv("VLLM_GLM53_MK_KTAIL")' in cu
+          and "int mk_choose_tail2(int m, int n, int k, int ksr)" in cu
+          and "if (shortest < 2 * tail) return 0;" in cu
+          and "const int nslices = c.tail > 0 ? 2 * ksr : ksr;      // partials per tile" in v2
+          and "const int slice = is_tail ? ksr + sp : sp;" in v2
+          and "s_last = (prev + 1u == (unsigned)nslices);" in v2
+          and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
+          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1);" in cu,
+          "v2 tail units (VLLM_GLM53_MK_KTAIL, default off): the last tail k-blocks "
+          "of every slice form a second unit at the end of the grid, folded as a "
+          "second partial in fixed order; only when every slice keeps >= tail "
+          "k-blocks and the doubled partial set fits")
     check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
           and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
           and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
@@ -8929,7 +8941,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
           and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
           and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
-          and "ext.set_gemm2(on, ksr)" in bench
+          and "ext.set_gemm2(on, ksr, ktail)" in bench
           and "same = bool(torch.equal(got2, got))" in bench,
           "the driver builds v2's ring depth in, the boot fingerprint names "
           "the served lane and its in_proj plan, and the bench times both "

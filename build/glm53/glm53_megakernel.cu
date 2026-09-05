@@ -1356,6 +1356,14 @@ struct MKGemm2Ctx {
   int a_ready = 0;
   int pair_act = 0;
   int n_int = 0;               // gate width = up width = the down launch's k
+  // Tail units (VLLM_GLM53_MK_KTAIL, 0 = off): every slice gives up its last
+  // `tail` k-blocks to a second unit that sits at the END of the grid. The
+  // main units fill one wave; the tail units are dispatched, in order, into
+  // the slots the fastest main units free -- so the DRAM-arbitration tail
+  // (the slowest block finishing 4-9 us after the median, 30차 §6) is
+  // absorbed by blocks that would otherwise sit idle. Every slice is then
+  // two partials (main, tail) folded in fixed order by the last arrival.
+  int tail = 0;
   float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
 };
 
@@ -1388,9 +1396,17 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
 
   const int kblk = c.k / KSTEP;
   const int ksr = c.ksr;
-  const int nt = (int)blockIdx.x / ksr, sp = (int)blockIdx.x % ksr;
-  // ksr <= kblk (host contract), so every slice is non-empty
-  const int kb0 = (kblk * sp) / ksr, kbn = (kblk * (sp + 1)) / ksr;
+  const int nmain = (c.n / SMEM_W_ROWS) * ksr;          // main units
+  const bool is_tail = (int)blockIdx.x >= nmain;
+  const int uu = is_tail ? (int)blockIdx.x - nmain : (int)blockIdx.x;
+  const int nt = uu / ksr, sp = uu % ksr;
+  // ksr <= kblk (host contract), so every slice is non-empty; with tails the
+  // host also guarantees every slice holds >= 2 x tail k-blocks
+  const int kbA = (kblk * sp) / ksr, kbB = (kblk * (sp + 1)) / ksr;
+  const int kb0 = is_tail ? kbB - c.tail : kbA;
+  const int kbn = is_tail ? kbB : kbB - c.tail;
+  const int nslices = c.tail > 0 ? 2 * ksr : ksr;      // partials per tile
+  const int slice = is_tail ? ksr + sp : sp;
   MK2_TS(0);
   constexpr int NB = W4_RAW_NBUF2, DIST = NB - 1;
 
@@ -1697,7 +1713,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       }
     }
   };
-  if (ksr == 1) {  // whole tile: bf16 out
+  if (nslices == 1) {  // whole tile: bf16 out
     store_tile([&](int r, int col, float v) {
       if (col < c.n_orig) c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(v);
     });
@@ -1708,7 +1724,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // k-slice: assign (never accumulate) this slice's partial, count the
   // arrival, and let the last slice fold the tile in slice order.
   {
-    float* pb = g_mk2_partial + (size_t)sp * c.m * c.n;
+    float* pb = g_mk2_partial + (size_t)slice * c.m * c.n;
     store_tile([&](int r, int col, float v) { pb[(size_t)r * c.n + col] = v; });
   }
   __syncthreads();
@@ -1716,7 +1732,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   __syncthreads();
   if (threadIdx.x == 0) {
     const unsigned prev = atomicAdd(&g_mk2_tile_arrive[nt], 1u);
-    s_last = (prev + 1u == (unsigned)ksr);
+    s_last = (prev + 1u == (unsigned)nslices);
     if (s_last) g_mk2_tile_arrive[nt] = 0u;  // all slices in; rearm
   }
   __syncthreads();
@@ -1726,7 +1742,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       const int r = i2 >> 5, c4 = (i2 & 31) * 4;
       const float* src = g_mk2_partial + (size_t)r * c.n + nt * 128 + c4;
       float4 v4 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-      for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible
+      for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible
         const float4 pv = __ldcg((const float4*)(src + (size_t)s * c.m * c.n));
         v4.x += pv.x; v4.y += pv.y; v4.z += pv.z; v4.w += pv.w;
       }
@@ -3468,9 +3484,28 @@ int mk_choose_ksr2(int m, int n, int k) {
   return ksr;
 }
 
+// Tail units per slice for one v2 launch (VLLM_GLM53_MK_KTAIL k-blocks, 0 =
+// off, the default until the sweep says otherwise): only when every slice
+// keeps at least as many k-blocks as it gives away, and the doubled partial
+// set still fits.
+int g_probe_ktail = -1;
+int mk_choose_tail2(int m, int n, int k, int ksr) {
+  if (g_probe_ktail < 0) {
+    const char* e = getenv("VLLM_GLM53_MK_KTAIL");
+    g_probe_ktail = e ? atoi(e) : 0;
+  }
+  int tail = g_probe_ktail;
+  if (tail <= 0) return 0;
+  const int kblk = k / KSTEP;
+  const int shortest = kblk / ksr;               // floor slice length
+  if (shortest < 2 * tail) return 0;
+  if ((size_t)m * n * 2 * ksr > (size_t)MK2_PART_ELEMS) return 0;
+  return tail;
+}
+
 // One v2 launch: the instantiation follows m (rows quantized per warp).
 void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
-  const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr;
+  const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1);
   if (c2.m <= 8)
     mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);
   else if (c2.m <= 16)
@@ -3573,9 +3608,10 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     c2.n_orig = c.n_orig;
     const int nblk = c2.n / SMEM_W_ROWS;
     c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k);
+    c2.tail = mk_choose_tail2(c2.m, c2.n, c2.k, c2.ksr);
     TORCH_CHECK(nblk <= MK2_TILES_MAX && c2.ksr >= 1
                     && c2.ksr <= c2.k / KSTEP
-                    && (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS,
+                    && (size_t)c2.m * c2.n * c2.ksr * (c2.tail > 0 ? 2 : 1) <= (size_t)MK2_PART_ELEMS,
                 "gemm2 plan out of contract");
     mk_launch_gemm2(c2, stream);
     return;
@@ -3892,6 +3928,7 @@ void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars,
   g.out = (__nv_bfloat16*)ptrs[5];
   g.m = T; g.n = n_gu_pad; g.k = k_gu; g.n_orig = n_gu;
   g.ksr = mk_choose_ksr2(g.m, g.n, g.k);
+  g.tail = mk_choose_tail2(g.m, g.n, g.k, g.ksr);
   g.pair_act = 1; g.n_int = n_int;
   g.act_limit = (float)scalars[2]; g.act_alpha = (float)scalars[3]; g.act_beta = (float)scalars[4];
   TORCH_CHECK((size_t)g.m * g.n * g.ksr <= (size_t)MK2_PART_ELEMS, "smlp2: gate_up plan out of contract");
@@ -3904,6 +3941,7 @@ void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars,
   d.out = (__nv_bfloat16*)ptrs[6];
   d.m = T; d.n = n_out_pad; d.k = n_int; d.n_orig = n_out;
   d.ksr = mk_choose_ksr2(d.m, d.n, d.k);
+  d.tail = mk_choose_tail2(d.m, d.n, d.k, d.ksr);
   d.a_ready = 1;
   TORCH_CHECK((size_t)d.m * d.n * d.ksr <= (size_t)MK2_PART_ELEMS, "smlp2: down plan out of contract");
   mk_launch_gemm2(d, stream);
@@ -3915,12 +3953,15 @@ std::vector<int64_t> mk_gemm2_plan(int64_t m, int64_t n, int64_t k) {
   set_kernel_attrs();
   const int n_pad = (int)(((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS);
   const int ksr = mk_choose_ksr2((int)m, n_pad, (int)k);
+  const int tail = mk_choose_tail2((int)m, n_pad, (int)k, ksr);
   return {(int64_t)(mk_gemm2_on() ? 1 : 0), (int64_t)ksr,
-          (int64_t)((n_pad / SMEM_W_ROWS) * ksr), (int64_t)g_gemm2_bps};
+          (int64_t)((n_pad / SMEM_W_ROWS) * ksr * (tail > 0 ? 2 : 1)),
+          (int64_t)g_gemm2_bps, (int64_t)tail};
 }
-void mk_set_gemm2(int64_t on, int64_t ksr) {
+void mk_set_gemm2(int64_t on, int64_t ksr, int64_t ktail) {
   if (on >= 0) g_probe_gemm2 = (int)on;
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
+  if (ktail >= 0) g_probe_ktail = (int)ktail;
 }
 // v2 unit timestamps of the last launch, [MK2_UNITS_MAX][4] ns, then cleared.
 std::vector<int64_t> mk_read_ts2() {
@@ -3941,8 +3982,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "bench: {grid, ksr, units, localq, launched grid, bar} of (m, n, k, bg)");
   m.def("set_probe", &mk_set_probe,
         "bench: ksr / localq (-1 = the env), lq grid / bg control grid (0 = off)");
-  m.def("gemm2_plan", &mk_gemm2_plan, "bench: v2 {on, ksr, units, blocks/SM}");
-  m.def("set_gemm2", &mk_set_gemm2, "bench: force the v2 lane and its ksr (-1 = keep)");
+  m.def("gemm2_plan", &mk_gemm2_plan, "bench: v2 {on, ksr, units, blocks/SM, tail}");
+  m.def("set_gemm2", &mk_set_gemm2, "bench: force the v2 lane, its ksr and its tail k-blocks (-1 = keep)");
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");

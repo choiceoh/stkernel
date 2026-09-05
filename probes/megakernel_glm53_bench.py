@@ -183,17 +183,19 @@ GEMM_SHAPES = [(8, 6416, 4096), (16, 4096, 4096), (32, 2048, 4096), (32, 1024, 4
                (8, 4096, 2048), (8, 2048, 4096), (8, 6144, 4096), (8, 4096, 3072)]
 
 
-def _lane(ext, on: int, ksr: int = 0) -> None:
+def _lane(ext, on: int, ksr: int = 0, ktail: int = -1) -> None:
     """Route the standalone launches through the v2 (non-persistent) lane
-    (on=1) or the persistent one (on=0); ksr > 0 forces v2's slice count."""
-    ext.set_gemm2(on, ksr)
+    (on=1) or the persistent one (on=0); ksr > 0 forces v2's slice count,
+    ktail >= 0 forces its tail k-blocks (-1 keeps the env's)."""
+    ext.set_gemm2(on, ksr, ktail)
 
 
 def _lane_restore(ext) -> None:
-    _lane(ext, 1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0)
+    _lane(ext, 1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0,
+          int(os.environ.get("VLLM_GLM53_MK_KTAIL", "0") or 0))
 
 
-def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
+def probe_gemm(iters: int, gemm2: str = "both", sweep=None, ktail_sweep=None) -> bool:
     """MK-GEMM (the W4 lane) against the stock quant+deepgemm pair on the
     decode shapes: by-design error (e2m1, gated at 0.15), single-launch
     and back-to-back timings, replay stability.
@@ -237,7 +239,7 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
         p4b = mk.build_mk_weight_w4(w2)
         del w2
-        if sweep:
+        if sweep or ktail_sweep:
             kept[(m, n, k)] = (x, p4, p4b)
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, p4, n)
@@ -295,7 +297,7 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
                 mark = "!"
             extra = (f"{t_mk2:>8.1f}{t_x2b:>8.1f}{nb_mk / t_mk2 / 1e3:>9.0f}"
                      f"{'bit' if same else f'{_rel(got2, got):.1e}':>9}"
-                     f"  ksr={plan[1]} u={plan[2]}")
+                     f"  ksr={plan[1]} u={plan[2]}" + (f" tail={plan[4]}" if len(plan) > 4 and plan[4] else ""))
             _lane(ext, 0)
         # which kernel this row ran under the process's knobs (the env's;
         # a bench shell that exported MK_LOCALQ=2 re-kernels these rows)
@@ -305,6 +307,24 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
               f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
               f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}{local:>6}"
               + extra)
+    if ktail_sweep:
+        # v2 tail-unit sweep at the rule's ksr: tail k-blocks per slice
+        print(f"{'v2 tail sweep':<24}" + "".join(f"{'tail=' + str(t):>14}" for t in ktail_sweep))
+        for m, n, k in GEMM_SHAPES:
+            x, p4, p4b = kept[(m, n, k)]
+            cells = []
+            for t in ktail_sweep:
+                _lane(ext, 1, 0, t)
+                if int(ext.gemm2_plan(m, n, k)[4]) != t:
+                    cells.append(f"{'-':>14}")
+                    continue
+                t1 = _time(lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
+                t2 = _time(lambda: (mk._gemm_call(x, p4, n),
+                                    mk._gemm_call(x, p4b, n)), iters,
+                           hot=(x,)) / 2
+                cells.append(f"{t1:>7.1f}/{t2:<6.1f}")
+            print(f" gemm m={m:<3}n={n:<5}k={k:<5}" + "".join(cells))
+        _lane(ext, 0, 0, -1)
     if sweep:
         # v2 slice-count sweep: the unit rule against the alternatives, per
         # shape, single launch and back-to-back on two weights
@@ -925,6 +945,8 @@ def main() -> int:
                     help="comma list of v2 slice counts to force per shape, e.g. 1,2,4,6,8")
     ap.add_argument("--stamps2", action="store_true",
                     help="v2 per-unit timeline (VLLM_GLM53_MK_PHASE_TS=1 build)")
+    ap.add_argument("--ktail2-sweep", default=None,
+                    help="comma list of v2 tail k-blocks per slice to force, e.g. 0,1,2,4")
     args = ap.parse_args()
     if args.gemm2 == "env":
         args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"
@@ -967,8 +989,10 @@ def main() -> int:
     ok = True
     sweep = ([int(v) for v in args.ksr2_sweep.split(",")]
              if args.ksr2_sweep else None)
+    ktail_sweep = ([int(v) for v in args.ktail2_sweep.split(",")]
+                   if args.ktail2_sweep else None)
     if "gemm" in segs:
-        ok &= probe_gemm(args.iters, args.gemm2, sweep)
+        ok &= probe_gemm(args.iters, args.gemm2, sweep, ktail_sweep)
     if args.gemm_sweep:
         ok &= probe_gemm_sweep(args.iters, args.stamps,
                                list(GEMM_SHAPES) if args.gemm_shapes else None)
