@@ -184,6 +184,11 @@ def main() -> int:
     ap.add_argument("--full-sweep", default="all",
                     help="v2 config specs that get the full U sweep, or 'all' "
                          "(others: U=40,64)")
+    ap.add_argument("--hang-diag", default="",
+                    help="run ONE served call of this v2 spec (use ',s') in a "
+                         "thread; if it has not returned after 20 s, read the "
+                         "stamps through a side stream and print where every "
+                         "CTA stopped, then exit 3")
     args = ap.parse_args()
     # config specs are themselves comma-separated: split on ",m" boundaries
     raw = args.configs
@@ -235,6 +240,63 @@ def main() -> int:
         call(ids, w, xx, oo)
         torch.cuda.synchronize()
         return oo.clone()
+
+    if args.hang_diag:
+        import os
+        import threading
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_kernel_v2 as k2
+
+        ids40, w40 = routings[40 if 40 in routings else us_list[0]][0]
+        md._STATIC_V2_OVERRIDE = md._parse_glm53_static_v2(args.hang_diag)
+        done = threading.Event()
+
+        def run_once():
+            call(ids40, w40)
+            torch.cuda.synchronize()
+            done.set()
+
+        threading.Thread(target=run_once, daemon=True).start()
+        if done.wait(20.0):
+            print(f"hang-diag[{args.hang_diag}]: the call returned; no hang")
+            return 0
+        st = None
+        for v_ in md._STATIC_V2_STAMPS.values():
+            st = v_
+        if st is None:
+            print("hang-diag: the call is stuck but no stamps tensor exists (use ',s')")
+            os._exit(3)
+        side = torch.cuda.Stream()
+        host = torch.empty(st.shape, dtype=st.dtype, device="cpu", pin_memory=True)
+        with torch.cuda.stream(side):
+            host.copy_(st, non_blocking=True)
+        side.synchronize()
+        s = host
+        base = int(s[:, 0][s[:, 0] > 0].min()) if (s[:, 0] > 0).any() else 0
+        print(f"hang-diag[{args.hang_diag}]: stuck after 20 s; per-CTA progress "
+              f"(us from the earliest kernel start):")
+        for b in range(s.shape[0]):
+            t0, t1 = int(s[b, 0]), int(s[b, 1])
+            mma = []
+            for i in range(k2.STAMP_ITEMS):
+                o = 2 + 5 * i
+                ph = [int(s[b, o + j]) for j in range(4)]
+                n = sum(1 for x in ph if x > 0)
+                if n == 0:
+                    break
+                mma.append(f"i{i}:{n}/4")
+            dma = []
+            for i in range(k2.STAMP_ITEMS):
+                d = k2.STAMP_DMA_BASE + 3 * i
+                ph = [int(s[b, d + j]) for j in range(3)]
+                n = sum(1 for x in ph if x > 0)
+                if n == 0:
+                    break
+                dma.append(f"i{i}:{n}/3")
+            end = int(s[b, k2.STAMP_MMA_END])
+            print(f"  cta {b:2d} start {'+%.1f' % ((t0 - base) / 1e3) if t0 else '-'} "
+                  f"frontend {'done' if t1 else '-'} mma [{' '.join(mma)}] "
+                  f"dma [{' '.join(dma)}] end {'done' if end else '-'}")
+        os._exit(3)
 
     print(f"{'row':<22}{'us/call':>9}{'MB':>8}{'GB/s':>8}")
     md._STATIC_V2_OVERRIDE = None
