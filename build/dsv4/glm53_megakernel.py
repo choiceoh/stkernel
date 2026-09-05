@@ -384,7 +384,7 @@ class MKPack(tuple):
 
 # Bump when the pack bytes or the tuple layout change: the pack cache keys
 # on it, so a stale cache can never serve an old layout to a new kernel.
-MK_PACK_VERSION = 3
+MK_PACK_VERSION = 4   # 4: the float64 / damping-ladder GPTQ solve (packs of v3 were the fp32 one)
 _LR_MAX = 32   # the kernel's LR_MAX: t scratch is [32 rows][LR_MAX] per stream
 
 

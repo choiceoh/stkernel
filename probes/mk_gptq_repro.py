@@ -32,9 +32,14 @@ for p in sorted(glob.glob("/mkcache/calib2/*.pt")):
     # the fair offline test (diagonal-only inputs drop the correlations GPTQ
     # compensates for and read it worse than RTN -- an artefact)
     C = (H.double() / ntok); C = 0.5 * (C + C.T)
-    C += torch.eye(k, dtype=torch.float64) * (1e-6 * float(C.diag().mean()))
-    Lc = torch.linalg.cholesky(C)
-    x = (torch.randn(256, k, dtype=torch.float64) @ Lc.T).to(DEV, torch.bfloat16)
+    # the real H is indefinite by fp32 accumulation rounding (negative
+    # eigenvalues far below the damping the packer adds): sample through the
+    # eigendecomposition with the negative part clipped
+    evals, evecs = torch.linalg.eigh(C)
+    print(f"   eig min/max {float(evals.min()):.3e}/{float(evals.max()):.3e} "
+          f"negative {int((evals < 0).sum())}/{k}", flush=True)
+    root = evecs * torch.sqrt(evals.clamp(min=0.0))[None, :]
+    x = (torch.randn(256, k, dtype=torch.float64) @ root.T).to(DEV, torch.bfloat16)
     s = torch.sqrt(H.diag().float() / ntok).clamp(min=1e-6)
     x_diag = (torch.randn(256, k) * s[None, :]).to(DEV, torch.bfloat16)
     truth = x.float() @ w.float().T
