@@ -3564,10 +3564,10 @@ def test_b12x_static_v2_controls() -> None:
     check(parse("1") == default and parse("1") is not default,
           "'1' must be a copy of the default config")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
-                      "dynamic": False},
-          "the default v2 config is m32,f2,g4,a32, static schedule, no stamps")
+                      "dynamic": False, "wide": False},
+          "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
-                                 "stamps": False, "dynamic": False},
+                                 "stamps": False, "dynamic": False, "wide": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
