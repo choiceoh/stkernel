@@ -85,7 +85,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_megakernel` | sm_121a 디코드 커널 코어 (opt-in; dsv4 는 MK_SEG_MHC 만 해당) | 2 | ✓ | ○ | ○ | · |
 | `mla_indexer` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |
-| `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | — | ○ | · | · |
+| `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | ✓ | ○ | · | · |
 | | | | | | | |
 | `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 (옛 `glm53_model_wiring`·`glm53_indexer_gate_splitk`·`glm53_mk_kda_wiring`·`glm53_mk_mla_wiring`·`glm53_kda_onepass`·`glm53_fp8_dense`) | 9 | 일부 | · | ● | · |
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·top-k 커널·tail-select 융합, tail 슬롯, SM121 MLA 프리필, KDA 프리필 버킷, MHC TileLang (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_sm121_mla_prefill`·`glm53_kda_prefill_regime`·`glm53_mhc_tilelang`) | 9 | 일부 | · | ● | · |
@@ -96,7 +96,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |
 | `dsv4_attention` | 모델 전용 | 1 | — | ● | · | · |
-| `dsv4_eager_scratch` | 모델 전용 | 1 | — | ● | · | · |
+| `dsv4_eager_scratch` | 모델 전용(신규 파일이라 계약은 이식 가능) | 1 | ✓ | ● | · | · |
 | `dsv4_flashinfer_sparse` | 모델 전용 | 1 | — | ● | · | · |
 | `dsv4_mhc_tilelang` | 모델 전용 | 1 | — | ● | · | · |
 | `dsv4_model` | 모델 전용 | 1 | — | ● | · | · |

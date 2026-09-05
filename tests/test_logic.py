@@ -5541,6 +5541,7 @@ def test_census_owner_axis() -> None:
     check(group("k_oneshot(Ctrl*, __nv_bfloat16 const*)") == "우리 · osar AR",
           "our one-shot AR still groups as ours")
     for n in ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+              "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
               "(anonymous namespace)::mk_mhc_kernel((anonymous namespace)::MKMhcArgs)",
               "mk_mla_kernel(MKMlaArgs)", "mk_kda_kernel(MKKdaArgs)"):
         check(group(n) == "우리 · 메가커널 세그먼트",
@@ -5552,6 +5553,7 @@ def test_census_owner_axis() -> None:
     tc = load_defs("tools/trace_common.py", {"OURS", "owner"}, {})
     owner = tc["owner"]
     ours = ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
+            "void (anonymous namespace)::mk_gemm2_kernel<4>((anonymous namespace)::MKGemm2Ctx)",
             "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
             "mk_kda_kernel(MKKdaArgs)", "k_oneshot(Ctrl*)",
             "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
@@ -5660,6 +5662,58 @@ def test_trace_step_tail_analyze() -> None:
     check(r["cats"]["AR k_oneshot"]["cnt"] == 1,
           "the drafter's all-reduce is in the tail, not the forward")
     print("  trace step tail cut ........... OK")
+
+
+def test_profiles_readme_module_table() -> None:
+    """profiles/README.md 의 모듈 × 프로필 표가 실제 프로필·매니페스트와 일치한다.
+
+    표는 손으로 유지되다가 드리프트했다: 프로필이 싣는 모듈 10개가 빠져 있었고
+    이미 삭제된 `glm53_async_dflash` 가 남아 있었다(#302 에서 수정). 표가 문서의
+    유일한 모듈 색인이므로, 세 가지를 코드로 고정한다 — 어느 프로필에 실리는가,
+    파일이 몇 개인가, 매니페스트 전 행이 `absent`(=이식 가능한 계약)인가.
+    """
+    import re as _re
+
+    profiles = {}
+    for name in ("dsv4", "glm53", "qwen38"):
+        txt = open(os.path.join(REPO, "profiles", f"{name}.env"), encoding="utf-8").read()
+        m = _re.search(r'MODULES="([^"]*)"', txt, _re.S)
+        check(m is not None, f"{name}.env must declare MODULES=")
+        profiles[name] = set(m.group(1).split())
+
+    rows = {}
+    for line in open(os.path.join(REPO, "profiles", "README.md"), encoding="utf-8"):
+        m = _re.match(r"\|\s*`([a-z0-9_]+)`\s*\|(.+)\|\s*$", line)
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group(2).split("|")]
+        if len(cells) != 6:          # 범위 · 파일 · 이식 · dsv4 · glm53 · qwen38
+            continue
+        rows[m.group(1)] = cells
+
+    listed = set(rows)
+    used = set().union(*profiles.values())
+    check(not (used - listed),
+          f"profiles load modules the table omits: {sorted(used - listed)}")
+    check(not (listed - used - {"glm53_drop_audit", "glm53_sparse_q"}),
+          f"table lists modules no profile loads: {sorted(listed - used)}")
+
+    for mod, cells in rows.items():
+        files, portable, marks = cells[1], cells[2], cells[3:]
+        man = os.path.join(REPO, "overlay", "modules", mod, "manifest.tsv")
+        check(os.path.exists(man), f"{mod}: table row without a module directory")
+        entries = [l.split("\t") for l in open(man, encoding="utf-8").read().splitlines()
+                   if l.strip() and not l.startswith("#")]
+        check(files == str(len(entries)),
+              f"{mod}: table says {files} files, manifest has {len(entries)}")
+        all_new = bool(entries) and all(e[2].strip() == "absent" for e in entries)
+        check((portable == "✓") == all_new,
+              f"{mod}: 이식={portable!r} but manifest all-absent={all_new}")
+        for name, mark in zip(("dsv4", "glm53", "qwen38"), marks):
+            in_profile = mod in profiles[name]
+            check((mark != "·") == in_profile,
+                  f"{mod}: {name} column {mark!r} but in-profile={in_profile}")
+    print("  profiles README module table .. OK")
 
 
 def test_dflash_warmup_buckets() -> None:
@@ -8585,8 +8639,8 @@ def test_glm53_megakernel_contracts() -> None:
     # the local quant runs ahead of the mma on rows loaded a whole iteration
     # earlier (a two-slot ring), the global path stages A(kb0) before the
     # wait exactly as main did
-    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, kb & 1);")
-              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1) & 1);")
+    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, (kb - kb0) & 1);")
+              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1 - kb0) & 1);")
               < cu.index("mma_fold(sw4t, kb);  // the group scales are inside the bytes")
           and "if (!local_q) stage_a_store(kb0);" in cu
           and cu.index("if (!local_q) stage_a_store(kb0);")
@@ -8609,19 +8663,12 @@ def test_glm53_megakernel_contracts() -> None:
           "has units; the bench's control (the global kernel on fewer blocks) "
           "runs on its own ticket counter; kda's mk_gemm_phase is the global "
           "instantiation")
-    # the boot's exact gate runs BOTH kernels, checks the local one really ran,
-    # requires them bitwise equal, and restores the env's knobs whatever happens
-    check("def exact_fixture(dev=\"cuda\"):" in pysrc_full
-          and "def run_both_kernels(x, pack, n):" in pysrc_full
-          and "_EXT.set_probe(0, lq, 0, 0)" in pysrc_full
-          and "finally:\n        _EXT.set_probe(-1, -1, 0, 0)" in pysrc_full
-          and "if plans[2][3] != 1:" in pysrc_full
-          and "if not torch.equal(got[0], got[2]):" in pysrc_full
-          and "os.environ.get(\"VLLM_GLM53_MK_LOCALQ\"" not in pysrc_full,
-          "the boot self-test exact-gates the global AND the local kernel on "
-          "ONE fixture builder shared with the bench, verifies the local plan, "
-          "requires bitwise equality, restores the knobs in a finally, and logs "
-          "the extension's plan rather than the raw env string")
+    # Executable lane-selection, failure-restoration and nonfinite tests run
+    # in test_megakernel_regression_suite below. Source strings previously
+    # passed even when both purported v1 launches actually selected v2.
+    check("def exact_fixture(dev=\"cuda\", shape=None):" in pysrc_full
+          and "def run_both_kernels(x, pack, n, ksr=0):" in pysrc_full,
+          "the boot and probe share the configurable exact fixture and v1 runner")
     bench = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
                  encoding="utf-8").read()
     check("x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
@@ -8798,7 +8845,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_selftest_w4" not in pysrc_full
           and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(\n"
           "        pack[0], pack[1], n, pack[2]).float().T"
-          in pysrc_full and "if e > 1e-3 or n_ulp > 0:" in pysrc_full
+          in pysrc_full and "if not e <= 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
           and "_TOL_GEMM_W4 = 0.15" in pysrc_full,
@@ -9038,7 +9085,7 @@ def test_glm53_megakernel_contracts() -> None:
           "-- the buffer's newest end is that window only when every draft "
           "was accepted")
     check("for (int i = 0; i < a.conv_width; ++i)" in cu
-          and "v = (i == 0) ? kept[0] : (i == 1) ? kept[1] : kept[2];" in cu
+          and "? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)" in cu
           and "for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;" in cu
           and "constexpr int KDA_NQ_MAX = KDA_SPEC + 1;" in cu
           and '"kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)"' in cu,
@@ -9259,9 +9306,10 @@ def test_glm53_megakernel_contracts() -> None:
           "the MK branch precedes the wrapper tail in forward_mqa")
     check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
           "the builder still plans every step (prefill and T>32 use the wrapper)")
-    check('m._ARMED["mla"] = False' in wsrc and "num / den > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
-          and "is_current_stream_capturing()" in wsrc and "SHADOW FAIL" in wsrc,
-          "one-shot shadow vs the wrapper on the first EAGER call with real rows; drift or non-finite output DISARMs, loudly")
+    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "_mk_mla_check_failure()" in wsrc and "SHADOW FAIL" in wsrc,
+          "real-KV shadow drift or nonfinite output invalidates the worker; "
+          "captured graphs must not continue behind a Python-only DISARM")
     check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
           "mk_mla_wiring requires the megakernel module")
     _mods = re.search(r'^MODULES="([^"]+)"', open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(), re.M).group(1).split()
@@ -11511,6 +11559,23 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     print("  supervisor relaunch pacing .... OK")
 
 
+def test_megakernel_regression_suite():
+    """Run behavioral gate/dispatch and extracted CUDA-control regressions.
+
+    Keep these in the normal deployment gate, not only in an opt-in test
+    command. GPU numeric/racecheck/graph proof is a separate validation.
+    """
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(
+        os.path.dirname(os.path.abspath(__file__)),
+        pattern="test_megakernel_*regressions.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.testsRun > 0 and result.wasSuccessful(),
+          "megakernel behavioral regressions must run and pass")
+    return result.testsRun
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -11583,6 +11648,7 @@ if __name__ == "__main__":
     test_census_owner_axis()
     test_census_streaming_events()
     test_trace_step_tail_analyze()
+    test_profiles_readme_module_table()
     test_dflash_warmup_buckets()
     test_dsv4_spec_warmup_contract()
     test_dsv4_ue8m0_host_guard()
@@ -11634,5 +11700,5 @@ if __name__ == "__main__":
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
-    print(f"all OK ({PASS} checks)")
-
+    regressions = test_megakernel_regression_suite()
+    print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")
