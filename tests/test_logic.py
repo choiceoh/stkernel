@@ -3657,8 +3657,9 @@ def test_b12x_static_v2_controls() -> None:
           "moe_static_kernel_v2.py\tabsent" in manifest,
           "the v2 kernel is a new file (absent preimage) in the module manifest")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=""' in profile,
-          "the profile ships the v2 kernel off until the bracket")
+    check('VLLM_GLM53_B12X_STATIC_V2=w' in profile,
+          "the profile ships the v3 static kernel (spec w) as the default "
+          "(35차, operator: +7~10% on the decode MoE kernel; rollback = \"\")")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v2.py" in runner,
           "the probe runner must mount the v2 kernel beside the dispatcher")
