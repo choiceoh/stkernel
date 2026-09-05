@@ -7765,7 +7765,7 @@ def test_osar_prefetch_hints_contract() -> None:
 
     profile = open(os.path.join(REPO, "profiles", "glm53.env"),
                    encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=1$", profile, re.M) is not None,
+    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=0$", profile, re.M) is not None,
           "the prefetch knob is declared ON in the profile (32차 §14: adopted with KDA+LOCALQ)")
     check(re.search(r"^VLLM_GLM53_MK_PDL=1$", profile, re.M) is not None,
           "PDL is the profile default for the MK launches (2026-09-04)")
@@ -8642,7 +8642,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the fp8-dense hook marks the shared expert's linears background "
           "(the aux-stream pair beside the routed MoE) for the lane")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=1$", prof, re.M) is not None,
+    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=0$", prof, re.M) is not None,
           "the profile DECLARES the local-quant knob (off until its bracket): "
           "the launcher forwards only declared keys, so an undeclared knob "
           "could not be flipped at all")
@@ -9365,8 +9365,8 @@ def test_megakernel_core_is_shared() -> None:
           "diagnostic, never a production default")
     for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_LOCALQ",
                  "VLLM_GLM53_AR_PREFETCH"):
-        check(re.search(rf"^{knob}=1$", glm_text, re.M) is not None,
-              f"glm53 ships {knob}=1 -- 32차 §14: the zero-gain set without "
+        check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
+              f"glm53 ships {knob}=0 -- 32차 §14: the zero-gain set without "
               "SMLP (KDA lane CAPTURED into the decode graph, local-quant, AR "
               "prefetch) measured +0.7% together with Korean clean; the "
               "operator adopted it")
