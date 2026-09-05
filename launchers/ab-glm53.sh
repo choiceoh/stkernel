@@ -34,6 +34,11 @@ case "$ARM" in
 esac
 
 echo "== boot arm=$ARM =="
+# Bracket boots keep the cold-tax channel: production pays the prefill JIT
+# tax at boot (PREFILL_WARMUP=1 since 33차), but this harness measures the
+# first-request tax itself and must not have warmup requests interleaving
+# with its legs. Caller env can still override to 1.
+export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"
 env $ARM_ENV $EXTRA bash "$REPO/launchers/start-glm53-nvfp4-tp4.sh" || {
   echo "ABORT: boot failed"; exit 1; }
 

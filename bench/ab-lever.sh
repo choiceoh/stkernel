@@ -36,6 +36,12 @@ if [ "${SKIP_BOOT:-0}" = 1 ]; then
   echo "== [$ARM] reusing the live boot (SKIP_BOOT=1) $(date +%T) =="
 else
   echo "== [$ARM] boot $(date +%T) caller env: $LEVER_ENV (profile defaults otherwise) =="
+  # Production boots pay the prefill JIT tax at boot (PREFILL_WARMUP=1 since
+  # 33차); a bracket boot must not. The warmup's six requests land right after
+  # health, inside the first decode leg's 2 s windows, and the prefill ladder's
+  # cold row IS this harness's cold-tax channel. Export 0 unless the caller
+  # explicitly wants to test the warmup itself.
+  export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"
   env $LEVER_ENV bash launchers/start-glm53-nvfp4-tp4.sh 2>&1 | tail -40 || true
 fi
 echo "== [$ARM] wait for health $(date +%T) =="

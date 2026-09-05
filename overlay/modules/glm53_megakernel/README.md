@@ -173,7 +173,10 @@ slots the fastest mains free -- the 4-9 us DRAM-arbitration tail of a
 96-unit launch (30차 §6) is then work for blocks that would otherwise
 idle. Each slice becomes two partials folded in fixed order; the rule
 takes it only when every slice keeps at least `tail` k-blocks. Swept by
-`--ktail2-sweep`; off until the sweep says which tail wins.
+`--ktail2-sweep` (30차 §11): -5.6% on [1024x4096] and -2% on [6144x4096]
+at tail=1, 5-17% worse on m=32, [4096x2048] and in_proj -- the second
+partial and the short unit's ring fill cost more than the 4-9 us tail they
+absorb. Stays off.
 
 MK_SEG_SMLP2 (`VLLM_GLM53_MK_SMLP2`, default off): the shared-expert /
 dense MLP as two PDL-chained v2 launches -- gate_up with the pair-
@@ -278,10 +281,10 @@ cold tax by the share this module covers.
 
 | hook | file | behavior when disarmed |
 |---|---|---|
-| MK-MHC | `glm53_mhc_tilelang/tilelang.py` small-M branch | falls through to ONEPASS/stock pair, byte-identical |
-| MK-GEMM | `glm53_fp8_dense` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
-| MK-KDA | `glm53_mk_kda_wiring`'s `kda.py` overlay (image preimage `ec090aab...`) | stock forward body verbatim |
-| MK-MLA | `glm53_mk_mla_wiring` (FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
+| MK-MHC | `glm53_kernels/tilelang.py` (was `glm53_mhc_tilelang`) small-M branch | falls through to ONEPASS/stock pair, byte-identical |
+| MK-GEMM | `glm53_model/glm53_fp8_dense.py` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
+| MK-KDA | `glm53_model/glm5next_kda.py` (was `glm53_mk_kda_wiring`; image preimage `ec090aab...`) | stock forward body verbatim |
+| MK-MLA | `glm53_model/flashinfer_mla_sparse_sm90.py` (was `glm53_mk_mla_wiring`; FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
 | MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
 
 Both MHC wirings call ONE entry point in this module -- `mhc_hook(...)`,
@@ -473,6 +476,40 @@ Every MHC number recorded before that date -- the bench line below, and the
 4/9/10차 rows in MEASUREMENTS -- was taken at 4 and is not comparable to a
 fresh run without that flag.
 
+## Correctness review (2026-09-05)
+
+The MHC deferred-publication branch now synchronizes before reusing its
+shared reduction tile. LOCALQ's two-buffer ring uses the split-relative
+k-block index, including odd split starts. KDA shifts the complete retained
+conv window for short verify requests, rather than repeating its third
+retained value. These changes require fresh GPU numerical and racecheck
+validation; CPU control-flow regressions are not GPU proof.
+
+Boot error comparisons reject nonfinite outputs, references and overflowed
+norms. The GEMM exact gate explicitly selects v1 global/local and v2, checks
+v2's M=8/16/32 classes and the LOCALQ KSR=3 odd-start case, then restores all
+seven probe overrides even after failure. KDA adds nq=1/4/6/8 cases, including
+accepted=8 with nq=1, and compares every written recurrent position.
+
+An MLA real-KV shadow failure now raises a persistent worker error: changing
+a Python arm flag cannot remove a kernel from an existing CUDA graph. Restart
+with `VLLM_GLM53_MK_MLA=0` after such a failure. KDA shadow mode takes precedence
+when both shadow and takeover are enabled; capture continues to use stock.
+
+`tests/test_logic.py` includes the behavioral regressions. To run the actual
+boot gates before the offline benchmark in an idle fleet window:
+
+```bash
+bash probes/run_megakernel_bench.sh --segments exact,mhc,kda --boot-gates --iters 5
+bash probes/run_mk_probe.sh probes/mk_smlp2_concurrent_probe.py --rounds 10 --replays 5
+```
+
+The second probe checks SMLP2 versus v2 plus the native CUDA activation in
+seven graphs (alone and both MoE issue orders), validates every captured
+output and replay before timing, and balances forward/reverse timing order.
+Missing native activation is a failed comparison, never a slower Torch
+fallback. Its per-layer exposure and x42 projection are not a serving gain.
+
 ## Verification ladder (in order, no skips)
 
 1. `python3 tests/test_logic.py` -- pure logic + .cu/.py geometry parity +
@@ -481,7 +518,8 @@ fresh run without that flag.
    container (srv4, never the serving one; the wrapper binds the profile's
    composed overlay at that image's real paths, and passes its package
    root as `MK_PKG_PATH`): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
-   by-design + 1e-5 exact-grid, 2e-2 KDA outputs and states on grid-snapped
+   by-design + 1e-3 exact-grid with no element over one bf16 ULP,
+   2e-2 KDA outputs and states on grid-snapped
    weights) + CUDA-event timing per segment + a replay-stability
    check (re-launch drift <= 1e-6 over the shared workspace -- the
    monotonic-barrier contract). `!` marks any cell over gate; a `!` cell

@@ -114,8 +114,12 @@ def main() -> int:
                 print(f"ABORT: len={n} rep={rep} got {len(ids)} ids")
                 return 1
             t0 = time.time()
+            # This fork's /v1/completions ignores a top-level prompt_token_ids
+            # (400 "Either prompt or prompt_embeds must be provided") and its
+            # prompt field does not take the {"prompt_token_ids": ...} object
+            # form either -- a bare list of ints IS the token-id form here.
             post("/v1/completions",
-                 {"prompt_token_ids": ids, "max_tokens": 1,
+                 {"prompt": ids, "max_tokens": 1,
                   "temperature": 0.0, "ignore_eos": True})
             dt = time.time() - t0
             tps = n / dt if dt > 0 else 0.0

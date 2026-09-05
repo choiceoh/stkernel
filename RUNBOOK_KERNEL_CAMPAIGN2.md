@@ -45,6 +45,7 @@
 | 19 | hc 가중치 bf16 | **사실상 초월** · 참조 측정 | — | mk_mhc 가 pair 를 대체해 ONEPASS 전제가 사라졌다 — 폴백 경로의 커널급 참조로만 유효(#303) |
 | 5 | 프리필: 캡처 → KDA 스윕 | 부분 완료 | — | 캡처·프로파일은 09-03 원장에 있고 KDA 청크 스윕이 남음 |
 | 16 | 드래프터 메가커널 | 제안 · 착수 승인 대기 | — | 상한 −0.8~1.0 ms, 공사 2주 |
+| 24 | **모듈·노드 융합 묶음 3** (34차) — 드래프터 준비 캐시 + 인덱서 tail-select 융합 + 대기 중이던 EXP-9·15·20·SMLP2 | 브래킷 대기 | ✅ | 신규 노브 둘 `DRAFTER_PREP=0`·`INDEXER_DECODE_FUSED=0` · 34차 트레이스(프로덕션 부팅, 1,166 노드/스텝, 유휴 1.2 ms): 드래프터 앞 호스트 갭 0.42/0.64 ms(rank 0/3), 인덱서 글루 11발×11층. 묶음 상한 ≈ −2.0 ms/스텝(3.5%), 절반은 EXP-9 |
 
 배포: `launchers/deploy-overlays.sh glm53` — `tests/test_logic.py` 게이트 →
 4노드 배포 → SHA-256·preimage 검증. 재기동은 `--enable-expert-parallel` 등
@@ -659,6 +660,34 @@ bash probes/run_mk_probe.sh probes/mk_gemm_concurrent_probe.py            # MoE 
 호출 측이 공유 전문가 선형을 bg 로 표시(`VLLM_GLM53_MK_LOCALQ=1` = bg 만, 2 = 유닛 ≤ grid 전부).
 v2 의 동시 실행 수치는 원장 29차.
 
+## EXP-24 — 모듈·노드 융합 묶음 3 (34차, 2026-09-05 추가)
+
+운영자 "메가커널 모듈 및 노드 융합". 프로덕션 부팅(PRODSET, v2 레인 + prep-fused + MLA + 드래프터
+W4 + PDL; KDA·LOCALQ·ARPF 켠 팔)의 트레이스(245 스텝, rank 0·3)를 노드 단위로 읽었다 —
+`tools/trace_step_nodes.py`(스트리밍, 노드 열·창 안 전 범주 이벤트). 스텝 1,166 노드, 프로파일러
+아래 55.8 ms, 유휴 1.2 ms. 남은 자리와 처방(원장 34차):
+
+| 자리 | 노드/스텝 | 프로파일러 µs/스텝 | 처방 | 노브 | 상태 |
+|---|---|---|---|---|---|
+| 드래프터 앞 호스트 갭 (DtoH 동기 + 메타데이터 빌드 Python) | 0 (GPU 유휴) | rank 0 420 / rank 3 640, 첫 AR 이 rank 0 을 245 붙잡음 | `glm53_drafter_prep`: FULL 재생이면 빌드 생략(형상당 1회 캐시) | `VLLM_GLM53_DRAFTER_PREP` time/shadow/1 | 신규 |
+| 인덱서 top-k 글루 (seq_len 2 + tail 강제 8 + 복사 1) × 11층 | 121 | ~260 | `_glm53_indexer_tail_select_kernel` 1발 + 버퍼 직접 쓰기 | `VLLM_GLM53_INDEXER_DECODE_FUSED=1` | 신규 · 프로브 40/40 비트 동일, 리플레이 층당 24.7 → 5.2 µs = **−0.21 ms/스텝** |
+| 인덱서 head-gate `gemmSN` × 11 | 0 | 950 (발당 86) | EXP-9 split-K (offline 89.5 → 12.7) | `INDEXER_GATE_SPLITK=1` | 구현됨, 미판정 |
+| 드래프터 fc 5발 + 글루 | 0 | ~390 | EXP-15 early-fc | `DFLASH_EARLY_FC=1` | 구현됨 |
+| KDA 스톡 체인 7→1, 듀얼 게이트, kpool 복사 | −249 | ~180 (C=1) | EXP-20 | `KDA_ONEPASS/KDA_DUAL_GEMM/KPOOL_UPDATE_DIRECT_POS=1` | 구현됨 |
+| 공유 전문가 gate_up→act→down | −42 | 벤치 x2 28 vs 체인 36 | SMLP2 (PDL 체인 v2 둘) | `MK_SMLP2=1` | 구현됨(#318) |
+
+- 순서: 부팅 없이 (1) `bash probes/run_indexer_fused_check.sh`(비트 동일 + 리플레이 µs), (2) `tests/test_logic.py`.
+  부팅 창에서 (3) `DRAFTER_PREP=time` 을 PROD 부팅에 얹어 호스트 µs 실측(원장 상한), (4) `shadow` 로 drift=0,
+  (5) 승격 팔 FUSION3 = 위 노브 전부 vs PROD base(프리필 동반). 수치가 바뀌는 축은 EXP-9 하나(fp32 합산 순서)라
+  품질 9/9·한국어 0/16·수용률 프로파일이 게이트.
+- 상한(프로파일러 값, 실측은 그 아래): 드래프터 갭 0.3~0.6 + 인덱서 글루 0.25 + split-K 0.8 + early-fc 0.35 +
+  EXP-20 0.18 + SMLP2 0.2~0.4 ≈ **−2.0~2.6 ms/스텝(3.5~4.5%)**. 단독으로 CV 를 넘는 것은 split-K 뿐이라 R2 방식(묶음).
+- 캡처·서빙 증명 줄: `[drafter-prep] serving: FULL replay -> draft metadata cached` (propose 는 매 스텝 파이썬이라
+  tally 줄도 나온다), `[indexer-fused] tail-select fused: ... [capture]`, `[indexer-gate] ... -> split-K`,
+  `[kda-onepass] one-pass KDA serving`, smlp2 캡처 줄.
+- 다음 자리(34차 §4, 운영자 결정): MLA 층의 bf16 저랭크 사영 4발(q_b·wq_b 67 µs, absorb 쌍 26+22) = 층당 ~200 µs,
+  스텝 2.2 ms — EXP-4 의 W4 레인(−1.1~1.4 ms, 2%)이 이 캠페인 최대 단일 항목이지만 인덱서·쿼리 정밀도 강등.
+
 ## EXP-21 — MK-GEMM v2: 비상주 GEMM 레인 (`VLLM_GLM53_MK_GEMM2`, 2026-09-05 추가)
 
 **근거**: 원장 30차. 무장 트레이스(09-04 18:42)의 mk_gemm 185발 14.13 ms 중 5.7 ms 는
@@ -700,6 +729,9 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 96유닛 발사의 DRAM 중재 꼬리 4~9 µs 를 먼저 끝난 블록이 흡수. 스윕 `--ktail2-sweep 0,1,2,4` 뒤 채택.
 (e) 3라운드 GPU 결과(원장 §8): v2 x2 가 v1 대비 전 형상 −7~−24%. PR #318. 브래킷은 다른 세션의
 lever-chain14(GEMM2 팔, 09:02~)가 실행 중 — 결과 `ab-lever-GEMM2.log`.
+(f) **트레이스 확인**(원장 30차 §12, 09-05 15:07 프로덕션 캡처, 246 스텝): 같은 185발 13.86 → 7.78 ms(−44%),
+aux 쌍 노출 1.16 → 0.15 ms; 스텝 55.3 ms 에서 GEMM 16%, MoE 52%, AR 10%. SMLP2 탐색 팔은 기대 ≤ 0.3 ms(노출이
+0.15 ms 뿐)라 해상도 아래 → 보류. 레인의 다음 후보는 LM 헤드 2발(deep_gemm 835 µs/발, 대역 39%) → v2.
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
@@ -903,6 +935,10 @@ ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight
 8. **EXP-20 (미세 융합 묶음 2)** — 오프라인 게이트 뒤 세 노브를 한 cand 로 브래킷.
    개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각. 원패스 캡처 줄이 없으면
    그 축만 보류하고 둘로 판정(EXP-20 절의 재정정).
+
+9. **EXP-24 (모듈·노드 융합 묶음 3)** — 34차 트레이스의 남은 자리 셋(드래프터 호스트 갭·인덱서
+   글루·head-gate)에 대기 중이던 EXP-9·15·20·SMLP2 를 한 팔로. 부팅 전 프로브·`time` 부팅으로 상한을
+   실측하고, 승격 팔 하나로 판정한다(수치 축은 EXP-9 하나).
 
 **승인이 필요한 것**
 

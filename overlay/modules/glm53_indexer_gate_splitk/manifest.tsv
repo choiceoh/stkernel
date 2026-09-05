@@ -1,3 +1,0 @@
-# source	container_target(relative to TARGET_PREFIX)	base_preimage_sha256
-glm5next_attention.py	vllm/models/glm5next/nvidia/attention.py	a0870c317287ab444a4639ad418964e981efafb5386592540f85eb38d534c369
-glm53_indexer_gate.py	vllm/models/glm5next/nvidia/glm53_indexer_gate.py	absent

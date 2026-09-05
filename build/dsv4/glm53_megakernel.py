@@ -37,6 +37,7 @@ import math
 import os
 import shutil
 import time
+from contextlib import contextmanager
 
 logger = logging.getLogger("vllm.glm53.megakernel")
 
@@ -1558,9 +1559,15 @@ def _drain_l2():
 def _rel_err(a, b) -> float:
     import torch
 
-    d = (a.float() - b.float()).norm()
-    den = b.float().norm()
-    return float(d / den) if den > 0 else float(d)
+    d = float((a.float() - b.float()).norm())
+    den = float(b.float().norm())
+    if not math.isfinite(d) or not math.isfinite(den):
+        return math.inf
+    error = float(d / den) if den > 0 else float(d)
+    # Every caller must fail closed: max(0.0, NaN) is 0.0 and NaN > tol
+    # is false. Neither an invalid output nor an invalid oracle can arm a
+    # segment, including replay/aggregate gates that use those idioms.
+    return error if math.isfinite(error) else math.inf
 
 
 def _exact_gate(got, ref32) -> tuple:
@@ -1639,7 +1646,7 @@ def _selftest_mhc() -> bool:
 EXACT_FIXTURE = (1024, 4096, 8)  # n, k, m: 8 tiles -> 32 units, both kernels
 
 
-def exact_fixture(dev="cuda"):
+def exact_fixture(dev="cuda", shape=None):
     """(x, pack, w_exact, ref): weights ON the e2m1 x 2^s grid at PRODUCTION
     magnitudes (sexp in [-12, -2): the group scale of real dense projections
     is ~2^-7 median; O(1) weights never reached the expansion's floor and hid
@@ -1648,7 +1655,7 @@ def exact_fixture(dev="cuda"):
     import torch
 
     torch.manual_seed(0)
-    n, k, m = EXACT_FIXTURE
+    n, k, m = EXACT_FIXTURE if shape is None else shape
     code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
     sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
     grid = torch.tensor(_E2M1_GRID, device=dev)
@@ -1662,21 +1669,77 @@ def exact_fixture(dev="cuda"):
     return x, pack, w_exact, ref
 
 
-def run_both_kernels(x, pack, n):
+@contextmanager
+def _gemm_probe_scope():
+    """Restore the exact lane/split overrides, also after a failed gate."""
+    state = _EXT.probe_state()
+    try:
+        yield
+    finally:
+        _EXT.restore_probe_state(state)
+
+
+def run_both_kernels(x, pack, n, ksr=0):
     """The lane's output on the global kernel (knob 0) and on the local one
     (knob 2, the model's split, its own launched grid), with the plan each
-    ran under -- {0: out, 2: out}, {0: plan, 2: plan}. The knobs are forced
-    through the process globals and put back to the env's whatever happens;
-    the caller checks plans[2][3] == 1 (the local kernel really ran)."""
+    ran under -- {0: out, 2: out}, {0: plan, 2: plan}. Explicitly select v1:
+    set_probe only controls v1's plan, so leaving GEMM2 on would execute v2
+    twice while reporting hypothetical global/local plans. All overrides
+    are restored even on failure. ksr=3 exercises odd-start LOCALQ slices."""
     got, plans = {}, {}
-    try:
+    with _gemm_probe_scope():
+        _EXT.set_gemm2(0, -1, -1)
         for lq in (0, 2):
-            _EXT.set_probe(0, lq, 0, 0)
+            _EXT.set_probe(ksr, lq, 0, 0)
+            if _EXT.gemm2_plan(x.shape[0], n, x.shape[1])[0] != 0:
+                raise RuntimeError("exact gate failed to select GEMM v1")
             plans[lq] = _EXT.gemm_plan(x.shape[0], n, x.shape[1], 0)
+            if bool(plans[lq][3]) != bool(lq):
+                raise RuntimeError(f"exact gate selected wrong v1 kernel: {plans[lq]}")
             got[lq] = _gemm_call(x, pack, n)
-    finally:
-        _EXT.set_probe(-1, -1, 0, 0)  # back to the env's knobs
     return got, plans
+
+
+def _selftest_gemm_exact() -> float:
+    """All three kernels, each v2 row class, and an odd-start v1 split.
+
+    Return the worst finite error; raise on failure so the normal arm gate
+    disarms GEMM. Reuse each weight pack across row classes to keep boot
+    work bounded. No comparison is allowed to silently run the same lane.
+    """
+    import torch
+
+    worst = 0.0
+    for shape, rows, ksr in (((1024, HIDDEN, 32), (8, 16, 32), 0),
+                              ((2048, HIDDEN, 8), (8,), 3)):
+        n, k, _ = shape
+        x_all, pack, _w, ref_all = exact_fixture(shape=shape)
+        for m in rows:
+            x, ref = x_all[:m], ref_all[:m]
+            got, plans = run_both_kernels(x, pack, n, ksr=ksr)
+            with _gemm_probe_scope():
+                _EXT.set_gemm2(1, -1, -1)
+                plan2 = _EXT.gemm2_plan(m, n, k)
+                if plan2[0] != 1:
+                    raise RuntimeError("exact gate failed to select GEMM v2")
+                got[1] = _gemm_call(x, pack, n)
+                again = _gemm_call(x, pack, n)
+            torch.cuda.synchronize()
+            for lane, name in ((0, "v1 global"), (2, "v1 local"), (1, "v2")):
+                e, n_ulp = _exact_gate(got[lane], ref)
+                if not e <= 1e-3 or n_ulp > 0:
+                    raise RuntimeError(
+                        f"GEMM exact {name} m={m} n={n} k={k}: "
+                        f"rel={e:.2e} over-ulp={n_ulp}")
+                worst = max(worst, e)
+            if not torch.equal(got[0], got[2]):
+                raise RuntimeError(f"GEMM v1 global/local differ: m={m} n={n} ksr={ksr}")
+            if not _rel_err(got[1], again) <= 1e-6:
+                raise RuntimeError(f"GEMM v2 replay drift: m={m} n={n}")
+            logger.warning("[megakernel] exact gemm m=%d n=%d: v1 global/local "
+                           "ksr=%d/%d bitwise same; v2 plan=%s PASS",
+                           m, n, plans[0][1], plans[2][1], list(plan2))
+    return worst
 
 
 def _selftest_gemm() -> bool:
@@ -1698,33 +1761,7 @@ def _selftest_gemm() -> bool:
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
 
     dev = "cuda"
-    n, k, m = EXACT_FIXTURE
-    x, pack, w_exact, ref = exact_fixture(dev)
-    # BOTH kernels, whatever the knob: this fixture (8 tiles, 32 units) is
-    # a one-unit-per-block launch, so under the local-quant knob it would
-    # gate only mk_gemm_lq_kernel and the global kernel -- every launch with
-    # units > grid -- would keep no 1-ulp gate at all. The two must also be
-    # bitwise the same: the local quant is quant_store's arithmetic.
-    got, plans = run_both_kernels(x, pack, n)
-    torch.cuda.synchronize()
-    if plans[2][3] != 1:
-        logger.warning("[megakernel] selftest gemm: the plan refused the local "
-                       "kernel on the exact fixture (%s) -> DISARM (the gate "
-                       "would compare the global kernel with itself)", plans[2])
-        return False
-    e_exact = 0.0
-    for lq in (0, 2):
-        e, n_ulp = _exact_gate(got[lq], ref)
-        e_exact = max(e_exact, e)
-        if e > 1e-3 or n_ulp > 0:
-            logger.warning("[megakernel] selftest gemm EXACT (%s) rel=%.2e "
-                           "over-ulp=%d -> DISARM (expansion is not bit-exact)",
-                           "local" if lq else "global", e, n_ulp)
-            return False
-    if not torch.equal(got[0], got[2]):
-        logger.warning("[megakernel] selftest gemm local vs global paths "
-                       "differ -> DISARM (the local quant must be quant_store's)")
-        return False
+    e_exact = _selftest_gemm_exact()
     for m, n in ((8, KDA_INPROJ_N), (16, HIDDEN), (32, 1024)):
         w = torch.randn(n, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.05
         x = torch.randn(m, HIDDEN, dtype=torch.bfloat16, device=dev)
@@ -1733,15 +1770,15 @@ def _selftest_gemm() -> bool:
         got = _gemm_call(x, build_mk_weight_w4(w), n)
         torch.cuda.synchronize()
         e = _rel_err(got, ref)
-        if e > _TOL_GEMM_W4:
+        if not e <= _TOL_GEMM_W4:
             logger.warning("[megakernel] selftest gemm m=%d n=%d by-design "
                            "rel=%.2e -> DISARM", m, n, e)
             return False
     # the served plan of the shared expert's gate_up under THIS process's
     # knobs (the extension's reading of the env, not the raw string)
     plan = _EXT.gemm_plan(8, 1024, HIDDEN, 1)
-    logger.warning("[megakernel] selftest gemm exact=%.2e (both kernels, "
-                   "bitwise same) -> ARM; bg [1024x4096] plan: ksr=%d "
+    logger.warning("[megakernel] selftest gemm exact=%.2e (v1 global/local, "
+                   "v2 m=8/16/32) -> ARM; bg [1024x4096] plan: ksr=%d "
                    "units=%d localq=%d lgrid=%d", e_exact, plan[1], plan[2],
                    plan[3], plan[4])
     # which lane the boot serves, in the fingerprint: v2 is the non-
@@ -1877,6 +1914,32 @@ class _KdaFixture:
         self._mk_cache = (la, _Meta())
         return self._mk_cache
 
+    def for_query(self, nq: int, acc: int):
+        """Short/ragged verify case sharing the already built weight packs.
+
+        The state pool still has eight positions: acc belongs to the prior
+        step and may exceed this step's query length. Only the token input
+        and query boundary shrink, matching the served metadata contract.
+        """
+        import copy
+        import types
+        import torch
+
+        if not (1 <= nq <= self.T and 1 <= acc <= self.sidx.shape[1]):
+            raise ValueError(f"invalid KDA fixture nq={nq} acc={acc}")
+        case = copy.copy(self)
+        case.T, case.acc = nq, acc
+        case.x = self.x[:nq]
+        case.cu = torch.tensor([0, nq], dtype=torch.int32, device="cuda")
+        case.nacc = torch.tensor([acc], dtype=torch.int32, device="cuda")
+        layer, _ = self._layer_stand_in()
+        case._mk_cache = (layer, types.SimpleNamespace(
+            num_spec_decodes=1, num_actual_tokens=nq,
+            spec_query_start_loc=case.cu,
+            spec_state_indices_tensor=case.sidx,
+            num_accepted_tokens=case.nacc))
+        return case
+
     def mk_run(self, delta_variant=None, drain=False, layout="ds"):
         """MK arm on cloned states -> dict(out, conv_state, rec_state).
 
@@ -1952,10 +2015,7 @@ class _KdaFixture:
         ref = self.stock_run()
         for v in (0, 1, 2):
             got = self.mk_run(delta_variant=v)
-            slot = slice(_KdaFixture.SLOT, _KdaFixture.SLOT + 1)
-            errs = {k: _rel_err(got[k][slot] if k != "out" else got[k],
-                                ref[k][slot] if k != "out" else ref[k])
-                    for k in ref}
+            errs = self.errors(got, ref)
             if all(e <= _TOL_KDA for e in errs.values()):
                 logger.warning("[megakernel] kda delta variant %d matches "
                                "stock (errs=%s)", v,
@@ -1964,6 +2024,14 @@ class _KdaFixture:
         logger.warning("[megakernel] no delta variant matches stock: %s",
                        {k: "%.2e" % x for k, x in errs.items()})
         return None
+
+    def errors(self, got, ref):
+        """Judge every written recurrent position, not only the first slot."""
+        conv = slice(self.SLOT, self.SLOT + 1)
+        rec = slice(self.SLOT, self.SLOT + self.T)
+        return {"out": _rel_err(got["out"], ref["out"]),
+                "conv_state": _rel_err(got["conv_state"][conv], ref["conv_state"][conv]),
+                "rec_state": _rel_err(got["rec_state"][rec], ref["rec_state"][rec])}
 
     def stock_run(self, debug=False):
         """Stock chain (in_proj gemm, conv update, fused_recurrent_kda,
@@ -2090,8 +2158,19 @@ def _selftest_kda() -> bool:
                 logger.warning("[megakernel] selftest kda layout %s: %s rel=%.2e "
                                "(tol %.0e) vs the contiguous run -> DISARM", lay, key, rel, tol)
                 return False
+    # Retained conv history grows when a verify request has fewer than
+    # eight tokens. A full-width-only fixture missed copying kept[2] over
+    # every later retained position. Reuse the packs and exercise both the
+    # query-length and accepted-token boundaries against the stock chain.
+    for nq, acc in ((1, 1), (1, 8), (4, 1), (6, 3), (8, 8)):
+        case = fx.for_query(nq, acc)
+        errs = case.errors(case.mk_run(v), case.stock_run())
+        if not all(e <= _TOL_KDA for e in errs.values()):
+            logger.warning("[megakernel] selftest kda nq=%d acc=%d rel_errs=%s -> DISARM",
+                           nq, acc, errs)
+            return False
     logger.warning("[megakernel] selftest kda: padded-slot, SD-transposed and "
-                   "bf16-conv views match the contiguous run -> ARM")
+                   "bf16-conv views, nq=1/4/6/8 output and states -> ARM")
     _KDA_VARIANT = v
     return True
 
@@ -2313,10 +2392,12 @@ def _selftest_mla() -> bool:
         got = mla_decode(q, cache.view(torch.uint8), slots, lens, sm, ks)
         ref = mla_decode_ref(q, cache, slots, lens, sm, ks)
         torch.cuda.synchronize()
-        worst = max(worst, _rel_err(got.float(), ref.float()))
-    if worst > 2e-2:
-        logger.warning("[megakernel] selftest mla rel=%.2e -> DISARM", worst)
-        return False
+        error = _rel_err(got.float(), ref.float())
+        if not error <= 2e-2:
+            logger.warning("[megakernel] selftest mla T=%d W=%d rel=%.2e -> DISARM",
+                           T, W, error)
+            return False
+        worst = max(worst, error)
     logger.warning("[megakernel] selftest mla rel=%.2e -> ARM", worst)
     return True
 
