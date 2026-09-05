@@ -39,6 +39,41 @@ def _deneb_persist_tilelang_cache() -> None:
 
 _deneb_persist_tilelang_cache()
 
+
+_HC_PRENORM_MIN_M = 8
+
+
+def _deneb_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits):
+    """37차: deep_gemm's tf32 prenorm GEMM, with M padded to 8 rows when it is
+    smaller.
+
+    The one place a served M below 8 has ever reached this GEMM is a k=5
+    speculative boot (6 tokens per request); chain 13's K5 boot spun there
+    (rank 0, CPU 200%, 19 min, no new JIT files) and the M=8/16/24 decode
+    batches of k=7 and every prefill M (arbitrary, e.g. 27) run through it
+    daily. So M < 8 -- and only that -- is served as the proven M=8 shape:
+    zero rows appended, GEMM, the live rows copied back. Both outputs are
+    row-wise (out = x @ fn^T, sqrsum = |x|^2 per row), so the padding rows are
+    inert and never read. Cost at k=5, C=1: one 196 KB zero-copy and two
+    ~30 KB copies per layer; at k=7 this branch is never taken.
+    """
+    from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
+
+    m = x.shape[0]
+    if m >= _HC_PRENORM_MIN_M:
+        tf32_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits)
+        return
+    x_pad = torch.zeros((_HC_PRENORM_MIN_M,) + tuple(x.shape[1:]),
+                        dtype=x.dtype, device=x.device)
+    x_pad[:m].copy_(x)
+    mul_pad = torch.empty((out_mul.shape[0], _HC_PRENORM_MIN_M) + tuple(out_mul.shape[2:]),
+                          dtype=out_mul.dtype, device=out_mul.device)
+    sq_pad = torch.empty((out_sqrsum.shape[0], _HC_PRENORM_MIN_M),
+                         dtype=out_sqrsum.dtype, device=out_sqrsum.device)
+    tf32_hc_prenorm_gemm(x_pad, fn, mul_pad, sq_pad, n_splits)
+    out_mul.copy_(mul_pad[:, :m])
+    out_sqrsum.copy_(sq_pad[:, :m])
+
 import torch
 
 from vllm.utils.torch_utils import direct_register_custom_op
@@ -400,7 +435,7 @@ def mhc_pre_tilelang(
 
     residual_2d = residual_flat.view(num_tokens, hc_mult * hidden_size)
     if use_deep_gemm:
-        tf32_hc_prenorm_gemm(
+        _deneb_hc_prenorm_gemm(
             residual_2d,
             fn,
             gemm_out_mul,
@@ -583,7 +618,7 @@ def mhc_pre_broadcast_tilelang(
 
     from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
 
-    tf32_hc_prenorm_gemm(
+    _deneb_hc_prenorm_gemm(
         residual_flat,
         fn_broadcast,
         gemm_out_mul,
@@ -923,7 +958,7 @@ def mhc_fused_post_pre_tilelang(
         if use_deep_gemm:
             from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
 
-            tf32_hc_prenorm_gemm(
+            _deneb_hc_prenorm_gemm(
                 residual_cur_2d,
                 fn,
                 gemm_out_mul,

@@ -8413,6 +8413,24 @@ def test_self_built_kernels_persist_their_caches() -> None:
               and "except OSError:" in src,
               f"{name} prunes stale sibling builds, and a failed prune never "
               f"fails the build")
+    # 37차: chain 13's k=5 boot spun in deep_gemm's tf32 prenorm GEMM at
+    # M=6 (rank 0, CPU 200%, 19 min); M=8/16/24 (k=7 decode) and every
+    # prefill M run through it daily. So M < 8 -- only that -- is served as
+    # the proven M=8 shape: zero rows appended, GEMM, live rows copied back.
+    # Every call site goes through the wrapper, or a k=5 boot finds the one
+    # that does not.
+    check("def _deneb_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits):" in tl
+          and "_HC_PRENORM_MIN_M = 8" in tl
+          and "if m >= _HC_PRENORM_MIN_M:" in tl
+          and "x_pad[:m].copy_(x)" in tl
+          and "out_mul.copy_(mul_pad[:, :m])" in tl
+          and "out_sqrsum.copy_(sq_pad[:, :m])" in tl
+          and tl.count("_deneb_hc_prenorm_gemm(") == 4
+          and tl.count("tf32_hc_prenorm_gemm(") == 2
+          and tl.rindex("tf32_hc_prenorm_gemm(") < tl.index("def mhc_"),
+          "the prenorm GEMM's three call sites route through the M<8 padding "
+          "wrapper (def + 3 calls); the raw deep_gemm call appears only "
+          "inside the wrapper")
     print("  self-built kernels persist their caches .. OK")
 
 
