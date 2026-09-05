@@ -33,6 +33,7 @@ per-token x 128-channel-group ``ckv_scale_arr`` layout is supported by the
 kernel but not wired yet (it needs a group-quantizing cache-write op).
 """
 
+import math
 from typing import Any, ClassVar
 
 import torch
@@ -393,7 +394,7 @@ logger = init_logger(__name__)
 # against the part's 225 GB/s scattered-gather ceiling, versus 113 GB/s for
 # the wrapper -- prefill attention is 25% of a 32K prefill.
 _MK_MLA_MAX_T = 1 << 20
-_MK_MLA_SHADOW = {"checked": False}
+_MK_MLA_SHADOW = {"checked": False, "failure": None}
 _MK_MLA_SHADOW_MAX_T = 4096     # judge on a prefill chunk, not a 1M-row one
 _MK_MLA_SHADOW_MIN_ROWS = 16    # rows must read real slots, not the dummy's
 _MK_MLA_SHADOW_MIN_NORM = 1e-3  # an all-zero reference proves nothing
@@ -407,7 +408,17 @@ def _mk_mla_mod():
     return m if getattr(m, "ENABLE_MLA", False) else None
 
 
+def _mk_mla_check_failure() -> None:
+    # Captured decode graphs keep their MK launches after Python disarms the
+    # lane. A failed real-KV comparison therefore invalidates this worker,
+    # including later calls whose shape would otherwise select the wrapper.
+    failure = _MK_MLA_SHADOW.get("failure")
+    if failure is not None:
+        raise RuntimeError(failure)
+
+
 def _mk_mla_route(impl, num_tokens: int) -> bool:
+    _mk_mla_check_failure()
     m = _mk_mla_mod()
     if m is None or num_tokens <= 0 or num_tokens > _MK_MLA_MAX_T:
         return False
@@ -444,6 +455,7 @@ def _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, layer
 
 
 def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_counts, layer):
+    _mk_mla_check_failure()
     m = _mk_mla_mod()
     ckv_scale = float(layer._k_scale_float or 1.0)
     q = q_nope if q_nope.is_contiguous() else q_nope.contiguous()
@@ -473,8 +485,8 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
         # "pass" that armed the kernel for nothing on 09-03 (28차). The
         # first eager call with real rows is a request's prefill chunk. The
         # decode graphs captured at boot already bake the launch, so a
-        # failure here cannot un-capture them: it disarms every eager call
-        # and says so loudly enough for the bracket fingerprint to fail.
+        # failure here cannot un-capture them: invalidate this worker and
+        # raise before the request can continue to a captured decode step.
         rows = int(valid_counts.max().item())
         if rows >= _MK_MLA_SHADOW_MIN_ROWS:
             ref = _sm90_wrapper_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots.clone(), layer)
@@ -486,15 +498,23 @@ def _mk_mla_run(impl, q_nope, q_pe, kv_c_and_k_pe_cache, topk_slots, valid_count
                            q_nope.shape[0], 1e3 * ev[0].elapsed_time(ev[1]), 1e3 * ev[1].elapsed_time(ev[2]))
             den = ref.float().norm().item()
             num = (out.float() - ref.float()).norm().item()
-            finite = bool(torch.isfinite(out).all().item())
+            finite = (math.isfinite(den) and math.isfinite(num)
+                      and bool(torch.isfinite(out).all().item()))
             T = q_nope.shape[0]
-            if den < _MK_MLA_SHADOW_MIN_NORM:
-                logger.warning("[megakernel] mla shadow inconclusive: |ref|=%.2e (T=%d, rows<=%d) -- waiting for real KV", den, T, rows)
-            elif not finite or num / den > 2e-2:
+            rel = num / den if den > 0 else float("inf")
+            if not finite or (den >= _MK_MLA_SHADOW_MIN_NORM and rel > 2e-2):
                 _MK_MLA_SHADOW["checked"] = True
                 m._ARMED["mla"] = False
-                logger.warning("[megakernel] mla SHADOW FAIL vs wrapper rel=%.2e finite=%s (T=%d, rows<=%d, real KV) -> DISARM eager; decode graphs captured before this call still bake the kernel -- this boot is invalid", num / den, finite, T, rows)
-                return None
+                _MK_MLA_SHADOW["failure"] = (
+                    "[megakernel] mla SHADOW FAIL vs wrapper "
+                    f"rel={rel:.2e} finite={finite} (T={T}, rows<={rows}, real KV); "
+                    "worker invalid: captured decode graphs may contain the "
+                    "failed kernel; restart with VLLM_GLM53_MK_MLA=0"
+                )
+                logger.error(_MK_MLA_SHADOW["failure"])
+                _mk_mla_check_failure()
+            elif den < _MK_MLA_SHADOW_MIN_NORM:
+                logger.warning("[megakernel] mla shadow inconclusive: |ref|=%.2e (T=%d, rows<=%d) -- waiting for real KV", den, T, rows)
             else:
                 _MK_MLA_SHADOW["checked"] = True
                 logger.warning("[megakernel] mla shadow vs wrapper rel=%.2e (T=%d, rows<=%d, real KV) -> ARMED", num / den, T, rows)

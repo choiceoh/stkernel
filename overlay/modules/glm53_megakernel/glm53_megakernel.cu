@@ -52,6 +52,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 #include <type_traits>
 
@@ -1093,8 +1094,10 @@ __device__ void mk_gemm_phase_t(const MKGemmCtx& c, uint8_t* smem,
           // x for kb+2 into the ring slot kb+2's quant will read next
           // iteration (kb's slot: consumed already); kb+1's rows, loaded a
           // whole iteration ago, reduced now, ahead of the mma
-          if (kb + 2 < kbn) stage_a_load(kb + 2, kb & 1);
-          if (kb + 1 < kbn) lq_quant((kb + 1) & 1);
+          // The prologue seeds kb0 in slot 0, even when a split starts
+          // at an odd k-block. Keep this ring relative to that start.
+          if (kb + 2 < kbn) stage_a_load(kb + 2, (kb - kb0) & 1);
+          if (kb + 1 < kbn) lq_quant((kb + 1 - kb0) & 1);
         } else {
           if (kb + 1 < kbn) stage_a_load(kb + 1, 0);
         }
@@ -2097,6 +2100,10 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
         if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);
       } else {
         pend = t;
+        // Publication can wait, but reuse of part[][] cannot: every
+        // warp must finish reducing this token before any warp stores
+        // the next token's rows into the same shared tile.
+        __syncthreads();
       }
       xv = nxv;
 #pragma unroll
@@ -2374,9 +2381,9 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
     // written back keeps the accepted drafts (stock's spec conv kernel).
     // Everything a thread touches is indexed by compile-time constants:
     // the token loop is unrolled to the spec window (KDA_NQ_MAX = 8
-    // tokens) with a guard, and the history / kept values
+    // tokens) with a guard, and the history values
     // are selected, never indexed at runtime -- the old form (a lambda
-    // over a runtime `pos`) put st[] and kept[] in local memory and the 8
+    // over a runtime `pos`) put st[] in local memory and the 8
     // token loads behind each other: 8 us for 6144 channels of ~40 FMAs.
     constexpr int NQ_MAX = KDA_NQ_MAX;  // 8 (the host refuses a wider mql)
     for (int r = 0; r < a.n_spec; ++r) {
@@ -2390,18 +2397,12 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         const float* w = a.conv_w + (size_t)ch * CONV_W;
         const size_t sbase = (size_t)slot * a.cs_s0 + (size_t)ch * a.cs_s1;
         const int keep = a.conv_width - nq_tok;
-        // history = state[acc-1 .. acc+1]; kept = state[acc .. acc+keep-1]
-        // (keep <= 2 whenever nq_tok >= 8; guard the general case)
+        // history = state[acc-1 .. acc+1]. The retained window is moved
+        // below; short verify requests can retain more than three values.
         float st[CONV_W - 1];
 #pragma unroll
         for (int i = 0; i < CONV_W - 1; ++i)
           st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);
-        float kept[CONV_W - 1];
-#pragma unroll
-        for (int i = 0; i < CONV_W - 1; ++i)
-          kept[i] = (i < keep && acc + i < a.conv_width)
-                        ? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)
-                        : 0.0f;
         float xin[NQ_MAX];
 #pragma unroll
         for (int j = 0; j < NQ_MAX; ++j)
@@ -2428,7 +2429,12 @@ __global__ void mk_kda_kernel(const MKKdaArgs a) {
         for (int i = 0; i < a.conv_width; ++i) {
           float v;
           if (i < keep) {
-            v = (i == 0) ? kept[0] : (i == 1) ? kept[1] : kept[2];
+            // Ascending stores are safe: acc >= 1 puts every source
+            // ahead of its destination, and each thread owns a channel.
+            // Preserve the stock mask for sources beyond the window.
+            v = (acc + i < a.conv_width)
+                    ? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)
+                    : 0.0f;
           } else {
             const int q = i - keep;  // 0 .. nq_tok - 1
             v = 0.0f;
@@ -3966,6 +3972,36 @@ void mk_set_gemm2(int64_t on, int64_t ksr, int64_t ktail) {
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
   if (ktail >= 0) g_probe_ktail = (int)ktail;
 }
+// Boot checks temporarily exercise several lanes and splits. Preserve raw
+// values, including the -1 sentinel that defers reading an environment knob,
+// so a check cannot change the plan the caller configured.
+std::vector<int64_t> mk_probe_state() {
+  return {g_probe_ksr, g_probe_localq, g_probe_lq_grid, g_probe_bg_grid,
+          g_probe_gemm2, g_probe_ksr2, g_probe_ktail};
+}
+void mk_restore_probe_state(const std::vector<int64_t>& state) {
+  TORCH_CHECK(state.size() == 7, "restore_probe_state: expected seven knobs");
+  const int64_t imax = std::numeric_limits<int>::max();
+  const int64_t imin = std::numeric_limits<int>::min();
+  TORCH_CHECK(state[0] >= -1 && state[0] <= KBLK_MAX &&
+                  state[1] >= -1 && state[1] <= 2 &&
+                  state[2] >= 0 && state[2] <= MK_GRID_CAP &&
+                  state[3] >= 0 && state[3] <= MK_GRID_CAP &&
+                  state[4] >= -1 && state[4] <= imax &&
+                  state[5] >= imin && state[5] <= imax &&
+                  state[6] >= imin && state[6] <= imax,
+              "restore_probe_state: a knob is outside its stored range");
+  // Validate everything first: an invalid snapshot must not partially reset
+  // the plan. The v2 setter accepts arbitrary nonnegative splits/tails (the
+  // chooser bounds them), and their environment values may be negative.
+  g_probe_ksr = (int)state[0];
+  g_probe_localq = (int)state[1];
+  g_probe_lq_grid = (int)state[2];
+  g_probe_bg_grid = (int)state[3];
+  g_probe_gemm2 = (int)state[4];
+  g_probe_ksr2 = (int)state[5];
+  g_probe_ktail = (int)state[6];
+}
 // v2 unit timestamps of the last launch, [MK2_UNITS_MAX][4] ns, then cleared.
 std::vector<int64_t> mk_read_ts2() {
 #ifdef MK_PHASE_TS
@@ -3987,6 +4023,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "bench: ksr / localq (-1 = the env), lq grid / bg control grid (0 = off)");
   m.def("gemm2_plan", &mk_gemm2_plan, "bench: v2 {on, ksr, units, blocks/SM, tail}");
   m.def("set_gemm2", &mk_set_gemm2, "bench: force the v2 lane, its ksr and its tail k-blocks (-1 = keep)");
+  m.def("probe_state", &mk_probe_state, "snapshot raw GEMM probe knobs");
+  m.def("restore_probe_state", &mk_restore_probe_state, "restore raw GEMM probe knobs");
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
