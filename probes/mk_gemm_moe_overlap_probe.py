@@ -151,7 +151,7 @@ def main() -> int:
     print(f"{'moe alone (U=40)':<36}{t_moe:>9.1f}")
     rows = {}
     for lane in (0, 1):
-        ext.set_gemm2(lane, 0)
+        ext.set_gemm2(lane, 0, -1)
         tag = f"v{lane + 1}"
         t_pair = _time(_capture(nothing, pair, "moe-first"))
         print(f"{'pair alone ' + tag:<36}{t_pair:>9.1f}")
@@ -160,7 +160,7 @@ def main() -> int:
             rows[(lane, order)] = t - t_moe
             print(f"{'moe || pair ' + tag + ' ' + order:<36}{t:>9.1f}"
                   f"{t - t_moe:>12.1f}")
-    ext.set_gemm2(1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0)
+    ext.set_gemm2(1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0, -1)
     # the number that maps onto the step: 42 layers x the exposed pair
     for lane in (0, 1):
         worst = max(rows[(lane, o)] for o in ("moe-first", "pair-first"))

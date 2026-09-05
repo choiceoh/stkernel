@@ -8836,7 +8836,7 @@ def test_glm53_megakernel_contracts() -> None:
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
-          and "&g_gemm2_bps, mk_gemm2_kernel, MK_THREADS, GEMM2_SMEM" in cu,
+          and "&g_gemm2_bps, mk_gemm2_kernel<4>, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
           "merely run slowly (the third query is the v2 lane's blocks per SM, "
@@ -8877,18 +8877,61 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 k loop: exact ring wait, refill of the stage consumed last "
           "iteration, quant into the A buffer the running mma does not read, "
           "one __syncthreads per k-block")
-    check("__device__ __forceinline__ uint32_t mk_w4x4(uint32_t w16, uint32_t eb)" in cu
-          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in cu_code[cu_code.index("mk_w4x4"):]
-          and "__byte_perm(l0, l1, w16 & 0x7777u)" in cu_code
-          and "__byte_perm(0x8000u, 0u, (w16 >> 3) & 0x1111u)" in cu_code
-          and "const uint32_t b0 = mk_w4x4(w0, e0);" in v2
-          and "const uint32_t b1 = mk_w4x4(w1, e1);" in v2
-          and "expand_w4" not in v2,
+    check("int a_ready = 0;\n  int pair_act = 0;" in cu
+          and "__device__ __align__(16) uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];" in cu
+          and "constexpr int MK2_UNITS_MAX = MK2_TILES_MAX * MK2_KSR_MAX * 2;" in cu
+          and "__device__ unsigned int g_mk2_pair_arrive[MK2_TILES_MAX];" in cu
+          and "if (c.a_ready) {  // stage the published group; nothing to quantize" in v2
+          and "if (c.pair_act) pair_finish(nt);  // the tile's final store was just made" in v2
+          and "if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store" in v2
+          and "if (s_pair_last) g_mk2_pair_arrive[pair] = 0u;  // both arrived; rearm" in v2
+          and "void mk_run_smlp2(std::vector<int64_t> ptrs, std::vector<double> scalars," in cu
+          and cu.count("mk_launch_gemm2(") == 4  # def, gemm, smlp2 x2
+          and "g.pair_act = 1; g.n_int = n_int;" in cu and "d.a_ready = 1;" in cu
+          and 'm.def("run_smlp2", &mk_run_smlp2' in cu
+          and "mk_grid_barrier" not in cu[cu.index("void mk_run_smlp2("):cu.index("std::vector<int64_t> mk_gemm2_plan(")],
+          "MK_SEG_SMLP2 is two PDL-chained v2 launches: gate_up's pair epilogue "
+          "emits the fp8 groups, down stages them (a_ready), no grid barrier, "
+          "the pair counter self-rearms")
+    check('ENABLE_SMLP2 = MASTER and _flag("VLLM_GLM53_MK_SMLP2")' in pysrc_full
+          and "def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0," in pysrc_full
+          and "def _selftest_smlp2() -> bool:" in pysrc_full
+          and '_ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)' in pysrc_full
+          and 'if not (_ARMED["smlp"] or _ARMED["smlp2"]):' in pysrc_full
+          and 'if _ARMED["smlp2"]:\n        return _smlp2_call(' in pysrc_full
+          and 'first fused call (%s) ' in pysrc_full
+          and '"smlp2" if _ARMED["smlp2"] else "smlp"' in pysrc_full,
+          "the driver arms smlp2 behind its own knob with the exact + replay "
+          "gate, the MLP hook prefers it when armed, and the serving line "
+          "names the lane")
+    check("template <int RQ>" in cu
+          and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
+          and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
+          and "for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group" in v2
+          and "mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);" in cu,
+          "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
+          "m-tiles and the x lane mapping at compile time) and the host picks "
+          "the instantiation from m")
+    check("((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
+          and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
+          and "l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);" in v2
+          and "l1b[j] = __vadd4((uint32_t)(lb >> 32), eb * 0x01010101u);" in v2
+          and "__byte_perm(l0, l1, w & 0x7777u)" in v2
+          and "__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in v2
+          and "__byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u)" in v2
+          and "const int wsel = (ks + q) & 3;" in v2
+          and "const int koff = 32 * q + 8 * wsel;" in v2
+          and "expand_w4" not in v2 and "mk_w4x4" not in cu_code,
           "v2 expands the e2m1 nibbles into the B fragments per lane with the "
           "SAME table lookup as expand_w4 (same two LUT immediates, same sign "
-          "prmt), so the bytes the mma sees are the persistent kernel's")
+          "prmt) -- two LUT pairs per W row per k-block (lane q owns natural "
+          "elements [32q, 32q+32), groups 2q and 2q+1) and the rotated word "
+          "(ks + q) & 3 keeps the quad's raw loads on distinct banks")
     check("((ch ^ ((r >> 1) & 3)) << 4)" in v2
-          and "((ks ^ ((nrow >> 1) & 3)) << 4)" in v2,
+          and "slot[j] = nrow * W4_RAW_PITCH + ((q ^ ((nrow >> 1) & 3)) << 4);" in v2
+          and "*(const uint32_t*)(rr + slot[j] + 4 * wsel);" in v2,
           "the raw nibble chunks land XOR-swizzled at copy time and the "
           "fragment loads read through the same swizzle (eight rows on a 64 B "
           "pitch would otherwise share two bank groups)")
@@ -8896,12 +8939,24 @@ def test_glm53_megakernel_contracts() -> None:
           and "if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }" in v2
           and "atomicAdd(&g_mk2_tile_arrive[nt], 1u)" in v2
           and "if (s_last) g_mk2_tile_arrive[nt] = 0u;" in v2
-          and "for (int s = 0; s < ksr; ++s) {  // fixed order -> reproducible" in v2
+          and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
           and "atomicAdd(&g_mk2_partial" not in cu
           and "g_mk2_partial[i] = 0.0f;" not in cu,
           "v2 split slices are assigned (no zero pass), counted per tile with "
           "a self-rearming counter, and folded by the last slice in fixed "
           "order -- deterministic, no atomics on the partials")
+    check('getenv("VLLM_GLM53_MK_KTAIL")' in cu
+          and "int mk_choose_tail2(int m, int n, int k, int ksr)" in cu
+          and "if (shortest < 2 * tail) return 0;" in cu
+          and "const int nslices = c.tail > 0 ? 2 * ksr : ksr;      // partials per tile" in v2
+          and "const int slice = is_tail ? ksr + sp : sp;" in v2
+          and "s_last = (prev + 1u == (unsigned)nslices);" in v2
+          and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
+          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1);" in cu,
+          "v2 tail units (VLLM_GLM53_MK_KTAIL, default off): the last tail k-blocks "
+          "of every slice form a second unit at the end of the grid, folded as a "
+          "second partial in fixed order; only when every slice keeps >= tail "
+          "k-blocks and the doubled partial set fits")
     check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
           and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
           and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
@@ -8924,7 +8979,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
           and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
           and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
-          and "ext.set_gemm2(on, ksr)" in bench
+          and "ext.set_gemm2(on, ksr, ktail)" in bench
           and "same = bool(torch.equal(got2, got))" in bench,
           "the driver builds v2's ring depth in, the boot fingerprint names "
           "the served lane and its in_proj plan, and the bench times both "
@@ -10890,6 +10945,13 @@ def test_micro_fusion_bundle_contracts() -> None:
           and kern.count("((done + 1) & (NV - 1)) == 0") == 1
           and "tl.atomic_xchg" not in kern,
           "two monotonic last-arriver counters (conv-state write, norm), nothing resets them")
+    check("_COUNTERS: dict[tuple[torch.device, int], torch.Tensor] = {}" in kern
+          and "def prepare_counters(device: torch.device, nv: int = _SERVING_NV) -> torch.Tensor:" in kern
+          and "ctr = prepare_counters(projected.device, nv)" in kern
+          and "prepare_counters(device, _SERVING_NV)" in kern
+          and "if not counters_ready(projected.device, nv) and torch.cuda.is_current_stream_capturing():" in kern,
+          "counters are keyed by block width (count % NV needs one NV per buffer), prepared off-capture "
+          "for the serving width; a missing width under capture declines to stock")
     check("(nv & (nv - 1)) != 0" in kern and "_MAX_REQ_HEADS" in kern
           and "num_spec_decodes * h > _MAX_REQ_HEADS" in kern,
           "applicability pins NV to a power of two and declines (never raises) past the counter buffer")

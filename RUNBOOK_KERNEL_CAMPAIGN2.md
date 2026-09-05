@@ -685,6 +685,21 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 **주의**: SMLP(EXP-20 계열, 상주+배리어)를 같은 자리에 켜면 이 진단의 직렬화가 되살아난다 —
 공유 전문가 융합은 v2 구조(독립 블록 + 타일 도착 의존) 위에 다시 지어야 한다.
 
+**진행 상태(2026-09-05 07:0x, 운영자 "진행")**: (a) 브래킷은 srv2 `~/glm53-logs/lever-chain-mkg2.sh` 가
+다른 세션의 chain12 뒤에 자동 실행(origin/main 배포 → `ab-lever2.sh MKG2BASE ""` → `MKG2
+"VLLM_GLM53_MK_GEMM2=1"`, 탐색 팔 LEGS=decode,prefill8k · 3 reps; 결과 `lever-chain-mkg2.out`,
+행 `bracket-lever.jsonl` name MKG2BASE/MKG2 — judge 는 acc 정규화 step/s 를 두 이름으로 직접 비교).
+(b) 3라운드 커널(브랜치 `claude/mk-gemm-v2-round3`): m 별 인스턴스(RQ 1/2/4)와 레인 k 순열로 LUT
+쌍 16 → 4(warp·k-블록당 명령 −27% 추정), 레지스터 124 → 96/96/117, GPU 검증은 srv2 `gap_bench4.sh`
+(`g2.r3.out`, `g2.r3stamps.out`). (c) **SMLP2 구현**(원장 30차 §7): 한 grid 의 스핀 대기 대신 **PDL 체인된 v2 발사 둘**(gate_up 의
+쌍 에필로그가 fp8 그룹을 방출, down 은 a_ready) — 교착 위험 없이 act_and_mul 42발과 down 의
+양자화를 없앤다. 노브 `VLLM_GLM53_MK_SMLP2`(기본 0), 자가진단 exact 3종 + 리플레이. 벤치
+`--segments smlp --gemm2 both` 가 29차 SMLP·v2 체인·smlp2 를 나란히 잰다.
+(d) **꼬리 유닛** `VLLM_GLM53_MK_KTAIL`(기본 0): 슬라이스의 마지막 k-블록을 grid 끝의 두 번째 유닛으로 —
+96유닛 발사의 DRAM 중재 꼬리 4~9 µs 를 먼저 끝난 블록이 흡수. 스윕 `--ktail2-sweep 0,1,2,4` 뒤 채택.
+(e) 3라운드 GPU 결과(원장 §8): v2 x2 가 v1 대비 전 형상 −7~−24%. PR #318. 브래킷은 다른 세션의
+lever-chain14(GEMM2 팔, 09:02~)가 실행 중 — 결과 `ab-lever-GEMM2.log`.
+
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
 

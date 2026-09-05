@@ -916,7 +916,12 @@ def _attach_mk_pack(method, weight, cols) -> bool:
     try:
         from vllm.model_executor.layers import glm53_megakernel as _mkmod
 
-        if _mkmod.ENABLE_GEMM and cols % 128 == 0:
+        # every lane that reads the pack: the standalone GEMM and the two
+        # fused-MLP lanes (their hook finds the pack on the linear; an armed
+        # segment whose linears carry no pack serves stock in silence)
+        wants = (_mkmod.ENABLE_GEMM or getattr(_mkmod, "ENABLE_SMLP", False)
+                 or getattr(_mkmod, "ENABLE_SMLP2", False))
+        if wants and cols % 128 == 0:
             if cols > _mkmod.MK_GEMM_KMAX:
                 # wider than one launch of the lane (the drafter's fc,
                 # K = 5 x hidden): a pack per K-chunk, summed by gemm_w4a8
