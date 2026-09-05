@@ -325,7 +325,7 @@ struct MKGemmCtx {
   // into the weights, and passes 2^-shift here; it costs one multiply on
   // the activation scales in the prologue.
   float wgs = 1.0f;
-  // MK_SEG_SMLP (29차 item 3): gate_up's epilogue finishes the MLP's first
+  // MK_SEG_SMLP (32차 item 3): gate_up's epilogue finishes the MLP's first
   // half. Tiles come in (gate, up) pairs of the same 128 output columns
   // (tile nt and nt + n_int/128); whichever block stores a pair's second
   // final tile computes the clamped SwiGLU over the pair from the just-
@@ -2180,7 +2180,7 @@ struct MKKdaArgs {
   // Element strides of conv_state over (slot, channel, width). The engine
   // hands the state out as a VIEW of the hybrid pool: a slot stride wider
   // than KDA_QKV*width (page alignment), or the SD layout's transposed
-  // view (channel stride 1). KDA32SHADOW (29차) rejected every layer on a
+  // view (channel stride 1). KDA32SHADOW (32차) rejected every layer on a
   // contiguity gate; the kernel addresses through the strides instead and
   // the Python gate only refuses overlapping or non-positive ones.
   long long cs_s0, cs_s1, cs_s2;
@@ -2768,7 +2768,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_smlp_kernel(const MKSmlpArgs a)
      // the same idea (an L2 warm from idle blocks queued a latency chain
      // behind it, 10차); here nothing latency-bound runs alongside, and the
      // bench said so: -2 us on all three model shapes (45.1 -> 43.0,
-     // 130.1 -> 127.0, 59.3 -> 57.2 us; 29차), so it is unconditional.
+     // 130.1 -> 127.0, 59.3 -> 57.2 us; 32차), so it is unconditional.
     const int kblk_d = a.n_int / KSTEP;
     const int nblk_d = a.n_out_pad / SMEM_W_ROWS;
     if ((int)blockIdx.x < nblk_d) {

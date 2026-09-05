@@ -25,19 +25,22 @@
 | 6 | 메가커널 세그먼트 | **채택 · 프로덕션 기본값** | — | `MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1 (28차 §8) |
 | 10 | 드래프터 GEMM → MK W4 | **채택 · 기본값** | — | C=1 15.95 → **16.235**(+1.8%), 28차 §4 |
 | 12 | 서빙 PDL | **채택 · 기본값** | — | 발사당 58.0 → 53.6 µs(27차 오프라인). **종단 수치는 아직 없다** |
+| 7 | 준비 커널 통합 (prep_fused) | **채택 · 기본값** | — | `PREP_FUSED=1` · 기준 16.39 → **+6~9%**(PROD 체인7 확정치; PREPDEF +4~6%), 32차 판정표. +7.3% 팔은 `SPLITK=1` 동반·한국어 불합격이라 "측정됐지만 미출시"이고, 단독 팔 PREP2 는 행 — 세트 안에서만 검증됐다 |
 | 8 | dflash async scheduling | **기각** | — | 이미 켜져 있었다(`dflash` ∈ `EagleModelTypes`), 모듈 제거 |
 | 14 | MK_SEG_MOE go/no-go | **닫힘** | — | b12x static 197 vs MK 레인 196 GB/s = 103%(27차). 재개 조건은 마이크로커널 240 |
-| 7 | 준비 커널 통합 (prep_fused) | 부팅 대기 | ✅ | `PREP_FUSED=0` · 표적 = 유휴 8.18 ms(지도 보충 분해 5) |
 | 1 | b12x EP | 부팅 대기 | ✅ | `ENABLE_EP=0` · 구현 완료, 측정만 남음 |
 | 2 | custom_ops 융합 | 부팅 대기 | ✅ | `CUSTOM_OPS_AXIS=all` · 기대값 하향: 글루 481발 전부 합쳐 1.00 ms |
 | 13 | AR 프리페치 | 브래킷 대기 | ✅ | `AR_PREFETCH=0` · 상한 −0.4~0.6 ms(27차 정정), EXP-6+12 위에만 |
 | 18 | osar 벡터화 + 캐시정책 | 브래킷 대기 | ✅ | 코드 반영 완료. 직렬 절감 단독은 ~0.2~0.3 ms 로 CV 미달 — **EXP-13 팔과 같은 부팅**에서 L2 위생 시너지로 판정(#303 정정) |
+| 20 | 미세 융합 묶음 2 (듀얼 GEMM·KDA 원패스·kpool) | 브래킷 대기 | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS(31차), 런치 −249/1,548, **−0.18 ms/스텝**(C=1; 첫 판 −0.25 는 프로브 clone 편향) · C=4 −0.3. 원패스의 전제(순수 spec-verify 스텝)는 유니폼 디코드 그래프의 캡처 형상이다 — "이 러너엔 없다"(32차 §11 정정 전 가설)는 04:50 정정·KDAPROOF3 `n_spec=4` 캡처로 철회, 증명은 캡처 줄. 게이트 epilogue 축은 오프라인 기각 |
 | 9 | 인덱서 head-gate split-K | 얹기 대기 | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
 | 4 | b_proj/indexer fp8 | 대기 | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
 | 3 | MHC small-M 스윕 | 프로브 먼저 | — | `MHC_SMALLM` unset = 불활성 |
 | 17 | MHC TileLang 패스설정 | 프로브 먼저 · **표적 축소** | — | `MHC_PASSES` 기본 off (#301). 무장 뒤 디코드 몫은 잔여 mhc 14발뿐이고 주종은 **프리필 big_fuse**(#303 정정) |
 | 11 | dsv4 에 MK_SEG_MHC | 프로브 먼저 | — | 2단계는 무부팅, 이기면 dsv4 다운타임 창 |
+| 21 | MK-GEMM v2 (비상주 레인) | 프로브 먼저 · **선언 선행** | — | exact PASS, 규칙 확정 뒤 m ≤ 16 전 형상 v2 ≥ v1 — **노출 프로브·스탬프 대기**(30차 §4~5). 상한 스텝 −2.5 ms. **`VLLM_GLM53_MK_GEMM2` 가 프로필에 없다 → 런처의 `_vllm_keys` 가 안 나른다: 지금 부팅에 얹으면 caller env 로 줘도 조용히 v1 이 돈다**(메가커널 29차의 교훈, MEASUREMENTS:2380). 브래킷 전에 프로필 선언(기본 0)이 선행 |
+| 22 | 공유 전문가 GEMM 로컬 양자화 | 프로브 먼저 · **단독 부팅 금지** | — | `MK_LOCALQ=0` · 단독으론 손해, MoE 아래 노출 전역 47.4 → 32블록 **31.8 µs/층**(투영 −0.66 ms/스텝, 메가커널 29차). EXP-21 과 같은 창에서 재고 이기면 EXP-6 브래킷 cand 팔 |
 | 19 | hc 가중치 bf16 | **사실상 초월** · 참조 측정 | — | mk_mhc 가 pair 를 대체해 ONEPASS 전제가 사라졌다 — 폴백 경로의 커널급 참조로만 유효(#303) |
 | 5 | 프리필: 캡처 → KDA 스윕 | 부분 완료 | — | 캡처·프로파일은 09-03 원장에 있고 KDA 청크 스윕이 남음 |
 | 16 | 드래프터 메가커널 | 제안 · 착수 승인 대기 | — | 상한 −0.8~1.0 ms, 공사 2주 |
@@ -701,19 +704,35 @@ v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 �
 오프라인 수치 게이트 + 인그래프 물리확인(트레이스에서 대상 커널 소멸) + e2e 무회귀.
 09-04 18:42 rank3 트레이스(무장 세트, 스텝 64.8 ms, 커널 1,548개) 기준 대상:
 
-| 축 | 노브 | 제거 런치/스텝 | 근사 |
+| 축 | 노브 | 제거 런치/스텝 | 스텝 Δ(31차 측정, 조용한 GPU) |
 |---|---|---|---|
 | ~~게이트 체인 완결~~ — epilogue top-k 는 bit-exact 였지만 한 CTA 의 직렬 선택이 대체한 커널보다 느렸다(M=8 28.2→31.3 us/층). **오프라인 기각, 트리에 없음**(31차) | — | (42) | — |
-| f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | ~0.15 ms |
-| KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로 | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | 0.5~0.7 ms |
-| kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | ~0.03 ms |
+| f_b+g_b 듀얼 GEMM — 같은 병합 행의 인접 128열 두 슬라이스, 한 런치에 dot 둘 | `VLLM_GLM53_KDA_DUAL_GEMM=1` | 34 (wmma 4.7~6 us) | −0.12 ms (M=8, BLOCK_N=32) |
+| KDA 원패스 — conv + q/k/v/beta 복사 4 + recurrent + gated norm 을 순수 spec-verify 스텝에서 한 런치로. 그 스텝은 유니폼 디코드 그래프의 캡처 형상이다(아래 재정정) | `VLLM_GLM53_KDA_ONEPASS=1` | 204 (층당 7→1) | −0.04 ms (C=1) / −0.23 ms (C=4) |
+| kpool 갱신 — int32 캐스트 복사 없이 int64 positions 직접 | `VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1` | 11 (`direct_copy` 1.7 us) | −0.014 ms |
 
-수치 등급: KDA 상태(conv·recurrent)와 출력은 프로브의 플릿 형상 6 케이스에서 **bit-exact**
+수치 등급: KDA 상태(conv·recurrent)와 출력은 프로브의 플릿 형상 8 케이스(bf16/fp32 conv 상태,
+2스텝 사슬 포함)와 부팅 자가진단 3 케이스에서 **bit-exact**
 (gated norm 의 128-합 트리가 stock 커널과 달라 등급은 reduce-order 로 선언) → 묶음 부팅은
 품질 9/9 + 한국어 0/16 + 수용률 ±2 pct 게이트를 진다. 듀얼 GEMM 은 M≤16 bit-exact(M=32 는
 cuBLAS 가 다른 커널을 골라 1 ulp 소수). kpool 은 값 동일.
 
 MK_SEG_KDA(`VLLM_GLM53_MK_KDA=1`)가 서빙되면 KDA 두 축은 무효(메가커널 분기가 먼저).
+
+**원패스의 서빙 조건 — 재정정(2026-09-05).** 진입 조건은 `use_spec`(순수 spec-verify 스텝:
+`num_prefills == 0`, `num_decodes == 0`, 비-spec 토큰 없음)이다. 09-05 07:04~07:11 의 "이 러너엔
+그런 스텝이 없다(32차 §11)" 는 §11 의 **정정 전 가설**(`spec_sequence_masks` 항상 None)에 기댄
+것이었고, §11 의 04:50 정정과 체인12 KDAPROOF3(`kda lane CAPTURED into the decode graph: T=32
+n_spec=4` — MK-KDA 레인의 전제도 같은 spec-verify 배치다)이 그 가설을 철회했다. 이미지 코드로도
+그렇다: `mamba_hybrid.prepare_attn` 은 실제 스텝마다 행별 `num_decode_draft_tokens_cpu`(드래프트
+> 0 이고 비-드래프트 토큰이 정확히 1개 스케줄된 행 = spec 행, 나머지 −1)를 채우고,
+`GDNAttentionMetadataBuilder.build_for_cudagraph_capture` 는 `query_start_loc` 차분에서 그것을
+만든다 — 즉 유니폼 디코드 그래프의 캡처 형상이 곧 순수 spec-verify 배치다. 섞인 스텝(프리필
+직후 첫 디코드의 −1 행이 낀 배치)은 스텝 단위로 stock 으로 내려간다. **증명은 캡처 시점이다**
+(32차 §12 교훈): 서빙 디코드는 FULL 그래프 재생이라 `[kda-onepass] one-pass KDA serving` 은
+캡처 때 한 번 찍히고, 트레이스의 `_kda_onepass_spec_kernel` 이 그 뒤를 잇는다. 그 줄이 없으면
+원패스 축만 **판정 보류**(듀얼 GEMM + kpool 로 판정, 런치 −45 ≈ −0.13 ms) — 원패스를 켜도
+창을 잃지 않는다.
 "kpool 원패스 11층→1" 은 층간 데이터 의존(층 L 의 갱신은 층 L 의 K 를 먹고 같은 층의
 logits 가 그 캐시를 읽음) 때문에 플래그 대기 persistent 커널 없이는 불가 — 스텝 내내
 SM 을 점유하는 그 형태는 채택 대상이 아니라서 캐스트 복사 제거로 축소했다.
@@ -721,15 +740,21 @@ SM 을 점유하는 그 형태는 채택 대상이 아니라서 캐스트 복사
 ```bash
 bash probes/run_micro_fusion_check.sh            # 오프라인 게이트 (fresh container)
 VLLM_GLM53_KDA_DUAL_GEMM=1 VLLM_GLM53_KDA_ONEPASS=1 VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS=1 \
-  bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand (세 노브; 원패스 증명은 캡처 줄)
 ```
 
-- 부팅 로그 앵커: `[kda-onepass] dual gate GEMM serving`, `[kda-onepass] one-pass KDA serving`.
-  `-> stock` 줄이 있으면 그 축은 안 돈 것이다.
+- 부팅 로그 앵커: `[kda-onepass] self-test PASS (...) -> one-pass ARMED`(자가진단, 첫 eager
+  forward), `[kda-onepass] dual gate GEMM serving`, `[kda-onepass] one-pass KDA serving`(그래프
+  캡처 때 한 번 — 재생 스텝은 파이썬을 돌지 않는다). 경고 줄 `decode shape not admitted -> stock
+  two GEMMs` / `tensors not admitted -> stock chain` / `self-test FAIL ... DISARMED` 가 있으면 그
+  축은 안 돈 것이다. 프리필·프로필 런(M>32)은 설계상 stock 이고 로그되지 않는다. conv 상태
+  dtype 은 bf16·fp32 둘 다 받으므로 MK-KDA 의 `MAMBA_CACHE_DTYPE=float32` 부팅에서도
+  돈다(MK 가 서빙하면 MK 분기가 먼저 반환해 무효).
 - 물리확인: cand 트레이스에서 `_causal_conv1d_update_kernel` 0, `layer_norm_gated_fwd_kernel` 0,
   KDA 층당 `_kda_onepass_spec_kernel` 1, `_dual_gate_gemm_kernel` 1, 인덱서 층당 `direct_copy`
-  −1. 스텝의 GDN 창 시간(트레이스 도구)으로 ms 를 잰다.
-- 브래킷: base → cand(네 노브) → base, C=1 step/s + 프리필 2048/8192 동반. 채택 뒤
+  −1. 스텝의 GDN 창 시간(트레이스 도구)으로 ms 를 잰다. 원패스 캡처 줄이 없는 부팅이면 conv/norm
+  소멸과 `_kda_onepass_spec_kernel` 은 게이트에서 빼고(원패스 보류) 나머지 둘로 판정한다.
+- 브래킷: base → cand(세 노브) → base, C=1 step/s + 프리필 2048/8192 동반. 채택 뒤
   프로필 기본값으로 올린다(운영자 규칙: 이득이 확인된 개선은 기본값).
 
 
@@ -870,9 +895,9 @@ ssh srv4 'cd /home/choiceoh/stkernel && probes/run_mhc_glm53_bench.sh --hcweight
    커널 32블록 대조군(이득이 "배리어 없음"인지 "블록 수"인지)과 행 술어화 판의 단독
    손해가 먼저. 이기면 EXP-6 브래킷의 cand 팔에 `VLLM_GLM53_MK_LOCALQ=1`(투영 −0.66
    ms/스텝 ≈ 1%, 브래킷 해상도 안쪽이라 세트로만). 단독 부팅 없음.
-
 8. **EXP-20 (미세 융합 묶음 2)** — 오프라인 게이트 뒤 세 노브를 한 cand 로 브래킷.
-   개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각.
+   개별 판정 없음(R2 방식). 게이트 epilogue 축은 프로브에서 기각. 원패스 캡처 줄이 없으면
+   그 축만 보류하고 둘로 판정(EXP-20 절의 재정정).
 
 **승인이 필요한 것**
 

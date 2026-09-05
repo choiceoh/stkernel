@@ -1,4 +1,4 @@
-"""29차 item 5 -- the dev lab's API side: POST /glm53/lab {op, args, timeout}
+"""32차 item 5 -- the dev lab's API side: POST /glm53/lab {op, args, timeout}
 -> engine_client.collective_rpc("glm53_lab", ...) on every rank. Added to
 the server with `--middleware vllm.glm53_lab_middleware.lab` (the launcher
 does that when VLLM_GLM53_DEV_LAB=1). Everything else passes through."""
