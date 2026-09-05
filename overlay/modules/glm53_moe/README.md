@@ -193,3 +193,46 @@ deploy loudly instead of silently dropping the patch.
 
 Only glm53 mounts this module (dsv4's MoE path does not go through
 b12x_shared_workspace).
+
+## Static v2 / v3 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
+
+`VLLM_GLM53_B12X_STATIC_V2` (profile default `""` = stock) routes the exact
+GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
+rework of flashinfer's `MoEStaticKernel` with the same workspace, weight
+views, routing frontend and arithmetic (FC1 accumulation order, fp4 quant of
+the intermediate, FC2 accumulation, bf16 atomic scatter) but a different
+streaming structure:
+
+- gate and up come in on one TMA pipeline stage (A + B_gate + B_up + scales on
+  one mbarrier) and accumulate in the same k loop -- the stock kernel runs
+  two passes with a drained pipeline and a CTA-wide barrier between them;
+- FC2 has its own stage buffers, so the DMA warp issues the item's 32 down
+  tiles the moment the FC1 loads are out and the next item's FC1 loads right
+  after -- no barrier at the item boundary (the quantized intermediate lives
+  in its own `sA2/sSFA2` instead of FC1's stage 0);
+- the A TMA box is `a_rows` rows (default = tile_m) instead of 128, and
+  tile_m = 32 is admitted, which keeps three accumulators plus two B fragment
+  sets inside the MMA warps' 232 registers;
+- pipeline states advance monotonically across items (no `reset_count`), so
+  any stage count works; `producer_tail` drains at exit.
+
+Spec: `"1"` = `m32,f2,g4,a32` (tile_m 32, FC1 2 stages, FC2 4 stages, 32-row
+A box, static item schedule); or a comma list of `m<tile_m>`, `f<fc1 stages>`,
+`g<fc2 stages>`, `a<A rows>`, `d` (dynamic item schedule: the DMA warp claims
+items from a global counter the kernel zeroes in its phase 0 and hands the
+coordinates to the MMA warps through a smem ring published by each item's
+first FC1 stage barrier; a sentinel stage ends the loop) and `s` (per-CTA
+`%globaltimer` stamps into an int64 `[grid, STAMP_SLOTS]` tensor -- probe
+only; the serving spec must not carry `s`), and `w` (`moe_static_kernel_v3.py`:
+FC1 streamed as two 64-wide halves over 256-wide K stages so every w13 TMA
+box row is a full 128 B line -- the v2 stamps put FC1 at 216 GB/s against
+FC2's 242 with the same pipeline, and a vectorized-load streamer measured
+DRAM at 167 GB/s for 64 B row segments, 202 for 128 B, 222 for 256 B; FC2
+and the intermediate layout are v2's, tile_m 32, static schedule, FC2 3
+stages by default). The cache key and on-disk kernel name carry the config; the source file
+is in `_kernel_source_files()`, so an edit invalidates the module cache like
+any other kernel file.
+
+Measured by `probes/b12x_static_probe.py` (stock vs v2, DRAM-cold, graph
+replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the
+kernel's TMA access pattern vs a linear read, plain CUDA). Ledger: 35차.

@@ -3459,7 +3459,9 @@ def test_glm53_b12x_tuning_controls() -> None:
         "num_experts": 72,
         "num_local_experts": 72,
         "hidden_size": 2048,
-        "intermediate_size": 512,
+        # 512 is the per-rank spelling the launcher passes (admitted since
+        # 2026-09-05); 1024 (a TP2 shard) is not a deployed geometry
+        "intermediate_size": 1024,
         "num_topk": 1,
         "quant_mode": "mxfp4",
         "activation": "silu",
@@ -3533,6 +3535,135 @@ def test_glm53_b12x_tuning_controls() -> None:
         check(f'{key}=""' in profile, f"{key} must remain explicitly default-off")
 
     print("  GLM53 b12x tuning controls ..... OK")
+
+
+def test_b12x_static_v2_controls() -> None:
+    """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
+
+    `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV2` for the served
+    GLM-5.3 TP geometry only. The profile ships it empty (stock kernel) until
+    the bracket; the spec parser must reject anything it cannot spell back,
+    because the config lands in the kernel cache key and the on-disk name.
+    """
+    dispatch_path = "overlay/modules/glm53_moe/moe_dispatch.py"
+    names = {
+        "_GLM53_B12X_STATIC_V2_ENV",
+        "_STATIC_V2_DEFAULT",
+        "_parse_glm53_static_v2",
+        "_is_glm53_b12x_tp_geometry",
+        "_static_v2_config_for",
+        "_static_v2_cache_key",
+        "_static_kernel_cache_key",
+    }
+    ns = load_defs(dispatch_path, names, {"Tuple": tuple, "Dict": dict, "torch": None})
+    parse = ns["_parse_glm53_static_v2"]
+    default = ns["_STATIC_V2_DEFAULT"]
+
+    for raw in (None, "", " ", "0", "off"):
+        check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
+    check(parse("1") == default and parse("1") is not default,
+          "'1' must be a copy of the default config")
+    check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
+                      "dynamic": False, "wide": False},
+          "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
+    check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
+                                 "stamps": False, "dynamic": False, "wide": False},
+          "explicit cells override the defaults")
+    check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
+          "d selects the dynamic item schedule")
+    wide = parse("w")
+    check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
+          "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
+    check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
+    for raw in ("w,m64", "w,d", "w,a64"):
+        try:
+            parse(raw)
+            check(False, f"w must reject {raw!r}")
+        except ValueError as exc:
+            check("v3" in str(exc), "the w conflict error names v3")
+    check(parse("m64,f2,g2")["a_rows"] == 64,
+          "a_rows follows tile_m unless spelled out")
+    check(parse("m32,f2,g4,a64")["a_rows"] == 64 and parse("m32,f2,g4,s")["stamps"],
+          "a<rows> and s cells parse")
+    for raw in ("2", "m48", "m32,x1", "m32,a48", "m32,a256", "f0", "m32,,g2", "m32 f2"):
+        try:
+            parse(raw)
+            check(False, f"invalid static v2 spec must fail: {raw!r}")
+        except ValueError as exc:
+            check("VLLM_GLM53_B12X_STATIC_V2" in str(exc),
+                  "static v2 spec error must name the knob")
+
+    geometry = dict(num_experts=288, num_local_experts=288, hidden_size=4096,
+                    intermediate_size=2048, num_topk=8, quant_mode="nvfp4",
+                    activation="swigluoai_uninterleave", swiglu_limit=10.0)
+    ns["_STATIC_V2_OVERRIDE"] = None
+    ns["_GLM53_B12X_STATIC_V2"] = None
+    config_for = ns["_static_v2_config_for"]
+    check(config_for(activation_precision="fp4", **geometry) is None,
+          "unset knob keeps the stock kernel")
+    ns["_GLM53_B12X_STATIC_V2"] = dict(default)
+    check(config_for(activation_precision="fp4", **geometry) == default,
+          "the env config applies to the exact GLM TP geometry")
+    check(config_for(activation_precision="bf16", **geometry) is None,
+          "W4A16 (bf16 activations) never takes the NVFP4 v2 kernel")
+    # launch_sm120_static_moe passes the PER-RANK intermediate (2048 / TP4 =
+    # 512); the first probe run measured the stock kernel six times because
+    # the gate only knew the full 2048 (no static2_ compile, no proof line)
+    per_rank = dict(geometry, intermediate_size=512)
+    check(config_for(activation_precision="fp4", **per_rank) == default,
+          "the geometry gate must admit the per-rank intermediate the launcher passes")
+    drift = dict(geometry, num_local_experts=72)
+    check(config_for(activation_precision="fp4", **drift) is None,
+          "EP geometry (E=72 local) keeps the stock kernel")
+    ns["_STATIC_V2_OVERRIDE"] = {"tile_m": 64, "fc1": 2, "fc2": 2, "a_rows": 64,
+                                 "stamps": True}
+    check(config_for(activation_precision="fp4", **geometry)["tile_m"] == 64,
+          "the probe override wins over the env config")
+
+    key_a = ns["_static_v2_cache_key"](
+        default, activation_precision="fp4", quant_mode="nvfp4", state_E=288,
+        weight_E=288, m=8, k=4096, n=512, num_topk=8, max_rows=512, mac=48,
+        mma_tiler_mn=(32, 128), topk_ids_dtype="int32",
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
+        swiglu_limit=10.0)
+    key_b = ns["_static_v2_cache_key"](
+        dict(default, fc2=2), activation_precision="fp4", quant_mode="nvfp4",
+        state_E=288, weight_E=288, m=8, k=4096, n=512, num_topk=8, max_rows=512,
+        mac=48, mma_tiler_mn=(32, 128), topk_ids_dtype="int32",
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
+        swiglu_limit=10.0)
+    check(key_a[0] == "static_v2" and key_a != key_b,
+          "the v2 cache key carries the config so configs never alias")
+
+    src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
+    check("moe_static_kernel_v2.__file__" in src,
+          "the v2 kernel source must be in the module cache key files")
+    check("_STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None" in src,
+          "the probe override is a module-level hook, not an env read at launch")
+    kernel = open(os.path.join(
+        REPO, "overlay/modules/glm53_moe/moe_static_kernel_v2.py"),
+        encoding="utf-8").read()
+    check("class MoEStaticKernelV2" in kernel and "producer_tail" in kernel
+          and "reset_count" not in kernel,
+          "v2 keeps its pipeline states continuous across items and drains at exit")
+    check("pass_sync_barrier" not in kernel,
+          "v2 has no CTA-wide item-boundary barrier")
+    manifest = open(os.path.join(
+        REPO, "overlay", "modules", "glm53_moe", "manifest.tsv"),
+        encoding="utf-8").read()
+    check("moe_static_kernel_v2.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_kernel_v2.py\tabsent" in manifest,
+          "the v2 kernel is a new file (absent preimage) in the module manifest")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check('VLLM_GLM53_B12X_STATIC_V2=""' in profile,
+          "the profile ships the v2 kernel off until the bracket")
+    runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
+    check("moe_static_kernel_v2.py" in runner,
+          "the probe runner must mount the v2 kernel beside the dispatcher")
+
+    print("  b12x static v2 controls ........ OK")
 
 
 def test_mhc_probe_contracts() -> None:
@@ -11658,6 +11789,7 @@ if __name__ == "__main__":
     test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
     test_glm53_b12x_tuning_controls()
+    test_b12x_static_v2_controls()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
