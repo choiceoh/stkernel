@@ -9721,9 +9721,15 @@ def test_prefill_warmup_contracts() -> None:
           "the warmup hook stays opt-in at the launcher")
     profile = open(os.path.join(REPO, "profiles/glm53.env"),
                    encoding="utf-8").read()
-    check("PREFILL_WARMUP=0" in profile
+    check("PREFILL_WARMUP=1" in profile
           and 'PREFILL_WARMUP_LENS="2048,4096,8192"' in profile,
-          "the profile carries the knob, default off, ladder lengths")
+          "the profile carries the knob, default on since 33차, ladder lengths")
+    for harness in ("bench/ab-lever.sh", "launchers/ab-glm53.sh"):
+        h = open(os.path.join(REPO, harness), encoding="utf-8").read()
+        check('export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"' in h,
+              f"{harness} pins its boots to no-warmup -- the cold-tax channel "
+              "is the bracket's to measure, and the warmup's requests would "
+              "land inside its first decode leg's 2s windows")
     print("  prefill warmup contracts ... OK")
 
 
@@ -10103,12 +10109,14 @@ def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
 
 
 def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
-    """PREFILL_WARMUP=1 bash launchers/... must survive sourcing the profile.
+    """PREFILL_WARMUP=0 bash launchers/... must survive sourcing the profile.
 
-    The profile declares PREFILL_WARMUP=0, and the launcher restores only the
-    keys in its _caller list after `. "$PROFILE_ENV"`; the warmup keys were
-    not on it, so a caller's =1 was silently clobbered back to 0 and the
-    2026-09-03 warm-prefill boot ran cold with no prefill-warmup.log at all."""
+    The profile declares PREFILL_WARMUP=1 (default on since 33차), and the
+    launcher restores only the keys in its _caller list after `. "$PROFILE_ENV"`;
+    the warmup keys were once not on it, so a caller's value was silently
+    clobbered by the profile and the 2026-09-03 warm-prefill boot ran cold
+    with no prefill-warmup.log at all. The restore list is what makes the
+    bracket harnesses' 0 pin and the kill switch work."""
     src = open(os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
     # The restore list is ct_load_profile's argument list now, and the library
     # appends $_vllm_keys to it; the profile is sourced inside that function.
@@ -10122,8 +10130,8 @@ def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
           "the shared loader captures the caller's values BEFORE sourcing the "
           "profile, or the restore has nothing to restore")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^PREFILL_WARMUP=0$", prof, re.M) is not None,
-          "profile still ships PREFILL_WARMUP=0 (warm boots are opt-in)")
+    check(re.search(r"^PREFILL_WARMUP=1$", prof, re.M) is not None,
+          "profile ships PREFILL_WARMUP=1 (cold boots are the opt-in now)")
     print("  launcher restores PREFILL_WARMUP from caller env .. OK")
 
 
