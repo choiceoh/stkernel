@@ -84,12 +84,47 @@ def ask(model, prompt, max_tokens):
     return int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0))
 
 
+def long_prompts(n: int, rng_seed: int = 11):
+    """n prompts of ~2.5K tokens each: the pool shuffled and concatenated as
+    a numbered list under one instruction. Only PREFILL rows reach the
+    observer (decode steps are graph replays), so calibration tokens are
+    prompt tokens; 64-token completions on 36 short prompts gave 12K of a
+    32K budget in 20 minutes (chain 24, 16:43) -- this form gives 30K in
+    about two."""
+    import random
+    pool = KO_TECH + KO_DAILY + EN + CODE
+    rng = random.Random(rng_seed)
+    out = []
+    for i in range(n):
+        items = []
+        for rep in range(3):
+            order = pool[:]
+            rng.shuffle(order)
+            items += order
+        head = ("다음 질문들에 번호를 붙여 차례로, 각각 한두 문단씩 답해줘.\n\n" if i % 2 == 0
+                else "Answer each of the following numbered questions in one or two paragraphs.\n\n")
+        body = "\n".join(f"{j + 1}. {q}" for j, q in enumerate(items))
+        out.append(head + body + "\n\n" + LONG[i % 2])
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--max-tokens", type=int, default=64)
+    ap.add_argument("--long", type=int, default=0,
+                    help="send N long prefill-only prompts (max_tokens 1) instead of the rounds")
     args = ap.parse_args()
     model = resolve_model("glm-5.3-flash", URL)
+    if args.long:
+        tot = 0
+        t0 = time.time()
+        for i, p in enumerate(long_prompts(args.long)):
+            pt, ct = ask(model, p, 1)
+            tot += pt
+            print(f"long prompt {i + 1}/{args.long}: {pt} prompt tokens ({tot} so far, {time.time() - t0:.0f}s)")
+        print(f"done: {tot} prompt tokens; look for '[megakernel] calib: dumped' on every rank")
+        return 0
     prompts = KO_TECH + KO_DAILY + EN + CODE + LONG
     tot_p = tot_c = 0
     t0 = time.time()

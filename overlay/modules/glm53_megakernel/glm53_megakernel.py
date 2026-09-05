@@ -932,7 +932,16 @@ try:
     _CALIB["budget"] = int(os.environ.get("VLLM_GLM53_MK_CALIB_TOKENS", "32768"))
 except ValueError:
     _CALIB["budget"] = 32768
-_PACK_META = {}   # id(pack) -> name (set by the fp8-dense attach)
+_PACK_META = {}   # wq4 data pointer -> name (set by the fp8-dense attach)
+
+
+def _pack_key(pack) -> int:
+    """The pack's identity for calibration: its nibble tensor's address.
+    The drafter's opaque custom op rebuilds the pack tuple on every call
+    (lists of tensors in, a fresh tuple out), so id(pack) never matched and
+    the drafter's 35 packs got no Hessians on the first calibration boot
+    (chain 24); the tensor behind the tuple is the same object."""
+    return int(pack[0].data_ptr())
 
 
 def note_pack_name(pack, name: str) -> None:
@@ -940,18 +949,18 @@ def note_pack_name(pack, name: str) -> None:
         return
     if isinstance(pack, list):
         for c, p in enumerate(pack):
-            _PACK_META[id(p)] = f"{name}.k{c}"
+            _PACK_META[_pack_key(p)] = f"{name}.k{c}"
     else:
-        _PACK_META[id(pack)] = name
+        _PACK_META[_pack_key(pack)] = name
 
 
 def _calib_observe(x, pack) -> None:
     """Accumulate this launch's input into its pack's Hessian."""
     import torch
 
-    if _CALIB["dumped"] or x.dim() != 2:
+    if _CALIB["dumped"] or x.dim() != 2 or pack[0] is None:
         return
-    key = id(pack)
+    key = _pack_key(pack)
     name = _PACK_META.get(key)
     if name is None:
         return
