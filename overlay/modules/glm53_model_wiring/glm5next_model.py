@@ -148,6 +148,22 @@ if install_glm53_dflash_early_fc is not None:
     except Exception:
         logger.exception("[dflash-early-fc] install failed -> stock path")
 
+# deneb fork (glm53_drafter_prep): skip the per-step host build of the draft
+# attention metadata on FULL drafter replays (34차: 420-640 us of GPU idle
+# per step behind a DtoH sync). Same install shape: import only, inert
+# unless VLLM_GLM53_DRAFTER_PREP names a mode, loud on failure, never fatal.
+try:
+    from .glm53_drafter_prep import install_glm53_drafter_prep
+except ImportError as _e:
+    install_glm53_drafter_prep = None
+    if _e.name != f"{__package__}.glm53_drafter_prep":
+        logger.exception("[drafter-prep] module import failed -> stock path")
+if install_glm53_drafter_prep is not None:
+    try:
+        install_glm53_drafter_prep()
+    except Exception:
+        logger.exception("[drafter-prep] install failed -> stock path")
+
 
 def _validate_decodable_vocab_bound(
     decodable_vocab: int,

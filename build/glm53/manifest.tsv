@@ -37,3 +37,4 @@ glm53_dflash_early_fc.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm
 glm53_kda_onepass.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py	absent
 glm53_dev_lab.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py	absent
 glm53_lab_middleware.py	/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py	absent
+glm53_drafter_prep.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py	absent

@@ -31,12 +31,20 @@ def load_kernel_events(path: str) -> list[dict]:
 
 
 def cut_steps(ev: list[dict]) -> tuple[str, list[int]]:
-    """(anchor used, indices of the first anchor kernel of every step)."""
+    """(anchor used, indices of the first anchor kernel of every step).
+
+    The anchor with the MOST occurrences wins, not the first with two: a
+    prep-fused boot (EXP-7, default since 32차) still launches the stock
+    `_gather_block_tables_kernel` on the rare non-uniform step, so the
+    first-match rule cut a 245-step trace into four 3.6 s "steps" (34차)."""
+    best = None
     for anchor in STEP_ANCHORS:
         starts = [i for i, e in enumerate(ev) if e["name"].startswith(anchor)]
-        if len(starts) >= 2:
-            return anchor, starts
-    raise SystemExit(f"no step anchor found among {STEP_ANCHORS}")
+        if len(starts) >= 2 and (best is None or len(starts) > len(best[1])):
+            best = (anchor, starts)
+    if best is None:
+        raise SystemExit(f"no step anchor found among {STEP_ANCHORS}")
+    return best
 
 
 def union_busy_us(seg: list[dict]) -> float:
@@ -65,11 +73,14 @@ def stream_of(e: dict):
 # flashinfer, deep_gemm, cuBLAS/CUTLASS, or the model's own TileLang code --
 # some of it out of files we overlay, which is a different axis (editable)
 # from who wrote the kernel (see STEP_KERNEL_MAP.md).
-OURS = ("mk_gemm_kernel", "mk_mhc_kernel", "mk_kda_kernel", "mk_mla_kernel",
+OURS = ("mk_gemm_kernel", "mk_gemm2_kernel", "mk_gemm_lq_kernel", "mk_smlp_kernel",
+        "mk_mhc_kernel", "mk_kda_kernel", "mk_mla_kernel",
         "k_oneshot", "kpool_topk_kernel", "_deneb_gate_partial_kernel",
         "_glm53_prep_fused_kernel", "_gate_splitk_partial_kernel",
         "_gate_splitk_reduce_kernel", "_kpool_seed_tail_cache_strided_kernel",
-        "_glm53_sparse_prefill_kernel", "_glm53_union_prefill_kernel")
+        "_glm53_sparse_prefill_kernel", "_glm53_union_prefill_kernel",
+        "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel",
+        "_glm53_indexer_tail_select_kernel")
 
 
 def owner(n: str) -> str:
@@ -80,8 +91,10 @@ def owner(n: str) -> str:
 def category(n: str) -> str:
     # our megakernel segments first -- their names contain the substrings the
     # vendor rules below match ("mhc", "gemm", "mla", "kda")
-    if "mk_gemm_kernel" in n:
+    if "mk_gemm_kernel" in n or "mk_gemm2_kernel" in n or "mk_gemm_lq_kernel" in n:
         return "MK GEMM (ours)"
+    if "mk_smlp_kernel" in n:
+        return "MK SMLP (ours)"
     if "mk_mhc_kernel" in n:
         return "MK MHC (ours)"
     if "mk_mla_kernel" in n:
@@ -103,11 +116,13 @@ def category(n: str) -> str:
     if ("cutlass_80_wmma" in n or "splitKreduce" in n or "gemmSN" in n
             or n.startswith("_gate_splitk")):
         return "bf16/cublas GEMM + head gate"
-    if "fused_recurrent" in n or "conv1d" in n or "layer_norm_gated" in n:
+    if ("fused_recurrent" in n or "conv1d" in n or "layer_norm_gated" in n
+            or "_kda_onepass_spec_kernel" in n or "_dual_gate_gemm_kernel" in n):
         return "KDA"
     if "BatchMLAPaged" in n or "concat_and_cache_mla" in n:
         return "MLA decode"
-    if ("mqa_logits" in n or "topKPerRow" in n or "expand_pools" in n or "kpool" in n.lower()):
+    if ("mqa_logits" in n or "topKPerRow" in n or "expand_pools" in n or "kpool" in n.lower()
+            or "_glm53_indexer_tail_select_kernel" in n or "_fwht_quant_kernel" in n):
         return "indexer"
     if "mhc" in n:
         return "MHC"

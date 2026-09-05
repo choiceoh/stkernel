@@ -18,6 +18,7 @@ from vllm.model_executor.layers.glm53_kpool_topk import (
 )
 from vllm.models.glm5next.nvidia.ops.kpool_compress import (
     _kpool_softmax_rotate_write_cache_kernel,
+    _expand_pools_and_append_tail_kernel,
     expand_pools_and_append_tail,
     expand_pools_to_tokens,
     kpool_decode_update_and_maybe_write_cache_batched,
@@ -609,6 +610,112 @@ def _force_tail_pool_into_logits(
     keep = logits.gather(1, col)
     biggest = torch.full_like(keep, torch.finfo(logits.dtype).max)
     logits.scatter_(1, col, torch.where(last_pool.unsqueeze(1) >= 0, biggest, keep))
+
+
+# deneb fork (glm53_kpool_tail_select, 34차 "module and node fusion"): the
+# decode top-k glue of every full-attention layer -- `_decode_topk_seq_lens`
+# (positions -> token seq_len, 2 launches), `_force_tail_pool_into_logits`
+# (8 launches: int64 cast, floor-div, sub, clamp, gather, full_like, compare,
+# where + scatter) and the final copy of the expanded indices into the
+# persistent buffer (1 launch) -- as ONE Triton launch plus a direct-write
+# expand. Eleven aten kernels x 11 layers = ~120 graph nodes and ~0.25 ms of
+# a decode step (34차 trace, profiler-inflated). Integer index arithmetic and
+# the same finfo.max bias, so the outputs are bit-identical to the stock
+# chain by construction (probes/indexer_decode_fused_check.py is the gate).
+# Uniform spec-verify decode only (the padded layout keeps the stock chain).
+_INDEXER_DECODE_FUSED = (
+    os.environ.get("VLLM_GLM53_INDEXER_DECODE_FUSED", "0").strip() == "1"
+)
+_FUSED_ANNOUNCED: set = set()
+
+
+@triton.jit
+def _glm53_indexer_tail_select_kernel(
+    pos_ptr,       # [n_rows] int64/int32 token positions (row r = decode token r)
+    logits_ptr,    # [n_rows, n_cols] fp32 pool logits, mutated in place
+    seq_out_ptr,   # [n_rows] int32 token-granular seq_len = pos + 1
+    n_rows,
+    n_cols,
+    logits_s0,
+    big,           # finfo(logits.dtype).max
+    POOL: tl.constexpr,
+    FORCE: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    rows = pid * BLOCK + tl.arange(0, BLOCK)
+    m = rows < n_rows
+    pos = tl.load(pos_ptr + rows, mask=m, other=-1)
+    # stock: positions[:n].to(int32) + 1 -- int32 add after the narrowing
+    seq = pos.to(tl.int32) + 1
+    tl.store(seq_out_ptr + rows, seq, mask=m)
+    if FORCE:
+        # stock: last_pool = seq.to(int64) // POOL - 1; col = clamp(last_pool,
+        # 0, n_cols - 1); logits[r, col] = biggest where last_pool >= 0 (else
+        # the gathered value is written back unchanged)
+        last_pool = seq.to(tl.int64) // POOL - 1
+        col = tl.minimum(tl.maximum(last_pool, 0), n_cols - 1)
+        wm = m & (last_pool >= 0)
+        tl.store(logits_ptr + rows.to(tl.int64) * logits_s0 + col, big, mask=wm)
+
+
+def indexer_tail_select_fused(
+    positions: torch.Tensor,
+    logits: torch.Tensor,
+    n_rows: int,
+    pool_size: int,
+    force_tail: bool,
+) -> torch.Tensor:
+    """One launch for `_decode_topk_seq_lens` (uniform layout) and
+    `_force_tail_pool_into_logits`. Returns the int32 token seq_len per row;
+    `logits` is mutated in place exactly as the stock scatter does."""
+    seq = torch.empty(n_rows, dtype=torch.int32, device=positions.device)
+    if n_rows == 0:
+        return seq
+    BLOCK = 128
+    _glm53_indexer_tail_select_kernel[(triton.cdiv(n_rows, BLOCK),)](
+        positions,
+        logits,
+        seq,
+        n_rows,
+        logits.shape[1],
+        logits.stride(0),
+        float(torch.finfo(logits.dtype).max),
+        POOL=pool_size,
+        FORCE=bool(force_tail),
+        BLOCK=BLOCK,
+    )
+    return seq
+
+
+def expand_pools_and_append_tail_into(
+    pool_ids: torch.Tensor,
+    seq_lens: torch.Tensor,
+    pool_size: int,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """`expand_pools_and_append_tail` written straight into `out` (a row-major
+    view of the persistent top-k buffer) instead of a fresh tensor plus a
+    copy. Same kernel, same values; returns the written view."""
+    rows, n_groups = pool_ids.shape
+    topk = n_groups * pool_size
+    out_cols = topk + pool_size - 1
+    dst = out[:rows, :out_cols]
+    if dst.stride(1) != 1 or dst.dtype != torch.int32 or rows == 0:
+        return None
+    BLOCK_COLS = 128
+    _expand_pools_and_append_tail_kernel[(rows, triton.cdiv(out_cols, BLOCK_COLS))](
+        pool_ids,
+        seq_lens,
+        dst,
+        topk,
+        out_cols,
+        POOL_SIZE=pool_size,
+        BLOCK_COLS=BLOCK_COLS,
+        pid_s0=pool_ids.stride(0),
+        out_s0=dst.stride(0),
+    )
+    return dst
 
 
 @eager_break_during_capture
@@ -1276,11 +1383,35 @@ def sparse_attn_indexer_kpool(
         # then expand each pool back to its kpool tokens.
         select_k = topk_tokens // index_kpool if index_kpool > 1 else topk_tokens
         dec_seq = None
+        fused_tail = False
         if index_kpool > 1:
             # Token-granular seq_len per row. Computed here rather than after the
             # top-k because the tail bias needs it too; expand_pools_and_append_tail
             # reuses this exact tensor below.
-            if positions is not None:
+            if (
+                positions is not None
+                and _INDEXER_DECODE_FUSED
+                and not decode_metadata.requires_padding
+                and positions.dtype in (torch.int64, torch.int32)
+                and logits.dim() == 2
+                and logits.stride(1) == 1
+            ):
+                # deneb fork (34차): seq_len + the tail-pool bias in ONE launch
+                # (the stock pair below is 10 aten kernels), bit-identical.
+                dec_seq = indexer_tail_select_fused(
+                    positions[:num_padded_tokens], logits, num_rows, index_kpool,
+                    _always_select_tail(),
+                )
+                fused_tail = True
+                if "capture" not in _FUSED_ANNOUNCED:
+                    _FUSED_ANNOUNCED.add("capture")
+                    logger.warning(
+                        "[indexer-fused] tail-select fused: rows=%d pools=%d "
+                        "(one launch for seq_len + tail bias; expanded indices "
+                        "written straight into the top-k buffer)%s",
+                        num_rows, logits.shape[1],
+                        " [capture]" if torch.cuda.is_current_stream_capturing() else "")
+            elif positions is not None:
                 dec_seq = _decode_topk_seq_lens(
                     positions,
                     decode_lens,
@@ -1297,7 +1428,7 @@ def sparse_attn_indexer_kpool(
             # Only on the token-granular path: the fallback below reads
             # decode_metadata.seq_lens, which is already pool-granular, and
             # dividing it again would aim the bias at the wrong pool.
-            if positions is not None and _always_select_tail():
+            if positions is not None and not fused_tail and _always_select_tail():
                 # The appended tail covers only [pool_len*kpool, seq_len), which
                 # is empty when seq_len % kpool == 0. Pin the last completed pool
                 # so recency never depends on winning the top-k.
@@ -1384,6 +1515,15 @@ def sparse_attn_indexer_kpool(
             # [B, next_n] layout on non-uniform batches (see
             # _decode_topk_seq_lens).
             assert dec_seq is not None  # hoisted above the top-k
+            if fused_tail:
+                # deneb fork (34차): expand straight into the persistent buffer
+                # (no fresh tensor, no copy); None = a layout the direct write
+                # cannot take, stock below
+                written = expand_pools_and_append_tail_into(
+                    pool_ids, dec_seq, index_kpool, topk_indices_buffer
+                )
+                if written is not None:
+                    return topk_indices_buffer
             out = expand_pools_and_append_tail(pool_ids, dec_seq, index_kpool)
         else:
             out = topk_dst

@@ -132,3 +132,29 @@ overwrite prefill results in mixed batches, and the rounded output columns keep
 their required `-1` mask.
 
 Base contract from `glm53:v13-b12x`.
+
+## Fused decode tail-select (34차, `VLLM_GLM53_INDEXER_DECODE_FUSED`)
+
+The decode branch of `sparse_attn_indexer_kpool` ran, per full-attention
+layer, ten aten launches between the paged-MQA logits and the top-k:
+`_decode_topk_seq_lens` (int32 cast + add) and `_force_tail_pool_into_logits`
+(int64 cast, floor-div, sub, clamp, gather, full_like, compare, where +
+scatter), then one more copy of the expanded indices into the persistent
+top-k buffer -- 11 x 11 layers = ~120 graph nodes and ~0.25 ms of a decode
+step in the 09-05 production trace (profiler-inflated).
+
+With the knob exactly `1` and a uniform spec-verify layout
+(`not requires_padding`), `_glm53_indexer_tail_select_kernel` does the
+seq_len and the tail bias in one launch (the same arithmetic, the same
+`finfo.max`), and `expand_pools_and_append_tail_into` runs the image's expand
+kernel straight into the buffer. Padded batches, prefill, and any layout the
+direct write refuses keep the stock chain. Integer index math only:
+`probes/indexer_decode_fused_check.py` (via `run_indexer_fused_check.sh`, a
+fresh container) is the bit-exact gate and prints the graph-replay time of
+both chains. The op logs `[indexer-fused] tail-select fused ... [capture]`
+once, the proof that the captured decode graph carries the fused launch.
+
+Measured (srv4, idle fleet, 2026-09-05): 40/40 random and edge-case trials
+bit-exact; CUDA-graph replay per layer, 1,250 pools: stock chain 24.7 us ->
+fused 5.2 us at 8 rows (C=1), 24.6 -> 6.2 us at 32 rows -- about -0.21 ms per
+decode step over the 11 full-attention layers, un-profiled.

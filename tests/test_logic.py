@@ -5553,7 +5553,9 @@ def test_census_owner_axis() -> None:
             "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
             "mk_kda_kernel(MKKdaArgs)", "k_oneshot(Ctrl*)",
             "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
-            "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel")
+            "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel",
+            "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+            "mk_smlp_kernel(MKSmlpArgs)", "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
     for n in ours:
         check(owner(n) == "ours", f"{n[:40]!r} is compiled from this repo")
     theirs = ("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>",
@@ -11081,6 +11083,316 @@ def test_micro_fusion_bundle_contracts() -> None:
     print("  micro-fusion bundle 2 contracts .. OK")
 
 
+
+def test_glm53_drafter_prep_contracts() -> None:
+    """glm53_drafter_prep (34차, EXP-24): the drafter's per-step host build of
+    its attention metadata is skipped on FULL cudagraph replays.
+
+    The trace showed a pageable DtoH + stream sync (`seq_lens.cpu()` inside
+    the FlashInfer builder, non-causal drafter attention) followed by 300-460
+    us of Python while the GPU idles; propose()'s FULL branch never reads the
+    dict. The wrapper decides FULL-ness through the drafter's own cudagraph
+    dispatch, caches one dict per shape, and falls back to the stock build for
+    everything else -- and for the rest of the boot on any exception."""
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_drafter_prep")
+    src = open(os.path.join(mod_dir, "glm53_drafter_prep.py"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
+    check("glm53_drafter_prep" in modules, "glm53 profile mounts glm53_drafter_prep")
+    check(len(re.findall(r"^VLLM_GLM53_DRAFTER_PREP=", profile, re.M)) == 1
+          and re.search(r"^VLLM_GLM53_DRAFTER_PREP=0$", profile, re.M) is not None,
+          "the knob is declared exactly once and ships off (32차 duplicate-declaration lesson)")
+    rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
+            .read().splitlines() if l and not l.startswith("#")]
+    check(rows == [["glm53_drafter_prep.py",
+                    "vllm/models/glm5next/nvidia/glm53_drafter_prep.py", "absent"]],
+          f"manifest binds the module as a new file next to the model: {rows}")
+    req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
+    check({"glm53_dflash2_fp8_head", "glm53_model_wiring"} <= set(req),
+          "requires names the drafter overlay and the wiring (installer)")
+    check('MODES = ("time", "shadow", "1")' in src
+          and "Spec._build_draft_attn_metadata = _patched_build" in src
+          and "_ORIG_BUILD = Spec._build_draft_attn_metadata" in src
+          and "check_preimages(root)" in src and "-> DISARM" in src,
+          "exact modes; the installer wraps the base build, keeps the original, "
+          "and DISARMs on image drift")
+    for rel in ("v1/worker/gpu/spec_decode/dflash/speculator.py",
+                "v1/worker/gpu/spec_decode/speculator.py", "v1/worker/gpu/cudagraph_utils.py"):
+        check(re.search(rf'"{re.escape(rel)}":\s*\n?\s*"[0-9a-f]{{64}}"', src) is not None,
+              f"preimage pinned for {rel}")
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+                                     "glm5next_model.py"), encoding="utf-8").read()
+    check("from .glm53_drafter_prep import install_glm53_drafter_prep" in wiring
+          and 'if _e.name != f"{__package__}.glm53_drafter_prep":' in wiring
+          and wiring.index("install_glm53_drafter_prep()")
+          > wiring.index("install_glm53_dflash_early_fc()"),
+          "installed from the wiring after early-fc: silent without the module, loud when broken")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_DRAFTER_PREP"' in bracket, "bracket.py snapshots the knob")
+    readme = open(os.path.join(mod_dir, "README.md"), encoding="utf-8").read()
+    check("Device -> Pageable" in readme and "run_fullgraph" in readme,
+          "the README carries the trace evidence and the FULL-branch argument")
+
+    # the wrapper on fakes: FULL -> cached after the first build; eager -> stock;
+    # a failing original -> disabled for good, stock served; compare() drift axes
+    import importlib.util
+    import types
+    fake_vllm = types.ModuleType("vllm")
+    fake_logger = types.ModuleType("vllm.logger")
+    fake_logger.init_logger = lambda name: _CapturingLogger()
+    fake_vllm.logger = fake_logger
+    fake_cfg = types.ModuleType("vllm.config")
+    fake_comp = types.ModuleType("vllm.config.compilation")
+
+    class _CG:
+        FULL = "FULL"
+        NONE = "NONE"
+
+    fake_comp.CUDAGraphMode = _CG
+    fake_cfg.compilation = fake_comp
+    keys = ("vllm", "vllm.logger", "vllm.config", "vllm.config.compilation", "torch")
+    saved = {k: sys.modules.get(k) for k in keys}
+    fake_torch = types.ModuleType("torch")
+
+    class _T:
+        def __init__(self, ptr, cuda=True, shape=(8,), dtype="i32", val=None):
+            self._ptr, self.is_cuda, self.shape, self.dtype, self.val = ptr, cuda, shape, dtype, val
+
+        def data_ptr(self):
+            return self._ptr
+
+        def stride(self):
+            return (1,)
+
+    fake_torch.Tensor = _T
+    fake_torch.equal = lambda a, b: a.val == b.val
+    sys.modules["vllm"] = fake_vllm
+    sys.modules["vllm.logger"] = fake_logger
+    sys.modules["vllm.config"] = fake_cfg
+    sys.modules["vllm.config.compilation"] = fake_comp
+    sys.modules["torch"] = fake_torch
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_drafter_prep_mod", os.path.join(mod_dir, "glm53_drafter_prep.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        class _Desc:
+            def __init__(self, mode, n):
+                self.cg_mode, self.num_tokens = mode, n
+
+        class _Mgr:
+            def __init__(self, mode):
+                self.mode, self.calls = mode, []
+
+            def dispatch(self, num_reqs, num_tokens, uniform, num_active_loras=0):
+                self.calls.append((num_reqs, num_tokens, uniform, num_active_loras))
+                return _Desc(self.mode, num_tokens)
+
+        class _Spec:
+            num_query_per_req = 8
+            dp_size = 1
+
+            def __init__(self, mode):
+                self.query_cudagraph_manager = _Mgr(mode)
+
+        built = []
+
+        def orig(self, num_reqs, num_reqs_padded, num_tokens_padded, ub, step, **kw):
+            built.append((num_reqs, num_tokens_padded, step))
+            return {"g": _T(0x10), "max_seq_len": 100 + len(built)}
+
+        mod._ORIG_BUILD = orig
+        mod._MODE = "1"
+        sp = _Spec("FULL")
+        a = mod._patched_build(sp, 1, 1, 8, None, 8, causal=False)
+        b = mod._patched_build(sp, 1, 1, 8, None, 8, causal=False)
+        check(a is b and len(built) == 1 and sp.query_cudagraph_manager.calls[0] == (1, 8, 8, 0),
+              "FULL replay: one stock build per shape, the cached dict after; the dispatch "
+              "call mirrors propose() (num_reqs, num_reqs x num_query_per_req, per-req, 0)")
+        c = mod._patched_build(sp, 2, 2, 16, None, 8, causal=False)
+        check(c is not a and len(built) == 2, "a new shape builds once more")
+        d = mod._patched_build(sp, 1, 1, 8, None, 8, causal=False, query_start_loc_np=[0])
+        check(len(built) == 3 and d is not a, "a query_start_loc override always builds")
+        sp2 = _Spec("NONE")
+        e = mod._patched_build(sp2, 1, 1, 8, None, 8, causal=False)
+        check(len(built) == 4 and e is not a and mod._STATS["stock"] >= 1,
+              "an eager batch takes the stock build")
+        check(mod._STATS["served"] == 1 and mod._DISABLED is False, "tally counts the served dict")
+
+        def boom(self, *a, **k):
+            raise RuntimeError("dispatch broke")
+
+        sp3 = _Spec("FULL")
+        sp3.query_cudagraph_manager.dispatch = boom
+        f = mod._patched_build(sp3, 1, 1, 8, None, 8, causal=False)
+        check(mod._DISABLED is True and len(built) == 5 and f is not a,
+              "an exception inside the wrapper disables it and serves the stock build")
+        g = mod._patched_build(sp, 1, 1, 8, None, 8, causal=False)
+        check(g is not a and len(built) == 6, "disabled stays disabled for the boot")
+        # compare(): identity drift vs expected per-step scalars
+        same = {"g": _T(0x10), "max_seq_len": 5}
+        check(mod.compare(same, {"g": _T(0x10), "max_seq_len": 9}) == (0, 1),
+              "a per-step scalar differing counts as scalar_diff, not drift")
+        check(mod.compare(same, {"g": _T(0x20), "max_seq_len": 5}) == (1, 0),
+              "a GPU tensor at another address is drift")
+        check(mod.compare(same, {"g": _T(0x10), "max_seq_len": 5, "extra": 1}) == (1, 0),
+              "a structural difference is drift")
+        check(mod.compare({"n": 3}, {"n": 4}) == (1, 0),
+              "an unlisted host value differing is drift")
+        # mode parsing
+        for v, want in (("1", "1"), ("shadow", "shadow"), ("time", "time"), ("yes", "0"), ("", "0")):
+            os.environ["VLLM_GLM53_DRAFTER_PREP"] = v
+            check(mod.drafter_prep_mode() == want, f"mode {v!r} -> {want!r}")
+        os.environ.pop("VLLM_GLM53_DRAFTER_PREP", None)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    print("  glm53_drafter_prep contracts .... OK")
+
+
+def test_indexer_decode_fused_contracts() -> None:
+    """glm53_kpool_tail_select (34차, EXP-24): the decode top-k glue of a
+    full-attention layer as one Triton launch + a direct-write expand.
+
+    Gated by VLLM_GLM53_INDEXER_DECODE_FUSED=1 (exact), uniform layouts only;
+    the fused kernel carries the stock arithmetic (int32 add after the
+    narrowing, int64 floor-div, clamp, finfo.max where last_pool >= 0) so the
+    probe's bit-exact gate is the contract; the stock chain stays as the
+    fallback and the padded path."""
+    path = os.path.join(REPO, "overlay/modules/glm53_kpool_tail_select/sparse_attn_indexer_kpool.py")
+    src = open(path, encoding="utf-8").read()
+    check('os.environ.get("VLLM_GLM53_INDEXER_DECODE_FUSED", "0").strip() == "1"' in src,
+          "exact-1 knob read once at import (the op runs per layer per step)")
+    check("def _glm53_indexer_tail_select_kernel(" in src
+          and "def indexer_tail_select_fused(" in src
+          and "def expand_pools_and_append_tail_into(" in src,
+          "the fused kernel, its wrapper and the direct-write expand exist")
+    kern = src[src.index("def _glm53_indexer_tail_select_kernel("):src.index("def indexer_tail_select_fused(")]
+    check("seq = pos.to(tl.int32) + 1" in kern
+          and "last_pool = seq.to(tl.int64) // POOL - 1" in kern
+          and "col = tl.minimum(tl.maximum(last_pool, 0), n_cols - 1)" in kern
+          and "wm = m & (last_pool >= 0)" in kern,
+          "the kernel mirrors _decode_topk_seq_lens + _force_tail_pool_into_logits step by step")
+    route = src[src.index("fused_tail = False"):src.index("_force_tail_pool_into_logits(logits, dec_seq, index_kpool)")]
+    check("and _INDEXER_DECODE_FUSED" in route
+          and "and not decode_metadata.requires_padding" in route
+          and "indexer_tail_select_fused(" in route
+          and "_always_select_tail()," in route
+          and "[indexer-fused] tail-select fused" in route,
+          "routing: knob + uniform layout only, the config's tail flag passed through, "
+          "a one-time proof line (capture-tagged)")
+    check("if positions is not None and not fused_tail and _always_select_tail():" in src,
+          "the stock tail bias is skipped when the fused launch already applied it")
+    tail = src[src.index("if fused_tail:\n"):src.index("out = expand_pools_and_append_tail(pool_ids, dec_seq, index_kpool)")]
+    check("expand_pools_and_append_tail_into(" in tail and "if written is not None:" in tail
+          and "return topk_indices_buffer" in tail,
+          "the fused path writes the expansion straight into the persistent buffer "
+          "and falls back to the stock expand + copy when the layout is refused")
+    check("_expand_pools_and_append_tail_kernel,\n" in src,
+          "the direct write reuses the image's expand kernel (same values)")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check(len(re.findall(r"^VLLM_GLM53_INDEXER_DECODE_FUSED=", profile, re.M)) == 1
+          and re.search(r"^VLLM_GLM53_INDEXER_DECODE_FUSED=0$", profile, re.M) is not None,
+          "the knob is declared once and ships off")
+    bracket = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
+    check('"VLLM_GLM53_INDEXER_DECODE_FUSED"' in bracket, "bracket.py snapshots the knob")
+    tc = load_defs("tools/trace_common.py", {"OURS", "owner", "category"}, {})
+    check(tc["owner"]("_glm53_indexer_tail_select_kernel") == "ours"
+          and tc["category"]("_glm53_indexer_tail_select_kernel") == "indexer",
+          "the trace tools count the fused kernel as ours, in the indexer bucket")
+    check(os.path.exists(os.path.join(REPO, "probes", "indexer_decode_fused_check.py"))
+          and os.path.exists(os.path.join(REPO, "probes", "run_indexer_fused_check.sh")),
+          "the bit-exact probe and its container runner exist")
+    runner = open(os.path.join(REPO, "probes", "run_indexer_fused_check.sh"), encoding="utf-8").read()
+    check("probes/indexer_decode_fused_check.py" in runner and "base preimage mismatch" in runner,
+          "the runner mounts the composed overlay after verifying every base preimage")
+    print("  indexer decode fused contracts .. OK")
+
+
+def test_trace_step_nodes_tool() -> None:
+    """tools/trace_step_nodes.py + trace_common.cut_steps (34차).
+
+    A prep-fused boot still launches the stock `_gather_block_tables_kernel`
+    on the rare non-uniform step, so "first anchor with >= 2 hits" cut the
+    09-05 trace into four 3.6 s steps; the anchor with the MOST hits must win,
+    ties going to the earlier (step-start) entry. The node tool streams the
+    file, keeps clean steps (kernel-count mode), dumps a step's node sequence
+    and lists every event category inside a window."""
+    import gzip
+    import importlib.util
+    import json
+    import tempfile
+
+    tc = load_defs("tools/trace_common.py", {"STEP_ANCHORS", "cut_steps"}, {})
+    ev = []
+    t = 0.0
+    for i in range(30):
+        name = "_glm53_prep_fused_kernel" if i % 3 == 0 else "k_oneshot(Ctrl*)"
+        if i == 16:
+            name = "_gather_block_tables_kernel"   # the rare stock prep launch
+        ev.append({"name": name, "ts": t, "dur": 5.0})
+        t += 10.0
+    ev.append({"name": "_gather_block_tables_kernel", "ts": t, "dur": 5.0})
+    anchor, starts = tc["cut_steps"](ev)
+    check(anchor == "_glm53_prep_fused_kernel" and len(starts) == 10,
+          f"the most frequent anchor wins over the first listed (got {anchor}, {len(starts)})")
+
+    spec = importlib.util.spec_from_file_location(
+        "_trace_step_nodes", os.path.join(REPO, "tools", "trace_step_nodes.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    events = []
+    ts = 1000.0
+    for step in range(6):
+        events.append({"ph": "X", "cat": "kernel", "name": "_glm53_prep_fused_kernel",
+                       "ts": ts, "dur": 50.0, "args": {"stream": 17}})
+        events.append({"ph": "X", "cat": "cuda_runtime", "name": "cudaGraphLaunch",
+                       "ts": ts + 60.0, "dur": 100.0, "pid": 7, "tid": 7})
+        events.append({"ph": "X", "cat": "kernel",
+                       "name": "(anonymous namespace)::mk_gemm2_kernel<1>(MKGemm2Ctx)",
+                       "ts": ts + 200.0, "dur": 20.0, "args": {"stream": 17}})
+        events.append({"ph": "X", "cat": "kernel", "name": "k_oneshot(Ctrl*)",
+                       "ts": ts + 230.0, "dur": 40.0, "args": {"stream": 17}})
+        if step == 2:   # one dirty step with an extra kernel
+            events.append({"ph": "X", "cat": "kernel", "name": "void at::native::fill{lambda()#3}",
+                           "ts": ts + 280.0, "dur": 2.0, "args": {"stream": 210}})
+        events.append({"ph": "X", "cat": "kernel", "name": "_get_num_sampled_and_rejected_kernel",
+                       "ts": ts + 300.0, "dur": 3.0, "args": {"stream": 17}})
+        ts += 400.0
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.json.gz")
+        with gzip.open(path, "wt") as f:
+            json.dump({"schemaVersion": 1, "traceEvents": events}, f)
+        r = mod.analyze(path)
+        check(r["anchor"] == "_glm53_prep_fused_kernel",
+              f"a tie between the sampler anchor and the prep anchor goes to the step start "
+              f"(got {r['anchor']})")
+        check(r["steps"] == 4 and r["clean"] == 3 and r["mode"] == 4,
+              f"6 anchors -> 4 inner steps, 3 clean at the kernel-count mode (got {r['steps']}, "
+              f"{r['clean']}, mode {r['mode']})")
+        check(abs(r["step_ms"] - 0.303) < 1e-6 and abs(r["idle_ms"] - 0.190) < 1e-6,
+              f"step span and idle from the union of kernels (got {r['step_ms']}, {r['idle_ms']})")
+        check(r["cats"]["MK GEMM (ours)"]["cnt"] == 1 and r["cats"]["AR k_oneshot"]["cnt"] == 1,
+              "categories know the v2 GEMM lane")
+        k = [n for n in r["kernels"] if "mk_gemm2" in n][0]
+        check(r["kernels"][k]["owner"] == "ours" and r["kernels"][k]["dur"] == 20.0,
+              "the v2 lane kernel is ours, with its median duration")
+        out = os.path.join(d, "dump.txt")
+        j = mod.dump_step(r, out, None)
+        lines = [l for l in open(out).read().splitlines() if not l.startswith("#")]
+        check(len(lines) == 4 and lines[0].split()[-1].endswith("_glm53_prep_fused_kernel")
+              and lines[1].split()[2] == "150.0",
+              f"the dump lists the step's kernels in order with the gap on their stream "
+              f"(step {j}: {lines[:3]})")
+        rows = mod.gap_events(path, r, None, 40.0, 190.0)
+        check([x[2] for x in rows] == ["cuda_runtime"] and rows[0][6] == "cudaGraphLaunch",
+              "a window listing shows the host event the kernel view cannot")
+    print("  trace step nodes tool ........... OK")
+
 def test_supervisor_paces_and_stops_relaunching() -> None:
     """A launcher that keeps failing must not churn the fleet forever.
 
@@ -11254,6 +11566,9 @@ if __name__ == "__main__":
     test_osar_wait_is_split_by_message_size()
     test_osar_prefetch_hints_contract()
     test_glm53_dflash_early_fc_contracts()
+    test_glm53_drafter_prep_contracts()
+    test_indexer_decode_fused_contracts()
+    test_trace_step_nodes_tool()
     test_micro_fusion_bundle_contracts()
     test_glm53_megakernel_contracts()
     test_prefill_warmup_contracts()

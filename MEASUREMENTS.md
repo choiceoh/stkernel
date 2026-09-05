@@ -1897,6 +1897,83 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★★★34차 — 메가커널 모듈·노드 융합: 프로덕션 스텝의 첫 노드 인구조사, 남은 자리 넷, 그리고 드래프터 앞의 호스트 갭 (2026-09-05 오후, 무부팅 + 프로파일 캡처 1회)
+
+운영자 "glm 5.3 flash 메가커널 모듈 및 노드 융합". 메가커널 캠페인이 세그먼트(MHC·GEMM·KDA·MLA)를
+접수한 뒤 스텝에 무엇이 남았는지를 **노드(그래프 안 커널 발사) 단위**로 읽고, 접을 수 있는 자리를
+접었다. 부팅은 하지 않았다 — 체인22 PRODSET 부팅(다른 세션, v2 레인 + prep-fused + MLA + 드래프터
+W4 + PDL + KDA·LOCALQ·ARPF)이 유휴일 때 `bench/profile-step.py decode:600` 으로 rank 0·3 트레이스를
+한 번 캡처했을 뿐이다(14:14~14:15, srv2 `~/vllm-prof/…1788585310358007760`, srv4 rank 3 사본).
+
+### 1. 도구 — 노드 뷰와 앵커 버그
+
+`tools/trace_step_nodes.py`(신규, 스트리밍): 커널 수가 최빈값인 "깨끗한 스텝"의 중앙값으로 범주
+구성·커널별 표(발/스텝, 중앙 µs, 스트림, 소유)·중앙 스텝의 노드 열(`--dump`)·창 안 **전 범주**
+이벤트(`--gap`: gpu_memcpy·cuda_runtime·…)를 낸다. RSS 수십 MB 라 부팅 중 노드에서도 안전하다.
+버그 둘 고침: (1) `trace_common.cut_steps` 가 "처음 두 번 이상 맞는 앵커"를 골라 prep-fused 부팅
+(비균일 스텝에만 스톡 `_gather_block_tables_kernel` 이 남는다)의 245 스텝을 3.6 초짜리 4 "스텝"으로
+잘랐다 → 가장 많이 나오는 앵커(동률이면 스텝 시작 앵커). (2) `category()/OURS` 가 v2 레인
+`mk_gemm2_kernel`·`mk_smlp_kernel`·원패스·듀얼 게이트를 몰라 "기타/이미지"로 흘렸다.
+
+### 2. 스텝 인구조사 (rank 0, 239 깨끗한 스텝 중앙값, 프로파일러 아래)
+
+| | 09-04 무장 | **09-05 프로덕션(PRODSET)** |
+|---|---|---|
+| 노드/스텝 | 1,582 | **1,166** |
+| 스텝 / 유휴(합집합) | 69.25 / 8.18 ms | **55.8 / 1.20 ms** |
+| MoE 전문가 | 42 발 32.5 | 42 발 29.4 |
+| AR k_oneshot | 102 발 5.28 | 102 발 6.7 (p50 64) |
+| 밀집 GEMM | mk_gemm 185 발 14.13 | **mk_gemm2 147 발 3.52** (KDA 레인이 in/o_proj 68 발 흡수) |
+| MK KDA / MHC / MLA | — / 89 발 2.03 / 0 | 34 발 5.77 / 89 발 1.73 / **11 발 0.42** |
+| bf16 cutlass·cublas + head gate | 201 발 6.39 | **103 발 3.34** |
+| MoE 글루 / elementwise | 136 발 1.20 / 481 발 1.00 | 136 발 1.21 / 318 발 0.68 |
+
+보충 분해 5 의 "다음 캡처 3줄"은 셋 다 확인됐다(mk_mla 11, cutlass 103, mk_gemm2 147). 프로파일러의
+왜곡 둘도 확정: 스텝 시작의 타깃 그래프 `cudaGraphLaunch` 가 rank 0 에서 2.8 ms(CUPTI 버퍼 요청
+1.6 ms 포함, rank 3 은 0.4) — 스텝 시작 갭은 프로파일러 값이고, 31차의 "그래프당 7~10 µs" 가 실값.
+
+### 3. 남은 자리 — 노드 열로 읽은 것 (STEP_KERNEL_MAP 보충 분해 6)
+
+| 자리 | 노드 | 프로파일러 µs/스텝 | 정체 |
+|---|---|---|---|
+| **드래프터 앞 호스트 갭** | 0 | **rank 0 420 / rank 3 640**, rank 0 의 드래프터 첫 AR 245 = rank 3 대기 | `precompute_and_store_context_kv` 뒤 `Memcpy DtoH (Device→Pageable)` + `cudaStreamSynchronize` → 파이썬 290~460 µs → 드래프터 `cudaGraphLaunch`. `DFlashSpeculator.propose` 의 `_build_draft_attn_metadata`: FlashInfer 빌더가 비인과 어텐션이라 `seq_lens.cpu()` 를 읽고, FULL 재생 분기(`run_fullgraph`)는 그 dict 를 **읽지 않는다** |
+| **MLA 층 bf16 저랭크 사영** | 44 | **2,200** (q_b 67·wq_b 66·q·W_UK 26·W_UV 22 × 11) | 12.6 MB 짜리 둘은 DRAM 속도(190 GB/s) — 바이트가 답이고, W4 레인이면 층당 −100 µs(EXP-4). 인덱서·쿼리 정밀도 강등 = 운영자 결정 |
+| **인덱서 head gate `gemmSN`** | 11 | **950** (발당 86) | EXP-9 split-K(offline 89.5 → 12.7) 가 구현돼 있고 판정된 적 없다(PREP3 사망은 플릿 행) |
+| 인덱서 top-k 글루 | 121 | ~260 | 층마다 seq_len 2발 + tail 강제 8발 + 복사 1발 — 정수 인덱스 산술 |
+| 드래프터 fc 5 청크 + 글루 | 20 | ~390 | EXP-15 early-fc 의 자리 |
+| MoE aux 체인 gate_partial 20 → topk 3.8 → MoE | 84 | ~1,000 (임계경로) | gate 가 공유 gate_up 과 겹쳐 20~23(단독 13.6); 게이트+topk 융합은 31차에서 기각 |
+| 드래프터 K/V 문맥 사영 bf16 101 µs | 1 | 101 | 레인 밖 "1 of 31" (`_build_fused_kv_buffers`) |
+| 마지막 norm 의 aten 9발 + memcpy32 6발 | 15 | ~50 | 사소 |
+
+### 4. 접은 것 (이 PR, 노브 둘 기본 0)
+
+1. **`glm53_drafter_prep`**(신규 모듈, `VLLM_GLM53_DRAFTER_PREP` = time/shadow/1): `DFlashSpeculator.
+   _build_draft_attn_metadata` 를 감싸 드래프터의 자체 cudagraph dispatch 가 FULL 이면 형상당 1회 빌드한
+   dict 를 되돌려 호스트 빌드(와 그 앞의 DtoH 동기)를 생략한다. `time` 은 스톡 빌드의 호스트 µs 를 찍고
+   (프로파일러 없는 상한), `shadow` 는 캐시 dict 를 필드별로 대조(GPU 텐서 동일성·형상·dtype, 호스트
+   스칼라 동등; 스텝마다 바뀌는 `max_seq_len` 류는 따로 셈). 이미지 3 파일 preimage 고정, 예외 시 부팅 내내
+   스톡. 수치 불변(같은 그래프가 같은 버퍼를 재생).
+2. **인덱서 tail-select 융합**(`glm53_kpool_tail_select`, `VLLM_GLM53_INDEXER_DECODE_FUSED=1`):
+   `_glm53_indexer_tail_select_kernel` 한 발이 `_decode_topk_seq_lens` + `_force_tail_pool_into_logits`(10 발)를
+   대신하고, `expand_pools_and_append_tail_into` 가 확장 결과를 영구 top-k 버퍼에 직접 쓴다(복사 −1). 균일
+   레이아웃만; 정수 산술 + 같은 finfo.max 라 비트 동일이 계약 — `probes/indexer_decode_fused_check.py`
+   (`run_indexer_fused_check.sh`, 프레시 컨테이너)가 게이트이고 리플레이 µs 를 같이 찍는다. 층당 −11 노드.
+   **프로브 실측(srv4, 플릿 유휴 창, 40/40 비트 동일 PASS, 그래프 리플레이 200회 중앙값)**: 층당 스톡 체인
+   24.7 µs → 융합 **5.2 µs**(C=1, 8행·1,250 풀), C=4 는 24.6 → 6.2 — **−0.21 ms/스텝**(11 층). 프로파일러
+   없는 값이라 §3 의 "~260 µs" 추정과 같은 크기다.
+3. RUNBOOK EXP-24: 위 둘 + 대기 중이던 EXP-9·15·20·SMLP2 를 한 팔(FUSION3)로. 상한(프로파일러 값)
+   −2.0~2.6 ms/스텝(3.5~4.5%), 절반이 split-K. 수치가 바뀌는 축은 EXP-9 하나.
+
+### 5. 상한 정직성
+
+프로파일러 아래 값은 호스트를 부풀린다 — 드래프터 갭 0.42/0.64 ms 는 상한이고, 실값은 `DRAFTER_PREP=time`
+부팅의 `[drafter-prep] stock build host us` 줄이 정한다. 인덱서 글루 0.26 ms 도 CUPTI 의 소형 커널
+부풀림(발당 ~2 µs)이 섞인 값이라 실값은 그 절반 근처일 것이다. 앞 회차의 교훈("상한은 목표와 같은
+측정 형태로") 그대로: 이 회차의 채택 판정은 브래킷 창 통계다.
+
+_이 항목의 측정: 캡처 1회(체인22 PRODSET 부팅 유휴 시, 다른 세션 레그와 겹치지 않음), 분석은 srv4 에서
+`nice -n 19 taskset -c 19`(rank 3 규칙; 부팅 창). GPU 프로브·전체 테스트는 플릿이 조용한 창에서._
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬
