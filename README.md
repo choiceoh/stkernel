@@ -11,6 +11,17 @@ CRS812 스위치드 패브릭, vLLM eldritch/b12x 포크 이미지.
 -v <overlay>/nvidia_model.py:/opt/venv/.../vllm/models/deepseek_v4/nvidia/model.py:ro
 ```
 
+## 무엇을 물으면 어디를 여나
+
+| 질문 | 문서 |
+|---|---|
+| 지금 무엇이 켜져 서빙되나 | [`profiles/README.md`](profiles/README.md) — 프로필별 모듈·기본 노브 표 |
+| 이 수치가 실측인가 | [`MEASUREMENTS.md`](MEASUREMENTS.md) — **여기 없으면 미실측**. 맨 앞에 판정 규율 8줄과 찾아보기 |
+| 디코드 스텝이 무슨 커널로 이루어지나 | [`STEP_KERNEL_MAP.md`](STEP_KERNEL_MAP.md) — 개수·소유권·시간 구성·꼬리 |
+| 다음에 무엇을 부팅하나 | [`RUNBOOK_KERNEL_CAMPAIGN2.md`](RUNBOOK_KERNEL_CAMPAIGN2.md) — EXP 상태 표(부팅 필요 여부 포함) |
+| 이 모듈은 무엇을 접수하나 | `overlay/modules/<name>/README.md` + 같은 폴더의 `manifest.tsv` |
+| 무엇으로 재나, 어디에 함정이 있나 | 이 문서의 `bench/` · `probes/` · `tools/` 절 |
+
 ## 모듈과 프로필
 
 오버레이는 **모듈 단위**다 (`overlay/modules/<name>/`, 각자 `manifest.tsv` 보유).
