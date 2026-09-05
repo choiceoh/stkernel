@@ -7541,7 +7541,8 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     # the pack attach: K-chunks past the lane's K
     attach = src[src.index("def _attach_mk_pack("):src.index("def _kda_owns(")]
     check("if cols > _mkmod.MK_GEMM_KMAX:" in attach
-          and "build_mk_weight_w4_kchunks(weight, name=name)" in attach,
+          and "build_mk_weight_w4_kchunks(weight, name=name," in attach
+          and 'per_row = False if getattr(method, "_opaque", False) else None' in attach,
           "a linear wider than the lane's K gets one pack per K-chunk")
 
     # the lane side
@@ -7549,7 +7550,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
                  encoding="utf-8").read()
     check("MK_GEMM_KMAX = 4096" in mksrc
           and "0 < k <= MK_GEMM_KMAX" in mksrc
-          and "def build_mk_weight_w4_kchunks(weight, name=None):" in mksrc
+          and "def build_mk_weight_w4_kchunks(weight, name=None, per_row=None):" in mksrc
           and "def _gemm_kchunks(x, packs, n_rows, bg=False):" in mksrc
           and "if isinstance(mk_pack, list):\n        return _gemm_kchunks(x, mk_pack, n_rows, bg)" in mksrc,
           "the lane's K contract is one constant; a chunked pack is a list "
@@ -9181,7 +9182,8 @@ def test_glm53_megakernel_contracts() -> None:
                                   "glm53_fp8_dense.py"), encoding="utf-8").read()
     check("gemm_w4a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
           "Fp8DenseMethod.apply routes through the megakernel driver")
-    check("method._mk = _mkmod.build_mk_weight_w4(weight, name=name)" in fp8
+    check("method._mk = _mkmod.build_mk_weight_w4(weight, name=name,\n                                                       per_row=per_row)" in fp8
+          and 'per_row = False if getattr(method, "_opaque", False) else None' in fp8
           and fp8.count('attach_mk(method, weight, cols, f"{type(model).__name__}/{name}")') == 4
           and "ENABLE_W4" not in fp8 and "build_mk_weight(" not in fp8
           and "VLLM_GLM53_MK_W4" not in fp8,

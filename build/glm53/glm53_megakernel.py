@@ -663,7 +663,7 @@ def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
     return os.path.join(root, f"rank{_mk_rank()}", key + ".pt")
 
 
-def build_mk_weight_w4(weight, name=None):
+def build_mk_weight_w4(weight, name=None, per_row=None):
     """The MKPack of a bf16 [n, k] weight -- see MKPack for the fields.
 
     Nibble layout: low nibble = even element, high = odd. Round-to-nearest
@@ -708,7 +708,11 @@ def build_mk_weight_w4(weight, name=None):
     MK_PACK_VERSION in the key), so the GPTQ solve is paid once per rank.
     `name` is the linear's module name: the Hessian and the boot log are
     keyed on it; None = RTN, no cache lookup by name (the md5 still keys
-    the cache)."""
+    the cache). `per_row` overrides the ROWSHIFT lever: the drafter's
+    opaque custom op hands the kernel only the 3-field pack (wq4, ws4,
+    wgs), so its packs must carry the shift as wgs -- a per-row pack there
+    served every drafter output mis-scaled and the acceptance rate went
+    to 0.0% (chain 25, 33차)."""
     import torch
 
     n, k = weight.shape
@@ -716,7 +720,8 @@ def build_mk_weight_w4(weight, name=None):
         raise ValueError(f"K={k} not a multiple of 128")
     n_pad = _mk_pad128(n)
     kg = k // 16
-    per_row = _w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
+    per_row = (_w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
+               if per_row is None else bool(per_row))
     calib = _calib_hessian_for(name, k)
     try:
         lr_rank = int(_w4_lever("VLLM_GLM53_MK_PACK_LORC", "0"))
@@ -1058,7 +1063,7 @@ def _stock_fp8_pair(w):
 # ---------------------------------------------------------------------------
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
-def build_mk_weight_w4_kchunks(weight, name=None):
+def build_mk_weight_w4_kchunks(weight, name=None, per_row=None):
     """[(wq4, ws4, gscale), ...]: one W4 pack per MK_GEMM_KMAX-wide column
     chunk of a [n, k] weight whose k exceeds the lane's per-launch K.
 
@@ -1078,7 +1083,8 @@ def build_mk_weight_w4_kchunks(weight, name=None):
     if k % 128 != 0:
         raise ValueError(f"K={k} not a multiple of 128")
     return [build_mk_weight_w4(weight[:, c:c + MK_GEMM_KMAX].contiguous(),
-                               name=None if name is None else f"{name}.k{c // MK_GEMM_KMAX}")
+                               name=None if name is None else f"{name}.k{c // MK_GEMM_KMAX}",
+                               per_row=per_row)
             for c in range(0, k, MK_GEMM_KMAX)]
 
 

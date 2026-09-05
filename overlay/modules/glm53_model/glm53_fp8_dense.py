@@ -922,12 +922,18 @@ def _attach_mk_pack(method, weight, cols, name=None) -> bool:
         wants = (_mkmod.ENABLE_GEMM or getattr(_mkmod, "ENABLE_SMLP", False)
                  or getattr(_mkmod, "ENABLE_SMLP2", False))
         if wants and cols % 128 == 0:
+            # the opaque op (the drafter's torch.compiled forward) passes the
+            # kernel the 3-field pack only: its packs carry the shift as wgs
+            # (per-tensor), never as per-row scales the op cannot hand over
+            per_row = False if getattr(method, "_opaque", False) else None
             if cols > _mkmod.MK_GEMM_KMAX:
                 # wider than one launch of the lane (the drafter's fc,
                 # K = 5 x hidden): a pack per K-chunk, summed by gemm_w4a8
-                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight, name=name)
+                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight, name=name,
+                                                               per_row=per_row)
             else:
-                method._mk = _mkmod.build_mk_weight_w4(weight, name=name)
+                method._mk = _mkmod.build_mk_weight_w4(weight, name=name,
+                                                       per_row=per_row)
             # the calibration pass (33차 lever 2) keys its Hessians on the
             # linear's name; the pack itself carries no name
             note = getattr(_mkmod, "note_pack_name", None)
