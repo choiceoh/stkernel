@@ -278,10 +278,10 @@ cold tax by the share this module covers.
 
 | hook | file | behavior when disarmed |
 |---|---|---|
-| MK-MHC | `glm53_mhc_tilelang/tilelang.py` small-M branch | falls through to ONEPASS/stock pair, byte-identical |
-| MK-GEMM | `glm53_fp8_dense` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
-| MK-KDA | `glm53_mk_kda_wiring`'s `kda.py` overlay (image preimage `ec090aab...`) | stock forward body verbatim |
-| MK-MLA | `glm53_mk_mla_wiring` (FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
+| MK-MHC | `glm53_kernels/tilelang.py` (was `glm53_mhc_tilelang`) small-M branch | falls through to ONEPASS/stock pair, byte-identical |
+| MK-GEMM | `glm53_model/glm53_fp8_dense.py` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
+| MK-KDA | `glm53_model/glm5next_kda.py` (was `glm53_mk_kda_wiring`; image preimage `ec090aab...`) | stock forward body verbatim |
+| MK-MLA | `glm53_model/flashinfer_mla_sparse_sm90.py` (was `glm53_mk_mla_wiring`; FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
 | MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
 
 Both MHC wirings call ONE entry point in this module -- `mhc_hook(...)`,

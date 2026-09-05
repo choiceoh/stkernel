@@ -87,7 +87,11 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | — | ○ | · | · |
 | | | | | | | |
-| `fp8_lm_head` | 모델 전용 | 1 | ✓ | · | ● | · |
+| `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 (옛 `glm53_model_wiring`·`glm53_indexer_gate_splitk`·`glm53_mk_kda_wiring`·`glm53_mk_mla_wiring`·`glm53_kda_onepass`·`glm53_fp8_dense`) | 9 | 일부 | · | ● | · |
+| `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·top-k 커널·tail-select 융합, tail 슬롯, SM121 MLA 프리필, KDA 프리필 버킷, MHC TileLang (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_sm121_mla_prefill`·`glm53_kda_prefill_regime`·`glm53_mhc_tilelang`) | 9 | 일부 | · | ● | · |
+| `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
+| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) | 4 | — | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 (옛 `glm53_prep_fused`·`glm53_v2_sampler_guards`·`glm53_boot_stamps`·`glm53_dev_lab`·`glm53_oneshot_wiring`) | 7 | 일부 | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |
@@ -100,29 +104,8 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `dsv4_ops_cache_utils` | 모델 전용 | 1 | — | ● | · | · |
 | `dsv4_ops_fused_indexer_q` | 모델 전용 | 1 | — | ● | · | · |
 | `dsv4_tokenizer` | 모델 전용 | 2 | — | ● | · | · |
-| `glm53_fp8_dense` | GLM-5.3 밀집 투영의 블록 fp8/W4 레인 (타깃 `FP8_DENSE=1` · 드래프터 `DFLASH2_FP8_DENSE=1`) | 1 | ✓ | · | ● | · |
-| `glm53_mhc_tilelang` | 이미지 MHC TileLang 접수 (small-M 타일 채택; `MHC_BIGFUSE`·`MHC_ONEPASS`·`MHC_PASSES` 는 기본 off) | 2 | — | · | ● | · |
-| `glm53_mk_mla_wiring` | sparse MLA 디코드를 `MK_SEG_MLA` 로 라우팅 (28차부터 기본 on) | 1 | — | · | ● | · |
-| `glm53_dflash2_fp8_head` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_dflash_loader_fp8` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_dflash_warmup` | DFlash 입력 준비 Triton 커널을 부팅 때 워밍업 (`DFLASH_PREP_WARMUP=0` 이 해제) | 1 | — | · | ● | · |
-| `glm53_boot_stamps` | 부팅 단계 타이밍 (추가 파일만, 이미지 교체 없음) | 2 | ✓ | · | ● | · |
-| `glm53_b12x_out` | b12x MoE 가 출력 버퍼에 직접 쓰게 (`B12X_DIRECT_OUT=1`) | 1 | — | · | ● | · |
-| `b12x_shared_workspace` | `B12xMoEWrapper` 를 층당 하나 대신 **형상당 하나**로 | 1 | — | · | ● | · |
-| `b12x_zero_weight_micro` | EP 마이크로커널 레인 (실험, `B12X_EP_ZERO_WEIGHT_MICRO=0`) | 2 | — | · | ○ | · |
-| `glm53_kpool_tail_select` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_kda_prefill_regime` | GLM-5.3 KDA prefill autotune buckets (opt-in) | 2 | — | · | ○ | · |
-| `glm53_model_wiring` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_oneshot_wiring` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_v2_sampler_guards` | 모델 전용 | 1 | — | · | ● | · |
-| `glm53_sm121_mla_prefill` | GLM-5.3 SM121 short prefill (opt-in) | 1 | — | · | ○ | · |
-| `glm53_mk_kda_wiring` | 모델 전용 (GLM KDA 인수 훅, opt-in — 네 세그먼트 중 유일한 미무장) | 1 | — | · | ○ | · |
-| `glm53_prep_fused` | GLM-5.3 디코드 입력 준비 통합 (opt-in, EXP-7; 러너 preimage 를 코드에서 고정) | 1 | ✓ | · | ○ | · |
-| `glm53_dflash_early_fc` | 드래프터 fc 를 타깃 헤드·샘플러 아래 side stream 으로 (opt-in, EXP-15) | 1 | ✓ | · | ○ | · |
-| `glm53_indexer_gate_splitk` | 인덱서 head-gate split-K (opt-in, EXP-9) | 2 | — | · | ○ | · |
-| `glm53_tail_slot_persistent` | kpool tail 슬롯 고정 버퍼 — breakable CG 전제라 이 이미지에서는 잠들어 있다 | 1 | — | · | ○ | · |
 
-매니페스트의 모든 행이 `absent`(=대체할 베이스가 없는 신규 파일)인 모듈은 이제 **열 개**다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_head`, `fp8_lm_head`, `dsv4_eager_scratch`, `glm53_megakernel`, `glm53_fp8_dense`, `glm53_prep_fused`, `glm53_dflash_early_fc`, `glm53_boot_stamps`. 그래서 이미지가 달라도 계약이 성립한다 — 단 **형식이 이식 가능하다는 것과 내용이 모델 무관이라는 것은 다른 명제다**: `glm53_fp8_dense` 는 GLM 의 선형 이름 패턴에, `glm53_prep_fused` 는 러너의 준비 체인에 묶여 있다. 표의 "이식" 열은 앞의 뜻(계약 형식)이고, "범위" 열이 뒤의 뜻이다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
+매니페스트의 모든 행이 `absent`(=대체할 베이스가 없는 신규 파일)인 모듈은 이제 **다섯 개**다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_head`, `dsv4_eager_scratch`, `glm53_megakernel`. 34차(2026-09-05)에 glm53 전용 모듈 25개를 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접으면서 이식 가능한 행(옛 `fp8_lm_head`·`glm53_fp8_dense`·`glm53_prep_fused`·`glm53_dflash_early_fc`·`glm53_boot_stamps` 등)은 묶음 안에서 이미지 계약 행과 섞였다 — 행 단위 계약은 그대로다(표의 "이식" 열 `일부`). 그래서 이미지가 달라도 계약이 성립한다 — 단 **형식이 이식 가능하다는 것과 내용이 모델 무관이라는 것은 다른 명제다**: `glm53_fp8_dense` 는 GLM 의 선형 이름 패턴에, `glm53_prep_fused` 는 러너의 준비 체인에 묶여 있다. 표의 "이식" 열은 앞의 뜻(계약 형식)이고, "범위" 열이 뒤의 뜻이다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
 
 `spec_fp8_head`는 ○로 표시했다: dsv4에 마운트돼 있지만 `VLLM_DSPARK_FP8_DRAFT_HEAD=0`으로 꺼져 있다. rowwise `_scaled_mm` 판본이고 실측에서 60.6 vs 61.7·수용률 무이동으로 기각됐다(MEASUREMENTS.md:419). 채택된 쪽은 `spec_fp8_lm_head`(deepgemm)이며 dsv4는 아직 `dspark_drafter` 안의 사본을 쓴다.
 

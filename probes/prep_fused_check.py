@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """glm53_prep_fused numerics + launch-count probe (fresh container, never serving).
 
-Gate ladder step 2 of overlay/modules/glm53_prep_fused/README.md: proves the
+Gate ladder step 2 of overlay/modules/glm53_runtime/README.md: proves the
 fused prep kernel reproduces, bit for bit, what the stock building blocks
 write -- input_batch's Triton kernels, BlockTables.gather/compute_slot,
 the GDN FULL-graph buffer copies, the sparse-MLA req ids, and the indexer's

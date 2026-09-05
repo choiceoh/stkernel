@@ -1566,7 +1566,7 @@ def test_ue8m0_scale_repair() -> None:
         return
 
     ns = load_defs(
-        "overlay/modules/fp8_lm_head/fp8_lm_head.py",
+        "overlay/modules/glm53_drafter/fp8_lm_head.py",
         {"_repair_ue8m0_scales", "_ue8m0_violations",
          "_SF_SIGN_AND_MANTISSA", "_SMALLEST_NORMAL_F32"},
         {"torch": torch},
@@ -1985,7 +1985,7 @@ def test_glm53_v2_overlay_contracts() -> None:
         "glm53 must not mount V1-only acceptance overlays on V2 Model Runner",
     )
     check(
-        "glm53_v2_sampler_guards" in modules
+        "glm53_runtime" in modules
         and "glm53_v2_hard_constraint_guard" not in modules,
         "glm53 must mount only the V2 sampling guard with an exact predicate",
     )
@@ -2110,7 +2110,7 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     scheme: never the default, never a boot failure, and never armed on
     "did not raise"."""
     src = open(os.path.join(
-        REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+        REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
         encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"),
                    encoding="utf-8").read()
@@ -2182,7 +2182,7 @@ def test_union_prefill_width_matches_the_converter_tile() -> None:
     The width must round up to the tile, and the rounded tail must be -1 --
     the converter's documented "invalid", which _topk_length and the >= 0
     masks downstream both honour."""
-    path = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+    path = os.path.join(REPO, "overlay/modules/glm53_model",
                         "glm53_union_prefill.py")
     src = open(path, encoding="utf-8").read()
     check("_CONVERT_BLOCK_N = 128" in src,
@@ -2400,7 +2400,7 @@ def test_fp8_dense_free_bf16_contract() -> None:
     at ~3 GiB free of 121, against a 4.0 GiB kernel min watermark -- srv3 was
     OOM-killed on 09-03 and srv1/srv2 wedged on 09-04. A default that costs a
     node is not a safe default."""
-    src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+    src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
                encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check(re.search(r"^VLLM_GLM53_FP8_DENSE_FREE_BF16=1$", profile, re.M) is not None,
@@ -2442,7 +2442,7 @@ def test_fp8_dense_free_bf16_contract() -> None:
     # attempt drove it from GPUModelRunner.load_model -- correct in principle,
     # dead in practice: glm53_drop_audit is in no composition, so the release
     # never ran and the boot silently measured the baseline.
-    wiring = os.path.join(REPO, "overlay/modules/glm53_model_wiring",
+    wiring = os.path.join(REPO, "overlay/modules/glm53_model",
                           "glm5next_model.py")
     src_w = open(wiring, encoding="utf-8").read()
     check("maybe_free_fp8_dense_bf16(self)" in src_w,
@@ -2694,7 +2694,7 @@ def test_mhc_passes_knob() -> None:
 # ---------------------------------------------------------------------------
 def test_ep_fixed_token_chunks() -> None:
     ns = load_defs(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
         {
             "B12X_EP_FIXED_MICRO_MAX_PAIRS",
             "B12X_EP_STOCK_TOPK_MICRO_MAX_TOKENS",
@@ -2931,7 +2931,7 @@ def test_ep_fixed_token_chunks() -> None:
 
     source = open(
         _overlay_source(
-            "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+            "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"
         ),
         encoding="utf-8",
     ).read()
@@ -3126,7 +3126,7 @@ def test_ep_fixed_token_chunks() -> None:
 def test_b12x_zero_weight_micro() -> None:
     """Default-off E=72 sentinel skip: exact gate, cache, and hot-path order."""
     wrapper_path = (
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"
     )
     wrapper_names = {
         "read_b12x_ep_bool",
@@ -3197,7 +3197,7 @@ def test_b12x_zero_weight_micro() -> None:
         check(chunks(*args[:3], enabled=args[3]) == (),
               f"non-exact wrapper shape must keep fixed fallback: {args}")
 
-    dispatch_path = "overlay/modules/b12x_zero_weight_micro/moe_dispatch.py"
+    dispatch_path = "overlay/modules/glm53_moe/moe_dispatch.py"
     dispatch_names = {
         "_B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS",
         "_B12X_EP_ZERO_WEIGHT_MICRO_TOKENS",
@@ -3292,7 +3292,7 @@ def test_b12x_zero_weight_micro() -> None:
     check("os.environ" not in launch_source,
           "captured launch path must consume the import-time latch only")
 
-    kernel_path = "overlay/modules/b12x_zero_weight_micro/moe_micro_kernel.py"
+    kernel_path = "overlay/modules/glm53_moe/moe_micro_kernel.py"
     kernel_source = open(_overlay_source(kernel_path), encoding="utf-8").read()
     kernel_tree = ast.parse(kernel_source)
     kernel_cls = next(n for n in kernel_tree.body
@@ -3376,12 +3376,12 @@ def test_b12x_zero_weight_micro() -> None:
 
     profile = open(os.path.join(REPO, "profiles", "glm53.env"),
                    encoding="utf-8").read()
-    check("b12x_zero_weight_micro" in profile,
+    check("glm53_moe" in profile,
           "glm53 composition must mount both FlashInfer source overlays")
     check("VLLM_B12X_EP_ZERO_WEIGHT_MICRO=0" in profile,
           "profile must keep the numeric experiment default off")
     manifest = open(os.path.join(
-        REPO, "overlay", "modules", "b12x_zero_weight_micro", "manifest.tsv"
+        REPO, "overlay", "modules", "glm53_moe", "manifest.tsv"
     ), encoding="utf-8").read()
     check("ccb6f65a22314961693493242f78f62ca58f79a319ecd0cb51bf6d7d8e7125c6"
           in manifest, "micro kernel must pin the live preimage SHA")
@@ -3393,7 +3393,7 @@ def test_b12x_zero_weight_micro() -> None:
 
 def test_glm53_b12x_tuning_controls() -> None:
     """Default-off GLM controls parse strictly and fail closed on shape drift."""
-    dispatch_path = "overlay/modules/b12x_zero_weight_micro/moe_dispatch.py"
+    dispatch_path = "overlay/modules/glm53_moe/moe_dispatch.py"
     names = {
         "_GLM53_B12X_FORCE_BACKEND_ENV",
         "_GLM53_B12X_STATIC_CUTOVER_ENV",
@@ -3506,7 +3506,7 @@ def test_glm53_b12x_tuning_controls() -> None:
     check("_effective_glm53_mac_ladder(" in dynamic_source,
           "dynamic compiler must gate its MAC ladder")
 
-    wrapper_path = "overlay/modules/glm53_b12x_out/b12x_moe.py"
+    wrapper_path = "overlay/modules/glm53_moe/b12x_moe.py"
     wrapper_source = open(_overlay_source(wrapper_path), encoding="utf-8").read()
     check("_effective_glm53_static_cutover(" in wrapper_source,
           "wrapper workspace capacity must use the same exact-shape cutover")
@@ -3938,7 +3938,7 @@ def test_mhc_bigfuse_knob() -> None:
 
 def test_ep_fixed_output_initialised() -> None:
     src = open(_overlay_source(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
     body = src[src.index("def _apply_ep_fixed"):src.index("def _apply_ep_compact")]
     check("pair_out = torch.zeros(" in body,
           "#146 fallback must initialise rows the kernel may skip")
@@ -4079,7 +4079,7 @@ def test_glm53_sm121_mla_prefill_gate() -> None:
         os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
     ).read()
     check(
-        "glm53_sm121_mla_prefill" in profile
+        "glm53_kernels" in profile
         and "VLLM_GLM53_SM121_MLA_PREFILL=0" in profile,
         "the mounted module remains default-off",
     )
@@ -4510,7 +4510,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     FakeIndexer.forward = original
     FakeIndexer._glm53_prefill_original_forward = original
     ns = load_defs(
-        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py",
+        "overlay/modules/glm53_model/glm53_prefill_fastpath.py",
         {
             "_GLM53_PREFILL_KG_WEIGHT",
             "_GLM53_FUSED_K_GATE_ENV",
@@ -4729,7 +4729,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
           "contract drift calls the original indexer unchanged")
 
     path = _overlay_source(
-        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
     )
     source = open(path, encoding="utf-8").read()
     tree = ast.parse(source)
@@ -4769,7 +4769,7 @@ def test_glm53_cache_only_indexer_prefill() -> None:
     )
 
     model_source = open(
-        _overlay_source("overlay/modules/glm53_model_wiring/glm5next_model.py"),
+        _overlay_source("overlay/modules/glm53_model/glm5next_model.py"),
         encoding="utf-8",
     ).read()
     check(
@@ -4812,21 +4812,21 @@ def test_glm53_cache_only_indexer_prefill() -> None:
         "them once after its own loader returns",
     )
     module_dir = os.path.join(
-        REPO, "overlay", "modules", "glm53_model_wiring"
+        REPO, "overlay", "modules", "glm53_model"
     )
     manifest = open(os.path.join(module_dir, "manifest.tsv"), encoding="utf-8").read()
     requires = open(os.path.join(module_dir, "requires"), encoding="utf-8").read()
     check("glm53_prefill_fastpath.py\t" in manifest and "\tabsent" in manifest,
           "prefill fastpath ships as an image-new overlay")
-    check("glm53_kpool_tail_select" in requires,
-          "model wiring declares its shared-gate dependency")
+    check("glm53_kernels" in requires,
+          "model wiring declares its kpool-indexer dependency (glm53_kernels)")
     print("  GLM53 cache-only prefill indexer . OK")
 
 
 def test_glm53_kda_prefill_regime() -> None:
     """The KDA cache split stays two-bucket, exact-gated and core-six only."""
-    module_rel = "overlay/modules/glm53_kda_prefill_regime/kda.py"
-    delta_rel = "overlay/modules/glm53_kda_prefill_regime/chunk_delta_h.py"
+    module_rel = "overlay/modules/glm53_kernels/kda.py"
+    delta_rel = "overlay/modules/glm53_kernels/chunk_delta_h.py"
     ns = load_defs(
         module_rel,
         {
@@ -5192,13 +5192,13 @@ def test_glm53_kda_prefill_regime() -> None:
 
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check(
-        "glm53_kda_prefill_regime" in profile
+        "glm53_kernels" in profile
         and "VLLM_GLM53_KDA_PREFILL_REGIME=0" in profile,
         "GLM profile mounts the module default-off",
     )
     for name in ("kda.py", "chunk_delta_h.py"):
         source = open(
-            os.path.join(REPO, "overlay", "modules", "glm53_kda_prefill_regime", name),
+            os.path.join(REPO, "overlay", "modules", "glm53_kernels", name),
             encoding="utf-8",
         ).read()
         built = open(os.path.join(REPO, "build", "glm53", name), encoding="utf-8").read()
@@ -5225,7 +5225,7 @@ def test_glm53_kda_prefill_regime() -> None:
 def test_glm53_upstream_prefill_batch() -> None:
     """Upstream-derived GLM prefill paths stay exact-gated and fail-closed."""
     indexer_path = _overlay_source(
-        "overlay/modules/glm53_tail_slot_persistent/glm53_kpool_indexer.py"
+        "overlay/modules/glm53_kernels/glm53_kpool_indexer.py"
     )
     indexer_source = open(indexer_path, encoding="utf-8").read()
     indexer_tree = ast.parse(indexer_source)
@@ -5280,7 +5280,7 @@ def test_glm53_upstream_prefill_batch() -> None:
 
     fastpath_source = open(
         _overlay_source(
-            "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+            "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
         ),
         encoding="utf-8",
     ).read()
@@ -5293,7 +5293,7 @@ def test_glm53_upstream_prefill_batch() -> None:
     )
 
     kpool_dir = os.path.join(
-        REPO, "overlay", "modules", "glm53_kpool_tail_select"
+        REPO, "overlay", "modules", "glm53_kernels"
     )
     kpool_py = open(
         os.path.join(kpool_dir, "glm53_kpool_topk.py"), encoding="utf-8"
@@ -5332,7 +5332,7 @@ def test_glm53_upstream_prefill_batch() -> None:
           "radix selection, expansion and tail share one CUDA kernel")
 
     union_path = _overlay_source(
-        "overlay/modules/glm53_model_wiring/glm53_union_prefill.py"
+        "overlay/modules/glm53_model/glm53_union_prefill.py"
     )
     union_source = open(union_path, encoding="utf-8").read()
     union_tree = ast.parse(union_source)
@@ -5473,10 +5473,12 @@ def test_oneshot_sm121_grid_contract() -> None:
           "post-agreement failures never silently switch one rank to NCCL")
 
     for profile in ("dsv4", "glm53"):
+        # dsv4 keeps its own wiring module; glm53's folded into glm53_runtime (34차)
+        _wiring_dir = {"dsv4": "dsv4_oneshot_wiring", "glm53": "glm53_runtime"}[profile]
         wiring = open(
             os.path.join(
                 REPO,
-                f"overlay/modules/{profile}_oneshot_wiring/"
+                f"overlay/modules/{_wiring_dir}/"
                 "cuda_communicator.py",
             ),
             encoding="utf-8",
@@ -5794,7 +5796,7 @@ def test_dsv4_ue8m0_host_guard() -> None:
 def test_b12x_micro_chunk_width() -> None:
     """The caller cannot exceed the matching dispatch/workspace contract."""
     ns = load_defs(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
         {"b12x_ep_micro_chunk_tokens", "b12x_ep_zero_weight_micro_chunks",
          "B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS",
          "B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS",
@@ -5859,7 +5861,7 @@ def test_b12x_micro_chunk_width() -> None:
     check(chunks(8, 8, 71, enabled=True) == (), "local experts must be 72")
 
     source = open(_overlay_source(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py"
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"
     ), encoding="utf-8").read()
     planner = source[source.index("def b12x_ep_zero_weight_micro_chunks"):
                      source.index("def b12x_ep_micro_tail")]
@@ -5893,7 +5895,7 @@ def test_b12x_micro_chunk_width() -> None:
 def test_ep_tail_fixed_shape() -> None:
     """The tail must be padded to one chunk: b12x JITs per launch shape."""
     src = open(_overlay_source(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
     body = src[src.index("def _ep_tail_padded_micro"):
                src.index("def _ep_tail_buffers")]
 
@@ -5927,7 +5929,7 @@ def test_ep_tail_fixed_shape() -> None:
 def test_ep_compact_shape_align() -> None:
     """Compact must bucket its pair count: b12x JITs per launch shape."""
     ns = load_defs(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
         {"b12x_ep_compact_pair_count", "B12X_EP_COMPACT_PAIR_ALIGN"},
         {},
     )
@@ -5951,7 +5953,7 @@ def test_ep_compact_shape_align() -> None:
           f"{len(buckets)}")
 
     src = open(_overlay_source(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
     start = src.index("def _apply_ep_compact")
     nxt = src.find("\n    def ", start)
     body = src[start:nxt if nxt > 0 else len(src)]
@@ -5970,7 +5972,7 @@ def test_ep_compact_shape_align() -> None:
 def test_ep_compact_warmup_ladder() -> None:
     """Load-time warmup ladder: opt-in, shape-derived, never fatal."""
     ns = load_defs(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
         {"b12x_ep_compact_warmup_buckets", "b12x_ep_compact_pair_count",
          "B12X_EP_COMPACT_PAIR_ALIGN"},
         {},
@@ -5995,7 +5997,7 @@ def test_ep_compact_warmup_ladder() -> None:
               f"degenerate geometry must yield no ladder: {args}")
 
     src = open(_overlay_source(
-        "overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py")).read()
+        "overlay/modules/glm53_moe/flashinfer_b12x_moe.py")).read()
     start = src.index("def _warm_compact_shapes")
     body = src[start:src.index("def _warm_activation_dtype")]
     check('os.environ.get("VLLM_B12X_EP_WARM_COMPACT", "0").strip() != "1"'
@@ -6172,8 +6174,8 @@ def test_launcher_nofile_limit() -> None:
 def test_once_logger_args_hashable() -> None:
     """*_once loggers dedupe by hashing their args -- a list raises there."""
     import ast as _ast
-    for rel in ("overlay/modules/b12x_shared_workspace/flashinfer_b12x_moe.py",
-                "overlay/modules/fp8_lm_head/fp8_lm_head.py"):
+    for rel in ("overlay/modules/glm53_moe/flashinfer_b12x_moe.py",
+                "overlay/modules/glm53_drafter/fp8_lm_head.py"):
         src = open(_overlay_source(rel)).read()
         for node in _ast.walk(_ast.parse(src)):
             if not (isinstance(node, _ast.Call)
@@ -6192,9 +6194,9 @@ def test_dflash2_selector_check() -> None:
     """The selector-load check must read the real object and never be silent."""
     import ast as _ast
     src = open(_overlay_source(
-        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py")).read()
+        "overlay/modules/glm53_drafter/qwen3_dflash2.py")).read()
     ns = load_defs(
-        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py",
+        "overlay/modules/glm53_drafter/qwen3_dflash2.py",
         {"dflash2_selector_load_verdict"}, {},
     )
     verdict = ns["dflash2_selector_load_verdict"]
@@ -6235,7 +6237,7 @@ def test_dflash2_selector_score_precision() -> None:
         return
 
     ns = load_defs(
-        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py",
+        "overlay/modules/glm53_drafter/qwen3_dflash2.py",
         {"_score_edges"}, {"torch": torch},
     )
     score_edges = ns["_score_edges"]
@@ -6277,7 +6279,7 @@ def test_dflash2_selector_score_precision() -> None:
 def test_dflash2_conv_mask_buffer() -> None:
     """Grouped conv reuses its deterministic speculative-block tap mask."""
     source = open(_overlay_source(
-        "overlay/modules/glm53_dflash2_fp8_head/qwen3_dflash2.py"
+        "overlay/modules/glm53_drafter/qwen3_dflash2.py"
     ), encoding="utf-8").read()
     tree = ast.parse(source)
 
@@ -6674,7 +6676,7 @@ def test_prefill_knobs_announce_arming() -> None:
     widths -- and the run would read as "measured, no effect".
     """
     union = open(_overlay_source(
-        "overlay/modules/glm53_model_wiring/glm53_union_prefill.py"
+        "overlay/modules/glm53_model/glm53_union_prefill.py"
     ), encoding="utf-8").read()
     check("union prefill: ARMED" in union,
           "the union path must announce its width when it installs")
@@ -6682,7 +6684,7 @@ def test_prefill_knobs_announce_arming() -> None:
           "a value that is not 2 or 4 must warn, not silently mean off")
 
     ns: dict = {"os": os, "logger": _CapturingLogger()}
-    load_defs("overlay/modules/glm53_model_wiring/glm53_union_prefill.py",
+    load_defs("overlay/modules/glm53_model/glm53_union_prefill.py",
               {"_UNION_ENV", "_UNION_REPORTED", "_read_group_size"}, ns)
     saved = os.environ.get(ns["_UNION_ENV"])
     try:
@@ -6702,12 +6704,12 @@ def test_prefill_knobs_announce_arming() -> None:
             os.environ[ns["_UNION_ENV"]] = saved
 
     fused = open(_overlay_source(
-        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
     ), encoding="utf-8").read()
     check("fused K+gate: ARMED" in fused,
           "replacing Indexer.forward must be visible in the boot log")
     kpool = open(_overlay_source(
-        "overlay/modules/glm53_kpool_tail_select/glm53_kpool_topk.py"
+        "overlay/modules/glm53_kernels/glm53_kpool_topk.py"
     ), encoding="utf-8").read()
     check("kpool fused top-k" in kpool and "ARMED" in kpool,
           "a requested-but-not-built extension must be distinguishable from "
@@ -6876,7 +6878,7 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     on maybe_free_fp8_dense_bf16).
     """
     src = open(
-        "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8"
+        "overlay/modules/glm53_model/glm53_fp8_dense.py", encoding="utf-8"
     ).read()
     body = src[src.index("def maybe_build_fp8_dense("):]
 
@@ -6954,7 +6956,7 @@ def test_kda_owns_its_projections_across_dense_schemes() -> None:
     layer with an nvfp4/w4a8 arm.
     """
     src = open(
-        "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8"
+        "overlay/modules/glm53_model/glm53_fp8_dense.py", encoding="utf-8"
     ).read()
     check("def _kda_owns(" in src,
           "ownership must be decided in the build pass, where the bf16 "
@@ -7055,7 +7057,7 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
         else:
             os.environ[env] = old
     # build wiring and the profile default
-    src = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py", encoding="utf-8").read()
+    src = open("overlay/modules/glm53_model/glm53_fp8_dense.py", encoding="utf-8").read()
     assert 'prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"' in src
     assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
     prof = open("profiles/glm53.env", encoding="utf-8").read()
@@ -7068,7 +7070,7 @@ def test_spec_k_compile_factor() -> None:
     module registers it as a compile factor (a K=5 boot's drafter artifacts
     killed the following K=7 boot)."""
     import os
-    fd = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"), encoding="utf-8").read()
+    fd = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"), encoding="utf-8").read()
     launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
     check('_register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)' in fd
           and 'ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"' in launcher,
@@ -7082,7 +7084,7 @@ def test_sampler_profile_skip_contract() -> None:
     the profile ships it off and the installer applies it before its own
     mode check so an 'off' prep-fused boot still gets it."""
     import os
-    pf = open(os.path.join(REPO, "overlay/modules/glm53_prep_fused/glm53_prep_fused.py"), encoding="utf-8").read()
+    pf = open(os.path.join(REPO, "overlay/modules/glm53_runtime/glm53_prep_fused.py"), encoding="utf-8").read()
     prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
     inst = pf[pf.index("def install_glm53_prep_fused()"):]
     check("GPUModelRunner._dummy_sampler_run = _skip" in pf
@@ -7101,7 +7103,7 @@ def test_dev_lab_contracts() -> None:
     when the knob is on; the driver installs the worker side from arm() and
     can rebuild the extension from another .cu; the profile ships it off."""
     import os
-    mod = os.path.join(REPO, "overlay/modules/glm53_dev_lab")
+    mod = os.path.join(REPO, "overlay/modules/glm53_runtime")
     lab = open(os.path.join(mod, "glm53_dev_lab.py"), encoding="utf-8").read()
     mw = open(os.path.join(mod, "glm53_lab_middleware.py"), encoding="utf-8").read()
     man = open(os.path.join(mod, "manifest.tsv"), encoding="utf-8").read()
@@ -7123,7 +7125,7 @@ def test_dev_lab_contracts() -> None:
           "over collective_rpc and says errors")
     check("glm53_dev_lab.py\tvllm/model_executor/layers/glm53_dev_lab.py\tabsent" in man
           and "glm53_lab_middleware.py\tvllm/glm53_lab_middleware.py\tabsent" in man
-          and req.strip() == "glm53_megakernel",
+          and "glm53_megakernel" in req.split(),
           "manifest places both files as new; the module requires the driver")
     check("def rebuild(src_path: str) -> dict:" in mk
           and 'name=f"glm53_megakernel_{md5}"' in mk and "_armed_once = False" in mk
@@ -7131,7 +7133,7 @@ def test_dev_lab_contracts() -> None:
           "the driver rebuilds under a per-md5 name, re-arms, and installs "
           "the lab from arm() behind the knob")
     check(re.search(r"^VLLM_GLM53_DEV_LAB=0$", prof, re.M) is not None
-          and "glm53_dev_lab" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
+          and "glm53_runtime" in re.search(r'^MODULES="([^"]*)"', prof, re.M).group(1)
           and 'if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then' in launcher
           and "--middleware vllm.glm53_lab_middleware.lab" in launcher,
           "the profile enrols the module OFF; the launcher adds the "
@@ -7239,7 +7241,7 @@ def test_mk_smlp_hook_and_contracts() -> None:
     assert "if (s_pair_last) g_mk_pair_arrive[pair] = 0u;" in ph, "pair counters rearm like tile counters"
     assert "if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);" in ph
     assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
-    wiring = open("overlay/modules/glm53_model_wiring/glm5next_model.py", encoding="utf-8").read()
+    wiring = open("overlay/modules/glm53_model/glm5next_model.py", encoding="utf-8").read()
     assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring
     prof = open("profiles/glm53.env", encoding="utf-8").read()
     assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 32차 bracket"
@@ -7323,7 +7325,7 @@ def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
     assert "assert splits == 1 or T * splits <= MLA_WS_ROWS" in src
     assert "(40, 2048, True), (100, 2048, True)" in src
     # the serving shadow judges real rows, not the empty-KV dummy
-    wsrc = open("overlay/modules/glm53_mk_mla_wiring/flashinfer_mla_sparse_sm90.py",
+    wsrc = open("overlay/modules/glm53_model/flashinfer_mla_sparse_sm90.py",
                 encoding="utf-8").read()
     body = wsrc[wsrc.index("def _mk_mla_run("):wsrc.index("class FlashInferMLASparseSM90Impl")]
     assert "rows = int(valid_counts.max().item())" in body
@@ -7445,12 +7447,12 @@ def test_fp8_dense_drafter_compile_factor_and_serving_proof() -> None:
     install(m, 0)
     assert "forward" not in m.__dict__
     # the loader wires the proof behind a True pass, counting opaque methods
-    src = open("overlay/modules/glm53_dflash_loader_fp8/dflash_utils.py",
+    src = open("overlay/modules/glm53_drafter/dflash_utils.py",
                encoding="utf-8").read()
     assert "if maybe_build_fp8_dense(dflash_model, env=\"VLLM_DFLASH2_FP8_DENSE\"):" in src
     assert "install_drafter_serving_check(dflash_model, n_opaque)" in src
     # and the op body counts itself
-    fsrc = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py",
+    fsrc = open("overlay/modules/glm53_model/glm53_fp8_dense.py",
                 encoding="utf-8").read()
     body = fsrc[fsrc.index("def _mk_or_fp8_dense_gemm("):]
     body = body[:body.index("\ntry:")]
@@ -7471,7 +7473,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     is torch.compiled, so its GEMMs must be one opaque op each: dynamo
     cannot trace the lane's eligibility test or the extension call.
     """
-    src = open("overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py",
+    src = open("overlay/modules/glm53_model/glm53_fp8_dense.py",
                encoding="utf-8").read()
     ns = load_defs(
         "overlay/glm53_fp8_dense.py",
@@ -7610,7 +7612,7 @@ def test_fused_k_gate_lazy_slot_exists() -> None:
     read has to tolerate that.
     """
     source = open(_overlay_source(
-        "overlay/modules/glm53_model_wiring/glm53_prefill_fastpath.py"
+        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
     ), encoding="utf-8").read()
     tree = ast.parse(source)
     fused = next(
@@ -7743,7 +7745,7 @@ def test_osar_prefetch_hints_contract() -> None:
         n_at, l_at = drv.find(note), drv.find(launch)
         check(0 < n_at < l_at, f"{site} launch notes its weights first")
 
-    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model/"
                                      "glm5next_model.py"), encoding="utf-8").read()
     cls_at = wiring.index("class Glm5NextForConditionalGeneration(")
     layer_at = wiring.index("class Glm5NextDecoderLayer(")
@@ -7752,7 +7754,7 @@ def test_osar_prefetch_hints_contract() -> None:
           and "def _osar_shim():" in wiring
           and 'osar.begin_forward("target")' in wiring,
           "the forward boundary comes from the class above the compiled region")
-    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_drafter/"
                                       "qwen3_dflash2.py"), encoding="utf-8").read()
     d_cls = drafter.index("class DFlash2Qwen3ForCausalLM(")
     d_b = drafter.index('osar.begin_forward("drafter")')
@@ -7860,21 +7862,21 @@ def test_glm53_dflash_early_fc_contracts() -> None:
     for this step's token count and waits on the producer's event first --
     before precompute_and_store_context_kv and the drafter graph, so the fc's
     megakernel launch never overlaps another one."""
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_dflash_early_fc")
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_drafter")
     src = open(os.path.join(mod_dir, "glm53_dflash_early_fc.py"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_dflash_early_fc" in modules, "glm53 profile mounts glm53_dflash_early_fc")
+    check("glm53_drafter" in modules, "glm53 profile mounts glm53_drafter (early-fc lives there)")
     check(re.search(r"^VLLM_GLM53_DFLASH_EARLY_FC=0$", profile, re.M) is not None,
           "the knob ships off")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
-    check(rows == [["glm53_dflash_early_fc.py",
-                    "vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py", "absent"]],
+    check(["glm53_dflash_early_fc.py",
+                    "vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py", "absent"] in rows,
           f"manifest binds the module as a new file next to the model: {rows}")
     req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
-    check({"glm53_dflash2_fp8_head", "glm53_model_wiring"} <= set(req),
-          "requires names the drafter overlay (consumer) and the wiring (installer)")
+    check({"glm53_model"} <= set(req) and os.path.exists(os.path.join(mod_dir, "qwen3_dflash2.py")),
+          "requires names the wiring (installer); the drafter overlay (consumer) is in the same module")
     check('(os.environ.get("VLLM_GLM53_DFLASH_EARLY_FC") or "0").strip() == "1"' in src
           and "def install_glm53_dflash_early_fc() -> bool:" in src
           and "Runner.execute_model = _patched_execute_model" in src
@@ -7896,13 +7898,13 @@ def test_glm53_dflash_early_fc_contracts() -> None:
     check("out = _ORIG_EXECUTE_MODEL(self, *args, **kwargs)" in patched
           and "_DISABLED = True" in patched and "return out" in patched,
           "a producer failure disables the arm for the boot and never breaks the step")
-    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model/"
                                      "glm5next_model.py"), encoding="utf-8").read()
     check("from .glm53_dflash_early_fc import install_glm53_dflash_early_fc" in wiring
           and 'if _e.name != f"{__package__}.glm53_dflash_early_fc":' in wiring
           and wiring.index("install_glm53_dflash_early_fc()") > wiring.index("install_glm53_prep_fused()"),
           "installed from the wiring like prep_fused: silent without the module, loud when broken")
-    drafter = open(os.path.join(REPO, "overlay/modules/glm53_dflash2_fp8_head/"
+    drafter = open(os.path.join(REPO, "overlay/modules/glm53_drafter/"
                                       "qwen3_dflash2.py"), encoding="utf-8").read()
     body = drafter[drafter.index("def combine_hidden_states(self, hidden_states"):]
     body = body[:body.index("def verify_selector_loaded")]
@@ -8106,12 +8108,14 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
     sitecustomize.py, which must not be shadowed), it patches deterministically
     (an audit hook misses modules already in sys.modules), and it must never
     stand between the boot and its work."""
-    d = os.path.join(REPO, "overlay/modules/glm53_boot_stamps")
+    d = os.path.join(REPO, "overlay/modules/glm53_runtime")
     src = open(os.path.join(d, "deneb_boot_stamps.py"), encoding="utf-8").read()
     man = open(os.path.join(d, "manifest.tsv"), encoding="utf-8").read()
     pth = open(os.path.join(d, "zz_deneb_boot_stamps.pth"),
                encoding="utf-8").read()
-    check(man.count("\tabsent") == 2 and "sitecustomize" not in man,
+    stamp_rows = [l for l in man.splitlines() if "deneb_boot_stamps" in l and not l.startswith("#")]
+    check(len(stamp_rows) == 2 and all(l.endswith("\tabsent") for l in stamp_rows)
+          and "sitecustomize" not in man,
           "boot stamps add two NEW files and replace nothing -- shadowing the "
           "image's sitecustomize.py would silently drop whatever it does")
     check(pth.strip() == "import deneb_boot_stamps; deneb_boot_stamps.install()",
@@ -8150,7 +8154,7 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "boot stamps are opt-out and inert on any failure: measuring a boot "
           "must never be able to stop one")
     prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    check("glm53_boot_stamps" in prof,
+    check("glm53_runtime" in prof,
           "the glm53 profile ships the boot stamps")
     print("  boot stamps measure without changing the boot .. OK")
 
@@ -8182,7 +8186,7 @@ def test_self_built_kernels_persist_their_caches() -> None:
           and 'os.makedirs("/root/.osar_build", exist_ok=True)' not in osar,
           "osar builds into the persistent cache mount too, and MAXEL rides "
           "in the flags so a different peer-buffer stride keys a new build")
-    tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
+    tl = open(os.path.join(REPO, "overlay/modules/glm53_kernels/"
                                  "tilelang.py"), encoding="utf-8").read()
     check("def _deneb_persist_tilelang_cache() -> None:" in tl
           and 'if os.environ.get("TILELANG_CACHE_DIR"):' in tl
@@ -8210,7 +8214,7 @@ def test_cuda_builds_keep_the_arch_specific_target() -> None:
     real on this part (measured 155 and 309 TFLOP/s), so the flag is what
     stands between the kernels and them."""
     for rel in ("overlay/modules/glm53_megakernel/glm53_megakernel.py",
-                "overlay/modules/glm53_kpool_tail_select/glm53_kpool_topk.py"):
+                "overlay/modules/glm53_kernels/glm53_kpool_topk.py"):
         src = open(os.path.join(REPO, rel), encoding="utf-8").read()
         i = src.find("extra_cuda_cflags=")
         while i != -1:
@@ -8637,7 +8641,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the concurrent probe builds the served MoE from the MoE probe's "
           "builders, projects by the model's 42 MoE layers, and carries the "
           "fewer-blocks control row")
-    fd_src = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+    fd_src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
                   encoding="utf-8").read()
     check("method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))" in fd_src
           and "bg=getattr(self, \"_mk_bg\", False)" in fd_src,
@@ -8808,7 +8812,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the torch twins exist: dequant of the tile-major pack and the "
           "prologue's per-128-group pow2 activation quant")
     check('".in_proj_qkvbfg_a" not in name' not in open(
-        os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
+        os.path.join(REPO, "overlay/modules/glm53_model/"
                             "glm53_fp8_dense.py"), encoding="utf-8").read(),
           "every eligible linear gets the W4 pack, the KDA in_proj included: "
           "there is no per-linear knob left")
@@ -9088,7 +9092,7 @@ def test_glm53_megakernel_contracts() -> None:
 
     # -- kda.py overlay keeps the stock body reachable (its own module since
     #    the core was made model-agnostic; see test_megakernel_core_is_shared)
-    kda = open(os.path.join(REPO, "overlay/modules/glm53_mk_kda_wiring",
+    kda = open(os.path.join(REPO, "overlay/modules/glm53_model",
                             "glm5next_kda.py"), encoding="utf-8").read()
     check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
           "kda.py overlay keeps the stock conv/recurrent path")
@@ -9168,14 +9172,14 @@ def test_glm53_megakernel_contracts() -> None:
           "inner loop and reduces through a transposed smem tile (pitch 27); "
           "the smem-slice form measured worse")
     # -- hook placement: MK precedes ONEPASS in the mhc wrapper
-    tl = open(os.path.join(REPO, "overlay/modules/glm53_mhc_tilelang/"
+    tl = open(os.path.join(REPO, "overlay/modules/glm53_kernels/"
                                  "tilelang.py"), encoding="utf-8").read()
     check(tl.index("_mk_hook = _deneb_mk_hook()")
           < tl.index("deneb fork: ONEPASS"),
           "the MK-MHC hook is tried before the ONEPASS experiment")
 
     # -- fp8_dense hook routes armed decode shapes and falls back otherwise
-    fp8 = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/"
+    fp8 = open(os.path.join(REPO, "overlay/modules/glm53_model/"
                                   "glm53_fp8_dense.py"), encoding="utf-8").read()
     check("gemm_w4a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
           "Fp8DenseMethod.apply routes through the megakernel driver")
@@ -9227,12 +9231,12 @@ def test_glm53_megakernel_contracts() -> None:
           "captured-graph launch needs; the wrapper's host replan is the cost "
           "this kernel exists to remove)")
     # -- glm53_mk_mla_wiring: the image-bound hook for MK_SEG_MLA
-    wd = os.path.join(REPO, "overlay", "modules", "glm53_mk_mla_wiring")
+    wd = os.path.join(REPO, "overlay", "modules", "glm53_model")
     wsrc = open(os.path.join(wd, "flashinfer_mla_sparse_sm90.py"), encoding="utf-8").read()
     wrows = [l.split("\t") for l in open(os.path.join(wd, "manifest.tsv"), encoding="utf-8")
              .read().splitlines() if l and not l.startswith("#")]
-    check(len(wrows) == 1 and wrows[0][1] == "vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py"
-          and re.fullmatch(r"[0-9a-f]{64}", wrows[0][2]) is not None,
+    mla_rows = [r for r in wrows if r[1] == "vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py"]
+    check(len(mla_rows) == 1 and re.fullmatch(r"[0-9a-f]{64}", mla_rows[0][2]) is not None,
           "mk_mla_wiring overlays the SM90 sparse backend with a pinned preimage")
     check("num_tokens > _MK_MLA_MAX_T" in wsrc and "_MK_MLA_MAX_T = 1 << 20" in wsrc,
           "mk_mla_wiring routes decode AND prefill (v5: splits==1 needs no scratch)")
@@ -9260,8 +9264,9 @@ def test_glm53_megakernel_contracts() -> None:
           "one-shot shadow vs the wrapper on the first EAGER call with real rows; drift or non-finite output DISARMs, loudly")
     check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
           "mk_mla_wiring requires the megakernel module")
-    check("glm53_megakernel glm53_mk_mla_wiring" in open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(),
-          "profile mounts the wiring right after the megakernel")
+    _mods = re.search(r'^MODULES="([^"]+)"', open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(), re.M).group(1).split()
+    check(_mods.index("glm53_megakernel") < _mods.index("glm53_model"),
+          "profile mounts the core before the wiring (glm53_model)")
     check("for s in range(1, budget + 1):" in pysrc_full and "(T * s) % grid == 0" in pysrc_full
           and "budget = max(1, min(MLA_SPLITS_MAX, MLA_WS_ROWS // T))" in pysrc_full,
           "mla split policy: smallest s with T*s a multiple of the resident grid (measured), "
@@ -9302,18 +9307,18 @@ def test_megakernel_core_is_shared() -> None:
           "requirement on GLM's wiring would follow it into every profile "
           "that mounts the kernel")
 
-    kw = os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring")
+    kw = os.path.join(REPO, "overlay", "modules", "glm53_model")
     krows = [l.split("\t") for l in
              open(os.path.join(kw, "manifest.tsv"), encoding="utf-8")
              .read().splitlines() if l and not l.startswith("#")]
-    check(len(krows) == 1
-          and krows[0][1] == "vllm/models/glm5next/nvidia/kda.py"
-          and re.fullmatch(r"[0-9a-f]{64}", krows[0][2]) is not None,
-          f"the KDA hook keeps the model path and its pinned preimage: {krows}")
-    check(open(os.path.join(kw, "requires"), encoding="utf-8").read().split()
-          == ["glm53_megakernel", "glm53_fp8_dense"],
-          "the KDA hook requires the kernel it calls and the fp8-dense arm "
-          "its packs are built from (that requirement used to sit on the core)")
+    kda_rows = [r for r in krows if r[1] == "vllm/models/glm5next/nvidia/kda.py"]
+    check(len(kda_rows) == 1
+          and re.fullmatch(r"[0-9a-f]{64}", kda_rows[0][2]) is not None,
+          f"the KDA hook keeps the model path and its pinned preimage: {kda_rows}")
+    check("glm53_megakernel" in open(os.path.join(kw, "requires"), encoding="utf-8").read().split()
+          and os.path.exists(os.path.join(kw, "glm53_fp8_dense.py")),
+          "the KDA hook requires the kernel it calls; the fp8-dense arm its packs "
+          "are built from lives in the same module (that requirement used to sit on the core)")
 
     # -- one core, two profiles; every profile mounting it carries a hook
     def _modules(profile):
@@ -9330,18 +9335,17 @@ def test_megakernel_core_is_shared() -> None:
     dsv_text, dsv_mods = _modules("dsv4")
     check("glm53_megakernel" in glm_mods and "glm53_megakernel" in dsv_mods,
           "both profiles mount the same core module")
-    check({"glm53_mhc_tilelang", "glm53_mk_mla_wiring", "glm53_mk_kda_wiring"}
-          <= set(glm_mods),
-          "glm53 keeps all three of its wirings after the split")
+    check({"glm53_kernels", "glm53_model"} <= set(glm_mods),
+          "glm53 keeps its wirings after the split (MHC in glm53_kernels, MLA/KDA in glm53_model)")
     # The core's `requires` used to make compose ABORT when the wiring was
     # missing. Splitting it moved that guarantee here, so the rule has to hold
     # for EVERY profile, not the two this test happens to name -- a third
     # profile mounting the kernel with no hook, or arming a segment whose hook
     # is not mounted, would log `armed` and route nothing.
     seg_hook = {"VLLM_GLM53_MK_MHC": None,          # any module with the hook
-                "VLLM_GLM53_MK_GEMM": "glm53_fp8_dense",
-                "VLLM_GLM53_MK_KDA": "glm53_mk_kda_wiring",
-                "VLLM_GLM53_MK_MLA": "glm53_mk_mla_wiring"}
+                "VLLM_GLM53_MK_GEMM": "glm53_model",
+                "VLLM_GLM53_MK_KDA": "glm53_model",
+                "VLLM_GLM53_MK_MLA": "glm53_model"}
     for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
         profile = os.path.basename(envpath)[:-4]
         text, mods = _modules(profile)
@@ -9380,13 +9384,13 @@ def test_megakernel_core_is_shared() -> None:
     ab = open(os.path.join(REPO, "launchers/ab-glm53.sh"), encoding="utf-8").read()
     check('base) ARM_ENV="VLLM_GLM53_MEGAKERNEL=0"' in ab,
           "ab-glm53 base arm pins the master OFF now that the profile ships it on")
-    du = open(os.path.join(REPO, "overlay/modules/glm53_dflash_loader_fp8/dflash_utils.py"),
+    du = open(os.path.join(REPO, "overlay/modules/glm53_drafter/dflash_utils.py"),
               encoding="utf-8").read()
     check('maybe_free_fp8_dense_bf16(dflash_model, label="drafter")' in du
           and du.index("install_drafter_serving_check(dflash_model, n_opaque)")
           < du.index('maybe_free_fp8_dense_bf16(dflash_model, label="drafter")'),
           "the drafter's bf16 sources are released at load, after the pass and the proof")
-    fd = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"),
+    fd = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
               encoding="utf-8").read()
     check('def maybe_free_fp8_dense_bf16(model, label: str = "") -> int:' in fd,
           "the release names its model in the log line")
@@ -9462,7 +9466,7 @@ def test_megakernel_core_is_shared() -> None:
         return "\n".join(l for l in out
                           if l.strip() and not l.strip().startswith("#"))
 
-    forks = [os.path.join(REPO, "overlay", "modules", "glm53_mhc_tilelang",
+    forks = [os.path.join(REPO, "overlay", "modules", "glm53_kernels",
                           "tilelang.py"),
              os.path.join(REPO, "overlay", "modules", "dsv4_mhc_tilelang",
                           "mhc_tilelang.py")]
@@ -9941,22 +9945,22 @@ def test_glm53_prep_fused_contracts() -> None:
     import hashlib
     import tempfile
 
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_prep_fused")
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_runtime")
     src_path = os.path.join(mod_dir, "glm53_prep_fused.py")
     src = open(src_path, encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_prep_fused" in modules, "glm53 profile must mount glm53_prep_fused")
+    check("glm53_runtime" in modules, "glm53 profile must mount glm53_runtime (prep_fused lives there)")
     check(re.search(r"^VLLM_GLM53_PREP_FUSED=1$", profile, re.M) is not None
           and "0 stays the kill switch" in profile,
           "profile ships VLLM_GLM53_PREP_FUSED=1 (32차 operator decision: the "
           "+7.3% lever is on; 0 stays the kill switch)")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
-    check(rows == [["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"]],
+    check(["glm53_prep_fused.py", "vllm/models/glm5next/nvidia/glm53_prep_fused.py", "absent"] in rows,
           f"manifest must bind the module as a new file next to the model: {rows}")
     req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
-    check({"glm53_model_wiring", "glm53_tail_slot_persistent", "glm53_kpool_tail_select"} <= set(req),
+    check({"glm53_model", "glm53_kernels"} <= set(req),
           "requires must name the wiring, the tail indexer and the kpool op it was read against")
     wiring = open(_overlay_source("overlay/glm5next_model.py"), encoding="utf-8").read()
     hook = wiring.find("install_glm53_prep_fused()")
@@ -10183,20 +10187,20 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 def test_glm53_indexer_gate_splitk_contracts() -> None:
     """glm53_indexer_gate_splitk: opt-in deterministic split-K head gate on the
     checkpoint's shape (index_n_heads=32), small-M only, stock default."""
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_indexer_gate_splitk")
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_model")
     kern = open(os.path.join(mod_dir, "glm53_indexer_gate.py"), encoding="utf-8").read()
     attn = open(os.path.join(mod_dir, "glm5next_attention.py"), encoding="utf-8").read()
-    fast = open(os.path.join(REPO, "overlay", "modules", "glm53_model_wiring",
+    fast = open(os.path.join(REPO, "overlay", "modules", "glm53_model",
                              "glm53_prefill_fastpath.py"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_indexer_gate_splitk" in modules, "glm53 profile must mount glm53_indexer_gate_splitk")
+    check("glm53_model" in modules, "glm53 profile must mount glm53_model (the indexer gate lives there)")
     check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=0$", profile, re.M) is not None,
           "profile must ship VLLM_GLM53_INDEXER_GATE_SPLITK=0 (stock torch.mm by default)")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
     by_target = {r[1]: r[2] for r in rows}
-    check(len(rows) == 2 and re.fullmatch(
+    check(re.fullmatch(
         r"[0-9a-f]{64}", by_target.get("vllm/models/glm5next/nvidia/attention.py", "")) is not None
         and by_target.get("vllm/models/glm5next/nvidia/glm53_indexer_gate.py") == "absent",
         f"manifest must overlay attention.py (pinned) and add the kernel file (absent): {rows}")
@@ -10213,8 +10217,9 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
           "the fastpath tolerates only 'module not mounted' silently and logs other ImportErrors")
     check("VLLM_GLM53_INDEXER_GATE_SPLITK" in fast.split("def _glm53_head_gate")[1].split("return _HEAD_GATE")[0],
           "the fastpath announces a knob that asks for split-K while the module is missing")
-    check(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().strip() == "",
-          "the module is self-contained (the wiring fastpath optionally imports it, not the reverse)")
+    check(not ({"glm53_drafter", "glm53_runtime"}
+                    & set(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split())),
+          "the module is self-contained (the wiring fastpath optionally imports it, not the reverse) (folded into glm53_model: requires nothing above the model layer)")
     # kernel/helper contracts: deterministic two-stage reduce, the checkpoint's N, layout guards
     check("MAX_N = 32" in kern and "w.shape[1] <= MAX_N" in kern,
           "the applicability cap must admit the checkpoint's index_n_heads=32")
@@ -10918,7 +10923,7 @@ def test_micro_fusion_bundle_contracts() -> None:
     slower than the kernel it replaced); nothing may reference it."""
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_kda_onepass" in modules, "glm53 profile mounts glm53_kda_onepass")
+    check("glm53_model" in modules, "glm53 profile mounts glm53_model (kda_onepass lives there)")
     for knob in ("VLLM_GLM53_KDA_DUAL_GEMM", "VLLM_GLM53_KDA_ONEPASS",
                  "VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS"):
         check(re.search(rf"^{knob}=0$", profile, re.M) is not None,
@@ -10930,14 +10935,15 @@ def test_micro_fusion_bundle_contracts() -> None:
           "the rejected top-k epilogue stays out of the gate module and the profile")
 
     # --- glm53_kda_onepass: module shape ---
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_kda_onepass")
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_model")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
-    check(rows == [["glm53_kda_onepass.py",
-                    "vllm/model_executor/layers/glm53_kda_onepass.py", "absent"]],
+    check(["glm53_kda_onepass.py",
+                    "vllm/model_executor/layers/glm53_kda_onepass.py", "absent"] in rows,
           f"manifest adds the kernel file next to the layers (absent preimage): {rows}")
-    check(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().strip() == "",
-          "self-contained: the KDA wiring optionally imports it, not the reverse")
+    check(not ({"glm53_drafter", "glm53_runtime"}
+                    & set(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split())),
+          "self-contained: the KDA wiring optionally imports it, not the reverse (folded into glm53_model: requires nothing above the model layer)")
     kern = open(os.path.join(mod_dir, "glm53_kda_onepass.py"), encoding="utf-8").read()
     # knobs: exact "1", read in one place (the module), executed here
     knob_nodes = [n for n in ast.parse(kern).body
@@ -11040,7 +11046,7 @@ def test_micro_fusion_bundle_contracts() -> None:
           "README: numerics caveat, caller-env arming, checkpoint shape, log anchor, probe, no stale tile")
 
     # --- wiring in glm53_mk_kda_wiring: a guarded import and two calls ---
-    kda = open(os.path.join(REPO, "overlay", "modules", "glm53_mk_kda_wiring", "glm5next_kda.py"),
+    kda = open(os.path.join(REPO, "overlay", "modules", "glm53_model", "glm5next_kda.py"),
                encoding="utf-8").read()
     fusion_state = kda.split("def _kda_fusion_state")[1].split("class Glm5NextLinearAttention")[0]
     check('_KDA_ONEPASS_MODULE = "vllm.model_executor.layers.glm53_kda_onepass"' in kda
@@ -11070,7 +11076,7 @@ def test_micro_fusion_bundle_contracts() -> None:
           "the one-pass call sits after the merged conv weight exists")
 
     # --- kpool direct positions ---
-    kp = open(os.path.join(REPO, "overlay", "modules", "glm53_kpool_tail_select",
+    kp = open(os.path.join(REPO, "overlay", "modules", "glm53_kernels",
                            "sparse_attn_indexer_kpool.py"), encoding="utf-8").read()
     check('os.environ.get("VLLM_GLM53_KPOOL_UPDATE_DIRECT_POS", "").strip() == "1"' in kp,
           "kpool knob arms on the exact string 1")
@@ -11094,22 +11100,22 @@ def test_glm53_drafter_prep_contracts() -> None:
     dict. The wrapper decides FULL-ness through the drafter's own cudagraph
     dispatch, caches one dict per shape, and falls back to the stock build for
     everything else -- and for the rest of the boot on any exception."""
-    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_drafter_prep")
+    mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_drafter")
     src = open(os.path.join(mod_dir, "glm53_drafter_prep.py"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
-    check("glm53_drafter_prep" in modules, "glm53 profile mounts glm53_drafter_prep")
+    check("glm53_drafter" in modules, "glm53 profile mounts glm53_drafter (drafter_prep lives there)")
     check(len(re.findall(r"^VLLM_GLM53_DRAFTER_PREP=", profile, re.M)) == 1
           and re.search(r"^VLLM_GLM53_DRAFTER_PREP=0$", profile, re.M) is not None,
           "the knob is declared exactly once and ships off (32차 duplicate-declaration lesson)")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
-    check(rows == [["glm53_drafter_prep.py",
-                    "vllm/models/glm5next/nvidia/glm53_drafter_prep.py", "absent"]],
+    check(["glm53_drafter_prep.py",
+                    "vllm/models/glm5next/nvidia/glm53_drafter_prep.py", "absent"] in rows,
           f"manifest binds the module as a new file next to the model: {rows}")
     req = open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split()
-    check({"glm53_dflash2_fp8_head", "glm53_model_wiring"} <= set(req),
-          "requires names the drafter overlay and the wiring (installer)")
+    check({"glm53_model"} <= set(req) and os.path.exists(os.path.join(mod_dir, "qwen3_dflash2.py")),
+          "requires names the wiring (installer); the drafter overlay is in the same module")
     check('MODES = ("time", "shadow", "1")' in src
           and "Spec._build_draft_attn_metadata = _patched_build" in src
           and "_ORIG_BUILD = Spec._build_draft_attn_metadata" in src
@@ -11120,7 +11126,7 @@ def test_glm53_drafter_prep_contracts() -> None:
                 "v1/worker/gpu/spec_decode/speculator.py", "v1/worker/gpu/cudagraph_utils.py"):
         check(re.search(rf'"{re.escape(rel)}":\s*\n?\s*"[0-9a-f]{{64}}"', src) is not None,
               f"preimage pinned for {rel}")
-    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model_wiring/"
+    wiring = open(os.path.join(REPO, "overlay/modules/glm53_model/"
                                      "glm5next_model.py"), encoding="utf-8").read()
     check("from .glm53_drafter_prep import install_glm53_drafter_prep" in wiring
           and 'if _e.name != f"{__package__}.glm53_drafter_prep":' in wiring
@@ -11263,7 +11269,7 @@ def test_indexer_decode_fused_contracts() -> None:
     narrowing, int64 floor-div, clamp, finfo.max where last_pool >= 0) so the
     probe's bit-exact gate is the contract; the stock chain stays as the
     fallback and the padded path."""
-    path = os.path.join(REPO, "overlay/modules/glm53_kpool_tail_select/sparse_attn_indexer_kpool.py")
+    path = os.path.join(REPO, "overlay/modules/glm53_kernels/sparse_attn_indexer_kpool.py")
     src = open(path, encoding="utf-8").read()
     check('os.environ.get("VLLM_GLM53_INDEXER_DECODE_FUSED", "0").strip() == "1"' in src,
           "exact-1 knob read once at import (the op runs per layer per step)")
