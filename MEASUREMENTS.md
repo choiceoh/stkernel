@@ -2018,12 +2018,12 @@ dsv4 와 공유하는 `tp_oneshot_ar`·`moe_gate_sm121`·`glm53_megakernel` 은 
 | 5 | `SM121_MLA_PREFILL` + `flash_attn.py` overlay | 기본 off "브래킷 clean 까지"; MK-MLA v5 가 프리필 행을 이미 라우팅(+17%) | 파일 1(행 1), 노브, 테스트 `test_glm53_sm121_mla_prefill_gate` | 겹치는 표적인지 확인 뒤 |
 | 6 | `KDA_PREFILL_REGIME` + `kda.py`·`chunk_delta_h.py` overlay | "성능 결과 없음"; 마운트만으로 Triton ABI 가 바뀌어 0 이어도 재컴파일 비용 | 파일 2(행 2), 노브, 테스트 | 지우면 프리필 첫 부팅 JIT 하나 줄어듦 |
 | 7 | `FUSED_K_GATE`, `KPOOL_FUSED_TOPK` + `glm53_kpool_topk.cu/.py` | 둘 다 opt-in, 서빙 판정 없음(런북 상태표에 없음) | 파일 2(행 2), 노브 2 | 원장에서 판정 기록을 먼저 찾을 것 |
-| 8 | EP 계열: `ENABLE_EP`·`B12X_EP_NO_DUMMY`·`EP_STOCK_TOPK_MICRO`·`EP_ZERO_WEIGHT_MICRO` + `moe_micro_kernel.py`·`moe_dispatch.py` | 원장 "b12x + EP 종결(불가)"; EXP-1 은 "부팅 대기"로 남아 있음 | 파일 2(행 2), 노브 4, `flashinfer_b12x_moe.py` 의 EP 분기 다수, 테스트 다수 | 가장 큰 삭제. EXP-1 을 닫을지가 먼저 |
+| 8 | ~~EP 계열~~ — **철회(운영자 "EP 종결 안 됐잖아")**. 08-30 의 "종결(불가)"는 flashinfer 자체 EP(진입점 하드 거부)에 대한 판정이고, 그 뒤 #115·#120~122 가 리포의 로컬 전용 래퍼 EP 경로를 구현해 EXP-1 은 "구현 완료, 부팅 측정만 남음"(런북 상태표)이다 | 후보 아님 | — | 판정은 EXP-1 부팅 뒤 |
 | 9 | `MHC_ONEPASS`·`MHC_SMALLM`(디코드 쪽) | mk_mhc 가 쌍을 대체해 전제 소멸(런북 EXP-19 "초월") | 노브 2, `tilelang.py` 의 분기 | `MHC_PASSES`·`MHC_BIGFUSE` 는 프리필 big_fuse 표적이라 유지 |
 | 10 | `SKIP_SAMPLER_PROFILE` | K5 탐색용, K5 는 보류 | 노브 1, 러너 패치 1 | K5 재개 전까지 불필요 |
 | 11 | 고아 모듈 `glm53_drop_audit`·`glm53_sparse_q` | 어느 프로필도 안 실음(프로필 주석으로 설명됨) | 디렉터리 2 | 설명 절이 "은퇴"면 삭제 |
 
-유지(후보 아님): `MK_KDA`·`MK_KDA_SHADOW`(레인은 서빙되고 진단이 남아 있음), `FP8_DENSE_PREFILL_NVFP4`(프리필 레버,
+유지(후보 아님): EP 계열 4 노브 + 마이크로커널 2파일(EXP-1 미측정 — 위 8번 철회), `MK_KDA`·`MK_KDA_SHADOW`(레인은 서빙되고 진단이 남아 있음), `FP8_DENSE_PREFILL_NVFP4`(프리필 레버,
 미판정), `DECODABLE_VOCAB`·`VOCAB_MASK_AUDIT`(한국어 품질 도구), `glm53_tail_slot_persistent` 행(잠들어 있지만
 prep-fused 가 그 파일의 preimage 를 고정 — 지우면 이미지 원본으로 바뀌어 DISARM).
 
