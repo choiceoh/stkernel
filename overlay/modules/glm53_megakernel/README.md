@@ -587,3 +587,37 @@ fixture, both in `_selftest_gemm`; `probes/megakernel_glm53_bench.py
 arms against the bf16 truth (the bench's rel_err is the gap to the stock
 fp8 pair, two quantized arms disagreeing, and cannot rank them).
 
+## The vocab head on the v2 lane (30차 §13, 2026-09-06)
+
+`VLLM_GLM53_MK_HEAD_DRAFT` / `VLLM_GLM53_MK_HEAD_TARGET` (both default 0). The
+served head is fp8 (`VLLM_TARGET_LM_HEAD_FP8`, `VLLM_SPEC_FP8_LM_HEAD`:
+deep_gemm W8A8 -- the `sm120_fp8_fp4` kernel name is deep_gemm's unified sm120
+kernel with every FP4 flag false), 158 MB/rank at ~190 GB/s = 836 us, twice a
+step (target verify m=8, draft candidates m=7): already at the DRAM floor for
+fp8 bytes. The W4 pack halves the bytes (the v1 lane measured 418 us on the
+same shape, 33차; v2 is 303 tiles = 3.2 waves, expected ~420 us).
+
+Wiring: `fp8_lm_head.Fp8HeadLogitsProcessor._apply_head` asks `head_logits()`
+first (None = its fp8/bf16 path, unchanged); `head_pack()` builds the pack
+once per head object on the first call (pack cache; the target and the
+drafter alias one head, so one pack, two independent endpoint gates); the
+first eligible call per endpoint -- the eager warm-up, before capture -- is
+checked against the pack's twin on the first and the last eight tiles (the
+padded tail), a miss disarms that endpoint for the boot, loudly; then the
+serving proof line, and the processor logs the W4-vs-fp8 argmax agreement of
+that call (`fp8 lm_head: W4 head lane ... argmax agree N/N rows`). Needs
+MK_GEMM=1 (packs, exact gate) and MK_GEMM2=1 (the persistent kernel was never
+sized for 303 tiles; with GEMM2 off the head disarms itself).
+
+Kernel side: `MK2_TILES_MAX` 64 -> 320; the ksr rule takes ONE slice when
+the tiles alone fill two or more waves (a split adds 2.5 MB of fp32 partials
+per slice at n = 38,784 plus the fold -- the head sweep decides); the partial
+bound is a split's contract only (ksr 1, tail 0 stores bf16 straight from
+the accumulators, so m = 32 on the head serves whole).
+
+Gates, in order: bench `--segments gemm --gemm-shapes 8:38720:4096,7:38720:4096
+--gemm2 both --ksr2-sweep 1,2` (exact PASS; the stock column IS the served fp8
+head), then a DRAFT-head bracket (acceptance-normalised step/s, pos-1 within
+2 pct, quality 9/9, Korean 0/16) -- a coarser draft head only moves
+acceptance. TARGET is the served logits, the decision `VLLM_TARGET_LM_HEAD_FP8`
+documents one notch coarser: operator decision only.

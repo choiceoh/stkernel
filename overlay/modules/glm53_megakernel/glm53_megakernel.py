@@ -86,6 +86,13 @@ ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
 # standalone v2 lane does (30차 §2/§6). Wins the hook over MK_SMLP when both
 # are armed.
 ENABLE_SMLP2 = MASTER and _flag("VLLM_GLM53_MK_SMLP2")
+# The vocab head on the v2 lane (30차 §13): W4 packs of lm_head, one knob per
+# endpoint because the two ends of speculative decoding carry different risk
+# (fp8_lm_head.Fp8HeadLogitsProcessor): a coarser DRAFT head only moves
+# acceptance, the TARGET head's logits are the served output. Both need the
+# GEMM segment (its packs and exact gate) and the v2 lane.
+ENABLE_HEAD_DRAFT = MASTER and _flag("VLLM_GLM53_MK_HEAD_DRAFT")
+ENABLE_HEAD_TARGET = MASTER and _flag("VLLM_GLM53_MK_HEAD_TARGET")
 # MK-GEMM is the W4 arm: e2m1 weights x per-16-group pow2 scale, expanded
 # to EXACT e4m3 bytes in-kernel, on EVERY eligible decode linear (the KDA
 # in_proj included -- there is no fp8 MK arm to fall back to; the W8 arm
@@ -1233,6 +1240,139 @@ def _gemm_kchunks(x, packs, n_rows, bg=False):
                          n_rows, bg)
         acc = out.float() if acc is None else acc.add_(out.float())
     return acc.to(torch.bfloat16)
+
+
+# ---------------------------------------------------------------------------
+# The vocabulary head on the v2 lane (30차 §13). fp8_lm_head's
+# Fp8HeadLogitsProcessor._apply_head asks head_logits() first; None means
+# "not this launch" and its fp8 / bf16 path runs unchanged. The fp8 head is
+# 158 MB/rank read at ~190 GB/s (836 us, twice a step: target verify + draft
+# candidates), already at the DRAM floor for fp8 bytes; the W4 pack halves
+# the bytes. One knob per endpoint: VLLM_GLM53_MK_HEAD_DRAFT / _TARGET.
+# ---------------------------------------------------------------------------
+_HEAD = {"said": set(), "disarmed": {}}   # endpoint -> why it was disarmed
+
+
+def _head_disarm(endpoint: str, why: str) -> None:
+    if endpoint not in _HEAD["disarmed"]:
+        _HEAD["disarmed"][endpoint] = why
+        logger.warning("[megakernel] head lane %s DISARMED for this boot: %s "
+                       "-> the fp8/bf16 head serves", endpoint, why)
+
+
+def head_pack(lm_head, endpoint: str):
+    """The W4 pack of lm_head.weight ([vocab/TP, hidden] bf16), built once
+    per head object and kept on it: the target and the drafter may share one
+    head object, so the pack is shared storage while the endpoint gates stay
+    independent. None (latched, like the fp8 copy's build) when the build
+    failed or the weight is outside the lane's K contract -- never retried
+    on the hot path."""
+    pack = getattr(lm_head, "_mk_head_pack", None)
+    if pack is not None:
+        return pack
+    if getattr(lm_head, "_mk_head_pack_attempted", False):
+        return None
+    lm_head._mk_head_pack_attempted = True
+    weight = getattr(lm_head, "weight", None)
+    try:
+        import torch
+
+        if (weight is None or weight.dim() != 2
+                or weight.dtype not in (torch.bfloat16, torch.float16)):
+            raise ValueError("head weight is not a 2-D bf16/fp16 shard: %s"
+                             % (None if weight is None
+                                else (tuple(weight.shape), weight.dtype)))
+        n, k = weight.shape
+        if k % 128 != 0 or k > MK_GEMM_KMAX:
+            raise ValueError(f"head K={k} is outside the lane's contract "
+                             f"(a multiple of 128, <= {MK_GEMM_KMAX})")
+        # `name` keys the calibration Hessian (33차 lever 2) and the boot
+        # log; the pack cache keys on the weight's md5 regardless
+        pack = build_mk_weight_w4(weight, name="lm_head")
+        note_pack_name(pack, "lm_head")
+        lm_head._mk_head_pack = pack
+        logger.warning("[megakernel] head pack built (%s endpoint first): weight "
+                       "%s -> %d tiles (n_pad %d)", endpoint, tuple(weight.shape),
+                       int(pack[0].shape[0]), int(pack[0].shape[0]) * 128)
+        return pack
+    except Exception as e:
+        logger.warning("[megakernel] head pack build FAILED (%s, weight %s): %r",
+                       endpoint, None if weight is None else tuple(weight.shape), e)
+        return None
+
+
+def _head_first_call_gate(x, pack, n, out) -> float:
+    """The lane's output on this x against the pack's dequantized twin on
+    two tile groups -- the first eight tiles and the last eight (the padded
+    tail, where n_orig masks the stores) -- so the check reads 16 MB of
+    dequantized weight, not the head's 634 MB. Raises on a miss; returns the
+    worst rel error."""
+    tiles = int(pack[0].shape[0])
+    rgs = pack[3] if len(pack) > 3 else None
+    lr_a = pack[4] if len(pack) > 4 else None
+    lr_b = pack[5] if len(pack) > 5 else None
+    groups = [(0, min(8, tiles))]
+    if tiles > 8:
+        groups.append((max(tiles - 8, 8), tiles))
+    worst = 0.0
+    for t0, t1 in groups:
+        c0, c1 = t0 * 128, min(t1 * 128, n)
+        rows = c1 - c0
+        sub = MKPack(pack[0][t0:t1], pack[1][t0:t1], pack[2],
+                     None if rgs is None else rgs[t0 * 128:t1 * 128],
+                     None if lr_a is None else lr_a[t0 * 128:t1 * 128], lr_b)
+        ref = mk_pack_twin(x, sub, rows)
+        e, n_ulp = _exact_gate(out[:, c0:c1], ref)
+        if not e <= 1e-3 or n_ulp > 0:
+            raise RuntimeError(f"head exact gate on tiles [{t0}, {t1}): "
+                               f"rel={e:.2e} over-ulp={n_ulp}")
+        worst = max(worst, e)
+    return worst
+
+
+def head_logits(x, lm_head, endpoint: str):
+    """bf16 [m, vocab/TP] from the W4 pack on the v2 lane, or None (the
+    caller's fp8/bf16 path). Serving needs the GEMM segment armed (its boot
+    exact gate passed), the v2 lane (the persistent kernel's static
+    distribution was never sized for 303 tiles), a decode-sized batch
+    (m <= 32, the lane's contract) and this endpoint's first-call gate: the
+    first eligible call -- the eager warm-up, before capture -- is checked
+    against the pack's twin; a miss disarms the endpoint for the boot,
+    loudly. Then the serving proof line (armed is not serving)."""
+    if not _ARMED["gemm"] or x.dim() != 2 or x.shape[0] > 32:
+        return None
+    if endpoint in _HEAD["disarmed"]:
+        return None
+    if not _flag("VLLM_GLM53_MK_GEMM2"):
+        _head_disarm(endpoint, "VLLM_GLM53_MK_GEMM2 is off (the head needs the v2 lane)")
+        return None
+    pack = head_pack(lm_head, endpoint)
+    if pack is None:
+        _head_disarm(endpoint, "no W4 pack for the head")
+        return None
+    n = int(lm_head.weight.shape[0])
+    out = gemm_w4a8(x, pack, n)
+    if out is None:
+        return None            # this batch is outside the lane's contract
+    if endpoint not in _HEAD["said"]:
+        _HEAD["said"].add(endpoint)
+        import torch
+
+        capturing = torch.cuda.is_current_stream_capturing()
+        worst = float("nan")
+        if not capturing:
+            try:
+                worst = _head_first_call_gate(x, pack, n, out)
+            except Exception as e:
+                _head_disarm(endpoint, f"first-call exact gate: {e!r}")
+                return None
+        plan = list(_EXT.gemm2_plan(int(x.shape[0]), n, int(x.shape[1])))
+        logger.warning("[megakernel] head lane serving: %s endpoint, first eligible "
+                       "call m=%d n=%d k=%d plan(on/ksr/units/bps/tail)=%s, exact "
+                       "gate worst rel=%.1e %s", endpoint, int(x.shape[0]), n,
+                       int(x.shape[1]), plan, worst,
+                       "SKIPPED (capturing)" if capturing else "PASS")
+    return out
 
 
 # ---------------------------------------------------------------------------

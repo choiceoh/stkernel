@@ -1341,7 +1341,10 @@ constexpr int GEMM2_SMEM = MK_SMEM_ALIGN + 2 * 32 * SMEM_A_PITCH +
 // Two blocks per SM is the point of this kernel: the SM has 102,400 B of
 // shared memory and reserves ~1 KB per resident block.
 static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");
-constexpr int MK2_TILES_MAX = 64;               // n <= 8192
+// n <= 40,960: the vocab head is the widest per-rank linear on the lane
+// (154,880 / 4 = 38,720 rows -> 303 tiles, 30차 §13); the arrival counters
+// below are the only per-tile state, 320 x 4 B each.
+constexpr int MK2_TILES_MAX = 320;
 constexpr int MK2_KSR_MAX = 8;
 // fp32 partials [ksr][m][n]: the widest per-rank linear (in_proj, 6528)
 // at m = 32 and ksr = 4; the host lowers ksr for anything wider.
@@ -3705,6 +3708,13 @@ int mk_choose_ksr2(int m, int n, int k) {
     const int kmax = kblk / 4 > 1 ? kblk / 4 : 1;
     if (slots % nblk == 0 && slots / nblk <= kmax) {
       ksr = slots / nblk;               // one exact wave
+    } else if (nblk >= 2 * slots) {
+      // two or more full waves of tiles on its own (the vocab head: 303
+      // tiles, 3.2 waves): the last wave's stragglers are a small fraction
+      // of a launch already at the DRAM floor, and every split adds m x n
+      // fp32 partials per slice (2.5 MB at n = 38,784) plus their fold.
+      // Head sweep (30차 §13): ksr 1 vs 2 on the real shape decides.
+      ksr = 1;
     } else if (nblk * 2 > slots) {
       ksr = kmax;                       // would leave a short second wave: slice fine
     } else {
@@ -3866,9 +3876,13 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     const int nblk = c2.n / SMEM_W_ROWS;
     c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k);
     c2.tail = mk_choose_tail2(c2.m, c2.n, c2.k, c2.ksr);
+    // one slice per tile stores bf16 straight from the accumulators (no
+    // partial is read or written), so the partial bound is a split's
+    // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
     TORCH_CHECK(nblk <= MK2_TILES_MAX && c2.ksr >= 1
                     && c2.ksr <= c2.k / KSTEP
-                    && (size_t)c2.m * c2.n * c2.ksr * (c2.tail > 0 ? 2 : 1) <= (size_t)MK2_PART_ELEMS,
+                    && ((c2.ksr == 1 && c2.tail == 0)
+                        || (size_t)c2.m * c2.n * c2.ksr * (c2.tail > 0 ? 2 : 1) <= (size_t)MK2_PART_ELEMS),
                 "gemm2 plan out of contract");
     mk_launch_gemm2(c2, stream);
     return;
