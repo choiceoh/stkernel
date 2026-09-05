@@ -186,7 +186,10 @@ def main() -> int:
     for i in range(len(samp) - 1):
         (ta, sa), (tb, sb) = samp[i], samp[i + 1]
         for ctx, t0p, t1p in phases:
-            if ta >= t0p and tb <= t1p:
+            # 1 s margins: the first window after the first token still holds
+            # prefill tail, the last one before the end holds the stream's
+            # close (3 windows per answer make one low edge window the median)
+            if ta >= t0p + 1.0 and tb <= t1p - 1.0:
                 r = (sb - sa) / max(tb - ta, 1e-6)
                 if r > 0:
                     by_ctx.setdefault(ctx, []).append(r)
