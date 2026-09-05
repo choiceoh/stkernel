@@ -44,6 +44,7 @@ opt-ins instead of riding the default (#110).
 
 import os
 import re
+import time
 
 import torch
 
@@ -995,6 +996,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     raw = (os.environ.get(env) or "0").strip().lower()
     if raw in ("", "0", "false", "no", "off"):
         return False
+    t_fold = time.perf_counter()  # 37차: this pass is ~45 s of the 118 s load
     # w4a8: weights one notch lower on the same kernel family
     # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
     # stay fp8 -- the axis the literature blesses. 1/true keeps W8A8.
@@ -1236,8 +1238,9 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     )
     try:  # 33차: how the W4 packs were made (rtn / gptq / cached / low-rank)
         from vllm.model_executor.layers import glm53_megakernel as _mkmod2
-        logger.warning("[fp8-dense] %s megakernel %s", type(model).__name__,
-                       _mkmod2.pack_stats_line())
+        logger.warning("[fp8-dense] %s megakernel %s in %.1f s",
+                       type(model).__name__, _mkmod2.pack_stats_line(),
+                       time.perf_counter() - t_fold)
     except Exception:
         pass
     if shapes:

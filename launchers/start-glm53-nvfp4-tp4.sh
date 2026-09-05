@@ -500,6 +500,74 @@ ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 #
 # NVRM allocates against MemFree, so cached file pages are memory the engine
 # cannot use. SKIP_PREFLIGHT=1 opts out of the whole step.
+# 37차 (2026-09-06): build the overlay's two nvcc extensions BEFORE the old
+# containers are torn down, on every node at once, so a boot of a changed
+# source does not pay them inside the downtime. The 2026-09-05 19:30 UTC boot
+# spent 69 s in the osar shim's nvcc and 43 s in the megakernel's (both
+# "source md5 -> connected/armed"), with production already down; the same
+# source rebooted spends 1 s in each because both build into /cache keyed by
+# source md5 + flags + torch/CUDA. A throwaway CPU-only container (no GPU: the
+# arch is explicit in both extensions' nvcc flags, so torch never asks the
+# device), one core, nice 19, the same overlay mounts and -e env as the
+# serving container (the flags ride in VLLM_GLM53_MK_* / VLLM_DSV4_OSAR_*),
+# calls each module's _build(). Unchanged source: ninja finds nothing to do
+# and the step costs ~10 s of imports. Never fatal: a failed prebuild just
+# leaves the boot to build as before. PREBUILD=0 skips it.
+PREBUILD="${PREBUILD:-1}"
+if [ "$PREBUILD" = 1 ] && [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
+  echo "== 확장 사전 빌드 (osar·megakernel nvcc, 구 컨테이너 서빙 중, 노드 병렬) =="
+  _pb_py=$(cat <<'PBEOF'
+import importlib, os, time
+t0 = time.time()
+rc = 0
+for mod, label in (("vllm.model_executor.layers.glm53_megakernel", "megakernel"),
+                   ("vllm.distributed.device_communicators.dsv4_oneshot_shim", "osar")):
+    t = time.time()
+    try:
+        importlib.import_module(mod)._build()
+        print(f"[prebuild] {label} ok in {time.time() - t:.0f}s", flush=True)
+    except Exception as e:  # noqa: BLE001 -- report, never block the boot
+        rc = 1
+        print(f"[prebuild] {label} FAILED after {time.time() - t:.0f}s: {e!r}", flush=True)
+print(f"[prebuild] done in {time.time() - t0:.0f}s", flush=True)
+raise SystemExit(rc)
+PBEOF
+)
+  _pb_b64=$(printf '%s\n' "$_pb_py" | base64 -w0)
+  _pb_mounts="-v $CACHE_HOST_PATH:/cache"
+  for _i in "${!OVFILES[@]}"; do
+    _pb_mounts="$_pb_mounts -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
+  done
+  # Quoted per word like the worker's _wrun, so the same string runs through
+  # `bash -c` on the head and through ssh on the workers.
+  _pb_run=$(printf '%q ' docker run --rm --cpuset-cpus=19 --memory 8g $_pb_mounts $ENVV \
+              -e CUDA_VISIBLE_DEVICES= --entrypoint /bin/bash $IMAGE \
+              -c "echo $_pb_b64 | base64 -d > /tmp/prebuild.py; exec nice -n 19 python3 /tmp/prebuild.py")
+  _pb_dir=$(mktemp -d /tmp/glm53-prebuild.XXXXXX)
+  _pb_pids=()
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    if [ "$_ip" = "$HEAD_IP" ]; then
+      ( bash -c "$_pb_run" > "$_pb_dir/$_ip.log" 2>&1; echo $? > "$_pb_dir/$_ip.rc" ) &
+    else
+      ( ssh $SSHOPT choiceoh@"$_ip" "$_pb_run" > "$_pb_dir/$_ip.log" 2>&1; echo $? > "$_pb_dir/$_ip.rc" ) &
+    fi
+    _pb_pids+=($!)
+  done
+  # 300 s cap: a build that takes longer is not one the boot should wait for
+  # twice (it will pick it up from the lock in /cache when it gets there).
+  _pb_t0=$(date +%s)
+  for _pid in "${_pb_pids[@]}"; do
+    while kill -0 "$_pid" 2>/dev/null; do
+      if (( $(date +%s) - _pb_t0 > 300 )); then echo "  ! 사전 빌드 300 s 초과 — 나머지는 부팅 안에서 빌드"; break 2; fi
+      sleep 2
+    done
+  done
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    printf '  %s: %s (rc=%s)\n' "$_ip" "$(grep -h '^\[prebuild\]' "$_pb_dir/$_ip.log" 2>/dev/null | tr '\n' ' ' | cut -c1-200)" "$(cat "$_pb_dir/$_ip.rc" 2>/dev/null || echo running)"
+  done
+  rm -rf "$_pb_dir"
+fi
+
 PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" != 1 ]; then
   echo "== 이전 부팅 잔여 컨테이너 회수 =="
