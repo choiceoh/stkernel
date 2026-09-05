@@ -9968,6 +9968,11 @@ def test_megakernel_w4_layout_functional() -> None:
         os.environ["VLLM_GLM53_MK_CALIB_DIR"] = td
         pk_c = mod.build_mk_weight_w4(w_a)
         mod.note_pack_name(pk_c, "Glm5Next/layers.1.self_attn.q_proj")
+        check("if torch.cuda.is_current_stream_capturing():\n        return\n    key = _pack_key(pack)"
+              in open(os.path.join(mod_dir, "glm53_megakernel.py"), encoding="utf-8").read(),
+              "calibration: the observer never runs under graph capture (its "
+              "finite-row mask syncs the device: 'operation not permitted when "
+              "stream is capturing' killed the CALIB2 boot)")
         xs = torch.randn(24, k)
         xs_pad = torch.cat([xs, torch.full((4, k), float("nan"))])   # padded rows
         mod._calib_observe(xs_pad, pk_c)

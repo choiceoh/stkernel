@@ -981,6 +981,13 @@ def _calib_observe(x, pack) -> None:
 
     if _CALIB["dumped"] or x.dim() != 2 or pack[0] is None:
         return
+    # the decode graph capture runs this entry eagerly with capture active:
+    # the finite-row mask below syncs the device (a boolean index / .all()
+    # read), which is "operation not permitted when stream is capturing"
+    # (CALIB2 boot, 33차 chain 25). Captured steps are replays of dummy
+    # rows anyway -- nothing to observe.
+    if torch.cuda.is_current_stream_capturing():
+        return
     key = _pack_key(pack)
     name = _PACK_META.get(key)
     if name is None:
