@@ -8587,8 +8587,8 @@ def test_glm53_megakernel_contracts() -> None:
     # the local quant runs ahead of the mma on rows loaded a whole iteration
     # earlier (a two-slot ring), the global path stages A(kb0) before the
     # wait exactly as main did
-    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, kb & 1);")
-              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1) & 1);")
+    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, (kb - kb0) & 1);")
+              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1 - kb0) & 1);")
               < cu.index("mma_fold(sw4t, kb);  // the group scales are inside the bytes")
           and "if (!local_q) stage_a_store(kb0);" in cu
           and cu.index("if (!local_q) stage_a_store(kb0);")
@@ -8611,19 +8611,12 @@ def test_glm53_megakernel_contracts() -> None:
           "has units; the bench's control (the global kernel on fewer blocks) "
           "runs on its own ticket counter; kda's mk_gemm_phase is the global "
           "instantiation")
-    # the boot's exact gate runs BOTH kernels, checks the local one really ran,
-    # requires them bitwise equal, and restores the env's knobs whatever happens
-    check("def exact_fixture(dev=\"cuda\"):" in pysrc_full
-          and "def run_both_kernels(x, pack, n):" in pysrc_full
-          and "_EXT.set_probe(0, lq, 0, 0)" in pysrc_full
-          and "finally:\n        _EXT.set_probe(-1, -1, 0, 0)" in pysrc_full
-          and "if plans[2][3] != 1:" in pysrc_full
-          and "if not torch.equal(got[0], got[2]):" in pysrc_full
-          and "os.environ.get(\"VLLM_GLM53_MK_LOCALQ\"" not in pysrc_full,
-          "the boot self-test exact-gates the global AND the local kernel on "
-          "ONE fixture builder shared with the bench, verifies the local plan, "
-          "requires bitwise equality, restores the knobs in a finally, and logs "
-          "the extension's plan rather than the raw env string")
+    # Executable lane-selection, failure-restoration and nonfinite tests run
+    # in test_megakernel_regression_suite below. Source strings previously
+    # passed even when both purported v1 launches actually selected v2.
+    check("def exact_fixture(dev=\"cuda\", shape=None):" in pysrc_full
+          and "def run_both_kernels(x, pack, n, ksr=0):" in pysrc_full,
+          "the boot and probe share the configurable exact fixture and v1 runner")
     bench = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
                  encoding="utf-8").read()
     check("x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
@@ -8800,7 +8793,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_selftest_w4" not in pysrc_full
           and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(\n"
           "        pack[0], pack[1], n, pack[2]).float().T"
-          in pysrc_full and "if e > 1e-3 or n_ulp > 0:" in pysrc_full
+          in pysrc_full and "if not e <= 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
           and "_TOL_GEMM_W4 = 0.15" in pysrc_full,
@@ -9040,7 +9033,7 @@ def test_glm53_megakernel_contracts() -> None:
           "-- the buffer's newest end is that window only when every draft "
           "was accepted")
     check("for (int i = 0; i < a.conv_width; ++i)" in cu
-          and "v = (i == 0) ? kept[0] : (i == 1) ? kept[1] : kept[2];" in cu
+          and "? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)" in cu
           and "for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;" in cu
           and "constexpr int KDA_NQ_MAX = KDA_SPEC + 1;" in cu
           and '"kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)"' in cu,
@@ -9261,9 +9254,10 @@ def test_glm53_megakernel_contracts() -> None:
           "the MK branch precedes the wrapper tail in forward_mqa")
     check("_SM90_STATE.plan(num_rows, kv_lens)" in wsrc,
           "the builder still plans every step (prefill and T>32 use the wrapper)")
-    check('m._ARMED["mla"] = False' in wsrc and "num / den > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
-          and "is_current_stream_capturing()" in wsrc and "SHADOW FAIL" in wsrc,
-          "one-shot shadow vs the wrapper on the first EAGER call with real rows; drift or non-finite output DISARMs, loudly")
+    check('m._ARMED["mla"] = False' in wsrc and "rel > 2e-2" in wsrc and "torch.isfinite(out).all()" in wsrc
+          and "_mk_mla_check_failure()" in wsrc and "SHADOW FAIL" in wsrc,
+          "real-KV shadow drift or nonfinite output invalidates the worker; "
+          "captured graphs must not continue behind a Python-only DISARM")
     check("glm53_megakernel" in open(os.path.join(wd, "requires"), encoding="utf-8").read(),
           "mk_mla_wiring requires the megakernel module")
     _mods = re.search(r'^MODULES="([^"]+)"', open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read(), re.M).group(1).split()
@@ -11475,6 +11469,23 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     print("  supervisor relaunch pacing .... OK")
 
 
+def test_megakernel_regression_suite():
+    """Run behavioral gate/dispatch and extracted CUDA-control regressions.
+
+    Keep these in the normal deployment gate, not only in an opt-in test
+    command. GPU numeric/racecheck/graph proof is a separate validation.
+    """
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(
+        os.path.dirname(os.path.abspath(__file__)),
+        pattern="test_megakernel_*regressions.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.testsRun > 0 and result.wasSuccessful(),
+          "megakernel behavioral regressions must run and pass")
+    return result.testsRun
+
+
 if __name__ == "__main__":
     test_skip_topk()
     test_prefill_chunker()
@@ -11597,5 +11608,5 @@ if __name__ == "__main__":
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
-    print(f"all OK ({PASS} checks)")
-
+    regressions = test_megakernel_regression_suite()
+    print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")
