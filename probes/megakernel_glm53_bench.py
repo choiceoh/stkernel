@@ -65,6 +65,8 @@ def _arm_env(segs) -> None:
     os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
     for seg in segs:
         os.environ.setdefault(_SEG_KNOB[seg], "1")
+    if "smlp" in segs:  # the probe times both fused lanes
+        os.environ.setdefault("VLLM_GLM53_MK_SMLP2", "1")
     # programmatic launches: the mk_x2 column below is where they show
     os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 
@@ -181,17 +183,19 @@ GEMM_SHAPES = [(8, 6416, 4096), (16, 4096, 4096), (32, 2048, 4096), (32, 1024, 4
                (8, 4096, 2048), (8, 2048, 4096), (8, 6144, 4096), (8, 4096, 3072)]
 
 
-def _lane(ext, on: int, ksr: int = 0) -> None:
+def _lane(ext, on: int, ksr: int = 0, ktail: int = -1) -> None:
     """Route the standalone launches through the v2 (non-persistent) lane
-    (on=1) or the persistent one (on=0); ksr > 0 forces v2's slice count."""
-    ext.set_gemm2(on, ksr)
+    (on=1) or the persistent one (on=0); ksr > 0 forces v2's slice count,
+    ktail >= 0 forces its tail k-blocks (-1 keeps the env's)."""
+    ext.set_gemm2(on, ksr, ktail)
 
 
 def _lane_restore(ext) -> None:
-    _lane(ext, 1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0)
+    _lane(ext, 1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0,
+          int(os.environ.get("VLLM_GLM53_MK_KTAIL", "0") or 0))
 
 
-def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
+def probe_gemm(iters: int, gemm2: str = "both", sweep=None, ktail_sweep=None) -> bool:
     """MK-GEMM (the W4 lane) against the stock quant+deepgemm pair on the
     decode shapes: by-design error (e2m1, gated at 0.15), single-launch
     and back-to-back timings, replay stability.
@@ -199,9 +203,11 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
     gemm2: "0" times the persistent kernel in the mk columns, "1" the v2
     (non-persistent) kernel, "both" the persistent one in the mk columns
     and v2 in the mk2 columns after them, with v2's output diffed against
-    the persistent lane's (bit = identical; a split shape sums its k
-    slices in a different order and shows the rel instead) and v2's plan
-    (ksr, units). sweep: ksr values to force on v2 per shape."""
+    the persistent lane's (bit = identical; since the round-3 lane
+    k-permutation the in-mma summation order differs, so the column shows
+    a ~1e-7 rel on every shape and the exact gate is the numerics
+    contract) and v2's plan (ksr, units). sweep: ksr values to force on
+    v2 per shape."""
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
     from vllm.model_executor.layers import glm53_megakernel as mk
 
@@ -233,8 +239,8 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
         sq2, sws2, srows2, scols2 = mk._stock_fp8_pair(w2)
         p4b = mk.build_mk_weight_w4(w2)
         del w2
-        if sweep:
-            kept[(m, n, k)] = (x, p4, p4b)
+        if sweep or ktail_sweep:
+            kept[(m, n, k)] = (x, p4, p4b, got)  # got: this run's lane output, the sweeps' reference
         ref = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got = mk._gemm_call(x, p4, n)
         torch.cuda.synchronize()
@@ -291,7 +297,7 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
                 mark = "!"
             extra = (f"{t_mk2:>8.1f}{t_x2b:>8.1f}{nb_mk / t_mk2 / 1e3:>9.0f}"
                      f"{'bit' if same else f'{_rel(got2, got):.1e}':>9}"
-                     f"  ksr={plan[1]} u={plan[2]}")
+                     f"  ksr={plan[1]} u={plan[2]}" + (f" tail={plan[4]}" if len(plan) > 4 and plan[4] else ""))
             _lane(ext, 0)
         # which kernel this row ran under the process's knobs (the env's;
         # a bench shell that exported MK_LOCALQ=2 re-kernels these rows)
@@ -301,12 +307,46 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
               f"{nb_mk / t_mk / 1e3:>9.0f}{nb_st / t_ref / 1e3:>9.0f}"
               f"{100 * (t_hi - t_lo) / t_mk:>9.1f}%{t_x2:>7.1f}{t_sx2:>7.1f}{local:>6}"
               + extra)
+    # A forced split (ksr or tail) is a different indexing / fold: every cell
+    # is checked against the run's lane output (summation order only, so
+    # 1e-4 is generous) and for replay stability before its time counts --
+    # a '!' cell fails the verdict, a timing is never printed for a wrong
+    # answer.
+    def sweep_cell(x, p4, p4b, n, got):
+        out = mk._gemm_call(x, p4, n)
+        torch.cuda.synchronize()
+        again = mk._gemm_call(x, p4, n)
+        torch.cuda.synchronize()
+        good = _rel(out, got) <= 1e-4 and torch.equal(out, again)
+        if not good:
+            return False, f"{'!wrong':>14}"
+        t1 = _time(lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
+        t2 = _time(lambda: (mk._gemm_call(x, p4, n), mk._gemm_call(x, p4b, n)),
+                   iters, hot=(x,)) / 2
+        return True, f"{t1:>7.1f}/{t2:<6.1f}"
+
+    if ktail_sweep:
+        # v2 tail-unit sweep at the rule's ksr: tail k-blocks per slice
+        print(f"{'v2 tail sweep':<24}" + "".join(f"{'tail=' + str(t):>14}" for t in ktail_sweep))
+        for m, n, k in GEMM_SHAPES:
+            x, p4, p4b, got = kept[(m, n, k)]
+            cells = []
+            for t in ktail_sweep:
+                _lane(ext, 1, 0, t)
+                if int(ext.gemm2_plan(m, n, k)[4]) != t:
+                    cells.append(f"{'-':>14}")
+                    continue
+                good, cell = sweep_cell(x, p4, p4b, n, got)
+                ok &= good
+                cells.append(cell)
+            print(f" gemm m={m:<3}n={n:<5}k={k:<5}" + "".join(cells))
+        _lane_restore(ext)  # the tail override must not leak into the ksr sweep
     if sweep:
         # v2 slice-count sweep: the unit rule against the alternatives, per
         # shape, single launch and back-to-back on two weights
         print(f"{'v2 ksr sweep':<24}" + "".join(f"{'ksr=' + str(r):>14}" for r in sweep))
         for m, n, k in GEMM_SHAPES:
-            x, p4, p4b = kept[(m, n, k)]  # built once above
+            x, p4, p4b, got = kept[(m, n, k)]  # built once above
             cells = []
             for r in sweep:
                 _lane(ext, 1, r)
@@ -316,11 +356,9 @@ def probe_gemm(iters: int, gemm2: str = "both", sweep=None) -> bool:
                 if int(ext.gemm2_plan(m, n, k)[1]) != r:
                     cells.append(f"{'-':>14}")
                     continue
-                t1 = _time(lambda: mk._gemm_call(x, p4, n), iters, hot=(x,))
-                t2 = _time(lambda: (mk._gemm_call(x, p4, n),
-                                    mk._gemm_call(x, p4b, n)), iters,
-                           hot=(x,)) / 2
-                cells.append(f"{t1:>7.1f}/{t2:<6.1f}")
+                good, cell = sweep_cell(x, p4, p4b, n, got)
+                ok &= good
+                cells.append(cell)
             print(f" gemm m={m:<3}n={n:<5}k={k:<5}" + "".join(cells))
         _lane(ext, 0, 0)
     _lane_restore(ext)
@@ -467,7 +505,12 @@ def probe_smlp(iters: int) -> bool:
 
     ok = True
     limit = 10.0
-    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}")
+    ext = mk._build()
+    # the probe drives the extension directly (no arm()), so the lane is
+    # "present" when the driver and the binding have it, not when armed
+    has2 = hasattr(mk, "_smlp2_call") and hasattr(ext, "run_smlp2")
+    print(f"{'shape':<26}{'exact':>10}{'chain_us':>10}{'fused_us':>10}{'x2_chain':>10}{'x2_fused':>10}"
+          + (f"{'exact2':>10}{'chain2_x2':>10}{'fused2':>10}{'x2_fused2':>10}" if has2 else ""))
     for T, n_int, k, n_out in ((8, 512, 4096, 4096), (8, 3072, 4096, 4096), (32, 512, 4096, 4096)):
         n_gu = 2 * n_int
         torch.manual_seed(0)
@@ -488,6 +531,13 @@ def probe_smlp(iters: int) -> bool:
         torch.cuda.synchronize()
         gate_ok, e_exact, n_ulp = mk._smlp_gate(got, ref)
         ok &= gate_ok
+        e_exact2 = float("nan")
+        if has2:
+            got2 = mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
+            torch.cuda.synchronize()
+            gate_ok2, e_exact2, _ = mk._smlp_gate(got2, ref)
+            ok &= gate_ok2
+            gate_ok &= gate_ok2
         # timing on random weights, two pack pairs
         w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05
         w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05
@@ -517,8 +567,22 @@ def probe_smlp(iters: int) -> bool:
         t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
                                   mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
                          iters, hot=(x,)) / 2
+        extra = ""
+        if has2:
+            # the v2 standalone chain (gate_up v2 -> act -> down v2) and the
+            # two-launch fused lane, back to back on the two pack pairs
+            _lane(ext, 1)
+            t_chain2_v2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)),
+                                iters, hot=(x,)) / 2
+            _lane_restore(ext)
+            t_f2 = _time(lambda: mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                         iters, hot=(x,))
+            t_f2x2 = _time(lambda: (mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                                    mk._smlp2_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
+                           iters, hot=(x,)) / 2
+            extra = f"{e_exact2:>10.2e}{t_chain2_v2:>10.1f}{t_f2:>10.1f}{t_f2x2:>10.1f}"
         mark = " " if gate_ok else "!"
-        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}")
+        print(f"{mark}smlp T={T:<3}int={n_int:<5}k={k:<5}{e_exact:>10.2e}{t_chain:>10.1f}{t_fused:>10.1f}{t_chain2:>10.1f}{t_fused2:>10.1f}" + extra)
     return ok
 
 
@@ -895,6 +959,8 @@ def main() -> int:
                     help="comma list of v2 slice counts to force per shape, e.g. 1,2,4,6,8")
     ap.add_argument("--stamps2", action="store_true",
                     help="v2 per-unit timeline (VLLM_GLM53_MK_PHASE_TS=1 build)")
+    ap.add_argument("--ktail2-sweep", default=None,
+                    help="comma list of v2 tail k-blocks per slice to force, e.g. 0,1,2,4")
     args = ap.parse_args()
     if args.gemm2 == "env":
         args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"
@@ -937,8 +1003,10 @@ def main() -> int:
     ok = True
     sweep = ([int(v) for v in args.ksr2_sweep.split(",")]
              if args.ksr2_sweep else None)
+    ktail_sweep = ([int(v) for v in args.ktail2_sweep.split(",")]
+                   if args.ktail2_sweep else None)
     if "gemm" in segs:
-        ok &= probe_gemm(args.iters, args.gemm2, sweep)
+        ok &= probe_gemm(args.iters, args.gemm2, sweep, ktail_sweep)
     if args.gemm_sweep:
         ok &= probe_gemm_sweep(args.iters, args.stamps,
                                list(GEMM_SHAPES) if args.gemm_shapes else None)
