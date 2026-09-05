@@ -89,10 +89,13 @@ streaming structure:
   any stage count works; `producer_tail` drains at exit.
 
 Spec: `"1"` = `m32,f2,g4,a32` (tile_m 32, FC1 2 stages, FC2 4 stages, 32-row
-A box); or a comma list of `m<tile_m>`, `f<fc1 stages>`, `g<fc2 stages>`,
-`a<A rows>`, and `s` (per-CTA `%globaltimer` stamps into an int64
-`[grid, STAMP_SLOTS]` tensor -- probe only; the serving spec must not carry
-`s`). The cache key and on-disk kernel name carry the config; the source file
+A box, static item schedule); or a comma list of `m<tile_m>`, `f<fc1 stages>`,
+`g<fc2 stages>`, `a<A rows>`, `d` (dynamic item schedule: the DMA warp claims
+items from a global counter the kernel zeroes in its phase 0 and hands the
+coordinates to the MMA warps through a smem ring published by each item's
+first FC1 stage barrier; a sentinel stage ends the loop) and `s` (per-CTA
+`%globaltimer` stamps into an int64 `[grid, STAMP_SLOTS]` tensor -- probe
+only; the serving spec must not carry `s`). The cache key and on-disk kernel name carry the config; the source file
 is in `_kernel_source_files()`, so an edit invalidates the module cache like
 any other kernel file.
 
