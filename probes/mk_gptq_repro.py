@@ -27,9 +27,18 @@ for p in sorted(glob.glob("/mkcache/calib2/*.pt")):
     if w is None:
         torch.manual_seed(0); w = (torch.randn(4096, k) * 0.02).to(torch.bfloat16)
     w = w.to(DEV)
+    # inputs with the dump's FULL second moment (x ~ N(0, H/ntok)): GPTQ's
+    # objective is E|(W - Q) x|^2 under exactly this covariance, so this is
+    # the fair offline test (diagonal-only inputs drop the correlations GPTQ
+    # compensates for and read it worse than RTN -- an artefact)
+    C = (H.double() / ntok); C = 0.5 * (C + C.T)
+    C += torch.eye(k, dtype=torch.float64) * (1e-6 * float(C.diag().mean()))
+    Lc = torch.linalg.cholesky(C)
+    x = (torch.randn(256, k, dtype=torch.float64) @ Lc.T).to(DEV, torch.bfloat16)
     s = torch.sqrt(H.diag().float() / ntok).clamp(min=1e-6)
-    x = (torch.randn(256, k) * s[None, :]).to(DEV, torch.bfloat16)
+    x_diag = (torch.randn(256, k) * s[None, :]).to(DEV, torch.bfloat16)
     truth = x.float() @ w.float().T
+    truth_diag = x_diag.float() @ w.float().T
     for arm, gptq in (("rtn", False), ("gptq", True)):
         os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "1" if gptq else "0"
         mk._CALIB_OVERRIDE = (H, ntok) if gptq else None
@@ -37,7 +46,9 @@ for p in sorted(glob.glob("/mkcache/calib2/*.pt")):
         try:
             pk = mk.build_mk_weight_w4(w, name=name)
             out = mk.mk_pack_twin(x, pk, w.shape[0])
-            print(f"   {arm}: OK {time.time() - t0:.1f}s err/truth {_rel(out, truth):.4e}  ({mk.pack_stats_line()})", flush=True)
+            out_d = mk.mk_pack_twin(x_diag, pk, w.shape[0])
+            print(f"   {arm}: OK {time.time() - t0:.1f}s err/truth full-cov {_rel(out, truth):.4e} "
+                  f"diag-only {_rel(out_d, truth_diag):.4e}", flush=True)
         except Exception:
             print(f"   {arm}: FAILED after {time.time() - t0:.1f}s"); traceback.print_exc()
         mk._CALIB_OVERRIDE = None
