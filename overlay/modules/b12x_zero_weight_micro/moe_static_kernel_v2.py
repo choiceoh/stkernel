@@ -194,6 +194,24 @@ def _ld_shared_i32(addr, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _ld_shared_i32_volatile(addr, *, loc=None, ip=None):
+    """A shared load the compiler must re-issue every time (the claim slot and
+    the ring are rewritten by another warp between reads; the plain load has
+    no side effects and was hoisted out of the item loop -- 33차 §8)."""
+    return Int32(
+        llvm.inline_asm(
+            T.i32(),
+            [Int32(addr).ir_value(loc=loc, ip=ip)],
+            "ld.volatile.shared.s32 $0, [$1];",
+            "=r,r",
+            has_side_effects=True,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+        )
+    )
+
+
+@dsl_user_op
 def _st_shared_f32(addr, val, *, loc=None, ip=None):
     llvm.inline_asm(
         None,
@@ -1342,10 +1360,10 @@ class MoEStaticKernelV2:
                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                 ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
-                ring_e = _ld_shared_i32(ring_off + Int32(8))
+                ring_e = _ld_shared_i32_volatile(ring_off + Int32(8))
                 tile_coord = (
-                    _ld_shared_i32(ring_off),
-                    _ld_shared_i32(ring_off + Int32(4)),
+                    _ld_shared_i32_volatile(ring_off),
+                    _ld_shared_i32_volatile(ring_off + Int32(4)),
                     ring_e,
                 )
                 is_valid_tile = ring_e >= Int32(0)
@@ -1988,10 +2006,10 @@ class MoEStaticKernelV2:
                     peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                     fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                     ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
-                    ring_e = _ld_shared_i32(ring_off + Int32(8))
+                    ring_e = _ld_shared_i32_volatile(ring_off + Int32(8))
                     tile_coord = (
-                        _ld_shared_i32(ring_off),
-                        _ld_shared_i32(ring_off + Int32(4)),
+                        _ld_shared_i32_volatile(ring_off),
+                        _ld_shared_i32_volatile(ring_off + Int32(4)),
                         ring_e,
                     )
                     is_valid_tile = ring_e >= Int32(0)
@@ -2060,7 +2078,7 @@ class MoEStaticKernelV2:
                         ),
                     )
                 cute.arch.sync_warp()
-                current_work_linear_idx = _ld_shared_i32(claim_base_addr)
+                current_work_linear_idx = _ld_shared_i32_volatile(claim_base_addr)
                 cute.arch.sync_warp()
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                 _compact_static_get_work_tile(
@@ -2215,7 +2233,7 @@ class MoEStaticKernelV2:
                             ),
                         )
                     cute.arch.sync_warp()
-                    current_work_linear_idx = _ld_shared_i32(claim_base_addr)
+                    current_work_linear_idx = _ld_shared_i32_volatile(claim_base_addr)
                     cute.arch.sync_warp()
                 else:
                     current_work_linear_idx += num_persistent_clusters

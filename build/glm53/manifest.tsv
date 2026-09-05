@@ -2,6 +2,7 @@ flashinfer_b12x_moe.py	/usr/local/lib/python3.12/dist-packages/vllm/model_execut
 moe_micro_kernel.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py	ccb6f65a22314961693493242f78f62ca58f79a319ecd0cb51bf6d7d8e7125c6
 moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py	f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362
 moe_static_kernel_v2.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v2.py	absent
+moe_static_kernel_v3.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
 glm53_kpool_indexer.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py	fe1b106466008c21d0194a59909b19832e127fad255965611c4c7f7a971422a2
 sparse_attn_indexer_kpool.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py	4772b45eb9b72daab77d8a7581f88508a5e30ed6440e1ed2637722977defaf1b
 glm53_kpool_topk.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kpool_topk.py	absent

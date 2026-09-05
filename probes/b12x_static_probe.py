@@ -263,7 +263,8 @@ def main() -> int:
         for v_ in md._STATIC_V2_STAMPS.values():
             st = v_
         if st is None:
-            print("hang-diag: the call is stuck but no stamps tensor exists (use ',s')")
+            print("hang-diag: the call is stuck but no stamps tensor exists (use ',s')",
+                  flush=True)
             os._exit(3)
         side = torch.cuda.Stream()
         host = torch.empty(st.shape, dtype=st.dtype, device="cpu", pin_memory=True)
@@ -273,7 +274,7 @@ def main() -> int:
         s = host
         base = int(s[:, 0][s[:, 0] > 0].min()) if (s[:, 0] > 0).any() else 0
         print(f"hang-diag[{args.hang_diag}]: stuck after 20 s; per-CTA progress "
-              f"(us from the earliest kernel start):")
+              f"(us from the earliest kernel start):", flush=True)
         for b in range(s.shape[0]):
             t0, t1 = int(s[b, 0]), int(s[b, 1])
             mma = []
@@ -295,7 +296,8 @@ def main() -> int:
             end = int(s[b, k2.STAMP_MMA_END])
             print(f"  cta {b:2d} start {'+%.1f' % ((t0 - base) / 1e3) if t0 else '-'} "
                   f"frontend {'done' if t1 else '-'} mma [{' '.join(mma)}] "
-                  f"dma [{' '.join(dma)}] end {'done' if end else '-'}")
+                  f"dma [{' '.join(dma)}] end {'done' if end else '-'}", flush=True)
+        sys.stdout.flush()
         os._exit(3)
 
     print(f"{'row':<22}{'us/call':>9}{'MB':>8}{'GB/s':>8}")

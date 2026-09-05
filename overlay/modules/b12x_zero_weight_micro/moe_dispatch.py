@@ -44,6 +44,7 @@ from .moe_static_kernel_v2 import (
     MoEStaticKernelV2,
     STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS,
 )
+from .moe_static_kernel_v3 import MoEStaticKernelV3
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
     _W4A16_ALLOWED_ROUTED_SIZES,
@@ -292,6 +293,7 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
 _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
+    "wide": False,
 }
 
 
@@ -313,6 +315,13 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
         if token == "d":
             cfg["dynamic"] = True
             continue
+        if token == "w":
+            # v3: FC1 as two 64-wide halves over 256-wide K stages (128 B
+            # w13 row segments); tile_m 32, static schedule, FC2 3 stages
+            cfg["wide"] = True
+            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
+                cfg["fc2"] = 3
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
@@ -330,6 +339,10 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
         )
     if cfg["fc1"] < 1 or cfg["fc2"] < 1:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
+    if cfg["wide"] and (cfg["tile_m"] != 32 or cfg["a_rows"] != 32 or cfg["dynamic"]):
+        raise ValueError(
+            f"{_GLM53_B12X_STATIC_V2_ENV}: w (v3) is tile_m 32, a_rows 32, static schedule"
+        )
     return cfg
 
 
@@ -1056,6 +1069,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_micro_kernel,
         moe_static_kernel,
         moe_static_kernel_v2,
+        moe_static_kernel_v3,
     )
 
     return (
@@ -1063,6 +1077,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_activation.__file__,
         moe_static_kernel.__file__,
         moe_static_kernel_v2.__file__,
+        moe_static_kernel_v3.__file__,
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1504,6 +1519,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         int(config["a_rows"]),
         bool(config["stamps"]),
         bool(config.get("dynamic", False)),
+        bool(config.get("wide", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1580,22 +1596,37 @@ def _get_static_kernel_v2(
     alpha_dtype = cutlass.Float32
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
-    kernel: Any = MoEStaticKernelV2(
-        sf_vec_size=sf_vec_size,
-        mma_tiler_mn=mma_tiler_mn,
-        output_tile_count_n=output_tile_count_n,
-        fc1_stages=int(config["fc1"]),
-        fc2_stages=int(config["fc2"]),
-        a_rows=int(config["a_rows"]),
-        stamps=bool(config["stamps"]),
-        dynamic=bool(config.get("dynamic", False)),
-        fast_math=fast_math,
-        activation=activation,
-        swiglu_alpha=swiglu_alpha,
-        swiglu_beta=swiglu_beta,
-        swiglu_limit=swiglu_limit,
-        input_scales_are_reciprocal=input_scales_are_reciprocal,
-    )
+    if config.get("wide", False):
+        kernel: Any = MoEStaticKernelV3(
+            sf_vec_size=sf_vec_size,
+            output_tile_count_n=output_tile_count_n,
+            fc1_stages=int(config["fc1"]),
+            fc2_stages=int(config["fc2"]),
+            stamps=bool(config["stamps"]),
+            fast_math=fast_math,
+            activation=activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit,
+            input_scales_are_reciprocal=input_scales_are_reciprocal,
+        )
+    else:
+        kernel = MoEStaticKernelV2(
+            sf_vec_size=sf_vec_size,
+            mma_tiler_mn=mma_tiler_mn,
+            output_tile_count_n=output_tile_count_n,
+            fc1_stages=int(config["fc1"]),
+            fc2_stages=int(config["fc2"]),
+            a_rows=int(config["a_rows"]),
+            stamps=bool(config["stamps"]),
+            dynamic=bool(config.get("dynamic", False)),
+            fast_math=fast_math,
+            activation=activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit,
+            input_scales_are_reciprocal=input_scales_are_reciprocal,
+        )
 
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
@@ -1682,6 +1713,7 @@ def _get_static_kernel_v2(
         f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
+        f"{'w' if config.get('wide') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,

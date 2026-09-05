@@ -3571,6 +3571,16 @@ def test_b12x_static_v2_controls() -> None:
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
+    wide = parse("w")
+    check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
+          "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
+    check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
+    for raw in ("w,m64", "w,d", "w,a64"):
+        try:
+            parse(raw)
+            check(False, f"w must reject {raw!r}")
+        except ValueError as exc:
+            check("v3" in str(exc), "the w conflict error names v3")
     check(parse("m64,f2,g2")["a_rows"] == 64,
           "a_rows follows tile_m unless spelled out")
     check(parse("m32,f2,g4,a64")["a_rows"] == 64 and parse("m32,f2,g4,s")["stamps"],
