@@ -896,7 +896,7 @@ def _nvfp4_pair_for(mod, method, weight, rows, name, seen):
     return (wq, wsf, w_gs, rows, alpha)
 
 
-def _attach_mk_pack(method, weight, cols) -> bool:
+def _attach_mk_pack(method, weight, cols, name=None) -> bool:
     """Attach the megakernel's W4 pack to an fp8 method that will SERVE.
 
     deneb fork (glm53_megakernel): W4 is e2m1 x per-16 pow2 scale, expanded
@@ -925,9 +925,14 @@ def _attach_mk_pack(method, weight, cols) -> bool:
             if cols > _mkmod.MK_GEMM_KMAX:
                 # wider than one launch of the lane (the drafter's fc,
                 # K = 5 x hidden): a pack per K-chunk, summed by gemm_w4a8
-                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight)
+                method._mk = _mkmod.build_mk_weight_w4_kchunks(weight, name=name)
             else:
-                method._mk = _mkmod.build_mk_weight_w4(weight)
+                method._mk = _mkmod.build_mk_weight_w4(weight, name=name)
+            # the calibration pass (33차 lever 2) keys its Hessians on the
+            # linear's name; the pack itself carries no name
+            note = getattr(_mkmod, "note_pack_name", None)
+            if note is not None:
+                note(method._mk, name)
             return method._mk is not None
     except Exception:
         method._mk = None
@@ -1050,7 +1055,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                 # dense scheme does not bid for it: an nvfp4/w4a8 copy here
                 # would be built, verified and never read. What MK-KDA does
                 # read is the W4 pack, and it must be attached now.
-                if attach_mk(method, weight, cols):
+                if attach_mk(method, weight, cols, name):
                     mk_packs += 1
                     kda_owned += 1
                 mod.quant_method = method
@@ -1131,7 +1136,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                         params_w4 += weight.numel()
                         armed_nv = True
                 if not armed_nv:
-                    if attach_mk(method, weight, cols):
+                    if attach_mk(method, weight, cols, name):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
@@ -1163,14 +1168,14 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     except Exception:
                         continue
                 else:
-                    if attach_mk(method, weight, cols):
+                    if attach_mk(method, weight, cols, name):
                         mk_packs += 1
                     mod.quant_method = method
                     quantized.append(name)
                     params += weight.numel()
                     continue
                 continue
-            if attach_mk(method, weight, cols):
+            if attach_mk(method, weight, cols, name):
                 mk_packs += 1
             if prefill_nv and weight.shape[1] % _NVFP4_BLOCK == 0:
                 pair = _nvfp4_pair_for(

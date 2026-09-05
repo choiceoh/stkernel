@@ -353,9 +353,302 @@ def _mk_w4_scale_exp(amax: float) -> int:
     return max(-5, min(6, e))
 
 
-def build_mk_weight_w4(weight):
-    """(wq4 uint8 [n_pad/128, k/128, 128, 64] nibbles,
-        ws4 int8 [n_pad/128, k/128, 128, 8] scale bytes) -- tile-major.
+class MKPack(tuple):
+    """The W4 pack: a tuple (wq4, ws4, wgs, rgs, lr_a, lr_b) whose first
+    three fields are the 3-tuple every lane read before 33차, so p[0], p[1],
+    float(p[2]) keep working; the three new fields are None when the
+    corresponding lever is off.
+
+      wq4   uint8 [n_pad/128, k/128, 128, 64]  e2m1 nibbles, tile-major
+      ws4   int8  [n_pad/128, k/128, 128, 8]   per-16-group e4m3 scale bytes
+      wgs   float  2^-shift of a PER-TENSOR shift (1.0 under the row shift)
+      rgs   fp32 [n_pad] or None: 2^-shift_r of the PER-ROW shift (33차
+            lever 3), applied to the output column in the kernel epilogue
+      lr_a  bf16 [n_pad, r] or None: low-rank error correction, A side
+      lr_b  bf16 [r, k] or None: B side; out += (x @ lr_b.T) @ lr_a.T
+    """
+    __slots__ = ()
+
+    def __new__(cls, wq4, ws4, wgs, rgs=None, lr_a=None, lr_b=None):
+        return tuple.__new__(cls, (wq4, ws4, wgs, rgs, lr_a, lr_b))
+
+    wq4 = property(lambda s: s[0])
+    ws4 = property(lambda s: s[1])
+    wgs = property(lambda s: s[2])
+    rgs = property(lambda s: s[3])
+    lr_a = property(lambda s: s[4])
+    lr_b = property(lambda s: s[5])
+    lr_r = property(lambda s: int(s[4].shape[1]) if s[4] is not None else 0)
+
+
+# Bump when the pack bytes or the tuple layout change: the pack cache keys
+# on it, so a stale cache can never serve an old layout to a new kernel.
+MK_PACK_VERSION = 3
+_LR_MAX = 32   # the kernel's LR_MAX: t scratch is [32 rows][LR_MAX] per stream
+
+
+def _w4_lever(name: str, default: str) -> str:
+    return os.environ.get(name, default).strip()
+
+
+def _w4_search(g, e0, mids, grid):
+    """Best (code, d, scale) per 16-group of g [..., 16] fp32 (already
+    shifted): the 2-octave x 8-mantissa e4m3-scale search of the RTN packer
+    (it reaches the 72-candidate optimum exactly on the real weights), the
+    error taken on what the kernel's expanded byte holds. e0 [..., 1] is the
+    covering exponent ceil(log2(amax/6)) of the group, already shifted."""
+    import torch
+
+    sign = torch.sign(g)
+    best = None
+    for j in (0.0, 1.0):
+        e = (e0 - j).clamp(-5, 5)
+        for kk in range(8):
+            sc = (1.0 + kk / 8.0) * torch.exp2(e)
+            code = torch.bucketize((g / sc).abs(), mids)
+            deq = (grid[code] * sign * sc).to(torch.float8_e4m3fn).float()
+            err = (deq - g).pow(2).sum(-1, keepdim=True)
+            d = (e * 8.0 + kk).to(torch.int8)
+            if best is None:
+                best = [err, code, d, sc]
+            else:
+                take = err < best[0]
+                best = [torch.where(take, err, best[0]),
+                        torch.where(take, code, best[1]),
+                        torch.where(take, d, best[2]),
+                        torch.where(take, sc, best[3])]
+    return best[1], best[2], best[3]
+
+
+def _w4_quant_cols(w, sc, mids, grid):
+    """Quantize the columns w [R, c] with the fixed per-row scale sc [R, 1]:
+    (code uint8 [R, c] without the sign bit, deq fp32 [R, c] = the kernel's
+    expanded byte)."""
+    import torch
+
+    code = torch.bucketize((w / sc).abs(), mids)
+    deq = (grid[code] * torch.sign(w) * sc).to(torch.float8_e4m3fn).float()
+    return code, deq
+
+
+def _w4_row_shift(weight, n_pad: int, kg: int, per_row: bool):
+    """(need [n_pad, kg] covering exponents, shift [n_pad] int per row,
+    clamped fraction). Per-tensor: one median shift on every row (wgs);
+    per-row (33차 lever 3): each row centred on its own median, so a row
+    living 2^6 from the tensor median no longer clamps its groups at the
+    e4m3 exponent floor/ceiling -- the 1.5% of clamped groups on the
+    production [6416, 4096] in_proj were exactly those rows."""
+    import torch
+
+    n, k = weight.shape
+    need = torch.empty(n_pad, kg, dtype=torch.float32, device=weight.device)
+    CH = max(128, (((1 << 20) // k) // 128) * 128)
+    for r0 in range(0, n, CH):
+        r1 = min(r0 + CH, n)
+        a = weight[r0:r1].float().view(r1 - r0, kg, 16).abs().amax(-1)
+        need[r0:r1] = torch.ceil(torch.log2((a / 6.0).clamp(min=1e-30)))
+    need[n:] = 0.0
+    live = need[:n]
+    if per_row:
+        shift = torch.zeros(n_pad, dtype=torch.float32, device=weight.device)
+        shift[:n] = -torch.median(live, dim=1).values
+    else:
+        s = float(-torch.median(live).item()) if n else 0.0
+        shift = torch.full((n_pad,), s, dtype=torch.float32,
+                           device=weight.device)
+    e_sh = live + shift[:n, None]
+    clamped = float(((e_sh < -5) | (e_sh > 5)).float().mean()) if n else 0.0
+    return need, shift, clamped
+
+
+def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
+                   percdamp=0.01):
+    """GPTQ (OBQ error feedback, Frantar et al. 2022) on the e2m1 x e4m3
+    grid: columns are quantized in order; each column's rounding error is
+    fed forward into the not-yet-quantized columns through the inverse
+    Hessian of the layer's INPUT (H = sum x x^T over calibration tokens),
+    so the rounding decisions minimise the OUTPUT error x @ (W - Q)^T, not
+    the weight error. Group scales are re-derived on the error-updated
+    weights when the group starts (groups never cross a block: 16 | 128).
+    Same bytes, same kernel: the accuracy is bought at pack time.
+
+    Returns (codes uint8 [n_pad, k] with the sign in bit 3, d int8 [n_pad,
+    kg]) in the SHIFTED domain (weights x 2^shift_r), like the RTN path."""
+    import torch
+
+    n, k = weight.shape
+    n_pad = shift.shape[0]
+    kg = k // 16
+    dev = weight.device
+    W = torch.zeros(n_pad, k, dtype=torch.float32, device=dev)
+    W[:n] = weight.float() * torch.exp2(shift[:n, None])
+    H = H.to(dev, torch.float32).clone()
+    dead = torch.diag(H) == 0
+    H[dead, dead] = 1.0
+    W[:, dead] = 0.0
+    damp = percdamp * torch.mean(torch.diag(H))
+    H += torch.eye(k, device=dev) * damp
+    L = torch.linalg.cholesky(H)
+    Hinv = torch.cholesky_inverse(L)
+    Hinv = torch.linalg.cholesky(Hinv, upper=True)
+    del H, L
+    codes = torch.zeros(n_pad, k, dtype=torch.uint8, device=dev)
+    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
+    sc = None
+    for i1 in range(0, k, blocksize):
+        i2 = min(i1 + blocksize, k)
+        cnt = i2 - i1
+        W1 = W[:, i1:i2].clone()
+        Err1 = torch.zeros_like(W1)
+        Hinv1 = Hinv[i1:i2, i1:i2]
+        for i in range(cnt):
+            col = i1 + i
+            if col % 16 == 0:
+                g16 = W1[:, i:i + 16]
+                amax = g16.abs().amax(-1, keepdim=True)
+                e0 = torch.ceil(torch.log2((amax / 6.0).clamp(min=1e-30)))
+                # a dead / all-zero group: any scale, keep the byte 0
+                e0 = torch.where(amax > 0, e0, torch.zeros_like(e0))
+                _c, d, sc = _w4_search(g16, e0, mids, grid)
+                d_out[:, col // 16] = d.squeeze(-1)
+            w = W1[:, i:i + 1]
+            code, q = _w4_quant_cols(w, sc, mids, grid)
+            sgn = torch.signbit(w).to(torch.uint8) << 3
+            codes[:, col] = (code.to(torch.uint8) | sgn).squeeze(-1)
+            err = (w - q) / Hinv1[i, i]
+            W1[:, i:] -= err @ Hinv1[i:i + 1, i:]
+            Err1[:, i:i + 1] = err
+        W[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
+    del W, Hinv
+    return codes, d_out
+
+
+def _w4_rtn_codes(weight, shift, need, mids, grid):
+    """Round-to-nearest packer (the 24차..32차 path): per chunk of rows,
+    the e4m3-scale search per 16-group on the shifted weights."""
+    import torch
+
+    n, k = weight.shape
+    n_pad = shift.shape[0]
+    kg = k // 16
+    dev = weight.device
+    q_out = torch.zeros(n_pad, kg, 16, dtype=torch.uint8, device=dev)
+    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
+    # ~1M elements per row chunk: the search makes a dozen temporaries per
+    # candidate per chunk, and the GB10 allocator answered a whole-tensor
+    # search by mapping new pages (14.5 GiB reserved on one [6416, 4096]
+    # pack, 26차) -- a quarter chunk is a quarter of every temporary.
+    CH = max(128, (((1 << 20) // k) // 128) * 128)
+    for r0 in range(0, n_pad, CH):
+        r1 = min(r0 + CH, n_pad)
+        g = torch.zeros(r1 - r0, kg, 16, dtype=torch.float32, device=dev)
+        if r0 < n:
+            src = weight[r0:min(r1, n)].float()
+            g[:src.shape[0]] = src.view(src.shape[0], kg, 16)
+        g *= torch.exp2(shift[r0:r1])[:, None, None]
+        sign = torch.signbit(g).to(torch.uint8) << 3
+        e0 = need[r0:r1].unsqueeze(-1) + shift[r0:r1, None, None]
+        code, d, _sc = _w4_search(g, e0, mids, grid)
+        q_out[r0:r1] = code.to(torch.uint8) | sign
+        d_out[r0:r1] = d.squeeze(-1)
+        del g, sign, e0, code, d
+    return q_out.view(n_pad, k), d_out
+
+
+def _w4_lorc(weight, deq_unshifted, H, rank: int):
+    """Activation-aware low-rank correction of the quantization error
+    (LQER / ZeroQuant-V2 LoRC): E = W - deq; with S = rms of each input
+    channel over the calibration tokens (sqrt(diag(H) / ntok)), the SVD of
+    E S keeps the directions the layer's real inputs excite, and
+    A = U_r S_r, B = V_r^T S^-1 give x @ B^T @ A^T ~ x @ E^T. Without H the
+    SVD is plain (white-noise error: r/(sqrt(n)+sqrt(k))^2 of the energy,
+    i.e. little). Returns (lr_a bf16 [n_pad, r], lr_b bf16 [r, k],
+    captured fraction of the weighted error energy)."""
+    import torch
+
+    n, k = weight.shape
+    n_pad = deq_unshifted.shape[0]
+    E = weight.float() - deq_unshifted[:n]
+    if H is not None:
+        S = torch.sqrt(torch.diag(H).float().to(E.device).clamp(min=0.0)
+                       / max(1.0, float(H.shape[0])))
+        S = S.clamp(min=1e-6 * float(S.max()) if float(S.max()) > 0 else 1e-6)
+    else:
+        S = torch.ones(k, dtype=torch.float32, device=E.device)
+    ES = E * S[None, :]
+    U, s, V = torch.svd_lowrank(ES, q=min(rank + 8, min(n, k)), niter=4)
+    U, s, V = U[:, :rank], s[:rank], V[:, :rank]
+    lr_a = torch.zeros(n_pad, rank, dtype=torch.bfloat16, device=E.device)
+    lr_a[:n] = (U * s[None, :]).to(torch.bfloat16)
+    lr_b = (V.T / S[None, :]).to(torch.bfloat16)
+    tot = float(ES.pow(2).sum())
+    cap = float(s.pow(2).sum()) / tot if tot > 0 else 0.0
+    return lr_a, lr_b, cap
+
+
+_CALIB_DIR_DEFAULT = "/cache/mkcalib"
+_PACK_CACHE_DEFAULT = "/cache/mkpacks"
+
+
+def _mk_rank() -> int:
+    try:
+        import torch.distributed as dist
+        if dist.is_available() and dist.is_initialized():
+            return int(dist.get_rank())
+    except Exception:
+        pass
+    return 0
+
+
+_CALIB_OVERRIDE = None   # probes: (H, ntok) handed straight to the packer
+
+
+def _calib_hessian_for(name):
+    """The calibration Hessian dumped for this linear on this rank, or None
+    (no calibration boot yet, or the knob is off). Read on the pack path
+    only; VLLM_GLM53_MK_PACK_GPTQ=0 keeps the packer RTN whatever is on disk."""
+    if not name or _w4_lever("VLLM_GLM53_MK_PACK_GPTQ", "1") != "1":
+        return None
+    if _CALIB_OVERRIDE is not None:
+        return _CALIB_OVERRIDE
+    d = os.path.join(_w4_lever("VLLM_GLM53_MK_CALIB_DIR", _CALIB_DIR_DEFAULT),
+                     f"rank{_mk_rank()}")
+    p = os.path.join(d, name + ".pt")
+    if not os.path.exists(p):
+        return None
+    try:
+        import torch
+        blob = torch.load(p, map_location="cpu")
+        return blob["H"], int(blob["ntok"])
+    except Exception as e:
+        logger.warning("[megakernel] calib: %s unreadable (%r) -> RTN", p, e)
+        return None
+
+
+def _weight_md5(weight) -> str:
+    import torch
+
+    w = weight.detach().contiguous()
+    b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
+    return hashlib.md5(b.cpu().numpy().tobytes()).hexdigest()
+
+
+def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
+    root = _w4_lever("VLLM_GLM53_MK_PACK_CACHE", _PACK_CACHE_DEFAULT)
+    if root in ("", "0", "off"):
+        return None
+    # the bytes AND the shape: two weights of the same seed and element
+    # count are byte-identical at different shapes (the bench's [2048 x
+    # 4096] and [4096 x 2048] collided on the first run of this cache)
+    key = (f"{_weight_md5(weight)}-{weight.shape[0]}x{weight.shape[1]}-"
+           f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
+           f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
+           f"lr{rank}")
+    return os.path.join(root, f"rank{_mk_rank()}", key + ".pt")
+
+
+def build_mk_weight_w4(weight, name=None):
+    """The MKPack of a bf16 [n, k] weight -- see MKPack for the fields.
 
     Nibble layout: low nibble = even element, high = odd. Round-to-nearest
     on the e2m1 grid {0, .5, 1, 1.5, 2, 3, 4, 6} x scale.
@@ -381,7 +674,25 @@ def build_mk_weight_w4(weight):
     cover rule a finer scale grid measured WORSE (it maps the group into
     the sparse top of the e2m1 grid), which is why the two changes only
     pay together.
-    """
+
+    33차 (operator: 'accuracy up, speed untouched'), three pack-time levers
+    on the same bytes and the same kernel:
+      lever 3  VLLM_GLM53_MK_PACK_ROWSHIFT=1 (default): the shift that keeps
+               the group exponents inside the byte-add window is per ROW,
+               undone on the output column (MKPack.rgs) instead of on the
+               activation scales.
+      lever 2  VLLM_GLM53_MK_PACK_GPTQ=1 (default): when a calibration boot
+               (VLLM_GLM53_MK_CALIB=1) has dumped this linear's input
+               Hessian for this rank, the rounding is GPTQ's error feedback
+               instead of round-to-nearest.
+      lever 4  VLLM_GLM53_MK_PACK_LORC=r (default 0): a rank-r correction of
+               the remaining error, activation-aware when the Hessian is
+               there; the v2 kernel adds it in the epilogue.
+    Packs are cached under VLLM_GLM53_MK_PACK_CACHE (weight md5 + levers +
+    MK_PACK_VERSION in the key), so the GPTQ solve is paid once per rank.
+    `name` is the linear's module name: the Hessian and the boot log are
+    keyed on it; None = RTN, no cache lookup by name (the md5 still keys
+    the cache)."""
     import torch
 
     n, k = weight.shape
@@ -389,95 +700,81 @@ def build_mk_weight_w4(weight):
         raise ValueError(f"K={k} not a multiple of 128")
     n_pad = _mk_pad128(n)
     kg = k // 16
+    per_row = _w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
+    calib = _calib_hessian_for(name)
+    try:
+        lr_rank = int(_w4_lever("VLLM_GLM53_MK_PACK_LORC", "0"))
+    except ValueError:
+        lr_rank = 0
+    lr_rank = max(0, min(_LR_MAX, lr_rank))
+    if lr_rank % 8:
+        lr_rank = (lr_rank // 8) * 8   # the kernel walks r in eights
+    cache = None
+    try:
+        cache = _pack_cache_path(weight, per_row, calib is not None, lr_rank)
+    except Exception as e:
+        logger.warning("[megakernel] pack cache key failed (%r) -> no cache", e)
+    if cache and os.path.exists(cache):
+        try:
+            blob = torch.load(cache, map_location="cpu")
+            if blob.get("version") == MK_PACK_VERSION:
+                dev = weight.device
+                pk = MKPack(blob["wq4"].to(dev), blob["ws4"].to(dev),
+                            float(blob["wgs"]),
+                            None if blob["rgs"] is None else blob["rgs"].to(dev),
+                            None if blob["lr_a"] is None else blob["lr_a"].to(dev),
+                            None if blob["lr_b"] is None else blob["lr_b"].to(dev))
+                _PACK_STATS["cached"] += 1
+                return pk
+        except Exception as e:
+            logger.warning("[megakernel] pack cache %s unreadable (%r) -> rebuild",
+                           cache, e)
+    t0 = time.perf_counter()
     mids = torch.tensor(_E2M1_MIDS, device=weight.device)
     grid = torch.tensor(_E2M1_GRID, device=weight.device)
-    # Pass 1: where the groups actually live. The expansion is a byte add,
-    # so a group scale can only reach 2^-5 around a magnitude of 1 -- and
-    # GLM-5.3's dense projections sit at 2^-7 (median), 2^-16 (p1). Without
-    # this every production group clamped at the floor and the pack was
-    # ~3x worse than the format allows (0.225 rel vs 0.082 measured on
-    # layers.1 q/k/v/o/gate/up/down). The shift is a power of two, undone
-    # on the kernel's activation scales, so it costs no accuracy.
-    need = torch.empty(n_pad, kg, dtype=torch.float32, device=weight.device)
-    # ~1M elements per row chunk. The candidate search below makes a dozen
-    # temporaries per candidate per chunk, and on the unified-memory GB10
-    # the caching allocator (expandable segments) answered that churn by
-    # MAPPING new pages instead of reusing freed blocks: at 4M elements a
-    # [6416, 4096] pack grew torch's reserved memory by 14.5 GiB with the
-    # live set flat (instrumented boot, 2026-09-04), and 180 packs in the
-    # fp8-dense pass took every node under the 4 GiB kernel watermark. A
-    # quarter of the chunk is a quarter of every temporary, and the cache
-    # is handed back at the end of the build (below).
-    CH = max(128, (((1 << 20) // k) // 128) * 128)
-    for r0 in range(0, n, CH):
-        r1 = min(r0 + CH, n)
-        a = weight[r0:r1].float().view(r1 - r0, kg, 16).abs().amax(-1)
-        need[r0:r1] = torch.ceil(torch.log2((a / 6.0).clamp(min=1e-30)))
-    need[n:] = 0.0
-    live = need[:n]
-    shift = int(-torch.median(live).item()) if n else 0
-    gscale = float(2.0 ** -shift)
-    clamped = float(((live + shift < -5) | (live + shift > 5)).float().mean())
-
-    q_out = torch.zeros(n_pad, kg, 16, dtype=torch.uint8,
-                        device=weight.device)
-    d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=weight.device)
-    # Pass 2: row-chunked search. It holds ~4 temporaries the size of the
-    # chunk, and runs at load time next to the fp8 copies -- the boot that
-    # OOM-killed srv3 is what a whole-tensor search would have joined.
-    for r0 in range(0, n_pad, CH):
-        r1 = min(r0 + CH, n_pad)
-        g = torch.zeros(r1 - r0, kg, 16, dtype=torch.float32,
-                        device=weight.device)
-        if r0 < n:
-            src = weight[r0:min(r1, n)].float()
-            g[:src.shape[0]] = src.view(src.shape[0], kg, 16)
-        g *= 2.0 ** shift
-        sign = torch.signbit(g).to(torch.uint8) << 3
-        e0 = need[r0:r1].unsqueeze(-1) + shift
-        best_err = None
-        # Two octaves x 8 mantissas reach the full 72-candidate optimum
-        # exactly on the real weights (q_proj 0.0833 both, down_proj 0.0787).
-        for j in (0.0, 1.0):
-            e = (e0 - j).clamp(-5, 5)
-            for kk in range(8):
-                sc = (1.0 + kk / 8.0) * torch.exp2(e)
-                code = torch.bucketize((g / sc).abs(), mids)
-                # what the kernel's expanded byte actually holds
-                deq = (grid[code] * torch.sign(g) * sc).to(
-                    torch.float8_e4m3fn).float()
-                err = (deq - g).pow(2).sum(-1, keepdim=True)
-                d = (e * 8.0 + kk).to(torch.int8)
-                if best_err is None:
-                    best_err, best_code, best_d = err, code, d
-                else:
-                    take = err < best_err
-                    best_err = torch.where(take, err, best_err)
-                    best_code = torch.where(take, code, best_code)
-                    best_d = torch.where(take, d, best_d)
-        q_out[r0:r1] = best_code.to(torch.uint8) | sign
-        d_out[r0:r1] = best_d.squeeze(-1)
-        del g, sign, e0, best_err, best_code, best_d
+    need, shift, clamped = _w4_row_shift(weight, n_pad, kg, per_row)
+    if calib is not None:
+        H, ntok = calib
+        q_flat, d_out = _w4_gptq_codes(weight, shift, need, H, mids, grid)
+        _PACK_STATS["gptq"] += 1
+    else:
+        H = None
+        q_flat, d_out = _w4_rtn_codes(weight, shift, need, mids, grid)
+        _PACK_STATS["rtn"] += 1
     if clamped > 0.01:
         # Silent clamping is what made this defect invisible for a campaign:
         # the self-test's weights are O(1) and never reach the floor.
         logger.warning("[megakernel] w4 pack %s: %.1f%% of groups clamp even "
-                       "after the 2^%d shift -- the tensor's dynamic range "
+                       "after the %s shift -- the tensor's dynamic range "
                        "exceeds the 11 octaves a byte-add expansion spans",
-                       tuple(weight.shape), 100 * clamped, shift)
-    # Pack PAIRS along k: even k-index -> low nibble, odd -> high. The pair
-    # slice must run on the [.., 16] group view. (Found in review: slicing a
-    # [.., 8] re-view instead picked elements 0,2,4,6 of each octet AND left
-    # numel 4x the target, so reshape raised -- the attach's except then
-    # swallowed it into a silently-stock boot, and the self-test exception
-    # disarmed every OTHER segment with it. Shape asserts below make any
-    # future layout drift fail loudly at build, not silently at serve.)
+                       tuple(weight.shape), 100 * clamped,
+                       "per-row" if per_row else f"2^{int(shift[0].item())}")
+    # Pack PAIRS along k: even k-index -> low nibble, odd -> high. (Found in
+    # review: slicing a [.., 8] re-view instead picked elements 0,2,4,6 of
+    # each octet AND left numel 4x the target, so reshape raised -- the
+    # attach's except then swallowed it into a silently-stock boot, and the
+    # self-test exception disarmed every OTHER segment with it. Shape
+    # asserts below make any future layout drift fail loudly at build.)
+    q_out = q_flat.view(n_pad, kg, 16)
     wq4 = (q_out[..., 0::2] | (q_out[..., 1::2] << 4)).reshape(n_pad, k // 2)
     ws4 = d_out.contiguous()
     assert wq4.shape == (n_pad, k // 2), \
         f"wq4 {tuple(wq4.shape)} != {(n_pad, k // 2)}"
     assert ws4.shape == (n_pad, k // 16), \
         f"ws4 {tuple(ws4.shape)} != {(n_pad, k // 16)}"
+    if per_row:
+        wgs = 1.0
+        rgs = torch.exp2(-shift).contiguous()
+    else:
+        wgs = float(2.0 ** -float(shift[0].item()))
+        rgs = None
+    lr_a = lr_b = None
+    if lr_rank > 0:
+        deq = mk_w4_dequant_rowmajor(wq4, ws4, wgs, rgs)
+        lr_a, lr_b, cap = _w4_lorc(weight, deq, H, lr_rank)
+        _PACK_STATS["lorc"] += 1
+        _PACK_STATS["lorc_cap"] += cap
+        del deq
     # Tile-major, like the fp8 pack (#208): one (tile, k-block) record is
     # 128 rows x 64 nibble bytes + 128 x 8 scale bytes, contiguous, so the
     # kernel's stage_raw4 streams it with cp.async as one 8 KB + 1 KB run
@@ -486,57 +783,191 @@ def build_mk_weight_w4(weight):
            .permute(0, 2, 1, 3).contiguous())
     ws4 = (ws4.view(n_pad // 128, 128, k // 128, 8)
            .permute(0, 2, 1, 3).contiguous())
+    pk = MKPack(wq4, ws4, wgs, rgs, lr_a, lr_b)
+    _PACK_STATS["build_s"] += time.perf_counter() - t0
+    if cache:
+        try:
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            tmp = cache + f".tmp{os.getpid()}"
+            torch.save({"version": MK_PACK_VERSION, "wq4": wq4.cpu(),
+                        "ws4": ws4.cpu(), "wgs": wgs,
+                        "rgs": None if rgs is None else rgs.cpu(),
+                        "lr_a": None if lr_a is None else lr_a.cpu(),
+                        "lr_b": None if lr_b is None else lr_b.cpu(),
+                        "name": name, "shape": (n, k)}, tmp)
+            os.replace(tmp, cache)
+        except Exception as e:
+            logger.warning("[megakernel] pack cache write %s failed (%r)", cache, e)
     # Reserved-but-free blocks are host memory this box has lost; give the
-    # search's churn back before the next pack (see CH above). Also matters
-    # for the KDA packs built inside the first forward, where a reservation
-    # that lingers is subtracted from the KV budget by the memory profiler.
+    # search's churn back before the next pack. Also matters for the KDA
+    # packs built inside the first forward, where a reservation that
+    # lingers is subtracted from the KV budget by the memory profiler.
     torch.cuda.empty_cache()
-    return wq4, ws4, gscale
+    return pk
 
 
-def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0):
-    """bf16 [n_rows, k] holding exactly the values the kernel's expansion
-    feeds the mma for this pack: the pure-torch twin of expand_w4 (nibble
-    -> e2m1 grid value x the group's e4m3 scale, rounded into e4m3 the way
-    the kernel's byte add does, sign from nibble bit 3). Weights already on
-    the grid round-trip bit-exactly, which is what the exact gate and the
-    KDA fixture rely on."""
+_PACK_STATS = {"rtn": 0, "gptq": 0, "cached": 0, "lorc": 0, "lorc_cap": 0.0,
+               "build_s": 0.0}
+
+
+def pack_stats_line() -> str:
+    """One boot-log line: how the packs of this process were made."""
+    s = _PACK_STATS
+    cap = (s["lorc_cap"] / s["lorc"]) if s["lorc"] else 0.0
+    return (f"packs: rtn={s['rtn']} gptq={s['gptq']} cached={s['cached']} "
+            f"lorc={s['lorc']} (mean captured error energy {cap:.2f}) "
+            f"build {s['build_s']:.0f}s; levers rowshift="
+            f"{_w4_lever('VLLM_GLM53_MK_PACK_ROWSHIFT', '1')} gptq="
+            f"{_w4_lever('VLLM_GLM53_MK_PACK_GPTQ', '1')} lorc="
+            f"{_w4_lever('VLLM_GLM53_MK_PACK_LORC', '0')}")
+
+
+def mk_w4_dequant_rowmajor(wq4_rm, ws4_rm, wgs=1.0, rgs=None):
+    """fp32 [n_pad, k] from the ROW-MAJOR (pre-tile) nibbles [n_pad, k/2]
+    and scale bytes [n_pad, k/16]: the kernel's expanded e4m3 byte times
+    the shift's undo (wgs, or rgs per row)."""
     import torch
 
-    nt, kt = wq4.shape[0], wq4.shape[1]
-    n_pad, k = nt * 128, kt * 128
-    q = wq4.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
-    nib = torch.stack((q & 0x0F, q >> 4), dim=-1).reshape(n_pad, k)
-    grid = torch.tensor(_E2M1_GRID, device=wq4.device)
-    mag = grid[(nib & 7).long()]
-    sign = torch.where((nib & 8) != 0, -1.0, 1.0)
-    d = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16).to(torch.int32)
-    # d = (e << 3) + k, k in [0, 7] -- the low three bits are the scale
-    # mantissa for either sign of e, and the arithmetic shift is e.
+    n_pad, k2 = wq4_rm.shape
+    k = k2 * 2
+    lo = wq4_rm & 0xF
+    hi = wq4_rm >> 4
+    q = torch.stack([lo, hi], dim=-1).reshape(n_pad, k)
+    grid = torch.tensor(_E2M1_GRID, device=wq4_rm.device)
+    mag = grid[(q & 7).long()]
+    sign = torch.where((q & 8) != 0, -1.0, 1.0)
+    d = ws4_rm.to(torch.int32)
     scale = (1.0 + (d & 7).float() / 8.0) * torch.exp2((d >> 3).float())
     w = mag * sign * scale.repeat_interleave(16, dim=1)
-    # the kernel's table byte IS e4m3(mag * scale); model that rounding
-    w = w.to(torch.float8_e4m3fn).float() * gscale
-    return w[:n_rows].to(torch.bfloat16)
+    w = w.to(torch.float8_e4m3fn).float() * wgs
+    if rgs is not None:
+        w = w * rgs.float()[:, None]
+    return w
+
+
+def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0, rgs=None):
+    """fp32 [n_rows, k] the kernel's expansion reads: nibble -> e2m1 grid
+    value x the group's e4m3 scale, rounded into e4m3 the way the kernel's
+    table byte is, times the shift's undo (gscale, or rgs per row). Zero
+    stays zero; every other code round-trips the grid bit-exactly, which is
+    what the exact gate and the by-design gate both need."""
+    import torch
+
+    tn, tk, _, _ = wq4.shape
+    n_pad, k = tn * 128, tk * 128
+    # tile-major [n/128][k/128][128][64] -> row-major [n_pad, k/2]
+    wq4_rm = wq4.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
+    ws4_rm = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16)
+    w = mk_w4_dequant_rowmajor(wq4_rm, ws4_rm, gscale, rgs)
+    return w[:n_rows]
+
+
+def mk_pack_dequant(pack, n_rows):
+    """fp32 [n_rows, k]: what the lane SERVES for this pack, low-rank
+    correction included (W_q + A B)."""
+    w = mk_w4_dequant(pack[0], pack[1], n_rows, pack[2],
+                      pack[3] if len(pack) > 3 else None)
+    if len(pack) > 5 and pack[4] is not None:
+        w = w + (pack[4][:n_rows].float() @ pack[5].float())
+    return w
 
 
 def _mk_quant_x_ref(x):
     """fp32 [m, k]: x after the kernel's activation quant (per row, per
-    128-k group: pow2 scale 2^frexp_exp(amax/448), e4m3 round-to-nearest,
-    rescale). Pure twin of the prologue; with mk_w4_dequant it makes a
-    torch fp32 matmul the kernel's exact reference (no fp8 MK arm exists
-    to diff against any more)."""
+    128-k group: the EXACT scale amax/448 (33차 lever 1; it was the pow2
+    2^frexp_exp(amax/448) before, which wasted up to one bit of e4m3's
+    three), e4m3 round-to-nearest at v * (1/scale), rescale). Pure twin of
+    the prologue: the division, the reciprocal (__frcp_rn) and the product
+    are the same IEEE fp32 operations in both, so with mk_w4_dequant it
+    makes a torch fp32 matmul the kernel's exact reference (no fp8 MK arm
+    exists to diff against any more)."""
     import torch
 
     m, k = x.shape
     g = x.float().view(m, k // 128, 128)
     amax = g.abs().amax(-1, keepdim=True)
-    ratio = (amax / 448.0).clamp(min=1e-30)
-    _frac, exp = torch.frexp(ratio)
-    scale = torch.where(amax > 0, torch.exp2(exp.float()),
-                        torch.ones_like(amax))
-    q = (g / scale).to(torch.float8_e4m3fn).float() * scale
+    # amax * fp32(1/448): the kernel's form, and torch's own for a scalar
+    # divisor; the floor is the kernel's fmaxf
+    scale = (amax * (1.0 / 448.0)).clamp(min=1e-30)
+    rsc = 1.0 / scale
+    # the kernel converts with SATFINITE: a product one ulp over 448 (the
+    # row's own amax times a rounded reciprocal) saturates instead of NaN
+    q = (g * rsc).clamp(-448.0, 448.0).to(torch.float8_e4m3fn).float() * scale
     return q.view(m, k)
+
+
+# ---------------------------------------------------------------------------
+# Calibration: the input Hessians the GPTQ packer needs (33차 lever 2).
+# VLLM_GLM53_MK_CALIB=1 makes every W4 launch's Python entry accumulate
+# H += x^T x for its pack until VLLM_GLM53_MK_CALIB_TOKENS rows have been
+# seen, then each rank dumps <calib dir>/rank<r>/<name>.pt and stops. It is
+# the eager entry that counts, so run the calibration traffic BEFORE the
+# decode graphs are captured or with enough prefill (prefill never replays).
+# ---------------------------------------------------------------------------
+_CALIB = {"on": _flag("VLLM_GLM53_MK_CALIB"), "H": {}, "ntok": {},
+          "meta": {}, "budget": 0, "seen": 0, "dumped": False}
+try:
+    _CALIB["budget"] = int(os.environ.get("VLLM_GLM53_MK_CALIB_TOKENS", "32768"))
+except ValueError:
+    _CALIB["budget"] = 32768
+_PACK_META = {}   # id(pack) -> name (set by the fp8-dense attach)
+
+
+def note_pack_name(pack, name: str) -> None:
+    if pack is None or not name:
+        return
+    if isinstance(pack, list):
+        for c, p in enumerate(pack):
+            _PACK_META[id(p)] = f"{name}.k{c}"
+    else:
+        _PACK_META[id(pack)] = name
+
+
+def _calib_observe(x, pack) -> None:
+    """Accumulate this launch's input into its pack's Hessian."""
+    import torch
+
+    if _CALIB["dumped"] or x.dim() != 2:
+        return
+    key = id(pack)
+    name = _PACK_META.get(key)
+    if name is None:
+        return
+    x32 = x.detach().float()
+    H = _CALIB["H"].get(key)
+    if H is None:
+        H = torch.zeros(x.shape[1], x.shape[1], dtype=torch.float32,
+                        device=x.device)
+        _CALIB["H"][key] = H
+        _CALIB["ntok"][key] = 0
+        _CALIB["meta"][key] = (name, (int(pack[0].shape[0]) * 128, int(x.shape[1])))
+    H.addmm_(x32.T, x32)
+    _CALIB["ntok"][key] += int(x.shape[0])
+    # every served linear sees every token, so any pack's count is the
+    # budget's progress; the max keeps a late-attached pack from stalling it
+    _CALIB["seen"] = max(_CALIB["seen"], _CALIB["ntok"][key])
+    if _CALIB["seen"] >= _CALIB["budget"]:
+        _calib_dump()
+
+
+def _calib_dump() -> None:
+    import torch
+
+    _CALIB["dumped"] = True
+    root = os.path.join(_w4_lever("VLLM_GLM53_MK_CALIB_DIR", _CALIB_DIR_DEFAULT),
+                        f"rank{_mk_rank()}")
+    os.makedirs(root, exist_ok=True)
+    n = 0
+    for key, H in _CALIB["H"].items():
+        name, shape = _CALIB["meta"][key]
+        torch.save({"H": H.cpu(), "ntok": _CALIB["ntok"][key], "shape": shape,
+                    "name": name}, os.path.join(root, name + ".pt"))
+        n += 1
+    logger.warning("[megakernel] calib: dumped %d Hessians to %s (%d tokens "
+                   "seen); the next boot's packer uses them (GPTQ)", n, root,
+                   _CALIB["seen"])
+    _CALIB["H"].clear()
+    torch.cuda.empty_cache()
 
 
 def _stock_fp8_pair(w):
@@ -554,7 +985,7 @@ def _stock_fp8_pair(w):
 # ---------------------------------------------------------------------------
 # MK_SEG_GEMM
 # ---------------------------------------------------------------------------
-def build_mk_weight_w4_kchunks(weight):
+def build_mk_weight_w4_kchunks(weight, name=None):
     """[(wq4, ws4, gscale), ...]: one W4 pack per MK_GEMM_KMAX-wide column
     chunk of a [n, k] weight whose k exceeds the lane's per-launch K.
 
@@ -573,11 +1004,18 @@ def build_mk_weight_w4_kchunks(weight):
     n, k = weight.shape
     if k % 128 != 0:
         raise ValueError(f"K={k} not a multiple of 128")
-    return [build_mk_weight_w4(weight[:, c:c + MK_GEMM_KMAX].contiguous())
+    return [build_mk_weight_w4(weight[:, c:c + MK_GEMM_KMAX].contiguous(),
+                               name=None if name is None else f"{name}.k{c // MK_GEMM_KMAX}")
             for c in range(0, k, MK_GEMM_KMAX)]
 
 
 _AR_NOTE = None
+
+
+def _rgs_ptr(pack) -> int:
+    """The pack's per-row output scale pointer for a launch (0 = none)."""
+    rgs = pack[3] if len(pack) > 3 else None
+    return 0 if rgs is None else int(rgs.data_ptr())
 
 
 def _ar_note(*tensors) -> None:
@@ -613,8 +1051,15 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
                       device=x.device)
     _ar_note(mk_pack[0], mk_pack[1])
+    rgs = mk_pack[3] if len(mk_pack) > 3 else None
+    lr_a = mk_pack[4] if len(mk_pack) > 4 else None
+    lr_b = mk_pack[5] if len(mk_pack) > 5 else None
     _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
-                  float(mk_pack[2]), 1 if bg else 0)
+                  float(mk_pack[2]), 1 if bg else 0,
+                  0 if rgs is None else rgs.data_ptr(),
+                  0 if lr_a is None else lr_a.data_ptr(),
+                  0 if lr_b is None else lr_b.data_ptr(),
+                  0 if lr_a is None else int(lr_a.shape[1]))
     return out
 
 
@@ -645,6 +1090,12 @@ def gemm_w4a8(x, mk_pack, n_rows, bg=False):
                                1 if _flag("VLLM_GLM53_MK_GEMM2") else 0)
         except Exception:
             _GEMM_CAPTURED["said"] = True
+    if _CALIB["on"]:
+        if isinstance(mk_pack, list):
+            for c, p in enumerate(mk_pack):
+                _calib_observe(x[:, c * MK_GEMM_KMAX:(c + 1) * MK_GEMM_KMAX], p)
+        else:
+            _calib_observe(x, mk_pack)
     if isinstance(mk_pack, list):
         return _gemm_kchunks(x, mk_pack, n_rows, bg)
     if mk_pack[0] is None:
@@ -703,7 +1154,7 @@ def _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
     _EXT.run_smlp(
         [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
          d_pack[0].data_ptr(), d_pack[1].data_ptr(), out.data_ptr(),
-         ws["barrier_smlp"].data_ptr()],
+         ws["barrier_smlp"].data_ptr(), _rgs_ptr(gu_pack), _rgs_ptr(d_pack)],
         [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
          float(beta)],
         [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
@@ -734,7 +1185,7 @@ def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
     _EXT.run_smlp2(
         [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
          d_pack[0].data_ptr(), d_pack[1].data_ptr(), _SMLP2_GU.data_ptr(),
-         out.data_ptr()],
+         out.data_ptr(), _rgs_ptr(gu_pack), _rgs_ptr(d_pack)],
         [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
          float(beta)],
         [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
@@ -854,16 +1305,15 @@ def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
     rounding points."""
     import torch
 
-    gu = (_mk_quant_x_ref(x) @ mk_w4_dequant(
-        gu_pack[0], gu_pack[1], n_gu, gu_pack[2]).float().T).to(torch.bfloat16)
+    gu = (_mk_quant_x_ref(x) @ mk_pack_dequant(gu_pack, n_gu).float().T
+          ).to(torch.bfloat16)
     g = gu[:, :n_int].float()
     u = gu[:, n_int:].float()
     if limit > 0:
         g = g.clamp(max=limit)
         u = u.clamp(min=-limit, max=limit)
     a = (g * torch.sigmoid(alpha * g) * (u + beta)).to(torch.bfloat16)
-    return _mk_quant_x_ref(a) @ mk_w4_dequant(
-        d_pack[0], d_pack[1], n_out, d_pack[2]).float().T
+    return _mk_quant_x_ref(a) @ mk_pack_dequant(d_pack, n_out).float().T
 
 
 def _selftest_smlp2() -> bool:
@@ -1378,7 +1828,8 @@ def _kda_launch(layer, hidden_states, meta, conv_state, rec_state, out,
          out.data_ptr(),
          ws["qkv"].data_ptr(), ws["g1"].data_ptr(), ws["g2"].data_ptr(),
          ws["convq"].data_ptr(), ws["attn"].data_ptr(),
-         _barrier_ptr(ws), onorm_w.data_ptr()],
+         _barrier_ptr(ws), onorm_w.data_ptr(),
+         _rgs_ptr(layer._mk_in_pack), _rgs_ptr(layer._mk_o_pack)],
         [float(layer.kda_lower_bound),
          float(getattr(layer.o_norm, "eps", 1e-5)),
          float(layer._mk_in_pack[2]), float(layer._mk_o_pack[2])],
@@ -1657,8 +2108,7 @@ def exact_fixture(dev="cuda"):
     w_exact = w_exact.view(n, k).to(torch.bfloat16)
     x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
     pack = build_mk_weight_w4(w_exact)
-    ref = _mk_quant_x_ref(x) @ mk_w4_dequant(
-        pack[0], pack[1], n, pack[2]).float().T
+    ref = _mk_quant_x_ref(x) @ mk_pack_dequant(pack, n).float().T
     return x, pack, w_exact, ref
 
 
@@ -1798,10 +2248,10 @@ class _KdaFixture:
         # rounding noise (the 2e-2 class), not e2m1's by-design error.
         _pi = build_mk_weight_w4(mkw(KDA_INPROJ_N, HIDDEN) * 0.02)
         _po = build_mk_weight_w4(mkw(HIDDEN, KDA_OUT) * 0.02)
-        # explicit, not a splat: the pack carries a third element (its pow2
-        # normalisation) and a splat would land it on n_rows
-        self.w_in = mk_w4_dequant(_pi[0], _pi[1], KDA_INPROJ_N, _pi[2])
-        self.w_o = mk_w4_dequant(_po[0], _po[1], HIDDEN, _po[2])
+        # the pack's own dequant (its shift undo rides in the pack: per
+        # tensor as wgs, per row as rgs -- 33차 lever 3)
+        self.w_in = mk_pack_dequant(_pi, KDA_INPROJ_N)
+        self.w_o = mk_pack_dequant(_po, HIDDEN)
         self.f_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.g_b = mkw(KDA_OUT, KDA_D) * 0.1
         self.conv_w = mkw(KDA_QKV, 4, dt=torch.float32) * 0.2
