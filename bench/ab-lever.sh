@@ -94,7 +94,7 @@ if has onepass; then
   # 35차 (operator): every gate from one workload -- the quality documents are
   # the prefill ladder, the Korean prompts are the decode stream (~12 min)
   echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} =="
-  python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk onepass /tmp/leg.$$
+  python3 bench/onepass.py --name "$NAME" --korean-extra > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk onepass /tmp/leg.$$
 fi
 rm -f /tmp/leg.$$
 echo "== [$ARM] gate lines after traffic =="
