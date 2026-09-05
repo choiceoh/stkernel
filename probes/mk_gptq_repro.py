@@ -44,9 +44,13 @@ for p in sorted(glob.glob("/mkcache/calib2/*.pt")):
     x_diag = (torch.randn(256, k) * s[None, :]).to(DEV, torch.bfloat16)
     truth = x.float() @ w.float().T
     truth_diag = x_diag.float() @ w.float().T
-    for arm, gptq in (("rtn", False), ("gptq", True)):
+    for arm, gptq, lr in (("rtn", False, 0), ("gptq", True, 0), ("rtn+lorc16(plainSVD)", False, 16),
+                          ("gptq+lorc16", True, 16), ("gptq+lorc32", True, 32)):
         os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "1" if gptq else "0"
-        mk._CALIB_OVERRIDE = (H, ntok) if gptq else None
+        os.environ["VLLM_GLM53_MK_PACK_LORC"] = str(lr)
+        # the low-rank SVD is activation-aware through the Hessian: hand it over
+        # for the RTN+lorc arm too (GPTQ=0 keeps the rounding RTN)
+        mk._CALIB_OVERRIDE = (H, ntok) if (gptq or lr) else None
         t0 = time.time()
         try:
             pk = mk.build_mk_weight_w4(w, name=name)
