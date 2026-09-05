@@ -128,6 +128,7 @@ def main() -> int:
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
+    phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
     quality_ok = quality_total = 0
     gen_tokens = 0
 
@@ -140,7 +141,9 @@ def main() -> int:
             ttfts, hits, tok = [], [], 0
             for qi, (_, q, _old) in enumerate(cq.FACTS):
                 content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
+                t_req = time.monotonic()
                 text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens)
+                phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
                 gen_tokens += ctok
                 ttfts.append(ttft)
@@ -160,7 +163,9 @@ def main() -> int:
         if args.korean_extra:
             for r in range(2):
                 for i, p in enumerate(kq.PROMPTS):
+                    t_req = time.monotonic()
                     text, finish = kq.ask(p, args.max_tokens)
+                    phases.append((0, t_req + 0.5, time.monotonic()))   # short prompts: ~0 prefill
                     texts.append((f"ko r{r} p{i}", text, finish))
     wall = time.time() - t_dec0
     m1 = bd._parse_spec_metrics(_metrics_text(bd.METRICS))
@@ -171,21 +176,39 @@ def main() -> int:
     rec["quality"] = {"ok": quality_ok, "total": quality_total}
     print(f"=> {quality_ok}/{quality_total} correct", flush=True)
 
-    # ---- decode: windows over the whole phase (prefill-spanning windows drop
-    # out under the min_frac rule), acceptance from the counters
+    # ---- decode: only windows that lie INSIDE an answer's decode phase (after
+    # its first token, before its end) count, bucketed by the context length --
+    # decode at 128K context is heavier than at 2K, and the legs' number is
+    # the short-context one. Acceptance from the counters over the whole run.
     legacy, raw = br._spec_delta(m0, m1)
-    rates = sw.rates()
-    tok_s = gen_tokens / wall if wall > 0 else 0.0   # generated tokens per wall second INCLUDING the prefills
+    samp = sw.samples
+    by_ctx = {}
+    for i in range(len(samp) - 1):
+        (ta, sa), (tb, sb) = samp[i], samp[i + 1]
+        for ctx, t0p, t1p in phases:
+            # 1 s margins: the first window after the first token still holds
+            # prefill tail, the last one before the end holds the stream's
+            # close (3 windows per answer make one low edge window the median)
+            if ta >= t0p + 1.0 and tb <= t1p - 1.0:
+                r = (sb - sa) / max(tb - ta, 1e-6)
+                if r > 0:
+                    by_ctx.setdefault(ctx, []).append(r)
+                break
+    rates = [r for v in by_ctx.values() for r in v]
     win_med = median(rates) if rates else None
     if rates:
-        print(f"decode: windows n={len(rates)} med {win_med:.1f} [{min(rates):.1f}, {max(rates):.1f}] step/s, "
-              f"raw acc {(raw or 0) * 100:.1f}%, tokens/step {1 + args.num_spec * (raw or 0):.3f}, "
-              f"generated {gen_tokens} tokens over {wall:.0f}s (prefills included)", flush=True)
+        per = "  ".join(f"{('ko' if c == 0 else str(c // 1000) + 'K')}: n={len(v)} med {median(v):.1f}"
+                        for c, v in sorted(by_ctx.items()))
+        print(f"decode: windows n={len(rates)} med {win_med:.1f} [{min(rates):.1f}, {max(rates):.1f}] step/s "
+              f"(inside the answers only; per context: {per}), raw acc {(raw or 0) * 100:.1f}%, "
+              f"tokens/step {1 + args.num_spec * (raw or 0):.3f}, generated {gen_tokens} tokens over {wall:.0f}s",
+              flush=True)
     else:
         print("decode: no windows", flush=True)
     rec["decode"] = {"gen_tokens": gen_tokens, "wall_s": wall, "acc_raw": raw, "acc_legacy": legacy,
                      "tokens_per_step": 1 + args.num_spec * (raw or 0), "windows": rates,
-                     "windows_med": win_med, "num_spec": args.num_spec}
+                     "windows_med": win_med, "windows_by_ctx": {str(k): v for k, v in by_ctx.items()},
+                     "num_spec": args.num_spec}
 
     # ---- Korean corruption on every answer
     dirty, chars, kinds_tot = [], 0, {}
