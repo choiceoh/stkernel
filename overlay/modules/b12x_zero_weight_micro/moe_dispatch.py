@@ -8,6 +8,7 @@ selection.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import weakref
 from dataclasses import dataclass
@@ -1689,6 +1690,14 @@ def _get_static_kernel_v2(
 
     result = (compiled, mac)
     _STATIC_V2_KERNEL_CACHE[cache_key] = result
+    # The serving proof line (22차/28차 lesson: "armed" is not "serving"): the
+    # first launch of this shape in a process builds or loads the v2 kernel
+    # here, so this line in a worker log means the served wrapper took the
+    # v2 lane for that shape. The cached-kernel path is silent otherwise.
+    logging.getLogger("flashinfer.b12x").warning(
+        "[b12x static v2] lane serving: %s (mac=%d, m=%d, routed=%d, smem=%d B)",
+        name, mac, m, m * num_topk, getattr(kernel, "smem_bytes", 0),
+    )
     return result
 
 

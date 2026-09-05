@@ -1189,9 +1189,20 @@ class MoEStaticKernelV2:
         )
         tCsA2 = thr_mma.partition_A(sA2)
         tCrA2 = tiled_mma.make_fragment_A(tCsA2[None, None, None, 0])
+        # the quantized intermediate occupies rows [0, tile_m) of the 128-row
+        # SF block: partition the first tile_m-row sub-tile, as the stock FC2
+        # path does through its sfa_tile_offset (0 here)
+        if cutlass.const_expr(self.sfa_tiles_per_block > 1):
+            sSFA2_tile = cute.local_tile(
+                sSFA2,
+                cute.slice_(self.tile_shape_mnk, (None, 0, None)),
+                (0, 0, None),
+            )
+        else:
+            sSFA2_tile = sSFA2
         tCrSFA2 = self._dense_cls._partition_fragment_SFA(
             self,  # type: ignore[arg-type]
-            sSFA2[None, None, 0],
+            sSFA2_tile[None, None, 0],
             thr_mma,
             tidx,
         )
@@ -1286,7 +1297,7 @@ class MoEStaticKernelV2:
             crSFBu_full = thr_ld_SFB.retile(tCrSFBu)
             csA2 = thr_ld_A.partition_S(sA2)
             crA2 = thr_ld_A.retile(tCrA2)
-            csSFA2 = thr_ld_SFA.partition_S(sSFA2)
+            csSFA2 = thr_ld_SFA.partition_S(sSFA2_tile)
             crSFA2 = thr_ld_SFA.retile(tCrSFA2)
             csB2 = thr_ld_B.partition_S(sB2)
             crB2 = thr_ld_B.retile(tCrB2)
