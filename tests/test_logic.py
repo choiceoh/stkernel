@@ -8841,7 +8841,8 @@ def test_glm53_megakernel_contracts() -> None:
           "iteration, quant into the A buffer the running mma does not read, "
           "one __syncthreads per k-block")
     check("int a_ready = 0;\n  int pair_act = 0;" in cu
-          and "__device__ uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];" in cu
+          and "__device__ __align__(16) uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];" in cu
+          and "constexpr int MK2_UNITS_MAX = MK2_TILES_MAX * MK2_KSR_MAX * 2;" in cu
           and "__device__ unsigned int g_mk2_pair_arrive[MK2_TILES_MAX];" in cu
           and "if (c.a_ready) {  // stage the published group; nothing to quantize" in v2
           and "if (c.pair_act) pair_finish(nt);  // the tile's final store was just made" in v2

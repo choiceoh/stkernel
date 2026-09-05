@@ -1320,11 +1320,14 @@ __device__ unsigned int g_mk2_tile_arrive[MK2_TILES_MAX];
 // epilogue emits and the down launch stages (a_ready), plus the (gate,
 // up) pair arrivals, self-rearming. One set for the device: the same
 // no-overlap contract as the partials above.
-__device__ uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
+// 16 B aligned: the down launch stages it with uint4 loads (a uint8_t
+// array carries no alignment on its own)
+__device__ __align__(16) uint8_t g_mk2_aq[(size_t)KBLK_MAX * 32 * KSTEP];  // 128 KB
 __device__ float g_mk2_axs[32 * KBLK_MAX];
 __device__ unsigned int g_mk2_pair_arrive[MK2_TILES_MAX];
 #ifdef MK_PHASE_TS
-constexpr int MK2_UNITS_MAX = MK2_TILES_MAX * MK2_KSR_MAX;  // 512
+// tail units (MKGemm2Ctx::tail) double the grid
+constexpr int MK2_UNITS_MAX = MK2_TILES_MAX * MK2_KSR_MAX * 2;  // 1024
 // [unit][4]: entry, first record landed, last mma done, exit
 __device__ unsigned long long g_mk2_ts[MK2_UNITS_MAX * 4];
 #define MK2_TS(slot)                                                          \
