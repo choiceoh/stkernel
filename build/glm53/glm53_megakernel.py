@@ -483,16 +483,33 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
     dev = weight.device
     W = torch.zeros(n_pad, k, dtype=torch.float32, device=dev)
     W[:n] = weight.float() * torch.exp2(shift[:n, None])
-    H = H.to(dev, torch.float32).clone()
-    dead = torch.diag(H) == 0
+    # The real Hessians (33K tokens, outlier channels 20x, fp32 addmm) are
+    # indefinite by rounding at the 1e-7 level: the first GPTQ boot lost 9+
+    # linears to "leading minor ... not positive-definite" at 1% damping.
+    # Symmetrise, factor in float64, and raise the damping until it holds.
+    H = H.to(dev, torch.float64)
+    H = 0.5 * (H + H.T)
+    dead = torch.diag(H) <= 0
     H[dead, dead] = 1.0
     W[:, dead] = 0.0
-    damp = percdamp * torch.mean(torch.diag(H))
-    H += torch.eye(k, device=dev) * damp
-    L = torch.linalg.cholesky(H)
-    Hinv = torch.cholesky_inverse(L)
-    Hinv = torch.linalg.cholesky(Hinv, upper=True)
-    del H, L
+    mean_diag = float(torch.mean(torch.diag(H)))
+    Hinv = None
+    for damp_f in (percdamp, 10 * percdamp, 100 * percdamp, 1.0):
+        try:
+            Hd = H + torch.eye(k, device=dev, dtype=torch.float64) * (damp_f * mean_diag)
+            L = torch.linalg.cholesky(Hd)
+            Hinv = torch.cholesky_inverse(L)
+            Hinv = torch.linalg.cholesky(Hinv, upper=True).to(torch.float32)
+            del Hd, L
+            if damp_f != percdamp:
+                logger.warning("[megakernel] w4 pack GPTQ: Hessian held at damping %.0f%% "
+                               "(not at %.0f%%)", 100 * damp_f, 100 * percdamp)
+            break
+        except Exception:
+            Hinv = None
+    if Hinv is None:
+        raise RuntimeError("Hessian not positive-definite at any damping")
+    del H
     codes = torch.zeros(n_pad, k, dtype=torch.uint8, device=dev)
     d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
     sc = None
