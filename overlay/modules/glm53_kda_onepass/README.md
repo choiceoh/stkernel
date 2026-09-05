@@ -118,7 +118,11 @@ cannot be split by channel), and the same head's norm is applied in place by
 the last program to finish its recurrence. The counters are monotonic: the
 last arriver is the program that brings the count to a multiple of NV (a
 power of two), so nothing resets them and an int32 wrap is harmless; a batch
-beyond the buffer (256 requests x 16 heads) is declined, not raised.
+beyond the buffer (256 requests x 16 heads) is declined, not raised. Because
+the test is `count % NV`, a counter must only ever see launches of one NV:
+each block width owns its own buffer, `resolve()` allocates the serving
+width's (BV=8, NV=16) before any capture, and a width missing under capture
+declines to the stock chain instead of allocating.
 
 ## Offline gate
 
