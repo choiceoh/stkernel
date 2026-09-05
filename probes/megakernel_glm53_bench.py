@@ -690,7 +690,7 @@ def probe_exact(gemm2: str = "both") -> bool:
     print(f"{'case':<24}{'rel_err':>10}{'gate':>8}")
     n, k, m = mk.EXACT_FIXTURE
     x, p4, w_exact, ref = mk.exact_fixture(DEV)
-    w_back = mk.mk_w4_dequant(p4[0], p4[1], n, p4[2])  # p4[2]: 2^-shift
+    w_back = mk.mk_pack_dequant(p4, n)  # the pack's own undo (wgs or per-row rgs)
     e_pack = _rel(w_back, w_exact)  # the pack itself must round-trip
     ok &= e_pack == 0.0
     print(f"{'!' if e_pack else ' '}w4 pack roundtrip{e_pack:>17.2e}{0:>8.0e}")

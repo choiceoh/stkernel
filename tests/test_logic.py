@@ -3459,7 +3459,9 @@ def test_glm53_b12x_tuning_controls() -> None:
         "num_experts": 72,
         "num_local_experts": 72,
         "hidden_size": 2048,
-        "intermediate_size": 512,
+        # 512 is the per-rank spelling the launcher passes (admitted since
+        # 2026-09-05); 1024 (a TP2 shard) is not a deployed geometry
+        "intermediate_size": 1024,
         "num_topk": 1,
         "quant_mode": "mxfp4",
         "activation": "silu",
@@ -3533,6 +3535,136 @@ def test_glm53_b12x_tuning_controls() -> None:
         check(f'{key}=""' in profile, f"{key} must remain explicitly default-off")
 
     print("  GLM53 b12x tuning controls ..... OK")
+
+
+def test_b12x_static_v2_controls() -> None:
+    """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
+
+    `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV2` for the served
+    GLM-5.3 TP geometry only. The profile ships it empty (stock kernel) until
+    the bracket; the spec parser must reject anything it cannot spell back,
+    because the config lands in the kernel cache key and the on-disk name.
+    """
+    dispatch_path = "overlay/modules/glm53_moe/moe_dispatch.py"
+    names = {
+        "_GLM53_B12X_STATIC_V2_ENV",
+        "_STATIC_V2_DEFAULT",
+        "_parse_glm53_static_v2",
+        "_is_glm53_b12x_tp_geometry",
+        "_static_v2_config_for",
+        "_static_v2_cache_key",
+        "_static_kernel_cache_key",
+    }
+    ns = load_defs(dispatch_path, names, {"Tuple": tuple, "Dict": dict, "torch": None})
+    parse = ns["_parse_glm53_static_v2"]
+    default = ns["_STATIC_V2_DEFAULT"]
+
+    for raw in (None, "", " ", "0", "off"):
+        check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
+    check(parse("1") == default and parse("1") is not default,
+          "'1' must be a copy of the default config")
+    check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
+                      "dynamic": False, "wide": False},
+          "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
+    check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
+                                 "stamps": False, "dynamic": False, "wide": False},
+          "explicit cells override the defaults")
+    check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
+          "d selects the dynamic item schedule")
+    wide = parse("w")
+    check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
+          "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
+    check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
+    for raw in ("w,m64", "w,d", "w,a64"):
+        try:
+            parse(raw)
+            check(False, f"w must reject {raw!r}")
+        except ValueError as exc:
+            check("v3" in str(exc), "the w conflict error names v3")
+    check(parse("m64,f2,g2")["a_rows"] == 64,
+          "a_rows follows tile_m unless spelled out")
+    check(parse("m32,f2,g4,a64")["a_rows"] == 64 and parse("m32,f2,g4,s")["stamps"],
+          "a<rows> and s cells parse")
+    for raw in ("2", "m48", "m32,x1", "m32,a48", "m32,a256", "f0", "m32,,g2", "m32 f2"):
+        try:
+            parse(raw)
+            check(False, f"invalid static v2 spec must fail: {raw!r}")
+        except ValueError as exc:
+            check("VLLM_GLM53_B12X_STATIC_V2" in str(exc),
+                  "static v2 spec error must name the knob")
+
+    geometry = dict(num_experts=288, num_local_experts=288, hidden_size=4096,
+                    intermediate_size=2048, num_topk=8, quant_mode="nvfp4",
+                    activation="swigluoai_uninterleave", swiglu_limit=10.0)
+    ns["_STATIC_V2_OVERRIDE"] = None
+    ns["_GLM53_B12X_STATIC_V2"] = None
+    config_for = ns["_static_v2_config_for"]
+    check(config_for(activation_precision="fp4", **geometry) is None,
+          "unset knob keeps the stock kernel")
+    ns["_GLM53_B12X_STATIC_V2"] = dict(default)
+    check(config_for(activation_precision="fp4", **geometry) == default,
+          "the env config applies to the exact GLM TP geometry")
+    check(config_for(activation_precision="bf16", **geometry) is None,
+          "W4A16 (bf16 activations) never takes the NVFP4 v2 kernel")
+    # launch_sm120_static_moe passes the PER-RANK intermediate (2048 / TP4 =
+    # 512); the first probe run measured the stock kernel six times because
+    # the gate only knew the full 2048 (no static2_ compile, no proof line)
+    per_rank = dict(geometry, intermediate_size=512)
+    check(config_for(activation_precision="fp4", **per_rank) == default,
+          "the geometry gate must admit the per-rank intermediate the launcher passes")
+    drift = dict(geometry, num_local_experts=72)
+    check(config_for(activation_precision="fp4", **drift) is None,
+          "EP geometry (E=72 local) keeps the stock kernel")
+    ns["_STATIC_V2_OVERRIDE"] = {"tile_m": 64, "fc1": 2, "fc2": 2, "a_rows": 64,
+                                 "stamps": True}
+    check(config_for(activation_precision="fp4", **geometry)["tile_m"] == 64,
+          "the probe override wins over the env config")
+
+    key_a = ns["_static_v2_cache_key"](
+        default, activation_precision="fp4", quant_mode="nvfp4", state_E=288,
+        weight_E=288, m=8, k=4096, n=512, num_topk=8, max_rows=512, mac=48,
+        mma_tiler_mn=(32, 128), topk_ids_dtype="int32",
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
+        swiglu_limit=10.0)
+    key_b = ns["_static_v2_cache_key"](
+        dict(default, fc2=2), activation_precision="fp4", quant_mode="nvfp4",
+        state_E=288, weight_E=288, m=8, k=4096, n=512, num_topk=8, max_rows=512,
+        mac=48, mma_tiler_mn=(32, 128), topk_ids_dtype="int32",
+        input_scales_are_reciprocal=False, fast_math=True,
+        activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
+        swiglu_limit=10.0)
+    check(key_a[0] == "static_v2" and key_a != key_b,
+          "the v2 cache key carries the config so configs never alias")
+
+    src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
+    check("moe_static_kernel_v2.__file__" in src,
+          "the v2 kernel source must be in the module cache key files")
+    check("_STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None" in src,
+          "the probe override is a module-level hook, not an env read at launch")
+    kernel = open(os.path.join(
+        REPO, "overlay/modules/glm53_moe/moe_static_kernel_v2.py"),
+        encoding="utf-8").read()
+    check("class MoEStaticKernelV2" in kernel and "producer_tail" in kernel
+          and "reset_count" not in kernel,
+          "v2 keeps its pipeline states continuous across items and drains at exit")
+    check("pass_sync_barrier" not in kernel,
+          "v2 has no CTA-wide item-boundary barrier")
+    manifest = open(os.path.join(
+        REPO, "overlay", "modules", "glm53_moe", "manifest.tsv"),
+        encoding="utf-8").read()
+    check("moe_static_kernel_v2.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_kernel_v2.py\tabsent" in manifest,
+          "the v2 kernel is a new file (absent preimage) in the module manifest")
+    profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
+    check('VLLM_GLM53_B12X_STATIC_V2=w' in profile,
+          "the profile ships the v3 static kernel (spec w) as the default "
+          "(35차, operator: +7~10% on the decode MoE kernel; rollback = \"\")")
+    runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
+    check("moe_static_kernel_v2.py" in runner,
+          "the probe runner must mount the v2 kernel beside the dispatcher")
+
+    print("  b12x static v2 controls ........ OK")
 
 
 def test_mhc_probe_contracts() -> None:
@@ -7593,7 +7725,8 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
     # the pack attach: K-chunks past the lane's K
     attach = src[src.index("def _attach_mk_pack("):src.index("def _kda_owns(")]
     check("if cols > _mkmod.MK_GEMM_KMAX:" in attach
-          and "build_mk_weight_w4_kchunks(weight)" in attach,
+          and "build_mk_weight_w4_kchunks(weight, name=name," in attach
+          and 'per_row = False if getattr(method, "_opaque", False) else None' in attach,
           "a linear wider than the lane's K gets one pack per K-chunk")
 
     # the lane side
@@ -7601,7 +7734,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
                  encoding="utf-8").read()
     check("MK_GEMM_KMAX = 4096" in mksrc
           and "0 < k <= MK_GEMM_KMAX" in mksrc
-          and "def build_mk_weight_w4_kchunks(weight):" in mksrc
+          and "def build_mk_weight_w4_kchunks(weight, name=None, per_row=None):" in mksrc
           and "def _gemm_kchunks(x, packs, n_rows, bg=False):" in mksrc
           and "if isinstance(mk_pack, list):\n        return _gemm_kchunks(x, mk_pack, n_rows, bg)" in mksrc,
           "the lane's K contract is one constant; a chunked pack is a list "
@@ -8626,8 +8759,9 @@ def test_glm53_megakernel_contracts() -> None:
     _lq = cu.index("auto lq_quant = [&](int buf) {")
     _lq_end = cu.index("auto stage_a_store = [&](int kb) {", _lq)
     check(cu.count("mk_pack4(") == 4 and cu.count("mk_warp_amax(") == 5
-          and cu.count("mk_pow2_rcp(") == 4  # def + the three quantizers
-          and "mk_pow2_scale(mxq[i])" in cu[_lq:_lq_end]
+          and cu.count("mk_act_rcp(") >= 4  # def + the quantizers (33차 lever 1: exact scale)
+          and cu.count("mk_pow2_scale(") == 1  # the definition only: no activation quantizer is pow2 now
+          and "mk_act_scale(mxq[i])" in cu[_lq:_lq_end]
           and "asc[i] = sc * c.wgs;" in cu[_lq:_lq_end]
           and "sxs[r * KBLK_MAX + kb] = asc[i];" in cu
           and "__reduce_max_sync(0xffffffffu, __float_as_uint(v))" in cu
@@ -8828,7 +8962,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the serving KDA shadow is gated at the e2m1 by-design class (its "
           "MK arm streams W4 packs of the real weights); the fixture keeps "
           "the 2e-2 noise gate on grid-snapped weights")
-    check("mk_w4_dequant(_pi[0], _pi[1], KDA_INPROJ_N, _pi[2])" in pysrc_full
+    check("self.w_in = mk_pack_dequant(_pi, KDA_INPROJ_N)" in pysrc_full
           and "in_mk, o_mk = build_mk_weight_w4(f.w_in), build_mk_weight_w4(f.w_o)"
           in pysrc_full,
           "the KDA fixture snaps its weights to the e2m1 grid so both arms "
@@ -8843,8 +8977,7 @@ def test_glm53_megakernel_contracts() -> None:
           "never a local-memory byte array")
     check("def _selftest_gemm() -> bool:" in pysrc_full
           and "_selftest_w4" not in pysrc_full
-          and "ref = _mk_quant_x_ref(x) @ mk_w4_dequant(\n"
-          "        pack[0], pack[1], n, pack[2]).float().T"
+          and "ref = mk_pack_twin(x, pack, n)"
           in pysrc_full and "if not e <= 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
@@ -8852,10 +8985,13 @@ def test_glm53_megakernel_contracts() -> None:
           "the GEMM self-test gates bit-exact expansion against the torch "
           "twins (kernel activation quant x dequantized pack) and the "
           "by-design error against the stock pair")
-    check("def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0):" in pysrc_full
+    check("def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0, rgs=None):" in pysrc_full
           and "def _mk_quant_x_ref(x):" in pysrc_full
           and "torch.float8_e4m3fn" in pysrc_full
-          and "torch.exp2(exp.float())" in pysrc_full,
+          and "scale = (amax * (1.0 / 448.0)).clamp(min=1e-30)" in pysrc_full
+          and "return fmaxf(amax * (1.0f / 448.0f), 1.0e-30f);" in cu
+          and "rsc = 1.0 / scale" in pysrc_full
+          and ".clamp(-448.0, 448.0).to(torch.float8_e4m3fn)" in pysrc_full,
           "the torch twins exist: dequant of the tile-major pack and the "
           "prologue's per-128-group pow2 activation quant")
     check('".in_proj_qkvbfg_a" not in name' not in open(
@@ -8889,7 +9025,7 @@ def test_glm53_megakernel_contracts() -> None:
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
-          and "&g_gemm2_bps, mk_gemm2_kernel<4>, MK_THREADS, GEMM2_SMEM" in cu,
+          and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
           "merely run slowly (the third query is the v2 lane's blocks per SM, "
@@ -8957,13 +9093,13 @@ def test_glm53_megakernel_contracts() -> None:
           "the driver arms smlp2 behind its own knob with the exact + replay "
           "gate, the MLP hook prefers it when armed, and the serving line "
           "names the lane")
-    check("template <int RQ>" in cu
+    check("template <int RQ, bool LR>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
           and "for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group" in v2
-          and "mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);" in cu
-          and "mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);" in cu
-          and "mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);" in cu,
+          and "mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<4, false>, grid2, GEMM2_SMEM, stream, c2);" in cu,
           "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
           "m-tiles and the x lane mapping at compile time) and the host picks "
           "the instantiation from m")
@@ -9005,7 +9141,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "const int slice = is_tail ? ksr + sp : sp;" in v2
           and "s_last = (prev + 1u == (unsigned)nslices);" in v2
           and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
-          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1);" in cu,
+          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1)\n                    + (c2.lr_r > 0 ? LR_CTAS : 0);" in cu,
           "v2 tail units (VLLM_GLM53_MK_KTAIL, default off): the last tail k-blocks "
           "of every slice form a second unit at the end of the grid, folded as a "
           "second partial in fixed order; only when every slice keeps >= tail "
@@ -9230,7 +9366,9 @@ def test_glm53_megakernel_contracts() -> None:
                                   "glm53_fp8_dense.py"), encoding="utf-8").read()
     check("gemm_w4a8 as _mk_gemm" in fp8 and "maybe_arm as _mk_arm" in fp8,
           "Fp8DenseMethod.apply routes through the megakernel driver")
-    check("method._mk = _mkmod.build_mk_weight_w4(weight)" in fp8
+    check("method._mk = _mkmod.build_mk_weight_w4(weight, name=name,\n                                                       per_row=per_row)" in fp8
+          and 'per_row = False if getattr(method, "_opaque", False) else None' in fp8
+          and fp8.count('attach_mk(method, weight, cols, f"{type(model).__name__}/{name}")') == 4
           and "ENABLE_W4" not in fp8 and "build_mk_weight(" not in fp8
           and "VLLM_GLM53_MK_W4" not in fp8,
           "the build attaches the W4 pack next to the deepgemm pair on every "
@@ -9928,8 +10066,18 @@ def test_megakernel_w4_layout_functional() -> None:
                 for _ in range(k // 16)] for _ in range(n)]
     sexps_a = [[rng.randrange(-5, 6) for _ in range(k // 16)]
                for _ in range(n)]
-    wq4, ws4, _gs = mod.build_mk_weight_w4(craft(lambda r, g: codes_a[r][g],
-                                            lambda r, g: sexps_a[r][g]))
+    # the crafted tiers pin the PER-TENSOR shift path byte for byte; the
+    # per-row shift (33차 lever 3) gets its own tier below. No pack cache
+    # in a test process.
+    _env_keep = {k: os.environ.get(k) for k in
+                 ("VLLM_GLM53_MK_PACK_ROWSHIFT", "VLLM_GLM53_MK_PACK_CACHE")}
+    os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = "0"
+    os.environ["VLLM_GLM53_MK_PACK_CACHE"] = "off"
+    w_a = craft(lambda r, g: codes_a[r][g], lambda r, g: sexps_a[r][g])
+    wq4, ws4, _gs, *_rest = mod.build_mk_weight_w4(w_a)
+    check(_rest[0] is None and _rest[1] is None and _rest[2] is None,
+          "per-tensor shift: the pack carries no row scales and no "
+          "low-rank factors")
     check(tuple(wq4.shape) == (1, 1, 128, k // 2),
           "wq4 is tile-major [n_pad/128, k/128, 128, 64]")
     check(tuple(ws4.shape) == (1, 1, 128, k // 16),
@@ -9957,6 +10105,84 @@ def test_megakernel_w4_layout_functional() -> None:
                   "byte-exact tier: the stored byte is (e << 3) + mantissa, "
                   "with e carrying the pack's pow2 normalisation")
 
+    # (a') PER-ROW shift tier (33차 lever 3): the same crafted weights under
+    # VLLM_GLM53_MK_PACK_ROWSHIFT=1 -- wgs is 1, rgs[r] = 2^-shift_r with
+    # shift_r = -median of the row's covering exponents (on these groups
+    # amax = 4 x 2^s, so the covering exponent is s itself), and every
+    # stored byte carries ITS ROW's shift.
+    # Rows 16 octaves apart (base_r in [-8, 8]) with a 5-octave spread
+    # inside each row: a per-tensor shift cannot keep such a tensor inside
+    # the 11-octave window, a per-row one centres every row on its median
+    # so every group stays clamp-free and byte-exact.
+    os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = "1"
+    base_r = [rng.randrange(-8, 9) for _ in range(n)]
+    sexps_r = [[base_r[r] + rng.randrange(-2, 3) for _ in range(k // 16)]
+               for r in range(n)]
+    w_r = craft(lambda r, g: codes_a[r][g], lambda r, g: sexps_r[r][g])
+    pk_r = mod.build_mk_weight_w4(w_r)
+    check(float(pk_r[2]) == 1.0 and pk_r[3] is not None
+          and tuple(pk_r[3].shape) == (128,),
+          "per-row shift: wgs is 1 and rgs is fp32 [n_pad]")
+    rgs_l = pk_r[3].tolist()
+    q_r, sc_r = pk_r[0].tolist(), pk_r[1].tolist()
+    for r in range(n):
+        med = sorted(sexps_r[r])[(len(sexps_r[r]) - 1) // 2]  # torch.median: the lower middle
+        shift_r = int(round(-_math.log2(rgs_l[r])))
+        check(shift_r == -med,
+              f"per-row shift: row {r} shifts by minus its median exponent")
+        for kk in range(k):
+            byte = q_r[0][0][r][(kk % 128) // 2]
+            code = (byte & 0xF) if kk % 2 == 0 else (byte >> 4)
+            check(code == codes_a[r][kk // 16],
+                  f"per-row tier: the nibbles are the crafted ones (row {r})")
+            check(sc_r[0][0][r][(kk % 128) // 16]
+                  == ((sexps_r[r][kk // 16] + shift_r) << 3),
+                  "per-row tier: the stored byte carries the ROW's shift")
+    for r in range(n, 128):
+        check(rgs_l[r] == 1.0, "per-row shift: padded rows scale by 1")
+    os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = "0"
+
+    # (c) 33차 lever 2 plumbing: the calibration observer accumulates x^T x
+    # per pack under its name, dumps per rank, and the packer reads it back
+    # by name (the served GPTQ path is this file round trip, never exercised
+    # by the GPU probes, which hand the Hessian over in memory)
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        mod._CALIB["on"] = True; mod._CALIB["dumped"] = False
+        mod._CALIB["H"].clear(); mod._CALIB["ntok"].clear(); mod._CALIB["meta"].clear()
+        mod._CALIB["seen"] = 0; mod._CALIB["budget"] = 40
+        os.environ["VLLM_GLM53_MK_CALIB_DIR"] = td
+        pk_c = mod.build_mk_weight_w4(w_a)
+        mod.note_pack_name(pk_c, "Glm5Next/layers.1.self_attn.q_proj")
+        check("if torch.cuda.is_current_stream_capturing():\n        return\n    key = _pack_key(pack)"
+              in open(os.path.join(mod_dir, "glm53_megakernel.py"), encoding="utf-8").read(),
+              "calibration: the observer never runs under graph capture (its "
+              "finite-row mask syncs the device: 'operation not permitted when "
+              "stream is capturing' killed the CALIB2 boot)")
+        xs = torch.randn(24, k)
+        xs_pad = torch.cat([xs, torch.full((4, k), float("nan"))])   # padded rows
+        mod._calib_observe(xs_pad, pk_c)
+        check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
+              "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
+        mod._calib_observe(xs, pk_c)
+        check(mod._CALIB["dumped"], "calibration: the budget dumps")
+        got_c = mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k)
+        check(got_c is not None and int(got_c[1]) == 48
+              and torch.allclose(got_c[0], 2 * (xs.T @ xs), atol=1e-3),
+              "calibration: the dumped Hessian is sum x^T x over the seen rows, "
+              "keyed by the linear's name and rank 0")
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.k_proj", k) is None,
+              "calibration: an unknown linear packs RTN")
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", 2 * k) is None,
+              "calibration: a Hessian of another k is ignored (the drafter's "
+              "linear must never read the target's dump)")
+        os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "0"
+        check(mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k) is None,
+              "calibration: VLLM_GLM53_MK_PACK_GPTQ=0 ignores the dump")
+        os.environ.pop("VLLM_GLM53_MK_PACK_GPTQ", None)
+        os.environ.pop("VLLM_GLM53_MK_CALIB_DIR", None)
+        mod._CALIB["on"] = False
+
     # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
     # renormalize a group to its own (s', code') -- legal, the grid is
     # closed under x2 up to 6 -- but the dequantized VALUES must return
@@ -9970,7 +10196,12 @@ def test_megakernel_w4_layout_functional() -> None:
     sexps_b = [[rng.randrange(-3, 4) for _ in range(k // 16)]
                for _ in range(n)]
     wb = craft(lambda r, g: codes_b[r][g], lambda r, g: sexps_b[r][g])
-    wq4, ws4, _gs2 = mod.build_mk_weight_w4(wb)
+    wq4, ws4, _gs2, *_rest2 = mod.build_mk_weight_w4(wb)
+    for _k, _v in _env_keep.items():
+        if _v is None:
+            os.environ.pop(_k, None)
+        else:
+            os.environ[_k] = _v
     q, sc = wq4.tolist(), ws4.tolist()
     for r in range(n):
         for kk in range(k):
@@ -11597,6 +11828,7 @@ if __name__ == "__main__":
     test_ep_fixed_output_initialised()
     test_b12x_zero_weight_micro()
     test_glm53_b12x_tuning_controls()
+    test_b12x_static_v2_controls()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()

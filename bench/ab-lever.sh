@@ -2,7 +2,9 @@
 # One lever arm on the PRODUCTION defaults (profiles/glm53.env): boot with the
 # given caller env, then the legs. Usage: ab-lever.sh <NAME> "<caller env>" [reps]
 #   SKIP_BOOT=1 reuses the live boot. Records --name NAME --tag cand.
-#   LEGS=decode,prefill,accept,quality,korean (default: all) picks the legs --
+#   LEGS=decode,prefill,accept,quality,korean (default: all) picks the legs;
+#   LEGS=onepass runs bench/onepass.py instead (all five gates from one
+#   workload, ~12 min; 35차) --
 #   the 32차 leg matrix: an EXPLORATION arm (a decode-kernel change) runs
 #   LEGS=decode,prefill8k QUALITY_CTX=2000,32000 (boot + ~5 min), a PROMOTION
 #   arm runs everything. SHORT=1 is the old alias for decode,prefill.
@@ -63,8 +65,23 @@ for i in $(seq 1 $((HEALTH_BUDGET_S / 15))); do
 done
 [ "$up" = 1 ] || snap "never became healthy"
 sleep 20
+# 35차: the lever's PROOF is the container's environment, not the caller's
+# line (a lever once read as not applied and the cause was never found)
+if [ -n "${LEVER_ENV:-}" ]; then
+  _keys=$(for kv in $LEVER_ENV; do echo "${kv%%=*}"; done | paste -sd'|')
+  echo "== [$ARM] lever env inside the head container =="
+  docker exec glm53 env 2>/dev/null | grep -E "^($_keys)=" || echo "  (none of $_keys set in the container!)"
+fi
 echo "== [$ARM] fingerprint (head log) =="
 grep -hE "armed=|MK W4 packs|fp8-dense\] (Drafter|DFlash|Glm)|drafter lane|mla shadow|mla SHADOW|selftest mla|kda layout gate|kda shadow|KDA shadow|prep-fused|split-K|splitk|union|PDL|pdl|prefetch|early.fc|KV pinned|Available KV|DISARM|drift" "$LOGD/glm53.log" 2>/dev/null | grep -v "GET /\|POST /" | cut -c1-230 | tail -24
+# 33차: the W4 packs' provenance -- gptq=N is the serving proof of the GPTQ
+# packs; gptq=0 with calibration dumps on disk means the packer fell back
+# (cache purged, names mismatched) and production is silently RTN
+grep -hE "megakernel packs:" "$LOGD/glm53.log" 2>/dev/null | sed -E "s/^.*\[fp8-dense\] //" | cut -c1-200 | tail -2
+if grep -hE "megakernel packs:" "$LOGD/glm53.log" 2>/dev/null | grep -q "Glm5Next.*gptq=0" \
+   && [ -n "$(ls "$HOME/glm53-cache/mkcalib/rank0" 2>/dev/null)" ]; then
+  echo "WARNING: [$ARM] the target's W4 packs are RTN (gptq=0) although calibration dumps exist -- check VLLM_GLM53_MK_PACK_GPTQ and the pack cache"
+fi
 if has decode; then
   echo "== [$ARM] decode leg $(date +%T) reps=$REPS =="
   env BENCH_MODEL=glm-5.3-flash python3 bench/bracket.py leg --name "$NAME" --tag cand --reps "$REPS" --out "$OUT" > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk decode /tmp/leg.$$
@@ -87,6 +104,12 @@ fi
 if has korean; then
   echo "== [$ARM] korean $(date +%T) =="
   python3 bench/korean-corruption.py 2 400 > /tmp/leg.$$ 2>&1; tail -12 /tmp/leg.$$; chk korean /tmp/leg.$$
+fi
+if has onepass; then
+  # 35차 (operator): every gate from one workload -- the quality documents are
+  # the prefill ladder, the Korean prompts are the decode stream (~12 min)
+  echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} =="
+  python3 bench/onepass.py --name "$NAME" --korean-extra > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk onepass /tmp/leg.$$
 fi
 rm -f /tmp/leg.$$
 echo "== [$ARM] gate lines after traffic =="
