@@ -1352,6 +1352,12 @@ constexpr int LR_CTAS = 16;   // reducer blocks per launch (k / 16 each)
 constexpr int LR_KS = 128;    // k per staged chunk: 32 x 128 x + 32 x 128 B bf16 = 16 KB
 constexpr int LR_PITCH = LR_KS + 8;  // smem row pitch (bf16): +16 B breaks the 32-way
                                      // bank conflict of 256 B rows (rows differ per lane)
+// The epilogue's staging after the main loop (the rings are free then):
+// t [32][LR_MAX] fp32, this tile's A rows [128][LR_APITCH] bf16 (pitch 34 =
+// 17 words: consecutive columns hit consecutive banks), and the correction
+// tile [32][128] fp32 the stores add. 4 + 8.5 + 16 KB must fit the ring.
+constexpr int LR_APITCH = LR_MAX + 2;
+constexpr int LR_EPI_BYTES = 32 * LR_MAX * 4 + 128 * LR_APITCH * 2 + 32 * 128 * 4;
 __device__ __align__(16) float g_mk2_lr_t[2][32 * LR_MAX];
 __device__ unsigned g_mk2_lr_flag[2];
 __device__ unsigned g_mk2_lr_done[2];
@@ -1526,7 +1532,11 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       return;
     }
   }
-  float* s_lr_t = (float*)saq;   // [32][LR_MAX] fp32 = 4 KB of the 8 KB A ring
+  static_assert(!LR || GEMM2_SMEM - MK_SMEM_ALIGN >= LR_EPI_BYTES,
+                "the low-rank epilogue staging must fit the v2 smem (raise VLLM_GLM53_MK_NBUF2 to 3)");
+  float* s_lr_t = (float*)sb0;                                  // [32][LR_MAX]
+  __nv_bfloat16* s_lr_a = (__nv_bfloat16*)(sb0 + 32 * LR_MAX * 4);   // [128][LR_APITCH]
+  float* s_lr_c = (float*)(sb0 + 32 * LR_MAX * 4 + 128 * LR_APITCH * 2);  // [32][128]
   const int bid = (int)blockIdx.x - (LR ? LR_CTAS : 0);
   const int kblk = c.k / KSTEP;
   const int ksr = c.ksr;
@@ -1849,26 +1859,44 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // ---- 33차 lever 4: wait for the reducer blocks' t, stage it, and add
   // t[row] . lr_a[col] to every final store; the launch's last final store
   // rearms the scratch for the next launch (graph replay reuses it).
+  // After the main loop (every thread past it: the first __syncthreads
+  // below), the smem rings are free: stage t and THIS tile's 128 rows of
+  // lr_a with coalesced loads, then compute the correction tile
+  // corr[r][cc] = t[r] . A[nt*128 + cc] cooperatively from smem, so the
+  // stores add one smem read each. (The first form -- each store walking
+  // its A row from L2 -- was latency-bound: 30-50 us per tile on the
+  // stamps, more than the main loop itself.)
   auto lr_wait = [&]() {
     if (threadIdx.x == 0) {
       while (*((volatile unsigned*)&g_mk2_lr_flag[c.lr_slot]) < (unsigned)LR_CTAS)
         __nanosleep(64);
       __threadfence();
     }
-    __syncthreads();
+    __syncthreads();   // flag seen; the main loop's smem reads are all done
     const float* t = g_mk2_lr_t[c.lr_slot];
     for (int i = threadIdx.x; i < 32 * LR_MAX; i += MK_THREADS) s_lr_t[i] = __ldcg(t + i);
+    const int rq = c.lr_r / 2;   // bf16 pairs per A row
+    for (int i = threadIdx.x; i < 128 * rq; i += MK_THREADS) {
+      const int row = i / rq, q = i - row * rq;
+      *(__nv_bfloat162*)(s_lr_a + row * LR_APITCH + q * 2) =
+          *(const __nv_bfloat162*)(c.lr_a + ((size_t)nt * 128 + row) * c.lr_r + q * 2);
+    }
+    __syncthreads();
+    const int cc = (int)threadIdx.x & 127, r0 = (int)threadIdx.x >> 7;
+    const __nv_bfloat16* a = s_lr_a + cc * LR_APITCH;
+    for (int r = r0; r < c.m; r += 2) {
+      const float* t_r = s_lr_t + r * LR_MAX;
+      float acc_lr = 0.0f;
+      for (int j = 0; j < c.lr_r; j += 2) {
+        const __nv_bfloat162 av = *(const __nv_bfloat162*)(a + j);
+        acc_lr += t_r[j] * __low2float(av) + t_r[j + 1] * __high2float(av);
+      }
+      s_lr_c[r * 128 + cc] = acc_lr;
+    }
     __syncthreads();
   };
   auto lr_term = [&](int r, int col) -> float {
-    const __nv_bfloat16* a = c.lr_a + (size_t)col * c.lr_r;   // col < n_pad
-    const float* t = s_lr_t + r * LR_MAX;
-    float acc_lr = 0.0f;
-    for (int j = 0; j < c.lr_r; j += 2) {
-      const __nv_bfloat162 av = *(const __nv_bfloat162*)(a + j);
-      acc_lr += t[j] * __low2float(av) + t[j + 1] * __high2float(av);
-    }
-    return acc_lr;
+    return s_lr_c[r * 128 + (col - nt * 128)];
   };
   auto lr_done = [&]() {
     __syncthreads();

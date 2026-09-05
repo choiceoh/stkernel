@@ -533,14 +533,17 @@ and the inner loop are unchanged.
 4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
    8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
    from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`
-   and the served product is `x W_q^T + (x B^T) A^T`. The v2 kernel adds it:
-   `LR_CTAS` extra blocks at the front of the grid reduce `t = x B^T` into a
-   per-stream scratch and raise a flag; a tile's final store waits for the
-   flag (by then the reducers finished long ago -- they are the lowest
-   block indices, dispatched first), adds `t[row] . A[col]`, and the
-   launch's last final store rearms the scratch (graph replay reuses it).
-   v1 / KDA / SMLP lanes serve such a pack WITHOUT the correction (said
-   once on stderr).
+   and the served product is `x W_q^T + (x B^T) A^T` (the correction on the
+   unquantized x; `mk_pack_twin` is the reference). The v2 kernel's `LR`
+   instantiation adds it -- the plain instantiation carries none of the
+   code: `LR_CTAS` extra blocks at the front of the grid reduce `t = x B^T`
+   into a per-stream scratch and raise a flag (they are the lowest block
+   indices, dispatched first; on the stamps they publish by 10-15 us); a
+   tile's final store waits for the flag, stages t and the tile's 128 rows
+   of A in the freed smem rings, computes the correction tile once, adds it
+   per store, and the launch's last final store rearms the scratch (graph
+   replay reuses it). v1 / KDA / SMLP lanes serve such a pack WITHOUT the
+   correction (said once on stderr).
 
 Gates: the exact fixture (weights on the grid: the correction is zero, the
 per-row shift is byte-exact, the twin is the reference) and the by-design
