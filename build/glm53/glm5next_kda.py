@@ -386,15 +386,15 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         if _mk is not None and _mk(self):
             from vllm.model_executor.layers import glm53_megakernel as _mkmod
 
-            if _mkmod.ENABLE_KDA and _mkmod._ARMED["kda"]:
+            if _mk_shadow_on:
+                # Shadow wins when both knobs are set. Captured steps keep
+                # stock; eager steps compare cloned MK states below.
+                if not torch.cuda.is_current_stream_capturing():
+                    _mk_shadow = _mk_arm(self, hidden_states)
+            elif _mkmod.ENABLE_KDA and _mkmod._ARMED["kda"]:
                 # Armed: the launch is the real path (capturable, and a
                 # failure must stay loud -- no except back to stock).
                 return _mkmod.kda_block(self, hidden_states, positions)
-            if (
-                _mk_shadow_on
-                and not torch.cuda.is_current_stream_capturing()
-            ):
-                _mk_shadow = _mk_arm(self, hidden_states)
         num_tokens = hidden_states.size(0)
         # One merged GEMM for q, k, v, b, f_a, g_a (replaces 6 separate GEMMs).
         projected = self.in_proj_qkvbfg_a(hidden_states)[0]

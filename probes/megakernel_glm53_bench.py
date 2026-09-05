@@ -495,9 +495,30 @@ def probe_gemm_sweep(iters: int, stamps: bool, shapes=None) -> bool:
     return ok
 
 
+def native_smlp_activation(limit: float):
+    """Return the image's CUDA activation and its identity, or fail closed.
+
+    A Torch fallback adds several launches to the reference chain and turns
+    their launch cost into an apparent fusion win. Select forward_cuda
+    explicitly so a CustomOp dispatch override cannot silently select it.
+    """
+    try:
+        from vllm.model_executor.layers.activation import SiluAndMulWithClamp
+
+        act = SiluAndMulWithClamp(swiglu_limit=limit)
+        forward = act.forward_cuda
+        if not callable(forward):
+            raise TypeError("forward_cuda is not callable")
+    except Exception as exc:
+        raise RuntimeError("native SMLP baseline unavailable: "
+                           "SiluAndMulWithClamp.forward_cuda is required") from exc
+    identity = f"{forward.__module__}.{forward.__qualname__}"
+    return forward, identity
+
+
 def probe_smlp(iters: int) -> bool:
     """MK_SEG_SMLP: the dense MLP as one launch vs the three-launch chain
-    (W4 gate_up, torch clamped SwiGLU, W4 down) on the shared expert's and
+    (W4 gate_up, native clamped SwiGLU, W4 down) on the shared expert's and
     the dense layers' per-rank geometry. Exact gate on e2m1-grid weights,
     then timing on random weights, DRAM-cold (a second pack pair per shape
     for the back-to-back column, as probe_gemm does)."""
@@ -505,6 +526,13 @@ def probe_smlp(iters: int) -> bool:
 
     ok = True
     limit = 10.0
+    try:
+        act_fn, activation_identity = native_smlp_activation(limit)
+    except RuntimeError as exc:
+        print(f"!smlp: {exc}")
+        return False
+    print(f"stock activation: {activation_identity} (native CUDA; no fallback)")
+    print("chain_us/x2_chain: v1 GEMM; chain2_x2: v2 GEMM (lanes forced explicitly)")
     ext = mk._build()
     # the probe drives the extension directly (no arm()), so the lane is
     # "present" when the driver and the binding have it, not when armed
@@ -545,36 +573,25 @@ def probe_smlp(iters: int) -> bool:
         gu_pack2 = mk.build_mk_weight_w4(torch.randn(n_gu, k, dtype=torch.bfloat16, device=DEV) * 0.05)
         d_pack2 = mk.build_mk_weight_w4(torch.randn(n_out, n_int, dtype=torch.bfloat16, device=DEV) * 0.05)
 
-        # the stock chain's activation is ONE CUDA launch (vLLM's
-        # silu_and_mul_with_clamp); torch's clamp/sigmoid/mul would be five
-        # and flatter the fused arm
-        try:
-            from vllm.model_executor.layers.activation import SiluAndMulWithClamp
-            act = SiluAndMulWithClamp(limit)
-            act_fn = lambda gu: act(gu)  # noqa: E731
-        except Exception:
-            def act_fn(gu):
-                g = gu[:, :n_int].float().clamp(max=limit)
-                u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
-                return (g * torch.sigmoid(g) * u).to(torch.bfloat16)
-
         def chain(gp, dp):
             return mk._gemm_call(act_fn(mk._gemm_call(x, gp, n_gu)), dp, n_out)
 
-        t_chain = _time(lambda: chain(gu_pack, d_pack), iters, hot=(x,))
-        t_fused = _time(lambda: mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit), iters, hot=(x,))
-        t_chain2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)), iters, hot=(x,)) / 2
-        t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
-                                  mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
-                         iters, hot=(x,)) / 2
+        with mk._gemm_probe_scope():
+            _lane(ext, 0)
+            t_chain = _time(lambda: chain(gu_pack, d_pack), iters, hot=(x,))
+            t_fused = _time(lambda: mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit), iters, hot=(x,))
+            t_chain2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)), iters, hot=(x,)) / 2
+            t_fused2 = _time(lambda: (mk._smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
+                                      mk._smlp_call(x, gu_pack2, d_pack2, n_gu, n_int, n_out, limit)),
+                             iters, hot=(x,)) / 2
         extra = ""
         if has2:
             # the v2 standalone chain (gate_up v2 -> act -> down v2) and the
             # two-launch fused lane, back to back on the two pack pairs
-            _lane(ext, 1)
-            t_chain2_v2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)),
-                                iters, hot=(x,)) / 2
-            _lane_restore(ext)
+            with mk._gemm_probe_scope():
+                _lane(ext, 1)
+                t_chain2_v2 = _time(lambda: (chain(gu_pack, d_pack), chain(gu_pack2, d_pack2)),
+                                    iters, hot=(x,)) / 2
             t_f2 = _time(lambda: mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
                          iters, hot=(x,))
             t_f2x2 = _time(lambda: (mk._smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit),
@@ -921,9 +938,39 @@ def probe_mhc_dispatch(iters: int, sk: int) -> bool:
     return ok
 
 
+def probe_boot_gates(mk, segs) -> bool:
+    """Run selected boot self-tests before any timings, without arm() side effects.
+
+    GEMM's boot gate includes all v2 row classes and the odd-start v1 split;
+    KDA's includes short verify queries and all written recurrent positions.
+    The usual probe remains lightweight unless --boot-gates is requested.
+    """
+    names = []
+    for seg in segs:
+        name = "gemm" if seg == "exact" else seg
+        if name not in names:
+            names.append(name)
+        if seg == "smlp" and hasattr(mk, "_smlp2_call") and "smlp2" not in names:
+            names.append("smlp2")
+    for name in names:
+        try:
+            result = getattr(mk, f"_selftest_{name}")()
+            if result is not True:
+                print(f"!boot selftest {name}: returned {result!r}")
+                return False
+        except Exception as exc:
+            print(f"!boot selftest {name}: {type(exc).__name__}: {exc}")
+            return False
+        print(f"boot selftest {name}: PASS")
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=30)
+    ap.add_argument("--boot-gates", action="store_true",
+                    help="run selected boot self-tests (including GEMM row classes "
+                         "and short KDA queries) before timings; stop on failure")
     ap.add_argument("--gemm-shapes", default=None,
                     help="m:n:k,... for the gemm table AND --gemm-sweep (default: "
                          "the decode sweep + the production small shapes / "
@@ -1000,6 +1047,9 @@ def main() -> int:
     print(f"segments={','.join(segs)} stock={args.stock} "
           f"sinkhorn_repeat={sk}"
           f"{' (driver default)' if args.sinkhorn is None else ''}")
+    if args.boot_gates and not probe_boot_gates(mk, segs):
+        print("VERDICT: FAIL (boot selftest failed; timings skipped)")
+        return 1
     ok = True
     sweep = ([int(v) for v in args.ksr2_sweep.split(",")]
              if args.ksr2_sweep else None)

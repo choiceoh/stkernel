@@ -4605,3 +4605,42 @@ prompt_embeds must be provided")하고 `{"prompt": {"prompt_token_ids": ...}}` �
 
 **이 부팅이 현재 프로덕션.** 33차의 웜업 승격 판정(영수증·첫 요청 랜딩)은 두 부팅 모두에서
 성립 — 웜업은 런처 쪽 변경이라 서빙 구성과 직교한다.
+
+## 메가커널 정확성 리뷰 수정 (2026-09-05, 기준 3b2f180, 미배포)
+
+정확성 수정: MHC의 deferred-publication 분기에 shared tile 재사용 동기화,
+LOCALQ의 홀수 시작 split에 상대 버퍼 인덱스, KDA 짧은 verify 요청의 retained
+conv window 전체 이동. MLA 실KV shadow 실패는 Python DISARM에 그치지 않고
+worker 오류로 전파하며, KDA shadow는 takeover보다 우선한다.
+
+검증 수정: 비유한 오차·분모 norm overflow를 실패 처리하고, GEMM 부팅 exact 게이트가
+실제 v1 global/local 및 v2 M=8/16/32를 선택·검사한 뒤 원래 probe 설정을 복원한다.
+KDA 부팅 게이트는 nq=1/4/6/8과 모든 쓰인 recurrent 슬롯을 검사한다.
+`tests/test_megakernel_*regressions.py`는 실제 Python 함수 및 CUDA에서 추출한
+제어문을 CPU에서 실행한다. 최초 세 CUDA 결함을 되살린 변형이 각 검사에서 실패했다.
+이 회귀 검사들은 `tests/test_logic.py`의 일반 배포 검사에 포함했다.
+
+새 `probes/mk_smlp2_concurrent_probe.py`는 v2/native-activation 체인과 SMLP2를
+단독 및 MoE 양쪽 발행 순서의 CUDA graph로 비교한다. 출력·유한성·반복 replay를
+통과한 뒤 정/역순으로 시간을 수집한다. 기존 벤치의 조용한 Torch activation
+fallback도 제거했다. **새 성능 수치와 서빙 품질 결과는 아직 없다.**
+
+검증 상태:
+
+- 로컬 `tests/test_logic.py` **6,236 checks + 새 회귀 검사 38개 통과**.
+  Python 문법, glm53/dsv4 합성 및 소스 일치, `git diff --check`도 통과했다.
+- srv2 `glm53`, srv4 `glm53-worker` 및 외부 테넌트가 가동 중이어서 GPU 실행과
+  racecheck는 수행하지 않았다. 서비스 재기동·배포·기본값 변경은 하지 않았다.
+- CUDA compile-only 시도: srv2의 별도 runc 컨테이너, GPU 장치 없음, CPU 1개,
+  RAM/swap 3 GiB, network=none, 단독 `/tmp/stkernel-mk-review-inGtyiFg` 마운트.
+  이미지 `a3dd4c0f6cbb`, torch 2.13.0+cu130 / CUDA 13.0, sm_121a 플래그.
+  약 29초 후 메모리 한도로 OOMKilled=true / exit 137. **컴파일 성공이 아니다.**
+  실패 소스 SHA256 `5b2ca90381fe85fca0249465e7c800343563a2be86ed55e08df9e33f32fc8ff3`;
+  이후 호스트 probe-state 음수 ksr2 복원 범위만 수정했고 재시도하지 않았다.
+  로그는 srv2의 위 임시 디렉터리에 있으며 SHA256은
+  `ca83fbeed0f7fb3aca25781265168e8a49a273d8cfa9b2706eaacd71418bd961`.
+
+다음 GPU 검증: idle window에서 위 README의 `--boot-gates` 벤치,
+MHC racecheck, SMLP2 동시 실행 프로브를 수행한 뒤
+서빙 성능·한국어·수용률을 별도 브래킷으로 판단한다. 기존 SMLP2 65.9→28.2 µs
+마이크로벤치 값을 이번 수정의 실측 이득으로 재사용하지 않는다.
