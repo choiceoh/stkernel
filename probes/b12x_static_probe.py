@@ -276,7 +276,9 @@ def main() -> int:
             print(f"{label} lane taken: "
                   + ", ".join(k[0] + ":" + "/".join(str(x) for x in k[1:6])
                               for k in md._STATIC_V2_KERNEL_CACHE))
-            for case, ids_, w_, xx, oo in cases:
+            # the served shapes first; the 640-pair case runs after every
+            # config's sweep (a device fault there is sticky for the process)
+            for case, ids_, w_, xx, oo in cases[:2]:
                 ref_a, noise, scale = refs[case]
                 v2_out = eager_out(ids_, w_, xx, oo)
                 diff = (v2_out.float() - ref_a.float()).abs().max().item()
@@ -311,6 +313,31 @@ def main() -> int:
                     _stamp_summary(st, spec)
         except Exception as exc:  # noqa: BLE001 -- one config must not end the run
             print(f"{label} ERROR: {type(exc).__name__}: {str(exc)[:400]}")
+        finally:
+            md._STATIC_V2_OVERRIDE = None
+
+    # the static backend's largest shape (640 pairs, experts over 3 m-tiles),
+    # after every timing row is in: a fault here must not cost the sweep
+    for spec in specs:
+        cfg = md._parse_glm53_static_v2(spec)
+        label = f"v2[{spec}]"
+        try:
+            md._STATIC_V2_OVERRIDE = cfg
+            for case, ids_, w_, xx, oo in cases[2:]:
+                ref_a, noise, scale = refs[case]
+                v2_out = eager_out(ids_, w_, xx, oo)
+                diff = (v2_out.float() - ref_a.float()).abs().max().item()
+                verdict = "PASS" if diff <= max(4 * noise, 1e-2 * scale) else "FAIL"
+                print(f"numerics {label} vs stock [{case}] max|diff| {diff:.3e} "
+                      f"-> {verdict}")
+                if verdict == "FAIL":
+                    d = (v2_out.float() - ref_a.float()).abs()
+                    rows = d.max(dim=1).values.tolist()
+                    print("   per-row max: " + " ".join(f"{r:.2e}" for r in rows[:24]))
+        except Exception as exc:  # noqa: BLE001
+            print(f"{label} ERROR (640-pair numerics): {type(exc).__name__}: "
+                  f"{str(exc)[:300]}")
+            break
         finally:
             md._STATIC_V2_OVERRIDE = None
 

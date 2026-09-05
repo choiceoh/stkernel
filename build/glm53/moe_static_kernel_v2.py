@@ -1903,9 +1903,13 @@ class MoEStaticKernelV2:
                         self.epilog_sync_barrier.arrive_and_wait()
 
                         rows_offset = Int32(epi_m) * Int32(self.epi_tile[0])
-                        warp_epi_rows = (
-                            valid_rows - tile_m_base - rows_offset - warp_m_base
-                        )
+                        # clamp by THIS tile's rows (valid_tile_rows), not the
+                        # expert's: the stock formula (valid_rows - tile_m_base
+                        # - ...) only works because its tile_m is 128 whenever
+                        # an expert has more than 64 rows; with tile_m 32 an
+                        # 80-row expert made warps read past sC (T=80 probe:
+                        # illegal address) and scatter zero-weight garbage
+                        warp_epi_rows = valid_tile_rows - rows_offset - warp_m_base
                         if warp_epi_rows > Int32(64):
                             warp_epi_rows = Int32(64)
                         if warp_epi_rows < Int32(0):
