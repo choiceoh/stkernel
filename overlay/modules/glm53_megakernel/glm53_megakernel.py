@@ -618,6 +618,9 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
     return out
 
 
+_GEMM_CAPTURED = {"said": False}
+
+
 def gemm_w4a8(x, mk_pack, n_rows, bg=False):
     """Fp8DenseMethod.apply hook: None = not armed/eligible (stock runs).
 
@@ -626,6 +629,22 @@ def gemm_w4a8(x, mk_pack, n_rows, bg=False):
     to by construction."""
     if not _ARMED["gemm"] or x.dim() != 2 or mk_pack is None:
         return None
+    # the served decode is a graph replay: say once, at capture, which lane
+    # variant the graph bakes (the .cu reads the same env once: 32차 §13)
+    if not _GEMM_CAPTURED["said"]:
+        try:
+            import torch
+            if torch.cuda.is_current_stream_capturing():
+                _GEMM_CAPTURED["said"] = True
+                # the extension's plan (grid, ksr, units, localq, lgrid, bar),
+                # not the env string; v2 has no plan query, so its knob is read
+                plan = _EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)
+                logger.warning("[megakernel] gemm lane CAPTURED into the decode graph: "
+                               "M=%d plan grid=%d ksr=%d localq=%d gemm2=%d",
+                               int(x.shape[0]), int(plan[0]), int(plan[1]), int(plan[3]),
+                               1 if _flag("VLLM_GLM53_MK_GEMM2") else 0)
+        except Exception:
+            _GEMM_CAPTURED["said"] = True
     if isinstance(mk_pack, list):
         return _gemm_kchunks(x, mk_pack, n_rows, bg)
     if mk_pack[0] is None:

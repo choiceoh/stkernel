@@ -354,6 +354,11 @@ ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_O
 for _k in ${_vllm_keys:-}; do
   if [ -n "${!_k:-}" ]; then ENVV="$ENVV -e $_k=${!_k}"; fi
 done
+# 29차: the torch.compile/AOT cache key did not carry num_speculative_tokens --
+# a K=5 boot wrote drafter artifacts a K=7 boot then loaded and died on
+# ('expected size 7==5'). The fp8-dense module registers VLLM_GLM53_SPEC_K as a
+# compile factor; this is the value it hashes.
+ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
 
 # MK-KDA indexes the conv state as DS (dim, state_len). vLLM's default is SD,
 # and the segment's layout gate then rejects EVERY layer for the life of the

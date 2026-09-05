@@ -1114,9 +1114,35 @@ def _memo_slot_mappings_by_layer():
 _INSTALLED = False
 
 
+_SAMPLER_PROFILE_SKIPPED = False
+
+
+def _maybe_skip_sampler_profile() -> None:
+    """VLLM_GLM53_SKIP_SAMPLER_PROFILE=1: skip the profile-time dummy sampler
+    run (a few MB of sampler scratch at max batch, nothing the KV budget
+    misses). 29차: the K5 boot spent 45 minutes inside that run's Triton
+    kernel init; this is the one-line try before any diagnosis (operator)."""
+    global _SAMPLER_PROFILE_SKIPPED
+    if _SAMPLER_PROFILE_SKIPPED or os.environ.get(
+            "VLLM_GLM53_SKIP_SAMPLER_PROFILE", "0").strip().lower() in ("", "0", "off", "false"):
+        return
+    try:
+        from vllm.v1.worker.gpu.model_runner import GPUModelRunner
+    except Exception:
+        return
+
+    def _skip(self, *a, **k):
+        logger.warning("[prep-fused] profile-time dummy sampler run SKIPPED "
+                       "(VLLM_GLM53_SKIP_SAMPLER_PROFILE)")
+
+    GPUModelRunner._dummy_sampler_run = _skip
+    _SAMPLER_PROFILE_SKIPPED = True
+
+
 def install_glm53_prep_fused() -> bool:
     """Patch the runner classes once. Safe to call from model __init__."""
     global _INSTALLED
+    _maybe_skip_sampler_profile()
     mode = prep_fused_mode()
     if mode == "off" or _INSTALLED:
         return _INSTALLED

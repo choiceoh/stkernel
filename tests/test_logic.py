@@ -6793,6 +6793,11 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
           "slot stride; the gate names the recurrent strides it refuses")
     st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
     kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
+    gl = mk[mk.index("def gemm_w4a8(x, mk_pack, n_rows, bg=False)"):]
+    gl = gl[:gl.index("\ndef ", 1)]
+    check("gemm lane CAPTURED into the decode graph" in gl and "plan grid=%d ksr=%d localq=%d gemm2=%d" in gl
+          and "_EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)" in gl,
+          "the GEMM lane says once at capture which variant the graph bakes")
     kb = mk[mk.index("def kda_block(layer, hidden_states, positions)"):mk.index("class KdaShadowArm")]
     check("kda lane CAPTURED into the decode graph" in kb and "_KDA_CAPTURED" in kb,
           "kda_block says once when it is captured into the decode graph -- "
@@ -7053,6 +7058,38 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
     prof = open("profiles/glm53.env", encoding="utf-8").read()
     assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
+
+
+def test_spec_k_compile_factor() -> None:
+    """29차: num_speculative_tokens must be part of the compile-cache key --
+    the launcher forwards SPEC_K as VLLM_GLM53_SPEC_K and the fp8-dense
+    module registers it as a compile factor (a K=5 boot's drafter artifacts
+    killed the following K=7 boot)."""
+    import os
+    fd = open(os.path.join(REPO, "overlay/modules/glm53_fp8_dense/glm53_fp8_dense.py"), encoding="utf-8").read()
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    check('_register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)' in fd
+          and 'ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"' in launcher,
+          "SPEC_K reaches the container and keys the compile cache")
+    print("  spec_k compile factor .. OK")
+
+
+def test_sampler_profile_skip_contract() -> None:
+    """29차: VLLM_GLM53_SKIP_SAMPLER_PROFILE=1 replaces the profile-time dummy
+    sampler run with a loud no-op (the K5 boot's 45-minute Triton init);
+    the profile ships it off and the installer applies it before its own
+    mode check so an 'off' prep-fused boot still gets it."""
+    import os
+    pf = open(os.path.join(REPO, "overlay/modules/glm53_prep_fused/glm53_prep_fused.py"), encoding="utf-8").read()
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    inst = pf[pf.index("def install_glm53_prep_fused()"):]
+    check("GPUModelRunner._dummy_sampler_run = _skip" in pf
+          and "profile-time dummy sampler run SKIPPED" in pf
+          and inst.index("_maybe_skip_sampler_profile()") < inst.index("mode = prep_fused_mode()")
+          and re.search(r"^VLLM_GLM53_SKIP_SAMPLER_PROFILE=0$", prof, re.M) is not None,
+          "the sampler-profile skip is env-gated, loud, applied before the mode "
+          "check, and off in the profile")
+    print("  sampler profile skip contract .. OK")
 
 
 def test_dev_lab_contracts() -> None:
@@ -7728,8 +7765,8 @@ def test_osar_prefetch_hints_contract() -> None:
 
     profile = open(os.path.join(REPO, "profiles", "glm53.env"),
                    encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=0$", profile, re.M) is not None,
-          "the prefetch knob is declared off in the profile")
+    check(re.search(r"^VLLM_GLM53_AR_PREFETCH=1$", profile, re.M) is not None,
+          "the prefetch knob is declared ON in the profile (32차 §14: adopted with KDA+LOCALQ)")
     check(re.search(r"^VLLM_GLM53_MK_PDL=1$", profile, re.M) is not None,
           "PDL is the profile default for the MK launches (2026-09-04)")
     ab = open(os.path.join(REPO, "launchers", "ab-glm53.sh"),
@@ -8605,7 +8642,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the fp8-dense hook marks the shared expert's linears background "
           "(the aux-stream pair beside the routed MoE) for the lane")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=0$", prof, re.M) is not None,
+    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=1$", prof, re.M) is not None,
           "the profile DECLARES the local-quant knob (off until its bracket): "
           "the launcher forwards only declared keys, so an undeclared knob "
           "could not be flipped at all")
@@ -9323,10 +9360,16 @@ def test_megakernel_core_is_shared() -> None:
                   "the segment would arm on its self-test and then serve "
                   "nothing, with the boot log saying otherwise")
 
-    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_KDA_SHADOW"):
-        check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
-              f"glm53 must ship {knob}=0 -- MK-KDA never served (layout gate, "
-              "open state-index contract); adoption is bracket-only")
+    check(re.search(r"^VLLM_GLM53_MK_KDA_SHADOW=0$", glm_text, re.M) is not None,
+          "glm53 ships VLLM_GLM53_MK_KDA_SHADOW=0 -- the shadow judge is a "
+          "diagnostic, never a production default")
+    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_LOCALQ",
+                 "VLLM_GLM53_AR_PREFETCH"):
+        check(re.search(rf"^{knob}=1$", glm_text, re.M) is not None,
+              f"glm53 ships {knob}=1 -- 32차 §14: the zero-gain set without "
+              "SMLP (KDA lane CAPTURED into the decode graph, local-quant, AR "
+              "prefetch) measured +0.7% together with Korean clean; the "
+              "operator adopted it")
     for knob in ("VLLM_GLM53_MEGAKERNEL", "VLLM_GLM53_MK_MHC",
                  "VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_MLA"):
         check(re.search(rf"^{knob}=1$", glm_text, re.M) is not None,
@@ -9684,9 +9727,15 @@ def test_prefill_warmup_contracts() -> None:
           "the warmup hook stays opt-in at the launcher")
     profile = open(os.path.join(REPO, "profiles/glm53.env"),
                    encoding="utf-8").read()
-    check("PREFILL_WARMUP=0" in profile
+    check("PREFILL_WARMUP=1" in profile
           and 'PREFILL_WARMUP_LENS="2048,4096,8192"' in profile,
-          "the profile carries the knob, default off, ladder lengths")
+          "the profile carries the knob, default on since 33차, ladder lengths")
+    for harness in ("bench/ab-lever.sh", "launchers/ab-glm53.sh"):
+        h = open(os.path.join(REPO, harness), encoding="utf-8").read()
+        check('export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"' in h,
+              f"{harness} pins its boots to no-warmup -- the cold-tax channel "
+              "is the bracket's to measure, and the warmup's requests would "
+              "land inside its first decode leg's 2s windows")
     print("  prefill warmup contracts ... OK")
 
 
@@ -10066,12 +10115,14 @@ def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
 
 
 def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
-    """PREFILL_WARMUP=1 bash launchers/... must survive sourcing the profile.
+    """PREFILL_WARMUP=0 bash launchers/... must survive sourcing the profile.
 
-    The profile declares PREFILL_WARMUP=0, and the launcher restores only the
-    keys in its _caller list after `. "$PROFILE_ENV"`; the warmup keys were
-    not on it, so a caller's =1 was silently clobbered back to 0 and the
-    2026-09-03 warm-prefill boot ran cold with no prefill-warmup.log at all."""
+    The profile declares PREFILL_WARMUP=1 (default on since 33차), and the
+    launcher restores only the keys in its _caller list after `. "$PROFILE_ENV"`;
+    the warmup keys were once not on it, so a caller's value was silently
+    clobbered by the profile and the 2026-09-03 warm-prefill boot ran cold
+    with no prefill-warmup.log at all. The restore list is what makes the
+    bracket harnesses' 0 pin and the kill switch work."""
     src = open(os.path.join(REPO, "launchers", "start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
     # The restore list is ct_load_profile's argument list now, and the library
     # appends $_vllm_keys to it; the profile is sourced inside that function.
@@ -10085,8 +10136,8 @@ def test_launcher_restores_prefill_warmup_from_caller_env() -> None:
           "the shared loader captures the caller's values BEFORE sourcing the "
           "profile, or the restore has nothing to restore")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^PREFILL_WARMUP=0$", prof, re.M) is not None,
-          "profile still ships PREFILL_WARMUP=0 (warm boots are opt-in)")
+    check(re.search(r"^PREFILL_WARMUP=1$", prof, re.M) is not None,
+          "profile ships PREFILL_WARMUP=1 (cold boots are the opt-in now)")
     print("  launcher restores PREFILL_WARMUP from caller env .. OK")
 
 
@@ -10908,6 +10959,13 @@ def test_micro_fusion_bundle_contracts() -> None:
           and kern.count("((done + 1) & (NV - 1)) == 0") == 1
           and "tl.atomic_xchg" not in kern,
           "two monotonic last-arriver counters (conv-state write, norm), nothing resets them")
+    check("_COUNTERS: dict[tuple[torch.device, int], torch.Tensor] = {}" in kern
+          and "def prepare_counters(device: torch.device, nv: int = _SERVING_NV) -> torch.Tensor:" in kern
+          and "ctr = prepare_counters(projected.device, nv)" in kern
+          and "prepare_counters(device, _SERVING_NV)" in kern
+          and "if not counters_ready(projected.device, nv) and torch.cuda.is_current_stream_capturing():" in kern,
+          "counters are keyed by block width (count % NV needs one NV per buffer), prepared off-capture "
+          "for the serving width; a missing width under capture declines to stock")
     check("(nv & (nv - 1)) != 0" in kern and "_MAX_REQ_HEADS" in kern
           and "num_spec_decodes * h > _MAX_REQ_HEADS" in kern,
           "applicability pins NV to a power of two and declines (never raises) past the counter buffer")
@@ -11180,6 +11238,8 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_patterns_and_opaque_op()
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
+    test_spec_k_compile_factor()
+    test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()

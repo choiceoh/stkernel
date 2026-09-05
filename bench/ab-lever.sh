@@ -36,11 +36,22 @@ if [ "${SKIP_BOOT:-0}" = 1 ]; then
   echo "== [$ARM] reusing the live boot (SKIP_BOOT=1) $(date +%T) =="
 else
   echo "== [$ARM] boot $(date +%T) caller env: $LEVER_ENV (profile defaults otherwise) =="
+  # Production boots pay the prefill JIT tax at boot (PREFILL_WARMUP=1 since
+  # 33차); a bracket boot must not. The warmup's six requests land right after
+  # health, inside the first decode leg's 2 s windows, and the prefill ladder's
+  # cold row IS this harness's cold-tax channel. Export 0 unless the caller
+  # explicitly wants to test the warmup itself.
+  export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"
   env $LEVER_ENV bash launchers/start-glm53-nvfp4-tp4.sh 2>&1 | tail -40 || true
 fi
 echo "== [$ARM] wait for health $(date +%T) =="
 up=0
-for i in $(seq 1 200); do
+# HEALTH_BUDGET_S: a boot on NEW shapes (SPEC_K != 7, a new drafter, a wiped
+# cache) JIT-compiles deep_gemm/Triton/cutlass variants serially inside the
+# worker at ~1 min each (29차 K5: 45+ min); the caches under /cache persist,
+# so a second boot resumes where the first stopped. Default 50 min.
+HEALTH_BUDGET_S=${HEALTH_BUDGET_S:-3000}
+for i in $(seq 1 $((HEALTH_BUDGET_S / 15))); do
   if [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:8000/health")" = 200 ]; then
     echo "up after $((i*15))s"; up=1; break
   fi
