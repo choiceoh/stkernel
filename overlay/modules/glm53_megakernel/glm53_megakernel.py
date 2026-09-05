@@ -71,6 +71,9 @@ def _flag(name: str, default: str = "0") -> bool:
 
 MASTER = _flag("VLLM_GLM53_MEGAKERNEL")
 ENABLE_MHC = MASTER and _flag("VLLM_GLM53_MK_MHC")
+# 37차: layer 0's standalone pre-mix through the same kernel (identity post),
+# so a decode step touches deep_gemm nowhere. Rides on the MHC segment.
+ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")
 ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
@@ -158,7 +161,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "gemm": False, "kda": False, "mla": False, "smlp": False,
+_ARMED = {"mhc": False, "mhc_pre": False, "gemm": False, "kda": False, "mla": False, "smlp": False,
           "smlp2": False}
 
 
@@ -1630,6 +1633,88 @@ def mhc_hook(x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
 
 
 # ---------------------------------------------------------------------------
+# MK_SEG_MHC, pre-only (37차): layer 0's standalone pre-mix
+# ---------------------------------------------------------------------------
+# The model's first layer has no incoming post state and calls hc_pre alone;
+# every other layer's pre rides in hc_fused_post_pre, which MK_SEG_MHC serves
+# at T <= 16. That one standalone call was the only place a decode step still
+# reached deep_gemm's tf32 prenorm GEMM -- and at k=5 (T=6) it is where chain
+# 13's boot spun. The fused kernel's post step is v = pm[j]*x + sum_k cm[k][j]*
+# res[k] in fp32, so pm = 0 and cm = I give residual_out == residual bitwise
+# and the pre part runs on the untouched residual: the standalone pre, from
+# the kernel already armed, with no kernel change. The coefficient buffers
+# are three static tensors at T_max (x zeros 256 KB, pm zeros, cm identity
+# rows), sliced per call, allocated once at the self-test (never inside a
+# graph capture).
+_HOOK_SERVED_PRE = [0]
+_PRE_LOGGED = [False]
+_PRE_BUF = {}
+MHC_PRE_TMAX = 32
+
+
+def _pre_bufs(device):
+    """(x zeros [TMAX, HIDDEN] bf16, pm zeros [TMAX, HC] fp32, cm identity
+    [TMAX, HC*HC] fp32) for the device, made once."""
+    import torch
+    key = str(device)
+    bufs = _PRE_BUF.get(key)
+    if bufs is None:
+        x0 = torch.zeros(MHC_PRE_TMAX, HIDDEN, dtype=torch.bfloat16, device=device)
+        pm0 = torch.zeros(MHC_PRE_TMAX, HC, dtype=torch.float32, device=device)
+        cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)
+        cm_i = cm_i.repeat(MHC_PRE_TMAX, 1).contiguous()
+        bufs = _PRE_BUF[key] = (x0, pm0, cm_i)
+    return bufs
+
+
+def mhc_pre_only(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                 hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                 norm_weight, norm_eps):
+    """The standalone pre-mix (mhc_pre_tilelang's contract, with norm) from
+    the fused kernel under identity post coefficients. None = stock."""
+    if not _ARMED["mhc_pre"]:
+        return None
+    import torch
+    if residual.dim() != 3 or norm_weight is None:
+        return None
+    num_tokens, hc_mult, hidden = residual.shape
+    if num_tokens > MHC_PRE_TMAX or not _mk_mhc_eligible(num_tokens, hc_mult, hidden):
+        return None
+    if (residual.dtype != torch.bfloat16 or fn.dtype != torch.float32
+            or hc_scale.dtype != torch.float32 or hc_base.dtype != torch.float32
+            or norm_weight.dtype != torch.bfloat16):
+        return None
+    x0, pm0, cm_i = _pre_bufs(residual.device)
+    _rc, pm, cm, li = _mhc_call(
+        x0[:num_tokens], residual.reshape(-1, hc_mult, hidden),
+        pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base,
+        norm_weight, num_tokens, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
+        hc_post_mult_value, norm_eps, sinkhorn_repeat)
+    return pm, cm, li
+
+
+def mhc_pre_hook(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                 hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                 norm_weight, norm_eps):
+    """Arm, then try -- mhc_hook's contract for the standalone pre. Returns
+    (post_mix [T, HC], comb_mix [T, HC*HC], layer_input [T, HIDDEN]) or None
+    for every miss. Logs once when it first serves a real call: the receipt
+    that separates "armed" from "serving" (the 28차 lesson)."""
+    maybe_arm()
+    out = mhc_pre_only(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                       hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                       norm_weight, norm_eps)
+    if out is not None:
+        _HOOK_SERVED_PRE[0] += 1
+        if not _PRE_LOGGED[0]:
+            _PRE_LOGGED[0] = True
+            logger.warning("[megakernel] mhc-pre hook serving (T=%d): layer 0's "
+                           "standalone pre-mix runs in the MHC segment; no "
+                           "deep_gemm in the decode step", residual.shape[0])
+    return out
+
+
+# ---------------------------------------------------------------------------
 # MK_SEG_KDA
 # ---------------------------------------------------------------------------
 def _kda_meta(layer):
@@ -2193,6 +2278,58 @@ def _selftest_mhc() -> bool:
 # The exact e2m1 fixture of the boot gate AND the bench's probe_exact -- one
 # builder, so the two cannot drift apart again (the bench once kept an older
 # scale range and FAILed on the fixture, not the kernel: 25차).
+def _selftest_mhc_pre() -> bool:
+    """Diff the pre-only path (fused kernel, identity post) against the stock
+    standalone pre at T=8 and, when the boot's spec k is not 7, at T=k+1 --
+    the shape a k=5 boot serves and a k=7 production boot never runs (a T it
+    never serves must not be able to hang its arm). Two checks: the post step
+    under pm=0, cm=I leaves the residual bitwise unchanged (the identity the
+    trick rests on), and pm/cm/layer_input match the stock pair."""
+    import torch
+    from vllm.model_executor.kernels.mhc import tilelang_kernels as tlk
+    torch.manual_seed(1)
+    dev = "cuda"
+    spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()
+    ts = [8]
+    if spec_k.isdigit() and int(spec_k) != 7 and 0 < int(spec_k) + 1 <= MHC_PRE_TMAX:
+        ts.append(int(spec_k) + 1)
+    x0, pm0, cm_i = _pre_bufs(dev)
+    fn = torch.randn(NOUT, HC * HIDDEN, dtype=torch.float32, device=dev) * 0.02
+    hc_scale = torch.ones(3, dtype=torch.float32, device=dev)
+    hc_base = torch.zeros(NOUT, dtype=torch.float32, device=dev)
+    nw = torch.randn(HIDDEN, dtype=torch.bfloat16, device=dev)
+    rms_eps = pre_eps = sink_eps = norm_eps = 1e-6
+    post_mult, sinkhorn_repeat = 1.0, SINKHORN_SERVED
+    worst, identity = 0.0, True
+    for T in ts:
+        res = torch.randn(T, HC, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.1
+        rc, pmc, cmc, li = _mhc_call(
+            x0[:T], res, pm0[:T], cm_i[:T], fn, hc_scale, hc_base, nw, T,
+            rms_eps, pre_eps, sink_eps, post_mult, norm_eps, sinkhorn_repeat)
+        n_splits = 4
+        yp = torch.empty(n_splits, T, NOUT, dtype=torch.float32, device=dev)
+        rp = torch.empty(n_splits, T, dtype=torch.float32, device=dev)
+        res_ref = torch.empty_like(res)
+        tlk.mhc_fused_tilelang(cm_i[:T].view(T, HC, HC), res, pm0[:T], x0[:T],
+                               fn.view(NOUT, HC, HIDDEN), yp, rp, res_ref, HC,
+                               HIDDEN, NOUT, tile_n=2, n_splits=n_splits)
+        pm_ref = torch.empty(T, HC, dtype=torch.float32, device=dev)
+        cm_ref = torch.empty(T, HC * HC, dtype=torch.float32, device=dev)
+        li_ref = torch.empty(T, HIDDEN, dtype=torch.bfloat16, device=dev)
+        tlk.mhc_pre_big_fuse_with_norm_tilelang(
+            yp, rp, hc_scale, hc_base, res_ref, pm_ref, cm_ref, li_ref, nw,
+            HIDDEN, rms_eps, pre_eps, sink_eps, post_mult, sinkhorn_repeat,
+            norm_eps, n_splits=n_splits, hc_mult=HC)
+        torch.cuda.synchronize()
+        identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))
+        worst = max(worst, _rel_err(pmc, pm_ref), _rel_err(cmc, cm_ref),
+                    _rel_err(li, li_ref))
+    ok = identity and worst <= _TOL_MHC
+    logger.warning("[megakernel] selftest mhc-pre T=%s identity=%s rel=%.2e -> %s",
+                   ts, identity, worst, "ARM" if ok else "DISARM")
+    return ok
+
+
 EXACT_FIXTURE = (1024, 4096, 8)  # n, k, m: 8 tiles -> 32 units, both kernels
 
 
@@ -2752,6 +2889,8 @@ def arm() -> None:
 
     if ENABLE_MHC:
         _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
+        if ENABLE_MHC_PRE and _ARMED["mhc"]:
+            _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
     if ENABLE_MLA:
