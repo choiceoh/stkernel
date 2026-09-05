@@ -5795,6 +5795,58 @@ def test_trace_step_tail_analyze() -> None:
     print("  trace step tail cut ........... OK")
 
 
+def test_profiles_readme_module_table() -> None:
+    """profiles/README.md 의 모듈 × 프로필 표가 실제 프로필·매니페스트와 일치한다.
+
+    표는 손으로 유지되다가 드리프트했다: 프로필이 싣는 모듈 10개가 빠져 있었고
+    이미 삭제된 `glm53_async_dflash` 가 남아 있었다(#302 에서 수정). 표가 문서의
+    유일한 모듈 색인이므로, 세 가지를 코드로 고정한다 — 어느 프로필에 실리는가,
+    파일이 몇 개인가, 매니페스트 전 행이 `absent`(=이식 가능한 계약)인가.
+    """
+    import re as _re
+
+    profiles = {}
+    for name in ("dsv4", "glm53", "qwen38"):
+        txt = open(os.path.join(REPO, "profiles", f"{name}.env"), encoding="utf-8").read()
+        m = _re.search(r'MODULES="([^"]*)"', txt, _re.S)
+        check(m is not None, f"{name}.env must declare MODULES=")
+        profiles[name] = set(m.group(1).split())
+
+    rows = {}
+    for line in open(os.path.join(REPO, "profiles", "README.md"), encoding="utf-8"):
+        m = _re.match(r"\|\s*`([a-z0-9_]+)`\s*\|(.+)\|\s*$", line)
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group(2).split("|")]
+        if len(cells) != 6:          # 범위 · 파일 · 이식 · dsv4 · glm53 · qwen38
+            continue
+        rows[m.group(1)] = cells
+
+    listed = set(rows)
+    used = set().union(*profiles.values())
+    check(not (used - listed),
+          f"profiles load modules the table omits: {sorted(used - listed)}")
+    check(not (listed - used - {"glm53_drop_audit", "glm53_sparse_q"}),
+          f"table lists modules no profile loads: {sorted(listed - used)}")
+
+    for mod, cells in rows.items():
+        files, portable, marks = cells[1], cells[2], cells[3:]
+        man = os.path.join(REPO, "overlay", "modules", mod, "manifest.tsv")
+        check(os.path.exists(man), f"{mod}: table row without a module directory")
+        entries = [l.split("\t") for l in open(man, encoding="utf-8").read().splitlines()
+                   if l.strip() and not l.startswith("#")]
+        check(files == str(len(entries)),
+              f"{mod}: table says {files} files, manifest has {len(entries)}")
+        all_new = bool(entries) and all(e[2].strip() == "absent" for e in entries)
+        check((portable == "✓") == all_new,
+              f"{mod}: 이식={portable!r} but manifest all-absent={all_new}")
+        for name, mark in zip(("dsv4", "glm53", "qwen38"), marks):
+            in_profile = mod in profiles[name]
+            check((mark != "·") == in_profile,
+                  f"{mod}: {name} column {mark!r} but in-profile={in_profile}")
+    print("  profiles README module table .. OK")
+
+
 def test_dflash_warmup_buckets() -> None:
     """The DFlash input-prep warmup sweeps every BLOCK_SIZE bucket, or none.
 
@@ -11690,6 +11742,7 @@ if __name__ == "__main__":
     test_census_owner_axis()
     test_census_streaming_events()
     test_trace_step_tail_analyze()
+    test_profiles_readme_module_table()
     test_dflash_warmup_buckets()
     test_dsv4_spec_warmup_contract()
     test_dsv4_ue8m0_host_guard()
