@@ -101,6 +101,10 @@ from .moe_activation import gated_activation_f32, is_gated_activation
 
 _SF_VEC_SIZE = 16
 _COMPACT_STATIC_TILE_M = 128
+# dynamic scheduling: the DMA warp claims items from a global counter and
+# hands (m_tile, slice, expert) to the MMA warps through this smem ring; the
+# first FC1 stage's full barrier publishes each entry (release/acquire)
+_RING = 8
 # stamps tensor: [grid, STAMP_SLOTS] int64 (ns, %globaltimer)
 #   0 kernel start (MMA warp 0 lane 0)   1 frontend done (compute start)
 #   2 + 5*i + {0 item start, 1 FC1 done, 2 quant done, 3 FC2+scatter done,
@@ -329,6 +333,7 @@ class MoEStaticKernelV2:
         fc2_stages: int = 4,
         a_rows: int | None = None,
         stamps: bool = False,
+        dynamic: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -362,6 +367,7 @@ class MoEStaticKernelV2:
         self.fc1_stages = int(fc1_stages)
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
+        self.dynamic = bool(dynamic)
         tile_k = sf_vec_size * 8
         self.tile_shape_mnk = (tile_m, tile_n, tile_k)
         self.sa_tile_shape_mk = (a_rows, tile_k)
@@ -582,6 +588,7 @@ class MoEStaticKernelV2:
         token_map: cute.Tensor,
         token_weights: cute.Tensor,
         stamps: cute.Tensor,  # [grid, STAMP_SLOTS] int64
+        next_item: cute.Tensor,  # [1] int32, the dynamic-schedule claim counter
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -693,6 +700,7 @@ class MoEStaticKernelV2:
             token_map,
             token_weights,
             stamps,
+            next_item,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -747,6 +755,7 @@ class MoEStaticKernelV2:
         token_map: cute.Tensor,
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
+        next_item: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -805,6 +814,8 @@ class MoEStaticKernelV2:
             scatter_weight_cache: cute.struct.MemRange[
                 cutlass.Float32, _COMPACT_STATIC_TILE_M
             ]
+            ring: cute.struct.MemRange[cutlass.Int32, 4 * _RING]
+            claim: cute.struct.MemRange[cutlass.Int32, 1]
             sA: cute.struct.Align[
                 cute.struct.MemRange[self.a_dtype, cute.cosize(a_smem_staged)],
                 self.buffer_align_bytes,
@@ -906,6 +917,8 @@ class MoEStaticKernelV2:
         scatter_weight_base_addr = shared_ptr_to_u32(
             storage.scatter_weight_cache.data_ptr()
         )
+        ring_base_addr = shared_ptr_to_u32(storage.ring.data_ptr())
+        claim_base_addr = shared_ptr_to_u32(storage.claim.data_ptr())
 
         num_tokens = Int32(a_input.shape[0])
         cols = Int32(a_input.shape[1])
@@ -935,6 +948,8 @@ class MoEStaticKernelV2:
             i += flat_stride
         if flat_tid == Int32(0):
             active_expert_count[Int32(0)] = Int32(0)
+            if cutlass.const_expr(self.dynamic):
+                next_item[Int32(0)] = Int32(0)
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
@@ -1318,19 +1333,44 @@ class MoEStaticKernelV2:
             current_local_expert_idx = Int32(0)
             accum_tile_m = Int32(0)
             item_no = Int32(0)
-            tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                _compact_static_get_work_tile(
-                    row_counts,
-                    active_expert_count,
-                    tile_m=Int32(self.tile_shape_mnk[0]),
-                    num_tiles_n=Int32(self.output_tile_count_n),
-                    cluster_shape_mn=cluster_shape_mn,
-                    current_work_linear_idx=current_work_linear_idx,
-                    current_local_expert_idx=current_local_expert_idx,
-                    accum_tile_m=accum_tile_m,
-                    cta_id_in_cluster=cta_id_in_cluster,
+            # Acquire the first item: the loop body below assumes the item's
+            # first FC1 stage has already been waited on.
+            if cutlass.const_expr(self.dynamic):
+                # the DMA warp claimed the item and wrote its coordinates
+                # into the ring before arming the stage; the stage's full
+                # barrier (release/acquire) publishes the entry
+                peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
+                fc1_pipeline.consumer_wait(fc1_cons_state, peek)
+                ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
+                ring_e = _ld_shared_i32(ring_off + Int32(8))
+                tile_coord = (
+                    _ld_shared_i32(ring_off),
+                    _ld_shared_i32(ring_off + Int32(4)),
+                    ring_e,
                 )
-            )
+                is_valid_tile = ring_e >= Int32(0)
+                if ring_e < Int32(0):
+                    fc1_pipeline.consumer_release(fc1_cons_state)
+                    fc1_cons_state.advance()
+            else:
+                tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
+                    _compact_static_get_work_tile(
+                        row_counts,
+                        active_expert_count,
+                        tile_m=Int32(self.tile_shape_mnk[0]),
+                        num_tiles_n=Int32(self.output_tile_count_n),
+                        cluster_shape_mn=cluster_shape_mn,
+                        current_work_linear_idx=current_work_linear_idx,
+                        current_local_expert_idx=current_local_expert_idx,
+                        accum_tile_m=accum_tile_m,
+                        cta_id_in_cluster=cta_id_in_cluster,
+                    )
+                )
+                # the token is defined on every path (the while loop below
+                # carries it); a try-wait on an unarmed stage just returns
+                peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
+                if is_valid_tile:
+                    fc1_pipeline.consumer_wait(fc1_cons_state, peek)
 
             _is_m_major = self.c_layout.is_m_major_c()
             copy_atom_r2s = cute.make_copy_atom(
@@ -1460,8 +1500,10 @@ class MoEStaticKernelV2:
                 # ============================================================
                 gate_acc.fill(0.0)
                 up_acc.fill(0.0)
+                # the item's first FC1 stage was waited on when the item was
+                # acquired; this try-wait on the completed phase returns at
+                # once and gives the k loop its loop-carried token
                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
-                fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                 csA_p = csA_tile[None, None, None, fc1_cons_state.index]
                 csBg_p = csBg[None, None, None, fc1_cons_state.index]
                 csBu_p = csBu[None, None, None, fc1_cons_state.index]
@@ -1937,20 +1979,39 @@ class MoEStaticKernelV2:
                 # next item: the next FC1 loads target the stage buffers,
                 # never sA2/sSFA2/sC, so no item-boundary barrier is needed
                 item_no += Int32(1)
-                current_work_linear_idx += num_persistent_clusters
-                tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                    _compact_static_get_work_tile(
-                        row_counts,
-                        active_expert_count,
-                        tile_m=Int32(self.tile_shape_mnk[0]),
-                        num_tiles_n=Int32(self.output_tile_count_n),
-                        cluster_shape_mn=cluster_shape_mn,
-                        current_work_linear_idx=current_work_linear_idx,
-                        current_local_expert_idx=current_local_expert_idx,
-                        accum_tile_m=accum_tile_m,
-                        cta_id_in_cluster=cta_id_in_cluster,
+                # acquire the next item (see the pre-loop block)
+                if cutlass.const_expr(self.dynamic):
+                    peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
+                    fc1_pipeline.consumer_wait(fc1_cons_state, peek)
+                    ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
+                    ring_e = _ld_shared_i32(ring_off + Int32(8))
+                    tile_coord = (
+                        _ld_shared_i32(ring_off),
+                        _ld_shared_i32(ring_off + Int32(4)),
+                        ring_e,
                     )
-                )
+                    is_valid_tile = ring_e >= Int32(0)
+                    if ring_e < Int32(0):
+                        fc1_pipeline.consumer_release(fc1_cons_state)
+                        fc1_cons_state.advance()
+                else:
+                    current_work_linear_idx += num_persistent_clusters
+                    tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
+                        _compact_static_get_work_tile(
+                            row_counts,
+                            active_expert_count,
+                            tile_m=Int32(self.tile_shape_mnk[0]),
+                            num_tiles_n=Int32(self.output_tile_count_n),
+                            cluster_shape_mn=cluster_shape_mn,
+                            current_work_linear_idx=current_work_linear_idx,
+                            current_local_expert_idx=current_local_expert_idx,
+                            accum_tile_m=accum_tile_m,
+                            cta_id_in_cluster=cta_id_in_cluster,
+                        )
+                    )
+                    peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
+                    if is_valid_tile:
+                        fc1_pipeline.consumer_wait(fc1_cons_state, peek)
             if cutlass.const_expr(self.stamps):
                 if Int32(tidx) == Int32(0):
                     _st_global_i64(
@@ -1983,6 +2044,20 @@ class MoEStaticKernelV2:
             accum_tile_m = Int32(0)
             item_no = Int32(0)
             is_dma_lane0 = Int32(tidx) == Int32(self.tma_load_warp_id * 32)
+            if cutlass.const_expr(self.dynamic):
+                # claim a global item index (lane 0), broadcast through smem;
+                # claims are monotonic per CTA, so the incremental decoder
+                # state below stays valid
+                if is_dma_lane0:
+                    _st_shared_i32(
+                        claim_base_addr,
+                        atomic_add_global_i32(
+                            get_ptr_as_int64(next_item, Int32(0)), Int32(1)
+                        ),
+                    )
+                cute.arch.sync_warp()
+                current_work_linear_idx = _ld_shared_i32(claim_base_addr)
+                cute.arch.sync_warp()
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                 _compact_static_get_work_tile(
                     row_counts,
@@ -2002,6 +2077,13 @@ class MoEStaticKernelV2:
                 intermediate_slice = tc[1]
                 local_expert_idx = tc[2]
                 weight_expert_idx = weight_expert_ids[local_expert_idx]
+                if cutlass.const_expr(self.dynamic):
+                    # publish the item's coordinates before arming its first
+                    # stage (every lane writes the same words: benign)
+                    ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
+                    _st_shared_i32(ring_off, tc[0])
+                    _st_shared_i32(ring_off + Int32(4), tc[1])
+                    _st_shared_i32(ring_off + Int32(8), tc[2])
                 stamp_dma = stamp_row + Int32(STAMP_DMA_BASE) + item_no * Int32(3)
                 if cutlass.const_expr(self.stamps):
                     if is_dma_lane0:
@@ -2120,7 +2202,19 @@ class MoEStaticKernelV2:
                             )
 
                 item_no += Int32(1)
-                current_work_linear_idx += num_persistent_clusters
+                if cutlass.const_expr(self.dynamic):
+                    if is_dma_lane0:
+                        _st_shared_i32(
+                            claim_base_addr,
+                            atomic_add_global_i32(
+                                get_ptr_as_int64(next_item, Int32(0)), Int32(1)
+                            ),
+                        )
+                    cute.arch.sync_warp()
+                    current_work_linear_idx = _ld_shared_i32(claim_base_addr)
+                    cute.arch.sync_warp()
+                else:
+                    current_work_linear_idx += num_persistent_clusters
                 tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                     _compact_static_get_work_tile(
                         row_counts,
@@ -2134,6 +2228,57 @@ class MoEStaticKernelV2:
                         cta_id_in_cluster=cta_id_in_cluster,
                     )
                 )
+
+            if cutlass.const_expr(self.dynamic):
+                # sentinel: publish "no more items" and arm one more FC1 stage
+                # with valid (unused) coordinates so the MMA warps' wait on
+                # that stage returns, they read the sentinel and exit -- and
+                # release the stage, which producer_tail below waits for
+                ring_off = ring_base_addr + (item_no % Int32(_RING)) * Int32(16)
+                _st_shared_i32(ring_off + Int32(8), Int32(-1))
+                w0 = weight_expert_ids[Int32(0)]
+                fc1_pipeline.producer_acquire(fc1_prod_state)
+                bar = fc1_pipeline.producer_get_barrier(fc1_prod_state)
+                cute.copy(
+                    tma_a,
+                    tAgA[(None, Int32(0), Int32(0), Int32(0))],
+                    tAsA[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                cute.copy(
+                    tma_b_w13,
+                    tBgB_w13[(None, gate_tile_cnt, Int32(0), w0)],
+                    tBsBg[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                cute.copy(
+                    tma_b_w13,
+                    tBgB_w13[(None, Int32(0), Int32(0), w0)],
+                    tBsBu[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                cute.copy(
+                    tma_sfa,
+                    tAgSFA[(None, Int32(0), Int32(0), Int32(0))],
+                    tAsSFA[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                cute.copy(
+                    tma_sfb_w13,
+                    tBgSFB_w13[
+                        (None, gate_tile_cnt // self.sfb_tiles_per_block, Int32(0), w0)
+                    ],
+                    tBsSFBg[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                cute.copy(
+                    tma_sfb_w13,
+                    tBgSFB_w13[(None, Int32(0), Int32(0), w0)],
+                    tBsSFBu[(None, fc1_prod_state.index)],
+                    tma_bar_ptr=bar,
+                )
+                fc1_pipeline.producer_commit(fc1_prod_state)
+                fc1_prod_state.advance()
 
             fc1_pipeline.producer_tail(fc1_prod_state)
             fc2_pipeline.producer_tail(fc2_prod_state)

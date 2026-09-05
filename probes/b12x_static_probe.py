@@ -72,10 +72,10 @@ def _time_graph(g, reps: int) -> float:
     return s.elapsed_time(e) * 1e3 / reps   # us per replay
 
 
-def _routings(U: int):
+def _routings(U: int, T: int = T):
     """ROT disjoint expert subsets of size U; per subset [T, TOPK] ids with 8
     distinct experts per token, all inside the subset, plus normalized weights."""
-    gen = torch.Generator().manual_seed(1000 + U)
+    gen = torch.Generator().manual_seed(1000 + U + 7919 * T)
     perm = torch.randperm(E, generator=gen)
     rot = min(E // U, 8)
     out = []
@@ -106,7 +106,7 @@ def served_wrapper():
 
     return B12xMoEWrapper(
         num_experts=E, top_k=TOPK, hidden_size=HID, intermediate_size=INTER,
-        use_cuda_graph=True, max_num_tokens=64, num_local_experts=E,
+        use_cuda_graph=True, max_num_tokens=80, num_local_experts=E,
         activation="swigluoai_uninterleave", swiglu_alpha=1.0,
         swiglu_beta=0.0, swiglu_limit=10.0)
 
@@ -174,11 +174,13 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--configs", default="1,m32,f3,g2,m64,f2,g2")
+    ap.add_argument("--configs",
+                    default="1,m32,f3,g2,m64,f2,g2,m32,f2,g4,d,m32,f2,g4,s,m32,f2,g4,d,s")
     ap.add_argument("--us", default="8,16,24,32,40,48,64")
     ap.add_argument("--reps", type=int, default=20)
-    ap.add_argument("--full-sweep", default="1",
-                    help="v2 config specs that get the full U sweep (others: U=40,64)")
+    ap.add_argument("--full-sweep", default="all",
+                    help="v2 config specs that get the full U sweep, or 'all' "
+                         "(others: U=40,64)")
     args = ap.parse_args()
     # config specs are themselves comma-separated: split on ",m" boundaries
     raw = args.configs
@@ -188,7 +190,8 @@ def main() -> int:
         if part:
             specs.append(part)
     us_list = [int(u) for u in args.us.split(",")]
-    full = set(args.full_sweep.replace(",m", "|m").split("|"))
+    full = (set(specs) if args.full_sweep == "all"
+            else set(args.full_sweep.replace(",m", "|m").split("|")))
 
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
 
@@ -204,9 +207,13 @@ def main() -> int:
     out = torch.empty(T, HID, dtype=torch.bfloat16, device=DEV)
     routings = {U: _routings(U) for U in us_list}
 
-    def call(ids, w):
-        wrapper.run(x, w13, sf13, w2, sf2, ids, w, w1_alpha=ones,
-                    w2_alpha=ones, fc2_input_scale=ones, out=out)
+    def make_io(t):
+        return (torch.randn(t, HID, dtype=torch.bfloat16, device=DEV) * 0.5,
+                torch.empty(t, HID, dtype=torch.bfloat16, device=DEV))
+
+    def call(ids, w, xx=x, oo=out):
+        wrapper.run(xx, w13, sf13, w2, sf2, ids, w, w1_alpha=ones,
+                    w2_alpha=ones, fc2_input_scale=ones, out=oo)
 
     def bench(U):
         rot = routings[U]
@@ -221,10 +228,10 @@ def main() -> int:
         mb = U * BYTES_PER_EXPERT / 1e6
         return us, mb, mb * 1e6 / us / 1e3
 
-    def eager_out(ids, w):
-        call(ids, w)
+    def eager_out(ids, w, xx=x, oo=out):
+        call(ids, w, xx, oo)
         torch.cuda.synchronize()
-        return out.clone()
+        return oo.clone()
 
     print(f"{'row':<22}{'us/call':>9}{'MB':>8}{'GB/s':>8}")
     md._STATIC_V2_OVERRIDE = None
@@ -233,11 +240,22 @@ def main() -> int:
         stock[U] = bench(U)
         print(f"{'stock U=' + str(U):<22}{stock[U][0]:>9.1f}{stock[U][1]:>8.1f}{stock[U][2]:>8.0f}")
     ids40, w40 = routings[40 if 40 in routings else us_list[-1]][0]
-    ref_a = eager_out(ids40, w40)
-    ref_b = eager_out(ids40, w40)
-    noise = (ref_a.float() - ref_b.float()).abs().max().item()
-    scale = ref_a.float().abs().max().item()
-    print(f"numerics stock vs stock' max|diff| {noise:.3e} (max|out| {scale:.3e})")
+    # numerics cases: the served shape, a C=4-like shape, and the static
+    # backend's largest shape (640 pairs), where an expert spans 3 m-tiles
+    cases = [("T=8 U=40", ids40, w40, x, out)]
+    for t, u in ((32, 16), (80, 8)):
+        ids_u, w_u = _routings(u, t)[0]
+        xx, oo = make_io(t)
+        cases.append((f"T={t} U={u}", ids_u, w_u, xx, oo))
+    refs = {}
+    for case, ids_, w_, xx, oo in cases:
+        ref_a = eager_out(ids_, w_, xx, oo)
+        ref_b = eager_out(ids_, w_, xx, oo)
+        noise = (ref_a.float() - ref_b.float()).abs().max().item()
+        scale = ref_a.float().abs().max().item()
+        refs[case] = (ref_a, noise, scale)
+        print(f"numerics stock vs stock' [{case}] max|diff| {noise:.3e} "
+              f"(max|out| {scale:.3e})")
 
     results = {}
     for spec in specs:
@@ -246,10 +264,13 @@ def main() -> int:
         try:
             md._STATIC_V2_OVERRIDE = cfg
             md._STATIC_V2_KERNEL_CACHE.clear()
-            v2_out = eager_out(ids40, w40)
-            diff = (v2_out.float() - ref_a.float()).abs().max().item()
-            verdict = "PASS" if diff <= max(4 * noise, 1e-2 * scale) else "FAIL"
-            print(f"numerics {label} vs stock max|diff| {diff:.3e} -> {verdict}")
+            for case, ids_, w_, xx, oo in cases:
+                ref_a, noise, scale = refs[case]
+                v2_out = eager_out(ids_, w_, xx, oo)
+                diff = (v2_out.float() - ref_a.float()).abs().max().item()
+                verdict = "PASS" if diff <= max(4 * noise, 1e-2 * scale) else "FAIL"
+                print(f"numerics {label} vs stock [{case}] max|diff| {diff:.3e} "
+                      f"-> {verdict}")
             sweep = us_list if spec in full else [u for u in (40, 64) if u in routings]
             for U in sweep:
                 r = bench(U)

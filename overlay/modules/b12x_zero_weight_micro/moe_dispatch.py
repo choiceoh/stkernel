@@ -290,7 +290,9 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
 # `g<fc2 stages>`, `a<A box rows>` (multiple of tile_m, <= 128) and `s`
 # (per-CTA %globaltimer stamps, probe only). Parsed once at import.
 _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
-_STATIC_V2_DEFAULT = {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False}
+_STATIC_V2_DEFAULT = {
+    "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
+}
 
 
 def _parse_glm53_static_v2(raw: str | None) -> dict | None:
@@ -308,10 +310,13 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
         if token == "s":
             cfg["stamps"] = True
             continue
+        if token == "d":
+            cfg["dynamic"] = True
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
-                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s] cells (got {raw!r})"
+                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -333,6 +338,7 @@ _GLM53_B12X_STATIC_V2 = _parse_glm53_static_v2(os.environ.get(_GLM53_B12X_STATIC
 # (a monkeypatch target), never read from the environment at launch time.
 _STATIC_V2_OVERRIDE: dict | None = None
 _STATIC_V2_STAMPS: Dict[Tuple[int, str], "torch.Tensor"] = {}
+_STATIC_V2_COUNTERS: Dict[str, "torch.Tensor"] = {}
 
 
 def _static_v2_config_for(
@@ -371,6 +377,18 @@ def _static_v2_stamps_tensor(mac: int, device: "torch.device") -> "torch.Tensor"
     if tensor is None:
         tensor = torch.zeros((int(mac), _STATIC_V2_STAMP_SLOTS), dtype=torch.int64, device=device)
         _STATIC_V2_STAMPS[key] = tensor
+    return tensor
+
+
+def _static_v2_counter_tensor(device: "torch.device") -> "torch.Tensor":
+    """The dynamic scheduler's claim counter: one int32 the kernel zeroes in
+    its phase 0 (launches on one stream are serialized, so one per process
+    suffices; a fixed address keeps it CUDA-graph safe)."""
+    key = str(device)
+    tensor = _STATIC_V2_COUNTERS.get(key)
+    if tensor is None:
+        tensor = torch.zeros((1,), dtype=torch.int32, device=device)
+        _STATIC_V2_COUNTERS[key] = tensor
     return tensor
 
 
@@ -1476,6 +1494,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         int(config["fc2"]),
         int(config["a_rows"]),
         bool(config["stamps"]),
+        bool(config.get("dynamic", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1560,6 +1579,7 @@ def _get_static_kernel_v2(
         fc2_stages=int(config["fc2"]),
         a_rows=int(config["a_rows"]),
         stamps=bool(config["stamps"]),
+        dynamic=bool(config.get("dynamic", False)),
         fast_math=fast_math,
         activation=activation,
         swiglu_alpha=swiglu_alpha,
@@ -1645,11 +1665,14 @@ def _get_static_kernel_v2(
     stamps_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int64, (mac, _STATIC_V2_STAMP_SLOTS), stride_order=(1, 0), assumed_align=8
     )
+    next_item_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Int32, (1,), assumed_align=4
+    )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     name = (
         f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
-        f"{'s' if config['stamps'] else ''}"
+        f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
@@ -1681,6 +1704,7 @@ def _get_static_kernel_v2(
             token_map_fake,
             token_weights_fake,
             stamps_fake,
+            next_item_fake,
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
@@ -2293,8 +2317,9 @@ def launch_sm120_static_moe(
     static_mac = min(tuned_static_mac or base_mac, base_mac)
     if activation_precision == "fp4" and not use_micro and routed_rows < 40:
         static_mac = min(static_mac, 64)
-    # set only when the v2 static kernel launches (it takes one extra tensor)
+    # set only when the v2 static kernel launches (it takes two extra tensors)
     static_v2_stamps = None
+    static_v2_counter = None
 
     if use_micro:
         assert flat_ids.numel() <= workspace.compact_topk_ids.numel(), (
@@ -2415,6 +2440,7 @@ def launch_sm120_static_moe(
                 quant_mode=quant_mode,
             )
             static_v2_stamps = _static_v2_stamps_tensor(mac, a.device)
+            static_v2_counter = _static_v2_counter_tensor(a.device)
         else:
             compiled, mac = _get_static_kernel(
                 workspace.state_E,
@@ -2469,7 +2495,7 @@ def launch_sm120_static_moe(
         workspace.token_weights,
     )
     if static_v2_stamps is not None:
-        runtime_args = runtime_args + (static_v2_stamps,)
+        runtime_args = runtime_args + (static_v2_stamps, static_v2_counter)
     compiled(*runtime_args)
 
     return scatter_output
