@@ -4062,6 +4062,13 @@ recurrent 는 재개 슬롯이 유효할 때만, 둘 다 아니면 즉시 반환
 `[kda-onepass] self-test FAIL ... DISARMED` — 아래 레이아웃 함정의 회귀 감시다. (7) 배선
 (`glm5next_kda.py`)은 모듈의 `resolve()/gate_gemms()/spec_onepass()` 만 부르고, 노브·가드·
 로그·카운터는 전부 모듈 안에 있다; `_forward` 가 o_norm 을 스스로 적용한다(플래그 없음).
+(8) 2차 리뷰(Codex): 카운터는 **블록 폭(NV)별 버퍼**다 — 마지막 도착 판정이 `count % NV` 라 한 버퍼가
+두 NV 를 보면(프로브의 BV=8/16/32 스윕) 이른 프로그램이 마지막으로 뽑혀 conv 상태 갱신이 읽기와
+경주한다; `resolve()` 가 서빙 폭(BV=8, NV=16)을 캡처 전에 준비하고 캡처 중 없는 폭은 stock 으로
+내린다. 프로브의 출력 게이트는 rel 이 아니라 **비트 동일**(8 케이스 + 자가진단 3, 프로브 13 PASS).
+`cudaGraphLaunch` 의 호스트 시간은 `host submit` 로 따로 재니 stock 0.2 / 원패스 0.3 us/층
+(그래프당 ≈ 7~10 us, 노드 수 238 vs 34 에 거의 무관) — 이 묶음의 이득이 호스트 제출이 아니라
+장치 시간에서 온다는 (2) 의 판독과 같다.
 
 **게이트 top-k 의 비트 일치는 소스가 아니라 프로브가 정했다.** 커널 소스
 (`single_group_topk_block_kernel`)는 `sigmoid_accurate = 0.5f*tanhf(0.5f*x)+0.5f` 와

@@ -84,6 +84,10 @@ _DUAL_BLOCK_N = 32
 # 16 heads. A batch beyond that is declined (stock chain), never raised.
 _MAX_REQ_HEADS = 4096
 _COUNTER_SLOTS = 2 * _MAX_REQ_HEADS
+# The serving launch geometry (BV=8 over the fleet head_dim 128 -> NV=16);
+# resolve() prepares the counters for this width so capture never allocates.
+_SERVING_BLOCK_V = 8
+_SERVING_NV = 128 // _SERVING_BLOCK_V
 
 
 def dual_gemm_enabled() -> bool:
@@ -500,18 +504,32 @@ def _kda_onepass_spec_kernel(
                 tl.store(p, b_y.to(p.dtype.element_ty))
 
 
-_COUNTERS: dict[torch.device, torch.Tensor] = {}
+_COUNTERS: dict[tuple[torch.device, int], torch.Tensor] = {}
 
 
-def prepare_counters(device: torch.device) -> torch.Tensor:
-    """Allocate the arrival counters once, off-capture (``resolve()`` does it
-    on the first eager forward). Every launch slices the same buffer, so the
-    address a captured graph records stays valid and no allocation ever
-    happens under capture. The counters are monotonic: nothing resets them."""
-    buf = _COUNTERS.get(device)
+def counters_ready(device: torch.device, nv: int) -> bool:
+    """True once the counters for this block width (NV programs per head)
+    exist on ``device``."""
+    return (device, nv) in _COUNTERS
+
+
+def prepare_counters(device: torch.device, nv: int = _SERVING_NV) -> torch.Tensor:
+    """Allocate the arrival counters for one block width once, off-capture
+    (``resolve()`` does it on the first eager forward for the serving width).
+    The last-arriver test is ``count % NV == 0``, so a counter must only ever
+    see launches of one NV: every block width owns its own buffer (the probe
+    sweeps BV=8/16/32). Every launch of a width slices the same buffer, so
+    the address a captured graph records stays valid and no allocation ever
+    happens under capture -- a missing width under capture raises instead.
+    The counters are monotonic: nothing resets them."""
+    key = (device, nv)
+    buf = _COUNTERS.get(key)
     if buf is None:
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError(
+                f"[kda-onepass] counters for NV={nv} must be prepared before capture")
         buf = torch.zeros((_COUNTER_SLOTS,), dtype=torch.int32, device=device)
-        _COUNTERS[device] = buf
+        _COUNTERS[key] = buf
     return buf
 
 
@@ -642,7 +660,7 @@ def kda_onepass_spec(
         return
     nv = d // block_v
     nh_total = n * h
-    ctr = prepare_counters(projected.device)
+    ctr = prepare_counters(projected.device, nv)
     _kda_onepass_spec_kernel[(nv, nh_total)](
         projected,
         projected.stride(0),
@@ -722,6 +740,13 @@ def spec_onepass(
             f"{tuple(recurrent_state.shape)} {recurrent_state.dtype}, indices "
             f"{tuple(spec_state_indices.shape)}, tokens {num_actual_tokens}/"
             f"{num_spec_decodes} req) -> stock chain", warn=True)
+        return False
+    nv = layer.head_dim // _SERVING_BLOCK_V
+    if not counters_ready(projected.device, nv) and torch.cuda.is_current_stream_capturing():
+        announce_once(
+            "onepass-stock", lambda: f"one-pass KDA: counters for NV={nv} were not prepared "
+            "before CUDA-graph capture (resolve() prepares the serving width) -> stock chain",
+            warn=True)
         return False
     kda_onepass_spec(
         projected, g1, g2_flat, conv_weight, conv_state, recurrent_state,
@@ -909,7 +934,7 @@ def resolve(device: torch.device | None = None) -> dict:
             st["detail"] = "resolve() called under CUDA-graph capture; one-pass disarmed"
             logger.warning("[kda-onepass] %s", st["detail"])
             return st
-        prepare_counters(device)
+        prepare_counters(device, _SERVING_NV)
         ok, detail = selftest(device)
         st["onepass"] = ok
         st["detail"] = detail

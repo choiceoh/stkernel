@@ -10885,6 +10885,13 @@ def test_micro_fusion_bundle_contracts() -> None:
           and kern.count("((done + 1) & (NV - 1)) == 0") == 1
           and "tl.atomic_xchg" not in kern,
           "two monotonic last-arriver counters (conv-state write, norm), nothing resets them")
+    check("_COUNTERS: dict[tuple[torch.device, int], torch.Tensor] = {}" in kern
+          and "def prepare_counters(device: torch.device, nv: int = _SERVING_NV) -> torch.Tensor:" in kern
+          and "ctr = prepare_counters(projected.device, nv)" in kern
+          and "prepare_counters(device, _SERVING_NV)" in kern
+          and "if not counters_ready(projected.device, nv) and torch.cuda.is_current_stream_capturing():" in kern,
+          "counters are keyed by block width (count % NV needs one NV per buffer), prepared off-capture "
+          "for the serving width; a missing width under capture declines to stock")
     check("(nv & (nv - 1)) != 0" in kern and "_MAX_REQ_HEADS" in kern
           and "num_spec_decodes * h > _MAX_REQ_HEADS" in kern,
           "applicability pins NV to a power of two and declines (never raises) past the counter buffer")

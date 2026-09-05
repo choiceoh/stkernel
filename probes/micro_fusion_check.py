@@ -78,8 +78,8 @@ def bf16_mismatch(a: torch.Tensor, b: torch.Tensor) -> tuple[int, int]:
     return int((d != 0).sum()), int(d.max()) if d.numel() else 0
 
 
-def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
-    """(gpu_ms, launch_ms) per replay of a CUDA graph holding one call of fn().
+def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float, float]:
+    """(gpu_ms, launch_ms, submit_ms) per replay of a CUDA graph holding one call of fn().
 
     gpu_ms: the second of two back-to-back replays -- its host submission is
     hidden behind the first replay's execution, so the events bracket device
@@ -87,7 +87,9 @@ def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
     events are stream-side, so this is not a CPU timing of cudaGraphLaunch:
     it is device time plus the idle gap the stream sees while the launch is
     being submitted (node-count proportional) -- what a step pays when the
-    graph is not already queued behind other work. Medians over ``iters``.
+    graph is not already queued behind other work. submit_ms: the host time
+    spent inside that replay() call (perf_counter around cudaGraphLaunch),
+    the CPU-side cost of the node count. Medians over ``iters``.
     """
     s = torch.cuda.Stream()
     s.wait_stream(torch.cuda.current_stream())
@@ -102,7 +104,7 @@ def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
     for _ in range(warm):
         g.replay()
     torch.cuda.synchronize()
-    gpu, launch = [], []
+    gpu, launch, submit = [], [], []
     for _ in range(iters):
         e0 = torch.cuda.Event(enable_timing=True)
         e1 = torch.cuda.Event(enable_timing=True)
@@ -110,7 +112,9 @@ def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
         e3 = torch.cuda.Event(enable_timing=True)
         # single replay from idle: submission + device
         e0.record()
+        t_host = time.perf_counter()
         g.replay()
+        submit.append((time.perf_counter() - t_host) * 1000.0)
         e1.record()
         torch.cuda.synchronize()
         launch.append(e0.elapsed_time(e1))
@@ -123,15 +127,18 @@ def graph_time(fn, iters: int, warm: int = 5) -> tuple[float, float]:
         gpu.append(e2.elapsed_time(e3))
     gpu.sort()
     launch.sort()
-    return gpu[len(gpu) // 2], launch[len(launch) // 2]
+    submit.sort()
+    return gpu[len(gpu) // 2], launch[len(launch) // 2], submit[len(submit) // 2]
 
 
-def _fmt(tag: str, layers: int, stock: tuple[float, float], fused: tuple[float, float]) -> str:
-    sg, sl = stock
-    fg, fl = fused
+def _fmt(tag: str, layers: int, stock: tuple[float, float, float],
+         fused: tuple[float, float, float]) -> str:
+    sg, sl, ss = stock
+    fg, fl, fs = fused
     return (f"  timing {tag}: {layers} layers  gpu stock {sg*1000/layers:7.1f} -> fused "
             f"{fg*1000/layers:7.1f} us/layer (step {fg-sg:+.3f} ms)  |  +launch stock "
-            f"{sl*1000/layers:7.1f} -> fused {fl*1000/layers:7.1f} us/layer (step {fl-sl:+.3f} ms)")
+            f"{sl*1000/layers:7.1f} -> fused {fl*1000/layers:7.1f} us/layer (step {fl-sl:+.3f} ms)"
+            f"  |  host submit stock {ss*1000/layers:5.1f} -> fused {fs*1000/layers:5.1f} us/layer")
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +243,9 @@ def section_kda(iters: int) -> None:
         if not rec_ok:
             d = (rec0 - rec1).abs()
             fail(f"kda {name}: recurrent state differs ({int((d != 0).sum())} elems, max {d.max():.3e})")
-        if r > 2e-3:
-            fail(f"kda {name}: output rel {r:.3e} above the reduce-order gate 2e-3")
+        if n_mis > 0:
+            fail(f"kda {name}: output differs from stock in {n_mis} bf16 elements (max ulp {ulp}, "
+                 f"rel {r:.3e}) -- the gate is bit equality on every case")
         if torch.isnan(y1.float()).any():
             fail(f"kda {name}: NaN in output")
         print(f"  {name:40s} conv state {'bit-exact' if cs_ok else 'DIFF'}  rec state "
