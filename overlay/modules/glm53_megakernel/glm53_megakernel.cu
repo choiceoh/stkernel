@@ -1437,7 +1437,9 @@ struct MKGemm2Ctx {
 // first (PDL): x is that grid's output and the scratch was rearmed by it.
 __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
                                                uint8_t* smem, int part) {
+  MK2_TS(0);  // dispatched (before the PDL wait)
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  MK2_TS(1);  // the previous grid is done: x is readable
   __nv_bfloat16* sx = (__nv_bfloat16*)smem;          // [32][LR_PITCH]
   __nv_bfloat16* sB = sx + 32 * LR_PITCH;            // [LR_MAX][LR_PITCH]
   const int r = c.lr_r;
@@ -1485,9 +1487,13 @@ __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
   __threadfence();
   __syncthreads();
   if (threadIdx.x == 0) atomicAdd(&g_mk2_lr_flag[c.lr_slot], 1u);
+  MK2_TS(3);  // partial t published
 }
 
-template <int RQ>
+// LR: the low-rank-correction instantiation (33차 lever 4). The plain one
+// carries none of its code, scratch or waits -- the production path must
+// not pay for a lever that is off.
+template <int RQ, bool LR>
 __global__ void __launch_bounds__(MK_THREADS, 2)
 mk_gemm2_kernel(const MKGemm2Ctx c) {
   static_assert(RQ == 1 || RQ == 2 || RQ == 4, "rows per warp");
@@ -1509,16 +1515,19 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   uint8_t* sraw = (uint8_t*)(sxs + 2 * 32);             // [NB][W4_RAW_BYTES]
   __shared__ int s_last;
 
-  __shared__ float s_lr_t[32 * LR_MAX];   // t staged for the epilogue (lever 4)
-  __shared__ int s_lr_last;
-  // 33차 lever 4: the first LR_CTAS blocks of a corrected launch reduce
-  // t = x @ lr_b^T and leave; they are the lowest block indices so they
-  // are dispatched before any block that could wait on them.
-  if (c.lr_r > 0 && (int)blockIdx.x < LR_CTAS) {
-    mk2_lr_partial(c, sb0, (int)blockIdx.x);
-    return;
+  // 33차 lever 4 (LR only): the first LR_CTAS blocks of a corrected launch
+  // reduce t = x @ lr_b^T and leave; they are the lowest block indices so
+  // they are dispatched before any block that could wait on them. The
+  // staged t reuses the A ring (saq) after the main loop; s_last is reused
+  // as the launch's "last final store" flag.
+  if constexpr (LR) {
+    if ((int)blockIdx.x < LR_CTAS) {
+      mk2_lr_partial(c, sb0, (int)blockIdx.x);
+      return;
+    }
   }
-  const int bid = (int)blockIdx.x - (c.lr_r > 0 ? LR_CTAS : 0);
+  float* s_lr_t = (float*)saq;   // [32][LR_MAX] fp32 = 4 KB of the 8 KB A ring
+  const int bid = (int)blockIdx.x - (LR ? LR_CTAS : 0);
   const int kblk = c.k / KSTEP;
   const int ksr = c.ksr;
   const int nmain = (c.n / SMEM_W_ROWS) * ksr;          // main units
@@ -1841,7 +1850,6 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // t[row] . lr_a[col] to every final store; the launch's last final store
   // rearms the scratch for the next launch (graph replay reuses it).
   auto lr_wait = [&]() {
-    if (c.lr_r <= 0) return;
     if (threadIdx.x == 0) {
       while (*((volatile unsigned*)&g_mk2_lr_flag[c.lr_slot]) < (unsigned)LR_CTAS)
         __nanosleep(64);
@@ -1853,7 +1861,6 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     __syncthreads();
   };
   auto lr_term = [&](int r, int col) -> float {
-    if (c.lr_r <= 0) return 0.0f;
     const __nv_bfloat16* a = c.lr_a + (size_t)col * c.lr_r;   // col < n_pad
     const float* t = s_lr_t + r * LR_MAX;
     float acc_lr = 0.0f;
@@ -1864,14 +1871,13 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     return acc_lr;
   };
   auto lr_done = [&]() {
-    if (c.lr_r <= 0) return;
     __syncthreads();
     if (threadIdx.x == 0) {
       const unsigned prev = atomicAdd(&g_mk2_lr_done[c.lr_slot], 1u);
-      s_lr_last = (prev + 1u == (unsigned)(c.n / SMEM_W_ROWS)) ? 1 : 0;
+      s_last = (prev + 1u == (unsigned)(c.n / SMEM_W_ROWS)) ? 1 : 0;
     }
     __syncthreads();
-    if (s_lr_last) {
+    if (s_last) {
       float* t = g_mk2_lr_t[c.lr_slot];
       for (int i = threadIdx.x; i < 32 * LR_MAX; i += MK_THREADS) t[i] = 0.0f;
       __threadfence();
@@ -1883,14 +1889,16 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     }
   };
   if (nslices == 1) {  // whole tile: bf16 out
-    lr_wait();
+    if constexpr (LR) lr_wait();
     store_tile([&](int r, int col, float v) {
-      if (col < c.n_orig)
-        c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(
-            v * (c.rgs ? c.rgs[col] : 1.0f) + lr_term(r, col));
+      if (col < c.n_orig) {
+        float o = v * (c.rgs ? c.rgs[col] : 1.0f);
+        if constexpr (LR) o += lr_term(r, col);
+        c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(o);
+      }
     });
     if (c.pair_act) pair_finish(nt);  // the tile's final store was just made
-    lr_done();
+    if constexpr (LR) lr_done();
     MK2_TS(3);
     return;
   }
@@ -1911,7 +1919,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   __syncthreads();
   if (s_last) {
     __threadfence();  // acquire: the other slices' partials
-    lr_wait();
+    if constexpr (LR) lr_wait();
     for (int i2 = threadIdx.x; i2 < c.m * 32; i2 += MK_THREADS) {
       const int r = i2 >> 5, c4 = (i2 & 31) * 4;
       const float* src = g_mk2_partial + (size_t)r * c.n + nt * 128 + c4;
@@ -1924,13 +1932,18 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       const float4 rg = c.rgs ? *(const float4*)(c.rgs + col)
                               : make_float4(1.0f, 1.0f, 1.0f, 1.0f);
       __nv_bfloat16* o = c.out + (size_t)r * c.n_orig + col;
-      if (col < c.n_orig) o[0] = __float2bfloat16(v4.x * rg.x + lr_term(r, col));
-      if (col + 1 < c.n_orig) o[1] = __float2bfloat16(v4.y * rg.y + lr_term(r, col + 1));
-      if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z * rg.z + lr_term(r, col + 2));
-      if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w * rg.w + lr_term(r, col + 3));
+      v4.x *= rg.x; v4.y *= rg.y; v4.z *= rg.z; v4.w *= rg.w;
+      if constexpr (LR) {
+        v4.x += lr_term(r, col); v4.y += lr_term(r, col + 1);
+        v4.z += lr_term(r, col + 2); v4.w += lr_term(r, col + 3);
+      }
+      if (col < c.n_orig) o[0] = __float2bfloat16(v4.x);
+      if (col + 1 < c.n_orig) o[1] = __float2bfloat16(v4.y);
+      if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
+      if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
     }
     if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store
-    lr_done();
+    if constexpr (LR) lr_done();
   }
   MK2_TS(3);
 }
@@ -3388,20 +3401,23 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_kda_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm2_kernel<1>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-      GEMM2_SMEM));
+      mk_gemm2_kernel<1, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm2_kernel<2>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-      GEMM2_SMEM));
+      mk_gemm2_kernel<2, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
-      mk_gemm2_kernel<4>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-      GEMM2_SMEM));
+      mk_gemm2_kernel<4, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<1, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<2, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<4, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   // not a residency contract (v2 has no barrier): the unit rule wants
   // to know how many blocks share an SM
   // the widest instantiation (two m-tiles, four quant rows) bounds the
   // others' occupancy
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-      &g_gemm2_bps, mk_gemm2_kernel<4>, MK_THREADS, GEMM2_SMEM));
+      &g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM));
   if (g_gemm2_bps < 1) g_gemm2_bps = 1;
   {  // the CURRENT device, the one the occupancy above and the launches
      // use -- not ordinal 0 (mk_probe_device asks the same way)
@@ -3692,12 +3708,21 @@ int mk_choose_tail2(int m, int n, int k, int ksr) {
 void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
   const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1)
                     + (c2.lr_r > 0 ? LR_CTAS : 0);
+  if (c2.lr_r > 0) {
+    if (c2.m <= 8)
+      mk_launch(mk_gemm2_kernel<1, true>, grid2, GEMM2_SMEM, stream, c2);
+    else if (c2.m <= 16)
+      mk_launch(mk_gemm2_kernel<2, true>, grid2, GEMM2_SMEM, stream, c2);
+    else
+      mk_launch(mk_gemm2_kernel<4, true>, grid2, GEMM2_SMEM, stream, c2);
+    return;
+  }
   if (c2.m <= 8)
-    mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);
   else if (c2.m <= 16)
-    mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);
   else
-    mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<4, false>, grid2, GEMM2_SMEM, stream, c2);
 }
 
 }  // namespace

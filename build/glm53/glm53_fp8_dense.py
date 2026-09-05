@@ -1224,6 +1224,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         kda_owned, nv_prefill,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
+    try:  # 33차: how the W4 packs were made (rtn / gptq / cached / low-rank)
+        from vllm.model_executor.layers import glm53_megakernel as _mkmod2
+        logger.warning("[fp8-dense] %s megakernel %s", type(model).__name__,
+                       _mkmod2.pack_stats_line())
+    except Exception:
+        pass
     if shapes:
         # [N x K] x count: the map from a decode trace's launch classes to
         # linears (28차: the 30-45 us class is [1024 x 4096] and [4096 x 512])

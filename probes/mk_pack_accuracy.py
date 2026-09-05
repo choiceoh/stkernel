@@ -155,9 +155,9 @@ def main():
         cases.append((f"randn {n}x{k}", (torch.randn(n, k, device=DEV) * 0.02).to(torch.bfloat16)))
     ranks = [int(r) for r in args.lorc.split(",") if r.strip()]
 
-    print(f"{'weight':<22}{'arm':<14}{'err/truth':>11}{'(256 rows)':>11}{'kernel-twin':>13}{'v2 us':>8}")
-    print("err/truth: the arm's pure-torch twin on 256 held-out rows vs x_bf16 @ W_bf16^T; "
-          "kernel-twin: the v2 kernel's bf16 output vs the twin's bf16 on the kernel's rows")
+    print(f"{'weight':<22}{'arm':<14}{'err/truth':>11}{'build s':>11}{'kernel-twin':>13}{'v2 us':>8}")
+    print("err/truth: the arm's pure-torch twin on 256 held-out rows vs x_bf16 @ W_bf16^T; build s: the pack "
+          "build (GPTQ solve / SVD included); kernel-twin: the v2 kernel's bf16 output vs the twin's bf16")
     m = args.m
     for name, w in cases:
         n, k = w.shape
@@ -175,7 +175,7 @@ def main():
         got = _fp8_dense_gemm(x, sq, sws, srows, scols)
         got_eval = _fp8_dense_gemm(x_eval.to(torch.bfloat16), sq, sws, srows, scols)
         t = _time(lambda: _fp8_dense_gemm(x, sq, sws, srows, scols), args.iters)
-        rows.append(("stock w8a8", _rel(got_eval, truth_eval), float("nan"), float("nan"), t))
+        rows.append(("stock w8a8", _rel(got_eval, truth_eval), 0.0, float("nan"), t))
         # the pack arms
         H, ntok = acts.hessian(args.ntok, seed=2)
         calib_tag = None
@@ -192,6 +192,7 @@ def main():
         for arm, rowshift, hess, lr in arms:
             os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = rowshift
             os.environ["VLLM_GLM53_MK_PACK_LORC"] = str(lr)
+            tb = time.perf_counter()
             if hess is None:
                 os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "0"
                 pack = mk.build_mk_weight_w4(w)
@@ -200,21 +201,22 @@ def main():
                 mk._CALIB_OVERRIDE = (H, ntok)
                 pack = mk.build_mk_weight_w4(w, name="__probe__")
                 mk._CALIB_OVERRIDE = None
+            torch.cuda.synchronize()
+            build_s = time.perf_counter() - tb
             if lr and pack[4] is None:
                 pack = mk.MKPack(pack[0], pack[1], pack[2], pack[3],
                                  *mk._w4_lorc(w, mk.mk_w4_dequant(pack[0], pack[1], n, pack[2], pack[3]),
                                               H if hess else None, lr)[:2])
-            deq = mk.mk_pack_dequant(pack, n).float()
-            twin_eval = mk._mk_quant_x_ref(x_eval.to(torch.bfloat16)) @ deq.T
+            twin_eval = mk.mk_pack_twin(x_eval.to(torch.bfloat16), pack, n)
             twin = twin_eval[:m]
             got = mk._gemm_call(x, pack, n)
             torch.cuda.synchronize()
             t = _time(lambda: mk._gemm_call(x, pack, n), args.iters)
             rows.append((arm + ("" if hess is None or calib_tag is None else "*"),
-                         _rel(twin_eval, truth_eval), _rel(twin_eval, truth_eval),
+                         _rel(twin_eval, truth_eval), build_s,
                          _rel(got, twin.to(torch.bfloat16)), t))
-        for arm, e, e_twin, gap, t in rows:
-            print(f"{name:<22}{arm:<14}{e:>11.3e}{e_twin:>11.3e}{gap:>13.2e}{t:>8.1f}")
+        for arm, e, b, gap, t in rows:
+            print(f"{name:<22}{arm:<14}{e:>11.3e}{b:>11.2f}{gap:>13.2e}{t:>8.1f}")
         print()
     return 0
 

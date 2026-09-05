@@ -580,7 +580,12 @@ def _w4_lorc(weight, deq_unshifted, H, rank: int):
     U, s, V = U[:, :rank], s[:rank], V[:, :rank]
     lr_a = torch.zeros(n_pad, rank, dtype=torch.bfloat16, device=E.device)
     lr_a[:n] = (U * s[None, :]).to(torch.bfloat16)
-    lr_b = (V.T / S[None, :]).to(torch.bfloat16)
+    # ROW-MAJOR [r, k], explicitly: V.T keeps the SVD's transposed strides
+    # (a [r, k] tensor laid out column-major) whenever n < k, and the kernel
+    # walks lr_b as jj * k + kk -- the first low-rank diagnostic read every
+    # n < k shape 2% wrong and every n > k shape right on exactly that
+    lr_b = (V.T / S[None, :]).to(torch.bfloat16).contiguous()
+    lr_a = lr_a.contiguous()
     tot = float(ES.pow(2).sum())
     cap = float(s.pow(2).sum()) / tot if tot > 0 else 0.0
     return lr_a, lr_b, cap
@@ -872,6 +877,22 @@ def mk_pack_dequant(pack, n_rows):
     return w
 
 
+def mk_pack_twin(x, pack, n_rows):
+    """fp32 [m, n_rows]: what the lane serves for x and this pack -- the
+    kernel-quantized activations against the dequantized W4 bytes (row
+    scales applied), plus the low-rank correction (33차 lever 4) on the
+    UNQUANTIZED x: the reducer blocks read x itself, so the served product
+    is x_q W_q^T + x B^T A^T. mk_pack_dequant is the WEIGHT the lane serves
+    (W_q + A B), for weight-space error statistics; this is the output."""
+    xq = _mk_quant_x_ref(x)
+    out = xq @ mk_w4_dequant(pack[0], pack[1], n_rows, pack[2],
+                             pack[3] if len(pack) > 3 else None).float().T
+    if len(pack) > 5 and pack[4] is not None:
+        t = x.float() @ pack[5].float().T                    # [m, r]
+        out = out + t @ pack[4][:n_rows].float().T
+    return out
+
+
 def _mk_quant_x_ref(x):
     """fp32 [m, k]: x after the kernel's activation quant (per row, per
     128-k group: the EXACT scale amax/448 (33차 lever 1; it was the pow2
@@ -1054,6 +1075,10 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
     rgs = mk_pack[3] if len(mk_pack) > 3 else None
     lr_a = mk_pack[4] if len(mk_pack) > 4 else None
     lr_b = mk_pack[5] if len(mk_pack) > 5 else None
+    if lr_a is not None and not (lr_a.is_contiguous() and lr_b.is_contiguous()
+                                 and rgs is None or rgs.is_contiguous()):
+        raise ValueError("low-rank factors / row scales must be contiguous "
+                         "(the kernel walks them row-major)")
     _EXT.run_gemm(x.contiguous(), mk_pack[0], mk_pack[1], out, n_rows,
                   float(mk_pack[2]), 1 if bg else 0,
                   0 if rgs is None else rgs.data_ptr(),
@@ -2108,7 +2133,7 @@ def exact_fixture(dev="cuda"):
     w_exact = w_exact.view(n, k).to(torch.bfloat16)
     x = torch.randn(m, k, dtype=torch.bfloat16, device=dev)
     pack = build_mk_weight_w4(w_exact)
-    ref = _mk_quant_x_ref(x) @ mk_pack_dequant(pack, n).float().T
+    ref = mk_pack_twin(x, pack, n)
     return x, pack, w_exact, ref
 
 

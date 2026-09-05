@@ -8791,7 +8791,7 @@ def test_glm53_megakernel_contracts() -> None:
           "never a local-memory byte array")
     check("def _selftest_gemm() -> bool:" in pysrc_full
           and "_selftest_w4" not in pysrc_full
-          and "ref = _mk_quant_x_ref(x) @ mk_pack_dequant(pack, n).float().T"
+          and "ref = mk_pack_twin(x, pack, n)"
           in pysrc_full and "if e > 1e-3 or n_ulp > 0:" in pysrc_full
           and "def _exact_gate(got, ref32) -> tuple:" in pysrc_full
           and "refb = ref32.to(torch.bfloat16).float()" in pysrc_full
@@ -8839,7 +8839,7 @@ def test_glm53_megakernel_contracts() -> None:
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
-          and "&g_gemm2_bps, mk_gemm2_kernel<4>, MK_THREADS, GEMM2_SMEM" in cu,
+          and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu,
           "both persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
           "merely run slowly (the third query is the v2 lane's blocks per SM, "
@@ -8907,13 +8907,13 @@ def test_glm53_megakernel_contracts() -> None:
           "the driver arms smlp2 behind its own knob with the exact + replay "
           "gate, the MLP hook prefers it when armed, and the serving line "
           "names the lane")
-    check("template <int RQ>" in cu
+    check("template <int RQ, bool LR>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
           and "for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group" in v2
-          and "mk_launch(mk_gemm2_kernel<1>, grid2, GEMM2_SMEM, stream, c2);" in cu
-          and "mk_launch(mk_gemm2_kernel<2>, grid2, GEMM2_SMEM, stream, c2);" in cu
-          and "mk_launch(mk_gemm2_kernel<4>, grid2, GEMM2_SMEM, stream, c2);" in cu,
+          and "mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<4, false>, grid2, GEMM2_SMEM, stream, c2);" in cu,
           "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
           "m-tiles and the x lane mapping at compile time) and the host picks "
           "the instantiation from m")
@@ -9939,6 +9939,38 @@ def test_megakernel_w4_layout_functional() -> None:
     for r in range(n, 128):
         check(rgs_l[r] == 1.0, "per-row shift: padded rows scale by 1")
     os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = "0"
+
+    # (c) 33차 lever 2 plumbing: the calibration observer accumulates x^T x
+    # per pack under its name, dumps per rank, and the packer reads it back
+    # by name (the served GPTQ path is this file round trip, never exercised
+    # by the GPU probes, which hand the Hessian over in memory)
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        mod._CALIB["on"] = True; mod._CALIB["dumped"] = False
+        mod._CALIB["H"].clear(); mod._CALIB["ntok"].clear(); mod._CALIB["meta"].clear()
+        mod._CALIB["seen"] = 0; mod._CALIB["budget"] = 40
+        os.environ["VLLM_GLM53_MK_CALIB_DIR"] = td
+        pk_c = mod.build_mk_weight_w4(w_a)
+        mod.note_pack_name(pk_c, "layers.1.self_attn.q_proj")
+        xs = torch.randn(24, k)
+        mod._calib_observe(xs, pk_c)
+        check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
+              "calibration: 24 rows seen, budget 40 not reached")
+        mod._calib_observe(xs, pk_c)
+        check(mod._CALIB["dumped"], "calibration: the budget dumps")
+        got_c = mod._calib_hessian_for("layers.1.self_attn.q_proj")
+        check(got_c is not None and int(got_c[1]) == 48
+              and torch.allclose(got_c[0], 2 * (xs.T @ xs), atol=1e-3),
+              "calibration: the dumped Hessian is sum x^T x over the seen rows, "
+              "keyed by the linear's name and rank 0")
+        check(mod._calib_hessian_for("layers.1.self_attn.k_proj") is None,
+              "calibration: an unknown linear packs RTN")
+        os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "0"
+        check(mod._calib_hessian_for("layers.1.self_attn.q_proj") is None,
+              "calibration: VLLM_GLM53_MK_PACK_GPTQ=0 ignores the dump")
+        os.environ.pop("VLLM_GLM53_MK_PACK_GPTQ", None)
+        os.environ.pop("VLLM_GLM53_MK_CALIB_DIR", None)
+        mod._CALIB["on"] = False
 
     # (b) VALUE-EXACT tier: fully random codes/scales. The quantizer may
     # renormalize a group to its own (s', code') -- legal, the grid is
