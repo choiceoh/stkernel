@@ -14,6 +14,84 @@ from pathlib import Path
 import statistics
 
 
+def source_block(source, marker):
+    start = source.index(marker)
+    opening = source.index("{", start)
+    depth, end = 1, opening + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[start:end]
+
+
+def fixedpoint_source(source):
+    """Stop only after exact equality: all remaining iterations are identical.
+
+    Period 1 checks each iteration; period 4 amortizes comparison overhead.
+    This does not use a convergence tolerance or reduce the iteration limit.
+    """
+    old_p2 = source_block(source, "__device__ void mk_mhc_p2_token(")
+    p2 = "template <int PERIOD = 0>\n" + old_p2
+    loop = "    for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {"
+    p2 = p2.replace(loop, loop + """
+      float previous[HC][HC];
+      bool check = false;
+      if constexpr (PERIOD > 0) {
+        check = ((it + 1) % PERIOD) == 0;
+        if (check) {
+#pragma unroll
+          for (int j = 0; j < HC; ++j)
+#pragma unroll
+            for (int k = 0; k < HC; ++k) previous[j][k] = m[j][k];
+        }
+      }
+""")
+    marker = "    }\n    MK_MHC_PROBE(3);"
+    assert marker in p2
+    p2 = p2.replace(marker, """
+      if constexpr (PERIOD > 0) {
+        if (check) {
+          bool same = true;
+#pragma unroll
+          for (int j = 0; j < HC; ++j)
+#pragma unroll
+            for (int k = 0; k < HC; ++k)
+              same = same && (__float_as_uint(m[j][k]) == __float_as_uint(previous[j][k]));
+          if (same) break;
+        }
+      }
+    }
+    MK_MHC_PROBE(3);""", 1)
+    source = source.replace(old_p2, p2, 1)
+    p1 = source_block(source, "__device__ void mk_mhc_p1(")
+    new_p1 = "template <int PERIOD>\n" + p1.replace("mk_mhc_p1(", "mk_mhc_fixed_p1(", 1).replace("mk_mhc_p2_token(a,", "mk_mhc_p2_token<PERIOD>(a,")
+    kernel = source_block(source, "__global__ void mk_mhc_kernel(")
+    new_kernel = "template <int PERIOD>\n" + kernel.replace("mk_mhc_kernel(", "mk_mhc_fixed_kernel(", 1).replace("mk_mhc_p1(a,", "mk_mhc_fixed_p1<PERIOD>(a,")
+    source = source.replace(kernel, kernel + "\n" + new_p1 + "\n" + new_kernel, 1)
+    source = source.replace("void mk_run_mhc(", "int g_probe_mhc_reuse = 0;\nvoid mk_run_mhc(", 1)
+    launches = []
+    for mode, period in ((1, 1), (2, 4)):
+        launches.append(f"""
+  if (g_probe_mhc_reuse == {mode}) {{
+    static int grid = 0;
+    if (!grid) {{
+      int blocks = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &blocks, mk_mhc_fixed_kernel<{period}>, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      grid = std::min(blocks * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(grid > 0, "fixed-point MHC has no resident blocks");
+    }}
+    a.grid = grid;
+    mk_launch(mk_mhc_fixed_kernel<{period}>, grid, 0, stream, a);
+    return;
+  }}
+""")
+    source = source.replace("  static int mhc_grid = 0;", "".join(launches) + "  static int mhc_grid = 0;", 1)
+    return source.replace('  m.def("run_mhc",',
+                          '  m.def("set_mhc_reuse", [](int v) { TORCH_CHECK(v >= 0 && v <= 2); g_probe_mhc_reuse = v; });\n  m.def("run_mhc",', 1)
+
+
 def candidate_source(source, tensorcore=False, fused=False):
     marker = "__device__ void mk_mhc_p2_token("
     start = source.index(marker)
@@ -96,6 +174,7 @@ def main():
     ap.add_argument("--reps", type=int, default=18)
     ap.add_argument("--tensorcore", action="store_true", help="compensated TF32 projection; separate numeric gate")
     ap.add_argument("--fused", action="store_true", help="one resident kernel versus the two-launch TC path")
+    ap.add_argument("--fixedpoint", action="store_true", help="exact Sinkhorn fixed-point early exit in the original kernel")
     args = ap.parse_args()
     if args.reps < 6 or args.reps % 6:
         ap.error("reps must be a positive multiple of six for balanced orders")
@@ -108,7 +187,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     original = Path(mk._SRC).read_bytes()
     assert original == (root / "build/glm53/glm53_megakernel.cu").read_bytes()
-    source = candidate_source(original.decode(), args.tensorcore or args.fused, args.fused)
+    source = (fixedpoint_source(original.decode()) if args.fixedpoint else
+              candidate_source(original.decode(), args.tensorcore or args.fused, args.fused))
     sha = hashlib.sha256(source.encode()).hexdigest()
     directory = Path(os.environ.get("VLLM_GLM53_MK_BUILD_DIR", "/tmp/mhc-reuse"))
     directory = directory / ("prototype-" + sha[:12])
@@ -118,7 +198,7 @@ def main():
     print(json.dumps({"source_sha256": hashlib.sha256(original).hexdigest(),
                       "prototype_sha256": sha, "device": torch.cuda.get_device_name(),
                       "torch": torch.__version__, "cuda": torch.version.cuda,
-                      "projection": "tf32x3-fused" if args.fused else "tf32x3" if args.tensorcore else "simt-fp32"}), flush=True)
+                      "projection": "exact-fixedpoint" if args.fixedpoint else "tf32x3-fused" if args.fused else "tf32x3" if args.tensorcore else "simt-fp32"}), flush=True)
     ext = load(name="mhc_reuse_" + sha[:12], sources=[str(path)],
                extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"],
                build_directory=str(directory), verbose=False)
@@ -160,6 +240,8 @@ def main():
                 torch.cuda.synchronize()
                 errors = [mk._rel_err(a, b) for a, b in zip(got, ref)]
                 assert torch.equal(got[0], ref[0]), (tokens, seed, mode, "residual rounding")
+                if args.fixedpoint:
+                    assert all(torch.equal(a, b) for a, b in zip(got, ref)), (tokens, seed, mode, "fixed-point changed output bits")
                 assert max(errors) <= mk._TOL_MHC, (tokens, seed, mode, errors)
                 oracle_errors = [mk._rel_err(a, b) for a, b in zip(got, oracle)]
                 assert max(oracle_errors) <= mk._TOL_MHC, (tokens, seed, mode, "FP64", oracle_errors)
@@ -200,7 +282,8 @@ def main():
                     assert all(torch.equal(a, b) for a, b in zip(got, snapshots[mode])), (tokens, mode, "graph drift")
             med = [statistics.median(t) for t in times]
             print(json.dumps({"T": tokens, "regime": "cold" if cold else "warm",
-                              "modes": ["baseline", "fused128", "split128"] if args.fused else ["baseline", "reuse64", "reuse128"],
+                              "modes": (["baseline", "fixedpoint1", "fixedpoint4"] if args.fixedpoint else
+                                        ["baseline", "fused128", "split128"] if args.fused else ["baseline", "reuse64", "reuse128"]),
                               "median_us": med, "samples_us": times,
                               "changes_pct": [100 * (v / med[0] - 1) for v in med]}), flush=True)
     print("PASS: stock and baseline oracles, exact residuals and repeated CUDA graphs", flush=True)
