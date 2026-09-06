@@ -95,10 +95,8 @@ _FC1_TILE_N = 64
 _FC1_TILE_K = 512
 _FC2_TILE_N = 128
 _FC2_TILE_K = 128
-# prefetch-ahead distances (cell p): FC1 k tiles / FC2 down tiles ahead of the
-# TMA loads, into L2 -- a deeper pipeline without smem
-_PF_D1 = 2
-_PF_D2 = 3
+# prefetch-ahead (cell p<n>): n FC1 k tiles / n+1 FC2 down tiles ahead of the
+# TMA loads, into L2 -- a deeper pipeline without smem (default n = 2)
 
 
 class MoEStaticKernelV4:
@@ -120,6 +118,7 @@ class MoEStaticKernelV4:
         skip_a: bool = False,
         a_ring: bool = False,
         prefetch: bool = False,
+        prefetch_dist: int = 2,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -177,6 +176,11 @@ class MoEStaticKernelV4:
         # down tiles ahead of the TMA loads (8 + 1 / 4 + 1 lines per lane per
         # stage), so DRAM sees ~2x the requests in flight per CTA at no smem.
         self.prefetch = bool(prefetch)
+        # k tiles ahead for FC1 (n) and down tiles ahead for FC2 (n + 1)
+        self.pf_d1 = int(prefetch_dist)
+        self.pf_d2 = int(prefetch_dist) + 1
+        if self.prefetch and not (1 <= self.pf_d1 <= 6):
+            raise ValueError("prefetch distance must be 1..6")
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
@@ -1768,7 +1772,7 @@ class MoEStaticKernelV4:
                             if cutlass.const_expr(self.prefetch):
                                 # k tile _PF_D1 ahead (same half; the last ones
                                 # reach into the next half / stop at the end)
-                                pf_kt = k_tile + Int32(_PF_D1)
+                                pf_kt = k_tile + Int32(self.pf_d1)
                                 pf_up = up_tile
                                 if pf_kt >= k_tile_cnt1:
                                     pf_kt = pf_kt - k_tile_cnt1
@@ -1852,7 +1856,7 @@ class MoEStaticKernelV4:
                 # ---- FC2: the item's 32 down tiles ----
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
                     if cutlass.const_expr(self.prefetch):
-                        pf_t = output_tile_idx + Int32(_PF_D2)
+                        pf_t = output_tile_idx + Int32(self.pf_d2)
                         if pf_t < output_tile_cnt:
                             e_off2 = Int64(weight_expert_idx) * w2_exp_b
                             # 128 rows x 64 B chunk (slice) per tile: the line holding

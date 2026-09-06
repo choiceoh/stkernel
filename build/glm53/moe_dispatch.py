@@ -295,7 +295,7 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
     "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
-    "v4": False, "a_ring": False, "prefetch": False,
+    "v4": False, "a_ring": False, "prefetch": False, "prefetch_dist": 2,
 }
 
 
@@ -333,10 +333,12 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # wave is fullest takes items (U=40: 40 CTAs x 4 items)
             cfg["even"] = True
             continue
-        if token == "p":
-            # v4/v5: the DMA warp prefetches w13/w2 rows (+SF) into L2 a few
-            # stages ahead of the TMA loads
+        if token == "p" or (token[:1] == "p" and token[1:].isdigit()):
+            # v4/v5: the DMA warp prefetches w13/w2 rows (+SF) into L2 n k
+            # tiles / n+1 down tiles ahead of the TMA loads (p = p2)
             cfg["prefetch"] = True
+            if token[1:]:
+                cfg["prefetch_dist"] = int(token[1:])
             continue
         if token == "v":
             # v4 + A ring: A and SFA loaded once per k tile on their own
@@ -398,6 +400,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: xs/xa need w (v3)")
     if cfg["prefetch"] and not cfg["v4"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p (L2 prefetch) needs u or v (v4)")
+    if cfg["prefetch"] and not (1 <= int(cfg["prefetch_dist"]) <= 6):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p<n> distance must be 1..6")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
     return cfg
@@ -1584,6 +1588,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("v4", False)),
         bool(config.get("a_ring", False)),
         bool(config.get("prefetch", False)),
+        int(config.get("prefetch_dist", 2)),
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
     )
@@ -1666,7 +1671,8 @@ def _get_static_kernel_v2(
         kernel_cls = MoEStaticKernelV4 if config.get("v4", False) else MoEStaticKernelV3
         v4_kwargs = (
             {"a_ring": bool(config.get("a_ring", False)),
-             "prefetch": bool(config.get("prefetch", False))}
+             "prefetch": bool(config.get("prefetch", False)),
+             "prefetch_dist": int(config.get("prefetch_dist", 2))}
             if config.get("v4", False) else {}
         )
         kernel: Any = kernel_cls(
@@ -1792,7 +1798,8 @@ def _get_static_kernel_v2(
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
-        f"{'v' if config.get('a_ring') else ''}{'p' if config.get('prefetch') else ''}"
+        f"{'v' if config.get('a_ring') else ''}"
+        f"{('p' + str(config.get('prefetch_dist', 2))) if config.get('prefetch') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

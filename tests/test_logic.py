@@ -3566,13 +3566,13 @@ def test_b12x_static_v2_controls() -> None:
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
                       "dynamic": False, "wide": False, "even": False, "split": False,
                       "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False,
-                      "prefetch": False},
+                      "prefetch": False, "prefetch_dist": 2},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
                                  "stamps": False, "dynamic": False, "wide": False,
                                  "even": False, "split": False, "skip_sf": False,
                                  "skip_a": False, "v4": False, "a_ring": False,
-                                 "prefetch": False},
+                                 "prefetch": False, "prefetch_dist": 2},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3603,6 +3603,13 @@ def test_b12x_static_v2_controls() -> None:
     except ValueError:
         pass
     check(parse("v,p")["prefetch"] and parse("u,p")["v4"], "p adds the L2 prefetch to v4/v5")
+    check(parse("v,p4")["prefetch_dist"] == 4 and parse("v,p")["prefetch_dist"] == 2,
+          "p<n> sets the prefetch distance (p = p2)")
+    try:
+        parse("v,p9")
+        check(False, "p9 must be rejected")
+    except ValueError:
+        pass
     try:
         parse("w,p")
         check(False, "p without v4 must be rejected")
