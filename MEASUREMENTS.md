@@ -6724,3 +6724,174 @@ main 14ffb9e(PR #374) 배포 후 같은 빌드에서 연달아 두 팔(`bench/pa
 - 정적 검증: main 병합(#372/#373, README 충돌 양측 보존) + `tests/test_logic.py` 통과. **z 계약 검사는 CPU 컴파일
   검사(`--specs z`) 재실행으로 확인해야 한다** — 폐쇄형이 레이아웃과 어긋나면 z 컴파일이 실패한다(fail-loud 가 목적).
 
+
+### Startup artifact follow-up — FP8 and rank caches (2026-09-06)
+
+After #366, added explicit opt-in `VLLM_GLM53_FP8_CACHE` and
+`VLLM_GLM53_RANK_CACHE` paths (both default empty). FP8 artifacts retain exact
+bytes/strides/padding and the direct source check. Rank checkpoints are saved at
+the outer GLM loading boundary before FP8/MK and vLLM quant finalization; hits
+restore each worker's own state and run the normal post-load sequence once.
+An all-rank readiness vote is required because the installed InstantTensor
+iterator passes the world device group to `instanttensor.safe_open`: partial
+cache hits must not skip its collectives on only some ranks. A miss on any rank
+uses the source loader on all ranks. Chunk checksums and atomic publication
+prevent partial artifacts from being served; a payload error during restoration
+aborts. Per-chunk sync/page eviction bounds file-cache pressure on Linux UMA.
+
+Local CPU tests cover artifact round trips, source/runtime invalidation,
+truncated/corrupt data, write failure, source-iterator bypass, reload bypass,
+post-load ordering and a four-process Gloo all-hit/partial-miss vote. GPU/NCCL,
+full-model quant finalization, output/acceptance, peak memory and actual boot
+speed remain **unverified**; neither cache is deployed or promoted. No fleet
+restart or GPU workload was performed for this implementation. See
+[the startup-artifact contract](overlay/modules/glm53_model/README.md#startup-artifacts-fp8-copies-and-rank-checkpoints-2026-09-06)
+for enable/rollback and validation requirements. The old 54.9 s fold / 52.1 s
+read+apply measurements describe candidate budgets, not savings. The 302 s TP
+initialization pause is still separate and unresolved.
+
+### Startup cache fleet trial 1 — default-on rejected, retry prepared (2026-09-07)
+
+Operator explicitly requested default-on fleet validation. `startupcache1`
+ran under the normal GPU queue, rebased onto `d855194`, and deployed source
+`284686a` / overlay `6131ff0d79e1` with SHA-256 parity on all four nodes.
+Evidence: `/home/choiceoh/glm53-logs/startup-cache-20260907-run1` on srv2.
+Same source/profile; BASE sets both cache paths to `0`, COLD uses enabled
+profile paths. Both use `PREFILL_WARMUP=0`; the canonical Korean onepass uses
+2K/32K, with exact prompts/responses retained. This is a startup trial, not a
+decode-throughput promotion.
+
+- BASE: health **389 s**, head load-model **157.6 s**, target source read/apply
+  **33.2 + 19.5 = 52.7 s**, FP8 fold **65.7 + 7.6 s** (target/drafter).
+  Onepass **6/6**, corruption **0/4**, raw acceptance **45.8%**.
+  The first source deployment cleared torch.compile cache: the total boot is
+  not a clean warm-compile baseline. Distributed model groups took **3.2 s**;
+  the historical 302 s pause did not reproduce on this boot.
+- COLD: health **712 s**, head load-model **571.6 s**. srv1 refused rank-cache
+  publication for insufficient disk space; the other ranks wrote their cache.
+  The all-node receipt gate correctly failed and triggered cache-off recovery
+  before WARM. COLD/WARM output and warm-hit speed are **not validated**.
+- The head rank artifact was **98,908,191,824 bytes** and took **376.463 s** to
+  write. Its manifest proves **1,805** `layers`/`_active_layers` registrations
+  contain identical chunk checksums; **48,982,417,960 bytes** are redundant.
+  This explains both the disk guard and excessive copying, rather than a
+  general requirement for 93 GiB of rank storage.
+- Format 2 writes exact registration aliases once (**49,925,773,864 bytes**
+  predicted from the actual manifest), validates alias topology, rejects
+  overlapping views, and votes on all-rank publication readiness so a full
+  disk cannot make the other ranks waste a cold write. Copies reuse a bounded
+  pinned staging buffer and synchronize before hashing/reuse/page eviction;
+  this targets the `.cpu()` waits in the slow-phase stacks. CPU byte/layout,
+  alias and peer-capacity regressions cover the changes. The retry must prove
+  real GPU behavior and a net gain; no warm-cache speedup is claimed yet.
+
+### Startup cache fleet trial 2 — exact FP8 hits, JSON identity rejection (2026-09-07)
+
+`startupcache2` deployed `673e454` after rebasing onto `cea6938`; all 56 overlay
+files matched across the fleet. Evidence: `startup-cache-20260907-run2` under
+the same srv2 log directory. The same cache-off/COLD/WARM sequence and Korean
+2K/32K onepass were used, with four-node resource sampling throughout.
+
+| Metric | BASE | COLD | WARM attempt |
+|---|---:|---:|---:|
+| Health wall, seconds | 392 | 348 | 256 |
+| Head load-model, seconds | 164.9 | 209.1 | 114.5 |
+| Head target source read + apply, seconds | 53.6 | 50.8 | source fallback |
+| Korean onepass facts | 6/6 | 6/6 | not run: cache receipt gate failed |
+| Corrupt responses | 0/4 | 0/4 | not run |
+| Raw acceptance | 51.83% | 52.13% | not run |
+
+- All four ranks successfully wrote **48,092,653,608 bytes (44.8 GiB)** each.
+  Exact aliases beyond `_active_layers` reduce this below the first manifest's
+  46.5 GiB estimate. Write times: srv1 **96.461 s**, srv2 **48.447 s**,
+  srv3 **43.504 s**, srv4 **42.729 s**. This is a deduplication/transfer fix,
+  not yet a measured warm rank-loading gain.
+- All four nodes hit **213 target + 31 drafter FP8 artifacts**, with zero
+  misses, cache errors or source-copy disarms on the WARM attempt. The head's
+  FP8 key/read total was **5.163 s**, versus **9.180 s** of quantization in
+  BASE (host phase timers; not isolated GPU kernel timings). Full response text
+  differs between BASE and COLD despite matching prompts, so no bit-exact
+  generated-output claim is made.
+- Rank metadata checksums were intact, but direct Python identity equality
+  rejected them: Transformers' outer/nested `id2label` maps have integer keys,
+  which JSON restores as strings. No rank artifact was restored. The guard
+  used source weights and triggered cache-off recovery; health **200** was
+  verified after restoration. The 256 s wall time therefore includes FP8 hits
+  and warm compilation, **not rank-cache acceleration**.
+- Normalize the complete identity to JSON-compatible values before hashing or
+  persistence. A new regression covers nested integer label keys (including
+  multi-digit labels) and tuples. All **27** focused tests pass, alongside
+  **6,650** logic checks, 30 megakernel and 20 fleet regressions. Trial 3 repeats
+  the full sequence to exercise the actual rank-restore path.
+- Trial 1/2 rank payloads were removed only after preserving their complete
+  compressed manifests. The 488 obsolete FP8 files per node were inventoried
+  and removed while both cache knobs were verified `0`, so the next format
+  generation does not consume additional old-cache disk space.
+
+### Startup cache fleet trial 3 — all-rank warm hits and serving checks pass (2026-09-07)
+
+`startupcache3` completed through the normal GPU queue with exit **0**, using
+source **`2abdc6b8c6603b6a231e0a96639523dbb1d1f181`** and overlay **`1376abe3d8d0`**.
+All four nodes had matching generated helper hashes in all three arms. Evidence
+is preserved at `/home/choiceoh/glm53-logs/startup-cache-20260907-run3` on srv2
+(raw node logs, container state, environment, source/build identities, health
+timers, exact prompts/responses, onepass records and 10-second host samples).
+`report.md` and `report.json` summarize those receipts; local copies are under
+`runs/startup-cache-20260907-run3` in the task worktree.
+
+BASE disables both caches, COLD publishes them, and WARM restores them. All
+three boots use the same source/profile and canonical Korean onepass at
+**2K/32K**, with **`PREFILL_WARMUP=0`** and effective speculative K **5**. These
+are single boots in that order, not repeated or order-balanced measurements;
+the production 128K prefill warmup is outside this trial's scope.
+
+| Metric | BASE | COLD | WARM |
+|---|---:|---:|---:|
+| Health wall, seconds | 347 | 358 | 239 |
+| Head load-model, seconds | 150.9 | 217.1 | 100.7 |
+| Head target source read + apply, seconds | 34.6 + 19.4 = 54.0 | 35.2 + 19.1 = 54.3 | skipped |
+| Head rank cache, seconds | disabled | write 46.569 | restore 48.039 |
+| Head target + drafter FP8 preparation, seconds | quantize 9.045 | quantize + publication | key + read 5.172 |
+| All-node FP8 hits / misses / errors | 0 / 976 / 0 | 0 / 976 / 0 | 976 / 0 / 0 |
+| Korean onepass facts | 6/6 | 6/6 | 6/6 |
+| Corrupt responses | 0/4 | 0/4 | 0/4 |
+| Raw speculative acceptance | 51.55% | 50.19% | 49.21% |
+
+All four ranks restored **48,092,653,608 bytes (44.8 GiB)** each. Each node's
+FP8 hit receipt contains **213 target + 31 drafter** artifacts, and every
+direct-source copy check reported zero disarms. This exercises the NCCL
+readiness path, actual CUDA restoration and normal GLM/vLLM post-load hooks.
+
+| Node / rank | Cold rank write (s) | Warm rank restore (s) | Minimum available RAM (GiB) | Minimum free disk (GiB) |
+|---|---:|---:|---:|---:|
+| srv1 / 1 | 97.632 | 44.929 | 15.23 | 10.02 |
+| srv2 / 0 | 46.569 | 48.039 | 10.62 | 1042.44 |
+| srv3 / 2 | 43.101 | 39.121 | 10.78 | 1852.45 |
+| srv4 / 3 | 43.149 | 38.404 | 13.15 | 2212.93 |
+
+There were 114 resource samples per node and no net swap-use increase. These
+are OS sampled minima, not CUDA peak allocations. Rank plus FP8 artifacts use
+about **47 GiB per node**. Initial publication is substantial extra work, and
+different source/runtime identities retain separate files without eviction.
+
+The head's corresponding loading phases improved by about **6.0 s** for rank
+restoration and **3.9 s** for FP8 preparation. Do **not** attribute the full
+**347 → 239 s** health-wall difference to caching: the head's memory-profile
+phase also changed from **93.0 → 36.5 s** as compilation became warm, and other
+fold/startup phases changed. Host phase timers include synchronization; this
+is neither an isolated kernel benchmark nor a stable total-latency estimate.
+
+All four prompt hashes match between arms, but exact generated responses match
+**0/4** for BASE→COLD, BASE→WARM and COLD→WARM. The short quality/corruption checks
+pass; they do not prove identical generation, broad quality equivalence or a
+decode/acceptance improvement. Artifact-byte checks and generated-output
+checks are recorded separately.
+
+**Decision:** retain both operator-requested profile defaults enabled. The
+successful WARM service was left running with health **200**, both cache paths
+present, and the fleet holder released. `=0` disables either path. The two
+runtime defects found in trials 1/2 are fixed and exercised by this passing
+trial. All **27** focused tests, **6,650** logic checks, **30** megakernel and
+**20** fleet regressions pass; the final documentation update does not change
+the tested runtime. End-to-end repeated/balanced speedup and full-context
+acceptance remain unclaimed.

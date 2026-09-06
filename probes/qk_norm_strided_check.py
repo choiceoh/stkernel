@@ -157,6 +157,12 @@ def main():
                 report["cases"].append(row)
                 print(json.dumps(row), flush=True)
     run_decline_cases(kda)
+    if os.environ.get("FLEET_PROBE_REPORT"):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bench"))
+        from probe_report import write_report
+        write_report({"mismatches": 0}, {"strided_lane": True, "decline_guards": True},
+                     len(report["cases"]), report["device"])
     print(json.dumps({"decline_cases": "OK"}), flush=True)
     if args.json:
         args.json.write_text(json.dumps(report, indent=2) + "\n")

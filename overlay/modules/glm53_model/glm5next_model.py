@@ -1383,7 +1383,12 @@ class Glm5NextForCausalLM(
             self,
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
-        loaded = loader.load_weights(weights)
+        if getattr(self, "_defer_post_load", False):
+            loaded = loader.load_weights(weights)
+        else:
+            from vllm.model_executor.layers.glm53_rank_cache import load_rank_cached
+
+            loaded = load_rank_cached(self, weights, loader.load_weights)
         # deneb fork: the post-load work (fp8 copies, prefill fastpath, kpool)
         # runs from whoever owns the WHOLE checkpoint walk. Served under the
         # multimodal wrapper, that is Glm5NextForConditionalGeneration, which
@@ -1473,6 +1478,7 @@ class Glm5NextForConditionalGeneration(
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super(Glm4vForConditionalGeneration, self).__init__()
+        self.vllm_config = vllm_config
         config = vllm_config.model_config.hf_config
         multimodal_config = vllm_config.model_config.multimodal_config
         assert multimodal_config is not None
@@ -1517,7 +1523,11 @@ class Glm5NextForConditionalGeneration(
         self.language_model._defer_post_load = True
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loaded = super().load_weights(weights)
+        from vllm.model_executor.layers.glm53_rank_cache import load_rank_cached
+
+        # The cache holds pre-finalization rank weights. Rebuild all GLM
+        # acceleration state below on BOTH cache hits and source loads.
+        loaded = load_rank_cached(self, weights, super().load_weights)
         run = getattr(self.language_model, "run_post_load", None)
         if callable(run):
             run()

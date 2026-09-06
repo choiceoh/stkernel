@@ -42,6 +42,11 @@ from .moe_micro_kernel import MoEMicroKernel
 from .moe_static_kernel import MoEStaticKernel
 from .moe_static_common import STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS
 from .moe_static_kernel_v4 import MoEStaticKernelV4
+from .moe_sf_pack import (
+    SF_PACK_BLOCK,
+    SF_STAGE_BYTES,
+    pack_sf_inline,
+)
 from .moe_static_kernel_v5 import (
     MoEStaticKernelV5,
     TILED_W13_K_IN,
@@ -358,7 +363,7 @@ _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
-    "tiled": False,
+    "tiled": False, "sf_pack": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -402,6 +407,18 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # one contiguous run
             cfg["tiled"] = True
             continue
+        if token == "q":
+            # 39차 §4c: the FC1 weight scales arrive 6-bit packed (base + index
+            # per 4 KB block) and the MMA warps expand them in the stage buffer.
+            # Probe only: the gated prefill kernel reads the same scales and has
+            # no expansion, so reject it at boot like xs/xa.
+            if not probe:
+                raise ValueError(
+                    f"{_GLM53_B12X_STATIC_V2_ENV}: q is a probe-only cell "
+                    "(packed scales the dynamic kernel cannot read)"
+                )
+            cfg["sf_pack"] = True
+            continue
         if token in ("xs", "xa"):
             if not probe:
                 raise ValueError(
@@ -412,7 +429,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,z] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -1011,6 +1028,8 @@ class _WeightViews:
     # views are 4-D over a re-laid-out copy kept alive here; a tiled view must
     # only ever reach a kernel compiled for the tiled layout
     tiled: bool = False
+    # cell q: the FC1 scales 6-bit packed, (E, blocks, stage bytes) u8
+    sfb1_packed: torch.Tensor | None = None
     w13_tiled_storage: torch.Tensor | None = None
     w2_tiled_storage: torch.Tensor | None = None
     w1_alpha: torch.Tensor | None = None
@@ -1033,6 +1052,48 @@ def _register_cache_eviction(cache: Dict, key: Tuple, *source_tensors) -> None:
 
 
 _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
+
+
+_SF_PACKED: Dict[Tuple[int, int], torch.Tensor] = {}
+_SF_PACK_DUMMY: Dict[str, torch.Tensor] = {}
+
+
+def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
+    """(E, blocks per expert, SF_STAGE_BYTES) u8 -- the FC1 weight scales
+    6-bit packed per 4 KB block, the unit the kernel stages (39차 §4c). Cached
+    on the scale buffer's pointer: packing walks every scale byte once."""
+    key = (sf.data_ptr(), sf.numel())
+    got = _SF_PACKED.get(key)
+    if got is not None:
+        return got
+    flat = sf.reshape(-1).view(torch.uint8)
+    if flat.numel() % (SF_PACK_BLOCK * num_experts):
+        raise ValueError(
+            f"packed scales (cell q): {flat.numel()} scale bytes is not "
+            f"{num_experts} experts x whole {SF_PACK_BLOCK} B blocks"
+        )
+    blocks = flat.numel() // SF_PACK_BLOCK
+    packed = pack_sf_inline(flat, SF_PACK_BLOCK).reshape(
+        num_experts, blocks // num_experts, SF_STAGE_BYTES
+    )
+    _SF_PACKED[key] = packed
+    return packed
+
+
+def _sf_pack_dummy(device: "torch.device") -> torch.Tensor:
+    """The 16 B stand-in the kernel takes but never reads off the q lane."""
+    key = str(device)
+    got = _SF_PACK_DUMMY.get(key)
+    if got is None:
+        got = torch.zeros((1, 1, 16), dtype=torch.uint8, device=device)
+        _SF_PACK_DUMMY[key] = got
+    return got
+
+
+def static_v2_weights_sf_pack(**geometry) -> bool:
+    """Whether the static lane wants 6-bit packed FC1 scales (cell q)."""
+    cfg = _static_v2_config_for(**geometry)
+    return bool(cfg is not None and cfg.get("sf_pack", False))
 
 
 _TILE_MAJOR_ATTR = "_b12x_tile_major"   # False / "plain" on a weight tensor
@@ -1181,6 +1242,7 @@ def _get_weight_views(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     tiled: bool = False,
+    sf_pack: bool = False,
 ) -> _WeightViews:
     """Create permuted weight views for the static kernel.
 
@@ -1209,6 +1271,7 @@ def _get_weight_views(
         activation_precision,
         quant_mode,
         bool(tiled),
+        bool(sf_pack),
         w1_fp4.data_ptr(),
         w1_blockscale.data_ptr(),
         w1_alphas.data_ptr(),
@@ -1299,6 +1362,9 @@ def _get_weight_views(
         w13_fp4=w13,
         down_fp4=down,
         tiled=bool(tiled),
+        sfb1_packed=(
+            _packed_fc1_scales(w13_sf_contiguous, w1_fp4.shape[0]) if sf_pack else None
+        ),
         w13_tiled_storage=w13_tiled,
         w2_tiled_storage=w2_tiled,
         sfb_w13_ptr=make_ptr(
@@ -1825,6 +1891,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
         bool(config.get("tiled", False)),
+        bool(config.get("sf_pack", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1905,6 +1972,7 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         a_ring=bool(config.get("a_ring", False)),
+        sf_pack=bool(config.get("sf_pack", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2019,6 +2087,22 @@ def _get_static_kernel_v2(
     next_item_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (1,), assumed_align=4
     )
+    # cell q: the packed FC1 scales, (E, blocks per expert, stage bytes) u8; off
+    # the lane a 16 B dummy the kernel never reads.
+    if config.get("sf_pack"):
+        _sf_blocks = (n * 2 // 128) * (k // TILED_W13_K_IN)
+        sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
+            cutlass.Uint8, (weight_E, _sf_blocks, SF_STAGE_BYTES),
+            # row-major, the torch tensor's own order: without this the fake is
+            # compact in the OTHER direction (strides (1, E, ...)) and the call
+            # fails with "Mismatched sfb1_packed.strides[0]"
+            stride_order=(2, 1, 0),
+            assumed_align=16,
+        )
+    else:
+        sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
+            cutlass.Uint8, (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16
+        )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     name = (
         f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
@@ -2027,6 +2111,7 @@ def _get_static_kernel_v2(
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
+        f"{'q' if config.get('sf_pack') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
@@ -2060,6 +2145,7 @@ def _get_static_kernel_v2(
             token_weights_fake,
             stamps_fake,
             next_item_fake,
+            sfb1_packed_fake,
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
@@ -2866,7 +2952,12 @@ def launch_sm120_static_moe(
         workspace.token_weights,
     )
     if static_v2_stamps is not None:
-        runtime_args = runtime_args + (static_v2_stamps, static_v2_counter)
+        runtime_args = runtime_args + (
+            static_v2_stamps,
+            static_v2_counter,
+            weights.sfb1_packed if weights.sfb1_packed is not None
+            else _sf_pack_dummy(a.device),
+        )
     compiled(*runtime_args)
 
     return scatter_output
@@ -4136,6 +4227,7 @@ def clear_sm120_moe_caches() -> None:
     """
     _WORKSPACE_CACHE.clear()
     _WEIGHT_CACHE.clear()
+    _SF_PACKED.clear()
     _W4A16_WEIGHT_CACHE.clear()
     _PADDED_WEIGHT_CACHE.clear()
     _STATIC_KERNEL_CACHE.clear()
@@ -4578,6 +4670,17 @@ def launch_sm120_moe(
         swiglu_limit=swiglu_limit,
         activation_precision=activation_precision,
     )
+    weights_sf_pack = static_v2_weights_sf_pack(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=k,
+        intermediate_size=n,
+        num_topk=top_k,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+        activation_precision=activation_precision,
+    )
     weights = (
         _weight_views
         if _weight_views is not None
@@ -4593,6 +4696,7 @@ def launch_sm120_moe(
             activation_precision=activation_precision,
             quant_mode=quant_mode,
             tiled=weights_tiled,
+            sf_pack=weights_sf_pack,
         )
     )
 

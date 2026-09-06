@@ -23,11 +23,22 @@ LEVER=${LEVER:-$LOGD/ab-lever2.sh}
 S=${FLEET_SESSION:-pair}
 PAIR_FLOOR_N=${PAIR_FLOOR_N:-3}
 cd "$REPO" || exit 1
+# A failed candidate must not spend another measurement boot. Restore only
+# when this holder has no boot successor, preserving the original failure.
+cleanup_failure() {
+  local rc=$?
+  if [ "$rc" != 0 ] && bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
+    LEGS=none bash "$LEVER" "${NAME}RECOVER" "" 2>&1 | tail -12
+  fi
+  return "$rc"
+}
+trap cleanup_failure EXIT
 echo "== pair $NAME $(date +%T) knobs: ${KNOBS:-(none)} session=$S rehearse=${FLEET_REHEARSE:-0}"
 python3 bench/baseline.py --brief ${KNOBS:+--knobs "$(echo $KNOBS | tr ' ' ',')"} 2>/dev/null | sed 's/^/   /'
 
 echo "== $(date +%T) candidate arm $NAME"
-bash "$LEVER" "$NAME" "$KNOBS" 2>&1 | tail -40
+bash "$LEVER" "$NAME" "$KNOBS" 2>&1 | tail -40 || exit $?
+python3 bench/judge.py "$NAME" --write --fail-invalid ${FLEET_REHEARSE:+--allow-rehearsal} || exit $?
 
 # a short probe waiting behind us can use the idle candidate serving; we keep
 # our place and continue with the next boot after it
@@ -37,25 +48,19 @@ bash "$LEVER" "$NAME" "$KNOBS" 2>&1 | tail -40
 need_base=0
 bl=$(python3 bench/baseline.py --brief 2>/dev/null)
 case "$bl" in *"NONE for build"*|*"none for build"*) need_base=1;; esac
-nb=$(python3 - <<'PY' 2>/dev/null
-import sys, os
-sys.path.insert(0, "bench")
-from baseline import load, for_build, is_baseline, deployed_build, deployed_git
-rows = load(); b = deployed_build(); g = deployed_git()
-print(sum(1 for r in for_build(rows, b, g) if is_baseline(r)[0] and not r.get("rehearsal")))
-PY
-)
+nb=$(python3 bench/baseline.py --count-for "$NAME") || exit $?
 [ "${nb:-0}" -lt "$PAIR_FLOOR_N" ] && need_base=1
 if [ "$need_base" = 1 ]; then
   # the baseline SAMPLE is a measurement, not a restore: without it this build
   # has no verdict (FUS7 #3, 20:00: "no baseline on this build" after the sample
   # was skipped because a boot job followed). Only a bare restore is skippable.
   echo "== $(date +%T) defaults arm ${NAME}BASE (baseline sample ${nb:-0}/$PAIR_FLOOR_N on this build; the verdict needs it)"
-  bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30
+  bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30 || exit $?
+  python3 bench/judge.py "$NAME" --write --fail-invalid ${FLEET_REHEARSE:+--allow-rehearsal} || exit $?
 else
   if bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
     echo "== $(date +%T) restore boot (defaults, no leg: the build already has ${nb} baseline samples)"
-    LEGS=none bash "$LEVER" "${NAME}RESTORE" "" 2>&1 | tail -12
+    LEGS=none bash "$LEVER" "${NAME}RESTORE" "" 2>&1 | tail -12 || exit $?
   else
     echo "== $(date +%T) restore skipped: a boot job follows and replaces this serving"
   fi

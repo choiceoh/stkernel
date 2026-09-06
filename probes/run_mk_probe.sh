@@ -45,7 +45,7 @@ sources=(glm53_megakernel.py glm53_megakernel.cu
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
          moe_dynamic_prefill.py moe_dynamic_prefill_n128.py
          parallel_state.py glm53_prefill_collectives.py
-         moe_static_common.py moe_static_kernel_v4.py
+         moe_static_common.py moe_static_kernel_v4.py moe_sf_pack.py
          moe_static_kernel_v5.py moe_dynamic_gated_tiled.py)
 mounts=()
 for source in "${sources[@]}"; do
@@ -65,6 +65,17 @@ case "${VLLM_GLM53_MEGAKERNEL-1}" in
 esac
 
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
+# A runner-owned report directory is the only extra writable evidence mount.
+# Preserve the fresh challenge through the container boundary; ordinary manual
+# probes keep their existing behavior.
+if [ -n "${FLEET_PROBE_REPORT:-}" ]; then
+  report_dir=$(dirname "$FLEET_PROBE_REPORT")
+  mounts+=(--mount "type=bind,src=$report_dir,dst=/fleet-report")
+  envs+=(-e FLEET_PROBE_REPORT=/fleet-report/probe-report.json)
+  for v in FLEET_PROBE_NONCE FLEET_PROBE_BINDING FLEET_EXPERIMENT_ID; do
+    envs+=(-e "$v=${!v}")
+  done
+fi
 # PROBE_CACHE=1: the serving boot's persistent caches (the launcher mounts
 # $HOME/glm53-cache at /cache and points flashinfer / triton / vLLM at it),
 # so a probe that JIT-compiles -- probes/nvfp4_prefill_warm.py builds the

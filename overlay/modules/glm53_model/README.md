@@ -571,3 +571,134 @@ source, and the BF16 free pass skips this method). **No-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1`** (this profile's default): the fp8 pattern
 already owns every b_proj linear. Neither knob has GPU validation yet —
 keep both at 0 until the combined campaign.
+
+### Startup artifacts: FP8 copies and rank checkpoints (2026-09-06)
+
+Two independent path-valued switches reuse work from a prior boot:
+
+```bash
+VLLM_GLM53_FP8_CACHE=/cache/glm53-fp8 \
+VLLM_GLM53_RANK_CACHE=/cache/glm53-ranks \
+bash launchers/start-glm53-nvfp4-tp4.sh
+```
+
+The launcher carries these profile-declared variables to every worker. `/cache`
+is already the node-local persistent cache mount. Set either variable to `0`
+to disable it, including when overriding a nonempty profile default. `LOAD_FORMAT` remains the normal source loader
+(`instanttensor` by default); **do not set it to `sharded_state` for these
+artifacts**. Both profile paths remain enabled as requested by the operator.
+The third four-node fleet trial on 2026-09-07 passed the cache receipts and
+Korean serving checks below. The measured scope is three individual boots;
+it does not establish a stable end-to-end speedup across repeated runs.
+
+**FP8 cache.** `glm53_startup_cache.py` saves the exact padded E4M3 weight and
+DeepGEMM scale backing allocations, including dtype, shape, stride, storage
+offset and padding. Its key contains the current source weight's SHA-256,
+shape/dtype/stride, quantization recipe, Torch/CUDA/device identity and imported
+vLLM/DeepGEMM implementation digests. This applies to both target and drafter
+FP8 folds. Content/layout checksums reject corrupt artifacts and rebuild;
+failed writes keep freshly computed results. Publication is atomic and reads
+use `weights_only=True`. The existing direct-kernel source check still runs on
+every layer and evicts an artifact if it rejects the copy. MK/GPTQ packs,
+precision, fallback behavior and BF16 release timing are unchanged.
+
+`[fp8-cache]` reports hits, misses, errors and key/read/quantize/write host wall
+time. `[fp8-dense]` additionally splits source-check, MK attachment and
+`empty_cache` time. These are host phase times including existing syncs, not
+isolated CUDA kernel timings. Per-linear allocator cleanup remains mandatory.
+
+**Rank checkpoint cache.** `glm53_rank_cache.py` intercepts only the GLM model
+that owns the complete checkpoint walk. The first source load snapshots its
+rank-local parameters and persistent buffers **before** GLM FP8/MK hooks and
+vLLM quantization finalization. On a hit it restores those tensors without
+advancing the source iterator, then executes the same outer post-load hooks
+once. This avoids the missing plain-attribute FP8/MK copies and freed BF16
+weights in a dump of a running model. It uses the same rank-local loading idea
+as [vLLM's ShardedStateLoader](https://docs.vllm.ai/en/latest/api/vllm/model_executor/model_loader/sharded_state_loader/),
+with a separate pre-finalization artifact format and lifecycle.
+
+A readiness MIN vote on the established world device group requires **every
+rank** to have a matching, complete cache. Otherwise all ranks use the source
+loader: InstantTensor itself uses that group, so mixed cache/source paths could
+strand its collectives. No additional Gloo object exchange is introduced.
+
+Format 2 stores exact shared tensor views once, and checks the registration
+alias graph before restoration. GLM's `layers`/`_active_layers` registrations
+otherwise duplicate 1,805 tensors: the first fleet trial wrote 92.1 GiB instead
+of 46.5 GiB per rank and srv1 correctly declined for insufficient disk space.
+Partially overlapping views are unsupported. A second readiness vote before
+publication skips saving on all ranks if any rank lacks a valid context or
+sufficient space. These fixes were exercised by the second and third trials.
+
+The second trial wrote 44.8 GiB per rank after all exact aliases were removed.
+It also exposed integer `id2label` keys in Transformers configs: the identity
+is now normalized to JSON-compatible values before hashing and persistence,
+including nested configs and tuples. JSON round trips must not turn a valid
+cache into a permanent miss. Trial history and the final acceptance decision
+are recorded in `MEASUREMENTS.md`.
+
+Startup transfers reuse one 64 MiB pinned host buffer. CPU hashing/file writes
+wait for D2H completion, and H2D copies finish before the pinned input is reused
+or mapped pages are discarded. This follows the synchronization requirement in
+[PyTorch's transfer guide](https://docs.pytorch.org/tutorials/intermediate/pinmem_nonblock.html).
+Pinned allocation failure retains synchronous copies. The final trial restored
+44.8 GiB per rank in 38.4–48.0 seconds; pinned staging and alias deduplication
+were introduced together, so their individual contributions are not isolated.
+
+Rank identity includes the local checkpoint index/config and every source
+file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model
+config, TP/rank, environment and runtime code. This is an immutable-source,
+node-local cache; copying checkpoint files or changing configuration/code causes
+a miss. It does not rehash the full original checkpoint on warm boots. Keep
+source files read-only and consistent across nodes, as with the source loader.
+Source identity is rechecked after loading/restoration to reject concurrent
+changes. Unsupported EP/EPLB, PP/DP/context parallelism, LoRA, meta tensors,
+noncontiguous state or secondary weight sources use the original loader.
+Later weight reloads bypass this startup cache.
+
+Each rank writes one raw payload plus a complete schema/chunk-checksum manifest
+in a temporary directory, then atomically publishes the directory. Serialization
+and restoration operate in at most 64 MiB chunks. Cold writes sync and discard
+file pages per chunk; warm reads discard consumed mmap/file pages on Linux to
+avoid retaining a rank-sized host page cache on UMA. Allow disk space for the
+whole rank state plus 512 MiB; source/runtimes with different identities keep
+separate directories. There is no automatic cache eviction.
+
+Missing/incompatible metadata falls back before restoring any tensors. A
+payload checksum error **aborts the boot**, since some earlier chunks may have
+been copied; it never serves a partial checkpoint. The log names rejected
+metadata directories. Remove the affected artifact directory during an idle
+window to rebuild it; existing published directories are never replaced under
+readers. A single missing rank makes the next boot use the source loader on all
+ranks, while only missing caches need writing.
+
+`[rank-cache]` is the authoritative hit/save timing. Default boot stamps start
+the source loader timer even when its iterator is unused; if
+`DENEB_BOOT_STAMPS=0`, ignore the stock `Loading weights took` line on a hit
+(the stock loader starts that timer only from its skipped iterator).
+
+Validation: all 27 focused artifact tests pass, including CPU byte/layout,
+invalidation/fallback, alias topology, JSON identity and a real four-process
+Gloo readiness vote. Fleet trial 3 used source `2abdc6b`, the same four-node
+runtime and Korean 2K/32K onepass for cache-off, first-write and warm-hit boots
+with `PREFILL_WARMUP=0`. Every rank restored its checkpoint; all **976 FP8
+artifacts hit**, with zero misses, cache errors or direct-source copy disarms.
+All three serving checks passed **6/6**, with corruption **0/4** per boot.
+Generated responses differed despite matching prompts, so this is not a
+bit-exact generated-output claim or broad acceptance/throughput validation.
+
+On the head, target source read/apply was **54.0 s**, compared with a **48.039 s**
+rank restoration; FP8 quantization was **9.045 s**, compared with **5.172 s** of
+warm key/read work. Health-ready wall times were **347 / 358 / 239 s** for
+cache-off / first-write / warm-hit. Compilation/profile warmup also changed
+(head memory-profile phase **93.0 → 36.5 s**), so the full 108 s wall difference
+cannot be attributed to these caches. Cold rank publication took **43.1–97.6 s**
+and the artifacts occupy about **47 GiB per node**, with no automatic eviction.
+Ten-second host samples showed at least **10.62 GiB** available RAM and no swap
+increase; these are sampled OS values, not CUDA peak-memory measurements.
+See `MEASUREMENTS.md` for all-node timings, acceptance and evidence paths.
+
+The earlier 54.9 s fold and 52.1 s read/apply budgets predate #366 deployment
+and are **not** measured savings from these caches. The unrelated historical
+302 s distributed-init pause did not reproduce in these trials; its cause
+remains unresolved.

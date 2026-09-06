@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -42,21 +43,58 @@ def build_of(rec):
 def baselines_on(rows, rec):
     """Baseline records of the arm's build (stamp first, git for older rows)."""
     b = build_of(rec)
-    mine = [r for r in for_build(rows, rec.get("overlay"), rec.get("git")) if not r.get("rehearsal")]
+    mine = [r for r in for_build(rows, rec.get("overlay"), rec.get("git")) if not r.get("rehearsal")
+            and compatible(r, rec)]
     return [r for r in mine if is_baseline(r)[0]], b
+
+
+def compatible(a, b):
+    if b.get("overlay") and a.get("overlay") != b["overlay"]:
+        return False
+    return all(a.get(k) == b.get(k) for k in ("harness", "doc_lang", "thinking", "workload", "runtime"))
+
+
+def record_errors(rec):
+    """Missing gates and unknown markers cannot become reusable evidence."""
+    errors = []
+    q, k, d = (rec.get(key) or {} for key in ("quality", "korean", "decode"))
+    if not isinstance(q.get("total"), int) or q["total"] <= 0 or q.get("ok") != q["total"]:
+        errors.append(f"quality {q.get('ok')}/{q.get('total')}")
+    if not isinstance(k.get("n"), int) or k["n"] <= 0 or k.get("dirty") != 0:
+        errors.append(f"korean {k.get('dirty')}/{k.get('n')}")
+    value = d.get("windows_med")
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        errors.append("no finite decode window")
+    if "knobs" not in rec:
+        errors.append("knobs not attested")
+    return errors
+
+
+def unproved(rec):
+    knobs = {k for k, v in (rec.get("knobs") or {}).items() if v not in ("0", "", "off")}
+    return bool(knobs) and any((rec.get("proof") or {}).get(k) is not True for k in knobs)
 
 
 def floor_of(rows, rec):
     """(rel spread, n, scope): spread of windows_med over the baselines of the
     build; fewer than 2 -> the harness across builds; fewer than 2 -> None."""
     bases, _ = baselines_on(rows, rec)
-    wins = [x["decode"]["windows_med"] for x in bases if (x.get("decode") or {}).get("windows_med")]
+    def windows(records):
+        # Multiple onepass records on the same attested boot are one noise
+        # sample. Older untagged rows retain their legacy interpretation.
+        boots = {}
+        for index, x in enumerate(records):
+            if not record_errors(x):
+                boots[x.get("boot_id") or ("legacy", index)] = x["decode"]["windows_med"]
+        return list(boots.values())
+    wins = windows(bases)
     scope = "same build"
     if len(wins) < 2:
-        wins = [x["decode"]["windows_med"] for x in rows
+        wins = windows([x for x in rows
                 if is_baseline(x)[0] and not x.get("rehearsal")
                 and x.get("harness") == rec.get("harness")
-                and (x.get("decode") or {}).get("windows_med")]
+                and all(x.get(k) == rec.get(k) for k in ("doc_lang", "thinking", "workload", "runtime"))
+                and not record_errors(x)])
         scope = "same harness, across builds"
     if len(wins) < 2:
         return None, len(wins), scope
@@ -78,38 +116,38 @@ def fmt(rec):
 
 def judge(cand, base, rows):
     out = {"cand": cand.get("name"), "base": base.get("name") if base else None,
-           "build": build_of(cand), "harness": cand.get("harness"), "session": cand.get("session")}
-    gates = []
-    k = cand.get("korean") or {}
-    q = cand.get("quality") or {}
-    if k.get("dirty") not in (0, None):
-        gates.append(f"korean {k.get('dirty')}/{k.get('n')}")
-    if q.get("ok") is not None and q.get("ok") != q.get("total"):
-        gates.append(f"quality {q.get('ok')}/{q.get('total')}")
+           "build": build_of(cand), "harness": cand.get("harness"), "session": cand.get("session"),
+           "status": "incomplete"}
+    gates = record_errors(cand)
     proof = cand.get("proof_ok")
-    knobs = {kk: vv for kk, vv in (cand.get("knobs") or {}).items() if vv not in ("0", "", "off")}
-    unproved = bool(knobs) and (not proof or proof.split("/")[0] != proof.split("/")[1])
     out["gates"] = gates
     out["proof_ok"] = proof
+    if unproved(cand):
+        out.update(status="invalid", verdict=f"UNPROVED (proof {proof or 'none'}): the delta is not evidence")
+        return out
+    if gates:
+        out.update(status="invalid", verdict="GATE FAIL: " + ", ".join(gates))
+        return out
     if base is None:
         out["verdict"] = "no baseline on this build"
+        return out
+    if not compatible(base, cand) or not is_baseline(base)[0] or record_errors(base):
+        out["verdict"] = "baseline is incompatible or failed its gates"
         return out
     cw = (cand.get("decode") or {}).get("windows_med") or 0
     bw = (base.get("decode") or {}).get("windows_med") or 0
     out["delta"] = cw / bw - 1 if bw else None
     fl, n, scope = floor_of(rows, cand)
     out["floor"], out["floor_n"], out["floor_scope"] = fl, n, scope
-    if unproved:
-        out["verdict"] = f"UNPROVED (proof {proof or 'none'}): the delta is not evidence"
-    elif gates:
-        out["verdict"] = "GATE FAIL: " + ", ".join(gates)
-    elif out["delta"] is None:
+    if out["delta"] is None:
         out["verdict"] = "no decode window"
     elif fl is None:
         out["verdict"] = f"{100 * out['delta']:+.1f}% with no floor yet (n={n}): one more baseline sample"
     elif abs(out["delta"]) <= fl:
+        out["status"] = "inconclusive"
         out["verdict"] = f"{100 * out['delta']:+.1f}% WITHIN the floor ±{100 * fl:.1f}% (n={n}, {scope}): one more sample"
     else:
+        out["status"] = "valid" if scope == "same build" else "inconclusive"
         out["verdict"] = f"{100 * out['delta']:+.1f}% BEYOND the floor ±{100 * fl:.1f}% (n={n}, {scope})"
     return out
 
@@ -121,6 +159,7 @@ def main() -> int:
     ap.add_argument("--jsonl", default=JSONL)
     ap.add_argument("--write", action="store_true", help="append the verdict to verdicts.jsonl")
     ap.add_argument("--allow-rehearsal", action="store_true")
+    ap.add_argument("--fail-invalid", action="store_true", help="stop dependent arms after a gate/proof failure")
     a = ap.parse_args()
     rows = load(a.jsonl)
     if a.allow_rehearsal:
@@ -147,7 +186,12 @@ def main() -> int:
         with open(VERDICTS, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(v, ensure_ascii=False) + "\n")
         print(f"judge> written to {VERDICTS}")
-    return 0
+        if os.environ.get("FLEET_EXPERIMENT_ID") and os.environ.get("FLEET_EXPERIMENT_ROOT"):
+            from experiments import Store
+            store = Store(os.environ["FLEET_EXPERIMENT_ROOT"])
+            with store.db:
+                store.event(os.environ["FLEET_EXPERIMENT_ID"], "arm_result", v)
+    return 4 if a.fail_invalid and v["status"] == "invalid" else 0
 
 
 if __name__ == "__main__":

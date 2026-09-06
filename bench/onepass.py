@@ -149,6 +149,10 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
         name = next((n for n in names if n.startswith("glm53")), None)
         if not name:
             return out
+        boot = subprocess.run(["docker", "inspect", "-f", "{{.Id}}|{{.State.StartedAt}}", name],
+                              capture_output=True, text=True, timeout=10)
+        if boot.returncode == 0 and "|" in boot.stdout.strip():
+            out["boot_id"] = boot.stdout.strip()
         raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
                              capture_output=True, text=True, timeout=10).stdout
         served = dict(e.split("=", 1) for e in json.loads(raw or "[]")
@@ -190,6 +194,11 @@ def main() -> int:
     rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
            "harness": 40, "doc_lang": "ko", "thinking": True, "window_s": 1.0,
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
+    rec["workload"] = {"ctx": [int(c) for c in args.ctx.split(",")], "seed": args.seed,
+                       "max_tokens": args.max_tokens, "combine_min_ctx": args.combine_min_ctx}
+    if os.environ.get("FLEET_EXPERIMENT_ID"):
+        rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
+        rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)

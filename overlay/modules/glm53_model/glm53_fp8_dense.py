@@ -997,6 +997,10 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     if raw in ("", "0", "false", "no", "off"):
         return _maybe_build_prefill_bproj(model, env)
     t_fold = time.perf_counter()  # 37차: this pass is ~45 s of the 118 s load
+    from vllm.model_executor.layers.glm53_startup_cache import Fp8Cache
+
+    fp8_cache = Fp8Cache()
+    phase_seconds = dict(check=0.0, mk=0.0, empty_cache=0.0)
     # w4a8: weights one notch lower on the same kernel family
     # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
     # stay fp8 -- the axis the literature blesses. 1/true keeps W8A8.
@@ -1012,7 +1016,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     # the drafter bracket is gone -- the bracket picked W4 and the operator's
     # rule is that a proven improvement becomes the default and the other
     # side is removed, not kept as a second setting to remember.
-    attach_mk = _attach_mk_pack
+    def attach_mk(*args):
+        started = time.perf_counter()
+        try:
+            return _attach_mk_pack(*args)
+        finally:
+            phase_seconds["mk"] += time.perf_counter() - started
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
@@ -1048,16 +1057,20 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             continue
         try:
             shapes[tuple(weight.shape)] = shapes.get(tuple(weight.shape), 0) + 1
-            q, ws, rows, cols = _quantize_fp8_block_padded(weight)
+            q, ws, rows, cols = fp8_cache.quantize(weight, _quantize_fp8_block_padded)
             method = Fp8DenseMethod(base, q, ws, rows, cols)
             method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))
             # the drafter's forward is torch.compiled: its GEMMs must be
             # one opaque op each (see _mk_or_fp8_dense_gemm)
             method._opaque = env == _DRAFTER_ENV
-            if _copy_matches_source(
+            t_check = time.perf_counter()
+            copy_ok = _copy_matches_source(
                 mod, method, weight,
                 got_fn=lambda xx: _fp8_dense_gemm_op(xx, q, ws, rows, cols),
-            ) is False:
+            )
+            phase_seconds["check"] += time.perf_counter() - t_check
+            if copy_ok is False:
+                fp8_cache.reject_last()
                 mod.quant_method = base
                 stale.append(name)
                 continue
@@ -1211,7 +1224,13 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             # That was the 09-03 srv3 OOM and both 09-04 wedges; with
             # earlyoom (09-04) it became a deterministic SIGKILL. Freeing the
             # cache per linear bounds the pass at ONE transient at a time.
+            t_empty = time.perf_counter()
             torch.cuda.empty_cache()
+            phase_seconds["empty_cache"] += time.perf_counter() - t_empty
+    fp8_cache.report(type(model).__name__)
+    logger.warning("[fp8-dense] %s host-seconds=%s (includes existing syncs)",
+                   type(model).__name__,
+                   " ".join(f"{k}={v:.3f}" for k, v in phase_seconds.items()))
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
