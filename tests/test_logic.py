@@ -8131,7 +8131,7 @@ def test_self_built_kernels_persist_their_caches() -> None:
                                   "glm53_prep_fused.py"), encoding="utf-8").read()
     check("__global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a)" in mkcu
           and 'm.def("run_prep", &mk_run_prep,' in mkcu
-          and "TORCH_CHECK(ptrs.size() == 33 && ints.size() == 23" in mkcu
+          and "TORCH_CHECK(ptrs.size() == 33 && ints.size() == 24" in mkcu
           and "def kernel_backend() -> str:" in pf3
           and 'os.environ.get(ENV_KERNEL, "cuda")' in pf3
           and "def cuda_dtype_reason(self) -> str | None:" in pf3
@@ -8158,15 +8158,16 @@ def test_self_built_kernels_persist_their_caches() -> None:
     want_ints = ["num_reqs", "num_tokens", "max_num_reqs", "max_num_tokens", "draft_stride",
                  "num_blocks_stride", "slot_stride", "req_id_cap", "exp_bt_stride", "dec_seq_cap",
                  "idx_bt_stride", "idx_bt_cols", "comp_slot_cap", "Q", "NUM_SPEC", "NS", "G",
-                 "N_GDN", "ATTN_G", "FACTOR", "RATIO", "SBS", "PAD_ID"]
-    check(cpp_ints == want_ints and len(cpp_ints) == 23
+                 "N_GDN", "ATTN_G", "FACTOR", "RATIO", "SBS", "PAD_ID", "MAMBA_BLOCK"]
+    check(cpp_ints == want_ints and len(cpp_ints) == 24
           and all(k in py_ints_src for k in ("self.draft_tokens.stride(0)", "bt.num_blocks.gpu.stride(0)",
                                               "bt.slot_mappings.stride(0)", "self.req_id_buf.numel()",
                                               "self.exp_bt.stride(0)", "self.dec_seq_lens.numel()",
                                               "self.idx_bt.stride(0)", "self.idx_bt_cols", "self.comp_slot.numel()",
                                               "self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g",
-                                              "self.factor, self.ratio, self.sbs, PAD_SLOT_ID")),
-          "the 23 ints are unpacked in the documented order on both sides")
+                                              "self.factor, self.ratio, self.sbs, PAD_SLOT_ID,",
+                                              "self.mamba_block]")),
+          "the 24 ints are unpacked in the documented order on both sides")
     # 37차 night round: the target's per-token features for drafter training
     # (five aux hidden states, ids, positions, top-k logits + lse) from prefill
     # steps. Inert without VLLM_GLM53_DRAFT_DUMP; wraps execute_model after
@@ -9830,11 +9831,89 @@ def test_glm53_prep_fused_contracts() -> None:
           and "start_col = tl.maximum((seq_len - 1) // mamba_block, 0)" in _k
           and "st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)" in _k,
           "align mode: the GDN state indices come from the running block column (stock mamba_get_block_table_tensor)")
-    check('reason = "mamba align mode: run_prep gathers state column 0"' in src
+    mkcu_prep = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/glm53_megakernel.cu"),
+                     encoding="utf-8").read()
+    mkcu_prep = mkcu_prep[mkcu_prep.index("struct MKPrepArgs {"):]
+    check('reason = "mamba align mode: run_prep gathers state column 0"' not in src
           and "align_mode=runner.cache_config.mamba_cache_mode == \"align\"" in src
-          and "mamba_block=int(mamba_block or (1 << 30))" in src,
-          "align mode: the CUDA run_prep (column 0) yields to the Triton kernel; the block size reaches the plan")
+          and "mamba_block=int(mamba_block or (1 << 30))" in src
+          and "int64_t MAMBA_BLOCK;" in mkcu_prep
+          and "const int64_t state_col = ((int64_t)seq_len - 1) / a.MAMBA_BLOCK;" in mkcu_prep
+          and "sp[(int64_t)r * ss + t] = dst[(int64_t)r * stride + state_col + t];" in mkcu_prep
+          and 'TORCH_CHECK(a.MAMBA_BLOCK > 0, "mk_run_prep: MAMBA_BLOCK must be positive");' in mkcu_prep,
+          "align mode: the CUDA run_prep gathers the state columns from the running block like the "
+          "Triton kernel (24th int), so align boots keep the CUDA backend")
     print("  glm53 prep fused contracts .. OK")
+
+
+def test_nvfp4_static_scale_contracts() -> None:
+    """39차: the NVFP4 prefill pair's activation scale can be calibrated and
+    frozen (VLLM_GLM53_NVFP4_STATIC_SCALE=N): exact for N calls, frozen with
+    headroom afterwards, re-checked every CHECK calls, never shrinking; the
+    route calls the scaled GEMM op with the pair's scales and no host sync."""
+    src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"), encoding="utf-8").read()
+    check('_NVFP4_STATIC_CAL = int(os.environ.get("VLLM_GLM53_NVFP4_STATIC_SCALE", "0") or 0)' in src
+          and '_NVFP4_STATIC_HEADROOM = float(os.environ.get("VLLM_GLM53_NVFP4_STATIC_HEADROOM", "2.0") or 2.0)' in src
+          and '_NVFP4_STATIC_CHECK = int(os.environ.get("VLLM_GLM53_NVFP4_STATIC_CHECK", "16") or 16)' in src
+          and "cal = _NvFp4ScaleCal(name, w_gs, alpha) if _NVFP4_STATIC_CAL > 0 else None" in src
+          and "return (wq, wsf, w_gs, rows, alpha, cal)" in src
+          and "cal = nv[5] if len(nv) > 5 else None" in src
+          and "return _nvfp4_dense_gemm_op(x, *nv[:5])" in src
+          and "x_gs, alpha = cal.scales(x.reshape(-1, x.shape[-1]))" in src
+          and "return _nvfp4_dense_gemm_scaled_op(" in src
+          and '"glm53_fp8_dense::gemm_nvfp4_scaled", mutates_args=()' in src
+          and "return _nvfp4_dense_gemm_scaled(x, wq, wsf, x_gs, alpha, out_rows)" in src,
+          "the static scale is opt-in (0 = dynamic default), rides the pair tuple as a 6th element, and "
+          "the dynamic route is the scaled body with per-call scales")
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    for env in ("VLLM_GLM53_NVFP4_STATIC_SCALE=0", "VLLM_GLM53_NVFP4_STATIC_HEADROOM=2.0",
+                "VLLM_GLM53_NVFP4_STATIC_CHECK=16"):
+        check(env in prof, f"{env} declared in profiles/glm53.env (the launcher forwards declared keys only)")
+
+    class T:  # a 1-element fp32 "tensor": enough for the class's device-side arithmetic
+        def __init__(self, v): self.v = float(v)
+        def view(self, *_): return self
+        def to(self, *_): return self
+        def __rtruediv__(self, o): return T(o / self.v)
+        def __truediv__(self, o): return T(self.v / (o.v if isinstance(o, T) else o))
+        def __mul__(self, o): return T(self.v * (o.v if isinstance(o, T) else o))
+        __rmul__ = __mul__
+
+    class FakeTorch:
+        float32 = "f32"
+        @staticmethod
+        def zeros(n, dtype=None, device=None): return T(0.0)
+        @staticmethod
+        def maximum(a, b): return T(max(a.v, b.v))
+
+    logs = []
+    ns = {"torch": FakeTorch, "_NVFP4_SCALE_FUSED": False, "_NVFP4_STATIC_CAL": 3,
+          "_NVFP4_STATIC_HEADROOM": 2.0, "_NVFP4_STATIC_CHECK": 4,
+          "_nvfp4_global_scale": None,
+          "logger": types.SimpleNamespace(warning=lambda *a: logs.append(a[0] % a[1:]))}
+    cls_src = src[src.index("class _NvFp4ScaleCal:"):src.index("def _nvfp4_dense_gemm(")]
+    exec(cls_src, ns)
+    amaxes = iter([4.0, 8.0, 6.0, 2.0, 20.0, 1.0, 1.0, 1.0, 30.0])
+    ns["_nvfp4_global_scale"] = lambda flat: T(2688.0 / next(amaxes))
+    w_gs = T(1.0); w_gs.dtype = "f32"; w_gs.device = "cuda"; w_gs.numel = lambda: 1
+    cal = ns["_NvFp4ScaleCal"]("q_a", w_gs, 0.5)
+    got = [cal.scales(None) for _ in range(9)]
+    xg = [round(g[0].v, 4) for g in got]
+    # calls 1-3 exact (amax 4, 8, 6) then frozen at max 8 * headroom 2 = 16 -> x_gs 168
+    check(xg[:3] == [672.0, 336.0, 448.0] and cal.frozen and round(cal.x_gs.v, 4) == 168.0
+          and xg[3] == 168.0,
+          f"exact while calibrating, frozen at amax_max * headroom afterwards (got {xg[:4]})")
+    # call 4 (n=4) is a CHECK call: exact (amax 2) but the frozen range does not shrink;
+    # n=8 is the next check: amax 1 -> still 168; the 9th call is frozen
+    check(round(got[3][0].v, 4) == 1344.0 and round(cal.x_gs.v, 4) == 168.0
+          and xg[4] == 168.0 and xg[5] == 168.0 and xg[6] == 168.0
+          and round(got[7][0].v, 4) == 2688.0 and round(cal.x_gs.v, 4) == 168.0 and xg[8] == 168.0,
+          f"check calls are exact and can only widen the frozen range (got {xg})")
+    check(round(got[3][1].v, 6) == round(0.5 / 1344.0, 6) and round(cal.alpha.v, 6) == round(0.5 / 168.0, 6),
+          "alpha follows the scale in use (alpha_scale / (x_gs * w_gs))")
+    check(len(logs) == 1 and "static scale frozen on q_a after 3 calls" in logs[0],
+          "the freeze is logged once per pair with the call count")
+    print("  nvfp4 static scale contracts .. OK")
 
 
 def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
@@ -11409,6 +11488,7 @@ def test_megakernel_regression_suite():
 
 if __name__ == "__main__":
     test_skip_topk()
+    test_nvfp4_static_scale_contracts()
     test_prefill_chunker()
     test_sp_ranges()
     test_helpers()
