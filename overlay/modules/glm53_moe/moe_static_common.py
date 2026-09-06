@@ -266,6 +266,27 @@ def _spin_wait_global_eq_i32(addr, expected, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _spin_wait_global_ge_i32(addr, expected, *, loc=None, ip=None):
+    """Spin until the int32 at addr (acquire loads) is >= expected."""
+    llvm.inline_asm(
+        None,
+        [Int64(addr).ir_value(loc=loc, ip=ip), Int32(expected).ir_value(loc=loc, ip=ip)],
+        "{\n"
+        ".reg .pred p;\n"
+        ".reg .s32 v;\n"
+        "L_spin_ge_${:uid}:\n"
+        "ld.global.acquire.gpu.s32 v, [$0];\n"
+        "setp.lt.s32 p, v, $1;\n"
+        "@p bra L_spin_ge_${:uid};\n"
+        "}\n",
+        "l,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+
+@dsl_user_op
 def _threadfence(*, loc=None, ip=None):
     llvm.inline_asm(
         None,

@@ -3418,7 +3418,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False},
+                      "a_ring": False, "tail": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring")
     v4 = parse("u")
     check(v4 == default and v4 is not default, "u is a copy of the default (v4) config")
@@ -3431,6 +3431,12 @@ def test_b12x_static_v2_controls() -> None:
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
+    except ValueError:
+        pass
+    check(parse("u,t")["tail"] and not parse("u")["tail"], "t selects the last-wave tail exchange")
+    try:
+        parse("v,t")
+        check(False, "t with v must be rejected")
     except ValueError:
         pass
     for bad in ("1", "d", "w", "e", "k", "w,e,k", "u,k", "w,g2", "m32,f2,g4,d"):

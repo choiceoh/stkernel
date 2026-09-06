@@ -342,6 +342,7 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
+    "tail": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -379,6 +380,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "u":
             # v4 (moe_static_kernel_v4.py), the default configuration
             continue
+        if token == "t":
+            # v4 tail: the last partial wave's items run on grid // p CTAs
+            # each (FC1 stage ranges + fp32 partial exchange, FC2 tile ranges)
+            cfg["tail"] = True
+            continue
         if token in ("xs", "xa"):
             if not probe:
                 raise ValueError(
@@ -399,6 +405,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
+    if cfg["tail"] and cfg["a_ring"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: t (tail) and v (A ring) are exclusive")
     return cfg
 
 
@@ -456,8 +464,25 @@ def _static_v2_counter_tensor(device: "torch.device") -> "torch.Tensor":
     key = str(device)
     tensor = _STATIC_V2_COUNTERS.get(key)
     if tensor is None:
-        tensor = torch.zeros((1,), dtype=torch.int32, device=device)
+        tensor = torch.zeros((_STATIC_V2_CTRL_INTS,), dtype=torch.int32, device=device)
         _STATIC_V2_COUNTERS[key] = tensor
+    return tensor
+
+
+# [0] = item total, [1 + bidz] = tail flags (grid <= 64)
+_STATIC_V2_CTRL_INTS = 65
+# tail partial-accumulator slots: 64 CTAs x 2 halves x 2 (gate, up) x 128 threads x 16 fp32
+_STATIC_V2_SPLIT_WS_FLOATS = 64 * 2 * 2 * 128 * 16
+_STATIC_V2_SPLIT_WS: Dict[str, "torch.Tensor"] = {}
+
+
+def _static_v2_split_ws(device: "torch.device") -> "torch.Tensor":
+    """The tail exchange workspace (2 MB of fp32), one per device, fixed address."""
+    key = str(device)
+    tensor = _STATIC_V2_SPLIT_WS.get(key)
+    if tensor is None:
+        tensor = torch.zeros((_STATIC_V2_SPLIT_WS_FLOATS,), dtype=torch.float32, device=device)
+        _STATIC_V2_SPLIT_WS[key] = tensor
     return tensor
 
 
@@ -1585,6 +1610,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         int(config["a_rows"]),
         bool(config["stamps"]),
         bool(config.get("a_ring", False)),
+        bool(config.get("tail", False)),
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
     )
@@ -1665,6 +1691,7 @@ def _get_static_kernel_v2(
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     kernel: Any = MoEStaticKernelV4(
         a_ring=bool(config.get("a_ring", False)),
+        tail=bool(config.get("tail", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -1758,7 +1785,10 @@ def _get_static_kernel_v2(
         cutlass.Int64, (mac, _STATIC_V2_STAMP_SLOTS), stride_order=(1, 0), assumed_align=8
     )
     next_item_fake = cute.runtime.make_fake_compact_tensor(
-        cutlass.Int32, (1,), assumed_align=4
+        cutlass.Int32, (_STATIC_V2_CTRL_INTS,), assumed_align=4
+    )
+    split_ws_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Float32, (_STATIC_V2_SPLIT_WS_FLOATS,), assumed_align=16
     )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     name = (
@@ -1767,7 +1797,7 @@ def _get_static_kernel_v2(
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
-        f"{'v' if config.get('a_ring') else ''}"
+        f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tail') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
@@ -1801,6 +1831,7 @@ def _get_static_kernel_v2(
             token_weights_fake,
             stamps_fake,
             next_item_fake,
+            split_ws_fake,
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
@@ -2416,6 +2447,7 @@ def launch_sm120_static_moe(
     # set only when the v2 static kernel launches (it takes two extra tensors)
     static_v2_stamps = None
     static_v2_counter = None
+    static_v2_split_ws = None
 
     if use_micro:
         assert flat_ids.numel() <= workspace.compact_topk_ids.numel(), (
@@ -2537,6 +2569,7 @@ def launch_sm120_static_moe(
             )
             static_v2_stamps = _static_v2_stamps_tensor(mac, a.device)
             static_v2_counter = _static_v2_counter_tensor(a.device)
+            static_v2_split_ws = _static_v2_split_ws(a.device)
         else:
             compiled, mac = _get_static_kernel(
                 workspace.state_E,
@@ -2591,7 +2624,7 @@ def launch_sm120_static_moe(
         workspace.token_weights,
     )
     if static_v2_stamps is not None:
-        runtime_args = runtime_args + (static_v2_stamps, static_v2_counter)
+        runtime_args = runtime_args + (static_v2_stamps, static_v2_counter, static_v2_split_ws)
     compiled(*runtime_args)
 
     return scatter_output
