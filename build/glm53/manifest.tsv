@@ -14,6 +14,7 @@ moe_micro_kernel.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe
 moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py	f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362
 b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
 moe_static_common.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py	absent
+moe_sf_pack.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py	absent
 moe_static_kernel_v4.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
 moe_static_kernel_v5.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py	absent
 moe_dynamic_gated_tiled.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py	absent

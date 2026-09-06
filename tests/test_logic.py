@@ -3390,6 +3390,84 @@ def test_glm53_b12x_tuning_controls() -> None:
     print("  GLM53 b12x tuning controls ..... OK")
 
 
+def test_b12x_sf_pack_is_lossless() -> None:
+    """6-bit block packing of the NVFP4 scales (39차 §4c) is exact, or it raises.
+
+    Every 16 fp4 values carry one e4m3 scale byte, 11.1% of an expert's packed
+    bytes, and the static kernel is bandwidth-bound (§3e), so removing scale
+    bytes buys time almost 1:1. Measured over 516 expert scale tensors: the
+    code span inside one 4096 B block (what the FC1 DMA stages) is median 21
+    and max 45, so a 6-bit ``base + index`` covers 100% of blocks with no
+    escape -- but only per block. Per tensor the span reaches 239, and the
+    global alphabet is 66 codes.
+
+    The kernel expands this in registers, so the bit layout below is a
+    contract: plane A holds the low nibbles two per byte, plane B the high two
+    bits four per byte, in the stock block's own byte order.
+    """
+    import typing
+    try:
+        import torch
+    except ImportError:
+        print("  b12x SF 6-bit pack ............ OK (skipped: no torch)")
+        return
+    ns = {"torch": torch, "Tuple": typing.Tuple}
+    load_defs("glm53_moe/moe_sf_pack.py", {
+        "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "SF_PACK_MAX_INDEX",
+        "SF_PACK_BYTES", "SF_PACK_PLANE_A", "SF_PACK_PLANE_B",
+        "sf_packed_block_bytes", "_blocks", "sf_pack_span", "pack_sf",
+        "unpack_sf", "sf_packed_bytes",
+    }, ns)
+    check(ns["SF_PACK_BITS"] == 6 and ns["SF_PACK_BLOCK"] == 4096
+          and ns["SF_PACK_BLOCK_FC2"] == 1024 and ns["SF_PACK_MAX_INDEX"] == 63,
+          "the packing unit is the kernel's own SF stage: 4096 B (FC1) / 1024 B "
+          "(FC2), 6-bit index")
+    check(ns["SF_PACK_BYTES"] == 3072 and ns["SF_PACK_PLANE_A"] == 2048
+          and ns["SF_PACK_PLANE_B"] == 1024,
+          "a 4096 B block packs to 2048 B of nibbles + 1024 B of 2-bit fields")
+
+    # the bit layout the kernel will invert
+    idx = torch.zeros(ns["SF_PACK_BLOCK"], dtype=torch.uint8)
+    idx[:4] = torch.tensor([0, 1, 16, 63], dtype=torch.uint8)
+    sf = (idx.to(torch.int16) + 0x40).to(torch.uint8)
+    packed, bases = ns["pack_sf"](sf)
+    check(int(bases[0]) == 0x40, "the base is the block's smallest e4m3 code")
+    check(int(packed[0][0]) == 0x10 and int(packed[0][1]) == 0xF0,
+          "plane A: low nibble of scale i at byte i>>1, half (i&1)")
+    check(int(packed[0][ns["SF_PACK_PLANE_A"]]) == 0xD0,
+          "plane B: high 2 bits of scale i at byte i>>2, field (i&3)")
+
+    # exactness over the real shape of the checkpoint's bands, both stages
+    gen = torch.Generator().manual_seed(11)
+    for block in (ns["SF_PACK_BLOCK"], ns["SF_PACK_BLOCK_FC2"]):
+        for base, span in ((0x5c, 45), (0x6e, 21), (0x00, 1), (0xc0, 64)):
+            raw = (base + torch.randint(0, span, (block * 3,), generator=gen,
+                                        dtype=torch.int16)).to(torch.uint8)
+            pk, bs = ns["pack_sf"](raw, block)
+            check(pk.shape[1] == block * 6 // 8 and bs.numel() == 3,
+                  f"block {block} packs to {block * 6 // 8} B plus one base")
+            check(bool(torch.equal(ns["unpack_sf"](pk, bs, block), raw)),
+                  f"pack/unpack is byte-exact (block {block}, base {base:#x}, span {span})")
+            check(int(ns["sf_pack_span"](raw, block).max()) <= span,
+                  "sf_pack_span reports the block's code span")
+
+    # a block wider than the index must raise, never round
+    wide = (0x40 + torch.arange(ns["SF_PACK_BLOCK"], dtype=torch.int16) % 65).to(torch.uint8)
+    try:
+        ns["pack_sf"](wide)
+        check(False, "a 65-code block must be refused, not rounded")
+    except ValueError:
+        pass
+    ragged = torch.zeros(ns["SF_PACK_BLOCK"] + 4, dtype=torch.uint8)
+    try:
+        ns["pack_sf"](ragged)
+        check(False, "scale bytes that are not a whole number of blocks must be refused")
+    except ValueError:
+        pass
+    check(ns["sf_packed_bytes"](4096 * 100) == 100 * 3073,
+          "packed size counts the per-block base byte")
+
+
 def test_b12x_static_v2_controls() -> None:
     """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
 
@@ -11233,6 +11311,7 @@ if __name__ == "__main__":
     test_b12x_zero_weight_micro()
     test_glm53_b12x_tuning_controls()
     test_b12x_static_v2_controls()
+    test_b12x_sf_pack_is_lossless()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()
