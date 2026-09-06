@@ -2188,6 +2188,13 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - DF1 onepass: 프리필 32K −10.8% / 128K −7.3%, **128K 디코드 −31%**(창 13.5~15.5 step/s 지속, 32K 는 정상 20.9~21.9), tok/step −7.2% → REGRESS. 순차 요청이라 스케줄러는 손대지 않아야 하는 구간이다; DF2 의 128K 창으로 스케줄러 기인 여부를 가른다(§ 아래).
 - **v3 = 번갈아 모드**(`SCHED_MODE=alternate`, 기본): 섞지 않는다. 순수 디코드 스텝 K(`SCHED_DECODE_STEPS`=6) 뒤에 디코더가 한 스텝 쉬고(stock 의 요청별 `next_decode_eligible_step` 게이트) 순수 프리필 청크 C(`SCHED_MIXED_CHUNK`=1152) 한 스텝. 양쪽 다 빠른 경로(그래프·MK·prep-fused / SP·KDA·NVFP4) 를 유지. 비용 모델: 사이클 = K×47 ms + C/2,950 + 프리필 스텝 고정 ~0.1 s → K=6, C=1152 면 사이클 ≈ 0.78 s, 프리필 ≈ 1,500 tok/s(스톡 혼합 2,480 의 60%), 디코더 7.7 step/s(스톡 혼합 1.3 의 6배), 최대 ITL ≈ 0.5 s(스톡 6.6 s, DF1 3.5 s). 논리 테스트 확장. 팔 DF3(K=6) / DF3b(K=3) 큐.
 
+**DF2**(v2 + `PREFILL_EVERY=2`: 혼합 스텝 사이에 순수 디코드 스텝 하나) — 혼합 부하: 32K 겹침 ITL med 74 / p95 1,581 / max 1,671 ms, 스텝 62, TTFT 33.0 s(977 tok/s); 100K 663 / 1,405 / 2,088 ms, 스텝 156, TTFT 101.3 s(993). 중앙값 ITL 은 순수 디코드 스텝 덕에 74 ms 지만 프리필 스텝이 1.4~2 s(floor 가 청크를 키움) 라 p95 는 DF1 보다 나쁘고 프리필은 같은 ~1,000 tok/s. onepass 는 정상(프리필 32K −0.8% / 128K +0.1%, 디코드 32K −1.4% / 128K −3.5%) → DF1 의 128K 디코드 −31% 는 재현되지 않은 일시 현상.
+- **참조 편차 주의**: DEF40 의 raw acc 51.9%(tok/step 3.597) 는 오늘 6 부팅 중 최고치(나머지 46.8~49.3%, tok/step 3.34~3.46). APC/DF1/DF2 의 "tok/step −7%" 는 이 편차이지 퇴행이 아니다. 이후 tok/step 판정은 3.35~3.46 띠 기준.
+- 판정 요약(체인 1): APC = 히트·수용률 PASS / prep-fused 꺼짐(수정 PR #399, 후속 APC2·APC3) ; DF1·DF2(v2 혼합) = 기각(혼합 스텝 고정 비용) → v3 번갈아 모드(PR #400, 후속 DF3·DF3b).
+
+**APC2**(`PREFIX_CACHE=1` + prep-fused 재수집 수정 #399, 19:33) — 히트/수용률 전과 같음(32K warm 1.37 s 92% / warm2 0.37 s 99.6%, 100K warm 2.12 s 96% / warm2 1.10 s 98%, 정답 6/6, acc 41.6~59.5% 잡음폭). onepass: 프리필 2K +14.7% / 32K **−3.2%**(2,972) / 128K **+1.1%**(2,972) — align 청크(6,912)의 순수 프리필 비용은 작다(APC 의 −8% 는 대부분 잡음). 디코드는 여전히 −9.3/−10.3%: prep-fused 가 **두 번째 관문**에서 빠졌다 — `mamba_cache_mode != none (block table select differs)`.
+- 원인: stock `mamba_get_block_table_tensor` 는 GDN 상태 블록 열을 `(seq_len−1)//mamba_block` 부터 `1+num_spec` 개 취하는데('align' 은 2304 블록을 넘을 때마다 열이 이동), 융합 커널은 0열부터 취했다(캐시 모드 'none' 은 블록 하나 = max_model_len 이라 항상 0열). 수정(PR #405): 커널이 실행 중 블록 열부터 모으고(런타임 인자 `mamba_block`, 'none' 은 그대로 0열), align 모드에선 0열만 아는 CUDA `run_prep` 대신 Triton 커널(호스트 ~12 µs/스텝). 셀프체크의 `gdn_state` 비교가 stock 빌더와의 일치를 검증한다. 후속 팔 **APC4**(두 수정 모두) 를 DF3 체인 끝에 붙임; CUDA run_prep 의 열 이동 지원은 APC 승격 뒤 후속.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.

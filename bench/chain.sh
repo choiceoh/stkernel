@@ -65,8 +65,10 @@ PY
 last=${NAMES[$((${#NAMES[@]} - 1))]}
 if [ "$had_defaults" = 1 ] && [ -z "${KNOBS[$((${#NAMES[@]} - 1))]}" ]; then
   echo "== $(date +%T) production stays on the last arm ($last = defaults)"
-elif [ "${nb:-0}" -lt "$CHAIN_FLOOR_N" ] && { bash "$FLEET" restore-needed "$S" >/dev/null 2>&1 || [ "${FLEET_REHEARSE:-0}" = 1 ]; }; then
-  echo "== $(date +%T) defaults arm ${last}BASE (baseline sample ${nb:-0}/$CHAIN_FLOOR_N on this build; production stays here)"
+elif [ "${nb:-0}" -lt "$CHAIN_FLOOR_N" ]; then
+  # the baseline SAMPLE is a measurement, not a restore: only a bare restore is
+  # skippable when a boot job follows (FUS7 #3 lost its verdict to that confusion)
+  echo "== $(date +%T) defaults arm ${last}BASE (baseline sample ${nb:-0}/$CHAIN_FLOOR_N on this build; the verdict needs it)"
   bash "$LEVER" "${last}BASE" "" 2>&1 | tail -30
 elif bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
   echo "== $(date +%T) restore boot (defaults, no leg; the build has ${nb:-0} baseline samples)"

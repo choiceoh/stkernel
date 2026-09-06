@@ -9495,6 +9495,16 @@ def test_glm53_prep_fused_contracts() -> None:
           "align re-gather runs on every fused step, after the cached metadata is resolved")
     check("postprocess_state" not in src[src.index("def install_glm53_prep_fused("):],
           "postprocess_state (num_accepted scatter + align post-save) stays stock")
+    _k = src[src.index("def _glm53_prep_fused_kernel("):src.index("@dataclass\nclass PrepPlan:")]
+    check("mamba_cache_mode != none (block table select differs)" not in src
+          and '"mamba_block"' in src[src.index("_NO_SPECIALIZE = ["):src.index("]", src.index("_NO_SPECIALIZE = ["))]
+          and "start_col = tl.maximum((seq_len - 1) // mamba_block, 0)" in _k
+          and "st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)" in _k,
+          "align mode: the GDN state indices come from the running block column (stock mamba_get_block_table_tensor)")
+    check('reason = "mamba align mode: run_prep gathers state column 0"' in src
+          and "align_mode=runner.cache_config.mamba_cache_mode == \"align\"" in src
+          and "mamba_block=int(mamba_block or (1 << 30))" in src,
+          "align mode: the CUDA run_prep (column 0) yields to the Triton kernel; the block size reaches the plan")
     print("  glm53 prep fused contracts .. OK")
 
 
@@ -10921,8 +10931,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
     for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
                 "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
         check(sub in fleet, f"fleet.sh carries {sub}")
-    check('grep -qE "^${k%%=*}=" $profiles 2>/dev/null || undeclared=' in fleet,
-          "preflight refuses a knob no profile declares (the launcher forwards only declared keys)")
+    check('grep -qE "^${k%%=*}=" <<< "$prof_here"' in fleet and "FAIL undeclared in profiles/glm53.env" in fleet,
+          "preflight refuses a knob the profile does not declare (the launcher forwards only declared keys)")
+    # 39차 손질: the profile that serves is origin/main's (chains pull it); the
+    # checkout's copy only adds a note, and the tool's own stale copy is synced
+    check('git -C "$REPO" show origin/main:profiles/glm53.env' in fleet
+          and "NOTE checkout is $behind commit(s) behind origin/main" in fleet
+          and 'SYNC $copy <- repo (was stale)' in fleet,
+          "preflight checks declarations against origin/main, notes checkout lag, syncs its own copy")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
     check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
@@ -11016,8 +11032,9 @@ def test_fleet_reservation_tooling_contracts() -> None:
     # -- round 4 (operator "우회를 못하게 막아 그리고 chain 헬퍼 만들어")
     check("FLEET_PREFLIGHT" not in fleet and "forced" not in fleet and "--cpu --force" not in fleet,
           "no bypass: neither the preflight nor the --cpu refusal has an override")
-    check("SYNCED $copy <- $src" in fleet and 'mv "$copy.new" "$copy"' in fleet,
-          "a stale srv2 copy is synced from the repo (atomic mv), never a reason to fail")
+    check('SYNC $copy <- repo (was stale)' in fleet and 'mv "$copy.new" "$copy"' in fleet
+          and 'for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"' in fleet,
+          "a stale srv2 copy -- the runner's as well as the tool's own -- is synced from the repo (atomic mv), never a reason to fail")
     check('[ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"' in fleet,
           "knobs may be declared by a tree the chain cd's into (a PR checkout)")
     check("chain)" in fleet and "QUICKSTART" in fleet,

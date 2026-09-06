@@ -134,7 +134,10 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
     [ -f "$copy" ] || continue
     if [ "$(md5sum < "$copy")" = "$(md5sum < "$src")" ]; then echo "  PASS $copy == repo"
     elif cp "$src" "$copy.new" 2>/dev/null && chmod +x "$copy.new" && bash -n "$copy.new" 2>/dev/null && mv "$copy.new" "$copy"; then
-      echo "  SYNCED $copy <- $src (was stale: the repo is the source of truth)"; logit "preflight synced $(basename "$copy") from the repo"
+      # a stale copy is only ever a stale copy: sync it from the repo (the
+      # source of truth) instead of costing the caller a turn (09-06: two
+      # queue attempts lost) -- both copies, the tool's own and the runner's
+      echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
     else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
   shift
@@ -155,17 +158,35 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   if [ "$kind" = probe ]; then
     echo "  SKIP declared-knob check (probe: no launcher in the path)"
   else
-    # a chain that `cd`s into a checkout (a PR tree under ~/mkab) declares its
-    # knobs in THAT tree's profile; the repo's is not the only truth
-    local k undeclared="" profiles="$REPO/profiles/glm53.env" d
+    # The profile that will serve is the one the chain deploys, and chains pull
+    # origin/main at their start (or the holder runs `fleet.sh deploy`): check
+    # against origin/main, falling back to the checkout when the fetch is
+    # impossible. A key declared only in the checkout (a branch not merged yet)
+    # passes with a note; a key declared only by a tree the chain `cd`s into (a
+    # PR checkout under ~/mkab) passes with a note; undeclared everywhere FAILs.
+    # 09-06: a key merged to main minutes earlier FAILed against the stale checkout.
+    local k undeclared="" prof_main="" prof_src=checkout behind=0
+    if timeout 20 git -C "$REPO" fetch -q origin 2>/dev/null; then
+      prof_main=$(git -C "$REPO" show origin/main:profiles/glm53.env 2>/dev/null) && prof_src=origin/main
+      behind=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+    fi
+    local prof_here; prof_here=$(cat "$REPO/profiles/glm53.env")
+    local profiles="" d
     for d in $( { [ -n "$chain" ] && grep -vE '^\s*#' "$chain"; printf '%s ' "$@"; } 2>/dev/null | grep -oE "cd +[^ ;&|)]+" | awk '{print $2}' | sed "s|^~|$HOME|" | sort -u); do
       [ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"
     done
+    local only_here="" only_tree=""
     for k in $knobs; do
-      grep -qE "^${k%%=*}=" $profiles 2>/dev/null || undeclared="$undeclared ${k%%=*}"
+      if [ -n "$prof_main" ] && grep -qE "^${k%%=*}=" <<< "$prof_main"; then continue; fi
+      if grep -qE "^${k%%=*}=" <<< "$prof_here"; then only_here="$only_here ${k%%=*}"
+      elif [ -n "$profiles" ] && grep -qE "^${k%%=*}=" $profiles 2>/dev/null; then only_tree="$only_tree ${k%%=*}"
+      else undeclared="$undeclared ${k%%=*}"; fi
     done
-    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys):$undeclared"; ok=0
-    elif [ -n "$knobs" ]; then echo "  PASS knobs declared: $(echo $knobs | tr ' ' ',')"; fi
+    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys; checked $prof_src and checkout):$undeclared"; ok=0
+    elif [ -n "$knobs" ]; then echo "  PASS knobs declared in $prof_src: $(echo $knobs | tr ' ' ',')"; fi
+    [ -z "$only_here" ] || echo "  NOTE declared only in the checkout (not in origin/main yet):$only_here"
+    [ -z "$only_tree" ] || echo "  NOTE declared only by a tree the chain cd's into (a PR checkout):$only_tree"
+    [ "${behind:-0}" = 0 ] || echo "  NOTE checkout is $behind commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots"
     if [ -f "$REPO/bench/baseline.py" ]; then
       local kv; kv=$(echo $knobs | tr ' ' ',')
       (cd "$REPO" && timeout 20 python3 bench/baseline.py --brief ${kv:+--knobs "$kv"} 2>/dev/null | sed 's/^/  /') || true
