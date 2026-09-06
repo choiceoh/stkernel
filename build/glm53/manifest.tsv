@@ -18,6 +18,7 @@ moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cut
 b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
 moe_static_kernel_v2.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v2.py	absent
 moe_static_kernel_v3.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
+moe_static_kernel_v4.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
 glm53_prefill_fastpath.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py	absent
 glm53_union_prefill.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_union_prefill.py	absent
