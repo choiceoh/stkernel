@@ -3481,6 +3481,18 @@ yes/no, 프로브 slip(부팅 작업이 선두인데 유휴라 프로브가 먼�
 리허설 pair 가 GPU 없이 끝까지(기본값 표본→judge "WITHIN the floor ±2.6% (n=3)"→verdicts.jsonl), status 의 production/deployed/NOTE 줄,
 yield(홀더 양보→프로브 slip→프로브 release→홀더 재GO→RESUMED). 계약 핀은 `test_fleet_reservation_tooling_contracts` 2라운드 절.
 
+### 15. 예약 도구 3라운드 — 마커 표 자동 채움·게시판·세션 이름 충돌 (2026-09-06 밤, 운영자 "3 5 7")
+
+- **마커 표 자동 채움** `bench/proof_markers_gen.py`: 오버레이 소스의 서빙 줄("… serving", "[tag] installed", "plan built")을 그 파일이 읽는 노브에
+  귀속(태그 토큰 ⊂ 노브 이름; "X lane/hook serving" 이 모듈 태그보다 우선 — `[megakernel] head lane serving` 은 헤드 레인의 줄). 실패·폴백 줄
+  ("failed", "not mounted", "-> stock", "NOT SERVING", "declin…")은 제외. `--check` 는 빠진 행·낡은 행이 있으면 실패하고 `test_logic` 이 그걸 핀한다
+  → **새 레인은 표 행 없이는 테스트를 못 넘는다.** 이번에 `PREFILL_NVFP4_BPROJ`·`DEV_LAB` 행이 추가됐고 `MEGAKERNEL` 은 "-"(서빙 줄 없는 마스터 스위치).
+  생성기가 오탐한 것: `[fp8-dense] drafter lane NOT SERVING`, `declining the opt-in lane, serving the …` — 부정 목록으로 걸렀다.
+- **게시판** `fleet.sh board [n]` = `bench/board.py`: 홀더·큐, 세션 전체의 최근 판정(델타·바닥·증명·판정), 오늘의 부팅 회계를 한 화면에.
+- **세션 이름 충돌**: 큐 항목이 요청 pid 를 기억한다(7열). 같은 이름을 다른 살아있는 pid 가 다시 걸면 **거부**(`FLEET_SAME_SESSION=1` 로 티켓 공유).
+  09-06 에 `run fusion` 을 두 번 걸어 티켓이 합쳐졌던 사고.
+샌드박스: 두 번째 `run fusion` 거부 메시지, 공유 옵션으로 2번 순번, 리허설 pair 뒤 board 에 판정 행. `tests/test_logic.py` 3라운드 핀.
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬

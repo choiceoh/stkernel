@@ -36,6 +36,7 @@
 #                                                    (health 200, 0 requests) or no serving at all,
 #                                                    never a boot in progress; est <= 15 may slip
 #                                                    ahead of queued boot jobs (logged)
+#   fleet.sh board [n]                               every session's last n verdicts + today's boots
 #   fleet.sh ledger [days]                           per-session holds, minutes, boots, records and
 #                                                    boots that produced no measurement
 #   fleet.sh pair <session> <NAME> "<knobs>" [est] [note]
@@ -232,13 +233,20 @@ holder_line() { [ -s "$H" ] && IFS='|' read -r s pid host t0 est note kind < "$H
 
 with_lock() { ( flock -x 9; "$@" ) 9>"$LK"; }
 
-_enqueue() {  # session est note [kind] -- idempotent per session; a repeat refreshes est/note/kind in place
-  local kind; kind=$(kind_of "${4:-}")
+_enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repeat refreshes est/note/kind in place
+  local kind pid; kind=$(kind_of "${4:-}"); pid=${5:-}
   if grep -q "^[0-9]*|$1|" "$Q"; then
-    awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" '$2==s {$4=est; $5=note; $6=kind} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
+    # two live processes under one session name would merge into one ticket
+    # and take one turn between them (09-06: `run fusion` twice); refuse
+    local qpid; qpid=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f7)
+    if [ -n "$qpid" ] && [ -n "$pid" ] && [ "$qpid" != "$pid" ] && kill -0 "$qpid" 2>/dev/null && [ "${FLEET_SAME_SESSION:-0}" != 1 ]; then
+      echo "session '$1' is already queued by a live process (pid $qpid): use another name (e.g. $1-2), or FLEET_SAME_SESSION=1 to share the ticket" >&2
+      logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
+    fi
+    awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
     return 0
   fi
-  echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
+  echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
 }
 _dequeue() { grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"; }
 _position() { grep -n "^[0-9]*|$1|" "$Q" | head -1 | cut -d: -f1; }
@@ -287,7 +295,7 @@ PY
   logit "ledger $s held=${held}m boots=$boots records=$recs wasted=$wasted"
   ls -t "$LOGD"/boot-*.log 2>/dev/null | head -4 | while read -r f; do [ "$(stat -c %Y "$f")" -ge "$t0" ] && logit "  kept $f"; done
 }
-_yield_requeue() { _enqueue "$1" "$2" "$3" boot; _front "$1"; }   # the yielding holder keeps its place: head of the queue
+_yield_requeue() { _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"; }   # the yielding holder keeps its place: head of the queue
 _release() {  # session
   if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
     _ledger_row "$1"
@@ -313,19 +321,19 @@ cmd=${1:-status}; shift || true
 case "$cmd" in
   request)
     kind=boot; [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
-    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind"; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
+    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind" "$PPID" || exit 6; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
-    [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind"; est=30; note=""; }
+    [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
     t_end=$(( $(now) + tmo * 60 )); last=""
     while [ "$(now)" -lt "$t_end" ]; do
       # an orphaned waiter (its run process gone) must not keep polling for a
       # dead pid; a request that vanished (a stale sibling took it, or a
       # cancel) is re-queued at the back instead of waiting forever at "pos /0"
       kill -0 "$pid" 2>/dev/null || { echo "parent $pid is gone; giving up $(ts)" >&2; with_lock _dequeue "$s"; exit 1; }
-      [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note" "$kind"; echo "re-queued: $s (entry was gone) $(ts)"; }
+      [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note" "$kind" "$pid" || exit 6; echo "re-queued: $s (entry was gone) $(ts)"; }
       if with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; then echo "GO $s $(ts)"; exit 0; fi
       why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
@@ -360,7 +368,7 @@ case "$cmd" in
     if ! preflight "$s" -- "$@"; then
       if [ "${FLEET_PREFLIGHT:-}" = skip ]; then logit "preflight FAIL overridden by $s"; else logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3; fi
     fi
-    with_lock _enqueue "$s" "$est" "$note" "$kind"
+    with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
     FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
     if [ "$kind" = boot ]; then
       echo "nodes:"; if ! nodes_check; then
@@ -382,7 +390,7 @@ case "$cmd" in
       hbf=$(hb_file "$hs"); [ -f "$hbf" ] && [ $(( $(now) - $(stat -c %Y "$hbf") )) -gt 600 ] && echo "  SILENT: no heartbeat for $(( ($(now) - $(stat -c %Y "$hbf")) / 60 ))m"
     fi
     echo "legacy: $(busy_procs) bench/boot procs, $(busy_reqs) requests in flight$(booting && echo ', head booting')"
-    echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
+    echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind qpid; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
     production_line; deployed_line; baseline_line;;
@@ -428,6 +436,7 @@ case "$cmd" in
   nodes) nodes_check;;
   notify) s=${1:?session}; shift; [ $# -gt 0 ] && { echo "$*" > "$FLEET_DIR/notify.$s"; echo "hook for $s: $*"; } || { rm -f "$FLEET_DIR/notify.$s"; echo "hook for $s removed"; };;
   events) tail -"${1:-20}" "$FLEET_DIR/events.log" 2>/dev/null;;
+  board) (cd "$REPO" && FLEET_DIR="$FLEET_DIR" LOGD="$LOGD" python3 bench/board.py --n "${1:-12}");;
   classify) shift 0; classify_cmd "$@";;
   restore-needed) restore_needed "${1:?session}";;
   ledger)
