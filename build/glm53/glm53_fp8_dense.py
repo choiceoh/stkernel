@@ -693,6 +693,13 @@ class Fp8DenseMethod:
         # is shape-agnostic, so ranks cannot diverge on it).
         nv = self._nvfp4
         if nv is not None and x.numel() // x.shape[-1] > _NVFP4_PREFILL_MIN_M:
+            if not getattr(self, "_nvfp4_announced", False):
+                # 39차: the bracket's proof that the prefill route ran (self-
+                # contained: the logic suite execs this def in a stub namespace)
+                self._nvfp4_announced = True
+                _lg = globals().get("logger")
+                if _lg is not None:
+                    _lg.warning("[fp8-dense] nvfp4 prefill route engaged (M=%d)", x.numel() // x.shape[-1])
             try:
                 return _nvfp4_dense_gemm_op(x, *nv)
             except Exception as e:

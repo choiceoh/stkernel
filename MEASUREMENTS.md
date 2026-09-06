@@ -2043,6 +2043,90 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 - 주의(판정 불변): 새 드래프터의 W4 팩은 stock 드래프터 활성값으로 찍은 Hessian(이름 기준)으로 GPTQ 됐다(gptq=30, stock 부팅은 rtn=33). 근소 차이였다면 재확인 항목.
 - 파일: 4 노드 `~/models/GLM-5.3-Flash-DFlash2-TR3-v3`(sha256 cfe8c069… 일치). 라이선스 other, 원본 CC BY-NC-ND 파생 → 내부 평가 전용.
 
+### §4b incoai 08-31 리비전(R0831) 브래킷 — 우리 스택에선 08-28 보다 낫지 않음, 복구 (15:16~15:35)
+
+발단: 4 노드의 드래프터 파일이 달랐다. srv2(rank 0)·srv1·srv3 = incoai dc77ff1c(08-28, sha256 b33c0347…), srv4 = bf582e4e(08-31, b038e1d9…, 09-05 05:36 누군가 갱신, `ONE_SPARK_REVISION`).
+서빙 드래프트는 rank 0 의 결과만 스케줄러로 가므로 프로덕션은 08-28본. incoai 는 08-27 릴리즈 뒤 08-28·08-31 "Checkpoint update"(메시지 없음, 토론 없음); 08-31 README 는 벤치 표를 지우고
+"재측정 중". 텐서 비교: 선택기 codebook 2개 10.7~11.0%·projection 8.2%(원소 98% 변경), 백본 5층 0.2~0.3%, fc 0.17%, norm 0 → **선택기 재학습 + 백본 소량 이어학습**.
+
+| onepass (구 하니스, k=5, 같은 배포 01ae713) | tok/step | step/s | tok/s | raw acc | 품질 | 한국어 |
+|---|---|---|---|---|---|---|
+| **R0831** (08-31, 15:23) | 2.72 | 21.4 | 58.4 | 34.5% | 9/9 | 0/25 |
+| stock 08-28, 오늘 6회 범위 (PRODK5H·MKG3·B12XU·B12XW·PRODU·PRODW) | 2.79~2.99 | 20.4~20.9 | 57.0~62.1 | 35.7~39.9% | 9/9 | 0 |
+
+- 위치별 수용(누적, 3,354 드래프트): .676/.426/.291/.193/.137. 컨테이너 안 sha256 b038e1d9… 로 서빙 증명. step/s 동일.
+- **판정 RESTORE**(규칙: 오늘 stock 참조 중앙값 대비 tok/s·tok/step −2% 이내면 KEEP; 실측 tok/step −5.8%). 벤더 최신본이 우리 nvfp4·한국어·thinking off·temp 0 조건에선 이득이 없다.
+  운영자 "08-28 에 문제가 있어 바꿨을 것" — 맞을 수 있으나 그 조건은 벤더 벤치(thinking Max, temp 1.0, 영어 수학·코드)일 가능성이 크고, 정확성은 검증이 보장하므로 무관. **미결**: thinking on 구간 A/B(§6).
+- 파일 정리: 08-31본은 4 노드 `~/models/GLM-5.3-Flash-DFlash2-r0831`, stock 경로는 4 노드 모두 08-28(srv4 도 되돌림, 원자적 mv). 런처 프리플라이트가 드래프터 경로를 4 노드에서 검사(PR #371).
+- 사고 2건(15:03, 15:05): ① 대기 체인을 pid 로만 죽여 자식 런처가 살아남고 이어 붙인 판정 스크립트가 "헤드 컨테이너 없음"을 사망으로 읽어 복구 런처를 하나 더 띄움 → 런처 둘 충돌, 15분 손실;
+  ② srv4 에 -r0831 사본이 없어(rsync 를 srv2→srv1/srv3 만) docker 가 root 소유 빈 디렉터리를 만들고 rank 3 워커가 SpeculativeConfig 에서 사망, 나머지 랭크는 TCPStore 랑데부(dist-world)에서 헬스 예산 내내 대기 → 12분 손실.
+
+### §4c 통일 하니스 기준선 — BASE39-stock (한국어 문서 onepass, main 3af71e8, stock 08-28, 15:33)
+
+| | 2K | 32K | 128K |
+|---|---|---|---|
+| 프롬프트 토큰 | 2,128 | 32,545 | 128,559 |
+| 콜드 프리필 tok/s | 2,100 | 2,645 | 2,514 |
+| 콜드 TTFT | 1.01 s | 12.31 s | 51.13 s |
+| 리트리벌 | 3/3 | 3/3 | 3/3 |
+
+디코드 창 n=17 med **20.4** step/s, raw acc **48.5%**, tok/step **3.43** (k=5) → 69.9 tok/s 환산, 생성 3,481 토큰, 한국어 손상 0/5, **총 119초**(구 하니스 339~375초).
+한국어 문서 Q&A 의 수용률(48.5%)이 구 하니스(36~39%)보다 높다 — 문서 근거 답변은 인용이 많아 예측이 쉽다. **이후 비교는 이 행이 기준**이며 구 기록과는 step/s 만 맞댈 수 있다.
+
+### §4d #368+#373 프리필 후보 결합 팔(P1) — 이득 0, 128K 디코드 퇴행, 복구 (15:48~16:10; 운영자 "PR368+373 테스트 후 디폴트화")
+
+게이트 프로브 2개(플릿 내린 srv4 GPU): **둘 다 실패**. ① `probes/qk_norm_strided_check.py`: conv 레이아웃 T=129 에서 1 ulp(max_abs 9.8e-4) → KDA_PREFILL_QK_NORM 제외.
+② `probes/glm53_nvfp4_scale_check.py`: 스케일 637.1556 vs 637.1555 → NVFP4_SCALE_FUSED 제외. 남은 8개로 부팅(main 15b8031, PREFILL_WARMUP=1, .cu 재빌드 포함 630 s):
+SP=1 SP_FP8=1 MLA_PREFILL_PAIR=1 GROUP=4 FP8_DENSE_PREFILL_NVFP4=1 B12X_PREFILL_REUSE=1 FC1_N128=1 KDA_PREFILL_DIRECT_OUT=1 (POST_PRENORM·NVFP4_BPROJ 는 문서의 1차 팔대로 off).
+
+| 통일 onepass | 2K cold | 32K cold | 128K cold | step/s (2K/32K/128K) | tok/step | raw acc | 품질 | 한국어 |
+|---|---|---|---|---|---|---|---|---|
+| **P1** | 2116 | 2643 | 2375 | 16.5 (20.4 / 20.4 / **11.0**) | 3.21 | 44.6% | 9/9 | 0/5 |
+| BASE39-stock | 2100 | 2645 | 2514 | 20.4 (20.4 / 20.4 / 20.4) | 3.43 | 48.5% | 9/9 | 0/5 |
+
+- **판정 RESTORE.** 프리필 이득 없음(32K −0.1%, 128K −5.5%; 문서 예측 +41%), **128K 문맥 디코드 step/s 절반**(11.0), 수용 −4pt. 품질·한국어는 통과. 프로덕션 stock 기본값으로 복구.
+- 레인 관여 증거 없음: 헤드 로그의 앵커는 megakernel armed / fp8-dense / prep-fused 뿐이고 SP·MoE reuse 레인은 앵커 자체가 없다(SP 모듈에 로그 0줄, MoE 는 decline 로그만). "무장 ≠ 호출"이 이번에도 그대로. 복구 부팅이 헤드 로그를 덮어써 사후 판독도 불가 → 체인이 팔별 로그를 보존하도록 고침(§7).
+- 128K 디코드 퇴행의 용의자는 MLA pair+group4(디코드 MK MLA 커널의 컴파일 플래그·512 스레드 레지스터 비용, 문서가 "미검증"이라 적은 지점)와 SP_FP8(수용 −4pt 쪽). 그룹 이분(SP / MLA / NVFP4 / MoE+KDA, 4 부팅 ≈ 55분)을 플릿 큐에 등록(P2).
+
+### §4e 두 게이트의 수정 — 둘 다 PASS (16:05~16:12, srv4)
+
+- **NVFP4 스케일 융합**: stock 레시피 `448.0 * 6.0 / amax`, `alpha_scale / (x_gs * w_gs)` 는 파이썬 float 가 왼쪽이라 torch 가 `reciprocal(tensor) * scalar`(두 번 반올림)로 계산한다. 융합 커널의 `div_rn(2688, amax)`(IEEE 한 번)가 1 ulp 위였다.
+  `div_rn(1, amax) * 2688`, `div_rn(1, product) * alpha_scale` 로 stock 의 반올림 순서를 그대로 따르게 고침 → 프로브 `"status": "passed"`. "구성상 비트 동일"은 틀린 주장이었다.
+- **QK-norm 스트라이드**: stock kernel2 는 MBLOCK 32·num_warps 4 고정(행 수 무관). 실패는 conv 레이아웃 전용 [128,32]-타일·축0 리덕션 커널의 트리가 kernel2 의 [32,128]·축1 트리와 달라서이고 데이터 의존적(진단 `probes/qknorm_diag.py`:
+  T=128 에서 2행, 1000 에서 8행, 8185 에서 54행 불일치; 타일 전치·warp 1/8 도 불일치). **kernel2 모양의 strided 커널을 conv 레이아웃에 쓰면 T=1~8192 전부 비트 동일** → conv 분기와 전용 커널 삭제. 게이트 150 케이스 PASS + decline OK.
+  conv 레이아웃의 로드는 T 스트라이드(비병합, L2 친화)라 속도는 브래킷이 잰다. 이 레인의 절감 자체가 128K 프리필의 0.03% 수준이라 정확성이 우선.
+- 앵커 추가: `[prefill-sp] sequence-parallel prefill armed (fp8 transport=…)`, `[b12x prefill reuse] armed: reuse=… fc1_n128=…` (무장의 부재를 로그로 증명하기 위해).
+
+### §4f P2 그룹 이분 — 레인별 첫 실측: 컴파일 실패 2, 퇴행 1, 무이득 1, SP 는 +5% 에 비용 둘 (16:20~16:59)
+
+BASE39-stock 대비, 통일 onepass. 판정 규칙: 프리필 32K/128K +3% 이상 = GAIN, 어느 항목 −3% 아래 = REGRESS.
+
+| 팔 | 노브 | 결과 |
+|---|---|---|
+| P2A | SP + SP_FP8 | **부팅 사망**: SP 채택 직후(`MHC token shards selected T=8192`) `_decode` Triton 컴파일 실패 — fp8 포인터 로드 `other=0` (`cannot cast int32 to fp8e4nv`). 수정 PR #382 |
+| P2B | MLA pair + group4 | **REGRESS**: 프리필 32K −16.5%, 128K −18.1%. 디코드·품질·한국어 불변. 무장 앵커 `pair_prefill=True group=4 -> ARM` 확인 |
+| P2C | FP8_DENSE_PREFILL_NVFP4 + SCALE_FUSED | **무이득**: 32K −4.5%, 128K +3.7%, tok/step −2.4%; 첫 요청 2K cold −58.8%(2.46 s, nvfp4 경로 JIT 를 워밍업이 안 태움). 쌍 201+ 개 빌드 확인 |
+| P2D | B12X_PREFILL_REUSE + FC1_N128 + KDA_DIRECT_OUT + QK_NORM | **부팅 사망**: MoE 레인 `ENGAGED … m=8192 E=288 act_precision=fp4 quant=nvfp4 tiler=(128,128)` 직후 CuTe-DSL `dynamic_e288_k4096_n512_t8` MLIR 검증 실패("operand #0 does not dominate this use", ICE). KDA 둘은 미측정 |
+| P2A2 | SP + SP_FP8 (#382 적용) | **첫 실측**: 32K **+4.5%**, 128K **+5.5%**, 2K warm **+18%**(0.87 s) / cold −31.7%(1.48 s), tok/step −3.2%(raw acc 46.3 vs 48.5), 디코드 불변, 9/9, 0/5 |
+
+- **P1 의 0% 해명**: P1 은 옛 배포본으로 8개 노브를 한꺼번에 켰고, SP 는 관문에서 조용히 탈락(단독이면 채택되어 죽었을 코드가 살아남았다), MLA pair 도 selftest 줄에 `pair_prefill` 이 없어 미관여, MoE N128 도 관여했다면 죽었을 것. 실제로 돈 것은 NVFP4(무이득)뿐이었다고 보는 게 일관된다. 128K 디코드 절반(11 step/s)만 미해명 — P2B·P2C·P2A2 어디서도 재현되지 않았다.
+- **SP 의 비용 둘**: ① 커널 6개가 원소 수를 `tl.constexpr` 로 받아 프리필 길이마다 재컴파일(프로덕션이면 프롬프트마다) → 런타임 인자로 수정 PR #384; ② FP8 전송(층당 2회, 46층 ≈ 90회 e4m3 반올림이 잔차에 누적 → 드래프터 문맥 특징·KV 가 흔들림)의 수용률 −2pt 는 기전은 있으나 단일 측정이라 잡음과 미분리(P2C 도 −1.6pt). BF16 전송 팔(P2A3)과 stock 2차 기준선으로 판정.
+- 배포 함정: 런처는 `~/stkernel` 이 아니라 4 노드 `/home/choiceoh/overlays/glm53`(deploy-overlays.sh) 를 마운트한다. P2B·P2C 는 git 만 당긴 체크아웃과 다른 옛 배포본으로 돌았다(앵커 부재). 이후 체인은 시작 시 배포.
+- 디코드 창의 +5% 는 잡음: 프리필 전용 노브(P2B) 에서도 같은 폭. 오늘 stock 부팅 20.4~21.4 step/s.
+- 후속(큐): P2D2(REUSE 단독 + KDA 둘, 죽으면 KDA 만), P3B(MLA pair group2 + `VLLM_GLM53_MLA_PAIR_STATS=1` 겹침 통계 + 32K 프로파일), P3C(NVFP4 + 32K 프로파일), P2A4(SP+FP8, 재컴파일 수정), P2A3(SP, BF16 전송), stock 복구 + BASE39-stock2 + stock 프로파일.
+- **P2D2** (REUSE 단독 + KDA 둘, 17:00): **부팅 사망** — N128 없이도 같은 CuTe-DSL MLIR 검증 실패(`dynamic_e288_k4096_n512_t8_b107080c`). #368 의 MoE 프리필 reuse 커널 자체가 이 이미지에서 컴파일 불가. b12x 세션에 통보.
+- **P2D3** (KDA_PREFILL_DIRECT_OUT + QK_NORM, 17:10): **NEUTRAL(+)** — 프리필 2K +1.0%, 32K +1.3%, 128K +2.4%, raw acc 49.4%, 디코드 불변, 9/9, 0/5. 앵커 `[kda-prefill] direct output engaged (tokens=8192)`. 예측 86 ms(0.6%) 수준의 공짜 절감.
+  **운영자 "기본값으로 올려" → 프로파일 기본값 1 (PR #386).**
+- **P3B** (MLA pair group2 + 32K 프로파일, 17:17): **REGRESS** 32K −10.0%, 128K −9.5%. 프로파일: `mk_mla_pair_kernel` 3,208 ms(×55) vs stock `mk_mla_kernel` 1,734 ms — 커널 자체가 1.85배 느리고 나머지 버킷은 동일.
+  겹침 통계는 `VLLM_GLM53_MLA_PAIR_STATS` 가 프로파일 미선언 키라 워커에 안 넘어가 미기록(EXTRA_ENV 함정). 커널 재작성 없이는 회수 불가로 기록.
+- **P3C** (NVFP4 dense + 32K 프로파일, 17:28): 32K +1.7%, 128K +5.3%, 2K cold −19.6%(JIT), raw acc 48.0%. 프로파일: 대상 dense GEMM 1,118 → ~600 ms(−520, 예측대로) 이지만 활성값 양자화 `quantize_with_block_size_tma` +202 ms(×1010)
+  + amax `_partials` +184 ms(×1010) + 런치 글루 97 → 560 ms 가 상쇄. 벽시계 13,794 → 13,683 ms(−0.8%). 회수 경로: M 문턱 상향(작은 프리필은 stock), 워밍업에 nvfp4 형상, 양자화의 producer 에필로그 융합(상한 +6%).
+- **P2A4** (SP+FP8, #384 적용, 17:35): 32K +7.1%, 128K +4.9%, 2K warm +17% / cold −7.8%, raw acc 48.1%(P2A2 의 −2pt 는 잡음이었다), 디코드 불변, 9/9, 0.
+- **P2A3** (SP, BF16 전송, 17:41): **GAIN** — 32K **+12.6%**(2,978), 128K **+13.3%**(2,847), 2K warm +13% / cold −1.3%, raw acc 46.8%, 디코드 불변, 9/9, 0. BF16 전송이 FP8 전송보다 빠르다(양자화·amax·복원 커널과 스케일 AllReduce 가 절약 바이트보다 비싸다).
+  **SP(BF16) 기본값 승격(PR #388)**, SP_FP8 은 off 유지.
+- **302초 공백 종결**: 17:21 스톨 스냅샷(4 랭크 py-spy)에서 rank 2 만 `CustomAllreduce.__init__ → _init_mnnvl_buffer → symmetric_memory.rendezvous` 에 300 s(TCPStore 타임아웃) 갇혀 있고 나머지는 TP 첫 브로드캐스트에서 대기.
+  커스텀 AR 은 다중 노드라 생성자 직후 자기 비활성화("MNNVL multicast 미지원", 매 부팅) → 런처 `--disable-custom-all-reduce`(PR #387). 플래그 부팅 3/3 정상(P2A4 225 s·dist-group tp 1.8 s, P2A3 210 s, 복구), "Custom collectives" 줄 0. 서빙 커널 변화 없음.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
@@ -3255,6 +3339,39 @@ GPU 자가진단(`run_megakernel_bench.sh --segments gemm exact mhc kda smlp`)�
 프로필 노브 7개 소멸(`MK_KDA`·`MK_KDA_SHADOW`·`MK_GEMM2`·`SM121_MLA_PREFILL`·`FUSED_K_GATE`·`KPOOL_FUSED_TOPK`, 미선언이던 `MHC_SMALLM`/`MHC_ONEPASS` 포함; `KDA_PREFILL_REGIME` 은 위 7번대로 유지), 오버레이 파일 44→38(일몰만) → #368 병합 뒤 46(모듈 8 그대로). 남는 커널: `mk_gemm2_kernel`·`mk_mhc_kernel`·`mk_mla_kernel`·`mk_prep_kernel`(.cu 3,975→2,418줄), `k_oneshot`, `_deneb_gate_partial`, prep_fused·split-K·원패스·tail-select Triton, `moe_static_kernel_v4`.
 
 검증(무부팅): 컨테이너 nvcc PASS(경고만), `tests/test_logic.py` all OK(70,345 checks; 일몰 전용 테스트 10개 삭제, 메가커널 계약 테스트 재핀), 회귀 스크립트 4종 OK. 다음 부팅은 콜드 컴파일 1회 + GPU 자가진단(`run_megakernel_bench.sh --segments gemm,exact,mhc,smlp`)·원큐 사다리 1회로 서빙 확인 — 다른 세션이 플릿을 넘겨준 상태(14:41 전후 `FLEET-free-for-fusion.done`).
+
+### 12. 어휘 헤드의 팩 정확도를 헤드 가중치로 처음 쟀다 — "3배" 는 q_proj 에서 빌린 값이었다 (2026-09-06 오후, 호스트 CPU, 무부팅·무플릿)
+
+운영자 질문("fp8 lm 헤드를 우리 버전으로 다시 쓰는건?")에서 나온 확인이다. 결론부터: **우리 fp8 헤드는 얻을 게 없고**(§13 의 대역 바닥),
+남은 레버는 바이트뿐이며, 그 W4 의 대가를 헤드 가중치로 처음 실측했다.
+
+**왜 fp8 재작성이 아닌가.** 헤드는 158 MB/rank 를 190 GB/s 로 읽어 835 µs — fp8 바이트의 바닥이다. 우리 레인의 실측 상한은 같은 계열에서
+196 GB/s(27차, b12x 197 대비 103%)이고, 33차가 같은 형상에서 잰 MK W4 418 µs 는 절반 바이트를 같은 ~190 GB/s 로 읽은 값이다. 즉 v2 레인의
+이득은 전부 바이트에서 나왔지 효율에서 나온 게 아니다 — fp8 로 다시 쓰면 deep_gemm 숫자에 그대로 착지한다(잘해야 3%). 게다가 W8 팔은
+09-02 에, v1 상주 커널은 §11 에 지웠다.
+
+**측정.** `probes/head_pack_accuracy_cpu.py`(이 절이 만든 도구, GPU·컨테이너·플릿 불필요): 체크포인트의 실 가중치, 드라이버의 shipped 패커,
+33차 정정표와 **같은 자**(같은 생성기의 held-out 256행, bf16 진실 대비 fp32 상대오차, 합성 헤시안 4096토큰). fp8 열은 deepgemm 쌍의 torch
+트윈(ue8m0 128×128 가중치 블록 **과 ue8m0 토큰그룹 활성 스케일**; 활성을 fp32 스케일로 두면 1.62e-2 로 읽혀 잘못된 트윈이다).
+
+| 가중치 | stock fp8 | W4 RTN | W4 GPTQ(합성 H) |
+|---|---|---|---|
+| L1 q_proj [하네스 검증] | 2.651e-2 (공표 2.66e-2) | 8.331e-2 (공표 8.33e-2) | 7.272e-2 (공표 7.27e-2) |
+| **lm_head [실측, rank-3 슬라이스 38,720×4,096]** | **3.794e-2** | **8.484e-2 (fp8 의 2.24배)** | **7.387e-2 (1.95배)** |
+
+**읽기.**
+1. **헤드의 fp8 오차 자체가 밀집층보다 43% 나쁘다**(3.79e-2 대 2.65e-2). W4 가 넘어야 할 문턱이 그만큼 낮아, §13 이 q_proj 에서 빌려 쓴
+   "잡음 3배" 는 헤드에서 **2.24배(RTN) / 1.95배(GPTQ)** 다.
+2. **캐시에 `lm_head` 헤시안이 없다** — rank3 덤프 215개(Glm5Next 180 + DFlash2 35) 어디에도 없다. 교정 훅은 GEMM 레인을 타는 선형만
+   보는데 헤드 훅이 기본 off 라 헤드는 레인을 안 탄다. 즉 **오늘 헤드 노브를 켜면 조용히 RTN 팩**이고 8.48e-2 다(§13 의 "교정 부팅에서
+   자동 기록" 은 헤드 훅이 켜져 있을 때의 이야기였고, 실제로 켜고 돈 적이 없다).
+3. 합성 헤시안은 GPTQ 를 **과소평가**한다: 33차 실 덤프에서 GPTQ 는 RTN 8.56e-2 → 2.24e-2(−74%)였고 여기 −13% 와 다르다. 그러므로 위 표의
+   GPTQ 열은 **W4 오차의 상한**이지 서빙값이 아니다. 실 `lm_head` 헤시안이 있으면 헤드 W4 가 fp8 의 3.79e-2 아래로 갈 여지가 실재한다.
+
+**판정: 보류 유지.** 정밀도 쪽 불안이 예상보다 작다는 것이 더해졌을 뿐, 이득 −0.4 ms/스텝(0.75%)은 브래킷 해상도(CV 1.7%) 아래라는 사실이
+그대로다. 09-06 04:30 운영자 판정("GPTQ 가 다시 연 후보 셋 … 이익이 너무 적어 굳이 → 전부 접음")을 뒤집지 않는다. **다시 열 조건**은 하나:
+다른 이유로 교정 부팅을 할 때 `VLLM_GLM53_MK_HEAD_DRAFT=1` 을 함께 켜 `lm_head` 헤시안을 덤프에 얹는 것. 부팅을 새로 쓰지 않고 실 헤시안이
+생기고, 그 뒤 이 프로브를 `--calib` 로 한 번 더 돌리면 서빙값이 나온다.
 
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 

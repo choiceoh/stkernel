@@ -2199,7 +2199,47 @@ def _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
     T, _, _ = q_nope.shape
     W = slots.shape[1]
     width = MLA_PREFILL_GROUP
+    _fn = _mla_prefill_pair
+    if not getattr(_fn, "_announced", False):
+        # 39차: the bracket's proof that the optional path ran (P1 had none);
+        # self-contained so a def exec'd alone in a stub namespace still runs
+        _fn._announced = True
+        _lg = globals().get("logger")
+        if _lg is not None:
+            _lg.warning("[megakernel] mla prefill pair engaged (T=%d, W=%d, group=%d)", T, W, width)
     groups = (T + width - 1) // width
+    if os.environ.get("VLLM_GLM53_MLA_PAIR_STATS") == "1" and getattr(_fn, "_stats_calls", 0) < 6:
+        # 39차 diagnostic (operator: "제안대로 개선"): how much of the sparse
+        # selection adjacent rows really share. The forecast assumed 75 %
+        # common selection; the pair kernel's work is the UNION of the
+        # group's selections, so union/W is the traffic ratio it can reach.
+        _fn._stats_calls = getattr(_fn, "_stats_calls", 0) + 1
+        try:
+            with torch.no_grad():
+                valid = torch.arange(W, device=slots.device)[None, :] < lens[:, None]
+                s = torch.where(valid, slots.long(), torch.full_like(slots.long(), -1))
+                rows = (T // width) * width
+                g = s[:rows].view(-1, width, W)                       # [groups, width, W]
+                a = g[:, 0]; b = g[:, 1]
+                inter = ((a[:, :, None] == b[:, None, :]) & (a[:, :, None] >= 0)).any(-1).sum(-1).float()
+                la = (a >= 0).sum(-1).float(); lb = (b >= 0).sum(-1).float()
+                union = la + lb - inter
+                jac = (inter / union.clamp_min(1)).mean().item()
+                # the group's union of all `width` rows vs the sum of their lengths
+                flat = g.reshape(g.shape[0], -1)
+                srt, _ = flat.sort(-1)
+                uniq = ((srt[:, 1:] != srt[:, :-1]) & (srt[:, 1:] >= 0)).sum(-1).float() + (srt[:, :1] >= 0).sum(-1).float()
+                lsum = (flat >= 0).sum(-1).float()
+                ratio = (uniq / lsum.clamp_min(1)).mean().item()
+                _lg = globals().get("logger")
+                if _lg is not None:
+                    _lg.warning("[megakernel] mla pair stats: T=%d W=%d group=%d mean len=%.0f | adjacent-row jaccard=%.3f "
+                                "| group union/sum-of-lengths=%.3f (forecast assumed 0.4375 traffic at 75%% common)",
+                                T, W, width, lsum.mean().item() / width, jac, ratio)
+        except Exception as e:  # noqa: BLE001 -- a diagnostic must never take the lane down
+            _lg = globals().get("logger")
+            if _lg is not None:
+                _lg.warning("[megakernel] mla pair stats failed: %r", e)
     schedule = torch.empty((groups, width * W), dtype=torch.int32, device=q_nope.device)
     membership = torch.empty_like(schedule)
     lengths = torch.empty(groups, dtype=torch.int32, device=q_nope.device)

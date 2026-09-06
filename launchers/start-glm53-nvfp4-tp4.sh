@@ -790,7 +790,19 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --tool-call-parser glm47 --enable-auto-tool-choice \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
+--disable-custom-all-reduce \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+# --disable-custom-all-reduce (39차, the 302-second dist-init gap): the
+# custom all-reduce is disabled on this multi-node fleet anyway ("Custom
+# collectives are disabled because this multi-node group does not support
+# MNNVL multicast" on every boot), but before it disables itself its
+# constructor runs _init_mnnvl_buffer -> torch symmetric-memory rendezvous.
+# The 17:21 stall snapshot (py-spy on all four ranks) caught rank 2 alone
+# inside that rendezvous for the TCPStore's 300 s while ranks 0/1/3 waited
+# for it in the TP group's first broadcast; rank 2's log then shows "MNNVL
+# AG/RS initialization failed" and the boot proceeds. Serving never used
+# it (osar / PyNCCL carry the collectives), so skipping the constructor
+# removes the 5-minute gap without changing a served kernel.
 # 32차 item 5: the dev lab's API route rides on --middleware (the worker side
 # installs itself from the megakernel driver when the knob is on)
 if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then
