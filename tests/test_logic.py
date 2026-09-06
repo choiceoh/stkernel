@@ -3416,7 +3416,8 @@ def test_b12x_sf_pack_is_lossless() -> None:
         "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "SF_PACK_MAX_INDEX",
         "SF_PACK_BYTES", "SF_PACK_PLANE_A", "SF_PACK_PLANE_B",
         "sf_packed_block_bytes", "_blocks", "sf_pack_span", "pack_sf",
-        "unpack_sf", "sf_packed_bytes",
+        "unpack_sf", "sf_packed_bytes", "SF_PACK_BASE_TAIL", "SF_STAGE_BYTES",
+        "sf_stage_bytes", "pack_sf_inline", "unpack_sf_inline",
     }, ns)
     check(ns["SF_PACK_BITS"] == 6 and ns["SF_PACK_BLOCK"] == 4096
           and ns["SF_PACK_BLOCK_FC2"] == 1024 and ns["SF_PACK_MAX_INDEX"] == 63,
@@ -3450,6 +3451,39 @@ def test_b12x_sf_pack_is_lossless() -> None:
                   f"pack/unpack is byte-exact (block {block}, base {base:#x}, span {span})")
             check(int(ns["sf_pack_span"](raw, block).max()) <= span,
                   "sf_pack_span reports the block's code span")
+
+    # The kernel expands a stage in registers, so its arithmetic is a second
+    # implementation of this format and can drift from the packer. Model it
+    # here exactly as _sf_expand_stage writes it (per thread: four plane-A
+    # words, two plane-B words, the base, then 8 output words) and require it
+    # to reproduce the packer's input byte for byte.
+    def _kernel_expand(stage: bytes) -> bytes:
+        out = bytearray(ns["SF_PACK_BLOCK"])
+        for tid in range(128):
+            a = [int.from_bytes(stage[16 * tid + 4 * w: 16 * tid + 4 * w + 4], "little")
+                 for w in range(4)]
+            b = [int.from_bytes(stage[2048 + 8 * tid + 4 * w: 2048 + 8 * tid + 4 * w + 4],
+                                "little") for w in range(2)]
+            base = int.from_bytes(stage[3072:3076], "little") & 0xFF
+            for j in range(8):
+                word = 0
+                for mm in range(4):
+                    i = 4 * j + mm
+                    nib = (a[i >> 3] >> (8 * ((i >> 1) & 3) + 4 * (i & 1))) & 0xF
+                    hi = (b[i >> 4] >> (8 * ((i >> 2) & 3) + 2 * (i & 3))) & 0x3
+                    word |= ((base + nib + (hi << 4)) & 0xFF) << (8 * mm)
+                out[32 * tid + 4 * j: 32 * tid + 4 * j + 4] = word.to_bytes(4, "little")
+        return bytes(out)
+
+    for base, span in ((0x5c, 45), (0x6e, 21), (0x40, 64), (0x00, 1)):
+        raw = (base + torch.randint(0, span, (ns["SF_PACK_BLOCK"] * 2,), generator=gen,
+                                    dtype=torch.int16)).to(torch.uint8)
+        staged = ns["pack_sf_inline"](raw)
+        for blk in range(staged.shape[0]):
+            check(_kernel_expand(bytes(staged[blk].numpy()))
+                  == bytes(raw[blk * ns["SF_PACK_BLOCK"]:(blk + 1) * ns["SF_PACK_BLOCK"]].numpy()),
+                  f"the kernel's in-register expansion reproduces the packed block "
+                  f"(base {base:#x}, span {span})")
 
     # a block wider than the index must raise, never round
     wide = (0x40 + torch.arange(ns["SF_PACK_BLOCK"], dtype=torch.int16) % 65).to(torch.uint8)
@@ -3496,7 +3530,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3527,6 +3561,19 @@ def test_b12x_static_v2_controls() -> None:
             check(False, f"the retired h cell must be rejected: {dead}")
         except ValueError:
             pass
+    # q (39차 §4c): the FC1 weight scales 6-bit packed per 4 KB block, expanded
+    # in the stage buffer by the MMA warps. Probe-only: the gated prefill kernel
+    # reads the same scales and has no expansion.
+    q = parse("t,q", probe=True)
+    check(q["sf_pack"] and q["tiled"] and not parse("t")["sf_pack"]
+          and parse("q", probe=True)["sf_pack"]
+          and not parse("q", probe=True)["tiled"],
+          "q sets the packed-scale lane and composes with t")
+    try:
+        parse("t,q")
+        check(False, "q must be rejected by the serving parse (probe-only cell)")
+    except ValueError:
+        pass
     # z (39차 v6, sunset §3g/§3h): the pre-swizzled bulk-copy lane measured a
     # wash and failed numerics; its token must be rejected like any dead cell
     for dead in ("z", "z,s", "z,h"):
@@ -3643,6 +3690,33 @@ def test_b12x_static_v2_controls() -> None:
           and 'backend not in ("static", "dynamic")' in src,
           "phase 2: in-place re-layout, no micro lane on tiled weights, the tiled "
           "gated subclass compiled and keyed for the tiled layout, static+dynamic only")
+    # q: the DMA lands 3088 B of packed scales in one request and the MMA warps
+    # expand them in place behind a named barrier -- read, barrier, write, or a
+    # thread's output eats the plane bytes its neighbour has not read yet
+    v4_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v4.py"),
+                     encoding="utf-8").read()
+    check("_SF_STAGE_BYTES = 3088" in v4_kernel
+          and "def _sf_expand_stage(self, stage_addr, tidx):" in v4_kernel
+          and "self.sf_expand_barrier.arrive_and_wait()" in v4_kernel
+          and "barrier_id=3," in v4_kernel   # 1 is the epilogue, the stock class uses 1 and 2
+          and "fc1_tma_bytes += _SF_STAGE_BYTES" in v4_kernel
+          and v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
+              > v4_kernel.index("base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF))")
+          and v4_kernel.index("_st_shared_i32(stage_addr + Int32(32) * tidx")
+              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()"),
+          "q: 3088 B stages, the in-place expansion reads before the barrier and "
+          "writes after it, and the stage's tx bytes count the packed size")
+    check("sf_pack needs every MMA warp at every FC1 stage" in v4_kernel
+          and "xs (skip the FC1 SFB boxes) and sf_pack are exclusive" in v4_kernel,
+          "q refuses the split roles (not all warps reach every stage) and xs")
+    sfpack = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_sf_pack.py"),
+                  encoding="utf-8").read()
+    check("def pack_sf_inline(" in sfpack and "SF_STAGE_BYTES = SF_PACK_BYTES + 16" in sfpack
+          and "def _packed_fc1_scales(" in src and "def static_v2_weights_sf_pack(" in src
+          and "sf_pack=weights_sf_pack," in src
+          and "else _sf_pack_dummy(a.device)," in src,
+          "q: the host packs the base into the stage tail, the dispatcher caches "
+          "the packed scales per buffer and always passes the kernel an argument")
     vllm_side = open(os.path.join(REPO, "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"),
                      encoding="utf-8").read()
     check("_b12x_dispatch.tile_expert_weights_inplace(" in vllm_side
@@ -3668,9 +3742,10 @@ def test_b12x_static_v2_controls() -> None:
     wrapper = open(os.path.join(REPO, "overlay/modules/glm53_moe/b12x_moe.py"),
                    encoding="utf-8").read()
     check("static_v2_weights_layout as _static_v2_weights_layout" in wrapper
-          and "                weights_tiled,\n"
+          and "                weights_tiled,\n                weights_sf_pack,\n"
               "                w1_weight.data_ptr()," in wrapper
-          and "tiled=weights_tiled," in wrapper,
+          and "tiled=weights_tiled," in wrapper
+          and "sf_pack=weights_sf_pack," in wrapper,
           "the wrapper's weight-view cache key carries the lane's layout and "
           "builds the tiled views for it")
     v5_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v5.py"),

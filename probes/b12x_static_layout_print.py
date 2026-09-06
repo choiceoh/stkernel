@@ -41,6 +41,7 @@ def _runs(offsets):
 def main() -> int:
     dump = "--dump" in sys.argv
     sf = "--sf" in sys.argv
+    sf_order = "--sf-order" in sys.argv
     k = MoEStaticKernelV4(sf_vec_size=16, output_tile_count_n=4,
                           activation="swigluoai_uninterleave", swiglu_alpha=1.0,
                           swiglu_beta=0.0, swiglu_limit=10.0)
@@ -100,6 +101,33 @@ def main() -> int:
                       f"{len(runs)} contiguous runs, run lengths {lens}, "
                       f"first runs {runs[:4]} -> innermost "
                       f"{'OK (>= 16 B)' if min(lens) >= 16 else 'ILLEGAL (< 16 B)'}")
+
+        if sf_order:
+            # cell q packs the FC1 scale buffer block by block in ITS OWN byte
+            # order, and the kernel addresses a stage as
+            #   (expert * blocks_per_expert + row_block * k_tiles + k_tile)
+            # Check that against the real layout: a (128 rows x 512 k) block is
+            # 4096 contiguous bytes (--sf), so its start must be that index x
+            # 4096. Getting this wrong is exactly how cell z died.
+            sfb = blockscaled_utils.tile_atom_to_shape_SF((1024, 4096, 288),
+                                                          k.sf_vec_size)
+            rows, kk, ne = 1024, 4096, 288
+            row_blocks, k_tiles = rows // 128, kk // 512
+            per_expert = row_blocks * k_tiles
+            bad = 0
+            first = ""
+            for e in cutlass.range_constexpr(3):
+                for rb in cutlass.range_constexpr(8):
+                    for kt in cutlass.range_constexpr(8):
+                        got = int(cute.crd2idx((rb * 128, kt * 512, e), sfb))
+                        want = (e * per_expert + rb * k_tiles + kt) * 4096
+                        if cutlass.const_expr(got != want):
+                            bad += 1
+                            first = first or (f"(e {e}, row block {rb}, k tile {kt}): "
+                                              f"layout {got}, kernel {want}")
+            print(f"SF block order: {bad} of {3 * 8 * 8} sampled blocks disagree"
+                  + (f" -- first {first}" if first else "")
+                  + f"; blocks/expert {per_expert}")
 
     dummy = cute.runtime.make_fake_compact_tensor(cutlass.Int32, (1,), assumed_align=4)
     cute.compile(show, dummy)

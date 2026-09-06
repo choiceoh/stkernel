@@ -104,6 +104,7 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
+        sfb1_packed: cute.Tensor,   # cell q: 6-bit FC1 scales (u8), dummy otherwise
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -217,6 +218,7 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             token_weights,
             stamps,
             next_item,
+            sfb1_packed,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
