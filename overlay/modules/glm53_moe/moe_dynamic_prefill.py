@@ -1781,10 +1781,27 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
                     # register arrays; slice arithmetic order stays 0..3.
                     for slice_idx in cutlass.range_constexpr(4):
                         if task_slice_count_val > Int32(slice_idx):
+                            # 39차: mma_atom.set(SFA/SFB) rebinds the atom's IR
+                            # value in place. Stock runs the slices in one
+                            # dynamic while-loop region, which the DSL threads;
+                            # this static unroll makes four sibling scf.if
+                            # regions, and the value set in one does not
+                            # dominate the next ("operand #0 does not dominate
+                            # this use" at atom.set_value, P2D/P2D2). A fresh
+                            # atom per region keeps every set/gemm chain local.
+                            slice_mma_op = cute.nvgpu.warp.MmaMXF4NVF4Op(
+                                self.a_dtype, self.acc_dtype, self.sf_dtype,
+                            )
+                            slice_atom = cute.make_mma_atom(slice_mma_op)
+                            # then/else below are sibling regions too: an atom
+                            # mutated in one must not be reused in the other
+                            # (stock passes mma_atom / mma_atom_tail for the
+                            # same reason).
+                            slice_atom_tail = cute.make_mma_atom(slice_mma_op)
                             if valid_rows == Int32(self.tile_shape_mnk[0]):
                                 phase2_cons_state = self.fc2_accumulate_slice(
                                     num_k_blocks,
-                                    mma_atom,
+                                    slice_atom,
                                     down_acc,
                                     (phase2_pipeline, phase2_cons_state),
                                     (csB, csB_phase2_extra, csSFB),
@@ -1795,7 +1812,7 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
                             else:
                                 phase2_cons_state = self.fc2_accumulate_slice_tail(
                                     num_k_blocks,
-                                    mma_atom_tail,
+                                    slice_atom_tail,
                                     down_acc,
                                     valid_rows,
                                     warp_m_coord,

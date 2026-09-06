@@ -6475,6 +6475,7 @@ def test_decode_first_scheduler_contracts() -> None:
         def __init__(self, *args, **kwargs):
             self.max_num_scheduled_tokens = 8192
             self.max_num_running_reqs = 4
+            self.current_step = 0   # stock Scheduler counter (advanced inside schedule())
             self.scheduler_config = types.SimpleNamespace(long_prefill_token_threshold=0)
             self.running = []
             self.waiting = []
@@ -6504,7 +6505,7 @@ def test_decode_first_scheduler_contracts() -> None:
     fakes["vllm.v1.core.sched.async_scheduler"].AsyncScheduler = FakeAsyncScheduler  # type: ignore[attr-defined]
     fakes["vllm.v1.core.sched.output"].SchedulerOutput = object  # type: ignore[attr-defined]
     saved_modules = {name: sys.modules.get(name) for name in fakes}
-    env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_DECODE_STEPS", "VLLM_GLM53_SCHED_CHUNK_REF_CTX",
+    env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_MAX_WAIT_S", "VLLM_GLM53_SCHED_DECODE_STEPS", "VLLM_GLM53_SCHED_CHUNK_REF_CTX",
                 "VLLM_GLM53_SCHED_CHUNK_MAX",
                 "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
                 "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
@@ -6677,6 +6678,44 @@ def test_decode_first_scheduler_contracts() -> None:
         s2 = Sched()
         s2.mode = "mixed"; s2.alternate = False
         check(s2._chunk_for([far]) == 1152, "mixed shape keeps the fixed chunk")
+        # ---- v3.2 sequential: pending prefill waits behind decoders (pure decode steps) up to MAX_WAIT_S, then alternate
+        for k in env_keys:
+            os.environ.pop(k, None)
+        os.environ["VLLM_GLM53_SCHED_MODE"] = "sequential"
+        os.environ["VLLM_GLM53_SCHED_MAX_WAIT_S"] = "10"
+        os.environ["VLLM_GLM53_SCHED_DECODE_STEPS"] = "2"
+        q = Sched()
+        q.current_step = 80
+        check(q.sequential and q.alternate and q.max_wait_s == 10.0, "sequential implies the alternate cadence after the wait")
+        qd = dec()
+        qw = pre("newcomer", 0); qw.arrival_time = 500.0
+        q.running = [qd]; q.waiting = [qw]
+        clock[0] = 503.0
+        q.schedule(); q.schedule(); q.schedule()
+        check([c[0] for c in q.calls] == [True, True, True] and q._waited_steps == 3 and q._capped_steps == 0,
+              "inside MAX_WAIT_S every step is decode-only (the waiting prefill is not admitted)")
+        check(not hasattr(qd, "next_decode_eligible_step"), "the decoder is never gated while the prefill waits")
+        clock[0] = 511.0    # waited 11 s > 10 -> alternate cadence begins (2 decode steps, then a prefill step)
+        q.schedule(); q.schedule(); q.schedule()
+        check([c[0] for c in q.calls[3:]] == [True, True, False] and q.calls[-1][1] == 1152 and qd.next_decode_eligible_step == 82,
+              "after the wait: DECODE_STEPS decode-only steps then a pure prefill step with the decoder gated out")
+        # a running chunk's wait is its admission age
+        q2 = Sched()
+        q2.running = [dec(), pre("chunked", 4000)]; q2.waiting = []
+        clock[0] = 600.0
+        q2.schedule()                      # admission recorded, waits
+        clock[0] = 605.0
+        q2.schedule()
+        check(q2._waited_steps == 2 and q2.calls[-1][0] is True, "a partially prefilled request also waits behind decoders")
+        clock[0] = 609.9
+        q2.schedule()                      # last waiting step (real steps are ~50 ms apart: the floor clock is re-based here)
+        clock[0] = 611.0                   # waited 11 s > 10: the alternate cadence, floor age 1.1 s < grace -> no boost
+        q2.schedule(); q2.schedule(); q2.schedule()
+        check([c[0] for c in q2.calls[-3:]] == [True, True, False] and q2._capped_steps == 1 and q2._boost_steps == 0,
+              "and gets its prefill step once the wait is over, without a floor deficit from the wait")
+        q2.running = [pre("alone", 0)]; q2.waiting = []
+        q2.schedule()
+        check(q2.calls[-1] == (False, 0, False), "no decoder -> stock full-speed prefill")
         os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
         # min decoders and env hygiene
         os.environ["VLLM_GLM53_SCHED_MIN_DECODERS"] = "2"
@@ -6714,12 +6753,13 @@ def test_decode_first_scheduler_contracts() -> None:
           and "PREFIX_CACHE DECODE_FIRST \\" in launcher,
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
-    check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
-          "profile declares DECODE_FIRST=0 and the ten VLLM_GLM53_SCHED_* keys (forwarded to the container)")
-    check("\nVLLM_GLM53_SCHED_MODE=alternate\n" in profile and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
+    check("\nDECODE_FIRST=1\n" in profile and all(f"\n{k}=" in profile for k in env_keys),  # 39차 DF4: promoted
+          "profile declares DECODE_FIRST=1 and the eleven VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nVLLM_GLM53_SCHED_MODE=sequential\n" in profile and "\nVLLM_GLM53_SCHED_MAX_WAIT_S=20\n" in profile
+          and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
           and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
           and "\nVLLM_GLM53_SCHED_CHUNK_MAX=4608\n" in profile,
-          "profile: alternate mode, 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
+          "profile: sequential mode (20 s wait cap), 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
     print("  decode-first scheduler contracts .. OK")

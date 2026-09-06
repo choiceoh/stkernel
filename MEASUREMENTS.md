@@ -2213,12 +2213,64 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - APC 켠 네 부팅의 32K cold 프리필: −8.1 / −3.2 / −5.2 / −9.9% (평균 −6.6%), 128K 는 ±1%. align 모드 청크(6,912) 의 비용이며 `MAX_BATCHED=9216`(APC3) 로도 안 줄었다.
 - **판정: `PREFIX_CACHE=1` 기본값 승격.** 같은 접두사 재질문(멀티턴)의 TTFT 34 → 1.1~2.7 s(100K), 12.5 → 0.4~1.4 s(32K) 가 cold 32K 프리필 −7% 를 압도하고, 디코드·품질·warm 수용률이 유지된다. 롤백은 `PREFIX_CACHE=0`. 후속: CUDA run_prep 의 상태 열 이동 지원(호스트 ~12 µs/스텝 회수), 수용률 표본 누적.
 
+**DF4**(v3.1 alternate, K=6 / 청크 1,152 × pos/32K ≤ 4,608, `PREFIX_CACHE=0` 격리, 21:00) — 32K: DF3 와 동일(청크 1,152; 디코더 18.5 tok/s, ITL 47/695/1,363 ms, TTFT 27.0 s 1,192 tok/s). **100K: 디코더 10.0 tok/s(DF3 7.0), ITL 47/698/1,250 ms, TTFT 51.5 s(1,951 tok/s; DF3 1,379)** — 위치 비례 청크가 양쪽을 다 올렸다. onepass **NEUTRAL**(프리필 +0.1/−0.3%, 디코드 +2.3/−1.2%, tok/step −1.4%): 단독 경로 불변, 이번엔 128K 디코드 정상. 클럭 샘플 v2: SM 1,566~1,592 MHz, GPU ≤62 °C, CPU 2,808~3,019 MHz, SoC 최고 81 °C(srv2), 스로틀 없음.
+- **판정: `DECODE_FIRST=1` 기본값 승격**(운영자 항목 2). 스톡 혼합 대비 동시 디코더 4.2배(32K)/4배(100K), 중앙 ITL = 단독; 동시 프리필 −48%(32K)/−24%(100K). 롤백 `DECODE_FIRST=0`. 후속: 128K 디코드 이상(3/10 부팅) 원인, 프리필 스텝 고정 비용(~0.25 s@32K) 자체 절감.
+
+**VID**(이미지 1 + 영상 1, 인코더 data+SDPA, 템플릿 v2 + deepseek_r1 파서, 21:10) — **이미지 + 사고 off: 깨끗한 한국어 답**("빨간색 사각형이 왼쪽 위에 있고, 파란색 사각형이 아래쪽에…", TTFT 0.63 s, reasoning 0자) → 템플릿 v2 가 `thinking=false` 를 실제로 끈다. **영상은 엔진 사망**: `Attempted to assign 192 multimodal tokens to 384 placeholders` — 이 빌드의 GLM5Next 비디오 처리기가 자리표시 토큰을 인코더 출력(temporal_patch_size 2 로 병합)의 2배로 넣는다(체크포인트엔 preprocessor 설정 파일이 없고 처리기 설정이 코드에 내장). 우리 스택 문제가 아니며 필요도 없으니 `video: 0` 유지, 상류 결함으로 기록. 사고-on 검증은 엔진이 죽어 못 함 → TPL 팔(이미지만 + v2 + deepseek_r1, 사고 on/off 프로브 + onepass 새 참조).
+
+**VISB-A**(이미지 1, `MM_ENCODER_TP_MODE=data` 만, vit 어텐션은 기본 FLASH_ATTN, 21:17) — 부팅 375 s, 이미지 OK(TTFT 0.51 s), 텍스트 OK → **범인은 TP 분할 인코더(`weights` 모드)**, flash vit 어텐션은 무죄. 같은 부팅의 사고 프로브: `thinking=true` 요청은 glm45 파서가 reasoning 으로 분리(268자, content 0) — 유출은 **`thinking=false` 요청에서만** 난다: vLLM 이 그 요청의 파서를 건너뛰는데 템플릿은 `<think>` 를 강제해 모델이 사고를 content 로 쓴다. 따라서 파서 교체는 불필요, 템플릿 v2 만으로 해결(TPL 팔 = v2 + 기본 glm45).
+
+**DF5**(v3.2 `SCHED_MODE=sequential`, 대기 상한 20 s, `PREFIX_CACHE=0` 격리, 21:34; 운영자 "둘 다 너무 느려지는데 순차실행이 나을지도") — 혼합 부하:
+
+| ctx | 디코더 겹침 ITL med/p95/max | 디코더 tok/s@겹침 | 새 프롬프트 첫 토큰 (스톡 / 번갈아 v3.1) |
+|---|---|---|---|
+| 32K | **46 / 49 / 57 ms** (단독 46/49/90) | 28.1 (151 스텝) | **17.8 s** (13.3 / 27.0) |
+| 100K | **46 / 49 / 54 ms** | 12.2 (174 스텝) | **42.5 s** (39.2 / 51.5) |
+
+- 계산 그대로: 디코더 남은 ~7.6 s 를 그대로 끝내고 순수 프리필(10.2 s / 34 s) 이 뒤따른다. 디코더는 전혀 영향받지 않고, 새 프롬프트의 첫 토큰은 스톡보다 +4.5 / +3.3 s, 번갈아보다 −9 s. onepass NEUTRAL(프리필 +0.4/+0.1%, 디코드 −2.3/−1.2%, tok/step +1.3%). 클럭·온도 정상, 128K 정상.
+- **판정: `SCHED_MODE=sequential` 기본값**(DECODE_FIRST=1 유지). 대기 상한 20 s 뒤에는 번갈아(v3.1) 로 넘어가 긴 답변 뒤의 프롬프트도 굶지 않는다. 롤백: `alternate` 또는 `DECODE_FIRST=0`.
+
+**VISR + TPL1**(21:38~21:50) — VISR = VIS1 과 동일 설정(이미지 1, 인코더 노브 없음): **부팅·프로브 정상** → VIS1 의 rank 1 사망은 재현되지 않는 일회성 경합. 비전은 기본 경로로도 되며, 켤 때는 `MM_LIMIT='{"image":1,"video":0}'` 만으로 충분(안전하게는 `MM_ENCODER_TP_MODE=data` 도 두 번 검증). **TPL1**(템플릿 v2 + 기본 glm45 파서 + 이미지): 사고 off → 이미지 답 "왼쪽 상단에 빨간색 사각형, 하단에 파란색 가로 띠…"·텍스트 답 "1, 2, 3, 4, 5!" 로 깨끗, 사고 on → reasoning 310자 / content 0 → 분리 정상. onepass 는 사고 off 로 답이 짧아 디코드 창이 0개(비교 불가) → **onepass 는 `thinking: true` 를 명시**해 기존 참조(전부 사고 켜진 측정)와 조건을 맞춘다. 프리필 32K −7.6% 는 APC 비용(이 부팅은 PREFIX_CACHE=1).
+- **판정: `CHAT_TEMPLATE=chat_template_mm_v2.jinja` 기본값**(파서는 glm45 유지, deepseek_r1 불필요). 런처는 모델 디렉터리에 파일이 없으면 저장소 사본을 복사한다. Deneb 처럼 thinking=false 를 보내는 클라이언트는 이제 사고 없이 바로 답을 받는다(짧고 빠름); thinking=true 는 전과 같이 reasoning_content 로 분리.
+
 **비전 "행"의 원인**(운영자 "비전 킬 때마다 행 걸렸다" → "그 문제도 해결해봐"): 체크포인트에는 비전 타워가 있고(`model.visual.*` 347개) 우리 모델 오버레이의 멀티모달 코드는 이미지와 동일. 런처 `MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"` 의 매개변수 전개가 첫 `}` 에서 끝나 마지막 `}` 를 리터럴로 덧붙인다 → 덮어쓴 값이 `{"image":1,"video":0}}` (JSON `Extra data`) → vLLM argparse 사망 → 런처는 헬스를 예산(3,000 s)만큼 폴링 = "매번 행". 기본값 대입을 전개 밖으로 옮김(PR #408), 격리 노브 셋(`MM_ENCODER_TP_MODE`/`MM_ENCODER_ATTN`/`SKIP_MM_PROFILING`)과 `probes/vision_probe.py` 추가. 진단 체인 VIS(이미지 1 + 프로브 + 텍스트 onepass, 정말 멈추면 4 노드 py-spy 스냅샷) 큐.
 
 **비전 체인(VIS, 20:25~20:49)** — `MM_LIMIT` 수정본으로 이미지를 켠 첫 부팅 **VIS1 은 죽었다**(행이 아니라 사망): rank 1(srv1) 워커만 적재 뒤 `CUDA error: operation not permitted` (첫 발현 메가커널 셀프테스트의 `torch.randint`, 치명은 MoE `process_weights_after_loading` 의 `torch.allclose`) → rank 0/2/3 은 instanttensor 의 `avail_bytes.item()` 집합통신에서 대기 → NCCL 타임아웃. srv1 커널 로그에 Xid 없음, OOM 아님. rank 1·2 만 적재 중 dynamo/fake-tensor 추적(부팅 스탬프 60 s 덤프)이 찍혔지만 rank 2 는 살아남아 컴파일 자체가 원인은 아님.
 - **VIS2 는 살았다**: `MM_ENCODER_TP_MODE=data`(비전 타워 비분할, 인코더 안 TP 집합통신 없음) + `MM_ENCODER_ATTN=TORCH_SDPA`. 이미지 요청 OK(TTFT 0.51 s, 2.3 s, 빨간 사각형 인식), 텍스트 요청 OK. 범인은 기본 경로(TP 분할 인코더 또는 sm_121 의 FLASH_ATTN vit 어텐션) 중 하나 — 이분은 후속 팔.
 - 이 부팅의 onepass(VISON): 32K 정상, **128K 프리필 −19.8% / 디코드 −55%** — 세 번째 재현(DF1 −31, DF3b −33). 4 노드 GPU 샘플: SM 1,573~1,592 MHz, 최고 62 °C, 전력 ≤23.5 W, 스로틀 사유 없음 → **열/클럭 아님**. MK/prep-fused DISARM 없음. 다음: DF4 onepass 에 CPU 주파수·SoC 온도·부하 샘플 추가(`clock-sample.sh` v2), 그리고 128K 답변 도중 무엇이 바뀌는지(블록 경계 2304 통과 시점과 대조).
 - **추론 유출 발견**(포럼 글의 문제가 우리에게도 있다): 서빙 템플릿의 생성 프롬프트가 항상 `<|assistant|><think>` 로 끝나 `chat_template_kwargs.thinking=false` 가 무시되고(모델은 늘 사고함), 시작 태그가 프롬프트에 있어 glm45 파서는 출력에서 `<think>` 를 못 보고 사고 본문을 **content 로 스트리밍**한다(스트리밍·비스트리밍 모두 `reasoning_content` 비어 있음, 실측 VIS2). onepass 도 사실은 사고 켜진 채 잰 것(참조들끼리는 동일 조건). 조치: MiaAI-Lab 의 5 줄 수정(`thinking`/`enable_thinking` 존중, off 면 `<think></think>`) 을 `launchers/chat_template_mm_v2.jinja` 로 저장·4 노드 모델 디렉터리에 배치, 런처 노브 `CHAT_TEMPLATE`/`REASONING_PARSER`(deepseek_r1 파서는 프롬프트에 시작 태그가 있어도 `</think>` 앞을 reasoning 으로 처리). VID 팔에서 실측 뒤 기본값 결정; 바뀌면 onepass 참조를 새로 잡아야 한다(답변 길이·수용률이 달라짐).
+
+### §4i 39차 저녁 라운드 요약 — 승격 5, 발견 4, 미해결 1 (18:15~22:00)
+
+| 항목 | 판정 | 근거(원장 절) |
+|---|---|---|
+| NVFP4 dense 프리필 `MIN_M=1024` | 기본값 | §4g P3C2 +3.5~5.1%, DEF40 2차 확인 |
+| 프리픽스 캐시 `PREFIX_CACHE=1` + `glm53_prefix_cache` + prep-fused align 지원 | 기본값 | §4h APC~APC4: 재사용 92~99.6%, TTFT 34 → 1.1~2.7 s, warm 수용률 = cold, 디코드 복원; 비용 cold 32K −7% |
+| 디코드 우선 `DECODE_FIRST=1` + `SCHED_MODE=sequential` | 기본값 | §4h DF5: 디코더 ITL 단독과 동일, 새 프롬프트 첫 토큰 17.8/42.5 s(스톡 13.3/39.2) |
+| 채팅 템플릿 v2 (`thinking` kwarg 존중) | 기본값 | §4h TPL1: 사고 off 유출 제거, on 분리 유지 |
+| fleet.sh 결함 둘(옛 항목·고아 waiter; 프리플라이트 origin/main·복사본) | 수정 | PR #395, #406 |
+| 비전 | 켜면 됨(텍스트 전용 유지) | `MM_LIMIT` 전개 버그(#408) + 일회성 rank 1 사망; 영상은 상류 결함 |
+| 혼합 스텝 비용(그래프·MK·SP 전부 off, ~0.4 s) | 발견 | §4h DF1 — 인터리빙보다 순차 |
+| 128K 디코드 −31~55% (3/11 부팅) | **미해결** | 열·클럭·MK·prep-fused 아님; 128K 답변 두 창 뒤 저하 |
+
+**프로덕션 최종(22:01, main ed09625)**: `PREFIX_CACHE=1`(하이브리드 APC 조정자, prep-fused align plan built), `DECODE_FIRST=1` + `SCHED_MODE=sequential`(max_wait 20 s), `CHAT_TEMPLATE=chat_template_mm_v2.jinja`, NVFP4 프리필 MIN_M=1024, SP BF16, KDA 레인. 실서빙 확인: thinking=false → content "1, 2, 3, 4, 5! 🎉"(reasoning 없음), thinking=true → content "1, 2, 3, 4, 5"(사고는 reasoning_content 로). 플릿 FREE.
+
+### §4j 프리필의 남은 두 덩어리 — MoE 프리필 reuse 커널 컴파일 복구, SP FP8 전송 v2 (22:05~, 운영자 "두개 도전해")
+
+프로덕션 기본값에서 32K 프리필(36,853 토큰, 12.6 s) 하나를 census 로 잰 구성: MoE grouped GEMM **28.6%**, SP 집합통신(AllGather+ReduceScatter RING_LL) **~18%**, dense GEMM 12%, 메가커널 세그먼트+MHC ~15%, KDA 8.5%, 복사·글루 ~8%, MLA 6.7%, NVFP4 활성값 양자화+amax ~3.5%.
+
+- **MoE reuse 커널(#368 레인) 사망 원인**: CuTe-DSL `operand #0 does not dominate this use` at `atom.set_value`. `mma_atom.set(SFA/SFB)` 는 atom 의 IR 값을 제자리에서 바꾸는데(trait.value 갱신), stock 은 FC2 슬라이스를 동적 `while` 한 영역에서 돌려 DSL 이 값을 이어 주고, reuse 커널은 4 슬라이스를 정적 언롤한 형제 `scf.if` 영역들이라(DSL 의 `if_executor` 는 AST 에서 *대입된* 이름만 yield) 한 영역에서 set 한 값을 다음 영역이 쓴다. 두 번째: then/else 가지도 형제 영역이라 한 atom 을 공유하면 같은 위반(stock 이 `mma_atom`/`mma_atom_tail` 둘을 넘기는 이유). 수정: 슬라이스 영역마다, 가지마다 `cute.make_mma_atom(MmaMXF4NVF4Op(...))` 로 새 atom(PR #418).
+- **부팅 없는 컴파일 하니스**: 이미지 컨테이너에 glm53_moe 오버레이 파일을 타깃 경로로 바인드 마운트하고 `moe_dispatch._get_dynamic_kernel(288, 8192, 4096, 512, 8, …, activation="swigluoai_uninterleave", swiglu=(1.0,0.0,10.0), fp4/nvfp4, tile_m=128)` 을 부르면 ENGAGED 부팅과 같은 컴파일이 8 s 만에 재현·검증된다(`scratchpad/moe_reuse_compile.py`, srv4 GPU 공유). `CUTE_DSL_PRINT_AFTER_PREPROCESSOR=1` 이 영역 변환 코드를 보여 줘 원인 확정에 쓰였다. 수정 뒤 reuse 5.6 s, reuse+N128 11.9 s 컴파일 성공.
+- **SP FP8 v2**(`VLLM_GLM53_PREFILL_SP_FP8=2`): v1 은 reduce-scatter 마다 maxima all-reduce + fp8 SUM(headroom 448/4) + 커널 셋으로 BF16 에 졌다(+7.1 vs +12.6%). v2 는 all-gather 는 그대로, reduce-scatter 를 pack(블록 absmax+양자화, 스케일 합의 없음) → `all_to_all_single`(TP device_group) → unpack(4 부분합을 FP32 로 합산) 으로. 단위 테스트(srv4, 4 랭크 모사): 평균 상대오차 2.5%, 최대 4.4%(e4m3 상한 6.25%).
+- **체인 MOESP 결과(22:40~23:12, REF41 = 현 기본값 참조: 2K 1,860 / 32K 2,914 / 128K 2,959 tok/s, 9/9, 0)**:
+
+| 팔 | 노브 | 프리필 2K / 32K / 128K (REF41 대비) | 디코드·수용률 | 품질 | 판정 |
+|---|---|---|---|---|---|
+| MOER | `B12X_PREFILL_REUSE=1` | +9.3% / **−1.9%** / **−2.0%** (2,860 / 2,899) | 불변 / tok/step +3.2% | 9/9, 0 | **NEUTRAL(−)** — 커널은 맞지만 이득 없음(문서의 경고대로 FC2 레지스터 압박이 줄인 적재를 상쇄). 옵트인 유지 |
+| MOERN | + `FC1_N128=1` | **−71 / −71 / −74%** (848 / 759) | 불변 | 9/9, 0 | **기각** — FC1 N128 은 정확하나 1/4 속도(스필로 추정) |
+| SPV2 | `PREFILL_SP_FP8=2` | −0.6% / −2.1% / +1.7% (2,852 / 3,011) | 불변 / tok/step +10.7% | 9/9, 0 | **NEUTRAL** — 바이트 반감이 pack/unpack 커널과 상쇄. 옵트인 유지 |
+
+- 해석: 집합통신 ~18% 는 바이트가 아니라 **호출당 고정 비용**(스텝당 AG 67 + RS 60 회, RING_LL, 4 노드 링 지연) 에 묶여 있다 — v1(공유 스케일)·v2(per-block, all_to_all) 둘 다 바이트를 반으로 줄였는데 시간이 안 준다. 남은 길은 층당 집합통신 **횟수** 를 줄이거나(어텐션·MoE 경계 재배치, 공유 전문가·dense 부분과 겹치기) 통신을 계산과 겹치는 것이지 전송 정밀도가 아니다. MoE 28.6% 는 reuse 식 적재 절감으로는 안 열리고 타일/파이프라인 재설계가 필요하다. 둘 다 밤 라운드 규모의 커널 작업으로 기록하고 기본값은 그대로.
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
