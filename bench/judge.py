@@ -79,14 +79,22 @@ def floor_of(rows, rec):
     """(rel spread, n, scope): spread of windows_med over the baselines of the
     build; fewer than 2 -> the harness across builds; fewer than 2 -> None."""
     bases, _ = baselines_on(rows, rec)
-    wins = [x["decode"]["windows_med"] for x in bases if not record_errors(x)]
+    def windows(records):
+        # Multiple onepass records on the same attested boot are one noise
+        # sample. Older untagged rows retain their legacy interpretation.
+        boots = {}
+        for index, x in enumerate(records):
+            if not record_errors(x):
+                boots[x.get("boot_id") or ("legacy", index)] = x["decode"]["windows_med"]
+        return list(boots.values())
+    wins = windows(bases)
     scope = "same build"
     if len(wins) < 2:
-        wins = [x["decode"]["windows_med"] for x in rows
+        wins = windows([x for x in rows
                 if is_baseline(x)[0] and not x.get("rehearsal")
                 and x.get("harness") == rec.get("harness")
                 and all(x.get(k) == rec.get(k) for k in ("doc_lang", "thinking", "workload", "runtime"))
-                and not record_errors(x)]
+                and not record_errors(x)])
         scope = "same harness, across builds"
     if len(wins) < 2:
         return None, len(wins), scope

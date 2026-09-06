@@ -3,7 +3,8 @@
 Optimize the time from an agent's question to usable evidence. Submit once,
 continue independent implementation, and read the shared result. `fleet.sh`
 still owns GPU admission, preflight, short-probe yielding and production restore.
-Submissions never deploy, change the queue order, or interrupt another holder.
+Submissions never deploy or interrupt another holder. Waiting GPU jobs are
+ranked at the next free fleet boundary by downstream benefit, duration and age.
 
 ## Agent workflow
 
@@ -112,11 +113,28 @@ include external fixtures, model metadata and immutable weight manifests in
 `inputs`. The runner hashes those files; it does not rehash hundreds of GB of
 model weights or independently attest every hardware identifier.
 
-Each pair is one candidate plus the baseline/restore required by `pair.sh`. Other
+Once a pair's prerequisites and preflight pass, the worker reserves a shared
+defaults job if the context has fewer than three independent baseline samples.
+Compatible candidates join that reservation and wait outside the GPU queue.
+The defaults job measures only the missing samples, each on a separate boot,
+then releases all waiting candidates. There is no candidate/default flip for
+every member of a new campaign just to build its noise floor. A single new
+candidate still pays for that three-sample floor; sharing primarily benefits
+multiple candidates and avoids the former first-pair incomplete result.
+
+The reservation key includes revision, deployed sources, image, model/hardware
+context, workload/environment, external inputs and ledger location. Failed
+defaults block their consumers. Repeat the candidate with an explicit reason
+to retry a failed shared reservation. Container ID plus StartedAt supplies
+`boot_id`: repeated onepass runs on the same boot count once. Historical rows
+without boot identity cannot fill the new shared reservation's three samples.
+
+Each admitted pair retains the baseline/restore behavior in `pair.sh`. Other
 agents can enqueue their own pairs between submissions; long multi-candidate
 experiments should be separate submissions. Candidate/baseline evidence stays
 together and short probes can still yield through the existing fleet path.
-This adds no new priority scheduler or hard GPU preemption.
+There is no GPU preemption. A pair/chain's hold remains intact except for its
+existing explicit short-probe yield points.
 
 Pair results require fresh onepass records bearing the experiment ID, the
 requested knobs, a matching revision/build/workload/runtime, complete quality
@@ -127,7 +145,9 @@ baseline cannot become a successful result. A measured slowdown can be a valid
 result; an effect within the noise floor remains inconclusive.
 
 `result ID` rejudges an incomplete pair if a later matching baseline becomes
-available, without rerunning the candidate. Existing `chain.sh` also publishes
+available, without rerunning the candidate. Completion of a shared baseline
+also publishes those updated results without needing an agent to poll them.
+Existing `chain.sh` also publishes
 each candidate's verdict before the next arm and stops dependent arms after
 execution or proof/quality failure. Failed pairs/chains restore production when
 the existing queue policy requires it, without spending another baseline sample.
@@ -137,9 +157,77 @@ the existing queue policy requires it, without spending another baseline sample.
 Use `kind: "probe"`, `command: ["bash", "probes/...", "..."]`, the pinned GPU
 `context`, external `inputs` and optional prerequisites. The standard probe
 preflight/idle-serving rules apply. Generic probes return their log and process
-exit status as `probe-log` evidence. A successful process exit is deliberately
-`incomplete` until the agent reviews the probe's numerical and timing evidence;
-it does not automatically unlock a dependent production experiment.
+exit status as `probe-log` evidence. An exit code alone stays `incomplete`.
+
+For automatic CPU → numerical probe → pair progression, declare the numerical
+contract before submission and add that probe ID to the pair's `depends_on`:
+
+```json
+{
+  "kind": "probe",
+  "revision": "FULL_40_CHARACTER_COMMIT_SHA",
+  "hypothesis": "Strided QK normalization is bit-exact on every tested layout and regime",
+  "command": ["bash", "probes/run_mk_probe.sh", "probes/qk_norm_strided_check.py"],
+  "context": {
+    "image": "sha256:IMMUTABLE_64_CHARACTER_LOCAL_IMAGE_ID",
+    "model": "IMMUTABLE_MODEL_REVISION",
+    "hardware": "PINNED_GPU_AND_DRIVER_IDENTITIES"
+  },
+  "depends_on": ["CPU_EXPERIMENT_ID"],
+  "probe_contract": {
+    "checks": {"mismatches": {"op": "eq", "value": 0}},
+    "proof": ["strided_lane", "decline_guards"],
+    "min_samples": 150
+  },
+  "estimate_min": 10
+}
+```
+
+The existing QK probe now emits this report after its real comparisons and
+fallback-guard checks. Other probes can call `bench/probe_report.py`'s
+`write_report(metrics, proof, samples, device)` after completing their checks.
+`run_mk_probe.sh` forwards the runner's fresh challenge and mounts a private
+report directory into its container. Structured probes pin the immutable image
+ID; custom wrappers must honor `IMAGE` and forward the report fields themselves.
+Missing, stale, mismatched, nonfinite or insufficient reports never unlock the
+next job. Threshold failures and unknown lane proof fail the probe. A successful
+`gpu-probe` establishes only its declared numerical contract; the pair still
+checks serving quality, proof, throughput and a matching noise floor.
+
+## Queue policy and CPU content reuse
+
+`bash bench/fleet.sh priority` explains the current ranking. At a free fleet
+boundary, a ready job's score is `(1 + pending transitive dependents) /
+estimate_min + wait_seconds / 1800`. At 30 minutes waiting, oldest-first takes
+precedence, so a stream of tiny jobs cannot indefinitely starve a long one.
+Explicit `front` and a chosen yielded probe retain their order; a yielded holder
+resumes before other work. Ineligible probes wait for idle serving. Legacy jobs
+participate with zero known dependents. Ranking never interrupts a live holder;
+CPU jobs and prerequisite waits never enter this GPU queue. Estimates remain
+caller-supplied, so use realistic durations. The DB read failing falls back to
+zero known dependents, and a scheduler failure retains the existing file order.
+
+Named `cpu_checks.py --suite ...` submissions also consult a content cache.
+Submit the CPU request for the new revision normally; the new result can cite a
+previous successful complete CPU report via `cache_source`, `tested_revision`
+and `cache_identity`. It still carries the new revision for dependent requests.
+An identical-tree merge can reuse the full-tree cache. The reviewed startup
+tests use a narrower tests/launchers/bench/profiles scope, allowing unrelated
+documentation/kernel edits to reuse their startup evidence. Test source hashes
+pin this dependency audit: a changed test automatically falls back to the whole
+tracked tree. Logic and fleet suites conservatively include the whole tree,
+including docs that tests may inspect. There are no caller-supplied exclusions.
+
+Keys also include interpreter and shell tool binaries, installed package
+metadata and file size/mtime inventory, controlled environment, runtime context,
+external input hashes, command and timeout. Editable Python installations and
+unavailable runtime fingerprints disable content reuse. The package inventory
+detects normal local package edits; use an immutable environment identifier in
+`context` when package files may be replaced while preserving metadata. This is
+a local experiment cache, not a cryptographic attestation of the whole machine.
+Custom CPU commands, skipped/failed reports and deliberate `--repeat` requests
+do not use the content cache. GPU results remain bound to their original build
+and runtime.
 
 ## Identity, failure and recovery
 
@@ -163,7 +251,7 @@ a repeat. Snapshot checkouts and logs are retained for inspection. Remove a
 finished snapshot only with `git worktree remove` after preserving needed
 artifacts; never remove a queued/running job's checkout.
 
-`stats` separates CPU/pair/probe counts, shared/reused requests, and p50/p95 time
+`stats` separates CPU/pair/probe/baseline counts, shared/reused requests, and p50/p95 time
 to start and to a successful result. Queue time includes prerequisite waiting.
 An incomplete/failed result is never counted as a successful fast result. The
 initial implementation measures these timings; it makes no speedup claim until

@@ -64,7 +64,7 @@ def snapshot(repo, spec, stamp):
         if not re.fullmatch(r"[a-fA-F0-9]{12,64}", build):
             raise ValueError("GPU submissions need a valid deployed overlay stamp")
         result["build"] = build
-        if spec["kind"] == "pair":
+        if spec["kind"] in {"pair", "baseline"}:
             profile = dict(line.split("=", 1) for line in (repo / "profiles/glm53.env").read_text().splitlines()
                            if "=" in line and not line.startswith("#"))
             overlay = Path(profile.get("PROFILE_OVERLAY_DIR", "/home/choiceoh/overlays/glm53").strip('"\''))
@@ -85,6 +85,12 @@ def snapshot(repo, spec, stamp):
                 text=True, stderr=subprocess.PIPE, timeout=15).strip()
             if result["image"] != spec["context"]["image"]:
                 raise ValueError("context.image must pin the local immutable sha256 image ID")
+        elif spec.get("probe_contract"):
+            result["image"] = subprocess.check_output(
+                ["docker", "image", "inspect", spec["context"]["image"], "--format", "{{.Id}}"],
+                text=True, stderr=subprocess.PIPE, timeout=15).strip()
+            if result["image"] != spec["context"]["image"]:
+                raise ValueError("structured probe requires the pinned local immutable image ID")
     return result
 
 
@@ -92,7 +98,7 @@ def normalize(raw, repo):
     if not isinstance(raw, dict):
         raise ValueError("manifest must be a JSON object")
     allowed = {"kind", "revision", "hypothesis", "command", "knobs", "inputs", "context",
-               "env", "depends_on", "estimate_min", "timeout_s"}
+               "env", "depends_on", "estimate_min", "timeout_s", "probe_contract"}
     if set(raw) - allowed:
         raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
     kind = raw.get("kind")
@@ -149,9 +155,18 @@ def normalize(raw, repo):
     timeout = raw.get("timeout_s", 900)
     if type(timeout) is not int or not 1 <= timeout <= 86400:
         raise ValueError("timeout_s must be an integer between 1 and 86400 (CPU commands only)")
+    probe_contract = raw.get("probe_contract")
+    if probe_contract is not None:
+        from probe_report import contract
+        if kind != "probe":
+            raise ValueError("probe_contract is only valid for probes")
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", context["image"]):
+            raise ValueError("structured probe context.image must be an immutable sha256 image ID")
+        contract(probe_contract)
     return dict(kind=kind, revision=revision, hypothesis=raw["hypothesis"], command=command,
                 knobs=knobs, env=env, inputs=inputs, context=context,
-                depends_on=sorted(set(deps)), estimate_min=estimate, timeout_s=timeout)
+                depends_on=sorted(set(deps)), estimate_min=estimate, timeout_s=timeout,
+                probe_contract=probe_contract)
 
 
 class Store:
@@ -173,6 +188,11 @@ class Store:
             CREATE TABLE IF NOT EXISTS events (
                 cursor INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT NOT NULL,
                 at REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS dependencies (
+                job TEXT NOT NULL, dependency TEXT NOT NULL, kind TEXT NOT NULL,
+                PRIMARY KEY(job, dependency, kind));
+            CREATE TABLE IF NOT EXISTS cpu_cache (
+                key TEXT PRIMARY KEY, job TEXT NOT NULL);
         """)
 
     def event(self, job, kind, data):
@@ -258,7 +278,7 @@ def ensure_worker(store, job):
             return
         probe.close()
         state = store.get(job)["state"]
-        if state not in {"queued", "waiting_dependencies"}:
+        if state not in {"queued", "waiting_dependencies", "waiting_baseline"}:
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
@@ -287,7 +307,7 @@ def child_env(payload, store, job):
                FLEET_EXPERIMENT_ROOT=str(store.root), PYTHONUNBUFFERED="1",
                FLEET_CPU_REPORT=str(store.root / job / "cpu-report.json"),
                FLEET_CONTEXT=encoded(payload["spec"]["context"]))
-    if payload["spec"]["kind"] == "pair":
+    if payload["spec"]["kind"] != "cpu":
         env["IMAGE"] = payload["spec"]["context"]["image"]
     # Always execute the reviewed repo runners, not a stale log-directory copy.
     env["FLEET"] = str(Path(payload["repo"]) / "bench/fleet.sh")
@@ -338,11 +358,26 @@ def execute(store, job):
             raise ValueError("execute requires this experiment's fleet hold")
     verify(payload)
     store.state(job, "running")
+    if spec["kind"] == "baseline":
+        from experiment_baselines import run
+        state, result = run(store, job, payload)
+        store.state(job, state, result)
+        # Publish completions for earlier candidates even without result polls.
+        for item in store.db.execute("SELECT id FROM jobs WHERE state='incomplete'").fetchall():
+            refresh_result(store, item["id"])
+        return 0 if state == "succeeded" else 4
     if spec["kind"] == "pair":
         command = [payload["bash"], str(Path(payload["repo"]) / "bench/pair.sh"),
                    "EXP-" + job, " ".join(k + "=" + v for k, v in sorted(spec["knobs"].items()))]
     else:
         command = spec["command"]
+    nonce = uuid.uuid4().hex
+    binding = dict(revision=spec["revision"], snapshot=payload["snapshot"], context=spec["context"])
+    if spec["kind"] == "probe":
+        report_path = store.root / job / "probe-report.json"
+        report_path.unlink(missing_ok=True)
+        os.environ.update(FLEET_PROBE_REPORT=str(report_path), FLEET_PROBE_NONCE=nonce,
+                          FLEET_PROBE_BINDING=encoded(binding))
     if spec["kind"] == "cpu":
         proc = subprocess.Popen(command, cwd=payload["repo"], start_new_session=True)
         try:
@@ -376,9 +411,20 @@ def execute(store, job):
         report = store.root / job / "cpu-report.json"
         if report.exists():
             result["checks"] = json.loads(report.read_text())
+            if (result["checks"].get("passed") is not True
+                    or result["checks"].get("coverage_complete") is not True):
+                state = "failed"
     else:
-        state, result = "incomplete", {"returncode": 0, "evidence": "probe-log",
-                                      "reason": "probe exited successfully; inspect its numeric and timing evidence before promotion"}
+        from probe_report import adjudicate
+        state, result = adjudicate(report_path, spec.get("probe_contract"), job, nonce, binding)
+    if (spec["kind"] == "cpu" and state == "succeeded" and payload.get("cpu_identity")
+            and result.get("checks", {}).get("coverage_complete") is True):
+        from cpu_evidence import identity
+        if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
+            store.state(job, "failed", {"evidence": "cpu-only", "reason": "CPU environment changed during execution"})
+            return 4
+        with store.db:
+            store.db.execute("INSERT OR REPLACE INTO cpu_cache VALUES(?,?)", (payload["cpu_identity"]["key"], job))
     store.state(job, state, result)
     return 0
 
@@ -398,7 +444,7 @@ def worker(store, job):
             if spec["depends_on"]:
                 store.state(job, "waiting_dependencies")
             while spec["depends_on"]:
-                deps = [store.get(d) for d in spec["depends_on"]]
+                deps = [refresh_result(store, d) for d in spec["depends_on"]]
                 bad = [d["id"] for d in deps if d["state"] in TERMINAL and d["state"] != "succeeded"]
                 if bad:
                     store.state(job, "blocked", {"reason": "prerequisite did not pass", "dependencies": bad})
@@ -415,7 +461,9 @@ def worker(store, job):
             # defeat the existing --cpu classifier / knob checks.
             actual = ([payload["bash"], str(Path(payload["repo"]) / "bench/pair.sh"),
                        "EXP-" + job, " ".join(k + "=" + v for k, v in sorted(spec["knobs"].items()))]
-                      if spec["kind"] == "pair" else spec["command"])
+                      if spec["kind"] == "pair" else
+                      [payload["bash"], str(Path(payload["repo"]) / "bench/ab-lever.sh"), "EXP-" + job + "-BASE", ""]
+                      if spec["kind"] == "baseline" else spec["command"])
             if spec["kind"] != "cpu":
                 pf = [payload["bash"], fleet, "preflight"]
                 if spec["kind"] == "probe":
@@ -428,6 +476,43 @@ def worker(store, job):
                                                          env=env, cwd=payload["repo"], text=True).strip()
                 if classification == "gpu":
                     raise ValueError("CPU experiment shows GPU use; correct the manifest")
+                if payload.get("cpu_identity"):
+                    from cpu_evidence import identity
+                    if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
+                        raise ValueError("CPU environment changed while queued")
+                    hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
+                    if hit and not store.get(job)["repeat_reason"]:
+                        source = store.get(hit["job"])
+                        if (source["state"] == "succeeded" and source["result"].get("checks", {}).get("coverage_complete") is True):
+                            result = dict(source["result"], revision=spec["revision"], cache_source=source["id"],
+                                          tested_revision=source["payload"]["spec"]["revision"],
+                                          cache_identity=payload["cpu_identity"])
+                            verify(payload)
+                            store.state(job, "succeeded", result)
+                            return 0
+            if spec["kind"] == "pair":
+                from experiment_baselines import reserve, samples
+                if len(samples(payload)) < 3:
+                    baseline = reserve(store, job)
+                    store.state(job, "waiting_baseline", {"baseline_job": baseline})
+                    while True:
+                        ensure_worker(store, baseline)
+                        base = store.get(baseline)
+                        if base["state"] in TERMINAL:
+                            if base["state"] != "succeeded":
+                                store.state(job, "blocked", {"reason": "shared baseline did not pass", "baseline_job": baseline})
+                                return 0
+                            break
+                        time.sleep(.2)
+                    verify(payload)
+                    if len(samples(payload)) < 3:
+                        raise ValueError("shared baseline evidence changed; resubmit after checking its ledger")
+            elif spec["kind"] == "baseline":
+                from experiment_baselines import samples
+                bases = samples(payload)
+                if len(bases) >= payload["baseline_samples"]:
+                    store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
+                    return 0
             store.state(job, "queued_fleet")
             lane = ["--cpu"] if spec["kind"] == "cpu" else ["--gpu"]
             if spec["kind"] == "probe":
@@ -515,6 +600,9 @@ def main():
         payload = dict(spec=spec, repo=str(repo), paths=paths,
                        bash=shutil.which("bash"), environment={k: os.environ[k] for k in BASE_ENV if k in os.environ},
                        snapshot=snapshot(repo, spec, paths["MK_OVERLAY_STAMP"]))
+        if spec["kind"] == "cpu":
+            from cpu_evidence import identity
+            payload["cpu_identity"] = identity(repo, spec, payload["environment"])
         answer = store.submit(args.session, payload, args.repeat)
         ensure_worker(store, answer["id"])
     elif args.action == "worker":
