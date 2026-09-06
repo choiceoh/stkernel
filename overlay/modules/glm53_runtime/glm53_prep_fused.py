@@ -172,6 +172,45 @@ def selfcheck_every() -> int:
     return _every(ENV_SELFCHECK_EVERY, 64)
 
 
+ENV_KERNEL = "VLLM_GLM53_PREP_FUSED_KERNEL"
+
+
+def kernel_backend() -> str:
+    """'cuda' (default, 37차: the megakernel extension's mk_prep_kernel, any Q)
+    or 'triton' (the original kernel, Q_P2 masked lanes)."""
+    v = os.environ.get(ENV_KERNEL, "cuda").strip().lower()
+    return "triton" if v == "triton" else "cuda"
+
+
+_CUDA_EXT = [None, False]  # (ext or None, tried)
+
+
+def _cuda_ext():
+    """The megakernel extension when it carries run_prep, else None (once)."""
+    if not _CUDA_EXT[1]:
+        _CUDA_EXT[1] = True
+        try:
+            from vllm.model_executor.layers import glm53_megakernel as _mk
+            ext = _mk._build()
+            _CUDA_EXT[0] = ext if hasattr(ext, "run_prep") else None
+            if _CUDA_EXT[0] is None:
+                logger.warning("[prep-fused] megakernel extension has no run_prep -> triton kernel")
+        except Exception as e:  # noqa: BLE001 -- the Triton kernel stays available
+            logger.warning("[prep-fused] CUDA kernel unavailable (%r) -> triton kernel", e)
+            _CUDA_EXT[0] = None
+    return _CUDA_EXT[0]
+
+
+_CUDA_DTYPES = (  # (attribute path, dtype) the CUDA kernel hard-codes
+    ("num_computed", torch.int32), ("last_sampled", torch.int64), ("draft_tokens", torch.int64),
+    ("num_accepted", torch.int32), ("input_ids", torch.int32), ("positions", torch.int64),
+    ("query_start_loc", torch.int32), ("seq_lens", torch.int32), ("is_padding", torch.bool),
+    ("req_id_buf", torch.int32), ("exp_bt", torch.int32), ("dec_seq_lens", torch.int32),
+    ("dec_lens", torch.int32), ("per_req_dec_lens", torch.int32), ("idx_bt", torch.int32),
+    ("comp_slot", torch.int64),
+)
+
+
 def check_preimages(root: str) -> list[str]:
     """Return the relative paths whose sha256 differs from PREIMAGES."""
     bad = []
@@ -463,6 +502,7 @@ class PrepPlan:
     # the kpool tail builder whose circular slot buffer must stay dormant
     tail_builder: Any = None
     owned: dict[str, Any] = field(default_factory=dict)
+    kernel: str = "?"   # 37차: 'cuda' or 'triton (...)', set by warmup()
 
     def __post_init__(self) -> None:
         dev = self.device
@@ -514,6 +554,54 @@ class PrepPlan:
                                "what the graph reads")
         return True
 
+    def cuda_dtype_reason(self) -> str | None:
+        """None when every buffer has the dtype mk_prep_kernel hard-codes."""
+        bad = [f"{n}:{getattr(self, n).dtype}" for n, dt in _CUDA_DTYPES
+               if getattr(self, n).dtype != dt]
+        bt = self.bt
+        for n, t, dt in (("prefill_len", self.prefill_len_src.gpu, torch.int32),
+                         ("block_table_ptrs", bt.block_table_ptrs, torch.uint64),
+                         ("input_block_table_ptrs", bt.input_block_table_ptrs, torch.uint64),
+                         ("block_table_strides", bt.block_table_strides, torch.int64),
+                         ("block_sizes", bt.block_sizes_tensor, torch.int32),
+                         ("num_blocks", bt.num_blocks.gpu, torch.int32),
+                         ("slot_mappings", bt.slot_mappings, torch.int64)):
+            if t.dtype != dt:
+                bad.append(f"{n}:{t.dtype}")
+        for n, ts, dt in (("gdn_state", self.gdn_state, torch.int32), ("gdn_tok", self.gdn_tok, torch.int32),
+                          ("gdn_qsl", self.gdn_qsl, torch.int32), ("gdn_nacc", self.gdn_nacc, torch.int32)):
+            bad += [f"{n}[{i}]:{t.dtype}" for i, t in enumerate(ts) if t.dtype != dt]
+        bad += [f"gdn_mask[{i}]:{t.dtype}" for i, t in enumerate(self.gdn_mask)
+                if t.dtype not in (torch.int8, torch.bool, torch.uint8)]
+        if self.last_sampled.dim() == 2 and self.last_sampled.stride(0) != 1:
+            bad.append(f"last_sampled stride {self.last_sampled.stride(0)}")
+        return None if not bad else "dtype mismatch: " + ", ".join(bad)
+
+    def _cuda_ptrs(self, idx: torch.Tensor) -> list[int]:
+        """The 33 device pointers mk_run_prep unpacks, in its order."""
+        o = self.owned
+        bt = self.bt
+        return [t.data_ptr() for t in (
+            idx, self.num_computed, self.prefill_len_src.gpu, self.last_sampled,
+            self.draft_tokens, self.num_accepted,
+            self.input_ids, self.positions, self.query_start_loc, self.seq_lens,
+            self.is_padding, o["expanded_idx"], o["expanded_pos"],
+            bt.block_table_ptrs, bt.input_block_table_ptrs, bt.block_table_strides,
+            bt.block_sizes_tensor, bt.num_blocks.gpu, bt.slot_mappings,
+            o["gdn_group_idx"], o["gdn_state_ptrs"], o["gdn_state_strides"],
+            o["gdn_mask_ptrs"], o["gdn_tok_ptrs"], o["gdn_qsl_ptrs"], o["gdn_nacc_ptrs"],
+            self.req_id_buf, self.exp_bt, self.dec_seq_lens, self.dec_lens,
+            self.per_req_dec_lens, self.idx_bt, self.comp_slot)]
+
+    def _cuda_ints(self, num_reqs: int, num_tokens: int) -> list[int]:
+        bt = self.bt
+        return [num_reqs, num_tokens, self.max_num_reqs, self.max_num_tokens,
+                self.draft_tokens.stride(0), bt.num_blocks.gpu.stride(0), bt.slot_mappings.stride(0),
+                self.req_id_buf.numel(), self.exp_bt.stride(0), self.dec_seq_lens.numel(),
+                self.idx_bt.stride(0), self.idx_bt_cols, self.comp_slot.numel(),
+                self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g,
+                self.factor, self.ratio, self.sbs, PAD_SLOT_ID]
+
     def _consts(self) -> dict[str, int]:
         return dict(
             Q=self.q, Q_P2=self.q_p2, NUM_SPEC=self.num_spec, NS=self.num_spec + 1, NS_P2=self.ns_p2,
@@ -553,6 +641,11 @@ class PrepPlan:
         idx = o["idx_pool"].copy_to_gpu(
             idx_mapping_np.astype(np.int64, copy=False), out=o["idx_gpu"][:num_reqs])
         num_tokens = num_reqs * self.q
+        ext = o.get("cuda_ext")
+        if ext is not None:
+            ext.run_prep(self._cuda_ptrs(idx), self._cuda_ints(num_reqs, num_tokens))
+            self.schedule(num_tokens)
+            return idx
         args = self._args(idx, num_reqs, num_tokens)
         compiled = o.get("compiled")
         if compiled is not None:
@@ -572,6 +665,17 @@ class PrepPlan:
         Raises on failure so the caller can DISARM instead of JIT-ing (or
         failing) on the first real request. Keeps the compiled binary for
         direct launches when this Triton hands one back."""
+        self.owned["cuda_ext"] = None
+        if kernel_backend() == "cuda":
+            reason = self.cuda_dtype_reason()
+            ext = _cuda_ext() if reason is None else None
+            if ext is not None:
+                self.owned["cuda_ext"] = ext
+                self.kernel = "cuda"
+                return
+            self.kernel = f"triton ({reason or 'no extension'})"
+        else:
+            self.kernel = "triton"
         idx = self.owned["idx_gpu"][:1]
         compiled = _glm53_prep_fused_kernel.warmup(
             *self._args(idx, 1, self.q), **self._consts(), grid=(1,))
@@ -850,8 +954,9 @@ def _ensure_plan(runner, st: _State) -> bool:
         return False
     st.plan = plan
     runner.model_state._glm53_prep = st
-    logger.warning("[prep-fused] plan built: mode=%s groups=%d gdn=%s attn_g=%d factor=%d "
+    logger.warning("[prep-fused] plan built: mode=%s kernel=%s groups=%d gdn=%s attn_g=%d factor=%d "
                    "ratio=%d sbs=%d q=%d shadow_every=%d selfcheck_every=%d", st.mode,
+                   getattr(plan, "kernel", "?"),
                    plan.G, plan.gdn_groups, plan.attn_g, plan.factor, plan.ratio, plan.sbs,
                    plan.q, st.shadow_every, st.selfcheck_every)
     return True
