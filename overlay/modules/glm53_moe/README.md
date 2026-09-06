@@ -196,7 +196,7 @@ b12x_shared_workspace).
 
 ## Static v2 / v3 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
 
-`VLLM_GLM53_B12X_STATIC_V2` (profile default `""` = stock) routes the exact
+`VLLM_GLM53_B12X_STATIC_V2` (profile default `u` = v4 since 38차; `w` = v3 was the 35차 default, `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
 rework of flashinfer's `MoEStaticKernel` with the same workspace, weight
 views, routing frontend and arithmetic (FC1 accumulation order, fp4 quant of
