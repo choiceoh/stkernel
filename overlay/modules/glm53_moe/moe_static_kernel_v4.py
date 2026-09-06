@@ -113,6 +113,7 @@ class MoEStaticKernelV4:
         split: bool = False,
         skip_sf: bool = False,
         skip_a: bool = False,
+        a_ring: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -159,6 +160,14 @@ class MoEStaticKernelV4:
         # say what the small boxes cost the FC1 stream
         self.skip_sf = bool(skip_sf)
         self.skip_a = bool(skip_a)
+        # a_ring: A + SFA ride their own 2-deep ring (own mbarriers) loaded
+        # once per k tile and shared by the gate and the up stage, instead of
+        # once per stage -- halves the L2->smem A traffic v4 doubled (v3's
+        # `xa` diagnostic priced those loads at ~3%). Same smem: the A/SFA
+        # staged buffers already exist per stage.
+        self.a_ring = bool(a_ring)
+        if self.a_ring and self.skip_a:
+            raise ValueError("xa (skip A) and the A ring are exclusive")
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
         self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
         self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
@@ -251,6 +260,7 @@ class MoEStaticKernelV4:
         offset = (
             2 * 4
             + (self.fc1_stages + self.fc2_stages) * 2 * 8
+            + self.fc1_stages * 2 * 8          # a_bars (always allocated)
             + _COMPACT_STATIC_TILE_M * 4
             + _COMPACT_STATIC_TILE_M * 4
         )
@@ -573,9 +583,11 @@ class MoEStaticKernelV4:
         sfa1_smem_one = cute.slice_(sfa1_smem_staged, (None, None, 0))
         sfb1_smem_one = cute.slice_(sfb1_smem_staged, (None, None, 0))
         fc1_tma_bytes = cute.size_in_bytes(self.b_dtype, b1_smem_one)
-        if cutlass.const_expr(not self.skip_a):
-            fc1_tma_bytes += cute.size_in_bytes(self.a_dtype, a1_smem_one)
-            fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfa1_smem_one)
+        a_tma_bytes = cute.size_in_bytes(self.a_dtype, a1_smem_one) + cute.size_in_bytes(
+            self.sf_dtype, sfa1_smem_one
+        )
+        if cutlass.const_expr(not self.skip_a and not self.a_ring):
+            fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
             fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
         b2_smem_one = cute.slice_(b2_smem_staged, (None, None, 0))
@@ -591,6 +603,7 @@ class MoEStaticKernelV4:
             ctrl: cute.struct.MemRange[cutlass.Int32, 2]
             fc1_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
+            a_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             scatter_tok_cache: cute.struct.MemRange[
                 cutlass.Int32, _COMPACT_STATIC_TILE_M
             ]
@@ -659,6 +672,15 @@ class MoEStaticKernelV4:
             consumer_group=cons_group,
             tx_count=fc2_tma_bytes,
             barrier_storage=storage.fc2_bars.data_ptr(),
+            cta_layout_vmnk=cta_layout_vmnk,
+        )
+        # A ring (a_ring only; the init is harmless otherwise)
+        a_pipeline = pipeline.PipelineTmaAsync.create(
+            num_stages=self.fc1_stages,
+            producer_group=prod_group,
+            consumer_group=cons_group,
+            tx_count=a_tma_bytes,
+            barrier_storage=storage.a_bars.data_ptr(),
             cta_layout_vmnk=cta_layout_vmnk,
         )
 
@@ -999,6 +1021,12 @@ class MoEStaticKernelV4:
         fc1_cons_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Consumer, self.fc1_stages
         )
+        a_prod_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Producer, self.fc1_stages
+        )
+        a_cons_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Consumer, self.fc1_stages
+        )
         fc2_prod_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Producer, self.fc2_stages
         )
@@ -1261,13 +1289,20 @@ class MoEStaticKernelV4:
                         # per k tile: a gate stage, then an up stage (each
                         # A + one B + SFA + SFB over K 512 = 8 k blocks)
                         for _k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
+                            if cutlass.const_expr(self.a_ring):
+                                apeek = a_pipeline.consumer_try_wait(a_cons_state)
+                                a_pipeline.consumer_wait(a_cons_state, apeek)
                             for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
-                                csA_p = csA1[None, None, None, fc1_cons_state.index]
+                                if cutlass.const_expr(self.a_ring):
+                                    a_slot = a_cons_state.index
+                                else:
+                                    a_slot = fc1_cons_state.index
+                                csA_p = csA1[None, None, None, a_slot]
                                 csB_p = csB1[None, None, None, fc1_cons_state.index]
                                 fz_csSFA_p = cute.filter_zeros(
-                                    csSFA1_tile[None, None, None, fc1_cons_state.index]
+                                    csSFA1_tile[None, None, None, a_slot]
                                 )
                                 fz_csSFB_p = cute.filter_zeros(
                                     csSFB1[None, None, None, fc1_cons_state.index]
@@ -1332,6 +1367,9 @@ class MoEStaticKernelV4:
                                                 )
                                 fc1_pipeline.consumer_release(fc1_cons_state)
                                 fc1_cons_state.advance()
+                            if cutlass.const_expr(self.a_ring):
+                                a_pipeline.consumer_release(a_cons_state)
+                                a_cons_state.advance()
 
                         # ---- activation of this half -> sC1 -> quant into sA2 ----
                         epi_m_valid = valid_rows - tile_m_base
@@ -1688,10 +1726,23 @@ class MoEStaticKernelV4:
                              weight_expert_idx)
                         ]
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
+                            if cutlass.const_expr(self.a_ring):
+                                a_pipeline.producer_acquire(a_prod_state)
+                                abar = a_pipeline.producer_get_barrier(a_prod_state)
+                                cute.copy(
+                                    tma_a, tAgA_mk[(None, k_tile)],
+                                    tAsA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                )
+                                cute.copy(
+                                    tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                    tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                )
+                                a_pipeline.producer_commit(a_prod_state)
+                                a_prod_state.advance()
                             for gu in cutlass.range_constexpr(2):
                                 fc1_pipeline.producer_acquire(fc1_prod_state)
                                 bar = fc1_pipeline.producer_get_barrier(fc1_prod_state)
-                                if cutlass.const_expr(not self.skip_a):
+                                if cutlass.const_expr(not self.skip_a and not self.a_ring):
                                     cute.copy(
                                         tma_a, tAgA_mk[(None, k_tile)],
                                         tAsA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -1706,7 +1757,7 @@ class MoEStaticKernelV4:
                                         tma_b_w13, tBgB_up_nk[(None, k_tile)],
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
-                                if cutlass.const_expr(not self.skip_a):
+                                if cutlass.const_expr(not self.skip_a and not self.a_ring):
                                     cute.copy(
                                         tma_sfa, tAgSFA_mk[(None, k_tile)],
                                         tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -1786,6 +1837,8 @@ class MoEStaticKernelV4:
 
             fc1_pipeline.producer_tail(fc1_prod_state)
             fc2_pipeline.producer_tail(fc2_prod_state)
+            if cutlass.const_expr(self.a_ring):
+                a_pipeline.producer_tail(a_prod_state)
         return
 
 

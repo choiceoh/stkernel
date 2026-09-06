@@ -295,7 +295,7 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
     "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
-    "v4": False,
+    "v4": False, "a_ring": False,
 }
 
 
@@ -332,6 +332,15 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # v3 even waves: only the CTA count (48/44/40/36/32) whose last
             # wave is fullest takes items (U=40: 40 CTAs x 4 items)
             cfg["even"] = True
+            continue
+        if token == "v":
+            # v4 + A ring: A and SFA loaded once per k tile on their own
+            # 2-deep ring, shared by the gate and the up stage
+            cfg["wide"] = True
+            cfg["v4"] = True
+            cfg["a_ring"] = True
+            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
+                cfg["fc2"] = 2
             continue
         if token == "u":
             # v4 (moe_static_kernel_v4.py): FC1 halves over 512-wide K stages
@@ -382,6 +391,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: k (last-wave split) needs w, not e")
     if (cfg["skip_sf"] or cfg["skip_a"]) and not cfg["wide"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: xs/xa need w (v3)")
+    if cfg["a_ring"] and cfg["skip_a"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
     return cfg
 
 
@@ -1564,6 +1575,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("even", False)),
         bool(config.get("split", False)),
         bool(config.get("v4", False)),
+        bool(config.get("a_ring", False)),
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
     )
@@ -1644,7 +1656,9 @@ def _get_static_kernel_v2(
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     if config.get("wide", False):
         kernel_cls = MoEStaticKernelV4 if config.get("v4", False) else MoEStaticKernelV3
+        v4_kwargs = {"a_ring": bool(config.get("a_ring", False))} if config.get("v4", False) else {}
         kernel: Any = kernel_cls(
+            **v4_kwargs,
             sf_vec_size=sf_vec_size,
             output_tile_count_n=output_tile_count_n,
             fc1_stages=int(config["fc1"]),
@@ -1766,6 +1780,7 @@ def _get_static_kernel_v2(
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
+        f"{'v' if config.get('a_ring') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
