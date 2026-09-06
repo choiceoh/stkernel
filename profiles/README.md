@@ -57,8 +57,8 @@ is blocked, says so and names the one flip that would isolate the cause.
 | 상태 | production | 커널 캠페인 대상 · 매일 부팅 | bring-up |
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x`(서빙은 `-it` 태그, 4노드 ID 일치 요구) | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
-| 모듈 수 | 18 | **8**(34차 묶음; 접기 전 25) | 1 |
-| 오버레이 파일 | 23 | **46** | 2 |
+| 모듈 수 | 18 | **9**(34차 묶음 8 + 39차 프리픽스 캐시; 접기 전 25) | 1 |
+| 오버레이 파일 | 23 | **48** | 2 |
 | 기본 노브 | 노브 전부 off 가 기준선 | **메가커널 세트**(`MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1, `MK_KDA`=0) + 드래프터 W4 (28차 §8) + `MK_PDL`(27차 프로브, PR #290 — 종단 수치는 아직 없다) | — |
 
 `glm53` 의 기본값이 곧 브래킷된 cand 구성이다 — 그래서 A/B 의 base 팔은
@@ -91,7 +91,8 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·tail-select 융합, tail 슬롯, MHC TileLang 프리필 big_fuse 오버라이드 + MK 훅 (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_mhc_tilelang`; 34차 §8 일몰: radix top-k 확장, SM121 MLA 프리필, MHC SMALLM/ONEPASS; KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`)은 #368 이 direct-out 을 얹어 유지) | 6 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
 | `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v4(35·38차, `moe_static_kernel_v4.py` + 공유 헬퍼 `moe_static_common.py`, 프로필 기본값 `u`; v2/v3 은 34차 §8 일몰) + 순수 프리필 dynamic 재사용 후보(#368) + v5 `moe_static_kernel_v5.py`(타일 우선 가중치, 셀 `t`/`z`, 39차) + 그 배치를 읽는 gated 프리필 커널 서브클래스 `moe_dynamic_gated_tiled.py` | 10 | — | · | ● | · |
-| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives | 10 | 일부 | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives, 디코드 우선 스케줄러(39차, `DECODE_FIRST=1`) | 11 | 일부 | · | ● | · |
+| `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). `PREFIX_CACHE=0` 이면 무해 | 1 | — | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |

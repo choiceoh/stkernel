@@ -37,6 +37,7 @@ import re
 import sys
 import time
 import urllib.request
+
 from statistics import median
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,6 +115,55 @@ def ask_stream(url, model, content, max_tokens):
             int(usage.get("completion_tokens", 0) or 0), finish)
 
 
+def _served_build(repo: str, profile: str = "glm53") -> dict:
+    """What the SERVER is running: the deployed overlay stamp and the knobs
+    that differ from the profile's defaults.
+
+    NOT this process's environment -- ab-lever.sh boots the server with the
+    arm's env and then runs this bench in a plain shell, so os.environ here
+    carries none of it. The serving container's own Config.Env is the only
+    honest source, and the overlay stamp identifies the BUILD (a bench with
+    no deploy reuses the previous build whatever the git sha says).
+    An empty `knobs` IS that build's baseline -- bench/baseline.py reads it
+    so the next session can skip re-measuring one. Every failure degrades to
+    a missing field: a bench must never die over its own label.
+    """
+    import subprocess
+    out = {}
+    try:
+        stamp = os.environ.get("MK_OVERLAY_STAMP",
+                               "/home/choiceoh/glm53-cache/.overlay-sha")
+        with open(stamp) as fh:
+            out["overlay"] = fh.read().strip()[:12]
+    except Exception:
+        pass
+    try:
+        names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
+                               capture_output=True, text=True,
+                               timeout=10).stdout.split()
+        name = next((n for n in names if n.startswith("glm53")), None)
+        if not name:
+            return out
+        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
+                             capture_output=True, text=True, timeout=10).stdout
+        served = dict(e.split("=", 1) for e in json.loads(raw or "[]")
+                      if "=" in e and e.startswith("VLLM_"))
+        declared = {}
+        with open(os.path.join(repo, "profiles", profile + ".env")) as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("VLLM_") and "=" in line:
+                    k, v = line.split("=", 1)
+                    declared[k] = v.strip().strip('"')
+        knobs = {k: v for k, v in served.items() if k in declared and v != declared[k]}
+        knobs.update({k: v for k, v in served.items()
+                      if k.startswith("VLLM_GLM53_") and k not in declared})
+        out["knobs"] = dict(sorted(knobs.items()))
+    except Exception:
+        pass
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
@@ -134,6 +184,7 @@ def main() -> int:
     rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
            "harness": 39, "doc_lang": "ko",
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
+    rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
@@ -271,6 +322,17 @@ def main() -> int:
             print(f"\n  [{tag}] {ks}")
     rec["korean"] = {"dirty": len(dirty), "n": n, "kinds": kinds_tot,
                      "hits": [(tag, k) for tag, k, _ in dirty]}
+    # armed != serving: which of the arm's lanes actually ran, from the head log,
+    # checked after the traffic above (serving markers appear only then).
+    try:
+        from proof import check as _proof_check
+        _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
+        if _kn:
+            rec.update({kk: vv for kk, vv in _proof_check(
+                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")).items()
+                if kk in ("proof", "proof_ok")})
+    except Exception:
+        pass
 
     print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total", flush=True)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

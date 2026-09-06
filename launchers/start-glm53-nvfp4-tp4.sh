@@ -27,7 +27,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -549,6 +549,19 @@ fi
 # ASYNC_SCHED=0 removes the async scheduler while leaving the drafter in
 # place. vLLM registers bools via BooleanOptionalAction, hence --no-.
 ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
+# DECODE_FIRST=1 (39차): the overlay's decode-first scheduler -- an
+# AsyncScheduler subclass that caps prefill chunks (VLLM_GLM53_SCHED_MIXED_CHUNK
+# tokens) whenever decoders share the step, so a 100K prompt no longer stalls
+# a running answer for a whole 8192-token chunk. Pure prefill is untouched.
+# Requires the async scheduler (the subclass is one); refuse the contradiction.
+SCHED_CLS_FLAG=""
+case "${DECODE_FIRST:-0}" in
+  0) ;;
+  1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
+     SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"
+     echo "scheduler: decode-first v2 (mixed chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-576}, prefill every ${VLLM_GLM53_SCHED_PREFILL_EVERY:-1} mixed step, fair=${VLLM_GLM53_SCHED_FAIR:-1}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
+  *) echo "ABORT: DECODE_FIRST must be 0 or 1 (got $DECODE_FIRST)" >&2; exit 2 ;;
+esac
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
 #
@@ -785,12 +798,25 @@ $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
 --mamba-cache-dtype $MAMBA_CACHE_DTYPE \
 $ASYNC_FLAG \
+${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT' \
 --tool-call-parser glm47 --enable-auto-tool-choice \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \
+--disable-custom-all-reduce \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
+# --disable-custom-all-reduce (39차, the 302-second dist-init gap): the
+# custom all-reduce is disabled on this multi-node fleet anyway ("Custom
+# collectives are disabled because this multi-node group does not support
+# MNNVL multicast" on every boot), but before it disables itself its
+# constructor runs _init_mnnvl_buffer -> torch symmetric-memory rendezvous.
+# The 17:21 stall snapshot (py-spy on all four ranks) caught rank 2 alone
+# inside that rendezvous for the TCPStore's 300 s while ranks 0/1/3 waited
+# for it in the TP group's first broadcast; rank 2's log then shows "MNNVL
+# AG/RS initialization failed" and the boot proceeds. Serving never used
+# it (osar / PyNCCL carry the collectives), so skipping the constructor
+# removes the 5-minute gap without changing a served kernel.
 # 32차 item 5: the dev lab's API route rides on --middleware (the worker side
 # installs itself from the megakernel driver when the knob is on)
 if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then
@@ -803,7 +829,7 @@ fi
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
   for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE MAMBA_CACHE_DTYPE KV_TOKENS KV_BLOCKS EAGER GRAPH_CAP GMU MAX_SEQS \
-            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE \
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE DECODE_FIRST \
             DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done

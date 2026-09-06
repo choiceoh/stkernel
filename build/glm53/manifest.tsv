@@ -46,3 +46,5 @@ cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/de
 glm53_prefill_collectives.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py	absent
 parallel_state.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py	c6d65b96a260ea0d779da1073d1799392813eee74c9ed44753dfa56f4e7a9e4c
 glm53_draft_dump.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py	absent
+glm53_decode_first.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py	absent
+kv_cache_coordinator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py	f640b5c42f6bc718926329a8f8b48a0fd0c8c8f24368af4e4b9ec8d13f68432f

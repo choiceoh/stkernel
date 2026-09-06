@@ -64,7 +64,7 @@ _KDA_PREFILL_DIRECT_OUT = (
     os.environ.get("VLLM_GLM53_KDA_PREFILL_DIRECT_OUT") == "1"
 )
 if _KDA_PREFILL_DIRECT_OUT:
-    logger.info("[kda-prefill] direct output armed (pure prefill only)")
+    logger.warning("[kda-prefill] direct output armed (pure prefill only)")
 
 
 def _kda_prefill_output_buffer(
@@ -72,9 +72,10 @@ def _kda_prefill_output_buffer(
     *, use_spec, num_prefills, num_decodes,
 ):
     """Select only a dense pure-prefill destination; retain the merge otherwise."""
+    if not _KDA_PREFILL_DIRECT_OUT:
+        return None
     if (
-        not _KDA_PREFILL_DIRECT_OUT
-        or use_spec
+        use_spec
         or num_prefills <= 0
         or num_decodes != 0
         or num_actual_tokens <= 0
@@ -87,7 +88,24 @@ def _kda_prefill_output_buffer(
         or core_attn_out.shape[3] != head_dim
         or not core_attn_out.is_contiguous()
     ):
+        # 39차: say once why an armed lane is not taken (P1: use_spec is
+        # True on every batch of a speculative-decoding runner). Self-
+        # contained (function attribute + globals().get) because the logic
+        # suite execs this def alone in a stub namespace.
+        _fn = _kda_prefill_output_buffer
+        if num_prefills > 0 and num_decodes == 0 and not getattr(_fn, "_announced", False):
+            _fn._announced = True
+            _lg = globals().get("logger")
+            if _lg is not None:
+                _lg.warning("[kda-prefill] direct output NOT taken on a pure-prefill batch: use_spec=%s "
+                            "tokens=%d shape=%s", use_spec, num_actual_tokens, tuple(core_attn_out.shape))
         return None
+    _fn = _kda_prefill_output_buffer
+    if not getattr(_fn, "_announced", False):
+        _fn._announced = True
+        _lg = globals().get("logger")
+        if _lg is not None:
+            _lg.warning("[kda-prefill] direct output engaged (tokens=%d)", num_actual_tokens)
     # A prefix of the only batch remains dense, even with capture padding.
     return core_attn_out[:, :num_actual_tokens]
 

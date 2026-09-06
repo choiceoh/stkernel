@@ -1,0 +1,24 @@
+# knob	marker (fixed string that the HEAD log carries once the lane SERVES)	src (literal that must exist in overlay/modules, so the row cannot rot)
+# armed != serving (22차/28차/34차): a knob the launcher forwards can still take the stock path
+# (module not mounted, eligibility never met, a silent fallback). The marker is the line the
+# lane prints when it actually serves; bench/proof.py checks it with a fixed-string search --
+# three of these start with [brackets], which a regex grep reads as a character class and
+# never matches (the 18:41 FUS7 run reported 3/6 for exactly those three).
+# Lines without a serving line of their own use their arming line and say so in the third column.
+VLLM_GLM53_DRAFTER_PREP	[drafter-prep] serving	[drafter-prep] serving
+VLLM_GLM53_INDEXER_DECODE_FUSED	[indexer-fused] tail-select fused	[indexer-fused] tail-select fused
+VLLM_GLM53_DFLASH_EARLY_FC	[dflash-early-fc] installed	[dflash-early-fc] installed
+VLLM_GLM53_KDA_ONEPASS	one-pass KDA serving	one-pass KDA serving
+VLLM_GLM53_KDA_DUAL_GEMM	dual gate GEMM serving	dual gate GEMM serving
+VLLM_GLM53_MK_SMLP2	smlp lane serving: first fused call (smlp2)	smlp lane serving: first fused call (smlp2)
+VLLM_GLM53_MK_HEAD_DRAFT	head lane serving: draft endpoint	head lane serving
+VLLM_GLM53_MK_HEAD_TARGET	head lane serving: target endpoint	head lane serving
+VLLM_GLM53_DRAFTER_CTX_KV_W4	[drafter-ctx-kv] serving	[drafter-ctx-kv] serving
+VLLM_GLM53_PREP_FUSED	[prep-fused] plan built: mode=on	[prep-fused] plan built: mode=
+VLLM_GLM53_INDEXER_GATE_SPLITK	split-K routing	[indexer-gate]
+VLLM_GLM53_MK_MHC	'mhc': True	[megakernel] armed=
+VLLM_GLM53_MK_GEMM	'gemm': True	[megakernel] armed=
+VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
+VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
+VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed
+VLLM_GLM53_B12X_STATIC_V2	[b12x static v2] lane serving	[b12x static

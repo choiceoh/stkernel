@@ -283,7 +283,11 @@ _NVFP4_MAX = 6.0
 # gated -- A4 activations are a served-numerics change (quality 9/9, Korean
 # 0/16, acceptance profile, prefill ladder) -- and target-only.
 _PREFILL_NVFP4_ENV = "VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4"
-_NVFP4_PREFILL_MIN_M = 32
+# 39차 P3C: the nvfp4 prefill route pays ~3 quantization launches per GEMM
+# call; below a few thousand rows that fixed cost outweighs the 2x GEMM.
+# VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M raises the row threshold (rows
+# above it take the nvfp4 pair, the rest keep the fp8 pair). 32 = original.
+_NVFP4_PREFILL_MIN_M = int(os.environ.get("VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M", "32") or 32)
 
 
 def _prefill_nvfp4_enabled(env: str) -> bool:
@@ -693,6 +697,13 @@ class Fp8DenseMethod:
         # is shape-agnostic, so ranks cannot diverge on it).
         nv = self._nvfp4
         if nv is not None and x.numel() // x.shape[-1] > _NVFP4_PREFILL_MIN_M:
+            if not getattr(self, "_nvfp4_announced", False):
+                # 39차: the bracket's proof that the prefill route ran (self-
+                # contained: the logic suite execs this def in a stub namespace)
+                self._nvfp4_announced = True
+                _lg = globals().get("logger")
+                if _lg is not None:
+                    _lg.warning("[fp8-dense] nvfp4 prefill route engaged (M=%d)", x.numel() // x.shape[-1])
             try:
                 return _nvfp4_dense_gemm_op(x, *nv)
             except Exception as e:
