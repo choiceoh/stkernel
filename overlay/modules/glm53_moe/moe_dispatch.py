@@ -83,6 +83,13 @@ _GLM53_B12X_PREFILL_FC1_N128 = (
 )
 MoEGatedPrefillReuseKernel = None
 MoEGatedPrefillN128Kernel = None
+if _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128:
+    # 39차: boot-log anchor for the bracket -- the decline warning below only
+    # fires when the lane is refused; this line proves the knob was armed.
+    logging.getLogger("flashinfer.b12x").warning(
+        "[b12x prefill reuse] armed: reuse=%s fc1_n128=%s",
+        _GLM53_B12X_PREFILL_REUSE, _GLM53_B12X_PREFILL_FC1_N128,
+    )
 
 
 def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:

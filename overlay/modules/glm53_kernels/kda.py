@@ -86,35 +86,6 @@ def _glm53_qk_l2norm_strided_kernel(
     tl.store(Y + (rindex + N * row_idx), xs * rsqrt, mask)
 
 
-@triton.jit
-def _glm53_qk_l2norm_channel_major_kernel(
-    Q, K, QY, KY, TOKENS,
-    QH: tl.constexpr, QD: tl.constexpr,
-    KH: tl.constexpr, KD: tl.constexpr,
-    BT: tl.constexpr,
-):
-    # Conv output has contiguous TOKENS, not contiguous head dimensions.
-    # Put 32 adjacent tokens along the load's contiguous axis. Flattening
-    # T/H into stock's 32-row tile would expose only two adjacent tokens
-    # and can erase the copy saving with sparse memory transactions.
-    token = (tl.program_id(0) * BT + tl.arange(0, BT)[None, :]).to(tl.int64)
-    head = tl.program_id(1).to(tl.int64)
-    dim = tl.arange(0, 128)[:, None].to(tl.int64)
-    if tl.program_id(2) == 0:
-        xs = tl.load(Q + token + head * QH + dim * QD,
-                     token < TOKENS, other=0).to(tl.float32)
-        out = QY
-    else:
-        xs = tl.load(K + token + head * KH + dim * KD,
-                     token < TOKENS, other=0).to(tl.float32)
-        out = KY
-    # Same FP32 square/sum/rsqrt recipe; layout changes can still change the
-    # generated reduction schedule, so bit equality must be tested on GPU.
-    inv = tl.rsqrt(tl.sum(xs * xs, axis=0)[None, :] + 1.0e-6)
-    tl.store(out + (token * 16 + head) * 128 + dim,
-             xs * inv, token < TOKENS)
-
-
 def _glm53_qk_l2norm_strided(q, k):
     """Return dense normalized Q/K, or None outside the pinned chunk lane.
 
@@ -142,15 +113,16 @@ def _glm53_qk_l2norm_strided(q, k):
         return None
     q_out = torch.empty(q.shape, dtype=q.dtype, device=q.device)
     k_out = torch.empty_like(q_out)
-    if q.stride(1) == 1 and k.stride(1) == 1:
-        _glm53_qk_l2norm_channel_major_kernel[
-            (triton.cdiv(q.shape[1], 32), 16, 2)
-        ](
-            q, k, q_out, k_out, q.shape[1],
-            QH=q.stride(2), QD=q.stride(3),
-            KH=k.stride(2), KD=k.stride(3), BT=32, num_warps=4,
-        )
-        return q_out, k_out
+    # 39차 gate (probes/qk_norm_strided_check.py, probes/qknorm_diag.py): the
+    # channel-major [128, 32]-tile kernel that put tokens on the contiguous
+    # axis is NOT bit-exact against l2norm_fwd_kernel2 -- its axis-0 reduction
+    # tree differs from kernel2's axis-1 tree and the outputs disagree on a
+    # few rows per thousand at any T (T=128: 2 rows, T=8185: 54; transposing
+    # the tile or changing num_warps does not fix it). The kernel2-shaped
+    # strided kernel below IS bit-exact on the conv layout at every tested
+    # length (1..8192), so every positive-stride layout takes it. Its loads
+    # on the conv layout are strided by T (uncoalesced but L2-friendly); the
+    # copy saving stands, the strided-access cost is the bracket's to measure.
     rows = q.shape[1] * 16
     _glm53_qk_l2norm_strided_kernel[(triton.cdiv(rows, 32), 2)](
         q, k, q_out, k_out, 1e-6, rows,
