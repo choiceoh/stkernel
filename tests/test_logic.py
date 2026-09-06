@@ -8349,6 +8349,26 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
     # weight_loader. Read 296 s once and 63.5 s the next day on the same
     # code -- the first was measured while this repo's benches had all four
     # hosts busy. Timing the generator from both sides puts that in the log.
+    # 37차: the prep-fusion kernel ran tl.arange(0, Q) and DISARMed for any
+    # decode_query_len that is not a power of two (k=5 -> Q=6: "plan
+    # build/warmup failed"), so a k!=7 boot silently lost the fusion. Now it
+    # runs Q_P2 lanes and masks the ones >= Q, the NS_P2 pattern it already
+    # used for the GDN state -- every store over offs and the block-table load
+    # carry the mask, and neither raise remains.
+    pf2 = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                  "glm53_prep_fused.py"), encoding="utf-8").read()
+    kern = pf2[pf2.index("def _glm53_prep_fused_kernel("):]
+    kern = kern[:kern.index("\ndef ")] if "\ndef " in kern else kern
+    check("    Q_P2: tl.constexpr," in kern
+          and "    offs = tl.arange(0, Q_P2)\n    qmask = offs < Q\n" in kern
+          and not [l for l in kern.splitlines()
+                   if "tl.store(" in l and "+ offs" in l and "mask=" not in l]
+          and "bn = tl.load(src_row + bidx, mask=qmask, other=0)" in kern
+          and "not a power of two" not in pf2
+          and "self.q_p2 = 1 << (self.q - 1).bit_length()" in pf2
+          and "Q=self.q, Q_P2=self.q_p2," in pf2,
+          "prep-fused serves any decode_query_len: Q_P2 lanes, every offs "
+          "store and the block-table load masked, the power-of-two raises gone")
     check("def _wrap_weights_iter(cls, name):" in src
           and '_wrap_weights_iter(cls, "get_all_weights")' in src
           and "produce += time.monotonic() - t" in src
@@ -10408,13 +10428,20 @@ def test_glm53_prep_fused_contracts() -> None:
     post = ast.get_source_segment(src, funcs["__post_init__"])
     check("UvaBufferPool(" in post and "pin_memory=True" not in post,
           "idx_mapping staging must use the image's round-robin UVA pool (async-safe)")
-    check("self.q & (self.q - 1)" in post and "self.exp_bt.stride(0) != wa" in post,
-          "the plan must refuse a non-power-of-two Q and an expanded-table width mismatch")
+    # 37차: a non-power-of-two Q (k=5 -> 6) is served on Q_P2 masked lanes
+    # instead of refused -- refusing cost every k!=7 boot the fusion.
+    check("self.q_p2 = 1 << (self.q - 1).bit_length()" in post
+          and "self.q & (self.q - 1)" not in post
+          and "self.exp_bt.stride(0) != wa" in post,
+          "the plan pads Q to a power of two (masked lanes) and still refuses an "
+          "expanded-table width mismatch")
     plan_src = ast.get_source_segment(src, funcs["build_plan"])
     check("DFlash2Speculator" in src, "the fleet's DFlash2Speculator must be admitted")
     for guard in ("_SPECULATORS", "draft_attn_layer_names", "draft_kv_cache_group_ids",
-                  "tail_builder=tail_b", "q & (q - 1)"):
+                  "tail_builder=tail_b", "q != num_spec + 1"):
         check(guard in plan_src, f"build_plan must carry the guard {guard}")
+    check("q & (q - 1)" not in plan_src,
+          "build_plan no longer refuses a non-power-of-two Q (37차: masked lanes)")
     check("def tail_ok" in src and src.count("tail_ok()") >= 3,
           "the kpool tail builder's dormancy is asserted at plan build and on every verification")
     elig = ast.get_source_segment(src, funcs["_eligible"])
