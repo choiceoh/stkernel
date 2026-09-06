@@ -23,6 +23,14 @@ LEVER=${LEVER:-$LOGD/ab-lever2.sh}
 S=${FLEET_SESSION:-chain}
 CHAIN_FLOOR_N=${CHAIN_FLOOR_N:-3}
 cd "$REPO" || exit 1
+cleanup_failure() {
+  local rc=$?
+  if [ "$rc" != 0 ] && [ -n "${n:-}" ] && bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
+    LEGS=none bash "$LEVER" "${n}RECOVER" "" 2>&1 | tail -12
+  fi
+  return "$rc"
+}
+trap cleanup_failure EXIT
 
 declare -a NAMES=() KNOBS=()
 declare -A AFTER=() ARMLEGS=()
@@ -43,10 +51,15 @@ for i in "${!NAMES[@]}"; do
   n=${NAMES[$i]}; k=${KNOBS[$i]}
   [ -z "$k" ] && had_defaults=1
   echo "== $(date +%T) arm $n: ${k:-(defaults)}${ARMLEGS[$n]:+  legs=${ARMLEGS[$n]}}"
-  LEGS="${ARMLEGS[$n]:-onepass}" bash "$LEVER" "$n" "$k" 2>&1 | tail -40
+  LEGS="${ARMLEGS[$n]:-onepass}" bash "$LEVER" "$n" "$k" 2>&1 | tail -40 || exit $?
+  # Publish while this arm's evidence is fresh, before another boot/check.
+  # A missing baseline remains incomplete until the final pass below.
+  if [ -n "$k" ] && [ "${ARMLEGS[$n]:-onepass}" != none ]; then
+    python3 bench/judge.py "$n" --write --fail-invalid ${FLEET_REHEARSE:+--allow-rehearsal} || exit $?
+  fi
   if [ -n "${AFTER[$n]:-}" ]; then
     echo "== $(date +%T) after $n: ${AFTER[$n]}"
-    bash -c "${AFTER[$n]}" 2>&1 | tail -20
+    bash -c "${AFTER[$n]}" 2>&1 | tail -20 || exit $?
   fi
   # between arms: a short queued probe may use this idle serving; we keep our place
   [ -x "$FLEET" ] && bash "$FLEET" yield "$S" 15 2>&1 | sed 's/^/   /'
@@ -54,25 +67,18 @@ done
 
 # the build's baseline: a defaults arm above counts; else take one only while
 # the floor is thin AND nobody boots behind us; else a bare restore if needed
-nb=$(python3 - <<'PY' 2>/dev/null
-import sys
-sys.path.insert(0, "bench")
-from baseline import load, for_build, is_baseline, deployed_build, deployed_git
-rows = load(); b = deployed_build(); g = deployed_git()
-print(sum(1 for r in for_build(rows, b, g) if is_baseline(r)[0] and not r.get("rehearsal")))
-PY
-)
 last=${NAMES[$((${#NAMES[@]} - 1))]}
+nb=$(python3 bench/baseline.py --count-for "$last") || exit $?
 if [ "$had_defaults" = 1 ] && [ -z "${KNOBS[$((${#NAMES[@]} - 1))]}" ]; then
   echo "== $(date +%T) production stays on the last arm ($last = defaults)"
 elif [ "${nb:-0}" -lt "$CHAIN_FLOOR_N" ]; then
   # the baseline SAMPLE is a measurement, not a restore: only a bare restore is
   # skippable when a boot job follows (FUS7 #3 lost its verdict to that confusion)
   echo "== $(date +%T) defaults arm ${last}BASE (baseline sample ${nb:-0}/$CHAIN_FLOOR_N on this build; the verdict needs it)"
-  bash "$LEVER" "${last}BASE" "" 2>&1 | tail -30
+  bash "$LEVER" "${last}BASE" "" 2>&1 | tail -30 || exit $?
 elif bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
   echo "== $(date +%T) restore boot (defaults, no leg; the build has ${nb:-0} baseline samples)"
-  LEGS=none bash "$LEVER" "${last}RESTORE" "" 2>&1 | tail -12
+  LEGS=none bash "$LEVER" "${last}RESTORE" "" 2>&1 | tail -12 || exit $?
 else
   echo "== $(date +%T) restore skipped: a boot job follows and replaces this serving"
 fi

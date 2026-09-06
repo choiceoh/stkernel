@@ -75,7 +75,7 @@ else
   # cold row IS this harness's cold-tax channel. Export 0 unless the caller
   # explicitly wants to test the warmup itself.
   export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"
-  env $LEVER_ENV bash launchers/start-glm53-nvfp4-tp4.sh 2>&1 | tail -40 || true
+  env $LEVER_ENV bash launchers/start-glm53-nvfp4-tp4.sh 2>&1 | tail -40 || snap "launcher failed"
 fi
 echo "== [$ARM] wait for health $(date +%T) =="
 up=0
@@ -123,7 +123,11 @@ if has onepass; then
   # only its fallback, so hand it the profile's value when the caller has none.
   _k=$(sed -nE 's/^SPEC_K=([0-9]+).*/\1/p' profiles/glm53.env | tail -1)
   echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} k=${SPEC_K:-${_k:-7}} =="
-  env SPEC_K="${SPEC_K:-${_k:-7}}" BENCH_MODEL=glm-5.3-flash python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1; grep -vE "^\s*$" /tmp/leg.$$ | tail -40; chk onepass /tmp/leg.$$
+  env SPEC_K="${SPEC_K:-${_k:-7}}" BENCH_MODEL=glm-5.3-flash python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1
+  leg_rc=$?
+  grep -vE "^\s*$" /tmp/leg.$$ | tail -40
+  [ "$leg_rc" = 0 ] || snap "onepass exited $leg_rc"
+  chk onepass /tmp/leg.$$
   echo "== [$ARM] acceptance counters =="
   curl -s -m 5 "http://$HEAD:8000/metrics" | grep -E "^vllm:spec_decode_num_accepted_tokens_per_pos_total|^vllm:spec_decode_num_(drafts|draft_tokens|accepted_tokens)_total" | sed "s/{[^}]*}//"
 fi

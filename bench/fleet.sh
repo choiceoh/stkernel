@@ -3,6 +3,9 @@
 # "멀티세션간 플릿 테스트 대기 및 순번 같은거 프로그램 만들어").
 #
 # QUICKSTART (six lines; the rest of this header is the reference)
+#   fleet.sh submit agent spec.json                       async CPU / single pair / probe, deduplicated
+#   fleet.sh result ID | inbox agent --after CURSOR        shared evidence; no GPU wait in the agent
+#   See bench/EXPERIMENTS.md for CPU prerequisites and repeat samples.
 #   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
 #   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
 #   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
@@ -95,6 +98,12 @@ set -uo pipefail
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 REPO=${REPO:-/home/choiceoh/stkernel}
+# Submissions return immediately. The detached runner comes back through run,
+# preserving preflight, CPU classification and the existing GPU reservation.
+case "${1:-}" in
+  submit|result|inbox|jobs|stats) exec python3 "$REPO/bench/experiments.py" "$@";;
+  await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
+esac
 # "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
 # session spends a boot on a defaults arm, say whether the deployed build already
 # has one. bench/baseline.py reads the onepass records (overlay stamp + knobs).

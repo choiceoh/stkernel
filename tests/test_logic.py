@@ -11295,6 +11295,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "defaults sample only while the floor is thin, judge per arm")
 
 
+def test_fleet_experiment_behaviors():
+    import unittest
+    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet_experiments.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
+    return result.testsRun
+
+
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
 
@@ -11431,5 +11439,6 @@ if __name__ == "__main__":
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
     test_fleet_reservation_tooling_contracts()
+    fleet_regressions = test_fleet_experiment_behaviors()
     regressions = test_megakernel_regression_suite()
-    print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")
+    print(f"all OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")
