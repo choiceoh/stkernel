@@ -137,7 +137,11 @@ def _copy_pad(X, Out, N: tl.constexpr, OUT_N: tl.constexpr,
 def _decode(Packed, Scale, Out, N: tl.constexpr, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     offsets = block * BLOCK + tl.arange(0, BLOCK)
-    q = tl.load(Packed + offsets, offsets < N, other=0).to(tl.float32)
+    # 39차 P2A: `other=0` on an FP8 pointer does not compile on the image's
+    # Triton ("cannot cast int32[constexpr] to fp8e4nv") -- the first SP-
+    # admitted prefill killed the boot. Masked lanes are never stored, so no
+    # fill value is needed.
+    q = tl.load(Packed + offsets, mask=offsets < N).to(tl.float32)
     scale = tl.load(Scale + block)
     tl.store(Out + offsets, q * scale, offsets < N)
 
