@@ -100,16 +100,21 @@ def _check(tensor):
     return comm
 
 
-@triton.jit
-def _block_absmax(X, Max, N: tl.constexpr, BLOCK: tl.constexpr):
+# 39차 P2A2: the element counts were tl.constexpr, so every distinct prefill
+# length (every prompt) recompiled six kernels -- the 2K request after the
+# 8192-token warm-up paid 0.5 s (cold 1.48 s vs warm 0.87 s). They are
+# runtime integers now (do_not_specialize keeps Triton from re-specializing
+# on divisibility); the masks were already runtime.
+@triton.jit(do_not_specialize=["N"])
+def _block_absmax(X, Max, N, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     offsets = block * BLOCK + tl.arange(0, BLOCK)
     x = tl.load(X + offsets, offsets < N, other=0).to(tl.float32)
     tl.store(Max + block, tl.max(tl.abs(x), 0))
 
 
-@triton.jit
-def _encode(X, Max, Packed, Scale, N: tl.constexpr, OUT_N: tl.constexpr,
+@triton.jit(do_not_specialize=["N", "OUT_N"])
+def _encode(X, Max, Packed, Scale, N, OUT_N,
             LIMIT: tl.constexpr, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     offsets = block * BLOCK + tl.arange(0, BLOCK)
@@ -125,16 +130,16 @@ def _encode(X, Max, Packed, Scale, N: tl.constexpr, OUT_N: tl.constexpr,
     tl.store(Scale + block, scale)
 
 
-@triton.jit
-def _copy_pad(X, Out, N: tl.constexpr, OUT_N: tl.constexpr,
+@triton.jit(do_not_specialize=["N", "OUT_N"])
+def _copy_pad(X, Out, N, OUT_N,
               BLOCK: tl.constexpr):
     offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     x = tl.load(X + offsets, offsets < N, other=0)
     tl.store(Out + offsets, x, offsets < OUT_N)
 
 
-@triton.jit
-def _decode(Packed, Scale, Out, N: tl.constexpr, BLOCK: tl.constexpr):
+@triton.jit(do_not_specialize=["N"])
+def _decode(Packed, Scale, Out, N, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     offsets = block * BLOCK + tl.arange(0, BLOCK)
     # 39차 P2A: `other=0` on an FP8 pointer does not compile on the image's
@@ -146,8 +151,8 @@ def _decode(Packed, Scale, Out, N: tl.constexpr, BLOCK: tl.constexpr):
     tl.store(Out + offsets, q * scale, offsets < N)
 
 
-@triton.jit
-def _pack_gather(X, Packed, Scale, N: tl.constexpr, BLOCK: tl.constexpr):
+@triton.jit(do_not_specialize=["N"])
+def _pack_gather(X, Packed, Scale, N, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     offsets = block * BLOCK + tl.arange(0, BLOCK)
     x = tl.load(X + offsets, offsets < N, other=0).to(tl.float32)
@@ -157,9 +162,9 @@ def _pack_gather(X, Packed, Scale, N: tl.constexpr, BLOCK: tl.constexpr):
     tl.store(Scale + block, scale)
 
 
-@triton.jit
-def _unpack_gather(Packed, Scales, Out, LOCAL_N: tl.constexpr,
-                   PAYLOAD_BYTES: tl.constexpr, BLOCK: tl.constexpr):
+@triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
+def _unpack_gather(Packed, Scales, Out, LOCAL_N,
+                   PAYLOAD_BYTES, BLOCK: tl.constexpr):
     block = tl.program_id(0)
     local_blocks = LOCAL_N // BLOCK
     rank = block // local_blocks
