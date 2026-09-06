@@ -179,21 +179,20 @@ fi
 DFLASH2="${DFLASH2:-1}"
 # 37차: overridable for a retrained drafter (the night round's candidate).
 DRAFT_HOST_PATH="${DRAFT_HOST_PATH:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}"
-# DFlash/DSpark synthesize their context KV from target hidden states. Tokens
-# restored by automatic prefix caching do not run through the target, so this
-# image leaves their draft KV slots unwritten while draft attention still
-# reads them. That is upstream vLLM #47926: long shared-prefix workloads can
-# collapse to position-0-only acceptance. Until that draft PR's four-file
-# state/block-table repair lands, fail closed and make every prompt token flow
-# through the target. PREFIX_CACHE=1 is an explicit throughput-first rollback;
-# it may restore TTFT reuse at the cost of DFlash2 acceptance on cache hits.
+# Prefix caching: the profile turns it on (39차 -- the hybrid-APC coordinator
+# module and prep-fused's mamba align-mode support; 92-99.6 % reuse on
+# same-prefix re-asks, warm-hit acceptance equal to cold because the drafter's
+# SWA window blocks are reused with the hit). Without a profile this launcher
+# still defaults to off: a stock image scores 0 hits on the hybrid layout, and
+# DFlash/DSpark draft KV for tokens restored from the cache is unwritten
+# (upstream vLLM #47926) whenever the drafter's own blocks are not reused.
 PREFIX_CACHE="${PREFIX_CACHE:-0}"
 case "$PREFIX_CACHE" in
   0) PREFIX_CACHE_FLAG="--no-enable-prefix-caching" ;;
   1) PREFIX_CACHE_FLAG="--enable-prefix-caching" ;;
   *) echo "ABORT: PREFIX_CACHE must be 0 or 1 (got $PREFIX_CACHE)" >&2; exit 2 ;;
 esac
-[ "$PREFIX_CACHE" = 1 ] || echo "prefix-cache: disabled for DFlash2 draft-KV safety"
+[ "$PREFIX_CACHE" = 1 ] && echo "prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)" || echo "prefix-cache: disabled for DFlash2 draft-KV safety"
 # The former AUDIT overlay replaced V1 files, but this image runs V2 Model
 # Runner.  Refuse the old switch instead of claiming an audit that cannot run.
 [ "${AUDIT:-0}" = 0 ] || {

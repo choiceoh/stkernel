@@ -5890,7 +5890,7 @@ def test_dflash2_prefix_cache_fail_closed() -> None:
     ).read()
     profile = open("profiles/glm53.env", encoding="utf-8").read()
 
-    check("PREFIX_CACHE=0" in profile,
+    check("\nPREFIX_CACHE=1\n" in profile,  # 39차: promoted after APC4 (hits, warm acceptance, decode restored)
           "the DFlash2 profile must prefer valid draft KV over prefix TTFT reuse")
     check('PREFIX_CACHE="${PREFIX_CACHE:-0}"' in launcher,
           "a profile-less DFlash2 launch must also fail closed")

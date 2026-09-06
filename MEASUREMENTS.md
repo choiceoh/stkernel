@@ -2209,6 +2209,10 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - onepass DF3b: 프리필 32K +0.3% / 128K −0.2% (불변), 32K 디코드 −2.3%, **128K 디코드 −33%** — DF1 과 같은 이상(창 [20.9, 21.4, 10.0, 14.5, 14.0]: 답변 두 창 뒤부터 저하). DF2·DF3 는 정상. 순차 요청 구간이라 스케줄러는 손을 대지 않는 곳이고(prep-fused DRIFT/DISARM 없음, 헤드 노드 피어 CPU 작업 없음), onepass 의 마지막·최장 단계에서만 나타나므로 연속 부하 뒤의 GPU 클럭/온도 스로틀 가설을 세움 → 이후 체인(VIS·DF4)의 onepass 동안 4 노드 `clock-sample.sh`(SM 클럭·온도·전력·스로틀 사유 5 s) 로 판별.
 - **v3.1**(PR #409): alternate 모드의 청크를 프롬프트 위치에 비례해 키움(`chunk = 1152 × pos/32768`, 상한 4,608, 128 배수; 32K 1,152 → 64K 2,304 → 100K 3,456). DF4 팔 큐.
 
+**APC4**(`PREFIX_CACHE=1` + prep-fused align 수정 둘 #399/#405, 20:18) — prep-fused 가 align 모드에서 plan 을 세움(`kernel=triton (mamba align mode: run_prep gathers state column 0)`, DRIFT/DISARM 없음). 히트/정답 전과 같음(32K warm 1.38 s 92% / warm2 0.37 s 99.6%; 100K warm 2.11 s 96% / warm2 1.12 s 98%; 6/6), 수용률 43.7~52.3%(잡음폭). onepass: **디코드 복원** 32K +2.3% / 128K −3.5% (21.4 step/s), 프리필 2K +9.6% / 32K −9.9%(2,768) / 128K −0.4%(2,927), 9/9, 0. tok/step 3.19(raw acc 43.8%) 는 낮은 쪽 표본.
+- APC 켠 네 부팅의 32K cold 프리필: −8.1 / −3.2 / −5.2 / −9.9% (평균 −6.6%), 128K 는 ±1%. align 모드 청크(6,912) 의 비용이며 `MAX_BATCHED=9216`(APC3) 로도 안 줄었다.
+- **판정: `PREFIX_CACHE=1` 기본값 승격.** 같은 접두사 재질문(멀티턴)의 TTFT 34 → 1.1~2.7 s(100K), 12.5 → 0.4~1.4 s(32K) 가 cold 32K 프리필 −7% 를 압도하고, 디코드·품질·warm 수용률이 유지된다. 롤백은 `PREFIX_CACHE=0`. 후속: CUDA run_prep 의 상태 열 이동 지원(호스트 ~12 µs/스텝 회수), 수용률 표본 누적.
+
 **비전 "행"의 원인**(운영자 "비전 킬 때마다 행 걸렸다" → "그 문제도 해결해봐"): 체크포인트에는 비전 타워가 있고(`model.visual.*` 347개) 우리 모델 오버레이의 멀티모달 코드는 이미지와 동일. 런처 `MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"` 의 매개변수 전개가 첫 `}` 에서 끝나 마지막 `}` 를 리터럴로 덧붙인다 → 덮어쓴 값이 `{"image":1,"video":0}}` (JSON `Extra data`) → vLLM argparse 사망 → 런처는 헬스를 예산(3,000 s)만큼 폴링 = "매번 행". 기본값 대입을 전개 밖으로 옮김(PR #408), 격리 노브 셋(`MM_ENCODER_TP_MODE`/`MM_ENCODER_ATTN`/`SKIP_MM_PROFILING`)과 `probes/vision_probe.py` 추가. 진단 체인 VIS(이미지 1 + 프로브 + 텍스트 onepass, 정말 멈추면 4 노드 py-spy 스냅샷) 큐.
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
