@@ -233,6 +233,9 @@ def _build():
         f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
         # the v2 (non-persistent) lane's ring depth; 2..4 keep two blocks/SM
         f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+        f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
+        f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
+        f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
     ] + (["-DMK_PHASE_TS=1"]
          if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
     _EXT = load(
@@ -259,6 +262,9 @@ def rebuild(src_path: str) -> dict:
         f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
         f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
         f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+        f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
+        f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
+        f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
     ]
     t0 = time.perf_counter()
     ext = load(name=f"glm53_megakernel_{md5}", sources=[src_path],

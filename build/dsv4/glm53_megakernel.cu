@@ -226,6 +226,29 @@ __device__ __forceinline__ float mk_act_rcp(float sc) { return __frcp_rn(sc); }
 __device__ __forceinline__ uint8_t mk_f32_to_e4m3(float x) {
   return (uint8_t)__nv_cvt_float_to_fp8(x, __NV_SATFINITE, __NV_E4M3);
 }
+// BEGIN MK_FP8_PACK4 -- also compiled verbatim by mk_fp8_pack_bench.py.
+#ifndef MK_FP8_PACK2_DEF
+#define MK_FP8_PACK2_DEF 0
+#endif
+__device__ __forceinline__ uint32_t mk_f32x4_to_e4m3(
+    float x0, float x1, float x2, float x3) {
+#if MK_FP8_PACK2_DEF
+  // CUDA's x2 converter puts x in the low byte and y in the high byte.
+  // Keep the FP32 inputs and SATFINITE/RN conversion; an intermediate half
+  // conversion would double-round values near an e4m3 midpoint.
+  const uint32_t lo = __nv_cvt_float2_to_fp8x2(
+      make_float2(x0, x1), __NV_SATFINITE, __NV_E4M3);
+  const uint32_t hi = __nv_cvt_float2_to_fp8x2(
+      make_float2(x2, x3), __NV_SATFINITE, __NV_E4M3);
+  return lo | (hi << 16);
+#else
+  return (uint32_t)__nv_cvt_float_to_fp8(x0, __NV_SATFINITE, __NV_E4M3)
+      | ((uint32_t)__nv_cvt_float_to_fp8(x1, __NV_SATFINITE, __NV_E4M3) << 8)
+      | ((uint32_t)__nv_cvt_float_to_fp8(x2, __NV_SATFINITE, __NV_E4M3) << 16)
+      | ((uint32_t)__nv_cvt_float_to_fp8(x3, __NV_SATFINITE, __NV_E4M3) << 24);
+#endif
+}
+// END MK_FP8_PACK4
 // cp.async (sm_80 lineage, legal on sm_121a) -- 16B global->shared copies
 // that do not occupy a register while in flight. wait_group<N> stalls until
 // at most N of THIS thread's committed groups are still pending; the
@@ -359,6 +382,16 @@ static_assert(W4_RAW_NBUF2 >= 2 && W4_RAW_NBUF2 <= 5, "v2 raw stages");
 static_assert(W4_RAW_NBUF2 - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
 constexpr int GEMM2_SMEM = MK_SMEM_ALIGN + 2 * 32 * SMEM_A_PITCH +
                            2 * 32 * 4 + W4_RAW_NBUF2 * W4_RAW_BYTES;  // 37,120 at 3
+#ifndef MK_GEMM_TRANSPOSE_M8_DEF
+#define MK_GEMM_TRANSPOSE_M8_DEF 0
+#endif
+#ifndef MK_GEMM_COMPACT_M8_DEF
+#define MK_GEMM_COMPACT_M8_DEF 0
+#endif
+constexpr bool MK_COMPACT_M8 = MK_GEMM_TRANSPOSE_M8_DEF && MK_GEMM_COMPACT_M8_DEF;
+constexpr int GEMM2_M8_SMEM = MK_COMPACT_M8
+    ? MK_SMEM_ALIGN + 2 * 8 * SMEM_A_PITCH + 2 * 32 * 4 + W4_RAW_NBUF2 * W4_RAW_BYTES
+    : GEMM2_SMEM;
 // Two blocks per SM is the point of this kernel: the SM has 102,400 B of
 // shared memory and reserves ~1 KB per resident block.
 static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");
@@ -518,11 +551,18 @@ __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
 // LR: the low-rank-correction instantiation (33차 lever 4). The plain one
 // carries none of its code, scratch or waits -- the production path must
 // not pay for a lever that is off.
-template <int RQ, bool LR>
-__global__ void __launch_bounds__(MK_THREADS, 2)
+template <int RQ, bool LR, bool COMPACT = false>
+__global__ void __launch_bounds__(MK_THREADS, (MK_COMPACT_M8 && COMPACT) ? 3 : 2)
 mk_gemm2_kernel(const MKGemm2Ctx c) {
   static_assert(RQ == 1 || RQ == 2 || RQ == 4, "rows per warp");
   constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present
+  // C=1 verifies six tokens. Put W on the 16-row MMA operand and X on
+  // the 8-column operand: one W[16,32] @ X[8,32]^T instead of two
+  // X[16,32] @ W[8,32]^T operations. Quantization and K order are shared.
+  constexpr bool TRANSPOSE = MK_GEMM_TRANSPOSE_M8_DEF && RQ == 1 && !LR;
+  constexpr int NJ = TRANSPOSE ? 1 : 2;
+  static_assert(!COMPACT || (RQ == 1 && !LR), "compact specialization is ordinary M<=8 only");
+  constexpr int A_ROWS = (TRANSPOSE && MK_COMPACT_M8 && COMPACT) ? 8 : 32;
   constexpr int LPR = 32 / RQ;            // lanes per quantized row
   constexpr int EPL = KSTEP / LPR;        // x elements per lane: 4, 8, 16
   extern __shared__ uint8_t smem[];
@@ -535,8 +575,8 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     const uint32_t sb = (uint32_t)__cvta_generic_to_shared(sb0);
     sb0 += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);
   }
-  uint8_t* saq = sb0;                                   // [2][32][128] swizzled e4m3 A
-  float* sxs = (float*)(saq + 2 * 32 * SMEM_A_PITCH);   // [2][32] row scales, wgs folded
+  uint8_t* saq = sb0;                                   // [2][A_ROWS][128] swizzled e4m3 A
+  float* sxs = (float*)(saq + 2 * A_ROWS * SMEM_A_PITCH);   // [2][32] row scales, wgs folded
   uint8_t* sraw = (uint8_t*)(sxs + 2 * 32);             // [NB][W4_RAW_BYTES]
   __shared__ int s_last;
 
@@ -626,7 +666,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   auto quant_x = [&](int buf) {
     if (c.a_ready) {  // stage the published group; nothing to quantize
       if (arow < c.m) {
-        uint8_t* dst = saq + buf * (32 * SMEM_A_PITCH) +
+        uint8_t* dst = saq + buf * (A_ROWS * SMEM_A_PITCH) +
                        (arow >> 4) * 16 * SMEM_A_PITCH + (arow & 15) * SMEM_A_PITCH;
         *(uint4*)(dst + mk_swz(arow & 15, achunk * 16)) = areg;
         if (achunk == 0) sxs[buf * 32 + arow] = asc * c.wgs;
@@ -654,15 +694,14 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     // one rcp.rn per row (the IEEE divide's slow-path call showed on every
     // row of every k-block in the SASS); the twin does v * (1 / sc) too
     const float rsc = mk_act_rcp(sc);
-    uint8_t* dst = saq + buf * (32 * SMEM_A_PITCH) +
+    uint8_t* dst = saq + buf * (A_ROWS * SMEM_A_PITCH) +
                    (qrow >> 4) * 16 * SMEM_A_PITCH + (qrow & 15) * SMEM_A_PITCH +
                    mk_swz(qrow & 15, qu * EPL);  // EPL <= 16: inside one chunk
 #pragma unroll
     for (int w = 0; w < EPL / 4; ++w) {
-      uint32_t pack = 0;
-#pragma unroll
-      for (int q = 0; q < 4; ++q)
-        pack |= (uint32_t)mk_f32_to_e4m3(v[4 * w + q] * rsc) << (8 * q);
+      const uint32_t pack = mk_f32x4_to_e4m3(
+          v[4 * w] * rsc, v[4 * w + 1] * rsc,
+          v[4 * w + 2] * rsc, v[4 * w + 3] * rsc);
       *(uint32_t*)(dst + 4 * w) = pack;
     }
     if (qu == 0) sxs[buf * 32 + qrow] = sc * c.wgs;
@@ -672,11 +711,11 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   const int g = lane >> 2, q = lane & 3;
   const int warp = threadIdx.x >> 5;
 
-  float acc[MT][2][4];
+  float acc[MT][NJ][4];
 #pragma unroll
   for (int i = 0; i < MT; ++i)
 #pragma unroll
-    for (int j = 0; j < 2; ++j)
+    for (int j = 0; j < NJ; ++j)
 #pragma unroll
       for (int e = 0; e < 4; ++e) acc[i][j][e] = 0.0f;
 
@@ -694,12 +733,12 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // (<= 1 bf16 ulp of the fp32 reference) is the contract.
   auto mma_fold = [&](int rbuf, int abuf) {
     const uint8_t* rr = sraw + rbuf * W4_RAW_BYTES;
-    const uint8_t* sa = saq + abuf * (32 * SMEM_A_PITCH);
-    float kacc[MT][2][4];
+    const uint8_t* sa = saq + abuf * (A_ROWS * SMEM_A_PITCH);
+    float kacc[MT][NJ][4];
 #pragma unroll
     for (int i = 0; i < MT; ++i)
 #pragma unroll
-      for (int j = 0; j < 2; ++j)
+      for (int j = 0; j < NJ; ++j)
 #pragma unroll
         for (int e = 0; e < 4; ++e) kacc[i][j][e] = 0.0f;
     // per W row: the LUT pairs of groups 2q (words 0, 1) and 2q+1 (2, 3)
@@ -727,14 +766,17 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       const int wsel = (ks + q) & 3;             // this lane's word this step
       const int koff = 32 * q + 8 * wsel;        // its natural elements
       uint32_t a[MT][4];
+      uint32_t wb[2][2];
+      if constexpr (!TRANSPOSE) {
 #pragma unroll
-      for (int i = 0; i < MT; ++i) {
-        const uint8_t* base = sa + i * 16 * SMEM_A_PITCH;
-        const int o0 = mk_swz(g, koff), o1 = mk_swz(g, koff + 4);
-        a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o0);
-        a[i][1] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o0);
-        a[i][2] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o1);
-        a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o1);
+        for (int i = 0; i < MT; ++i) {
+          const uint8_t* base = sa + i * 16 * SMEM_A_PITCH;
+          const int o0 = mk_swz(g, koff), o1 = mk_swz(g, koff + 4);
+          a[i][0] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o0);
+          a[i][1] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o0);
+          a[i][2] = *(const uint32_t*)(base + g * SMEM_A_PITCH + o1);
+          a[i][3] = *(const uint32_t*)(base + (g + 8) * SMEM_A_PITCH + o1);
+        }
       }
 #pragma unroll
       for (int j = 0; j < 2; ++j) {
@@ -745,29 +787,59 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
                             __byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u);
         const uint32_t b1 = __byte_perm(l0, l1, (w >> 16) & 0x7777u) |
                             __byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u);
+        if constexpr (TRANSPOSE) {
+          wb[j][0] = b0;
+          wb[j][1] = b1;
+        } else {
 #pragma unroll
-        for (int i = 0; i < MT; ++i) {
-          asm volatile(
-              "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
-              "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
-              : "+f"(kacc[i][j][0]), "+f"(kacc[i][j][1]),
-                "+f"(kacc[i][j][2]), "+f"(kacc[i][j][3])
-              : "r"(a[i][0]), "r"(a[i][1]), "r"(a[i][2]), "r"(a[i][3]),
-                "r"(b0), "r"(b1));
+          for (int i = 0; i < MT; ++i) {
+            asm volatile(
+                "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+                "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+                : "+f"(kacc[i][j][0]), "+f"(kacc[i][j][1]),
+                  "+f"(kacc[i][j][2]), "+f"(kacc[i][j][3])
+                : "r"(a[i][0]), "r"(a[i][1]), "r"(a[i][2]), "r"(a[i][3]),
+                  "r"(b0), "r"(b1));
+          }
         }
       }
+      if constexpr (TRANSPOSE) {
+        // Invalid columns must be zero; the quantizer publishes only m
+        // rows and CUDA graph replay may leave older rows in this buffer.
+        uint32_t x0 = 0, x1 = 0;
+        if (g < c.m) {
+          x0 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff));
+          x1 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff + 4));
+        }
+        asm volatile(
+            "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+            "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+            : "+f"(kacc[0][0][0]), "+f"(kacc[0][0][1]),
+              "+f"(kacc[0][0][2]), "+f"(kacc[0][0][3])
+            : "r"(wb[0][0]), "r"(wb[1][0]), "r"(wb[0][1]), "r"(wb[1][1]),
+              "r"(x0), "r"(x1));
+      }
     }
+    if constexpr (TRANSPOSE) {
+      const float s0 = (2 * q < c.m) ? sxs[abuf * 32 + 2 * q] : 0.0f;
+      const float s1 = (2 * q + 1 < c.m) ? sxs[abuf * 32 + 2 * q + 1] : 0.0f;
+      acc[0][0][0] += kacc[0][0][0] * s0;
+      acc[0][0][1] += kacc[0][0][1] * s1;
+      acc[0][0][2] += kacc[0][0][2] * s0;
+      acc[0][0][3] += kacc[0][0][3] * s1;
+    } else {
 #pragma unroll
-    for (int i = 0; i < MT; ++i) {
-      const int r0 = i * 16 + g, r1 = r0 + 8;
-      const float s0 = (r0 < c.m) ? sxs[abuf * 32 + r0] : 0.0f;
-      const float s1 = (r1 < c.m) ? sxs[abuf * 32 + r1] : 0.0f;
+      for (int i = 0; i < MT; ++i) {
+        const int r0 = i * 16 + g, r1 = r0 + 8;
+        const float s0 = (r0 < c.m) ? sxs[abuf * 32 + r0] : 0.0f;
+        const float s1 = (r1 < c.m) ? sxs[abuf * 32 + r1] : 0.0f;
 #pragma unroll
-      for (int j = 0; j < 2; ++j) {
-        acc[i][j][0] += kacc[i][j][0] * s0;
-        acc[i][j][1] += kacc[i][j][1] * s0;
-        acc[i][j][2] += kacc[i][j][2] * s1;
-        acc[i][j][3] += kacc[i][j][3] * s1;
+        for (int j = 0; j < 2; ++j) {
+          acc[i][j][0] += kacc[i][j][0] * s0;
+          acc[i][j][1] += kacc[i][j][1] * s0;
+          acc[i][j][2] += kacc[i][j][2] * s1;
+          acc[i][j][3] += kacc[i][j][3] * s1;
+        }
       }
     }
   };
@@ -846,10 +918,8 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
           amax = fmaxf(amax, __shfl_xor_sync(~0u, amax, off));
         const float sc = mk_act_scale(amax);
         const float rsc = mk_act_rcp(sc);  // 33차 lever 1: exact scale  // exact: sc is a power of two
-        uint32_t pack = 0;
-#pragma unroll
-        for (int e = 0; e < 4; ++e)
-          pack |= (uint32_t)mk_f32_to_e4m3(v[e] * rsc) << (8 * e);
+        const uint32_t pack = mk_f32x4_to_e4m3(
+            v[0] * rsc, v[1] * rsc, v[2] * rsc, v[3] * rsc);
         *(uint32_t*)(g_mk2_aq + ((size_t)pair * 32 + t) * KSTEP + lane * 4) = pack;
         if (lane == 0) g_mk2_axs[t * KBLK_MAX + pair] = sc;
       }
@@ -858,14 +928,26 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
 
   // ---- epilogue: one walk over the fragment's real rows / cols, two stores
   auto store_tile = [&](auto&& put) {  // put(row, col, value)
+    if constexpr (TRANSPOSE) {
+      const int cb = nt * 128 + warp * 16 + g;
+      if (2 * q < c.m) {
+        put(2 * q, cb, acc[0][0][0]);
+        put(2 * q, cb + 8, acc[0][0][2]);
+      }
+      if (2 * q + 1 < c.m) {
+        put(2 * q + 1, cb, acc[0][0][1]);
+        put(2 * q + 1, cb + 8, acc[0][0][3]);
+      }
+    } else {
 #pragma unroll
-    for (int i = 0; i < MT; ++i) {
+      for (int i = 0; i < MT; ++i) {
 #pragma unroll
-      for (int j = 0; j < 2; ++j) {
-        const int r0 = i * 16 + g, r1 = r0 + 8;
-        const int cb = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
-        if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }
-        if (r1 < c.m) { put(r1, cb, acc[i][j][2]); put(r1, cb + 1, acc[i][j][3]); }
+        for (int j = 0; j < 2; ++j) {
+          const int r0 = i * 16 + g, r1 = r0 + 8;
+          const int cb = nt * 128 + warp * 16 + j * 8 + (lane & 3) * 2;
+          if (r0 < c.m) { put(r0, cb, acc[i][j][0]); put(r0, cb + 1, acc[i][j][1]); }
+          if (r1 < c.m) { put(r1, cb, acc[i][j][2]); put(r1, cb + 1, acc[i][j][3]); }
+        }
       }
     }
   };
@@ -2201,6 +2283,7 @@ bool g_attrs_set = false;
 // resident blocks per SM the device reports for mk_gemm2_kernel (2 by
 // construction of GEMM2_SMEM; the v2 unit rule sizes its grid from it)
 int g_gemm2_bps = 0;
+int g_gemm2_m8_bps = 0;
 int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
 void set_kernel_attrs() {
@@ -2224,6 +2307,15 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM));
   if (g_gemm2_bps < 1) g_gemm2_bps = 1;
+  if constexpr (MK_COMPACT_M8) {
+    MK_CHECK_CUDA(cudaFuncSetAttribute(
+        mk_gemm2_kernel<1, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_M8_SMEM));
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM));
+    if (g_gemm2_m8_bps < 1) g_gemm2_m8_bps = 1;
+  } else {
+    g_gemm2_m8_bps = g_gemm2_bps;
+  }
   {  // the CURRENT device, the one the occupancy above and the launches
      // use -- not ordinal 0 (mk_probe_device asks the same way)
     int dev = 0;
@@ -2306,7 +2398,15 @@ int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // unit's ring fill and first quant are paid per unit; k = 512 stays whole).
 // Then the contract clamps: ksr <= kblk (every slice non-empty), ksr <=
 // MK2_KSR_MAX, and the fp32 partial must fit (m x n x ksr floats).
-int mk_choose_ksr2(int m, int n, int k) {
+// Only the two C=1 shapes that won both warm and cold same-source A/B.
+// More residency alone lost on the small shared-expert GEMMs and on the
+// 51-tile in-projection. They retain the two-block transposed kernel.
+bool mk_use_compact_m8(int m, int n, int k, bool lr = false) {
+  return MK_COMPACT_M8 && !lr && m == 6 &&
+         ((n == 4096 && k == 2048) || (n == 6144 && k == 4096));
+}
+
+int mk_choose_ksr2(int m, int n, int k, bool lr = false) {
   const int nblk = n / SMEM_W_ROWS, kblk = k / KSTEP;
   if (g_probe_ksr2 < 0) {
     const char* e = getenv("VLLM_GLM53_MK_KSR2");
@@ -2316,7 +2416,8 @@ int mk_choose_ksr2(int m, int n, int k) {
   if (g_probe_ksr2 > 0) {
     ksr = g_probe_ksr2;
   } else {
-    const int slots = (g_gemm2_bps > 0 ? g_gemm2_bps : 2) *
+    const int bps = mk_use_compact_m8(m, n, k, lr) ? g_gemm2_m8_bps : g_gemm2_bps;
+    const int slots = (bps > 0 ? bps : 2) *
                       (g_mk_sms > 0 ? g_mk_sms : 48);
     const int kmax = kblk / 4 > 1 ? kblk / 4 : 1;
     if (slots % nblk == 0 && slots / nblk <= kmax) {
@@ -2355,7 +2456,9 @@ void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
       mk_launch(mk_gemm2_kernel<4, true>, grid2, GEMM2_SMEM, stream, c2);
     return;
   }
-  if (c2.m <= 8)
+  if (mk_use_compact_m8(c2.m, c2.n, c2.k))
+    mk_launch(mk_gemm2_kernel<1, false, true>, grid2, GEMM2_M8_SMEM, stream, c2);
+  else if (c2.m <= 8)
     mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);
   else if (c2.m <= 16)
     mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);
@@ -2454,7 +2557,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.lr_r = (int)lr_r;
   c2.lr_slot = bg != 0 ? 1 : 0;
   const int nblk = c2.n / SMEM_W_ROWS;
-  c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k);
+  c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -2709,7 +2812,7 @@ std::vector<int64_t> mk_gemm2_plan(int64_t m, int64_t n, int64_t k) {
   const int n_pad = (int)(((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS);
   const int ksr = mk_choose_ksr2((int)m, n_pad, (int)k);
   return {(int64_t)ksr, (int64_t)((n_pad / SMEM_W_ROWS) * ksr),
-          (int64_t)g_gemm2_bps};
+          (int64_t)(mk_use_compact_m8((int)m, n_pad, (int)k) ? g_gemm2_m8_bps : g_gemm2_bps)};
 }
 void mk_set_gemm2(int64_t ksr) {
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
