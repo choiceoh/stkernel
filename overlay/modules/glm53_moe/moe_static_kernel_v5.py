@@ -217,8 +217,6 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             token_weights,
             stamps,
             next_item,
-            cute.recast_tensor(b_w13, cutlass.Uint8),    # packed bytes: bulk-copy base
-            cute.recast_tensor(b_down, cutlass.Uint8),
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],

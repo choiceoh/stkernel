@@ -3496,7 +3496,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "bulk_b": False},
+                      "a_ring": False, "tiled": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3512,7 +3512,7 @@ def test_b12x_static_v2_controls() -> None:
     # and the dispatcher builds tiled weight views for that lane only
     tiled = parse("t")
     check(tiled["tiled"] and tiled["v4"] and tiled["wide"] and tiled["fc2"] == 2
-          and not tiled["a_ring"] and not tiled["bulk_b"],
+          and not tiled["a_ring"],
           "t selects the v5 kernel (v4 geometry) over tile-major weights")
     check(parse("v,t")["tiled"] and parse("v,t")["a_ring"] and parse("t,g3")["fc2"] == 3
           and parse("t,s", probe=True)["stamps"]
@@ -3527,18 +3527,14 @@ def test_b12x_static_v2_controls() -> None:
             check(False, f"the retired h cell must be rejected: {dead}")
         except ValueError:
             pass
-    # z (39차 v6): t's tiles pre-swizzled into the smem order, one 1-D bulk
-    # copy per B stage; probe-only until the gated prefill kernel reads it --
-    # the serving parse rejects it at boot, exactly like xs/xa
-    z = parse("z", probe=True)
-    check(z["bulk_b"] and z["tiled"] and z["v4"] and z["wide"] and z["fc2"] == 2
-          and not parse("t")["bulk_b"] and parse("z,s", probe=True)["stamps"],
-          "z selects the bulk-copy lane over pre-swizzled tile-major weights")
-    try:
-        parse("z")
-        check(False, "z must be rejected by the serving parse (probe-only cell)")
-    except ValueError:
-        pass
+    # z (39차 v6, sunset §3g/§3h): the pre-swizzled bulk-copy lane measured a
+    # wash and failed numerics; its token must be rejected like any dead cell
+    for dead in ("z", "z,s", "z,h"):
+        try:
+            parse(dead, probe=True)
+            check(False, f"the retired z cell must be rejected: {dead}")
+        except ValueError:
+            pass
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
@@ -3623,7 +3619,6 @@ def test_b12x_static_v2_controls() -> None:
     check("def static_v2_weights_layout(" in src
           and "tiled=weights_tiled," in src
           and 'if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):' in src
-          and 'or bool(getattr(weights, "swizzled", False)) != want_swz):' in src
           and "def _tile_expert_weights(" in src
           and "def invalidate_tile_major_if_reloaded(" in src
           and "row-major static lane over tile-major storage" in src
@@ -3648,35 +3643,6 @@ def test_b12x_static_v2_controls() -> None:
           and 'backend not in ("static", "dynamic")' in src,
           "phase 2: in-place re-layout, no micro lane on tiled weights, the tiled "
           "gated subclass compiled and keyed for the tiled layout, static+dynamic only")
-    # v6 (z): the bulk path and the pre-swizzle it relies on
-    check("def _swizzle_perms(" in src
-          and "lin = d ^ (((d >> 6) & 7) << 3)" in src
-          and "perm8k = d2 ^ (((d2 >> 6) & 3) << 3)" in src
-          and "def static_v2_weights_layout(" in src
-          and 'if bool(getattr(weights, "swizzled", False)) and backend != "static":' in src
-          and "swizzled=weights_swizzled," in src
-          and 'if have != ("swz" if swizzled else "plain"):' in src,
-          "z: byte permutations in the smem order, a layout predicate the wrappers key "
-          "on, the dynamic backend refused on swizzled storage, storage kind checked")
-    v4_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v4.py"),
-                     encoding="utf-8").read()
-    check("if cutlass.const_expr(self.bulk_b):" in v4_kernel
-          and v4_kernel.count("_bulk_g2s(") == 2
-          and "self._assert_bulk_swizzle_contract()" in v4_kernel
-          and "bulk_b swizzle contract drifted" in v4_kernel
-          and "sB1_base_addr + fc1_prod_state.index * bulk_b1_stage_b," in v4_kernel
-          and "sB2_base_addr + fc2_prod_state.index * bulk_b2_stage_b," in v4_kernel
-          and "shared_ptr_to_u32(bar)," in v4_kernel and "shared_ptr_to_u32(bar2)," in v4_kernel
-          and "cute.recast_tensor(b_w13, cutlass.Uint8),    # packed bytes: bulk-copy base" in v4_kernel
-          and "from .moe_static_common import (\n    _bulk_g2s," in v4_kernel,
-          "v4's DMA warp lands each B stage with one cp.async.bulk on the stage's "
-          "mbarrier when bulk_b is set; the packed bytes reach the kernel as Uint8")
-    common_src = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_common.py"),
-                      encoding="utf-8").read()
-    check('"cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [$0], [$1], $2, [$3];"'
-          in common_src,
-          "the 1-D bulk copy helper (moe_static_common) completes its bytes on the "
-          "pipeline mbarrier")
     vllm_side = open(os.path.join(REPO, "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"),
                      encoding="utf-8").read()
     check("_b12x_dispatch.tile_expert_weights_inplace(" in vllm_side
@@ -3702,9 +3668,9 @@ def test_b12x_static_v2_controls() -> None:
     wrapper = open(os.path.join(REPO, "overlay/modules/glm53_moe/b12x_moe.py"),
                    encoding="utf-8").read()
     check("static_v2_weights_layout as _static_v2_weights_layout" in wrapper
-          and "                weights_tiled,\n                weights_swizzled,\n"
+          and "                weights_tiled,\n"
               "                w1_weight.data_ptr()," in wrapper
-          and "tiled=weights_tiled," in wrapper and "swizzled=weights_swizzled," in wrapper,
+          and "tiled=weights_tiled," in wrapper,
           "the wrapper's weight-view cache key carries the lane's layout and "
           "builds the tiled views for it")
     v5_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v5.py"),

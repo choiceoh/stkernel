@@ -358,8 +358,7 @@ _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
-    # FC1 SFB boxes, z = t pre-swizzled + one cp.async.bulk per B stage
-    "tiled": False, "bulk_b": False,
+    "tiled": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -402,19 +401,6 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # weights -- the dispatcher re-lays w13/w2 out so every TMA box is
             # one contiguous run
             cfg["tiled"] = True
-            continue
-        if token == "z":
-            # v6 (39차): t's storage pre-swizzled into the smem order + one
-            # 1-D cp.async.bulk per B stage. Probe only until the gated
-            # prefill kernel reads that order -- reject it at boot (here),
-            # not at the first >640-pair prefill launch.
-            if not probe:
-                raise ValueError(
-                    f"{_GLM53_B12X_STATIC_V2_ENV}: z is a probe-only cell "
-                    "(pre-swizzled storage the dynamic kernel cannot read)"
-                )
-            cfg["tiled"] = True
-            cfg["bulk_b"] = True
             continue
         if token in ("xs", "xa"):
             if not probe:
@@ -1025,7 +1011,6 @@ class _WeightViews:
     # views are 4-D over a re-laid-out copy kept alive here; a tiled view must
     # only ever reach a kernel compiled for the tiled layout
     tiled: bool = False
-    swizzled: bool = False   # cell z: the tiled bytes are in the smem order (bulk copies)
     w13_tiled_storage: torch.Tensor | None = None
     w2_tiled_storage: torch.Tensor | None = None
     w1_alpha: torch.Tensor | None = None
@@ -1050,12 +1035,11 @@ def _register_cache_eviction(cache: Dict, key: Tuple, *source_tensors) -> None:
 _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
 
 
-_TILE_MAJOR_ATTR = "_b12x_tile_major"   # False / "plain" / "swz" on a weight tensor
+_TILE_MAJOR_ATTR = "_b12x_tile_major"   # False / "plain" on a weight tensor
 # sha256 of three 64-byte samples, recorded with _TILE_MAJOR_ATTR so a later
 # load cycle that overwrote the bytes can be detected (the marker itself
 # survives a plain param.data.copy_ of fresh row-major checkpoint bytes).
 _TILE_MAJOR_FP_ATTR = "_b12x_tile_major_fp"
-_SWZ_PERM: Dict[Tuple[str, str], torch.Tensor] = {}
 
 
 def _tile_major_fingerprint(w: torch.Tensor) -> str:
@@ -1110,35 +1094,8 @@ def invalidate_tile_major_if_reloaded(
     return cleared
 
 
-def _swizzle_perms(device: "torch.device") -> Tuple[torch.Tensor, torch.Tensor]:
-    """Byte permutations that turn a plain tile-major B tile into the static
-    kernel's smem byte order (probes/b12x_static_layout_print.py --dump):
-
-    FC1 stage (64 rows x 512 K, 16 KB): smem element offset lin = r*256 +
-    k%256 + (k//256)*16384, phys = lin ^ (((lin>>7)&7)<<4); in bytes the two
-    K halves are 8 KB blocks of 64 x 128 B rows and 8 B units are XORed with
-    ((lin_b>>6)&7). FC2 stage (128 rows x 128 K, 8 KB): lin = r*128 + k,
-    phys = lin ^ (((lin>>7)&3)<<4) -- 64 B rows, 8 B units XORed with (r&3).
-    Both XORs touch only bits below the ones they read, so each is its own
-    inverse. Returned as gather indices: dest[d] = src[perm[d]]."""
-    key = ("perm", str(device))
-    cached = _SWZ_PERM.get(key)
-    if cached is not None:
-        return cached
-    d = torch.arange(16384, dtype=torch.int64)
-    lin = d ^ (((d >> 6) & 7) << 3)
-    khalf, rem = lin >> 13, lin & 8191
-    r, kb = rem >> 7, rem & 127
-    perm16k = r * 256 + khalf * 128 + kb          # plain tile: [64 rows][256 B]
-    d2 = torch.arange(8192, dtype=torch.int64)
-    perm8k = d2 ^ (((d2 >> 6) & 3) << 3)          # plain tile: [128 rows][64 B]
-    cached = (perm16k.to(device), perm8k.to(device))
-    _SWZ_PERM[key] = cached
-    return cached
-
-
 def tile_expert_weights_inplace(
-    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor, *, swizzled: bool = False
+    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor
 ) -> None:
     """Re-lay the packed expert weights out tile-major IN PLACE (serving).
 
@@ -1152,13 +1109,13 @@ def tile_expert_weights_inplace(
     every process_weights_after_loading) clears it when a later load cycle
     overwrote the bytes.
     """
-    kind = "swz" if swizzled else "plain"
+    kind = "plain"
     have = getattr(w1_fp4, _TILE_MAJOR_ATTR, False)
     if have:
         if have != kind:
             raise ValueError(f"expert weights are already tile-major ({have}); wanted {kind}")
         return
-    w13_t, w2_t = _tile_expert_weights(w1_fp4, w2_fp4, swizzled=swizzled)
+    w13_t, w2_t = _tile_expert_weights(w1_fp4, w2_fp4)
     w1_fp4.view(-1).copy_(w13_t.view(-1))
     w2_fp4.view(-1).copy_(w2_t.view(-1))
     del w13_t, w2_t
@@ -1171,7 +1128,7 @@ def tile_expert_weights_inplace(
 
 
 def _tile_expert_weights(
-    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor, *, swizzled: bool = False
+    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Tile-major copies of the packed expert weights (spec cell t).
 
@@ -1198,28 +1155,18 @@ def _tile_expert_weights(
     w2_t = (
         w2_fp4.reshape(e2, hrows, nb // kin2_b, kin2_b).permute(0, 2, 1, 3).contiguous()
     )
-    if swizzled:
-        # cell z: each (64 rows x 256 B) / (128 rows x 64 B) unit into the
-        # kernel's smem byte order, so a stage is one linear bulk copy
-        if rows % 64 != 0 or hrows % 128 != 0:
-            raise ValueError("swizzled tiles need rows % 64 == 0 and H % 128 == 0")
-        perm16k, perm8k = _swizzle_perms(w1_fp4.device)
-        w13_t = w13_t.view(e, kb // kin_b, rows // 64, 64 * kin_b)[..., perm16k].contiguous()
-        w2_t = w2_t.view(e2, nb // kin2_b, hrows // 128, 128 * kin2_b)[..., perm8k].contiguous()
-        w13_t = w13_t.view(e, kb // kin_b, rows, kin_b)
-        w2_t = w2_t.view(e2, nb // kin2_b, hrows, kin2_b)
     return w13_t, w2_t
 
 
-def static_v2_weights_layout(**geometry) -> Tuple[bool, bool]:
-    """(tiled, swizzled) the static lane reads for the geometry -- the wrapper
-    keys its cached weight views on it, so a lane switch (probe) rebuilds
-    them and a tiled view never meets a row-major kernel; swizzled (cell z)
-    is the bulk-copy byte order."""
+def static_v2_weights_layout(**geometry) -> bool:
+    """Whether the static lane reads tile-major expert weights (cell t) for
+    this geometry -- the wrapper keys its cached weight views on it, so a lane
+    switch (probe) rebuilds them and a tiled view never meets a row-major
+    kernel."""
     cfg = _static_v2_config_for(**geometry)
     if cfg is None:
-        return False, False
-    return bool(cfg.get("tiled", False)), bool(cfg.get("bulk_b", False))
+        return False
+    return bool(cfg.get("tiled", False))
 
 
 def _get_weight_views(
@@ -1234,7 +1181,6 @@ def _get_weight_views(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     tiled: bool = False,
-    swizzled: bool = False,
 ) -> _WeightViews:
     """Create permuted weight views for the static kernel.
 
@@ -1263,7 +1209,6 @@ def _get_weight_views(
         activation_precision,
         quant_mode,
         bool(tiled),
-        bool(swizzled),
         w1_fp4.data_ptr(),
         w1_blockscale.data_ptr(),
         w1_alphas.data_ptr(),
@@ -1295,10 +1240,9 @@ def _get_weight_views(
             # served in place (tile_expert_weights_inplace): the bytes are
             # tile-major already -- reshape, no copy
             have = getattr(w1_fp4, _TILE_MAJOR_ATTR, False)
-            if have != ("swz" if swizzled else "plain"):
+            if have != "plain":
                 raise ValueError(
-                    f"tiled expert weights: storage is {have}, the lane wants "
-                    f"{'swz' if swizzled else 'plain'}"
+                    f"tiled expert weights: storage is {have}, the lane wants plain"
                 )
             e_, rows_, kb_ = w1_fp4.shape
             e2_, hrows_, nb_ = w2_fp4.shape
@@ -1309,7 +1253,7 @@ def _get_weight_views(
                 w2_fp4.view(e2_, nb_ // (TILED_W2_K_IN // 2), hrows_, TILED_W2_K_IN // 2),
             )
         else:
-            tiled_storage = _tile_expert_weights(w1_fp4, w2_fp4, swizzled=swizzled)
+            tiled_storage = _tile_expert_weights(w1_fp4, w2_fp4)
         cached = (
             convert_sf_from_mma_layout(
                 w1_blockscale,
@@ -1355,7 +1299,6 @@ def _get_weight_views(
         w13_fp4=w13,
         down_fp4=down,
         tiled=bool(tiled),
-        swizzled=bool(swizzled),
         w13_tiled_storage=w13_tiled,
         w2_tiled_storage=w2_tiled,
         sfb_w13_ptr=make_ptr(
@@ -1882,7 +1825,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
         bool(config.get("tiled", False)),
-        bool(config.get("bulk_b", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1963,7 +1905,6 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         a_ring=bool(config.get("a_ring", False)),
-        bulk_b=bool(config.get("bulk_b", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2086,7 +2027,6 @@ def _get_static_kernel_v2(
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
-        f"{'z' if config.get('bulk_b') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
@@ -2843,14 +2783,11 @@ def launch_sm120_static_moe(
             activation_precision=activation_precision,
         )
         want_tiled = bool(static_v2_config is not None and static_v2_config.get("tiled"))
-        want_swz = bool(static_v2_config is not None and static_v2_config.get("bulk_b"))
-        if (bool(getattr(weights, "tiled", False)) != want_tiled
-                or bool(getattr(weights, "swizzled", False)) != want_swz):
+        if bool(getattr(weights, "tiled", False)) != want_tiled:
             raise RuntimeError(
-                "tiled expert weights and the tiled static lane (spec cells t / z) must "
-                f"agree: views tiled={bool(getattr(weights, 'tiled', False))} "
-                f"swizzled={bool(getattr(weights, 'swizzled', False))}, "
-                f"lane tiled={want_tiled} swizzled={want_swz}"
+                "tiled expert weights and the tiled static lane (spec cell t) must "
+                f"agree: views tiled={bool(getattr(weights, 'tiled', False))}, "
+                f"lane tiled={want_tiled}"
             )
         if static_v2_config is not None:
             compiled, mac = _get_static_kernel_v2(
@@ -4206,7 +4143,6 @@ def clear_sm120_moe_caches() -> None:
     _DIRECT_MICRO_LAUNCH_CACHE.clear()
     _DIRECT_MICRO_KERNEL_CACHE.clear()
     _DYNAMIC_KERNEL_CACHE.clear()
-    _SWZ_PERM.clear()
 
 
 def allocate_sm120_moe_workspace(
@@ -4631,7 +4567,7 @@ def launch_sm120_moe(
     else:
         input_gs = w1_alpha
 
-    weights_tiled, weights_swizzled = static_v2_weights_layout(
+    weights_tiled = static_v2_weights_layout(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
         hidden_size=k,
@@ -4657,7 +4593,6 @@ def launch_sm120_moe(
             activation_precision=activation_precision,
             quant_mode=quant_mode,
             tiled=weights_tiled,
-            swizzled=weights_swizzled,
         )
     )
 
@@ -4727,11 +4662,6 @@ def launch_sm120_moe(
             swiglu_limit=swiglu_limit,
         )
 
-    if bool(getattr(weights, "swizzled", False)) and backend != "static":
-        raise NotImplementedError(
-            "pre-swizzled expert weights (VLLM_GLM53_B12X_STATIC_V2 cell z) reached the "
-            f"{backend} backend: only the static kernel's bulk copies read that order"
-        )
     if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):
         # the tiled layout is read by the v5 static kernel and the overlaid
         # gated dynamic kernel; every other lane reads row-major weights

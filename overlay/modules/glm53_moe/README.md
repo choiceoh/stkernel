@@ -278,17 +278,8 @@ because #368's reuse lane pins its sha256. The subclass groups the 4-D
 weights into a hierarchical K -- its 64 B tiles divide the 256 B / 64 B
 chunks -- and delegates to the stock `__call__`; compiled and cached per
 layout (`dynamic_..._tiled`); both kernels compile
-on the CPU check), `z` (39차 v6: `t`'s tile-major storage
-pre-swizzled into the smem layouts' own byte order -- B1 `S<3,4,3>` over
-(64 rows x 512 K): `lin = r*256 + k%256 + (k//256)*16384`, `phys = lin ^
-(((lin>>7)&7)<<4)`; B2 `S<2,4,3>` over (128 x 128): `phys = lin ^
-(((lin>>7)&3)<<4)`; measured with `probes/b12x_static_layout_print.py
---dump` and cross-checked byte for byte -- so the DMA warp lands each B
-stage with ONE 1-D `cp.async.bulk` (16 KB / 8 KB) on the stage's mbarrier
-instead of a 2-D TMA box of 64 / 128 row segments: the path is L2 request
-rate bound (38차 §8) and a bulk copy is the fewest requests a stage can be.
-Probe only until the gated prefill kernel reads that order: the entry
-refuses the dynamic backend on swizzled storage), and the probe-only timing
+on the CPU check; 39차 §3i measured it at -2.0~2.7% against `u` by
+interleaved repeats), and the probe-only timing
 cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the A + SFA boxes) that
 the serving parse rejects. The
 cache key and on-disk kernel name carry the config; the source files are in

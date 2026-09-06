@@ -654,7 +654,7 @@ class B12xMoEWrapper:
             # if the static lane switches between row-major and tile-major
             # weights (spec cell t, moe_static_kernel_v5): a tiled view must
             # never reach a kernel compiled for the row-major layout.
-            weights_tiled, weights_swizzled = _static_v2_weights_layout(
+            weights_tiled = _static_v2_weights_layout(
                 num_experts=self.num_experts,
                 num_local_experts=self.num_local_experts,
                 hidden_size=self.hidden_size,
@@ -668,7 +668,6 @@ class B12xMoEWrapper:
             weight_key = (
                 self.quant_mode,
                 weights_tiled,
-                weights_swizzled,
                 w1_weight.data_ptr(),
                 w1_weight_sf.data_ptr(),
                 w1_alpha.data_ptr(),
@@ -724,7 +723,6 @@ class B12xMoEWrapper:
                     activation_precision=self.activation_precision,
                     quant_mode=self.quant_mode,
                     tiled=weights_tiled,
-                    swizzled=weights_swizzled,
                 )
                 self._weight_key = weight_key
         else:

@@ -41,7 +41,6 @@ def _runs(offsets):
 def main() -> int:
     dump = "--dump" in sys.argv
     sf = "--sf" in sys.argv
-    verify = "--verify-swz" in sys.argv
     k = MoEStaticKernelV4(sf_vec_size=16, output_tile_count_n=4,
                           activation="swigluoai_uninterleave", swiglu_alpha=1.0,
                           swiglu_beta=0.0, swiglu_limit=10.0)
@@ -101,45 +100,6 @@ def main() -> int:
                       f"{len(runs)} contiguous runs, run lengths {lens}, "
                       f"first runs {runs[:4]} -> innermost "
                       f"{'OK (>= 16 B)' if min(lens) >= 16 else 'ILLEGAL (< 16 B)'}")
-
-        if verify:
-            # cell z end to end, on the CPU: the byte the kernel reads at smem
-            # byte d must be the plain tile-major byte moe_dispatch's host
-            # permutation put there. perm[d] is a GATHER index: the swizzled
-            # storage is built as swz[d] = plain[perm[d]], and the bulk copy
-            # lands swz linearly, so smem byte d holds plain[perm[d]].
-            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch import (
-                _swizzle_perms,
-            )
-            perm16k, perm8k = _swizzle_perms(torch.device("cpu"))
-            bad = 0
-            first = ""
-            for r in cutlass.range_constexpr(64):
-                for j in cutlass.range_constexpr(256):   # bytes per row per k tile
-                    e = int(cute.crd2idx((r, 2 * j, 0), k.b1_smem_layout_staged))
-                    want = r * 256 + j
-                    got = int(perm16k[e // 2])
-                    if cutlass.const_expr(got != want):
-                        bad += 1
-                        first = first or (
-                            f"B1 (row {r}, byte {j}) -> smem byte {e // 2}: "
-                            f"host perm says plain byte {got}, kernel wants {want}")
-            print(f"VERIFY B1: {bad} / {64 * 256} bytes disagree"
-                  + (f" -- first: {first}" if first else ""))
-            bad2 = 0
-            first2 = ""
-            for r in cutlass.range_constexpr(128):
-                for j in cutlass.range_constexpr(64):
-                    e = int(cute.crd2idx((r, 2 * j, 0), k.b2_smem_layout_staged))
-                    want = r * 64 + j
-                    got = int(perm8k[e // 2])
-                    if cutlass.const_expr(got != want):
-                        bad2 += 1
-                        first2 = first2 or (
-                            f"B2 (row {r}, byte {j}) -> smem byte {e // 2}: "
-                            f"host perm says plain byte {got}, kernel wants {want}")
-            print(f"VERIFY B2: {bad2} / {128 * 64} bytes disagree"
-                  + (f" -- first: {first2}" if first2 else ""))
 
     dummy = cute.runtime.make_fake_compact_tensor(cutlass.Int32, (1,), assumed_align=4)
     cute.compile(show, dummy)
