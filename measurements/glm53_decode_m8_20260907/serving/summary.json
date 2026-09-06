@@ -1,0 +1,166 @@
+{
+  "per_run": [
+    {
+      "name": "M8SERVB1",
+      "step_s": 21.934592589161877,
+      "tokens_per_step": 3.4291891891891892,
+      "by_ctx": {
+        "2000": {
+          "decode_tok_s": 74.31866241437858,
+          "tpot_ms": 13.455570478708294,
+          "completion_tokens": [
+            400,
+            400,
+            400
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 80.3042051832541,
+          "tpot_ms": 12.45264799916768,
+          "completion_tokens": [
+            1200
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 71.68969910392723,
+          "tpot_ms": 13.949005401045396,
+          "completion_tokens": [
+            774
+          ]
+        }
+      }
+    },
+    {
+      "name": "M8SERVB2",
+      "step_s": 21.425577079611507,
+      "tokens_per_step": 3.3957219251336896,
+      "by_ctx": {
+        "2000": {
+          "decode_tok_s": 75.8302758533627,
+          "tpot_ms": 13.18734487968574,
+          "completion_tokens": [
+            399,
+            400,
+            400
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 71.91060242284908,
+          "tpot_ms": 13.906155230348302,
+          "completion_tokens": [
+            778
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 78.45218389442581,
+          "tpot_ms": 12.74661775312353,
+          "completion_tokens": [
+            1200
+          ]
+        }
+      }
+    },
+    {
+      "name": "M8SERVA1",
+      "step_s": 21.681479514715228,
+      "tokens_per_step": 3.540963855421687,
+      "by_ctx": {
+        "2000": {
+          "decode_tok_s": 75.1670755404389,
+          "tpot_ms": 13.303697035040468,
+          "completion_tokens": [
+            400,
+            400,
+            400
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 76.70600646393153,
+          "tpot_ms": 13.036788722278443,
+          "completion_tokens": [
+            1200
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 82.46672094590478,
+          "tpot_ms": 12.126103578872309,
+          "completion_tokens": [
+            540
+          ]
+        }
+      }
+    },
+    {
+      "name": "M8SERVA2",
+      "step_s": 21.44222158596588,
+      "tokens_per_step": 3.304956896551724,
+      "by_ctx": {
+        "2000": {
+          "decode_tok_s": 71.13976960047627,
+          "tpot_ms": 14.056834954850698,
+          "completion_tokens": [
+            400,
+            400,
+            400
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 77.55978230146195,
+          "tpot_ms": 12.893280129554345,
+          "completion_tokens": [
+            1020
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 68.31640564434332,
+          "tpot_ms": 14.637772443796612,
+          "completion_tokens": [
+            846
+          ]
+        }
+      }
+    }
+  ],
+  "comparison": {
+    "2000": {
+      "A": {
+        "decode_tok_s": 73.1534225704576,
+        "tpot_ms": 13.680265994945582
+      },
+      "B": {
+        "decode_tok_s": 75.07446913387065,
+        "tpot_ms": 13.321457679197017
+      },
+      "speed_change_pct": -2.5588546753324337,
+      "baseline_spread_pct": 2.013485351842664
+    },
+    "32000": {
+      "A": {
+        "decode_tok_s": 77.13289438269675,
+        "tpot_ms": 12.965034425916393
+      },
+      "B": {
+        "decode_tok_s": 76.1074038030516,
+        "tpot_ms": 13.179401614757992
+      },
+      "speed_change_pct": 1.3474255176262329,
+      "baseline_spread_pct": 11.028628413243112
+    },
+    "128000": {
+      "A": {
+        "decode_tok_s": 75.39156329512406,
+        "tpot_ms": 13.38193801133446
+      },
+      "B": {
+        "decode_tok_s": 75.07094149917651,
+        "tpot_ms": 13.347811577084464
+      },
+      "speed_change_pct": 0.427091747545294,
+      "baseline_spread_pct": 9.008125721418814
+    }
+  },
+  "excluded": {
+    "name": "M8SERVB3",
+    "reason": "External requests overlapped 128K; Running: 2 reqs"
+  }
+}

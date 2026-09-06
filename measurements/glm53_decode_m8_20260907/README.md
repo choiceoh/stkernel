@@ -1,10 +1,14 @@
 # C=1 MK-GEMM decode experiments, 2026-09-07
 
+**Serving follow-up:** no reproducible C=1 speedup. The clean 2K-context
+comparison was 75.074 → 73.153 tok/s (-2.56%), with all onepass quality gates
+passing. Both options remain off. See [serving results and raw evidence](serving/README.md).
+
 Base checkout: `de2a0b3`. All runtime arms in each round are built from the
 same composed CUDA source in an isolated checkout, in `glm53:v13-b12x-it`,
 on srv2 / NVIDIA GB10 / SM121a. Torch 2.13.0+cu130, CUDA 13.0, PDL enabled.
 The fleet queue grants the GPU window; these probes do not restart serving.
-Both profile options remain off pending serving acceptance.
+Both profile options remain off; the serving follow-up above did not show a win.
 
 ## Round 1: paired conversion and transposed MMA
 

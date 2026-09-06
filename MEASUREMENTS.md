@@ -6940,3 +6940,32 @@ trial. All **27** focused tests, **6,650** logic checks, **30** megakernel and
 **20** fleet regressions pass; the final documentation update does not change
 the tested runtime. End-to-end repeated/balanced speedup and full-context
 acceptance remain unclaimed.
+
+### C=1 MK-GEMM serving follow-up — no speedup (2026-09-07)
+
+Fleet `glm53m8serve`, 05:14:55–05:40:47 KST, deployed source `f00a4eb`, stamp
+`1af1a93f83b5`: same four GB10 nodes, TP4, K5, C1, same model/image and request
+workload. Baseline flags 0/0 versus pack2=1 / transpose mode=2. Actual M6 graph
+capture proves both options and both selected compact shapes; compile cache
+flags and four-node source parity are recorded.
+
+The uncontaminated baseline B1/B2 and candidate A1/A2 comparison shows **2K
+output 75.074 → 73.153 tok/s (-2.56%), TPOT 13.321 → 13.680 ms**. The 32K
+and 128K deltas (+1.35%/+0.43%) are within baseline spreads of 11.03%/9.01%.
+All four runs pass quality 9/9 and Korean 0/5; both candidates prove 2/2 paths.
+The engine-step verdict is inconclusive within a 2.3% same-build noise floor.
+The two repeats per arm share a boot, so a general slowdown is not established;
+**a reproducible C1 speedup is not demonstrated, and both defaults remain 0**.
+
+The intended final reversal B3 received unrelated external requests during
+128K: 11 external POSTs and two running requests. Its aggregate engine rate
+14.456 step/s would misleadingly imply a +50% candidate gain. Exclude the
+whole arm from the primary C1 comparison. Its raw values remain in the evidence;
+the shared ledger's usable window median was invalidated with the original
+value and reason retained. B1/B2 also needed a metadata-only correction:
+`VLLM_GLM53_SPEC_K=5` is the launcher's alias of the profile default `SPEC_K=5`,
+not an experimental knob. Commit `47f9e3c` fixes future fingerprints; exact
+original/corrected rows and corrected inconclusive verdicts are preserved.
+No other runs or metrics were changed. Final health 200, knobs 0/0, fleet free.
+
+[Full serving result, raw records, correction audit and reproduction script](measurements/glm53_decode_m8_20260907/serving/README.md).
