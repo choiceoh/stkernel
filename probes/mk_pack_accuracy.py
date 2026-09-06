@@ -77,6 +77,8 @@ def real_weights(layer):
         "o_proj": f"model.language_model.layers.{layer}.self_attn.o_proj.weight",
         "se.gate_up": f"model.language_model.layers.{layer}.mlp.shared_experts.gate_up_proj.weight",
         "se.down": f"model.language_model.layers.{layer}.mlp.shared_experts.down_proj.weight",
+        # the vocab head: one TP rank's row slice, the shape the head lane packs
+        "lm_head": "lm_head.weight",
         "se.gate": f"model.language_model.layers.{layer}.mlp.shared_experts.gate_proj.weight",
         "se.up": f"model.language_model.layers.{layer}.mlp.shared_experts.up_proj.weight",
     }
@@ -89,6 +91,8 @@ def real_weights(layer):
         if f not in files:
             files[f] = safe_open(os.path.join(root, f), framework="pt", device="cpu")
         t = files[f].get_tensor(key)
+        if tag == "lm_head":
+            t = t[:t.shape[0] // 4]        # per-rank rows (TP4); the stats are per row
         if t.dtype not in (torch.bfloat16, torch.float16):
             continue  # fp8/fp4 experts are not the lane's
         out[tag] = t.to(torch.bfloat16)
