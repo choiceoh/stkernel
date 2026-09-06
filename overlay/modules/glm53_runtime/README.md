@@ -13,6 +13,7 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 | `glm53_oneshot_wiring` | `cuda_communicator.py` | one-shot AR 의 glm53 이미지 배선 (`cuda_communicator.py`) |
 | `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP`·`PREFILL_SP_FP8`, 기본 0) |
 | 채팅 옵션 계약 | `glm53_chat.py` | Chat Completions 옵션 검증과 정규화 |
+| GLM 본문 보존 | `glm47_moe.py` | none의 리터럴 XML, 도구 호출 사이·뒤의 본문, 인자의 think 태그 보존 |
 
 ## Chat Completions 옵션과 템플릿
 
@@ -35,6 +36,13 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
   하나만 분리하며 뒤의 본문과 태그는 보존한다. 명시적 reasoning 필드가 우선이다.
 - `content=null`은 빈 본문으로 렌더링한다. 도구 인자의 JSON 문자열→mapping
   변환은 vLLM의 Chat API 전처리 책임이다.
+- `glm53_required_first=true`를 요청 최상위에 명시하면, 렌더링 전에 도구
+  스키마의 필수 필드를 `required` 순서로 앞에 배치한다. 기본 false인 실험
+  옵션이며 OpenAI SDK에서는 `extra_body={"glm53_required_first": True}`로
+  전달한다. 중첩 스키마와 `$defs`도 처리하되 default/enum 값과 입력 객체는
+  변경하지 않는다. `tool_choice` 의미와 JSON Schema 검증 규칙은 그대로다.
+  [vLLM 초안 #55558](https://github.com/vllm-project/vllm/pull/55558)의 후보이며
+  우리 NVFP4에서 필수 인자 누락률 A/B를 확인하기 전에는 기본값으로 올리지 않는다.
 
 이 검증은 `/v1/chat/completions`에 적용된다. Responses API의 별도 입력 규약을
 추가로 구현한 것은 아니다. Hugging Face 직접 호출에는 Jinja 검증이 적용된다.
@@ -52,10 +60,40 @@ uv run --with jinja2 python tests/test_glm53_chat.py
 bash launchers/check-glm53-chat.sh /home/choiceoh/models/glm53-redhat-nvfp4 glm53:v13-b12x-it
 ```
 
-두 번째 검사는 GPU 없이 선택한 이미지의 실제 parser/tokenizer로 추론 시작·종료,
-미완료 추론, off, 복수 도구 호출, 인자 타입, 청크 경계와 도구 결과 재입력을
-검사한다. `deploy-overlays.sh glm53`도 파일 배포 전에 이 검사를 실행한다.
+두 번째 검사는 이미지의 원본 파서 SHA를 확인하고 후보 파서를 읽기 전용으로
+마운트한 CPU 컨테이너에서 실행한다. 실제 `ParserManager`의 glm45/glm47 조합과
+직접 엔진의 추론 시작·종료, 미완료 추론, off, none/auto/required/named, 복수
+도구 호출, 인자 타입, 본문과 청크 경계, 도구 결과 재입력을 검사한다.
+재입력은 실제 `auto` content-format 판별 경로를 사용한다. 프롬프트·응답의
+영상/이미지 처리 자체나 강제 생성의 수렴성을 CPU 재생으로 증명하지는 않는다.
+`deploy-overlays.sh glm53`도 파일 배포 전에 이 검사를 실행한다.
 모델을 재시작하거나 생성 품질을 측정하는 검사는 별도로 수행해야 한다.
+
+파서 교체는 GLM 모듈에 한정한다. `tool_choice=none`에서는 도구 문자열을
+소비한 뒤 호출만 숨기는 대신 인식을 건너뛴다. 실제 호출 사이·뒤의 텍스트는
+동일 청크에서 반환하며 들여쓰기를 보존한다. 최초 reasoning 블록 이후의
+`<think>`/`</think>`는 리터럴로 취급하므로 API reasoning 전처리가 도구 인자를
+손상하지 않는다. HTTP/SSE 종료 사유와 미완료 호출의 인자를 복구하거나
+`required`/named 요청을 auto로 바꾸는 동작은 추가하지 않는다.
+
+공식 템플릿 기준은 `tests/fixtures/glm53_official_chat_template.json`의 HF
+리비전·SHA로 고정한다. 비교 검사는 low/high/max, clear_thinking, 도구 결과,
+이미지·영상·오디오 자리표시자를 포함한다. off/legacy 이력/공백 보존처럼 의도한
+차이는 별도 회귀 검사로 유지한다. [공식 템플릿 수정 이력](https://huggingface.co/zai-org/GLM-5.3-Flash/discussions/18).
+
+강제 도구 생성의 수렴성은 [vLLM #55541](https://github.com/vllm-project/vllm/issues/55541)
+보고와 별도로 실제 모델 검증이 필요하다. 아래 opt-in 프로브는 지정한 엔드포인트에
+16개 요청(작은/큰 중첩 스키마 × none/auto/required/named × stream)을 보내며,
+도구를 실행하지 않고 JSON Schema·필수 인자·함수명·종료 사유·SSE 완료를 판정한다.
+`length`, 끊긴 SSE, 불완전 JSON은 성공으로 세지 않는다. 기본 파서 릴리스 게이트는
+이 네트워크 검사를 호출하지 않는다. GPU 캠페인 예약/동일 이미지 조건을 충족한
+엔드포인트에서 실행하고 `--required-first` 유무를 비교한다. `OPENAI_API_KEY`는
+환경 변수로만 읽으며 결과 JSONL에 응답 본문이나 인증 정보를 기록하지 않는다.
+
+```bash
+uv run --with jsonschema python probes/glm53_tool_choice_acceptance.py \
+  --url http://HOST:PORT/v1/chat/completions --model glm-5.3-flash
+```
 
 ---
 

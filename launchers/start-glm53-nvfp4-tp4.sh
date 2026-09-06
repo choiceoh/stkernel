@@ -294,14 +294,22 @@ fi
 REASONING_PARSER="${REASONING_PARSER:-glm45}"
 if [ "${DRY_RUN:-0}" != 1 ]; then
   _chat_mounted=0
+  _parser_mounted=0
   for _i in "${!OVFILES[@]}"; do
     if [ "${OVFILES[$_i]}" = glm53_chat.py ] \
         && [ "${OVTARGETS[$_i]}" = "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}vllm/glm53_chat.py" ]; then
       _chat_mounted=1
     fi
+    if [ "${OVFILES[$_i]}" = glm47_moe.py ] \
+        && [ "${OVTARGETS[$_i]}" = "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}vllm/parser/glm47_moe.py" ]; then
+      _parser_mounted=1
+    fi
   done
   [ "$_chat_mounted" = 1 ] || {
     echo "ABORT: chat option middleware missing -- run deploy-overlays.sh glm53" >&2; exit 1;
+  }
+  [ "$_parser_mounted" = 1 ] || {
+    echo "ABORT: GLM content-preserving parser missing -- run deploy-overlays.sh glm53" >&2; exit 1;
   }
 fi
 ct_prepare_glm53_chat "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

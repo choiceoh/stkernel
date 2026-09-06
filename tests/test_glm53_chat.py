@@ -22,18 +22,45 @@ chat = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(chat)
 
 
-def render(messages, **kwargs):
+def render(messages, template_path=None, **kwargs):
     env = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True,
                                        extensions=["jinja2.ext.loopcontrols"])
     env.filters["tojson"] = lambda obj, **options: json.dumps(obj, **options)
     def fail(message):
         raise TemplateError(message)
     env.globals["raise_exception"] = fail
-    return env.from_string((ROOT / "launchers/chat_template_mm_v2.jinja").read_text()).render(
-        messages=messages, tools=[], add_generation_prompt=True, **kwargs)
+    return env.from_string((template_path or ROOT / "launchers/chat_template_mm_v2.jinja").read_text()).render(
+        messages=messages, tools=kwargs.pop("tools", []), add_generation_prompt=True, **kwargs)
 
 
 class TemplateTests(unittest.TestCase):
+    def test_pinned_official_template_parity(self):
+        reference = ROOT / "tests/fixtures/glm53_official_chat_template.jinja"
+        meta = json.loads(reference.with_suffix(".json").read_text())
+        self.assertEqual(hashlib.sha256(reference.read_bytes()).hexdigest(), meta["sha256"])
+        tools = [{"type": "function", "function": {"name": "lookup", "parameters": {
+            "type": "object", "properties": {"q": {"type": "string"}}}}}]
+        messages = [
+            {"role": "system", "content": "Answer accurately."},
+            {"role": "user", "content": [{"type": "text", "text": "서울"},
+                {"type": "image_url", "image_url": {"url": "fixture.png"}},
+                {"type": "video_url", "video_url": {"url": "fixture.mp4"}},
+                {"type": "input_audio", "input_audio": {"data": "fixture"}}]},
+            {"role": "assistant", "content": "old answer", "reasoning_content": "old reason"},
+            {"role": "user", "content": "next question"},
+            {"role": "assistant", "content": None, "reasoning_content": "current reason",
+             "tool_calls": [{"id": "a", "function": {"name": "lookup", "arguments": {"q": "서울"}}}]},
+            {"role": "tool", "tool_call_id": "a", "content": [{"type": "text", "text": "tool result"}]},
+        ]
+        for effort in ("low", "high", "max"):
+            for clear in (True, False):
+                options = dict(tools=tools, reasoning_effort=effort, clear_thinking=clear)
+                with self.subTest(effort=effort, clear=clear):
+                    actual = render(messages, **options)
+                    self.assertEqual(actual, render(messages, template_path=reference, **options))
+                    for marker in ("<|image|>", "<|video|>", "<|begin_of_audio|>", "tool result"):
+                        self.assertEqual(actual.count(marker), 1)
+
     def test_null_tool_call_body_is_empty(self):
         output = render([{"role": "assistant", "content": None, "tool_calls": [
             {"id": "a", "function": {"name": "lookup", "arguments": {"q": "서울"}}}]}])
@@ -102,6 +129,35 @@ class TemplateTests(unittest.TestCase):
 
 
 class OptionTests(unittest.TestCase):
+    def test_required_first_is_opt_in_recursive_and_preserves_schema_data(self):
+        schema = {"type": "object", "properties": {
+            "optional": {"type": "string"}, "label": {"type": "string"}},
+            "required": ["label"]}
+        nested = {"type": "object", "properties": {"choices": {"type": "array",
+            "items": {"oneOf": [copy.deepcopy(schema), {"$ref": "#/$defs/entry"}]}},
+            "tag": {"type": "string"}}, "required": ["tag"],
+            "$defs": {"entry": copy.deepcopy(schema)}, "default": copy.deepcopy(schema),
+            "dependencies": {"choices": copy.deepcopy(schema), "tag": ["title"]}}
+        body = {"tools": [{"type": "function", "function": {"name": "collect", "parameters": nested}}],
+                "tool_choice": {"type": "function", "function": {"name": "collect"}}}
+        before = json.dumps(body)
+        self.assertEqual(json.dumps(chat.normalize_chat_options(body)), before)
+        result = chat.normalize_chat_options(dict(body, glm53_required_first=True))
+        self.assertEqual(result, body)  # JSON Schema semantics and request are unchanged.
+        self.assertEqual(json.dumps(body), before)
+        ordered = result["tools"][0]["function"]["parameters"]
+        self.assertEqual(list(ordered["properties"]), ["tag", "choices"])
+        self.assertEqual(list(ordered["properties"]["choices"]["items"]["oneOf"][0]["properties"]), ["label", "optional"])
+        self.assertEqual(list(ordered["$defs"]["entry"]["properties"]), ["label", "optional"])
+        self.assertEqual(list(ordered["dependencies"]["choices"]["properties"]), ["label", "optional"])
+        self.assertEqual(ordered["dependencies"]["tag"], ["title"])
+        self.assertEqual(list(ordered["default"]["properties"]), ["optional", "label"])
+        rendered = render([], tools=result["tools"])
+        self.assertLess(rendered.index('"tag"'), rendered.index('"choices"'))
+        for value in (None, "true", 1, []):
+            with self.subTest(value=value), self.assertRaises(chat.ChatContractError):
+                chat.normalize_chat_options(dict(body, glm53_required_first=value))
+
     def test_explicit_options_are_canonical_without_mutating_history(self):
         body = {"messages": [{"role": "user", "content": "test"}],
                 "reasoning_effort": "low", "chat_template_kwargs": {"enable_thinking": False}}
