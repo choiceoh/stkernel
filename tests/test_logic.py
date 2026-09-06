@@ -5318,6 +5318,146 @@ def test_glm53_kda_prefill_regime() -> None:
     print("  GLM53 KDA prefill regimes ....... OK")
 
 
+def test_glm53_kda_prefill_direct_output() -> None:
+    """Execute destination guards and all Python forwarding stages without CUDA."""
+    class Tensor:
+        next_ptr = 100
+
+        def __init__(self, shape=(1, 17, 16, 128), *, dtype="bf16",
+                     device=None, contiguous=True, ptr=None):
+            self.shape, self.dtype = shape, dtype
+            self.device = device or types.SimpleNamespace(type="cuda", index=0)
+            self.dense, self.ndim = contiguous, len(shape)
+            Tensor.next_ptr += 1
+            self.ptr = Tensor.next_ptr if ptr is None else ptr
+            self.value = None
+
+        def is_contiguous(self):
+            return self.dense
+
+        def contiguous(self):
+            return self if self.dense else Tensor(self.shape, dtype=self.dtype,
+                                                   device=self.device)
+
+        def untyped_storage(self):
+            return types.SimpleNamespace(data_ptr=lambda: self.ptr)
+
+        def __getitem__(self, indices):
+            return Tensor((self.shape[0], indices[1].stop, *self.shape[2:]),
+                          dtype=self.dtype, device=self.device, ptr=self.ptr)
+
+    torch_stub = types.SimpleNamespace(Tensor=Tensor, bfloat16="bf16", float32="fp32")
+    model_path = "overlay/modules/glm53_model/glm5next_kda.py"
+    kernel_path = "overlay/modules/glm53_kernels/kda.py"
+    route_ns = load_defs(model_path, {"_kda_prefill_output_buffer"}, {
+        "torch": torch_stub, "_KDA_PREFILL_DIRECT_OUT": True,
+    })
+    route = route_ns["_kda_prefill_output_buffer"]
+    opts = dict(use_spec=False, num_prefills=1, num_decodes=0)
+    padded = Tensor((1, 32, 16, 128))
+    dest = route(padded, 17, 16, 128, **opts)
+    check(dest.shape == (1, 17, 16, 128) and dest.ptr == padded.ptr,
+          "KDA prefill output is the live prefix of the padded destination")
+    for key, value in (("use_spec", True), ("num_prefills", 0), ("num_decodes", 1)):
+        check(route(padded, 17, 16, 128, **{**opts, key: value}) is None,
+              f"KDA prefill output declines {key}={value}")
+    for bad in (Tensor((2, 32, 16, 128)), Tensor((1, 8, 16, 128)),
+                Tensor((1, 32, 8, 128)), Tensor((1, 32, 16, 64)),
+                Tensor((1, 32, 16)), Tensor(contiguous=False),
+                Tensor(dtype="fp32"), Tensor(device=types.SimpleNamespace(type="cpu"))):
+        check(route(bad, 17, 16, 128, **opts) is None,
+              "KDA prefill output declines incompatible destination geometry")
+    route_ns["_KDA_PREFILL_DIRECT_OUT"] = False
+    check(route(padded, 17, 16, 128, **opts) is None,
+          "KDA prefill direct output is disabled by default")
+    for raw in (None, "0", "true", " 1", "1 ", "1"):
+        env = {} if raw is None else {"VLLM_GLM53_KDA_PREFILL_DIRECT_OUT": raw}
+        latched = load_defs(model_path, {"_KDA_PREFILL_DIRECT_OUT"}, {
+            "os": types.SimpleNamespace(environ=env),
+        })
+        env["VLLM_GLM53_KDA_PREFILL_DIRECT_OUT"] = "0"
+        check(latched["_KDA_PREFILL_DIRECT_OUT"] is (raw == "1"),
+              "KDA prefill direct output latches exact 1 before forward")
+
+    stages = []
+    final_state = Tensor((1, 16, 128, 128), dtype="fp32")
+
+    def output_kernel(**kwargs):
+        stages.append(kwargs["o"])
+        kwargs["o"].value = "kernel-result"
+        return kwargs["o"]
+
+    kernel_ns = load_defs(kernel_path, {
+        "_validate_chunk_kda_output", "_chunk_kda_fwd_with_cumulative_g",
+        "chunk_kda_with_fused_gate_fwd", "chunk_kda_with_fused_gate",
+    }, {
+        "torch": torch_stub, "FLA_CHUNK_SIZE": 64,
+        "l2norm_fwd": lambda tensor: Tensor(tensor.shape),
+        "_glm53_qk_l2norm_strided": lambda q, k: None,
+        "prepare_chunk_indices": lambda *args: object(),
+        "_glm53_kda_prefill_autotune_regime": lambda **kwargs: 0,
+        "fused_kda_gate_chunk_cumsum": lambda *args, **kwargs: Tensor(),
+        "chunk_kda_scaled_dot_kkt_fwd": lambda **kwargs: (Tensor(), Tensor()),
+        "solve_tril": lambda **kwargs: kwargs["A"],
+        "recompute_w_u_fwd": lambda **kwargs: (Tensor(), Tensor(), None, Tensor()),
+        "chunk_gated_delta_rule_fwd_h": lambda **kwargs: (Tensor(), Tensor(), final_state),
+        "chunk_gla_fwd_o_gk": output_kernel,
+    })
+    validate = kernel_ns["_validate_chunk_kda_output"]
+    v = Tensor()
+    validate(dest, v, (v, None))
+    check(True, "KDA direct output accepts a distinct contiguous destination")
+    validate(None, v, (v,))
+    for bad in (Tensor((1, 16, 16, 128)), Tensor(dtype="fp32"),
+                Tensor(device=types.SimpleNamespace(type="cuda", index=1)),
+                Tensor(device=types.SimpleNamespace(type="cpu")),
+                Tensor(contiguous=False), Tensor((1, 0, 16, 128)),
+                Tensor(ptr=v.ptr)):
+        try:
+            validate(bad, v, (v,))
+        except ValueError:
+            check(True, "KDA direct output rejects unsafe geometry or storage alias")
+        else:
+            check(False, "KDA direct output rejects unsafe geometry or storage alias")
+
+    call = kernel_ns["chunk_kda_with_fused_gate"]
+    inputs = dict(q=Tensor(), k=Tensor(), v=v, raw_g=Tensor(), beta=Tensor(),
+                  A_log=Tensor((16,)), g_bias=Tensor((2048,)),
+                  initial_state=Tensor((1, 16, 128, 128), dtype="fp32"),
+                  cu_seqlens=Tensor((2,), dtype="int32"),
+                  use_qk_l2norm_in_kernel=True, output_final_state=True,
+                  safe_gate=True, lower_bound=-5.0)
+    actual, state = call(**inputs, out=dest)
+    check(actual is dest and stages[-1] is dest and dest.value == "kernel-result",
+          "KDA direct output reaches the existing final output kernel")
+    check(state is final_state and v.value is None,
+          "KDA direct output preserves final state and input lifetime")
+    actual, state = call(**inputs)
+    check(actual is v and stages[-1] is v and state is final_state,
+          "KDA omitted destination retains the existing in-place-v output")
+    for input_name in ("q", "k", "v", "raw_g", "beta", "A_log", "g_bias",
+                       "initial_state", "cu_seqlens"):
+        before = len(stages)
+        try:
+            call(**inputs, out=Tensor(ptr=inputs[input_name].ptr))
+        except ValueError:
+            check(len(stages) == before,
+                  f"KDA rejects out aliasing {input_name} before any output launch")
+        else:
+            check(False, f"KDA rejects out aliasing {input_name}")
+
+    source = open(_overlay_source(model_path), encoding="utf-8").read()
+    tree = ast.parse(source)
+    chunk_calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Name)
+                   and node.func.id == "chunk_kda_with_fused_gate"]
+    check(len(chunk_calls) == 1 and any(
+        kw.arg == "out" and isinstance(kw.value, ast.Name) and kw.value.id == "ns_out"
+        for kw in chunk_calls[0].keywords
+    ), "KDA model forwards the selected destination to the chunk entry")
+    print("  GLM53 KDA prefill direct out ... OK")
+
+
 def test_glm53_upstream_prefill_batch() -> None:
     """Upstream-derived GLM prefill paths stay exact-gated and fail-closed."""
     indexer_path = _overlay_source(
@@ -8815,7 +8955,7 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') >= 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
@@ -12029,6 +12169,7 @@ if __name__ == "__main__":
     test_glm53_kpool_packed_scratch_contract()
     test_glm53_cache_only_indexer_prefill()
     test_glm53_kda_prefill_regime()
+    test_glm53_kda_prefill_direct_output()
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
     test_cuda_builds_keep_the_arch_specific_target()

@@ -87,11 +87,11 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `mla_sparse_swa` | DeepSeek-MLA | 1 | — | ● | · | · |
 | `spec_fp8_head` | 드래프터 일반 — **기각** | 1 | ✓ | ○ | · | · |
 | | | | | | | |
-| `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 (옛 `glm53_model_wiring`·`glm53_indexer_gate_splitk`·`glm53_mk_kda_wiring`·`glm53_mk_mla_wiring`·`glm53_kda_onepass`·`glm53_fp8_dense`) + MTP 블록 FP8 MoE 백엔드 오버레이(37차 `mtp.py`) | 9 | 일부 | · | ● | · |
+| `glm53_model` | **묶음(34차)**: 모델·어텐션·KDA·MLA 파일 접수 + 밀집 GEMM fp8/W4 패스 + KDA 원패스 + 순수 프리필 SP/NVFP4 후보 | 11 | 일부 | · | ● | · |
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·top-k 커널·tail-select 융합, tail 슬롯, SM121 MLA 프리필, KDA 프리필 버킷, MHC TileLang (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_sm121_mla_prefill`·`glm53_kda_prefill_regime`·`glm53_mhc_tilelang`) | 9 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
-| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v2/v3/v4(35·38차, `moe_static_kernel_v2.py`·`moe_static_kernel_v3.py`·`moe_static_kernel_v4.py`, 프로필 기본값 `u` = v4) | 7 | — | · | ● | · |
-| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프(37차, `VLLM_GLM53_DRAFT_DUMP` 없으면 비활성), 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 (옛 `glm53_prep_fused`·`glm53_v2_sampler_guards`·`glm53_boot_stamps`·`glm53_dev_lab`·`glm53_oneshot_wiring`) | 8 | 일부 | · | ● | · |
+| `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 + 정적 v2/v3/v4 및 순수 프리필 dynamic 재사용 후보 | 9 | — | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 및 순수 프리필 collectives | 10 | 일부 | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |
@@ -120,5 +120,10 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 분리한다. raw T는 key가 아니며 short/long 두 bucket만 허용한다. 기본 0은
 레짐 분리를 끄지만 오버레이된 Triton ABI가 달라지므로 최초 stock bucket의
 재컴파일·autotune까지 없애는 byte-identical rollback은 아니다.
+
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1`은 별도의 기본-off 실험이다.
+순수 프리필에서 KDA 마지막 출력 커널이 층 버퍼에 직접 써서 병합 복사를
+제거한다. 혼합·디코드 경로는 그대로이며 GPU 수치·재생·속도 검증 전에는
+승격하지 않는다. [검증 명령과 계약](../overlay/modules/glm53_kernels/README.md#pure-prefill-direct-output-2026-09-06-default-off).
 
 `qwen38`은 이미지를 고정하지 않았다. 그 브링업은 스톡 이미지에서 돌았고 b12x 경로는 열린 문제가 아니라 닫힌 것이라(MEASUREMENTS.md), 프로필은 기록으로만 있다 — 실제로 합성해 배포한 적은 없다.
