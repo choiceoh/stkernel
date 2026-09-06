@@ -10931,8 +10931,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
     for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
                 "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
         check(sub in fleet, f"fleet.sh carries {sub}")
-    check('grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env"' in fleet,
+    check('grep -qE "^${k%%=*}=" <<< "$prof_here"' in fleet and "FAIL undeclared in profiles/glm53.env" in fleet,
           "preflight refuses a knob the profile does not declare (the launcher forwards only declared keys)")
+    # 39차 손질: the profile that serves is origin/main's (chains pull it); the
+    # checkout's copy only adds a note, and the tool's own stale copy is synced
+    check('git -C "$REPO" show origin/main:profiles/glm53.env' in fleet
+          and "NOTE checkout is $behind commit(s) behind origin/main" in fleet
+          and 'SYNC $copy <- repo (was stale)' in fleet,
+          "preflight checks declarations against origin/main, notes checkout lag, syncs its own copy")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
     check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
