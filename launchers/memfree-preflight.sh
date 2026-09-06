@@ -77,14 +77,55 @@ RE
 }
 
 echo "# node          MemFree   AnonPages   (GiB, after reclaim)" >&2
-MIN=""; ANONS=()
+# Each host must finish its own reclaim and settle before being measured, but
+# hosts are independent. Run them together: four serial 2 s settles used to
+# cost at least 8 s of every boot. Join ALL probes before sizing or returning
+# failure, so the launcher cannot start loading while another node reclaims.
+PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/memfree-preflight.XXXXXX") || exit 1
+PROBE_PIDS=(); PROBE_FAILED=()
+finish_probes() {
+  # Closing ssh does not guarantee its remote reclaim stopped. On a launcher
+  # interrupt, wait for the existing probes before returning the signal status
+  # so a retry cannot overlap them. A second signal must not break this join.
+  trap '' INT TERM
+  local pid
+  for pid in "${PROBE_PIDS[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  rm -rf -- "$PROBE_DIR"
+}
+trap finish_probes EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+probe_index=0
 for n in "${NODES[@]}"; do
-  if [ "$n" = "10.10.10.2" ] && [ "$IS_SELF" = "1" ]; then
-    read -r free anon < <(bash -c "$(probe)")
+  (
+    if [ "$n" = "10.10.10.2" ] && [ "$IS_SELF" = "1" ]; then
+      bash -c "$(probe)"
+    else
+      ssh $SSHOPT "choiceoh@$n" "bash -s" <<< "$(probe)" 2>/dev/null
+    fi
+  ) > "$PROBE_DIR/$probe_index" &
+  PROBE_PIDS+=("$!")
+  probe_index=$((probe_index + 1))
+done
+for probe_index in "${!PROBE_PIDS[@]}"; do
+  if wait "${PROBE_PIDS[$probe_index]}"; then
+    PROBE_FAILED+=(0)
   else
-    read -r free anon < <(ssh $SSHOPT "choiceoh@$n" "bash -s" <<< "$(probe)" 2>/dev/null)
+    PROBE_FAILED+=(1)
   fi
-  [ -z "${free:-}" ] && { echo "  $n  UNREACHABLE -- refusing to size against a node we cannot see" >&2; exit 1; }
+done
+
+MIN=""; ANONS=()
+for probe_index in "${!NODES[@]}"; do
+  n=${NODES[$probe_index]}
+  free=""; anon=""
+  read -r free anon < "$PROBE_DIR/$probe_index"
+  if [ "${PROBE_FAILED[$probe_index]}" = 1 ] || [ -z "$free" ]; then
+    echo "  $n  UNREACHABLE -- refusing to size against a node we cannot see" >&2
+    exit 1
+  fi
   printf "  %-12s %7s   %7s\n" "$n" "$free" "$anon" >&2
   ANONS+=("$anon:$n")
   if [ -z "$MIN" ] || awk "BEGIN{exit !($free < $MIN)}"; then MIN=$free; fi

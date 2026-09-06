@@ -533,12 +533,11 @@ ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 # calls each module's _build(). Unchanged source: ninja finds nothing to do
 # and the step costs ~10 s of imports. Never fatal: a failed prebuild just
 # leaves the boot to build as before. PREBUILD=0 skips it.
-# 2026-09-06 11:20: OFF by default. The .so nvcc produced in the CPU-only
-# container hung two boots in the profile run (a kernel spinning at 96 %
-# GPU, every launch after it blocked) while the same source built on the
-# GPU node served; the megakernel self-tests passed on the bad build, so the
-# difference is not caught at arm time. Until the binaries are diffed and the
-# cause named, PREBUILD=1 is an experiment, not a default.
+# 2026-09-06: OFF by default. Two prebuilt boots hung in profile-run while
+# an in-boot build served. The 11:40 binary comparison found identical
+# fatbin/SASS, rejecting a bad CPU-built binary as the cause (37차 §7).
+# Build/arm timing and its interaction with the 302 s distributed-init gap
+# remain unresolved, so PREBUILD=1 stays experimental.
 PREBUILD="${PREBUILD:-0}"
 if [ "$PREBUILD" = 1 ] && [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
   echo "== 확장 사전 빌드 (osar·megakernel nvcc, 구 컨테이너 서빙 중, 노드 병렬) =="
@@ -759,7 +758,21 @@ if [ -f "$OVERLAY_MANIFEST" ]; then
   fi
 fi
 
-# Workers first (rank 1..3), head last — their documented order.
+# Workers first (rank 1..3), head last. Start independent nodes concurrently,
+# then join EVERY docker-run result before starting rank 0. Docker's detached
+# start is the barrier here; vLLM's distributed rendezvous handles Python/model
+# readiness. A fixed sleep cannot prove that readiness and adds 8 s per boot.
+_worker_pids=()
+_join_worker_starts() {
+  # Let in-flight remote starts return before a supervisor can retry. Killing
+  # SSH alone does not establish that the remote docker command has stopped.
+  trap '' INT TERM
+  local _pid
+  for _pid in "${_worker_pids[@]}"; do wait "$_pid" || true; done
+}
+trap _join_worker_starts EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 rank=1
 for ip in "${WORKER_IPS[@]}"; do
   # Prelude first: the RoCE-v2 IPv4 GID index is per-node, so it has to be
@@ -779,11 +792,23 @@ for ip in "${WORKER_IPS[@]}"; do
             ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$ip \
             --entrypoint /bin/bash $IMAGE \
             -c "echo $W_B64 | base64 -d > /tmp/serve.sh; bash /tmp/serve.sh")
-  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof; docker rm -f $NAME_WORKER 2>/dev/null; $_wrun"
-  echo "worker rank=$rank @$ip launched"
+  ssh $SSHOPT choiceoh@"$ip" "mkdir -p $CACHE_HOST_PATH $LOG_HOST_DIR /home/choiceoh/vllm-prof && { docker rm -f $NAME_WORKER 2>/dev/null || true; } && $_wrun" &
+  _worker_pids+=($!)
   rank=$((rank+1))
 done
-sleep 8
+_worker_failed=0
+for _i in "${!_worker_pids[@]}"; do
+  if wait "${_worker_pids[$_i]}"; then
+    echo "worker rank=$((_i+1)) @${WORKER_IPS[$_i]} launched"
+  else
+    echo "ABORT: worker rank=$((_i+1)) @${WORKER_IPS[$_i]} failed to launch" >&2
+    _worker_failed=1
+  fi
+done
+# Reap all starts even after one fails; never leave a background start racing
+# a supervisor retry, and never launch a head that must wait for a missing rank.
+[ "$_worker_failed" = 0 ] || exit 1
+trap - EXIT INT TERM
 docker rm -f $NAME_HEAD 2>/dev/null || true
 SERVE_B64=$(printf '%s\n' "$CT_GID_PRELUDE" "vllm serve $SERVE_ARGS --node-rank 0 > /glmlogs/glm53.log 2>&1" | base64 -w0)
 docker run --name $NAME_HEAD ${COMMON/CACHEDIR/$CACHE_HOST_PATH} $ENVV -e VLLM_HOST_IP=$HEAD_IP \
