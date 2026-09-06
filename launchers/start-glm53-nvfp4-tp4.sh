@@ -605,6 +605,19 @@ if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" !
     fi
   done
 
+  # 37차 (2026-09-06 13:18): a worker killed mid-build (docker rm -f under a
+  # torn-down boot) leaves torch's FileBaton lock in the extension build dir;
+  # the next boot's worker then waits on it forever inside profile-run (rank 3
+  # sat 10 min in cpp_extension.load -> baton.wait for /cache/osar_build/<key>/
+  # lock while rank 0 waited in an all_reduce). No build is running at this
+  # point of the launcher, so every lock under the two build roots is stale.
+  echo "== 확장 빌드 잔여 lock 제거 (mk_build·osar_build) =="
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    _rm='docker run --rm -v '"$CACHE_HOST_PATH"':/cache --entrypoint /bin/sh '"$IMAGE"' -c "rm -f /cache/mk_build/*/lock /cache/osar_build/*/lock 2>/dev/null; true"'
+    if [ "$_ip" = "$HEAD_IP" ]; then bash -c "$_rm" >/dev/null 2>&1 || true
+    else ssh $SSHOPT choiceoh@"$_ip" "$_rm" >/dev/null 2>&1 || true; fi
+  done
+
   echo "== memfree preflight =="
   # Report goes to stderr (straight to the terminal); the computed GMU is the
   # only thing on stdout, so $(...) captures it alone.
