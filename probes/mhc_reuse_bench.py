@@ -50,6 +50,34 @@ def candidate_source(source, tensorcore=False):
     return source
 
 
+def mathematical_reference(values, torch):
+    """Independent FP64 formula, with the two required BF16 rounding points.
+
+    This is an accuracy oracle, not a bitwise FP32 execution emulator.
+    It intentionally shares neither CUDA partials nor either kernel's tree.
+    """
+    x, res, pm, cm, fn, scale, base, nw = (v.double() for v in values)
+    tokens = x.shape[0]
+    cm = cm.reshape(tokens, 4, 4)
+    r = pm[:, :, None] * x[:, None, :]
+    for k in range(4):
+        r = r + cm[:, k, :, None] * res[:, k, None, :]
+    y = r.reshape(tokens, -1) @ fn.T
+    y = y * torch.rsqrt(r.square().mean((1, 2)) + 1e-6)[:, None]
+    pre = torch.sigmoid(y[:, :4] * scale[0] + base[:4]) + 1e-6
+    post = torch.sigmoid(y[:, 4:8] * scale[1] + base[4:8])
+    comb = torch.softmax((y[:, 8:] * scale[2] + base[8:]).reshape(tokens, 4, 4), -1) + 1e-6
+    comb = comb / (comb.sum(-2, keepdim=True) + 1e-6)
+    for _ in range(19):
+        comb = comb / (comb.sum(-1, keepdim=True) + 1e-6)
+        comb = comb / (comb.sum(-2, keepdim=True) + 1e-6)
+    residual = r.to(torch.bfloat16)
+    layer = (pre[:, :, None] * residual.double()).sum(1)
+    norm = torch.rsqrt(layer.square().mean(-1) + 1e-6)
+    layer = (layer.to(torch.bfloat16).double() * norm[:, None] * nw).to(torch.bfloat16)
+    return residual, post.float(), comb.reshape(tokens, 16).float(), layer
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=18)
@@ -109,6 +137,9 @@ def main():
                 values[0].zero_(); values[1].zero_()
             ext.set_mhc_reuse(0)
             ref = tuple(v.clone() for v in call(values))
+            oracle = mathematical_reference(values, torch)
+            baseline_errors = [mk._rel_err(a, b) for a, b in zip(ref, oracle)]
+            assert max(baseline_errors) <= mk._TOL_MHC, (tokens, seed, "baseline vs FP64", baseline_errors)
             for mode in (1, 2):
                 ext.set_mhc_reuse(mode)
                 got = call(values)
@@ -116,9 +147,13 @@ def main():
                 errors = [mk._rel_err(a, b) for a, b in zip(got, ref)]
                 assert torch.equal(got[0], ref[0]), (tokens, seed, mode, "residual rounding")
                 assert max(errors) <= mk._TOL_MHC, (tokens, seed, mode, errors)
+                oracle_errors = [mk._rel_err(a, b) for a, b in zip(got, oracle)]
+                assert max(oracle_errors) <= mk._TOL_MHC, (tokens, seed, mode, "FP64", oracle_errors)
                 assert all(torch.isfinite(v).all() for v in got)
                 print(json.dumps({"gate": "baseline differential", "T": tokens,
-                                  "seed": seed, "mode": mode, "errors": errors}), flush=True)
+                                  "seed": seed, "mode": mode, "errors": errors,
+                                  "fp64_errors": oracle_errors,
+                                  "baseline_fp64_errors": baseline_errors}), flush=True)
 
     orders = list(itertools.permutations(range(3)))
     for tokens in (2, 6, 8):
