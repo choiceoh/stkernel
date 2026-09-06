@@ -9514,10 +9514,19 @@ def test_megakernel_w4_layout_functional() -> None:
               "stream is capturing' killed the CALIB2 boot)")
         xs = torch.randn(24, k)
         xs_pad = torch.cat([xs, torch.full((4, k), float("nan"))])   # padded rows
-        mod._calib_observe(xs_pad, pk_c)
-        check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
-              "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
-        mod._calib_observe(xs, pk_c)
+        # This is a CPU tensor/Hessian test. Only the device's capture-state
+        # query is mocked; calling it on a CUDA wheel without a visible GPU
+        # initializes the driver and used to fail before testing the math.
+        from unittest.mock import patch
+        with patch.object(torch.cuda, "is_current_stream_capturing", return_value=True):
+            mod._calib_observe(xs_pad, pk_c)
+            check(mod._CALIB["seen"] == 0 and not mod._CALIB["H"],
+                  "calibration: capture skips observation before changing the Hessian")
+        with patch.object(torch.cuda, "is_current_stream_capturing", return_value=False):
+            mod._calib_observe(xs_pad, pk_c)
+            check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
+                  "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
+            mod._calib_observe(xs, pk_c)
         check(mod._CALIB["dumped"], "calibration: the budget dumps")
         got_c = mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k)
         check(got_c is not None and int(got_c[1]) == 48
@@ -11295,6 +11304,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "defaults sample only while the floor is thin, judge per arm")
 
 
+def test_fleet_experiment_behaviors():
+    import unittest
+    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet_experiments.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
+    return result.testsRun
+
+
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
 
@@ -11431,5 +11448,6 @@ if __name__ == "__main__":
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
     test_fleet_reservation_tooling_contracts()
+    fleet_regressions = test_fleet_experiment_behaviors()
     regressions = test_megakernel_regression_suite()
-    print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")
+    print(f"all OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")
