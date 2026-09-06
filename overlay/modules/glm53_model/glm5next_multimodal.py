@@ -751,12 +751,9 @@ class Glm5NextProcessingInfo(Glm4vProcessingInfo):
     # "Attempted to assign 192 multimodal tokens to 384 placeholders". One
     # block per temporal group, stamped with the group's first frame second.
     # ------------------------------------------------------------------
-    def _construct_video_placeholder(
-        self,
-        video_array,
-        metadata: dict[str, Any],
-        grid_thw: torch.Tensor,
-    ) -> list[int]:
+    def _construct_video_placeholder(self, video_array, metadata, grid_thw):
+        # no annotations: this module does not import typing.Any (a boot died
+        # on the NameError at class-definition time, VID2 23:55)
         from vllm.transformers_utils.processors.glm5next import glm_sample_frame_indices
 
         hf_processor = self.get_hf_processor()
