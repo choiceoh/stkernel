@@ -30,6 +30,8 @@ Rows:
 baseline measured in that same process. A device fault poisons a CUDA context
 for the life of a process, so without it the first faulting spec makes every
 later row of the table unreadable (39차 §3: one bad cell reported six).
+(probes/b12x_static_cells.sh isolates one level up -- a whole container per
+cell -- which also survives a cell that hangs or wedges its container.)
 """
 from __future__ import annotations
 

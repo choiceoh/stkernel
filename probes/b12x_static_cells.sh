@@ -8,6 +8,12 @@
 #
 #   bash probes/b12x_static_cells.sh "u|t|t,h|z" [probe args...]
 #   OUT=/path/cells.out bash probes/b12x_static_cells.sh "u|z,h" --us 8,40,64
+#
+# The probe's own --isolate (#397) isolates the same way one level down: one
+# child PROCESS per spec inside ONE container, plus a summary table (U=40 us,
+# GB/s, gain over that child's own stock, numerics counts, status). Cheaper
+# (no container or JIT per cell) but it cannot outlive a wedged container, so
+# use this script when a cell may hang, --isolate when they only fault.
 set -uo pipefail
 SPECS=${1:?usage: b12x_static_cells.sh "spec|spec|..." [probe args...]}
 shift
