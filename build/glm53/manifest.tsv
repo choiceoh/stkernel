@@ -18,6 +18,7 @@ moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cut
 b12x_moe.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
 moe_static_kernel_v2.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v2.py	absent
 moe_static_kernel_v3.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
+moe_static_kernel_v4.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
 glm5next_model.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py	a13ebce1807328004c96146882f7c599d58d20fbb25819316ce90c2aa3e6cff1
 glm53_prefill_fastpath.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py	absent
 glm5next_attention.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py	a0870c317287ab444a4639ad418964e981efafb5386592540f85eb38d534c369
@@ -26,6 +27,7 @@ glm5next_kda.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvi
 flashinfer_mla_sparse_sm90.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py	4449ea25921dcae1ec7988581ff26a6ff5a9e5d6d4a0ac4a68a0017ea108f136
 glm53_kda_onepass.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py	absent
 glm53_fp8_dense.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py	absent
+mtp.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py	b183ed6e134e7126719b3c7208eef46039805d478916a5c876ec25d60be714ce
 qwen3_dflash2.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py	c141daa4b2059c0098224ac36471c2197b7052c100bef0a4dbc2ca79b627053f
 dflash_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py	41a1f26c72f0f4c6150821a310632a09e0e76b252e24d4e1e0f47f62321f155d
 spec_decode_rejection_warmup.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py	cd3bce82d185b46fdb92b37292176c7d6ee9488e8bbed4cfde0fe079bf0b6f53

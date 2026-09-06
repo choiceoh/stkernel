@@ -33,15 +33,15 @@
 | 13 | AR 프리페치 | 브래킷 대기 | ✅ | `AR_PREFETCH=0` · 상한 −0.4~0.6 ms(27차 정정), EXP-6+12 위에만 |
 | 18 | osar 벡터화 + 캐시정책 | 브래킷 대기 | ✅ | 코드 반영 완료. 직렬 절감 단독은 ~0.2~0.3 ms 로 CV 미달 — **EXP-13 팔과 같은 부팅**에서 L2 위생 시너지로 판정(#303 정정) |
 | 20 | 미세 융합 묶음 2 (듀얼 GEMM·KDA 원패스·kpool) | 브래킷 대기 | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS(31차), 런치 −249/1,548, **−0.18 ms/스텝**(C=1; 첫 판 −0.25 는 프로브 clone 편향) · C=4 −0.3. 원패스의 전제(순수 spec-verify 스텝)는 유니폼 디코드 그래프의 캡처 형상이다 — "이 러너엔 없다"(32차 §11 정정 전 가설)는 04:50 정정·KDAPROOF3 `n_spec=4` 캡처로 철회, 증명은 캡처 줄. 게이트 epilogue 축은 오프라인 기각 |
-| 9 | 인덱서 head-gate split-K | 얹기 대기 | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
+| 9 | 인덱서 head-gate split-K | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14) | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
-| 4 | b_proj/indexer fp8 | 대기 | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
+| 4 | b_proj/indexer fp8 | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14; 키 선언 PR #357) | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
 | 3 | MHC small-M 스윕 | 프로브 먼저 | — | `MHC_SMALLM` unset = 불활성 |
 | 17 | MHC TileLang 패스설정 | 프로브 먼저 · **표적 축소** | — | `MHC_PASSES` 기본 off (#301). 무장 뒤 디코드 몫은 잔여 mhc 14발뿐이고 주종은 **프리필 big_fuse**(#303 정정) |
 | 11 | dsv4 에 MK_SEG_MHC | 프로브 먼저 | — | 2단계는 무부팅, 이기면 dsv4 다운타임 창 |
 | 21 | MK-GEMM v2 (비상주 레인) | 프로브 먼저 · **선언 선행** | — | exact PASS, 규칙 확정 뒤 m ≤ 16 전 형상 v2 ≥ v1 — **노출 프로브·스탬프 대기**(30차 §4~5). 상한 스텝 −2.5 ms. **`VLLM_GLM53_MK_GEMM2` 가 프로필에 없다 → 런처의 `_vllm_keys` 가 안 나른다: 지금 부팅에 얹으면 caller env 로 줘도 조용히 v1 이 돈다**(메가커널 29차의 교훈, MEASUREMENTS:2380). 브래킷 전에 프로필 선언(기본 0)이 선행 |
 | 22 | 공유 전문가 GEMM 로컬 양자화 | **일몰**(34차 §8, 2026-09-06) | — | 코드·노브 삭제(`mk_gemm_lq_kernel`·`MK_LOCALQ`). 단독 손해, 서빙 이득 0(체인14), 같은 진단의 채택된 처방은 EXP-21 v2 레인. 기록은 아래 EXP-22 절 |
-| 23 | b12x 정적(디코드) MoE 커널 v2/v3 | **프로브 통과 · 브래킷 대기** | ✅ | `VLLM_GLM53_B12X_STATIC_V2=""`(프로필, 기본 스톡). 커널 자체를 접수(모듈 `glm53_moe/moe_static_kernel_v{2,3}.py`): v2(gate+up 단일 스테이지·FC2 전용 스테이지·배리어 제거·32행 A 박스) U=40 723 → 693 µs **+4.2~4.9%**; v3(`w`, FC1 을 64폭 반쪽 × 256폭 K 로 w13 행 세그먼트 128 B) **727.9 → 657.2 µs +9.7%(215 GB/s)**, 세 형상 수치 PASS(35차 §7·§10). DRAM 이 행 세그먼트 폭을 본다(64 B 167 / 128 B 202 / 256 B 222 / 선형 239 GB/s, §8). 브래킷: base → `VLLM_GLM53_B12X_STATIC_V2=w` → base, 프리필 동반(dynamic 불변), 증명 줄 `[b12x static v2] lane serving: static2_…w` |
+| 23 | b12x 정적(디코드) MoE 커널 v2/v3/v4 | **v3 `w` 채택 · 프로필 기본값(35차 부록)** · **v4 `u` 승격 · 프로필 기본값**(38차 부록, 운영자) · A 링 `v` 프로브 대기 | ✅ | `VLLM_GLM53_B12X_STATIC_V2=u`(프로필; 서빙 반영은 다음 프로덕션 부팅, 증명 줄 `…wu`). v4 `u` 원샷(12:20~12:48, SPEC_K=5): 디코드 창 21.9/21.9/20.9 vs 21.4/21.4/20.7 step/s(**+2%**), 프리필 warm 불변, 9/9, 한국어 0/9; 프로브 U=40 648 vs 672 µs(−3.5%). `e` 짝수 웨이브 기각(합계 대역폭은 스트림 수에 준선형), `k` 분할 −1~2% |
 | 19 | hc 가중치 bf16 | **사실상 초월** · 참조 측정 | — | mk_mhc 가 pair 를 대체해 ONEPASS 전제가 사라졌다 — 폴백 경로의 커널급 참조로만 유효(#303) |
 | 5 | 프리필: 캡처 → KDA 스윕 | 부분 완료 | — | 캡처·프로파일은 09-03 원장에 있고 KDA 청크 스윕이 남음 |
 | 16 | 드래프터 메가커널 | 제안 · 착수 승인 대기 | — | 상한 −0.8~1.0 ms, 공사 2주 |
@@ -148,8 +148,8 @@ W8A8 이후 남은 bf16 GEMM 145개/스텝(7.7%) 중 가드가 통과시키는 �
 `wk_weights_proj`(로더가 융합을 위해 bf16 강제)는 의도적으로 제외했다.
 
 ```bash
-EXTRA_ENV="VLLM_GLM53_FP8_DENSE_BPROJ=1" \
-  bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+VLLM_GLM53_FP8_DENSE_BPROJ=1 \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand (profile-declared key: caller env, not EXTRA_ENV)
 ```
 
 - 전제: `VLLM_GLM53_FP8_DENSE=1`(프로필 기본) — 없으면 이 노브는 무효.
@@ -760,7 +760,8 @@ plan(on/ksr/units/bps/tail)=[1, 1, 303, 2, 0], exact gate worst rel=… PASS`, `
 (VLLM_GLM53_MK_HEAD_DRAFT) vs fp8 head on its first served call: argmax agree N/N rows, |delta| mean …`.
 트레이스에선 `mk_gemm2_kernel<1>` 이 스텝당 +2(타깃·드래프트) 하고 deep_gemm 헤드 발사가 사라진다.
 
-**상태**: 구현(브랜치 `claude/mk-gemm-v2-lmhead`, 원장 §13) — GPU 벤치와 드래프트 헤드 브래킷은 플릿 창 대기.
+**상태**: 구현·머지(PR #341, 원장 §13). **보류** — 교환비(§13): 헤드당 +0.75% 에 로짓 잡음 3배(fp8 2.66% → W4 8.37%, 실가중치 실측). 노브 기본 0 유지;
+GPU 벤치는 srv2 `gap_bench9.sh` 가 유휴 창에 남긴다(`g2.head.out`). 다음 레버는 EXP-4+EXP-9 묶음(§14).
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)

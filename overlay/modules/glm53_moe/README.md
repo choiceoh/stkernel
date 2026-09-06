@@ -196,7 +196,7 @@ b12x_shared_workspace).
 
 ## Static v2 / v3 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
 
-`VLLM_GLM53_B12X_STATIC_V2` (profile default `""` = stock) routes the exact
+`VLLM_GLM53_B12X_STATIC_V2` (profile default `u` = v4 since 38차; `w` = v3 was the 35차 default, `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a
 rework of flashinfer's `MoEStaticKernel` with the same workspace, weight
 views, routing frontend and arithmetic (FC1 accumulation order, fp4 quant of
@@ -229,9 +229,30 @@ box row is a full 128 B line -- the v2 stamps put FC1 at 216 GB/s against
 FC2's 242 with the same pipeline, and a vectorized-load streamer measured
 DRAM at 167 GB/s for 64 B row segments, 202 for 128 B, 222 for 256 B; FC2
 and the intermediate layout are v2's, tile_m 32, static schedule, FC2 3
-stages by default). The cache key and on-disk kernel name carry the config; the source file
-is in `_kernel_source_files()`, so an edit invalidates the module cache like
-any other kernel file.
+stages by default), and `e` (v3 only, even waves: the routing phase counts the
+items -- one m-tile per 32 rows of an expert, times the 4 intermediate
+slices -- into `next_item[0]`, and after the second grid barrier every CTA
+picks the CTA count in {48, 44, 40, 36, 32} whose last wave leaves the fewest
+empty item slots (ties to the larger); CTAs beyond it exit. U=40 experts =
+160 items run as 40 CTAs x 4 full waves instead of 48 x 3.33, whose last
+third-of-a-wave streamed at 16 CTAs' worth of bandwidth; multiples of 4 keep
+an expert's 4 slice-CTAs co-scheduled so DRAM still sees whole w2 rows;
+measured a wash -- 40 CTAs stream 220 GB/s against 48 CTAs' 229, the
+aggregate rate grows sub-linearly with the stream count, ledger 38차), `k` (v3
+last-wave split: when the last wave has p items and 2p CTAs, each item runs on
+two CTAs -- the striding owner streams FC1 half 0, the helper `bidz + p` half
+1, each zeroes the other half of the intermediate and runs the full FC2, the
+bf16 atomic scatter adds the partials; the item count comes from the same
+`next_item[0]` counter; U=40: -1~2%, numerics within the gate), `u`
+(`moe_static_kernel_v4.py`: v3 with 512-wide FC1 K stages and gate/up in
+separate stages, so every w13 TMA box row is 256 B -- the timing-only cells
+`xs`/`xa` showed FC1 at 200 GB/s = the streamer's 128 B-segment figure while
+FC2 sits at 237; 32 KB stages, FC2 2 stages by default, smem 101,376 B =
+the opt-in maximum), and the probe-only timing cells `xs` (skip the FC1 SFB
+boxes) and `xa` (skip the A + SFA boxes) that the serving parse rejects. The
+cache key and on-disk kernel name carry the config; the source files are in
+`_kernel_source_files()`, so an edit invalidates the module cache like any
+other kernel file.
 
 Measured by `probes/b12x_static_probe.py` (stock vs v2, DRAM-cold, graph
 replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the

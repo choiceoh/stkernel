@@ -3495,10 +3495,13 @@ def test_b12x_static_v2_controls() -> None:
     check(parse("1") == default and parse("1") is not default,
           "'1' must be a copy of the default config")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
-                      "dynamic": False, "wide": False},
+                      "dynamic": False, "wide": False, "even": False, "split": False,
+                      "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
-                                 "stamps": False, "dynamic": False, "wide": False},
+                                 "stamps": False, "dynamic": False, "wide": False,
+                                 "even": False, "split": False, "skip_sf": False,
+                                 "skip_a": False, "v4": False, "a_ring": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3506,6 +3509,36 @@ def test_b12x_static_v2_controls() -> None:
     check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
           "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
     check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
+    even = parse("w,e")
+    check(even["even"] and even["wide"] and even["fc2"] == 3,
+          "e selects the v3 even-wave striding on top of w")
+    check(not parse("w")["even"], "w alone keeps every CTA striding")
+    try:
+        parse("m32,f2,g4,e")
+        check(False, "e without w must be rejected")
+    except ValueError:
+        pass
+    check(parse("w,k")["split"] and not parse("w,k")["even"], "k selects the last-wave split")
+    v4 = parse("u")
+    check(v4["v4"] and v4["wide"] and v4["fc2"] == 2 and v4["fc1"] == 2,
+          "u selects the v4 kernel (FC1 K 512, gate/up stages) with 2 FC2 stages")
+    check(parse("u,g3")["fc2"] == 3 and parse("u,k")["split"], "u composes with g and k")
+    v5 = parse("v")
+    check(v5["a_ring"] and v5["v4"] and v5["wide"] and v5["fc2"] == 2,
+          "v selects v4 with the A ring")
+    try:
+        parse("v,xa", probe=True)
+        check(False, "v with xa must be rejected")
+    except ValueError:
+        pass
+    for bad in ("w,e,k", "m32,k", "w,xs", "w,xa"):
+        try:
+            parse(bad)
+            check(False, f"{bad} must be rejected by the serving parse")
+        except ValueError:
+            pass
+    check(parse("w,s,xs", probe=True)["skip_sf"] and parse("w,xa", probe=True)["skip_a"],
+          "the probe parse admits the timing-only xs/xa cells")
     for raw in ("w,m64", "w,d", "w,a64"):
         try:
             parse(raw)
@@ -3588,9 +3621,9 @@ def test_b12x_static_v2_controls() -> None:
           "moe_static_kernel_v2.py\tabsent" in manifest,
           "the v2 kernel is a new file (absent preimage) in the module manifest")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=w' in profile,
-          "the profile ships the v3 static kernel (spec w) as the default "
-          "(35차, operator: +7~10% on the decode MoE kernel; rollback = \"\")")
+    check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
+          "the profile ships the v4 static kernel (spec u) as the default "
+          "(38차, operator: decode windows +2% over v3, probes -3.5%; rollback = \"w\")")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v2.py" in runner,
           "the probe runner must mount the v2 kernel beside the dispatcher")
