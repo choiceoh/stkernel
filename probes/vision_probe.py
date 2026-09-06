@@ -8,7 +8,7 @@ not finish inside --timeout seconds (the serving side is then left for the
 stall watcher's py-spy snapshot). A second text-only request afterwards
 shows whether the engine still serves after the image request.
 
-    python3 probes/vision_probe.py [--timeout 180] [--size 224]
+    python3 probes/vision_probe.py [--timeout 180] [--size 224] [--video test.mp4]
 """
 import argparse
 import base64
@@ -90,13 +90,21 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--size", type=int, default=224)
     ap.add_argument("--max-tokens", type=int, default=120)
+    ap.add_argument("--video", default="", help="path of a small mp4 to send as a data-URL video_url (needs MM_LIMIT video>=1)")
     args = ap.parse_args()
     model = model_name()
     data_url = "data:image/png;base64," + base64.b64encode(png(args.size)).decode()
     content = [{"type": "image_url", "image_url": {"url": data_url}},
                {"type": "text", "text": "이 이미지에 어떤 색의 도형이 어디에 있는지 한 문장으로 설명해줘."}]
+    cases = [("image", content)]
+    if args.video:
+        with open(args.video, "rb") as fh:
+            vurl = "data:video/mp4;base64," + base64.b64encode(fh.read()).decode()
+        cases.append(("video", [{"type": "video_url", "video_url": {"url": vurl}},
+                                {"type": "text", "text": "이 짧은 영상에서 화면이 어떻게 바뀌는지 한 문장으로 설명해줘."}]))
+    cases.append(("text-after", "1부터 5까지 세어줘."))
     rc = 0
-    for label, payload in (("image", content), ("text-after", "1부터 5까지 세어줘.")):
+    for label, payload in cases:
         try:
             text, ttft, total = ask(model, payload, args.max_tokens, args.timeout)
             print(f"{label:>10}: OK  ttft={ttft if ttft is not None else float('nan'):.2f}s total={total:.1f}s -> {text[:160]!r}", flush=True)
