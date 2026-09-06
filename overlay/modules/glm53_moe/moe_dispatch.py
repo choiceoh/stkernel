@@ -73,6 +73,43 @@ _FORCE_MOE_W4A16_ENV = "FLASHINFER_B12X_FORCE_MOE_W4A16"
 _MICRO_SHARE_INPUT_ACROSS_EXPERTS = (
     os.environ.get("FLASHINFER_B12X_MICRO_SHARE_INPUT", "1") != "0"
 )
+# The pinned M128 GLM prefill candidate leaves small dynamic tiles and all
+# decode backends on their original implementation. Exact 1 is intentional.
+_GLM53_B12X_PREFILL_REUSE = (
+    os.environ.get("VLLM_GLM53_B12X_PREFILL_REUSE") == "1"
+)
+_GLM53_B12X_PREFILL_FC1_N128 = (
+    os.environ.get("VLLM_GLM53_B12X_PREFILL_FC1_N128") == "1"
+)
+MoEGatedPrefillReuseKernel = None
+MoEGatedPrefillN128Kernel = None
+
+
+def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
+    """Load private inherited helpers only after the optional shape gate.
+
+    Upstream may remove a private symbol before the candidate can compare
+    its source hash. That must decline this lane, including with the knob
+    off, rather than break importing the otherwise unchanged dispatcher.
+    """
+    global MoEGatedPrefillReuseKernel, MoEGatedPrefillN128Kernel
+    try:
+        from .moe_dynamic_prefill import (
+            MoEGatedPrefillReuseKernel as candidate,
+            stock_contract_matches,
+        )
+        if fc1_n128:
+            from .moe_dynamic_prefill_n128 import (
+                MoEGatedPrefillN128Kernel as wide_candidate,
+            )
+    except (ImportError, AttributeError):
+        return False
+    if not stock_contract_matches():
+        return False
+    MoEGatedPrefillReuseKernel = candidate
+    if fc1_n128:
+        MoEGatedPrefillN128Kernel = wide_candidate
+    return True
 
 # Micro kernel cutover thresholds (routed pairs)
 _MICRO_COMPACT_CUTOVER_PAIRS = 20
@@ -1086,6 +1123,9 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_kernel.__file__,
         moe_static_common.__file__,
         moe_static_kernel_v4.__file__,
+        # Hash the candidate without importing its pinned private helpers.
+        os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill.py"),
+        os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill_n128.py"),
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1232,6 +1272,8 @@ def _dynamic_kernel_cache_key(
     swiglu_beta: float,
     swiglu_limit: float | None,
     share_input_across_experts: bool,
+    prefill_reuse: bool = False,
+    prefill_fc1_n128: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1239,7 +1281,7 @@ def _dynamic_kernel_cache_key(
     runtime-shaped operands as pointers, so one artifact serves every batch
     size.
     """
-    return (
+    key = (
         "dynamic",
         activation_precision,
         quant_mode,
@@ -1258,6 +1300,11 @@ def _dynamic_kernel_cache_key(
         swiglu_limit,
         share_input_across_experts,
     )
+    # Preserve the stock key exactly; the opt-in kernel must never reuse a
+    # stock artifact (or poison a later stock call in the same process).
+    if prefill_fc1_n128:
+        return key + ("glm53_prefill_fc1_n128_v1",)
+    return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
 
 
 _STATIC_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
@@ -2973,6 +3020,26 @@ def _get_dynamic_kernel(
     # tile_m comes from the workspace's shared selection so the kernel's task
     # and scale indexing matches the allocated scratch geometry.
     mma_tiler_mn = (tile_m, _level_tile_n(activation_precision))
+    prefill_reuse = (
+        (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
+        and m >= 3456
+        and E == 288
+        and k == 4096
+        and n == 512
+        and num_topk == 8
+        and activation_precision == "fp4"
+        and quant_mode == "nvfp4"
+        and mma_tiler_mn == (128, 128)
+        and activation == "swigluoai_uninterleave"
+        and swiglu_alpha == 1.0
+        and swiglu_beta == 0.0
+        and swiglu_limit == 10.0
+        and torch.cuda.get_device_capability() == (12, 1)
+        and _prefill_reuse_stock_contract_matches(
+            fc1_n128=_GLM53_B12X_PREFILL_FC1_N128,
+        )
+    )
+    prefill_fc1_n128 = prefill_reuse and _GLM53_B12X_PREFILL_FC1_N128
 
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,
@@ -2991,6 +3058,8 @@ def _get_dynamic_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
         share_input_across_experts=share_input_across_experts,
+        prefill_reuse=prefill_reuse,
+        prefill_fc1_n128=prefill_fc1_n128,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3018,6 +3087,23 @@ def _get_dynamic_kernel(
         intermediate_size=n,
         num_topk=num_topk,
     )
+    if prefill_reuse:
+        candidate_cls = (
+            MoEGatedPrefillN128Kernel
+            if prefill_fc1_n128
+            else MoEGatedPrefillReuseKernel
+        )
+        kernel = candidate_cls(
+            sf_vec_size=sf_vec_size,
+            mma_tiler_mn=mma_tiler_mn,
+            input_scales_are_reciprocal=input_scales_are_reciprocal,
+            fast_math=fast_math,
+            activation=activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit,
+            share_input_across_experts=share_input_across_experts,
+        )
     launch = _DynamicMoELaunch(
         kernel,
         k=k,
@@ -3162,6 +3248,13 @@ def _get_dynamic_kernel(
         extra_key_files=_kernel_source_files(),
     )
 
+    if prefill_reuse:
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill reuse] compiled exact GLM M128 lane: "
+            "Q0 8 rows, parallel E288 scan/top8 reserve, FC2 A/SFA retained; "
+            "FC1_N128=%s; m=%d k=%d n=%d experts=%d mac=%d",
+            prefill_fc1_n128, m, k, n, E, mac,
+        )
     result = (compiled, mac)
     _DYNAMIC_KERNEL_CACHE[cache_key] = result
     return result

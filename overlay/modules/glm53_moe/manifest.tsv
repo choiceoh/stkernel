@@ -9,3 +9,6 @@ b12x_moe.py	flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb4
 # -- b12x static v4 (35차 v2 -> v3 -> 38차 v4 `u`; v2/v3 sunset 34차 §8, their shared helpers in moe_static_common)
 moe_static_common.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py	absent
 moe_static_kernel_v4.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
+# -- opt-in dynamic prefill task/input reuse (stock gated helper hash pinned)
+moe_dynamic_prefill.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py	absent
+moe_dynamic_prefill_n128.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py	absent

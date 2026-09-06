@@ -3,6 +3,9 @@
 sparse_attn_indexer_kpool.py	vllm/model_executor/layers/sparse_attn_indexer_kpool.py	4772b45eb9b72daab77d8a7581f88508a5e30ed6440e1ed2637722977defaf1b
 # -- glm53_tail_slot_persistent
 glm53_kpool_indexer.py	vllm/v1/attention/backends/mla/indexer.py	fe1b106466008c21d0194a59909b19832e127fad255965611c4c7f7a971422a2
+# -- glm53_kda_prefill_regime (kept: #368 builds the direct-out prefill path on kda.py)
+kda.py	vllm/third_party/flash_linear_attention/ops/kda.py	ac2260c84a36936ad7d56ef63dbceb4618b2c499d7637e08b407f0cd706f9d02
+chunk_delta_h.py	vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py	1b3ad391f939d9443c6b7adb19e57fe381bd5dccea064e8417a4f85b0e713b26
 # -- glm53_mhc_tilelang
 tilelang.py	vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
 tilelang_kernels.py	vllm/model_executor/kernels/mhc/tilelang_kernels.py	03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24

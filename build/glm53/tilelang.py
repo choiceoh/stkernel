@@ -11,6 +11,7 @@
 # tile_n/n_splits pair and the VLLM_GLM53_MHC_ONEPASS one-launch route --
 # were sunset in 34차 §8: mk_mhc replaced the pair (RUNBOOK EXP-19).
 import os
+from functools import cache
 
 
 def _deneb_persist_tilelang_cache() -> None:
@@ -113,6 +114,76 @@ def _deneb_parse_bigfuse(raw: str):
 
 _raw_bigfuse = (os.environ.get(_BIGFUSE_ENV) or "").strip()
 _DENEB_BIGFUSE = _deneb_parse_bigfuse(_raw_bigfuse) if _raw_bigfuse else None
+
+
+# Prefill post-map + prenorm experiment. The stock post result is rounded to
+# BF16 before its prenorm GEMM. The fused kernel retains that boundary while
+# avoiding the GEMM's reread of the complete HC-expanded residual. It changes
+# the dot/reduction schedule and requires GPU differential + serving gates.
+_DENEB_PREFILL_POST_PRENORM = (
+    os.environ.get("VLLM_GLM53_MHC_PREFILL_POST_PRENORM") == "1"
+)
+
+
+@cache
+def _deneb_prefill_post_prenorm_device(device):
+    return torch.cuda.get_device_capability(device) == (12, 1)
+
+
+def _deneb_prefill_post_prenorm(
+    comb, residual, post, x, fn, residual_out, gemm_out, sqrsum, n_splits,
+):
+    """Offer only the dense GLM prefill geometry to the fused experiment."""
+    if not _DENEB_PREFILL_POST_PRENORM:
+        return False
+    if (
+        residual.ndim != 3
+        or tuple(residual.shape[1:]) != (4, 4096)
+        or residual.shape[0] < 128
+        or residual.device.type != "cuda"
+        or n_splits < 1
+        or n_splits > 64
+    ):
+        return False
+    m = residual.shape[0]
+    layouts = (
+        (residual, (m, 4, 4096), torch.bfloat16),
+        (residual_out, (m, 4, 4096), torch.bfloat16),
+        (x, (m, 4096), torch.bfloat16),
+        (post, (m, 4), torch.float32),
+        (comb, (m, 4, 4), torch.float32),
+        (fn, (24, 16384), torch.float32),
+        (gemm_out, (n_splits, m, 24), torch.float32),
+        (sqrsum, (n_splits, m), torch.float32),
+    )
+    if any(
+        tuple(tensor.shape) != shape
+        or tensor.dtype != dtype
+        or tensor.device != residual.device
+        or not tensor.is_contiguous()
+        for tensor, shape, dtype in layouts
+    ):
+        return False
+    if not _deneb_prefill_post_prenorm_device(residual.device):
+        return False
+    from vllm.model_executor.kernels.mhc.tilelang_kernels import (
+        _mhc_prefill_post_prenorm_kernel,
+    )
+
+    # These outputs are fresh dispatcher allocations. Also reject aliases in
+    # direct probe calls: another CTA can still be reading the original row.
+    inputs = (residual, x, post, comb, fn)
+    input_storages = {tensor.untyped_storage().data_ptr() for tensor in inputs}
+    outputs = (residual_out, gemm_out, sqrsum)
+    output_storages = {tensor.untyped_storage().data_ptr() for tensor in outputs}
+    if len(output_storages) != len(outputs) or input_storages & output_storages:
+        return False
+    _mhc_prefill_post_prenorm_kernel[((m + 15) // 16, n_splits)](
+        comb, residual, post, x, fn, residual_out, gemm_out, sqrsum,
+        m, HIDDEN=4096, NSPLITS=n_splits, BM=16, BK=64, BN=32,
+        num_warps=4, num_stages=2,
+    )
+    return True
 
 
 def _deneb_bigfuse_hblk(num_tokens: int, hidden_size: int):
@@ -855,7 +926,10 @@ def mhc_fused_post_pre_tilelang(
             tile_n=tile_n,
             n_splits=n_splits,
         )
-    else:
+    elif not _deneb_prefill_post_prenorm(
+        comb_res_mix_flat, residual_flat, post_layer_mix_flat, x_flat,
+        fn, residual_cur, gemm_out_mul, gemm_out_sqrsum, n_splits,
+    ):
         _post_kw = {}
         _post = _deneb_bigfuse_post(num_tokens)
         if _post is not None:

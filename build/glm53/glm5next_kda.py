@@ -14,6 +14,8 @@ GLM5-Next-only. ``forward`` calls ``self._forward`` directly (no
 the decorated ``_forward``.
 """
 
+import os
+
 import torch
 from torch import nn
 
@@ -56,6 +58,38 @@ from vllm.transformers_utils.configs.kimi_linear import KimiLinearConfig
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
 logger = init_logger(__name__)
+
+
+_KDA_PREFILL_DIRECT_OUT = (
+    os.environ.get("VLLM_GLM53_KDA_PREFILL_DIRECT_OUT") == "1"
+)
+if _KDA_PREFILL_DIRECT_OUT:
+    logger.info("[kda-prefill] direct output armed (pure prefill only)")
+
+
+def _kda_prefill_output_buffer(
+    core_attn_out, num_actual_tokens, local_num_heads, head_dim,
+    *, use_spec, num_prefills, num_decodes,
+):
+    """Select only a dense pure-prefill destination; retain the merge otherwise."""
+    if (
+        not _KDA_PREFILL_DIRECT_OUT
+        or use_spec
+        or num_prefills <= 0
+        or num_decodes != 0
+        or num_actual_tokens <= 0
+        or core_attn_out.device.type != "cuda"
+        or core_attn_out.dtype != torch.bfloat16
+        or core_attn_out.ndim != 4
+        or core_attn_out.shape[0] != 1
+        or core_attn_out.shape[1] < num_actual_tokens
+        or core_attn_out.shape[2] != local_num_heads
+        or core_attn_out.shape[3] != head_dim
+        or not core_attn_out.is_contiguous()
+    ):
+        return None
+    # A prefix of the only batch remains dense, even with capture padding.
+    return core_attn_out[:, :num_actual_tokens]
 
 
 class _Glm5NextMergedColumnParallelLinear(MergedColumnParallelLinear):
@@ -658,9 +692,8 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
 
         # --- core attention: non-spec path (prefill or plain decode) ---
         core_attn_out_non_spec = None
-        # Only the plain-decode recurrent kernel can write straight into the
-        # layer output buffer; the chunked prefill kernel cannot, so this
-        # stays None there and the merge copy below runs as before.
+        # Pure prefill can opt into the same direct destination as plain
+        # decode. Mixed steps retain their gather/scatter merge below.
         ns_out = None
         if attn_metadata_narrowed.num_prefills > 0:
             assert q_ns is not None
@@ -668,6 +701,12 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
             assert has_initial_state is not None
             initial_state = gather_initial_states(
                 recurrent_state, non_spec_state_indices_tensor, has_initial_state
+            )
+            ns_out = _kda_prefill_output_buffer(
+                core_attn_out, num_actual_tokens, self.local_num_heads, self.head_dim,
+                use_spec=use_spec,
+                num_prefills=attn_metadata_narrowed.num_prefills,
+                num_decodes=attn_metadata_narrowed.num_decodes,
             )
             (
                 core_attn_out_non_spec,
@@ -688,6 +727,7 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
                 cu_seqlens=non_spec_query_start_loc,
                 safe_gate=safe_gate,
                 lower_bound=lower_bound,
+                out=ns_out,
             )
             # Init cache
             scatter_states(
