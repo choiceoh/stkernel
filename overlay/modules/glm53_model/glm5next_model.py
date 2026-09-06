@@ -133,6 +133,20 @@ if install_glm53_prep_fused is not None:
     except Exception:
         logger.exception("[prep-fused] install failed -> stock path")
 
+# deneb fork (glm53_draft_dump, 37차): the target's per-token features for
+# drafter training, from prefill steps; inert without VLLM_GLM53_DRAFT_DUMP.
+try:
+    from .glm53_draft_dump import install_glm53_draft_dump
+except ImportError as _e:
+    install_glm53_draft_dump = None
+    if _e.name != f"{__package__}.glm53_draft_dump":
+        logger.exception("[draft-dump] module import failed -> not installed")
+if install_glm53_draft_dump is not None:
+    try:
+        install_glm53_draft_dump()
+    except Exception:
+        logger.exception("[draft-dump] install failed -> not installed")
+
 # deneb fork (glm53_dflash_early_fc): the drafter's fc under the target head
 # + sampler. Same shape of install as prep_fused: import only, inert unless
 # VLLM_GLM53_DFLASH_EARLY_FC=1, loud on failure, never fatal.

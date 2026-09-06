@@ -8528,6 +8528,33 @@ def test_self_built_kernels_persist_their_caches() -> None:
                                               "self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g",
                                               "self.factor, self.ratio, self.sbs, PAD_SLOT_ID")),
           "the 23 ints are unpacked in the documented order on both sides")
+    # 37차 night round: the target's per-token features for drafter training
+    # (five aux hidden states, ids, positions, top-k logits + lse) from prefill
+    # steps. Inert without VLLM_GLM53_DRAFT_DUMP; wraps execute_model after
+    # the original; compute_logits is a TP collective so every rank runs the
+    # same 1024-token chunks and only rank 0 writes; a failing hook disables
+    # itself and never touches the step.
+    dd = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                 "glm53_draft_dump.py"), encoding="utf-8").read()
+    man_rt = open(os.path.join(REPO, "overlay/modules/glm53_runtime/manifest.tsv"),
+                  encoding="utf-8").read()
+    wiring_m = open(os.path.join(REPO, "overlay/modules/glm53_model/glm5next_model.py"),
+                    encoding="utf-8").read()
+    check("glm53_draft_dump.py\tvllm/models/glm5next/nvidia/glm53_draft_dump.py\tabsent" in man_rt
+          and "from .glm53_draft_dump import install_glm53_draft_dump" in wiring_m
+          and wiring_m.index("install_glm53_draft_dump()") > wiring_m.index("install_glm53_prep_fused()")
+          and "if _STATE[\"installed\"] or dump_dir() is None:" in dd
+          and "out = orig(self, scheduler_output, *args, **kwargs)" in dd
+          and dd.index("out = orig(self, scheduler_output") < dd.index("_dump_step(self)")
+          and "for i in range(0, hidden.shape[0], CHUNK):" in dd
+          and "top_ids, top_vals, lse = _topk_logits(runner, hidden, k)   # collective: all ranks" in dd
+          and "if rank == 0:" in dd and "os.replace(path + \".tmp\", path)" in dd
+          and "_STATE[\"disabled\"] = True" in dd
+          and "torch.cuda.is_current_stream_capturing()" in dd,
+          "the draft-dump hook is mounted beside prep_fused, installed after it, "
+          "inert without its env, runs after the original execute_model, computes "
+          "the head collectively in fixed chunks, writes on rank 0 atomically, and "
+          "disables itself on failure")
     check("_HOOK_SERVED_PRE[0] += 1" in mkp
           and "[megakernel] mhc-pre hook serving (T=%d)" in mkp
           and mkp.index("maybe_arm()", mkp.index("def mhc_pre_hook(")) < mkp.index("out = mhc_pre_only(", mkp.index("def mhc_pre_hook(")),

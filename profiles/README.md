@@ -91,7 +91,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_kernels` | **묶음(34차)**: kpool 인덱서 op·top-k 커널·tail-select 융합, tail 슬롯, SM121 MLA 프리필, KDA 프리필 버킷, MHC TileLang (옛 `glm53_kpool_tail_select`·`glm53_tail_slot_persistent`·`glm53_sm121_mla_prefill`·`glm53_kda_prefill_regime`·`glm53_mhc_tilelang`) | 9 | 일부 | · | ● | · |
 | `glm53_drafter` | **묶음(34차)**: DFlash2 드래프터 접수, fp8 로더, 워밍업, early-fc, 준비 캐시, fp8 lm_head (옛 `glm53_dflash2_fp8_head`·`glm53_dflash_loader_fp8`·`glm53_dflash_warmup`·`glm53_dflash_early_fc`·`glm53_drafter_prep`·`fp8_lm_head`) | 6 | 일부 | · | ● | · |
 | `glm53_moe` | **묶음(34차)**: b12x 공유 워크스페이스·EP 마이크로커널 레인·직접 출력 (옛 `b12x_shared_workspace`·`b12x_zero_weight_micro`·`glm53_b12x_out`) + 정적(디코드) MoE 커널 v2/v3(35차, `moe_static_kernel_v2.py`·`moe_static_kernel_v3.py`, opt-in) | 6 | — | · | ● | · |
-| `glm53_runtime` | **묶음(34차)**: prep-fused, 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 (옛 `glm53_prep_fused`·`glm53_v2_sampler_guards`·`glm53_boot_stamps`·`glm53_dev_lab`·`glm53_oneshot_wiring`) | 7 | 일부 | · | ● | · |
+| `glm53_runtime` | **묶음(34차)**: prep-fused, 드래프터 학습 덤프(37차, `VLLM_GLM53_DRAFT_DUMP` 없으면 비활성), 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선 (옛 `glm53_prep_fused`·`glm53_v2_sampler_guards`·`glm53_boot_stamps`·`glm53_dev_lab`·`glm53_oneshot_wiring`) | 8 | 일부 | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |
