@@ -2097,6 +2097,24 @@ SP=1 SP_FP8=1 MLA_PREFILL_PAIR=1 GROUP=4 FP8_DENSE_PREFILL_NVFP4=1 B12X_PREFILL_
   conv 레이아웃의 로드는 T 스트라이드(비병합, L2 친화)라 속도는 브래킷이 잰다. 이 레인의 절감 자체가 128K 프리필의 0.03% 수준이라 정확성이 우선.
 - 앵커 추가: `[prefill-sp] sequence-parallel prefill armed (fp8 transport=…)`, `[b12x prefill reuse] armed: reuse=… fc1_n128=…` (무장의 부재를 로그로 증명하기 위해).
 
+### §4f P2 그룹 이분 — 레인별 첫 실측: 컴파일 실패 2, 퇴행 1, 무이득 1, SP 는 +5% 에 비용 둘 (16:20~16:59)
+
+BASE39-stock 대비, 통일 onepass. 판정 규칙: 프리필 32K/128K +3% 이상 = GAIN, 어느 항목 −3% 아래 = REGRESS.
+
+| 팔 | 노브 | 결과 |
+|---|---|---|
+| P2A | SP + SP_FP8 | **부팅 사망**: SP 채택 직후(`MHC token shards selected T=8192`) `_decode` Triton 컴파일 실패 — fp8 포인터 로드 `other=0` (`cannot cast int32 to fp8e4nv`). 수정 PR #382 |
+| P2B | MLA pair + group4 | **REGRESS**: 프리필 32K −16.5%, 128K −18.1%. 디코드·품질·한국어 불변. 무장 앵커 `pair_prefill=True group=4 -> ARM` 확인 |
+| P2C | FP8_DENSE_PREFILL_NVFP4 + SCALE_FUSED | **무이득**: 32K −4.5%, 128K +3.7%, tok/step −2.4%; 첫 요청 2K cold −58.8%(2.46 s, nvfp4 경로 JIT 를 워밍업이 안 태움). 쌍 201+ 개 빌드 확인 |
+| P2D | B12X_PREFILL_REUSE + FC1_N128 + KDA_DIRECT_OUT + QK_NORM | **부팅 사망**: MoE 레인 `ENGAGED … m=8192 E=288 act_precision=fp4 quant=nvfp4 tiler=(128,128)` 직후 CuTe-DSL `dynamic_e288_k4096_n512_t8` MLIR 검증 실패("operand #0 does not dominate this use", ICE). KDA 둘은 미측정 |
+| P2A2 | SP + SP_FP8 (#382 적용) | **첫 실측**: 32K **+4.5%**, 128K **+5.5%**, 2K warm **+18%**(0.87 s) / cold −31.7%(1.48 s), tok/step −3.2%(raw acc 46.3 vs 48.5), 디코드 불변, 9/9, 0/5 |
+
+- **P1 의 0% 해명**: P1 은 옛 배포본으로 8개 노브를 한꺼번에 켰고, SP 는 관문에서 조용히 탈락(단독이면 채택되어 죽었을 코드가 살아남았다), MLA pair 도 selftest 줄에 `pair_prefill` 이 없어 미관여, MoE N128 도 관여했다면 죽었을 것. 실제로 돈 것은 NVFP4(무이득)뿐이었다고 보는 게 일관된다. 128K 디코드 절반(11 step/s)만 미해명 — P2B·P2C·P2A2 어디서도 재현되지 않았다.
+- **SP 의 비용 둘**: ① 커널 6개가 원소 수를 `tl.constexpr` 로 받아 프리필 길이마다 재컴파일(프로덕션이면 프롬프트마다) → 런타임 인자로 수정 PR #384; ② FP8 전송(층당 2회, 46층 ≈ 90회 e4m3 반올림이 잔차에 누적 → 드래프터 문맥 특징·KV 가 흔들림)의 수용률 −2pt 는 기전은 있으나 단일 측정이라 잡음과 미분리(P2C 도 −1.6pt). BF16 전송 팔(P2A3)과 stock 2차 기준선으로 판정.
+- 배포 함정: 런처는 `~/stkernel` 이 아니라 4 노드 `/home/choiceoh/overlays/glm53`(deploy-overlays.sh) 를 마운트한다. P2B·P2C 는 git 만 당긴 체크아웃과 다른 옛 배포본으로 돌았다(앵커 부재). 이후 체인은 시작 시 배포.
+- 디코드 창의 +5% 는 잡음: 프리필 전용 노브(P2B) 에서도 같은 폭. 오늘 stock 부팅 20.4~21.4 step/s.
+- 후속(큐): P2D2(REUSE 단독 + KDA 둘, 죽으면 KDA 만), P3B(MLA pair group2 + `VLLM_GLM53_MLA_PAIR_STATS=1` 겹침 통계 + 32K 프로파일), P3C(NVFP4 + 32K 프로파일), P2A4(SP+FP8, 재컴파일 수정), P2A3(SP, BF16 전송), stock 복구 + BASE39-stock2 + stock 프로파일.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
