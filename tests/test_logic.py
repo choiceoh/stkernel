@@ -8364,6 +8364,7 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           and not [l for l in kern.splitlines()
                    if "tl.store(" in l and "+ offs" in l and "mask=" not in l]
           and "bn = tl.load(src_row + bidx, mask=qmask, other=0)" in kern
+          and kern.count("v[None, :], mask=msk[None, :] & qmask[:, None])") == 2
           and "not a power of two" not in pf2
           and "self.q_p2 = 1 << (self.q - 1).bit_length()" in pf2
           and "Q=self.q, Q_P2=self.q_p2," in pf2,
