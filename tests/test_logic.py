@@ -9634,7 +9634,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu
           and "int pend = -1;  // a token whose chunk is done but not yet published" in cu
           and "s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);" in cu
-          and "while (*v < (unsigned int)NCHUNK) __nanosleep(128);" in cu
+          and "MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, \"mhc token arrive\");" in cu
           and "g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch" in cu
           and "g_mk_mhc_tail_next = 0u;" in cu
           and "      mk_mhc_p2_token(a, t, s_pmix);\n      mk_mhc_p34_load(a, t, tr);" in cu
