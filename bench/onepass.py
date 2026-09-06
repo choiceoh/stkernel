@@ -35,6 +35,7 @@ Their interior windows are the primary decode metric; the normal context
 ladder and all quality checks remain. Counter mismatches invalidate the run.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -131,7 +132,11 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
         decode_s = elapsed - ttft
         # Standard request TPOT includes the final stream/usage tail. SSE
         # chunks can contain several speculative tokens; gaps are NOT ITL.
-        timing.update(completion_tokens=ctok, ttft_s=ttft, elapsed_s=elapsed,
+        timing.update(completion_tokens=ctok, prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+                      min_tokens=min_tokens, max_tokens=max_tokens, seed=seed,
+                      request_sha256=hashlib.sha256(body).hexdigest(),
+                      output_sha256=hashlib.sha256("".join(parts).encode()).hexdigest(),
+                      ttft_s=ttft, elapsed_s=elapsed,
                       decode_s=decode_s, finish_reason=finish,
                       tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
                       decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,

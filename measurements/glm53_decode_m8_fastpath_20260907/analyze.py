@@ -33,6 +33,9 @@ def summarize(rows):
         assert math.isclose(rate, d["fixed_pooled_step_s"])
         reqs = [q for q in r["requests"] if q.get("fixed_decode")]
         assert len(reqs) == 3 and all(q["completion_tokens"] == 2048 for q in reqs)
+        first_reqs = [q for q in rows[0]["requests"] if q.get("fixed_decode")]
+        assert [(q["request_sha256"], q["prompt_tokens"], q["seed"]) for q in reqs] == [
+                (q["request_sha256"], q["prompt_tokens"], q["seed"]) for q in first_reqs]
         out.append({"name": r["name"], "arm": arm, "windows": len(windows),
                     "step_s": rate, "window_median_step_s": d["windows_med"],
                     "tok_s": median(q["decode_tok_s"] for q in reqs),

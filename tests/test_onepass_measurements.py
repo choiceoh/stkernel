@@ -77,6 +77,9 @@ class StreamTests(unittest.TestCase):
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual((payload["min_tokens"], payload["max_tokens"], payload["seed"]), (1536, 1536, 7))
         self.assertEqual(result, ("근거답변", 2, 2000, 1536, "length"))
+        self.assertEqual((timing["min_tokens"], timing["max_tokens"], timing["seed"], timing["prompt_tokens"]),
+                         (1536, 1536, 7, 2000))
+        self.assertEqual(timing["request_sha256"], onepass.hashlib.sha256(urlopen.call_args.args[0].data).hexdigest())
         self.assertAlmostEqual(timing["tpot_ms"], 1000 * 20.1 / 1535)
         self.assertEqual(timing["chunk_gaps_ms"], [20000])
 
