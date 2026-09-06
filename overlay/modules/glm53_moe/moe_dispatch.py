@@ -46,6 +46,11 @@ from .moe_static_kernel_v2 import (
 )
 from .moe_static_kernel_v3 import MoEStaticKernelV3
 from .moe_static_kernel_v4 import MoEStaticKernelV4
+from .moe_static_kernel_v5 import (
+    MoEStaticKernelV5,
+    TILED_W13_K_IN,
+    TILED_W2_K_IN,
+)
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
     _W4A16_ALLOWED_ROUTED_SIZES,
@@ -295,7 +300,7 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
     "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
-    "v4": False, "a_ring": False,
+    "v4": False, "a_ring": False, "tiled": False,
 }
 
 
@@ -351,6 +356,17 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
                 cfg["fc2"] = 2
             continue
+        if token == "t":
+            # v5 (moe_static_kernel_v5.py): v4 over tile-major expert weights
+            # -- the dispatcher re-lays w13/w2 out so every TMA box is one
+            # contiguous run (39차); implies u's geometry, FC2 2 stages
+            # unless g is given
+            cfg["wide"] = True
+            cfg["v4"] = True
+            cfg["tiled"] = True
+            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
+                cfg["fc2"] = 2
+            continue
         if token == "k":
             # v3 last-wave split: each item of a partial last wave (p items,
             # 2p <= grid) runs on two CTAs, one FC1 half each, full FC2 with
@@ -367,7 +383,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
-                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d][,w][,e] cells (got {raw!r})"
+                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d][,w][,e][,k][,u][,v][,t] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -964,6 +980,12 @@ class _WeightViews:
     down_fp4: object = None
     sfb_w13_ptr: object = None
     sfb_down_ptr: object = None
+    # tile-major expert weights (spec cell t, moe_static_kernel_v5): the
+    # views are 4-D over a re-laid-out copy kept alive here; a tiled view must
+    # only ever reach a kernel compiled for the tiled layout
+    tiled: bool = False
+    w13_tiled_storage: torch.Tensor | None = None
+    w2_tiled_storage: torch.Tensor | None = None
     w1_alpha: torch.Tensor | None = None
     w2_alpha: torch.Tensor | None = None
     w1_storage: torch.Tensor | None = None
@@ -986,6 +1008,67 @@ def _register_cache_eviction(cache: Dict, key: Tuple, *source_tensors) -> None:
 _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
 
 
+def _tile_expert_weights(
+    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Tile-major copies of the packed expert weights (spec cell t).
+
+    w1_fp4 [E, rows, K/2] bytes -> [E, K/512, rows, 256]: for one k tile the
+    rows' 256 B chunks are adjacent, so the kernel's (64 rows x 512 K) TMA box
+    is one contiguous 16 KB run instead of 64 chunks 2 KB apart. w2_fp4
+    [E, K, n/2] -> [E, n/128, K, 64] likewise for the (128 rows x 128 K) down
+    box (8 KB). Bytes only, no arithmetic: the kernel reads exactly the bytes
+    the row-major kernel reads, in the same order per tile.
+    """
+    if w1_fp4.dtype != torch.uint8 or w2_fp4.dtype != torch.uint8:
+        raise TypeError("tiled expert weights: packed fp4 bytes (uint8) expected")
+    e, rows, kb = w1_fp4.shape
+    kin_b = TILED_W13_K_IN // 2
+    if kb % kin_b != 0:
+        raise ValueError(f"tiled expert weights: K/2 = {kb} B is not a multiple of {kin_b}")
+    w13_t = (
+        w1_fp4.reshape(e, rows, kb // kin_b, kin_b).permute(0, 2, 1, 3).contiguous()
+    )
+    e2, hrows, nb = w2_fp4.shape
+    kin2_b = TILED_W2_K_IN // 2
+    if nb % kin2_b != 0:
+        raise ValueError(f"tiled expert weights: n/2 = {nb} B is not a multiple of {kin2_b}")
+    w2_t = (
+        w2_fp4.reshape(e2, hrows, nb // kin2_b, kin2_b).permute(0, 2, 1, 3).contiguous()
+    )
+    return w13_t, w2_t
+
+
+def static_v2_weights_tiled(
+    *,
+    num_experts: int,
+    num_local_experts: int,
+    hidden_size: int,
+    intermediate_size: int,
+    num_topk: int,
+    quant_mode: str,
+    activation: str,
+    swiglu_limit: float | None,
+    activation_precision: str,
+) -> bool:
+    """Whether the static lane this process would take for the geometry reads
+    tile-major weights -- the wrapper keys its cached weight views on it, so
+    a lane switch (probe) rebuilds them and a tiled view never meets a
+    row-major kernel."""
+    cfg = _static_v2_config_for(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_topk=num_topk,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+        activation_precision=activation_precision,
+    )
+    return bool(cfg is not None and cfg.get("tiled", False))
+
+
 def _get_weight_views(
     w1_fp4: torch.Tensor,
     w1_blockscale: torch.Tensor,
@@ -997,11 +1080,18 @@ def _get_weight_views(
     k: int,
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
+    tiled: bool = False,
 ) -> _WeightViews:
     """Create permuted weight views for the static kernel.
 
     The kernel expects concatenated w13 data with shape [2*n, k//2, E]
     via a single TMA descriptor.
+
+    tiled=True (spec cell t, moe_static_kernel_v5): the views are 4-D over a
+    tile-major COPY of the packed weights -- w13 as [E, K/512, 2n, 256 B]
+    and w2 as [E, n/128, K, 64 B] -- so every kernel TMA box is one
+    contiguous run of memory. The copy is cached with the scale conversions
+    and follows the source weights' lifetime.
     """
     activation_precision = _normalize_activation_precision(activation_precision)
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
@@ -1018,6 +1108,7 @@ def _get_weight_views(
     key = (
         activation_precision,
         quant_mode,
+        bool(tiled),
         w1_fp4.data_ptr(),
         w1_blockscale.data_ptr(),
         w1_alphas.data_ptr(),
@@ -1027,8 +1118,10 @@ def _get_weight_views(
     )
     cached = _WEIGHT_CACHE.get(key)
     if cached is None:
-        # Cache the fresh buffers (scale factors + fp32 alphas).
+        # Cache the fresh buffers (scale factors + fp32 alphas) -- and the
+        # tile-major weight copies when the lane reads them.
         w1_rows = w1_fp4.shape[1]  # 2*n for gated, n for non-gated
+        tiled_storage = _tile_expert_weights(w1_fp4, w2_fp4) if tiled else (None, None)
         cached = (
             convert_sf_from_mma_layout(
                 w1_blockscale,
@@ -1046,6 +1139,7 @@ def _get_weight_views(
             ).contiguous(),
             w1_alphas.contiguous().to(torch.float32),
             w2_alphas.contiguous().to(torch.float32),
+            tiled_storage,
         )
         _WEIGHT_CACHE[key] = cached
         _register_cache_eviction(
@@ -1058,14 +1152,23 @@ def _get_weight_views(
             w2_blockscale,
             w2_alphas,
         )
-    w13_sf_contiguous, down_sf_contiguous, w1_alpha, w2_alpha = cached
-
-    # Permute [E, w1_rows, k//2] -> [w1_rows, k//2, E] (view, no copy).
-    w13 = w1_fp4.permute(1, 2, 0)
-    down = w2_fp4.permute(1, 2, 0)
+    w13_sf_contiguous, down_sf_contiguous, w1_alpha, w2_alpha, tiled_storage = cached
+    w13_tiled, w2_tiled = tiled_storage
+    if tiled:
+        # (rows, K_in x2, K_tiles, E) over the tile-major bytes: the x2 dtype's
+        # innermost dim doubles to K_in fp4 elements, the other strides
+        # (256 B / 64 B, K_tiles x that, the expert) stay byte strides
+        w13 = w13_tiled.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0)
+        down = w2_tiled.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0)
+    else:
+        w13 = w1_fp4.permute(1, 2, 0).view(torch.float4_e2m1fn_x2)
+        down = w2_fp4.permute(1, 2, 0).view(torch.float4_e2m1fn_x2)
     return _WeightViews(
-        w13_fp4=w13.view(torch.float4_e2m1fn_x2),
-        down_fp4=down.view(torch.float4_e2m1fn_x2),
+        w13_fp4=w13,
+        down_fp4=down,
+        tiled=bool(tiled),
+        w13_tiled_storage=w13_tiled,
+        w2_tiled_storage=w2_tiled,
         sfb_w13_ptr=make_ptr(
             sf_dtype,
             w13_sf_contiguous.data_ptr(),
@@ -1121,6 +1224,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_kernel_v2,
         moe_static_kernel_v3,
         moe_static_kernel_v4,
+        moe_static_kernel_v5,
     )
 
     return (
@@ -1130,6 +1234,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_kernel_v2.__file__,
         moe_static_kernel_v3.__file__,
         moe_static_kernel_v4.__file__,
+        moe_static_kernel_v5.__file__,
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1578,6 +1683,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("a_ring", False)),
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
+        bool(config.get("tiled", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1654,8 +1760,14 @@ def _get_static_kernel_v2(
     alpha_dtype = cutlass.Float32
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
+    tiled = bool(config.get("tiled", False))
     if config.get("wide", False):
-        kernel_cls = MoEStaticKernelV4 if config.get("v4", False) else MoEStaticKernelV3
+        if tiled:
+            kernel_cls = MoEStaticKernelV5
+        elif config.get("v4", False):
+            kernel_cls = MoEStaticKernelV4
+        else:
+            kernel_cls = MoEStaticKernelV3
         v4_kwargs = {"a_ring": bool(config.get("a_ring", False))} if config.get("v4", False) else {}
         kernel: Any = kernel_cls(
             **v4_kwargs,
@@ -1726,13 +1838,32 @@ def _get_static_kernel_v2(
     barrier_epoch_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (1,), assumed_align=4
     )
-    b_w13_fake = cute.runtime.make_fake_compact_tensor(
-        weight_dtype, (w1_rows, k, weight_E), stride_order=(1, 0, 2), assumed_align=16
-    )
+    if tiled:
+        # tile-major storage (moe_static_kernel_v5): (rows, K_in, K/K_in, E),
+        # K_in the stride-1 mode, then the rows -- one contiguous chunk per
+        # (k tile, row), rows adjacent; the runtime view is the same 4-D
+        # permutation of the re-laid-out bytes (_get_weight_views(tiled=True))
+        if k % TILED_W13_K_IN != 0 or n % TILED_W2_K_IN != 0:
+            raise ValueError(
+                f"tiled expert weights need K % {TILED_W13_K_IN} == 0 and "
+                f"I_tp % {TILED_W2_K_IN} == 0 (got K={k}, I_tp={n})"
+            )
+        b_w13_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype, (w1_rows, TILED_W13_K_IN, k // TILED_W13_K_IN, weight_E),
+            stride_order=(1, 0, 2, 3), assumed_align=16,
+        )
+        b_down_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype, (k, TILED_W2_K_IN, n // TILED_W2_K_IN, weight_E),
+            stride_order=(1, 0, 2, 3), assumed_align=16,
+        )
+    else:
+        b_w13_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype, (w1_rows, k, weight_E), stride_order=(1, 0, 2), assumed_align=16
+        )
+        b_down_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype, (k, n, weight_E), stride_order=(1, 0, 2), assumed_align=16
+        )
     sfb_w13_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
-    b_down_fake = cute.runtime.make_fake_compact_tensor(
-        weight_dtype, (k, n, weight_E), stride_order=(1, 0, 2), assumed_align=16
-    )
     sfb_down_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     row_counts_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E,), assumed_align=4
@@ -1780,7 +1911,7 @@ def _get_static_kernel_v2(
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
-        f"{'v' if config.get('a_ring') else ''}"
+        f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
@@ -2527,6 +2658,13 @@ def launch_sm120_static_moe(
             swiglu_limit=swiglu_limit,
             activation_precision=activation_precision,
         )
+        want_tiled = bool(static_v2_config is not None and static_v2_config.get("tiled"))
+        if bool(getattr(weights, "tiled", False)) != want_tiled:
+            raise RuntimeError(
+                "tiled expert weights and the tiled static lane (spec cell t) must "
+                f"agree: views tiled={bool(getattr(weights, 'tiled', False))}, "
+                f"lane tiled={want_tiled}"
+            )
         if static_v2_config is not None:
             compiled, mac = _get_static_kernel_v2(
                 workspace.state_E,
@@ -4191,6 +4329,17 @@ def launch_sm120_moe(
     else:
         input_gs = w1_alpha
 
+    weights_tiled = static_v2_weights_tiled(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=k,
+        intermediate_size=n,
+        num_topk=top_k,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+        activation_precision=activation_precision,
+    )
     weights = (
         _weight_views
         if _weight_views is not None
@@ -4205,6 +4354,7 @@ def launch_sm120_moe(
             k=k,
             activation_precision=activation_precision,
             quant_mode=quant_mode,
+            tiled=weights_tiled,
         )
     )
 
@@ -4274,6 +4424,13 @@ def launch_sm120_moe(
             swiglu_limit=swiglu_limit,
         )
 
+    if bool(getattr(weights, "tiled", False)) and backend != "static":
+        # the tiled layout is served by the v5 static kernel only (39차 phase
+        # 1); the dynamic (prefill) kernel reads the row-major layout
+        raise NotImplementedError(
+            "tiled expert weights (VLLM_GLM53_B12X_STATIC_V2 cell t) reached the "
+            f"{backend} backend: only the static kernel reads the tiled layout"
+        )
     if backend == "dynamic":
         return launch_sm120_dynamic_moe(
             workspace=workspace,

@@ -3565,12 +3565,14 @@ def test_b12x_static_v2_controls() -> None:
           "'1' must be a copy of the default config")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
                       "dynamic": False, "wide": False, "even": False, "split": False,
-                      "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False},
+                      "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False,
+                      "tiled": False},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
                                  "stamps": False, "dynamic": False, "wide": False,
                                  "even": False, "split": False, "skip_sf": False,
-                                 "skip_a": False, "v4": False, "a_ring": False},
+                                 "skip_a": False, "v4": False, "a_ring": False,
+                                 "tiled": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3595,6 +3597,17 @@ def test_b12x_static_v2_controls() -> None:
     v5 = parse("v")
     check(v5["a_ring"] and v5["v4"] and v5["wide"] and v5["fc2"] == 2,
           "v selects v4 with the A ring")
+    # t (39차): v4 over tile-major expert weights (moe_static_kernel_v5) --
+    # the layout lives in the config so the cache key / kernel name carry it
+    # and the dispatcher builds tiled weight views for that lane only
+    tiled = parse("t")
+    check(tiled["tiled"] and tiled["v4"] and tiled["wide"] and tiled["fc2"] == 2
+          and not tiled["a_ring"],
+          "t selects the v5 kernel (v4 geometry) over tile-major weights")
+    check(parse("v,t")["tiled"] and parse("v,t")["a_ring"] and parse("t,g3")["fc2"] == 3
+          and parse("t,k")["split"] and parse("t,s", probe=True)["stamps"]
+          and not parse("u")["tiled"] and not parse("v")["tiled"],
+          "t composes with v, g, k and s; u and v stay row-major")
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
@@ -3671,8 +3684,39 @@ def test_b12x_static_v2_controls() -> None:
           "the v2 cache key carries the config so configs never alias")
 
     src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
-    check("moe_static_kernel_v2.__file__" in src,
-          "the v2 kernel source must be in the module cache key files")
+    check("moe_static_kernel_v2.__file__" in src and "moe_static_kernel_v5.__file__" in src,
+          "the v2 and v5 kernel sources must be in the module cache key files")
+    # the tiled layout must never meet a row-major kernel: the wrapper keys
+    # its cached views on the lane's tiled flag, the entry refuses the dynamic
+    # backend with tiled views, the static launch checks views vs lane
+    check("def static_v2_weights_tiled(" in src
+          and "tiled=weights_tiled," in src
+          and 'if bool(getattr(weights, "tiled", False)) and backend != "static":' in src
+          and 'if bool(getattr(weights, "tiled", False)) != want_tiled:' in src
+          and "def _tile_expert_weights(" in src
+          and "kernel_cls = MoEStaticKernelV5" in src
+          and 'stride_order=(1, 0, 2, 3), assumed_align=16,' in src,
+          "the tiled lane (t): re-layout helper, 4-D fake weight tensors, the v5 "
+          "class, and the three guards that keep tiled views on the v5 kernel")
+    wrapper = open(os.path.join(REPO, "overlay/modules/glm53_moe/b12x_moe.py"),
+                   encoding="utf-8").read()
+    check("static_v2_weights_tiled as _static_v2_weights_tiled" in wrapper
+          and "                weights_tiled,\n                w1_weight.data_ptr()," in wrapper
+          and "tiled=weights_tiled," in wrapper,
+          "the wrapper's weight-view cache key carries the lane's tiled flag and "
+          "builds the tiled views for it")
+    v5_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v5.py"),
+                     encoding="utf-8").read()
+    check("class MoEStaticKernelV5(MoEStaticKernelV4):" in v5_kernel
+          and "b_w13_h = cute.group_modes(b_w13, 1, 3)" in v5_kernel
+          and "b_down_h = cute.group_modes(b_down, 1, 3)" in v5_kernel
+          and "(w13_rows, w13_k, w13_e), self.sf_vec_size" in v5_kernel
+          and "TILED_W13_K_IN = _FC1_TILE_K" in v5_kernel
+          and "TILED_W2_K_IN = _FC2_TILE_K" in v5_kernel
+          and "def kernel(" not in v5_kernel,
+          "v5 is v4's kernel body over grouped-K TMA tensors: only __call__ is "
+          "overridden, the SF layouts come from the flat shapes, the chunk widths "
+          "are the v4 k tiles")
     check("_STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None" in src,
           "the probe override is a module-level hook, not an env read at launch")
     kernel = open(os.path.join(
@@ -3687,15 +3731,19 @@ def test_b12x_static_v2_controls() -> None:
         REPO, "overlay", "modules", "glm53_moe", "manifest.tsv"),
         encoding="utf-8").read()
     check("moe_static_kernel_v2.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
-          "moe_static_kernel_v2.py\tabsent" in manifest,
-          "the v2 kernel is a new file (absent preimage) in the module manifest")
+          "moe_static_kernel_v2.py\tabsent" in manifest
+          and "moe_static_kernel_v5.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_kernel_v5.py\tabsent" in manifest,
+          "the v2 and v5 kernels are new files (absent preimage) in the module manifest")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
           "the profile ships the v4 static kernel (spec u) as the default "
           "(38차, operator: decode windows +2% over v3, probes -3.5%; rollback = \"w\")")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
-    check("moe_static_kernel_v2.py" in runner,
-          "the probe runner must mount the v2 kernel beside the dispatcher")
+    check("moe_static_kernel_v2.py" in runner and "moe_static_kernel_v5.py" in runner
+          and 'if [ "${MK_PROBE_NO_GPU:-0}" = 1 ]; then' in runner,
+          "the probe runner must mount the v2 and v5 kernels beside the dispatcher "
+          "and offer the no-GPU form for the CPU compile check")
 
     print("  b12x static v2 controls ........ OK")
 

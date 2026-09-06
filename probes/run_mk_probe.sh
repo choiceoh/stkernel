@@ -41,7 +41,8 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 sources=(glm53_megakernel.py glm53_megakernel.cu
          glm5next_kda.py tilelang.py tilelang_kernels.py glm53_fp8_dense.py
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
-         moe_static_kernel_v2.py moe_static_kernel_v3.py moe_static_kernel_v4.py)
+         moe_static_kernel_v2.py moe_static_kernel_v3.py moe_static_kernel_v4.py
+         moe_static_kernel_v5.py)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")
@@ -84,7 +85,19 @@ echo "forwarded:${_fwd:- (none)}" >&2
 cmd="python3 /repo/$PROBE"
 for a in "$@"; do cmd="$cmd $(printf %q "$a")"; done
 
-exec docker run --rm --gpus all --entrypoint /bin/bash \
+# MK_PROBE_NO_GPU=1: no GPU in the container -- for the cute-dsl compile
+# checks (probes/b12x_static_compile_check.py) that build a kernel to its .o
+# on the CPU; CUTE_DSL_ARCH names the target the device query cannot
+gpu_args=(--gpus all)
+if [ "${MK_PROBE_NO_GPU:-0}" = 1 ]; then
+  gpu_args=()
+  envs+=(-e "CUTE_DSL_ARCH=${CUTE_DSL_ARCH:-sm_121a}" -e MK_PROBE_NO_GPU=1)
+fi
+# MK_PROBE_DOCKER_ARGS: extra docker run flags (e.g. --cpuset-cpus 16-19 to
+# keep a CPU-only compile check off the cores a serving worker uses)
+# shellcheck disable=SC2206
+extra_args=(${MK_PROBE_DOCKER_ARGS:-})
+exec docker run --rm "${gpu_args[@]}" "${extra_args[@]}" --entrypoint /bin/bash \
   --mount "type=bind,src=$REPO,dst=/repo,readonly" \
   "${envs[@]}" "${mounts[@]}" \
   "$IMAGE" -lc "$cmd"

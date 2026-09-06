@@ -10,3 +10,4 @@ b12x_moe.py	flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb4
 moe_static_kernel_v2.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v2.py	absent
 moe_static_kernel_v3.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
 moe_static_kernel_v4.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
+moe_static_kernel_v5.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py	absent
