@@ -45,6 +45,14 @@ VLLM_GLM53_* keys):
   VLLM_GLM53_SCHED_DECODE_STEPS   alternate: pure decode steps per prefill step (6)
   VLLM_GLM53_SCHED_MIXED_CHUNK    prefill tokens per request per prefill step
                                   (1152 = half of the 2304-token block)
+  VLLM_GLM53_SCHED_CHUNK_REF_CTX  alternate: the chunk grows with the prompt's
+                                  position, chunk = MIXED_CHUNK * pos / REF_CTX
+                                  (32768; 0 = fixed chunk). DF3 measured the
+                                  1152-token prefill step at 0.64 s at 32K but
+                                  1.3 s at 100K (890 tok/s): small chunks are
+                                  inefficient on the MLA/indexer prefill kernels
+                                  at long context, so the chunk scales up there.
+  VLLM_GLM53_SCHED_CHUNK_MAX      alternate: cap of that growth (4608)
   VLLM_GLM53_SCHED_PREFILL_EVERY  mixed: 1 = prefill on every mixed step (1)
   VLLM_GLM53_SCHED_MIN_DECODERS   decoders needed for mixed mode (1)
   VLLM_GLM53_SCHED_FAIR           1 = share the budget among pending prefills (1)
@@ -103,6 +111,8 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self.alternate = mode == "alternate"
         self.decode_steps = _int_env("VLLM_GLM53_SCHED_DECODE_STEPS", 6, 1)
         self.mixed_chunk = _int_env("VLLM_GLM53_SCHED_MIXED_CHUNK", 1152, 1)
+        self.chunk_ref_ctx = _int_env("VLLM_GLM53_SCHED_CHUNK_REF_CTX", 32768, 0)
+        self.chunk_max = max(self.mixed_chunk, _int_env("VLLM_GLM53_SCHED_CHUNK_MAX", 4608, 1))
         self.prefill_every = _int_env("VLLM_GLM53_SCHED_PREFILL_EVERY", 1, 1)
         self.min_decoders = _int_env("VLLM_GLM53_SCHED_MIN_DECODERS", 1, 1)
         self.fair = _int_env("VLLM_GLM53_SCHED_FAIR", 1, 0) > 0
@@ -118,12 +128,14 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self._max_boost = 0
         self._cycle = 0
         logger.warning(
-            "[decode-first] scheduler armed (v3 %s: decode_steps=%d, chunk=%d, prefill_every=%d, "
-            "min_decoders=%d, fair=%s, prefill_floor=%d tok/s after %.1fs, "
+            "[decode-first] scheduler armed (v3 %s: decode_steps=%d, chunk=%d (x pos/%d up to %d), "
+            "prefill_every=%d, min_decoders=%d, fair=%s, prefill_floor=%d tok/s after %.1fs, "
             "max_num_batched_tokens=%d, max_num_seqs=%d, stock threshold=%d)",
             self.mode,
             self.decode_steps,
             self.mixed_chunk,
+            self.chunk_ref_ctx,
+            self.chunk_max,
             self.prefill_every,
             self.min_decoders,
             self.fair,
@@ -171,7 +183,7 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
             starts.clear()
 
         if num_prefills > 0 and num_decoders >= self.min_decoders:
-            mode, threshold = "mixed", self.mixed_chunk
+            mode, threshold = "mixed", self._chunk_for(prefills)
         elif self.fair and num_prefills >= 2:
             mode, threshold = "fair", max(self.mixed_chunk, self.max_num_scheduled_tokens // num_prefills)
         else:
@@ -179,6 +191,18 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         if boost > 0:
             threshold = min(self.max_num_scheduled_tokens, threshold + boost)
         return mode, threshold, boost, decoders
+
+    def _chunk_for(self, prefills: list) -> int:
+        """The prefill chunk for this step: MIXED_CHUNK, scaled by the furthest
+        running prefill's position over CHUNK_REF_CTX in alternate mode (long
+        contexts make small chunks inefficient), capped at CHUNK_MAX, in
+        multiples of 128."""
+        if not self.alternate or self.chunk_ref_ctx <= 0 or not prefills:
+            return self.mixed_chunk
+        pos = max(request.num_computed_tokens for request in prefills)
+        scaled = self.mixed_chunk * pos // self.chunk_ref_ctx
+        scaled = min(self.chunk_max, max(self.mixed_chunk, scaled))
+        return max(self.mixed_chunk, scaled // 128 * 128)
 
     def _decode_only_step(self) -> SchedulerOutput:
         # Decoders only. The stock deferral path skips in-progress prefill
