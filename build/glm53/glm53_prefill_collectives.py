@@ -21,11 +21,22 @@ from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 _ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
-_FP8 = os.environ.get("VLLM_GLM53_PREFILL_SP_FP8") == "1"
+_FP8_MODE = os.environ.get("VLLM_GLM53_PREFILL_SP_FP8", "0").strip()
+_FP8 = _FP8_MODE in ("1", "2")
+# 39차 v2 (operator "두개 도전해"): the v1 FP8 transport lost to BF16 (+7.1 % vs
+# +12.6 %) because its reduce-scatter first agreed on block maxima with an extra
+# all-reduce, then summed FP8 partials natively (headroom 448/4, rounding), then
+# decoded -- three kernels and two collectives per reduction. v2 keeps the FP8
+# all-gather (pack / all-gather / unpack) and turns the reduce-scatter into an
+# all-to-all of per-block-scaled FP8 partials that the receiver sums in FP32:
+# one pack kernel (absmax + quantize fused, no scale agreement), one NCCL
+# all-to-all (same bytes as the FP8 reduce-scatter), one unpack-sum kernel.
+_FP8_V2 = _FP8_MODE == "2"
 if _ENABLED:
     # 39차: the boot-log anchor the bracket greps -- an armed knob is not
     # evidence of invocation, but a missing anchor IS evidence of no arming.
-    logger.warning("[prefill-sp] sequence-parallel prefill armed (fp8 transport=%s)", _FP8)
+    logger.warning("[prefill-sp] sequence-parallel prefill armed (fp8 transport=%s%s)", _FP8,
+                   " v2: per-block scales, all-to-all + fp32 sum" if _FP8_V2 else "")
 _BLOCK = 2048
 _TP = 4
 _HIDDEN = 4096
@@ -176,6 +187,38 @@ def _unpack_gather(Packed, Scales, Out, LOCAL_N,
     tl.store(Out + rank * LOCAL_N + offsets, q * scale)
 
 
+@triton.jit(do_not_specialize=["N", "OUT_N"])
+def _pack_rs(X, Packed, Scale, N, OUT_N, BLOCK: tl.constexpr):
+    """v2 reduce-scatter pack: one block (2048 elements, half a row) -> its own
+    absmax scale + FP8 payload. Rows past N (the padding rows) pack as zero.
+    Blocks are laid out in row order, so destination rank r's shard is the
+    contiguous byte range [r*OUT_N/4, (r+1)*OUT_N/4) -- all_to_all_single
+    with equal splits sends it without any reordering."""
+    block = tl.program_id(0)
+    offsets = block * BLOCK + tl.arange(0, BLOCK)
+    x = tl.load(X + offsets, mask=offsets < N, other=0.0).to(tl.float32)
+    amax = tl.max(tl.abs(x), axis=0)
+    scale = tl.exp2(tl.ceil(tl.log2(tl.maximum(amax, 1.0e-30) / 448.0)))
+    tl.store(Packed + offsets, (x / scale).to(tl.float8e4nv), mask=offsets < OUT_N)
+    tl.store(Scale + block, scale)
+
+
+@triton.jit(do_not_specialize=["LOCAL_N", "NUM_BLOCKS"])
+def _unpack_sum(Packed, Scales, Out, LOCAL_N, NUM_BLOCKS, TP: tl.constexpr,
+                BLOCK: tl.constexpr):
+    """v2 reduce-scatter unpack: sum the TP partials of one local block in
+    FP32 -- partial r sits at byte offset r*LOCAL_N of the received payload
+    and its scales at r*NUM_BLOCKS."""
+    block = tl.program_id(0)
+    offsets = block * BLOCK + tl.arange(0, BLOCK)
+    acc = tl.zeros([BLOCK], dtype=tl.float32)
+    for r in tl.static_range(TP):
+        q = tl.load(Packed + r * LOCAL_N + offsets).to(tl.float32)
+        scale = tl.load(Scales + r * NUM_BLOCKS + block)
+        acc += q * scale
+    tl.store(Out + offsets, acc)
+
+
 def _quantize(tensor, maxima, limit, *, num_rows=None):
     shape = tensor.shape if num_rows is None else (num_rows, _HIDDEN)
     packed = torch.empty(shape, device=tensor.device, dtype=torch.float8_e4m3fn)
@@ -276,6 +319,8 @@ def prefill_reduce_scatter(tensor):
             tensor = padded
         comm.reduce_scatter(out, tensor)
         return out
+    if _FP8_V2:
+        return _reduce_scatter_v2(tensor, out, padded_rows)
     # Encode padding directly into the FP8 payload: a full BF16 pad/copy
     # before each collective would erase a material part of the wire saving.
     maxima = _maxima(tensor, padded_numel=padded_rows * _HIDDEN)
@@ -293,5 +338,33 @@ def prefill_reduce_scatter(tensor):
     _decode[(scale_count,)](
         reduced, scales[start:start + scale_count], out,
         N=out.numel(), BLOCK=_BLOCK
+    )
+    return out
+
+
+
+def _reduce_scatter_v2(tensor, out, padded_rows):
+    """FP8 v2 reduce-scatter: per-block scales travel with the payload, the
+    receiver sums the TP partials in FP32. No scale-agreement collective, no
+    native FP8 SUM (so no headroom loss); NCCL all-to-all moves the same bytes
+    the FP8 reduce-scatter did (3/4 of the payload leaves each rank)."""
+    from vllm.distributed import get_tp_group
+
+    n_padded = padded_rows * _HIDDEN
+    blocks = n_padded // _BLOCK                 # H=4096 -> 2 blocks per row
+    local_n = n_padded // _TP
+    local_blocks = blocks // _TP
+    # payload: [fp8 bytes (n_padded)] [fp32 scales (blocks)] with every rank's
+    # shard a contiguous slice of each part, so one all_to_all per part
+    packed = torch.empty(n_padded, device=tensor.device, dtype=torch.float8_e4m3fn)
+    scales = torch.empty(blocks, device=tensor.device, dtype=torch.float32)
+    _pack_rs[(blocks,)](tensor, packed, scales, N=tensor.numel(), OUT_N=n_padded, BLOCK=_BLOCK)
+    group = get_tp_group().device_group
+    recv = torch.empty(n_padded, device=tensor.device, dtype=torch.float8_e4m3fn)
+    recv_scales = torch.empty(blocks, device=tensor.device, dtype=torch.float32)
+    torch.distributed.all_to_all_single(recv.view(torch.uint8), packed.view(torch.uint8), group=group)
+    torch.distributed.all_to_all_single(recv_scales, scales, group=group)
+    _unpack_sum[(local_blocks,)](
+        recv, recv_scales, out, LOCAL_N=local_n, NUM_BLOCKS=local_blocks, TP=_TP, BLOCK=_BLOCK
     )
     return out
