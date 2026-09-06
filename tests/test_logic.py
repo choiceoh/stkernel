@@ -3416,7 +3416,8 @@ def test_b12x_sf_pack_is_lossless() -> None:
         "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "SF_PACK_MAX_INDEX",
         "SF_PACK_BYTES", "SF_PACK_PLANE_A", "SF_PACK_PLANE_B",
         "sf_packed_block_bytes", "_blocks", "sf_pack_span", "pack_sf",
-        "unpack_sf", "sf_packed_bytes",
+        "unpack_sf", "sf_packed_bytes", "SF_PACK_BASE_TAIL", "SF_STAGE_BYTES",
+        "sf_stage_bytes", "pack_sf_inline", "unpack_sf_inline",
     }, ns)
     check(ns["SF_PACK_BITS"] == 6 and ns["SF_PACK_BLOCK"] == 4096
           and ns["SF_PACK_BLOCK_FC2"] == 1024 and ns["SF_PACK_MAX_INDEX"] == 63,
@@ -3450,6 +3451,39 @@ def test_b12x_sf_pack_is_lossless() -> None:
                   f"pack/unpack is byte-exact (block {block}, base {base:#x}, span {span})")
             check(int(ns["sf_pack_span"](raw, block).max()) <= span,
                   "sf_pack_span reports the block's code span")
+
+    # The kernel expands a stage in registers, so its arithmetic is a second
+    # implementation of this format and can drift from the packer. Model it
+    # here exactly as _sf_expand_stage writes it (per thread: four plane-A
+    # words, two plane-B words, the base, then 8 output words) and require it
+    # to reproduce the packer's input byte for byte.
+    def _kernel_expand(stage: bytes) -> bytes:
+        out = bytearray(ns["SF_PACK_BLOCK"])
+        for tid in range(128):
+            a = [int.from_bytes(stage[16 * tid + 4 * w: 16 * tid + 4 * w + 4], "little")
+                 for w in range(4)]
+            b = [int.from_bytes(stage[2048 + 8 * tid + 4 * w: 2048 + 8 * tid + 4 * w + 4],
+                                "little") for w in range(2)]
+            base = int.from_bytes(stage[3072:3076], "little") & 0xFF
+            for j in range(8):
+                word = 0
+                for mm in range(4):
+                    i = 4 * j + mm
+                    nib = (a[i >> 3] >> (8 * ((i >> 1) & 3) + 4 * (i & 1))) & 0xF
+                    hi = (b[i >> 4] >> (8 * ((i >> 2) & 3) + 2 * (i & 3))) & 0x3
+                    word |= ((base + nib + (hi << 4)) & 0xFF) << (8 * mm)
+                out[32 * tid + 4 * j: 32 * tid + 4 * j + 4] = word.to_bytes(4, "little")
+        return bytes(out)
+
+    for base, span in ((0x5c, 45), (0x6e, 21), (0x40, 64), (0x00, 1)):
+        raw = (base + torch.randint(0, span, (ns["SF_PACK_BLOCK"] * 2,), generator=gen,
+                                    dtype=torch.int16)).to(torch.uint8)
+        staged = ns["pack_sf_inline"](raw)
+        for blk in range(staged.shape[0]):
+            check(_kernel_expand(bytes(staged[blk].numpy()))
+                  == bytes(raw[blk * ns["SF_PACK_BLOCK"]:(blk + 1) * ns["SF_PACK_BLOCK"]].numpy()),
+                  f"the kernel's in-register expansion reproduces the packed block "
+                  f"(base {base:#x}, span {span})")
 
     # a block wider than the index must raise, never round
     wide = (0x40 + torch.arange(ns["SF_PACK_BLOCK"], dtype=torch.int16) % 65).to(torch.uint8)
