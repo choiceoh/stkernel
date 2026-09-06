@@ -148,8 +148,8 @@ W8A8 이후 남은 bf16 GEMM 145개/스텝(7.7%) 중 가드가 통과시키는 �
 `wk_weights_proj`(로더가 융합을 위해 bf16 강제)는 의도적으로 제외했다.
 
 ```bash
-EXTRA_ENV="VLLM_GLM53_FP8_DENSE_BPROJ=1" \
-  bash launchers/start-glm53-nvfp4-tp4.sh   # cand
+VLLM_GLM53_FP8_DENSE_BPROJ=1 \
+  bash launchers/start-glm53-nvfp4-tp4.sh   # cand (profile-declared key: caller env, not EXTRA_ENV)
 ```
 
 - 전제: `VLLM_GLM53_FP8_DENSE=1`(프로필 기본) — 없으면 이 노브는 무효.
