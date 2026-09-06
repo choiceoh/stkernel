@@ -45,6 +45,7 @@ zz_deneb_boot_stamps.pth	/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_s
 glm53_dev_lab.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py	absent
 glm53_lab_middleware.py	/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py	absent
 glm53_chat.py	/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py	absent
+glm47_moe.py	/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py	ce3629319e56e882d25cb75d62e3e7088a4eec1518885fc69fc696eafb4a97b2
 cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
 glm53_prefill_collectives.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py	absent
 parallel_state.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py	c6d65b96a260ea0d779da1073d1799392813eee74c9ed44753dfa56f4e7a9e4c

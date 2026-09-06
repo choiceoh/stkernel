@@ -22,6 +22,8 @@ def run(tokenizer_path: str):
     from vllm.entrypoints.chat_utils import parse_chat_messages
     from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
     from vllm.parser.glm47_moe import Glm47MoeParser
+    from vllm.parser import ParserManager
+    from vllm.renderers.hf import resolve_chat_template_content_format
     from vllm.reasoning import ReasoningParserManager
     from vllm.tool_parsers import ToolParserManager
 
@@ -31,7 +33,13 @@ def run(tokenizer_path: str):
     chat = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(chat)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
+    # The read-only tokenizer never changes during replay. Materialize its real
+    # 154k-entry vocabulary once instead of copying it for every parser instance.
+    vocab = tokenizer.get_vocab()
+    tokenizer.get_vocab = lambda: vocab
     template = (root / "launchers/chat_template_mm_v2.jinja").read_text()
+    dispatched = ParserManager.get_parser(tool_parser_name="glm47",
+        reasoning_parser_name="glm45", enable_auto_tools=True)
     for manager, name, getter in (
         (ReasoningParserManager, "glm45", "get_reasoning_parser"),
         (ToolParserManager, "glm47", "get_tool_parser"),
@@ -63,23 +71,66 @@ def run(tokenizer_path: str):
         ("tool_ends_reasoning", True, "reason" + call + "<tool_call>ping</tool_call>", "reason", "", expected_calls),
         ("off_tools", False, call + "<tool_call>ping</tool_call>", "", "", expected_calls),
     ]
+    cases = [(*case, "auto") for case in cases]
+    ping = "<tool_call>ping</tool_call>"
+    for thinking in (True, False):
+        prefix, reason = ("reason</think>", "reason") if thinking else ("", "")
+        cases.extend([
+            (f"none_literal_{thinking}", thinking, prefix + call, reason, call, [], "none"),
+            (f"none_fenced_{thinking}", thinking, prefix + "```xml\n" + ping + "\n```",
+             reason, "```xml\n" + ping + "\n```", [], "none"),
+            (f"none_partial_{thinking}", thinking, prefix + "example <tool_ca",
+             reason, "example <tool_ca", [], "none"),
+            (f"surrounding_{thinking}", thinking, prefix + "  앞\n" + ping + "\n  뒤  ",
+             reason, "  앞\n\n  뒤  ", [("ping", {})], "auto"),
+            (f"between_{thinking}", thinking, prefix + ping + " 사이 " + ping + " 뒤 ",
+             reason, " 사이  뒤 ", [("ping", {}), ("ping", {})], "auto"),
+            (f"literal_think_{thinking}", thinking, prefix + "Use <think>literal</think> here.",
+             reason, "Use <think>literal</think> here.", [], "none"),
+            (f"whitespace_{thinking}", thinking, prefix + " \n" + ping + "\n ",
+             reason, "", [("ping", {})], "auto"),
+        ])
+    cases.extend([
+        ("required", True, "reason</think>" + call, "reason", "", [("lookup", args)], "required"),
+        ("named", True, "reason</think>" + call, "reason", "", [("lookup", args)],
+         {"type": "function", "function": {"name": "lookup"}}),
+        ("none_implicit_end", True, "reason" + ping, "reason", ping, [], "none"),
+        ("none_no_tools", True, "reason</think>" + ping, "reason", ping, [], "none"),
+    ])
     replays = 0
-    for name, thinking, text, expected_reason, expected_content, expected_tools in cases:
+    for name, thinking, text, expected_reason, expected_content, expected_tools, choice in cases:
         body = chat.normalize_chat_options({"model": "glm-5.3-flash",
             "messages": [{"role": "user", "content": "test"}], "tools": tools,
-            "chat_template_kwargs": {"thinking": thinking}})
+            "tool_choice": choice, "chat_template_kwargs": {"thinking": thinking}})
+        if name == "none_no_tools":
+            body.pop("tools")
         request = ChatCompletionRequest(**body)
         prompt_ids = tokenizer.apply_chat_template(body["messages"], tools=tools,
             chat_template=template, tokenize=True, add_generation_prompt=True,
             **body["chat_template_kwargs"])
         def parser():
-            return Glm47MoeParser(tokenizer, tools=request.tools,
+            return dispatched(tokenizer, tools=request.tools,
                                  chat_template_kwargs=body["chat_template_kwargs"])
+        original_choice = request.tool_choice
+        parser().adjust_request(request)
+        assert request.tool_choice == original_choice, (name, "changed tool choice")
+        assert request.skip_special_tokens is False
+        if choice in ("required",) or isinstance(choice, dict):
+            assert request.structured_outputs is not None, (name, "missing structural tag")
         expected = (expected_reason, expected_content, expected_tools)
         reasoning, content, calls = parser().parse(text, request, enable_auto_tools=True)
         actual = (reasoning or "", content or "",
                   [(c.name, json.loads(c.arguments)) for c in calls or []])
         assert actual == expected, (name, "non-streaming", actual, expected)
+        # Also retain direct-engine coverage: it is a separate upstream entry.
+        direct = Glm47MoeParser(tokenizer, tools=request.tools,
+                               chat_template_kwargs=body["chat_template_kwargs"])
+        r, c, tcs = direct.parse(text, request, enable_auto_tools=True)
+        assert (r or "", c or "", [(tc.name, json.loads(tc.arguments)) for tc in tcs or []]) == expected, (name, "direct")
+        hidden_request = request.model_copy(update={"include_reasoning": False})
+        hidden = parser().parse_delta(text, [], hidden_request,
+            prompt_token_ids=prompt_ids, finished=True)
+        assert hidden is None or not hidden.reasoning, (name, "reasoning visibility")
 
         if calls:
             # Exercise the real Chat API request validation and preprocessing:
@@ -90,12 +141,14 @@ def run(tokenizer_path: str):
                     {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
                     for c in calls]}] + [
                 {"role": "tool", "tool_call_id": c.id,
-                 "content": [{"type": "text", "text": "result " + c.name}]} for c in reversed(calls)]
+                 "content": [{"type": "text", "text": "result " + c.id}]} for c in reversed(calls)]
             roundtrip_request = ChatCompletionRequest(model=body["model"], messages=history)
             # Text-only configuration: no media processor or model weights.
+            content_format = resolve_chat_template_content_format(template, tools, "auto",
+                tokenizer, model_config=None)  # Explicit template requires no model config.
             conversation, mm_data, _ = parse_chat_messages(roundtrip_request.messages,
                 SimpleNamespace(multimodal_config=None, enable_prompt_embeds=False),
-                content_format="string")
+                content_format=content_format)
             assert mm_data is None
             if expected_reason:
                 assert conversation[1]["reasoning_content"] == expected_reason
@@ -103,7 +156,7 @@ def run(tokenizer_path: str):
                 chat_template=template, tokenize=False, add_generation_prompt=True)
             assert "None" not in rendered, (name, "null content")
             for c in calls:
-                assert rendered.count("result " + c.name) == 1, (name, "lost tool response")
+                assert rendered.count("result " + c.id) == 1, (name, "lost tool response")
 
         # Every character cut, one-character chunks, and one combined delta.
         # Text-only splits exercise delimiter buffering without token hints.
