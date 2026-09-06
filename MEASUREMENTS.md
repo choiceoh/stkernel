@@ -3602,6 +3602,35 @@ acc 정규화 step/s 브래킷이 자동으로 정산하되 0.75% 는 CV 아래�
 33차 팩 레버 그대로: 교정 부팅(`VLLM_GLM53_MK_CALIB=1`, 헤드 훅이 켜져 있으면 `lm_head` Hessian 이 자동 기록)의
 GPTQ 팩 + 저랭크 보정(r=32)이 dense 층에서 오차를 크게 줄였으니 헤드에서도 3배 → ~2배 이하가 기대치.
 
+### 14. "이득이 너무 적네" — 남은 레버를 크기로 다시 세다: 소형 GEMM 인구조사, EXP-4+EXP-9 묶음 팔 큐 (2026-09-06)
+
+헤드 레인은 보류(§13 교환비: +1.5% 최대 vs 로짓 잡음 3배). v2 레인 자체는 대역 78% 라 남은 것이 ~1 ms. 그래서 §12 의
+"bf16/cuBLAS 소형 GEMM 3.70 ms, 171발" 을 `tools/trace_vendor_gemm_census.py`(발사 위치의 앞 커널로 소속을 잡는다)로
+세었다 — 같은 15:07 트레이스, 245 스텝, 3,761 µs/스텝, 183발:
+
+| µs/스텝 | 발/스텝 | 발당 | grid | 커널 | 앞 커널 → 소속 |
+|---|---|---|---|---|---|
+| 1,475 | 22 | 67.0 | (8,32,1) | cutlass bf16 16×16 128x1 | `_fused_q_kv_rmsnorm` ×11, cutlass ×11 → **MLA q_b_proj [1536×4096] + 인덱서 wq_b [1536×4096], bf16 12.6 MB 씩** |
+| 961 | 11 | 87.4 | (1,2,1) | cuBLAS gemmSN **fp32** | elementwise ×11 → **인덱서 head-gate** `weights_proj` [4096×32] fp32, cuBLAS 가 2블록 커널을 고른다(EXP-9 의 표적 그대로) |
+| 343 | 68 | 5.0 | (8,16,1) | cutlass bf16 16×16 | mk_gemm2 ×34, cutlass ×34 → KDA 층당 2발(이 캡처는 KDA=0; KDA=1 프로덕션에선 mk_kda 안) |
+| 283 + 249 | 11 + 11 | 25.7 / 22.7 | (8,2,16) / (8,1,16) | cutlass bf16 32×32 split-K 16 | `concat_and_cache_mla` / `mk_mla_kernel` → 흡수 MLA 의 q·W_UK, attn·W_UV 쌍 |
+| 144 + 107 + 94 + 54 | 12 + 1 + 11 + 11 | | | | 소형 잔여(인덱서 mqa logits 54 포함) |
+
+**레버 크기표**(스텝 55.3 ms): (1) `SPEC_K` 7→5/3 — MoE 가 DRAM 포화(m=8 행이 만지는 전문가 ≤48 × 3.5 MB 가 683 µs
+= 대역 ~100%)라 행 수가 곧 MoE 시간; 수용 프로파일(3.83 tok/스텝 ↔ a≈0.77 등비)로 k=5 tokens 3.44(−10%)·k=3 2.82(−26%),
+스텝 −7~−16 ms → tok/s 콘텐츠에 따라 +3%(높은 수용)~+29%(2.44 tok/스텝 류). **다른 세션이 오늘 K4/K5/K6 팔을 돌리는 중**
+(`bracket-lever.jsonl` 09:15 K5 44.69 tok/s·step 15.54 vs 07:55 PRODT 44.84·17.99, 11:13 PRODK5H-dec 46.67·20.60) — 그쪽 레버.
+(2) **EXP-4** `VLLM_GLM53_FP8_DENSE_BPROJ=1`: q_b + wq_b 22발 1.48 ms → fp8 dense → MK W4 팩 → v2 레인 → ~0.35 ms, **−1.1 ms
+(2.0%)**, 로짓 무관(어텐션·인덱서 q 투영; 인덱서 wq_b 의 W4 는 index 점수 순위에 닿을 수 있어 quality 레그가 게이트). (3) **EXP-9**
+`VLLM_GLM53_INDEXER_GATE_SPLITK=1`: 88 → 12.7 µs × 11 = **−0.83 ms (1.5%)**, 합산 순서만 변경(README 검증 완료). (4) MLA split-K
+쌍 0.53 → mk_mla 흡수(다른 세션 커널). (5) AR 5.6 ms(osar), MoE 커널(대역 포화 — 행 수 레버가 정답).
+
+**실행(운영자 "제안대로")**: 프로필에 `VLLM_GLM53_FP8_DENSE_BPROJ=0` 선언(PR #357 — 미선언 키는 런처가 컨테이너로 안 보낸다,
+32차 사고 부류) → srv2 `~/glm53-logs/lever-chain-mkg3.sh`(12:21 큐; 다른 세션 체인·피어의 캘리브레이션/GPTQ 부팅 뒤 10분
+유휴에 시작 → origin/main 배포 → `MKG3BASE ""` decode+prefill8k → `MKG3 "VLLM_GLM53_FP8_DENSE_BPROJ=1
+VLLM_GLM53_INDEXER_GATE_SPLITK=1"` 전 레그). 기대 −1.9 ms(3.5%, CV 1.7% 위). 판정 = step/s + quality 9/9 + 한국어 0/16 + pos-1 ±2 pct;
+증명 줄 `[fp8-dense] … linears`(+33: q_b·kv_b·wq_b × 11) 와 트레이스의 gemmSN 11발 소멸. 결과 `lever-chain-mkg3.out`, 행 이름 MKG3BASE/MKG3.
+
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 
 운영자 "glm flash 커널개선작업" → 25차 승인분 드래프터 W4 브래킷을 26차 수정 위에서 완주시키는 날이었다.
