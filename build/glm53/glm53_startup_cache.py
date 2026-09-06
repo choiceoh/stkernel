@@ -33,7 +33,7 @@ class HostStaging:
     def _get(self):
         if self.buffer is None and not self.disabled:
             try:
-                self.buffer = torch.empty(TRANSFER_BYTES, dtype=torch.uint8, pin_memory=True)
+                self.buffer = torch.empty(TRANSFER_BYTES, dtype=torch.uint8, device="cpu", pin_memory=True)
             except RuntimeError as exc:
                 self.disabled = True
                 logger.warning("[startup-cache] pinned staging unavailable; using synchronous copies: %r", exc)
@@ -55,7 +55,7 @@ class HostStaging:
     def to_cpu(self, raw):
         if raw.device.type != "cuda":
             return raw.cpu()
-        cpu = torch.empty(raw.numel(), dtype=torch.uint8)
+        cpu = torch.empty(raw.numel(), dtype=torch.uint8, device="cpu")
         for start, chunk in self.chunks_to_cpu(raw):
             cpu[start:start + chunk.numel()].copy_(chunk)
         return cpu
@@ -180,7 +180,7 @@ def _restore_storage(record, device, staging):
             or any(type(x) is not int or x < 0 for x in stride)):
         raise ValueError("invalid cached layout")
     span = offset + 1 + sum((n - 1) * s for n, s in zip(shape, stride))
-    itemsize = torch.empty((), dtype=dtype).element_size()
+    itemsize = torch.empty((), dtype=dtype, device="cpu").element_size()
     if span * itemsize > raw.numel() or raw.numel() % itemsize:
         raise ValueError("cached layout exceeds its storage")
     storage = torch.empty(raw.numel(), dtype=torch.uint8, device=device)

@@ -351,6 +351,22 @@ class RankArtifactTests(unittest.TestCase):
             self.load(self.model())
         self.assertEqual(self.loader.call_count, 4)
 
+    def test_transformers_label_keys_and_tuples_survive_json_identity(self):
+        def configured():
+            model = self.model()
+            model.model_config.hf_config.to_dict = lambda: {
+                "id2label": {i: f"LABEL_{i}" for i in range(12)},
+                "vision_config": {"id2label": {0: "LABEL_0", 1: "LABEL_1"}},
+                "shape_hint": (2, 4),
+            }
+            return model
+        first = configured()
+        self.load(first)
+        second = configured()
+        self.load(second)
+        self.assertEqual(self.loader.call_count, 1)
+        self.assertTrue(torch.equal(first.weight, second.weight))
+
     def test_missing_truncated_or_incomplete_metadata_falls_back_before_copy(self):
         self.load(self.model())
         for kind in ("truncated", "missing", "extent"):

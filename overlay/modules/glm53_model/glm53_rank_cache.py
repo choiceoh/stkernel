@@ -137,7 +137,11 @@ def _context(model):
                 "quantization": mc.quantization, "revision": mc.revision,
                 "env": environment_identity(), "runtime": runtime_identity()}
     identity["runtime"]["sources"]["rank_cache"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    return source, identity
+    # PretrainedConfig.to_dict() retains integer id2label keys (including
+    # nested vision configs) and may contain tuples. JSON turns them into
+    # strings/lists. Normalize BEFORE hashing and comparison, so a valid
+    # persisted identity equals the next fresh model's identity.
+    return source, json.loads(json.dumps(identity, allow_nan=False))
 
 
 def _write(directory, identity, state, loaded):
