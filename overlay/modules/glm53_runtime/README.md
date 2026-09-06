@@ -381,9 +381,19 @@ v2 sends rank-local values and scales in two all-to-alls and sums decoded
 terms in FP32. v3 packs values and scales by destination directly into one
 all-to-all, preserving v2's numerical recipe. Its packet stride is rounded
 to 128 bytes for both collectives; the pack kernel initializes the alignment
-gap. BF16 already has one native
-reduce-scatter, so v3 needs a fresh bracket against BF16. Every FP8 mode
-requires its own serving-quality gate.
+gap. BF16 already has one native reduce-scatter. Ungated v3's matched
+serving comparison gained 1.7%/3.4% at 32K/128K but lost 9.2% at warm 2K.
+Every FP8 mode requires its own serving-quality gate.
+
+v3 now selects BF16 before codec/scratch allocation when the actual scheduled
+chunk has fewer than `VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS=4096` real global
+rows. This is an initial boundary, not a measured optimum. All model gathers
+(including auxiliary/final output) supply the real count, so TP padding does
+not promote a short chunk to FP8. Standalone gathers without `num_tokens`
+use their represented padded row count. The gate has no device-data read or
+extra collective; every rank uses the same profile and chunk shape. Set the
+minimum to `0` for the ungated v3 control. v1/v2 remain unchanged; FP8 remains
+off by default. See `docs/GLM53_PREFILL_40.md` for current serving evidence.
 
 `probes/glm53_prefill_collectives_check.py` (WORLD_SIZE=4 torchrun) covers
 all four transports. `probes/run_glm53_prefill_transport_check.sh` checks

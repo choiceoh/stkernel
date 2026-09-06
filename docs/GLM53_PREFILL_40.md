@@ -156,10 +156,46 @@ for the short-request regression, not a measured GPU time breakdown.
 All three previous boots reported prefix-cache hit rate 0%. The onepass
 "warm" value is the minimum of two post-first-run requests, not a cache-hit
 measurement or a repeated-sample median. Future records now retain every
-TTFT sample. Validation for the gate will include 2K/4K/8K/32K/128K onepass
-requests on matching candidate/BF16 builds, both BF16 short-path markers,
-the packed FP8 serving marker, and the existing quality/corruption gates.
-Runtime results for this dispatch change are pending.
+TTFT sample.
+
+The follow-up ran 2K/4K/8K/32K/128K onepass requests on source `60a7de0`
+(main `05c4a65`), overlay `7cb8c033a0b2`, and the same pinned image on all
+four ranks. CPU prerequisite `62328ea3d97047cb9571` passed nine contracts.
+The deployment gate passed 6656 available logic checks, 30 megakernel and
+32 fleet regressions (torch-dependent CPU portions remain skipped on the
+host); all 56 overlays were verified on all nodes. The asynchronous pair
+submission rejected the stale pre-boot cache stamp after deployment, so the
+documented `fleet.sh pair` path performed the boots and matched comparison.
+No stamp was overwritten to bypass that check.
+
+Candidate `SPGATE0907A` ran at 08:19:31 KST; BF16 `SPGATE0907ABASE` at
+08:27:37. Both passed retrieval 15/15 and Korean corruption 0/11. The
+candidate's short BF16 gather/scatter markers fired at the first real 2121
+token request, and repeated requests used 2128 tokens. Its packed FP8 marker
+also passed. Node attestations confirm mode 3 versus 0 with threshold 4096,
+SPEC_K=5, identical image and manifest, and independent container boots.
+
+**Short-request result:** BF16's post-first 2K TTFT samples were 846.921 /
+843.019 ms; gated v3's were 844.359 / 881.140 ms. The harness's best sample
+is 843.019 → 844.359 ms (2524.260 → 2520.256 tok/s, -0.16%). The two-sample
+medians are 844.970 → 862.749 ms (+2.10% latency). The earlier 9.2% loss is
+not reproduced, but two samples do not establish a stable percentage. This
+2K phase had no observed prefix hits or concurrent requests.
+
+**Long-context timing is not a clean comparison.** During baseline 8K and
+later phases, a non-loopback client submitted requests. At 08:28:24 the log
+shows two running requests and a mixed-batch metadata fallback; at 08:28:44
+it shows a queued request, and at 08:29:24/34 a deferred request. Baseline
+32K took 16.614 s versus candidate 10.793 s, but the apparent 53.9% gain is
+not accepted. 8K/128K timing deltas are excluded from a speedup verdict too.
+Warm 4K/8K requests also reuse prefixes, so they do not establish a pure
+codec crossover. No additional traffic was sent outside the fleet hold.
+
+Decision: retain the short-chunk gate in the opt-in candidate, keep FP8 off
+by default, and leave the optimal threshold and long-context benefit
+unresolved. The original 40% target is not established. The pair released
+the fleet on BF16 at 08:30:14. Raw records, node attestations and selected
+traffic evidence: [gated serving report](GLM53_PREFILL_GATED_SERVING_20260907.json).
 Remote logs: `srv2:/home/choiceoh/glm53-logs/fleet/experiments/754d6f2f4f1940d49b79/run.log`
 and `boot-SPV3S0907B1.log`, `boot-EXP-754d6f2f4f1940d49b79.log`,
 `boot-EXP-754d6f2f4f1940d49b79BASE.log` under `srv2:/home/choiceoh/glm53-logs/`.

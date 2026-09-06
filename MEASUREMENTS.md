@@ -2339,6 +2339,23 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
   원본 3개 onepass 레코드: `docs/GLM53_PREFILL_V3_SERVING_20260907.json`.
   pair 로그: `srv2:/home/choiceoh/glm53-logs/fleet/experiments/754d6f2f4f1940d49b79/run.log`.
 
+- **짧은 청크 BF16 분기 (09-07 08:12~08:30)**: main `05c4a65` 기반 소스 `60a7de0`, 빌드 `7cb8c033a0b2`.
+  v3만 실제 청크의 패딩 전 전역 토큰 수가 `PREFILL_SP_FP8_MIN_TOKENS=4096` 미만이면 BF16으로 처리한다.
+  FP8 임시 버퍼·codec 전에 분기하며 aux/final gather에도 적용. 0은 ungated 대조군, FP8 기본값은 0 유지.
+  CPU 선행 `62328ea3d97047cb9571`의 9개 계약 검사 통과, 배포 6656 available logic + 30 megakernel + 32 fleet 통과
+  (호스트 torch 의존 검사는 생략), 56개 overlay의 4노드 SHA 검증. 부팅 전 stamp 때문에 비동기 등록이 거절되어
+  stamp를 수동 변경하지 않고 정식 `fleet.sh pair`로 실행했다.
+  A=`SPGATE0907A`, B=`SPGATE0907ABASE`, 2K/4K/8K/32K/128K 동일 onepass·이미지·SPEC_K=5.
+  2K 후속 TTFT(ms): B **846.921 / 843.019**, A **844.359 / 881.140**.
+  최소값 처리율 B **2524.260** / A **2520.256 tok/s**(−0.16%); 두 표본 중앙값 지연은 A +2.10%.
+  2K 구간은 prefix hit 0%, 동시 요청 없음. BF16 AG/RS 실행 표식과 v3 packed 표식 모두 확인.
+  양쪽 정답 **15/15**, 한국어 깨짐 **0/11**. 앞선 −9.2% 퇴행은 재현되지 않았지만 안정적인 개선율로 단정하지 않는다.
+  **장문 판정 제외**: B의 8K 이후 외부 클라이언트 POST와 동시/대기 요청이 확인됨(08:28:24 running=2,
+  08:28:44 waiting=1, 08:29:24/34 deferred=1). B 32K 16.614 s / A 10.793 s의 겉보기 +53.9%는 채택하지 않음.
+  4K/8K 웜에는 prefix reuse도 있어 순수 codec 경계 측정이 아니다. 4096은 초기값, 장문 이득·40% 목표는 미확정.
+  08:30:14 BF16 상태로 플릿 반환. 원시 표본·4노드 부팅 지문·간섭 증거:
+  `docs/GLM53_PREFILL_GATED_SERVING_20260907.json`.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
