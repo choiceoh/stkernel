@@ -169,7 +169,8 @@ fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
-DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
+# 37차: overridable for a retrained drafter (the night round's candidate).
+DRAFT_HOST_PATH="${DRAFT_HOST_PATH:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}"
 # DFlash/DSpark synthesize their context KV from target hidden states. Tokens
 # restored by automatic prefix caching do not run through the target, so this
 # image leaves their draft KV slots unwritten while draft attention still

@@ -174,6 +174,29 @@ static_assert(W4_RAW_NBUF - 1 <= 4, "mk_cp_wait_upto dispatches up to 4");
 // baked workspace pointers is exact. Device-scope fences make the phases'
 // global writes visible across blocks (the osar barrier lesson).
 // ---------------------------------------------------------------------------
+// 37차 (2026-09-06): every device-side wait carries a deadline. A legitimate
+// wait is microseconds; a spin that reaches MK_SPIN_DEADLINE iterations of
+// __nanosleep (>= seconds) is a wedged kernel, and a wedged kernel is silent:
+// the host's next launch blocks and every stack shows THAT launch (the 10:31
+// and 10:47 boots sat 4+ minutes at a stock TileLang launch with the GPU at
+// 96 %, and nothing named the spinner). Trapping here names the site and
+// kills the process instead of hanging the boot. -DMK_SPIN_DEADLINE=0 disables.
+#ifndef MK_SPIN_DEADLINE
+#define MK_SPIN_DEADLINE (1u << 24)
+#endif
+#define MK_SPIN_WAIT(cond, ns, site)                                          \
+  do {                                                                        \
+    unsigned int mk_spin_n_ = 0;                                              \
+    while (cond) {                                                            \
+      __nanosleep(ns);                                                        \
+      if (MK_SPIN_DEADLINE && ++mk_spin_n_ >= (unsigned int)MK_SPIN_DEADLINE) {   \
+        printf("[megakernel] spin deadline at %s (block %d, thread %d)\n",   \
+               site, (int)blockIdx.x, (int)threadIdx.x);                      \
+        __trap();                                                             \
+      }                                                                       \
+    }                                                                         \
+  } while (0)
+
 __device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr,
                                                int grid) {
   __syncthreads();
@@ -187,7 +210,7 @@ __device__ __forceinline__ void mk_grid_barrier(unsigned long long* ctr,
         (t / (unsigned long long)grid + 1ULL) * grid;
     volatile unsigned long long* v =
         (volatile unsigned long long*)ctr;
-    while (*v < target) __nanosleep(64);
+    MK_SPIN_WAIT(*v < target, 64, "grid barrier");
     __threadfence();
   }
   __syncthreads();
@@ -1871,8 +1894,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // stamps, more than the main loop itself.)
   auto lr_wait = [&]() {
     if (threadIdx.x == 0) {
-      while (*((volatile unsigned*)&g_mk2_lr_flag[c.lr_slot]) < (unsigned)LR_CTAS)
-        __nanosleep(64);
+      MK_SPIN_WAIT(*((volatile unsigned*)&g_mk2_lr_flag[c.lr_slot]) < (unsigned)LR_CTAS, 64, "gemm2 lr flag");
       __threadfence();
     }
     __syncthreads();   // flag seen; the main loop's smem reads are all done
@@ -2342,7 +2364,7 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     if (t >= a.num_tokens) break;
     if (threadIdx.x == 0) {
       volatile unsigned int* v = &g_mk_mhc_tok_arrive[t];
-      while (*v < (unsigned int)NCHUNK) __nanosleep(128);
+      MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, "mhc token arrive");
       g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch
       __threadfence();
     }
