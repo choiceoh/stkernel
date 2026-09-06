@@ -17,12 +17,11 @@ both issue orders, and times the union against each part alone:
 
   exposed = span(moe || pair) - span(moe)
 
-Rows: the persistent v1 kernel (48-block grid, grid barrier) and the v2
-non-persistent lane (one block per unit, no barrier -- the served lane
-since 32차). The barrier-free local-quant kernel and the fewer-blocks
-control row this probe once carried were sunset in 34차 §8; the v1/v2
-pair is the same question ("is it the barrier or the block count?")
-answered by the lane serving keeps. What differs from the step, and why the x42 line is a projection, not a
+Row: the v2 non-persistent lane (one block per unit, no barrier -- the
+served lane since 32차 and, since 34차 §8, the GEMM segment's only kernel:
+the persistent v1 kernel, the barrier-free local-quant kernel and the
+fewer-blocks control row this probe once compared are gone). What differs
+from the step, and why the x42 line is a projection, not a
 step number: the step's main stream runs the router GEMM + topk before the
 MoE kernel (the pair's first GEMM overlaps those, not the MoE), the
 activation between the two GEMMs is a real kernel here replaced by a copy,
@@ -39,7 +38,6 @@ import sys
 os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
 os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
 os.environ.setdefault("VLLM_GLM53_MK_MHC", "0")
-os.environ.setdefault("VLLM_GLM53_MK_KDA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_MLA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 sys.path.insert(0, os.environ.get("MK_PKG_PATH",
@@ -58,11 +56,7 @@ SHARED_N = 1024                           # shared expert gate_up rows / rank
 SHARED_K = 512                            # down-proj K / rank
 REPS = 20
 NREPLAY = 5                               # replays per event bracket
-# (v2 lane on/off) -> row label
-ROWS = (
-    (0, "v1 persistent 48"),
-    (1, "v2 non-persistent"),
-)
+ROWS = (("v2 non-persistent",),)
 
 
 def _capture(fn_a, fn_b, order: str):
@@ -159,17 +153,11 @@ def main() -> int:
     t_moe = _time(_capture(moe, nothing, "moe-first"))
     print(f"{'moe alone (U=40)':<44}{t_moe:>9.1f}")
     rows = {}
-    with mk._gemm_probe_scope():  # every lane override restored after
-        for on, label in ROWS:
-            ext.set_gemm2(on, -1)
-            if on:
-                plan_up = ext.gemm2_plan(T, SHARED_N, HID)
-                plan_dn = ext.gemm2_plan(T, HID, SHARED_K)
-                print(f"  v2 plans (on, ksr, units, blocks/SM): up={plan_up} down={plan_dn}")
-            else:
-                plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
-                plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
-                print(f"  v1 plans (grid, ksr, units): up={plan_up} down={plan_dn}")
+    with mk._gemm_probe_scope():  # the split override restored after
+        for (label,) in ROWS:
+            plan_up = ext.gemm2_plan(T, SHARED_N, HID)
+            plan_dn = ext.gemm2_plan(T, HID, SHARED_K)
+            print(f"  plans (ksr, units, blocks/SM): up={plan_up} down={plan_dn}")
             t_pair = _time(_capture(nothing, pair, "moe-first"))
             print(f"{'pair alone ' + label:<44}{t_pair:>9.1f}")
             for order in ("moe-first", "pair-first"):
@@ -178,7 +166,7 @@ def main() -> int:
                 print(f"{'moe || pair ' + label + ' ' + order:<44}{t:>9.1f}"
                       f"{t - t_moe:>12.1f}")
     # the projection onto the step: the exposed pair times the MoE layers
-    for _, label in ROWS:
+    for (label,) in ROWS:
         a = rows[(label, "moe-first")]
         b = rows[(label, "pair-first")]
         print(f"{label}: exposed per layer moe-first {a:.1f} / pair-first {b:.1f} us"

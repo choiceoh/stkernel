@@ -2,7 +2,7 @@
 """Execute extracted CUDA control flow as C++ without CUDA or torch.
 
 The operand labels and synchronization counters below replace device operations,
-but the window movement and publication branches come from the shipped
+but the publication branches come from the shipped
 .cu file. These tests catch indexing and missing-barrier regressions; GPU
 racecheck and stock-op numerical comparisons remain necessary before deployment.
 """
@@ -39,8 +39,6 @@ def _statement(source: str, marker: str) -> str:
 def harness_source(source: str) -> str:
     publication = source[source.index("if (pend >= 0)"):
                          source.index("      xv = nxv;")]
-    window = _block(source[source.index("// Write the WHOLE window"):],
-                    "for (int i = 0; i < a.conv_width; ++i)")
     probe = _block(source, "std::vector<int64_t> mk_probe_state()")
     restore = _block(source, "void mk_restore_probe_state(")
     return r'''
@@ -58,7 +56,7 @@ void require(bool ok, const char* what) {
 }
 #define TORCH_CHECK(ok, ...) require((ok), "probe-state validation")
 constexpr int KBLK_MAX = 32, MK_GRID_CAP = 96;
-int g_probe_ksr, g_probe_gemm2, g_probe_ksr2;
+int g_probe_ksr2;
 ''' + probe + "\n" + restore + r'''
 
 
@@ -93,45 +91,14 @@ void mhc_test() {
   }
 }
 
-struct ConvArgs { int conv_width; size_t cs_s2; std::vector<float> state; };
-float kda_cs_load(const ConvArgs& a, size_t i) { return a.state.at(i); }
-void kda_cs_store(ConvArgs& a, size_t i, float v) { a.state.at(i) = v; }
-
-void window_test() {
-  constexpr int NQ_MAX = 8;
-  // Distinct values expose duplication. Padded and strided storage catches
-  // writes to adjacent channels/slots; acc+n beyond width exercises masking.
-  for (int nq_tok = 1; nq_tok <= 8; ++nq_tok) {
-    for (int acc = 1; acc <= 8; ++acc) {
-      for (size_t stride : {size_t(1), size_t(7)}) {
-        const size_t sbase = 19;
-        ConvArgs a{10, stride, std::vector<float>(110, -777.0f)};
-        for (int i = 0; i < a.conv_width; ++i)
-          a.state.at(sbase + i * stride) = float(101 + 3 * i);
-        const auto original = a.state;
-        auto expected = original;
-        const int keep = a.conv_width - nq_tok;
-        float xin[NQ_MAX];
-        for (int q = 0; q < NQ_MAX; ++q) xin[q] = float(1001 + 5 * q);
-        for (int i = 0; i < a.conv_width; ++i) {
-          expected.at(sbase + i * stride) = i < keep
-              ? (acc + i < a.conv_width ? original.at(sbase + (acc + i) * stride) : 0.0f)
-              : xin[i - keep];
-        }
-''' + window + r'''
-        require(a.state == expected, "KDA did not preserve the shifted conv window");
-      }
-    }
-  }
-}
-
 void probe_state_test() {
   const int64_t imax = std::numeric_limits<int>::max();
   const int64_t imin = std::numeric_limits<int>::min();
-  // (ksr, gemm2, ksr2) since 34차 §8: the local-quant, bg-control and tail
-  // knobs are gone with their lanes
+  // one knob (ksr2, the forced split) since 34차 §8: the persistent lane's
+  // split, the lane switch, the local-quant, bg-control and tail knobs are
+  // gone with their lanes
   const std::vector<std::vector<int64_t>> snapshots = {
-    {-1,-1,-1}, {3,0,5}, {32,imax,imin}, {0,1,imax}, {0,1,-2}
+    {-1}, {0}, {5}, {imax}, {imin}, {-2}
   };
   for (const auto& snapshot : snapshots) {
     mk_restore_probe_state(snapshot);
@@ -146,10 +113,9 @@ void probe_state_test() {
   };
   reject({});
   reject({0,0});
-  reject({0,0,0,0});
-  const int64_t low[] = {-2,-2,imin-1};
-  const int64_t high[] = {33,imax+1,imax+1};
-  for (int i = 0; i < 3; ++i) {
+  const int64_t low[] = {imin-1};
+  const int64_t high[] = {imax+1};
+  for (int i = 0; i < 1; ++i) {
     auto bad = before; bad[i] = low[i]; reject(bad);
     bad[i] = high[i]; reject(bad);
   }
@@ -160,7 +126,6 @@ int main(int argc, char** argv) {
     require(argc == 2, "select a regression case");
     const std::string test = argv[1];
     if (test == "mhc") mhc_test();
-    else if (test == "window") window_test();
     else if (test == "probe") probe_state_test();
     else throw std::runtime_error("unknown regression case");
     std::cout << test << ": PASS\n";
@@ -194,9 +159,6 @@ class MegakernelCudaRegressions(unittest.TestCase):
 
     def test_mhc_shared_tile_reuse(self):
         self._run("mhc")
-
-    def test_kda_short_and_strided_windows(self):
-        self._run("window")
 
     def test_probe_state_restoration_is_exact_and_atomic(self):
         self._run("probe")

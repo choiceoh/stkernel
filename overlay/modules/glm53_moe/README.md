@@ -194,7 +194,9 @@ deploy loudly instead of silently dropping the patch.
 Only glm53 mounts this module (dsv4's MoE path does not go through
 b12x_shared_workspace).
 
-## Static v2 / v3 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel (`moe_static_kernel_v2.py`)
+## Static v2 / v3 / v4 (35차, from b12x_zero_weight_micro): the decode-streaming static kernel
+
+**34차 §8 (2026-09-06, 운영자 "전부 지워")**: `moe_static_kernel_v2.py`(레인 `1`/`m..`/`d`)와 `moe_static_kernel_v3.py`(레인 `w`/`e`/`k`)는 삭제됐다 — v4 `u`(38차 부록 +2%)가 두 세대 앞선다. 둘이 공유하던 스탬프 슬롯·PTX 헬퍼는 `moe_static_common.py` 로 옮겨 v4 가 거기서 import 한다. 파서는 옛 토큰을 조용히 재매핑하지 않고 거부한다(`u`/`v` 만 유효). 아래 v2/v3 서술은 기록이다.
 
 `VLLM_GLM53_B12X_STATIC_V2` (profile default `u` = v4 since 38차; `w` = v3 was the 35차 default, `""` = stock) routes the exact
 GLM-5.3 TP geometry's static (decode) MoE launches to `MoEStaticKernelV2`, a

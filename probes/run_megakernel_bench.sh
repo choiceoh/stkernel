@@ -92,7 +92,7 @@ done
 # container -- a sweep over them then reports four identical numbers and
 # reads as "the knob had no effect" rather than "the knob never arrived".
 # VLLM_DSV4_* rides along because this lane's STOCK arm is tuned by three of
-# them (MHC_SMALLM_TUNED / TUNED_R2 / BIGFUSE_TUNED, all default 1): a sweep
+# them (dsv4's MHC_SMALLM_TUNED / TUNED_R2 / BIGFUSE_TUNED, all default 1): a sweep
 # that wants the untuned reference has to be able to say so.
 # The probe arms itself with os.environ.setdefault, so a forwarded knob WINS.
 # That is what a sweep wants -- and it is also how a probe run measures
@@ -118,8 +118,8 @@ esac
 # they are also what a sourced profile carries, and MK_PDL in particular is
 # worth 17-19 pct per launch (module README), so a forwarded 0 changes every
 # number in the table with nothing in it to say why.
-for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_KDA \
-          VLLM_GLM53_MK_MLA VLLM_GLM53_MK_PDL; do
+for _k in VLLM_GLM53_MK_MHC VLLM_GLM53_MK_GEMM VLLM_GLM53_MK_MLA \
+          VLLM_GLM53_MK_PDL; do
   case "${!_k-1}" in
     0|""|false|FALSE|no|off)
       echo "WARNING: $_k='${!_k}' is set in this shell and will be forwarded" >&2 ;;

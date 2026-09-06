@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute production MLA/KDA routing with CPU mocks; no CUDA or vLLM needed.
+"""Execute production MLA routing with CPU mocks; no CUDA or vLLM needed.
 
 Run: python3 tests/test_megakernel_wiring_regressions.py
 """
@@ -181,67 +181,6 @@ class MLAFailureTests(unittest.TestCase):
         self.assertIs(self.run_mla(), self.module.mla_decode.return_value)
         self.assertTrue(self.ns["_MK_MLA_SHADOW"]["checked"])
         self.assertTrue(self.ns["_mk_mla_route"](self.impl, 16))
-
-
-class KDAShadowTests(unittest.TestCase):
-    def setUp(self):
-        self.capturing = [False]
-        self.shadow = Mock()
-        self.module = types.ModuleType("vllm.model_executor.layers.glm53_megakernel")
-        self.module.KDA_SHADOW = True
-        self.module.ENABLE_KDA = True
-        self.module._ARMED = {"kda": True}
-        self.module.kda_takeover = Mock(return_value=True)
-        self.module.KdaShadowArm = Mock(return_value=self.shadow)
-        self.module.kda_block = Mock(return_value="MK real output")
-        layers = types.ModuleType("vllm.model_executor.layers")
-        layers.glm53_megakernel = self.module
-        self.imports = patch.dict(sys.modules, {
-            "vllm": types.ModuleType("vllm"),
-            "vllm.model_executor": types.ModuleType("vllm.model_executor"),
-            "vllm.model_executor.layers": layers,
-            self.module.__name__: self.module,
-        })
-        self.imports.start()
-        self.addCleanup(self.imports.stop)
-        self.stock_out = Tensor(2.0)
-        self.layer = types.SimpleNamespace(
-            local_projection_size=1, local_num_heads=1, head_dim=1,
-            in_proj_qkvbfg_a=Mock(return_value=(Tensor(shape=(16, 6)),)),
-            f_b_proj=Mock(return_value=(Tensor(),)),
-            g_b_proj=Mock(return_value=(Tensor(),)),
-            o_proj=Mock(return_value=(self.stock_out,)), _forward=Mock())
-        self.ns = {"torch": fake_torch(self.capturing),
-                   "_kda_fusion_state": lambda: {"dual": False}}
-        load_functions("glm5next_kda.py", {"forward"}, self.ns,
-                       class_name="Glm5NextLinearAttention")
-
-    def test_shadow_overrides_armed_lane_and_compares_stock_output(self):
-        out = self.ns["forward"](self.layer, Tensor(), Tensor())
-        self.assertIs(out, self.stock_out)
-        self.module.kda_block.assert_not_called()
-        self.module.KdaShadowArm.assert_called_once()
-        self.shadow.compare.assert_called_once_with(self.stock_out)
-        self.layer._forward.assert_called_once()
-
-    def test_shadow_capture_runs_stock_without_mk_state_mutations(self):
-        self.capturing[0] = True
-        out = self.ns["forward"](self.layer, Tensor(), Tensor())
-        self.assertIs(out, self.stock_out)
-        self.module.kda_block.assert_not_called()
-        self.module.KdaShadowArm.assert_not_called()
-        self.shadow.compare.assert_not_called()
-        self.layer._forward.assert_called_once()
-
-    def test_armed_lane_still_serves_when_shadow_is_disabled(self):
-        self.module.KDA_SHADOW = False
-        for capturing in (False, True):
-            self.capturing[0] = capturing
-            self.assertEqual(self.ns["forward"](self.layer, Tensor(), Tensor()),
-                             "MK real output")
-        self.assertEqual(self.module.kda_block.call_count, 2)
-        self.layer._forward.assert_not_called()
-        self.module.KdaShadowArm.assert_not_called()
 
 
 if __name__ == "__main__":

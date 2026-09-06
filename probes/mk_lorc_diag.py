@@ -23,7 +23,6 @@ def main():
     args = ap.parse_args()
     os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
     os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
-    os.environ.setdefault("VLLM_GLM53_MK_GEMM2", "1")
     os.environ["VLLM_GLM53_MK_PACK_CACHE"] = "off"
     os.environ["VLLM_GLM53_MK_PACK_ROWSHIFT"] = "1"
     os.environ["VLLM_GLM53_MK_PACK_GPTQ"] = "0"
@@ -44,7 +43,7 @@ def main():
             x = torch.randn(m, k, device=DEV).to(torch.bfloat16)
             twin = mk.mk_pack_twin(x, pk, n).to(torch.bfloat16)
             for ksr in (0, 1, 2, 4, 8):
-                ext.set_gemm2(1, ksr, -1)
+                ext.set_gemm2(ksr)
                 try:
                     plan = list(ext.gemm2_plan(m, n, k))
                 except Exception:
@@ -58,7 +57,7 @@ def main():
                 ok &= good
                 print(f"{'!' if not good else ' '}{n}x{k:<10}{m:>3}{ksr:>5}{str(plan[:3]) if plan else '-':>12}"
                       f"{gaps[0]:>10.2e}{gaps[1]:>10.2e}{gaps[2]:>24.2e}")
-        ext.set_gemm2(1, 0, -1)
+        ext.set_gemm2(0)
     # ---- isolate the correction: corrected launch minus uncorrected launch (same
     # nibbles / scales) against the twin's x (A B)^T. NOTE: the difference of two
     # bf16 outputs carries bf16 rounding noise of the OUTPUT (~2^-9), which is
@@ -76,7 +75,7 @@ def main():
         os.environ["VLLM_GLM53_MK_PACK_LORC"] = "0"
         pk0 = mk.build_mk_weight_w4(w)
         AB = (pk[4][:n].float() @ pk[5].float())
-        ext.set_gemm2(1, 0, -1)
+        ext.set_gemm2(0)
         for m in (8, 32):
             x = torch.randn(m, k, device=DEV).to(torch.bfloat16)
             tw = x.float() @ AB.T                            # the twin's correction (fp32, on x itself)
@@ -109,7 +108,7 @@ def main():
         w = (torch.randn(n, k, device=DEV) * 0.02).to(torch.bfloat16)
         os.environ["VLLM_GLM53_MK_PACK_LORC"] = str(args.rank)
         pk = mk.build_mk_weight_w4(w)
-        ext.set_gemm2(1, 0, -1)
+        ext.set_gemm2(0)
         for m in (8, 32):
             x = torch.randn(m, k, device=DEV).to(torch.bfloat16)
             for _ in range(3):

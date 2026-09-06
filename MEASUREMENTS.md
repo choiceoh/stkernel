@@ -2906,7 +2906,9 @@ U=64 +8.7%. 세 실행(657/678/670)의 스톡은 727~728 로 고정인데 v3 쪽
 
 **GPTQ 가 다시 여는 후보 셋과 판정(2026-09-06 04:30, 운영자):** 타깃 헤드 W4(−0.4 ms/스텝, 서빙 로짓 변경), 드래프트 헤드 W4(−0.4 ms/스텝, 수용률 게이트), nvfp4 프리필 W4A4(프리필 +4%, 활성 4비트 오차는 GPTQ 가 못 잡음) — 합쳐 디코드 −1.5%·프리필 +4% 로 **"이익이 너무 적어 굳이" → 전부 접음.** GPTQ 의 가치는 속도가 아니라 품질(한국어 0/96)이었다.
 
-**운영 주의:** GPTQ 팩은 각 노드 `/cache/mkcalib/rank<r>/<모델클래스>/` 의 헤시안 덤프와 `/cache/mkpacks/rank<r>/` 의 팩 캐시(둘 다 컨테이너가 root 로 씀)에 의존한다. 캐시를 지우거나 새 노드면 팩 줄이 `gptq=0` 으로 돌아오고 조용히 RTN 이 된다 — **부팅 로그의 `megakernel packs:` 줄에서 `gptq=180 gptq_failed=0` 을 확인하는 것이 서빙 증명**. 체크포인트가 바뀌면 교정 부팅(`MK_CALIB=1` + `bench/mk-calib-run.py --long 16`)을 한 번 다시 한다.## ★★★34차 — 메가커널 모듈·노드 융합: 프로덕션 스텝의 첫 노드 인구조사, 남은 자리 넷, 그리고 드래프터 앞의 호스트 갭 (2026-09-05 오후, 무부팅 + 프로파일 캡처 1회)
+**운영 주의:** GPTQ 팩은 각 노드 `/cache/mkcalib/rank<r>/<모델클래스>/` 의 헤시안 덤프와 `/cache/mkpacks/rank<r>/` 의 팩 캐시(둘 다 컨테이너가 root 로 씀)에 의존한다. 캐시를 지우거나 새 노드면 팩 줄이 `gptq=0` 으로 돌아오고 조용히 RTN 이 된다 — **부팅 로그의 `megakernel packs:` 줄에서 `gptq=180 gptq_failed=0` 을 확인하는 것이 서빙 증명**. 체크포인트가 바뀌면 교정 부팅(`MK_CALIB=1` + `bench/mk-calib-run.py --long 16`)을 한 번 다시 한다.
+
+## ★★★34차 — 메가커널 모듈·노드 융합: 프로덕션 스텝의 첫 노드 인구조사, 남은 자리 넷, 그리고 드래프터 앞의 호스트 갭 (2026-09-05 오후, 무부팅 + 프로파일 캡처 1회)
 
 운영자 "glm 5.3 flash 메가커널 모듈 및 노드 융합". 메가커널 캠페인이 세그먼트(MHC·GEMM·KDA·MLA)를
 접수한 뒤 스텝에 무엇이 남았는지를 **노드(그래프 안 커널 발사) 단위**로 읽고, 접을 수 있는 자리를
@@ -3087,6 +3089,26 @@ smlp2 의 v2 쪽이다.
 검증(무부팅): 컨테이너 nvcc 컴파일(`-gencode arch=compute_121a,code=sm_121a`, 1분 12초, 경고만), `tests/test_logic.py`, 회귀 스크립트 4종.
 GPU 자가진단(`run_megakernel_bench.sh --segments gemm exact mhc kda smlp`)과 서빙 판정은 다음 원큐 사다리 부팅에서 — 오버레이 sha 가
 바뀌므로 그 부팅은 콜드 컴파일 1회(≈12분).
+
+### 11. 일몰 전부 집행 — "안 쓰거나 메가커널이 대체한 커널" 8건 (운영자 "전부 지워", 2026-09-06 오후)
+
+§10 의 A 집행 뒤 운영자가 "커널에서 우리가 안 쓰는 것, 메가커널로 대체된 것도 지워도 되잖아"라 하여 후보 8건을 표로 올렸고
+("전부 지워") 전부 지웠다. 기준: 프로필 기본값에서 서빙에 안 도는 것, 또는 후속 커널이 대체한 것.
+
+| # | 지운 것 | 근거 | 범위 |
+|---|---|---|---|
+| 1 | MK_SEG_KDA(`mk_kda_kernel`, 드라이버 KDA 세그먼트·섀도·픽스처, `MK_KDA`/`MK_KDA_SHADOW`, `glm5next_kda.py` 인수 훅, fp8_dense 의 `_kda_owns`) | `MK_KDA=0` 기본, 세트 +0.7% 뒤 되돌림(#322), 같은 블록은 `KDA_ONEPASS`(Triton)가 후보 | .cu −620, 드라이버 −830, 런처 DS 레이아웃 가드, 프로브 `kda_conv_state_map` 삭제 |
+| 2 | v1 상주 GEMM(`mk_gemm_kernel`·`mk_gemm_phase`·grid 배리어·공유 A 양자화·나머지 split-K·유닛 핸드아웃·`MKGemmPlan`·`set_probe`/`gemm_plan`)과 `MK_GEMM2` 노브 | `GEMM2=1`이면 단독 발사 0(디스패치가 v2 뒤 return); KDA 인라인만 남아 있었음 | .cu −900; `mk_run_gemm` 이 v2 ctx 를 직접 만듦; `set_gemm2(ksr)`, `gemm2_plan→(ksr, units, bps)`, 스냅샷 1 노브; 벤치 `--gemm2`/`--gemm-sweep`/`--stamps`/v1 열 삭제, `--segments gemm,exact,mhc,smlp` |
+| 3·4 | b12x static v2·v3(`moe_static_kernel_v2/v3.py`, 레인 `1`/`m..`/`d`/`w`/`e`/`k`) | v4 `u` 가 두 세대 앞섬(38차 부록) | −4,230줄; 공유 스탬프 슬롯·PTX 헬퍼는 `moe_static_common.py` 로 이동(v4 가 import); 파서는 옛 토큰을 재매핑 없이 거부 |
+| 5 | MHC TileLang 디코드 쪽 `MHC_ONEPASS`(`mhc_onepass_tilelang` 244줄)·`MHC_SMALLM` 파서/디스패치 | mk_mhc 가 쌍을 대체(런북 19) | `tilelang.py` −134, `tilelang_kernels.py` −249; `mhc_glm53_bench.py` 의 onepass/hcweight 팔 삭제(−358) |
+| 6 | `SM121_MLA_PREFILL`(`flash_attn.py` 오버레이) + 캐시 전용 인덱서 경로 | 기본 0, MK-MLA v5 가 프리필 행 라우팅 | 파일 1, `glm53_prefill_fastpath.py` 478→97줄(메타데이터 웜업만) |
+| 7 | ~~`KDA_PREFILL_REGIME`(`kda.py`·`chunk_delta_h.py`)~~ **유지로 되돌림** | 삭제 커밋 뒤 #368(다른 세션)이 같은 `kda.py` 에 `KDA_PREFILL_DIRECT_OUT` 프리필 경로를 얹어 main 에 머지 — 병합 충돌에서 그쪽을 살렸다. 성능 결과 없음은 그대로라 판정은 #368 의 부팅 뒤 | 파일 2·프로브 복원 |
+| 8 | `KPOOL_FUSED_TOPK`(`glm53_kpool_topk.cu/.py`) + `FUSED_K_GATE` 분기 | opt-in, 판정 기록 없음 | 파일 2, 인덱서·모델 배선의 분기 |
+| 잔손질 | `.cu` 무참조 헬퍼 `mk_pow2_scale`·`mk_pow2_rcp`(+ 뒤따라 죽은 `mk_warp_amax`·`mk_pack4`·`mk_env_int`·`GEMM_SMEM`·`W4_RAW_NBUF`·`MK_NBUF_DEF`), `trace_common.OURS` 의 존재하지 않는 커널 이름, 원장 34차 헤더 접착 | — | — |
+
+프로필 노브 7개 소멸(`MK_KDA`·`MK_KDA_SHADOW`·`MK_GEMM2`·`SM121_MLA_PREFILL`·`FUSED_K_GATE`·`KPOOL_FUSED_TOPK`, 미선언이던 `MHC_SMALLM`/`MHC_ONEPASS` 포함; `KDA_PREFILL_REGIME` 은 위 7번대로 유지), 오버레이 파일 44→38(일몰만) → #368 병합 뒤 46(모듈 8 그대로). 남는 커널: `mk_gemm2_kernel`·`mk_mhc_kernel`·`mk_mla_kernel`·`mk_prep_kernel`(.cu 3,975→2,418줄), `k_oneshot`, `_deneb_gate_partial`, prep_fused·split-K·원패스·tail-select Triton, `moe_static_kernel_v4`.
+
+검증(무부팅): 컨테이너 nvcc PASS(경고만), `tests/test_logic.py` all OK(70,345 checks; 일몰 전용 테스트 10개 삭제, 메가커널 계약 테스트 재핀), 회귀 스크립트 4종 OK. 다음 부팅은 콜드 컴파일 1회 + GPU 자가진단(`run_megakernel_bench.sh --segments gemm,exact,mhc,smlp`)·원큐 사다리 1회로 서빙 확인 — 다른 세션이 플릿을 넘겨준 상태(14:41 전후 `FLEET-free-for-fusion.done`).
 
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 

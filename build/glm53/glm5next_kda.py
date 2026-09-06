@@ -399,36 +399,10 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         hidden_states: torch.Tensor,
         positions: torch.Tensor,
     ) -> torch.Tensor:
-        # deneb fork (glm53_megakernel): MK_SEG_KDA takes over the whole
-        # block -- in_proj GEMM, f_b/g_b gates, short conv, gated delta-rule
-        # recurrence, gated norm, o_proj GEMM -- in ONE persistent 48-block
-        # launch for pure spec-verify decode steps (T <= 32). Armed only
-        # after the boot self-test diffs it against the stock ops below.
-        # Shadow mode runs both arms in eager steps and logs divergence
-        # (outputs AND the states the next step reads) while stock stays the
-        # real output; capture steps always run stock under shadow.
-        _mk_shadow = None
-        _mk = _mk_arm = None
-        try:  # import only: a boot without the megakernel module is stock
-            from vllm.model_executor.layers.glm53_megakernel import (
-                KDA_SHADOW as _mk_shadow_on,
-                KdaShadowArm as _mk_arm,
-                kda_takeover as _mk,
-            )
-        except Exception:
-            _mk = None
-        if _mk is not None and _mk(self):
-            from vllm.model_executor.layers import glm53_megakernel as _mkmod
-
-            if _mk_shadow_on:
-                # Shadow wins when both knobs are set. Captured steps keep
-                # stock; eager steps compare cloned MK states below.
-                if not torch.cuda.is_current_stream_capturing():
-                    _mk_shadow = _mk_arm(self, hidden_states)
-            elif _mkmod.ENABLE_KDA and _mkmod._ARMED["kda"]:
-                # Armed: the launch is the real path (capturable, and a
-                # failure must stay loud -- no except back to stock).
-                return _mkmod.kda_block(self, hidden_states, positions)
+        # (deneb fork: the megakernel's MK_SEG_KDA takeover of this block --
+        # one persistent launch for spec-verify decode steps -- was sunset in
+        # 34차 §8; the stock chain below, with KDA_ONEPASS / KDA_DUAL_GEMM
+        # behind their own knobs, is the block's only path.)
         num_tokens = hidden_states.size(0)
         # One merged GEMM for q, k, v, b, f_a, g_a (replaces 6 separate GEMMs).
         projected = self.in_proj_qkvbfg_a(hidden_states)[0]
@@ -492,11 +466,6 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         )
         core_attn_out = core_attn_out.reshape(core_attn_out.size(1), -1)
         out = self.o_proj(core_attn_out)[0]
-        # deneb fork (glm53_megakernel): shadow epilogue -- diff the stock
-        # run against the MK arm launched above (eager only, by construction
-        # of the guard in the prologue).
-        if _mk_shadow is not None:
-            _mk_shadow.compare(out)
         return out
 
     @eager_break_during_capture
