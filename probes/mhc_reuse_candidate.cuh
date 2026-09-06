@@ -65,19 +65,19 @@ __global__ void mk_mhc_reuse_p1(const MKMhcArgs a) {
 }
 
 template <int CHUNKS>
-__global__ void mk_mhc_reuse_tail(const MKMhcArgs a) {
+__device__ void mk_mhc_reuse_tail_impl(const MKMhcArgs a, int t) {
   // The ordinary stream dependency waits for every producer CTA; no
   // persistent-grid assumptions, global counters, or spin waiting.
   __shared__ float pmix[HC];
   __shared__ float partial[MK_WARPS][NOUT + 1];
-  const int t = blockIdx.x, warp = threadIdx.x >> 5;
+  const int warp = threadIdx.x >> 5;
   const int lane = threadIdx.x & 31;
   float mine = 0.0f;
   if (lane <= NOUT) {
 #pragma unroll
     for (int c = warp; c < CHUNKS; c += MK_WARPS)
-      mine += lane < NOUT ? a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane]
-                         : a.rp[c * MAX_TOK + t];
+      mine += lane < NOUT ? __ldcg(&a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane])
+                         : __ldcg(&a.rp[c * MAX_TOK + t]);
     partial[warp][lane] = mine;
   }
   __syncthreads();
@@ -94,4 +94,9 @@ __global__ void mk_mhc_reuse_tail(const MKMhcArgs a) {
   }
   __syncthreads();
   mk_mhc_p34_compute(a, t, pmix, r);
+}
+
+template <int CHUNKS>
+__global__ void mk_mhc_reuse_tail(const MKMhcArgs a) {
+  mk_mhc_reuse_tail_impl<CHUNKS>(a, blockIdx.x);
 }

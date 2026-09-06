@@ -14,7 +14,7 @@ from pathlib import Path
 import statistics
 
 
-def candidate_source(source, tensorcore=False):
+def candidate_source(source, tensorcore=False, fused=False):
     marker = "__device__ void mk_mhc_p2_token("
     start = source.index(marker)
     end = source.index("// p3 + p4 for ONE token", start)
@@ -31,8 +31,21 @@ def candidate_source(source, tensorcore=False):
     source = source.replace("void mk_run_mhc(", "int g_probe_mhc_reuse = 0;\nvoid mk_run_mhc(", 1)
     marker = "  static int mhc_grid = 0;"
     launch = []
-    for mode, chunk in ((1, 64), (2, 128)):
+    for mode, chunk in (((1, 128), (2, 128)) if fused else ((1, 64), (2, 128))):
         for tokens in (2, 6, 8):
+            if fused and mode == 1:
+                launch.append(f"""
+  if (g_probe_mhc_reuse == 1 && a.num_tokens == {tokens}) {{
+    int blocks = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &blocks, mk_mhc_tf32x3_p1<{tokens}, 128, true>, MK_THREADS, 0));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+    TORCH_CHECK(blocks * sms >= HIDDEN/128, "MHC TC grid must be fully resident");
+    mk_launch(mk_mhc_tf32x3_p1<{tokens}, 128, true>, HIDDEN/128, 0, stream, a);
+    return;
+  }}
+""")
+                continue
             producer = (f"mk_mhc_tf32x3_p1<{tokens}, {chunk}><<<HIDDEN/{chunk}, MK_THREADS, 0, stream>>>(a);"
                         if tensorcore else f"mk_mhc_reuse_p1<2, {chunk}><<<(HIDDEN/{chunk})*({tokens}/2), MK_THREADS, 0, stream>>>(a);")
             launch.append(f"""
@@ -82,6 +95,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=18)
     ap.add_argument("--tensorcore", action="store_true", help="compensated TF32 projection; separate numeric gate")
+    ap.add_argument("--fused", action="store_true", help="one resident kernel versus the two-launch TC path")
     args = ap.parse_args()
     if args.reps < 6 or args.reps % 6:
         ap.error("reps must be a positive multiple of six for balanced orders")
@@ -94,7 +108,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     original = Path(mk._SRC).read_bytes()
     assert original == (root / "build/glm53/glm53_megakernel.cu").read_bytes()
-    source = candidate_source(original.decode(), args.tensorcore)
+    source = candidate_source(original.decode(), args.tensorcore or args.fused, args.fused)
     sha = hashlib.sha256(source.encode()).hexdigest()
     directory = Path(os.environ.get("VLLM_GLM53_MK_BUILD_DIR", "/tmp/mhc-reuse"))
     directory = directory / ("prototype-" + sha[:12])
@@ -104,7 +118,7 @@ def main():
     print(json.dumps({"source_sha256": hashlib.sha256(original).hexdigest(),
                       "prototype_sha256": sha, "device": torch.cuda.get_device_name(),
                       "torch": torch.__version__, "cuda": torch.version.cuda,
-                      "projection": "tf32x3" if args.tensorcore else "simt-fp32"}), flush=True)
+                      "projection": "tf32x3-fused" if args.fused else "tf32x3" if args.tensorcore else "simt-fp32"}), flush=True)
     ext = load(name="mhc_reuse_" + sha[:12], sources=[str(path)],
                extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"],
                build_directory=str(directory), verbose=False)
@@ -186,7 +200,7 @@ def main():
                     assert all(torch.equal(a, b) for a, b in zip(got, snapshots[mode])), (tokens, mode, "graph drift")
             med = [statistics.median(t) for t in times]
             print(json.dumps({"T": tokens, "regime": "cold" if cold else "warm",
-                              "modes": ["baseline", "reuse64", "reuse128"],
+                              "modes": ["baseline", "fused128", "split128"] if args.fused else ["baseline", "reuse64", "reuse128"],
                               "median_us": med, "samples_us": times,
                               "changes_pct": [100 * (v / med[0] - 1) for v in med]}), flush=True)
     print("PASS: stock and baseline oracles, exact residuals and repeated CUDA graphs", flush=True)

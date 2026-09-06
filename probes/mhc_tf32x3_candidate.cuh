@@ -16,8 +16,11 @@ __device__ __forceinline__ void mhc_mma_tf32(float (&acc)[4],
                : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
 }
 
-template <int TOK, int CHUNK>
+__device__ unsigned g_mhc_tc_arrived = 0, g_mhc_tc_tail_next = 0, g_mhc_tc_exit = 0;
+
+template <int TOK, int CHUNK, bool FUSED = false>
 __global__ void mk_mhc_tf32x3_p1(const MKMhcArgs a) {
+  asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
   __shared__ uint32_t hi[8][HC][CHUNK];
   __shared__ uint32_t lo[8][HC][CHUNK];
@@ -101,5 +104,36 @@ __global__ void mk_mhc_tf32x3_p1(const MKMhcArgs a) {
 #pragma unroll
     for (int off = 16; off; off >>= 1) s += __shfl_xor_sync(~0u, s, off);
     if (lane == 0) a.rp[c * MAX_TOK + warp] = s;
+  }
+  if constexpr (FUSED) {
+    // Host admission proves every block resident. A bounded number of
+    // blocks wait for completed partials, while all producer blocks are
+    // already in flight. Every producer thread publishes its own stores.
+    constexpr int CHUNKS = HIDDEN / CHUNK;
+    __shared__ int token;
+    __threadfence();
+    __syncthreads();
+    if (tid == 0) {
+      atomicAdd(&g_mhc_tc_arrived, 1u);
+      token = atomicAdd(&g_mhc_tc_tail_next, 1u);
+    }
+    __syncthreads();
+    if (token < TOK) {
+      if (tid == 0) {
+        volatile unsigned* ready = &g_mhc_tc_arrived;
+        MK_SPIN_WAIT(*ready < CHUNKS, 128, "MHC TC partials");
+        __threadfence();
+      }
+      __syncthreads();
+      mk_mhc_reuse_tail_impl<CHUNKS>(a, token);
+    }
+    __threadfence();
+    __syncthreads();
+    if (tid == 0 && atomicAdd(&g_mhc_tc_exit, 1u) + 1u == CHUNKS) {
+      g_mhc_tc_arrived = 0;
+      g_mhc_tc_tail_next = 0;
+      g_mhc_tc_exit = 0;
+      __threadfence();
+    }
   }
 }
