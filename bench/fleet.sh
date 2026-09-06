@@ -65,8 +65,11 @@ holder_line() { [ -s "$H" ] && IFS='|' read -r s pid host t0 est note < "$H" && 
 
 with_lock() { ( flock -x 9; "$@" ) 9>"$LK"; }
 
-_enqueue() {  # session est note
-  grep -q "^[0-9]*|$1|" "$Q" && return 0
+_enqueue() {  # session est note -- idempotent per session; a repeat refreshes est/note in place
+  if grep -q "^[0-9]*|$1|" "$Q"; then
+    awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" '$2==s {$4=est; $5=note} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
+    return 0
+  fi
   echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}" >> "$Q"; logit "request $1 est=${2:-30}m $3"
 }
 _dequeue() { grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"; }
@@ -80,6 +83,10 @@ _try_hold() {  # session pid est note -> 0 when held
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
   fi
   [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
+  # never hand the fleet to a dead job (an orphaned waiter whose run process
+  # was killed took a turn for pid 3710362 on 09-06 and was auto-kicked 2 s
+  # later, dropping the live request with the same session name)
+  [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
   legacy_busy && return 1
   echo "$s|$pid|$(me)|$(now)|$est|$note" > "$H"; _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
@@ -105,6 +112,11 @@ case "$cmd" in
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 ""; est=30; note=""; }
     t_end=$(( $(now) + tmo * 60 )); last=""
     while [ "$(now)" -lt "$t_end" ]; do
+      # an orphaned waiter (its run process gone) must not keep polling for a
+      # dead pid; a request that vanished (a stale sibling took it, or a
+      # cancel) is re-queued at the back instead of waiting forever at "pos /0"
+      kill -0 "$pid" 2>/dev/null || { echo "parent $pid is gone; giving up $(ts)" >&2; with_lock _dequeue "$s"; exit 1; }
+      [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note"; echo "re-queued: $s (entry was gone) $(ts)"; }
       if with_lock _try_hold "$s" "$pid" "$est" "$note"; then echo "GO $s $(ts)"; exit 0; fi
       why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
