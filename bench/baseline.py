@@ -127,9 +127,18 @@ def main() -> int:
     ap.add_argument("--build", default=None, help="overlay stamp (default: the deployed one)")
     ap.add_argument("--brief", action="store_true", help="one line for fleet.sh")
     ap.add_argument("--jsonl", default=JSONL)
+    ap.add_argument("--count-for", help="count usable baselines compatible with this candidate's workload/runtime")
     ap.add_argument("--knobs", default=None,
                     help="K=V,K=V of the arm you are about to boot: report a record with the SAME set on this build")
     args = ap.parse_args()
+
+    if args.count_for:
+        from judge import baselines_on, record_errors
+        rows = load(args.jsonl)
+        cand = next((r for r in reversed(rows) if r.get("name") == args.count_for and not r.get("rehearsal")), None)
+        bases = baselines_on(rows, cand)[0] if cand else []
+        print(sum(not record_errors(r) for r in bases))
+        return 0
 
     build = args.build or deployed_build()
     git = args.build or deployed_git()      # an explicit --build names the build, full stop

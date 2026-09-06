@@ -14,6 +14,8 @@ set -euo pipefail
 # see the file header for what that drift cost.
 # shellcheck source=lib/common-tp4.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common-tp4.sh"
+# shellcheck source=lib/glm53-chat.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/glm53-chat.sh"
 
 # Whether GMU was pinned by the caller, recorded before the profile and the
 # default below can fill it in. The preflight adopts its measured value only
@@ -27,7 +29,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -117,14 +119,14 @@ EAGER="${EAGER:-0}"
 GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
 MAX_SEQS="${MAX_SEQS:-4}"
-# Text-only by default: the RedHat checkpoint carries the BF16 vision tower
-# (347 model.visual.* tensors, vision_config). Every earlier boot with images
-# enabled "hung" (operator, 39차) -- the old default expression here,
-# ${MM_LIMIT:-{...}}, ended its parameter expansion at the first '}' and
-# appended the last one as a literal, so any override became
-# {"image":1,"video":0}} -- invalid JSON, vLLM's argparse died, and the
-# launcher polled /health for the whole budget. The default is now assigned
-# outside the expansion so an override passes through untouched.
+# Vision: the profile turns images and one video per prompt on (39차,
+# operator "이미지 영상 기본으로 켜"). The RedHat checkpoint carries the BF16
+# vision tower; the "hang" every earlier vision boot showed was this file's
+# old default expression, ${MM_LIMIT:-{...}}, ending its parameter expansion
+# at the first '}' and appending the last one as a literal (invalid JSON ->
+# argparse died -> the launcher polled /health for the budget). Video also
+# needed the glm53_model placeholder overlay (one block per frame pair).
+# Without a profile this launcher still defaults to text-only.
 MM_LIMIT="${MM_LIMIT:-}"
 [ -n "$MM_LIMIT" ] || MM_LIMIT='{"image":0,"video":0}'
 # The old value asked for FULL_AND_PIECEWISE *and* fuse_attn_quant, which vLLM
@@ -289,8 +291,28 @@ fi
 [ "${DRY_RUN:-0}" = 1 ] || ct_verify_image_uniform "$SSHOPT" "$IMAGE" "" "$HEAD_IP" "${WORKER_IPS[@]}"
 
 [ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/config.json"
-[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
-  echo "ABORT: chat_template_mm.jinja missing in model dir (copy from ~/glm53-4x/)"; exit 1; }
+REASONING_PARSER="${REASONING_PARSER:-glm45}"
+if [ "${DRY_RUN:-0}" != 1 ]; then
+  _chat_mounted=0
+  _parser_mounted=0
+  for _i in "${!OVFILES[@]}"; do
+    if [ "${OVFILES[$_i]}" = glm53_chat.py ] \
+        && [ "${OVTARGETS[$_i]}" = "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}vllm/glm53_chat.py" ]; then
+      _chat_mounted=1
+    fi
+    if [ "${OVFILES[$_i]}" = glm47_moe.py ] \
+        && [ "${OVTARGETS[$_i]}" = "${TARGET_PREFIX:-/usr/local/lib/python3.12/dist-packages/}vllm/parser/glm47_moe.py" ]; then
+      _parser_mounted=1
+    fi
+  done
+  [ "$_chat_mounted" = 1 ] || {
+    echo "ABORT: chat option middleware missing -- run deploy-overlays.sh glm53" >&2; exit 1;
+  }
+  [ "$_parser_mounted" = 1 ] || {
+    echo "ABORT: GLM content-preserving parser missing -- run deploy-overlays.sh glm53" >&2; exit 1;
+  }
+fi
+ct_prepare_glm53_chat "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Verify the head once, then the independent workers concurrently. Each worker
 # checks model presence and overlay bytes in one SSH call; join every result
@@ -581,26 +603,7 @@ MM_FLAGS=""
 [ -z "${MM_ENCODER_ATTN:-}" ] || MM_FLAGS="$MM_FLAGS --mm-encoder-attn-backend $MM_ENCODER_ATTN"
 [ "${SKIP_MM_PROFILING:-0}" = 0 ] || MM_FLAGS="$MM_FLAGS --skip-mm-profiling"
 [ -z "$MM_FLAGS" ] || echo "vision: $MM_FLAGS (limit $MM_LIMIT)"
-# Chat template + reasoning parser (39차, the forum's "thinking leaked into
-# content"): the served template always pre-fills '<think>' in the assistant
-# prompt, so chat_template_kwargs thinking=false was ignored (the model
-# reasoned anyway) and, with the start tag in the prompt, the glm45 parser saw
-# no '<think>' in the output and streamed the reasoning as content.
-# CHAT_TEMPLATE=chat_template_mm_v2.jinja honours thinking/enable_thinking
-# (MiaAI-Lab's 5-line fix: '<think></think>' when off); REASONING_PARSER
-# picks the parser (deepseek_r1 treats text before '</think>' as reasoning
-# even when '<think>' came from the prompt). Defaults unchanged until measured.
-CHAT_TEMPLATE="${CHAT_TEMPLATE:-chat_template_mm.jinja}"
-REASONING_PARSER="${REASONING_PARSER:-glm45}"
-if [ "${DRY_RUN:-0}" != 1 ] && ! test -f "$MODEL_HOST_PATH/$CHAT_TEMPLATE"; then
-  _tpl_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$CHAT_TEMPLATE"
-  if [ -f "$_tpl_repo" ]; then
-    cp "$_tpl_repo" "$MODEL_HOST_PATH/$CHAT_TEMPLATE" && echo "chat: copied $CHAT_TEMPLATE from the repo into $MODEL_HOST_PATH"
-  else
-    echo "ABORT: $CHAT_TEMPLATE missing in $MODEL_HOST_PATH and in launchers/"; exit 1
-  fi
-fi
-[ "$CHAT_TEMPLATE $REASONING_PARSER" = "chat_template_mm.jinja glm45" ] || echo "chat: template $CHAT_TEMPLATE, reasoning parser $REASONING_PARSER"
+# CHAT_TEMPLATE was staged and verified before the node/preimage checks.
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
 #
@@ -842,6 +845,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT'${MM_FLAGS:+ $MM_FLAGS} \
 --tool-call-parser glm47 --enable-auto-tool-choice \
 --reasoning-parser $REASONING_PARSER --chat-template $MODEL_PATH/$CHAT_TEMPLATE \
+--middleware vllm.glm53_chat.ChatContractMiddleware \
 --distributed-executor-backend mp \
 --disable-custom-all-reduce \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
@@ -856,8 +860,7 @@ $EAGER_FLAG --enable-flashinfer-autotune \
 # AG/RS initialization failed" and the boot proceeds. Serving never used
 # it (osar / PyNCCL carry the collectives), so skipping the constructor
 # removes the 5-minute gap without changing a served kernel.
-# 32차 item 5: the dev lab's API route rides on --middleware (the worker side
-# installs itself from the megakernel driver when the knob is on)
+# vLLM's --middleware uses action=append, including when the lab is enabled.
 if [ "${VLLM_GLM53_DEV_LAB:-0}" != 0 ]; then
   SERVE_ARGS="$SERVE_ARGS --middleware vllm.glm53_lab_middleware.lab"
 fi

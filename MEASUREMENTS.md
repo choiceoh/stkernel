@@ -2272,6 +2272,14 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 - 해석: 집합통신 ~18% 는 바이트가 아니라 **호출당 고정 비용**(스텝당 AG 67 + RS 60 회, RING_LL, 4 노드 링 지연) 에 묶여 있다 — v1(공유 스케일)·v2(per-block, all_to_all) 둘 다 바이트를 반으로 줄였는데 시간이 안 준다. 남은 길은 층당 집합통신 **횟수** 를 줄이거나(어텐션·MoE 경계 재배치, 공유 전문가·dense 부분과 겹치기) 통신을 계산과 겹치는 것이지 전송 정밀도가 아니다. MoE 28.6% 는 reuse 식 적재 절감으로는 안 열리고 타일/파이프라인 재설계가 필요하다. 둘 다 밤 라운드 규모의 커널 작업으로 기록하고 기본값은 그대로.
 
+### §4k 영상 자리표시 수정 (23:20~, 운영자 "이 이미지에선 왜 안되는데?" → "해봐")
+
+- 원인(코드로 확정): 이미지의 `Glm5NextMultiModalProcessor` 는 GLM-4.6V 의 `_construct_video_placeholder` 를 물려받아 **샘플링된 프레임마다** `<|begin_of_image|>`+(H·W/4)토큰+타임스탬프 블록을 넣는다(`len(video_array)` 로 루프, grid_thw 의 T 무시). 반면 이 체크포인트용으로 이식된 `Glm5NextVideoProcessor`(학습 파이프라인 포트) 는 `temporal_patch_size=2` 로 프레임 쌍을 한 패치 묶음으로 만들어 `video_grid_thw` T = 샘플/2 를 넘긴다. 3 초 영상: 2 fps 샘플 6 프레임 → 자리표시 6×64 = 384, 인코더 3×64 = 192 → 워커 사망. 이미지는 t_bar=2 하나라 무관. HF 허브 공식 저장소에는 처리기 코드가 없어(설정 파일뿐) 포트의 문서("frames are expanded with `<|begin_of_image|>…<|end_of_image|>{ts} seconds`")가 유일한 참조.
+- 수정(PR #420, `glm53_model/glm5next_multimodal.py`, 베이스 sha 고정): `Glm5NextProcessingInfo._construct_video_placeholder` 오버라이드 — 시간 묶음(T)마다 블록 하나, 타임스탬프는 묶음 첫 프레임의 초(`{:.1f} seconds`), 프레임 인덱스는 포트의 `glm_sample_frame_indices` 를 같은 노브로 재계산(vLLM 이 미리 샘플한 경우 `frames_indices` 사용). 오버레이 49개.
+- 첫 VID2(23:53)는 오버라이드의 타입힌트 `dict[str, Any]` 가 정의 시점에 평가돼 `NameError`(이 모듈은 `typing.Any` 를 import 하지 않음) 로 모델 검사에서 죽었고, **체인이 시작 시 배포한 그 오버레이로 복구 부팅(PRODW3/W4)까지 죽어 프로덕션이 23:53~00:06 (13 분) 내려갔다.** 조치: srv2 에서 main 재배포 + 복구 전용 체인을 `fleet.sh front` 로 큐 맨 앞에. 예방: 모델 파일 오버레이는 머지 전에 이미지 컨테이너에서 import 스모크(9 모듈 바인드 마운트, 30 s, 부팅 없음)를 돌린다 — `py_compile` 은 정의 시점 NameError 를 못 잡는다. 수정 PR #426.
+- **VID2 재시도(00:07, 기본 인코더 경로, 이미지 1 + 영상 1)**: 영상 요청 OK — 답 "영상은 표준 컬러 테스트 패턴으로 시작해, 화면이 점차 붉은색으로 변하다가 마지막에는 완전히 붉은색으로 채워…" = 합성 영상의 실제 순서(ffmpeg `overlay … enable='lt(t,1.5)'`: 0~1.5 s 테스트 패턴, 그 뒤 빨간 화면) 그대로. TTFT 0.50 s, 1.7 s. 이미지 OK(0.63 s), 텍스트 OK, 사고 on 분리 OK(341자 reasoning). **영상 지원 확립.** 프로덕션 기본은 텍스트 전용 유지(`MM_LIMIT` 0); 켜려면 `MM_LIMIT='{"image":1,"video":1}'` — 텍스트 서빙 영향은 VISON 32K 정상(128K 는 별개 이상) 이며, 켤지는 운영자 판단.
+
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
@@ -6627,6 +6635,72 @@ FC1 = w13 512 KB + SFB 32 KB, FC2 = w2 256 KB + SF 32 KB, 아이템 832 KB 중 S
 **손실 결정**(운영자): (a) 라우팅 가중치가 작은 전문가 생략(U 40 → 30 이면 MoE 바이트 −25%, −7 ms/스텝; 수용률·품질·한국어
 게이트), (b) 4 bit 아래 정밀도, (c) 스텝의 나머지 26 ms(MoE 밖).
 
+### §4d SF 패킹의 천장을 먼저 쟀다 — `t,s` vs `t,s,xs` 교차 (fleet `b12xsf`, 23:46)
+
+짓기 전에 천장부터. `xs` 는 FC1 SFB 박스를 **통째로** 생략하는 프로브 전용 진단이므로, 그 −X% 의 1/4 이 6-bit
+패킹이 낼 수 있는 최대다. 한 프로세스, 스톡 한 번, 두 번씩 번갈아:
+
+| | 1 | 2 | 중앙값 | Δ |
+|---|---|---|---|---|
+| `t,s` U=40 | 637.2 | 638.3 | 637.8 | — |
+| `t,s,xs` U=40 | 591.7 | 627.2 | 609.5 | **−4.4%** |
+| `t,s` U=64 | 1003.7 | 1016.8 | 1010.3 | — |
+| `t,s,xs` U=64 | 957.5 | 938.3 | 947.9 | **−6.2%** |
+
+U=40 의 `xs` 두 값이 6% 벌어져(591.7 / 627.2) 신뢰 구간이 넓다. 산포가 2% 인 U=64 를 쓰면 **SFB 박스 전체 = 호출의
+6.2%**. 6-bit 는 그 25% → **호출 −1.5%, 스텝 −0.45 ms(+0.85% step/s)**. FC2 쪽 SF 를 더해도 −2% 를 넘기 어렵다.
+§4c 의 정정치(−2%, +1.1%)와 같은 급이고, 상한이 0 이 아님을 실측으로 확인했다.
+
+부수 관찰: SFB 바이트는 FC1 의 5.9%(32/544 KB)인데 시간은 6.2% 를 먹는다 — 바이트 비례보다 약간 비싸다. 38차 §10 이
+bulk SF 복사(요청 128 → 32)를 무이동으로 판정했으므로 그 초과분은 요청 수가 아니다. 즉 **패킹으로 바이트를 줄이는
+것이 이 축에서 남은 유일한 손잡이**다.
+
+### §4e 그 6.2% 의 **절반은 중복**이다 — 패킹보다 큰 레버가 먼저다
+
+§4d 가 잰 것은 FC1 SFB 박스 전체 = 호출의 6.2% 다. 그런데 v4 의 아이템은 그 블록을 **두 번** 싣는다.
+`up_tile = slice*2 + h`, `sfb_idx = tile // sfb1_tiles_per_block`(= tile // 2) 이므로 **h=0 과 h=1 스테이지의 SF 블록
+인덱스가 같다**. 아이템당 FC1 SFB 128 KB(32 스테이지 × 4 KB) 중 **64 KB 가 같은 바이트의 재독**이다.
+
+| 레버 | 없애는 SFB | §4d 환산(6.2% 기준) | 저장·호스트·프리필 변경 |
+|---|---|---|---|
+| **두 반쪽이 블록 하나를 공유** | 50% | **≈ 3.1%** | 없음 |
+| 6-bit 패킹(§4c) | 25% | ≈ 1.55% | 패킹 + 커널 확장 + 프리필 경로 |
+| 둘 다 | 62.5% | ≈ 3.9% | 위와 같음 |
+
+**그런데 공유는 벽 셋에 막혀 있다**(구현하려다 확인 — §4e 초안의 "루프 순서만 바꾸면 된다"는 틀렸다):
+
+1. **레지스터**: 두 반쪽을 시간상 붙이려면(`for k_tile: for gu: for h:`) FC1 누산기가 **동시에 둘** 살아야 한다.
+   `gate_acc`/`up_acc` 는 (m32 × n64) 타일을 128 스레드로 나눈 rmem 텐서 = 스레드당 16 레지스터씩 32 개. 반쪽 둘이면
+   +32 인데 MMA 워프는 이미 `setmaxregister_increase(232)` 를 쓰고 하드웨어 상한이 255 다 → **264 > 255**.
+2. **smem**: 대신 FC1 타일을 128 행으로 넓히면(반쪽 자체를 없앰) 스테이지 B 가 16 → 32 KB 라 2 스테이지에 64 KB.
+   지금 총 101,376 B 를 쓰는 판에 들어갈 자리가 없다(38차 §7 이 이미 같은 벽에 부딪혔다).
+3. **레이아웃**: 블록의 절반만 싣는 길은 §3b 가 불가능으로 닫았다(64 행 = 8 B 조각 256 개).
+
+세 벽이 서로 독립이라 공유는 이 형상에서 닫힌 길이다. 따라서 **SF 트래픽에 남은 손잡이는 바이트를 줄이는 것 하나**
+뿐이다 — 6-bit 패킹(§4c, ≈1.55%). 그쪽은 레지스터 몇 개와 명명 배리어 하나만 쓰고 smem 을 안 늘린다(제자리 확장).
+
+역할 분할(`split`)이 켜지면 두 반쪽을 서로 다른 DMA 역할이 맡는다(`(role-2)*(role-h)==0`) — 기본 경로는 꺼져 있다.
+
+### §4f `t` 부팅 A/B — 서빙 step/s +2.3%, 승격 (fleet `b12xt`, 23:37~23:53)
+
+main 14ffb9e(PR #374) 배포 후 같은 빌드에서 연달아 두 팔(`bench/pair.sh`):
+
+| 팔 | 디코드 step/s(중앙, 창 수) | 2K | 32K | 128K | tok/step | 수용 | 품질 | 한국어 | 레인 증명 |
+|---|---|---|---|---|---|---|---|---|---|
+| `t` (T39T) | **21.9** (n=11) | 21.9 | 21.7 | 21.9 | 3.290 | 45.8% | 9/9 | 0/5 | **1/1** |
+| 기본값 `u` (T39TBASE) | 21.4 (n=6) | 21.4 | 21.4 | — | 3.448 | 49.0% | 9/9 | 0/5 | — |
+
+- **step/s +2.3%**(2K 기준 +2.3%, 32K +1.4%) — 프로브의 커널 −2.0~2.7%(§3i)와 정합. MoE 가 스텝의 절반이니 커널
+  −2% 는 스텝 −1% 인데 +2.3% 가 나온 것은 창 수·문맥 구성 차이(후보만 128K 창 4 개)를 감안해 읽어야 한다.
+- **tok/step 은 기본값이 높다**(3.448 vs 3.290): 수용률 49.0 vs 45.8 의 차이이고, **MoE 커널은 수용률을 바꿀 수 없다**
+  (드래프터·표본 텍스트의 성질). 원장 규율의 "acc 정규화"대로 **판정은 step/s** 로 한다.
+- 게이트 전부 통과: 품질 9/9, 한국어 깨짐 0/5, `bench/proof.py` 가 `VLLM_GLM53_B12X_STATIC_V2` 레인을 **1/1 서빙 증명**
+  (무장 ≠ 서빙 규율).
+- `pair.sh` 의 자동 판정은 "no baseline on this build" 로 남았다 — 프로덕션이 `SPEC_K=5` 로 돌아 기본값 팔이 기준선으로
+  분류되지 않는다. 다음 이 빌드 부팅 때 표본을 하나 더 쌓으면 바닥(3 표본)이 선다.
+
+**승격**: 프로필 기본값을 `u` → `t` 로 올린다. 롤백은 이 줄을 `u` 로 되돌리면 끝이고 저장 배치는 부팅마다 다시 잡힌다.
+
 ### §5 리뷰 경화 (PR #374 머지 전, 측정 없음)
 
 39차 코드 리뷰에서 나온 결함·위험의 소스 수정. **측정 없음 — 기록일 뿐 판정이 아니다.** 전부 프로브/가드 강화이며
@@ -6695,3 +6769,174 @@ cold 76.512→71.888 µs, -6.0%)이다. 최종 모드 2는 **이 두 형상만**
 [measurements/glm53_decode_m8_20260907](measurements/glm53_decode_m8_20260907/README.md).
 로컬 계약 검사 6,587개 통과(메가커널 회귀 30개 포함); 로컬 torch 검사는 패키지
 부재로 건너뛰었고 수치 판정은 위 GPU 프로브에서 수행했다.
+
+### Startup artifact follow-up — FP8 and rank caches (2026-09-06)
+
+After #366, added explicit opt-in `VLLM_GLM53_FP8_CACHE` and
+`VLLM_GLM53_RANK_CACHE` paths (both default empty). FP8 artifacts retain exact
+bytes/strides/padding and the direct source check. Rank checkpoints are saved at
+the outer GLM loading boundary before FP8/MK and vLLM quant finalization; hits
+restore each worker's own state and run the normal post-load sequence once.
+An all-rank readiness vote is required because the installed InstantTensor
+iterator passes the world device group to `instanttensor.safe_open`: partial
+cache hits must not skip its collectives on only some ranks. A miss on any rank
+uses the source loader on all ranks. Chunk checksums and atomic publication
+prevent partial artifacts from being served; a payload error during restoration
+aborts. Per-chunk sync/page eviction bounds file-cache pressure on Linux UMA.
+
+Local CPU tests cover artifact round trips, source/runtime invalidation,
+truncated/corrupt data, write failure, source-iterator bypass, reload bypass,
+post-load ordering and a four-process Gloo all-hit/partial-miss vote. GPU/NCCL,
+full-model quant finalization, output/acceptance, peak memory and actual boot
+speed remain **unverified**; neither cache is deployed or promoted. No fleet
+restart or GPU workload was performed for this implementation. See
+[the startup-artifact contract](overlay/modules/glm53_model/README.md#startup-artifacts-fp8-copies-and-rank-checkpoints-2026-09-06)
+for enable/rollback and validation requirements. The old 54.9 s fold / 52.1 s
+read+apply measurements describe candidate budgets, not savings. The 302 s TP
+initialization pause is still separate and unresolved.
+
+### Startup cache fleet trial 1 — default-on rejected, retry prepared (2026-09-07)
+
+Operator explicitly requested default-on fleet validation. `startupcache1`
+ran under the normal GPU queue, rebased onto `d855194`, and deployed source
+`284686a` / overlay `6131ff0d79e1` with SHA-256 parity on all four nodes.
+Evidence: `/home/choiceoh/glm53-logs/startup-cache-20260907-run1` on srv2.
+Same source/profile; BASE sets both cache paths to `0`, COLD uses enabled
+profile paths. Both use `PREFILL_WARMUP=0`; the canonical Korean onepass uses
+2K/32K, with exact prompts/responses retained. This is a startup trial, not a
+decode-throughput promotion.
+
+- BASE: health **389 s**, head load-model **157.6 s**, target source read/apply
+  **33.2 + 19.5 = 52.7 s**, FP8 fold **65.7 + 7.6 s** (target/drafter).
+  Onepass **6/6**, corruption **0/4**, raw acceptance **45.8%**.
+  The first source deployment cleared torch.compile cache: the total boot is
+  not a clean warm-compile baseline. Distributed model groups took **3.2 s**;
+  the historical 302 s pause did not reproduce on this boot.
+- COLD: health **712 s**, head load-model **571.6 s**. srv1 refused rank-cache
+  publication for insufficient disk space; the other ranks wrote their cache.
+  The all-node receipt gate correctly failed and triggered cache-off recovery
+  before WARM. COLD/WARM output and warm-hit speed are **not validated**.
+- The head rank artifact was **98,908,191,824 bytes** and took **376.463 s** to
+  write. Its manifest proves **1,805** `layers`/`_active_layers` registrations
+  contain identical chunk checksums; **48,982,417,960 bytes** are redundant.
+  This explains both the disk guard and excessive copying, rather than a
+  general requirement for 93 GiB of rank storage.
+- Format 2 writes exact registration aliases once (**49,925,773,864 bytes**
+  predicted from the actual manifest), validates alias topology, rejects
+  overlapping views, and votes on all-rank publication readiness so a full
+  disk cannot make the other ranks waste a cold write. Copies reuse a bounded
+  pinned staging buffer and synchronize before hashing/reuse/page eviction;
+  this targets the `.cpu()` waits in the slow-phase stacks. CPU byte/layout,
+  alias and peer-capacity regressions cover the changes. The retry must prove
+  real GPU behavior and a net gain; no warm-cache speedup is claimed yet.
+
+### Startup cache fleet trial 2 — exact FP8 hits, JSON identity rejection (2026-09-07)
+
+`startupcache2` deployed `673e454` after rebasing onto `cea6938`; all 56 overlay
+files matched across the fleet. Evidence: `startup-cache-20260907-run2` under
+the same srv2 log directory. The same cache-off/COLD/WARM sequence and Korean
+2K/32K onepass were used, with four-node resource sampling throughout.
+
+| Metric | BASE | COLD | WARM attempt |
+|---|---:|---:|---:|
+| Health wall, seconds | 392 | 348 | 256 |
+| Head load-model, seconds | 164.9 | 209.1 | 114.5 |
+| Head target source read + apply, seconds | 53.6 | 50.8 | source fallback |
+| Korean onepass facts | 6/6 | 6/6 | not run: cache receipt gate failed |
+| Corrupt responses | 0/4 | 0/4 | not run |
+| Raw acceptance | 51.83% | 52.13% | not run |
+
+- All four ranks successfully wrote **48,092,653,608 bytes (44.8 GiB)** each.
+  Exact aliases beyond `_active_layers` reduce this below the first manifest's
+  46.5 GiB estimate. Write times: srv1 **96.461 s**, srv2 **48.447 s**,
+  srv3 **43.504 s**, srv4 **42.729 s**. This is a deduplication/transfer fix,
+  not yet a measured warm rank-loading gain.
+- All four nodes hit **213 target + 31 drafter FP8 artifacts**, with zero
+  misses, cache errors or source-copy disarms on the WARM attempt. The head's
+  FP8 key/read total was **5.163 s**, versus **9.180 s** of quantization in
+  BASE (host phase timers; not isolated GPU kernel timings). Full response text
+  differs between BASE and COLD despite matching prompts, so no bit-exact
+  generated-output claim is made.
+- Rank metadata checksums were intact, but direct Python identity equality
+  rejected them: Transformers' outer/nested `id2label` maps have integer keys,
+  which JSON restores as strings. No rank artifact was restored. The guard
+  used source weights and triggered cache-off recovery; health **200** was
+  verified after restoration. The 256 s wall time therefore includes FP8 hits
+  and warm compilation, **not rank-cache acceleration**.
+- Normalize the complete identity to JSON-compatible values before hashing or
+  persistence. A new regression covers nested integer label keys (including
+  multi-digit labels) and tuples. All **27** focused tests pass, alongside
+  **6,650** logic checks, 30 megakernel and 20 fleet regressions. Trial 3 repeats
+  the full sequence to exercise the actual rank-restore path.
+- Trial 1/2 rank payloads were removed only after preserving their complete
+  compressed manifests. The 488 obsolete FP8 files per node were inventoried
+  and removed while both cache knobs were verified `0`, so the next format
+  generation does not consume additional old-cache disk space.
+
+### Startup cache fleet trial 3 — all-rank warm hits and serving checks pass (2026-09-07)
+
+`startupcache3` completed through the normal GPU queue with exit **0**, using
+source **`2abdc6b8c6603b6a231e0a96639523dbb1d1f181`** and overlay **`1376abe3d8d0`**.
+All four nodes had matching generated helper hashes in all three arms. Evidence
+is preserved at `/home/choiceoh/glm53-logs/startup-cache-20260907-run3` on srv2
+(raw node logs, container state, environment, source/build identities, health
+timers, exact prompts/responses, onepass records and 10-second host samples).
+`report.md` and `report.json` summarize those receipts; local copies are under
+`runs/startup-cache-20260907-run3` in the task worktree.
+
+BASE disables both caches, COLD publishes them, and WARM restores them. All
+three boots use the same source/profile and canonical Korean onepass at
+**2K/32K**, with **`PREFILL_WARMUP=0`** and effective speculative K **5**. These
+are single boots in that order, not repeated or order-balanced measurements;
+the production 128K prefill warmup is outside this trial's scope.
+
+| Metric | BASE | COLD | WARM |
+|---|---:|---:|---:|
+| Health wall, seconds | 347 | 358 | 239 |
+| Head load-model, seconds | 150.9 | 217.1 | 100.7 |
+| Head target source read + apply, seconds | 34.6 + 19.4 = 54.0 | 35.2 + 19.1 = 54.3 | skipped |
+| Head rank cache, seconds | disabled | write 46.569 | restore 48.039 |
+| Head target + drafter FP8 preparation, seconds | quantize 9.045 | quantize + publication | key + read 5.172 |
+| All-node FP8 hits / misses / errors | 0 / 976 / 0 | 0 / 976 / 0 | 976 / 0 / 0 |
+| Korean onepass facts | 6/6 | 6/6 | 6/6 |
+| Corrupt responses | 0/4 | 0/4 | 0/4 |
+| Raw speculative acceptance | 51.55% | 50.19% | 49.21% |
+
+All four ranks restored **48,092,653,608 bytes (44.8 GiB)** each. Each node's
+FP8 hit receipt contains **213 target + 31 drafter** artifacts, and every
+direct-source copy check reported zero disarms. This exercises the NCCL
+readiness path, actual CUDA restoration and normal GLM/vLLM post-load hooks.
+
+| Node / rank | Cold rank write (s) | Warm rank restore (s) | Minimum available RAM (GiB) | Minimum free disk (GiB) |
+|---|---:|---:|---:|---:|
+| srv1 / 1 | 97.632 | 44.929 | 15.23 | 10.02 |
+| srv2 / 0 | 46.569 | 48.039 | 10.62 | 1042.44 |
+| srv3 / 2 | 43.101 | 39.121 | 10.78 | 1852.45 |
+| srv4 / 3 | 43.149 | 38.404 | 13.15 | 2212.93 |
+
+There were 114 resource samples per node and no net swap-use increase. These
+are OS sampled minima, not CUDA peak allocations. Rank plus FP8 artifacts use
+about **47 GiB per node**. Initial publication is substantial extra work, and
+different source/runtime identities retain separate files without eviction.
+
+The head's corresponding loading phases improved by about **6.0 s** for rank
+restoration and **3.9 s** for FP8 preparation. Do **not** attribute the full
+**347 → 239 s** health-wall difference to caching: the head's memory-profile
+phase also changed from **93.0 → 36.5 s** as compilation became warm, and other
+fold/startup phases changed. Host phase timers include synchronization; this
+is neither an isolated kernel benchmark nor a stable total-latency estimate.
+
+All four prompt hashes match between arms, but exact generated responses match
+**0/4** for BASE→COLD, BASE→WARM and COLD→WARM. The short quality/corruption checks
+pass; they do not prove identical generation, broad quality equivalence or a
+decode/acceptance improvement. Artifact-byte checks and generated-output
+checks are recorded separately.
+
+**Decision:** retain both operator-requested profile defaults enabled. The
+successful WARM service was left running with health **200**, both cache paths
+present, and the fleet holder released. `=0` disables either path. The two
+runtime defects found in trials 1/2 are fixed and exercised by this passing
+trial. All **27** focused tests, **6,650** logic checks, **30** megakernel and
+**20** fleet regressions pass; the final documentation update does not change
+the tested runtime. End-to-end repeated/balanced speedup and full-context
+acceptance remain unclaimed.

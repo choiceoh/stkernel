@@ -1,22 +1,5 @@
 [gMASK]<sop>
-{%- for flag in ['thinking', 'enable_thinking', 'clear_thinking', 'legacy_reasoning_content'] -%}
-    {%- set value = {'thinking': thinking, 'enable_thinking': enable_thinking, 'clear_thinking': clear_thinking, 'legacy_reasoning_content': legacy_reasoning_content}[flag] -%}
-    {%- if value is defined and value is not boolean -%}
-        {{- raise_exception(flag + ' must be a boolean') -}}
-    {%- endif -%}
-{%- endfor -%}
-{%- if thinking is defined and enable_thinking is defined and thinking != enable_thinking -%}
-    {{- raise_exception('thinking and enable_thinking must agree') -}}
-{%- endif -%}
-{%- if thinking is defined or enable_thinking is defined -%}
-{%- set thinking_enabled = thinking if thinking is defined else enable_thinking -%}
-{%- else -%}
-{%- set thinking_enabled = true -%}
-{%- endif -%}
-{%- if reasoning_effort is defined and reasoning_effort is not none and reasoning_effort not in ['low', 'high', 'max'] -%}
-    {{- raise_exception('reasoning_effort must be low, high, or max') -}}
-{%- endif -%}
-{%- set effective_reasoning_effort = reasoning_effort if reasoning_effort is defined and reasoning_effort is not none else 'max' -%}
+{%- set effective_reasoning_effort = reasoning_effort if reasoning_effort is defined and reasoning_effort in ['low', 'high'] else 'max' -%}
 {%- if effective_reasoning_effort is not none -%}<|system|>Reasoning Effort: {{ effective_reasoning_effort | capitalize }}{%- endif -%}
 {%- set clear_thinking = clear_thinking if clear_thinking is defined else false -%}
 {%- if tools -%}
@@ -159,10 +142,9 @@ For each function call, output the function name and arguments within the follow
 {%- set content = visible_text(m.content) %}
 {%- if m.reasoning_content is string %}
     {%- set reasoning_content = m.reasoning_content %}
-{%- elif legacy_reasoning_content is defined and legacy_reasoning_content and content.startswith('<think>') and '</think>' in content %}
-    {%- set parts = content.split('</think>', 1) %}
-    {%- set reasoning_content = parts[0][7:] %}
-    {%- set content = parts[1] %}
+{%- elif '</think>' in content %}
+    {%- set reasoning_content = content.split('</think>')[0].split('<think>')[-1] %}
+    {%- set content = content.split('</think>')[-1] %}
 {%- endif %}
 {%- if (not clear_thinking or loop.index0 > ns.last_user_index) and reasoning_content is defined -%}
 {{ '<think>' + reasoning_content +  '</think>'}}
@@ -170,14 +152,14 @@ For each function call, output the function name and arguments within the follow
 {{ '<think></think>' }}
 {%- endif -%}
 {%- if content.strip() -%}
-{{ content }}
+{{ content.strip() }}
 {%- endif -%}
 {% if m.tool_calls %}
 {% for tc in m.tool_calls %}
 {%- if tc.function %}
     {%- set tc = tc.function %}
 {%- endif %}
-{{- '<tool_call>' + tc.name -}}
+{{- '<tool_call>' ~ tc.name -}}
 {% set _args = tc.arguments %}{% for k, v in _args.items() %}<arg_key>{{ k }}</arg_key><arg_value>{{ v | tojson(ensure_ascii=False) if v is not string else v }}</arg_value>{% endfor %}</tool_call>{% endfor %}
 {% endif %}
 {%- elif m.role == 'tool' -%}
@@ -201,9 +183,11 @@ For each function call, output the function name and arguments within the follow
         {%- set ns_chk.can_sort = false -%}
     {%- else -%}
         {%- for k in range(block_start, ns_blk.end + 1) -%}
+            {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
             {%- set m = messages[k] -%}
             {%- if is_list_of_outputs(m) -%}
                 {%- for entry in m.content -%}
+                    {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
                     {%- set eid = id_of(entry) -%}
                     {%- if not eid -%}
                         {%- set ns_chk.can_sort = false -%}
@@ -225,6 +209,7 @@ For each function call, output the function name and arguments within the follow
             {%- endif -%}
         {%- endfor -%}
         {%- for i in range(ns_a.tool_calls | length) -%}
+            {%- if not ns_chk.can_sort -%}{%- break -%}{%- endif -%}
             {%- set tc_id = id_of(ns_a.tool_calls[i]) -%}
             {%- if not tc_id -%}
                 {%- set ns_chk.can_sort = false -%}
@@ -232,9 +217,10 @@ For each function call, output the function name and arguments within the follow
             {%- for j in range(i + 1, ns_a.tool_calls | length) -%}
                 {%- if id_of(ns_a.tool_calls[j]) == tc_id -%}
                     {%- set ns_chk.can_sort = false -%}
+                    {%- break -%}
                 {%- endif -%}
             {%- endfor -%}
-    {%- endfor -%}
+        {%- endfor -%}
     {%- endif -%}
     {%- if ns_chk.can_sort -%}
         {%- for tc in ns_a.tool_calls -%}
@@ -251,8 +237,8 @@ For each function call, output the function name and arguments within the follow
                                 {{- tool_response(visible_text(entry.output)) -}}
                             {%- endif -%}
                         {%- endif -%}
-    {%- endfor -%}
-{%- else -%}
+                    {%- endfor -%}
+                {%- else -%}
                     {%- set tk_id = id_of(m) -%}
                     {%- if tk_id == tc_id -%}
                         {{- render_tool_response(m) -}}
@@ -271,5 +257,5 @@ For each function call, output the function name and arguments within the follow
 {%- endif -%}
 {%- endfor -%}
 {%- if add_generation_prompt -%}
-    <|assistant|>{{- '<think>' if thinking_enabled else '<think></think>' -}}
+    <|assistant|>{{- '<think>' -}}
 {%- endif -%}

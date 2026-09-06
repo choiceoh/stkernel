@@ -9,6 +9,9 @@ zz_deneb_boot_stamps.pth	zz_deneb_boot_stamps.pth	absent
 # -- glm53_dev_lab
 glm53_dev_lab.py	vllm/model_executor/layers/glm53_dev_lab.py	absent
 glm53_lab_middleware.py	vllm/glm53_lab_middleware.py	absent
+# -- Chat Completions template/parser option contract
+glm53_chat.py	vllm/glm53_chat.py	absent
+glm47_moe.py	vllm/parser/glm47_moe.py	ce3629319e56e882d25cb75d62e3e7088a4eec1518885fc69fc696eafb4a97b2
 # -- glm53_oneshot_wiring
 cuda_communicator.py	vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
 glm53_prefill_collectives.py	vllm/distributed/device_communicators/glm53_prefill_collectives.py	absent

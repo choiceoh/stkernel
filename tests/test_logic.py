@@ -3715,9 +3715,10 @@ def test_b12x_static_v2_controls() -> None:
           "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
-          "the profile ships the v4 static kernel (spec u) as the default "
-          "(38차, operator: decode windows +2% over v3, probes -3.5%)")
+    check('VLLM_GLM53_B12X_STATIC_V2=t' in profile,
+          "the profile ships the v5 tile-major lane (spec t) as the default "
+          "(39차 §3i/§4f: probe -2.0~2.7% vs u by interleaved repeats, boot "
+          "bracket 21.9 vs 21.4 step/s, lane proved serving 1/1)")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner
@@ -6315,10 +6316,9 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     # The refusal path is `if not armed_nv:` since the alpha convention
     # stopped being resolved per layer; the split it guards is the same one.
     fallback = nv.index("if not armed_nv:")
-    # the call sites go through `attach_mk`, which is _attach_mk_pack or,
-    # under the "w8" scheme (fp8 pair only), a no-op -- one axis per boot
-    check("attach_mk = _attach_mk_pack\n" in body,
-          "attach_mk is the helper, bound once per pass")
+    # The timed wrapper calls the same helper, without changing lane selection.
+    check("def attach_mk(*args):" in body and "return _attach_mk_pack(*args)" in body,
+          "attach_mk times the helper without replacing its result")
     check("attach_mk(" not in nv[:fallback] and "_attach_mk_pack(" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
@@ -7305,7 +7305,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
           "the build pass selects its pattern set by the knob it runs under")
     check("method._opaque = env == _DRAFTER_ENV" in body,
           "drafter methods are marked opaque: the drafter forward is compiled")
-    check("attach_mk = _attach_mk_pack\n" in body and '"w8"' not in body,
+    check("return _attach_mk_pack(*args)" in body and '"w8"' not in body,
           "one lane below fp8: no fp8-only arm to remember (operator rule "
           "2026-09-04 -- a proven improvement is the default, the other side "
           "goes)")
@@ -9530,10 +9530,19 @@ def test_megakernel_w4_layout_functional() -> None:
               "stream is capturing' killed the CALIB2 boot)")
         xs = torch.randn(24, k)
         xs_pad = torch.cat([xs, torch.full((4, k), float("nan"))])   # padded rows
-        mod._calib_observe(xs_pad, pk_c)
-        check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
-              "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
-        mod._calib_observe(xs, pk_c)
+        # This is a CPU tensor/Hessian test. Only the device's capture-state
+        # query is mocked; calling it on a CUDA wheel without a visible GPU
+        # initializes the driver and used to fail before testing the math.
+        from unittest.mock import patch
+        with patch.object(torch.cuda, "is_current_stream_capturing", return_value=True):
+            mod._calib_observe(xs_pad, pk_c)
+            check(mod._CALIB["seen"] == 0 and not mod._CALIB["H"],
+                  "calibration: capture skips observation before changing the Hessian")
+        with patch.object(torch.cuda, "is_current_stream_capturing", return_value=False):
+            mod._calib_observe(xs_pad, pk_c)
+            check(not mod._CALIB["dumped"] and mod._CALIB["seen"] == 24,
+                  "calibration: 24 finite rows seen (4 padded NaN rows dropped), budget 40 not reached")
+            mod._calib_observe(xs, pk_c)
         check(mod._CALIB["dumped"], "calibration: the budget dumps")
         got_c = mod._calib_hessian_for("Glm5Next/layers.1.self_attn.q_proj", k)
         check(got_c is not None and int(got_c[1]) == 48
@@ -11311,6 +11320,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "defaults sample only while the floor is thin, judge per arm")
 
 
+def test_fleet_experiment_behaviors():
+    import unittest
+    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet_experiments.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
+    return result.testsRun
+
+
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
 
@@ -11447,5 +11464,6 @@ if __name__ == "__main__":
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
     test_fleet_reservation_tooling_contracts()
+    fleet_regressions = test_fleet_experiment_behaviors()
     regressions = test_megakernel_regression_suite()
-    print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")
+    print(f"all OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")
