@@ -277,7 +277,8 @@ _ledger_row() {  # session -- from the holder file, before it is removed
   IFS='|' read -r s pid host t0 est note kind < "$H"
   local held boots recs; held=$(( ($(now) - t0 + 30) / 60 ))
   boots=$(find "$LOGD" -maxdepth 1 -name 'boot-*.log' -newermt "@$t0" 2>/dev/null | wc -l)
-  [ "$boots" = 0 ] && [ -f "$LOGD/glm53.log" ] && [ "$(stat -c %Y "$LOGD/glm53.log")" -ge "$t0" ] && boots=1
+  [ "$boots" = 0 ] && [ "${kind:-boot}" = boot ] && [ -f "$LOGD/glm53.log" ] && [ "$(stat -c %Y "$LOGD/glm53.log")" -ge "$t0" ] && boots=1
+  [ "${kind:-boot}" = probe ] && boots=0
   recs=$(python3 - "$JSONL" "$t0" <<'PY' 2>/dev/null || echo 0
 import json, sys, time
 n = 0
@@ -401,7 +402,12 @@ case "$cmd" in
     with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
     logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
-  cancel) with_lock _dequeue "${1:?session}"; logit "cancel $1"; echo "cancelled $1";;
+  cancel)
+    s=${1:?session}; qpid=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f7)
+    # a live waiter re-queues a vanished entry within 15 s (its wait loop), so
+    # the waiter goes first -- it is this tool's own process, recorded at request
+    if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -q "fleet.sh" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
+    with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
   kick)
     if [ ! -s "$H" ]; then echo "nothing held"; exit 0; fi
     if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; exit 1; fi
