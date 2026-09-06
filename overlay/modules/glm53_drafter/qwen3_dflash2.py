@@ -457,6 +457,9 @@ class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
             valid_vocab_size=decodable_vocab_size(
                 vllm_config.model_config.tokenizer
             ),
+            # W4 head on the megakernel's v2 lane (30차 §13): a draft head
+            # only moves acceptance, so it is the endpoint bracketed first
+            mk_env="VLLM_GLM53_MK_HEAD_DRAFT",
         )
 
 

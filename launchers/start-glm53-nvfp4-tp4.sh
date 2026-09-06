@@ -169,7 +169,8 @@ fi
 # DFLASH2=1: block-diffusion drafter (2.15x over MTP-4 at TP2, acceptance 74%).
 # num_speculative_tokens MUST be 7 (drafter block 8 minus the verified token).
 DFLASH2="${DFLASH2:-1}"
-DRAFT_HOST_PATH=/home/choiceoh/models/GLM-5.3-Flash-DFlash2
+# 37차: overridable for a retrained drafter (the night round's candidate).
+DRAFT_HOST_PATH="${DRAFT_HOST_PATH:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}"
 # DFlash/DSpark synthesize their context KV from target hidden states. Tokens
 # restored by automatic prefix caching do not run through the target, so this
 # image leaves their draft KV slots unwritten while draft attention still
@@ -341,7 +342,8 @@ ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_O
 -e TORCH_CUDA_ARCH_LIST=12.1a -e FLASHINFER_CUDA_ARCH_LIST=12.1a \
 -e FLASHINFER_DISABLE_VERSION_CHECK=1 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
--e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 \
+-e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=${GLOO_IFNAME:-enP2p1s0f0np0} \
+-e TORCH_CPP_LOG_LEVEL=${TORCH_CPP_LOG_LEVEL:-WARNING} \
 -e TP_SOCKET_IFNAME=enp1s0f0np0 -e MN_IF_NAME=enp1s0f0np0 \
 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
 -e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
@@ -359,6 +361,19 @@ done
 # ('expected size 7==5'). The fp8-dense module registers VLLM_GLM53_SPEC_K as a
 # compile factor; this is the value it hashes.
 ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
+# 37차 (2026-09-06): three of eight boots today spent 302 s in the TP
+# group's FIRST gloo collective (in_the_same_node_as -> broadcast_object_list,
+# every rank inside it, then success) right after the NCCL communicator init
+# on the same port; a 4-node gloo probe without NCCL never stalls. So gloo
+# moves to the second RoCE port (10.10.11.x; NCCL bootstrap stays on port 0)
+# and c10d socket warnings are logged, so a recurrence names the socket.
+# GLOO_IFNAME=enp1s0f0np0 puts it back for an A/B.
+# Diagnostic passthrough for the 302 s gap (37차 §6-b): TORCH_LOGS="+distributed"
+# turns on torch.distributed's Python-level INFO/DEBUG (store-based barrier
+# waits, group creation), TORCH_DISTRIBUTED_DEBUG=DETAIL its collective
+# checks. Both off unless the caller sets them.
+[ -n "${TORCH_LOGS:-}" ] && ENVV="$ENVV -e TORCH_LOGS=$TORCH_LOGS"
+[ -n "${TORCH_DISTRIBUTED_DEBUG:-}" ] && ENVV="$ENVV -e TORCH_DISTRIBUTED_DEBUG=$TORCH_DISTRIBUTED_DEBUG"
 
 # MK-KDA indexes the conv state as DS (dim, state_len). vLLM's default is SD,
 # and the segment's layout gate then rejects EVERY layer for the life of the
@@ -437,8 +452,13 @@ elif [ "$DFLASH2" = 1 ]; then
   # trained on blocks of 8 and would see a shorter one. That shows up as
   # acceptance collapse in the per-position counters, not as an error, so the
   # experiment is only readable with /metrics beside the throughput.
-  if [ "$SPEC_K" != 7 ] && [ "${SPEC_K_FORCE:-0}" != 1 ]; then
-    echo "ABORT: dflash requires SPEC_K=7 (drafter block 8 minus the verified token), got $SPEC_K -- set SPEC_K_FORCE=1 to open it for an experiment"
+  # 37차 (2026-09-06): tested. SPEC_K=5 boots and serves (K5DIAG: health in
+  # 300 s, 44.5 tok/s at C=1, drafter raw acceptance 29.5%) once the two
+  # k-agnostic fixes were in (the M<8 prenorm padding and the MHC pre-only
+  # hook). Any k in 1..7 is inside the drafter's block of 8, so those pass
+  # without the escape hatch; k > 7 or a non-number still needs SPEC_K_FORCE=1.
+  if ! [[ "$SPEC_K" =~ ^[1-7]$ ]] && [ "${SPEC_K_FORCE:-0}" != 1 ]; then
+    echo "ABORT: dflash serves SPEC_K in 1..7 (drafter block 8 minus the verified token), got $SPEC_K -- set SPEC_K_FORCE=1 to open it for an experiment"
     exit 1
   fi
   _spec_extra=""
@@ -500,6 +520,80 @@ ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 #
 # NVRM allocates against MemFree, so cached file pages are memory the engine
 # cannot use. SKIP_PREFLIGHT=1 opts out of the whole step.
+# 37차 (2026-09-06): build the overlay's two nvcc extensions BEFORE the old
+# containers are torn down, on every node at once, so a boot of a changed
+# source does not pay them inside the downtime. The 2026-09-05 19:30 UTC boot
+# spent 69 s in the osar shim's nvcc and 43 s in the megakernel's (both
+# "source md5 -> connected/armed"), with production already down; the same
+# source rebooted spends 1 s in each because both build into /cache keyed by
+# source md5 + flags + torch/CUDA. A throwaway CPU-only container (no GPU: the
+# arch is explicit in both extensions' nvcc flags, so torch never asks the
+# device), one core, nice 19, the same overlay mounts and -e env as the
+# serving container (the flags ride in VLLM_GLM53_MK_* / VLLM_DSV4_OSAR_*),
+# calls each module's _build(). Unchanged source: ninja finds nothing to do
+# and the step costs ~10 s of imports. Never fatal: a failed prebuild just
+# leaves the boot to build as before. PREBUILD=0 skips it.
+# 2026-09-06 11:20: OFF by default. The .so nvcc produced in the CPU-only
+# container hung two boots in the profile run (a kernel spinning at 96 %
+# GPU, every launch after it blocked) while the same source built on the
+# GPU node served; the megakernel self-tests passed on the bad build, so the
+# difference is not caught at arm time. Until the binaries are diffed and the
+# cause named, PREBUILD=1 is an experiment, not a default.
+PREBUILD="${PREBUILD:-0}"
+if [ "$PREBUILD" = 1 ] && [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
+  echo "== 확장 사전 빌드 (osar·megakernel nvcc, 구 컨테이너 서빙 중, 노드 병렬) =="
+  _pb_py=$(cat <<'PBEOF'
+import importlib, os, time
+t0 = time.time()
+rc = 0
+for mod, label in (("vllm.model_executor.layers.glm53_megakernel", "megakernel"),
+                   ("vllm.distributed.device_communicators.dsv4_oneshot_shim", "osar")):
+    t = time.time()
+    try:
+        importlib.import_module(mod)._build()
+        print(f"[prebuild] {label} ok in {time.time() - t:.0f}s", flush=True)
+    except Exception as e:  # noqa: BLE001 -- report, never block the boot
+        rc = 1
+        print(f"[prebuild] {label} FAILED after {time.time() - t:.0f}s: {e!r}", flush=True)
+print(f"[prebuild] done in {time.time() - t0:.0f}s", flush=True)
+raise SystemExit(rc)
+PBEOF
+)
+  _pb_b64=$(printf '%s\n' "$_pb_py" | base64 -w0)
+  _pb_mounts="-v $CACHE_HOST_PATH:/cache"
+  for _i in "${!OVFILES[@]}"; do
+    _pb_mounts="$_pb_mounts -v $OVERLAY_DIR/${OVFILES[$_i]}:${OVTARGETS[$_i]}:ro"
+  done
+  # Quoted per word like the worker's _wrun, so the same string runs through
+  # `bash -c` on the head and through ssh on the workers.
+  _pb_run=$(printf '%q ' docker run --rm --cpuset-cpus=19 --memory 8g $_pb_mounts $ENVV \
+              -e CUDA_VISIBLE_DEVICES= --entrypoint /bin/bash $IMAGE \
+              -c "echo $_pb_b64 | base64 -d > /tmp/prebuild.py; exec nice -n 19 python3 /tmp/prebuild.py")
+  _pb_dir=$(mktemp -d /tmp/glm53-prebuild.XXXXXX)
+  _pb_pids=()
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    if [ "$_ip" = "$HEAD_IP" ]; then
+      ( bash -c "$_pb_run" > "$_pb_dir/$_ip.log" 2>&1; echo $? > "$_pb_dir/$_ip.rc" ) &
+    else
+      ( ssh $SSHOPT choiceoh@"$_ip" "$_pb_run" > "$_pb_dir/$_ip.log" 2>&1; echo $? > "$_pb_dir/$_ip.rc" ) &
+    fi
+    _pb_pids+=($!)
+  done
+  # 300 s cap: a build that takes longer is not one the boot should wait for
+  # twice (it will pick it up from the lock in /cache when it gets there).
+  _pb_t0=$(date +%s)
+  for _pid in "${_pb_pids[@]}"; do
+    while kill -0 "$_pid" 2>/dev/null; do
+      if (( $(date +%s) - _pb_t0 > 300 )); then echo "  ! 사전 빌드 300 s 초과 — 나머지는 부팅 안에서 빌드"; break 2; fi
+      sleep 2
+    done
+  done
+  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
+    printf '  %s: %s (rc=%s)\n' "$_ip" "$(grep -h '^\[prebuild\]' "$_pb_dir/$_ip.log" 2>/dev/null | tr '\n' ' ' | cut -c1-200)" "$(cat "$_pb_dir/$_ip.rc" 2>/dev/null || echo running)"
+  done
+  rm -rf "$_pb_dir"
+fi
+
 PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" != 1 ]; then
   echo "== 이전 부팅 잔여 컨테이너 회수 =="

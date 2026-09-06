@@ -84,6 +84,17 @@ def _spec_delta(m0, m1):
     return legacy, raw
 
 
+def spec_k_eff(m0, m1):
+    """37차: the drafted length the server actually ran, from the counters
+    (draft tokens per draft over the delta) -- the k=5 sweep read
+    tokens/step 3.68 because every derived number assumed 7. None when the
+    counters are absent or no draft happened."""
+    delta = {k: m1.get(k, 0.0) - m0.get(k, 0.0) for k in m1}
+    tok = sum(v for k, v in delta.items() if k.endswith("num_draft_tokens_total"))
+    n = sum(v for k, v in delta.items() if k.endswith("num_drafts_total"))
+    return (tok / n) if n > 0 and tok > 0 else None
+
+
 def step_s_of(tok_s: float, acc_raw, num_spec: int):
     """원장 판정 채널. 토큰/스텝 = 1 + k x raw_acc; 수락률 카운터가 없으면
     None — judge 는 그 다리를 tok/s 로 떨어뜨려 놓고 표시한다."""
@@ -157,9 +168,11 @@ def cmd_leg(args) -> int:
         m0 = bd.spec_counters()
         with _StepWindows(bd) as win:
             toks, dt = bd.sweep(args.conc, r + 1 + args.conc * 1000)
-        legacy, raw = _spec_delta(m0, bd.spec_counters())
+        m1 = bd.spec_counters()
+        legacy, raw = _spec_delta(m0, m1)
+        k_eff = spec_k_eff(m0, m1) or args.num_spec
         tok_s = toks / dt
-        s = step_s_of(tok_s, raw, args.num_spec)
+        s = step_s_of(tok_s, raw, k_eff)
         rates = win.rates()
         rec["reps"].append({"rep": r + 1, "tok_s": round(tok_s, 2),
                             "acc_legacy": None if legacy is None else round(legacy, 4),
@@ -172,7 +185,7 @@ def cmd_leg(args) -> int:
             wtxt = (f", windows n={len(q)} med {median(q):.1f} "
                     f"[{q[len(q) // 4]:.1f}, {q[(3 * len(q)) // 4]:.1f}]")
         print(f"{args.tag} C={args.conc} rep{r + 1}: {tok_s:.1f} tok/s"
-              + (f", raw acc {raw:.1%}" if raw is not None else "")
+              + (f", raw acc {raw:.1%} (k={k_eff:.1f})" if raw is not None else "")
               + (f", step/s {s:.1f}" if s is not None else "") + wtxt, flush=True)
     with open(args.out, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")
