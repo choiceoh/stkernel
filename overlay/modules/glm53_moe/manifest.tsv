@@ -6,7 +6,9 @@ moe_micro_kernel.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kern
 moe_dispatch.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py	f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362
 # -- glm53_b12x_out
 b12x_moe.py	flashinfer/fused_moe/cute_dsl/b12x_moe.py	43a12178ad4f6923d1917a0fb47ea31491104c47496f553b5d73f6a286792576
-# -- b12x static v2 / v3 (35차)
-moe_static_kernel_v2.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v2.py	absent
-moe_static_kernel_v3.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
+# -- b12x static v4 (35차 v2 -> v3 -> 38차 v4 `u`; v2/v3 sunset 34차 §8, their shared helpers in moe_static_common)
+moe_static_common.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py	absent
 moe_static_kernel_v4.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
+# -- opt-in dynamic prefill task/input reuse (stock gated helper hash pinned)
+moe_dynamic_prefill.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py	absent
+moe_dynamic_prefill_n128.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py	absent

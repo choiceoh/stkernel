@@ -82,7 +82,7 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/modules/<name>/` | 오버레이 **모듈** 25개 — 각자 소스 · `manifest.tsv` · `README.md`(25/25) · 의존 선언 `requires`. glm53 전용 25개는 34차(2026-09-05)에 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접혔다 — 행·계약·노브 불변 |
+| `overlay/modules/<name>/` | 오버레이 **모듈** 23개 — 각자 소스 · `manifest.tsv` · `README.md`(23/23) · 의존 선언 `requires`. glm53 전용 25개는 34차(2026-09-05)에 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접혔다 — 행·계약·노브 불변; 고아 모듈 둘(`glm53_drop_audit`·`glm53_sparse_q`)은 34차 §8 에서 삭제 |
 | `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · glm53 8 · qwen38 1 모듈 |
 | `build/<profile>/` | `compose-overlays.sh` 가 렌더한 평평한 디렉터리 + 합성 매니페스트 — 배포기·런처가 보는 것 (생성물, 손으로 고치지 않는다) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 + A/B 하네스(`ab-glm53.sh`) |

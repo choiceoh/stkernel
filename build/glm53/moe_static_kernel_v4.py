@@ -67,7 +67,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
-from .moe_static_kernel_v2 import (
+from .moe_static_common import (
     _bulk_g2s,
     _prefetch_l2,
     STAMP_BARRIER1,

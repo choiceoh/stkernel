@@ -83,7 +83,7 @@ def _run(args) -> int:
     # Explicitly select the same v2 rule for the baseline and the fused arm.
     # The finally restores every override, including lazy environment state.
     state = ext.probe_state()
-    ext.set_gemm2(1, 0, 0)
+    ext.set_gemm2(0)
     try:
         print(f"v2 plans: up={list(ext.gemm2_plan(T, SHARED_N, HID))} "
               f"down={list(ext.gemm2_plan(T, HID, SHARED_K))}")

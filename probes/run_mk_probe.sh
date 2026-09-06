@@ -39,9 +39,13 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 # The megakernel driver and everything its arm touches, plus the served MoE
 # path (vLLM's b12x experts, flashinfer's wrapper and its sm12x dispatch).
 sources=(glm53_megakernel.py glm53_megakernel.cu
-         glm5next_kda.py tilelang.py tilelang_kernels.py glm53_fp8_dense.py
+         glm5next_kda.py kda.py chunk_delta_h.py
+         tilelang.py tilelang_kernels.py glm53_fp8_dense.py glm53_nvfp4_scale.py
+         glm53_nvfp4_bproj.py
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
-         moe_static_kernel_v2.py moe_static_kernel_v3.py moe_static_kernel_v4.py)
+         moe_dynamic_prefill.py moe_dynamic_prefill_n128.py
+         parallel_state.py glm53_prefill_collectives.py
+         moe_static_common.py moe_static_kernel_v4.py)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")

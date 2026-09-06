@@ -40,11 +40,7 @@ from .moe_dynamic_kernel import (
 )
 from .moe_micro_kernel import MoEMicroKernel
 from .moe_static_kernel import MoEStaticKernel
-from .moe_static_kernel_v2 import (
-    MoEStaticKernelV2,
-    STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS,
-)
-from .moe_static_kernel_v3 import MoEStaticKernelV3
+from .moe_static_common import STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS
 from .moe_static_kernel_v4 import MoEStaticKernelV4
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
@@ -77,6 +73,43 @@ _FORCE_MOE_W4A16_ENV = "FLASHINFER_B12X_FORCE_MOE_W4A16"
 _MICRO_SHARE_INPUT_ACROSS_EXPERTS = (
     os.environ.get("FLASHINFER_B12X_MICRO_SHARE_INPUT", "1") != "0"
 )
+# The pinned M128 GLM prefill candidate leaves small dynamic tiles and all
+# decode backends on their original implementation. Exact 1 is intentional.
+_GLM53_B12X_PREFILL_REUSE = (
+    os.environ.get("VLLM_GLM53_B12X_PREFILL_REUSE") == "1"
+)
+_GLM53_B12X_PREFILL_FC1_N128 = (
+    os.environ.get("VLLM_GLM53_B12X_PREFILL_FC1_N128") == "1"
+)
+MoEGatedPrefillReuseKernel = None
+MoEGatedPrefillN128Kernel = None
+
+
+def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
+    """Load private inherited helpers only after the optional shape gate.
+
+    Upstream may remove a private symbol before the candidate can compare
+    its source hash. That must decline this lane, including with the knob
+    off, rather than break importing the otherwise unchanged dispatcher.
+    """
+    global MoEGatedPrefillReuseKernel, MoEGatedPrefillN128Kernel
+    try:
+        from .moe_dynamic_prefill import (
+            MoEGatedPrefillReuseKernel as candidate,
+            stock_contract_matches,
+        )
+        if fc1_n128:
+            from .moe_dynamic_prefill_n128 import (
+                MoEGatedPrefillN128Kernel as wide_candidate,
+            )
+    except (ImportError, AttributeError):
+        return False
+    if not stock_contract_matches():
+        return False
+    MoEGatedPrefillReuseKernel = candidate
+    if fc1_n128:
+        MoEGatedPrefillN128Kernel = wide_candidate
+    return True
 
 # Micro kernel cutover thresholds (routed pairs)
 _MICRO_COMPACT_CUTOVER_PAIRS = 20
@@ -285,17 +318,24 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
     _GLM53_B12X_DYNAMIC_MAC_LADDER_ENV,
 )
 
-# The decode-streaming static kernel (moe_static_kernel_v2). Admitted for the
-# exact GLM-5.3 TP geometry only; every other shape keeps the stock kernel.
-# Value: unset/""/"0" = off; "1" = the default configuration; or a
-# comma-separated spec of `m<tile_m>` (32|64|128), `f<fc1 stages>`,
-# `g<fc2 stages>`, `a<A box rows>` (multiple of tile_m, <= 128) and `s`
-# (per-CTA %globaltimer stamps, probe only). Parsed once at import.
+# The decode-streaming static kernel: v4 (moe_static_kernel_v4, 38차 `u`, the
+# profile default). Admitted for the exact GLM-5.3 TP geometry only; every
+# other shape keeps the stock kernel. Value: unset/""/"0" = off; `u` = v4
+# (FC1 halves over 512-wide K stages, gate and up in separate stages, FC2 2
+# stages unless `g<n>` is given); `v` = v4 + the A ring; plus `f<fc1 stages>`,
+# `g<fc2 stages>`, `s` (per-CTA %globaltimer stamps, probe only) and, for
+# compatibility, `m32`/`a32`. The v2 (`1`, `m..`, `d`) and v3 (`w`, `e`, `k`)
+# lanes were sunset in 34차 §8: those tokens are rejected, not remapped.
+# Parsed once at import.
 _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
-    "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
-    "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
-    "v4": False, "a_ring": False, "prefetch": False, "prefetch_dist": 2, "bulk_sf": False,
+    "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
+    "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
+    "prefetch": False, "prefetch_dist": 2, "bulk_sf": False,
+}
+_STATIC_SUNSET_TOKENS = {
+    "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
+    "e": "v3 even waves", "k": "the v3 last-wave split",
 }
 
 
@@ -310,64 +350,37 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
     value = raw.strip()
     if value in ("", "0", "off"):
         return None
-    if value == "1":
-        return dict(_STATIC_V2_DEFAULT)
     cfg = dict(_STATIC_V2_DEFAULT)
     for token in value.split(","):
         token = token.strip()
+        if token in _STATIC_SUNSET_TOKENS:
+            raise ValueError(
+                f"{_GLM53_B12X_STATIC_V2_ENV}: {token!r} selected {_STATIC_SUNSET_TOKENS[token]}, "
+                "sunset in 34차 §8 -- use u (v4) or v (v4 + A ring)"
+            )
         if token == "s":
             cfg["stamps"] = True
-            continue
-        if token == "d":
-            cfg["dynamic"] = True
-            continue
-        if token == "w":
-            # v3: FC1 as two 64-wide halves over 256-wide K stages (128 B
-            # w13 row segments); tile_m 32, static schedule, FC2 3 stages
-            cfg["wide"] = True
-            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
-                cfg["fc2"] = 3
-            continue
-        if token == "e":
-            # v3 even waves: only the CTA count (48/44/40/36/32) whose last
-            # wave is fullest takes items (U=40: 40 CTAs x 4 items)
-            cfg["even"] = True
-            continue
-        if token == "b":
-            # v4/v5: scale-factor boxes as 1-D cp.async.bulk copies (fewer
-            # L2 requests per stage)
-            cfg["bulk_sf"] = True
-            continue
-        if token == "p" or (token[:1] == "p" and token[1:].isdigit()):
-            # v4/v5: the DMA warp prefetches w13/w2 rows (+SF) into L2 n k
-            # tiles / n+1 down tiles ahead of the TMA loads (p = p2)
-            cfg["prefetch"] = True
-            if token[1:]:
-                cfg["prefetch_dist"] = int(token[1:])
             continue
         if token == "v":
             # v4 + A ring: A and SFA loaded once per k tile on their own
             # 2-deep ring, shared by the gate and the up stage
-            cfg["wide"] = True
-            cfg["v4"] = True
             cfg["a_ring"] = True
-            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
-                cfg["fc2"] = 2
             continue
         if token == "u":
-            # v4 (moe_static_kernel_v4.py): FC1 halves over 512-wide K stages
-            # with gate and up in separate stages (256 B w13 row segments);
-            # implies w's geometry, FC2 2 stages unless g is given
-            cfg["wide"] = True
-            cfg["v4"] = True
-            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
-                cfg["fc2"] = 2
+            # v4 (moe_static_kernel_v4.py), the default configuration
             continue
-        if token == "k":
-            # v3 last-wave split: each item of a partial last wave (p items,
-            # 2p <= grid) runs on two CTAs, one FC1 half each, full FC2 with
-            # the other half zeroed (the scatter adds the partials)
-            cfg["split"] = True
+        if token == "b":
+            # scale-factor boxes as 1-D cp.async.bulk copies of the contiguous
+            # global block (32/32/8 line requests instead of 128 each; 38차 §9)
+            cfg["bulk_sf"] = True
+            continue
+        if token == "p" or (token[:1] == "p" and token[1:].isdigit()):
+            # L2 prefetch-ahead by the DMA warp, n k tiles / n+1 down tiles
+            # ahead (p = p2); measured a loss at every distance (38차 §8),
+            # kept as an opt-in for the record
+            cfg["prefetch"] = True
+            if token[1:]:
+                cfg["prefetch_dist"] = int(token[1:])
             continue
         if token in ("xs", "xa"):
             if not probe:
@@ -378,39 +391,21 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
-                f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
-                f"m<tile_m>,f<fc1>,g<fc2>,a<a_rows>[,s][,d][,w][,e] cells (got {raw!r})"
+                f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
+                f"u|v,f<fc1>,g<fc2>[,b][,p<n>][,m32][,a32][,s] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
-    if cfg["tile_m"] not in (32, 64, 128):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: tile_m must be 32, 64 or 128")
-    if "a" not in "".join(t.strip()[:1] for t in value.split(",")):
-        cfg["a_rows"] = cfg["tile_m"]
-    if cfg["a_rows"] % cfg["tile_m"] != 0 or cfg["a_rows"] > 128:
-        raise ValueError(
-            f"{_GLM53_B12X_STATIC_V2_ENV}: a_rows must be a multiple of tile_m, <= 128"
-        )
+    if cfg["tile_m"] != 32 or cfg["a_rows"] != 32:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v4 is tile_m 32, a_rows 32")
     if cfg["fc1"] < 1 or cfg["fc2"] < 1:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
-    if cfg["wide"] and (cfg["tile_m"] != 32 or cfg["a_rows"] != 32 or cfg["dynamic"]):
-        raise ValueError(
-            f"{_GLM53_B12X_STATIC_V2_ENV}: w (v3) is tile_m 32, a_rows 32, static schedule"
-        )
-    if cfg["even"] and not cfg["wide"]:
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: e (even waves) needs w (v3)")
-    if cfg["split"] and (not cfg["wide"] or cfg["even"]):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: k (last-wave split) needs w, not e")
-    if (cfg["skip_sf"] or cfg["skip_a"]) and not cfg["wide"]:
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: xs/xa need w (v3)")
-    if cfg["bulk_sf"] and (not cfg["v4"] or cfg["skip_sf"] or cfg["skip_a"]):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: b (bulk SF) needs u/v and no xs/xa")
-    if cfg["prefetch"] and not cfg["v4"]:
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p (L2 prefetch) needs u or v (v4)")
-    if cfg["prefetch"] and not (1 <= int(cfg["prefetch_dist"]) <= 6):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p<n> distance must be 1..6")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
+    if cfg["prefetch"] and not (1 <= int(cfg["prefetch_dist"]) <= 6):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p<n> distance must be 1..6")
+    if cfg["bulk_sf"] and (cfg["skip_sf"] or cfg["skip_a"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: b (bulk SF) and xs/xa are exclusive")
     return cfg
 
 
@@ -1136,8 +1131,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_dynamic_kernel,
         moe_micro_kernel,
         moe_static_kernel,
-        moe_static_kernel_v2,
-        moe_static_kernel_v3,
+        moe_static_common,
         moe_static_kernel_v4,
     )
 
@@ -1145,9 +1139,11 @@ def _kernel_source_files() -> Tuple[str, ...]:
         __file__,
         moe_activation.__file__,
         moe_static_kernel.__file__,
-        moe_static_kernel_v2.__file__,
-        moe_static_kernel_v3.__file__,
+        moe_static_common.__file__,
         moe_static_kernel_v4.__file__,
+        # Hash the candidate without importing its pinned private helpers.
+        os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill.py"),
+        os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill_n128.py"),
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1294,6 +1290,8 @@ def _dynamic_kernel_cache_key(
     swiglu_beta: float,
     swiglu_limit: float | None,
     share_input_across_experts: bool,
+    prefill_reuse: bool = False,
+    prefill_fc1_n128: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1301,7 +1299,7 @@ def _dynamic_kernel_cache_key(
     runtime-shaped operands as pointers, so one artifact serves every batch
     size.
     """
-    return (
+    key = (
         "dynamic",
         activation_precision,
         quant_mode,
@@ -1320,6 +1318,11 @@ def _dynamic_kernel_cache_key(
         swiglu_limit,
         share_input_across_experts,
     )
+    # Preserve the stock key exactly; the opt-in kernel must never reuse a
+    # stock artifact (or poison a later stock call in the same process).
+    if prefill_fc1_n128:
+        return key + ("glm53_prefill_fc1_n128_v1",)
+    return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
 
 
 _STATIC_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
@@ -1588,11 +1591,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         int(config["fc2"]),
         int(config["a_rows"]),
         bool(config["stamps"]),
-        bool(config.get("dynamic", False)),
-        bool(config.get("wide", False)),
-        bool(config.get("even", False)),
-        bool(config.get("split", False)),
-        bool(config.get("v4", False)),
         bool(config.get("a_ring", False)),
         bool(config.get("prefetch", False)),
         int(config.get("prefetch_dist", 2)),
@@ -1675,50 +1673,25 @@ def _get_static_kernel_v2(
     alpha_dtype = cutlass.Float32
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
-    if config.get("wide", False):
-        kernel_cls = MoEStaticKernelV4 if config.get("v4", False) else MoEStaticKernelV3
-        v4_kwargs = (
-            {"a_ring": bool(config.get("a_ring", False)),
-             "prefetch": bool(config.get("prefetch", False)),
-             "prefetch_dist": int(config.get("prefetch_dist", 2)),
-             "bulk_sf": bool(config.get("bulk_sf", False))}
-            if config.get("v4", False) else {}
-        )
-        kernel: Any = kernel_cls(
-            **v4_kwargs,
-            sf_vec_size=sf_vec_size,
-            output_tile_count_n=output_tile_count_n,
-            fc1_stages=int(config["fc1"]),
-            fc2_stages=int(config["fc2"]),
-            stamps=bool(config["stamps"]),
-            even=bool(config.get("even", False)),
-            split=bool(config.get("split", False)),
-            skip_sf=bool(config.get("skip_sf", False)),
-            skip_a=bool(config.get("skip_a", False)),
-            fast_math=fast_math,
-            activation=activation,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_beta=swiglu_beta,
-            swiglu_limit=swiglu_limit,
-            input_scales_are_reciprocal=input_scales_are_reciprocal,
-        )
-    else:
-        kernel = MoEStaticKernelV2(
-            sf_vec_size=sf_vec_size,
-            mma_tiler_mn=mma_tiler_mn,
-            output_tile_count_n=output_tile_count_n,
-            fc1_stages=int(config["fc1"]),
-            fc2_stages=int(config["fc2"]),
-            a_rows=int(config["a_rows"]),
-            stamps=bool(config["stamps"]),
-            dynamic=bool(config.get("dynamic", False)),
-            fast_math=fast_math,
-            activation=activation,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_beta=swiglu_beta,
-            swiglu_limit=swiglu_limit,
-            input_scales_are_reciprocal=input_scales_are_reciprocal,
-        )
+    kernel: Any = MoEStaticKernelV4(
+        a_ring=bool(config.get("a_ring", False)),
+        prefetch=bool(config.get("prefetch", False)),
+        prefetch_dist=int(config.get("prefetch_dist", 2)),
+        bulk_sf=bool(config.get("bulk_sf", False)),
+        sf_vec_size=sf_vec_size,
+        output_tile_count_n=output_tile_count_n,
+        fc1_stages=int(config["fc1"]),
+        fc2_stages=int(config["fc2"]),
+        stamps=bool(config["stamps"]),
+        skip_sf=bool(config.get("skip_sf", False)),
+        skip_a=bool(config.get("skip_a", False)),
+        fast_math=fast_math,
+        activation=activation,
+        swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit,
+        input_scales_are_reciprocal=input_scales_are_reciprocal,
+    )
 
     w1_rows = 2 * n
     rows_pad_k = _align_up(max_rows, 128)
@@ -3073,6 +3046,26 @@ def _get_dynamic_kernel(
     # tile_m comes from the workspace's shared selection so the kernel's task
     # and scale indexing matches the allocated scratch geometry.
     mma_tiler_mn = (tile_m, _level_tile_n(activation_precision))
+    prefill_reuse = (
+        (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
+        and m >= 3456
+        and E == 288
+        and k == 4096
+        and n == 512
+        and num_topk == 8
+        and activation_precision == "fp4"
+        and quant_mode == "nvfp4"
+        and mma_tiler_mn == (128, 128)
+        and activation == "swigluoai_uninterleave"
+        and swiglu_alpha == 1.0
+        and swiglu_beta == 0.0
+        and swiglu_limit == 10.0
+        and torch.cuda.get_device_capability() == (12, 1)
+        and _prefill_reuse_stock_contract_matches(
+            fc1_n128=_GLM53_B12X_PREFILL_FC1_N128,
+        )
+    )
+    prefill_fc1_n128 = prefill_reuse and _GLM53_B12X_PREFILL_FC1_N128
 
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,
@@ -3091,6 +3084,8 @@ def _get_dynamic_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
         share_input_across_experts=share_input_across_experts,
+        prefill_reuse=prefill_reuse,
+        prefill_fc1_n128=prefill_fc1_n128,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3118,6 +3113,23 @@ def _get_dynamic_kernel(
         intermediate_size=n,
         num_topk=num_topk,
     )
+    if prefill_reuse:
+        candidate_cls = (
+            MoEGatedPrefillN128Kernel
+            if prefill_fc1_n128
+            else MoEGatedPrefillReuseKernel
+        )
+        kernel = candidate_cls(
+            sf_vec_size=sf_vec_size,
+            mma_tiler_mn=mma_tiler_mn,
+            input_scales_are_reciprocal=input_scales_are_reciprocal,
+            fast_math=fast_math,
+            activation=activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta,
+            swiglu_limit=swiglu_limit,
+            share_input_across_experts=share_input_across_experts,
+        )
     launch = _DynamicMoELaunch(
         kernel,
         k=k,
@@ -3262,6 +3274,13 @@ def _get_dynamic_kernel(
         extra_key_files=_kernel_source_files(),
     )
 
+    if prefill_reuse:
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill reuse] compiled exact GLM M128 lane: "
+            "Q0 8 rows, parallel E288 scan/top8 reserve, FC2 A/SFA retained; "
+            "FC1_N128=%s; m=%d k=%d n=%d experts=%d mac=%d",
+            prefill_fc1_n128, m, k, n, E, mac,
+        )
     result = (compiled, mac)
     _DYNAMIC_KERNEL_CACHE[cache_key] = result
     return result

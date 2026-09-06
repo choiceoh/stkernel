@@ -1981,10 +1981,6 @@ def test_glm53_v2_overlay_contracts() -> None:
     assert modules_match is not None
     modules = set(modules_match.group(1).split())
     check(
-        not {"glm53_drop_audit", "glm53_sparse_q"} & modules,
-        "glm53 must not mount V1-only acceptance overlays on V2 Model Runner",
-    )
-    check(
         "glm53_runtime" in modules
         and "glm53_v2_hard_constraint_guard" not in modules,
         "glm53 must mount only the V2 sampling guard with an exact predicate",
@@ -2163,75 +2159,6 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
           "W4A8DenseMethod, NvFp4DenseMethod)\n        ):" in src,
           "re-arm unwraps stacked methods in a loop")
     print("  fp8-dense nvfp4 scheme contract .. OK")
-
-
-def test_union_prefill_width_matches_the_converter_tile() -> None:
-    """The union arm must hand the converter a width it accepts.
-
-    It did not, for its whole life. The code sliced 2051 columns (2048 KPool
-    selection + at most three live tail tokens) and passed that as
-    NUM_TOPK_TOKENS, but triton_convert_req_index_to_global_index tiles
-    columns and asserts NUM_TOPK_TOKENS % BLOCK_N == 0. 2051 = 7 x 293, so no
-    usable tile divides it, and every prefill raised:
-
-        AssertionError: NUM_TOPK_TOKENS (2051) must be divisible by BLOCK_N (128)
-
-    caught, logged, fallen back to FlashInfer. A boot logging "union prefill:
-    ARMED width=4" ran 11 prefills and took the fallback 11 times.
-
-    The width must round up to the tile, and the rounded tail must be -1 --
-    the converter's documented "invalid", which _topk_length and the >= 0
-    masks downstream both honour."""
-    path = os.path.join(REPO, "overlay/modules/glm53_model",
-                        "glm53_union_prefill.py")
-    src = open(path, encoding="utf-8").read()
-    check("_CONVERT_BLOCK_N = 128" in src,
-          "the converter's column tile is named, not implied")
-    body = src[src.index("tokens = q[0].shape[0]"):]
-    body = body[:body.index("triton_convert_req_index_to_global_index(") + 400]
-    check("-(-want // _CONVERT_BLOCK_N) * _CONVERT_BLOCK_N" in body,
-          "the width rounds UP to the tile instead of passing 2051")
-    check("logical[:, carried:] = -1" in body,
-          "the rounded tail is marked invalid, not left as stale scratch")
-    check("BLOCK_N=_CONVERT_BLOCK_N" in body,
-          "the tile passed to the converter is the one the width used")
-    check(".clone()" in body,
-          "the padded view is a copy -- the fallback path reads that buffer")
-    check("logical.shape[1] % _CONVERT_BLOCK_N == 0" in body,
-          "and the contract is asserted here, not only inside vLLM")
-
-    # The arm claims exact output and never once ran, so the claim is
-    # untested. Shadow makes it a number instead of an argument -- and must
-    # serve the STOCK answer while measuring, or it is not a shadow.
-    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
-                   encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_UNION_PREFILL_SHADOW=0$", profile, re.M),
-          "the shadow ships off")
-    check('_UNION_SHADOW_ENV, "").strip() == "1"' in src,
-          "exact opt-in for the shadow")
-    shadow = src[src.index("if _union_shadow_enabled():"):]
-    shadow = shadow[:shadow.index("return output, None")]
-    check("ref = original(" in shadow and "return ref" in shadow,
-          "shadow serves the stock answer, never the measured one")
-    check("_UNION_SHADOW_MAX" in shadow,
-          "shadow is bounded -- a long run must not pay for it forever")
-
-    # The kernel tiles group_size x heads rows, each with a [D] fp32
-    # accumulator, and caps that at 32. The hook admits only 16-head q (64
-    # heads at TP4), so width 4 is 64 rows and can NEVER run on this model --
-    # it returns None and the caller quietly uses the stock path. Not an
-    # exception, so it does not even reach the fallback counter. This lane
-    # booted "union prefill: ARMED width=4" for weeks on that.
-    check("q[0].shape[1:] == (16, 512)" in src,
-          "the hook pins 16 heads, which is what makes the cap a width limit")
-    check("group_size * heads > 32" in src, "the row cap is still the gate")
-    decline = src[src.index("if group_size not in (2, 4)"):]
-    decline = decline[:decline.index("return None") + 12]
-    check("_UNION_DECLINED" in decline and "logger.warning" in decline,
-          "a declined width must say so once, not fail silently")
-    check("VLLM_GLM53_UNION_PREFILL=2" in decline,
-          "and must name the width that can actually run")
-    print("  union prefill width vs converter tile .. OK")
 
 
 def test_benches_ask_the_server_for_the_model_name() -> None:
@@ -2440,8 +2367,9 @@ def test_fp8_dense_free_bf16_contract() -> None:
     # ... and it is driven from the first forward of the model file, which is
     # the only COMPOSED place that provably runs after loading. The first
     # attempt drove it from GPUModelRunner.load_model -- correct in principle,
-    # dead in practice: glm53_drop_audit is in no composition, so the release
-    # never ran and the boot silently measured the baseline.
+    # dead in practice: the module that carried the runner patch was in no
+    # composition, so the release never ran and the boot silently measured
+    # the baseline (that module was itself sunset in 34차 §8).
     wiring = os.path.join(REPO, "overlay/modules/glm53_model",
                           "glm5next_model.py")
     src_w = open(wiring, encoding="utf-8").read()
@@ -2537,81 +2465,6 @@ def test_fp8_dense_bproj() -> None:
             os.environ.pop("VLLM_GLM53_FP8_DENSE_BPROJ", None)
         else:
             os.environ["VLLM_GLM53_FP8_DENSE_BPROJ"] = saved
-
-
-def test_mhc_smallm_knob() -> None:
-    """VLLM_GLM53_MHC_SMALLM: parse strictly, validate against kernel contracts.
-
-    The override feeds mhc_fused_post_pre's small-M branch; an invalid value
-    must fall back to the stock heuristic (TODO(gnovack)-marked), never crash
-    the dispatcher's assert or silently drop elements in the h-loop.
-    """
-    env_name = "VLLM_GLM53_MHC_SMALLM"
-    saved = os.environ.pop(env_name, None)
-
-    def load():
-        ns = load_defs(
-            "overlay/tilelang.py",
-            {
-                "_SMALLM_ENV",
-                "_deneb_parse_smallm",
-                "_deneb_smallm_pair",
-                "_raw_smallm",
-                "_DENEB_SMALLM",
-            },
-            {"os": os},
-        )
-        return ns
-
-    try:
-        os.environ.pop(env_name, None)
-        ns = load()
-        parse = ns["_deneb_parse_smallm"]
-        check(ns["_DENEB_SMALLM"] is None, "env unset: knob is None (stock)")
-        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
-              "env unset: pair falls back to stock")
-
-        check(parse("6,4") == (6, 4), "parse plain")
-        check(parse(" 6 , 4 ") == (6, 4), "parse whitespace")
-        check(parse("6") is None, "parse missing split")
-        check(parse("6,4,2") is None, "parse extra field")
-        check(parse("a,b") is None, "parse non-numeric")
-        check(parse("0,4") is None and parse("-6,4") is None,
-              "parse rejects non-positive")
-        check(parse("6,4x") is None, "parse rejects trailing junk")
-
-        os.environ[env_name] = "6,4"
-        ns = load()
-        check(ns["_DENEB_SMALLM"] == (6, 4), "env set: knob frozen at import")
-        pair = ns["_deneb_smallm_pair"]
-        check(pair(1, 4096, 4) == (6, 4), "GLM shapes admit (6,4)")
-        check(pair(16, 4096, 4) == (6, 4), "whole small-M branch is overridden")
-
-        os.environ[env_name] = "5,4"
-        ns = load()
-        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
-              "tile_n=5 does not divide n_out=24 -> stock")
-        os.environ[env_name] = "6,3"
-        ns = load()
-        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
-              "n_splits=3 would trip the dispatcher assert -> stock")
-        os.environ[env_name] = "6,16"
-        ns = load()
-        check(ns["_deneb_smallm_pair"](1, 4096, 4) is None,
-              "n_splits=16 exceeds the dispatcher's set -> stock")
-        os.environ[env_name] = "6,8"
-        ns = load()
-        check(ns["_deneb_smallm_pair"](1, 4096, 4) == (6, 8),
-              "(6,8): h_per_split=512 is n_thr-exact")
-        os.environ[env_name] = "6,4"
-        ns = load()
-        check(ns["_deneb_smallm_pair"](1, 512, 4) is None,
-              "h_per_split=128 leaves 128 threads idle -> stock (silent-drop guard)")
-    finally:
-        if saved is None:
-            os.environ.pop(env_name, None)
-        else:
-            os.environ[env_name] = saved
 
 
 def test_mhc_passes_knob() -> None:
@@ -3540,15 +3393,17 @@ def test_glm53_b12x_tuning_controls() -> None:
 def test_b12x_static_v2_controls() -> None:
     """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
 
-    `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV2` for the served
-    GLM-5.3 TP geometry only. The profile ships it empty (stock kernel) until
-    the bracket; the spec parser must reject anything it cannot spell back,
-    because the config lands in the kernel cache key and the on-disk name.
+    `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV4` for the served
+    GLM-5.3 TP geometry only (34차 §8: the v2 and v3 kernels are gone, and
+    their tokens are rejected, never remapped). The spec parser must reject
+    anything it cannot spell back, because the config lands in the kernel
+    cache key and the on-disk name.
     """
     dispatch_path = "overlay/modules/glm53_moe/moe_dispatch.py"
     names = {
         "_GLM53_B12X_STATIC_V2_ENV",
         "_STATIC_V2_DEFAULT",
+        "_STATIC_SUNSET_TOKENS",
         "_parse_glm53_static_v2",
         "_is_glm53_b12x_tp_geometry",
         "_static_v2_config_for",
@@ -3561,42 +3416,18 @@ def test_b12x_static_v2_controls() -> None:
 
     for raw in (None, "", " ", "0", "off"):
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
-    check(parse("1") == default and parse("1") is not default,
-          "'1' must be a copy of the default config")
-    check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
-                      "dynamic": False, "wide": False, "even": False, "split": False,
-                      "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False,
-                      "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
-          "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
-    check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
-                                 "stamps": False, "dynamic": False, "wide": False,
-                                 "even": False, "split": False, "skip_sf": False,
-                                 "skip_a": False, "v4": False, "a_ring": False,
-                                 "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
-          "explicit cells override the defaults")
-    check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
-          "d selects the dynamic item schedule")
-    wide = parse("w")
-    check(wide["wide"] and wide["fc2"] == 3 and wide["fc1"] == 2 and wide["tile_m"] == 32,
-          "w selects the v3 kernel (FC1 halves over 256-wide K) with 3 FC2 stages")
-    check(parse("w,g2")["fc2"] == 2, "an explicit g cell overrides w's FC2 default")
-    even = parse("w,e")
-    check(even["even"] and even["wide"] and even["fc2"] == 3,
-          "e selects the v3 even-wave striding on top of w")
-    check(not parse("w")["even"], "w alone keeps every CTA striding")
-    try:
-        parse("m32,f2,g4,e")
-        check(False, "e without w must be rejected")
-    except ValueError:
-        pass
-    check(parse("w,k")["split"] and not parse("w,k")["even"], "k selects the last-wave split")
+    check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
+                      "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
+                      "a_ring": False, "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
+          "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring")
     v4 = parse("u")
-    check(v4["v4"] and v4["wide"] and v4["fc2"] == 2 and v4["fc1"] == 2,
-          "u selects the v4 kernel (FC1 K 512, gate/up stages) with 2 FC2 stages")
-    check(parse("u,g3")["fc2"] == 3 and parse("u,k")["split"], "u composes with g and k")
+    check(v4 == default and v4 is not default, "u is a copy of the default (v4) config")
+    check(parse("u,g3")["fc2"] == 3 and parse("u,f3")["fc1"] == 3, "u composes with f and g")
     v5 = parse("v")
     check(v5["a_ring"] and v5["v4"] and v5["wide"] and v5["fc2"] == 2,
           "v selects v4 with the A ring")
+    check(parse("u,s")["stamps"] and parse("u,m32,a32")["tile_m"] == 32,
+          "s, m32 and a32 cells parse")
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
@@ -3605,42 +3436,29 @@ def test_b12x_static_v2_controls() -> None:
     check(parse("v,p")["prefetch"] and parse("u,p")["v4"], "p adds the L2 prefetch to v4/v5")
     check(parse("v,p4")["prefetch_dist"] == 4 and parse("v,p")["prefetch_dist"] == 2,
           "p<n> sets the prefetch distance (p = p2)")
-    try:
-        parse("v,p9")
-        check(False, "p9 must be rejected")
-    except ValueError:
-        pass
     check(parse("u,b")["bulk_sf"] and parse("v,b")["v4"], "b selects the bulk SF copies on v4/v5")
-    for bad in ("w,b", "u,b,xs"):
+    for bad in ("v,p9", "u,b,xs"):
         try:
             parse(bad, probe=True)
-            check(False, f"{bad} must be rejected")
+            check(False, f"{bad!r} must be rejected")
         except ValueError:
             pass
-    try:
-        parse("w,p")
-        check(False, "p without v4 must be rejected")
-    except ValueError:
-        pass
-    for bad in ("w,e,k", "m32,k", "w,xs", "w,xa"):
+    for bad in ("1", "d", "w", "e", "k", "w,e,k", "u,k", "w,g2", "m32,f2,g4,d"):
+        try:
+            parse(bad)
+            check(False, f"{bad!r} selects a sunset lane and must be rejected")
+        except ValueError as exc:
+            check("34차 §8" in str(exc) and "VLLM_GLM53_B12X_STATIC_V2" in str(exc),
+                  "the sunset error names the knob and the sunset")
+    check(parse("u,s,xs", probe=True)["skip_sf"] and parse("u,xa", probe=True)["skip_a"],
+          "the probe parse admits the timing-only xs/xa cells")
+    for bad in ("u,xs", "u,xa"):
         try:
             parse(bad)
             check(False, f"{bad} must be rejected by the serving parse")
         except ValueError:
             pass
-    check(parse("w,s,xs", probe=True)["skip_sf"] and parse("w,xa", probe=True)["skip_a"],
-          "the probe parse admits the timing-only xs/xa cells")
-    for raw in ("w,m64", "w,d", "w,a64"):
-        try:
-            parse(raw)
-            check(False, f"w must reject {raw!r}")
-        except ValueError as exc:
-            check("v3" in str(exc), "the w conflict error names v3")
-    check(parse("m64,f2,g2")["a_rows"] == 64,
-          "a_rows follows tile_m unless spelled out")
-    check(parse("m32,f2,g4,a64")["a_rows"] == 64 and parse("m32,f2,g4,s")["stamps"],
-          "a<rows> and s cells parse")
-    for raw in ("2", "m48", "m32,x1", "m32,a48", "m32,a256", "f0", "m32,,g2", "m32 f2"):
+    for raw in ("u,m64", "u,a64", "2", "m48", "m32,x1", "m32,a48", "f0", "u,,g2", "u f2"):
         try:
             parse(raw)
             check(False, f"invalid static v2 spec must fail: {raw!r}")
@@ -3660,7 +3478,7 @@ def test_b12x_static_v2_controls() -> None:
     check(config_for(activation_precision="fp4", **geometry) == default,
           "the env config applies to the exact GLM TP geometry")
     check(config_for(activation_precision="bf16", **geometry) is None,
-          "W4A16 (bf16 activations) never takes the NVFP4 v2 kernel")
+          "W4A16 (bf16 activations) never takes the NVFP4 static kernel")
     # launch_sm120_static_moe passes the PER-RANK intermediate (2048 / TP4 =
     # 512); the first probe run measured the stock kernel six times because
     # the gate only knew the full 2048 (no static2_ compile, no proof line)
@@ -3670,9 +3488,8 @@ def test_b12x_static_v2_controls() -> None:
     drift = dict(geometry, num_local_experts=72)
     check(config_for(activation_precision="fp4", **drift) is None,
           "EP geometry (E=72 local) keeps the stock kernel")
-    ns["_STATIC_V2_OVERRIDE"] = {"tile_m": 64, "fc1": 2, "fc2": 2, "a_rows": 64,
-                                 "stamps": True}
-    check(config_for(activation_precision="fp4", **geometry)["tile_m"] == 64,
+    ns["_STATIC_V2_OVERRIDE"] = dict(default, stamps=True)
+    check(config_for(activation_precision="fp4", **geometry)["stamps"] is True,
           "the probe override wins over the env config")
 
     key_a = ns["_static_v2_cache_key"](
@@ -3683,41 +3500,53 @@ def test_b12x_static_v2_controls() -> None:
         activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
         swiglu_limit=10.0)
     key_b = ns["_static_v2_cache_key"](
-        dict(default, fc2=2), activation_precision="fp4", quant_mode="nvfp4",
+        dict(default, fc2=3), activation_precision="fp4", quant_mode="nvfp4",
         state_E=288, weight_E=288, m=8, k=4096, n=512, num_topk=8, max_rows=512,
         mac=48, mma_tiler_mn=(32, 128), topk_ids_dtype="int32",
         input_scales_are_reciprocal=False, fast_math=True,
         activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0,
         swiglu_limit=10.0)
     check(key_a[0] == "static_v2" and key_a != key_b,
-          "the v2 cache key carries the config so configs never alias")
+          "the static cache key carries the config so configs never alias")
 
     src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
-    check("moe_static_kernel_v2.__file__" in src,
-          "the v2 kernel source must be in the module cache key files")
+    check("moe_static_kernel_v4.__file__" in src and "moe_static_common.__file__" in src
+          and "moe_static_kernel_v2" not in src and "MoEStaticKernelV3" not in src,
+          "the v4 kernel and the shared helpers are in the module cache key files; "
+          "v2/v3 are gone (34차 §8)")
     check("_STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None" in src,
           "the probe override is a module-level hook, not an env read at launch")
     kernel = open(os.path.join(
-        REPO, "overlay/modules/glm53_moe/moe_static_kernel_v2.py"),
+        REPO, "overlay/modules/glm53_moe/moe_static_kernel_v4.py"),
         encoding="utf-8").read()
-    check("class MoEStaticKernelV2" in kernel and "producer_tail" in kernel
-          and "reset_count" not in kernel,
-          "v2 keeps its pipeline states continuous across items and drains at exit")
-    check("pass_sync_barrier" not in kernel,
-          "v2 has no CTA-wide item-boundary barrier")
+    common = open(os.path.join(
+        REPO, "overlay/modules/glm53_moe/moe_static_common.py"),
+        encoding="utf-8").read()
+    check("class MoEStaticKernelV4" in kernel
+          and "from .moe_static_common import (" in kernel
+          and "STAMP_SLOTS" in common and "_compact_static_get_work_tile" in common
+          and "class MoEStaticKernel" not in common,
+          "v4 imports the stamp layout and the PTX helpers from moe_static_common, "
+          "which carries no kernel of its own")
     manifest = open(os.path.join(
         REPO, "overlay", "modules", "glm53_moe", "manifest.tsv"),
         encoding="utf-8").read()
-    check("moe_static_kernel_v2.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
-          "moe_static_kernel_v2.py\tabsent" in manifest,
-          "the v2 kernel is a new file (absent preimage) in the module manifest")
+    check("moe_static_kernel_v4.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_kernel_v4.py\tabsent" in manifest
+          and "moe_static_common.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_common.py\tabsent" in manifest
+          and "moe_static_kernel_v2.py" not in manifest
+          and "moe_static_kernel_v3.py" not in manifest,
+          "the v4 kernel and its helpers are new files (absent preimage) in the "
+          "module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
           "the profile ships the v4 static kernel (spec u) as the default "
-          "(38차, operator: decode windows +2% over v3, probes -3.5%; rollback = \"w\")")
+          "(38차, operator: decode windows +2% over v3, probes -3.5%)")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
-    check("moe_static_kernel_v2.py" in runner,
-          "the probe runner must mount the v2 kernel beside the dispatcher")
+    check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
+          and "moe_static_kernel_v2" not in runner,
+          "the probe runner must mount the v4 kernel and its helpers beside the dispatcher")
 
     print("  b12x static v2 controls ........ OK")
 
@@ -3739,7 +3568,7 @@ def test_mhc_probe_contracts() -> None:
 
     names = {
         "STOCK_LT8", "STOCK_GE8", "_stock_config", "_parse_ms",
-        "_onepass_rel_errors", "_pair_rel_errors",
+        "_pair_rel_errors",
     }
     ns = load_defs("probes/mhc_glm53_bench.py", names,
                    {"rel_err": fake_rel_err})
@@ -3761,18 +3590,6 @@ def test_mhc_probe_contracts() -> None:
 
     ref = [FakeTensor(name) for name in
            ("gemm", "sqrsum", "residual", "post", "comb", "layer")]
-    out = [FakeTensor(name) for name in
-           ("residual-out", "post-out", "comb-out", "layer-out")]
-    result = ns["_onepass_rel_errors"](out, ref)
-    check(result == [1, 2, 3, 4], "onepass must compare all four outputs")
-    check(comparisons == [
-        (out[0], ref[2]),
-        (("reshape_as", "post-out", "post"), ref[3]),
-        (("reshape_as", "comb-out", "comb"), ref[4]),
-        (out[3], ref[5]),
-    ], "onepass post/comb outputs must match the stock flat-buffer shapes")
-
-    comparisons.clear()
     pair = [FakeTensor(name) for name in
             ("candidate-gemm", "candidate-sqrsum", "candidate-residual",
              "candidate-post", "candidate-comb", "candidate-layer")]
@@ -3788,19 +3605,16 @@ def test_mhc_probe_contracts() -> None:
                      and node.name == "main")
     main_source = ast.get_source_segment(probe_source, main_node)
     assert main_source is not None
-    check(main_source.index('os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"')
-          < main_source.index("_load_mhc_overlay"),
-          "ONEPASS must be set before importing the eager MHC package")
+    check("_load_mhc_overlay()" in main_source and "ONEPASS" not in main_source,
+          "the probe loads the eager MHC package once; the one-pass arm is gone (34차 §8)")
 
     loader_node = next(node for node in probe_tree.body
                        if isinstance(node, ast.FunctionDef)
                        and node.name == "_load_mhc_overlay")
     loader_source = ast.get_source_segment(probe_source, loader_node)
     assert loader_source is not None
-    check(loader_source.count("_require_composed_source") == 2
-          and '"_DENEB_ONEPASS"' in loader_source
-          and '"mhc_onepass_tilelang"' in loader_source,
-          "probe must prove both source hashes and the armed onepass path")
+    check(loader_source.count("_require_composed_source") == 2,
+          "probe must prove both source hashes")
 
     wrapper = os.path.join(REPO, "probes", "run_mhc_glm53_bench.sh")
     wrapper_source = open(wrapper, encoding="utf-8").read()
@@ -3809,247 +3623,6 @@ def test_mhc_probe_contracts() -> None:
           and "STKERNEL_MHC_OVERLAY_BUILD=/repo/build/glm53" in wrapper_source,
           "probe wrapper must bind and identify both composed MHC sources")
     print("  mhc probe contracts ............ OK")
-
-
-def test_mhc_onepass_math() -> None:
-    """mhc_onepass_tilelang's MATH equals the stock two-kernel pipeline.
-
-    The fused kernel is a transcription of mhc_fused_tilelang (phase 1) +
-    mhc_pre_big_fuse_with_norm_tilelang (mixes/sinkhorn/norm). This sim runs
-    both pipelines in pure python at hc=4, h=64 -- stock materializes the
-    gemm_out intermediates like the two kernels do, onepass follows the fused
-    kernel's single-CTA phase order. Same op order => bitwise-equal floats.
-    A transcription slip (swapped scale index, dropped eps, wrong sinkhorn
-    round count) breaks equality.
-    """
-    import struct
-
-    def bf16(x):
-        """Round fp32 to bf16 and back (the kernels' storage rounding)."""
-        return struct.unpack("f", struct.pack("I",
-            struct.unpack("I", struct.pack("f", x))[0] & 0xFFFF0000))[0]
-
-    import math as _m
-
-    hc, h, n_out = 4, 64, 24
-    rms_eps, pre_eps, sink_eps, post_mult, sinkhorn, norm_eps = (
-        1e-5, 1e-6, 1e-6, 2.0, 20, 1e-5)
-    scale = [1.1, 0.9, 1.05]
-    rng = random.Random(7)
-
-    comb_in = [[rng.uniform(-1, 1) for _ in range(hc)] for _ in range(hc)]
-    post_in = [rng.uniform(0.5, 1.5) for _ in range(hc)]
-    x = [rng.uniform(-1, 1) for _ in range(h)]
-    resid = [[rng.uniform(-1, 1) for _ in range(h)] for _ in range(hc)]
-    fn = [[[rng.uniform(-0.05, 0.05) for _ in range(h)]
-           for _ in range(hc)] for _ in range(n_out)]
-    base = [rng.uniform(-0.5, 0.5) for _ in range(n_out)]
-    norm_w = [1.0 for _ in range(h)]
-
-    def rsqrt(v):
-        return 1.0 / _m.sqrt(v)
-
-    def sigmoid(v):
-        return 1.0 / (1.0 + _m.exp(-v))
-
-    def sinkhorn_rounds(cm):
-        row_max = [max(cm[j]) for j in range(hc)]
-        for j in range(hc):
-            for k in range(hc):
-                cm[j][k] = _m.exp(cm[j][k] - row_max[j])
-        row_sum = [sum(cm[j]) for j in range(hc)]
-        for j in range(hc):
-            for k in range(hc):
-                cm[j][k] = cm[j][k] / row_sum[j] + sink_eps
-        col_sum = [sum(cm[j][k] for j in range(hc)) for k in range(hc)]
-        for j in range(hc):
-            for k in range(hc):
-                cm[j][k] = cm[j][k] / (col_sum[k] + sink_eps)
-        for _ in range(sinkhorn - 1):
-            row_sum = [sum(cm[j]) for j in range(hc)]
-            for j in range(hc):
-                for k in range(hc):
-                    cm[j][k] = cm[j][k] / (row_sum[j] + sink_eps)
-            col_sum = [sum(cm[j][k] for j in range(hc)) for k in range(hc)]
-            for j in range(hc):
-                for k in range(hc):
-                    cm[j][k] = cm[j][k] / (col_sum[k] + sink_eps)
-        return cm
-
-    def gates_and_norm(mixes, resid_cur):
-        post = [bf16(sigmoid(mixes[j + hc] * scale[1] + base[j + hc]))
-                * post_mult for j in range(hc)]
-        cm = [[mixes[j * hc + k + hc * 2] * scale[2]
-               + base[j * hc + k + hc * 2] for k in range(hc)]
-              for j in range(hc)]
-        comb = sinkhorn_rounds(cm)
-        pre = [sigmoid(mixes[j] * scale[0] + base[j]) + pre_eps
-               for j in range(hc)]
-        ol = [sum(pre[j] * resid_cur[j][hh] for j in range(hc))
-              for hh in range(h)]
-        ol = [bf16(v) for v in ol]
-        sumsq = sum(v * v for v in ol)
-        r = rsqrt(sumsq / h + norm_eps)
-        layer = [bf16(ol[hh] * r * norm_w[hh]) for hh in range(h)]
-        return post, comb, layer
-
-    def stock_pipeline():
-        # kernel 1: mhc_fused (split_k=1, full tile) -> materialized outputs
-        resid_cur = [[bf16(post_in[j] * x[hh]
-                           + sum(comb_in[k][j] * resid[k][hh]
-                                 for k in range(hc)))
-                      for hh in range(h)] for j in range(hc)]
-        yp = [sum(fn[n][j][hh] * resid_cur[j][hh]
-                  for j in range(hc) for hh in range(h))
-              for n in range(n_out)]
-        rp = sum(resid_cur[j][hh] ** 2
-                 for j in range(hc) for hh in range(h))
-        # kernel 2: big_fuse_with_norm reads the intermediates back
-        r = rsqrt(rp / (hc * h) + rms_eps)
-        mixes = [yp[n] * r for n in range(n_out)]
-        post, comb, layer = gates_and_norm(mixes, resid_cur)
-        return post, comb, layer
-
-    def onepass_pipeline():
-        # the fused kernel's phase order: same formulas, intermediates stay
-        # in-register; resid_cur goes to global once and is re-read (bf16).
-        resid_cur = [[bf16(post_in[j] * x[hh]
-                           + sum(comb_in[k][j] * resid[k][hh]
-                                 for k in range(hc)))
-                      for hh in range(h)] for j in range(hc)]
-        acc = [sum(fn[n][j][hh] * resid_cur[j][hh]
-                   for j in range(hc) for hh in range(h))
-               for n in range(n_out)]
-        sqr = sum(resid_cur[j][hh] ** 2
-                  for j in range(hc) for hh in range(h))
-        r = rsqrt(sqr / (hc * h) + rms_eps)
-        mixes = [acc[n] * r for n in range(n_out)]
-        post, comb, layer = gates_and_norm(mixes, resid_cur)
-        return post, comb, layer
-
-    sp, sc, sl = stock_pipeline()
-    fp_, fc, fl = onepass_pipeline()
-    check(sp == fp_, "post_mix identical between stock and onepass")
-    check(sc == fc, "comb_mix identical between stock and onepass")
-    check(sl == fl, "layer_input identical between stock and onepass")
-    # semantic anchors: sinkhorn output is ~doubly stochastic; the normed
-    # layer_input has ~unit RMS when norm_weight == 1
-    colsums = [sum(sc[j][k] for j in range(hc)) for k in range(hc)]
-    check(all(abs(v - 1.0) < 1e-3 for v in colsums),
-          f"sinkhorn columns ~1: {sum(colsums) / hc:.4f}")
-    rms_out = _m.sqrt(sum(v * v for v in sl) / h)
-    check(abs(rms_out - 1.0) < 0.3, f"layer_input RMS ~1: {rms_out:.3f}")
-
-    # gate + contract functions from the dispatcher takeover. The gate is
-    # frozen at import like its siblings, so flipping env means re-loading.
-    names = {
-        "_ONEPASS_ENV", "_raw_onepass", "_DENEB_ONEPASS",
-        "_deneb_onepass_enabled", "_deneb_onepass_ok",
-    }
-    saved = os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
-    try:
-        os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
-        ns = load_defs("overlay/tilelang.py", names, {"os": os})
-        check(not ns["_deneb_onepass_enabled"](), "ONEPASS default off")
-
-        os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"
-        ns = load_defs("overlay/tilelang.py", names, {"os": os})
-        check(ns["_DENEB_ONEPASS"] is True and ns["_deneb_onepass_enabled"](),
-              "ONEPASS env arms (frozen at import)")
-        ok = ns["_deneb_onepass_ok"]
-        check(ok(4096, 4), "GLM shapes admit onepass")
-        check(not ok(4096, 8),
-              "n_out=80 exceeds one warp's write span -> refuse")
-        check(not ok(1000, 4), "hidden not n_thr-exact -> refuse")
-    finally:
-        if saved is None:
-            os.environ.pop("VLLM_GLM53_MHC_ONEPASS", None)
-        else:
-            os.environ["VLLM_GLM53_MHC_ONEPASS"] = saved
-
-    print("  mhc onepass math ................ OK")
-
-
-def test_mhc_smallm_split_ownership() -> None:
-    """ONEPASS-off must not overwrite the small-M kernel's split contract.
-
-    ONEPASS was inserted between the stock ``if use_small_fma`` and its
-    non-small ``else``. If that else binds to ONEPASS instead, the default-off
-    path calls the generic DeepGEMM split planner even for the small-M kernel.
-    GB10 then picks 48 splits for GLM's hc=4, H=4096 shape, outside the
-    dispatcher's 1/2/4/8 set, and completes no 256-thread hidden iteration.
-    """
-    path = _overlay_source("overlay/tilelang.py")
-    source = open(path, encoding="utf-8").read()
-    tree = ast.parse(source)
-    dispatcher = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "mhc_fused_post_pre_tilelang"
-    )
-
-    def node_source(node):
-        segment = ast.get_source_segment(source, node)
-        assert segment is not None
-        return segment
-
-    top_level_ifs = [node for node in dispatcher.body if isinstance(node, ast.If)]
-    onepass_if = next(
-        node for node in top_level_ifs
-        if "_deneb_onepass_enabled()" in node_source(node.test)
-    )
-    check(not onepass_if.orelse,
-          "ONEPASS early return must not own the stock fallback")
-
-    nonsmall_if = next(
-        node for node in top_level_ifs
-        if node_source(node.test).strip() == "not use_small_fma"
-    )
-    check("compute_num_split(" in node_source(nonsmall_if),
-          "generic split planner must be guarded by not use_small_fma")
-    check(onepass_if.end_lineno < nonsmall_if.lineno,
-          "generic non-small planner must follow the ONEPASS early return")
-
-    split_calls = [
-        node for node in ast.walk(dispatcher)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "compute_num_split"
-    ]
-    check(len(split_calls) == 1,
-          "dispatcher must have exactly one generic split-planner call")
-    check(nonsmall_if.lineno <= split_calls[0].lineno <= nonsmall_if.end_lineno,
-          "every generic split-planner call must stay under the non-small guard")
-
-    small_if = next(
-        node for node in top_level_ifs
-        if node_source(node.test).strip() == "use_small_fma"
-    )
-    stock_split = next(
-        node.value for node in ast.walk(small_if)
-        if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "n_splits"
-                for target in node.targets)
-        and isinstance(node.value, ast.IfExp)
-    )
-    check(ast.unparse(stock_split.test)
-          == "num_tokens < 8 and hidden_size <= 4096"
-          and ast.literal_eval(stock_split.body) == 8
-          and ast.literal_eval(stock_split.orelse) == 4,
-          "stock small-M dispatcher must retain its 8/4 split heuristic")
-    for split in (4, 8):
-        check((4096 // split) % 256 == 0
-              and (4096 // split) // 256 > 0,
-              f"stock split={split} must cover H=4096 in 256-thread iterations")
-
-    # vLLM compute_num_split(block_k=64, k=hc*hidden, grid_size=1) on GB10.
-    generic_split = min(48, ((4 * 4096 + 63) // 64) // 4)
-    check(generic_split == 48 and generic_split not in (1, 2, 4, 8),
-          f"SM121a regression fixture must expose split=48: {generic_split}")
-    check((4096 // generic_split) // 256 == 0,
-          "split=48 must expose the zero-iteration small-M failure")
-    print("  mhc small-M split ownership ..... OK")
 
 
 
@@ -4146,133 +3719,6 @@ def test_ep_fixed_output_initialised() -> None:
           and "output.masked_fill_(all_remote, 0)" in stock,
           "stock experiment must seal all-remote tokens to exact zero")
     print("  EP fixed/stock output init ..... OK")
-def test_glm53_sm121_mla_prefill_gate() -> None:
-    """The GLM dense-prefill arm must fail closed on contract drift."""
-    ns = load_defs(
-        "overlay/flash_attn.py",
-        {
-            "_glm53_sm121_dense_prefill_gate",
-            "_glm53_sm121_filter_prefill_metadata",
-            "_glm53_sm121_instance_dimensions",
-        },
-        {},
-    )
-    gate = ns["_glm53_sm121_dense_prefill_gate"]
-    valid = {
-        "flag": "1",
-        "capability": (12, 1),
-        "dimensions": (256, 0, 256),
-        "model_type": "glm5_next_text",
-        "kv_lora_rank": 512,
-        "num_attention_heads": 64,
-        "index_topk": 2048,
-        "index_kpool": 4,
-        "kv_cache_dtype": "fp8_e4m3",
-        "outer_backend_name": "FLASHINFER_MLA_SPARSE_SM90",
-        "flash_attn_version": 2,
-    }
-    check(gate(**valid), "exact SM121/GLM/HND contract admits dense prefill")
-    rejected = {
-        "flag": (None, "0", "true", " 1"),
-        "capability": ((12, 0), (10, 0)),
-        "dimensions": ((128, 64, 128), (256, 64, 256)),
-        "model_type": (None, "deepseek_v32"),
-        "kv_lora_rank": (256, 576),
-        "num_attention_heads": (32, 128),
-        "index_topk": (1024, 4096),
-        "index_kpool": (1, 16),
-        "kv_cache_dtype": ("auto", "fp8_ds_mla"),
-        "outer_backend_name": (
-            "FLASHINFER_MLA_SPARSE_SM120",
-            "FLASHMLA_SPARSE",
-        ),
-        "flash_attn_version": (3, 4, None),
-    }
-    for field, values in rejected.items():
-        for bad in values:
-            case = dict(valid)
-            case[field] = bad
-            check(not gate(**case), f"{field}={bad!r} retains top-k MQA")
-
-    dims = ns["_glm53_sm121_instance_dimensions"]
-    check(
-        dims(qk_nope_head_dim=256, qk_rope_head_dim=0, v_head_dim=256),
-        "only the admitted non-stock GLM dimensions latch the request guard",
-    )
-    for stock_dims in ((128, 64, 128), (192, 64, 256), (64, 64, 128)):
-        check(
-            not dims(
-                qk_nope_head_dim=stock_dims[0],
-                qk_rope_head_dim=stock_dims[1],
-                v_head_dim=stock_dims[2],
-            ),
-            f"stock dimensions {stock_dims} do not latch the GLM guard",
-        )
-
-    filter_metadata = ns["_glm53_sm121_filter_prefill_metadata"]
-    fresh = types.SimpleNamespace(chunked_context=None, use_dense_mha=True)
-    filter_metadata(fresh, optin=True)
-    check(fresh.use_dense_mha, "fresh causal GLM prefill remains dense-MHA")
-    cached = types.SimpleNamespace(chunked_context=object(), use_dense_mha=True)
-    filter_metadata(cached, optin=True)
-    check(not cached.use_dense_mha, "cached GLM prefill falls back before FA2")
-    stock = types.SimpleNamespace(chunked_context=object(), use_dense_mha=True)
-    filter_metadata(stock, optin=False)
-    check(stock.use_dense_mha, "stock FlashAttention models remain unchanged")
-
-    source = open(_overlay_source("overlay/flash_attn.py"), encoding="utf-8").read()
-    tree = ast.parse(source)
-    backend = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and node.name == "FlashAttnPrefillBackend"
-    )
-    prepare = next(
-        node
-        for node in backend.body
-        if isinstance(node, ast.FunctionDef) and node.name == "prepare_metadata"
-    )
-    prepare_source = ast.get_source_segment(source, prepare)
-    assert prepare_source is not None
-    check(
-        prepare_source.index("super().prepare_metadata")
-        < prepare_source.index("_glm53_sm121_filter_prefill_metadata"),
-        "the cached-context guard runs after stock metadata preparation",
-    )
-    enabled = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_glm53_sm121_dense_prefill_enabled"
-    )
-    enabled_source = ast.get_source_segment(source, enabled)
-    assert enabled_source is not None
-    check(
-        "reversed(tuple(static_context.values()))" in enabled_source
-        and 'getattr(layer, "attn_backend", None)' in enabled_source,
-        "admission binds the newest layer's actual outer backend",
-    )
-    check(
-        "stock_supported or _glm53_sm121_dense_prefill_enabled" in source,
-        "stock dimension support remains intact",
-    )
-    build_source = open(
-        os.path.join(REPO, "build", "glm53", "flash_attn.py"),
-        encoding="utf-8",
-    ).read()
-    check(source == build_source, "module and composed build remain byte-identical")
-    profile = open(
-        os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
-    ).read()
-    check(
-        "glm53_kernels" in profile
-        and "VLLM_GLM53_SM121_MLA_PREFILL=0" in profile,
-        "the mounted module remains default-off",
-    )
-    print("  GLM53 SM121 MLA prefill gate .... OK")
-
-
 def test_glm53_kpool_packed_scratch_contract() -> None:
     """Pool top-k reuses only packed storage outside live output rows."""
     # The serving hosts run this suite as the deploy gate and have no
@@ -4671,343 +4117,6 @@ def test_glm53_kpool_packed_scratch_contract() -> None:
     check("pool_topk.to(torch.int64)" not in dispatcher_source,
           "the CUDA pool scratch must not be widened unconditionally")
     print("  GLM53 kpool packed scratch ...... OK")
-
-
-def test_glm53_cache_only_indexer_prefill() -> None:
-    """Dense MLA builds kpool cache state without dead query scoring."""
-    try:
-        import torch
-    except ImportError:
-        print("  GLM53 cache-only prefill indexer . SKIP (no torch on this host)")
-        return
-    import torch.nn.functional as F
-
-    class FakeIndexer:
-        def __init__(self):
-            self._buffers = {}
-
-        def register_buffer(self, name, tensor, persistent=True):
-            self._buffers[name] = tensor
-            setattr(self, name, tensor)
-
-    def original(self, *args):
-        self.original_called = True
-        return "original"
-
-    FakeIndexer.forward = original
-    FakeIndexer._glm53_prefill_original_forward = original
-    ns = load_defs(
-        "overlay/modules/glm53_model/glm53_prefill_fastpath.py",
-        {
-            "_GLM53_PREFILL_KG_WEIGHT",
-            "_GLM53_FUSED_K_GATE_ENV",
-            "_GLM53_SM121_MLA_PREFILL_ENV",
-            "_glm53_fused_k_gate_enabled",
-            "_glm53_cache_only_indexer_contract",
-            "_glm53_cache_only_indexer_forward",
-            "_glm53_fused_indexer_forward",
-            "_glm53_head_gate", "_HEAD_GATE", "_HEAD_GATE_MODULE",
-            "install_glm53_prefill_fastpath",
-            "prepare_glm53_prefill_fastpath",
-        },
-        {
-            "os": os,
-            # load_defs execs only the named defs, so the module-level logger
-            # never comes along. Stub it rather than pulling vllm in: the
-            # arming lines are the point of the log, and a test that cannot
-            # run them would hide the next one that is missing.
-            "logger": _CapturingLogger(),
-            "torch": torch,
-            "F": F,
-            "Indexer": FakeIndexer,
-            "_fused_indexer_k_norm": lambda k, *args: k,
-            "_fused_indexer_weight_scale": (
-                lambda weights, q_scale, scale: weights * scale
-            ),
-            "_pad_indexer_heads": lambda value, pad: value,
-            "fwht128_quant_fp8": lambda q: (
-                q,
-                torch.ones(q.shape[0], 1, dtype=torch.float32),
-            ),
-            "_glm53_indexer_scoring_unused": lambda indexer: True,
-        },
-    )
-    contract = ns["_glm53_cache_only_indexer_contract"]
-    valid = dict(
-        rope_dim=0,
-        head_dim=128,
-        quant_block_size=128,
-        scale_fmt="ue8m0",
-        index_kpool=4,
-        topk_tokens=2048,
-        n_head=32,
-        op_type="SparseAttnIndexerKpool",
-        use_fp4_cache=False,
-        hidden_dtype=torch.bfloat16,
-        k_weight_dtype=torch.bfloat16,
-        k_weight_shape=(160, 8),
-        hidden_size=8,
-        gate_dtype=torch.bfloat16,
-        gate_shape=(128, 8),
-        ape_shape=(4, 128),
-        ape_dtype=torch.float32,
-        fused_weight_dtype=torch.bfloat16,
-        fused_weight_shape=(256, 8),
-        fused_weight_contiguous=True,
-    )
-    check(contract(**valid), "exact GLM dense-prefill indexer contract admits")
-    rejected = {
-        "rope_dim": (64,),
-        "head_dim": (64, 256),
-        "quant_block_size": (64,),
-        "scale_fmt": (None, "float"),
-        "index_kpool": (1, 16),
-        "topk_tokens": (1024, 4096),
-        "n_head": (16, 64),
-        "op_type": ("SparseAttnIndexer",),
-        "use_fp4_cache": (True,),
-        "hidden_dtype": (torch.float16, torch.float32),
-        "k_weight_dtype": (torch.float16,),
-        "k_weight_shape": ((128, 8), (160, 16)),
-        "gate_dtype": (torch.float16, torch.float32),
-        "gate_shape": ((64, 8),),
-        "ape_shape": ((8, 128),),
-        "ape_dtype": (torch.bfloat16,),
-        "fused_weight_dtype": (torch.float16,),
-        "fused_weight_shape": ((128, 8), (256, 16)),
-        "fused_weight_contiguous": (False,),
-    }
-    for field, values in rejected.items():
-        for bad in values:
-            case = dict(valid)
-            case[field] = bad
-            check(not contract(**case), f"cache-only contract rejects {field}={bad}")
-
-    class SparseAttnIndexerKpool:
-        use_fp4_cache = False
-
-        def __call__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-            return args[1]
-
-    op = SparseAttnIndexerKpool()
-    indexer = FakeIndexer()
-    indexer.rope_dim = 0
-    indexer.head_dim = 128
-    indexer.quant_block_size = 128
-    indexer.scale_fmt = "ue8m0"
-    indexer.index_kpool = 4
-    indexer.topk_tokens = 2048
-    indexer.n_head = 32
-    indexer.indexer_op = op
-    indexer.wk_weights_proj = types.SimpleNamespace(
-        weight=torch.randn(160, 8, dtype=torch.bfloat16)
-    )
-    indexer.index_kpool_compress_gate = torch.randn(
-        128, 8, dtype=torch.bfloat16
-    )
-    indexer.index_kpool_compress_ape = torch.randn(4, 128, dtype=torch.float32)
-    indexer.k_norm = types.SimpleNamespace(
-        weight=torch.ones(128, dtype=torch.bfloat16),
-        bias=torch.zeros(128, dtype=torch.bfloat16),
-        eps=1e-6,
-    )
-    indexer.original_called = False
-    hidden = torch.randn(3, 8, dtype=torch.bfloat16)
-    qr = torch.randn(3, 4, dtype=torch.bfloat16)
-    positions = torch.arange(3)
-    forward = ns["_glm53_cache_only_indexer_forward"]
-    fused_forward = ns["_glm53_fused_indexer_forward"]
-    check(forward(indexer, hidden, qr, positions, None) == "original",
-          "missing fused K+gate buffer fails closed to original indexer")
-
-    env_name = ns["_GLM53_SM121_MLA_PREFILL_ENV"]
-    fused_name = ns["_GLM53_PREFILL_KG_WEIGHT"]
-    prepare = ns["prepare_glm53_prefill_fastpath"]
-    model = types.SimpleNamespace(modules=lambda: (indexer,))
-    old_env = os.environ.pop(env_name, None)
-    try:
-        install = ns["install_glm53_prefill_fastpath"]
-        install()
-        check(FakeIndexer.forward is original,
-              "disabled dense-MLA arm leaves Indexer.forward untouched")
-        check(prepare(model) == 0 and not hasattr(indexer, fused_name),
-              "disabled dense-MLA arm allocates no fused prefill weight")
-        os.environ[env_name] = "1"
-        install()
-        check(
-            FakeIndexer.forward is fused_forward
-            and FakeIndexer._glm53_prefill_original_forward is original,
-            "exact dense-MLA opt-in installs fused prefill forward once",
-        )
-        install()
-        check(FakeIndexer._glm53_prefill_original_forward is original,
-              "prefill fastpath installer is idempotent")
-        check(prepare(model) == 1,
-              "post-load preparation builds one exact K+gate buffer")
-        fused_weight = getattr(indexer, fused_name)
-        expected_weight = torch.cat(
-            (
-                indexer.wk_weights_proj.weight[: indexer.head_dim],
-                indexer.index_kpool_compress_gate,
-            ),
-            dim=0,
-        )
-        check(torch.equal(fused_weight, expected_weight),
-              "fused prefill weight preserves K then gate row order")
-        check(fused_name in indexer._buffers,
-              "fused prefill weight is owned as a module buffer")
-    finally:
-        if old_env is None:
-            os.environ.pop(env_name, None)
-        else:
-            os.environ[env_name] = old_env
-
-    indexer.original_called = False
-    out = forward(indexer, hidden, qr, positions, None)
-    check(out.shape == (3, 128), "cache-only path computes K rows only")
-    check(not indexer.original_called, "admitted dense prefill skips original scoring")
-    check(
-        op.args[1].data_ptr() == op.args[2].data_ptr() == op.args[3].data_ptr(),
-        "K aliases both unused custom-op placeholders",
-    )
-    check(op.kwargs["gate_score"].shape == (3, 128),
-          "cache-only path still computes kpool gate state")
-    check(op.kwargs["gate_score"].stride(0) == 256,
-          "split gate remains a zero-copy view of fused projection output")
-    projected = F.linear(hidden, getattr(indexer, fused_name))
-    check(
-        torch.equal(op.args[1], projected[:, : indexer.head_dim])
-        and torch.equal(op.kwargs["gate_score"], projected[:, indexer.head_dim :]),
-        "single projection preserves exact K and gate row partitions",
-    )
-    check(op.kwargs["compress_ape"] is indexer.index_kpool_compress_ape,
-          "cache-only path preserves trained pool bias")
-
-    # The same fused buffer serves normal sparse prefill while preserving the
-    # stock FP32 head-weight projection and query scoring pipeline.
-    indexer.wq_b = lambda value: (
-        torch.randn(value.shape[0], 32 * 128, dtype=torch.bfloat16),
-        None,
-    )
-    indexer._wp_fp32 = None
-    indexer.softmax_scale = 128**-0.5
-    ns["_glm53_indexer_scoring_unused"] = lambda owner: False
-    sparse_out = fused_forward(indexer, hidden, qr, positions, None)
-    check(sparse_out.shape == (3, 32, 128),
-          "normal sparse prefill uses the fused K+gate projection")
-    check(op.args[1].shape == (3, 32, 128),
-          "normal sparse prefill preserves quantized-query head geometry")
-    check(op.args[2].shape == (3, 128) and op.args[3].shape == (3, 32),
-          "normal sparse prefill preserves K and FP32 head weights")
-    check(indexer._wp_fp32.dtype == torch.float32,
-          "fused K+gate path keeps ranking head weights in FP32")
-    check(op.kwargs["gate_score"].stride(0) == 256,
-          "normal sparse gate is still a view of the single projection")
-    indexer.original_called = False
-    decode_out = fused_forward(indexer, hidden, qr, positions, None)
-    check(decode_out.shape == (3, 32, 128) and not indexer.original_called,
-          "decode and mixed batches also use the fused K+gate projection")
-
-    indexer.rope_dim = 64
-    check(forward(indexer, hidden, qr, positions, None) == "original"
-          and indexer.original_called,
-          "contract drift calls the original indexer unchanged")
-
-    path = _overlay_source(
-        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
-    )
-    source = open(path, encoding="utf-8").read()
-    tree = ast.parse(source)
-    forward_node = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_glm53_cache_only_indexer_forward"
-    )
-    forward_source = ast.get_source_segment(source, forward_node) or ""
-    for dead in (
-        "self.wq_b",
-        "fwht128_quant_fp8",
-        "_fused_indexer_weight_scale",
-        "_pad_indexer_heads",
-        "torch.mm",
-    ):
-        check(dead not in forward_source,
-              f"cache-only path must not execute dead scoring op {dead}")
-    check(
-        forward_source.count("F.linear(") == 1
-        and "kg.split(self.head_dim, dim=-1)" in forward_source,
-        "cache-only path computes K and gate with one projection",
-    )
-    check("_glm53_indexer_scoring_unused(self)" in forward_source,
-          "model fast path shares the custom-op no-consumer predicate")
-    prepare_node = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "prepare_glm53_prefill_fastpath"
-    )
-    prepare_source = ast.get_source_segment(source, prepare_node) or ""
-    check(
-        "torch.cat(" in prepare_source
-        and "persistent=False" in prepare_source
-        and "with torch.no_grad():" in prepare_source,
-        "K+gate weight is a post-load non-persistent inference buffer",
-    )
-
-    model_source = open(
-        _overlay_source("overlay/modules/glm53_model/glm5next_model.py"),
-        encoding="utf-8",
-    ).read()
-    check(
-        "install_glm53_prefill_fastpath" in model_source
-        and model_source.index("install_glm53_prefill_fastpath()")
-        < model_source.index("class Glm5NextDecoderLayer"),
-        "GLM model installs the indexer path before constructing layers",
-    )
-    load_start = model_source.index(
-        "def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]])",
-        model_source.index("class Glm5NextForCausalLM"),
-    )
-    load_source = model_source[load_start : model_source.index("\n\n@", load_start)]
-    # The post-load hooks (fp8 copies, fused K+gate, metadata warmup, kpool)
-    # live in run_post_load and run ONCE from whoever owns the whole
-    # checkpoint walk. AutoWeightsLoader enters a child's load_weights once
-    # per contiguous run of its prefix in the stream, so hooks inline there
-    # ran ~25 s into the load on unloaded weights and again per run -- the
-    # memory cliff of 2026-09-04 (MEASUREMENTS 26차).
-    check(
-        "def run_post_load(self) -> None:" in load_source
-        and "prepare_glm53_prefill_fastpath(self)" in load_source
-        and load_source.index("loaded = loader.load_weights(weights)")
-        < load_source.index('if not getattr(self, "_defer_post_load", False):')
-        < load_source.index("self.run_post_load()")
-        < load_source.index("def run_post_load(self) -> None:")
-        < load_source.index("maybe_build_fp8_dense(self)")
-        < load_source.index("prepare_glm53_prefill_fastpath(self)"),
-        "the child runs its post-load hooks only when nothing above it owns "
-        "the walk, and the fp8 copies come before the fused K+gate buffer",
-    )
-    wrap_start = model_source.index("class Glm5NextForConditionalGeneration(")
-    wrap_source = model_source[wrap_start:]
-    check(
-        "self.language_model._defer_post_load = True" in wrap_source
-        and "loaded = super().load_weights(weights)" in wrap_source
-        and wrap_source.index("loaded = super().load_weights(weights)")
-        < wrap_source.index('getattr(self.language_model, "run_post_load", None)'),
-        "the wrapper owns the walk: it defers the child's hooks and runs "
-        "them once after its own loader returns",
-    )
-    module_dir = os.path.join(
-        REPO, "overlay", "modules", "glm53_model"
-    )
-    manifest = open(os.path.join(module_dir, "manifest.tsv"), encoding="utf-8").read()
-    requires = open(os.path.join(module_dir, "requires"), encoding="utf-8").read()
-    check("glm53_prefill_fastpath.py\t" in manifest and "\tabsent" in manifest,
-          "prefill fastpath ships as an image-new overlay")
-    check("glm53_kernels" in requires,
-          "model wiring declares its kpool-indexer dependency (glm53_kernels)")
-    print("  GLM53 cache-only prefill indexer . OK")
 
 
 def test_glm53_kda_prefill_regime() -> None:
@@ -5409,6 +4518,146 @@ def test_glm53_kda_prefill_regime() -> None:
     print("  GLM53 KDA prefill regimes ....... OK")
 
 
+def test_glm53_kda_prefill_direct_output() -> None:
+    """Execute destination guards and all Python forwarding stages without CUDA."""
+    class Tensor:
+        next_ptr = 100
+
+        def __init__(self, shape=(1, 17, 16, 128), *, dtype="bf16",
+                     device=None, contiguous=True, ptr=None):
+            self.shape, self.dtype = shape, dtype
+            self.device = device or types.SimpleNamespace(type="cuda", index=0)
+            self.dense, self.ndim = contiguous, len(shape)
+            Tensor.next_ptr += 1
+            self.ptr = Tensor.next_ptr if ptr is None else ptr
+            self.value = None
+
+        def is_contiguous(self):
+            return self.dense
+
+        def contiguous(self):
+            return self if self.dense else Tensor(self.shape, dtype=self.dtype,
+                                                   device=self.device)
+
+        def untyped_storage(self):
+            return types.SimpleNamespace(data_ptr=lambda: self.ptr)
+
+        def __getitem__(self, indices):
+            return Tensor((self.shape[0], indices[1].stop, *self.shape[2:]),
+                          dtype=self.dtype, device=self.device, ptr=self.ptr)
+
+    torch_stub = types.SimpleNamespace(Tensor=Tensor, bfloat16="bf16", float32="fp32")
+    model_path = "overlay/modules/glm53_model/glm5next_kda.py"
+    kernel_path = "overlay/modules/glm53_kernels/kda.py"
+    route_ns = load_defs(model_path, {"_kda_prefill_output_buffer"}, {
+        "torch": torch_stub, "_KDA_PREFILL_DIRECT_OUT": True,
+    })
+    route = route_ns["_kda_prefill_output_buffer"]
+    opts = dict(use_spec=False, num_prefills=1, num_decodes=0)
+    padded = Tensor((1, 32, 16, 128))
+    dest = route(padded, 17, 16, 128, **opts)
+    check(dest.shape == (1, 17, 16, 128) and dest.ptr == padded.ptr,
+          "KDA prefill output is the live prefix of the padded destination")
+    for key, value in (("use_spec", True), ("num_prefills", 0), ("num_decodes", 1)):
+        check(route(padded, 17, 16, 128, **{**opts, key: value}) is None,
+              f"KDA prefill output declines {key}={value}")
+    for bad in (Tensor((2, 32, 16, 128)), Tensor((1, 8, 16, 128)),
+                Tensor((1, 32, 8, 128)), Tensor((1, 32, 16, 64)),
+                Tensor((1, 32, 16)), Tensor(contiguous=False),
+                Tensor(dtype="fp32"), Tensor(device=types.SimpleNamespace(type="cpu"))):
+        check(route(bad, 17, 16, 128, **opts) is None,
+              "KDA prefill output declines incompatible destination geometry")
+    route_ns["_KDA_PREFILL_DIRECT_OUT"] = False
+    check(route(padded, 17, 16, 128, **opts) is None,
+          "KDA prefill direct output is disabled by default")
+    for raw in (None, "0", "true", " 1", "1 ", "1"):
+        env = {} if raw is None else {"VLLM_GLM53_KDA_PREFILL_DIRECT_OUT": raw}
+        latched = load_defs(model_path, {"_KDA_PREFILL_DIRECT_OUT"}, {
+            "os": types.SimpleNamespace(environ=env),
+        })
+        env["VLLM_GLM53_KDA_PREFILL_DIRECT_OUT"] = "0"
+        check(latched["_KDA_PREFILL_DIRECT_OUT"] is (raw == "1"),
+              "KDA prefill direct output latches exact 1 before forward")
+
+    stages = []
+    final_state = Tensor((1, 16, 128, 128), dtype="fp32")
+
+    def output_kernel(**kwargs):
+        stages.append(kwargs["o"])
+        kwargs["o"].value = "kernel-result"
+        return kwargs["o"]
+
+    kernel_ns = load_defs(kernel_path, {
+        "_validate_chunk_kda_output", "_chunk_kda_fwd_with_cumulative_g",
+        "chunk_kda_with_fused_gate_fwd", "chunk_kda_with_fused_gate",
+    }, {
+        "torch": torch_stub, "FLA_CHUNK_SIZE": 64,
+        "l2norm_fwd": lambda tensor: Tensor(tensor.shape),
+        "_glm53_qk_l2norm_strided": lambda q, k: None,
+        "prepare_chunk_indices": lambda *args: object(),
+        "_glm53_kda_prefill_autotune_regime": lambda **kwargs: 0,
+        "fused_kda_gate_chunk_cumsum": lambda *args, **kwargs: Tensor(),
+        "chunk_kda_scaled_dot_kkt_fwd": lambda **kwargs: (Tensor(), Tensor()),
+        "solve_tril": lambda **kwargs: kwargs["A"],
+        "recompute_w_u_fwd": lambda **kwargs: (Tensor(), Tensor(), None, Tensor()),
+        "chunk_gated_delta_rule_fwd_h": lambda **kwargs: (Tensor(), Tensor(), final_state),
+        "chunk_gla_fwd_o_gk": output_kernel,
+    })
+    validate = kernel_ns["_validate_chunk_kda_output"]
+    v = Tensor()
+    validate(dest, v, (v, None))
+    check(True, "KDA direct output accepts a distinct contiguous destination")
+    validate(None, v, (v,))
+    for bad in (Tensor((1, 16, 16, 128)), Tensor(dtype="fp32"),
+                Tensor(device=types.SimpleNamespace(type="cuda", index=1)),
+                Tensor(device=types.SimpleNamespace(type="cpu")),
+                Tensor(contiguous=False), Tensor((1, 0, 16, 128)),
+                Tensor(ptr=v.ptr)):
+        try:
+            validate(bad, v, (v,))
+        except ValueError:
+            check(True, "KDA direct output rejects unsafe geometry or storage alias")
+        else:
+            check(False, "KDA direct output rejects unsafe geometry or storage alias")
+
+    call = kernel_ns["chunk_kda_with_fused_gate"]
+    inputs = dict(q=Tensor(), k=Tensor(), v=v, raw_g=Tensor(), beta=Tensor(),
+                  A_log=Tensor((16,)), g_bias=Tensor((2048,)),
+                  initial_state=Tensor((1, 16, 128, 128), dtype="fp32"),
+                  cu_seqlens=Tensor((2,), dtype="int32"),
+                  use_qk_l2norm_in_kernel=True, output_final_state=True,
+                  safe_gate=True, lower_bound=-5.0)
+    actual, state = call(**inputs, out=dest)
+    check(actual is dest and stages[-1] is dest and dest.value == "kernel-result",
+          "KDA direct output reaches the existing final output kernel")
+    check(state is final_state and v.value is None,
+          "KDA direct output preserves final state and input lifetime")
+    actual, state = call(**inputs)
+    check(actual is v and stages[-1] is v and state is final_state,
+          "KDA omitted destination retains the existing in-place-v output")
+    for input_name in ("q", "k", "v", "raw_g", "beta", "A_log", "g_bias",
+                       "initial_state", "cu_seqlens"):
+        before = len(stages)
+        try:
+            call(**inputs, out=Tensor(ptr=inputs[input_name].ptr))
+        except ValueError:
+            check(len(stages) == before,
+                  f"KDA rejects out aliasing {input_name} before any output launch")
+        else:
+            check(False, f"KDA rejects out aliasing {input_name}")
+
+    source = open(_overlay_source(model_path), encoding="utf-8").read()
+    tree = ast.parse(source)
+    chunk_calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Name)
+                   and node.func.id == "chunk_kda_with_fused_gate"]
+    check(len(chunk_calls) == 1 and any(
+        kw.arg == "out" and isinstance(kw.value, ast.Name) and kw.value.id == "ns_out"
+        for kw in chunk_calls[0].keywords
+    ), "KDA model forwards the selected destination to the chunk entry")
+    print("  GLM53 KDA prefill direct out ... OK")
+
+
 def test_glm53_upstream_prefill_batch() -> None:
     """Upstream-derived GLM prefill paths stay exact-gated and fail-closed."""
     indexer_path = _overlay_source(
@@ -5479,91 +4728,6 @@ def test_glm53_upstream_prefill_batch() -> None:
         "runtime warmup executes both pointer alignments under exact GLM TP4",
     )
 
-    kpool_dir = os.path.join(
-        REPO, "overlay", "modules", "glm53_kernels"
-    )
-    kpool_py = open(
-        os.path.join(kpool_dir, "glm53_kpool_topk.py"), encoding="utf-8"
-    ).read()
-    kpool_cu = open(
-        os.path.join(kpool_dir, "glm53_kpool_topk.cu"), encoding="utf-8"
-    ).read()
-    sparse_source = open(
-        os.path.join(kpool_dir, "sparse_attn_indexer_kpool.py"),
-        encoding="utf-8",
-    ).read()
-    check('os.environ.get(_ENV, "0") == "1"' in kpool_py,
-          "radix KPool path is exact opt-in")
-    for contract in (
-        "scores.dtype == torch.float32",
-        "output.shape == (scores.shape[0], 2051)",
-        "row_starts.dtype == torch.int32",
-    ):
-        check(contract in kpool_py, f"radix wrapper pins {contract}")
-    check(
-        sparse_source.index("glm53_kpool_topk_expand_tail(")
-        < sparse_source.index("torch.ops._C.top_k_per_row_prefill("),
-        "single-launch KPool attempt precedes the untouched stock fallback",
-    )
-    for cuda_contract in (
-        "constexpr int kGroupTopK = 512",
-        "constexpr int kPoolSize = 4",
-        "constexpr int kTokenTopK = 2048",
-        "uint64_t topk_key",
-        "sort_selected_indices<kGroupTopK>",
-        "threshold_candidates > kSmemInputSize",
-    ):
-        check(cuda_contract in kpool_cu,
-              f"radix CUDA source carries {cuda_contract}")
-    check(kpool_cu.count("__global__") == 1,
-          "radix selection, expansion and tail share one CUDA kernel")
-
-    union_path = _overlay_source(
-        "overlay/modules/glm53_model/glm53_union_prefill.py"
-    )
-    union_source = open(union_path, encoding="utf-8").read()
-    union_tree = ast.parse(union_source)
-    union_defs = {
-        node.name for node in union_tree.body if isinstance(node, ast.FunctionDef)
-    }
-    check(
-        {
-            "_union_dense_prefix_prepare_kernel",
-            "_union_mark_kernel",
-            "_union_compact_kernel",
-            "_glm53_union_prefill_kernel",
-            "glm53_union_sparse_prefill",
-            "install_glm53_union_prefill",
-        } <= union_defs,
-        "union path ships preparation, compaction, attention and installer",
-    )
-    for gate in (
-        "q[0].shape[1:] == (16, 512)",
-        'getattr(attn_metadata, "num_decodes", -1) == 0',
-        'getattr(attn_metadata, "num_prefills", 0) > 0',
-        'getattr(self, "qk_rope_head_dim", -1) == 0',
-        "not torch.cuda.is_current_stream_capturing()",
-    ):
-        check(gate in union_source, f"union forward pins {gate}")
-    check(
-        "same_req" in union_source
-        and "value != expected" in union_source
-        and "tl.where(dense, slot, slot + base)" in union_source,
-        "dense-prefix reuse has exact nested-prefix and request guards",
-    )
-    check(
-        "owned =" in union_source
-        and "owned & valid" in union_source
-        and union_source.count("sm_scale * kv_scale") == 2
-        and union_source.count("kv_scale / denom") == 2,
-        "union/base kernels restore ownership and FP8 K/V scaling",
-    )
-    check(
-        'VLLM_GLM53_UNION_PREFILL=0' in open(
-            os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
-        ).read(),
-        "unmeasured union path remains default-off",
-    )
     print("  GLM53 upstream prefill batch ..... OK")
 
 
@@ -5727,10 +4891,9 @@ def test_census_owner_axis() -> None:
           "deep_gemm's split-K reduce is a GEMM kernel, not our all-reduce")
     check(group("k_oneshot(Ctrl*, __nv_bfloat16 const*)") == "우리 · osar AR",
           "our one-shot AR still groups as ours")
-    for n in ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
-              "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+    for n in ("void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
               "(anonymous namespace)::mk_mhc_kernel((anonymous namespace)::MKMhcArgs)",
-              "mk_mla_kernel(MKMlaArgs)", "mk_kda_kernel(MKKdaArgs)"):
+              "mk_mla_kernel(MKMlaArgs)"):
         check(group(n) == "우리 · 메가커널 세그먼트",
               f"{n[:40]!r} is a megakernel segment, not a vendor GEMM/MHC/MLA")
     check(group("_glm53_prep_fused_kernel") == "우리 · 준비/인덱서"
@@ -5739,14 +4902,13 @@ def test_census_owner_axis() -> None:
 
     tc = load_defs("tools/trace_common.py", {"OURS", "owner"}, {})
     owner = tc["owner"]
-    ours = ("(anonymous namespace)::mk_gemm_kernel((anonymous namespace)::MKGemmCtx)",
-            "void (anonymous namespace)::mk_gemm2_kernel<4>((anonymous namespace)::MKGemm2Ctx)",
+    ours = ("void (anonymous namespace)::mk_gemm2_kernel<4>((anonymous namespace)::MKGemm2Ctx)",
             "mk_mhc_kernel(MKMhcArgs)", "mk_mla_kernel(MKMlaArgs)",
-            "mk_kda_kernel(MKKdaArgs)", "k_oneshot(Ctrl*)",
-            "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
+            "k_oneshot(Ctrl*)",
+            "_deneb_gate_partial_kernel",
             "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel",
             "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
-            "mk_smlp_kernel(MKSmlpArgs)", "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
+            "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
     for n in ours:
         check(owner(n) == "ours", f"{n[:40]!r} is compiled from this repo")
     theirs = ("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>",
@@ -5882,7 +5044,7 @@ def test_profiles_readme_module_table() -> None:
     used = set().union(*profiles.values())
     check(not (used - listed),
           f"profiles load modules the table omits: {sorted(used - listed)}")
-    check(not (listed - used - {"glm53_drop_audit", "glm53_sparse_q"}),
+    check(not (listed - used),
           f"table lists modules no profile loads: {sorted(listed - used)}")
 
     for mod, cells in rows.items():
@@ -6907,57 +6069,6 @@ def test_bench_resolves_served_model() -> None:
     print("  bench served-model resolve .... OK")
 
 
-def test_prefill_knobs_announce_arming() -> None:
-    """Every opt-in prefill path must say it armed, and 1 must not read as off.
-
-    #188 added four env knobs and none of the new code paths logged anything
-    but failures. That is the shape this lane keeps losing boots to: #178's
-    guard, CUSTOM_OPS_AXIS, the *_once TypeError. A sweep that sets everything
-    to 1 would silently leave union prefill OFF, because only 2 and 4 are
-    widths -- and the run would read as "measured, no effect".
-    """
-    union = open(_overlay_source(
-        "overlay/modules/glm53_model/glm53_union_prefill.py"
-    ), encoding="utf-8").read()
-    check("union prefill: ARMED" in union,
-          "the union path must announce its width when it installs")
-    check("is not a union width" in union,
-          "a value that is not 2 or 4 must warn, not silently mean off")
-
-    ns: dict = {"os": os, "logger": _CapturingLogger()}
-    load_defs("overlay/modules/glm53_model/glm53_union_prefill.py",
-              {"_UNION_ENV", "_UNION_REPORTED", "_read_group_size"}, ns)
-    saved = os.environ.get(ns["_UNION_ENV"])
-    try:
-        for raw, want, warns in (("0", 0, False), ("2", 2, False),
-                                 ("4", 4, False), ("1", 0, True),
-                                 ("yes", 0, True)):
-            ns["_UNION_REPORTED"].clear()
-            ns["logger"].lines.clear()
-            os.environ[ns["_UNION_ENV"]] = raw
-            check(ns["_read_group_size"]() == want,
-                  f"union width {raw!r} must resolve to {want}")
-            check(bool(ns["logger"].lines) is warns,
-                  f"union width {raw!r} must {'warn' if warns else 'stay quiet'}")
-    finally:
-        os.environ.pop(ns["_UNION_ENV"], None)
-        if saved is not None:
-            os.environ[ns["_UNION_ENV"]] = saved
-
-    fused = open(_overlay_source(
-        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
-    ), encoding="utf-8").read()
-    check("fused K+gate: ARMED" in fused,
-          "replacing Indexer.forward must be visible in the boot log")
-    kpool = open(_overlay_source(
-        "overlay/modules/glm53_kernels/glm53_kpool_topk.py"
-    ), encoding="utf-8").read()
-    check("kpool fused top-k" in kpool and "ARMED" in kpool,
-          "a requested-but-not-built extension must be distinguishable from "
-          "a knob that never parsed")
-    print("  prefill knobs announce arming . OK")
-
-
 def test_extra_env_rejects_comma_list() -> None:
     """EXTRA_ENV is space-separated; a comma-joined list must abort.
 
@@ -6992,117 +6103,6 @@ def test_extra_env_rejects_comma_list() -> None:
           "the comma pattern must be tested BEFORE the generic KEY=VALUE arm "
           "-- case takes the first match, so the order is the guard")
     print("  extra-env comma guard ......... OK")
-
-
-def test_kda_conv_state_layout_is_the_arming_contract() -> None:
-    """MK-KDA indexes DS; vLLM's default is SD, and the mismatch was silent.
-
-    The 09-03 decode trace carried no mk_kda_kernel at all while the boot log
-    said armed={'kda': True}: _selftest_kda builds its own DS fixtures and
-    passes, then _kda_layout_ok rejects every production layer for the life
-    of the boot and says nothing. Two things must hold so that cannot recur:
-    the launcher derives the layout the segment needs, and a rejection names
-    itself in the log.
-    """
-    mk = open(
-        "overlay/modules/glm53_megakernel/glm53_megakernel.py", encoding="utf-8"
-    ).read()
-    launcher = open(
-        "launchers/start-glm53-nvfp4-tp4.sh", encoding="utf-8"
-    ).read()
-
-    # 1. the gate returns a REASON, and the hot path logs each one once
-    check("def _kda_layout_reason(layer)" in mk,
-          "the layout gate must be able to say which predicate failed")
-    reason = mk[mk.index("def _kda_layout_reason(layer)"):
-                mk.index("def _kda_layout_ok(layer)")]
-    # 32차: the kernel addresses the state through launch-carried strides,
-    # so the gate no longer rejects a process layout (SD arrives as a
-    # transposed view) or a non-contiguous view (page-aligned slots); it
-    # refuses only overlapping / non-positive strides, and says them.
-    check("isinstance(kv, (tuple, list))" in reason
-          and "_conv_state_dim_first" not in reason
-          and "conv_state.is_contiguous()" not in reason
-          and "conv state strides %s overlap or are not positive" in reason
-          and "slot_extent = s1 * (KDA_QKV - 1) + s2 * (cw - 1) + 1" in reason,
-          "the layout gate admits strided views and names the strides it "
-          "refuses -- a contiguity gate rejected every production layer")
-    launch = mk[mk.index("def _kda_launch("):mk.index("def kda_block(")]
-    check("int(conv_state.stride(0)), int(conv_state.stride(1))" in launch
-          and "int(conv_state.stride(2)), int(rec_state.stride(0))" in launch
-          and "int(conv_state.dtype == torch.bfloat16)" in launch
-          and "torch.float32, torch.bfloat16" in reason
-          and "rec_state.is_contiguous()" not in reason
-          and "recurrent state strides %s are not" in reason,
-          "the launch carries the three conv-state strides and the recurrent "
-          "slot stride; the gate names the recurrent strides it refuses")
-    st = mk[mk.index("def _selftest_kda()"):mk.index("def arm()")]
-    kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
-    gl = mk[mk.index("def gemm_w4a8(x, mk_pack, n_rows, bg=False)"):]
-    gl = gl[:gl.index("\ndef ", 1)]
-    check("gemm lane CAPTURED into the decode graph" in gl and "plan grid=%d ksr=%d localq=%d gemm2=%d" in gl
-          and "_EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)" in gl,
-          "the GEMM lane says once at capture which variant the graph bakes")
-    kb = mk[mk.index("def kda_block(layer, hidden_states, positions)"):mk.index("class KdaShadowArm")]
-    check("kda lane CAPTURED into the decode graph" in kb and "_KDA_CAPTURED" in kb,
-          "kda_block says once when it is captured into the decode graph -- "
-          "the served step is a replay, no other line can see it")
-    check("kda lane serving: first eligible eager step" in kt
-          and "is_current_stream_capturing()" in kt and "kda lane tally: served=%d stock=%d capture=%d" in kt
-          and "kda lane stock: %s" in kt and '"(routine)" not in reason' in kt
-          and "_kda_eligible_said(_kda_meta(layer))" in mk,
-          "the KDA takeover says once when a step first serves (armed or "
-          "shadow) and once per distinct eligibility reason it does not; "
-          "prefill steps stay silent (no boot tonight logged a KDA judgement)")
-    hook = mk[mk.index("def smlp_forward(mlp, x)"):mk.index("def _smlp_ref(")]
-    check("smlp lane CAPTURED into the decode graph" in hook
-          and "smlp lane serving: first fused call" in hook
-          and hook.count("_smlp_stock(") >= 4
-          and "if T < 1 or T > MAX_TOK:\n        return None" in hook,
-          "the smlp hook says once when it first serves and once per distinct "
-          "reason it does not (armed != serving, 28차); prefill rows are "
-          "routine and silent")
-    judge = mk[mk.index("class KdaShadowArm"):mk.index("_DRAIN_BUF = None")]
-    check("self.conv_mk[1:] = conv_state[used]" in judge
-          and "self.rec_mk[1:] = rec_state[used]" in judge
-          and "spec_state_indices_tensor=sidx_c.contiguous()" in judge
-          and "conv_state[self.used]" in judge and "rec_state[self.used]" in judge
-          and "conv_state.clone()" not in judge and "rec_state.clone()" not in judge,
-          "the KDA shadow judge clones only the slots the step touches, with "
-          "the indices remapped into the compact buffers (whole-pool clones "
-          "emptied unified memory: KDA32SHADOW3 earlyoom, 32차)")
-    check('fx.mk_run(v, layout=lay)' in st and '("bf16", 2e-2)' in st,
-          "the self-test runs the padded-slot and SD-transposed views "
-          "against the contiguous result")
-    ok = mk[mk.index("def _kda_layout_ok(layer)"):
-            mk.index("def _kda_ensure_packs")]
-    check("_KDA_LAYOUT_SAID" in ok and "logger.warning" in ok
-          and "has rejected %d calls" in ok,
-          "a permanent rejection must be logged, once per distinct reason")
-    check("return True" in ok and "_kda_layout_reason(layer)" in ok,
-          "_kda_layout_ok must be the thin wrapper over the reason")
-
-    # 2. arming says so when the process layout will reject every layer
-    arm = mk[mk.index('_ARMED["kda"] = _gate("kda", _selftest_kda)'):]
-    arm = arm[:arm.index("_armed_once")]
-    check("is_conv_state_dim_first" in arm,
-          "the boot must compare the ARMED segment against the process "
-          "layout: the self-test's own fixtures cannot see it")
-
-    # 3. the launcher derives DS rather than asking for two knobs
-    check("VLLM_SSM_CONV_STATE_LAYOUT=DS" in launcher,
-          "the launcher must set the layout MK-KDA indexes")
-    blk = launcher[launcher.index('if [ "${VLLM_GLM53_MEGAKERNEL:-0}" != 0 ]'
-                                  ' && [ "${VLLM_GLM53_MK_KDA:-0}" != 0 ]'):]
-    blk = blk[:blk.index("\nfi\n") + 4]
-    check("ABORT" in blk,
-          "a conflicting layout must abort the boot, not be overridden "
-          "silently -- docker takes the last -e and the operator would never "
-          "see which value won")
-    check(blk.index("ABORT") < blk.index(
-        'ENVV="$ENVV -e VLLM_SSM_CONV_STATE_LAYOUT=DS"'),
-          "the conflict check must run before the -e is appended")
-    print("  kda conv-state layout ......... OK")
 
 
 def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
@@ -7184,44 +6184,6 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
           "the bf16 release must stay outside the build pass: releasing from "
           "inside it made the early AutoWeightsLoader call destructive")
     print("  fp8-dense build peak .......... OK")
-
-
-def test_kda_owns_its_projections_across_dense_schemes() -> None:
-    """MK-KDA and the nvfp4 dense scheme are not exclusive; only MK-GEMM is.
-
-    MK-MHC and MK-MLA never read a pack. MK-KDA fuses in_proj/o_proj into
-    its own launch, so for those two the layer's quant_method is never
-    called -- whichever scheme won them is dead weight, and the W4 pack the
-    kernel does read must be attached while the bf16 source is still alive.
-    Only MK-GEMM, which IS the Fp8DenseMethod.apply hook, cannot share a
-    layer with an nvfp4/w4a8 arm.
-    """
-    src = open(
-        "overlay/modules/glm53_model/glm53_fp8_dense.py", encoding="utf-8"
-    ).read()
-    check("def _kda_owns(" in src,
-          "ownership must be decided in the build pass, where the bf16 "
-          "source is still alive")
-    owns = src[src.index("def _kda_owns("):src.index("def maybe_build_fp8_dense(")]
-    check("in_proj_qkvbfg_a" in owns and "o_proj" in owns,
-          "the KDA block's two projections are the owned pair")
-    check('hasattr(parent, "in_proj_qkvbfg_a")' in owns,
-          "o_proj also names the attention block's output projection -- the "
-          "KDA one is the sibling of in_proj_qkvbfg_a")
-    check("ENABLE_KDA or _mkmod.KDA_SHADOW" in owns,
-          "ownership follows the KDA knob; with the segment off the dense "
-          "scheme keeps the layer")
-
-    body = src[src.index("def maybe_build_fp8_dense("):]
-    owns_at = body.index("if _kda_owns(model, name):")
-    nv_at = body.index('if scheme == "nvfp4"')
-    check(owns_at < nv_at,
-          "ownership is decided BEFORE any low-precision arm bids, or the "
-          "layer pays for a copy nothing reads")
-    branch = body[owns_at:nv_at]
-    check("attach_mk(" in branch and "continue" in branch,
-          "an owned layer attaches the pack and skips the arm")
-    print("  kda owns its projections ...... OK")
 
 
 def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
@@ -7319,24 +6281,6 @@ def test_spec_k_compile_factor() -> None:
     print("  spec_k compile factor .. OK")
 
 
-def test_sampler_profile_skip_contract() -> None:
-    """29차: VLLM_GLM53_SKIP_SAMPLER_PROFILE=1 replaces the profile-time dummy
-    sampler run with a loud no-op (the K5 boot's 45-minute Triton init);
-    the profile ships it off and the installer applies it before its own
-    mode check so an 'off' prep-fused boot still gets it."""
-    import os
-    pf = open(os.path.join(REPO, "overlay/modules/glm53_runtime/glm53_prep_fused.py"), encoding="utf-8").read()
-    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    inst = pf[pf.index("def install_glm53_prep_fused()"):]
-    check("GPUModelRunner._dummy_sampler_run = _skip" in pf
-          and "profile-time dummy sampler run SKIPPED" in pf
-          and inst.index("_maybe_skip_sampler_profile()") < inst.index("mode = prep_fused_mode()")
-          and re.search(r"^VLLM_GLM53_SKIP_SAMPLER_PROFILE=0$", prof, re.M) is not None,
-          "the sampler-profile skip is env-gated, loud, applied before the mode "
-          "check, and off in the profile")
-    print("  sampler profile skip contract .. OK")
-
-
 def test_dev_lab_contracts() -> None:
     """32차 item 5: the boot-free kernel loop. The worker module remembers
     the served FULL descriptor and serves replay/reload/recapture through
@@ -7383,16 +6327,17 @@ def test_dev_lab_contracts() -> None:
 
 
 def test_mk_smlp_hook_and_contracts() -> None:
-    """MK_SEG_SMLP (32차): the dense MLP as one launch, wired without risk.
+    """MK_SEG_SMLP2 (32차 / 30차 §7): the dense MLP as a fused lane, wired
+    without risk. (The one-launch persistent MK_SMLP this test once covered
+    was sunset in 34차 §8; the hook now serves smlp2 alone.)
 
     smlp_forward is the Glm5NextMLP.forward hook: None (stock) unless the
     segment is armed, x is a 2-D bf16 decode batch (T <= 32, k a multiple
     of 128 <= 4096), both linears carry single W4 packs whose k-tiles match,
     and gate_up is 2 x the down input. The activation's clamp/alpha/beta
     come from the module (SiluAndMulWithClamp; SiluAndMul = 0/1/0). The
-    kernel keeps the stock rounding points and reuses kda's a_ready
-    hand-off; the hook never reduces (the linear's reduce_results contract
-    stays with the caller).
+    hook never reduces (the linear's reduce_results contract stays with the
+    caller).
     """
     import types
     calls, said = [], []
@@ -7402,7 +6347,7 @@ def test_mk_smlp_hook_and_contracts() -> None:
          "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
         {"os": os, "re": re,
          "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
-         "_smlp_call": lambda *a: calls.append(a) or "fused"},
+         "_smlp2_call": lambda *a: calls.append(a) or "fused"},
     )
     import types
     torch_stub = types.ModuleType("torch")
@@ -7429,16 +6374,17 @@ def test_mk_smlp_hook_and_contracts() -> None:
             down_proj=linear(d, out_size=4096, in_size=512),
             act_fn=types.SimpleNamespace(swiglu_limit=10.0, alpha=1.0, beta=0.0))
         f = ns["smlp_forward"]
-        ns["_ARMED"]["smlp"] = False
+        assert "smlp" not in ns["_ARMED"], "the v1 SMLP arm slot is gone (34차 §8)"
+        ns["_ARMED"]["smlp2"] = False
         assert f(mlp, _X(8, 4096)) is None            # not armed
-        ns["_ARMED"]["smlp"] = True
+        ns["_ARMED"]["smlp2"] = True
         assert f(mlp, _X(8, 4096)) == "fused"
         args = calls[-1]
         assert args[3:] == (1024, 512, 4096, 10.0, 1.0, 0.0), args[3:]
         assert f(mlp, _X(33, 4096)) is None           # T beyond the lane
-        # the proof lines: the first fused call says so once; a distinct
-        # stock reason says itself once; prefill rows are silent
-        assert any("smlp lane serving: first fused call" in a[0] for a in said), said
+        # the proof lines: the first fused call says so once and names the
+        # lane; a distinct stock reason says itself once; prefill rows are silent
+        assert any("smlp lane serving: first fused call (smlp2)" in a[0] for a in said), said
         n_said = len(said)
         assert f(mlp, _X(33, 4096)) is None and len(said) == n_said
         assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
@@ -7470,22 +6416,16 @@ def test_mk_smlp_hook_and_contracts() -> None:
         else:
             sys.modules["torch"] = saved
     cu = open("overlay/modules/glm53_megakernel/glm53_megakernel.cu", encoding="utf-8").read()
-    k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
-    assert k.count("mk_gemm_phase(c, smem, &g_mk_smlp_bar);") == 2, "two GEMM phases on the segment's own barrier"
-    assert "c.a_ready = true;" in k and "c.unit_ctr = &g_mk_smlp_unit2;" in k and "g_mk_smlp_unit2 = 0u;" in k, \
-        "down rides the a_ready path on its own unit counter, reset before phase A"
-    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 1, "one barrier: the activation lives in gate_up's epilogue"
-    assert "c.pair_act = 1;" in k and "c.n_int = a.n_int;" in k
-    ph = cu[cu.index("__device__ void mk_gemm_phase"):cu.index("__global__ void mk_gemm_kernel")]
-    assert "auto pair_finish = [&](int nt) {" in ph and ph.count("pair_finish(nt);") == 2, "both final-store paths finish the pair"
-    assert "__float2bfloat16(" in ph and "fminf(gv, c.act_limit)" in ph and "(uv + c.act_beta)" in ph, "clamped SwiGLU at the stock rounding point"
-    assert "if (s_pair_last) g_mk_pair_arrive[pair] = 0u;" in ph, "pair counters rearm like tile counters"
-    assert "if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);" in ph
-    assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
+    for gone in ("mk_smlp_kernel", "MKSmlpArgs", "mk_run_smlp(", '"run_smlp"',
+                 "g_mk_smlp_bar", "g_mk_smlp_gu", "g_mk_pair_arrive", "g_mk_smlp_unit2",
+                 "unit_ctr"):  # (act_limit/pair_act live on in MKGemm2Ctx: smlp2's v2 side)
+        assert gone not in cu, f"34차 §8: the v1 SMLP kernel is sunset, {gone!r} remains"
     wiring = open("overlay/modules/glm53_model/glm5next_model.py", encoding="utf-8").read()
     assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring
     prof = open("profiles/glm53.env", encoding="utf-8").read()
-    assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 32차 bracket"
+    assert "\nVLLM_GLM53_MK_SMLP2=0\n" in prof, "bracket-gated: off until its bracket"
+    assert "VLLM_GLM53_MK_SMLP=" not in prof, "the v1 SMLP knob is gone from the profile"
+
 
 
 def test_mk_head_lane_contracts() -> None:
@@ -7518,7 +6458,7 @@ def test_mk_head_lane_contracts() -> None:
          "build_mk_weight_w4": lambda w, name=None: PACK,
          "note_pack_name": lambda p, n: None,
          "gemm_w4a8": lambda x, p, n: "served",
-         "_EXT": types.SimpleNamespace(gemm2_plan=lambda m, n, k: [1, 1, 303, 2, 0]),
+         "_EXT": types.SimpleNamespace(gemm2_plan=lambda m, n, k: [1, 303, 2]),
          "_head_first_call_gate": lambda x, p, n, out: 1e-5,
          "MKPack": tuple, "mk_pack_twin": None, "_exact_gate": None})
     head_logits, head_pack = ns["head_logits"], ns["head_pack"]
@@ -7538,13 +6478,6 @@ def test_mk_head_lane_contracts() -> None:
         check(head_logits(_T((8, 4096, 1)), _Head(), "draft") is None
               and head_logits(_T((33, 4096)), _Head(), "draft") is None,
               "a non-2-D or m > 32 batch is outside the lane's contract")
-        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
-        check(head_logits(x, _Head(), "draft") is None
-              and "draft" in ns["_HEAD"]["disarmed"]
-              and "GEMM2" in ns["_HEAD"]["disarmed"]["draft"],
-              "with the v2 lane off the head disarms itself (v1 was never sized for 303 tiles)")
-        ns["_HEAD"]["disarmed"].clear()
-        os.environ["VLLM_GLM53_MK_GEMM2"] = "1"
         h = _Head()
         check(head_logits(x, h, "draft") == "served"
               and h._mk_head_pack is PACK
@@ -7571,7 +6504,6 @@ def test_mk_head_lane_contracts() -> None:
             sys.modules["torch"] = saved
         else:
             sys.modules.pop("torch", None)
-        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
 
     fp8_source = open(_overlay_source("overlay/fp8_lm_head.py")).read()
     tree = ast.parse(fp8_source)
@@ -7604,7 +6536,7 @@ def test_mk_head_lane_contracts() -> None:
     check(m is not None and int(m.group(1)) >= -(-38720 // 128),
           "the v2 tile cap covers the vocab head (38,720 / 128 = 303 tiles)")
     check("} else if (nblk >= 2 * slots) {" in cu
-          and "(c2.ksr == 1 && c2.tail == 0)" in cu,
+          and "|| (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS)" in cu,
           "the ksr rule takes one slice for >= 2 waves of tiles and the partial bound is a split's contract only")
     print("  mk head lane contracts .......... OK")
 
@@ -7899,7 +6831,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
           "flattened once (single or chunked)")
 
     # the pack attach: K-chunks past the lane's K
-    attach = src[src.index("def _attach_mk_pack("):src.index("def _kda_owns(")]
+    attach = src[src.index("def _attach_mk_pack("):src.index("def maybe_build_fp8_dense(")]
     check("if cols > _mkmod.MK_GEMM_KMAX:" in attach
           and "build_mk_weight_w4_kchunks(weight, name=name," in attach
           and 'per_row = False if getattr(method, "_opaque", False) else None' in attach,
@@ -7960,46 +6892,6 @@ def test_ab_runner_measures_both_channels() -> None:
     print("  ab runner measures both ....... OK")
 
 
-def test_fused_k_gate_lazy_slot_exists() -> None:
-    """The fused indexer forward must not read a slot nobody creates.
-
-    #188 shipped `if self._wp_fp32 is None:` with nothing ever setting it, so
-    arming VLLM_GLM53_FUSED_K_GATE killed the engine at load:
-
-      RuntimeError: Worker failed with error
-        ''Indexer' object has no attribute '_wp_fp32''
-
-    It had never booted in any configuration -- the same gate also fires for
-    VLLM_GLM53_SM121_MLA_PREFILL=1. install() and prepare() are gated
-    separately, so the forward can be live on a layer prepare() skipped; the
-    read has to tolerate that.
-    """
-    source = open(_overlay_source(
-        "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
-    ), encoding="utf-8").read()
-    tree = ast.parse(source)
-    fused = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_glm53_fused_indexer_forward"
-    )
-    body = ast.get_source_segment(source, fused) or ""
-    check("self._wp_fp32 is None" not in body,
-          "a bare attribute read of the lazy slot crashes any layer that "
-          "prepare() skipped -- use getattr(self, ..., None)")
-    check('getattr(self, "_wp_fp32", None)' in body,
-          "the lazy fp32 head-weight cache must be read defensively")
-
-    prepare = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "prepare_glm53_prefill_fastpath"
-    )
-    prep_body = ast.get_source_segment(source, prepare) or ""
-    check("_wp_fp32 = None" in prep_body,
-          "prepare() must create the slot where it sets the rest of the "
-          "layer's fast-path state")
-    print("  fused K+gate lazy slot ........ OK")
 # ---------------------------------------------------------------------------
 # glm53_megakernel -- pure helpers, .cu/.py geometry parity, sm_121a static
 # contracts, hook placement
@@ -8102,9 +6994,7 @@ def test_osar_prefetch_hints_contract() -> None:
                                   "glm53_megakernel.py"), encoding="utf-8").read()
     for site, note, launch in (
             ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
-            ("mhc", "_ar_note(fn)", "_EXT.run_mhc("),
-            ("kda", "_ar_note(layer._mk_in_pack[0], layer._mk_in_pack[1])",
-             "_EXT.run_kda(")):
+            ("mhc", "_ar_note(fn)", "_EXT.run_mhc(")):
         n_at, l_at = drv.find(note), drv.find(launch)
         check(0 < n_at < l_at, f"{site} launch notes its weights first")
 
@@ -8760,8 +7650,7 @@ def test_cuda_builds_keep_the_arch_specific_target() -> None:
     (kind::f8f6f4) and the 2:4 sparse mma (mma.sp::ordered_metadata). Both are
     real on this part (measured 155 and 309 TFLOP/s), so the flag is what
     stands between the kernels and them."""
-    for rel in ("overlay/modules/glm53_megakernel/glm53_megakernel.py",
-                "overlay/modules/glm53_kernels/glm53_kpool_topk.py"):
+    for rel in ("overlay/modules/glm53_megakernel/glm53_megakernel.py",):
         src = open(os.path.join(REPO, rel), encoding="utf-8").read()
         i = src.find("extra_cuda_cflags=")
         while i != -1:
@@ -8885,13 +7774,14 @@ def test_glm53_megakernel_contracts() -> None:
                        ("MAX_TOK", 32), ("NCHUNK", 16), ("KDA_H", 16),
                        ("KDA_D", 128), ("KDA_QKV", 6144),
                        ("KDA_INPROJ_N", 6416), ("KDA_INPROJ_N_PAD", 6528),
-                       ("CONV_W", 4), ("KDA_OUT", 2048), ("MK_GRID_CAP", 96),
+                       ("MK_GRID_CAP", 96),
                        ("MK_THREADS", 256), ("KSTEP", 128),
                        ("KBLK_MAX", 32), ("SMEM_W_ROWS", 128)):
         check(consts.get(name) == want,
               f".cu constant {name} == {want} (got {consts.get(name)})")
-    check(consts["GEMM_SMEM"] <= 98304,
-          "dynamic smem stays inside the 96 KB discipline of the 128 KB/SM")
+    check(consts["GEMM2_SMEM"] <= 51200,
+          "the GEMM's dynamic smem stays inside half the SM (two blocks per SM "
+          "is the point of the non-persistent lane)")
 
     # -- driver geometry must be the same numbers (drift here = silent
     #    shape-mismatch bugs the boot self-test would hunt blind)
@@ -8921,307 +7811,99 @@ def test_glm53_megakernel_contracts() -> None:
     check("m16n8k32.row.col.f32.e4m3.e4m3.f32" in cu,
           "the GEMM uses the e4m3 mma.sync kind available on sm_121a")
     check("cp.async.cg.shared.global" in cu_code
-          and "W4_RAW_NBUF * W4_RAW_BYTES" in cu
+          and "W4_RAW_NBUF2 * W4_RAW_BYTES" in cu
           and "cp.async.wait_group" in cu_code,
           "the W stream is a multi-buffer cp.async pipeline of raw records")
-    # Depth is a tuning knob, not a contract -- but it must stay deep enough
-    # to keep more than one record in flight, and the smem it costs must fit
-    # the opt-in this part actually reports (101376 B).
-    nbuf = consts["W4_RAW_NBUF"]
-    check(nbuf >= 3, f"W pipeline depth {nbuf} keeps too little in flight")
-    smem = consts["GEMM_SMEM"]
-    check(smem <= 101376,
-          f"W pipeline depth {nbuf} overruns the 101376 B smem opt-in")
-    # The opt-in is per BLOCK; occupancy is set by the SM's shared memory,
-    # which on this part is 102,400 B -- NOT the 131,072 an earlier version
-    # of this check assumed. That wrong number let the check pass while
-    # asserting the opposite of the truth: at nbuf=3 the block takes 69,632 B,
-    # so two blocks overrun 102,400 and exactly ONE block is resident.
-    # Record the real figure rather than assert a fiction.
-    #
-    # The load-bearing contract is residency, not depth: mk_gemm_kernel is a
-    # PERSISTENT grid with a grid barrier, so a grid that does not fit is a
-    # deadlock, not a slowdown. smem is the binding limit here (registers,
-    # at 59 x 256 = 15,104 of 65,536, would allow four blocks).
-    blocks_per_sm = 102400 // smem
-    check(blocks_per_sm >= 1,
-          f"W pipeline depth {nbuf} uses {smem} B, over the SM's 102400")
-    # The grid is now resolved at launch from the device, so the static
-    # contract is on the CEILING: it must not promise more than the smem
-    # could ever deliver, or the clamp is doing all the work and the cap is
-    # decoration. (The clamp is what keeps a bad pair from deadlocking; this
-    # keeps the pair honest.)
-    check(consts["MK_GRID_CAP"] <= 2 * blocks_per_sm * 48,
-          f"gemm grid ceiling {consts['MK_GRID_CAP']} is more than twice "
-          f"what {smem} B of smem allows ({blocks_per_sm} block(s)/SM on 48 "
-          "SMs) -- raise the ceiling only alongside a shallower pipeline")
+    # Depth is a tuning knob, not a contract -- but it must keep more than
+    # one record in flight, and the smem it costs must leave two blocks per
+    # SM (102,400 B of shared memory on this part; the opt-in is per block).
+    nbuf = consts["W4_RAW_NBUF2"]
+    check(nbuf >= 2, f"W pipeline depth {nbuf} keeps too little in flight")
+    smem = consts["GEMM2_SMEM"]
+    check(2 * (smem + 1024) <= 102400,
+          f"W pipeline depth {nbuf} uses {smem} B, more than half the SM")
     # The W pack is TILE-major and the packer and the kernel are the only
     # two places that know it -- they must move together or the kernel reads
     # a correct-looking tensor as garbage. Row-major put the 128 rows of a
     # tile 4096 B apart, so one record touched 128 DRAM pages.
     check("c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);" in cu
           and "((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);" in cu,
-          "stage_raw4 reads a (tile, k-block) record as one contiguous run")
-    check("rowb + mk_swz(row4, half4 * 64 + g4 * 16)" in cu
-          and "wrow + mk_swz(nrow, koff + t4)" in cu
-          and "constexpr int SMEM_W_PITCH = KSTEP;" in cu,
-          "the expanded e4m3 tile is dense 128 B rows: the expansion stores "
-          "and the fragment loads go through the same XOR swizzle (a padded "
-          "pitch put every row across a bank-line boundary)")
-    check("smem += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);"
-          in cu and "constexpr int GEMM_SMEM = MK_SMEM_ALIGN + 2 * 16 * SMEM_A_PITCH +"
+          "stage_raw reads a (tile, k-block) record as one contiguous run")
+    check("sb0 += (MK_SMEM_ALIGN - (sb & (MK_SMEM_ALIGN - 1))) & (MK_SMEM_ALIGN - 1);"
+          in cu and "constexpr int GEMM2_SMEM = MK_SMEM_ALIGN + 2 * 32 * SMEM_A_PITCH +"
           in cu,
-          "the dynamic smem base must be re-aligned at runtime (the static "
-          "s_last/s_unit push it to +16, which put every 128 B tile row across "
-          "a bank-line boundary) and the smem budget must carry the slack")
+          "the dynamic smem base must be re-aligned at runtime and the smem "
+          "budget must carry the slack")
     check(bench.index("torch.mm(_SPACER[0], _SPACER[1], out=_SPACER[2])")
           < bench.index("_DRAIN.sum()") < bench.index("for t in hot:"),
           "the bench flush must drain the dirty lines with a read stream AFTER "
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check("threadIdx.x != 0 && t < SMEM_W_ROWS * 4;" in cu,
-          "thread 0 issues no cp.async: it runs the grid barrier, whose "
-          "__threadfence drains its own outstanding copies -- with the "
-          "fill hoisted above the barrier that turned into a 6-12 us wait")
-    _w_at = cu_code.index("stage_raw4(nt, kb0,")
-    check(_w_at < cu_code.index("stage_a_load(kb0, 0);", _w_at),
-          "W(kb0) starts flying before A(kb0) is staged. kb0, not 0: a "
-          "block may own a k SLICE of a tile.")
-    # -- the FIRST unit's W fill is hoisted above the A-quant prologue and
-    #    its barrier, and the prologue's own x loads (consumed by the amax
-    #    shuffle) go out before that fill. Phase stamps: quant + barrier
-    #    took 3-10 us during which DRAM idled; a fill issued first instead
-    #    queued the 256 B/row x loads behind 1.5 MB of W (quant 13-18 us).
-    _hoist_at = cu_code.index("stage_raw4(nt0, kb00,")
-    check(_hoist_at < cu_code.index('asm volatile("griddepcontrol.wait;"')
-          < cu_code.index("raw[i] = *(const uint2*)(c.x +")
-          < cu_code.index("mx[i] = mk_warp_amax(")
-          < cu_code.index("mk_grid_barrier(bar, c.grid);"),
-          "prologue order: the first unit's W fill (independent of the "
-          "previous kernel), the PDL wait, x into registers, amax/convert/"
-          "store, barrier")
     check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, gemm-lq, gemm2, kda, mhc, mla, smlp) triggers "
-          "its dependents at entry and is launched programmatically behind "
-          "the MK_PDL knob")
-    check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
-          and "if (!prefilled) stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
-          "the unit loop must not re-issue the tiles the hoist already "
-          "staged -- a second cp.async group for the same buffer would "
-          "break the one-stage-one-group wait accounting")
-    # -- A is quantized ONCE per launch, not once per (tile, k-block). Every
-    #    n-tile walks all of k, so the in-loop form redid it nblk times --
-    #    51x at n=6416 -- on bf16 input, twice the bytes the mma consumes.
-    #    Measured ceiling for removing it: -10% at n=6416/4096, -22% at
-    #    n=2048, -14% at n=1024.
-    check("__device__ uint8_t g_mk_aq[" in cu
-          and "const int kbq = (int)blockIdx.x;" in cu
-          and "for (int kb = c.a_ready ? kblk : kbq + c.grid; kb < kblk;" in cu
-          and cu.index("g_mk_aq + ((size_t)kb * 32 + r) * KSTEP + ql * 4")
-              < cu.index("auto stage_a"),
-          "A is quantized once, cooperatively across the grid, before the "
-          "tile loop reads it")
-    check(cu.index("mk_grid_barrier(bar, c.grid);")
-          < cu.index("auto stage_a"),
-          "a barrier publishes the shared A quant before any block stages "
-          "it -- without it a block reads a tile another block has not "
-          "written yet, and only sometimes")
-    check("sxs[i] = g_mk_axs[i] * c.wgs;" in cu,
-          "the per-row scales come from the same shared quant, carrying the "
-          "pack's pow2 normalisation -- folding it here costs one multiply "
-          "in the prologue instead of one per accumulate")
-    # -- remainder split-K: leftovers of the last partial round take k
-    #    slices instead of leaving grid - rem blocks idle for a whole
-    #    tile-time. ksr == 1 must leave the original path untouched.
-    check("const int rem = nblk % c.grid;" in cu
-          and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
-          and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 7  # def, the gemm plan (+ its bg control), kda in/out, smlp gate_up/down
-          and "const int ksr = c.ksr;" in cu,
-          "the split is over the REMAINDER tiles when there are whole tiles "
-          "too -- those units are a mix of sizes and the uniform cost model "
-          "below does not apply to them")
-    # When full == 0 every unit is one k-slice of one tile, so wall time is
-    # ceil(nblk*r / grid) / r tile-times and the truncating grid/rem is
-    # simply the wrong pick: it returns 1 for nblk in (grid/2, grid],
-    # i.e. the 4096-wide projections, leaving 16 of 48 blocks
-    # idle where r=3 would cost 0.667 tile-times.
-    check("if (full == 0 && rem > 0 && m <= 32) {" in cu
-          and "if (rounds * bd < bn * r) { bn = rounds; bd = r; ksr = r; }"
-          in cu,
-          "with no whole tiles the k-split is the cost-minimising one, not "
-          "the truncated grid / rem")
-    check("const bool split = mk_split_ok(c.m, pcols, ksr);" in cu
-          and "return (ksr > 1) && (m <= 32) && (pcols <= MK_SPLIT_MAXCOL) &&" in cu,
-          "ksr == 1 must fall through to the single-pass path unchanged (the "
-          "gate is mk_split_ok, shared with the host's unit count)")
-    # The accumulator no longer follows from ksr * rem <= grid, so the
-    # size guard has to be on the accumulator itself.
-    check("((size_t)m * pcols * ksr <= MK_SPLIT_ELEMS)" in cu
-          and "MK_SPLIT_ELEMS = 32 * 128 * MK_SPLIT_UNITS_MAX" in cu,
-          "the split gate bounds the partial accumulator directly")
-    # The one surviving barrier must stand between the slice writes and the
-    # reads that fold them -- anchor it on the READ, not on the comment: the
-    # zero pass used to sit above the comment and the ordering check passed
-    # by accident of that layout.
-    # No fold barrier any more: the last slice of a tile folds it. The
-    # writer fences before its arrival is counted, the completing block
-    # fences after seeing the count and reads the other slices through L2
-    # (L1 is not coherent within a launch), and re-arms the counter.
-    _arr = cu.index("atomicAdd(&g_mk_tile_arrive[lt], 1u)")
-    check(cu.rindex("__threadfence();", 0, _arr) < _arr
-          < cu.index("__ldcg((const float4*)(src + (size_t)spx * pslice))"),
-          "last-arriver fold: fence before the arrival, L2 reads after it")
-    check("if (s_last) g_mk_tile_arrive[lt] = 0u;" in cu
-          and "const unsigned expect = (unsigned)min(ksr, kblk);" in cu,
-          "the tile counter is re-armed by its completing slice and expects "
-          "only the non-empty slices (kb0 == kbn never arrives)")
-    check(cu.count("mk_grid_barrier(bar, c.grid);") == 1,
-          "one grid barrier per gemm phase (the A-quant publish) -- the "
-          "fold has none")
-    # Units after the first are handed out dynamically; the counter is
-    # re-armed by block 0 BEFORE the A-quant barrier so the barrier orders
-    # the reset ahead of every block's first take.
-    check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
-          < cu.index("mk_grid_barrier(bar, c.grid);")
-          and "u = local_q ? u + (int)gridDim.x : next_unit()) {" in cu
-          and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
-          "dynamic unit hand-out: first unit static (hoisted fill), the "
-          "rest from a counter re-armed ahead of the publish barrier")
-    # -- barrier-free path (2026-09-04): a launch with at most one unit per
-    #    block (the shared expert's two GEMMs, 86 launches a step) has every
-    #    block quantize ITS unit's A k-blocks into smem as it stages them --
-    #    no grid-wide prologue, no barrier, idle blocks exit at once. The
-    #    host picks it and the phase re-derives the condition, so a drift
-    #    degrades to the global path; MK_LOCALQ=0 is the kill switch.
-    check("constexpr bool local_q = LQ;" in cu
-          and "if (c.a_ready || units > c.grid) __trap();" in cu
-          and "if (local_q && !has_u0) return;" in cu
-          and cu.index("if (local_q && !has_u0) return;")
-              < cu.index('asm volatile("griddepcontrol.wait;" ::: "memory");')
-          and "int mk_units(int m, int n, int grid, int ksr)" in cu
-          and "p.localq = (lq == 2 || (lq == 1 && bg)) && p.units <= p.grid &&" in cu
-          and "const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);" in cu
-          and 'mk_env_int("VLLM_GLM53_MK_LOCALQ", 0, 0, 2, false)' in cu
-          and cu.count("mk_gemm_plan_for(") == 3,  # def, the launch, the bench pybind
-          "the two paths are compile-time instantiations chosen by ONE host "
-          "plan (launch and bench pybind alike: units <= grid and a background "
-          "caller); a drift traps instead of running a 48-block barrier on a "
-          "launch sized to the units; default OFF behind VLLM_GLM53_MK_LOCALQ "
-          "(0 / 1 bg / 2 all)")
-    # the lane's A quantizer is ONE set of helpers for its three copies (the
-    # gemm prologue, the local path, kda p4): the local path's bytes are the
-    # global path's by construction, and the boot self-test checks it
-    _lq = cu.index("auto lq_quant = [&](int buf) {")
-    _lq_end = cu.index("auto stage_a_store = [&](int kb) {", _lq)
-    check(cu.count("mk_pack4(") == 4 and cu.count("mk_warp_amax(") == 5
-          and cu.count("mk_act_rcp(") >= 4  # def + the quantizers (33차 lever 1: exact scale)
-          and cu.count("mk_pow2_scale(") == 1  # the definition only: no activation quantizer is pow2 now
-          and "mk_act_scale(mxq[i])" in cu[_lq:_lq_end]
-          and "asc[i] = sc * c.wgs;" in cu[_lq:_lq_end]
-          and "sxs[r * KBLK_MAX + kb] = asc[i];" in cu
-          and "__reduce_max_sync(0xffffffffu, __float_as_uint(v))" in cu
-          and "__nv_cvt_float2_to_fp8x2(" in cu
-          and "return __int_as_float((biased + 1) << 23);" in cu,
-          "local A quant: quant_store's helpers (redux amax, exponent-"
-          "arithmetic pow2, exact reciprocal, paired e4m3 pack) -- the output "
-          "must be bitwise the global path's")
-    # the local quant runs ahead of the mma on rows loaded a whole iteration
-    # earlier (a two-slot ring), the global path stages A(kb0) before the
-    # wait exactly as main did
-    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, (kb - kb0) & 1);")
-              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1 - kb0) & 1);")
-              < cu.index("mma_fold(sw4t, kb);  // the group scales are inside the bytes")
-          and "if (!local_q) stage_a_store(kb0);" in cu
-          and cu.index("if (!local_q) stage_a_store(kb0);")
-              < cu.index("mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb0 - 1));")
-          and "if (local_q) stage_a_store(kb0);" in cu
-          and "uint2 xq0[RPW], xq1[RPW];" in cu,
-          "local path: x two k-blocks ahead in a register ring, the quant "
-          "before the mma; global path: A(kb0) into smem before the wait "
-          "(main's order)")
-    check("template <bool LQ>" in cu
-          and "mk_gemm_phase_t<false>(c, smem, bar);" in cu
-          and cu.count("mk_gemm_phase_t<true>(") == 1
-          and "__global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {" in cu
-          and "mk_launch(mk_gemm_lq_kernel, p.lgrid, GEMM_SMEM, stream, c);" in cu
-          and "mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid," in cu
-          and "int mk_lq_launch_grid(int units, int grid)" in cu
-          and "c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar" in cu
-          and "if (!p.localq && bg && g_probe_bg_grid > 0 && g_probe_bg_grid < p.grid) {" in cu,
-          "the local path is its own kernel launched on as many blocks as it "
-          "has units; the bench's control (the global kernel on fewer blocks) "
-          "runs on its own ticket counter; kda's mk_gemm_phase is the global "
-          "instantiation")
-    # Executable lane-selection, failure-restoration and nonfinite tests run
-    # in test_megakernel_regression_suite below. Source strings previously
-    # passed even when both purported v1 launches actually selected v2.
+          "every segment kernel (gemm2, mhc, mla, and the four MLA prefill "
+          "pair/group4 kernels of #368) triggers its dependents at entry and "
+          "is launched programmatically behind the MK_PDL knob")
+    # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
+    #    remainder split-K, dynamic unit hand-out) and the MK_SEG_KDA block
+    #    are gone; the non-persistent kernel is the GEMM segment's only
+    #    kernel and the stock KDA chain (with KDA_ONEPASS) serves the block.
+    check(all(t not in cu for t in ("mk_gemm_kernel", "MKGemmCtx", "mk_gemm_phase",
+                                    "g_mk_gemm_bar", "mk_choose_ksr(", "mk_units(",
+                                    "MKGemmPlan", "VLLM_GLM53_MK_GEMM2", "mk_gemm2_on",
+                                    "g_mk_unit_next", "g_mk_aq[", "g_mk_tile_arrive",
+                                    "g_mk_gemm_partial", "MK_SPLIT_ELEMS", "GEMM_SMEM",
+                                    "mk_kda_kernel", "MKKdaArgs", "mk_run_kda",
+                                    "g_mk_kda", "MK_KDA_TS", "MK_TS("))
+          and "mk_launch_gemm2(c2, stream);" in cu
+          and "void mk_set_gemm2(int64_t ksr) {" in cu
+          and "return {g_probe_ksr2};" in cu
+          and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
+          and all(t not in pysrc_full for t in ("ENABLE_KDA", "KDA_SHADOW", "kda_block",
+                                                "_KdaFixture", "_selftest_kda",
+                                                "run_v1_kernel", "VLLM_GLM53_MK_GEMM2",
+                                                "gemm_plan(", "-DMK_NBUF_DEF=")),
+          "34차 §8: no persistent GEMM, no KDA segment, no lane knob -- run_gemm "
+          "launches the non-persistent kernel, the bench forces only its split, "
+          "and the probe snapshot is one knob")
+    # the lane's A quantizer: exact scale (33차 lever 1) shared by the
+    # per-slice quant and the SMLP2 pair emitter
+    check(cu.count("mk_act_rcp(") == 3 and cu.count("mk_act_scale(") == 3
+          and "return fmaxf(amax * (1.0f / 448.0f), 1.0e-30f);" in cu
+          and "mk_pow2_scale" not in cu and "mk_pack4" not in cu
+          and "mk_warp_amax" not in cu,
+          "A quant: one exact-scale helper pair for the two quantizers; the "
+          "persistent lane's pow2 helpers went with it")
     check("def exact_fixture(dev=\"cuda\", shape=None):" in pysrc_full
-          and "def run_both_kernels(x, pack, n, ksr=0):" in pysrc_full,
-          "the boot and probe share the configurable exact fixture and v1 runner")
+          and "def _selftest_gemm_exact() -> float:" in pysrc_full,
+          "the boot and probe share the configurable exact fixture")
     bench = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
                  encoding="utf-8").read()
     check("x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
-          and "got, plans = mk.run_both_kernels(x, p4, n)" in bench
-          and "ran_local = plans[2][3] == 1" in bench
-          and 'mark = " " if (same != "NO" and r <= TOL_SPLIT and rep_ok) else "!"' in bench
-          and "ext.read_ts()  # clear: idle blocks of THIS launch must read 0" in bench,
-          "probe_exact uses the boot gate's fixture and runner (no second copy "
-          "to drift), the sweep marks rows by the tolerance it judges them by "
-          "and clears the stamps before the launch it stamps")
+          and "with mk._gemm_probe_scope():" in bench
+          and "def _probe_exact_lane(mk, x, p4, n, ref, tag: str) -> bool:" in bench
+          and "--gemm2" not in bench and "run_v1_kernel" not in bench,
+          "probe_exact uses the boot gate's fixture (no second copy to drift) "
+          "under a restored split scope, and no lane switch remains")
     conc = open(os.path.join(REPO, "probes", "mk_gemm_concurrent_probe.py"),
                 encoding="utf-8").read()
     check("from moe_decode_stream_probe import (" in conc
           and "served_wrapper" in conc and "expert_set" in conc
           and "MOE_LAYERS = 42" in conc
-          and '((0, 0, 32), "global 32 (control)")' in conc,
+          and 'ROWS = (("v2 non-persistent",),)' in conc
+          and "with mk._gemm_probe_scope():" in conc,
           "the concurrent probe builds the served MoE from the MoE probe's "
-          "builders, projects by the model's 42 MoE layers, and carries the "
-          "fewer-blocks control row")
+          "builders, projects by the model's 42 MoE layers, and times the "
+          "GEMM's only lane under one restored scope")
     fd_src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
                   encoding="utf-8").read()
     check("method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))" in fd_src
           and "bg=getattr(self, \"_mk_bg\", False)" in fd_src,
           "the fp8-dense hook marks the shared expert's linears background "
           "(the aux-stream pair beside the routed MoE) for the lane")
-    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=0$", prof, re.M) is not None,
-          "the profile DECLARES the local-quant knob (off until its bracket): "
-          "the launcher forwards only declared keys, so an undeclared knob "
-          "could not be flipped at all")
-    br = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
-    check('"VLLM_GLM53_MK_LOCALQ"' in br,
-          "bracket.py snapshots the local-quant knob")
-    # There is no zero pass: every accumulator element is ASSIGNED by exactly
-    # one unit, so pre-setting them cost a full pass plus a barrier to
-    # publish values that are all overwritten before anyone reads them. The
-    # assignment is what makes that true -- if the epilogue ever goes back to
-    # accumulating, the zero pass has to come back with it.
-    check("g_mk_gemm_partial[i] = 0.0f;" not in cu
-          and "pb[(size_t)r0 * pcols + pc] = acc[i][j][0];" in cu,
-          "the split-K accumulator is assigned, not accumulated, so it "
-          "needs no zero pass")
-    check("32 * 128 * MK_SPLIT_UNITS_MAX" in cu
-          and "MK_SPLIT_UNITS_MAX = 2 * MK_GRID_CAP" in cu
-          and "(MK_GRID_CAP - 1) * 128" in cu,
-          "the accumulator is sized by the UNIT cap (rem * ksr), not by n: "
-          "ksr * rem <= grid stopped holding once ksr could exceed "
-          "grid / rem, and n-sized would be 20x larger for no reason")
-    check("atomicAdd(&g_mk_gemm_partial" not in cu
-          and "fixed order -> reproducible" in cu,
-          "the split reduction must be deterministic: an atomicAdd "
-          "accumulator returns bitwise-different results for back-to-back "
-          "launches of the same call, which the probe's replay-stability "
-          "check flags and this lane cannot ship")
-    check("expand_w4(kb0 % W4_RAW_NBUF, kb0 % 2)" in cu
-          and "stage_raw4(nt, kb0, kb0 % W4_RAW_NBUF);" in cu,
-          "the W4 prologue must fill the buffer the loop reads first: the "
-          "loop starts at kb0, so a hardcoded 0 loads the wrong k-block "
-          "(this broke the W4 exact-grid check when split-K landed)")
     # -- W streams its raw records through cp.async:
     #    tile-major pack (one contiguous 8 KB + 1 KB record per (tile,
     #    k-block)), one commit group per stage, the exact-wait formula,
@@ -9231,10 +7913,10 @@ def test_glm53_megakernel_contracts() -> None:
           and ".permute(0, 2, 1, 3).contiguous())" in pysrc_full
           and "wq4.view(n_pad // 128, 128, k // 128, 64)" in pysrc_full,
           "the W4 pack is tile-major and the host refuses any other shape")
-    check("W4_RAW_NBUF * W4_RAW_BYTES" in cu
-          and 'static_assert(GEMM_SMEM <= 101376, "over the sm_121 opt-in smem");' in cu
-          and "mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb - 2));" in cu,
-          "W4 raw staging is budgeted in GEMM_SMEM and waits for exactly "
+    check("W4_RAW_NBUF2 * W4_RAW_BYTES" in cu
+          and 'static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");' in cu
+          and "mk_cp_wait_upto(min(DIST - 1, kbn - kb - 2));" in cu,
+          "W4 raw staging is budgeted in GEMM2_SMEM and waits for exactly "
           "the record it needs")
     # -- W4 pack: exact e2m1 -> e4m3 expansion
     # Pin the LIVE constant, not a copy of it. This used to check a
@@ -9259,8 +7941,6 @@ def test_glm53_megakernel_contracts() -> None:
           and "0x4C484440'3C383000ULL" in cu
           and "__byte_perm(l0, l1, w & 0x7777u)" in cu_code
           and "__byte_perm(l0, l1, (w >> 16) & 0x7777u)" in cu_code
-          and "__vadd4((uint32_t)lutg, eb * 0x01010100u)" in cu_code
-          and "__vadd4((uint32_t)(lutg >> 32), eb * 0x01010101u)" in cu_code
           # the scale byte is e4m3, not a bare exponent: its 3-bit mantissa
           # rides the SAME byte add, and the only correction is +1 on the
           # three codes whose magnitude mantissa is 1.5, which does not
@@ -9275,61 +7955,21 @@ def test_glm53_megakernel_contracts() -> None:
           "with the group exponent folded in per 16 elements -- never a "
           "__constant__ load, never per-nibble scalar chains, and no longer "
           "the byte-lane arithmetic (22 -> 13 ops per raw word)")
-    # -- one lane: the fp8 (W8) MK arm was removed once W4 beat the stock
-    #    pair on every decode shape. One kernel, one budget, one ticket
-    #    counter, one pack builder, one knob (MK_GEMM) -- nothing to select.
-    check("mk_gemm_kernel<" not in cu_code and "template <bool W4>" not in cu
-          and "run_gemm_w4" not in cu and "GEMM_SMEM_W4" not in cu
-          and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
-          and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
-          and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
-          and "mk_gemm_phase(c, smem, c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar);" in cu,
-          "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
-          "or entry point remains in the .cu")
     check("def build_mk_weight(" not in pysrc_full
           and "run_gemm_w4" not in pysrc_full and "ENABLE_W4" not in pysrc_full
           and "W4_ALL" not in pysrc_full and "_W4_ARMED" not in pysrc_full
           and "VLLM_GLM53_MK_W4" not in pysrc_full
-          and "-DMK_NBUF_DEF=" in pysrc_full and "MK_W4_NBUF" not in pysrc_full
+          and "-DMK_NBUF2_DEF=" in pysrc_full and "MK_W4_NBUF" not in pysrc_full
           and "MK_PROBE_SKIP" not in pysrc_full and "MK_PROBE_SKIP" not in cu,
           "the driver has one pack builder, one launch entry and one depth "
-          "knob (VLLM_GLM53_MK_NBUF); the W4 arm knob and the probe-skip "
+          "knob (VLLM_GLM53_MK_NBUF2); the W4 arm knob and the probe-skip "
           "switch are gone")
     check("mk_pack[0].shape[0] * 128" in pysrc_full
           and "def gemm_w4a8(x, mk_pack, n_rows, bg=False):" in pysrc_full,
           "eligibility derives n_pad from the tile-major pack's first dim x "
           "128 (the tile count itself failed n_pad % 128 on every real shape "
           "and the lane silently stayed stock)")
-    # -- kda p4 emits the o_proj GEMM's fp8 A tiles + pow2 scales itself
-    #    (a head's 128 dims = one k-group), and p5 runs with a_ready: no
-    #    x load / quant / publishing barrier in its prologue. The unit
-    #    counter reset moves under the kernel's own p4->p5 barrier.
-    check("bool a_ready = false;" in cu
-          and "if (!c.a_ready && kbq < kblk) quant_store(kbq, v, mx);" in cu
-          and "if (!c.a_ready) {\n    if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;"
-          in cu
-          and "*(uint32_t*)(g_mk_aq + ((size_t)h * 32 + t) * KSTEP + lane * 4) = pack;"
-          in cu and "if (lane == 0) g_mk_axs[t * KBLK_MAX + h] = sc;" in cu
-          and "c.a_ready = true;" in cu
-          and cu.index("if (blockIdx.x == 0 && threadIdx.x == 0) g_mk_unit_next = 0u;\n  MK_KDA_TS(9);")
-              < cu.index("c.a_ready = true;"),
-          "kda p4 writes the o_proj A tiles and scales in the GEMM's layout; "
-          "p5 skips its prologue (a_ready) and the unit counter is reset under "
-          "the p4->p5 barrier")
-    check("_TOL_KDA_SHADOW = 0.15" in pysrc_full
-          and "not (v <= _TOL_KDA_SHADOW)" in pysrc_full
-          and "_TOL_KDA = 2e-2" in pysrc_full,
-          "the serving KDA shadow is gated at the e2m1 by-design class (its "
-          "MK arm streams W4 packs of the real weights); the fixture keeps "
-          "the 2e-2 noise gate on grid-snapped weights")
-    check("self.w_in = mk_pack_dequant(_pi, KDA_INPROJ_N)" in pysrc_full
-          and "in_mk, o_mk = build_mk_weight_w4(f.w_in), build_mk_weight_w4(f.w_o)"
-          in pysrc_full,
-          "the KDA fixture snaps its weights to the e2m1 grid so both arms "
-          "see the same values and the 2e-2 gate measures noise, not e2m1's "
-          "by-design error")
-    check("(int8_t)((sc4 >> (8 * g4)) & 0xFFu)) & 0xFFu" in cu_code
-          and "__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in cu_code
+    check("__byte_perm(0x8000u, 0u, (w >> 3) & 0x1111u)" in cu_code
           and "__byte_perm(0x8000u, 0u, (w >> 19) & 0x1111u)" in cu_code
           and "uint8_t nb[32]" not in cu_code and "uint8_t ob[64]" not in cu_code,
           "expansion is a scale-byte add (in the table) + sign (a second "
@@ -9354,31 +7994,14 @@ def test_glm53_megakernel_contracts() -> None:
           and ".clamp(-448.0, 448.0).to(torch.float8_e4m3fn)" in pysrc_full,
           "the torch twins exist: dequant of the tile-major pack and the "
           "prologue's per-128-group pow2 activation quant")
-    check('".in_proj_qkvbfg_a" not in name' not in open(
-        os.path.join(REPO, "overlay/modules/glm53_model/"
-                            "glm53_fp8_dense.py"), encoding="utf-8").read(),
-          "every eligible linear gets the W4 pack, the KDA in_proj included: "
-          "there is no per-linear knob left")
-    # All four launches are persistent grids that resolve their own size
-    # from the device. mhc has its own ceiling because it takes no dynamic
-    # smem; gemm and kda share MK_GRID_CAP but resolve separately, since
-    # kda carries more state and need not fit as often.
-    # gemm and kda are persistent grids too, and their occupancy differs
-    # from each other's, so each resolves its own -- clamped, like mhc, so a
-    # grid that does not fit degrades instead of refusing to launch.
-    check("mk_resident_grid(mk_gemm_kernel, g_gemm_grid, GEMM_SMEM)" in cu
-          and "mk_resident_grid(mk_kda_kernel, g_kda_grid, GEMM_SMEM)" in cu
+    # The persistent launches resolve their own grid from the device: mhc
+    # has its own ceiling because it takes no dynamic smem, mla resolves
+    # against its smem and its own cap -- clamped, so a grid that does not
+    # fit degrades instead of refusing to launch.
+    check("mk_resident_grid(mk_mla_kernel, g_mla_grid, MLA_SMEM, MLA_GRID_CAP)" in cu
           and "int cap = MK_GRID_CAP" in cu and "if (cache > cap) cache = cap;" in cu,
-          "gemm and kda each resolve their persistent grid from the device "
-          "rather than assuming MK_GRID_CAP (the cap is a defaulted argument so "
-          "MK_SEG_MLA, which owns its ticket counter, can raise its own)")
-    # Distinct grids must not share a ticket counter -- the same trap the
-    # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
-    check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase(c, smem, c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
-          "kda's inlined gemm phases use their own barrier counter")
+          "mla resolves its persistent grid from the device rather than "
+          "assuming a constant (the cap is a defaulted argument)")
     check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
           and "if (mhc_grid > MK_MHC_GRID_CAP)" in cu,
           "mhc launches its own grid, clamped to what the device reports "
@@ -9386,9 +8009,9 @@ def test_glm53_megakernel_contracts() -> None:
           "register drift into a refusal to boot")
     check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu,
-          "both persistent grids check residency before launching: a grid "
+          "the persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
-          "merely run slowly (the third query is the v2 lane's blocks per SM, "
+          "merely run slowly (one query is the GEMM's blocks per SM, "
           "which sizes its grid and is not a residency contract)")
 
     # -- MK-GEMM v2 (30차): the same GEMM as a NON-persistent grid. The
@@ -9408,10 +8031,9 @@ def test_glm53_megakernel_contracts() -> None:
           "two per SM and its register budget is bounded to match -- one "
           "resident block would make it the persistent kernel without the "
           "barrier, not a co-scheduling kernel")
-    check("mk_grid_barrier" not in v2 and "g_mk_unit_next" not in v2
-          and "g_mk_aq" not in v2,
-          "v2 has no grid barrier, no unit counter and no shared A tiles: "
-          "every block quantizes the A k-blocks of its own slice")
+    check("mk_grid_barrier" not in v2,
+          "the GEMM has no grid barrier: every block quantizes the A k-blocks "
+          "of its own slice")
     check("stage_raw(kb0 + d, (kb0 + d) % NB)" in v2
           and v2.index("stage_raw(kb0 + d, (kb0 + d) % NB)")
               < v2.index('asm volatile("griddepcontrol.wait;"')
@@ -9446,13 +8068,13 @@ def test_glm53_megakernel_contracts() -> None:
           and "def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0," in pysrc_full
           and "def _selftest_smlp2() -> bool:" in pysrc_full
           and '_ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)' in pysrc_full
-          and 'if not (_ARMED["smlp"] or _ARMED["smlp2"]):' in pysrc_full
-          and 'if _ARMED["smlp2"]:\n        return _smlp2_call(' in pysrc_full
-          and 'first fused call (%s) ' in pysrc_full
-          and '"smlp2" if _ARMED["smlp2"] else "smlp"' in pysrc_full,
+          and 'if not _ARMED["smlp2"]:\n        return None' in pysrc_full
+          and "    return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out," in pysrc_full
+          and 'first fused call (smlp2) ' in pysrc_full
+          and '_ARMED["smlp"]' not in pysrc_full and "ENABLE_SMLP =" not in pysrc_full,
           "the driver arms smlp2 behind its own knob with the exact + replay "
-          "gate, the MLP hook prefers it when armed, and the serving line "
-          "names the lane")
+          "gate, the MLP hook serves it alone (the v1 SMLP sunset in 34차 §8), "
+          "and the serving line names the lane")
     check("template <int RQ, bool LR>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
@@ -9494,23 +8116,17 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 split slices are assigned (no zero pass), counted per tile with "
           "a self-rearming counter, and folded by the last slice in fixed "
           "order -- deterministic, no atomics on the partials")
-    check('getenv("VLLM_GLM53_MK_KTAIL")' in cu
-          and "int mk_choose_tail2(int m, int n, int k, int ksr)" in cu
-          and "if (shortest < 2 * tail) return 0;" in cu
-          and "const int nslices = c.tail > 0 ? 2 * ksr : ksr;      // partials per tile" in v2
-          and "const int slice = is_tail ? ksr + sp : sp;" in v2
+    check("VLLM_GLM53_MK_KTAIL" not in cu and "mk_choose_tail2" not in cu
+          and "is_tail" not in v2 and "c.tail" not in v2
+          and "const int nslices = ksr;      // partials per tile" in v2
           and "s_last = (prev + 1u == (unsigned)nslices);" in v2
           and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
-          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1)\n                    + (c2.lr_r > 0 ? LR_CTAS : 0);" in cu,
-          "v2 tail units (VLLM_GLM53_MK_KTAIL, default off): the last tail k-blocks "
-          "of every slice form a second unit at the end of the grid, folded as a "
-          "second partial in fixed order; only when every slice keeps >= tail "
-          "k-blocks and the doubled partial set fits")
-    check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
-          and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
-          and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
-              < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);")
-          and "int mk_choose_ksr2(int m, int n, int k)" in cu
+          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr\n                    + (c2.lr_r > 0 ? LR_CTAS : 0);" in cu
+          and "void mk_set_gemm2(int64_t ksr) {" in cu,
+          "34차 §8: v2's tail units (VLLM_GLM53_MK_KTAIL; 30차 §11: noise on two "
+          "shapes, 5-17% worse on the rest) are sunset -- one unit per slice, "
+          "ksr partials per tile, the setter takes the split only")
+    check("int mk_choose_ksr2(int m, int n, int k)" in cu
           and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
           and "MK_CHECK_CUDA(cudaGetDevice(&dev));" in cu
           and "&g_mk_sms, cudaDevAttrMultiProcessorCount, dev));" in cu
@@ -9519,31 +8135,24 @@ def test_glm53_megakernel_contracts() -> None:
           and "if (ksr > kblk) ksr = kblk;" in cu
           and "while (ksr > 1 && (size_t)m * n * ksr > (size_t)MK2_PART_ELEMS) --ksr;" in cu
           and consts["MK2_PART_ELEMS"] >= 32 * consts["KDA_INPROJ_N_PAD"] * 4,
-          "the v2 lane is a kill-switched dispatch ahead of the persistent "
-          "launch (VLLM_GLM53_MK_GEMM2, default off); its slice rule takes one "
+          "the GEMM's slice rule takes one "
           "exact wave of the device's resident slots (SM count from the device, "
           "not a constant), fine slices above half the slots, and keeps every "
           "slice non-empty and the fp32 partial inside its buffer")
-    check('"-DMK_NBUF2_DEF=" in pysrc_full' if False else "-DMK_NBUF2_DEF=" in pysrc_full
+    check("-DMK_NBUF2_DEF=" in pysrc_full
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
-          and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
-          and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
-          and "ext.set_gemm2(on, ksr, ktail)" in bench
-          and "same = bool(torch.equal(got2, got))" in bench,
-          "the driver builds v2's ring depth in, the boot fingerprint names "
-          "the served lane and its in_proj plan, and the bench times both "
-          "lanes side by side with v2's output diffed against the persistent "
-          "lane's")
+          and "ext.set_gemm2(ksr)" in bench,
+          "the driver builds the ring depth in, the boot fingerprint names "
+          "the in_proj plan, and the bench forces only the split")
     # Two grid sizes must never share a ticket counter. The barrier computes
     # (t / grid + 1) * grid, so it is only correct when the counter is
     # grid-aligned at launch; a 48-block kernel leaves it 48 past a multiple
     # of 96, and the next 96-block launch then releases at half its blocks.
     check('ws["barrier_mhc"].data_ptr()' in pysrc_full
           and 'ws["barrier_mla"].data_ptr()' in pysrc_full
-          and pysrc_full.count("_barrier_ptr(ws)")
-          - pysrc_full.count("def _barrier_ptr(ws)") == 1,
-          "mhc and mla each run their own barrier counter, not the one the "
-          "48-block kernels share (their grids are 96 blocks)")
+          and "_barrier_ptr(" not in pysrc_full,
+          "mhc and mla each run their own barrier counter (the 48-block "
+          "kernels that shared one are gone)")
     check("(t / (unsigned long long)grid + 1ULL) * grid" in cu,
           "grid barrier is the never-reset monotonic ticket form, 64-bit "
           "(32-bit wraps in ~a week of arrivals and releases early)")
@@ -9555,98 +8164,9 @@ def test_glm53_megakernel_contracts() -> None:
           "the barrier counter is never reset inside the kernel "
           "(monotonic ticket only)")
 
-    # -- state slot addressing: [slots, ...] buffers need the per-slot
-    #    element count in the stride (a slot-0-only self-test once passed
-    #    while the conv stride was missing it -- found in review)
-    check(cu.count("slot * a.cs_s0 + (size_t)ch * a.cs_s1") >= 1
-          and "sbase + (size_t)i * a.cs_s2" in cu
-          and "sbase + (size_t)(acc + i) * a.cs_s2" in cu
-          and "slot * KDA_QKV * a.conv_width" not in cu
-          and "ints.size() == 10" in cu
-          and "kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2)" in cu
-          and "kda_cs_store(a, sbase + (size_t)i * a.cs_s2, v)" in cu
-          and "a.cs_bf16 = (int)ints[9];" in cu
-          and "conv state strides must be positive" in cu
-          and "(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
-          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
-          and "recurrent state slot stride is narrower than one slot" in cu,
-          "conv state is addressed through (slot, channel, width) strides "
-          "carried by the launch, computed once as sbase and used by every "
-          "read and write (the engine hands out page-aligned / transposed "
-          "views; a contiguity gate rejected every production layer, 32차)")
-    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
-          and "a.conv_state[sbase + a.conv_width - (CONV_W - 1) + i]" not in cu,
-          "the convolution's pos<0 history starts at the accepted boundary "
-          "(state[acc - 1 .. acc + 1], the stock spec kernel's prior_tokens) "
-          "-- the buffer's newest end is that window only when every draft "
-          "was accepted")
-    check("for (int i = 0; i < a.conv_width; ++i)" in cu
-          and "? kda_cs_load(a, sbase + (size_t)(acc + i) * a.cs_s2)" in cu
-          and "for (int j = 0; j < NQ_MAX; ++j) v = (q == j) ? xin[j] : v;" in cu
-          and "constexpr int KDA_NQ_MAX = KDA_SPEC + 1;" in cu
-          and '"kda: max_query_len over the unrolled conv window (KDA_NQ_MAX)"' in cu,
-          "the state update writes the WHOLE window: causal_conv1d_update "
-          "keeps conv_width - nq old values starting at `acc` and appends "
-          "every query token")
-    check("(size_t)slot0 * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
-          and "(size_t)sj * a.rs_s0 + (size_t)head * KDA_D * KDA_D" in cu
-          and "const int head = blockIdx.x >> 1, rowhalf = blockIdx.x & 1;" in cu
-          and "(size_t)rowhalf * RB * KDA_D;" in cu,
-          "recurrent state slot stride is the launch-carried rs_s0 (>= H*D*D) "
-          "for both the resume slot and the per-position store slots")
-
-    # -- driver-side guards from the same review
-    check("SLOT = 1" in pysrc_full
-          and "self.sidx = (self.SLOT + torch.arange(8, dtype=torch.int32,"
-          in pysrc_full
-          and "mkw(self.SLOT + 8 + 1, KDA_H, KDA_D, KDA_D," in pysrc_full,
-          "the KDA fixture addresses NONZERO, DISTINCT state slots per query "
-          "position (the engine's spec-decode layout)")
-    # -- the state-index contract, taken from the stock kernels: the conv
-    #    history starts at the accepted boundary, the recurrence resumes
-    #    from slot [r, acc - 1] and stores after every token into [r, j]
-    check("st[i] = kda_cs_load(a, sbase + (size_t)(acc - 1 + i) * a.cs_s2);" in cu
-          and "const int slot0 = a.state_idx[r * a.mql + (acc - 1)];" in cu
-          and "if (slot0 <= 0 || t1 <= t0) continue;" in cu
-          and "const int sj = a.state_idx[r * a.mql + j];" in cu
-          and "if (sj > 0) {" in cu
-          and "if (j == acc - 1)" not in cu
-          and "a.conv_width - (CONV_W - 1) + i" not in cu,
-          "MK-KDA follows the stock state-index contract: conv history from "
-          "state[acc - 1], recurrence resumed from slot [r, acc - 1] and "
-          "stored per position into [r, j] (slot <= 0 skipped)")
     arm_fn = pysrc_full[pysrc_full.index("def maybe_arm"):]
     check("is_current_stream_capturing()" in arm_fn,
           "maybe_arm never compiles/self-tests inside graph capture")
-    check("_kda_ensure_packs" in pysrc_full
-          and "NvFp4DenseMethod, W4A8DenseMethod" in pysrc_full
-          and "while isinstance(m, (NvFp4DenseMethod, W4A8DenseMethod))"
-          in pysrc_full,
-          "KDA packs require a QUANTIZED arm, but the method may be wrapped "
-          "(nvfp4/w4a8 stack on the fp8 one) -- demanding Fp8DenseMethod by "
-          "isinstance is what made MK-KDA look exclusive with the nvfp4 "
-          "dense scheme when only MK-GEMM ever was")
-    packs_fn = pysrc_full[pysrc_full.index("def _kda_ensure_packs"):]
-    packs_fn = packs_fn[:packs_fn.index("def _kda_device_ok")]
-    check("_bf16_freed" in packs_fn and "raise RuntimeError" in packs_fn,
-          "this runs on the first eager forward, AFTER "
-          "maybe_free_fp8_dense_bf16: a missing pack whose source was "
-          "released must refuse loudly, not pack an empty tensor")
-
-    # -- kda.py overlay keeps the stock body reachable (its own module since
-    #    the core was made model-agnostic; see test_megakernel_core_is_shared)
-    kda = open(os.path.join(REPO, "overlay/modules/glm53_model",
-                            "glm5next_kda.py"), encoding="utf-8").read()
-    check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
-          "kda.py overlay keeps the stock conv/recurrent path")
-    check("deneb fork (glm53_megakernel)" in kda,
-          "kda.py takeover carries the fork marker")
-    check("kda_block(self, hidden_states, positions)" in kda
-          and "compare(out)" in kda,
-          "kda.py wires both the armed takeover and the shadow epilogue")
-    check(kda.index("torch.cuda.is_current_stream_capturing()")
-          < kda.index("_mk_arm(self, hidden_states)"),
-          "shadow runs eager-only, never inside graph capture")
 
     # -- mhc: no grid barrier. The block that completes a token's 16th
     #    chunk runs that token's p2/p3/p4 (arrival counter, rearmed by the
@@ -9657,33 +8177,6 @@ def test_glm53_megakernel_contracts() -> None:
     _mhc_k = _mhc_k[:_mhc_k.index("\n}\n")]
     check("mk_grid_barrier" not in _mhc_k and "mk_mhc_p1(a, blockIdx.x);" in _mhc_k,
           "the mhc kernel has no grid barrier: p2/p3/p4 run off the tail queue")
-    # -- kda: gates and conv share a phase (both read only p0's qkv); the
-    #    kernel has four grid barriers, not five
-    _kda_k = cu[cu.index("__global__ void mk_kda_kernel(const MKKdaArgs a) {"):]
-    _kda_k = _kda_k[:_kda_k.index("\n}\n")]
-    check(_kda_k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 4
-          and "// no barrier here: phase 2 (conv) reads only phase 0's qkv" in _kda_k,
-          "the kda kernel runs gates and conv back to back without a barrier")
-    # -- kda: the split-K model keeps >= 8 k-blocks per slice (warming L2
-    #    with the o_proj pack from the idle blocks measured a net loss:
-    #    p5 -5.6 us, p3 +12)
-    _smlp_k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
-    check("prefetch.global.L2" not in _kda_k
-          and cu.count("prefetch.global.L2") == _smlp_k.count("prefetch.global.L2")
-          and "Warm phase C's first W records in L2" in _smlp_k
-          and "L2WARM" not in cu and "warm_l2" not in cu
-          and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
-          and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
-          "split-K never makes slices shorter than 8 k-blocks; no L2 "
-          "prefetch under the delta rule (net loss) -- the fused MLP's warm "
-          "of its down pack is a bench knob, off by default")
-    # -- kda gates: a tensor-core GEMM (cp.async weight tiles, bf16 mma)
-    check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
-          and "constexpr int GT_TILES = 2 * KDA_OUT / GT_ROWS;" in cu
-          and "if (next < GT_TILES) stage_tile(next, buf ^ 1);" in cu
-          and '"gate weights and the qkv workspace must be 16 B aligned (cp.async)"' in cu,
-          "the kda gates run as a double-buffered cp.async + bf16 mma GEMM "
-          "(the warp-per-dot form measured 14-18 us for 1 MB of weights)")
     check("__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];" in cu
           and "if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);" in cu
           and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu
@@ -9714,12 +8207,14 @@ def test_glm53_megakernel_contracts() -> None:
           "p1 keeps the chunk's fn slice in registers with the tokens as the "
           "inner loop and reduces through a transposed smem tile (pitch 27); "
           "the smem-slice form measured worse")
-    # -- hook placement: MK precedes ONEPASS in the mhc wrapper
+    # -- hook placement: the MK hook is the small-M branch's only fork
     tl = open(os.path.join(REPO, "overlay/modules/glm53_kernels/"
                                  "tilelang.py"), encoding="utf-8").read()
-    check(tl.index("_mk_hook = _deneb_mk_hook()")
-          < tl.index("deneb fork: ONEPASS"),
-          "the MK-MHC hook is tried before the ONEPASS experiment")
+    check("_mk_hook = _deneb_mk_hook()" in tl
+          and "ONEPASS" not in tl.split("_mk_hook = _deneb_mk_hook()")[1]
+          and "_deneb_smallm_pair" not in tl,
+          "34차 §8: the one-pass and small-M overrides are gone from the "
+          "dispatcher; the MK-MHC hook is the decode branch's only fork")
 
     # -- fp8_dense hook routes armed decode shapes and falls back otherwise
     fp8 = open(os.path.join(REPO, "overlay/modules/glm53_model/"
@@ -9728,18 +8223,18 @@ def test_glm53_megakernel_contracts() -> None:
           "Fp8DenseMethod.apply routes through the megakernel driver")
     check("method._mk = _mkmod.build_mk_weight_w4(weight, name=name,\n                                                       per_row=per_row)" in fp8
           and 'per_row = False if getattr(method, "_opaque", False) else None' in fp8
-          and fp8.count('attach_mk(method, weight, cols, f"{type(model).__name__}/{name}")') == 4
+          and fp8.count('attach_mk(method, weight, cols, f"{type(model).__name__}/{name}")') == 3  # the MK-KDA-owned branch left with the lane (34차 §8)
           and "ENABLE_W4" not in fp8 and "build_mk_weight(" not in fp8
           and "VLLM_GLM53_MK_W4" not in fp8,
           "the build attaches the W4 pack next to the deepgemm pair on every "
           "eligible linear, no arm knob")
-    check("def probe_exact(gemm2: str = \"both\") -> bool:" in bench
+    check("def probe_exact() -> bool:" in bench
           and "def _probe_exact_lane(mk, x, p4, n, ref, tag: str) -> bool:" in bench
           and "x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
           and "probe_w4" not in bench
           and "run_gemm_w4" not in bench and "build_mk_weight(" not in bench
           and "VLLM_GLM53_MK_W4" not in bench
-          and 'TOL = {"mhc": 1e-3, "gemm": 0.15, "kda": 2e-2}' in bench,
+          and 'TOL = {"mhc": 1e-3, "gemm": 0.15}' in bench,
           "the bench times the W4 lane as the MK arm, gates it at the e2m1 "
           "by-design class, and keeps the exact-grid gate against the torch "
           "twins")
@@ -9890,7 +8385,6 @@ def test_megakernel_core_is_shared() -> None:
     # is not mounted, would log `armed` and route nothing.
     seg_hook = {"VLLM_GLM53_MK_MHC": None,          # any module with the hook
                 "VLLM_GLM53_MK_GEMM": "glm53_model",
-                "VLLM_GLM53_MK_KDA": "glm53_model",
                 "VLLM_GLM53_MK_MLA": "glm53_model"}
     for envpath in sorted(glob.glob(os.path.join(REPO, "profiles", "*.env"))):
         profile = os.path.basename(envpath)[:-4]
@@ -9912,11 +8406,11 @@ def test_megakernel_core_is_shared() -> None:
                   "the segment would arm on its self-test and then serve "
                   "nothing, with the boot log saying otherwise")
 
-    check(re.search(r"^VLLM_GLM53_MK_KDA_SHADOW=0$", glm_text, re.M) is not None,
-          "glm53 ships VLLM_GLM53_MK_KDA_SHADOW=0 -- the shadow judge is a "
-          "diagnostic, never a production default")
-    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_LOCALQ",
-                 "VLLM_GLM53_AR_PREFETCH"):
+    check(re.search(r"^VLLM_GLM53_MK_KDA", glm_text, re.M) is None
+          and re.search(r"^VLLM_GLM53_MK_GEMM2=", glm_text, re.M) is None,
+          "34차 §8: the MK_KDA / MK_KDA_SHADOW / MK_GEMM2 knobs are gone from the "
+          "profile with their lanes (the v2 GEMM is the GEMM segment's only kernel)")
+    for knob in ("VLLM_GLM53_AR_PREFETCH",):
         check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
               f"glm53 ships {knob}=0 -- 32차 §14: the zero-gain set without "
               "SMLP (KDA lane CAPTURED into the decode graph, local-quant, AR "
@@ -9947,7 +8441,7 @@ def test_megakernel_core_is_shared() -> None:
         check(re.search(rf"^{knob}=0$", dsv_text, re.M) is not None,
               f"dsv4 must ship {knob}=0 (this is production and nothing is "
               "measured on this model)")
-    for knob in ("VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_MLA"):
+    for knob in ("VLLM_GLM53_MK_GEMM", "VLLM_GLM53_MK_MLA"):
         check(re.search(rf"^{knob}=", dsv_text, re.M) is None,
               f"dsv4 declares no {knob}: no linear-attention layer, a "
               "different MLA geometry, and block-fp8 dense weights with no "
@@ -10115,9 +8609,9 @@ def test_megakernel_core_is_shared() -> None:
           "the probe imports from the package root the wrapper hands it")
     check('ap.add_argument("--segments"' in probe
           and 'ap.add_argument("--stock"' in probe
-          and '"--skip-kda", action="store_true"' in probe,
-          "--segments and --stock exist and --skip-kda still works (the "
-          "campaign's running commands use it)")
+          and "--skip-kda" not in probe,
+          "--segments and --stock exist; the kda segment and its --skip-kda "
+          "left with the lane (34차 §8)")
     disp = probe[probe.index("def probe_mhc_dispatch"):probe.index("def main()")]
     check("mk.maybe_arm()" in disp
           and disp.index("mk.maybe_arm()") < disp.index('mk._ARMED["mhc"] = False'),
@@ -10831,18 +9325,16 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 
 
 def test_glm53_indexer_gate_splitk_contracts() -> None:
-    """glm53_indexer_gate_splitk: opt-in deterministic split-K head gate on the
-    checkpoint's shape (index_n_heads=32), small-M only, stock default."""
+    """The profile adopts split-K on the checkpoint's small-M shape; the
+    helper retains its explicit knob and stock fallback on other shapes."""
     mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_model")
     kern = open(os.path.join(mod_dir, "glm53_indexer_gate.py"), encoding="utf-8").read()
     attn = open(os.path.join(mod_dir, "glm5next_attention.py"), encoding="utf-8").read()
-    fast = open(os.path.join(REPO, "overlay", "modules", "glm53_model",
-                             "glm53_prefill_fastpath.py"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
     check("glm53_model" in modules, "glm53 profile must mount glm53_model (the indexer gate lives there)")
-    check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=0$", profile, re.M) is not None,
-          "profile must ship VLLM_GLM53_INDEXER_GATE_SPLITK=0 (stock torch.mm by default)")
+    check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=1$", profile, re.M) is not None,
+          "profile must retain the MKG3-adopted VLLM_GLM53_INDEXER_GATE_SPLITK=1 default")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
     by_target = {r[1]: r[2] for r in rows}
@@ -10856,13 +9348,6 @@ def test_glm53_indexer_gate_splitk_contracts() -> None:
           "attention overlay routes the head gate through the helper exactly once")
     check("from vllm.models.glm5next.nvidia.glm53_indexer_gate import head_gate as _glm53_head_gate" in attn,
           "attention overlay imports the helper from the module's kernel file")
-    check(stock not in fast and fast.count(helper) == 1,
-          "the fused-indexer forward (VLLM_GLM53_FUSED_K_GATE) routes through the same helper")
-    check("isinstance(e, ModuleNotFoundError) and e.name == _HEAD_GATE_MODULE" in fast
-          and "logger.exception(" in fast.split("def _glm53_head_gate")[1].split("return _HEAD_GATE")[0],
-          "the fastpath tolerates only 'module not mounted' silently and logs other ImportErrors")
-    check("VLLM_GLM53_INDEXER_GATE_SPLITK" in fast.split("def _glm53_head_gate")[1].split("return _HEAD_GATE")[0],
-          "the fastpath announces a knob that asks for split-K while the module is missing")
     check(not ({"glm53_drafter", "glm53_runtime"}
                     & set(open(os.path.join(mod_dir, "requires"), encoding="utf-8").read().split())),
           "the module is self-contained (the wiring fastpath optionally imports it, not the reverse) (folded into glm53_model: requires nothing above the model layer)")
@@ -12206,9 +10691,7 @@ if __name__ == "__main__":
     test_overlay_logger_defined()
     test_osar_maxel_rank_agreement()
     test_bench_resolves_served_model()
-    test_prefill_knobs_announce_arming()
     test_extra_env_rejects_comma_list()
-    test_fused_k_gate_lazy_slot_exists()
     test_torch_imports_are_guarded()
     test_dflash2_conv_mask_buffer()
     test_dflash_aot_guard_stays_removed()
@@ -12230,18 +10713,14 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
-    test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
     test_every_module_can_mount_on_an_image_the_repo_can_launch()
     test_profile_declares_no_knob_the_code_cannot_read()
     test_fp8_dense_free_bf16_contract()
     test_fp8_dense_bproj()
-    test_mhc_smallm_knob()
     test_mhc_passes_knob()
     test_mhc_probe_contracts()
-    test_mhc_onepass_math()
-    test_mhc_smallm_split_ownership()
     test_mhc_bigfuse_knob()
     test_census_kda_group()
     test_census_owner_axis()
@@ -12251,10 +10730,9 @@ if __name__ == "__main__":
     test_dflash_warmup_buckets()
     test_dsv4_spec_warmup_contract()
     test_dsv4_ue8m0_host_guard()
-    test_glm53_sm121_mla_prefill_gate()
     test_glm53_kpool_packed_scratch_contract()
-    test_glm53_cache_only_indexer_prefill()
     test_glm53_kda_prefill_regime()
+    test_glm53_kda_prefill_direct_output()
     test_glm53_upstream_prefill_batch()
     test_oneshot_sm121_grid_contract()
     test_cuda_builds_keep_the_arch_specific_target()
@@ -12267,7 +10745,6 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
     test_spec_k_compile_factor()
-    test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
     test_mk_head_lane_contracts()
@@ -12293,9 +10770,7 @@ if __name__ == "__main__":
     test_bracket_runner_contracts()
     test_trace_composition_analyze()
     test_drafter_fc_probe_contracts()
-    test_kda_conv_state_layout_is_the_arming_contract()
     test_fp8_dense_build_peak_pays_only_for_what_serves()
-    test_kda_owns_its_projections_across_dense_schemes()
     test_hy4_entrypoint_carries_the_production_knobs()
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """The served b12x static MoE kernel vs the decode-streaming v2 kernel
-(``moe_static_kernel_v2``), at the decode shape, DRAM-cold, graph-replayed --
+(``moe_static_kernel_v4``; v2/v3 sunset 34차 §8), at the decode shape, DRAM-cold, graph-replayed --
 and the v2 per-CTA timeline (stamps) that says where the time goes.
 
 Shape: C=1 decode = 8 tokens x top-8 = 64 routed pairs -> the STATIC backend
@@ -128,7 +128,7 @@ def expert_set(gen):
 
 def _stamp_summary(st: torch.Tensor, label: str) -> None:
     """st: [grid, STAMP_SLOTS] int64 ns."""
-    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_kernel_v2 as k2
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_common as k2
 
     s = st.cpu()
     grid = s.shape[0]
@@ -250,7 +250,7 @@ def main() -> int:
     if args.hang_diag:
         import os
         import threading
-        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_kernel_v2 as k2
+        from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_static_common as k2
 
         ids40, w40 = routings[40 if 40 in routings else us_list[0]][0]
         md._STATIC_V2_OVERRIDE = md._parse_glm53_static_v2(args.hang_diag)

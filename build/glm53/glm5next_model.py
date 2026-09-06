@@ -16,6 +16,7 @@ from vllm.distributed import (
     get_tensor_model_parallel_world_size,
     tensor_model_parallel_all_gather,
 )
+from vllm.forward_context import get_forward_context, is_forward_context_available
 from vllm.logger import init_logger
 from vllm.model_executor.layers.activation import SiluAndMul, SiluAndMulWithClamp
 from vllm.model_executor.layers.fused_moe import (
@@ -96,12 +97,7 @@ from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.glm5_next import Glm5NextConfig
 
 from .attention import Glm5NextMLAAttention
-from .glm53_prefill_fastpath import (
-    install_glm53_prefill_fastpath,
-    prepare_glm53_prefill_fastpath,
-    warm_glm53_prefill_metadata_runtime,
-)
-from .glm53_union_prefill import install_glm53_union_prefill
+from .glm53_prefill_fastpath import warm_glm53_prefill_metadata_runtime
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -109,11 +105,87 @@ from .multimodal import (
     Glm5NextVisionTransformer,
 )
 
-# Install after .attention is fully imported and before any GLM layer is built.
-install_glm53_prefill_fastpath()
-install_glm53_union_prefill()
 
 logger = init_logger(__name__)
+
+_PREFILL_SP_ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
+if _PREFILL_SP_ENABLED:
+    from vllm.distributed.device_communicators.glm53_prefill_collectives import (
+        partial_tp_output,
+        prefill_all_gather,
+        prefill_reduce_scatter,
+        prefill_shard,
+    )
+
+
+def _prefill_sp_metadata_ok(metadata, layer_names, num_tokens):
+    """Inspect host metadata only: every target layer must be pure prefill."""
+    if not isinstance(metadata, dict) or not layer_names:
+        return False
+    for name, kind in layer_names:
+        item = metadata.get(name)
+        counts = (
+            getattr(item, "num_actual_tokens", None),
+            getattr(item, "num_prefills", None),
+            getattr(item, "num_decodes", None),
+            getattr(item, "num_decode_tokens", None),
+        )
+        if not all(type(value) is int for value in counts):
+            return False
+        actual, prefills, decodes, decode_tokens = counts
+        if actual != num_tokens or prefills <= 0 or decodes != 0 or decode_tokens != 0:
+            return False
+        if kind == "kda":
+            # GDN separates ordinary decode from speculative verification.
+            if (
+                getattr(item, "num_spec_decodes", None) != 0
+                or getattr(item, "num_spec_decode_tokens", None) != 0
+                or getattr(item, "num_prefill_tokens", None) != num_tokens
+            ):
+                return False
+        elif kind != "mla":
+            return False
+    return True
+
+
+def _prefill_sp_layer_reduction_ok(layer):
+    """Require exactly one late TP sum in each attention/MLP call.
+
+    The request-local communicator scope counts that sum again at execution.
+    These guards reject early-reduced or transformed MoE paths before the
+    first SP collective; no layer attributes are changed for this request.
+    """
+    if (
+        not layer.mhc
+        or layer.is_mtp_layer
+        or layer.is_sequence_parallel
+        or getattr(layer.self_attn.o_proj, "reduce_results", None) is not True
+    ):
+        return False
+    if not layer._mlp_is_moe:
+        return getattr(layer.mlp.down_proj, "reduce_results", None) is True
+    runner = layer.mlp.experts
+    config = getattr(runner, "moe_config", None)
+    if (
+        config is None
+        or getattr(config, "tp_size", None) != 4
+        or getattr(config, "ep_size", None) != 1
+        or getattr(config, "dp_size", None) != 1
+        or getattr(config, "is_sequence_parallel", None) is not False
+        or getattr(config, "skip_final_all_reduce", None) is not False
+        or getattr(config, "moe_backend", None) not in ("flashinfer_b12x", "b12x")
+        or getattr(runner, "routed_input_transform", None) is not None
+        or getattr(runner, "routed_output_transform", None) is not None
+        or getattr(runner, "_fused_output_is_reduced", None) is not False
+    ):
+        return False
+    router = getattr(runner, "router", None)
+    if router is None or any(
+        cls.__name__ == "ZeroExpertRouter" for cls in type(router).__mro__
+    ):
+        return False
+    shared = layer.mlp.shared_experts
+    return shared is None or getattr(shared.down_proj, "reduce_results", None) is False
 
 # deneb fork (glm53_prep_fused): fused decode input preparation. Import only
 # -- a boot without the module mounted is stock -- and the installer is inert
@@ -428,6 +500,11 @@ class Glm5NextDecoderLayer(nn.Module):
         self.mhc = config.mhc
         self.layer_kind = "kda" if config.is_kda_layer(layer_idx) else "mla"
         self.is_sequence_parallel = parallel_config.use_sequence_parallel_moe
+        self._prefill_sp_metadata_name = (
+            f"{prefix}.self_attn"
+            if self.layer_kind == "kda"
+            else f"{prefix}.self_attn.attn"
+        )
 
         if config.is_kda_layer(layer_idx):
             self.self_attn = Glm5NextLinearAttention(
@@ -536,6 +613,7 @@ class Glm5NextDecoderLayer(nn.Module):
         residual: torch.Tensor | None = None,
         post: torch.Tensor | None = None,
         comb: torch.Tensor | None = None,
+        prefill_sequence_parallel: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -596,16 +674,19 @@ class Glm5NextDecoderLayer(nn.Module):
 
         # Attention needs the full token sequence; mHC above ran on the SP
         # shard. Gather for attention, scatter back afterward (DSv4 pattern).
-        if self.is_sequence_parallel:
+        if prefill_sequence_parallel:
+            # MHC owns only this rank's contiguous token shard. Attention
+            # continues to see the original complete metadata/positions.
+            x = prefill_all_gather(x, num_tokens=positions.shape[0])
+            with partial_tp_output(num_tokens=positions.shape[0]):
+                x = self.self_attn(hidden_states=x, positions=positions)
+            x = prefill_reduce_scatter(x)
+        elif self.is_sequence_parallel:
             x = sp_all_gather(x)[: positions.shape[0]]
-
-        x = self.self_attn(
-            hidden_states=x,
-            positions=positions,
-        )
-
-        if self.is_sequence_parallel:
+            x = self.self_attn(hidden_states=x, positions=positions)
             x = sp_reduce_scatter(x)
+        else:
+            x = self.self_attn(hidden_states=x, positions=positions)
 
         # Fuse post-attn hc_post + pre-FFN hc_pre (+ RMSNorm) into one kernel.
         residual, post, comb, x = self.hc_fused_post_pre(
@@ -621,7 +702,14 @@ class Glm5NextDecoderLayer(nn.Module):
         )
 
         # Fully Connected
-        if self._mlp_is_moe:
+        if prefill_sequence_parallel:
+            # Keep the existing TP expert/dense weights and full-token MoE
+            # routing. Suppress only their terminal sum, then scatter it.
+            x = prefill_all_gather(x, num_tokens=positions.shape[0])
+            with partial_tp_output(num_tokens=positions.shape[0]):
+                x = self.mlp(x)
+            x = prefill_reduce_scatter(x)
+        elif self._mlp_is_moe:
             x = self.mlp(x, already_sequence_parallel=self.is_sequence_parallel)
         else:
             x = self.mlp(x)
@@ -791,6 +879,28 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
         self.is_sequence_parallel = (
             vllm_config.parallel_config.use_sequence_parallel_moe
         )
+        parallel = vllm_config.parallel_config
+        self._prefill_sp_config_ok = (
+            _PREFILL_SP_ENABLED
+            and config.mhc
+            and config.hidden_size == 4096
+            and config.mhc_num_residual_streams == 4
+            and not self.is_sequence_parallel
+            and parallel.tensor_parallel_size == 4
+            and parallel.pipeline_parallel_size == 1
+            and getattr(parallel, "data_parallel_size", 1) == 1
+            and not getattr(parallel, "enable_expert_parallel", False)
+            and not getattr(parallel, "enable_eplb", False)
+            and getattr(parallel, "decode_context_parallel_size", 1) == 1
+            and getattr(parallel, "prefill_context_parallel_size", 1) == 1
+            and self.start_layer == 0
+            and self.end_layer == config.num_hidden_layers
+        )
+        self._prefill_sp_metadata_layers = tuple(
+            (layer._prefill_sp_metadata_name, layer.layer_kind)
+            for layer in self._active_layers
+        )
+        self._prefill_sp_announced = False
 
         world_size = get_tensor_model_parallel_world_size()
         assert config.num_attention_heads % world_size == 0, (
@@ -799,6 +909,42 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
+
+    def _can_prefill_sequence_parallel(self, hidden_states, positions) -> bool:
+        if not self._prefill_sp_config_ok:
+            return False
+        if (
+            torch.compiler.is_compiling()
+            or hidden_states.device.type != "cuda"
+            or hidden_states.dtype != torch.bfloat16
+            or hidden_states.ndim != 2
+            or hidden_states.shape[1] != 4096
+            or not hidden_states.is_contiguous()
+            or positions.ndim != 1
+            or positions.device != hidden_states.device
+            or positions.shape[0] != hidden_states.shape[0]
+            or positions.shape[0] < 128
+            or torch.cuda.is_current_stream_capturing()
+            or not is_forward_context_available()
+        ):
+            return False
+        if not _prefill_sp_metadata_ok(
+            get_forward_context().attn_metadata,
+            self._prefill_sp_metadata_layers,
+            positions.shape[0],
+        ):
+            return False
+        # Quant kernels and wrappers are installed after construction, so
+        # their reduction contract is checked on the actual serving objects.
+        if not all(_prefill_sp_layer_reduction_ok(layer) for layer in self._active_layers):
+            return False
+        if not self._prefill_sp_announced:
+            logger.info(
+                "[prefill-sp] MHC token shards selected (T=%d, TP=4, full-token attention/MoE)",
+                positions.shape[0],
+            )
+            self._prefill_sp_announced = True
+        return True
 
     def forward(
         self,
@@ -826,7 +972,10 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
             comb = None
 
         full_num_tokens = positions.shape[0]
-        if self.is_sequence_parallel:
+        prefill_sequence_parallel = self._can_prefill_sequence_parallel(hidden_states, positions)
+        if prefill_sequence_parallel:
+            hidden_states = prefill_shard(hidden_states)
+        elif self.is_sequence_parallel:
             hidden_states = sp_shard(hidden_states)
 
         # DFLASH2-AUX-CAPTURE (EAGLE-3 aux hidden states; mirrors
@@ -834,7 +983,8 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
         aux_hidden_states: list[torch.Tensor] = []
         for idx, layer in enumerate(self._active_layers, start=self.start_layer):
             hidden_states, residual, post, comb = layer(
-                positions, hidden_states, residual, post, comb
+                positions, hidden_states, residual, post, comb,
+                prefill_sequence_parallel=prefill_sequence_parallel,
             )
             if idx + 1 in self.aux_hidden_state_layers:
                 # `idx + 1` matches deepseek_v4: the runner already converted
@@ -856,7 +1006,11 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                     # the layer) or a non-mHC layer: the output is already
                     # plain [num_tokens, hidden_size].
                     aux_hidden_state = hidden_states
-                if self.is_sequence_parallel:
+                if prefill_sequence_parallel:
+                    aux_hidden_state = prefill_all_gather(
+                        aux_hidden_state, num_tokens=full_num_tokens
+                    )
+                elif self.is_sequence_parallel:
                     # Aux states are consumed at full-sequence granularity;
                     # gather the SP shard (deepseek_v4 pattern).
                     aux_hidden_state = sp_all_gather(aux_hidden_state)[
@@ -874,7 +1028,9 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                 {"hidden_states": hidden_states, "residual": residual}
             )
 
-        if self.is_sequence_parallel:
+        if prefill_sequence_parallel:
+            hidden_states = prefill_all_gather(hidden_states, num_tokens=full_num_tokens)
+        elif self.is_sequence_parallel:
             hidden_states = sp_all_gather(hidden_states)[:full_num_tokens]
 
         hidden_states = self.norm(hidden_states)
@@ -1243,30 +1399,10 @@ class Glm5NextForCausalLM(
         except Exception:
             pass
 
-        # Build the dense-prefill indexer's fused K+gate weight only after the
-        # outer loader has populated every source parameter. It is a
-        # non-persistent acceleration buffer; any failure keeps the original
-        # per-projection path.
-        try:
-            prepare_glm53_prefill_fastpath(self)
-        except Exception:
-            pass
-
         # Compile the exact pooled-prefill metadata launch signatures before
-        # the first request. Independent rollback from the dense-MLA arm.
+        # the first request.
         try:
             warm_glm53_prefill_metadata_runtime(self)
-        except Exception:
-            pass
-
-        # Build the optional fixed-shape radix KPool extension during startup,
-        # never on the first user prefill. A build failure is fail-closed.
-        try:
-            from vllm.model_executor.layers.glm53_kpool_topk import (
-                prepare_glm53_kpool_topk,
-            )
-
-            prepare_glm53_kpool_topk()
         except Exception:
             pass
 

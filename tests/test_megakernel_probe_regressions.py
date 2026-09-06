@@ -221,11 +221,11 @@ class BootGateOption(unittest.TestCase):
         calls = []
         mk = types.SimpleNamespace(
             _selftest_gemm=lambda: calls.append("gemm") or True,
-            _selftest_kda=lambda: calls.append("kda") or True)
+            _selftest_mhc=lambda: calls.append("mhc") or True)
         run = self.extract("probe_boot_gates", {})
         with redirect_stdout(io.StringIO()):
-            self.assertTrue(run(mk, ["exact", "gemm", "kda"]))
-        self.assertEqual(calls, ["gemm", "kda"])
+            self.assertTrue(run(mk, ["exact", "gemm", "mhc"]))
+        self.assertEqual(calls, ["gemm", "mhc"])
 
     def test_false_nonfinite_or_exception_stops_later_gates(self):
         def broken():
@@ -235,9 +235,9 @@ class BootGateOption(unittest.TestCase):
         for first in (lambda: False, lambda: math.nan, broken):
             calls = []
             mk = types.SimpleNamespace(_selftest_gemm=first,
-                                       _selftest_kda=lambda: calls.append("kda") or True)
+                                       _selftest_mhc=lambda: calls.append("mhc") or True)
             with redirect_stdout(io.StringIO()):
-                self.assertFalse(run(mk, ["gemm", "kda"]))
+                self.assertFalse(run(mk, ["gemm", "mhc"]))
             self.assertEqual(calls, [])
 
     def run_main(self, flags, boot_result):

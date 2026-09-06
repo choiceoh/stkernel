@@ -144,12 +144,12 @@ if after:
 
 # 그룹핑 규칙 (우리 소유 / 남의 것)
 GROUPS = [
-    ("우리 · 메가커널 세그먼트", r"mk_gemm2?_kernel|mk_mhc_kernel|mk_mla_kernel|mk_kda_kernel"),
+    ("우리 · 메가커널 세그먼트", r"mk_gemm2_kernel|mk_mhc_kernel|mk_mla_kernel"),
     # ^ 앵커 필수: 앵커 없는 `k_reduce` 는 deep_gemm 의 split_k_reduce 42발/스텝을
     # 우리 AR 로 셌다(08-31 인구조사의 "우리 소유 186" 이 그래서 42 만큼 부풀었다).
     ("우리 · osar AR",      r"^k_oneshot|^k_guard|^k_copy_in|^k_signal|^k_wait|^k_reduce"),
     ("우리 · MoE 게이트",    r"_deneb_gate"),
-    ("우리 · 준비/인덱서",    r"_glm53_prep_fused|_gate_splitk|kpool_topk_kernel"),
+    ("우리 · 준비/인덱서",    r"_glm53_prep_fused|_gate_splitk"),
     ("MoE b12x",            r"b12x|moe|topk|Moe"),
     ("mhc (MHC 압축)",       r"mhc"),
     ("KDA/FLA 청크",         r"kda|chunk|recurrent_gated|causal_conv1d|wy_|solve_tril|l2norm|cumsum"),

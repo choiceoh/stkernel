@@ -15,7 +15,7 @@
 #
 #   ab-glm53.sh base                 # megakernel off (profile default)
 #   ab-glm53.sh cand                 # megakernel on
-#   ab-glm53.sh cand "VLLM_GLM53_MK_KDA=1"   # extra knobs for this arm
+#   ab-glm53.sh cand "VLLM_GLM53_MK_SMLP2=1" # extra knobs for this arm
 set -uo pipefail
 ARM=${1:?usage: ab-glm53.sh base|cand [extra env]}
 EXTRA=${2:-}

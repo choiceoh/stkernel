@@ -73,12 +73,11 @@ def stream_of(e: dict):
 # flashinfer, deep_gemm, cuBLAS/CUTLASS, or the model's own TileLang code --
 # some of it out of files we overlay, which is a different axis (editable)
 # from who wrote the kernel (see STEP_KERNEL_MAP.md).
-OURS = ("mk_gemm_kernel", "mk_gemm2_kernel", "mk_gemm_lq_kernel", "mk_smlp_kernel",
-        "mk_mhc_kernel", "mk_kda_kernel", "mk_mla_kernel",
-        "k_oneshot", "kpool_topk_kernel", "_deneb_gate_partial_kernel",
+OURS = ("mk_gemm2_kernel",
+        "mk_mhc_kernel", "mk_mla_kernel",
+        "k_oneshot", "_deneb_gate_partial_kernel",
         "_glm53_prep_fused_kernel", "_gate_splitk_partial_kernel",
         "_gate_splitk_reduce_kernel", "_kpool_seed_tail_cache_strided_kernel",
-        "_glm53_sparse_prefill_kernel", "_glm53_union_prefill_kernel",
         "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel",
         "_glm53_indexer_tail_select_kernel")
 
@@ -91,16 +90,12 @@ def owner(n: str) -> str:
 def category(n: str) -> str:
     # our megakernel segments first -- their names contain the substrings the
     # vendor rules below match ("mhc", "gemm", "mla", "kda")
-    if "mk_gemm_kernel" in n or "mk_gemm2_kernel" in n or "mk_gemm_lq_kernel" in n:
+    if "mk_gemm2_kernel" in n:
         return "MK GEMM (ours)"
-    if "mk_smlp_kernel" in n:
-        return "MK SMLP (ours)"
     if "mk_mhc_kernel" in n:
         return "MK MHC (ours)"
     if "mk_mla_kernel" in n:
         return "MK MLA (ours)"
-    if "mk_kda_kernel" in n:
-        return "MK KDA (ours)"
     if n.startswith("_glm53_prep_fused"):
         return "prep fused (ours)"
     if n.startswith("k_oneshot"):

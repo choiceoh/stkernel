@@ -1,16 +1,17 @@
 # glm53_kernels
 
-GLM-5.3 층 커널 — kpool 희소 인덱서, tail 슬롯, SM121 MLA 프리필, KDA 프리필, MHC TileLang.
+GLM-5.3 층 커널 — kpool 희소 인덱서(tail-select 융합), tail 슬롯, KDA 프리필(regime 버킷 + #368 direct-out), MHC TileLang(프리필 big_fuse 오버라이드 + MK 훅).
+
+**34차 §8 (2026-09-06, 운영자 "전부 지워")**: radix top-k 확장(`glm53_kpool_topk.cu/.py`, `KPOOL_FUSED_TOPK`), SM121 MLA 프리필(`flash_attn.py`, `SM121_MLA_PREFILL`), MHC 디코드 쪽 오버라이드(`MHC_SMALLM`·`MHC_ONEPASS`·`mhc_onepass_tilelang`)를 삭제했다 — opt-in 이었고 판정 기록이 없거나(top-k·SM121) mk_mhc 가 대체했다(ONEPASS/SMALLM). KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`, `KDA_PREFILL_REGIME`)도 후보였으나 같은 날 #368 이 그 파일에 direct-out 프리필 경로를 얹어 **유지**했다. 아래 해당 절은 기록이다.
 
 2026-09-05 (34차, 운영자 "디폴트화된 모듈들을 4~5개씩 하나로 묶어라") 에 아래 모듈들을 이 디렉터리 하나로 합쳤다. **매니페스트 행·베이스 계약·소스 파일·노브·기본값은 그대로**이고 디렉터리와 `manifest.tsv`·`requires`·README 만 합쳐졌다(합성 결과 `build/glm53/` 의 파일은 바이트 동일(메가커널 .cu 주석의 경로 한 줄 제외), 행 순서만 바뀜). 옛 이름은 원장·런북·커밋에 그대로 남아 있고, 아래 절이 옛 모듈 하나씩이다.
 
 | 옛 모듈 | 파일 | 무엇 |
 |---|---|---|
-| `glm53_kpool_tail_select` | `glm53_kpool_topk.cu`, `glm53_kpool_topk.py`, `sparse_attn_indexer_kpool.py` | kpool 인덱서 op 접수 + top-k 커널 + tail-select 융합 (`INDEXER_DECODE_FUSED`, `KPOOL_*`) |
+| `glm53_kpool_tail_select` | `sparse_attn_indexer_kpool.py` | kpool 인덱서 op 접수 + tail-select 융합 (`INDEXER_DECODE_FUSED`, `KPOOL_UPDATE_DIRECT_POS`); radix top-k 확장은 34차 §8 일몰 |
 | `glm53_tail_slot_persistent` | `glm53_kpool_indexer.py` | kpool tail 슬롯 고정 버퍼 (이 이미지에서는 잠들어 있음) |
-| `glm53_sm121_mla_prefill` | `flash_attn.py` | SM121 짧은 프리필 (`SM121_MLA_PREFILL`, 기본 off) |
-| `glm53_kda_prefill_regime` | `chunk_delta_h.py`, `kda.py` | KDA 프리필 autotune 버킷 (`KDA_PREFILL_REGIME`, 기본 off) |
-| `glm53_mhc_tilelang` | `tilelang.py`, `tilelang_kernels.py` | MHC TileLang 접수 (small-M 타일; MK-MHC 훅) |
+| `glm53_kda_prefill_regime` | `chunk_delta_h.py`, `kda.py` | KDA 프리필 autotune 버킷 (`KDA_PREFILL_REGIME`, 기본 off) + #368 direct-out 출력 (`KDA_PREFILL_DIRECT_OUT`, 기본 off) |
+| `glm53_mhc_tilelang` | `tilelang.py`, `tilelang_kernels.py` | MHC TileLang 접수 (프리필 big_fuse `MHC_BIGFUSE`·패스 `MHC_PASSES` 오버라이드; MK-MHC 훅) |
 
 ---
 
@@ -253,7 +254,7 @@ has not been measured.
 
 ---
 
-## glm53_sm121_mla_prefill (was `overlay/modules/glm53_kernels/`)
+## glm53_sm121_mla_prefill (was `overlay/modules/glm53_kernels/`; 34차 §8 일몰 — 기록)
 
 ## glm53_sm121_mla_prefill
 
@@ -350,6 +351,49 @@ require the engine-down bracket above.
 ---
 
 ## glm53_kda_prefill_regime (was `overlay/modules/glm53_kernels/`)
+
+### Pure-prefill direct output (2026-09-06, default off)
+
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1` lets the existing final KDA output
+kernel write into the layer's `core_attn_out` prefix. Previously it wrote to
+the contiguous V scratch and the model copied the result into that buffer.
+The arithmetic, final recurrent state, state scatter, and gated RMSNorm are
+unchanged. The model admits BF16 pure-prefill batches only; mixed/spec/plain
+decode keep their current routes. The destination must have matching shape,
+dtype and CUDA device, be contiguous, and share no storage with any input.
+Invalid explicit `out` fails before launching, since a silent fallback would
+cause the caller to skip a necessary copy.
+
+For TP4's `[1,8192,16,128]` BF16 output this removes a 32 MiB copy per KDA
+layer, or 1.0625 GiB of copied payload across 34 layers per rank and full
+8K chunk. This is source-derived traffic accounting, **not a measured speedup**.
+The input V contiguous copy is still required by the preceding kernels.
+
+Validation in an idle fleet window (fresh containers, no serving workers or
+other GPU tenants; the runner does not acquire a fleet reservation):
+
+```bash
+bash probes/run_mk_probe.sh probes/kda_prefill_direct_out.py --order long-first \
+  | tee /tmp/kda-direct-long-first.log
+bash probes/run_mk_probe.sh probes/kda_prefill_direct_out.py --order short-first \
+  | tee /tmp/kda-direct-short-first.log
+```
+
+Leave `PROBE_CACHE` unset so each run starts with fresh caches. The probe
+checks bitwise output/final-state equality, input integrity, padded output
+sentinels and poisoned-output graph replay. It includes chunk boundaries,
+uneven packed sequences, contiguous V and both QKV split layouts. It records
+source hashes, library versions, first prewarm shape and autotuner selections.
+ABBA eager timing excludes input reset; graph timing includes reset only when
+stock actually overwrites V (including singleton strided fixtures).
+
+Before promotion, additionally compare 2K/32K/128K onepass prefill and the
+existing quality/Korean/acceptance controls at explicit knob values 0 and 1.
+Arm on the launcher as a caller variable, not through `EXTRA_ENV`:
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1 bash launchers/start-glm53-nvfp4-tp4.sh`.
+Rollback is the same caller variable set to 0. The import-time arming message
+alone does not prove this lane served: confirm a pure-prefill trace loses the
+KDA output-merge copies. GPU and service measurements remain pending.
 
 ## glm53_kda_prefill_regime
 
@@ -511,7 +555,7 @@ Format: `VLLM_GLM53_MHC_BIGFUSE="h_blk[,post_thr]"` — e.g. `"4096"` or
 shapes. Adopt via bracket + the standard gates; numerics class is bf16
 reduce-order (R3 measured layer_input rel 1.2e-3).
 
-### One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (default off)
+### One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (34차 §8 일몰 — 기록; mk_mhc 가 쌍을 대체)
 
 `tilelang_kernels.py` is also taken over now (preimage `03aeb3f7…`): the stock
 kernels are untouched, and one new kernel is appended — `mhc_onepass_tilelang`,

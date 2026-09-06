@@ -1,8 +1,11 @@
 # glm53_megakernel
 
 The GLM-5.3-Flash decode megakernel for GB10 (sm_121a, 48 SM, TP=4): ONE
-persistent 48-block CUDA launch per inter-collective segment of the decode
-step, compiled AOT by nvcc (`-arch=sm_121a`) instead of JIT.
+CUDA launch per inter-collective segment of the decode step (persistent
+grids for MHC and MLA, a non-persistent grid for the GEMM), compiled AOT by
+nvcc (`-arch=sm_121a`) instead of JIT. 34차 §8 (2026-09-06) sunset the
+persistent v1 GEMM kernel and the MK_SEG_KDA block; their sections below
+are kept as history where they still explain a number.
 
 ## MK-GEMM is the W4 lane (the fp8 W8 arm was removed 2026-09-02)
 
@@ -55,64 +58,6 @@ partials summed in fp32 (`_gemm_kchunks`): 301 us against 682 bf16 / 489 fp8
 contract keeps the whole linear on the fp8 pair. `glm53_fp8_dense` attaches
 the chunked pack automatically for any admitted linear wider than the lane.
 
-## The shared expert's pair: the barrier-free local-quant kernel (2026-09-04, `VLLM_GLM53_MK_LOCALQ`)
-
-The decode step's 30-45 us class is the shared expert's gate_up `[1024 x
-4096]` and down `[4096 x 512]` -- two launches in each of the 42 MoE layers
-(the 28차 trace reading counted 86), 3.5 ms, 2.4 ms of it not covered by
-another stream -- 1-2 MB each, i.e. 5-12 us of DRAM at the lane's rate.
-Both are one-unit-per-block launches (32 units on the 48-block grid), and
-serving forks them onto the aux stream beside the routed MoE call of the
-same layer.
-
-`mk_gemm_lq_kernel` (`mk_gemm_phase_t<true>`, a compile-time instantiation
-that carries none of the barrier path) is the lane's kernel for them:
-every block quantizes the A k-blocks of ITS unit straight into smem from x
-in L2 as it stages them (x loaded two k-blocks ahead in a register ring,
-the reduce + convert ahead of the mma, only the smem stores behind the
-barrier), instead of the grid-wide prologue (one k-block per block into
-`g_mk_aq`, a grid barrier, `sxs` from `g_mk_axs`). The three A quantizers
-of the lane -- that prologue, this path, KDA p4 -- share one set of helpers
-(`mk_warp_amax`, `mk_pow2_scale`, `mk_pow2_rcp`, `mk_pack4`), so the bytes
-are the same by construction; the boot self-test runs the exact e2m1
-fixture through BOTH kernels, checks the plan really took the local one,
-and requires the two outputs bitwise equal. It is launched on as many
-blocks as it has units (`mk_lq_launch_grid`), has no grid barrier, and a
-block with nothing to do leaves before the PDL wait. A host/kernel drift on
-the unit rule traps (it must never run the barrier path on a launch sized
-to the units).
-
-What the 29차 probes say (srv2): **standalone it is slower than the global
-kernel** -- the prologue it skips costs ~5 us on the stamps and the in-loop
-quant cost more than that back (the first form +4 us at m=8, +12 at m=32;
-the 32-block v2 form +8 us on the pair; the ring/row-bound form of this
-text is unmeasured). **Under the routed MoE kernel**
-(`probes/mk_gemm_concurrent_probe.py`: one graph, the pair on a forked
-stream beside a U=40 b12x call, 5 back-to-back replays per bracket) the
-global kernel's pair is exposed whole in either issue order (47.4 us a
-layer); the local kernel on 32 blocks is exposed 36.2 (MoE issued first) /
-31.8 (pair first, serving's order). x42 layers that is a *projection* of
-about -0.66 ms/step, not a step number -- the probe's main stream holds
-only the MoE kernel, serving runs the router + topk there first. Whether
-the difference is the missing barrier or the smaller grid is what the
-probe's control row (the global kernel on 32 blocks, its own ticket
-counter) separates -- pending.
-
-Knob: `VLLM_GLM53_MK_LOCALQ` = 0 (default, declared in `profiles/glm53.env`
-so the launcher forwards it) / 1 = the launches the fp8-dense hook marks
-background (`_mk_bg`: `mlp.shared_experts.*` -- by module name, which
-assumes the runner keeps forking the shared expert onto its aux stream) /
-2 = every one-unit-per-block launch (the bench's sweep). The lq launch
-grid and the fewer-blocks control are the bench's only, through
-`set_probe` -- no env surface. `mk_gemm_kernel` stays at 80 registers (one
-kernel with both paths allocated for the union, 128), but its prologue's
-quantizer changed with the shared helpers (SASS 3,360 -> 3,240 lines), so
-the n=6416/4096 control rows are re-measured, not assumed. The
-host's plan (`mk_gemm_plan_for`: `mk_units` <= grid on the phase's own
-`mk_split_ok` gate, the lq kernel's resident grid) decides the kernel and
-the bench's `gemm_plan` prints that same plan. Probes: `--gemm-sweep`
-(local x split, bitwise `same`, replay), `--stamps` (phase stamps of a
-`VLLM_GLM53_MK_PHASE_TS=1` build), the concurrent probe above.
 ## The v2 lane: the same GEMM as a non-persistent grid (2026-09-05, 30차)
 
 The persistent kernel is right for a kernel that owns the GPU and wrong
@@ -129,8 +74,10 @@ stream the once-per-launch prologue and the static first-unit assignment
 cost 15-35 us a launch (dense gate_up [6144 x 4096]: 119 us for 62 us of
 bytes -- 48 tiles on 48 blocks, nothing to balance them).
 
-`mk_gemm2_kernel` (`VLLM_GLM53_MK_GEMM2=1`, default off; the persistent
-kernel stays as the kill-switched lane) is the same W4A8 GEMM as grid =
+`mk_gemm2_kernel` (the GEMM segment's only kernel since 34차 §8; it served
+by default since 32차 behind `VLLM_GLM53_MK_GEMM2=1`, whose knob went with the
+persistent kernel -- `VLLM_GLM53_MK_GEMM=0` is the kill switch) is the same
+W4A8 GEMM as grid =
 (n/128) x ksr independent blocks: no grid barrier, no shared A tiles
 (each block quantizes the A k-blocks of its own slice from x in L2 --
 same amax, same pow2 scale, same conversion, so the mma sees the bytes
@@ -166,44 +113,51 @@ builds two LUT pairs per W row per k-block instead of eight (216 of the
 raw loads land on four different banks. ptxas: 96 / 96 / 117 registers,
 no spills, no stack.
 
-Tail units (`VLLM_GLM53_MK_KTAIL=<k-blocks>`, default off): every slice
-gives its last k-blocks to a second unit placed at the end of the grid, so
-the main units fill one wave and the tail units are dispatched into the
-slots the fastest mains free -- the 4-9 us DRAM-arbitration tail of a
-96-unit launch (30차 §6) is then work for blocks that would otherwise
-idle. Each slice becomes two partials folded in fixed order; the rule
-takes it only when every slice keeps at least `tail` k-blocks. Swept by
-`--ktail2-sweep` (30차 §11): -5.6% on [1024x4096] and -2% on [6144x4096]
-at tail=1, 5-17% worse on m=32, [4096x2048] and in_proj -- the second
-partial and the short unit's ring fill cost more than the 4-9 us tail they
-absorb. Stays off.
-
 MK_SEG_SMLP2 (`VLLM_GLM53_MK_SMLP2`, default off): the shared-expert /
 dense MLP as two PDL-chained v2 launches -- gate_up with the pair-
 activation epilogue (the block storing the second final tile of a (gate,
 up) pair computes the clamped SwiGLU over those 128 columns and emits
 the e4m3 group + row scale), down on the a_ready path (it stages those
 groups instead of quantizing x). No grid barrier and no 48-block
-residency, unlike the persistent MK_SEG_SMLP launch, so it shares SMs
-with the routed MoE kernel the way the standalone v2 lane does; it also
-retires the act_and_mul launch and the down GEMM's own quant. The hook
-in Glm5NextMLP.forward prefers it over MK_SMLP when both are armed.
+residency, so it shares SMs with the routed MoE kernel the way the
+standalone v2 lane does; it also retires the act_and_mul launch and the
+down GEMM's own quant. It is the only fused lane behind the hook in
+Glm5NextMLP.forward.
 
-Contract, inherited from the persistent lane: v2's partials and per-tile
+### Sunset in 34차 §8 (2026-09-06, operator "A 지워")
+
+Three lanes of this file were deleted once their verdicts were in, so a
+reader of the older ledger rows will not find them here: the one-launch
+persistent SMLP kernel (`mk_smlp_kernel`, `VLLM_GLM53_MK_SMLP`; 32차 §7:
+no served gain, Korean 1-2/16, replaced by SMLP2 above), the barrier-free
+local-quant kernel (`mk_gemm_lq_kernel`, `VLLM_GLM53_MK_LOCALQ`; 29차:
+slower standalone, no served gain in chain 14, the v2 lane is the adopted
+remedy for the same diagnosis) and v2's tail units (`VLLM_GLM53_MK_KTAIL`;
+30차 §11: noise on two shapes, 5-17% worse on the rest). The bench lost
+`--ktail2-sweep`, the `local` column and the local rows of `--gemm-sweep`.
+The operator's second verdict ("전부 지워", the same day) then removed the
+persistent v1 GEMM itself (`mk_gemm_kernel`, `mk_gemm_phase`, the grid
+barrier, the shared A quant, the remainder split-K, `set_probe`,
+`gemm_plan`, `VLLM_GLM53_MK_GEMM2`), the MK_SEG_KDA block (`mk_kda_kernel`,
+`VLLM_GLM53_MK_KDA` / `_SHADOW`, the fixture and shadow arm, `run_kda`,
+`read_kda_ts`) and `--segments kda` / `--gemm-sweep` / `--gemm2` from the
+bench: `set_gemm2(ksr)` forces the split, `gemm2_plan` returns (ksr, units,
+blocks/SM), the probe snapshot is one knob, and the stock KDA chain (with
+`KDA_ONEPASS` / `KDA_DUAL_GEMM` behind their own knobs) serves the block.
+
+Contract (inherited from the persistent lane it replaced): the partials and per-tile
 arrival counters are one device-wide set, so a v2 launch must never
 overlap another MK GEMM launch on a different stream (two launches
 folding the same tile index would sum each other's slices). Serving
 keeps it by stream order -- the side-stream pair is joined before the
 next main-stream GEMM.
 
-Gates and numbers: the boot self-test's exact-grid gate runs on whichever
-lane the boot serves and the fingerprint names it (`lane v2, in_proj plan
-on/ksr/units/bps=...`). The bench times both lanes side by side
-(`--gemm2 both`: v2's output differs from the persistent lane's only by
-summation order -- the round-3 lane k-permutation inside each mma step
-and, on split shapes, the slice order -- and the exact gate is the gate;
-`--ksr2-sweep 1,2,4,6,8`), the exact gate runs on both lanes at five
-slice counts, and `probes/mk_gemm_moe_overlap_probe.py` measures the
+Gates and numbers: the boot self-test's exact-grid gate runs each row
+class and a forced odd split, and the fingerprint names the plans
+(`plans ksr/units/bps: [1024x4096]=..., in_proj=...`). The bench times the
+lane against the stock pair (`--segments gemm`; `--ksr2-sweep 1,2,4,6,8`
+forces the split per shape), the exact gate runs at six slice counts
+(`--segments exact`), and `probes/mk_gemm_moe_overlap_probe.py` measures the
 shared-expert pair's exposure under the MoE kernel for both lanes.
 MEASUREMENTS.md 30차 carries the trace analysis and the numbers.
 
@@ -220,7 +174,7 @@ and glue component only; the bytes it reads are the same bytes.
 |---|---|---|---|---|
 | `MK_SEG_MHC` | mhc_fused + pre_big_fuse_with_norm | 179 | 45 | **89** + 7 stock leftovers · 2.54 -> 2.07 ms |
 | `MK_SEG_GEMM` | per_token_group_quant + deepgemm, M<=32 | ~360 | ~180 | **187** (mk_gemm 185 + 2 lm_heads) · dense GEMM time flat, quant share -1.5 ms |
-| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 | not armed (`MK_SEG_KDA=0`) |
+| `MK_SEG_KDA` | whole linear-attention block (~15 kernels x 34 layers) | ~510 | 34 | sunset 34차 §8 (never a served default; the stock chain + `KDA_ONEPASS` covers it) |
 | `MK_SEG_MLA` | sparse MLA decode (NoPE, fp8 KV) | 22 | 11 | default since 28차 -- decode +1.0%, prefill +15~18% |
 
 Ceiling if all three hold: ~900 launches x 5.4 us = **4.9 ms (7.4% of the
@@ -263,27 +217,26 @@ cold tax by the share this module covers.
   until then serving had never carried it (the driver reads the env, only
   the bench probe set it), so every armed boot ran the lane without PDL.
   The captured-chain form is checked by `probes/mk_pdl_graph_check.py`.
-- Fixed 48-block grid everywhere; the never-reset monotonic ticket barrier
-  is what keeps CUDA-graph replay with baked pointers exact (the osar
-  `done_ctr` trick). A larger grid deadlocked on this part (#150).
-- Dynamic smem: 69,632 B (2 expanded tiles + 3 raw stages + A tiles +
-  scales), 1 block/SM; the KDA kernel inlines the same phase on the same
-  budget. It includes 1 KB of slack: the phase re-aligns the dynamic base
-  at runtime, because the static `s_last`/`s_unit` push it to +16 and every
-  128 B tile row then straddles a bank-line boundary (that alone hid 15% of
-  the W stream; MEASUREMENTS.md 4차).
-- The expanded e4m3 tile rows are dense 128 B with a 16 B-chunk XOR swizzle
-  (`mk_swz`, keyed by row & 7) on both the expansion stores and the mma
-  fragment loads. A padded 144 B pitch cost a pure stream 16% (194 vs 230
-  GB/s, clean regime).
+- The persistent grids (MHC, MLA) resolve their block count from the
+  device and use the never-reset monotonic ticket barrier that keeps
+  CUDA-graph replay with baked pointers exact (the osar `done_ctr` trick).
+  A larger grid deadlocked on this part (#150).
+- The GEMM's dynamic smem is 37 KB (two A buffers + the raw W ring), two
+  blocks per SM, 1 KB of slack for the runtime re-alignment of the dynamic
+  base (the static shared variables push it off 1 KB and every 128 B row
+  then straddles a bank-line boundary; that alone hid 15% of the W stream
+  on the persistent kernel, MEASUREMENTS.md 4차).
+- The e2m1 expansion runs in registers straight into the mma B fragments
+  (`mk_w4x4`); the persistent kernel's expanded smem tiles and their XOR
+  swizzle went with it (34차 §8).
 
 ## Integration (all inside files this repo owns)
 
 | hook | file | behavior when disarmed |
 |---|---|---|
-| MK-MHC | `glm53_kernels/tilelang.py` (was `glm53_mhc_tilelang`) small-M branch | falls through to ONEPASS/stock pair, byte-identical |
+| MK-MHC | `glm53_kernels/tilelang.py` (was `glm53_mhc_tilelang`) small-M branch | falls through to the stock pair, byte-identical |
 | MK-GEMM | `glm53_model/glm53_fp8_dense.py` `Fp8DenseMethod.apply` + build | stock quant+deepgemm pair |
-| MK-KDA | `glm53_model/glm5next_kda.py` (was `glm53_mk_kda_wiring`; image preimage `ec090aab...`) | stock forward body verbatim |
+| MK-KDA | sunset 34차 §8 -- `glm53_model/glm5next_kda.py` keeps the stock forward body (the KDA_ONEPASS / DUAL_GEMM knobs live there) | -- |
 | MK-MLA | `glm53_model/flashinfer_mla_sparse_sm90.py` (was `glm53_mk_mla_wiring`; FlashInfer SM90 sparse backend) | the wrapper's own plan+run |
 | MK-MHC (dsv4) | `dsv4_mhc_tilelang` small-M branch, the same hook | stock swept pair, byte-identical |
 
@@ -316,7 +269,7 @@ That is what lets **`profiles/dsv4.env` mount this same module**
 | segment | dsv4 | why |
 |---|---|---|
 | `MK_SEG_MHC` | **applies** | same MHC geometry (hc_mult 4, sinkhorn 20, hc_eps 1e-6, hidden 4096), identical wrapper signature -- `dsv4_mhc_tilelang` carries the same branch GLM's `tilelang.py` does |
-| `MK_SEG_KDA` | no | the model has no linear-attention layer at all |
+| `MK_SEG_KDA` | no (sunset 34차 §8) | the model has no linear-attention layer at all |
 | `MK_SEG_MLA` | no | this kernel is NoPE / kv_lora 512 / topk 2048; V4-Flash has rope 64, topk 512, a compressor and a sliding window |
 | `MK_SEG_GEMM` | no | the lane is W4 (e2m1 packs built from bf16); V4-Flash's dense weights are block-fp8 with no bf16 source. The fp8 W8 arm that WOULD have fit was removed 2026-09-02 (`cfeae2b`) |
 
@@ -343,14 +296,11 @@ second model.
 ## Arming
 
 ```
-VLLM_GLM53_MEGAKERNEL=1     # master, default 1 since 28차 (MHC+GEMM+MLA on, KDA off)
+VLLM_GLM53_MEGAKERNEL=1     # master, default 1 since 28차 (MHC+GEMM+MLA on)
 VLLM_GLM53_MK_MHC=1         # per segment, each default 0
-VLLM_GLM53_MK_GEMM=1
-VLLM_GLM53_MK_KDA=1         # shadow first (state-index section below)
-VLLM_GLM53_MK_KDA_SHADOW=1  # dual-run KDA eagerly, stock stays real
+VLLM_GLM53_MK_GEMM=1        # the non-persistent W4 GEMM (the only GEMM kernel since 34차 §8)
+VLLM_GLM53_MK_MLA=1
 VLLM_GLM53_MK_PDL=1         # programmatic dependent launches, default 0
-VLLM_GLM53_MK_LOCALQ=1      # gemm: the local-quant kernel for the shared
-                            # expert's pair (bg), default 0; 2 = all small
 ```
 
 Arm happens lazily on the first eligible call: device must be exactly cc
@@ -370,7 +320,7 @@ a name that hashes the source, the nvcc flags and the torch/CUDA pair. So
 a restart reloads the .so in 0.3 s while a deploy, a probe flag sweep or
 an image bump still recompiles (measured 59.4 s cold, 0.3 s warm).
 
-## The state-index contract (settled 2026-09-02 from the stock source)
+## The state-index contract (settled 2026-09-02 from the stock source; MK-KDA sunset 34차 §8, kept as the record of the contract)
 
 `spec_state_indices_tensor` is `[n_spec, max_query_len]`: **one state slot
 per query position**. The stock kernels (`fused_recurrent.py`,
@@ -392,11 +342,8 @@ at `j == acc - 1`, and read the conv history from the buffer's newest end
 acc=8 passed and acc=1/3 differed by ~1.3 in the output. The fixture now
 addresses distinct slots per position (`SLOT .. SLOT + 7`), so the boot
 self-test and the bench probe check the per-position contract itself.
-Eager **shadow mode** (`VLLM_GLM53_MK_KDA_SHADOW=1`) stays the live gate:
-both arms run, outputs AND the states the next step reads are diffed every
-64 calls and on drift (gated at the e2m1 by-design class, see above), graph
-replay stays stock. Run shadow on a bench boot, read the log, then decide
-the arm.
+(The eager shadow mode that diffed both arms every 64 calls left with the
+segment; the contract itself is what `glm53_kda_onepass` inherits.)
 
 ## MK-MHC structure (2026-09-02)
 
@@ -419,7 +366,7 @@ broadcast in the tail (spills under the p1 register pressure).
 Bench (srv2, PDL on, **sinkhorn_repeat=4** -- the basis before 2026-09-03, reproduce with `--sinkhorn 4`): T=8 27.4 us, T=32 42.0 us vs stock 32.8 / 71.6
 (MEASUREMENTS.md 9차 has the eight experiments that got here).
 
-## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch)
+## MK-KDA phase budget (2026-09-02, srv2, acc=3, L2 drained before launch; the segment was sunset 34차 §8 -- history)
 
 in_proj 76 | gates 6 | conv 4 | delta 34 | norm 0.5 | o_proj 35 |
 barriers ~17 = **176 us** per layer-step (402 before the phase
@@ -479,16 +426,15 @@ fresh run without that flag.
 ## Correctness review (2026-09-05)
 
 The MHC deferred-publication branch now synchronizes before reusing its
-shared reduction tile. LOCALQ's two-buffer ring uses the split-relative
-k-block index, including odd split starts. KDA shifts the complete retained
+shared reduction tile. KDA shifts the complete retained
 conv window for short verify requests, rather than repeating its third
 retained value. These changes require fresh GPU numerical and racecheck
 validation; CPU control-flow regressions are not GPU proof.
 
 Boot error comparisons reject nonfinite outputs, references and overflowed
-norms. The GEMM exact gate explicitly selects v1 global/local and v2, checks
-v2's M=8/16/32 classes and the LOCALQ KSR=3 odd-start case, then restores all
-seven probe overrides even after failure. KDA adds nq=1/4/6/8 cases, including
+norms. The GEMM exact gate explicitly selects v1 and v2, checks v2's
+M=8/16/32 classes and a KSR=3 odd-start v1 split, then restores all three
+probe overrides even after failure. KDA adds nq=1/4/6/8 cases, including
 accepted=8 with nq=1, and compares every written recurrent position.
 
 An MLA real-KV shadow failure now raises a persistent worker error: changing
@@ -500,7 +446,7 @@ when both shadow and takeover are enabled; capture continues to use stock.
 boot gates before the offline benchmark in an idle fleet window:
 
 ```bash
-bash probes/run_megakernel_bench.sh --segments exact,mhc,kda --boot-gates --iters 5
+bash probes/run_megakernel_bench.sh --segments exact,mhc --boot-gates --iters 5
 bash probes/run_mk_probe.sh probes/mk_smlp2_concurrent_probe.py --rounds 10 --replays 5
 ```
 
@@ -518,14 +464,12 @@ fallback. Its per-layer exposure and x42 projection are not a serving gain.
    container (srv4, never the serving one; the wrapper binds the profile's
    composed overlay at that image's real paths, and passes its package
    root as `MK_PKG_PATH`): numerics vs stock (rel gates 1e-3 MHC / 0.15 GEMM
-   by-design + 1e-3 exact-grid with no element over one bf16 ULP,
-   2e-2 KDA outputs and states on grid-snapped
-   weights) + CUDA-event timing per segment + a replay-stability
+   by-design + 1e-3 exact-grid with no element over one bf16 ULP)
+   + CUDA-event timing per segment + a replay-stability
    check (re-launch drift <= 1e-6 over the shared workspace -- the
    monotonic-barrier contract). `!` marks any cell over gate; a `!` cell
    disqualifies that shape.
-3. `VLLM_GLM53_MK_KDA_SHADOW=1` bench boot: shadow log clean for a full
-   bench-tp4 pass.
+3. (the KDA shadow boot of the sunset segment is gone from the ladder)
 4. EXP bracket (RUNBOOK_KERNEL_CAMPAIGN2.md): base -> cand -> base on
    C=1 step/s, quality 9/9, Korean 0/16, pos-1 acceptance within 2 pct.
 
@@ -544,8 +488,8 @@ and the inner loop are unchanged.
    same three fp32 ops in the same FORM (torch divides by a scalar as a
    multiply by its fp32 reciprocal; an IEEE divide in the kernel failed the
    exact gate at 4e-3, over-ulp 1526). Every activation quantizer feeding
-   a W4 pack -- the GEMM prologues (global, local-quant, v2), the SMLP pair
-   emitters, KDA p4 -- uses it.
+   a W4 pack -- the GEMM's per-slice quant and the SMLP2 pair emitter --
+   uses it.
 2. **Per-row shift** (`VLLM_GLM53_MK_PACK_ROWSHIFT=1`, default). The shift
    that keeps the group exponents inside the byte-add expansion's 11
    octaves is per output row (median of the row's covering exponents),
@@ -564,7 +508,11 @@ and the inner loop are unchanged.
    (OBQ/GPTQ, blocks of 128, group scales re-derived on the updated
    weights). The pack is cached under `VLLM_GLM53_MK_PACK_CACHE` (weight
    md5 + shape + levers + `MK_PACK_VERSION`), so the solve is paid once per
-   rank.
+   rank. Calibration ZIP dumps are loaded with `torch.load(mmap=True)`:
+   a pack-cache hit checks Hessian metadata without first reading its full
+   tensor storage. A miss consumes the same Hessian values for GPTQ. Legacy
+   serialization and torch versions without mmap keep the eager loader;
+   malformed or mismatched calibration still falls back to RTN.
 4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
    8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
    from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`
@@ -577,8 +525,8 @@ and the inner loop are unchanged.
    tile's final store waits for the flag, stages t and the tile's 128 rows
    of A in the freed smem rings, computes the correction tile once, adds it
    per store, and the launch's last final store rearms the scratch (graph
-   replay reuses it). v1 / KDA / SMLP lanes serve such a pack WITHOUT the
-   correction (said once on stderr).
+   replay reuses it). Only the GEMM launch adds the correction; the SMLP2
+   pair serves such a pack WITHOUT it.
 
 Gates: the exact fixture (weights on the grid: the correction is zero, the
 per-row shift is byte-exact, the twin is the reference) and the by-design
@@ -606,8 +554,8 @@ checked against the pack's twin on the first and the last eight tiles (the
 padded tail), a miss disarms that endpoint for the boot, loudly; then the
 serving proof line, and the processor logs the W4-vs-fp8 argmax agreement of
 that call (`fp8 lm_head: W4 head lane ... argmax agree N/N rows`). Needs
-MK_GEMM=1 (packs, exact gate) and MK_GEMM2=1 (the persistent kernel was never
-sized for 303 tiles; with GEMM2 off the head disarms itself).
+MK_GEMM=1 (packs, exact gate); the GEMM kernel is sized for the head's 303
+tiles (`MK2_TILES_MAX` 320).
 
 Kernel side: `MK2_TILES_MAX` 64 -> 320; the ksr rule takes ONE slice when
 the tiles alone fill two or more waves (a split adds 2.5 MB of fp32 partials
@@ -616,7 +564,7 @@ bound is a split's contract only (ksr 1, tail 0 stores bf16 straight from
 the accumulators, so m = 32 on the head serves whole).
 
 Gates, in order: bench `--segments gemm --gemm-shapes 8:38720:4096,7:38720:4096
---gemm2 both --ksr2-sweep 1,2` (exact PASS; the stock column IS the served fp8
+--ksr2-sweep 1,2` (exact PASS; the stock column IS the served fp8
 head), then a DRAFT-head bracket (acceptance-normalised step/s, pos-1 within
 2 pct, quality 9/9, Korean 0/16) -- a coarser draft head only moves
 acceptance. TARGET is the served logits, the decision `VLLM_TARGET_LM_HEAD_FP8`
