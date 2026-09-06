@@ -395,6 +395,30 @@ Rollback is the same caller variable set to 0. The import-time arming message
 alone does not prove this lane served: confirm a pure-prefill trace loses the
 KDA output-merge copies. GPU and service measurements remain pending.
 
+### Strided Q/K l2norm (2026-09-06, default off)
+
+`VLLM_GLM53_KDA_PREFILL_QK_NORM=1` (exact "1" arms) replaces
+`l2norm_fwd(q.contiguous())` with a strided/channel-major kernel over the
+original views — at T=8192 with both inputs noncontiguous this removes
+128 MiB of copy traffic per KDA layer. The guard accepts only pinned-layout
+BF16 `[1,T,16,128]` views with positive strides and the SHA-pinned stock
+l2norm source; every other case keeps the stock contiguous path. The
+fused tile layout can change the generated reduction schedule, so the
+knob's own source requires GPU bit-equality evidence before arming —
+that gate is `probes/qk_norm_strided_check.py`, which compares raw BF16
+bytes against the stock arm over both kernel branches (channel-major conv
+output, token-major QKV split, mixed strides), chunk-relevant lengths
+(1..8192 including 8185), and boundary value regimes (zeros, FP32-square
+overflow, subnormal squares), and asserts the guard still declines
+invalid fixtures. Run it in an idle fleet window:
+
+```bash
+bash probes/run_mk_probe.sh probes/qk_norm_strided_check.py | tee /tmp/qknorm.log
+```
+
+Strided-access efficiency is unmeasured; the bit-equality gate earns the
+right to measure, nothing more.
+
 ## glm53_kda_prefill_regime
 
 Default-off, two-bucket Triton autotune-cache split for the generic

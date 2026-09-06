@@ -2680,6 +2680,36 @@ MoE dynamic(20~22%) 최적화도 여전히 미해결이다.
   한국어, 수용률 및 실제 prefill trace의 복사 제거를 확인해야 한다.
   [명령/계약](overlay/modules/glm53_kernels/README.md#pure-prefill-direct-output-2026-09-06-default-off).
 
+#### §2 후속 2 — 368차 리뷰 경화 (2026-09-06, 측정 없음)
+
+PR #368(머지 `638c985`) 코드 리뷰에서 나온 결함·위험의 소스 수정. **측정은
+하나도 없다** — 전부 기본-off 레인의 잠재 결함 제거이므로 이 항목은 기록일 뿐
+판정이 아니다.
+
+- **int32 오버플로(실결함)**: `_mhc_prefill_post_prenorm_kernel`의 잔차
+  오프셋이 m=131072에서 정확히 INT32_MAX(마진 0), m≥131073부터 음수 랩으로
+  조용한 OOB. `row`를 int64 승격(kda.py 쪽 커널과 동일한 처방). 게이트의
+  m 상한 부재는 그대로(승격으로 불필요).
+- **pair 해시 무한 프로브(잠재 hang)**: `mk_mla_pair_prepare`의 `while(true)`
+  선형 탐사를 group4와 동일한 64-프로브 상한+`failed` 워드로 교체(테이블
+  가득 시 원본 리스트 폴백), `static_assert(2*MLA_PAIR_MAX_W < MLA_PAIR_HASH)`
+  로 불변식 고정. PREP 공유메모리 +4B(제어 워드 3개).
+- **QK-norm 등가 게이트 부재**: `VLLM_GLM53_KDA_PREFILL_QK_NORM`에 GPU
+  bit-equality 증거가 없었다(소스 주석은 그것을 요구). 신규
+  `probes/qk_norm_strided_check.py`가 두 커널 분기(conv 채널-메이저·QKV
+  토큰-메이저·혼합 stride)×길이 1~8192(8185 포함)×경계값 레짐(raw BF16 바이트
+  비교)과 가드 거부 케이스를 검증한다. **미실행 — 이 노브의 활성 조건**.
+- **관측성/문서**: MoE prefill-reuse 레인이 핀 드리프트로 stock 에 물러날 때
+  노브가 켜져 있으면 `[b12x prefill reuse] declining ...` 경고 로그. NVFP4
+  두 노브의 exact-"1" 무장·`PREFILL_NVFP4_BPROJ`가 `FP8_DENSE_BPROJ=1` 프로필에서
+  항상 no-op라는 우선순위, GROUP=2 기본값("모든 노브 기본 0" 문장 수정),
+  4개 그룹 README의 368차 신규 모듈 절 신설. megakernel "exact-selection"
+  표기에 not-bit-exact 단서 병기, 죽은 Up-SFB sC alias·sC 필드의 부정확한
+  주석 정정, 존재하지 않는 "source contract checker" 주석 제거.
+- 정적 검증: 재합성(glm53/dsv4) + `tests/test_logic.py` **6,579 checks +
+  37 regressions** 통과, 변경 Python 전부 컴파일. CUDA 미실행(로컬 무GPU).
+  .cu 수정분은 배포 호스트 첫 JIT에서 컴파일된다.
+
 ### §3 (6) 하니스 결함 둘
 
 - **레버 env 미적용(9-05 PRODRTN, `MK_PACK_GPTQ=0` 이 컨테이너에서 1로 읽힘)**: 재현 실패 — `ct_load_profile` 은 호출자 값을 다시 적용하고(`env KEY=0 bash -c '. common-tp4.sh; ct_load_profile …'` → 0 유지), `bash -x` 로 런처를 추적하면 `ENVV` 에 `-e VLLM_GLM53_MK_PACK_GPTQ=0` 이 들어간다. 원인 미상으로 남기되 **증명을 하니스에 넣었다**: `bench/ab-lever.sh`·srv2 `ab-lever2.sh` 가 health 뒤 `docker exec glm53 env` 에서 레버 키의 실제 값을 찍는다(다음 재발 때 판독).
