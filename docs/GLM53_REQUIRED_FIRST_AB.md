@@ -10,7 +10,9 @@ establish transport correctness, not generated-argument completeness.
 24 automatic tool calls (four preference questions × low/high/max reasoning ×
 streaming/nonstreaming), then six job/literal-content guardrails (required,
 named, none × streaming/nonstreaming). Required fields occur after optional
-fields in the input schemas, including a nested job location. Job calls request
+fields in the input schemas. Half the preference cases wrap their question in
+an array item (as in the upstream report); the other half use a flat object.
+The job schema also includes a nested location. Job calls request
 a 250-word description and ten responsibilities. The fixtures are synthetic;
 returned tools are never executed.
 

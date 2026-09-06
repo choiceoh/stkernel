@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "probes"))
 import glm53_required_first_ab as ab
@@ -52,6 +53,19 @@ class PairedEvidenceTests(unittest.TestCase):
         errors, paths = ab.classify(message, "tool_calls", case)
         self.assertEqual(errors, ["missing_required", "tool_envelope", "wrong_function"])
         self.assertEqual(paths, ["/location/city", "/location/remote"])
+
+    def test_array_item_omission_keeps_nested_path(self):
+        case = ab.cases()[1]
+        self.assertEqual(ab.classify(self.message('{"questions":[{"prompt":"choose"}]}'),
+                         "tool_calls", case), (["missing_required"], ["/questions/0/tag"]))
+
+    def test_total_request_deadline_is_removed_after_transport_failure(self):
+        with patch.object(ab, "_send", side_effect=TimeoutError), patch.object(ab.signal, "signal", return_value="previous") as handler, patch.object(ab.signal, "setitimer") as timer:
+            with self.assertRaises(TimeoutError):
+                ab.send("unused", {}, 5)
+            self.assertEqual(timer.call_args_list[0].args, (ab.signal.ITIMER_REAL, 5))
+            self.assertEqual(timer.call_args_list[-1].args, (ab.signal.ITIMER_REAL, 0))
+            self.assertEqual(handler.call_args_list[-1].args, (ab.signal.SIGALRM, "previous"))
 
     def records(self):
         return [{"pair": pair, "required_first": enabled, "choice": case["choice"],

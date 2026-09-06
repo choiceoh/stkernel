@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import signal
 from pathlib import Path
 import statistics
 import subprocess
@@ -68,9 +69,12 @@ def cases():
     result = []
     for effort in ("low", "high", "max"):
         for stream in (False, True):
-            for topic in topics:
+            for index, topic in enumerate(topics):
+                schema = pref if index % 2 == 0 else {"type": "object", "properties": {
+                    "questions": {"type": "array", "items": pref, "minItems": 1, "maxItems": 1}},
+                    "required": ["questions"], "additionalProperties": False}
                 result.append({"name": f"preferences/{topic}", "choice": "auto", "effort": effort,
-                               "stream": stream, "function": "collect_preferences", "schema": pref,
+                               "stream": stream, "function": "collect_preferences", "schema": schema,
                                "prompt": f"Help me choose {topic}. Ask me one useful follow-up question "
                                "using collect_preferences. Include six answer choices."})
     job = {"type": "object", "properties": {
@@ -185,7 +189,22 @@ def summarize(records, expected_pairs, identity_stable):
             "gates": gates, "promotion_review_supported": all(gates.values())}
 
 
+def _request_deadline(signum, frame):
+    raise TimeoutError("Total request deadline exceeded")
+
+
 def send(url, body, timeout):
+    """Bound total response time too: urllib alone only bounds idle socket reads."""
+    previous = signal.signal(signal.SIGALRM, _request_deadline)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        return _send(url, body, timeout)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _send(url, body, timeout):
     headers = {"Content-Type": "application/json"}
     if os.environ.get("OPENAI_API_KEY"):
         headers["Authorization"] = "Bearer " + os.environ["OPENAI_API_KEY"]
