@@ -49,6 +49,7 @@ def sf_packed_block_bytes(block: int = SF_PACK_BLOCK) -> int:
 
 
 SF_PACK_BYTES = sf_packed_block_bytes(SF_PACK_BLOCK)          # 3072
+SF_STAGE_BYTES = SF_PACK_BYTES + 16                           # 3088 (base tail)
 SF_PACK_PLANE_A = SF_PACK_BLOCK // 2                          # 2048
 SF_PACK_PLANE_B = SF_PACK_BLOCK // 4                          # 1024
 
@@ -119,6 +120,37 @@ def unpack_sf(packed: torch.Tensor, bases: torch.Tensor,
     return (idx.to(torch.int16) + bases.reshape(-1, 1).to(torch.int16)).to(torch.uint8).reshape(-1)
 
 
+# The kernel reads one packed block per stage and needs that block's base. It
+# rides in the block itself (16 B tail, the copy's alignment unit) so the DMA
+# is a single contiguous copy and the expanding threads read the base from
+# smem -- no side table, no block-index arithmetic on the consumer side.
+SF_PACK_BASE_TAIL = 16
+
+
+def sf_stage_bytes(block: int = SF_PACK_BLOCK) -> int:
+    """Bytes the DMA moves per stage: the packed planes plus the base tail."""
+    return sf_packed_block_bytes(block) + SF_PACK_BASE_TAIL
+
+
+def pack_sf_inline(sf: torch.Tensor, block: int = SF_PACK_BLOCK) -> torch.Tensor:
+    """[blocks, sf_stage_bytes(block)] uint8: plane A, plane B, then the base
+    byte in the 16 B tail (byte 0 of the tail; the rest is zero padding so the
+    stage stays 16 B aligned)."""
+    packed, bases = pack_sf(sf, block)
+    tail = torch.zeros((packed.shape[0], SF_PACK_BASE_TAIL), dtype=torch.uint8,
+                       device=packed.device)
+    tail[:, 0] = bases
+    return torch.cat((packed, tail), dim=1).contiguous()
+
+
+def unpack_sf_inline(staged: torch.Tensor, block: int = SF_PACK_BLOCK) -> torch.Tensor:
+    """The inverse of :func:`pack_sf_inline` (what the kernel's expansion must
+    reproduce byte for byte)."""
+    rows = staged.reshape(-1, sf_stage_bytes(block))
+    body = sf_packed_block_bytes(block)
+    return unpack_sf(rows[:, :body].contiguous(), rows[:, body], block)
+
+
 def sf_packed_bytes(scale_bytes: int, block: int = SF_PACK_BLOCK) -> int:
     """Packed size of ``scale_bytes`` e4m3 bytes, bases included."""
     blocks = scale_bytes // block
@@ -126,7 +158,9 @@ def sf_packed_bytes(scale_bytes: int, block: int = SF_PACK_BLOCK) -> int:
 
 
 __all__ = [
-    "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "sf_packed_block_bytes", "SF_PACK_BYTES", "SF_PACK_PLANE_A",
+    "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "sf_packed_block_bytes",
+    "SF_PACK_BASE_TAIL", "SF_STAGE_BYTES", "sf_stage_bytes", "pack_sf_inline",
+    "unpack_sf_inline", "SF_PACK_BYTES", "SF_PACK_PLANE_A",
     "SF_PACK_PLANE_B", "SF_PACK_MAX_INDEX",
     "sf_pack_span", "pack_sf", "unpack_sf", "sf_packed_bytes",
 ]

@@ -138,6 +138,27 @@ def _st_shared_i32(addr, val, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _bulk_g2s(dst_smem, src_gmem, nbytes, mbar_smem, *, loc=None, ip=None):
+    """1-D cp.async.bulk global -> shared (cluster-scoped smem address),
+    completing nbytes of transaction on the mbarrier; one thread issues it,
+    addresses and size 16 B aligned. Used by the packed-scale lane (39차 §4c)
+    to land a whole packed SF stage in one request."""
+    llvm.inline_asm(
+        None,
+        [
+            Int32(dst_smem).ir_value(loc=loc, ip=ip),
+            Int64(src_gmem).ir_value(loc=loc, ip=ip),
+            Int32(nbytes).ir_value(loc=loc, ip=ip),
+            Int32(mbar_smem).ir_value(loc=loc, ip=ip),
+        ],
+        "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [$0], [$1], $2, [$3];",
+        "r,l,r,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+
 @dsl_user_op
 def _ld_shared_i32(addr, *, loc=None, ip=None):
     return Int32(
