@@ -79,6 +79,7 @@ from .moe_static_common import (
     _ld_global_acquire_i32,
     _ld_shared_f32,
     _ld_shared_i32,
+    _ld_shared_i32_volatile,
     _spin_wait_global_eq_i32,
     _st_global_i64,
     _st_global_release_i32,
@@ -124,6 +125,7 @@ class MoEStaticKernelV4:
         skip_a: bool = False,
         a_ring: bool = False,
         sf_pack: bool = False,
+        sf_pack_raw: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -187,6 +189,13 @@ class MoEStaticKernelV4:
         # (§4d measured the whole box at 6.2%); the expansion rides in the DMA's
         # shadow, where the MMA warps are already waiting.
         self.sf_pack = bool(sf_pack)
+        # sf_pack_raw (cell q0, diagnosis): same bulk-copy path and the same
+        # block index, but the stage is the UNPACKED 4096 B block and nothing
+        # is expanded. It splits a numerics failure in two -- if q0 passes, the
+        # DMA address and the block index are right and the fault is in the
+        # expansion; if q0 fails, it is the address.
+        self.sf_pack_raw = bool(sf_pack_raw)
+        self.sf_stage_bytes = _SF_BLOCK_BYTES if self.sf_pack_raw else _SF_STAGE_BYTES
         if self.sf_pack and self.skip_sf:
             raise ValueError("xs (skip the FC1 SFB boxes) and sf_pack are exclusive")
         if self.sf_pack and self.split:
@@ -300,15 +309,23 @@ class MoEStaticKernelV4:
         output bytes and reads its own 24 B of input FIRST; the barrier between
         the two halves is what makes it safe in place, since thread 0's output
         lands on plane A bytes thread 1 has not read yet.
+
+        The reads are VOLATILE for that reason: a plain ld.shared has no side
+        effects, so nothing stops the compiler from sinking it past the barrier
+        intrinsic, and then a thread reads bytes another thread has already
+        overwritten. Same trap 35차 §8 recorded for the claim slot; here it
+        showed up as scales wrong everywhere and different between runs (cell
+        q's first GPU gate), while q0 -- the same DMA with no expansion --
+        passed.
         """
         a = []
         for w in range(4):
-            a.append(_ld_shared_i32(stage_addr + Int32(16) * tidx + Int32(4 * w)))
+            a.append(_ld_shared_i32_volatile(stage_addr + Int32(16) * tidx + Int32(4 * w)))
         b = []
         for w in range(2):
-            b.append(_ld_shared_i32(
+            b.append(_ld_shared_i32_volatile(
                 stage_addr + Int32(_SF_PLANE_A) + Int32(8) * tidx + Int32(4 * w)))
-        base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF)) & Int32(0xFF)
+        base = _ld_shared_i32_volatile(stage_addr + Int32(_SF_BASE_OFF)) & Int32(0xFF)
         # (plain Python loops: this helper is inlined into the traced kernel at
         # trace time, so every index below is a constant by the time IR is emitted)
         self.sf_expand_barrier.arrive_and_wait()
@@ -662,7 +679,7 @@ class MoEStaticKernelV4:
             fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
             if cutlass.const_expr(self.sf_pack):
-                fc1_tma_bytes += _SF_STAGE_BYTES
+                fc1_tma_bytes += self.sf_stage_bytes
             else:
                 fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
         b2_smem_one = cute.slice_(b2_smem_staged, (None, None, 0))
@@ -1373,7 +1390,7 @@ class MoEStaticKernelV4:
                             for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
-                                if cutlass.const_expr(self.sf_pack):
+                                if cutlass.const_expr(self.sf_pack and not self.sf_pack_raw):
                                     self._sf_expand_stage(
                                         sfb1_base_addr
                                         + fc1_cons_state.index * Int32(_SF_BLOCK_BYTES),
@@ -1864,8 +1881,8 @@ class MoEStaticKernelV4:
                                                 sfb1_packed_base
                                                 + (Int64(weight_expert_idx) * sf_blocks_per_expert
                                                    + Int64(sfb_blk) * Int64(k_tile_cnt1)
-                                                   + Int64(k_tile)) * Int64(_SF_STAGE_BYTES),
-                                                Int32(_SF_STAGE_BYTES),
+                                                   + Int64(k_tile)) * Int64(self.sf_stage_bytes),
+                                                Int32(self.sf_stage_bytes),
                                                 shared_ptr_to_u32(bar),
                                             )
                                     elif cutlass.const_expr(gu == 0):
