@@ -57,6 +57,17 @@ packet byte, padding, output bits versus v2 and an ordered reference, and
 one-call dispatch. It cannot prove actual NCCL behavior or serving quality.
 The real TP4 probe now covers v2/v3 against the ordered decoded reference.
 
+The later historical trace
+`dp0_pp0_tp0_dcp0_ep0_rank0.1788700171065354541.pt.trace.json.gz` also exposes
+another candidate to investigate: its MHC pre kernels use local row counts
+1728 (360 calls), 1152 (90), and 1150 (90). With 90 such calls per target
+prefill forward, that is six forwards: four 6912-row chunks, one 4608-row
+chunk and a final shard-padded 4600-row chunk. The sampler's nine calls also
+include decode and are not a prefill denominator. Under APC's 2304-token
+alignment, the configured 8192-token budget is not fully used. An aligned
+batch-budget experiment must account for speculative lookahead and memory
+before changing the default; these counts alone predict no throughput gain.
+
 The operator requested continued implementation and **no tests until the
 combined expected gain exceeds 40%**. After that threshold, validation is one
 combined campaign. During the implementation phase, source inspection and
