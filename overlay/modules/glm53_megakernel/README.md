@@ -80,8 +80,8 @@ pending serving evidence. Halving the MMA count does not
 halve weight traffic or establish a 2x kernel speedup.
 
 Mode `2` selects a separate compact kernel only for M=6 with
-`(N,K)=(4096,2048)` or `(6144,4096)`, the shapes that won both warm and
-cold-weight comparisons. Its two activation stages have eight rows, and
+`(N,K)=(4096,2048)` or `(6144,4096)`. These shapes retained a warm win;
+the initial cold-weight gain did not reproduce at the same size. Its two activation stages have eight rows, and
 the three-block launch bound uses 30,976 dynamic shared-memory bytes at
 ring depth 3. Actual device occupancy determines these shapes' split plan.
 All other shapes and low-rank correction retain the original allocation
@@ -92,6 +92,27 @@ GEMM oracle as well as replay stability; mode 1 retains a bit-equality gate.
 Use `probes/mk_fp8_pack_bench.py --compact` for baseline / mode 1 / mode 2;
 it also checks the compact SMLP2 producer and consumer in CUDA graphs.
 A serving bracket remains required before promotion.
+
+`VLLM_GLM53_MK_M8_FASTPATH=1` adds two exact transformations inside the
+transposed lane: unsigned warp reduction of nonnegative activation maxima,
+and an aligned halfword read of the two FP4 scale bytes each lane needs.
+The ordinary RQ=2/4 and low-rank lanes keep their existing reductions and
+loads. Quantization and accumulation order are unchanged relative to the
+previous M8 candidate. The flag defaults to 0 and is included in both build
+cache keys. `probes/mk_fp8_pack_bench.py --fastpath` compares baseline,
+previous M8, and this new variant from one source, including a special-value
+warp-reduction gate and bit equality against previous M8 on every replay.
+The full-warp reduction follows NVIDIA's
+[warp reduce contract](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html).
+
+For follow-up serving evidence, onepass accepts `--fixed-decode-tokens 2048
+--fixed-decode-reps 3 --require-exclusive`. It keeps the normal quality
+ladder and adds three 2K-document responses with equal minimum/maximum
+generation lengths and matched seeds. It records step counts and elapsed
+time for complete interior windows, plus request TPOT. Missing counters,
+extra completed requests, observed concurrency, wrong output length or fewer
+than 20 fixed windows invalidate the performance record. Windows within one
+boot are correlated; independent reversed-order boots remain necessary.
 
 The first same-source GPU round passed 1,114,880 converter inputs, GEMM
 and SMLP2 oracles, and bit-equal graph replay on all 12 geometries. At M=6,

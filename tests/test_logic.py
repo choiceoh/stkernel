@@ -8676,6 +8676,13 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
           "m-tiles and the x lane mapping at compile time) and the host picks "
           "the instantiation from m")
+    check("#define MK_M8_FASTPATH_DEF 0" in cu
+          and v2.count("if constexpr (MK_M8_FASTPATH_DEF && TRANSPOSE)") == 2
+          and "__reduce_max_sync(0xffffffffu, __float_as_uint(mx))" in v2
+          and "*(const uint16_t*)(rr + W4_RAW_NIB + nrow * 8 + 2 * q)" in v2
+          and pysrc_full.count("-DMK_M8_FASTPATH_DEF=") == 2,
+          "M8 fastpath is opt-in and limited to full-warp transposed rows; "
+          "normal and rebuild cache keys both include it")
     check("((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
           and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
           and "l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);" in v2

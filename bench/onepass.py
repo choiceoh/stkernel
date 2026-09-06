@@ -28,6 +28,11 @@ word-salad documents, separate Korean set) compare only on decode windows,
 raw acc and tokens/step.
 
     python3 bench/onepass.py --name PRODV3 [--ctx 2000,32000,128000]
+
+Optional C=1 follow-up: --fixed-decode-tokens 2048 --fixed-decode-reps 3
+--require-exclusive adds fixed-length 2K responses to this same workload.
+Their interior windows are the primary decode metric; the normal context
+ladder and all quality checks remain. Counter mismatches invalidate the run.
 """
 import argparse
 import importlib.util
@@ -73,10 +78,11 @@ def _counter(text, name):
     return float(m.group(1)) if m else 0.0
 
 
-def ask_stream(url, model, content, max_tokens, timing=None):
+def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
     streamed chat completion: ttft = first chunk carrying content."""
-    body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.0,
+    body = json.dumps({"model": model, "max_tokens": max_tokens, "min_tokens": min_tokens,
+                       "seed": seed, "temperature": 0.0,
                        "stream": True, "stream_options": {"include_usage": True},
                        "messages": [{"role": "user", "content": content}],
                        # 39차: thinking ON, explicitly. The stock template ignored this
@@ -200,7 +206,12 @@ def main() -> int:
     ap.add_argument("--out", default=os.environ.get("ONEPASS_JSONL",
                                                    os.path.expanduser("~/glm53-logs/bracket-onepass.jsonl")))
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--fixed-decode-tokens", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_TOKENS", "0")))
+    ap.add_argument("--fixed-decode-reps", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_REPS", "3")))
+    ap.add_argument("--require-exclusive", action="store_true", default=os.environ.get("ONEPASS_REQUIRE_EXCLUSIVE") == "1")
     args = ap.parse_args()
+    if args.fixed_decode_tokens < 0 or args.fixed_decode_reps < 1:
+        ap.error("fixed decode needs nonnegative tokens and positive repetitions")
 
     kq = _load("korean-corruption.py", "onepass_korean")
     cq = _load("check-quality.py", "onepass_quality")
@@ -210,7 +221,10 @@ def main() -> int:
            "harness": 39, "doc_lang": "ko", "thinking": True,
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     rec["workload"] = {"ctx": [int(c) for c in args.ctx.split(",")], "seed": args.seed,
-                       "max_tokens": args.max_tokens, "combine_min_ctx": args.combine_min_ctx}
+                       "max_tokens": args.max_tokens, "combine_min_ctx": args.combine_min_ctx,
+                       "fixed_decode_tokens": args.fixed_decode_tokens,
+                       "fixed_decode_reps": args.fixed_decode_reps if args.fixed_decode_tokens else 0,
+                       "require_exclusive": args.require_exclusive}
     if os.environ.get("FLEET_EXPERIMENT_ID"):
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
@@ -222,11 +236,17 @@ def main() -> int:
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
+    fixed_phases = []
     rec["requests"] = []
     quality_ok = quality_total = 0
     gen_tokens = 0
 
-    m0 = bd._parse_spec_metrics(_metrics_text(bd.METRICS))
+    from window_metrics import traffic_state, exclusive_errors, decode_windows
+    metrics_before = _metrics_text(bd.METRICS)
+    before_traffic = traffic_state(metrics_before)
+    if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
+        raise RuntimeError("exclusive onepass requires an idle server before sending requests")
+    m0 = bd._parse_spec_metrics(metrics_before)
     print(f"{'ctx':>7} {'tok':>7} {'cold tok/s':>11} {'warm tok/s':>11} {'cold TTFT':>10} {'warm TTFT':>10}  quality", flush=True)
     t_dec0 = time.time()
     with br._StepWindows(bd) as sw:
@@ -285,8 +305,37 @@ def main() -> int:
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
             print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t}  {' '.join(hits)}", flush=True)
+        if args.fixed_decode_tokens:
+            doc = cq.build(2000, args.seed + 2000)
+            qs = "\n".join(f"{i + 1}. {q}" for i, (_, q, _) in enumerate(facts))
+            content = (f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}\n"
+                       "세 답의 근거를 먼저 제시한 뒤 문서의 주제, 주요 개념, 사례와 한계를 "
+                       "한국어로 길고 상세하게 설명해줘. 내용을 여러 절로 구성해줘.")
+            for rep in range(args.fixed_decode_reps):
+                timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}
+                t_req = time.monotonic()
+                text, ttft, ptok, ctok, finish = ask_stream(
+                    cq.URL, cq.MODEL, content, args.fixed_decode_tokens, timing,
+                    min_tokens=args.fixed_decode_tokens, seed=args.seed + rep)
+                phase = (2000, t_req + ttft, time.monotonic())
+                phases.append(phase)
+                fixed_phases.append(phase)
+                rec["requests"].append(timing)
+                gen_tokens += ctok
+                for qi in range(len(facts)):
+                    good = all(any(alt in text.lower() for alt in group) for group in FACT_EXPECT[qi])
+                    quality_total += 1
+                    quality_ok += good
+                texts.append((f"fixed2K rep{rep}", text, finish))
+                print(f"fixed2K rep={rep} tokens={ctok}/{args.fixed_decode_tokens} "
+                      f"decode={timing['decode_tok_s']:.2f} tok/s", flush=True)
     wall = time.time() - t_dec0
-    m1 = bd._parse_spec_metrics(_metrics_text(bd.METRICS))
+    metrics_after = _metrics_text(bd.METRICS)
+    m1 = bd._parse_spec_metrics(metrics_after)
+    traffic_issues = exclusive_errors(before_traffic, traffic_state(metrics_after),
+                                      sw.traffic_samples, len(rec["requests"]))
+    rec["traffic"] = {"before": before_traffic, "after": traffic_state(metrics_after),
+                      "samples": sw.traffic_samples, "issues": traffic_issues}
     rows = rec["prefill"]
     if len(rows) >= 2:
         print(f"  warm 처리량: {rows[0]['warm_tok_s']:.0f} -> {rows[-1]['warm_tok_s']:.0f} tok/s "
@@ -301,19 +350,10 @@ def main() -> int:
     legacy, raw = br._spec_delta(m0, m1)
     k_eff = br.spec_k_eff(m0, m1) or args.num_spec   # 37차: the served k, not the flag
     samp = sw.samples
-    by_ctx = {}
-    for i in range(len(samp) - 1):
-        (ta, sa), (tb, sb) = samp[i], samp[i + 1]
-        for ctx, t0p, t1p in phases:
-            # 1 s margins: the first window after the first token still holds
-            # prefill tail, the last one before the end holds the stream's
-            # close (3 windows per answer make one low edge window the median)
-            if ta >= t0p + 1.0 and tb <= t1p - 1.0:
-                r = (sb - sa) / max(tb - ta, 1e-6)
-                if r > 0:
-                    by_ctx.setdefault(ctx, []).append(r)
-                break
+    by_ctx, fixed_intervals = decode_windows(samp, phases, fixed_phases)
     rates = [r for v in by_ctx.values() for r in v]
+    if args.fixed_decode_tokens:
+        rates = [w["steps"] / w["seconds"] for w in fixed_intervals]
     win_med = median(rates) if rates else None
     if rates:
         per = "  ".join(f"{('ko' if c == 0 else str(c // 1000) + 'K')}: n={len(v)} med {median(v):.1f}"
@@ -328,6 +368,10 @@ def main() -> int:
                      "tokens_per_step": 1 + k_eff * (raw or 0), "windows": rates,
                      "windows_med": win_med, "windows_by_ctx": {str(k): v for k, v in by_ctx.items()},
                      "num_spec": k_eff}
+    if args.fixed_decode_tokens:
+        rec["decode"].update(primary="fixed-2K", fixed_intervals=fixed_intervals,
+            fixed_pooled_step_s=(sum(w["steps"] for w in fixed_intervals)
+                                 / sum(w["seconds"] for w in fixed_intervals)) if fixed_intervals else None)
 
     # ---- Korean corruption on every answer
     dirty, chars, kinds_tot = [], 0, {}
@@ -361,6 +405,17 @@ def main() -> int:
             print(f"\n  [{tag}] {ks}")
     rec["korean"] = {"dirty": len(dirty), "n": n, "kinds": kinds_tot,
                      "hits": [(tag, k) for tag, k, _ in dirty]}
+    issues = list(traffic_issues) if args.require_exclusive else []
+    if args.fixed_decode_tokens:
+        if any(q["completion_tokens"] != args.fixed_decode_tokens for q in rec["requests"] if q.get("fixed_decode")):
+            issues.append("fixed decode token count differs from requested length")
+        if len(fixed_intervals) < 20:
+            issues.append(f"too few fixed decode windows: {len(fixed_intervals)} < 20")
+    if issues:
+        rec["evidence_issues"] = issues
+        rec["decode"]["raw_windows_med"] = rec["decode"]["windows_med"]
+        rec["decode"]["windows_med"] = None
+        print("INVALID measurement: " + "; ".join(issues), flush=True)
     # armed != serving: which of the arm's lanes actually ran, from the head log,
     # checked after the traffic above (serving markers appear only then).
     try:
@@ -377,7 +432,7 @@ def main() -> int:
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return 0
+    return 2 if issues else 0
 
 
 if __name__ == "__main__":

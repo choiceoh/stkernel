@@ -388,6 +388,9 @@ constexpr int GEMM2_SMEM = MK_SMEM_ALIGN + 2 * 32 * SMEM_A_PITCH +
 #ifndef MK_GEMM_COMPACT_M8_DEF
 #define MK_GEMM_COMPACT_M8_DEF 0
 #endif
+#ifndef MK_M8_FASTPATH_DEF
+#define MK_M8_FASTPATH_DEF 0
+#endif
 constexpr bool MK_COMPACT_M8 = MK_GEMM_TRANSPOSE_M8_DEF && MK_GEMM_COMPACT_M8_DEF;
 constexpr int GEMM2_M8_SMEM = MK_COMPACT_M8
     ? MK_SMEM_ALIGN + 2 * 8 * SMEM_A_PITCH + 2 * 32 * 4 + W4_RAW_NBUF2 * W4_RAW_BYTES
@@ -686,9 +689,16 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
         }
       }
     }
+    if constexpr (MK_M8_FASTPATH_DEF && TRANSPOSE) {
+      // mx starts at +0 and fmax(fabs(x)) is nonnegative and not NaN.
+      // Unsigned IEEE bit order therefore equals float order, including
+      // +inf. All 32 lanes of this one-row warp participate, even past m.
+      mx = __uint_as_float(__reduce_max_sync(0xffffffffu, __float_as_uint(mx)));
+    } else {
 #pragma unroll
-    for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group
-      mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
+      for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group
+        mx = fmaxf(mx, __shfl_xor_sync(0xffffffffu, mx, off));
+    }
     if (qrow >= c.m) return;
     const float sc = mk_act_scale(mx);
     // one rcp.rn per row (the IEEE divide's slow-path call showed on every
@@ -747,10 +757,19 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
 #pragma unroll
     for (int j = 0; j < 2; ++j) {
       const int nrow = warp * 16 + j * 8 + g;
-      const uint2 sb = *(const uint2*)(rr + W4_RAW_NIB + nrow * 8);
-      const uint32_t sw = (q < 2) ? sb.x : sb.y;
-      const uint32_t ea = (sw >> (16 * (q & 1))) & 0xFFu;       // group 2q
-      const uint32_t eb = (sw >> (16 * (q & 1) + 8)) & 0xFFu;   // group 2q+1
+      uint32_t ea, eb;
+      if constexpr (MK_M8_FASTPATH_DEF && TRANSPOSE) {
+        // Each lane needs only the two exponents for groups 2q and 2q+1.
+        // This aligned halfword avoids a 64-bit load, select and shift.
+        const uint32_t ex = *(const uint16_t*)(rr + W4_RAW_NIB + nrow * 8 + 2 * q);
+        ea = ex & 0xFFu;
+        eb = ex >> 8;
+      } else {
+        const uint2 sb = *(const uint2*)(rr + W4_RAW_NIB + nrow * 8);
+        const uint32_t sw = (q < 2) ? sb.x : sb.y;
+        ea = (sw >> (16 * (q & 1))) & 0xFFu;
+        eb = (sw >> (16 * (q & 1) + 8)) & 0xFFu;
+      }
       const unsigned long long la =
           ((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
       const unsigned long long lb =

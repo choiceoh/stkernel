@@ -45,6 +45,22 @@ void run_pack(torch::Tensor x, torch::Tensor a, torch::Tensor b) {
                  c10::cuda::getCurrentCUDAStream()>>>(
       x.data_ptr<float>(), a.data_ptr<int>(), b.data_ptr<int>(), n);
 }
+__global__ void compare_amax(const float* x, int* a, int* b, int n) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;  // n is a multiple of 32: no partial active warp
+  float v = fmaxf(0.0f, fabsf(x[i]));
+  const unsigned redux = __reduce_max_sync(0xffffffffu, __float_as_uint(v));
+  for (int off = 16; off; off >>= 1)
+    v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, off));
+  a[i] = __float_as_uint(v);
+  b[i] = redux;
+}
+void run_amax(torch::Tensor x, torch::Tensor a, torch::Tensor b) {
+  const int n = x.numel();
+  compare_amax<<<(n + 255) / 256, 256, 0,
+                 c10::cuda::getCurrentCUDAStream()>>>(
+      x.data_ptr<float>(), a.data_ptr<int>(), b.data_ptr<int>(), n);
+}
 """,
     ])
 
@@ -74,6 +90,14 @@ def byte_gate(ext, torch):
                       "mismatches": mismatches}), flush=True)
     if mismatches:
         raise RuntimeError("packed converter changed FP8 bytes")
+    x = torch.cat((x, torch.zeros((-x.numel()) % 32, device="cuda")))
+    a = torch.empty(x.numel(), dtype=torch.int32, device="cuda")
+    b = torch.empty_like(a)
+    ext.run_amax(x, a, b)
+    torch.cuda.synchronize()
+    if not torch.equal(a, b):
+        raise RuntimeError("unsigned warp amax differs from float shuffle reduction")
+    print(json.dumps({"gate": "warp amax bits", "values": x.numel(), "mismatches": 0}), flush=True)
 
 
 def capture(ext, torch, x, pack, n, calls, cold=False):
@@ -143,6 +167,7 @@ def main():
     ap.add_argument("--calls", type=int, default=50)
     ap.add_argument("--compile-only", action="store_true")
     ap.add_argument("--compact", action="store_true", help="compare the compact M<=8 allocation")
+    ap.add_argument("--fastpath", action="store_true", help="baseline vs previous M8 vs M8 redux/halfword")
     args = ap.parse_args()
     if args.reps < 2 or args.calls < 1:
         ap.error("need reps >= 2 and calls >= 1")
@@ -160,8 +185,8 @@ def main():
                       "sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
                       "torch": torch.__version__, "cuda": torch.version.cuda}), flush=True)
     gate = load_inline(
-        name="mk_fp8_pack_gate", cpp_sources="void run_pack(torch::Tensor, torch::Tensor, torch::Tensor);",
-        cuda_sources=pack_source(src.read_text()), functions=["run_pack"],
+        name="mk_fp8_pack_gate", cpp_sources="void run_pack(torch::Tensor, torch::Tensor, torch::Tensor); void run_amax(torch::Tensor, torch::Tensor, torch::Tensor);",
+        cuda_sources=pack_source(src.read_text()), functions=["run_pack", "run_amax"],
         extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"],
         verbose=False,
     )
@@ -171,15 +196,19 @@ def main():
     modes = ((0, 0), (1, 1), (1, 2)) if args.compact else ((0, 0), (1, 0), (1, 1))
     names = (["baseline", "pack2+transpose_m8", "pack2+compact_m8"] if args.compact
              else ["baseline", "pack2", "pack2+transpose_m8"])
-    for packing, transpose in modes:
+    if args.fastpath:
+        modes = ((0, 0), (1, 2), (1, 2))
+        names = ["baseline", "previous_m8", "m8_fastpath"]
+    for index, (packing, transpose) in enumerate(modes):
         os.environ["VLLM_GLM53_MK_FP8_PACK2"] = str(packing)
         os.environ["VLLM_GLM53_MK_GEMM_TRANSPOSE_M8"] = str(transpose)
+        os.environ["VLLM_GLM53_MK_M8_FASTPATH"] = str(int(args.fastpath and index == 2))
         mk._EXT = None
         ext = mk._build()
         if not args.compile_only:
             ext.set_gemm2(0)
         variants.append(ext)
-        print(f"compiled pack2={packing} transpose_m8={transpose}", flush=True)
+        print(f"compiled pack2={packing} transpose_m8={transpose} fastpath={int(args.fastpath and index == 2)}", flush=True)
     if args.compile_only:
         print("PASS: all three same-source variants compiled (no GPU validation)", flush=True)
         return
@@ -189,7 +218,7 @@ def main():
         mk._selftest_gemm_exact()
         if not mk._selftest_smlp2():
             raise RuntimeError("SMLP2 gate failed")
-    if args.compact:
+    if args.compact or args.fastpath:
         compact_smlp_gate(mk, torch, args.reps)
     torch.manual_seed(53)
     for m, n, k in ((6, 6416, 4096), (6, 4096, 2048), (6, 1024, 4096),
@@ -201,7 +230,7 @@ def main():
         pack = mk.build_mk_weight_w4(w)
         ref = (mk._mk_quant_x_ref(x) @ mk.mk_pack_dequant(pack, n).float().T)
         plans = [list(ext.gemm2_plan(m, n, k)) for ext in variants]
-        use_compact = args.compact and m == 6 and (n, k) in ((4096, 2048), (6144, 4096))
+        use_compact = (args.compact or args.fastpath) and m == 6 and (n, k) in ((4096, 2048), (6144, 4096))
         if plans[2][2] != (3 if use_compact else 2):
             raise RuntimeError(f"unexpected selected-kernel occupancy: {plans[2]}")
         for cold in (False, True):
@@ -217,7 +246,9 @@ def main():
                 for flag in (1, 2):
                     if not torch.equal(graphs[flag][1], snapshots[flag]):
                         raise RuntimeError(f"{names[flag]} replay drift at {(m, n, k)}, rep={rep}")
-                    if not (use_compact and flag == 2) and not torch.equal(graphs[0][1], graphs[flag][1]):
+                    if args.fastpath and flag == 2 and not torch.equal(graphs[1][1], graphs[2][1]):
+                        raise RuntimeError(f"fastpath changed previous M8 bits at {(m, n, k)}")
+                    if not (use_compact and (flag == 2 or args.fastpath)) and not torch.equal(graphs[0][1], graphs[flag][1]):
                         raise RuntimeError(f"{names[flag]} output differs at {(m, n, k)}, rep={rep}")
             errors = [mk._exact_gate(graph[1], ref) for graph in graphs]
             if any(not e <= 1e-3 or n_ulp for e, n_ulp in errors):

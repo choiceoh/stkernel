@@ -236,6 +236,7 @@ def _build():
         f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
         f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
         f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
+        f"-DMK_M8_FASTPATH_DEF={int(os.environ.get('VLLM_GLM53_MK_M8_FASTPATH') == '1')}",
     ] + (["-DMK_PHASE_TS=1"]
          if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
     _EXT = load(
@@ -265,6 +266,7 @@ def rebuild(src_path: str) -> dict:
         f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
         f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
         f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
+        f"-DMK_M8_FASTPATH_DEF={int(os.environ.get('VLLM_GLM53_MK_M8_FASTPATH') == '1')}",
     ]
     t0 = time.perf_counter()
     ext = load(name=f"glm53_megakernel_{md5}", sources=[src_path],
@@ -1159,6 +1161,8 @@ def _note_m8_capture(m, n, k, lr=False):
     if os.environ.get("VLLM_GLM53_MK_GEMM_TRANSPOSE_M8") in ("1", "2"):
         logger.warning("[megakernel] transpose-m8 CAPTURED M=%d N=%d K=%d compact=%s",
                        m, n, k, int(plan[2]) == 3)
+        if os.environ.get("VLLM_GLM53_MK_M8_FASTPATH") == "1":
+            logger.warning("[megakernel] m8-fastpath CAPTURED M=%d N=%d K=%d", m, n, k)
 
 
 def _gemm_call(x, mk_pack, n_rows, bg=False):

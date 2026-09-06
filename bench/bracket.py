@@ -115,6 +115,7 @@ class _StepWindows:
         import threading
         self.bd, self.period = bd, period
         self.samples: list[tuple[float, float]] = []   # (t, steps)
+        self.traffic_samples = []
         self._stop = threading.Event()
         self._th = threading.Thread(target=self._run, daemon=True)
 
@@ -124,6 +125,8 @@ class _StepWindows:
             text = urllib.request.urlopen(self.bd.METRICS, timeout=5).read().decode()
         except Exception:
             return None
+        from window_metrics import traffic_state
+        self.traffic_samples.append(traffic_state(text))
         m = re.search(r"^vllm:iteration_tokens_total_count\{[^}]*\}\s+([0-9.e+]+)", text, re.M)
         return float(m.group(1)) if m else None
 
