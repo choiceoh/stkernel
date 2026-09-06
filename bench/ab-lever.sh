@@ -96,6 +96,12 @@ if has onepass; then
   curl -s -m 5 "http://$HEAD:8000/metrics" | grep -E "^vllm:spec_decode_num_accepted_tokens_per_pos_total|^vllm:spec_decode_num_(drafts|draft_tokens|accepted_tokens)_total" | sed "s/{[^}]*}//"
 fi
 rm -f /tmp/leg.$$
+# 39차: the head log is the server's stdout, rewritten by every boot -- keep this
+# arm's copy (boot-<NAME>.log) BEFORE the next boot erases it, and prove the arm's
+# lanes from it with fixed-string markers (bench/proof-markers.tsv): armed != serving.
+cp "$LOGD/glm53.log" "$LOGD/boot-$NAME.log" 2>/dev/null && echo "== [$ARM] head log kept: $LOGD/boot-$NAME.log =="
+echo "== [$ARM] serving proof (bench/proof.py) =="
+python3 bench/proof.py --log "$LOGD/boot-$NAME.log" 2>&1 | tail -20 || true
 echo "== [$ARM] gate lines after traffic =="
 grep -hE "prep-fused|drift|DISARM|kda shadow|KDA shadow|SHADOW FAIL|union" "$LOGD/glm53.log" 2>/dev/null | grep -v "GET /\|POST /" | cut -c1-200 | tail -12
 echo "== [$ARM] done $(date +%T) =="
