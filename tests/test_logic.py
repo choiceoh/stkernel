@@ -6525,8 +6525,8 @@ def test_decode_first_scheduler_contracts() -> None:
           and "PREFIX_CACHE DECODE_FIRST \\" in launcher,
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
-    check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
-          "profile declares DECODE_FIRST=0 and the ten VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nDECODE_FIRST=1\n" in profile and all(f"\n{k}=" in profile for k in env_keys),  # 39차 DF4: promoted
+          "profile declares DECODE_FIRST=1 and the ten VLLM_GLM53_SCHED_* keys (forwarded to the container)")
     check("\nVLLM_GLM53_SCHED_MODE=alternate\n" in profile and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
           and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
           and "\nVLLM_GLM53_SCHED_CHUNK_MAX=4608\n" in profile,
