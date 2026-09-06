@@ -47,12 +47,11 @@ PY
 )
 [ "${nb:-0}" -lt "$PAIR_FLOOR_N" ] && need_base=1
 if [ "$need_base" = 1 ]; then
-  if bash "$FLEET" restore-needed "$S" >/dev/null 2>&1 || [ "${FLEET_REHEARSE:-0}" = 1 ]; then
-    echo "== $(date +%T) defaults arm ${NAME}BASE (baseline sample ${nb:-0}/$PAIR_FLOOR_N on this build; production stays here)"
-    bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30
-  else
-    echo "== $(date +%T) defaults arm skipped: a boot job follows (fleet.sh restore-needed = no); floor stays at ${nb:-0}"
-  fi
+  # the baseline SAMPLE is a measurement, not a restore: without it this build
+  # has no verdict (FUS7 #3, 20:00: "no baseline on this build" after the sample
+  # was skipped because a boot job followed). Only a bare restore is skippable.
+  echo "== $(date +%T) defaults arm ${NAME}BASE (baseline sample ${nb:-0}/$PAIR_FLOOR_N on this build; the verdict needs it)"
+  bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30
 else
   if bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
     echo "== $(date +%T) restore boot (defaults, no leg: the build already has ${nb} baseline samples)"

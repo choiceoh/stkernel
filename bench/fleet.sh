@@ -2,6 +2,14 @@
 # fleet.sh -- turn-taking for the TP4 fleet among sessions (39차, operator:
 # "멀티세션간 플릿 테스트 대기 및 순번 같은거 프로그램 만들어").
 #
+# QUICKSTART (six lines; the rest of this header is the reference)
+#   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
+#   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
+#   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
+#   fleet.sh status | board | events                           where things stand
+#   fleet.sh cancel fusion                                     leave (stops your waiter too)
+#   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
+#
 # One FIFO queue and one hold, as files under $FLEET_DIR on srv2 (every
 # session's chains run there). A session REQUESTS a turn, WAITS until it is
 # at the head of the queue AND nobody holds the fleet AND no legacy bench /
@@ -28,7 +36,10 @@
 #                                                    every VLLM_* knob the chain sets is declared in
 #                                                    the profile (the launcher forwards only those),
 #                                                    baseline / duplicate-arm notice. `run` refuses
-#                                                    a FAILed preflight (FLEET_PREFLIGHT=skip overrides)
+#                                                    a FAILed preflight -- no override (operator).
+#                                                    A stale srv2 copy is SYNCED from the repo, not
+#                                                    failed; knobs may be declared by the repo profile
+#                                                    or by a tree the chain `cd`s into (a PR checkout)
 #   fleet.sh restore-needed <session>                "yes" when nobody with a BOOT is queued behind you
 #                                                    (the last holder restores production; a holder
 #                                                    with a boot job behind it may skip the restore)
@@ -40,6 +51,12 @@
 #   fleet.sh board [n]                               every session's last n verdicts + today's boots
 #   fleet.sh ledger [days]                           per-session holds, minutes, boots, records and
 #                                                    boots that produced no measurement
+#   fleet.sh chain <session> [est] [note] -- NAME=KNOBS [NAME=KNOBS ...] [--after NAME 'cmd'] [--legs NAME none]
+#                                                    N arms in one hold (bench/chain.sh): proof per
+#                                                    arm, yield between arms, a defaults sample only
+#                                                    while the build's floor is thin, restore only when
+#                                                    nobody boots behind you, judge + verdicts. NAME=""
+#                                                    is a defaults arm; --after runs a check on that boot
 #   fleet.sh pair <session> <NAME> "<knobs>" [est] [note]
 #                                                    the standard bracket (bench/pair.sh): candidate
 #                                                    boot + onepass + proof, yield to a short probe,
@@ -59,8 +76,8 @@
 #                                                    the queue; --cpu runs NOW in parallel under nice,
 #                                                    never holding. A --cpu job whose script or command
 #                                                    shows GPU use (ab-lever, a boot, a probe container,
-#                                                    torch.cuda...) is REFUSED (--cpu --force overrides,
-#                                                    logged). Without a flag the classifier decides:
+#                                                    torch.cuda...) is REFUSED, no override: fix the
+#                                                    label or the classifier. Without a flag it decides:
 #                                                    GPU evidence -> queue; CPU evidence (rehearsal,
 #                                                    CPU probes, tests, compile checks) -> parallel;
 #                                                    no evidence -> queue, and it says so
@@ -116,12 +133,12 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
     local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
     [ -f "$copy" ] || continue
     if [ "$(md5sum < "$copy")" = "$(md5sum < "$src")" ]; then echo "  PASS $copy == repo"
-    elif [ "${pair%%:*}" = fleet.sh ]; then
-      # the tool's own copy: a caller that runs the repo's fleet.sh directly
-      # never uses it, and a stale copy is only ever a stale copy -- sync it
-      # instead of costing the caller a turn (09-06: two queue attempts lost)
-      cp "$src" "$copy.new" && mv "$copy.new" "$copy" && echo "  SYNC $copy <- repo (was stale)"
-    else echo "  FAIL $copy differs from $src (sync: cp $src $copy.new && mv $copy.new $copy)"; ok=0; fi
+    elif cp "$src" "$copy.new" 2>/dev/null && chmod +x "$copy.new" && bash -n "$copy.new" 2>/dev/null && mv "$copy.new" "$copy"; then
+      # a stale copy is only ever a stale copy: sync it from the repo (the
+      # source of truth) instead of costing the caller a turn (09-06: two
+      # queue attempts lost) -- both copies, the tool's own and the runner's
+      echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
+    else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
   shift
   [ "${1:-}" = "--" ] && shift
@@ -143,24 +160,32 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   else
     # The profile that will serve is the one the chain deploys, and chains pull
     # origin/main at their start (or the holder runs `fleet.sh deploy`): check
-    # the declaration against origin/main, falling back to the checkout when
-    # the fetch is impossible. A key declared only in the checkout (a branch
-    # not merged yet) passes with a note; undeclared in both FAILs. 09-06: a
-    # key merged to main minutes earlier FAILed against the stale checkout.
+    # against origin/main, falling back to the checkout when the fetch is
+    # impossible. A key declared only in the checkout (a branch not merged yet)
+    # passes with a note; a key declared only by a tree the chain `cd`s into (a
+    # PR checkout under ~/mkab) passes with a note; undeclared everywhere FAILs.
+    # 09-06: a key merged to main minutes earlier FAILed against the stale checkout.
     local k undeclared="" prof_main="" prof_src=checkout behind=0
     if timeout 20 git -C "$REPO" fetch -q origin 2>/dev/null; then
       prof_main=$(git -C "$REPO" show origin/main:profiles/glm53.env 2>/dev/null) && prof_src=origin/main
       behind=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
     fi
     local prof_here; prof_here=$(cat "$REPO/profiles/glm53.env")
-    local only_here=""
+    local profiles="" d
+    for d in $( { [ -n "$chain" ] && grep -vE '^\s*#' "$chain"; printf '%s ' "$@"; } 2>/dev/null | grep -oE "cd +[^ ;&|)]+" | awk '{print $2}' | sed "s|^~|$HOME|" | sort -u); do
+      [ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"
+    done
+    local only_here="" only_tree=""
     for k in $knobs; do
       if [ -n "$prof_main" ] && grep -qE "^${k%%=*}=" <<< "$prof_main"; then continue; fi
-      if grep -qE "^${k%%=*}=" <<< "$prof_here"; then only_here="$only_here ${k%%=*}"; else undeclared="$undeclared ${k%%=*}"; fi
+      if grep -qE "^${k%%=*}=" <<< "$prof_here"; then only_here="$only_here ${k%%=*}"
+      elif [ -n "$profiles" ] && grep -qE "^${k%%=*}=" $profiles 2>/dev/null; then only_tree="$only_tree ${k%%=*}"
+      else undeclared="$undeclared ${k%%=*}"; fi
     done
     if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys; checked $prof_src and checkout):$undeclared"; ok=0
     elif [ -n "$knobs" ]; then echo "  PASS knobs declared in $prof_src: $(echo $knobs | tr ' ' ',')"; fi
     [ -z "$only_here" ] || echo "  NOTE declared only in the checkout (not in origin/main yet):$only_here"
+    [ -z "$only_tree" ] || echo "  NOTE declared only by a tree the chain cd's into (a PR checkout):$only_tree"
     [ "${behind:-0}" = 0 ] || echo "  NOTE checkout is $behind commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots"
     if [ -f "$REPO/bench/baseline.py" ]; then
       local kv; kv=$(echo $knobs | tr ' ' ',')
@@ -168,7 +193,7 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
     fi
   fi
   [ $ok = 1 ] && { echo "  -> PASS"; return 0; }
-  echo "  -> FAIL (FLEET_PREFLIGHT=skip to override, logged)"; return 1
+  echo "  -> FAIL: fix the cause above and run again (there is no override)"; return 1
 }
 # ---- events + notification hook (idea 7)
 _event() {  # event session note
@@ -377,8 +402,7 @@ case "$cmd" in
   release) with_lock _release "${1:?session}";;
   run)
     kind=boot; force=""
-    forced=""
-    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --force) forced=1; shift;; *) break;; esac; done
+    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; *) break;; esac; done
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
@@ -386,8 +410,8 @@ case "$cmd" in
     [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
     export FLEET_SESSION=$s
     auto=$(classify_cmd "$@"); cls=${force:-$auto}
-    if [ "$force" = nogpu ] && [ "$auto" = gpu ] && [ -z "$forced" ]; then
-      echo "REFUSED: you said --cpu but the job shows GPU use (a boot, ab-lever, a probe container, torch.cuda); --cpu --force overrides" >&2
+    if [ "$force" = nogpu ] && [ "$auto" = gpu ]; then
+      echo "REFUSED: you said --cpu but the job shows GPU use (a boot, ab-lever, a probe container, torch.cuda); run it --gpu, or fix the classifier if it is wrong" >&2
       logit "refused --cpu $s: classifier saw GPU use"; exit 5
     fi
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
@@ -401,7 +425,7 @@ case "$cmd" in
     [ "$cls" = unknown ] && echo "no evidence either way -> queued as GPU (say --cpu to run in parallel)"
     pf=(); [ "$kind" = probe ] && pf=(--probe)
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
-      if [ "${FLEET_PREFLIGHT:-}" = skip ]; then logit "preflight FAIL overridden by $s"; else logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3; fi
+      logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
     FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
@@ -450,6 +474,14 @@ case "$cmd" in
   preflight)
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
+  chain)
+    s=${1:?session}; shift; est=30; note=""
+    [ "${1:-}" != "--" ] && { est=$1; shift; }
+    [ "${1:-}" != "--" ] && { note=$1; shift; }
+    [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...] [--after NAME cmd] [--legs NAME none]" >&2; exit 2; }
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "${note:-chain $*}" -- bash "$REPO/bench/chain.sh" "$@";;
   pair)
     s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
