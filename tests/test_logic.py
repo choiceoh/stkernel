@@ -3664,7 +3664,7 @@ def test_b12x_static_v2_controls() -> None:
     check("_SF_STAGE_BYTES = 3088" in v4_kernel
           and "def _sf_expand_stage(self, stage_addr, tidx):" in v4_kernel
           and "self.sf_expand_barrier.arrive_and_wait()" in v4_kernel
-          and "barrier_id=2," in v4_kernel
+          and "barrier_id=3," in v4_kernel   # 1 is the epilogue, the stock class uses 1 and 2
           and "fc1_tma_bytes += _SF_STAGE_BYTES" in v4_kernel
           and v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
               > v4_kernel.index("base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF))")

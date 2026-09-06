@@ -223,9 +223,11 @@ class MoEStaticKernelV4:
             num_threads=self.num_mma_warps * self.num_threads_per_warp,
         )
         # the 4 MMA warps expand a packed scale stage together: read, barrier,
-        # write (barrier 1 is the epilogue's, so this one is 2)
+        # write. Barrier 1 is this kernel's epilogue sync, and the stock dense
+        # class it borrows helpers from names 1 and 2 (mma_sync / epilog_sync),
+        # so this one takes 3 -- a collision would be a hang, not an error.
         self.sf_expand_barrier = pipeline.NamedBarrier(
-            barrier_id=2,
+            barrier_id=3,
             num_threads=self.num_mma_warps * self.num_threads_per_warp,
         )
         self.load_register_requirement = 32
