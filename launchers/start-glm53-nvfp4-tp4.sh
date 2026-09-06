@@ -532,7 +532,13 @@ ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
 # calls each module's _build(). Unchanged source: ninja finds nothing to do
 # and the step costs ~10 s of imports. Never fatal: a failed prebuild just
 # leaves the boot to build as before. PREBUILD=0 skips it.
-PREBUILD="${PREBUILD:-1}"
+# 2026-09-06 11:20: OFF by default. The .so nvcc produced in the CPU-only
+# container hung two boots in the profile run (a kernel spinning at 96 %
+# GPU, every launch after it blocked) while the same source built on the
+# GPU node served; the megakernel self-tests passed on the bad build, so the
+# difference is not caught at arm time. Until the binaries are diffed and the
+# cause named, PREBUILD=1 is an experiment, not a default.
+PREBUILD="${PREBUILD:-0}"
 if [ "$PREBUILD" = 1 ] && [ "${DRY_RUN:-0}" != 1 ] && (( ${#OVFILES[@]} )); then
   echo "== 확장 사전 빌드 (osar·megakernel nvcc, 구 컨테이너 서빙 중, 노드 병렬) =="
   _pb_py=$(cat <<'PBEOF'
