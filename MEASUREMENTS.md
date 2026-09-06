@@ -3461,6 +3461,26 @@ yes/no, 프로브 slip(부팅 작업이 선두인데 유휴라 프로브가 먼�
 한계(정직하게): 마커 표는 17개 노브만 덮는다(서빙 줄이 있는 것들). 표에 없는 노브는 `no-marker` 로 판정 유보. `PREFILL_SP`·`KDA_PREFILL_DIRECT_OUT` 은
 서빙 줄이 없어 arming 줄을 쓴다(3열에 명시). 부팅 수는 `boot-*.log` 로 세므로 ab-lever 를 안 타는 체인은 헤드 로그 mtime 으로 1 로만 잡힌다.
 
+### 14. 예약 도구 2라운드 — 표준 쌍 러너·리허설·노이즈 바닥·빌드 레지스트리·양보·알림·노드 점검·CPU 레인 (2026-09-06 밤, 운영자 "1~10 도입하고, gpu 없이 할 수 있는 작업은 병렬로")
+
+| # | 무엇 | 어디 |
+|---|---|---|
+| 1 | `fleet.sh pair <s> <NAME> "<knobs>"` = `bench/pair.sh`: 후보 부팅+onepass+증명 → 짧은 프로브에 양보 → 기본값 부팅은 이 빌드에 기준선이 없거나 바닥 표본이 3 미만이고 뒤에 부팅 작업이 없을 때만 → `judge.py` → 판정 기록 | bench/pair.sh |
+| 2 | 리허설 `FLEET_REHEARSE=1`: ab-lever 가 부팅·레그 없이 마지막 실기록을 복제(`rehearsal: true`) — 체인 흐름·판정 파싱을 GPU 없이 검증; fleet.sh 는 CPU 레인으로 병렬 실행 | bench/ab-lever.sh |
+| 3 | 배포 레지스트리 `fleet.sh deploy <s> <rev>`(홀더만) → `builds.tsv`(스탬프·sha·세션); `status` 가 "deployed: 스탬프 = sha" 와 체크아웃 불일치 경고; baseline.py 가 스탬프↔sha 를 옛 기록에도 적용 | bench/fleet.sh, baseline.py |
+| 4 | 콜드 컴파일 표시: 배포 뒤 첫 부팅이면 `cold_compile: true`(ab-lever `.boot-stamps`) — judge 표에 `cold` | bench/ab-lever.sh, onepass.py |
+| 5 | 노이즈 바닥: 같은 빌드 기준선들의 창 편차(없으면 같은 하니스 전체) — "+4.7% BEYOND/WITHIN the floor ±2.6% (n=3)" | bench/judge.py |
+| 6 | 팔 사이 양보 `fleet.sh yield <s> [max]`: 대기 중인 짧은 프로브가 있고 서빙이 유휴면 홀더가 자기 순번을 선두로 되돌리고 hold 를 놓아 프로브가 slip, 프로브 release 뒤 재GO | bench/fleet.sh |
+| 7 | 알림 `fleet.sh notify <s> "<cmd>"`: GO·release·preflight-fail·yield·nogpu 이벤트에 훅 실행, `events.log` 누적 | bench/fleet.sh |
+| 8 | GO 직후 노드 점검 `fleet.sh nodes`: 4 노드 ssh·GPU·떠도는 컨테이너·RAM·모델 경로(경고, `FLEET_NODES=strict` 면 거부) | bench/fleet.sh |
+| 9 | `status` 의 "production: defaults / NOT defaults: K=V"(컨테이너 env) — 큐가 비었는데 기본값이 아니면 복구 명령 출력, `FLEET_AUTO_RESTORE=1` 이면 실행 | bench/fleet.sh |
+| 10 | 기록에 `session`(FLEET_SESSION), 판정은 `verdicts.jsonl` | bench/onepass.py, judge.py |
+| + | **CPU 레인**: `run --gpu|--cpu` 를 에이전트가 지정(운영자: "수동으로 지정"); `--cpu` 는 즉시 병렬(nice), 홀드 없음, 원장 kind=nogpu. `--cpu` 인데 스크립트·명령에 GPU 사용 증거(ab-lever·부팅·프로브 컨테이너·torch.cuda)가 보이면 **거부**(`--force` 로 강제). 플래그가 없으면 분류기(셸 스크립트는 본문, 파이썬은 코드의 device 사용만 — docstring 의 "ab-lever" 에 속았던 사고)로 결정하고 증거 없으면 GPU 로 큐잉 | bench/fleet.sh |
+
+샌드박스 검증: 분류(baseline.py→CPU, 부팅 런처→GPU, pair.sh→GPU), `--cpu`+GPU 증거 → REFUSED, CPU 작업 즉시 실행+훅 발화+원장 kind=nogpu,
+리허설 pair 가 GPU 없이 끝까지(기본값 표본→judge "WITHIN the floor ±2.6% (n=3)"→verdicts.jsonl), status 의 production/deployed/NOTE 줄,
+yield(홀더 양보→프로브 slip→프로브 release→홀더 재GO→RESUMED). 계약 핀은 `test_fleet_reservation_tooling_contracts` 2라운드 절.
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬

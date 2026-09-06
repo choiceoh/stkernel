@@ -10962,6 +10962,43 @@ def test_fleet_reservation_tooling_contracts() -> None:
           and subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "ab-lever.sh")], capture_output=True).returncode == 0,
           "fleet.sh and ab-lever.sh parse")
 
+    # -- round 2 (operator "1~10 도입하고 ... gpu 없이 할수 있는 작업 같으면 병렬로",
+    #    then "에이전트가 수동으로 gpu 작업인지 cpu 작업인지 지정")
+    for sub in ("pair)", "deploy)", "yield)", "nodes)", "notify)", "classify)", "_yield_requeue()",
+                "classify_cmd()", "production_line()", "deployed_line()", "nodes_check()", "_event()"):
+        check(sub in fleet, f"fleet.sh round 2 carries {sub}")
+    check("--cpu|--nogpu) force=nogpu" in fleet and "--gpu) force=gpu" in fleet,
+          "the agent says --gpu or --cpu; the classifier is the net, not the interface")
+    check('[ "$force" = nogpu ] && [ "$auto" = gpu ] && [ -z "$forced" ]' in fleet and "REFUSED" in fleet,
+          "a --cpu job that shows GPU use is refused unless --force")
+    check("*.py) text=" in fleet and "torch\\.cuda" in fleet,
+          "the classifier reads python files for device use only, not their docstrings (baseline.py said 'ab-lever')")
+    check("nice -n 19" in fleet and "nogpu-start" in fleet,
+          "a CPU job runs now, in parallel, under nice, and is logged")
+    check("FLEET_AUTO_RESTORE" in fleet and "NOT defaults" in fleet,
+          "an empty queue with production off the defaults prints the restore command (opt-in runs it)")
+    lever = open(os.path.join(REPO, "bench", "ab-lever.sh"), encoding="utf-8").read()
+    check('if [ "${FLEET_REHEARSE:-0}" = 1 ]; then' in lever and '"rehearsal": True' in lever,
+          "ab-lever rehearses without a boot and marks the fabricated record")
+    check("MK_COLD_COMPILE=1" in lever and ".boot-stamps" in lever,
+          "ab-lever tags the first boot on a build as a cold compile")
+    check("LOGD=${LOGD:-/home/choiceoh/glm53-logs}" in lever,
+          "ab-lever's paths are overridable (the rehearsal once wrote into the real log dir)")
+    for name in ("pair.sh", "judge.py"):
+        check(os.path.exists(os.path.join(REPO, "bench", name)), f"bench/{name} exists")
+    judge = open(os.path.join(REPO, "bench", "judge.py"), encoding="utf-8").read()
+    check("def floor_of(" in judge and "WITHIN the floor" in judge and "UNPROVED" in judge,
+          "judge prints the delta beside the noise floor and refuses a verdict on an unproved arm")
+    pair = open(os.path.join(REPO, "bench", "pair.sh"), encoding="utf-8").read()
+    check('yield "$S" 15' in pair and "restore-needed" in pair and "PAIR_FLOOR_N" in pair,
+          "pair.sh yields to a short probe, asks restore-needed, and takes a defaults sample only while the floor is thin")
+    onepass = open(os.path.join(REPO, "bench", "onepass.py"), encoding="utf-8").read()
+    check('rec["session"]' in onepass and 'rec["cold_compile"]' in onepass,
+          "onepass records the holder session and the cold-compile flag")
+    base = open(os.path.join(REPO, "bench", "baseline.py"), encoding="utf-8").read()
+    check("def sha_of_stamp(" in base and 'rec.get("rehearsal")' in base,
+          "baseline maps a stamp to its sha through the deploy registry and never counts a rehearsal")
+
 
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
