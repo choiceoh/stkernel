@@ -7833,12 +7833,13 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 3
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm2, mhc, mla) triggers its dependents at "
-          "entry and is launched programmatically behind the MK_PDL knob")
+          "every segment kernel (gemm2, mhc, mla, and the four MLA prefill "
+          "pair/group4 kernels of #368) triggers its dependents at entry and "
+          "is launched programmatically behind the MK_PDL knob")
     # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
     #    remainder split-K, dynamic unit hand-out) and the MK_SEG_KDA block
     #    are gone; the non-persistent kernel is the GEMM segment's only
