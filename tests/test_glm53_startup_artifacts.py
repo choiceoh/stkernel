@@ -124,7 +124,8 @@ class Fp8ArtifactTests(unittest.TestCase):
     def assert_exact(self, left, right):
         for a, b in zip(left[:2], right[:2]):
             self.assertEqual(self.cache.tensor_spec(a), self.cache.tensor_spec(b))
-            ar, br = self.cache._storage_record(a), self.cache._storage_record(b)
+            staging = self.cache.HostStaging()
+            ar, br = self.cache._storage_record(a, staging), self.cache._storage_record(b, staging)
             self.assertEqual(ar["offset"], br["offset"])
             self.assertTrue(torch.equal(ar["raw"], br["raw"]))
         self.assertEqual(left[2:], right[2:])
@@ -288,6 +289,48 @@ class RankArtifactTests(unittest.TestCase):
         self.assertTrue(torch.all(second.weight == 13))
         self.assertEqual(self.loader.call_count, 2)
 
+    def test_registered_layer_aliases_are_saved_once_and_restored_in_place(self):
+        def aliased(fill):
+            model = self.model(fill)
+            model.layers = torch.nn.ModuleList([torch.nn.Linear(8, 7, bias=False)])
+            model._active_layers = model.layers[:]
+            return model
+        first = aliased(0)
+        self.load(first)
+        envelope = json.loads((self.artifact() / "manifest.json").read_text())
+        manifest = envelope["manifest"]
+        self.assertEqual(manifest["aliases"], {"_active_layers.0.weight": "layers.0.weight"})
+        expected = sum(t.numel() * t.element_size() for n, t in first.state_dict().items()
+                       if not n.startswith("_active_layers."))
+        self.assertEqual(manifest["size"], expected)
+        second = aliased(-1)
+        self.load(second)
+        self.assertEqual(self.loader.call_count, 1)
+        self.assertEqual(second.layers[0].weight.data_ptr(), second._active_layers[0].weight.data_ptr())
+        for name, tensor in first.state_dict().items():
+            self.assertTrue(torch.equal(tensor, second.state_dict()[name]), name)
+        # Same shapes with independent registrations cannot consume an alias.
+        third = aliased(-2)
+        third._active_layers = torch.nn.ModuleList([torch.nn.Linear(8, 7, bias=False)])
+        self.load(third)
+        self.assertEqual(self.loader.call_count, 2)
+
+    def test_peer_disk_shortfall_prevents_every_rank_from_writing(self):
+        self.rank._all_ranks_ready = Mock(side_effect=[False, False])
+        with patch.object(self.rank, "_write", side_effect=AssertionError("peer disk is full")):
+            self.load(self.model())
+        self.assertEqual([c.args for c in self.rank._all_ranks_ready.call_args_list], [(False,), (True,)])
+        self.assertEqual(list((self.root / "cache").iterdir()), [])
+
+    def test_partially_overlapping_views_keep_the_source_loader(self):
+        model = self.model()
+        shared = torch.arange(12, dtype=torch.float32)
+        model.register_buffer("first_view", shared[:8])
+        model.register_buffer("shifted_view", shared[4:])
+        self.load(model)
+        self.assertTrue(torch.all(model.weight == 7))
+        self.assertFalse((self.root / "cache").exists())
+
     def test_source_change_even_with_restored_mtime_invalidates(self):
         self.load(self.model())
         path = self.source / "model.safetensors"
@@ -372,7 +415,7 @@ class RankArtifactTests(unittest.TestCase):
         self.rank._all_ranks_ready = Mock(return_value=False)
         target = self.model()
         self.load(target, value=23)
-        self.rank._all_ranks_ready.assert_called_once_with(True)
+        self.assertEqual([c.args for c in self.rank._all_ranks_ready.call_args_list], [(True,), (True,)])
         self.assertTrue(torch.all(target.weight == 23))
         self.assertEqual(self.loader.call_count, 2)
 
@@ -380,7 +423,7 @@ class RankArtifactTests(unittest.TestCase):
         model = self.model()
         model.vllm_config.parallel_config.enable_expert_parallel = True
         self.load(model)
-        self.rank._all_ranks_ready.assert_called_once_with(False)
+        self.assertEqual([c.args for c in self.rank._all_ranks_ready.call_args_list], [(False,), (False,)])
 
     def test_outer_wrapper_runs_post_load_once_after_cache_restore(self):
         # Execute the real wrapper load_weights body with a tiny parent loader.

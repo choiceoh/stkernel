@@ -15,6 +15,68 @@ import torch
 logger = logging.getLogger(__name__)
 FORMAT_VERSION = 1
 _FILE_DIGESTS = {}
+TRANSFER_BYTES = 64 * 1024 * 1024
+
+
+class HostStaging:
+    """One reusable pinned buffer; copies finish before reuse or CPU access.
+
+    The first fleet trial spent 376 s copying a duplicated rank state through
+    freshly allocated pageable .cpu() tensors. Bound and reuse the transfer
+    allocation. Synchronize the current stream in BOTH directions: CPU hashing
+    and overwriting pinned H2D inputs must never race CUDA's copy engine.
+    """
+    def __init__(self):
+        self.buffer = None
+        self.disabled = False
+
+    def _get(self):
+        if self.buffer is None and not self.disabled:
+            try:
+                self.buffer = torch.empty(TRANSFER_BYTES, dtype=torch.uint8, pin_memory=True)
+            except RuntimeError as exc:
+                self.disabled = True
+                logger.warning("[startup-cache] pinned staging unavailable; using synchronous copies: %r", exc)
+        return self.buffer
+
+    def chunks_to_cpu(self, raw, chunk_bytes=TRANSFER_BYTES):
+        buffer = self._get() if raw.device.type == "cuda" else None
+        step = min(chunk_bytes, TRANSFER_BYTES)
+        for start in range(0, raw.numel(), step):
+            chunk = raw[start:start + step]
+            if buffer is None:
+                yield start, chunk.cpu()
+            else:
+                cpu = buffer[:chunk.numel()]
+                cpu.copy_(chunk, non_blocking=True)
+                torch.cuda.current_stream(raw.device).synchronize()
+                yield start, cpu
+
+    def to_cpu(self, raw):
+        if raw.device.type != "cuda":
+            return raw.cpu()
+        cpu = torch.empty(raw.numel(), dtype=torch.uint8)
+        for start, chunk in self.chunks_to_cpu(raw):
+            cpu[start:start + chunk.numel()].copy_(chunk)
+        return cpu
+
+    def digest(self, raw):
+        digest = hashlib.sha256()
+        for _, chunk in self.chunks_to_cpu(raw):
+            digest.update(memoryview(chunk.numpy()))
+        return digest.hexdigest()
+
+    def copy_from_cpu(self, target, raw):
+        buffer = self._get() if target.device.type == "cuda" else None
+        if buffer is None:
+            target.copy_(raw)
+            return
+        for start in range(0, raw.numel(), TRANSFER_BYTES):
+            chunk = raw[start:start + TRANSFER_BYTES]
+            cpu = buffer[:chunk.numel()]
+            cpu.copy_(chunk)
+            target[start:start + chunk.numel()].copy_(cpu, non_blocking=True)
+            torch.cuda.current_stream(target.device).synchronize()
 
 
 def cache_directory(value):
@@ -92,17 +154,17 @@ def tensor_spec(tensor):
             "dtype": str(tensor.dtype)}
 
 
-def _storage_record(tensor):
+def _storage_record(tensor, staging):
     # DeepGEMM scales can have padded strides and a storage offset. Preserve
     # the ENTIRE backing allocation, including padding used by vector loads.
     raw = torch.empty(0, dtype=torch.uint8, device=tensor.device).set_(
         tensor.untyped_storage(), 0, (tensor.untyped_storage().nbytes(),), (1,))
-    raw = raw.cpu()
+    raw = staging.to_cpu(raw)
     return {**tensor_spec(tensor), "offset": tensor.storage_offset(),
             "raw": raw, "sha256": tensor_digest(raw)}
 
 
-def _restore_storage(record, device):
+def _restore_storage(record, device, staging):
     raw = record["raw"]
     if not isinstance(raw, torch.Tensor) or raw.device.type != "cpu" or raw.dtype != torch.uint8:
         raise ValueError("invalid cached storage")
@@ -121,7 +183,8 @@ def _restore_storage(record, device):
     itemsize = torch.empty((), dtype=dtype).element_size()
     if span * itemsize > raw.numel() or raw.numel() % itemsize:
         raise ValueError("cached layout exceeds its storage")
-    storage = raw.to(device=device, copy=True)
+    storage = torch.empty(raw.numel(), dtype=torch.uint8, device=device)
+    staging.copy_from_cpu(storage, raw)
     return torch.empty(0, dtype=dtype, device=device).set_(
         storage.untyped_storage(), offset, shape, stride)
 
@@ -134,6 +197,7 @@ class Fp8Cache:
         self.last_path = None
         self.hits = self.misses = self.errors = 0
         self.times = dict(key=0.0, read=0.0, quantize=0.0, write=0.0)
+        self.staging = HostStaging()
 
     def quantize(self, weight, quantizer):
         self.last_path = None
@@ -146,8 +210,8 @@ class Fp8Cache:
                     import vllm.model_executor.layers.quantization.utils.fp8_utils  # noqa: F401
                     import vllm.utils.deep_gemm  # noqa: F401
                     self.identity = digest_json(runtime_identity())
-                raw = weight.detach().contiguous().view(torch.uint8).cpu()
-                key = {"source": tensor_digest(raw), "weight": tensor_spec(weight),
+                raw = weight.detach().contiguous().view(torch.uint8).reshape(-1)
+                key = {"source": self.staging.digest(raw), "weight": tensor_spec(weight),
                        "runtime": self.identity, "recipe": "e4m3-ue8m0-block128-padded-v1"}
                 del raw
                 path = Path(self.directory) / (digest_json(key) + ".pt")
@@ -162,8 +226,8 @@ class Fp8Cache:
                 data = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
                 if data["key"] != key or _artifact_digest(data) != data["sha256"]:
                     raise ValueError("cached identity mismatch")
-                q = _restore_storage(data["q"], weight.device)
-                ws = _restore_storage(data["ws"], weight.device)
+                q = _restore_storage(data["q"], weight.device, self.staging)
+                ws = _restore_storage(data["ws"], weight.device, self.staging)
                 rows, cols = weight.shape
                 if q.dtype != torch.float8_e4m3fn or tuple(q.shape) != (
                         (rows + 127) // 128 * 128, (cols + 127) // 128 * 128):
@@ -192,7 +256,7 @@ class Fp8Cache:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 q, ws, _, _ = result
-                data = {"key": key, "q": _storage_record(q), "ws": _storage_record(ws)}
+                data = {"key": key, "q": _storage_record(q, self.staging), "ws": _storage_record(ws, self.staging)}
                 data["sha256"] = _artifact_digest(data)
                 with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".fp8-", delete=False) as out:
                     temporary = Path(out.name)

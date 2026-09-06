@@ -20,12 +20,12 @@ import time
 import torch
 
 from vllm.model_executor.layers.glm53_startup_cache import (
-    cache_directory, digest_json, environment_identity, runtime_identity, tensor_spec,
+    HostStaging, cache_directory, digest_json, environment_identity, runtime_identity, tensor_spec,
 )
 
 logger = logging.getLogger(__name__)
 CHUNK_BYTES = 64 * 1024 * 1024
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 def _drop_file_pages(fd, offset, size, mapped=None):
@@ -79,6 +79,33 @@ def _schema(state):
     return result
 
 
+def _state_plan(state):
+    """Write exact shared views once, preserving the registration alias graph.
+
+    GLM registers the same decoder layers in both layers and _active_layers.
+    state_dict includes both names, almost doubling a naive checkpoint dump.
+    Disjoint views are not merged. Other overlaps are unsupported: independent
+    restoration could otherwise corrupt a neighbor if its view offset changes.
+    """
+    unique, aliases, seen, extents = {}, {}, {}, {}
+    for name, tensor in state.items():
+        key = (str(tensor.device), tensor.untyped_storage().data_ptr(),
+               tensor.storage_offset(), tensor.dtype, tuple(tensor.shape), tuple(tensor.stride()))
+        if tensor.numel() and key in seen:
+            aliases[name] = seen[key]
+        else:
+            if tensor.numel():
+                start = tensor.storage_offset() * tensor.element_size()
+                end = start + tensor.numel() * tensor.element_size()
+                spans = extents.setdefault(key[:2], [])
+                if any(start < hi and lo < end for lo, hi in spans):
+                    raise ValueError(f"unsupported overlapping rank tensor {name}")
+                spans.append((start, end))
+            unique[name] = tensor
+            seen[key] = name
+    return unique, aliases
+
+
 def _context(model):
     from vllm.distributed import get_tensor_model_parallel_rank
 
@@ -118,18 +145,19 @@ def _write(directory, identity, state, loaded):
     if directory.exists():
         return False
     schema = _schema(state)
-    size = sum(t.numel() * t.element_size() for t in state.values())
+    unique, aliases = _state_plan(state)
+    size = sum(t.numel() * t.element_size() for t in unique.values())
     directory.parent.mkdir(parents=True, exist_ok=True)
     if shutil.disk_usage(directory.parent).free < size + 512 * 1024**2:
         raise OSError("insufficient disk space for rank checkpoint cache")
     temporary = Path(tempfile.mkdtemp(dir=directory.parent, prefix=".rank-"))
     try:
         chunks, offset = [], 0
+        staging = HostStaging()
         with (temporary / "weights.bin").open("wb") as out:
-            for name, tensor in state.items():
+            for name, tensor in unique.items():
                 raw = tensor.detach().reshape(-1).view(torch.uint8)
-                for start in range(0, raw.numel(), CHUNK_BYTES):
-                    cpu = raw[start:start + CHUNK_BYTES].cpu()
+                for start, cpu in staging.chunks_to_cpu(raw, CHUNK_BYTES):
                     buf = memoryview(cpu.numpy())
                     checksum = hashlib.sha256(buf).hexdigest()
                     count = out.write(buf)
@@ -146,7 +174,7 @@ def _write(directory, identity, state, loaded):
                     del buf, cpu
             out.flush()
             os.fsync(out.fileno())
-        manifest = {"identity": identity, "schema": schema, "chunks": chunks,
+        manifest = {"identity": identity, "schema": schema, "aliases": aliases, "chunks": chunks,
                     "size": offset, "loaded": sorted(loaded)}
         with (temporary / "manifest.json").open("w") as out:
             json.dump({"manifest": manifest, "sha256": digest_json(manifest)}, out)
@@ -170,20 +198,23 @@ def _read_manifest(directory, identity, state):
         raise ValueError("rank-cache manifest identity/checksum mismatch")
     if manifest["schema"] != _schema(state):
         raise ValueError("rank-cache schema mismatch")
+    unique, aliases = _state_plan(state)
+    if manifest["aliases"] != aliases:
+        raise ValueError("rank-cache registration alias mismatch")
     if not isinstance(manifest["loaded"], list) or any(not isinstance(k, str) for k in manifest["loaded"]):
         raise ValueError("invalid loaded-weight set")
-    totals = {name: 0 for name in state}
+    totals = {name: 0 for name in unique}
     offset = 0
     for chunk in manifest["chunks"]:
         name, start, size = chunk["name"], chunk["start"], chunk["size"]
-        if name not in state or type(start) is not int or type(size) is not int:
+        if name not in unique or type(start) is not int or type(size) is not int:
             raise ValueError("invalid rank-cache chunk")
         if (start != totals[name] or chunk["offset"] != offset or not 0 < size <= CHUNK_BYTES
                 or size % state[name].element_size()):
             raise ValueError("invalid rank-cache chunk extent")
         totals[name] += size
         offset += size
-    if any(totals[name] != tensor.numel() * tensor.element_size() for name, tensor in state.items()):
+    if any(totals[name] != tensor.numel() * tensor.element_size() for name, tensor in unique.items()):
         raise ValueError("rank cache is incomplete")
     if offset != manifest["size"] or (directory / "weights.bin").stat().st_size != offset:
         raise ValueError("rank-cache file size mismatch")
@@ -198,6 +229,7 @@ def _restore(directory, manifest, state):
     """
     if manifest["size"] == 0:
         return set(manifest["loaded"])
+    staging = HostStaging()
     with (directory / "weights.bin").open("rb") as source:
         with mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_COPY) as mapped:
             with torch.no_grad():
@@ -209,7 +241,7 @@ def _restore(directory, manifest, state):
                             raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
                         raw = torch.frombuffer(view, dtype=torch.uint8)
                         target = state[chunk["name"]].reshape(-1).view(torch.uint8)
-                        target[chunk["start"]:chunk["start"] + chunk["size"]].copy_(raw)
+                        staging.copy_from_cpu(target[chunk["start"]:chunk["start"] + chunk["size"]], raw)
                     finally:
                         del raw
                         view.release()
@@ -250,6 +282,7 @@ def load_rank_cached(model, weights, load):
         source, identity = _context(model)
         state = model.state_dict()
         initial_schema = _schema(state)
+        initial_aliases = _state_plan(state)[1]
         directory = Path(root) / digest_json(identity)
     except Exception as exc:
         logger.warning("[rank-cache] unavailable; using source loader: %r", exc)
@@ -271,18 +304,35 @@ def load_rank_cached(model, weights, load):
     if manifest is not None:
         logger.warning("[rank-cache] another rank missed; all ranks use source loader")
     loaded = load(weights)
-    if directory is None:
-        return loaded
+    save_ready = False
     try:
+        if directory is None:
+            raise ValueError("local rank cache context is unavailable")
         state = model.state_dict()
-        if _schema(state) != initial_schema or checkpoint_identity(source) != identity["checkpoint"]:
+        if (_schema(state) != initial_schema or _state_plan(state)[1] != initial_aliases
+                or checkpoint_identity(source) != identity["checkpoint"]):
             raise ValueError("model schema or checkpoint changed while loading")
         if loaded is None:
             raise ValueError("source loader did not return a loaded-weight set")
+        unique, _ = _state_plan(state)
+        size = sum(t.numel() * t.element_size() for t in unique.values())
+        directory.parent.mkdir(parents=True, exist_ok=True)
+        free = shutil.disk_usage(directory.parent).free
+        if not directory.exists() and free < size + 512 * 1024**2:
+            raise OSError(f"insufficient disk space for rank checkpoint cache: need={size} free={free}")
+        save_ready = True
+    except Exception as exc:
+        logger.warning("[rank-cache] save unavailable; source weights remain active: %r", exc)
+    # An unusable rank must still vote, so peers do not waste minutes writing
+    # artifacts that the all-rank hit gate can never use.
+    if not _all_ranks_ready(save_ready):
+        logger.warning("[rank-cache] save skipped on all ranks; a peer cannot publish")
+        return loaded
+    try:
         save_start = time.perf_counter()
         if _write(directory, identity, state, loaded):
-            logger.warning("[rank-cache] saved rank=%d in %.3fs; post-load hooks follow",
-                           identity["rank"], time.perf_counter() - save_start)
+            logger.warning("[rank-cache] saved rank=%d bytes=%d in %.3fs; post-load hooks follow",
+                           identity["rank"], size, time.perf_counter() - save_start)
         else:
             logger.warning("[rank-cache] keeping existing artifact %s", directory)
     except Exception as exc:

@@ -6747,3 +6747,38 @@ restart or GPU workload was performed for this implementation. See
 for enable/rollback and validation requirements. The old 54.9 s fold / 52.1 s
 read+apply measurements describe candidate budgets, not savings. The 302 s TP
 initialization pause is still separate and unresolved.
+
+### Startup cache fleet trial 1 — default-on rejected, retry prepared (2026-09-07)
+
+Operator explicitly requested default-on fleet validation. `startupcache1`
+ran under the normal GPU queue, rebased onto `d855194`, and deployed source
+`284686a` / overlay `6131ff0d79e1` with SHA-256 parity on all four nodes.
+Evidence: `/home/choiceoh/glm53-logs/startup-cache-20260907-run1` on srv2.
+Same source/profile; BASE sets both cache paths to `0`, COLD uses enabled
+profile paths. Both use `PREFILL_WARMUP=0`; the canonical Korean onepass uses
+2K/32K, with exact prompts/responses retained. This is a startup trial, not a
+decode-throughput promotion.
+
+- BASE: health **389 s**, head load-model **157.6 s**, target source read/apply
+  **33.2 + 19.5 = 52.7 s**, FP8 fold **65.7 + 7.6 s** (target/drafter).
+  Onepass **6/6**, corruption **0/4**, raw acceptance **45.8%**.
+  The first source deployment cleared torch.compile cache: the total boot is
+  not a clean warm-compile baseline. Distributed model groups took **3.2 s**;
+  the historical 302 s pause did not reproduce on this boot.
+- COLD: health **712 s**, head load-model **571.6 s**. srv1 refused rank-cache
+  publication for insufficient disk space; the other ranks wrote their cache.
+  The all-node receipt gate correctly failed and triggered cache-off recovery
+  before WARM. COLD/WARM output and warm-hit speed are **not validated**.
+- The head rank artifact was **98,908,191,824 bytes** and took **376.463 s** to
+  write. Its manifest proves **1,805** `layers`/`_active_layers` registrations
+  contain identical chunk checksums; **48,982,417,960 bytes** are redundant.
+  This explains both the disk guard and excessive copying, rather than a
+  general requirement for 93 GiB of rank storage.
+- Format 2 writes exact registration aliases once (**49,925,773,864 bytes**
+  predicted from the actual manifest), validates alias topology, rejects
+  overlapping views, and votes on all-rank publication readiness so a full
+  disk cannot make the other ranks waste a cold write. Copies reuse a bounded
+  pinned staging buffer and synchronize before hashing/reuse/page eviction;
+  this targets the `.cpu()` waits in the slow-phase stacks. CPU byte/layout,
+  alias and peer-capacity regressions cover the changes. The retry must prove
+  real GPU behavior and a net gain; no warm-cache speedup is claimed yet.

@@ -621,6 +621,22 @@ rank** to have a matching, complete cache. Otherwise all ranks use the source
 loader: InstantTensor itself uses that group, so mixed cache/source paths could
 strand its collectives. No additional Gloo object exchange is introduced.
 
+Format 2 stores exact shared tensor views once, and checks the registration
+alias graph before restoration. GLM's `layers`/`_active_layers` registrations
+otherwise duplicate 1,805 tensors: the first fleet trial wrote 92.1 GiB instead
+of 46.5 GiB per rank and srv1 correctly declined for insufficient disk space.
+Partially overlapping views are unsupported. A second readiness vote before
+publication skips saving on all ranks if any rank lacks a valid context or
+sufficient space. These fixes follow the failed first trial; the retry must
+establish their actual boot benefit.
+
+Startup transfers reuse one 64 MiB pinned host buffer. CPU hashing/file writes
+wait for D2H completion, and H2D copies finish before the pinned input is reused
+or mapped pages are discarded. This follows the synchronization requirement in
+[PyTorch's transfer guide](https://docs.pytorch.org/tutorials/intermediate/pinmem_nonblock.html).
+Pinned allocation failure retains synchronous copies. The next fleet trial
+measures whether this removes the pageable-copy cost seen in the first trial.
+
 Rank identity includes the local checkpoint index/config and every source
 file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model
 config, TP/rank, environment and runtime code. This is an immutable-source,
