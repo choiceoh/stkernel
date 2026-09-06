@@ -13,7 +13,7 @@
 #   fleet.sh cancel fusion                                     leave (stops your waiter too)
 #   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
 #
-# One FIFO queue and one hold, as files under $FLEET_DIR on srv2 (every
+# One queue with aging and downstream priority, and one hold, under $FLEET_DIR on srv2 (every
 # session's chains run there). A session REQUESTS a turn, WAITS until it is
 # at the head of the queue AND nobody holds the fleet AND no legacy bench /
 # boot process is running (peers that never adopted this tool are still
@@ -103,6 +103,7 @@ REPO=${REPO:-/home/choiceoh/stkernel}
 case "${1:-}" in
   submit|result|inbox|jobs|stats) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
+  priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
 # "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
 # session spends a boot on a defaults arm, say whether the deployed build already
@@ -315,9 +316,15 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
   fi
   echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
 }
-_dequeue() { grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"; }
+_dequeue() {
+  grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"
+  local marker
+  for marker in priority-front priority-yield; do
+    [ "$(cat "$FLEET_DIR/$marker" 2>/dev/null)" != "$1" ] || rm -f "$FLEET_DIR/$marker"
+  done
+}
 _position() { grep -n "^[0-9]*|$1|" "$Q" | head -1 | cut -d: -f1; }
-_front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; mv "$Q.tmp" "$Q"; logit "front $1"; }
+_front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; mv "$Q.tmp" "$Q"; echo "$1" > "$FLEET_DIR/priority-front"; logit "front $1"; }
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
@@ -325,11 +332,12 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
   fi
-  if [ "$(head -1 "$Q" | cut -d'|' -f2)" != "$s" ]; then
-    # a short probe may slip ahead of queued BOOT jobs while serving sits idle:
-    # it costs them at most its bounded runtime and no boot (logged as slip)
-    if [ "$kind" = probe ] && [ "${est:-30}" -le 15 ] && serving_idle; then logit "slip $s (probe, est ${est}m) ahead of $(head -1 "$Q" | cut -d'|' -f2)"; else return 1; fi
-  fi
+  # We hold .lock and have no live holder. Every waiter sees the same order;
+  # priority cannot interrupt a pair/chain or steal a yielded holder's place.
+  local eligibility=""
+  serving_idle || eligibility=--boot-only
+  python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
+  [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
   [ "$kind" = probe ] && ! serving_idle && return 1
   # never hand the fleet to a dead job (an orphaned waiter whose run process
   # was killed took a turn for pid 3710362 on 09-06 and was auto-kicked 2 s
@@ -363,7 +371,10 @@ PY
   logit "ledger $s held=${held}m boots=$boots records=$recs wasted=$wasted"
   ls -t "$LOGD"/boot-*.log 2>/dev/null | head -4 | while read -r f; do [ "$(stat -c %Y "$f")" -ge "$t0" ] && logit "  kept $f"; done
 }
-_yield_requeue() { _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"; }   # the yielding holder keeps its place: head of the queue
+_yield_requeue() {
+  _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"
+  echo "$4" > "$FLEET_DIR/priority-yield"
+}   # the yielding holder resumes immediately after its chosen probe
 _release() {  # session
   if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
     _ledger_row "$1"
@@ -510,7 +521,7 @@ case "$cmd" in
     serving_idle || { echo "serving not idle; not yielding"; exit 0; }
     IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"
     logit "yield $s -> $cand"; _event yield "$s" "$cand"
-    with_lock _yield_requeue "$s" "$hest" "$hnote"
+    with_lock _yield_requeue "$s" "$hest" "$hnote" "$cand"
     FLEET_NO_RESTORE_CHECK=1 with_lock _release "$s"
     echo "yielded to $cand; waiting to resume"
     # give the probe its head start: its waiter polls every 15 s, ours would win the race otherwise

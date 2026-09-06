@@ -65,6 +65,17 @@ case "${VLLM_GLM53_MEGAKERNEL-1}" in
 esac
 
 envs=(-e "MK_PKG_PATH=${TARGET_PREFIX%/}")
+# A runner-owned report directory is the only extra writable evidence mount.
+# Preserve the fresh challenge through the container boundary; ordinary manual
+# probes keep their existing behavior.
+if [ -n "${FLEET_PROBE_REPORT:-}" ]; then
+  report_dir=$(dirname "$FLEET_PROBE_REPORT")
+  mounts+=(--mount "type=bind,src=$report_dir,dst=/fleet-report")
+  envs+=(-e FLEET_PROBE_REPORT=/fleet-report/probe-report.json)
+  for v in FLEET_PROBE_NONCE FLEET_PROBE_BINDING FLEET_EXPERIMENT_ID; do
+    envs+=(-e "$v=${!v}")
+  done
+fi
 # PROBE_CACHE=1: the serving boot's persistent caches (the launcher mounts
 # $HOME/glm53-cache at /cache and points flashinfer / triton / vLLM at it),
 # so a probe that JIT-compiles -- probes/nvfp4_prefill_warm.py builds the
