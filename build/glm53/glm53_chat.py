@@ -23,7 +23,7 @@ def _required_first_schema(schema):
     if isinstance(props, dict) and isinstance(required, list):
         names = [name for name in required if isinstance(name, str) and name in props]
         schema["properties"] = {name: props[name] for name in [*names, *props]}
-    for key in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas"):
+    for key in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"):
         children = schema.get(key)
         if isinstance(children, dict):
             for child in children.values():

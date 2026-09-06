@@ -17,6 +17,8 @@ import urllib.request
 
 from jsonschema import validate
 
+LITERAL_TOOL_XML = "<tool_call>record_job</tool_call>"
+
 
 def read_stream(lines):
     """Assemble tool slots without accepting EOF as a successful SSE finish."""
@@ -39,8 +41,12 @@ def read_stream(lines):
             delta = choice.get("delta", {})
             content.append(delta.get("content") or "")
             for tc in delta.get("tool_calls") or []:
-                slot = slots.setdefault(tc["index"], {"id": "", "type": "function",
+                slot = slots.setdefault(tc["index"], {"id": "",
                     "function": {"name": "", "arguments": ""}})
+                if "type" in tc:
+                    if tc["type"] != "function":
+                        raise ValueError("Unexpected tool-call type")
+                    slot["type"] = tc["type"]
                 if tc.get("id"):
                     if slot["id"] and slot["id"] != tc["id"]:
                         raise ValueError("Tool ID changed during streaming")
@@ -57,11 +63,13 @@ def check_response(message, finish, choice, schema):
         raise ValueError(f"Unfinished response: {finish}")
     calls = message.get("tool_calls") or []
     if choice == "none":
-        if calls or not message.get("content"):
-            raise ValueError("none must return content without tool calls")
+        if calls or LITERAL_TOOL_XML not in (message.get("content") or ""):
+            raise ValueError("none must preserve the requested XML without tool calls")
         return
     if len(calls) != 1 or not calls[0].get("id"):
         raise ValueError("Expected one complete tool call with an ID")
+    if calls[0].get("type") != "function":
+        raise ValueError("Expected an explicitly function-typed tool call")
     fn = calls[0]["function"]
     if fn["name"] != "record_job":
         raise ValueError("Unexpected function name")
@@ -90,7 +98,7 @@ def run(args):
                     if large:
                         prompt += " Include a 250-word description and ten detailed responsibilities."
                     if choice == "none":
-                        prompt = "Print this XML example literally: <tool_call>record_job</tool_call>"
+                        prompt = "Print this XML example literally: " + LITERAL_TOOL_XML
                     body = {"model": args.model, "messages": [{"role": "user", "content": prompt}],
                         "tools": [{"type": "function", "function": {"name": "record_job", "parameters": schema}}],
                         "tool_choice": {"type": "function", "function": {"name": "record_job"}} if choice == "named" else choice,

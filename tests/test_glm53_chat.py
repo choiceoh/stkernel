@@ -136,7 +136,8 @@ class OptionTests(unittest.TestCase):
         nested = {"type": "object", "properties": {"choices": {"type": "array",
             "items": {"oneOf": [copy.deepcopy(schema), {"$ref": "#/$defs/entry"}]}},
             "tag": {"type": "string"}}, "required": ["tag"],
-            "$defs": {"entry": copy.deepcopy(schema)}, "default": copy.deepcopy(schema)}
+            "$defs": {"entry": copy.deepcopy(schema)}, "default": copy.deepcopy(schema),
+            "dependencies": {"choices": copy.deepcopy(schema), "tag": ["title"]}}
         body = {"tools": [{"type": "function", "function": {"name": "collect", "parameters": nested}}],
                 "tool_choice": {"type": "function", "function": {"name": "collect"}}}
         before = json.dumps(body)
@@ -148,6 +149,8 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(list(ordered["properties"]), ["tag", "choices"])
         self.assertEqual(list(ordered["properties"]["choices"]["items"]["oneOf"][0]["properties"]), ["label", "optional"])
         self.assertEqual(list(ordered["$defs"]["entry"]["properties"]), ["label", "optional"])
+        self.assertEqual(list(ordered["dependencies"]["choices"]["properties"]), ["label", "optional"])
+        self.assertEqual(ordered["dependencies"]["tag"], ["title"])
         self.assertEqual(list(ordered["default"]["properties"]), ["optional", "label"])
         rendered = render([], tools=result["tools"])
         self.assertLess(rendered.index('"tag"'), rendered.index('"choices"'))
