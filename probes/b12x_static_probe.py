@@ -184,7 +184,7 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--configs",
+    ap.add_argument("--configs",   # "|"-separated specs, one process, one stock reference
                     default="1,m32,f3,g2,m64,f2,g2,m32,f2,g4,d,m32,f2,g4,s,m32,f2,g4,d,s")
     ap.add_argument("--us", default="8,16,24,32,40,48,64")
     ap.add_argument("--reps", type=int, default=20)
@@ -197,13 +197,12 @@ def main() -> int:
                          "stamps through a side stream and print where every "
                          "CTA stopped, then exit 3")
     args = ap.parse_args()
-    # config specs are themselves comma-separated: split on ",m" boundaries
+    # config specs are themselves comma-separated: "|" separates specs
+    # (v|u|v,s|v,p); without one, the legacy ",m" / ",1" boundaries do
     raw = args.configs
-    specs = []
-    for part in raw.replace(",m", "|m").replace(",1", "|1").split("|"):
-        part = part.strip()
-        if part:
-            specs.append(part)
+    if "|" not in raw:
+        raw = raw.replace(",m", "|m").replace(",1", "|1")
+    specs = [part.strip() for part in raw.split("|") if part.strip()]
     us_list = [int(u) for u in args.us.split(",")]
     full = (set(specs) if args.full_sweep == "all"
             else set(args.full_sweep.replace(",m", "|m").split("|")))
