@@ -2253,6 +2253,8 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 | 혼합 스텝 비용(그래프·MK·SP 전부 off, ~0.4 s) | 발견 | §4h DF1 — 인터리빙보다 순차 |
 | 128K 디코드 −31~55% (3/11 부팅) | **미해결** | 열·클럭·MK·prep-fused 아님; 128K 답변 두 창 뒤 저하 |
 
+**프로덕션 최종(22:01, main ed09625)**: `PREFIX_CACHE=1`(하이브리드 APC 조정자, prep-fused align plan built), `DECODE_FIRST=1` + `SCHED_MODE=sequential`(max_wait 20 s), `CHAT_TEMPLATE=chat_template_mm_v2.jinja`, NVFP4 프리필 MIN_M=1024, SP BF16, KDA 레인. 실서빙 확인: thinking=false → content "1, 2, 3, 4, 5! 🎉"(reasoning 없음), thinking=true → content "1, 2, 3, 4, 5"(사고는 reasoning_content 로). 플릿 FREE.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
