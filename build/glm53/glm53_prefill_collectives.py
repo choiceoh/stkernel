@@ -22,6 +22,10 @@ from vllm.logger import init_logger
 logger = init_logger(__name__)
 _ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
 _FP8 = os.environ.get("VLLM_GLM53_PREFILL_SP_FP8") == "1"
+if _ENABLED:
+    # 39차: the boot-log anchor the bracket greps -- an armed knob is not
+    # evidence of invocation, but a missing anchor IS evidence of no arming.
+    logger.warning("[prefill-sp] sequence-parallel prefill armed (fp8 transport=%s)", _FP8)
 _BLOCK = 2048
 _TP = 4
 _HIDDEN = 4096

@@ -2073,6 +2073,30 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 디코드 창 n=17 med **20.4** step/s, raw acc **48.5%**, tok/step **3.43** (k=5) → 69.9 tok/s 환산, 생성 3,481 토큰, 한국어 손상 0/5, **총 119초**(구 하니스 339~375초).
 한국어 문서 Q&A 의 수용률(48.5%)이 구 하니스(36~39%)보다 높다 — 문서 근거 답변은 인용이 많아 예측이 쉽다. **이후 비교는 이 행이 기준**이며 구 기록과는 step/s 만 맞댈 수 있다.
 
+### §4d #368+#373 프리필 후보 결합 팔(P1) — 이득 0, 128K 디코드 퇴행, 복구 (15:48~16:10; 운영자 "PR368+373 테스트 후 디폴트화")
+
+게이트 프로브 2개(플릿 내린 srv4 GPU): **둘 다 실패**. ① `probes/qk_norm_strided_check.py`: conv 레이아웃 T=129 에서 1 ulp(max_abs 9.8e-4) → KDA_PREFILL_QK_NORM 제외.
+② `probes/glm53_nvfp4_scale_check.py`: 스케일 637.1556 vs 637.1555 → NVFP4_SCALE_FUSED 제외. 남은 8개로 부팅(main 15b8031, PREFILL_WARMUP=1, .cu 재빌드 포함 630 s):
+SP=1 SP_FP8=1 MLA_PREFILL_PAIR=1 GROUP=4 FP8_DENSE_PREFILL_NVFP4=1 B12X_PREFILL_REUSE=1 FC1_N128=1 KDA_PREFILL_DIRECT_OUT=1 (POST_PRENORM·NVFP4_BPROJ 는 문서의 1차 팔대로 off).
+
+| 통일 onepass | 2K cold | 32K cold | 128K cold | step/s (2K/32K/128K) | tok/step | raw acc | 품질 | 한국어 |
+|---|---|---|---|---|---|---|---|---|
+| **P1** | 2116 | 2643 | 2375 | 16.5 (20.4 / 20.4 / **11.0**) | 3.21 | 44.6% | 9/9 | 0/5 |
+| BASE39-stock | 2100 | 2645 | 2514 | 20.4 (20.4 / 20.4 / 20.4) | 3.43 | 48.5% | 9/9 | 0/5 |
+
+- **판정 RESTORE.** 프리필 이득 없음(32K −0.1%, 128K −5.5%; 문서 예측 +41%), **128K 문맥 디코드 step/s 절반**(11.0), 수용 −4pt. 품질·한국어는 통과. 프로덕션 stock 기본값으로 복구.
+- 레인 관여 증거 없음: 헤드 로그의 앵커는 megakernel armed / fp8-dense / prep-fused 뿐이고 SP·MoE reuse 레인은 앵커 자체가 없다(SP 모듈에 로그 0줄, MoE 는 decline 로그만). "무장 ≠ 호출"이 이번에도 그대로. 복구 부팅이 헤드 로그를 덮어써 사후 판독도 불가 → 체인이 팔별 로그를 보존하도록 고침(§7).
+- 128K 디코드 퇴행의 용의자는 MLA pair+group4(디코드 MK MLA 커널의 컴파일 플래그·512 스레드 레지스터 비용, 문서가 "미검증"이라 적은 지점)와 SP_FP8(수용 −4pt 쪽). 그룹 이분(SP / MLA / NVFP4 / MoE+KDA, 4 부팅 ≈ 55분)을 플릿 큐에 등록(P2).
+
+### §4e 두 게이트의 수정 — 둘 다 PASS (16:05~16:12, srv4)
+
+- **NVFP4 스케일 융합**: stock 레시피 `448.0 * 6.0 / amax`, `alpha_scale / (x_gs * w_gs)` 는 파이썬 float 가 왼쪽이라 torch 가 `reciprocal(tensor) * scalar`(두 번 반올림)로 계산한다. 융합 커널의 `div_rn(2688, amax)`(IEEE 한 번)가 1 ulp 위였다.
+  `div_rn(1, amax) * 2688`, `div_rn(1, product) * alpha_scale` 로 stock 의 반올림 순서를 그대로 따르게 고침 → 프로브 `"status": "passed"`. "구성상 비트 동일"은 틀린 주장이었다.
+- **QK-norm 스트라이드**: stock kernel2 는 MBLOCK 32·num_warps 4 고정(행 수 무관). 실패는 conv 레이아웃 전용 [128,32]-타일·축0 리덕션 커널의 트리가 kernel2 의 [32,128]·축1 트리와 달라서이고 데이터 의존적(진단 `probes/qknorm_diag.py`:
+  T=128 에서 2행, 1000 에서 8행, 8185 에서 54행 불일치; 타일 전치·warp 1/8 도 불일치). **kernel2 모양의 strided 커널을 conv 레이아웃에 쓰면 T=1~8192 전부 비트 동일** → conv 분기와 전용 커널 삭제. 게이트 150 케이스 PASS + decline OK.
+  conv 레이아웃의 로드는 T 스트라이드(비병합, L2 친화)라 속도는 브래킷이 잰다. 이 레인의 절감 자체가 128K 프리필의 0.03% 수준이라 정확성이 우선.
+- 앵커 추가: `[prefill-sp] sequence-parallel prefill armed (fp8 transport=…)`, `[b12x prefill reuse] armed: reuse=… fc1_n128=…` (무장의 부재를 로그로 증명하기 위해).
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
