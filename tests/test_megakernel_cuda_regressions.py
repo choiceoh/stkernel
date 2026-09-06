@@ -31,11 +31,6 @@ def _block(source: str, marker: str) -> str:
     return source[start:end]
 
 
-def _statement(source: str, marker: str) -> str:
-    start = source.index(marker)
-    return source[start:source.index(";", start) + 1]
-
-
 def harness_source(source: str) -> str:
     publication = source[source.index("if (pend >= 0)"):
                          source.index("      xv = nxv;")]
