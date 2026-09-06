@@ -2195,6 +2195,18 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 **APC2**(`PREFIX_CACHE=1` + prep-fused 재수집 수정 #399, 19:33) — 히트/수용률 전과 같음(32K warm 1.37 s 92% / warm2 0.37 s 99.6%, 100K warm 2.12 s 96% / warm2 1.10 s 98%, 정답 6/6, acc 41.6~59.5% 잡음폭). onepass: 프리필 2K +14.7% / 32K **−3.2%**(2,972) / 128K **+1.1%**(2,972) — align 청크(6,912)의 순수 프리필 비용은 작다(APC 의 −8% 는 대부분 잡음). 디코드는 여전히 −9.3/−10.3%: prep-fused 가 **두 번째 관문**에서 빠졌다 — `mamba_cache_mode != none (block table select differs)`.
 - 원인: stock `mamba_get_block_table_tensor` 는 GDN 상태 블록 열을 `(seq_len−1)//mamba_block` 부터 `1+num_spec` 개 취하는데('align' 은 2304 블록을 넘을 때마다 열이 이동), 융합 커널은 0열부터 취했다(캐시 모드 'none' 은 블록 하나 = max_model_len 이라 항상 0열). 수정(PR #405): 커널이 실행 중 블록 열부터 모으고(런타임 인자 `mamba_block`, 'none' 은 그대로 0열), align 모드에선 0열만 아는 CUDA `run_prep` 대신 Triton 커널(호스트 ~12 µs/스텝). 셀프체크의 `gdn_state` 비교가 stock 빌더와의 일치를 검증한다. 후속 팔 **APC4**(두 수정 모두) 를 DF3 체인 끝에 붙임; CUDA run_prep 의 열 이동 지원은 APC 승격 뒤 후속.
 
+**DF3**(v3 alternate, K=6 디코드 스텝 / 청크 1,152, 20:06) — 혼합 부하(값: 스텝 = SSE 청크):
+
+| ctx | 스톡 겹침 ITL med/p95/max | 스톡 디코더 tok/s@겹침 | 스톡 TTFT | DF3 겹침 ITL | DF3 디코더 tok/s@겹침 (스텝) | DF3 TTFT (tok/s) |
+|---|---|---|---|---|---|---|
+| 32K | 69 / 3,446 / 6,640 ms | ~4.4 (17 스텝) | 13.3 s | **47 / 688 / 1,369 ms** | **19.5** (147 스텝) | 25.8 s (1,249) |
+| 100K | 71 / 3,144 / 3,179 ms | ~2.5 (30 스텝) | 39.2 s | **48 / 1,312 / 1,371 ms** | **7.0** (156 스텝) | 73.0 s (1,379) |
+
+- 섞지 않는 설계가 맞았다: 겹침 구간 중앙 ITL 이 단독(46 ms) 과 같고, 디코더 처리량은 스톡 혼합의 4.4배(32K)/2.8배(100K), DF1 대비 3.2배. 대가는 동시 프리필 −48%(32K) / −47%(100K). 단독 요청 경로는 불변(onepass 프리필 −0.3%/+0.4%, 디코드 0/−1.2%; tok/step −7.3% 는 DEF40 편차).
+- 긴 컨텍스트의 약점: 100K 에서 1,152 토큰 프리필 스텝이 1.3 s(890 tok/s) 로 32K(0.64 s) 의 두 배 — 청크가 작을수록 MLA/인덱서 프리필 커널의 효율이 떨어진다(솔로 8,192 청크 2,950 tok/s). 다음 개선: 청크를 컨텍스트(또는 직전 프리필 스텝 시간)에 맞춰 키우는 컨트롤러(목표 스텝 시간 ~0.7 s). DF3b(K=3) 결과와 함께 K·C 기본값을 정한다.
+
+**비전 "행"의 원인**(운영자 "비전 킬 때마다 행 걸렸다" → "그 문제도 해결해봐"): 체크포인트에는 비전 타워가 있고(`model.visual.*` 347개) 우리 모델 오버레이의 멀티모달 코드는 이미지와 동일. 런처 `MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"` 의 매개변수 전개가 첫 `}` 에서 끝나 마지막 `}` 를 리터럴로 덧붙인다 → 덮어쓴 값이 `{"image":1,"video":0}}` (JSON `Extra data`) → vLLM argparse 사망 → 런처는 헬스를 예산(3,000 s)만큼 폴링 = "매번 행". 기본값 대입을 전개 밖으로 옮김(PR #408), 격리 노브 셋(`MM_ENCODER_TP_MODE`/`MM_ENCODER_ATTN`/`SKIP_MM_PROFILING`)과 `probes/vision_probe.py` 추가. 진단 체인 VIS(이미지 1 + 프로브 + 텍스트 onepass, 정말 멈추면 4 노드 py-spy 스냅샷) 큐.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
