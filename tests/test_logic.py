@@ -10999,6 +10999,20 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check("def sha_of_stamp(" in base and 'rec.get("rehearsal")' in base,
           "baseline maps a stamp to its sha through the deploy registry and never counts a rehearsal")
 
+    # -- round 3 (operator "3 5 7"): the marker table must stay complete, a board, no name collisions
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("proof_markers_gen", os.path.join(REPO, "bench", "proof_markers_gen.py"))
+    gen = _ilu.module_from_spec(spec); spec.loader.exec_module(gen)
+    missing, stale, seen = gen.check(REPO)
+    check(not missing and not stale,
+          f"every serving line the generator attributes to a knob has a proof-marker row and no row is stale "
+          f"(missing={[m[0] for m in missing]}, stale={[s_[0] for s_ in stale]}) -- run bench/proof_markers_gen.py --propose")
+    check(len(seen) >= 10, f"the generator attributes serving lines to at least 10 knobs (got {len(seen)})")
+    check(os.path.exists(os.path.join(REPO, "bench", "board.py")) and "board)" in fleet,
+          "fleet.sh board shows every session's verdicts and boots")
+    check("already queued by a live process" in fleet and 'cut -d\'|\' -f7' in fleet,
+          "a second live process under a queued session name is refused (the ticket would merge)")
+
 
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
