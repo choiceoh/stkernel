@@ -6722,3 +6722,28 @@ main 14ffb9e(PR #374) 배포 후 같은 빌드에서 연달아 두 팔(`bench/pa
 - 정적 검증: main 병합(#372/#373, README 충돌 양측 보존) + `tests/test_logic.py` 통과. **z 계약 검사는 CPU 컴파일
   검사(`--specs z`) 재실행으로 확인해야 한다** — 폐쇄형이 레이아웃과 어긋나면 z 컴파일이 실패한다(fail-loud 가 목적).
 
+
+### Startup artifact follow-up — FP8 and rank caches (2026-09-06)
+
+After #366, added explicit opt-in `VLLM_GLM53_FP8_CACHE` and
+`VLLM_GLM53_RANK_CACHE` paths (both default empty). FP8 artifacts retain exact
+bytes/strides/padding and the direct source check. Rank checkpoints are saved at
+the outer GLM loading boundary before FP8/MK and vLLM quant finalization; hits
+restore each worker's own state and run the normal post-load sequence once.
+An all-rank readiness vote is required because the installed InstantTensor
+iterator passes the world device group to `instanttensor.safe_open`: partial
+cache hits must not skip its collectives on only some ranks. A miss on any rank
+uses the source loader on all ranks. Chunk checksums and atomic publication
+prevent partial artifacts from being served; a payload error during restoration
+aborts. Per-chunk sync/page eviction bounds file-cache pressure on Linux UMA.
+
+Local CPU tests cover artifact round trips, source/runtime invalidation,
+truncated/corrupt data, write failure, source-iterator bypass, reload bypass,
+post-load ordering and a four-process Gloo all-hit/partial-miss vote. GPU/NCCL,
+full-model quant finalization, output/acceptance, peak memory and actual boot
+speed remain **unverified**; neither cache is deployed or promoted. No fleet
+restart or GPU workload was performed for this implementation. See
+[the startup-artifact contract](overlay/modules/glm53_model/README.md#startup-artifacts-fp8-copies-and-rank-checkpoints-2026-09-06-default-off)
+for enable/rollback and validation requirements. The old 54.9 s fold / 52.1 s
+read+apply measurements describe candidate budgets, not savings. The 302 s TP
+initialization pause is still separate and unresolved.

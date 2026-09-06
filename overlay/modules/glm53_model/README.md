@@ -571,3 +571,94 @@ source, and the BF16 free pass skips this method). **No-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1`** (this profile's default): the fp8 pattern
 already owns every b_proj linear. Neither knob has GPU validation yet —
 keep both at 0 until the combined campaign.
+
+### Startup artifacts: FP8 copies and rank checkpoints (2026-09-06, default off)
+
+Two independent path-valued switches reuse work from a prior boot:
+
+```bash
+VLLM_GLM53_FP8_CACHE=/cache/glm53-fp8 \
+VLLM_GLM53_RANK_CACHE=/cache/glm53-ranks \
+bash launchers/start-glm53-nvfp4-tp4.sh
+```
+
+The launcher carries these profile-declared variables to every worker. `/cache`
+is already the node-local persistent cache mount. Set either variable to an
+empty string to disable it. `LOAD_FORMAT` remains the normal source loader
+(`instanttensor` by default); **do not set it to `sharded_state` for these
+artifacts**. Both switches remain empty in the profile until matched GPU boots
+prove correctness, memory safety and a net latency improvement.
+
+**FP8 cache.** `glm53_startup_cache.py` saves the exact padded E4M3 weight and
+DeepGEMM scale backing allocations, including dtype, shape, stride, storage
+offset and padding. Its key contains the current source weight's SHA-256,
+shape/dtype/stride, quantization recipe, Torch/CUDA/device identity and imported
+vLLM/DeepGEMM implementation digests. This applies to both target and drafter
+FP8 folds. Content/layout checksums reject corrupt artifacts and rebuild;
+failed writes keep freshly computed results. Publication is atomic and reads
+use `weights_only=True`. The existing direct-kernel source check still runs on
+every layer and evicts an artifact if it rejects the copy. MK/GPTQ packs,
+precision, fallback behavior and BF16 release timing are unchanged.
+
+`[fp8-cache]` reports hits, misses, errors and key/read/quantize/write host wall
+time. `[fp8-dense]` additionally splits source-check, MK attachment and
+`empty_cache` time. These are host phase times including existing syncs, not
+isolated CUDA kernel timings. Per-linear allocator cleanup remains mandatory.
+
+**Rank checkpoint cache.** `glm53_rank_cache.py` intercepts only the GLM model
+that owns the complete checkpoint walk. The first source load snapshots its
+rank-local parameters and persistent buffers **before** GLM FP8/MK hooks and
+vLLM quantization finalization. On a hit it restores those tensors without
+advancing the source iterator, then executes the same outer post-load hooks
+once. This avoids the missing plain-attribute FP8/MK copies and freed BF16
+weights in a dump of a running model. It uses the same rank-local loading idea
+as [vLLM's ShardedStateLoader](https://docs.vllm.ai/en/latest/api/vllm/model_executor/model_loader/sharded_state_loader/),
+with a separate pre-finalization artifact format and lifecycle.
+
+A readiness MIN vote on the established world device group requires **every
+rank** to have a matching, complete cache. Otherwise all ranks use the source
+loader: InstantTensor itself uses that group, so mixed cache/source paths could
+strand its collectives. No additional Gloo object exchange is introduced.
+
+Rank identity includes the local checkpoint index/config and every source
+file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model
+config, TP/rank, environment and runtime code. This is an immutable-source,
+node-local cache; copying checkpoint files or changing configuration/code causes
+a miss. It does not rehash the full original checkpoint on warm boots. Keep
+source files read-only and consistent across nodes, as with the source loader.
+Source identity is rechecked after loading/restoration to reject concurrent
+changes. Unsupported EP/EPLB, PP/DP/context parallelism, LoRA, meta tensors,
+noncontiguous state or secondary weight sources use the original loader.
+Later weight reloads bypass this startup cache.
+
+Each rank writes one raw payload plus a complete schema/chunk-checksum manifest
+in a temporary directory, then atomically publishes the directory. Serialization
+and restoration operate in at most 64 MiB chunks. Cold writes sync and discard
+file pages per chunk; warm reads discard consumed mmap/file pages on Linux to
+avoid retaining a rank-sized host page cache on UMA. Allow disk space for the
+whole rank state plus 512 MiB; source/runtimes with different identities keep
+separate directories. There is no automatic cache eviction.
+
+Missing/incompatible metadata falls back before restoring any tensors. A
+payload checksum error **aborts the boot**, since some earlier chunks may have
+been copied; it never serves a partial checkpoint. The log names rejected
+metadata directories. Remove the affected artifact directory during an idle
+window to rebuild it; existing published directories are never replaced under
+readers. A single missing rank makes the next boot use the source loader on all
+ranks, while only missing caches need writing.
+
+`[rank-cache]` is the authoritative hit/save timing. Default boot stamps start
+the source loader timer even when its iterator is unused; if
+`DENEB_BOOT_STAMPS=0`, ignore the stock `Loading weights took` line on a hit
+(the stock loader starts that timer only from its skipped iterator).
+
+Validation: CPU byte/layout/invalidation/fallback tests and a real four-process
+Gloo readiness test live in `tests/test_glm53_startup_artifacts.py`. They do not
+prove NCCL, actual DeepGEMM GPU output, full GLM post-load compatibility, UMA
+peak memory or serving acceptance. Before default-on, compare cache-disabled,
+cold-write and all-rank-hit boots with identical model/profile/prompt sets;
+check source-vs-hit outputs, drafter acceptance, all-rank hit logs, phase times,
+RSS/MemAvailable/CUDA peaks and total health-ready time. The earlier 54.9 s fold
+and 52.1 s read/apply budgets predate #366 deployment and are **not** measured
+savings from these caches. The unrelated 302 s distributed-init pause remains
+unresolved.
