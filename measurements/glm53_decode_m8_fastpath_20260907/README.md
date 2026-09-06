@@ -59,7 +59,7 @@ The canonical fleet accepted session `m8nextprobe` at 06:37 KST. At 06:38,
 serving healthy and idle, yet the probe could not acquire its turn. This is
 a scheduler blockage before kernel execution, not a failed GPU test.
 This task did not remove a hold or process. The preceding session was
-cancelled by its owner; the canonical fleet granted this probe at 06:45:54
+cancelled outside this task; the canonical fleet granted this probe at 06:45:54
 and released it at 06:47:54. The serving follow-up entered the queue at
 06:49, behind the resumed prefill experiment.
 
