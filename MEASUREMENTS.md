@@ -2262,7 +2262,15 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **MoE reuse 커널(#368 레인) 사망 원인**: CuTe-DSL `operand #0 does not dominate this use` at `atom.set_value`. `mma_atom.set(SFA/SFB)` 는 atom 의 IR 값을 제자리에서 바꾸는데(trait.value 갱신), stock 은 FC2 슬라이스를 동적 `while` 한 영역에서 돌려 DSL 이 값을 이어 주고, reuse 커널은 4 슬라이스를 정적 언롤한 형제 `scf.if` 영역들이라(DSL 의 `if_executor` 는 AST 에서 *대입된* 이름만 yield) 한 영역에서 set 한 값을 다음 영역이 쓴다. 두 번째: then/else 가지도 형제 영역이라 한 atom 을 공유하면 같은 위반(stock 이 `mma_atom`/`mma_atom_tail` 둘을 넘기는 이유). 수정: 슬라이스 영역마다, 가지마다 `cute.make_mma_atom(MmaMXF4NVF4Op(...))` 로 새 atom(PR #418).
 - **부팅 없는 컴파일 하니스**: 이미지 컨테이너에 glm53_moe 오버레이 파일을 타깃 경로로 바인드 마운트하고 `moe_dispatch._get_dynamic_kernel(288, 8192, 4096, 512, 8, …, activation="swigluoai_uninterleave", swiglu=(1.0,0.0,10.0), fp4/nvfp4, tile_m=128)` 을 부르면 ENGAGED 부팅과 같은 컴파일이 8 s 만에 재현·검증된다(`scratchpad/moe_reuse_compile.py`, srv4 GPU 공유). `CUTE_DSL_PRINT_AFTER_PREPROCESSOR=1` 이 영역 변환 코드를 보여 줘 원인 확정에 쓰였다. 수정 뒤 reuse 5.6 s, reuse+N128 11.9 s 컴파일 성공.
 - **SP FP8 v2**(`VLLM_GLM53_PREFILL_SP_FP8=2`): v1 은 reduce-scatter 마다 maxima all-reduce + fp8 SUM(headroom 448/4) + 커널 셋으로 BF16 에 졌다(+7.1 vs +12.6%). v2 는 all-gather 는 그대로, reduce-scatter 를 pack(블록 absmax+양자화, 스케일 합의 없음) → `all_to_all_single`(TP device_group) → unpack(4 부분합을 FP32 로 합산) 으로. 단위 테스트(srv4, 4 랭크 모사): 평균 상대오차 2.5%, 최대 4.4%(e4m3 상한 6.25%).
-- 체인 MOESP(22:40): REF41(기본값 참조) → MOER → MOERN → SPV2 → 복구.
+- **체인 MOESP 결과(22:40~23:12, REF41 = 현 기본값 참조: 2K 1,860 / 32K 2,914 / 128K 2,959 tok/s, 9/9, 0)**:
+
+| 팔 | 노브 | 프리필 2K / 32K / 128K (REF41 대비) | 디코드·수용률 | 품질 | 판정 |
+|---|---|---|---|---|---|
+| MOER | `B12X_PREFILL_REUSE=1` | +9.3% / **−1.9%** / **−2.0%** (2,860 / 2,899) | 불변 / tok/step +3.2% | 9/9, 0 | **NEUTRAL(−)** — 커널은 맞지만 이득 없음(문서의 경고대로 FC2 레지스터 압박이 줄인 적재를 상쇄). 옵트인 유지 |
+| MOERN | + `FC1_N128=1` | **−71 / −71 / −74%** (848 / 759) | 불변 | 9/9, 0 | **기각** — FC1 N128 은 정확하나 1/4 속도(스필로 추정) |
+| SPV2 | `PREFILL_SP_FP8=2` | −0.6% / −2.1% / +1.7% (2,852 / 3,011) | 불변 / tok/step +10.7% | 9/9, 0 | **NEUTRAL** — 바이트 반감이 pack/unpack 커널과 상쇄. 옵트인 유지 |
+
+- 해석: 집합통신 ~18% 는 바이트가 아니라 **호출당 고정 비용**(스텝당 AG 67 + RS 60 회, RING_LL, 4 노드 링 지연) 에 묶여 있다 — v1(공유 스케일)·v2(per-block, all_to_all) 둘 다 바이트를 반으로 줄였는데 시간이 안 준다. 남은 길은 층당 집합통신 **횟수** 를 줄이거나(어텐션·MoE 경계 재배치, 공유 전문가·dense 부분과 겹치기) 통신을 계산과 겹치는 것이지 전송 정밀도가 아니다. MoE 28.6% 는 reuse 식 적재 절감으로는 안 열리고 타일/파이프라인 재설계가 필요하다. 둘 다 밤 라운드 규모의 커널 작업으로 기록하고 기본값은 그대로.
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
