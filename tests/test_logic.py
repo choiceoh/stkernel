@@ -9881,6 +9881,7 @@ def test_nvfp4_static_scale_contracts() -> None:
 
     class FakeTorch:
         float32 = "f32"
+        Tensor = T
         @staticmethod
         def zeros(n, dtype=None, device=None): return T(0.0)
         @staticmethod
@@ -9893,23 +9894,24 @@ def test_nvfp4_static_scale_contracts() -> None:
           "logger": types.SimpleNamespace(warning=lambda *a: logs.append(a[0] % a[1:]))}
     cls_src = src[src.index("class _NvFp4ScaleCal:"):src.index("def _nvfp4_dense_gemm(")]
     exec(cls_src, ns)
-    amaxes = iter([4.0, 8.0, 6.0, 2.0, 20.0, 1.0, 1.0, 1.0, 30.0])
+    # amax is only measured on dynamic calls: the three calibration calls, then
+    # every CHECK-th (4th, 8th) call
+    amaxes = iter([4.0, 8.0, 6.0, 2.0, 20.0])
     ns["_nvfp4_global_scale"] = lambda flat: T(2688.0 / next(amaxes))
     w_gs = T(1.0); w_gs.dtype = "f32"; w_gs.device = "cuda"; w_gs.numel = lambda: 1
     cal = ns["_NvFp4ScaleCal"]("q_a", w_gs, 0.5)
     got = [cal.scales(None) for _ in range(9)]
     xg = [round(g[0].v, 4) for g in got]
-    # calls 1-3 exact (amax 4, 8, 6) then frozen at max 8 * headroom 2 = 16 -> x_gs 168
-    check(xg[:3] == [672.0, 336.0, 448.0] and cal.frozen and round(cal.x_gs.v, 4) == 168.0
-          and xg[3] == 168.0,
-          f"exact while calibrating, frozen at amax_max * headroom afterwards (got {xg[:4]})")
-    # call 4 (n=4) is a CHECK call: exact (amax 2) but the frozen range does not shrink;
-    # n=8 is the next check: amax 1 -> still 168; the 9th call is frozen
-    check(round(got[3][0].v, 4) == 1344.0 and round(cal.x_gs.v, 4) == 168.0
-          and xg[4] == 168.0 and xg[5] == 168.0 and xg[6] == 168.0
-          and round(got[7][0].v, 4) == 2688.0 and round(cal.x_gs.v, 4) == 168.0 and xg[8] == 168.0,
-          f"check calls are exact and can only widen the frozen range (got {xg})")
-    check(round(got[3][1].v, 6) == round(0.5 / 1344.0, 6) and round(cal.alpha.v, 6) == round(0.5 / 168.0, 6),
+    # calls 1-3 exact (amax 4, 8, 6), frozen at max 8 * headroom 2 = 16 -> 168;
+    # call 4 is a check call: exact (amax 2 -> 1344) and the range does not shrink;
+    # calls 5-7 frozen; call 8 checks amax 20 -> exact 134.4 and widens to 67.2;
+    # call 9 frozen at the widened scale
+    check(xg == [672.0, 336.0, 448.0, 1344.0, 168.0, 168.0, 168.0, 134.4, 67.2]
+          and cal.frozen and round(cal.x_gs.v, 4) == 67.2 and round(cal.amax_max.v, 4) == 20.0,
+          f"exact while calibrating and on check calls, frozen with headroom otherwise, "
+          f"the range only widens (got {xg})")
+    check(round(got[3][1].v, 8) == round(0.5 / 1344.0, 8) and round(got[4][1].v, 8) == round(0.5 / 168.0, 8)
+          and round(cal.alpha.v, 8) == round(0.5 / 67.2, 8),
           "alpha follows the scale in use (alpha_scale / (x_gs * w_gs))")
     check(len(logs) == 1 and "static scale frozen on q_a after 3 calls" in logs[0],
           "the freeze is logged once per pair with the call count")
