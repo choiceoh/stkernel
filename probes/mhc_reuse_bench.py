@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Same-source MHC weight reuse prototype, oracle and balanced graph timings.
+
+Run through fleet.sh run --gpu --probe and run_mk_probe.sh. The experiment
+injects only its own two kernels and selector into a private source copy;
+the serving source/defaults are unchanged until this gate establishes a win.
+"""
+import argparse
+import hashlib
+import itertools
+import json
+import os
+from pathlib import Path
+import statistics
+
+
+def candidate_source(source):
+    marker = "__device__ void mk_mhc_p2_token("
+    start = source.index(marker)
+    end = source.index("// p3 + p4 for ONE token", start)
+    p2 = source[start:end].replace("c < NCHUNK", "c < CHUNKS")
+    source = source[:start] + "template <int CHUNKS = NCHUNK>\n" + p2 + source[end:]
+    candidate = Path(__file__).with_name("mhc_reuse_candidate.cuh").read_text()
+    source = source.replace("__device__ void mk_mhc_p1(", candidate + "\n__device__ void mk_mhc_p1(", 1)
+    source = source.replace("void mk_run_mhc(", "int g_probe_mhc_reuse = 0;\nvoid mk_run_mhc(", 1)
+    marker = "  static int mhc_grid = 0;"
+    launch = []
+    for mode, chunk in ((1, 64), (2, 128)):
+        for tokens in (2, 6, 8):
+            launch.append(f"""
+  if (g_probe_mhc_reuse == {mode} && a.num_tokens == {tokens}) {{
+    mk_mhc_reuse_p1<{tokens}, {chunk}><<<HIDDEN/{chunk}, MK_THREADS, 0, stream>>>(a);
+    MK_CHECK_CUDA(cudaGetLastError());
+    mk_mhc_reuse_tail<HIDDEN/{chunk}><<<{tokens}, MK_THREADS, 0, stream>>>(a);
+    MK_CHECK_CUDA(cudaGetLastError());
+    return;
+  }}
+""")
+    source = source.replace(marker, "".join(launch) + marker, 1)
+    source = source.replace('  m.def("run_mhc",',
+                            '  m.def("set_mhc_reuse", [](int v) { TORCH_CHECK(v >= 0 && v <= 2); g_probe_mhc_reuse = v; });\n  m.def("run_mhc",', 1)
+    return source
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--reps", type=int, default=18)
+    args = ap.parse_args()
+    if args.reps < 6 or args.reps % 6:
+        ap.error("reps must be a positive multiple of six for balanced orders")
+    os.environ["VLLM_GLM53_MK_PDL"] = "1"
+    import torch
+    from vllm.model_executor.layers import glm53_megakernel as mk
+    from torch.utils.cpp_extension import load
+    from megakernel_glm53_bench import _l2_flush
+
+    root = Path(__file__).resolve().parents[1]
+    original = Path(mk._SRC).read_bytes()
+    assert original == (root / "build/glm53/glm53_megakernel.cu").read_bytes()
+    source = candidate_source(original.decode())
+    sha = hashlib.sha256(source.encode()).hexdigest()
+    directory = Path(os.environ.get("VLLM_GLM53_MK_BUILD_DIR", "/tmp/mhc-reuse"))
+    directory = directory / ("prototype-" + sha[:12])
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "prototype.cu"
+    path.write_text(source)
+    print(json.dumps({"source_sha256": hashlib.sha256(original).hexdigest(),
+                      "prototype_sha256": sha, "device": torch.cuda.get_device_name(),
+                      "torch": torch.__version__, "cuda": torch.version.cuda}), flush=True)
+    ext = load(name="mhc_reuse_" + sha[:12], sources=[str(path)],
+               extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"],
+               build_directory=str(directory), verbose=False)
+    mk._EXT = ext
+    mk.NCHUNK = 64  # ample scratch for both prototype split geometries
+    mk._WS = None
+    assert mk._selftest_mhc(), "unmodified MHC failed the stock oracle"
+    for mode in (1, 2):
+        ext.set_mhc_reuse(mode)
+        assert mk._selftest_mhc(), f"prototype {mode} failed the stock oracle"
+        assert mk._selftest_mhc_pre(), f"prototype {mode} failed the pre-only oracle"
+
+    def inputs(tokens, seed):
+        torch.manual_seed(seed)
+        return (torch.randn(tokens, 4096, device="cuda", dtype=torch.bfloat16) * .1,
+                torch.randn(tokens, 4, 4096, device="cuda", dtype=torch.bfloat16) * .1,
+                torch.rand(tokens, 4, device="cuda"), torch.rand(tokens, 16, device="cuda"),
+                torch.randn(24, 16384, device="cuda") * .02,
+                torch.ones(3, device="cuda"), torch.zeros(24, device="cuda"),
+                torch.randn(4096, device="cuda", dtype=torch.bfloat16))
+
+    def call(values):
+        return mk._mhc_call(*values, values[0].shape[0], 1e-6, 1e-6, 1e-6, 1., 1e-6, 20)
+
+    # Different input seeds, zero residuals, served shapes and fallback sizes.
+    for tokens in (1, 2, 6, 8, 12, 32):
+        for seed in (53, 97, 0):
+            values = inputs(tokens, seed)
+            if seed == 0:
+                values[0].zero_(); values[1].zero_()
+            ext.set_mhc_reuse(0)
+            ref = tuple(v.clone() for v in call(values))
+            for mode in (1, 2):
+                ext.set_mhc_reuse(mode)
+                got = call(values)
+                torch.cuda.synchronize()
+                errors = [mk._rel_err(a, b) for a, b in zip(got, ref)]
+                assert torch.equal(got[0], ref[0]), (tokens, seed, mode, "residual rounding")
+                assert max(errors) <= mk._TOL_MHC, (tokens, seed, mode, errors)
+                assert all(torch.isfinite(v).all() for v in got)
+                print(json.dumps({"gate": "baseline differential", "T": tokens,
+                                  "seed": seed, "mode": mode, "errors": errors}), flush=True)
+
+    orders = list(itertools.permutations(range(3)))
+    for tokens in (2, 6, 8):
+        values = inputs(tokens, 71)
+        for cold in (False, True):
+            calls = 1 if cold else 32
+            graphs = []
+            snapshots = []
+            for mode in (0, 1, 2):
+                ext.set_mhc_reuse(mode)
+                for _ in range(4): call(values)
+                if cold: _l2_flush(values[:4])
+                torch.cuda.synchronize()
+                graph = torch.cuda.CUDAGraph()
+                begin, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
+                with torch.cuda.graph(graph):
+                    if cold: _l2_flush(values[:4])
+                    begin.record()
+                    for _ in range(calls): got = call(values)
+                    end.record()
+                graph.replay(); end.synchronize()
+                snapshots.append(tuple(v.clone() for v in got))
+                graphs.append((graph, begin, end, got))
+            times = [[], [], []]
+            for rep in range(args.reps):
+                for mode in orders[rep % 6]:
+                    graph, begin, end, got = graphs[mode]
+                    graph.replay(); end.synchronize()
+                    times[mode].append(begin.elapsed_time(end) * 1000 / calls)
+                    assert all(torch.equal(a, b) for a, b in zip(got, snapshots[mode])), (tokens, mode, "graph drift")
+            med = [statistics.median(t) for t in times]
+            print(json.dumps({"T": tokens, "regime": "cold" if cold else "warm",
+                              "modes": ["baseline", "reuse64", "reuse128"],
+                              "median_us": med, "samples_us": times,
+                              "changes_pct": [100 * (v / med[0] - 1) for v in med]}), flush=True)
+    print("PASS: stock and baseline oracles, exact residuals and repeated CUDA graphs", flush=True)
+
+
+if __name__ == "__main__":
+    main()
