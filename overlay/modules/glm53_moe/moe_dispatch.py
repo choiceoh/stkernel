@@ -90,6 +90,14 @@ _GLM53_B12X_PREFILL_FC1_N128 = (
 )
 MoEGatedPrefillReuseKernel = None
 MoEGatedPrefillN128Kernel = None
+_prefill_reuse_announce = [False]
+if _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128:
+    # 39차: boot-log anchor for the bracket -- the decline warning below only
+    # fires when the lane is refused; this line proves the knob was armed.
+    logging.getLogger("flashinfer.b12x").warning(
+        "[b12x prefill reuse] armed: reuse=%s fc1_n128=%s",
+        _GLM53_B12X_PREFILL_REUSE, _GLM53_B12X_PREFILL_FC1_N128,
+    )
 
 
 def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
@@ -3395,6 +3403,19 @@ def _get_dynamic_kernel(
         )
     )
     prefill_fc1_n128 = prefill_reuse and _GLM53_B12X_PREFILL_FC1_N128
+    _announce = globals().get("_prefill_reuse_announce")
+    if ((_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128) and m >= 3456
+            and _announce is not None and not _announce[0]):
+        # 39차: one line per boot with the values the gate saw, so a bracket
+        # can tell "engaged" from "silently ineligible" (P1 read 0 % with
+        # the knob armed and no log at all)
+        _announce[0] = True
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill reuse] %s on the first large prefill: m=%d E=%d k=%d n=%d topk=%d "
+            "act_precision=%s quant=%s tiler=%s activation=%s swiglu=(%s,%s,%s) fc1_n128=%s",
+            "ENGAGED" if prefill_reuse else "NOT taken", m, E, k, n, num_topk,
+            activation_precision, quant_mode, mma_tiler_mn, activation,
+            swiglu_alpha, swiglu_beta, swiglu_limit, prefill_fc1_n128)
 
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,

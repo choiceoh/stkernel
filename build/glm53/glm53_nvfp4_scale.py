@@ -22,9 +22,15 @@ def _finish(Partial, WeightScale, GlobalScale, Alpha, COUNT: tl.constexpr,
     offsets = tl.arange(0, BLOCK)
     amax = tl.max(tl.load(Partial + offsets, offsets < COUNT, other=0), 0)
     amax = tl.maximum(amax, 1.0e-12)
-    scale = tl.div_rn(2688.0, amax)
+    # The stock recipe is `448.0 * 6.0 / amax` and `alpha_scale / (x_gs * w_gs)`
+    # with PYTHON floats on the left: torch's __rtruediv__ computes
+    # reciprocal(tensor) * scalar (two roundings), not one IEEE division.
+    # 39차 gate: div_rn(2688, amax) read 637.1556 against stock's 637.1555.
+    # Mirror the two roundings exactly: correctly rounded reciprocal, then
+    # the multiply (enable_fp_fusion=False keeps them separate).
+    scale = tl.div_rn(1.0, amax) * 2688.0
     product = scale * tl.load(WeightScale)
-    alpha = tl.div_rn(ALPHA_SCALE, product)
+    alpha = tl.div_rn(1.0, product) * ALPHA_SCALE
     tl.store(GlobalScale, scale)
     tl.store(Alpha, alpha)
 

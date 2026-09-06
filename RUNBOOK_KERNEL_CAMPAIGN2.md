@@ -764,7 +764,7 @@ plan(on/ksr/units/bps/tail)=[1, 1, 303, 2, 0], exact gate worst rel=… PASS`, `
 (VLLM_GLM53_MK_HEAD_DRAFT) vs fp8 head on its first served call: argmax agree N/N rows, |delta| mean …`.
 트레이스에선 `mk_gemm2_kernel<1>` 이 스텝당 +2(타깃·드래프트) 하고 deep_gemm 헤드 발사가 사라진다.
 
-**상태**: 구현·머지(PR #341, 원장 §13). **보류** — 교환비(§13): 헤드당 +0.75% 에 로짓 잡음 3배(fp8 2.66% → W4 8.37%, 실가중치 실측). 노브 기본 0 유지;
+**상태**: 구현·머지(PR #341, 원장 §13). **보류** — 교환비. 34차 §12 가 헤드 가중치 자체로 실측: fp8 3.79e-2(밀집층 2.65e-2 보다 43% 나쁨) 대 W4 RTN 8.48e-2(2.24배) / GPTQ(합성 H) 7.39e-2(1.95배) — §13 의 "3배" 는 q_proj 에서 빌린 값이었다. 캐시에 `lm_head` 헤시안이 없어(교정 훅은 GEMM 레인을 타는 선형만 본다) **오늘 켜면 조용히 RTN**. 09-06 04:30 운영자 판정("이익이 너무 적어 굳이 → 전부 접음")은 유지. 노브 기본 0 유지;
 GPU 벤치는 srv2 `gap_bench9.sh` 가 유휴 창에 남긴다(`g2.head.out`). 다음 레버는 EXP-4+EXP-9 묶음(§14).
 
 

@@ -6396,7 +6396,158 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert 'prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"' in src
     assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
     prof = open("profiles/glm53.env", encoding="utf-8").read()
-    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
+    # 39차 P3C2: the route is the default above 1024 rows (MIN_M=32 was neutral)
+    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=1\n" in prof
+    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M=1024\n" in prof
+    assert "\nVLLM_GLM53_NVFP4_SCALE_FUSED=1\n" in prof
+
+
+def test_decode_first_scheduler_contracts() -> None:
+    """39차 item 2: the decode-first scheduler caps prefill chunks only on
+    steps that carry decoders AND pending prefill, restores the stock
+    threshold after every call (also on exceptions), paces prefill to every
+    N-th mixed step through the stock throttle path with the capacity flag
+    cleared, and is wired through DECODE_FIRST=1 -> --scheduler-cls."""
+    import importlib.util
+    import os
+    import sys
+    import types
+
+    rel = "overlay/modules/glm53_runtime/glm53_decode_first.py"
+    warnings: list[str] = []
+
+    class FakeLogger:
+        def warning(self, msg, *args):
+            warnings.append(msg % args if args else msg)
+
+        info = warning
+
+    class FakeAsyncScheduler:
+        def __init__(self, *args, **kwargs):
+            self.max_num_scheduled_tokens = 8192
+            self.scheduler_config = types.SimpleNamespace(long_prefill_token_threshold=0)
+            self.running = []
+            self.waiting = []
+            self.prefill_capacity_bound = True
+            self.calls = []
+            self.boom = False
+
+        def schedule(self, throttle_prefills=False):
+            self.calls.append((throttle_prefills, self.scheduler_config.long_prefill_token_threshold,
+                               self.prefill_capacity_bound))
+            if self.boom:
+                raise RuntimeError("stock scheduler failed")
+            return "output"
+
+    fakes = {
+        "vllm": types.ModuleType("vllm"),
+        "vllm.logger": types.ModuleType("vllm.logger"),
+        "vllm.v1": types.ModuleType("vllm.v1"),
+        "vllm.v1.core": types.ModuleType("vllm.v1.core"),
+        "vllm.v1.core.sched": types.ModuleType("vllm.v1.core.sched"),
+        "vllm.v1.core.sched.async_scheduler": types.ModuleType("vllm.v1.core.sched.async_scheduler"),
+        "vllm.v1.core.sched.output": types.ModuleType("vllm.v1.core.sched.output"),
+    }
+    for name, mod in fakes.items():
+        mod.__path__ = []  # type: ignore[attr-defined]
+    fakes["vllm.logger"].init_logger = lambda name: FakeLogger()  # type: ignore[attr-defined]
+    fakes["vllm.v1.core.sched.async_scheduler"].AsyncScheduler = FakeAsyncScheduler  # type: ignore[attr-defined]
+    fakes["vllm.v1.core.sched.output"].SchedulerOutput = object  # type: ignore[attr-defined]
+    saved_modules = {name: sys.modules.get(name) for name in fakes}
+    env_keys = ("VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS")
+    saved_env = {k: os.environ.pop(k, None) for k in env_keys}
+    sys.modules.update(fakes)
+    try:
+        spec = importlib.util.spec_from_file_location("glm53_decode_first_under_test", os.path.join(REPO, rel))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        Sched = mod.Glm53DecodeFirstScheduler
+        dec = lambda: types.SimpleNamespace(is_prefill_chunk=False)  # noqa: E731
+        pre = lambda: types.SimpleNamespace(is_prefill_chunk=True)  # noqa: E731
+
+        s = Sched()
+        check((s.mixed_chunk, s.prefill_every, s.min_decoders) == (512, 1, 1), "defaults 512 / every 1 / 1 decoder")
+        check(any("[decode-first] scheduler armed" in w for w in warnings), "init announces the armed anchor")
+        # passthrough: no decoders
+        s.running = [pre()]; s.waiting = [pre()]
+        check(s.schedule() == "output" and s.calls[-1] == (False, 0, True), "no decoders -> stock call, uncapped")
+        # passthrough: decoders but nothing to prefill
+        s.running = [dec(), dec()]; s.waiting = []
+        s.schedule()
+        check(s.calls[-1] == (False, 0, True) and s._mixed_steps == 0, "decoders without prefill work -> untouched")
+        # capped: decoder + waiting prefill; restored afterwards
+        s.waiting = [pre()]
+        s.schedule()
+        check(s.calls[-1] == (False, 512, True), "decoder + pending prefill -> chunk capped at 512 for the call")
+        check(s.scheduler_config.long_prefill_token_threshold == 0 and s._capped_steps == 1, "stock threshold restored after the step")
+        # capped: decoder + in-progress prefill chunk in running
+        s.running = [dec(), pre()]; s.waiting = []
+        s.schedule()
+        check(s.calls[-1][1] == 512, "in-progress prefill beside a decoder is capped too")
+        # a stricter stock threshold is kept, a looser one is capped and restored
+        s.scheduler_config.long_prefill_token_threshold = 256
+        s.schedule()
+        check(s.calls[-1][1] == 256 and s.scheduler_config.long_prefill_token_threshold == 256, "stock 256 < 512 stays")
+        s.scheduler_config.long_prefill_token_threshold = 4096
+        s.schedule()
+        check(s.calls[-1][1] == 512 and s.scheduler_config.long_prefill_token_threshold == 4096, "stock 4096 capped to 512 and restored")
+        # exceptions restore the threshold
+        s.scheduler_config.long_prefill_token_threshold = 0
+        s.boom = True
+        try:
+            s.schedule()
+            check(False, "stock exception must propagate")
+        except RuntimeError:
+            pass
+        s.boom = False
+        check(s.scheduler_config.long_prefill_token_threshold == 0, "threshold restored when the stock call raises")
+        # pacing: every 2nd mixed step carries prefill; off-cadence steps take the throttle path
+        os.environ["VLLM_GLM53_SCHED_PREFILL_EVERY"] = "2"
+        os.environ["VLLM_GLM53_SCHED_MIXED_CHUNK"] = "300"
+        p = Sched()
+        p.running = [dec()]; p.waiting = [pre()]
+        p.schedule(); p.schedule(); p.schedule()
+        check([c[0] for c in p.calls] == [True, False, True], "every=2 -> throttle, prefill, throttle")
+        check(p.calls[0][2] is False and p.calls[0][1] == 0, "off-cadence step clears the capacity flag and leaves the threshold")
+        check(p.calls[1][1] == 300 and p._deferred_steps == 2 and p._capped_steps == 1, "cadence step capped at the configured chunk")
+        # min decoders and env hygiene
+        os.environ["VLLM_GLM53_SCHED_MIN_DECODERS"] = "2"
+        os.environ["VLLM_GLM53_SCHED_PREFILL_EVERY"] = "abc"
+        os.environ["VLLM_GLM53_SCHED_MIXED_CHUNK"] = "0"
+        m = Sched()
+        check((m.mixed_chunk, m.prefill_every, m.min_decoders) == (1, 1, 2), "bad int -> default, 0 -> clamped to 1")
+        check(any("is not an integer" in w for w in warnings), "bad env value is logged")
+        m.running = [dec()]; m.waiting = [pre()]
+        m.schedule()
+        check(m.calls[-1] == (False, 0, True), "below min_decoders -> stock call")
+        m.running = [dec(), dec()]
+        m.schedule()
+        check(m.calls[-1][1] == 1, "at min_decoders -> capped")
+    finally:
+        for name, old in saved_modules.items():
+            if old is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = old
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    launcher = open(os.path.join(REPO, "launchers/start-glm53-nvfp4-tp4.sh"), encoding="utf-8").read()
+    profile = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    manifest = open(os.path.join(REPO, "overlay/modules/glm53_runtime/manifest.tsv"), encoding="utf-8").read()
+    check('SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"' in launcher
+          and "${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\\" in launcher
+          and "PREFIX_CACHE DECODE_FIRST \\" in launcher,
+          "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
+    check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
+    check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
+          "profile declares DECODE_FIRST=0 and the three VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
+          "scheduler ships as a new file next to vLLM's schedulers")
+    print("  decode-first scheduler contracts .. OK")
 
 
 def test_spec_k_compile_factor() -> None:
@@ -10897,6 +11048,7 @@ if __name__ == "__main__":
     test_glm53_prep_fused_contracts()
     test_launcher_multiline_assignments_have_no_embedded_comments()
     test_launcher_restores_prefill_warmup_from_caller_env()
+    test_decode_first_scheduler_contracts()
     test_profile_keys_not_passed_via_extra_env()
     test_glm53_indexer_gate_splitk_contracts()
     test_bracket_runner_contracts()

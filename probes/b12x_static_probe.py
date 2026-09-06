@@ -158,6 +158,25 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
                 dma_lead.append((f1 - d1) / 1e3)   # MMA FC1 done after DMA issued
     tail = [(kernel_end - int(t_end[b])) / 1e3 for b in range(grid)]
     front = [(int(t1[b]) - int(t0[b])) / 1e3 for b in range(grid)]
+    # the last item of every CTA (the partial-wave items live here)
+    last_fc1, last_fc2, last_tot = [], [], []
+    for b in range(grid):
+        n = min(int(n_items[b]), k2.STAMP_ITEMS)
+        if n == 0:
+            continue
+        o = 2 + 5 * (n - 1)
+        a, f1, q, f2 = (int(s[b, o + j]) for j in range(4))
+        if 0 in (a, f1, q, f2):
+            continue
+        last_fc1.append((f1 - a) / 1e3)
+        last_fc2.append((f2 - q) / 1e3)
+        last_tot.append((f2 - a) / 1e3)
+    if last_tot:
+        print(f"  stamps[{label}] last item per CTA (med/max us): total "
+              f"{statistics.median(last_tot):.1f}/{max(last_tot):.1f} = FC1 "
+              f"{statistics.median(last_fc1):.1f}/{max(last_fc1):.1f} + FC2 "
+              f"{statistics.median(last_fc2):.1f}/{max(last_fc2):.1f}; "
+              f"last-item end spread {(max(int(t_end[b]) for b in range(grid)) - min(int(t_end[b]) for b in range(grid))) / 1e3:.1f} us")
     tb1 = s[:, k2.STAMP_BARRIER1] if s.shape[1] > k2.STAMP_BARRIER1 else None
     if tb1 is not None and int(tb1.min()) > 0:
         ph0 = [(int(tb1[b]) - int(t0[b])) / 1e3 for b in range(grid)]
@@ -184,7 +203,7 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--configs",
+    ap.add_argument("--configs",   # "|"-separated specs, one process, one stock reference
                     default="1,m32,f3,g2,m64,f2,g2,m32,f2,g4,d,m32,f2,g4,s,m32,f2,g4,d,s")
     ap.add_argument("--us", default="8,16,24,32,40,48,64")
     ap.add_argument("--reps", type=int, default=20)
@@ -197,13 +216,12 @@ def main() -> int:
                          "stamps through a side stream and print where every "
                          "CTA stopped, then exit 3")
     args = ap.parse_args()
-    # config specs are themselves comma-separated: split on ",m" boundaries
+    # config specs are themselves comma-separated: "|" separates specs
+    # (v|u|v,s|v,p); without one, the legacy ",m" / ",1" boundaries do
     raw = args.configs
-    specs = []
-    for part in raw.replace(",m", "|m").replace(",1", "|1").split("|"):
-        part = part.strip()
-        if part:
-            specs.append(part)
+    if "|" not in raw:
+        raw = raw.replace(",m", "|m").replace(",1", "|1")
+    specs = [part.strip() for part in raw.split("|") if part.strip()]
     us_list = [int(u) for u in args.us.split(",")]
     full = (set(specs) if args.full_sweep == "all"
             else set(args.full_sweep.replace(",m", "|m").split("|")))
