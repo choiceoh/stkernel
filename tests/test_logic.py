@@ -6316,10 +6316,9 @@ def test_fp8_dense_build_peak_pays_only_for_what_serves() -> None:
     # The refusal path is `if not armed_nv:` since the alpha convention
     # stopped being resolved per layer; the split it guards is the same one.
     fallback = nv.index("if not armed_nv:")
-    # the call sites go through `attach_mk`, which is _attach_mk_pack or,
-    # under the "w8" scheme (fp8 pair only), a no-op -- one axis per boot
-    check("attach_mk = _attach_mk_pack\n" in body,
-          "attach_mk is the helper, bound once per pass")
+    # The timed wrapper calls the same helper, without changing lane selection.
+    check("def attach_mk(*args):" in body and "return _attach_mk_pack(*args)" in body,
+          "attach_mk times the helper without replacing its result")
     check("attach_mk(" not in nv[:fallback] and "_attach_mk_pack(" not in nv[:fallback],
           "a layer the nvfp4 arm takes must not build an MK pack: "
           "NvFp4DenseMethod.apply goes straight to the nvfp4 kernel")
@@ -7306,7 +7305,7 @@ def test_fp8_dense_drafter_patterns_and_opaque_op() -> None:
           "the build pass selects its pattern set by the knob it runs under")
     check("method._opaque = env == _DRAFTER_ENV" in body,
           "drafter methods are marked opaque: the drafter forward is compiled")
-    check("attach_mk = _attach_mk_pack\n" in body and '"w8"' not in body,
+    check("return _attach_mk_pack(*args)" in body and '"w8"' not in body,
           "one lane below fp8: no fp8-only arm to remember (operator rule "
           "2026-09-04 -- a proven improvement is the default, the other side "
           "goes)")

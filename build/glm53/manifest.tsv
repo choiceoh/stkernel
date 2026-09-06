@@ -28,6 +28,8 @@ glm5next_kda.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvi
 flashinfer_mla_sparse_sm90.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py	4449ea25921dcae1ec7988581ff26a6ff5a9e5d6d4a0ac4a68a0017ea108f136
 glm53_kda_onepass.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py	absent
 glm53_fp8_dense.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py	absent
+glm53_startup_cache.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py	absent
+glm53_rank_cache.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py	absent
 glm53_nvfp4_scale.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py	absent
 glm53_nvfp4_bproj.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py	absent
 mtp.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py	b183ed6e134e7126719b3c7208eef46039805d478916a5c876ec25d60be714ce

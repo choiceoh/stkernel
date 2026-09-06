@@ -103,33 +103,42 @@ def _wrap_weights_iter(cls, name):
 
     def timed(*a, **kw):
         it = fn(*a, **kw)
-        produce = 0.0
-        nbytes = 0
-        count = 0
-        t_start = time.monotonic()
-        while True:
-            t = time.monotonic()
-            try:
-                item = next(it)
-            except StopIteration:
+        # A rank-cache hit never advances the source iterator. Start the
+        # stock loader's timer at the call, or its zero sentinel is printed
+        # as process uptime on a hit. Source reads remain lazy.
+        if a and hasattr(a[0], "counter_before_loading_weights"):
+            a[0].counter_before_loading_weights = time.perf_counter()
+
+        def measured():
+            produce = 0.0
+            nbytes = 0
+            count = 0
+            t_start = time.monotonic()
+            while True:
+                t = time.monotonic()
+                try:
+                    item = next(it)
+                except StopIteration:
+                    produce += time.monotonic() - t
+                    break
+                except Exception:
+                    produce += time.monotonic() - t
+                    raise
                 produce += time.monotonic() - t
-                break
-            except Exception:
-                produce += time.monotonic() - t
-                raise
-            produce += time.monotonic() - t
-            count += 1
-            try:
-                tensor = item[1]
-                nbytes += tensor.numel() * tensor.element_size()
-            except Exception:
-                pass
-            yield item
-        total = time.monotonic() - t_start
-        gib = nbytes / float(1 << 30)
-        _log(f"weights: {count} tensors, {gib:.1f} GiB | read {produce:.1f}s "
-             f"({gib / max(produce, 1e-9):.2f} GiB/s) | "
-             f"apply {max(total - produce, 0.0):.1f}s")
+                count += 1
+                try:
+                    tensor = item[1]
+                    nbytes += tensor.numel() * tensor.element_size()
+                except Exception:
+                    pass
+                yield item
+            total = time.monotonic() - t_start
+            gib = nbytes / float(1 << 30)
+            _log(f"weights: {count} tensors, {gib:.1f} GiB | read {produce:.1f}s "
+                 f"({gib / max(produce, 1e-9):.2f} GiB/s) | "
+                 f"apply {max(total - produce, 0.0):.1f}s")
+
+        return measured()
 
     try:
         setattr(cls, name, timed)

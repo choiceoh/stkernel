@@ -26,3 +26,6 @@ VLLM_GLM53_PREFILL_NVFP4_BPROJ	[nvfp4-bproj] serving	[nvfp4-bproj] serving
 VLLM_GLM53_DEV_LAB	[dev-lab] installed: POST /glm53/lab	[dev-lab] installed: POST /glm53/lab
 # "-" = this knob has no serving line of its own (a master switch); the generator stays quiet about it
 VLLM_GLM53_MEGAKERNEL	-	-
+# Startup artifact hits prove loading reuse, not a served kernel/quality result.
+VLLM_GLM53_FP8_CACHE	-	-
+VLLM_GLM53_RANK_CACHE	-	-
