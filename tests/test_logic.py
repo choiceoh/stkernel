@@ -10921,8 +10921,8 @@ def test_fleet_reservation_tooling_contracts() -> None:
     for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
                 "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
         check(sub in fleet, f"fleet.sh carries {sub}")
-    check('grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env"' in fleet,
-          "preflight refuses a knob the profile does not declare (the launcher forwards only declared keys)")
+    check('grep -qE "^${k%%=*}=" $profiles 2>/dev/null || undeclared=' in fleet,
+          "preflight refuses a knob no profile declares (the launcher forwards only declared keys)")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
     check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
@@ -10969,8 +10969,8 @@ def test_fleet_reservation_tooling_contracts() -> None:
         check(sub in fleet, f"fleet.sh round 2 carries {sub}")
     check("--cpu|--nogpu) force=nogpu" in fleet and "--gpu) force=gpu" in fleet,
           "the agent says --gpu or --cpu; the classifier is the net, not the interface")
-    check('[ "$force" = nogpu ] && [ "$auto" = gpu ] && [ -z "$forced" ]' in fleet and "REFUSED" in fleet,
-          "a --cpu job that shows GPU use is refused unless --force")
+    check('[ "$force" = nogpu ] && [ "$auto" = gpu ]; then' in fleet and "REFUSED" in fleet,
+          "a --cpu job that shows GPU use is refused")
     check("*.py) text=" in fleet and "torch\\.cuda" in fleet,
           "the classifier reads python files for device use only, not their docstrings (baseline.py said 'ab-lever')")
     check("nice -n 19" in fleet and "nogpu-start" in fleet,
@@ -11012,6 +11012,24 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "fleet.sh board shows every session's verdicts and boots")
     check("already queued by a live process" in fleet and 'cut -d\'|\' -f7' in fleet,
           "a second live process under a queued session name is refused (the ticket would merge)")
+
+    # -- round 4 (operator "우회를 못하게 막아 그리고 chain 헬퍼 만들어")
+    check("FLEET_PREFLIGHT" not in fleet and "forced" not in fleet and "--cpu --force" not in fleet,
+          "no bypass: neither the preflight nor the --cpu refusal has an override")
+    check("SYNCED $copy <- $src" in fleet and 'mv "$copy.new" "$copy"' in fleet,
+          "a stale srv2 copy is synced from the repo (atomic mv), never a reason to fail")
+    check('[ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"' in fleet,
+          "knobs may be declared by a tree the chain cd's into (a PR checkout)")
+    check("chain)" in fleet and "QUICKSTART" in fleet,
+          "fleet.sh chain exists and the header opens with a six-line quickstart")
+    chain = os.path.join(REPO, "bench", "chain.sh")
+    check(os.path.exists(chain) and subprocess.run(["bash", "-n", chain], capture_output=True).returncode == 0,
+          "bench/chain.sh parses")
+    chsrc = open(chain, encoding="utf-8").read()
+    check("--after)" in chsrc and "--legs)" in chsrc and 'yield "$S" 15' in chsrc
+          and "restore-needed" in chsrc and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
+          "chain.sh: N arms, --after checks, --legs, yield between arms, restore only when needed, a "
+          "defaults sample only while the floor is thin, judge per arm")
 
 
 def test_megakernel_regression_suite():

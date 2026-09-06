@@ -3493,6 +3493,20 @@ yield(홀더 양보→프로브 slip→프로브 release→홀더 재GO→RESUME
   09-06 에 `run fusion` 을 두 번 걸어 티켓이 합쳐졌던 사고.
 샌드박스: 두 번째 `run fusion` 거부 메시지, 공유 옵션으로 2번 순번, 리허설 pair 뒤 board 에 판정 행. `tests/test_logic.py` 3라운드 핀.
 
+### 16. 예약 도구 4라운드 — 우회 제거, 사본 자동 동기화, PR 트리 노브, N팔 chain 헬퍼 (2026-09-06 밤, 운영자 "우회를 못하게 막아 그리고 chain 헬퍼 만들어")
+
+- **우회 제거**: `FLEET_PREFLIGHT=skip` 과 `--cpu --force` 를 없앴다. FAIL 은 큐에 못 들어가고 REFUSED 는 `--gpu` 로 다시 거는 것만 답이다.
+  (19:25 의 두 FAIL 은 제 머지가 사본 동기화와 경주한 것이었고 한쪽은 skip 으로 우회했다 — 우회가 습관이 되면 preflight 는 죽는다.)
+- 그래서 preflight 가 **원인을 스스로 없앤다**: srv2 사본이 리포와 다르면 리포 판으로 **원자 교체(SYNCED)** 하고, 체인이 `cd` 하는 트리
+  (PR 체크아웃)의 `profiles/glm53.env` 도 노브 선언처로 인정한다. 피어가 그 사이 넣은 "프로브는 노브 검사 생략"(run_mk_probe.sh 의
+  VLLM_CACHE_ROOT 류가 노브가 아님)은 유지.
+- **`fleet.sh chain <s> [est] [note] -- NAME=KNOBS … [--after NAME 'cmd'] [--legs NAME none]`** = `bench/chain.sh`: 피어 체인(p1/p4/apc2/df3)
+  의 모양 — 팔 둘셋 + 부팅 위의 사용자 검사 + 복구 — 를 플릿 규칙과 함께: 팔마다 증명, 팔 사이 `yield`, `NAME=""` 는 기본값 팔(기준선 표본),
+  기본값 표본은 바닥이 얇을 때만, 복구 부팅은 뒤에 부팅 작업이 없을 때만, 팔마다 judge. `FLEET_REHEARSE=1` 로 GPU 없이 끝까지 돈다.
+- 헤더 맨 위에 여섯 줄 퀵스타트.
+샌드박스: 낡은 사본 → `SYNCED … -> PASS`(md5 일치), 트리 전용 노브는 `cd` 가 있을 때만 PASS, `--cpu --force` 는 REFUSED, 리허설 chain
+(팔 둘 + `--after A` 검사 실행 + `--legs B none` + 기본값 표본 + 팔별 판정). `tests/test_logic.py` 4라운드 핀.
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬
