@@ -900,8 +900,8 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
             (layer._prefill_sp_metadata_name, layer.layer_kind)
             for layer in self._active_layers
         )
-        self._prefill_sp_announced = False
-        self._prefill_sp_declined = False
+        self._prefill_sp_announced = set()      # forward sizes T already announced
+        self._prefill_sp_declined = set()       # (gate, T) already explained
 
         world_size = get_tensor_model_parallel_world_size()
         assert config.num_attention_heads % world_size == 0, (
@@ -911,20 +911,23 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
-    def _prefill_sp_decline(self, reason: str) -> bool:
+    def _prefill_sp_decline(self, reason: str, num_tokens: int = 0) -> bool:
         # 39차: an armed knob whose gate declines every forward reads as
-        # "no effect" in a bracket; say WHY, once, so P1's silence (0 %
-        # at 32K with eight knobs armed) cannot repeat unexplained.
-        if _PREFILL_SP_ENABLED and not self._prefill_sp_declined:
-            logger.warning("[prefill-sp] NOT selected: %s", reason)
-            self._prefill_sp_declined = True
+        # "no effect" in a bracket; say WHY -- once per (gate, forward size)
+        # so a mixed batch that declines after the pure-prefill warm-up was
+        # admitted still shows up (the P4 mixed-batch check reads this).
+        key = (reason.split(" (")[0], int(num_tokens))
+        if _PREFILL_SP_ENABLED and key not in self._prefill_sp_declined:
+            if len(self._prefill_sp_declined) < 64:
+                logger.warning("[prefill-sp] NOT selected: %s", reason)
+            self._prefill_sp_declined.add(key)
         return False
 
     def _can_prefill_sequence_parallel(self, hidden_states, positions) -> bool:
         if not self._prefill_sp_config_ok:
             return self._prefill_sp_decline(
                 "config gate (needs mhc, hidden 4096, 4 streams, TP4/PP1/DP1, no EP/EPLB/DCP/PCP, "
-                "no sequence-parallel MoE, all layers on this rank)")
+                "no sequence-parallel MoE, all layers on this rank)", positions.shape[0])
         if (
             torch.compiler.is_compiling()
             or hidden_states.device.type != "cuda"
@@ -940,7 +943,7 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
         ):
             return self._prefill_sp_decline(
                 f"tensor/context gate (compiling={torch.compiler.is_compiling()} "
-                f"capturing={torch.cuda.is_current_stream_capturing()} T={positions.shape[0]})")
+                f"capturing={torch.cuda.is_current_stream_capturing()} T={positions.shape[0]})", positions.shape[0])
         if positions.shape[0] < 128:
             return False   # decode-sized forward: silently stock, not a decline worth a line
         if not _prefill_sp_metadata_ok(
@@ -950,7 +953,7 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
         ):
             return self._prefill_sp_decline(
                 f"metadata gate (T={positions.shape[0]}: not a pure-prefill batch on every layer, "
-                "or metadata names/kinds unknown)")
+                "or metadata names/kinds unknown)", positions.shape[0])
         # Quant kernels and wrappers are installed after construction, so
         # their reduction contract is checked on the actual serving objects.
         for layer in self._active_layers:
@@ -958,13 +961,13 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
                 o = getattr(getattr(layer.self_attn, "o_proj", None), "reduce_results", None)
                 return self._prefill_sp_decline(
                     f"layer reduction contract (layer {layer.layer_idx}: o_proj.reduce_results={o}, "
-                    f"moe={layer._mlp_is_moe}, mhc={layer.mhc}, seq_parallel={layer.is_sequence_parallel})")
-        if not self._prefill_sp_announced:
+                    f"moe={layer._mlp_is_moe}, mhc={layer.mhc}, seq_parallel={layer.is_sequence_parallel})", positions.shape[0])
+        if int(positions.shape[0]) not in self._prefill_sp_announced and len(self._prefill_sp_announced) < 64:
             logger.info(
                 "[prefill-sp] MHC token shards selected (T=%d, TP=4, full-token attention/MoE)",
                 positions.shape[0],
             )
-            self._prefill_sp_announced = True
+            self._prefill_sp_announced.add(int(positions.shape[0]))
         return True
 
     def forward(
