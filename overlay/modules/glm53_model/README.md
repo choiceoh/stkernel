@@ -53,7 +53,7 @@ Base contract from `glm53:v13-b12x`.
 ## glm53_indexer_gate_splitk
 
 The sparse indexer's fp32 head-gate projection as a deterministic split-K
-Triton path, behind `VLLM_GLM53_INDEXER_GATE_SPLITK` (default `0`, stock
+Triton path, behind `VLLM_GLM53_INDEXER_GATE_SPLITK` (profile default `1` since 2026-09-06, MKG3 bracket; `0` = stock
 `torch.mm`). This README is the single home of the measured numbers; the
 ledger and RUNBOOK cite it.
 
@@ -448,7 +448,7 @@ module's default and what the fleet runs are different statements; profiles/READ
 carries the second one.
 The kernel pair is the one `fp8_lm_head` already runs under capture here.
 
-### b-projection arm — `VLLM_GLM53_FP8_DENSE_BPROJ` (default off)
+### b-projection arm — `VLLM_GLM53_FP8_DENSE_BPROJ` (profile default on since 2026-09-06, MKG3 bracket; module default off)
 
 STEP_KERNEL_MAP #108 §2: after W8A8, 145 `cutlass_80_wmma` bf16 GEMMs/step
 remain — the rear halves of the low-rank projections. This arm extends the

@@ -1976,6 +1976,85 @@ C>1 은 요청마다 수락률이 달라 배치 구성이 흔들려 단일 정�
 **먹힌 것**: W4 확장의 로컬 메모리 바이트 배열 → 레지스터 워드 산술(−20~33%; 타일 우선 팩 + cp.async 3단, 더 깊으면 손해); MHC p2 청크 축약을 24 레인에 + 4×4 sinkhorn 16 레인(bar2 13.5 → 5.4 µs; T=8 46→36, T=32 76→65); PDL 연쇄 발사(gemm 발사당 −3~5%, `VLLM_GLM53_MK_PDL`, 기본 off); ksr 호스트 계산·폴드 나눗셈 제거; 단계 스탬프(`-DMK_PHASE_TS`, gemm/mhc, wait 누적, 상한 프로브 `MK_PROBE_SKIP`).
 **안 먹힌 것(기록)**: W 채움 끌어올림(배리어 대기로 자리만 옮김), exact wait + 깊이 4·5, last-arriver 폴드, 동적 유닛 배분(n=6416 +1~2%), x cp.async 스테이징(프롤로그가 채움 전체를 기다림), smem 예산 공유(W8 −4~7% → 별도 인스턴스), mhc p1 fn 1회 읽기·fn 재배열(토큰당 지연이 지배), m≤16 mma 가드(언롤 안 break), 스위즐 3종.
 
+## ★★★39차 — 드래프터 축: DFlash 학습 레시피·DSpark 비교·HF 드래프터 15곳 조사, cfontes TR3-v3 브래킷 기각, 하니스 onepass 단일화 (2026-09-06 13:40~14:40 KST)
+
+**운영자 지시 순서**: "dflash 훈련 관련 웹 검색" → "dflash2랑 dspark 비교" → "이건 어때?"(cfontes TR3-v3) → "드래프터 이미지 많던데 살펴봐" →
+"5분 안 조용해져도 바로 해. 개별 테스트 없애고 무조건 원패스로 통일" → "명시적으로 더 빠르면 스톡 복구 불필요" → "스톡 원패스 찍지 마, 다른 세션 테스트하라고 해".
+
+### §1 DFlash 학습 레시피 — 공개된 것은 DFlash 1 논문뿐 (arXiv 2602.06036 부록 A.1)
+
+- 데이터 Nemotron Post-Training V2 + CodeAlpaca ≈800K 샘플, **응답은 타깃 모델이 재생성**(on-policy). 최대 3072 토큰(Coder 4096),
+  시퀀스당 앵커 512 무작위(매 epoch 재추출 — 표준 블록 분할 대비 Math500 τ 4.94→5.64, Table 13).
+- 손실 = 토큰 CE × 위치 감쇠 exp(−(k−1)/γ), γ=7/5/4 (블록 16/10/8). **특징 회귀(L1) 없음.** 6 epoch, AdamW 6e-4, clip 1.0, cosine,
+  warmup 4%. 하드웨어·시간 미기재(실험은 H200). 어블레이션은 100K 샘플로 학습(5층 bs16 Math500 τ 5.99 — 100K 로 충분).
+- 구조: 5층, 타깃 5개 층(2번째~끝에서 세 번째 사이 균등) hidden concat → RMSNorm(Wc·[H1..H5]) → 모든 층 K/V 주입, 임베딩·lm_head 타깃 공유(동결).
+  롱컨텍스트 적응: 4K 베이스 위 LongAlign 1.6K 샘플 × 3 epoch 파인튜닝으로 16K τ 3.61→6.05 (Table 4) — **소량 파인튜닝이 먹힌다는 논문 자체 증거**.
+- DFlash2(inco.ai 블로그): 5층 + 2-tap 동적 depthwise conv(+16.5M, 3%) + 위치별 top-16 후보 + 2.0M 선택기(+0.6% 지연, 합 +1.3%).
+  정답이 top-16 안에 있을 확률 pos1 99.5% → pos6 87.8%. **학습 데이터·레시피·코드 미공개**(모델 카드·블로그·README·LMSYS 글 전부; "Z Lab/Modal 에 연락").
+- DSpark(RedHat GLM-5.2 카드, 코드 vllm-project/speculators MIT): Magpie 300K + UltraChat 200K 를 타깃이 재생성, 손실 CE 0.1 + TV 0.9, lr 6e-4 cosine,
+  3 epoch, seq 4096, 라이브 vLLM 서버에서 hidden 스트리밍하는 온라인 학습(FSDP), **DFlash 체크포인트 warm-start 지원**. 검증 수용길이 3.97(k=7), 위치별 .829/.723/.646/.587/.539/.500/.464.
+- 함의: 취소한 우리 재학습 코퍼스(≈5M 토큰, 대부분 원문 위키)는 논문 최소선(100K 타깃 생성 샘플 ≈ 10^8 토큰)의 20~40분의 1이고 on-policy 도 아니었다 →
+  "처음부터 학습" 부적합 확정. 타깃 생성 100K 샘플은 우리 플릿(≈100 tok/s)으로 열흘 이상. 현실적 형태 = 기존 드래프터 위 소량 on-policy 파인튜닝(speculators 로 가능; Deneb 트랜스크립트가 그 용도).
+
+### §2 DSpark vs DFlash2 — 정확도·자원 모두 DFlash2, DSpark 의 이점은 "학습이 열려 있다" 하나
+
+| 타깃 (같은 데이터·같은 벤치, inco.ai) | DSpark | DFlash2 |
+|---|---|---|
+| Qwen3.5-4B temp 1 | 5.49 | 5.97 |
+| Qwen3.8-27B 블록 8 | 3.62 | 4.80 |
+| Muse Glimmer 30B 블록 16 | 4.48 | 5.70 |
+
+- 백본 동일(5층 DFlash). DSpark 보정 헤드 77.8M 파라미터·+9.6% 지연 vs DFlash2 선택기 2.0M·+0.6% — "DSpark 가 자원을 덜 쓴다" 가설 기각.
+- RedHat 카드의 .829 는 GLM-5.2-FP8 타깃 위 완전 on-policy 드래프터의 **검증셋 teacher-forcing** 수치. 우리 DFlash2 의 조건부 수용은 전 위치 ~.60 평평이라
+  pos1(.63) 만 뒤지고 pos5+ 는 우리가 높다(.58~.60 vs .54~.46). 격차의 정체 = 분포 불일치(nvfp4 가중치·FP8 KV·드래프터 W8A8·한국어+thinking 혼합), 아키텍처 아님.
+  증거: 온도 0→0.95 에 pos1 .644→.742, dsv4 공식 DSpark pos1 .785, GLM-5.3-Flash 용 DSpark 카드(Capicua25x) pos1 .493(우리보다 낮음), cfontes EXL3 on-policy 재학습 1.07→1.83.
+- 확신도 헤드로 k 를 줄이는 이점은 이 러너에서 실현 불가(35차 철회와 같은 이유: 검증 그래프 형상 k+1 고정). DSpark 이름으로만 받던 async 스케줄링은 `glm53_async_dflash` 로 확보 완료.
+
+### §3 HF 의 GLM-5.3 드래프터 15곳 — 가중치가 다른 것은 셋, 시험 가치는 하나
+
+| 저장소 | 정체 | 판정 |
+|---|---|---|
+| incoai/GLM-5.3-Flash-DFlash2 (12,080 dl) | 08-27 릴리즈, 08-28·08-31 "Checkpoint update". 우리 사본 = 최신(bf582e4e, sha256 b038e1d9…) | 현행 |
+| cfontes/…-DFlash2-TR3-v3 (09-05) | EXL3 TP4 서빙 캡처 427K(출력 886K 토큰)로 재학습, 손실 5종, 4 epoch 164 스텝. 그쪽 vendor 1.07→1.83(K=2) | 텐서 81개·config 동일 → 드롭인. §4 브래킷 |
+| cfontes/…-DFlash2-TP4-Spark v2~v5 (09-03) | NVFP4 TP4 vLLM, rank-64 fc 어댑터 폴드(446K 토큰). **카드 자기 기록: teacher-forced top-1 .57→.64 이나 서빙 수용길이 무이동(3.01~3.30 vs stock 3.28)** | NVFP4 소량 파인튜닝 무이동의 증거 |
+| gorbatjovy/…-ablit-fc (09-04) | abliterated NVFP4 타깃용 fc 한 텐서 릿지 재적합(학습 없음, 83K 쌍, ridge 1e-3; 낮은 ridge 는 in-sample 만 좋고 벤치 퇴행) | 우리 타깃 아님. fc = 타깃↔드래프터 결합 전부라는 관찰은 참고 |
+| local-inference-lab/…-MXFP8 외 1 (09-02) | incoai 구 리비전(dc77ff1c)의 MXFP8, RTX PRO 6000×4 B12X 이미지용 | 우리는 자체 W8A8/W4 팩. 불필요 |
+| avlp12/…-Alis-MTP-Drafter | 공식 MTP 층 bf16 추출(MLX, 14 GB) | MTP 는 37차 §10 기각 |
+| 레시피 3(cfontes tp4, randomllama SGLang, gorbatjovy patched), GGUF 4 | 가중치 없음 / llama.cpp | 참고 수치만 |
+
+- 커뮤니티 NVFP4 TP4 vLLM(cfontes v5, k=7, enforce-eager): C1 temp0 42.2, C4 84.7→94.2, 코딩 피크 69~74 tok/s, per-position temp0 78.6/57.5/35.1/22.7/16.8/10.3/6.7.
+  우리 stock 오늘(MKG3BASE, k=5): C1 50.8 중앙값(42.6~52.3), C4 95~101 → 우리가 앞섬. 그쪽 pos1 78.6%(영어 코드 위주) vs 우리 .63(한국어 혼합) 은 콘텐츠 차이.
+- 부수: 커뮤니티가 문서화한 vLLM 프리픽스 캐시 버그 — dflash 가 `use_eagle()` 로 잡히고 GLM 이 `is_eagle_group` 을 안 세워 hybrid KV 그룹 전부 EAGLE 취급, MLA 마지막 블록 드롭 → 히트 0%.
+  패치 `kv_cache_coordinator.hybrid-apc.py`(SlidingWindow 그룹만 플래그). 우리는 prefix caching OFF 라 미해당; 켤 때 필요. 디코드 아닌 다중 턴 TTFT 레버.
+
+### §4 cfontes TR3-v3 브래킷(CFV3) — 기각: 같은 main 에서 수용 −6pt, tok/s −10~15%
+
+같은 배포 main(01ae713), k=5, PREFILL_WARMUP=1, 드래프터만 `DRAFT_HOST_PATH` 로 교체(팩 캐시는 가중치 md5 키라 안전). onepass --korean-extra 한 워크로드.
+
+| onepass | tok/step | step/s | tok/s | raw acc | 품질 | 한국어 | pf32 warm |
+|---|---|---|---|---|---|---|---|
+| **CFV3** (cfontes v3, 14:23) | 2.51 | 21.0 | 52.6 | 30.2% | 9/9 | 0/25 | 2655 |
+| MKG3 (stock 드래프터, 14:07) | 2.80 | 20.9 | 58.7 | 36.0% | 9/9 | 0/25 | 2658 |
+| B12XU (stock, 12:44) | 2.96 | 20.9 | 62.1 | 39.3% | 9/9 | 0/9 | 2634 |
+
+- 위치별 수용(누적, 4,084 드래프트): .629/.387/.248/.158/.106 — 첫 토큰부터 고르게 낮다. 컨테이너 안 `/models/dflash2-draft` sha256 cfe8c069… 로 서빙 증명.
+- **판정 RESTORE.** step/s 동일(드래프터 비용 같음), 수용만 빠짐. EXL3 서빙 분포로 재학습된 드래프터는 nvfp4 타깃에 맞지 않고, 카드의 "+68%" 는 vendor 가 1.07 로
+  무너진 EXL3 기준선 위의 회복이다. 우리 스택에서 재학습 이득의 상한은 작다(§3 v2 무이동과 같은 방향).
+- 주의(판정 불변): 새 드래프터의 W4 팩은 stock 드래프터 활성값으로 찍은 Hessian(이름 기준)으로 GPTQ 됐다(gptq=30, stock 부팅은 rtn=33). 근소 차이였다면 재확인 항목.
+- 파일: 4 노드 `~/models/GLM-5.3-Flash-DFlash2-TR3-v3`(sha256 cfe8c069… 일치). 라이선스 other, 원본 CC BY-NC-ND 파생 → 내부 평가 전용.
+
+### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
+
+- **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
+  onepass 의 SPEC_K 폴백은 profile 값(tokens/step 은 어차피 카운터에서). srv2 `~/glm53-logs/ab-lever2.sh` 는 피어 체인이 도는 동안 미동기 — 다음 유휴 창에 맞춘다.
+- KEEP/RESTORE 규칙(운영자 "명시적으로 더 빠르면 복구 불필요"): 같은 날 stock onepass 참조들의 **최고치** 대비 tok/s +5% 이고 tok/step +3% 이며 품질 만점·한국어 0 → KEEP(복구 없이 서빙 유지 + 프로파일 기본값 PR), 아니면 stock 복구.
+  최저 참조(MKG3 58.7) 대비 +5% 는 참조 간 잡음폭(58.7~62.1)과 같아 "명시적"이 아니다.
+- 운영자 지시로 stock onepass 재측정 생략, 복구 부팅 후 플릿을 피어 3 세션(mk-gemm·fusion·b12x)에 인계(FLEET-free-for-{fusion,mkg3,b12x}.done + 세션 메시지).
+- onepass 단축(이 PR, `bench/onepass.py`): 32K·128K 는 질문 3개를 한 요청으로(프리필 1회; 128K 3×48 s → 1×), `--korean-extra` 1라운드(8문). 8분 → 약 4분 예상.
+  디코드 창·수용 카운터는 동일 조건(C=1, 묶은 요청은 답 3개 분량 생성). **이후 기록의 프리필 열·한국어 개수는 이전과 비교 불가**(`"combined": true`).
+- 함정 2건: ① `timeout` 아래 자식은 자기 프로세스 그룹이라 체인 pgid kill 에서 살아남는다(onepass 두 개가 겹칠 뻔함 → `^python3 bench/onepass.py --name X` 앵커드 패턴으로 따로 kill);
+  ② `pgrep -f "<패턴>"` 이 자기 ssh 명령줄과 매치돼 원격 셸 자살(이 세션 세 번째). `^bash x.sh$` 처럼 앵커된 패턴만 쓸 것.
+
 ## ★★★38차 — b12x 정적 MoE 커널 2라운드: 남은 레버 셋의 실측 — 짝수 웨이브 기각, 분할 −1~2%, v4(256 B 세그먼트) −3.5% (2026-09-06 08:00~10:30 KST, srv2 프로브, 무부팅)
 
 운영자 "남은레버 진행". 출발점은 35차 결론: v3(`w`, 프로덕션 기본값) U=40 657~680 µs 대
@@ -2327,6 +2406,19 @@ supported for FP8 MoE`. 이 nvfp4 체크포인트의 MTP 블록은 전문가가 
 부수: KMTP 체인이 배포 실패(당시 main 의 런북 예시 줄이 `EXTRA_ENV` 핀에 걸림 — 곧 다른 세션의 머지로 해소)를 검사하지 않고 부팅한 점은 체인 결함(학습
 체인은 검사함). 학습 라운드는 12:58 에 덤프 부팅으로 시작됐다(`NIGHT-go.done` 연쇄).
 
+**MTP3 재시험 결과(13:21 부팅, 오버레이 #359 로 로드 통과; 13:08 부팅은 srv4 의 stale FileBaton lock(제가 13:07 에 끊은 덤프 부팅 워커가 남김)으로
+profile-run 10 분 정지 → lock 삭제 후 진행, preflight 에 lock 제거 추가 #360)**
+
+| 구성 | C=1 tok/s (3회) | 창 step/s | C=4 tok/s | 위치별 채택률 | 채택/스텝 → tok/step |
+|---|---|---|---|---|---|
+| **MTP k=3** (stock 준비 경로: prep-fused 가 MTPSpeculator 를 몰라 DISARM) | 33.9/38.4/39.0 → **38.4** | 18.9 | 86.2 · 97.2 | **73.5 / 43.8 / 23.6 %** | 1.41 → 2.41 |
+| DFlash2 k=5 + CUDA 준비 융합 (프로덕션) | 47.3 | 20.4~20.9 | 97.1 · 94.9 | 70 / 46 / 31 / 21 / 15 % | 1.83 → 2.83 |
+| DFlash2 k=5, 융합 꺼짐 | 43.3 | 19.4~20.2 | 95.4 | 〃 | 〃 |
+
+**판정**: 기본 MTP 층은 DFlash2 에 진다. 1번째 위치는 73.5 vs 70 으로 조금 낫지만 같은 MTP 층을 반복 적용하는 2·3번째가 43.8/23.6 으로 DFlash2 의 46/31 보다
+빠르게 무너져 스텝당 채택 1.41(DFlash2 1.83). 융합 손해(5~8%)를 되돌려줘도 C=1 ~41 로 47.3 에 못 미치고 C=4 도 동률 이하. 별도 1B 드래프터가 없다는 메모리
+이점(2.2 GB)뿐. DFlash2 k=5 유지. (vLLM 도 부팅 때 "num_speculative_tokens > 1 은 같은 MTP 층을 여러 번 돌려 채택률이 낮아질 수 있다" 고 경고한다.)
+
 ### §9 논리 능력 점검 (운영자 "모델 논리 능력 테스트해봐" → "변별력 없는 건 왜" → "서술형 하나 내서 수준 봐", 11:30~12:00 KST, 프로덕션 k=5 융합)
 
 `bench/reason_eval.py`(온도 0, 서버 기본 thinking, 답 상한 3,072 토큰, C=4):
@@ -2380,6 +2472,69 @@ low 의 답: 메모리 바운드 진단, 레버(동시 스트림 C, 드래프터
 **철회**: "선택기 점수로 제안을 자르면 검증 비용이 준다"(경로 1)는 이 러너에서 성립하지 않는다 — uniform decode 의 쿼리 길이는 스텝 전체가 k+1 로 고정되고
 그래프도 그 형상으로만 캡처되므로, 요청별로 제안을 -1 로 잘라도 타깃 계산량은 같다. 스텝 단위 동적 k 는 k 별 그래프 캡처 + 러너 변경이 필요해 별도 과제.
 DSpark 의 확신도 헤드 이점도 같은 이유로 지금 스택에서는 실현되지 않는다. 남는 레버는 드래프터 품질(밤 재학습).
+
+### §11 부팅 준비 병렬화·Hessian 캐시 읽기 제거 (2026-09-06, 구현·로컬 검증, 플릿 부팅 미측정)
+
+**읽기 전용 관찰**: srv2 `~/glm53-logs/ab-lever-CFV3.log`의 시작 14:14:58,
+health 대기 진입 14:15:43(런처 45 s). 같은 부팅의 `glm53.log`는 타깃 가중치
+read 33.6 s + apply 19.5 s, 타깃 fp8-dense 폴드 45.2 s(`cached=180`),
+새 TR3-v3 드래프터 폴드 133.3 s(그중 GPTQ 팩 생성 123 s)를 기록했다.
+`load-model=239.1 s`, `profile-run=12.4 s`, `compile+warmup=12.5 s`.
+이 부팅의 TP 그룹은 1.8 s였으며 **간헐적인 302 s 정지는 여전히 미해결**이다.
+
+변경:
+
+- `memfree-preflight.sh`의 노드별 회수·2 s 안정화·측정 순서는 유지하고,
+  네 노드를 동시에 실행한다. 전 노드가 끝난 뒤 기존 최소 메모리 계산과 보고를 한다.
+  이 스크립트는 GLM·hy4 공용이다.
+- GLM 워커 세 개의 Docker 시작을 동시에 실행하고 모두 성공한 뒤 헤드를 시작한다.
+  고정 `sleep 8`을 제거했다. 실패·INT/TERM 때도 진행 중인 시작 작업을 모두 회수한다.
+- MK 팩 조회 전에 읽는 보정 Hessian을 메모리 매핑한다. 팩 캐시가 적중하면 형상과
+  메타데이터만 읽고, 캐시가 없으면 같은 Hessian으로 기존 GPTQ를 수행한다.
+  구형 직렬화·mmap 미지원은 기존 로더로 돌아간다. 팩 키·수치·커널은 그대로다.
+
+**로컬 검증 자료(플릿 성능 판정 아님)**:
+
+| 격리 검증 | 이전 | 변경 | 범위 |
+|---|---:|---:|---|
+| 메모리 준비, 노드당 2 s 지연 mock, 각 2회 중앙값 | 8.733 s | 2.701 s | GMU 둘 다 0.69 |
+| 워커 시작, 노드당 0.4 s mock, 각 1회 | 10.495 s | 1.217 s | 실제 시작 블록 실행; 전 워커 종료 후 헤드 |
+| CPU torch 2.11, 4096² FP32 Hessian 64 MiB, warm 9회 중앙값 | 4.425 ms | 0.192 ms | eager 읽기 대 mmap 메타데이터 조회 |
+
+회귀 검증은 `tests/test_memfree_preflight.py`, `tests/test_glm53_startup.py`,
+`tests/test_glm53_pack_cache_loading.py`에 있다. 마지막은 실제 CPU torch로 캐시 적중 때
+Hessian storage 읽기가 없는 것과 캐시 실패 때 GPTQ 팩 바이트가 eager 로더와 같은 것을 확인한다.
+**실제 45.2 s 폴드 전체를 제거했다거나 E2E 부팅이 위 차이만큼 줄었다는 주장은 하지 않는다.**
+진행 중인 CFV3 onepass를 건드리지 않았고 배포·재부팅·GPU 검증은 하지 않았다.
+동일 이미지·가중치·보정 파일·팩 캐시·SPEC_K로 다음 사용 가능한 부팅 창에서
+런처 시작→health와 `load-model`/폴드/분산 초기화 시간을 전후 비교해야 한다.
+
+### §12 추가 부팅 개선 — 검증·회수 병렬화, 가중치 해시 복사 제거 (2026-09-06, 로컬 검증)
+
+§11 커밋 `576587c`를 기준으로 추가했다. 플릿은 여전히 CFV3 onepass 실행 중이므로
+서버에서는 Docker 조회 구문의 이름 필터·마운트 출력만 읽기 전용으로 확인했다.
+
+- 오버레이 검증은 헤드 SHA 계산 **5회→1회**, 워커 SSH **6회→3회**로 줄였다.
+  워커의 모델 파일 확인과 SHA 계산을 한 번에 수행하고 세 워커를 병렬로 검증한다.
+  모든 검증이 끝나고 일치해야 컨테이너 회수로 넘어간다.
+- 컨테이너 종료→종료 확인→잔여 빌드 lock 정리는 노드 내부 순서를 유지하며 네 노드에서
+  동시에 수행한다. 모두 완료해야 메모리를 계산한다. Docker 오류나 잔여 컨테이너는
+  실패로 처리한다. 현재 또는 **이전 호출의 사전 빌드가 캐시를 사용 중이면 lock을 보존**한다.
+  이전 호출의 이름 없는 컨테이너도 실제 캐시 마운트로 찾는다.
+- 가중치 MD5는 NumPy 버퍼를 직접 읽어 `tobytes()`의 가중치 크기만큼의 임시 복사를 없앴다.
+  기존 해시·팩 캐시 키는 그대로이며, 가중치 변경 감지도 유지한다.
+
+| 격리 측정(실부팅 수치 아님) | §11 기준 | 추가 변경 |
+|---|---:|---:|
+| 파일 검증, SSH당 0.3 s mock, 각 2회 중앙값 | 2.995 s | 1.131 s |
+| 컨테이너 회수·lock 정리, 작업당 0.4 s mock, 각 1회 | 4.024 s | 1.230 s |
+| CPU 가중치 해시, KDA 50.1 MiB, warm 9회 중앙값 | 56.895 ms | 55.722 ms |
+| 위 해시의 Python 임시 할당 최대치 | 50.1 MiB | 361 B |
+
+추가 회귀 테스트 18개(검증 7·회수 8·해시 3), 기존 순수 로직 6,455개 통과.
+해시는 14 dtype×7 레이아웃 및 기존 키 문자열을 비교했다. 캐시 적중/실패의 이전
+검증도 유지한다. 생성된 GLM·DSV4 오버레이 바이트 일치와 shell 문법·ShellCheck error 검사 통과.
+**실부팅·GPU 단축량은 미측정이며 302 s 분산 초기화 정지는 이 변경으로 해결했다고 보지 않는다.**
 
 ## ★★★36차 — 다음 레버를 숫자로 고르기: C>1 처리량, 128K 프리필 지도, 하니스 결함 둘 (2026-09-06 07:00~07:15 KST, 프로덕션 부팅 위 무재부팅 측정)
 
@@ -3848,6 +4003,41 @@ GPTQ 팩 + 저랭크 보정(r=32)이 dense 층에서 오차를 크게 줄였으�
 유휴에 시작 → origin/main 배포 → `MKG3BASE ""` decode+prefill8k → `MKG3 "VLLM_GLM53_FP8_DENSE_BPROJ=1
 VLLM_GLM53_INDEXER_GATE_SPLITK=1"` 전 레그). 기대 −1.9 ms(3.5%, CV 1.7% 위). 판정 = step/s + quality 9/9 + 한국어 0/16 + pos-1 ±2 pct;
 증명 줄 `[fp8-dense] … linears`(+33: q_b·kv_b·wq_b × 11) 와 트레이스의 gemmSN 11발 소멸. 결과 `lever-chain-mkg3.out`, 행 이름 MKG3BASE/MKG3.
+
+### 15. MKG3 묶음 브래킷 — EXP-4 + EXP-9 채택, 디코드 창 +5~7% (2026-09-06 13:49~14:07, srv2 `lever-chain-mkg3.out`)
+
+**조건**: 두 부팅 다 K=5(아침부터 프로덕션), 같은 오버레이(배포 단계는 srv2 Wi-Fi 단절로 ABORT — 노드에 깔린 마지막 배포 그대로,
+프로필은 srv2 체크아웃 01ae713). base `MKG3BASE ""`(decode 3 rep + prefill8k), cand `MKG3 "VLLM_GLM53_FP8_DENSE_BPROJ=1
+VLLM_GLM53_INDEXER_GATE_SPLITK=1"`(전 레그). onepass(35차 표준)는 몰라서 안 썼다 — cand 부팅 위에서 사후 실행(아래).
+
+| | MKG3BASE | MKG3 |
+|---|---|---|
+| 디코드 창 중앙값 step/s, rep 1·2·3 | 20.9 · 21.7 · 20.9 | **22.4 · 22.4 · 22.4** (+5~7%) |
+| rep 평균 step/s | 18.65 · 20.65 · 20.40 | 21.13 · 21.56 · 21.31 |
+| tok/s (rep) | 50.8 · 42.6 · 52.3 | 41.2 · 52.3 · 51.4 (수용률 21~35% 요동, 판정 지표 아님) |
+| 프리필 8k cold / warm tok/s | 2623 / 2707 | 2361 / 2717 (warm 동일; cold 는 1표본) |
+| quality 2K/32K/128K | — | 9/9 |
+| 한국어 | — | 0/16 |
+| 수용 프로파일 (temp 0.95, 256 드래프트) | — | pos-0 76.2%, pos-1 53.1%, accepted/draft 2.258 → 3.258 tok/step, 드래프트 수용 45.2% (같은 날 K5 행 0.45) |
+
+**증명 줄**(cand 헤드 로그): `[fp8-dense] Glm5NextForCausalLM … 213 linears w8a8 … 213 MK W4 packs` — 180 → 213 = q_b [4096×1536]
+×11 + wq_b [4096×1536] ×11 + kv_b [8192×512] ×11 (형상 줄 `[4096x1536]x22, [8192x512]x11`); `[indexer-gate]
+VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) … (M<=16 admitted)` + 프리필은 `first stock torch.mm
+routing, e.g. x(8192, 4096)`; `[megakernel] selftest gemm exact=2.38e-05 -> ARM (lane v2)`, `gemm lane CAPTURED … M=24`.
+
+**판정**: 기대 −1.9 ms(3.5%)보다 큰 +5~7%(창 중앙값 20.9~21.7 → 22.4), 게이트 전부 통과 → 운영자 "생각보다 개선 정도가 크네
+디폴트화 하자" → 프로필 `VLLM_GLM53_FP8_DENSE_BPROJ=1`, `VLLM_GLM53_INDEXER_GATE_SPLITK=1`. 기대보다 큰 이유 후보: 인덱서
+head-gate 의 2블록 cuBLAS 88 µs 가 메인 스트림을 직렬로 막던 것(11층 × 75 µs = 0.83 ms)에 더해 q_b·wq_b 가 v2 레인으로 오면서
+그 뒤 커널들의 PDL 체인에 들어간 것 — 트레이스 재캡처가 확인할 일.
+
+**onepass(35차 표준, cand 부팅 위 사후 실행 14:08~14:14, `onepass-MKG3.out`)**: 창 중앙값 **20.94** step/s(n=39), tok/step 2.80,
+raw acc 36.0%, quality 9/9, 한국어 0/25, 프리필 warm 2041/2658/2597(2K/32K/128K). 같은 날 onepass 행: PRODK5H(11:14, 프로덕션 K5)
+20.45 / 2.79 / 2087·2630·2597, B12XW 20.69, B12XU(12:44, b12x 팔) 20.94. 즉 onepass 로는 아침 프로덕션 대비 +2.4%, b12x 팔과 동률 —
+배포가 다른 행끼리라 짝 비교가 아니다(같은 배포의 base onepass 는 없음; 부팅 한 번이면 채울 수 있다). **주의**: 문맥별 창에서 한국어
+추가 세트(n=35)의 중앙값이 12.0 인데, 그 구간(14:09:27·14:10:24·14:11:22)에 `stall-reporter` 가 "tokens unchanged 20 s" 정지를 세 번
+찍었다 — 오늘 이 정지는 07시 4회, 08시 8회, 09시 6회, 10시 7회, 11시 10회, 12시 8회, 14시 7회로 모든 부팅에서 나고 있고(덤프: 4 랭크
+전부 드래프터 `propose → _build_draft_attn_metadata → seq_lens_cpu` 대기), MKG3 고유가 아니다. 정지가 낀 창은 낮게 읽히므로 onepass
+의 20.94 는 하한이고, 같은 배포 짝의 레그 매트릭스(+5~7%)가 이 묶음의 판정 수치다. 정지 자체는 별도 원인 추적 대상(osar/스톨 세션).
 
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 

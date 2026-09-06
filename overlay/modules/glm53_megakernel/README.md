@@ -508,7 +508,11 @@ and the inner loop are unchanged.
    (OBQ/GPTQ, blocks of 128, group scales re-derived on the updated
    weights). The pack is cached under `VLLM_GLM53_MK_PACK_CACHE` (weight
    md5 + shape + levers + `MK_PACK_VERSION`), so the solve is paid once per
-   rank.
+   rank. Calibration ZIP dumps are loaded with `torch.load(mmap=True)`:
+   a pack-cache hit checks Hessian metadata without first reading its full
+   tensor storage. A miss consumes the same Hessian values for GPTQ. Legacy
+   serialization and torch versions without mmap keep the eager loader;
+   malformed or mismatched calibration still falls back to RTN.
 4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
    8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
    from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`

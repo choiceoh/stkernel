@@ -623,7 +623,17 @@ def _calib_hessian_for(name, k=None):
         return None
     try:
         import torch
-        blob = torch.load(p, map_location="cpu")
+        # A warm pack cache needs only the Hessian's shape/existence to
+        # select its GPTQ key. Map the storage so those hits do not first
+        # read every k-by-k Hessian into host memory. A cache miss still
+        # consumes the same values in _w4_gptq_codes. Older torch releases
+        # and legacy (non-ZIP) dumps retain the ordinary load path.
+        try:
+            blob = torch.load(p, map_location="cpu", mmap=True)
+        except (TypeError, RuntimeError) as exc:
+            if "mmap" not in str(exc):
+                raise
+            blob = torch.load(p, map_location="cpu")
         H = blob["H"]
         if k is not None and tuple(H.shape) != (k, k):
             logger.warning("[megakernel] calib: %s is %s, this linear's k is %d "
@@ -640,7 +650,10 @@ def _weight_md5(weight) -> str:
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
-    return hashlib.md5(b.cpu().numpy().tobytes()).hexdigest()
+    # NumPy exposes this contiguous uint8 storage through the buffer
+    # protocol. Hash those same bytes directly: tobytes() otherwise makes
+    # another full host copy (50 MiB for a KDA in-projection) on every hit.
+    return hashlib.md5(b.cpu().numpy()).hexdigest()
 
 
 def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):

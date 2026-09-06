@@ -33,9 +33,9 @@
 | 13 | AR 프리페치 | 브래킷 대기 | ✅ | `AR_PREFETCH=0` · 상한 −0.4~0.6 ms(27차 정정), EXP-6+12 위에만 |
 | 18 | osar 벡터화 + 캐시정책 | 브래킷 대기 | ✅ | 코드 반영 완료. 직렬 절감 단독은 ~0.2~0.3 ms 로 CV 미달 — **EXP-13 팔과 같은 부팅**에서 L2 위생 시너지로 판정(#303 정정) |
 | 20 | 미세 융합 묶음 2 (듀얼 GEMM·KDA 원패스·kpool) | 브래킷 대기 | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS(31차), 런치 −249/1,548, **−0.18 ms/스텝**(C=1; 첫 판 −0.25 는 프로브 clone 편향) · C=4 −0.3. 원패스의 전제(순수 spec-verify 스텝)는 유니폼 디코드 그래프의 캡처 형상이다 — "이 러너엔 없다"(32차 §11 정정 전 가설)는 04:50 정정·KDAPROOF3 `n_spec=4` 캡처로 철회, 증명은 캡처 줄. 게이트 epilogue 축은 오프라인 기각 |
-| 9 | 인덱서 head-gate split-K | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14) | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
+| 9 | 인덱서 head-gate split-K | **채택·기본값 1**(09-06 MKG3 묶음 브래킷, 원장 30차 §15) | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
-| 4 | b_proj/indexer fp8 | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14; 키 선언 PR #357) | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
+| 4 | b_proj/indexer fp8 | **채택·기본값 1**(09-06 MKG3 묶음 브래킷, 원장 30차 §15; W4 팩 213개) | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
 | 3 | MHC small-M 스윕 | **일몰**(34차 §8) | — | `MHC_SMALLM`·`MHC_ONEPASS` 코드 삭제 — mk_mhc 가 디코드 쌍을 대체(EXP-19). 프리필 `MHC_BIGFUSE`·`MHC_PASSES`(EXP-17)는 유지 |
 | 17 | MHC TileLang 패스설정 | 프로브 먼저 · **표적 축소** | — | `MHC_PASSES` 기본 off (#301). 무장 뒤 디코드 몫은 잔여 mhc 14발뿐이고 주종은 **프리필 big_fuse**(#303 정정) |
 | 11 | dsv4 에 MK_SEG_MHC | 프로브 먼저 | — | 2단계는 무부팅, 이기면 dsv4 다운타임 창 |
@@ -161,6 +161,8 @@ VLLM_GLM53_FP8_DENSE_BPROJ=1 \
   그대로 안 나올 수 있다 — 그러면 기각 사유가 명확한 셈이다.
 
 ---
+
+**채택(2026-09-06, MKG3 묶음 브래킷, 원장 30차 §15)**: `VLLM_GLM53_FP8_DENSE_BPROJ=1` 프로필 기본값. 부팅 줄 "213 linears w8a8 … 213 MK W4 packs"(+33 = q_b·kv_b·wq_b × 11), 디코드 창 +5~7%, quality 9/9, 한국어 0/16, pos-0 수용 76.2%, 프리필 warm 동일. 롤백은 프로필 한 줄.
 
 ## EXP-5 — 프리필: 캡처 → KDA 청크 스윕 (2026-09-01 추가)
 
@@ -401,6 +403,8 @@ VLLM_GLM53_INDEXER_GATE_SPLITK=1 bash launchers/start-glm53-nvfp4-tp4.sh
 - 롤백 = env 한 줄. 기본 0 = stock 과 동일한 `torch.mm` 호출.
 
 ---
+
+**채택(2026-09-06, MKG3 묶음 브래킷, 원장 30차 §15)**: `VLLM_GLM53_INDEXER_GATE_SPLITK=1` 프로필 기본값. 서빙 증명 줄 `[indexer-gate] … first split-K routing, e.g. x(12, 4096)`. 롤백은 프로필 한 줄.
 
 ## EXP-10 — 드래프터 GEMM 을 MK W4 레인으로 (2026-09-04 개정: 프로브가 돌았고, 숫자가 나왔다)
 

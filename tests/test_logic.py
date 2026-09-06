@@ -8814,16 +8814,16 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 
 
 def test_glm53_indexer_gate_splitk_contracts() -> None:
-    """glm53_indexer_gate_splitk: opt-in deterministic split-K head gate on the
-    checkpoint's shape (index_n_heads=32), small-M only, stock default."""
+    """The profile adopts split-K on the checkpoint's small-M shape; the
+    helper retains its explicit knob and stock fallback on other shapes."""
     mod_dir = os.path.join(REPO, "overlay", "modules", "glm53_model")
     kern = open(os.path.join(mod_dir, "glm53_indexer_gate.py"), encoding="utf-8").read()
     attn = open(os.path.join(mod_dir, "glm5next_attention.py"), encoding="utf-8").read()
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     modules = re.search(r'^MODULES="([^"]+)"', profile, re.M).group(1).split()
     check("glm53_model" in modules, "glm53 profile must mount glm53_model (the indexer gate lives there)")
-    check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=0$", profile, re.M) is not None,
-          "profile must ship VLLM_GLM53_INDEXER_GATE_SPLITK=0 (stock torch.mm by default)")
+    check(re.search(r"^VLLM_GLM53_INDEXER_GATE_SPLITK=1$", profile, re.M) is not None,
+          "profile must retain the MKG3-adopted VLLM_GLM53_INDEXER_GATE_SPLITK=1 default")
     rows = [l.split("\t") for l in open(os.path.join(mod_dir, "manifest.tsv"), encoding="utf-8")
             .read().splitlines() if l and not l.startswith("#")]
     by_target = {r[1]: r[2] for r in rows}
