@@ -79,7 +79,12 @@ def ask_stream(url, model, content, max_tokens):
     body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.0,
                        "stream": True, "stream_options": {"include_usage": True},
                        "messages": [{"role": "user", "content": content}],
-                       "chat_template_kwargs": {"thinking": False}}).encode()
+                       # 39차: thinking ON, explicitly. The stock template ignored this
+                       # kwarg and always reasoned, so every reference (BASE39-*, DEF40, ...)
+                       # was measured with reasoning in the stream; the v2 template honours
+                       # the kwarg and thinking=false gives answers too short for the 2 s
+                       # decode windows (TPL1: no windows). Keep the condition constant.
+                       "chat_template_kwargs": {"thinking": True}}).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     t0 = time.time()
     ttft = None
@@ -183,7 +188,7 @@ def main() -> int:
     bd = _load("bench-dec.py", "onepass_bench_dec")
     br = _load("bracket.py", "onepass_bracket")
     rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
-           "harness": 39, "doc_lang": "ko",
+           "harness": 39, "doc_lang": "ko", "thinking": True,
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     if os.environ.get("FLEET_SESSION"):
