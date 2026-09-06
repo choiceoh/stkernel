@@ -108,6 +108,14 @@ class PairedEvidenceTests(unittest.TestCase):
         self.assertFalse(rows[-1]["gates"]["complete"])
         self.assertEqual(rows[-3], {"kind": "interrupted", "reason": "wall_clock_budget"})
 
+    def test_fractional_remaining_budget_is_not_rounded_up(self):
+        identity = {"id": 1}
+        rc, rows, sender = self.run_probe([identity, identity, identity],
+                                         [0, 9, 9.2, 9.3, 9.75, 9.9, 11])
+        self.assertEqual(rc, 2)
+        self.assertEqual(sender.call_args.args[-1], 0.25)
+        self.assertFalse(rows[-1]["gates"]["complete"])
+
     def records(self):
         return [{"pair": pair, "required_first": enabled, "choice": case["choice"],
                  "errors": ["missing_required"] if pair < 6 and not enabled else [], "seconds": 1.0}

@@ -120,6 +120,6 @@ Evidence:
 
 Post-run review tightened the exhausted-budget check and made final identity
 read failures emit an unstable summary instead of losing the diagnostics.
-Nine focused CPU tests plus the five existing acceptance tests pass. These
+Ten focused CPU tests plus the five existing acceptance tests pass. These
 failure-path fixes do not change the fixtures, scoring, or the completed live
 run; no second GPU sample was needed.
