@@ -1,10 +1,22 @@
 [gMASK]<sop>
+{%- for flag in ['thinking', 'enable_thinking', 'clear_thinking', 'legacy_reasoning_content'] -%}
+    {%- set value = {'thinking': thinking, 'enable_thinking': enable_thinking, 'clear_thinking': clear_thinking, 'legacy_reasoning_content': legacy_reasoning_content}[flag] -%}
+    {%- if value is defined and value is not boolean -%}
+        {{- raise_exception(flag + ' must be a boolean') -}}
+    {%- endif -%}
+{%- endfor -%}
+{%- if thinking is defined and enable_thinking is defined and thinking != enable_thinking -%}
+    {{- raise_exception('thinking and enable_thinking must agree') -}}
+{%- endif -%}
 {%- if thinking is defined or enable_thinking is defined -%}
-{%- set thinking_enabled = (thinking if thinking is defined else false) or (enable_thinking if enable_thinking is defined else false) -%}
+{%- set thinking_enabled = thinking if thinking is defined else enable_thinking -%}
 {%- else -%}
 {%- set thinking_enabled = true -%}
 {%- endif -%}
-{%- set effective_reasoning_effort = reasoning_effort if reasoning_effort is defined and reasoning_effort in ['low', 'high'] else 'max' -%}
+{%- if reasoning_effort is defined and reasoning_effort is not none and reasoning_effort not in ['low', 'high', 'max'] -%}
+    {{- raise_exception('reasoning_effort must be low, high, or max') -}}
+{%- endif -%}
+{%- set effective_reasoning_effort = reasoning_effort if reasoning_effort is defined and reasoning_effort is not none else 'max' -%}
 {%- if effective_reasoning_effort is not none -%}<|system|>Reasoning Effort: {{ effective_reasoning_effort | capitalize }}{%- endif -%}
 {%- set clear_thinking = clear_thinking if clear_thinking is defined else false -%}
 {%- if tools -%}
@@ -73,8 +85,8 @@ For each function call, output the function name and arguments within the follow
                 {{- emit_audio() -}}
             {%- endif -%}
         {%- endfor -%}
-    {%- else -%}
-        {{- content }}
+    {%- elif content is not none -%}
+        {{- content -}}
     {%- endif -%}
 {%- endmacro -%}
 {%- macro tool_response(text) -%}
@@ -147,9 +159,10 @@ For each function call, output the function name and arguments within the follow
 {%- set content = visible_text(m.content) %}
 {%- if m.reasoning_content is string %}
     {%- set reasoning_content = m.reasoning_content %}
-{%- elif '</think>' in content %}
-    {%- set reasoning_content = content.split('</think>')[0].split('<think>')[-1] %}
-    {%- set content = content.split('</think>')[-1] %}
+{%- elif legacy_reasoning_content is defined and legacy_reasoning_content and content.startswith('<think>') and '</think>' in content %}
+    {%- set parts = content.split('</think>', 1) %}
+    {%- set reasoning_content = parts[0][7:] %}
+    {%- set content = parts[1] %}
 {%- endif %}
 {%- if (not clear_thinking or loop.index0 > ns.last_user_index) and reasoning_content is defined -%}
 {{ '<think>' + reasoning_content +  '</think>'}}
@@ -157,7 +170,7 @@ For each function call, output the function name and arguments within the follow
 {{ '<think></think>' }}
 {%- endif -%}
 {%- if content.strip() -%}
-{{ content.strip() }}
+{{ content }}
 {%- endif -%}
 {% if m.tool_calls %}
 {% for tc in m.tool_calls %}
