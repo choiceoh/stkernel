@@ -592,8 +592,14 @@ MM_FLAGS=""
 # even when '<think>' came from the prompt). Defaults unchanged until measured.
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-chat_template_mm.jinja}"
 REASONING_PARSER="${REASONING_PARSER:-glm45}"
-[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/$CHAT_TEMPLATE" || {
-  echo "ABORT: $CHAT_TEMPLATE missing in $MODEL_HOST_PATH (repo copy: launchers/chat_template_mm_v2.jinja)"; exit 1; }
+if [ "${DRY_RUN:-0}" != 1 ] && ! test -f "$MODEL_HOST_PATH/$CHAT_TEMPLATE"; then
+  _tpl_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$CHAT_TEMPLATE"
+  if [ -f "$_tpl_repo" ]; then
+    cp "$_tpl_repo" "$MODEL_HOST_PATH/$CHAT_TEMPLATE" && echo "chat: copied $CHAT_TEMPLATE from the repo into $MODEL_HOST_PATH"
+  else
+    echo "ABORT: $CHAT_TEMPLATE missing in $MODEL_HOST_PATH and in launchers/"; exit 1
+  fi
+fi
 [ "$CHAT_TEMPLATE $REASONING_PARSER" = "chat_template_mm.jinja glm45" ] || echo "chat: template $CHAT_TEMPLATE, reasoning parser $REASONING_PARSER"
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
