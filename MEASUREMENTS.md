@@ -2272,6 +2272,12 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 - 해석: 집합통신 ~18% 는 바이트가 아니라 **호출당 고정 비용**(스텝당 AG 67 + RS 60 회, RING_LL, 4 노드 링 지연) 에 묶여 있다 — v1(공유 스케일)·v2(per-block, all_to_all) 둘 다 바이트를 반으로 줄였는데 시간이 안 준다. 남은 길은 층당 집합통신 **횟수** 를 줄이거나(어텐션·MoE 경계 재배치, 공유 전문가·dense 부분과 겹치기) 통신을 계산과 겹치는 것이지 전송 정밀도가 아니다. MoE 28.6% 는 reuse 식 적재 절감으로는 안 열리고 타일/파이프라인 재설계가 필요하다. 둘 다 밤 라운드 규모의 커널 작업으로 기록하고 기본값은 그대로.
 
+### §4k 영상 자리표시 수정 (23:20~, 운영자 "이 이미지에선 왜 안되는데?" → "해봐")
+
+- 원인(코드로 확정): 이미지의 `Glm5NextMultiModalProcessor` 는 GLM-4.6V 의 `_construct_video_placeholder` 를 물려받아 **샘플링된 프레임마다** `<|begin_of_image|>`+(H·W/4)토큰+타임스탬프 블록을 넣는다(`len(video_array)` 로 루프, grid_thw 의 T 무시). 반면 이 체크포인트용으로 이식된 `Glm5NextVideoProcessor`(학습 파이프라인 포트) 는 `temporal_patch_size=2` 로 프레임 쌍을 한 패치 묶음으로 만들어 `video_grid_thw` T = 샘플/2 를 넘긴다. 3 초 영상: 2 fps 샘플 6 프레임 → 자리표시 6×64 = 384, 인코더 3×64 = 192 → 워커 사망. 이미지는 t_bar=2 하나라 무관. HF 허브 공식 저장소에는 처리기 코드가 없어(설정 파일뿐) 포트의 문서("frames are expanded with `<|begin_of_image|>…<|end_of_image|>{ts} seconds`")가 유일한 참조.
+- 수정(PR #420, `glm53_model/glm5next_multimodal.py`, 베이스 sha 고정): `Glm5NextProcessingInfo._construct_video_placeholder` 오버라이드 — 시간 묶음(T)마다 블록 하나, 타임스탬프는 묶음 첫 프레임의 초(`{:.1f} seconds`), 프레임 인덱스는 포트의 `glm_sample_frame_indices` 를 같은 노브로 재계산(vLLM 이 미리 샘플한 경우 `frames_indices` 사용). 오버레이 49개.
+- 검증 팔 VID2(이미지 1 + 영상 1, 기본 인코더 경로, 합성 3 초 영상: 앞 1.5 초 빨간 화면 → 테스트 패턴): 답이 그 변화를 서술하면 통과. 피어(b12xt) 뒤 큐.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
