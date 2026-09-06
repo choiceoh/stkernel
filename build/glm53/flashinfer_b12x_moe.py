@@ -1230,6 +1230,14 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 moe_dispatch as _b12x_dispatch,
             )
 
+            # A load cycle may have copied fresh row-major checkpoint bytes
+            # over tensors a previous cycle laid out tile-major (same
+            # Parameters, same pointers). Drop stale markers + weight-view
+            # cache entries first; an untouched tensor keeps its marker and
+            # the relayout below stays a no-op.
+            _b12x_dispatch.invalidate_tile_major_if_reloaded(
+                layer.w13_weight, layer.w2_weight
+            )
             _tiled, _swizzled = _b12x_dispatch.static_v2_weights_layout(
                 num_experts=self.global_num_experts,
                 num_local_experts=self.num_local_experts,

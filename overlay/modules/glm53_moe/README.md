@@ -271,10 +271,13 @@ the layer's packed bytes out in place once at weight post-processing (TP
 only; proof line `[b12x static v5] expert weights re-laid out tile-major in
 place`), the dispatcher views them without a copy, the micro lanes are off
 under tiled weights (they read row-major), and the gated dynamic (prefill)
-kernel is an overlay of the image's `_moe_dynamic/gated.py`
-(`moe_dynamic_gated.py`, pinned preimage) that groups the 4-D weights into a
-hierarchical K -- its 64 B tiles divide the 256 B / 64 B chunks -- and is
-compiled and cached per layout (`dynamic_..._tiled`); both kernels compile
+kernel is a NEW file `moe_dynamic_gated_tiled.py` (manifest preimage
+`absent`) -- a subclass of the image's `_moe_dynamic/gated.py`
+`MoEGatedDynamicKernel`, not an overlay: the stock file stays byte-identical
+because #368's reuse lane pins its sha256. The subclass groups the 4-D
+weights into a hierarchical K -- its 64 B tiles divide the 256 B / 64 B
+chunks -- and delegates to the stock `__call__`; compiled and cached per
+layout (`dynamic_..._tiled`); both kernels compile
 on the CPU check), `z` (39차 v6: `t`'s tile-major storage
 pre-swizzled into the smem layouts' own byte order -- B1 `S<3,4,3>` over
 (64 rows x 512 K): `lin = r*256 + k%256 + (k//256)*16384`, `phys = lin ^
@@ -297,7 +300,7 @@ replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the
 kernel's TMA access pattern vs a linear read, plain CUDA). A kernel edit is
 compiled to its .o on the CPU first -- `MK_PROBE_NO_GPU=1 bash
 probes/run_mk_probe.sh probes/b12x_static_compile_check.py --specs "u|t"`
-(~2 s a spec, no CUDA context: the host may be serving). Ledger: 35차, 38차,
+(~1.5–4 s a spec, no CUDA context: the host may be serving). Ledger: 35차, 38차,
 39차 (`t`).
 
 ---

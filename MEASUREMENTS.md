@@ -6165,13 +6165,14 @@ v4 의 w13 TMA 박스는 64 행 × 256 B 인데 스톡 저장 `[E, N, K]` 에서
   `_tile_expert_weights`(바이트 permute 복사) + `_get_weight_views(tiled=)`, 가드 셋 — 래퍼 뷰 캐시 키에 tiled 플래그,
   엔트리에서 dynamic 백엔드 + tiled 뷰 거부, static 발사에서 뷰 대 레인 일치 검사(타일 뷰가 행 우선 커널에 닿을 길 없음).
 - 프로브 도구: `run_mk_probe.sh` 에 v5 마운트 + `MK_PROBE_NO_GPU=1`(--gpus 없이, `CUTE_DSL_ARCH=sm_121a`) +
-  `MK_PROBE_DOCKER_ARGS`; `probes/b12x_static_compile_check.py` = CPU 컴파일 검사(스펙당 ~1.5 s, CUDA 컨텍스트 없음).
+  `MK_PROBE_DOCKER_ARGS`; `probes/b12x_static_compile_check.py` = CPU 컴파일 검사(스펙당 ~1.5–4 s, CUDA 컨텍스트 없음).
 - CPU 컴파일: `u`·`t`·`v,t`·`t,s` 전부 .o PASS, smem 101,376 B 불변, 커널 이름 `…tm32f2g2a32wut`.
 - 서빙(2단계, 같은 라운드에 배선): vLLM 래퍼 `process_weights_after_loading` 끝에서 층의 패킹 바이트를 **제자리** 재배치
   (`tile_expert_weights_inplace`, TP 만; 증명 줄 `[b12x static v5] expert weights re-laid out tile-major in place`),
   디스패처는 표식(`_b12x_tile_major`)을 보고 복사 없이 4-D 뷰; 마이크로 레인(행 우선 판독)은 tiled 면 꺼짐(강제 시 거부);
-  gated 동적(프리필) 커널은 이미지 `_moe_dynamic/gated.py` 의 오버레이(`moe_dynamic_gated.py`, preimage 고정)로 4-D
-  가중치를 계층 K 로 묶어 읽고(그 커널의 64 B 타일이 256/64 B 청크를 나눔) 배치별로 컴파일·캐시(`dynamic_…_tiled`).
+  gated 동적(프리필) 커널은 신규 파일 `moe_dynamic_gated_tiled.py`(preimage `absent`) — 이미지 `_moe_dynamic/gated.py` 의
+  **서브클래스**(오버레이 아님; 스톡 파일은 #368 재사용 레인이 sha256 을 고정하므로 무변경)로 4-D
+  가중치를 계층 K 로 묶어 읽고(그 커널의 64 B 타일이 256/64 B 청크를 나눔) 스톡 `__call__` 에 위임, 배치별로 컴파일·캐시(`dynamic_…_tiled`).
   CPU 컴파일: 동적 커널 행 우선 4.4 s / 타일 4.1 s PASS. cute-dsl 함정: `@cute.jit` 안의 파이썬 `if` 는 양 갈래에서
   변수 구조가 같아야 한다(`CONTAINER_STRUCTURE_CHANGED`) — 텐서 랭크로 갈리는 분기는 `cutlass.const_expr(...)` 로.
 
@@ -6290,4 +6291,25 @@ iso2 |... --isolate --configs "z|z,s|u,h|t,h"   # z 는 미지, u,h/t,h 는 §3b
 이고 바이트의 11.1% → 5-bit 고정폭 LUT 로 −4.2%, 엔트로피 코딩까지 −6.3%(order-0 상한 7.0%). 그러니 "훨씬 더" 의 나머지는
 **손실 결정**(운영자): (a) 라우팅 가중치가 작은 전문가 생략(U 40 → 30 이면 MoE 바이트 −25%, −7 ms/스텝; 수용률·품질·한국어
 게이트), (b) 4 bit 아래 정밀도, (c) 스텝의 나머지 26 ms(MoE 밖).
+
+### §5 리뷰 경화 (PR #374 머지 전, 측정 없음)
+
+39차 코드 리뷰에서 나온 결함·위험의 소스 수정. **측정 없음 — 기록일 뿐 판정이 아니다.** 전부 프로브/가드 강화이며
+기본 `u` 경로·커널 본체는 불변.
+
+- **마커 수명(실결함 경로)**: vLLM 재적재 주기가 같은 Parameter 에 row-major 체크포인트 바이트를 `copy_` 하면
+  `_b12x_tile_major` 표식이 살아남아 새 바이트를 tile-major 로 잘못 읽었다. 이제 표식에 64 B×3 내용 지문을 동반하고
+  `invalidate_tile_major_if_reloaded`(래퍼의 `process_weights_after_loading` 상단)가 지문 불일치 시 표식+뷰 캐시를
+  지우고 재배치를 다시 돌린다. process_weights 를 우회하는 대역외 쓰기는 컨트롤 밖임을 표식 docstring 에 명시.
+- **가드 비대칭**: `_get_weight_views` 의 행 우선 레인이 tile-major 표식 저장을 조용히 통과하던 것을 raise 로.
+- **`z` 셀 trace-time 계약**: `_swizzle_perms` 의 XOR 폐쇄형을 v4 `_setup_attributes` 안(컴파일 트레이스)에서
+  crd2idx 표본 검사로 고정 — flashinfer/cutlass 레이아웃 드리프트가 조용한 B 바이트 부패 대신 컴파일 실패로.
+  `bulk_b`(z) 에만 실행되므로 스톡 `u` 컴파일 불변.
+- **진단 시점**: 서빙 env 파서가 `z` 를 부팅 시 거부(xs/xa 와 같은 probe-only 게이트; 프로브는 `_parse(probe=True)`/
+  `_STATIC_V2_OVERRIDE` 로 계속), `t`+`PREFILL_REUSE` 상호배제도 import 시 진단(기존 발사 시점 검사는 유지).
+- **도구/문서**: 컴파일 검사가 0개 컴파일에 PASS 하던 것 방지, gated 프리필 커널을 "오버레이"가 아닌
+  `moe_dynamic_gated_tiled.py` 서브클래스로 정정(README+원장), stock 키 주석 정정, dead helper 제거,
+  `_SWZ_PERM` 캐시 클리어 추가, `assert`→ValueError.
+- 정적 검증: main 병합(#372/#373, README 충돌 양측 보존) + `tests/test_logic.py` 통과. **z 계약 검사는 CPU 컴파일
+  검사(`--specs z`) 재실행으로 확인해야 한다** — 폐쇄형이 레이아웃과 어긋나면 z 컴파일이 실패한다(fail-loud 가 목적).
 
