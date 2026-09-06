@@ -94,8 +94,11 @@ def main():
     stamps, done = [], [None]
     stream(model, decoder_prompt, args.decode_tokens, stamps, done)
     solo = gaps(stamps)
-    print(f"solo decoder: {len(stamps)} tokens, ITL med/p95/max ms = {summarize(solo)}", flush=True)
-    print(f"{'ctx':>7} {'dec tokens':>10} {'ITL(all) med p95 max':>22} {'ITL(overlap) med p95 max':>26} {'tok@overlap':>11} {'prefill TTFT':>12} {'prompt tok/s':>12}")
+    solo_tokens = (done[1] or {}).get("completion_tokens", 0) if len(done) > 1 else 0
+    solo_s = (stamps[-1] - stamps[0]) if len(stamps) > 1 else 0.0
+    print(f"solo decoder: {len(stamps)} steps, {solo_tokens} tokens ({solo_tokens / solo_s if solo_s else 0:.0f} tok/s), "
+          f"ITL med/p95/max ms = {summarize(solo)}", flush=True)
+    print(f"{'ctx':>7} {'dec steps/tok':>13} {'ITL(all) med p95 max':>22} {'ITL(overlap) med p95 max':>26} {'steps@ovl':>9} {'dec tok/s@ovl':>13} {'prefill TTFT':>12} {'prompt tok/s':>12}")
     for ctx in (int(c) for c in args.ctx.split(",")):
         doc = cq.build(ctx, args.seed + ctx)
         _, q, _ = cq.FACTS[0]
@@ -116,7 +119,11 @@ def main():
         rate = (prompt_tokens / ttft) if prompt_tokens and ttft == ttft and ttft > 0 else float("nan")
         overlap = gaps(d_stamps, t0, p_done[0])
         n_overlap = sum(1 for s in d_stamps if t0 <= s <= p_done[0])
-        print(f"{ctx:>7} {len(d_stamps):>10} {summarize(gaps(d_stamps)):>22} {summarize(overlap):>26} {n_overlap:>11} {ttft:>11.2f}s {rate:>12.0f}", flush=True)
+        d_tokens = (d_done[1] or {}).get("completion_tokens", 0) if len(d_done) > 1 else 0
+        per_step = (d_tokens / len(d_stamps)) if d_stamps else 0.0
+        ovl_s = max(p_done[0] - t0, 1e-9)
+        ovl_tps = n_overlap * per_step / ovl_s   # tokens/step from the whole answer, steps counted inside the overlap
+        print(f"{ctx:>7} {len(d_stamps):>6}/{d_tokens:<6} {summarize(gaps(d_stamps)):>22} {summarize(overlap):>26} {n_overlap:>9} {ovl_tps:>13.1f} {ttft:>11.2f}s {rate:>12.0f}", flush=True)
     return 0
 
 

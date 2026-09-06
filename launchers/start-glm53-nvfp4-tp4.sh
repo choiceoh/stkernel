@@ -559,7 +559,7 @@ case "${DECODE_FIRST:-0}" in
   0) ;;
   1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
      SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"
-     echo "scheduler: decode-first v2 (mixed chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-576}, prefill every ${VLLM_GLM53_SCHED_PREFILL_EVERY:-1} mixed step, fair=${VLLM_GLM53_SCHED_FAIR:-1}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
+     echo "scheduler: decode-first v3 ${VLLM_GLM53_SCHED_MODE:-alternate} (decode steps ${VLLM_GLM53_SCHED_DECODE_STEPS:-6}, chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-1152}, fair=${VLLM_GLM53_SCHED_FAIR:-1}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
   *) echo "ABORT: DECODE_FIRST must be 0 or 1 (got $DECODE_FIRST)" >&2; exit 2 ;;
 esac
 # Reclaim stale containers, then page cache, then size GMU -- in that order,

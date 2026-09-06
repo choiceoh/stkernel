@@ -2177,6 +2177,17 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - 남은 의문: 32K 프리필 −8% 는 align 모드가 청크 끝을 2304 블록에 맞춰 8,192 예산이 6,912 청크가 되는 비용(청크 5개 vs 4개) 또는 단일 표본 잡음. 후속 팔 APC2(수정본) / APC3(`MAX_BATCHED=9216` = 4×2304 로 청크 재정렬) 로 가른다.
 - 'all' 모드는 불가: `supports_mamba_prefix_caching` 이 GLM5Next 에 없어 'align' 으로 강등되고, 우리 KDA 프리필 커널이 블록마다 중간 상태를 쓰지도 않는다.
 
+**DF1**(`DECODE_FIRST=1`, v2: 혼합 스텝 안에서 청크 576 cap, floor 1000) — 혼합 부하(`mixed_load_test.py`, 값은 SSE 청크 = 스텝 수):
+
+| ctx | 스톡: 겹침 ITL med/p95/max | 스톡 스텝@겹침 | 스톡 TTFT | DF1: 겹침 ITL med/p95/max | DF1 스텝@겹침 | DF1 TTFT (tok/s) |
+|---|---|---|---|---|---|---|
+| 32K | 69 / 3,446 / 6,640 ms | 17 | 13.3 s | 645 / 663 / 3,503 ms | 65 | **36.0 s** (895) |
+| 100K | 71 / 3,144 / 3,179 ms | 30 | 39.2 s | 652 / 702 / 859 ms | 166 | **101.5 s** (991) |
+
+- ITL 은 잡혔지만(p95 3.4 s → 0.7 s) 프리필이 2.7배 느려졌고 디코더 스텝은 3.8배(≈6 tok/s vs 4.4). 혼합 스텝 하나가 ~650 ms: 이 스택의 혼합 스텝은 그래프·MK·prep-fused·SP 가 전부 꺼진 eager 경로라 **고정 비용 ~0.4 s** 가 붙는다. 청크를 잘게 썰수록 고정 비용만 곱해진다. floor(1000 tok/s) 가 실제 지배 변수였다(달성 895~991).
+- DF1 onepass: 프리필 32K −10.8% / 128K −7.3%, **128K 디코드 −31%**(창 13.5~15.5 step/s 지속, 32K 는 정상 20.9~21.9), tok/step −7.2% → REGRESS. 순차 요청이라 스케줄러는 손대지 않아야 하는 구간이다; DF2 의 128K 창으로 스케줄러 기인 여부를 가른다(§ 아래).
+- **v3 = 번갈아 모드**(`SCHED_MODE=alternate`, 기본): 섞지 않는다. 순수 디코드 스텝 K(`SCHED_DECODE_STEPS`=6) 뒤에 디코더가 한 스텝 쉬고(stock 의 요청별 `next_decode_eligible_step` 게이트) 순수 프리필 청크 C(`SCHED_MIXED_CHUNK`=1152) 한 스텝. 양쪽 다 빠른 경로(그래프·MK·prep-fused / SP·KDA·NVFP4) 를 유지. 비용 모델: 사이클 = K×47 ms + C/2,950 + 프리필 스텝 고정 ~0.1 s → K=6, C=1152 면 사이클 ≈ 0.78 s, 프리필 ≈ 1,500 tok/s(스톡 혼합 2,480 의 60%), 디코더 7.7 step/s(스톡 혼합 1.3 의 6배), 최대 ITL ≈ 0.5 s(스톡 6.6 s, DF1 3.5 s). 논리 테스트 확장. 팔 DF3(K=6) / DF3b(K=3) 큐.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
