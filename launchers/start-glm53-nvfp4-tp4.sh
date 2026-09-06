@@ -437,8 +437,13 @@ elif [ "$DFLASH2" = 1 ]; then
   # trained on blocks of 8 and would see a shorter one. That shows up as
   # acceptance collapse in the per-position counters, not as an error, so the
   # experiment is only readable with /metrics beside the throughput.
-  if [ "$SPEC_K" != 7 ] && [ "${SPEC_K_FORCE:-0}" != 1 ]; then
-    echo "ABORT: dflash requires SPEC_K=7 (drafter block 8 minus the verified token), got $SPEC_K -- set SPEC_K_FORCE=1 to open it for an experiment"
+  # 37차 (2026-09-06): tested. SPEC_K=5 boots and serves (K5DIAG: health in
+  # 300 s, 44.5 tok/s at C=1, drafter raw acceptance 29.5%) once the two
+  # k-agnostic fixes were in (the M<8 prenorm padding and the MHC pre-only
+  # hook). Any k in 1..7 is inside the drafter's block of 8, so those pass
+  # without the escape hatch; k > 7 or a non-number still needs SPEC_K_FORCE=1.
+  if ! [[ "$SPEC_K" =~ ^[1-7]$ ]] && [ "${SPEC_K_FORCE:-0}" != 1 ]; then
+    echo "ABORT: dflash serves SPEC_K in 1..7 (drafter block 8 minus the verified token), got $SPEC_K -- set SPEC_K_FORCE=1 to open it for an experiment"
     exit 1
   fi
   _spec_extra=""

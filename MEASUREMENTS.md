@@ -2064,6 +2064,22 @@ cm I)를 자체시험 때 한 번 만들어 호출마다 접두 슬라이스로 
 `mhc_pre_tilelang` 의 GEMM 앞(T≤16, norm 있음), 미스는 stock 으로 낙하. CPU 스텁 시험(계수·슬라이스·형상·영수증·미스) 통과; GPU 검증은 K5 체인의
 부팅 로그(`selftest mhc-pre T=[8, 6] identity=True … -> ARM`)와 k=7 복귀 부팅에서 본다. 속도 이득은 주장하지 않는다(T=8 에서 MK≈stock).
 
+### §6 K5 진단 체인 결과 (09-06 08:49~09:03 KST, fusion 세션이 플릿을 넘긴 뒤 자동 실행)
+
+| 단계 | 결과 |
+|---|---|
+| 0. 프리놈 프로브(헤드 일회용 GPU 컨테이너) | **M=8: 14 µs/call, M=6: 13 µs/call, rel 2e-4 — M=6 은 단독으로는 멈추지 않는다** |
+| main 배포 + PREBUILD(4 노드 병렬, 구 컨테이너 서빙 중) | .cu 가 바뀐 배포: 메가커널 31~34 s + osar 30~32 s = **노드당 62 s**, rc=0 ×4 |
+| K5DIAG `SPEC_K=5 SPEC_K_FORCE=1` | **부팅 성공, health 300 s**. `armed={'mhc': True, 'mhc_pre': True, …}`(자체시험 T=[8, 6] 통과), 디코드 1회 SHORT: **44.5 tok/s, raw acc 29.5%, 창 19.4/20.5**; 프리필 warm 2549→2714 tok/s |
+| PRODK7 (k=7 복귀) | health **255 s**(PREBUILD 무작업 4~5 s), `selftest mhc-pre T=[8] identity=True rel=1.65e-07 -> ARM`, **`mhc-pre hook serving (T=16)`** — 디코드 스텝에 deep_gemm 호출 없음 |
+| 분산 초기화 | 두 부팅 모두 `dist-group ep 1.3 s`, `init-device 8~15 s` — 302 s 공백 재발 없음(원인은 여전히 미확정, 워치독 상시) |
+
+**판독**: k≠7 부팅은 이제 뜬다. 다만 **어느 수정이 살렸는지는 미확정** — 프로브가 M=6 단독 GEMM 의 정지를 재현하지 못했으므로 체인 13 의 스핀은
+"M=6 GEMM 자체" 가 아니라 부팅 경로의 다른 조합(당시 커널 상태·캡처 순서)이었을 수 있다. 그래서 K5B 체인이 (a) k=5 3회 브래킷 + onepass,
+(b) `VLLM_GLM53_MK_MHC_PRE=0`(패딩 경로) 1회, (c) k=7 복귀 + onepass 로 **k=5 의 이득과 두 수정의 기여**를 나눠 적는다(§7 예정).
+K5DIAG 의 44.5 tok/s 는 SHORT 1회라 판정 수치가 아니다. 부수 정정: 러너의 팩 경고가 `cached=180`(캐시에서 읽은 GPTQ 팩)을 RTN 으로 오인 →
+`gptq=0 AND cached=0` 일 때만 경고하도록 고침(bench/ab-lever.sh, srv2 ab-lever2.sh).
+
 (b) 302 s 는 다음 재발 때 §3 줄로 판독 — 09-04·09-05 의 세 부팅 중 한 번만 났다.
 
 ## ★★★36차 — 다음 레버를 숫자로 고르기: C>1 처리량, 128K 프리필 지도, 하니스 결함 둘 (2026-09-06 07:00~07:15 KST, 프로덕션 부팅 위 무재부팅 측정)
