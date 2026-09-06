@@ -3715,9 +3715,10 @@ def test_b12x_static_v2_controls() -> None:
           "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
-          "the profile ships the v4 static kernel (spec u) as the default "
-          "(38차, operator: decode windows +2% over v3, probes -3.5%)")
+    check('VLLM_GLM53_B12X_STATIC_V2=t' in profile,
+          "the profile ships the v5 tile-major lane (spec t) as the default "
+          "(39차 §3i/§4f: probe -2.0~2.7% vs u by interleaved repeats, boot "
+          "bracket 21.9 vs 21.4 step/s, lane proved serving 1/1)")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner
