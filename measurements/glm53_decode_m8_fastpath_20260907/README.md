@@ -1,6 +1,7 @@
 # M8 exact fastpath and fixed-window follow-up
 
-Status: CPU gates passed; GPU probe queued. No new speedup has been measured.
+Status: CPU and GPU kernel gates passed; fixed-window serving ABBA queued.
+Kernel latency improved. End-to-end decoding speed is not yet measured.
 
 The prior candidate remains retained and inconclusive. This follow-up adds
 an opt-in reduction/scale-load path without changing its arithmetic result,
@@ -57,4 +58,34 @@ The canonical fleet accepted session `m8nextprobe` at 06:37 KST. At 06:38,
 `bash bench/chain.sh` parent as active benchmark traffic. Fleet was FREE,
 serving healthy and idle, yet the probe could not acquire its turn. This is
 a scheduler blockage before kernel execution, not a failed GPU test.
-No hold or process was forcibly removed.
+This task did not remove a hold or process. The preceding session was
+cancelled by its owner; the canonical fleet granted this probe at 06:45:54
+and released it at 06:47:54. The serving follow-up entered the queue at
+06:49, behind the resumed prefill experiment.
+
+## GPU result, first round
+
+[Raw log](probe-round1.log) and [parsed records](probe-round1.json) preserve
+all 18 samples per variant/regime and all gates. The source SHA-256 is
+`b3b8c7f891b09792200c477b38b247ed9c720c0469b1b34957ac30f9dcde2cdd`;
+the three builds use that identical source on GB10, Torch 2.13.0+cu130.
+Both conversion and warp-amax gates passed 1,114,880 inputs with zero bit
+mismatches. All 12 shapes passed the independent GEMM oracle and replay
+checks; new M8 was bit-identical to previous M8. SMLP2 producer/consumer
+graph checks passed 18 replays each for intermediate widths 2,048 and 3,072.
+
+The [previous](previous.resources) and [new](fastpath.resources) binaries
+retain 78 registers for compact M8 and 112 for ordinary M8, with zero local
+memory/stack on those lanes. Runtime occupancy and split plans match.
+
+| M=6 (N,K) | Warm baseline / previous / new, us | New vs previous | Cold baseline / previous / new, us | New vs previous |
+|---|---:|---:|---:|---:|
+| (6416,4096) | 41.640 / 40.641 / 38.176 | -6.06% | 77.024 / 77.552 / 76.368 | -1.53% |
+| (4096,2048) | 14.068 / 13.110 / 12.609 | -3.82% | 31.536 / 31.200 / 30.576 | -2.00% |
+| (1024,4096) | 11.107 / 10.789 / 10.330 | -4.26% | 22.096 / 21.472 / 20.896 | -2.68% |
+| (4096,512) | 6.819 / 6.616 / 6.178 | -6.62% | 14.624 / 14.464 / 14.336 | -0.88% |
+| (6144,4096) | 32.601 / 29.844 / 28.401 | -4.84% | 72.704 / 71.696 / 72.128 | +0.60% |
+
+Negative deltas mean lower kernel latency. Warm gains are consistent in this
+round; cold changes are smaller and one shape is 0.6% slower than previous
+M8. These are single-GPU microbenchmarks and do not establish a serving gain.
