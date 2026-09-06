@@ -27,7 +27,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -549,6 +549,19 @@ fi
 # ASYNC_SCHED=0 removes the async scheduler while leaving the drafter in
 # place. vLLM registers bools via BooleanOptionalAction, hence --no-.
 ASYNC_FLAG=""; [ "${ASYNC_SCHED:-1}" = 0 ] && ASYNC_FLAG="--no-async-scheduling"
+# DECODE_FIRST=1 (39차): the overlay's decode-first scheduler -- an
+# AsyncScheduler subclass that caps prefill chunks (VLLM_GLM53_SCHED_MIXED_CHUNK
+# tokens) whenever decoders share the step, so a 100K prompt no longer stalls
+# a running answer for a whole 8192-token chunk. Pure prefill is untouched.
+# Requires the async scheduler (the subclass is one); refuse the contradiction.
+SCHED_CLS_FLAG=""
+case "${DECODE_FIRST:-0}" in
+  0) ;;
+  1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
+     SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"
+     echo "scheduler: decode-first (mixed chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-512}, prefill every ${VLLM_GLM53_SCHED_PREFILL_EVERY:-1} mixed step)" ;;
+  *) echo "ABORT: DECODE_FIRST must be 0 or 1 (got $DECODE_FIRST)" >&2; exit 2 ;;
+esac
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
 #
@@ -785,6 +798,7 @@ $SPECCFG_VAL \
 --kv-cache-dtype $KV_DTYPE $KV_FLAG \
 --mamba-cache-dtype $MAMBA_CACHE_DTYPE \
 $ASYNC_FLAG \
+${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT' \
 --tool-call-parser glm47 --enable-auto-tool-choice \
@@ -815,7 +829,7 @@ fi
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "profile   : ${PROFILE_ENV:-<none>}"
   for _k in IMAGE MOE_BACKEND ENABLE_EP VLLM_B12X_EP_COMPACT VLLM_B12X_EP_NO_DUMMY KV_DTYPE MAMBA_CACHE_DTYPE KV_TOKENS KV_BLOCKS EAGER GRAPH_CAP GMU MAX_SEQS \
-            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE \
+            MAX_BATCHED MAX_LEN DFLASH2 SPEC SPEC_K ASYNC_SCHED PREFIX_CACHE DECODE_FIRST \
             DRAFT_SAMPLE REJECT_METHOD; do
     printf '  %-12s %s\n' "$_k" "${!_k:-<unset>}"
   done
