@@ -10859,6 +10859,61 @@ def test_supervisor_paces_and_stops_relaunching() -> None:
     print("  supervisor relaunch pacing .... OK")
 
 
+def test_fleet_reservation_tooling_contracts() -> None:
+    """39차, operator "전부 도입해": the ten reservation-tool pieces.
+
+    Each pin names the boot it would have saved on 2026-09-06: a stale srv2
+    runner copy (two boots), a proof grep that could never match its own
+    marker (a null verdict), a probe process poisoned by one illegal
+    instruction (six cells), a restore boot nobody needed.
+    """
+    global PASS
+    fleet = open(os.path.join(REPO, "bench", "fleet.sh"), encoding="utf-8").read()
+    for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
+                "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
+        check(sub in fleet, f"fleet.sh carries {sub}")
+    check('grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env"' in fleet,
+          "preflight refuses a knob the profile does not declare (the launcher forwards only declared keys)")
+    check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
+          "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
+    check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
+          "status flags an overdue or silent holder and the tool still never kills a live one")
+    check('[ "${est:-30}" -le 15 ] && serving_idle' in fleet,
+          "a probe slips ahead of boot jobs only when short and only beside an idle serving")
+
+    tsv = open(os.path.join(REPO, "bench", "proof-markers.tsv"), encoding="utf-8").read()
+    src_all = ""
+    for path in sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "*", "*.py"))):
+        src_all += open(path, encoding="utf-8").read()
+    rows = [l.split("\t") for l in tsv.splitlines() if l.strip() and not l.startswith("#")]
+    check(len(rows) >= 15 and all(len(r) == 3 for r in rows), "proof-markers.tsv: knob, marker, src")
+    for knob, marker, src in rows:
+        check(src in src_all, f"proof marker source literal exists for {knob}: {src!r}")
+        check(knob.startswith("VLLM_GLM53_"), f"proof marker row names a glm53 knob: {knob}")
+    proof = open(os.path.join(REPO, "bench", "proof.py"), encoding="utf-8").read()
+    check("table[k][0] in log" in proof and "import re" not in proof,
+          "proof.py matches markers as fixed strings, never as a regex")
+    onepass = open(os.path.join(REPO, "bench", "onepass.py"), encoding="utf-8").read()
+    check("def _served_build(" in onepass and 'out["overlay"]' in onepass and 'out["knobs"]' in onepass,
+          "onepass records the deployed build and the serving container's non-default knobs")
+    check("from proof import check as _proof_check" in onepass
+          and onepass.index("_proof_check") > onepass.index('rec["korean"] = {'),
+          "onepass records the lane proof AFTER the traffic (serving markers appear only then)")
+    lever = open(os.path.join(REPO, "bench", "ab-lever.sh"), encoding="utf-8").read()
+    check('cp "$LOGD/glm53.log" "$LOGD/boot-$NAME.log"' in lever and "bench/proof.py --log" in lever,
+          "ab-lever keeps the arm's head log before the next boot erases it, and proves the arm from it")
+    base = open(os.path.join(REPO, "bench", "baseline.py"), encoding="utf-8").read()
+    check('"--knobs"' in base and "already measured on this build" in base,
+          "baseline.py reports an arm already measured on this build")
+    cells = os.path.join(REPO, "probes", "b12x_static_cells.sh")
+    check(os.path.exists(cells) and subprocess.run(["bash", "-n", cells], capture_output=True).returncode == 0
+          and '--configs "$c"' in open(cells, encoding="utf-8").read(),
+          "b12x_static_cells.sh runs one probe process per spec cell")
+    check(subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "fleet.sh")], capture_output=True).returncode == 0
+          and subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "ab-lever.sh")], capture_output=True).returncode == 0,
+          "fleet.sh and ab-lever.sh parse")
+
+
 def test_megakernel_regression_suite():
     """Run behavioral gate/dispatch and extracted CUDA-control regressions.
 
@@ -10993,5 +11048,6 @@ if __name__ == "__main__":
     test_common_tp4_library_is_the_one_implementation()
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
+    test_fleet_reservation_tooling_contracts()
     regressions = test_megakernel_regression_suite()
     print(f"all OK ({PASS} checks; {regressions} megakernel regressions)")

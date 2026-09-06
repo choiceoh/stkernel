@@ -3389,6 +3389,33 @@ GPU 자가진단(`run_megakernel_bench.sh --segments gemm exact mhc kda smlp`)�
 다른 이유로 교정 부팅을 할 때 `VLLM_GLM53_MK_HEAD_DRAFT=1` 을 함께 켜 `lm_head` 헤시안을 덤프에 얹는 것. 부팅을 새로 쓰지 않고 실 헤시안이
 생기고, 그 뒤 이 프로브를 `--calib` 로 한 번 더 돌리면 서빙값이 나온다.
 
+### 13. 예약 도구(fleet.sh) 10개 개선 — 오늘 날린 부팅 넷이 만든 목록 (2026-09-06 저녁, 운영자 "전부 도입해")
+
+같은 날 부팅 넷이 측정 없이 사라졌다: srv2 러너 사본이 리포보다 뒤처져 `--korean-extra` 를 넘긴 쌍(16:09·16:16), 기준선이 이미 있는
+빌드의 기본값 재측정(18:13), 증명 마커가 BRE 대괄호에 걸려 3/6 으로 오판된 팔(18:41). 그리고 PR #374 프로브는 illegal instruction 하나가
+같은 프로세스의 여섯 셀을 오염시켰다. 운영자 지시로 열 가지를 한 PR 에 넣었다(#394 의 기준선 알림에 이어서).
+
+| # | 무엇 | 어디 | 막는 것 |
+|---|---|---|---|
+| 1 | `fleet.sh preflight` — srv2 사본(ab-lever2.sh·fleet.sh) == 리포 md5, 체인 문법, 체인이 쓰는 모든 `VLLM_*` 키가 프로필에 선언돼 있는지; `run` 은 FAIL 이면 큐에 안 넣음(`FLEET_PREFLIGHT=skip`) | bench/fleet.sh | 16:09 쌍(사본 뒤처짐), 미선언 노브가 조용히 base 와 같아지는 팔 |
+| 2 | 팔별 헤드 로그 보존 `boot-<NAME>.log` (헤드 `glm53.log` 는 `vllm serve > /glmlogs/glm53.log` 라 부팅마다 덮인다) | bench/ab-lever.sh | 18:02 팔의 증명 소실 |
+| 3 | 증명 마커 표 `bench/proof-markers.tsv`(knob·marker·src) + `bench/proof.py`(**고정 문자열**) → onepass 기록에 `proof`/`proof_ok` | bench/ | 18:41 의 3/6 오판(`[drafter-prep]` 를 문자 클래스로 읽음) |
+| 4 | `baseline.py --knobs` — 같은 빌드에 같은 노브 집합 기록이 있으면 알림(preflight 가 체인에서 노브를 뽑아 넘김) | bench/baseline.py | 후보 팔 중복 부팅 |
+| 5 | `fleet.sh restore-needed <s>` — 뒤에 BOOT 작업이 있으면 "no"(다음 홀더가 어차피 부팅), 없거나 프로브면 "yes" | bench/fleet.sh | 측정 없는 복구 부팅(P4 의 PRODP8 류) |
+| 6 | 프로브 레인 `run --probe` — 서빙이 유휴(health 200·요청 0·부팅 중 아님)일 때만 GO, est ≤ 15 이면 대기 중인 부팅 작업 앞으로 끼움(로그 `slip`) | bench/fleet.sh | 죽은 갭 러너의 역할 |
+| 7 | ETA — 원장의 세션별 최근 실제 소요 중앙값으로 `expect ~Nm, ETA ~HH:MM` | bench/fleet.sh status | `est` 만 믿는 대기 |
+| 8 | 하트비트(30 s) + `status` 의 OVERDUE(2×est)·SILENT(10 분) 표시 — 표시일 뿐, 살아있는 홀더는 여전히 안 죽임(죽은 pid 자동 kick 은 기존) | bench/fleet.sh | 걸린 홀더를 사람이 늦게 보는 것 |
+| 9 | 부팅 회계 `ledger.tsv`(release 마다: 세션·kind·소요·부팅 수·onepass 기록 수·**wasted**) + `fleet.sh ledger [days]` | bench/fleet.sh | 5번의 효과를 숫자로 |
+| 10 | `probes/b12x_static_cells.sh` — 스펙 셀마다 프로브 프로세스(컨테이너) 하나 | probes/ | PR #374 의 여섯 셀 오염 |
+
+검증: 로컬 샌드박스(임시 FLEET_DIR/LOGD, 죽은 HEAD_URL)에서 미선언 노브 FAIL, 사본 불일치 FAIL, PASS→GO→release→ledger 행, restore-needed
+yes/no, 프로브 slip(부팅 작업이 선두인데 유휴라 프로브가 먼저 GO, 로그에 `slip`), status 의 kind·expect·ETA 를 확인. `tests/test_logic.py` 에
+계약 핀(`test_fleet_reservation_tooling_contracts`): 마커 표의 src 리터럴이 오버레이 소스에 실재, proof.py 는 정규식 없음, onepass 는 트래픽
+**뒤에** 증명, ab-lever 는 로그 보존, preflight 는 미선언 키 거부와 md5 대조, 프로브 slip 조건.
+
+한계(정직하게): 마커 표는 17개 노브만 덮는다(서빙 줄이 있는 것들). 표에 없는 노브는 `no-marker` 로 판정 유보. `PREFILL_SP`·`KDA_PREFILL_DIRECT_OUT` 은
+서빙 줄이 없어 arming 줄을 쓴다(3열에 명시). 부팅 수는 `boot-*.log` 로 세므로 ab-lever 를 안 타는 체인은 헤드 로그 mtime 으로 1 로만 잡힌다.
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬

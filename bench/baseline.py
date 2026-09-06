@@ -102,6 +102,8 @@ def main() -> int:
     ap.add_argument("--build", default=None, help="overlay stamp (default: the deployed one)")
     ap.add_argument("--brief", action="store_true", help="one line for fleet.sh")
     ap.add_argument("--jsonl", default=JSONL)
+    ap.add_argument("--knobs", default=None,
+                    help="K=V,K=V of the arm you are about to boot: report a record with the SAME set on this build")
     args = ap.parse_args()
 
     build = args.build or deployed_build()
@@ -112,6 +114,18 @@ def main() -> int:
     bases = [r for r in mine if is_baseline(r)[0]]
     guessed = bases and all(is_baseline(r)[1] == "name" for r in bases)
 
+    if args.knobs:
+        want = dict(kv.split("=", 1) for kv in args.knobs.split(",") if "=" in kv)
+        want = {k: v for k, v in want.items() if v not in ("0", "", "off")}
+        same = [r for r in mine if "knobs" in r and
+                {k: v for k, v in (r["knobs"] or {}).items() if v not in ("0", "", "off")} == want]
+        if same:
+            r = same[-1]; d = r.get("decode") or {}
+            print(f"already measured on this build: {r.get('name')} at {r.get('t','')} -- "
+                  f"{d.get('windows_med') or 0:.2f} step/s, proof {r.get('proof_ok','?')}"
+                  f" -- a repeat only buys a second sample")
+        elif want:
+            print(f"this arm ({','.join(sorted(want))}) has no record on build {label}")
     if args.brief:
         if not build and not git:
             print("baseline: unknown build (no overlay stamp and no checkout here)")

@@ -37,6 +37,7 @@ import re
 import sys
 import time
 import urllib.request
+
 from statistics import median
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -321,6 +322,17 @@ def main() -> int:
             print(f"\n  [{tag}] {ks}")
     rec["korean"] = {"dirty": len(dirty), "n": n, "kinds": kinds_tot,
                      "hits": [(tag, k) for tag, k, _ in dirty]}
+    # armed != serving: which of the arm's lanes actually ran, from the head log,
+    # checked after the traffic above (serving markers appear only then).
+    try:
+        from proof import check as _proof_check
+        _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
+        if _kn:
+            rec.update({kk: vv for kk, vv in _proof_check(
+                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")).items()
+                if kk in ("proof", "proof_ok")})
+    except Exception:
+        pass
 
     print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total", flush=True)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
