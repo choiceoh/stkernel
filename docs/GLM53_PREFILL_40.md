@@ -9,8 +9,8 @@ a 40% reduction in wall time. Cold and warmed measurements are separate.
 
 ## Current evidence after rebase (2026-09-07)
 
-Rebased onto `8a16477` (including the chat contract, video defaults and shared
-experiment runner). The prefill kernels are unchanged by these upstream commits.
+Rebased onto `41af400` (including the chat contract, startup caches and SF
+packing). The two prefill helper changes are unchanged by these upstream commits.
 Follow-up branch:
 `codex/glm53-prefill-packed-transport`. **The original 41.2056% forecast below
 is superseded by measurements, not a current prediction or achieved gain.**
@@ -91,6 +91,54 @@ results, not a model prefill throughput or quality verdict; the 40% target
 and the default-off gate remain open. The unchanged NVFP4 checks were not
 repeated. Logs: `srv2:/tmp/glm53-prefill-transport.N910dY/run.log` and
 `srv2:/tmp/glm53-prefill-tp4.vg9y8E/rank-0.log`.
+
+### Direct serving comparison
+
+The serving build is source `5d44ef99284b47199f9c6064a52c9a67ed7a5ddf`,
+overlay `67048ebe4790`, with the same pinned image as the TP4 probe. CPU
+prerequisite `1f2ac74627e74966b7be` passed before GPU admission. Both modes use
+SPEC_K=5 and the same 2K/32K/128K Korean onepass workload on independent boots.
+
+The initial BF16 arm `SPV3S0907B1` (06:37 KST) measured 2955.886 tok/s at
+32K (11.010 s TTFT), and 2968.183 tok/s at 128K (43.312 s). It passed
+retrieval 9/9 and Korean corruption 0/5; decode median was 21.44 step/s.
+The 2K cold/warm figures were 831.007 / 2423.427 tok/s and are separate
+from the long-context comparison.
+
+The legacy chain stalled after yielding because `busy_procs` counted its own
+waiting `chain.sh` as legacy work. Only this yielded chain and its wait
+children were stopped; the completed baseline was retained. The remaining
+candidate/BF16 pair was experiment `754d6f2f4f1940d49b79`, using the standard
+asynchronous pair path and the same CPU prerequisite. It completed at
+07:00:31 KST; the fleet was released on BF16 at 07:00:32.
+
+| Context | First BF16 tok/s | v3 tok/s | Pair BF16 tok/s | v3 vs pair BF16 |
+| --- | ---: | ---: | ---: | ---: |
+| 2K warm | 2423.427 | 2288.031 | 2519.934 | -9.20% |
+| 32K | 2955.886 | 3021.035 | 2971.994 | +1.65% |
+| 128K | 2968.183 | 3063.626 | 2963.025 | +3.40% |
+
+The same pair's TTFTs were 10.951 → 10.773 s at 32K and 43.388 →
+41.963 s at 128K. Against the first BF16 arm, v3 gained 2.20% / 3.22%
+on the two long contexts, corroborating only a small improvement. All three
+arms passed retrieval 9/9 and Korean corruption 0/5. v3's serving proof was
+1/1. The 2K cold numbers are not a steady-state comparison: the first
+source boot and the candidate's `cold_compile` flag differ.
+
+Decode medians were 21.445 / 21.436 / 21.924 step/s in run order. The
+generic pair judge evaluates decode and returned `incomplete` (-2.2%, one
+compatible baseline and no noise floor). The initial manual baseline lacks
+the pair's `runtime` field and is not silently injected into its automatic
+baseline pool. This does not erase the measured prefill figures, and it
+does not establish a stable overall performance win.
+
+**Decision: keep FP8 transport off by default.** The direct serving gain is
+small on long contexts, warm 2K regresses, and the original 40% target is
+not achieved. No extra baseline was run just to improve the verdict label.
+Raw records: [three onepass records](GLM53_PREFILL_V3_SERVING_20260907.json).
+Remote logs: `srv2:/home/choiceoh/glm53-logs/fleet/experiments/754d6f2f4f1940d49b79/run.log`
+and `boot-SPV3S0907B1.log`, `boot-EXP-754d6f2f4f1940d49b79.log`,
+`boot-EXP-754d6f2f4f1940d49b79BASE.log` under `srv2:/home/choiceoh/glm53-logs/`.
 
 The later historical trace
 `dp0_pp0_tp0_dcp0_ep0_rank0.1788700171065354541.pt.trace.json.gz` also exposes
