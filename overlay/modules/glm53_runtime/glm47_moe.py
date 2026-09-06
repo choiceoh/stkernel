@@ -206,8 +206,7 @@ class Glm47MoeParser(ParserEngine):
         if request.tool_choice == "none" and not self.skip_tool_parsing:
             self.skip_tool_parsing = True
             self._skip_for_none = True
-        if request.tools:
-            self._tools = request.tools
+        self._tools = request.tools
 
     def _events_to_delta(self, events, finished=False):
         # The base engine defers text following a tool event. Its non-streaming

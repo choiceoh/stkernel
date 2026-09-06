@@ -196,10 +196,26 @@ def run(tokenizer_path: str):
 
         print(f"PASS {name}", flush=True)
 
+    # Requests may alternate tool definitions on a reused non-streaming parser.
+    reused = Glm47MoeParser(tokenizer, tools=request.tools)
+    # The real Chat API rejects tools=[]; omitted/null tools is the valid case.
+    for request_tools in (tools, None, tools):
+        reuse_request = ChatCompletionRequest(model="glm-5.3-flash",
+            messages=[{"role": "user", "content": "test"}], tools=request_tools,
+            tool_choice="auto" if request_tools else "none")
+        _, content, calls = reused.parse("reason</think>" + ping, reuse_request,
+                                        enable_auto_tools=True)
+        assert reused._tools is reuse_request.tools, "stale request tool definitions"
+        if request_tools:
+            assert len(calls or []) == 1 and calls[0].name == "ping"
+        else:
+            assert not calls and content == ping
+    print("PASS request_reuse", flush=True)
+
     sources = [Path(inspect.getfile(Glm47MoeParser)),
                root / "launchers/chat_template_mm_v2.jinja"]
     print(json.dumps({"vllm": vllm.__version__, "tokenizer": tokenizer_path,
-        "cases": len(cases), "replays": replays,
+        "cases": len(cases), "replays": replays, "reuse_requests": 3,
         "sha256": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}}, ensure_ascii=False))
 
 

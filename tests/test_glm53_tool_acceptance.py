@@ -8,6 +8,8 @@ from jsonschema import ValidationError
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("acceptance", ROOT / "probes/glm53_tool_choice_acceptance.py")
+if spec is None or spec.loader is None:
+    raise RuntimeError("Cannot load probes/glm53_tool_choice_acceptance.py")
 acceptance = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(acceptance)
 

@@ -7,6 +7,10 @@ IMAGE=${2:?usage: check-glm53-chat.sh <tokenizer/model directory> <serving image
 test -f "$MODEL_DIR/tokenizer_config.json"
 # Gate the candidate parser in an isolated container, not the unpatched image.
 PARSER_BASE=$(awk -F '\t' '$1 == "glm47_moe.py" {print $3}' "$REPO/overlay/modules/glm53_runtime/manifest.tsv")
+[[ "$PARSER_BASE" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ABORT: GLM parser base SHA missing or invalid in manifest" >&2
+  exit 1
+}
 PARSER_TARGET=/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py
 ACTUAL_BASE=$(docker run --rm --network none --entrypoint sha256sum "$IMAGE" "$PARSER_TARGET")
 test "${ACTUAL_BASE%% *}" = "$PARSER_BASE" || {
