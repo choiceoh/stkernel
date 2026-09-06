@@ -2255,6 +2255,15 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 **프로덕션 최종(22:01, main ed09625)**: `PREFIX_CACHE=1`(하이브리드 APC 조정자, prep-fused align plan built), `DECODE_FIRST=1` + `SCHED_MODE=sequential`(max_wait 20 s), `CHAT_TEMPLATE=chat_template_mm_v2.jinja`, NVFP4 프리필 MIN_M=1024, SP BF16, KDA 레인. 실서빙 확인: thinking=false → content "1, 2, 3, 4, 5! 🎉"(reasoning 없음), thinking=true → content "1, 2, 3, 4, 5"(사고는 reasoning_content 로). 플릿 FREE.
 
+### §4j 프리필의 남은 두 덩어리 — MoE 프리필 reuse 커널 컴파일 복구, SP FP8 전송 v2 (22:05~, 운영자 "두개 도전해")
+
+프로덕션 기본값에서 32K 프리필(36,853 토큰, 12.6 s) 하나를 census 로 잰 구성: MoE grouped GEMM **28.6%**, SP 집합통신(AllGather+ReduceScatter RING_LL) **~18%**, dense GEMM 12%, 메가커널 세그먼트+MHC ~15%, KDA 8.5%, 복사·글루 ~8%, MLA 6.7%, NVFP4 활성값 양자화+amax ~3.5%.
+
+- **MoE reuse 커널(#368 레인) 사망 원인**: CuTe-DSL `operand #0 does not dominate this use` at `atom.set_value`. `mma_atom.set(SFA/SFB)` 는 atom 의 IR 값을 제자리에서 바꾸는데(trait.value 갱신), stock 은 FC2 슬라이스를 동적 `while` 한 영역에서 돌려 DSL 이 값을 이어 주고, reuse 커널은 4 슬라이스를 정적 언롤한 형제 `scf.if` 영역들이라(DSL 의 `if_executor` 는 AST 에서 *대입된* 이름만 yield) 한 영역에서 set 한 값을 다음 영역이 쓴다. 두 번째: then/else 가지도 형제 영역이라 한 atom 을 공유하면 같은 위반(stock 이 `mma_atom`/`mma_atom_tail` 둘을 넘기는 이유). 수정: 슬라이스 영역마다, 가지마다 `cute.make_mma_atom(MmaMXF4NVF4Op(...))` 로 새 atom(PR #418).
+- **부팅 없는 컴파일 하니스**: 이미지 컨테이너에 glm53_moe 오버레이 파일을 타깃 경로로 바인드 마운트하고 `moe_dispatch._get_dynamic_kernel(288, 8192, 4096, 512, 8, …, activation="swigluoai_uninterleave", swiglu=(1.0,0.0,10.0), fp4/nvfp4, tile_m=128)` 을 부르면 ENGAGED 부팅과 같은 컴파일이 8 s 만에 재현·검증된다(`scratchpad/moe_reuse_compile.py`, srv4 GPU 공유). `CUTE_DSL_PRINT_AFTER_PREPROCESSOR=1` 이 영역 변환 코드를 보여 줘 원인 확정에 쓰였다. 수정 뒤 reuse 5.6 s, reuse+N128 11.9 s 컴파일 성공.
+- **SP FP8 v2**(`VLLM_GLM53_PREFILL_SP_FP8=2`): v1 은 reduce-scatter 마다 maxima all-reduce + fp8 SUM(headroom 448/4) + 커널 셋으로 BF16 에 졌다(+7.1 vs +12.6%). v2 는 all-gather 는 그대로, reduce-scatter 를 pack(블록 absmax+양자화, 스케일 합의 없음) → `all_to_all_single`(TP device_group) → unpack(4 부분합을 FP32 로 합산) 으로. 단위 테스트(srv4, 4 랭크 모사): 평균 상대오차 2.5%, 최대 4.4%(e4m3 상한 6.25%).
+- 체인 MOESP(22:40): REF41(기본값 참조) → MOER → MOERN → SPV2 → 복구.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
