@@ -33,6 +33,14 @@ _FP8 = _FP8_MODE in ("1", "2", "3")
 # all-to-alls (values and scales), one unpack-sum kernel.
 _FP8_V2 = _FP8_MODE == "2"
 _FP8_V3 = _FP8_MODE == "3"
+# A serving 2K request lost 52--86 ms to unconditional v3, while 6912-row
+# chunks dominate the long requests that improved. Start between those
+# measured shapes; this is a candidate boundary, not a measured crossover.
+# Latch the same profile setting on all ranks. Zero preserves the ungated
+# v3 control for paired experiments; historical v1/v2 behavior is unchanged.
+_FP8_V3_MIN_TOKENS = int(os.environ.get("VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS", "4096"))
+if _FP8_V3_MIN_TOKENS < 0:
+    raise ValueError("prefill FP8 minimum tokens must be nonnegative")
 # v2 actually launches TWO all-to-alls: values and scales. v3 packs each
 # destination's scales after its values, so both travel in one byte exchange.
 # Quantization and FP32 accumulation stay the same; this targets call cost.
@@ -123,6 +131,12 @@ def _payload_bytes(local_n):
     # counts. Keep every sender/receiver slice aligned, not just allocation 0.
     used = local_n + 4 * (local_n // _BLOCK)
     return ((used + 127) // 128) * 128
+
+
+def _use_fp8(num_tokens):
+    # Shape metadata is host-side and identical across TP ranks. Never use a
+    # local shard length, request's total context, or tensor values here.
+    return _FP8 and (not _FP8_V3 or num_tokens >= _FP8_V3_MIN_TOKENS)
 
 
 # 39차 P2A2: the element counts were tl.constexpr, so every distinct prefill
@@ -328,7 +342,10 @@ def prefill_all_gather(tensor, *, num_tokens=None):
         raise ValueError("prefill gather expects the real row count of its TP4 shards")
     out = torch.empty((padded_rows, _HIDDEN),
                       device=tensor.device, dtype=tensor.dtype)
-    if not _FP8:
+    real_rows = padded_rows if num_tokens is None else num_tokens
+    if not _use_fp8(real_rows):
+        if _FP8_V3:
+            logger.info_once("[prefill-sp] short chunk BF16 all-gather engaged")
         comm.all_gather(out, tensor)
         return out if num_tokens is None else out[:num_tokens]
     # One payload contains FP8 bytes followed by FP32 scales. All-gather has
@@ -373,7 +390,9 @@ def prefill_reduce_scatter(tensor):
     padded_rows = rows * _TP
     out = torch.empty((rows, _HIDDEN),
                       device=tensor.device, dtype=tensor.dtype)
-    if not _FP8:
+    if not _use_fp8(tensor.shape[0]):
+        if _FP8_V3:
+            logger.info_once("[prefill-sp] short chunk BF16 reduce-scatter engaged")
         if padded_rows != tensor.shape[0]:
             padded = torch.empty((padded_rows, _HIDDEN),
                                  device=tensor.device, dtype=tensor.dtype)

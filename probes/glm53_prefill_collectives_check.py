@@ -295,7 +295,7 @@ def _timing(helper, group, rows, device, repeats):
         # The serving helper normally latches these on import. Isolate the
         # timing controls here; restore them before any other probe checks.
         return patch.multiple(helper, _FP8=mode != "bf16", _FP8_V2=mode == "fp8-v2",
-                              _FP8_V3=mode == "fp8-v3")
+                              _FP8_V3=mode == "fp8-v3", _FP8_V3_MIN_TOKENS=0)
 
     def invoke(operation):
         if operation == "all_gather":
@@ -350,6 +350,8 @@ def main():
     parser.add_argument("--timing", action="store_true",
                         help="balanced BF16/v2/v3 isolated collective timings after correctness")
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--fp8-min-tokens", type=int, default=0,
+                        help="v3 dispatch threshold; default 0 measures the raw codec control")
     args = parser.parse_args()
     world = int(os.environ.get("WORLD_SIZE", "0"))
     if world != 4:
@@ -358,10 +360,13 @@ def main():
         parser.error("rows must be >=128")
     if args.repeats < 1:
         parser.error("repeats must be positive")
+    if args.fp8_min_tokens < 0:
+        parser.error("fp8 minimum tokens must be nonnegative")
     os.environ["VLLM_GLM53_PREFILL_SP"] = "1"
     os.environ["VLLM_GLM53_PREFILL_SP_FP8"] = {
         "bf16": "0", "fp8": "1", "fp8-v2": "2", "fp8-v3": "3",
     }[args.transport]
+    os.environ["VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS"] = str(args.fp8_min_tokens)
     # Keep the independent reference out of optional one-shot/custom AR arms.
     os.environ["VLLM_DSV4_ONESHOT_AR"] = "0"
     global torch, dist
@@ -402,7 +407,8 @@ def main():
             peer_identity = [None] * 4
             dist.all_gather_object(peer_identity,
                                    ({name: item["sha256"] for name, item in fingerprints.items()},
-                                    args.transport, args.rows, args.timing, args.repeats), group=group.cpu_group)
+                                    args.transport, args.rows, args.timing, args.repeats,
+                                    args.fp8_min_tokens), group=group.cpu_group)
             _require(all(item == peer_identity[0] for item in peer_identity),
                      "ranks disagree on source/transport/row cases", group)
             comm = group.device_communicator
@@ -412,8 +418,12 @@ def main():
             results = []
             for rows in args.rows:
                 _scope_checks(helper, group, device, rows)
+                reference_transport = ("bf16" if args.transport == "fp8-v3"
+                                       and rows < args.fp8_min_tokens else args.transport)
                 for case in ("zeros", "random", "cancellation", "extreme_finite", "signed_headroom"):
-                    results.append(_case(helper, group, rows, case, args.transport, device))
+                    result = _case(helper, group, rows, case, reference_transport, device)
+                    result["effective_transport"] = reference_transport
+                    results.append(result)
             torch.cuda.synchronize(device)
             peer_results = [None] * 4
             dist.all_gather_object(peer_results, results, group=group.cpu_group)
@@ -423,6 +433,7 @@ def main():
                     timings.extend(_timing(helper, group, rows, device, args.repeats))
             if rank == 0:
                 report = {"status": "passed", "transport": args.transport,
+                          "fp8_min_tokens": args.fp8_min_tokens,
                           "world_size": 4, "sources": fingerprints,
                           "checks": peer_results,
                           "timings": timings,

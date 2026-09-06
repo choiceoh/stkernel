@@ -136,6 +136,30 @@ does not establish a stable overall performance win.
 small on long contexts, warm 2K regresses, and the original 40% target is
 not achieved. No extra baseline was run just to improve the verdict label.
 Raw records: [three onepass records](GLM53_PREFILL_V3_SERVING_20260907.json).
+
+### Short-chunk BF16 candidate
+
+The follow-up v3 path uses native BF16 all-gather/reduce-scatter below
+`VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS=4096`. The gate uses the actual
+scheduled chunk's real global rows before TP padding, including auxiliary
+and final gathers, rather than the entire request or a rank's local rows.
+It runs before FP8 scratch allocation or codec launches. At/above the
+boundary v3 retains its aligned packed transport. `0` restores ungated v3
+for experiments; modes 1/2 and the default FP8-off mode are unchanged.
+
+4096 is an initial candidate between the observed 2128-token short request
+and the 6912-token chunks used by long requests, not a measured optimum.
+Native BF16 already uses one collective; v3's two-to-one reduction applies
+only against v2. Its codec/temporary-buffer costs are the leading explanation
+for the short-request regression, not a measured GPU time breakdown.
+
+All three previous boots reported prefix-cache hit rate 0%. The onepass
+"warm" value is the minimum of two post-first-run requests, not a cache-hit
+measurement or a repeated-sample median. Future records now retain every
+TTFT sample. Validation for the gate will include 2K/4K/8K/32K/128K onepass
+requests on matching candidate/BF16 builds, both BF16 short-path markers,
+the packed FP8 serving marker, and the existing quality/corruption gates.
+Runtime results for this dispatch change are pending.
 Remote logs: `srv2:/home/choiceoh/glm53-logs/fleet/experiments/754d6f2f4f1940d49b79/run.log`
 and `boot-SPV3S0907B1.log`, `boot-EXP-754d6f2f4f1940d49b79.log`,
 `boot-EXP-754d6f2f4f1940d49b79BASE.log` under `srv2:/home/choiceoh/glm53-logs/`.
