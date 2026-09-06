@@ -17,11 +17,12 @@ both issue orders, and times the union against each part alone:
 
   exposed = span(moe || pair) - span(moe)
 
-Rows: the global kernel on its 48-block grid; the global kernel on 32
-blocks (the CONTROL: fewer blocks, barrier kept -- separates "fewer blocks"
-from "no barrier"); the local-quant kernel on 32 blocks (= its units, the
-served form), on 48 (the first form: 16 idle blocks leave at once) and on
-16. What differs from the step, and why the x42 line is a projection, not a
+Rows: the persistent v1 kernel (48-block grid, grid barrier) and the v2
+non-persistent lane (one block per unit, no barrier -- the served lane
+since 32차). The barrier-free local-quant kernel and the fewer-blocks
+control row this probe once carried were sunset in 34차 §8; the v1/v2
+pair is the same question ("is it the barrier or the block count?")
+answered by the lane serving keeps. What differs from the step, and why the x42 line is a projection, not a
 step number: the step's main stream runs the router GEMM + topk before the
 MoE kernel (the pair's first GEMM overlaps those, not the MoE), the
 activation between the two GEMMs is a real kernel here replaced by a copy,
@@ -57,13 +58,10 @@ SHARED_N = 1024                           # shared expert gate_up rows / rank
 SHARED_K = 512                            # down-proj K / rank
 REPS = 20
 NREPLAY = 5                               # replays per event bracket
-# (localq knob, lq launch grid, bg control grid) -> row label
+# (v2 lane on/off) -> row label
 ROWS = (
-    ((0, 0, 0), "global 48"),
-    ((0, 0, 32), "global 32 (control)"),
-    ((1, 0, 0), "local 32 (=units)"),
-    ((1, 48, 0), "local 48 (16 idle)"),
-    ((1, 16, 0), "local 16"),
+    (0, "v1 persistent 48"),
+    (1, "v2 non-persistent"),
 )
 
 
@@ -141,7 +139,7 @@ def main() -> int:
     # the shared expert's pair: gate_up [1024 x 4096] on x, then down
     # [4096 x 512] on the (untouched: the activation is not the point)
     # first 512 columns of that output. bg=True: the serving call site
-    # marks these launches background, which is what LOCALQ=1 keys on.
+    # marks these launches background (v2's lr_slot keys on it).
     p_up = mk.build_mk_weight_w4(
         torch.randn(SHARED_N, HID, dtype=torch.bfloat16, device=DEV) * 0.05)
     p_dn = mk.build_mk_weight_w4(
@@ -158,17 +156,20 @@ def main() -> int:
         pass
 
     print(f"{'row':<44}{'us':>9}{'exposed_us':>12}")
-    ext.set_probe(0, 0, 0, 0)
     t_moe = _time(_capture(moe, nothing, "moe-first"))
     print(f"{'moe alone (U=40)':<44}{t_moe:>9.1f}")
     rows = {}
-    try:
-        for (lq, lqg, bgg), label in ROWS:
-            ext.set_probe(0, lq, lqg, bgg)
-            plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
-            plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
-            print(f"  plans (grid, ksr, units, localq, lgrid, bar): up={plan_up} "
-                  f"down={plan_dn}")
+    with mk._gemm_probe_scope():  # every lane override restored after
+        for on, label in ROWS:
+            ext.set_gemm2(on, -1)
+            if on:
+                plan_up = ext.gemm2_plan(T, SHARED_N, HID)
+                plan_dn = ext.gemm2_plan(T, HID, SHARED_K)
+                print(f"  v2 plans (on, ksr, units, blocks/SM): up={plan_up} down={plan_dn}")
+            else:
+                plan_up = ext.gemm_plan(T, SHARED_N, HID, 1)
+                plan_dn = ext.gemm_plan(T, HID, SHARED_K, 1)
+                print(f"  v1 plans (grid, ksr, units): up={plan_up} down={plan_dn}")
             t_pair = _time(_capture(nothing, pair, "moe-first"))
             print(f"{'pair alone ' + label:<44}{t_pair:>9.1f}")
             for order in ("moe-first", "pair-first"):
@@ -176,8 +177,6 @@ def main() -> int:
                 rows[(label, order)] = t - t_moe
                 print(f"{'moe || pair ' + label + ' ' + order:<44}{t:>9.1f}"
                       f"{t - t_moe:>12.1f}")
-    finally:
-        ext.set_probe(-1, -1, 0, 0)
     # the projection onto the step: the exposed pair times the MoE layers
     for _, label in ROWS:
         a = rows[(label, "moe-first")]

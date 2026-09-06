@@ -1,2 +1,0 @@
-# source	container_target(relative)	base_preimage_sha256
-llm_base_proposer.py	vllm/v1/spec_decode/llm_base_proposer.py	b9c26acf8b77cb56f062213aa6b9eebab58dc69980e78430da027493fc757237

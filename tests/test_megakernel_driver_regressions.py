@@ -70,10 +70,12 @@ def torch_stub():
 
 
 class Extension:
+    """The binding's probe surface since 34차 §8: state = (ksr, gemm2, ksr2)."""
+
     def __init__(self, state=None):
-        self.state = list(state or [5, 1, 32, 24, 1, 3, 1])
+        self.state = list(state or [5, 1, 3])
         self.calls = []
-        self.refuse_local = False
+        self.refuse_v1 = False  # a lane switch the extension ignores
 
     def probe_state(self):
         return self.state.copy()
@@ -81,23 +83,23 @@ class Extension:
     def restore_probe_state(self, state):
         self.state = list(state)
 
-    def set_probe(self, *values):
-        self.state[:4] = values
+    def set_probe(self, ksr):
+        self.state[0] = ksr
 
-    def set_gemm2(self, *values):
-        for i, value in enumerate(values, 4):
-            if value >= 0:
-                self.state[i] = value
+    def set_gemm2(self, on, ksr):
+        if on >= 0 and not (self.refuse_v1 and on == 0):
+            self.state[1] = on
+        if ksr >= 0:
+            self.state[2] = ksr
 
     def gemm2_plan(self, m, n, k):
-        return [self.state[4], self.state[5], 32, 2, self.state[6]]
+        return [self.state[1], self.state[2], 32, 2]
 
     def gemm_plan(self, m, n, k, bg):
-        local = int(self.state[1] == 2 and not self.refuse_local)
-        return [96, self.state[0], 32, local, 32 if local else 96, 0]
+        return [96, self.state[0], 32]
 
     def run(self, x, pack, n):
-        lane = "v2" if self.state[4] else "local" if self.state[1] == 2 else "global"
+        lane = "v2" if self.state[1] else "v1"
         self.calls.append((lane, x.shape[0], n, self.state[0]))
         return (x.shape[0], n)  # equal mathematical output, distinct dispatch
 
@@ -167,24 +169,27 @@ class DriverRegressions(unittest.TestCase):
         ext = Extension()
         mk._EXT, mk._gemm_call = ext, ext.run
         original = ext.probe_state()
-        mk.run_both_kernels(Tensor(8, 4096), object(), 2048, ksr=3)
-        self.assertEqual(ext.calls, [("global", 8, 2048, 3), ("local", 8, 2048, 3)])
+        got, plan = mk.run_v1_kernel(Tensor(8, 4096), object(), 2048, ksr=3)
+        self.assertEqual(ext.calls, [("v1", 8, 2048, 3)])
+        self.assertEqual((got, list(plan)), ((8, 2048), [96, 3, 32]))
         self.assertEqual(ext.probe_state(), original)
 
     def test_restore_after_launch_failure_or_wrong_plan(self):
         mk = driver()
-        for refuse_local in (False, True):
+        for refuse_v1 in (False, True):
             ext = Extension()
-            ext.refuse_local = refuse_local
+            ext.refuse_v1 = refuse_v1
             original = ext.probe_state()
             mk._EXT = ext
             def launch(*args):
-                if not refuse_local:
+                if not refuse_v1:
                     raise RuntimeError("injected launch failure")
                 return ext.run(*args)
             mk._gemm_call = launch
             with self.assertRaises(RuntimeError):
-                mk.run_both_kernels(Tensor(8, 4096), object(), 1024)
+                mk.run_v1_kernel(Tensor(8, 4096), object(), 1024)
+            if refuse_v1:
+                self.assertEqual(ext.calls, [])  # the wrong lane never launched
             self.assertEqual(ext.probe_state(), original)
 
     def test_exact_gate_runs_v2_row_classes_and_odd_v1_split(self):
@@ -201,7 +206,8 @@ class DriverRegressions(unittest.TestCase):
         with patch.dict(sys.modules, {"torch": torch_stub()}):
             self.assertEqual(mk._selftest_gemm_exact(), 0)
         self.assertEqual({m for lane, m, n, ksr in ext.calls if lane == "v2"}, {8, 16, 32})
-        self.assertIn(("local", 8, 2048, 3), ext.calls)
+        self.assertIn(("v1", 8, 2048, 3), ext.calls)
+        self.assertNotIn("local", {lane for lane, *_ in ext.calls})
         self.assertEqual(ext.probe_state(), original)
 
     def test_exact_gate_rejects_v2_nan_and_restores_state(self):
@@ -210,7 +216,7 @@ class DriverRegressions(unittest.TestCase):
         original = ext.probe_state()
         mk._EXT, mk._gemm_call = ext, ext.run
         mk.exact_fixture = lambda **_: (Tensor(32, 4096), object(), object(), Tensor(32, 1024))
-        errors = iter([(0.0, 0), (0.0, 0), (math.nan, 0)])
+        errors = iter([(0.0, 0), (math.nan, 0)])  # v1 passes, v2 is NaN (two lanes since 34차 §8)
         mk._exact_gate = lambda *a: next(errors)
         with patch.dict(sys.modules, {"torch": torch_stub()}), self.assertRaises(RuntimeError):
             mk._selftest_gemm_exact()

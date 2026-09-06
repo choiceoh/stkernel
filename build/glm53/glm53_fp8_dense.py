@@ -61,8 +61,8 @@ logger = init_logger(__name__)
 # padded copy covers them.
 # The shared expert's pair runs on the aux stream beside the routed MoE
 # (glm5next's MoE runner forks it); the megakernel lane treats those two
-# launches as background (its local-quant kernel on as many blocks as it
-# has units, VLLM_GLM53_MK_LOCALQ=1) -- hence the name.
+# launches as background (v2's LoRC slot keys on it; the local-quant
+# kernel that once did was sunset in 34차 §8) -- hence the name.
 _SHARED_EXPERT_RE = re.compile(r"\.mlp\.shared_experts\.(gate_up_proj|down_proj)$")
 _INCLUDE = (
     re.compile(
@@ -917,11 +917,10 @@ def _attach_mk_pack(method, weight, cols, name=None) -> bool:
     try:
         from vllm.model_executor.layers import glm53_megakernel as _mkmod
 
-        # every lane that reads the pack: the standalone GEMM and the two
-        # fused-MLP lanes (their hook finds the pack on the linear; an armed
-        # segment whose linears carry no pack serves stock in silence)
-        wants = (_mkmod.ENABLE_GEMM or getattr(_mkmod, "ENABLE_SMLP", False)
-                 or getattr(_mkmod, "ENABLE_SMLP2", False))
+        # every lane that reads the pack: the standalone GEMM and the fused-
+        # MLP lane (its hook finds the pack on the linear; an armed segment
+        # whose linears carry no pack serves stock in silence)
+        wants = (_mkmod.ENABLE_GEMM or getattr(_mkmod, "ENABLE_SMLP2", False))
         if wants and cols % 128 == 0:
             # the opaque op (the drafter's torch.compiled forward) passes the
             # kernel the 3-field pack only: its packs carry the shift as wgs

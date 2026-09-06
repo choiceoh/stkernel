@@ -2165,75 +2165,6 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     print("  fp8-dense nvfp4 scheme contract .. OK")
 
 
-def test_union_prefill_width_matches_the_converter_tile() -> None:
-    """The union arm must hand the converter a width it accepts.
-
-    It did not, for its whole life. The code sliced 2051 columns (2048 KPool
-    selection + at most three live tail tokens) and passed that as
-    NUM_TOPK_TOKENS, but triton_convert_req_index_to_global_index tiles
-    columns and asserts NUM_TOPK_TOKENS % BLOCK_N == 0. 2051 = 7 x 293, so no
-    usable tile divides it, and every prefill raised:
-
-        AssertionError: NUM_TOPK_TOKENS (2051) must be divisible by BLOCK_N (128)
-
-    caught, logged, fallen back to FlashInfer. A boot logging "union prefill:
-    ARMED width=4" ran 11 prefills and took the fallback 11 times.
-
-    The width must round up to the tile, and the rounded tail must be -1 --
-    the converter's documented "invalid", which _topk_length and the >= 0
-    masks downstream both honour."""
-    path = os.path.join(REPO, "overlay/modules/glm53_model",
-                        "glm53_union_prefill.py")
-    src = open(path, encoding="utf-8").read()
-    check("_CONVERT_BLOCK_N = 128" in src,
-          "the converter's column tile is named, not implied")
-    body = src[src.index("tokens = q[0].shape[0]"):]
-    body = body[:body.index("triton_convert_req_index_to_global_index(") + 400]
-    check("-(-want // _CONVERT_BLOCK_N) * _CONVERT_BLOCK_N" in body,
-          "the width rounds UP to the tile instead of passing 2051")
-    check("logical[:, carried:] = -1" in body,
-          "the rounded tail is marked invalid, not left as stale scratch")
-    check("BLOCK_N=_CONVERT_BLOCK_N" in body,
-          "the tile passed to the converter is the one the width used")
-    check(".clone()" in body,
-          "the padded view is a copy -- the fallback path reads that buffer")
-    check("logical.shape[1] % _CONVERT_BLOCK_N == 0" in body,
-          "and the contract is asserted here, not only inside vLLM")
-
-    # The arm claims exact output and never once ran, so the claim is
-    # untested. Shadow makes it a number instead of an argument -- and must
-    # serve the STOCK answer while measuring, or it is not a shadow.
-    profile = open(os.path.join(REPO, "profiles", "glm53.env"),
-                   encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_UNION_PREFILL_SHADOW=0$", profile, re.M),
-          "the shadow ships off")
-    check('_UNION_SHADOW_ENV, "").strip() == "1"' in src,
-          "exact opt-in for the shadow")
-    shadow = src[src.index("if _union_shadow_enabled():"):]
-    shadow = shadow[:shadow.index("return output, None")]
-    check("ref = original(" in shadow and "return ref" in shadow,
-          "shadow serves the stock answer, never the measured one")
-    check("_UNION_SHADOW_MAX" in shadow,
-          "shadow is bounded -- a long run must not pay for it forever")
-
-    # The kernel tiles group_size x heads rows, each with a [D] fp32
-    # accumulator, and caps that at 32. The hook admits only 16-head q (64
-    # heads at TP4), so width 4 is 64 rows and can NEVER run on this model --
-    # it returns None and the caller quietly uses the stock path. Not an
-    # exception, so it does not even reach the fallback counter. This lane
-    # booted "union prefill: ARMED width=4" for weeks on that.
-    check("q[0].shape[1:] == (16, 512)" in src,
-          "the hook pins 16 heads, which is what makes the cap a width limit")
-    check("group_size * heads > 32" in src, "the row cap is still the gate")
-    decline = src[src.index("if group_size not in (2, 4)"):]
-    decline = decline[:decline.index("return None") + 12]
-    check("_UNION_DECLINED" in decline and "logger.warning" in decline,
-          "a declined width must say so once, not fail silently")
-    check("VLLM_GLM53_UNION_PREFILL=2" in decline,
-          "and must name the width that can actually run")
-    print("  union prefill width vs converter tile .. OK")
-
-
 def test_benches_ask_the_server_for_the_model_name() -> None:
     """No bench may hardcode a served model name as its only source.
 
@@ -5463,52 +5394,6 @@ def test_glm53_upstream_prefill_batch() -> None:
     check(kpool_cu.count("__global__") == 1,
           "radix selection, expansion and tail share one CUDA kernel")
 
-    union_path = _overlay_source(
-        "overlay/modules/glm53_model/glm53_union_prefill.py"
-    )
-    union_source = open(union_path, encoding="utf-8").read()
-    union_tree = ast.parse(union_source)
-    union_defs = {
-        node.name for node in union_tree.body if isinstance(node, ast.FunctionDef)
-    }
-    check(
-        {
-            "_union_dense_prefix_prepare_kernel",
-            "_union_mark_kernel",
-            "_union_compact_kernel",
-            "_glm53_union_prefill_kernel",
-            "glm53_union_sparse_prefill",
-            "install_glm53_union_prefill",
-        } <= union_defs,
-        "union path ships preparation, compaction, attention and installer",
-    )
-    for gate in (
-        "q[0].shape[1:] == (16, 512)",
-        'getattr(attn_metadata, "num_decodes", -1) == 0',
-        'getattr(attn_metadata, "num_prefills", 0) > 0',
-        'getattr(self, "qk_rope_head_dim", -1) == 0',
-        "not torch.cuda.is_current_stream_capturing()",
-    ):
-        check(gate in union_source, f"union forward pins {gate}")
-    check(
-        "same_req" in union_source
-        and "value != expected" in union_source
-        and "tl.where(dense, slot, slot + base)" in union_source,
-        "dense-prefix reuse has exact nested-prefix and request guards",
-    )
-    check(
-        "owned =" in union_source
-        and "owned & valid" in union_source
-        and union_source.count("sm_scale * kv_scale") == 2
-        and union_source.count("kv_scale / denom") == 2,
-        "union/base kernels restore ownership and FP8 K/V scaling",
-    )
-    check(
-        'VLLM_GLM53_UNION_PREFILL=0' in open(
-            os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8"
-        ).read(),
-        "unmeasured union path remains default-off",
-    )
     print("  GLM53 upstream prefill batch ..... OK")
 
 
@@ -5691,7 +5576,7 @@ def test_census_owner_axis() -> None:
             "_deneb_gate_partial_kernel", "kpool_topk_kernel(...)",
             "_glm53_prep_fused_kernel", "_gate_splitk_reduce_kernel",
             "void (anonymous namespace)::mk_gemm2_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
-            "mk_smlp_kernel(MKSmlpArgs)", "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
+            "_kda_onepass_spec_kernel", "_dual_gate_gemm_kernel")
     for n in ours:
         check(owner(n) == "ours", f"{n[:40]!r} is compiled from this repo")
     theirs = ("void deep_gemm::sm120_split_k_reduce_impl<cutlass::bfloat16_t, 4u>",
@@ -6857,38 +6742,9 @@ def test_prefill_knobs_announce_arming() -> None:
 
     #188 added four env knobs and none of the new code paths logged anything
     but failures. That is the shape this lane keeps losing boots to: #178's
-    guard, CUSTOM_OPS_AXIS, the *_once TypeError. A sweep that sets everything
-    to 1 would silently leave union prefill OFF, because only 2 and 4 are
-    widths -- and the run would read as "measured, no effect".
+    guard, CUSTOM_OPS_AXIS, the *_once TypeError. (The union prefill arm,
+    whose width knob this test once exercised, was sunset in 34차 §8.)
     """
-    union = open(_overlay_source(
-        "overlay/modules/glm53_model/glm53_union_prefill.py"
-    ), encoding="utf-8").read()
-    check("union prefill: ARMED" in union,
-          "the union path must announce its width when it installs")
-    check("is not a union width" in union,
-          "a value that is not 2 or 4 must warn, not silently mean off")
-
-    ns: dict = {"os": os, "logger": _CapturingLogger()}
-    load_defs("overlay/modules/glm53_model/glm53_union_prefill.py",
-              {"_UNION_ENV", "_UNION_REPORTED", "_read_group_size"}, ns)
-    saved = os.environ.get(ns["_UNION_ENV"])
-    try:
-        for raw, want, warns in (("0", 0, False), ("2", 2, False),
-                                 ("4", 4, False), ("1", 0, True),
-                                 ("yes", 0, True)):
-            ns["_UNION_REPORTED"].clear()
-            ns["logger"].lines.clear()
-            os.environ[ns["_UNION_ENV"]] = raw
-            check(ns["_read_group_size"]() == want,
-                  f"union width {raw!r} must resolve to {want}")
-            check(bool(ns["logger"].lines) is warns,
-                  f"union width {raw!r} must {'warn' if warns else 'stay quiet'}")
-    finally:
-        os.environ.pop(ns["_UNION_ENV"], None)
-        if saved is not None:
-            os.environ[ns["_UNION_ENV"]] = saved
-
     fused = open(_overlay_source(
         "overlay/modules/glm53_model/glm53_prefill_fastpath.py"
     ), encoding="utf-8").read()
@@ -6985,7 +6841,7 @@ def test_kda_conv_state_layout_is_the_arming_contract() -> None:
     kt = mk[mk.index("def _kda_eligible_reason(meta)"):mk.index("_KDA_LAYOUT_SAID = set()")]
     gl = mk[mk.index("def gemm_w4a8(x, mk_pack, n_rows, bg=False)"):]
     gl = gl[:gl.index("\ndef ", 1)]
-    check("gemm lane CAPTURED into the decode graph" in gl and "plan grid=%d ksr=%d localq=%d gemm2=%d" in gl
+    check("gemm lane CAPTURED into the decode graph" in gl and "plan grid=%d ksr=%d units=%d gemm2=%d" in gl
           and "_EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)" in gl,
           "the GEMM lane says once at capture which variant the graph bakes")
     kb = mk[mk.index("def kda_block(layer, hidden_states, positions)"):mk.index("class KdaShadowArm")]
@@ -7264,24 +7120,6 @@ def test_spec_k_compile_factor() -> None:
     print("  spec_k compile factor .. OK")
 
 
-def test_sampler_profile_skip_contract() -> None:
-    """29차: VLLM_GLM53_SKIP_SAMPLER_PROFILE=1 replaces the profile-time dummy
-    sampler run with a loud no-op (the K5 boot's 45-minute Triton init);
-    the profile ships it off and the installer applies it before its own
-    mode check so an 'off' prep-fused boot still gets it."""
-    import os
-    pf = open(os.path.join(REPO, "overlay/modules/glm53_runtime/glm53_prep_fused.py"), encoding="utf-8").read()
-    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    inst = pf[pf.index("def install_glm53_prep_fused()"):]
-    check("GPUModelRunner._dummy_sampler_run = _skip" in pf
-          and "profile-time dummy sampler run SKIPPED" in pf
-          and inst.index("_maybe_skip_sampler_profile()") < inst.index("mode = prep_fused_mode()")
-          and re.search(r"^VLLM_GLM53_SKIP_SAMPLER_PROFILE=0$", prof, re.M) is not None,
-          "the sampler-profile skip is env-gated, loud, applied before the mode "
-          "check, and off in the profile")
-    print("  sampler profile skip contract .. OK")
-
-
 def test_dev_lab_contracts() -> None:
     """32차 item 5: the boot-free kernel loop. The worker module remembers
     the served FULL descriptor and serves replay/reload/recapture through
@@ -7328,16 +7166,17 @@ def test_dev_lab_contracts() -> None:
 
 
 def test_mk_smlp_hook_and_contracts() -> None:
-    """MK_SEG_SMLP (32차): the dense MLP as one launch, wired without risk.
+    """MK_SEG_SMLP2 (32차 / 30차 §7): the dense MLP as a fused lane, wired
+    without risk. (The one-launch persistent MK_SMLP this test once covered
+    was sunset in 34차 §8; the hook now serves smlp2 alone.)
 
     smlp_forward is the Glm5NextMLP.forward hook: None (stock) unless the
     segment is armed, x is a 2-D bf16 decode batch (T <= 32, k a multiple
     of 128 <= 4096), both linears carry single W4 packs whose k-tiles match,
     and gate_up is 2 x the down input. The activation's clamp/alpha/beta
     come from the module (SiluAndMulWithClamp; SiluAndMul = 0/1/0). The
-    kernel keeps the stock rounding points and reuses kda's a_ready
-    hand-off; the hook never reduces (the linear's reduce_results contract
-    stays with the caller).
+    hook never reduces (the linear's reduce_results contract stays with the
+    caller).
     """
     import types
     calls, said = [], []
@@ -7347,7 +7186,7 @@ def test_mk_smlp_hook_and_contracts() -> None:
          "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
         {"os": os, "re": re,
          "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
-         "_smlp_call": lambda *a: calls.append(a) or "fused"},
+         "_smlp2_call": lambda *a: calls.append(a) or "fused"},
     )
     import types
     torch_stub = types.ModuleType("torch")
@@ -7374,16 +7213,17 @@ def test_mk_smlp_hook_and_contracts() -> None:
             down_proj=linear(d, out_size=4096, in_size=512),
             act_fn=types.SimpleNamespace(swiglu_limit=10.0, alpha=1.0, beta=0.0))
         f = ns["smlp_forward"]
-        ns["_ARMED"]["smlp"] = False
+        assert "smlp" not in ns["_ARMED"], "the v1 SMLP arm slot is gone (34차 §8)"
+        ns["_ARMED"]["smlp2"] = False
         assert f(mlp, _X(8, 4096)) is None            # not armed
-        ns["_ARMED"]["smlp"] = True
+        ns["_ARMED"]["smlp2"] = True
         assert f(mlp, _X(8, 4096)) == "fused"
         args = calls[-1]
         assert args[3:] == (1024, 512, 4096, 10.0, 1.0, 0.0), args[3:]
         assert f(mlp, _X(33, 4096)) is None           # T beyond the lane
-        # the proof lines: the first fused call says so once; a distinct
-        # stock reason says itself once; prefill rows are silent
-        assert any("smlp lane serving: first fused call" in a[0] for a in said), said
+        # the proof lines: the first fused call says so once and names the
+        # lane; a distinct stock reason says itself once; prefill rows are silent
+        assert any("smlp lane serving: first fused call (smlp2)" in a[0] for a in said), said
         n_said = len(said)
         assert f(mlp, _X(33, 4096)) is None and len(said) == n_said
         assert f(mlp, _X(8, 4096, dtype="fp16")) is None and len(said) == n_said + 1
@@ -7415,22 +7255,18 @@ def test_mk_smlp_hook_and_contracts() -> None:
         else:
             sys.modules["torch"] = saved
     cu = open("overlay/modules/glm53_megakernel/glm53_megakernel.cu", encoding="utf-8").read()
-    k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
-    assert k.count("mk_gemm_phase(c, smem, &g_mk_smlp_bar);") == 2, "two GEMM phases on the segment's own barrier"
-    assert "c.a_ready = true;" in k and "c.unit_ctr = &g_mk_smlp_unit2;" in k and "g_mk_smlp_unit2 = 0u;" in k, \
-        "down rides the a_ready path on its own unit counter, reset before phase A"
-    assert k.count("mk_grid_barrier(a.barrier_ctr, a.grid);") == 1, "one barrier: the activation lives in gate_up's epilogue"
-    assert "c.pair_act = 1;" in k and "c.n_int = a.n_int;" in k
+    for gone in ("mk_smlp_kernel", "MKSmlpArgs", "mk_run_smlp(", '"run_smlp"',
+                 "g_mk_smlp_bar", "g_mk_smlp_gu", "g_mk_pair_arrive", "g_mk_smlp_unit2",
+                 "unit_ctr"):  # (act_limit/pair_act live on in MKGemm2Ctx: smlp2's v2 side)
+        assert gone not in cu, f"34차 §8: the v1 SMLP kernel is sunset, {gone!r} remains"
     ph = cu[cu.index("__device__ void mk_gemm_phase"):cu.index("__global__ void mk_gemm_kernel")]
-    assert "auto pair_finish = [&](int nt) {" in ph and ph.count("pair_finish(nt);") == 2, "both final-store paths finish the pair"
-    assert "__float2bfloat16(" in ph and "fminf(gv, c.act_limit)" in ph and "(uv + c.act_beta)" in ph, "clamped SwiGLU at the stock rounding point"
-    assert "if (s_pair_last) g_mk_pair_arrive[pair] = 0u;" in ph, "pair counters rearm like tile counters"
-    assert "if (c.unit_ctr) s_unit = c.grid + (int)atomicAdd(c.unit_ctr, 1u);" in ph
-    assert 'm.def("run_smlp"' in cu and "mk_smlp_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize" in cu
+    assert "pair_finish" not in ph and "pair_act" not in ph, "the v1 phase carries no pair epilogue"
     wiring = open("overlay/modules/glm53_model/glm5next_model.py", encoding="utf-8").read()
     assert "out = _mk_smlp(self, x)" in wiring and 'getattr(self.down_proj, "reduce_results", False)' in wiring
     prof = open("profiles/glm53.env", encoding="utf-8").read()
-    assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 32차 bracket"
+    assert "\nVLLM_GLM53_MK_SMLP2=0\n" in prof, "bracket-gated: off until its bracket"
+    assert "VLLM_GLM53_MK_SMLP=" not in prof, "the v1 SMLP knob is gone from the profile"
+
 
 
 def test_mk_head_lane_contracts() -> None:
@@ -7549,7 +7385,7 @@ def test_mk_head_lane_contracts() -> None:
     check(m is not None and int(m.group(1)) >= -(-38720 // 128),
           "the v2 tile cap covers the vocab head (38,720 / 128 = 303 tiles)")
     check("} else if (nblk >= 2 * slots) {" in cu
-          and "(c2.ksr == 1 && c2.tail == 0)" in cu,
+          and "|| (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS)" in cu,
           "the ksr rule takes one slice for >= 2 waves of tiles and the partial bound is a split's contract only")
     print("  mk head lane contracts .......... OK")
 
@@ -8946,11 +8782,12 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm, gemm-lq, gemm2, kda, mhc, mla, smlp) triggers "
+          "every segment kernel (gemm, gemm2, kda, mhc, mla; gemm-lq and the v1 "
+          "smlp kernel were sunset in 34차 §8) triggers "
           "its dependents at entry and is launched programmatically behind "
           "the MK_PDL knob")
     check("const bool prefilled = hoisted && (u == (int)blockIdx.x);" in cu
@@ -8985,7 +8822,7 @@ def test_glm53_megakernel_contracts() -> None:
     check("const int rem = nblk % c.grid;" in cu
           and "int ksr = (rem > 0) ? (grid / rem) : 1;" in cu
           and "int mk_choose_ksr(int m, int n, int k, int grid)" in cu
-          and cu.count("mk_choose_ksr(") == 7  # def, the gemm plan (+ its bg control), kda in/out, smlp gate_up/down
+          and cu.count("mk_choose_ksr(") == 4  # def, the gemm plan, kda in/out (the bg control + v1 smlp callers sunset 34차 §8)
           and "const int ksr = c.ksr;" in cu,
           "the split is over the REMAINDER tiles when there are whole tiles "
           "too -- those units are a mix of sizes and the uniform cost model "
@@ -9033,87 +8870,56 @@ def test_glm53_megakernel_contracts() -> None:
     # the reset ahead of every block's first take.
     check(cu.index("g_mk_unit_next = 0u;", cu.index("MK_TS(0)"))
           < cu.index("mk_grid_barrier(bar, c.grid);")
-          and "u = local_q ? u + (int)gridDim.x : next_unit()) {" in cu
+          and "for (int u = blockIdx.x; u < units; u = next_unit()) {" in cu
           and "s_unit = c.grid + (int)atomicAdd(&g_mk_unit_next, 1u);" in cu,
           "dynamic unit hand-out: first unit static (hoisted fill), the "
           "rest from a counter re-armed ahead of the publish barrier")
-    # -- barrier-free path (2026-09-04): a launch with at most one unit per
-    #    block (the shared expert's two GEMMs, 86 launches a step) has every
-    #    block quantize ITS unit's A k-blocks into smem as it stages them --
-    #    no grid-wide prologue, no barrier, idle blocks exit at once. The
-    #    host picks it and the phase re-derives the condition, so a drift
-    #    degrades to the global path; MK_LOCALQ=0 is the kill switch.
-    check("constexpr bool local_q = LQ;" in cu
-          and "if (c.a_ready || units > c.grid) __trap();" in cu
-          and "if (local_q && !has_u0) return;" in cu
-          and cu.index("if (local_q && !has_u0) return;")
-              < cu.index('asm volatile("griddepcontrol.wait;" ::: "memory");')
+    # -- the barrier-free local-quant path (2026-09-04, VLLM_GLM53_MK_LOCALQ)
+    #    was sunset in 34차 §8: slower standalone, no served gain (chain 14),
+    #    the v2 lane is the adopted remedy for the same diagnosis. One phase,
+    #    one kernel, one ticket counter, one host plan.
+    check("local_q" not in cu and "LQ>" not in cu and "lq_quant" not in cu
+          and "mk_gemm_lq_kernel" not in cu and "mk_gemm_phase_t" not in cu
+          and "VLLM_GLM53_MK_LOCALQ" not in cu and "g_mk_gemm_bar_bg" not in cu
+          and "bar_id" not in cu and "g_probe_localq" not in cu
+          and "mk_lq_launch_grid" not in cu and "g_probe_bg_grid" not in cu
           and "int mk_units(int m, int n, int grid, int ksr)" in cu
-          and "p.localq = (lq == 2 || (lq == 1 && bg)) && p.units <= p.grid &&" in cu
-          and "const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);" in cu
-          and 'mk_env_int("VLLM_GLM53_MK_LOCALQ", 0, 0, 2, false)' in cu
-          and cu.count("mk_gemm_plan_for(") == 3,  # def, the launch, the bench pybind
-          "the two paths are compile-time instantiations chosen by ONE host "
-          "plan (launch and bench pybind alike: units <= grid and a background "
-          "caller); a drift traps instead of running a 48-block barrier on a "
-          "launch sized to the units; default OFF behind VLLM_GLM53_MK_LOCALQ "
-          "(0 / 1 bg / 2 all)")
-    # the lane's A quantizer is ONE set of helpers for its three copies (the
-    # gemm prologue, the local path, kda p4): the local path's bytes are the
-    # global path's by construction, and the boot self-test checks it
-    _lq = cu.index("auto lq_quant = [&](int buf) {")
-    _lq_end = cu.index("auto stage_a_store = [&](int kb) {", _lq)
-    check(cu.count("mk_pack4(") == 4 and cu.count("mk_warp_amax(") == 5
-          and cu.count("mk_act_rcp(") >= 4  # def + the quantizers (33차 lever 1: exact scale)
+          and "MKGemmPlan mk_gemm_plan_for(int m, int n, int k) {" in cu
+          and cu.count("mk_gemm_plan_for(") == 3  # def, the launch, the bench pybind
+          and "mk_launch(mk_gemm_kernel, p.grid, GEMM_SMEM, stream, c);" in cu
+          and "void mk_set_probe(int64_t ksr) {" in cu
+          and "return {g_probe_ksr, g_probe_gemm2, g_probe_ksr2};" in cu,
+          "34차 §8: the local-quant kernel, its plan fields, its knobs and the "
+          "bench's bg control counter are gone; the persistent lane launches "
+          "one kernel on its resident grid and the probe snapshot is three knobs")
+    # the lane's A quantizer is ONE set of helpers for its copies (the gemm
+    # prologue, kda p4, v2's per-slice quant): the same bytes by construction
+    check(cu.count("mk_pack4(") == 3 and cu.count("mk_warp_amax(") == 4
+          and cu.count("mk_act_rcp(") >= 3  # def + the quantizers (33차 lever 1: exact scale)
           and cu.count("mk_pow2_scale(") == 1  # the definition only: no activation quantizer is pow2 now
-          and "mk_act_scale(mxq[i])" in cu[_lq:_lq_end]
-          and "asc[i] = sc * c.wgs;" in cu[_lq:_lq_end]
-          and "sxs[r * KBLK_MAX + kb] = asc[i];" in cu
           and "__reduce_max_sync(0xffffffffu, __float_as_uint(v))" in cu
           and "__nv_cvt_float2_to_fp8x2(" in cu
           and "return __int_as_float((biased + 1) << 23);" in cu,
-          "local A quant: quant_store's helpers (redux amax, exponent-"
-          "arithmetic pow2, exact reciprocal, paired e4m3 pack) -- the output "
-          "must be bitwise the global path's")
-    # the local quant runs ahead of the mma on rows loaded a whole iteration
-    # earlier (a two-slot ring), the global path stages A(kb0) before the
-    # wait exactly as main did
-    check(cu.index("if (kb + 2 < kbn) stage_a_load(kb + 2, (kb - kb0) & 1);")
-              < cu.index("if (kb + 1 < kbn) lq_quant((kb + 1 - kb0) & 1);")
-              < cu.index("mma_fold(sw4t, kb);  // the group scales are inside the bytes")
-          and "if (!local_q) stage_a_store(kb0);" in cu
-          and cu.index("if (!local_q) stage_a_store(kb0);")
+          "A quant: quant_store's helpers (redux amax, exponent-arithmetic "
+          "pow2, exact reciprocal, paired e4m3 pack) shared by every copy")
+    # the prologue stages A(kb0) into smem before the wait, as main did
+    check("stage_a_load(kb0, 0);" in cu
+          and cu.index("stage_a_load(kb0, 0);") < cu.index("stage_a_store(kb0);")
               < cu.index("mk_cp_wait_upto(min(RAW_DIST - 1, kbn - kb0 - 1));")
-          and "if (local_q) stage_a_store(kb0);" in cu
-          and "uint2 xq0[RPW], xq1[RPW];" in cu,
-          "local path: x two k-blocks ahead in a register ring, the quant "
-          "before the mma; global path: A(kb0) into smem before the wait "
-          "(main's order)")
-    check("template <bool LQ>" in cu
-          and "mk_gemm_phase_t<false>(c, smem, bar);" in cu
-          and cu.count("mk_gemm_phase_t<true>(") == 1
-          and "__global__ void mk_gemm_lq_kernel(const MKGemmCtx c) {" in cu
-          and "mk_launch(mk_gemm_lq_kernel, p.lgrid, GEMM_SMEM, stream, c);" in cu
-          and "mk_resident_grid(mk_gemm_lq_kernel, g_gemm_lq_grid," in cu
-          and "int mk_lq_launch_grid(int units, int grid)" in cu
-          and "c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar" in cu
-          and "if (!p.localq && bg && g_probe_bg_grid > 0 && g_probe_bg_grid < p.grid) {" in cu,
-          "the local path is its own kernel launched on as many blocks as it "
-          "has units; the bench's control (the global kernel on fewer blocks) "
-          "runs on its own ticket counter; kda's mk_gemm_phase is the global "
-          "instantiation")
+          and "if (kb + 1 < kbn) stage_a_load(kb + 1, 0);" in cu,
+          "A(kb0) into smem before the wait (main's order), the next k-block "
+          "staged inside the loop")
     # Executable lane-selection, failure-restoration and nonfinite tests run
     # in test_megakernel_regression_suite below. Source strings previously
     # passed even when both purported v1 launches actually selected v2.
     check("def exact_fixture(dev=\"cuda\", shape=None):" in pysrc_full
-          and "def run_both_kernels(x, pack, n, ksr=0):" in pysrc_full,
+          and "def run_v1_kernel(x, pack, n, ksr=0):" in pysrc_full,
           "the boot and probe share the configurable exact fixture and v1 runner")
     bench = open(os.path.join(REPO, "probes", "megakernel_glm53_bench.py"),
                  encoding="utf-8").read()
     check("x, p4, w_exact, ref = mk.exact_fixture(DEV)" in bench
-          and "got, plans = mk.run_both_kernels(x, p4, n)" in bench
-          and "ran_local = plans[2][3] == 1" in bench
-          and 'mark = " " if (same != "NO" and r <= TOL_SPLIT and rep_ok) else "!"' in bench
+          and "got1, plan1 = mk.run_v1_kernel(x, p4, n)" in bench
+          and 'mark = " " if (r <= TOL_SPLIT and rep_ok) else "!"' in bench
           and "ext.read_ts()  # clear: idle blocks of THIS launch must read 0" in bench,
           "probe_exact uses the boot gate's fixture and runner (no second copy "
           "to drift), the sweep marks rows by the tolerance it judges them by "
@@ -9123,10 +8929,11 @@ def test_glm53_megakernel_contracts() -> None:
     check("from moe_decode_stream_probe import (" in conc
           and "served_wrapper" in conc and "expert_set" in conc
           and "MOE_LAYERS = 42" in conc
-          and '((0, 0, 32), "global 32 (control)")' in conc,
+          and '(1, "v2 non-persistent")' in conc
+          and "with mk._gemm_probe_scope():" in conc,
           "the concurrent probe builds the served MoE from the MoE probe's "
-          "builders, projects by the model's 42 MoE layers, and carries the "
-          "fewer-blocks control row")
+          "builders, projects by the model's 42 MoE layers, and compares the "
+          "persistent v1 lane with the v2 lane under one restored scope")
     fd_src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_fp8_dense.py"),
                   encoding="utf-8").read()
     check("method._mk_bg = bool(_SHARED_EXPERT_RE.search(name))" in fd_src
@@ -9134,13 +8941,10 @@ def test_glm53_megakernel_contracts() -> None:
           "the fp8-dense hook marks the shared expert's linears background "
           "(the aux-stream pair beside the routed MoE) for the lane")
     prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check(re.search(r"^VLLM_GLM53_MK_LOCALQ=0$", prof, re.M) is not None,
-          "the profile DECLARES the local-quant knob (off until its bracket): "
-          "the launcher forwards only declared keys, so an undeclared knob "
-          "could not be flipped at all")
     br = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
-    check('"VLLM_GLM53_MK_LOCALQ"' in br,
-          "bracket.py snapshots the local-quant knob")
+    check("VLLM_GLM53_MK_LOCALQ" not in prof and "VLLM_GLM53_MK_LOCALQ" not in br,
+          "34차 §8: the local-quant knob is gone from the profile and from "
+          "bracket.py's snapshot")
     # There is no zero pass: every accumulator element is ASSIGNED by exactly
     # one unit, so pre-setting them cost a full pass plus a barrier to
     # publish values that are all overwritten before anyone reads them. The
@@ -9228,7 +9032,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
           and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
           and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
-          and "mk_gemm_phase(c, smem, c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar);" in cu,
+          and "mk_gemm_phase(c, smem, &g_mk_gemm_bar);" in cu,
           "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
           "or entry point remains in the .cu")
     check("def build_mk_weight(" not in pysrc_full
@@ -9320,8 +9124,7 @@ def test_glm53_megakernel_contracts() -> None:
     # Distinct grids must not share a ticket counter -- the same trap the
     # mhc split fixed. kda inlines mk_gemm_phase on ITS grid.
     check("g_mk_kda_bar" in cu
-          and cu.count("mk_gemm_phase(c, smem, c.bar_id ? &g_mk_gemm_bar_bg : &g_mk_gemm_bar)") == 1
-          and cu.count("mk_gemm_phase_t<true>(c, smem, &g_mk_gemm_bar)") == 1
+          and cu.count("mk_gemm_phase(c, smem, &g_mk_gemm_bar)") == 1
           and cu.count("mk_gemm_phase(c, smem, &g_mk_kda_bar)") == 2,
           "kda's inlined gemm phases use their own barrier counter")
     check(cu.count("mk_launch(mk_mhc_kernel, mhc_grid, 0, stream, a);") == 1
@@ -9391,13 +9194,13 @@ def test_glm53_megakernel_contracts() -> None:
           and "def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0," in pysrc_full
           and "def _selftest_smlp2() -> bool:" in pysrc_full
           and '_ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)' in pysrc_full
-          and 'if not (_ARMED["smlp"] or _ARMED["smlp2"]):' in pysrc_full
-          and 'if _ARMED["smlp2"]:\n        return _smlp2_call(' in pysrc_full
-          and 'first fused call (%s) ' in pysrc_full
-          and '"smlp2" if _ARMED["smlp2"] else "smlp"' in pysrc_full,
+          and 'if not _ARMED["smlp2"]:\n        return None' in pysrc_full
+          and "    return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out," in pysrc_full
+          and 'first fused call (smlp2) ' in pysrc_full
+          and '_ARMED["smlp"]' not in pysrc_full and "ENABLE_SMLP =" not in pysrc_full,
           "the driver arms smlp2 behind its own knob with the exact + replay "
-          "gate, the MLP hook prefers it when armed, and the serving line "
-          "names the lane")
+          "gate, the MLP hook serves it alone (the v1 SMLP sunset in 34차 §8), "
+          "and the serving line names the lane")
     check("template <int RQ, bool LR>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
@@ -9439,22 +9242,20 @@ def test_glm53_megakernel_contracts() -> None:
           "v2 split slices are assigned (no zero pass), counted per tile with "
           "a self-rearming counter, and folded by the last slice in fixed "
           "order -- deterministic, no atomics on the partials")
-    check('getenv("VLLM_GLM53_MK_KTAIL")' in cu
-          and "int mk_choose_tail2(int m, int n, int k, int ksr)" in cu
-          and "if (shortest < 2 * tail) return 0;" in cu
-          and "const int nslices = c.tail > 0 ? 2 * ksr : ksr;      // partials per tile" in v2
-          and "const int slice = is_tail ? ksr + sp : sp;" in v2
+    check("VLLM_GLM53_MK_KTAIL" not in cu and "mk_choose_tail2" not in cu
+          and "is_tail" not in v2 and "c.tail" not in v2
+          and "const int nslices = ksr;      // partials per tile" in v2
           and "s_last = (prev + 1u == (unsigned)nslices);" in v2
           and "for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible" in v2
-          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr * (c2.tail > 0 ? 2 : 1)\n                    + (c2.lr_r > 0 ? LR_CTAS : 0);" in cu,
-          "v2 tail units (VLLM_GLM53_MK_KTAIL, default off): the last tail k-blocks "
-          "of every slice form a second unit at the end of the grid, folded as a "
-          "second partial in fixed order; only when every slice keeps >= tail "
-          "k-blocks and the doubled partial set fits")
+          and "const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr\n                    + (c2.lr_r > 0 ? LR_CTAS : 0);" in cu
+          and "void mk_set_gemm2(int64_t on, int64_t ksr) {" in cu,
+          "34차 §8: v2's tail units (VLLM_GLM53_MK_KTAIL; 30차 §11: noise on two "
+          "shapes, 5-17% worse on the rest) are sunset -- one unit per slice, "
+          "ksr partials per tile, the lane setter takes on/ksr only")
     check('getenv("VLLM_GLM53_MK_GEMM2")' in cu
           and "if (mk_gemm2_on()) {  // the non-persistent lane" in cu
           and cu.index("if (mk_gemm2_on()) {  // the non-persistent lane")
-              < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k, bg != 0);")
+              < cu.index("const MKGemmPlan p = mk_gemm_plan_for(c.m, c.n, c.k);")
           and "int mk_choose_ksr2(int m, int n, int k)" in cu
           and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
           and "MK_CHECK_CUDA(cudaGetDevice(&dev));" in cu
@@ -9473,7 +9274,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "_EXT.gemm2_plan(8, KDA_INPROJ_N, HIDDEN)" in pysrc_full
           and 'ap.add_argument("--gemm2", choices=("0", "1", "both", "env"), default="env")' in bench
           and 'args.gemm2 = "1" if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else "0"' in bench
-          and "ext.set_gemm2(on, ksr, ktail)" in bench
+          and "ext.set_gemm2(on, ksr)" in bench
           and "same = bool(torch.equal(got2, got))" in bench,
           "the driver builds v2's ring depth in, the boot fingerprint names "
           "the served lane and its in_proj plan, and the bench times both "
@@ -9612,16 +9413,13 @@ def test_glm53_megakernel_contracts() -> None:
     # -- kda: the split-K model keeps >= 8 k-blocks per slice (warming L2
     #    with the o_proj pack from the idle blocks measured a net loss:
     #    p5 -5.6 us, p3 +12)
-    _smlp_k = cu[cu.index("void mk_smlp_kernel"):cu.index("void mk_mla_kernel")]
-    check("prefetch.global.L2" not in _kda_k
-          and cu.count("prefetch.global.L2") == _smlp_k.count("prefetch.global.L2")
-          and "Warm phase C's first W records in L2" in _smlp_k
+    check("prefetch.global.L2" not in cu
           and "L2WARM" not in cu and "warm_l2" not in cu
           and "const int rmax = kblk / 8 > 1 ? kblk / 8 : 1;" in cu
           and "for (int r = 2; r <= kblk && r <= rmax; ++r) {" in cu,
           "split-K never makes slices shorter than 8 k-blocks; no L2 "
-          "prefetch under the delta rule (net loss) -- the fused MLP's warm "
-          "of its down pack is a bench knob, off by default")
+          "prefetch under the delta rule (net loss); the v1 SMLP kernel that "
+          "carried a bench-only L2 warm is sunset (34차 §8)")
     # -- kda gates: a tensor-core GEMM (cp.async weight tiles, bf16 mma)
     check("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32" in cu
           and "constexpr int GT_TILES = 2 * KDA_OUT / GT_ROWS;" in cu
@@ -9860,8 +9658,7 @@ def test_megakernel_core_is_shared() -> None:
     check(re.search(r"^VLLM_GLM53_MK_KDA_SHADOW=0$", glm_text, re.M) is not None,
           "glm53 ships VLLM_GLM53_MK_KDA_SHADOW=0 -- the shadow judge is a "
           "diagnostic, never a production default")
-    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_MK_LOCALQ",
-                 "VLLM_GLM53_AR_PREFETCH"):
+    for knob in ("VLLM_GLM53_MK_KDA", "VLLM_GLM53_AR_PREFETCH"):
         check(re.search(rf"^{knob}=0$", glm_text, re.M) is not None,
               f"glm53 ships {knob}=0 -- 32차 §14: the zero-gain set without "
               "SMLP (KDA lane CAPTURED into the decode graph, local-quant, AR "
@@ -12175,7 +11972,6 @@ if __name__ == "__main__":
     test_b12x_ep_launcher()
     test_deploy_refusal_is_not_swallowed()
     test_fp8_dense_nvfp4_scheme_contract()
-    test_union_prefill_width_matches_the_converter_tile()
     test_benches_ask_the_server_for_the_model_name()
     test_korean_gate_separates_notation_from_damage()
     test_every_module_can_mount_on_an_image_the_repo_can_launch()
@@ -12212,7 +12008,6 @@ if __name__ == "__main__":
     test_fp8_dense_drafter_compile_factor_and_serving_proof()
     test_mk_mla_workspace_is_fixed_and_splits_bounded()
     test_spec_k_compile_factor()
-    test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
     test_mk_head_lane_contracts()

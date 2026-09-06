@@ -2728,6 +2728,21 @@ prep-fused 가 그 파일의 preimage 를 고정 — 지우면 이미지 원본�
 _이 항목의 측정: 캡처 1회(체인22 PRODSET 부팅 유휴 시, 다른 세션 레그와 겹치지 않음), 분석은 srv4 에서
 `nice -n 19 taskset -c 19`(rank 3 규칙; 부팅 창). GPU 프로브·전체 테스트는 플릿이 조용한 창에서._
 
+### 10. 일몰 A 집행 (§8 의 운영자 판정 "A 지워", 2026-09-06, PR 아래)
+
+§8 표의 1·2·3·4·10·11 을 지웠다(B: 5·6·7 은 확인 뒤 별도, C: EP·MHC 계열 유지). 지운 것: 커널 3(`mk_smlp_kernel` v1 상주 SMLP,
+`mk_gemm_lq_kernel`·`mk_gemm_phase_t<LQ>` 로컬 양자화, v2 꼬리 유닛 경로), 노브 7(`MK_SMLP`·`MK_KTAIL`·`MK_LOCALQ`·`UNION_PREFILL`·
+`UNION_PREFILL_SHADOW`·`DENSE_PREFIX_PREFILL`·`SKIP_SAMPLER_PROFILE`), 파일 3(`glm53_union_prefill.py` + 모델 배선 두 줄·manifest 행,
+고아 모듈 디렉터리 `glm53_drop_audit`·`glm53_sparse_q`), 러너 패치 1(`_maybe_skip_sampler_profile`). 벤치는 `--ktail2-sweep`·`local` 열·
+v1 SMLP 열을 잃고 `--gemm-sweep` 은 v1 split 스윕으로, `--segments smlp` 는 smlp2 만 잰다; `set_probe(ksr)`·`set_gemm2(on, ksr)`·
+`gemm_plan → (grid, ksr, units)`·`gemm2_plan → (on, ksr, units, bps)`·프로브 스냅샷 3 노브. `run_both_kernels` → `run_v1_kernel`.
+동시 실행 프로브는 v1 상주 대 v2 비상주로 재표적(smlp2 프로브가 그 fork/join 을 import). 남는 `pair_act`·`g_mk2_pair_arrive` 는
+smlp2 의 v2 쪽이다.
+
+검증(무부팅): 컨테이너 nvcc 컴파일(`-gencode arch=compute_121a,code=sm_121a`, 1분 12초, 경고만), `tests/test_logic.py`, 회귀 스크립트 4종.
+GPU 자가진단(`run_megakernel_bench.sh --segments gemm exact mhc kda smlp`)과 서빙 판정은 다음 원큐 사다리 부팅에서 — 오버레이 sha 가
+바뀌므로 그 부팅은 콜드 컴파일 1회(≈12분).
+
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 
 _원장 번호: 이 항목은 29차로 적혀 있었으나 그 번호는 먼저 머지된 메가커널 29차(로컬
