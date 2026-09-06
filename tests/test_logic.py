@@ -3566,13 +3566,13 @@ def test_b12x_static_v2_controls() -> None:
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
                       "dynamic": False, "wide": False, "even": False, "split": False,
                       "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False,
-                      "prefetch": False, "prefetch_dist": 2},
+                      "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
                                  "stamps": False, "dynamic": False, "wide": False,
                                  "even": False, "split": False, "skip_sf": False,
                                  "skip_a": False, "v4": False, "a_ring": False,
-                                 "prefetch": False, "prefetch_dist": 2},
+                                 "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3610,6 +3610,13 @@ def test_b12x_static_v2_controls() -> None:
         check(False, "p9 must be rejected")
     except ValueError:
         pass
+    check(parse("u,b")["bulk_sf"] and parse("v,b")["v4"], "b selects the bulk SF copies on v4/v5")
+    for bad in ("w,b", "u,b,xs"):
+        try:
+            parse(bad, probe=True)
+            check(False, f"{bad} must be rejected")
+        except ValueError:
+            pass
     try:
         parse("w,p")
         check(False, "p without v4 must be rejected")

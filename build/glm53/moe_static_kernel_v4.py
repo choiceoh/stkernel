@@ -68,6 +68,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_kernel_v2 import (
+    _bulk_g2s,
     _prefetch_l2,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
@@ -119,6 +120,7 @@ class MoEStaticKernelV4:
         a_ring: bool = False,
         prefetch: bool = False,
         prefetch_dist: int = 2,
+        bulk_sf: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -181,6 +183,14 @@ class MoEStaticKernelV4:
         self.pf_d2 = int(prefetch_dist) + 1
         if self.prefetch and not (1 <= self.pf_d1 <= 6):
             raise ValueError("prefetch distance must be 1..6")
+        # bulk_sf: the three scale-factor boxes (FC1 SFA 4 KB, FC1 SFB 4 KB,
+        # FC2 SFB 1 KB) come in as 1-D cp.async.bulk copies of the contiguous
+        # global block instead of 128-row TMA boxes -- 32 / 32 / 8 line
+        # requests instead of 128 each (the memory system looks request-rate
+        # bound: xs/xa, and the L2 prefetch that doubled requests lost 3~5%)
+        self.bulk_sf = bool(bulk_sf)
+        if self.bulk_sf and (self.skip_sf or self.skip_a):
+            raise ValueError("bulk SF and the xs/xa timing cells are exclusive")
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
@@ -732,6 +742,12 @@ class MoEStaticKernelV4:
             epi_smem_staged.outer, swizzle=epi_smem_staged.inner
         )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
+        sfa1_base_addr = shared_ptr_to_u32(storage.sSFA1.data_ptr())
+        sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
+        sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
+        sfa1_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfa1_smem_one))
+        sfb1_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfb1_smem_one))
+        sfb2_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfb2_smem_one))
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
@@ -1710,6 +1726,9 @@ class MoEStaticKernelV4:
             sf13_exp_b = Int64((w13_rows // 128) * 128 * (2 * w13_kb // 16))
             sf2_blk_b = Int64(128 * (2 * w2_kb // 16))
             sf2_exp_b = Int64((w2_rows // 128) * 128 * (2 * w2_kb // 16))
+            sfa_base = get_ptr_as_int64(scale_storage, Int32(0))
+            sfa_exp_b = Int64(expert_scale_stride)
+            sfa_blk_b = Int64(128 * (2 * w13_kb // 16))          # 128-row block of A scales
             pf_w13 = get_ptr_as_int64(raw_w13, Int32(0))
             pf_w2 = get_ptr_as_int64(raw_w2, Int32(0))
             pf_sf13 = get_ptr_as_int64(raw_sf13, Int32(0))
@@ -1803,10 +1822,21 @@ class MoEStaticKernelV4:
                                     tma_a, tAgA_mk[(None, k_tile)],
                                     tAsA[(None, a_prod_state.index)], tma_bar_ptr=abar,
                                 )
-                                cute.copy(
-                                    tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                    tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
-                                )
+                                if cutlass.const_expr(self.bulk_sf):
+                                    if is_dma_lane0:
+                                        _bulk_g2s(
+                                            sfa1_base_addr + a_prod_state.index * sfa1_stage_b,
+                                            sfa_base + Int64(tc[2]) * sfa_exp_b
+                                            + Int64(sfa_tile_coord_m) * sfa_blk_b
+                                            + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
+                                            sfa1_stage_b,
+                                            shared_ptr_to_u32(abar),
+                                        )
+                                else:
+                                    cute.copy(
+                                        tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                        tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                    )
                                 a_pipeline.producer_commit(a_prod_state)
                                 a_prod_state.advance()
                             for gu in cutlass.range_constexpr(2):
@@ -1828,11 +1858,36 @@ class MoEStaticKernelV4:
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_a and not self.a_ring):
-                                    cute.copy(
-                                        tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                        tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
-                                    )
-                                if cutlass.const_expr(not self.skip_sf):
+                                    if cutlass.const_expr(self.bulk_sf):
+                                        if is_dma_lane0:
+                                            _bulk_g2s(
+                                                sfa1_base_addr + fc1_prod_state.index * sfa1_stage_b,
+                                                sfa_base + Int64(tc[2]) * sfa_exp_b
+                                                + Int64(sfa_tile_coord_m) * sfa_blk_b
+                                                + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
+                                                sfa1_stage_b,
+                                                shared_ptr_to_u32(bar),
+                                            )
+                                    else:
+                                        cute.copy(
+                                            tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                            tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                        )
+                                if cutlass.const_expr(self.bulk_sf):
+                                    if is_dma_lane0:
+                                        if cutlass.const_expr(gu == 0):
+                                            blk_sf = Int64(gate_tile // Int32(self.sfb1_tiles_per_block))
+                                        else:
+                                            blk_sf = Int64(up_tile // Int32(self.sfb1_tiles_per_block))
+                                        _bulk_g2s(
+                                            sfb1_base_addr + fc1_prod_state.index * sfb1_stage_b,
+                                            pf_sf13 + Int64(weight_expert_idx) * sf13_exp_b
+                                            + blk_sf * sf13_blk_b
+                                            + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
+                                            sfb1_stage_b,
+                                            shared_ptr_to_u32(bar),
+                                        )
+                                elif cutlass.const_expr(not self.skip_sf):
                                     if cutlass.const_expr(gu == 0):
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_gate_nk[(None, k_tile)],
@@ -1879,13 +1934,24 @@ class MoEStaticKernelV4:
                         tBsB2[(None, fc2_prod_state.index)],
                         tma_bar_ptr=bar2,
                     )
-                    cute.copy(
-                        tma_sfb_down,
-                        tBgSFB_down[(None, output_tile_idx, intermediate_slice,
-                                     weight_expert_idx)],
-                        tBsSFB2[(None, fc2_prod_state.index)],
-                        tma_bar_ptr=bar2,
-                    )
+                    if cutlass.const_expr(self.bulk_sf):
+                        if is_dma_lane0:
+                            _bulk_g2s(
+                                sfb2_base_addr + fc2_prod_state.index * sfb2_stage_b,
+                                pf_sf2 + Int64(weight_expert_idx) * sf2_exp_b
+                                + Int64(output_tile_idx) * sf2_blk_b
+                                + Int64(intermediate_slice) * Int64((_FC2_TILE_K // 64) * 512),
+                                sfb2_stage_b,
+                                shared_ptr_to_u32(bar2),
+                            )
+                    else:
+                        cute.copy(
+                            tma_sfb_down,
+                            tBgSFB_down[(None, output_tile_idx, intermediate_slice,
+                                         weight_expert_idx)],
+                            tBsSFB2[(None, fc2_prod_state.index)],
+                            tma_bar_ptr=bar2,
+                        )
                     fc2_pipeline.producer_commit(fc2_prod_state)
                     fc2_prod_state.advance()
                 if cutlass.const_expr(self.stamps):
