@@ -58,7 +58,7 @@ is blocked, says so and names the one flip that would isolate the cause.
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x`(서빙은 `-it` 태그, 4노드 ID 일치 요구) | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
 | 모듈 수 | 18 | **8**(34차 묶음; 접기 전 25) | 1 |
-| 오버레이 파일 | 23 | **42** | 2 |
+| 오버레이 파일 | 23 | **44** | 2 |
 | 기본 노브 | 노브 전부 off 가 기준선 | **메가커널 세트**(`MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1, `MK_KDA`=0) + 드래프터 W4 (28차 §8) + `MK_PDL`(27차 프로브, PR #290 — 종단 수치는 아직 없다) | — |
 
 `glm53` 의 기본값이 곧 브래킷된 cand 구성이다 — 그래서 A/B 의 base 팔은
