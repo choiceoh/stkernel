@@ -66,9 +66,31 @@ unaligned v3 transport on latency**. At T=8185, the median paired
 reduce-scatter times were BF16 3871.696 us, v2 2480.416 us and v3
 47169.312 us (five mirrored-order rounds, maximum across ranks per sample).
 At T=128, whose packet stride was already aligned, v3 took 388.880 us
-versus BF16 420.144 us. The 128-byte alignment correction addresses a
-shape-dependent hypothesis; its benefit must be measured, not assumed.
+versus BF16 420.144 us. This motivated the 128-byte alignment correction.
 Raw evidence: `srv2:/tmp/glm53-prefill-tp4.o9CdNc/rank-0.log`.
+
+The aligned follow-up ran on 2026-09-07 00:59:38–01:00:23 KST under fleet
+`prefill40align`. All 28 simulated-rank cases and all 60 real TP4 numerical
+checks passed; every TP4 output matched the ordered transport reference
+exactly. The same pinned image and helper SHA recorded in the ledger were
+used on all four ranks. Five mirrored-order rounds gave these medians:
+
+| Rows | Operation | BF16 us | v2 us | Aligned v3 us |
+| --- | --- | ---: | ---: | ---: |
+| 128 | all-gather | 505.104 | 446.960 | 427.808 |
+| 128 | reduce-scatter | 427.664 | 418.528 | 338.480 |
+| 129 | all-gather | 428.320 | 472.048 | 436.816 |
+| 129 | reduce-scatter | 436.480 | 364.608 | 326.000 |
+| 8185 | all-gather | 3263.872 | 5609.456 | 2258.656 |
+| 8185 | reduce-scatter | 3965.456 | 2535.296 | 2079.712 |
+
+At T=8185, v3 reduces collective latency by 30.8% for all-gather and 47.6%
+for reduce-scatter versus BF16 (ratios of the displayed medians). T=129
+all-gather remains slightly slower than BF16. These are isolated collective
+results, not a model prefill throughput or quality verdict; the 40% target
+and the default-off gate remain open. The unchanged NVFP4 checks were not
+repeated. Logs: `srv2:/tmp/glm53-prefill-transport.N910dY/run.log` and
+`srv2:/tmp/glm53-prefill-tp4.vg9y8E/rank-0.log`.
 
 The later historical trace
 `dp0_pp0_tp0_dcp0_ep0_rank0.1788700171065354541.pt.trace.json.gz` also exposes
