@@ -2276,7 +2276,9 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 - 원인(코드로 확정): 이미지의 `Glm5NextMultiModalProcessor` 는 GLM-4.6V 의 `_construct_video_placeholder` 를 물려받아 **샘플링된 프레임마다** `<|begin_of_image|>`+(H·W/4)토큰+타임스탬프 블록을 넣는다(`len(video_array)` 로 루프, grid_thw 의 T 무시). 반면 이 체크포인트용으로 이식된 `Glm5NextVideoProcessor`(학습 파이프라인 포트) 는 `temporal_patch_size=2` 로 프레임 쌍을 한 패치 묶음으로 만들어 `video_grid_thw` T = 샘플/2 를 넘긴다. 3 초 영상: 2 fps 샘플 6 프레임 → 자리표시 6×64 = 384, 인코더 3×64 = 192 → 워커 사망. 이미지는 t_bar=2 하나라 무관. HF 허브 공식 저장소에는 처리기 코드가 없어(설정 파일뿐) 포트의 문서("frames are expanded with `<|begin_of_image|>…<|end_of_image|>{ts} seconds`")가 유일한 참조.
 - 수정(PR #420, `glm53_model/glm5next_multimodal.py`, 베이스 sha 고정): `Glm5NextProcessingInfo._construct_video_placeholder` 오버라이드 — 시간 묶음(T)마다 블록 하나, 타임스탬프는 묶음 첫 프레임의 초(`{:.1f} seconds`), 프레임 인덱스는 포트의 `glm_sample_frame_indices` 를 같은 노브로 재계산(vLLM 이 미리 샘플한 경우 `frames_indices` 사용). 오버레이 49개.
-- 검증 팔 VID2(이미지 1 + 영상 1, 기본 인코더 경로, 합성 3 초 영상: 앞 1.5 초 빨간 화면 → 테스트 패턴): 답이 그 변화를 서술하면 통과. 피어(b12xt) 뒤 큐.
+- 첫 VID2(23:53)는 오버라이드의 타입힌트 `dict[str, Any]` 가 정의 시점에 평가돼 `NameError`(이 모듈은 `typing.Any` 를 import 하지 않음) 로 모델 검사에서 죽었고, **체인이 시작 시 배포한 그 오버레이로 복구 부팅(PRODW3/W4)까지 죽어 프로덕션이 23:53~00:06 (13 분) 내려갔다.** 조치: srv2 에서 main 재배포 + 복구 전용 체인을 `fleet.sh front` 로 큐 맨 앞에. 예방: 모델 파일 오버레이는 머지 전에 이미지 컨테이너에서 import 스모크(9 모듈 바인드 마운트, 30 s, 부팅 없음)를 돌린다 — `py_compile` 은 정의 시점 NameError 를 못 잡는다. 수정 PR #426.
+- **VID2 재시도(00:07, 기본 인코더 경로, 이미지 1 + 영상 1)**: 영상 요청 OK — 답 "영상은 표준 컬러 테스트 패턴으로 시작해, 화면이 점차 붉은색으로 변하다가 마지막에는 완전히 붉은색으로 채워…" = 합성 영상의 실제 순서(ffmpeg `overlay … enable='lt(t,1.5)'`: 0~1.5 s 테스트 패턴, 그 뒤 빨간 화면) 그대로. TTFT 0.50 s, 1.7 s. 이미지 OK(0.63 s), 텍스트 OK, 사고 on 분리 OK(341자 reasoning). **영상 지원 확립.** 프로덕션 기본은 텍스트 전용 유지(`MM_LIMIT` 0); 켜려면 `MM_LIMIT='{"image":1,"video":1}'` — 텍스트 서빙 영향은 VISON 32K 정상(128K 는 별개 이상) 이며, 켤지는 운영자 판단.
+
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
