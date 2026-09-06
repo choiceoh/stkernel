@@ -2117,6 +2117,15 @@ BASE39-stock 대비, 통일 onepass. 판정 규칙: 프리필 32K/128K +3% 이�
 - **P2D2** (REUSE 단독 + KDA 둘, 17:00): **부팅 사망** — N128 없이도 같은 CuTe-DSL MLIR 검증 실패(`dynamic_e288_k4096_n512_t8_b107080c`). #368 의 MoE 프리필 reuse 커널 자체가 이 이미지에서 컴파일 불가. b12x 세션에 통보.
 - **P2D3** (KDA_PREFILL_DIRECT_OUT + QK_NORM, 17:10): **NEUTRAL(+)** — 프리필 2K +1.0%, 32K +1.3%, 128K +2.4%, raw acc 49.4%, 디코드 불변, 9/9, 0/5. 앵커 `[kda-prefill] direct output engaged (tokens=8192)`. 예측 86 ms(0.6%) 수준의 공짜 절감.
   **운영자 "기본값으로 올려" → 프로파일 기본값 1 (PR #386).**
+- **P3B** (MLA pair group2 + 32K 프로파일, 17:17): **REGRESS** 32K −10.0%, 128K −9.5%. 프로파일: `mk_mla_pair_kernel` 3,208 ms(×55) vs stock `mk_mla_kernel` 1,734 ms — 커널 자체가 1.85배 느리고 나머지 버킷은 동일.
+  겹침 통계는 `VLLM_GLM53_MLA_PAIR_STATS` 가 프로파일 미선언 키라 워커에 안 넘어가 미기록(EXTRA_ENV 함정). 커널 재작성 없이는 회수 불가로 기록.
+- **P3C** (NVFP4 dense + 32K 프로파일, 17:28): 32K +1.7%, 128K +5.3%, 2K cold −19.6%(JIT), raw acc 48.0%. 프로파일: 대상 dense GEMM 1,118 → ~600 ms(−520, 예측대로) 이지만 활성값 양자화 `quantize_with_block_size_tma` +202 ms(×1010)
+  + amax `_partials` +184 ms(×1010) + 런치 글루 97 → 560 ms 가 상쇄. 벽시계 13,794 → 13,683 ms(−0.8%). 회수 경로: M 문턱 상향(작은 프리필은 stock), 워밍업에 nvfp4 형상, 양자화의 producer 에필로그 융합(상한 +6%).
+- **P2A4** (SP+FP8, #384 적용, 17:35): 32K +7.1%, 128K +4.9%, 2K warm +17% / cold −7.8%, raw acc 48.1%(P2A2 의 −2pt 는 잡음이었다), 디코드 불변, 9/9, 0.
+- **P2A3** (SP, BF16 전송, 17:41): **GAIN** — 32K **+12.6%**(2,978), 128K **+13.3%**(2,847), 2K warm +13% / cold −1.3%, raw acc 46.8%, 디코드 불변, 9/9, 0. BF16 전송이 FP8 전송보다 빠르다(양자화·amax·복원 커널과 스케일 AllReduce 가 절약 바이트보다 비싸다).
+  **SP(BF16) 기본값 승격(PR #388)**, SP_FP8 은 off 유지.
+- **302초 공백 종결**: 17:21 스톨 스냅샷(4 랭크 py-spy)에서 rank 2 만 `CustomAllreduce.__init__ → _init_mnnvl_buffer → symmetric_memory.rendezvous` 에 300 s(TCPStore 타임아웃) 갇혀 있고 나머지는 TP 첫 브로드캐스트에서 대기.
+  커스텀 AR 은 다중 노드라 생성자 직후 자기 비활성화("MNNVL multicast 미지원", 매 부팅) → 런처 `--disable-custom-all-reduce`(PR #387). 플래그 부팅 3/3 정상(P2A4 225 s·dist-group tp 1.8 s, P2A3 210 s, 복구), "Custom collectives" 줄 0. 서빙 커널 변화 없음.
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
