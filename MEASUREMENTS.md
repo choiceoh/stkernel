@@ -3903,6 +3903,41 @@ GPTQ 팩 + 저랭크 보정(r=32)이 dense 층에서 오차를 크게 줄였으�
 VLLM_GLM53_INDEXER_GATE_SPLITK=1"` 전 레그). 기대 −1.9 ms(3.5%, CV 1.7% 위). 판정 = step/s + quality 9/9 + 한국어 0/16 + pos-1 ±2 pct;
 증명 줄 `[fp8-dense] … linears`(+33: q_b·kv_b·wq_b × 11) 와 트레이스의 gemmSN 11발 소멸. 결과 `lever-chain-mkg3.out`, 행 이름 MKG3BASE/MKG3.
 
+### 15. MKG3 묶음 브래킷 — EXP-4 + EXP-9 채택, 디코드 창 +5~7% (2026-09-06 13:49~14:07, srv2 `lever-chain-mkg3.out`)
+
+**조건**: 두 부팅 다 K=5(아침부터 프로덕션), 같은 오버레이(배포 단계는 srv2 Wi-Fi 단절로 ABORT — 노드에 깔린 마지막 배포 그대로,
+프로필은 srv2 체크아웃 01ae713). base `MKG3BASE ""`(decode 3 rep + prefill8k), cand `MKG3 "VLLM_GLM53_FP8_DENSE_BPROJ=1
+VLLM_GLM53_INDEXER_GATE_SPLITK=1"`(전 레그). onepass(35차 표준)는 몰라서 안 썼다 — cand 부팅 위에서 사후 실행(아래).
+
+| | MKG3BASE | MKG3 |
+|---|---|---|
+| 디코드 창 중앙값 step/s, rep 1·2·3 | 20.9 · 21.7 · 20.9 | **22.4 · 22.4 · 22.4** (+5~7%) |
+| rep 평균 step/s | 18.65 · 20.65 · 20.40 | 21.13 · 21.56 · 21.31 |
+| tok/s (rep) | 50.8 · 42.6 · 52.3 | 41.2 · 52.3 · 51.4 (수용률 21~35% 요동, 판정 지표 아님) |
+| 프리필 8k cold / warm tok/s | 2623 / 2707 | 2361 / 2717 (warm 동일; cold 는 1표본) |
+| quality 2K/32K/128K | — | 9/9 |
+| 한국어 | — | 0/16 |
+| 수용 프로파일 (temp 0.95, 256 드래프트) | — | pos-0 76.2%, pos-1 53.1%, accepted/draft 2.258 → 3.258 tok/step, 드래프트 수용 45.2% (같은 날 K5 행 0.45) |
+
+**증명 줄**(cand 헤드 로그): `[fp8-dense] Glm5NextForCausalLM … 213 linears w8a8 … 213 MK W4 packs` — 180 → 213 = q_b [4096×1536]
+×11 + wq_b [4096×1536] ×11 + kv_b [8192×512] ×11 (형상 줄 `[4096x1536]x22, [8192x512]x11`); `[indexer-gate]
+VLLM_GLM53_INDEXER_GATE_SPLITK=1: first split-K routing, e.g. x(12, 4096) … (M<=16 admitted)` + 프리필은 `first stock torch.mm
+routing, e.g. x(8192, 4096)`; `[megakernel] selftest gemm exact=2.38e-05 -> ARM (lane v2)`, `gemm lane CAPTURED … M=24`.
+
+**판정**: 기대 −1.9 ms(3.5%)보다 큰 +5~7%(창 중앙값 20.9~21.7 → 22.4), 게이트 전부 통과 → 운영자 "생각보다 개선 정도가 크네
+디폴트화 하자" → 프로필 `VLLM_GLM53_FP8_DENSE_BPROJ=1`, `VLLM_GLM53_INDEXER_GATE_SPLITK=1`. 기대보다 큰 이유 후보: 인덱서
+head-gate 의 2블록 cuBLAS 88 µs 가 메인 스트림을 직렬로 막던 것(11층 × 75 µs = 0.83 ms)에 더해 q_b·wq_b 가 v2 레인으로 오면서
+그 뒤 커널들의 PDL 체인에 들어간 것 — 트레이스 재캡처가 확인할 일.
+
+**onepass(35차 표준, cand 부팅 위 사후 실행 14:08~14:14, `onepass-MKG3.out`)**: 창 중앙값 **20.94** step/s(n=39), tok/step 2.80,
+raw acc 36.0%, quality 9/9, 한국어 0/25, 프리필 warm 2041/2658/2597(2K/32K/128K). 같은 날 onepass 행: PRODK5H(11:14, 프로덕션 K5)
+20.45 / 2.79 / 2087·2630·2597, B12XW 20.69, B12XU(12:44, b12x 팔) 20.94. 즉 onepass 로는 아침 프로덕션 대비 +2.4%, b12x 팔과 동률 —
+배포가 다른 행끼리라 짝 비교가 아니다(같은 배포의 base onepass 는 없음; 부팅 한 번이면 채울 수 있다). **주의**: 문맥별 창에서 한국어
+추가 세트(n=35)의 중앙값이 12.0 인데, 그 구간(14:09:27·14:10:24·14:11:22)에 `stall-reporter` 가 "tokens unchanged 20 s" 정지를 세 번
+찍었다 — 오늘 이 정지는 07시 4회, 08시 8회, 09시 6회, 10시 7회, 11시 10회, 12시 8회, 14시 7회로 모든 부팅에서 나고 있고(덤프: 4 랭크
+전부 드래프터 `propose → _build_draft_attn_metadata → seq_lens_cpu` 대기), MKG3 고유가 아니다. 정지가 낀 창은 낮게 읽히므로 onepass
+의 20.94 는 하한이고, 같은 배포 짝의 레그 매트릭스(+5~7%)가 이 묶음의 판정 수치다. 정지 자체는 별도 원인 추적 대상(osar/스톨 세션).
+
 ## ★★★28차 — 드래프터 W4 는 서빙된 적이 없었다(컴파일 캐시), MK-MLA 서빙 사망의 원인은 스크래치 재할당, 그리고 드래프터 W4 판정 (2026-09-04)
 
 운영자 "glm flash 커널개선작업" → 25차 승인분 드래프터 W4 브래킷을 26차 수정 위에서 완주시키는 날이었다.
