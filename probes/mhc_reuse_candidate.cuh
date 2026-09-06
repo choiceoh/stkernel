@@ -7,21 +7,23 @@ __global__ void mk_mhc_reuse_p1(const MKMhcArgs a) {
   constexpr int CHUNKS = HIDDEN / CHUNK;
   __shared__ float residual[TOK][HC][CHUNK];
   const int tid = threadIdx.x;
-  const int c = blockIdx.x;
+  const int c = blockIdx.x % CHUNKS;
+  const int first = (blockIdx.x / CHUNKS) * TOK;
   // Each residual output is computed once, with the original FP32 order
   // and original BF16 rounding. The projection consumes its FP32 value.
   for (int i = tid; i < HC * CHUNK; i += MK_THREADS) {
     const int j = i / CHUNK, h = c * CHUNK + i % CHUNK;
 #pragma unroll
     for (int t = 0; t < TOK; ++t) {
-      const float x = __bfloat162float(a.x_in[t * HIDDEN + h]);
-      float v = a.post_mix_in[t * HC + j] * x;
+      const int token = first + t;
+      const float x = __bfloat162float(a.x_in[token * HIDDEN + h]);
+      float v = a.post_mix_in[token * HC + j] * x;
 #pragma unroll
       for (int k = 0; k < HC; ++k)
-        v += a.comb_mix_in[t * HC * HC + k * HC + j] *
-             __bfloat162float(a.residual_in[(size_t)t * HC * HIDDEN + k * HIDDEN + h]);
+        v += a.comb_mix_in[token * HC * HC + k * HC + j] *
+             __bfloat162float(a.residual_in[(size_t)token * HC * HIDDEN + k * HIDDEN + h]);
       residual[t][j][i % CHUNK] = v;
-      a.residual_out[(size_t)t * HC * HIDDEN + j * HIDDEN + h] = __float2bfloat16(v);
+      a.residual_out[(size_t)token * HC * HIDDEN + j * HIDDEN + h] = __float2bfloat16(v);
     }
   }
   __syncthreads();
@@ -56,8 +58,8 @@ __global__ void mk_mhc_reuse_p1(const MKMhcArgs a) {
     for (int off = 4; off; off >>= 1)
       sums[t] += __shfl_xor_sync(0xffffffffu, sums[t], off);
     if (l8 == 0 && m <= NOUT) {
-      if (m < NOUT) a.yp[((size_t)c * MAX_TOK + t) * NOUT + m] = sums[t];
-      else a.rp[c * MAX_TOK + t] = sums[t];
+      if (m < NOUT) a.yp[((size_t)c * MAX_TOK + first + t) * NOUT + m] = sums[t];
+      else a.rp[c * MAX_TOK + first + t] = sums[t];
     }
   }
 }
@@ -67,11 +69,27 @@ __global__ void mk_mhc_reuse_tail(const MKMhcArgs a) {
   // The ordinary stream dependency waits for every producer CTA; no
   // persistent-grid assumptions, global counters, or spin waiting.
   __shared__ float pmix[HC];
+  __shared__ float partial[MK_WARPS][NOUT + 1];
   const int t = blockIdx.x, warp = threadIdx.x >> 5;
+  const int lane = threadIdx.x & 31;
+  float mine = 0.0f;
+  if (lane <= NOUT) {
+#pragma unroll
+    for (int c = warp; c < CHUNKS; c += MK_WARPS)
+      mine += lane < NOUT ? a.yp[((size_t)c * MAX_TOK + t) * NOUT + lane]
+                         : a.rp[c * MAX_TOK + t];
+    partial[warp][lane] = mine;
+  }
+  __syncthreads();
   MhcTailRegs r;
   if (warp != 0) mk_mhc_p34_load(a, t, r);
   if (warp == 0) {
-    mk_mhc_p2_token<CHUNKS>(a, t, pmix);
+    mine = 0.0f;
+    if (lane <= NOUT) {
+#pragma unroll
+      for (int w = 0; w < MK_WARPS; ++w) mine += partial[w][lane];
+    }
+    mk_mhc_p2_token<CHUNKS, true>(a, t, pmix, mine);
     mk_mhc_p34_load(a, t, r);
   }
   __syncthreads();

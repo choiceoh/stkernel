@@ -19,7 +19,11 @@ def candidate_source(source):
     start = source.index(marker)
     end = source.index("// p3 + p4 for ONE token", start)
     p2 = source[start:end].replace("c < NCHUNK", "c < CHUNKS")
-    source = source[:start] + "template <int CHUNKS = NCHUNK>\n" + p2 + source[end:]
+    p2 = p2.replace("float* s_pmix) {", "float* s_pmix, float ready = 0.0f) {")
+    p2 = p2.replace("  float mine = 0.0f;\n  if (lane < NOUT)",
+                    "  float mine = ready;\n  if constexpr (!READY) {\n  if (lane < NOUT)")
+    p2 = p2.replace("  MK_MHC_PROBE(1);", "  }\n  MK_MHC_PROBE(1);")
+    source = source[:start] + "template <int CHUNKS = NCHUNK, bool READY = false>\n" + p2 + source[end:]
     candidate = Path(__file__).with_name("mhc_reuse_candidate.cuh").read_text()
     source = source.replace("__device__ void mk_mhc_p1(", candidate + "\n__device__ void mk_mhc_p1(", 1)
     source = source.replace("void mk_run_mhc(", "int g_probe_mhc_reuse = 0;\nvoid mk_run_mhc(", 1)
@@ -29,7 +33,7 @@ def candidate_source(source):
         for tokens in (2, 6, 8):
             launch.append(f"""
   if (g_probe_mhc_reuse == {mode} && a.num_tokens == {tokens}) {{
-    mk_mhc_reuse_p1<{tokens}, {chunk}><<<HIDDEN/{chunk}, MK_THREADS, 0, stream>>>(a);
+    mk_mhc_reuse_p1<2, {chunk}><<<(HIDDEN/{chunk})*({tokens}/2), MK_THREADS, 0, stream>>>(a);
     MK_CHECK_CUDA(cudaGetLastError());
     mk_mhc_reuse_tail<HIDDEN/{chunk}><<<{tokens}, MK_THREADS, 0, stream>>>(a);
     MK_CHECK_CUDA(cudaGetLastError());
