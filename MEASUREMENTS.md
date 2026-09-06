@@ -2280,6 +2280,8 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **VID2 재시도(00:07, 기본 인코더 경로, 이미지 1 + 영상 1)**: 영상 요청 OK — 답 "영상은 표준 컬러 테스트 패턴으로 시작해, 화면이 점차 붉은색으로 변하다가 마지막에는 완전히 붉은색으로 채워…" = 합성 영상의 실제 순서(ffmpeg `overlay … enable='lt(t,1.5)'`: 0~1.5 s 테스트 패턴, 그 뒤 빨간 화면) 그대로. TTFT 0.50 s, 1.7 s. 이미지 OK(0.63 s), 텍스트 OK, 사고 on 분리 OK(341자 reasoning). **영상 지원 확립.** 프로덕션 기본은 텍스트 전용 유지(`MM_LIMIT` 0); 켜려면 `MM_LIMIT='{"image":1,"video":1}'` — 텍스트 서빙 영향은 VISON 32K 정상(128K 는 별개 이상) 이며, 켤지는 운영자 판단.
 
 
+- **운영자 "이미지 영상 기본으로 켜" (00:20, PR #431)**: 프로파일 `MM_LIMIT='{"image":4,"video":1}'`(런처가 읽는 프로파일 키로 추가). 재측정 없이(운영자 "왜 한번 더 찍어") 프로덕션 부팅 한 번으로 적용, 올라온 뒤 이미지·영상 요청 스모크만. 롤백 `'{"image":0,"video":0}'`.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
