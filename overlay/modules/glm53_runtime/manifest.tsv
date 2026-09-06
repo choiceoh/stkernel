@@ -11,3 +11,5 @@ glm53_dev_lab.py	vllm/model_executor/layers/glm53_dev_lab.py	absent
 glm53_lab_middleware.py	vllm/glm53_lab_middleware.py	absent
 # -- glm53_oneshot_wiring
 cuda_communicator.py	vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
+# -- glm53_draft_dump (37차 night round: target features for drafter training; inert without VLLM_GLM53_DRAFT_DUMP)
+glm53_draft_dump.py	vllm/models/glm5next/nvidia/glm53_draft_dump.py	absent
