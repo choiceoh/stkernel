@@ -572,7 +572,7 @@ source, and the BF16 free pass skips this method). **No-op while
 already owns every b_proj linear. Neither knob has GPU validation yet —
 keep both at 0 until the combined campaign.
 
-### Startup artifacts: FP8 copies and rank checkpoints (2026-09-06, default off)
+### Startup artifacts: FP8 copies and rank checkpoints (2026-09-06)
 
 Two independent path-valued switches reuse work from a prior boot:
 
@@ -583,10 +583,11 @@ bash launchers/start-glm53-nvfp4-tp4.sh
 ```
 
 The launcher carries these profile-declared variables to every worker. `/cache`
-is already the node-local persistent cache mount. Set either variable to an
-empty string to disable it. `LOAD_FORMAT` remains the normal source loader
+is already the node-local persistent cache mount. Set either variable to `0`
+to disable it, including when overriding a nonempty profile default. `LOAD_FORMAT` remains the normal source loader
 (`instanttensor` by default); **do not set it to `sharded_state` for these
-artifacts**. Both switches remain empty in the profile until matched GPU boots
+artifacts**. On 2026-09-07 the operator requested a default-on fleet trial, so both profile
+paths are enabled. This is a trial setting until the matched boot receipts below
 prove correctness, memory safety and a net latency improvement.
 
 **FP8 cache.** `glm53_startup_cache.py` saves the exact padded E4M3 weight and

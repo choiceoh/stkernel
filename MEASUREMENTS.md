@@ -6743,7 +6743,7 @@ post-load ordering and a four-process Gloo all-hit/partial-miss vote. GPU/NCCL,
 full-model quant finalization, output/acceptance, peak memory and actual boot
 speed remain **unverified**; neither cache is deployed or promoted. No fleet
 restart or GPU workload was performed for this implementation. See
-[the startup-artifact contract](overlay/modules/glm53_model/README.md#startup-artifacts-fp8-copies-and-rank-checkpoints-2026-09-06-default-off)
+[the startup-artifact contract](overlay/modules/glm53_model/README.md#startup-artifacts-fp8-copies-and-rank-checkpoints-2026-09-06)
 for enable/rollback and validation requirements. The old 54.9 s fold / 52.1 s
 read+apply measurements describe candidate budgets, not savings. The 302 s TP
 initialization pause is still separate and unresolved.

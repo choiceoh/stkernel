@@ -20,7 +20,7 @@ import time
 import torch
 
 from vllm.model_executor.layers.glm53_startup_cache import (
-    digest_json, environment_identity, runtime_identity, tensor_spec,
+    cache_directory, digest_json, environment_identity, runtime_identity, tensor_spec,
 )
 
 logger = logging.getLogger(__name__)
@@ -240,7 +240,7 @@ def _all_ranks_ready(ready):
 
 def load_rank_cached(model, weights, load):
     """Use once, on the model that owns the complete checkpoint walk."""
-    root = os.environ.get("VLLM_GLM53_RANK_CACHE", "")
+    root = cache_directory(os.environ.get("VLLM_GLM53_RANK_CACHE", ""))
     if not root or getattr(model, "_rank_cache_attempted", False):
         return load(weights)
     model._rank_cache_attempted = True

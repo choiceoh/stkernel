@@ -17,6 +17,12 @@ FORMAT_VERSION = 1
 _FILE_DIGESTS = {}
 
 
+def cache_directory(value):
+    # Profile loading preserves nonempty caller overrides. "0" therefore
+    # provides an explicit rollback even when the profile names a cache path.
+    return "" if (value or "").strip().lower() in ("", "0", "off", "false", "no") else value
+
+
 def file_digest(path):
     """Bound the host allocation even for a large runtime shared library."""
     path = Path(path)
@@ -123,7 +129,7 @@ def _restore_storage(record, device):
 class Fp8Cache:
     """Per-fold cache/timing state; an empty directory disables disk access."""
     def __init__(self, directory=None, identity=None):
-        self.directory = directory if directory is not None else os.environ.get("VLLM_GLM53_FP8_CACHE", "")
+        self.directory = cache_directory(directory if directory is not None else os.environ.get("VLLM_GLM53_FP8_CACHE", ""))
         self.identity = identity
         self.last_path = None
         self.hits = self.misses = self.errors = 0

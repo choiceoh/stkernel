@@ -159,7 +159,8 @@ class Fp8ArtifactTests(unittest.TestCase):
 
     def test_disabled_cache_does_no_hashing_or_disk_io(self):
         with patch.object(self.cache, "tensor_digest", side_effect=AssertionError("unexpected hash")):
-            result = self.cache.Fp8Cache("").quantize(self.weight, self.quantizer)
+            for value in ("", "0", "off", "false"):
+                result = self.cache.Fp8Cache(value).quantize(self.weight, self.quantizer)
         self.assertEqual(result[2:], self.weight.shape)
         self.assertEqual(list(Path(self.tmp.name).iterdir()), [])
 
@@ -360,9 +361,10 @@ class RankArtifactTests(unittest.TestCase):
         self.assertFalse((self.root / "cache").exists())
 
     def test_disabled_path_does_not_read_source_metadata(self):
-        with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE": ""}), \
-             patch.object(self.rank, "_context", side_effect=AssertionError("unexpected context")):
-            self.load(self.model())
+        for value in ("", "0", "off", "false"):
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE": value}), \
+                 patch.object(self.rank, "_context", side_effect=AssertionError("unexpected context")):
+                self.load(self.model())
         self.assertFalse((self.root / "cache").exists())
 
     def test_peer_miss_forces_source_load_even_with_local_hit(self):
