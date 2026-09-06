@@ -13,37 +13,13 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from bench_common import resolve_model as _resolve_model
 MODEL = _resolve_model("deepseek-v4-flash")
-WORDS = [
-    "reactor", "harbor", "lattice", "quarry", "ember", "meridian", "syntax",
-    "granite", "voltage", "cirrus", "tundra", "beacon", "ledger", "prism",
-]
-
+# 39차 (operator: "한국어 본문을 프리필해서 품질·프리필·디코드를 한 번에",
+# "모든 테스트는 저거 한 개로 통일"): the document IS the Korean workload --
+# three facts planted in Korean prose drawn in seeded order from a fixed pool
+# of Korean Wikipedia paragraphs (bench/ko_filler.txt, CC BY-SA). The English
+# word-salad body (14 words, assumed 1.3 tokens/word, actually ~1.0) is gone.
 # (planted sentence, question, accepted answer substrings)
 FACTS = [
-    ("The calibration constant for the Meridian array is 8127.",
-     "What is the calibration constant for the Meridian array?", ["8127"]),
-    ("Dr. Halvorsen signed the tundra survey on 14 March 1997.",
-     "Who signed the tundra survey, and on what date?",
-     ["halvorsen", "14 march 1997"]),
-    ("The quarry's emergency shutoff is valve K-42 on the north wall.",
-     "Which valve is the quarry's emergency shutoff, and where is it?",
-     ["k-42", "north"]),
-]
-
-
-def filler(n_tokens, rng):
-    return " ".join(rng.choice(WORDS) for _ in range(int(n_tokens / 1.3)))
-
-
-# 39차 (operator: "한국어 본문을 프리필해서 품질·프리필·디코드를 한 번에"): the
-# same three facts planted in KOREAN prose, so the document IS the Korean
-# workload -- prefill on real Korean text, answers decoded from a Korean
-# context, corruption scanned on those answers -- instead of an English
-# gibberish body plus a separate Korean prompt set. The filler is a fixed
-# pool of Korean Wikipedia paragraphs (bench/ko_filler.txt, CC BY-SA) drawn
-# in seeded order; the English word-salad body stays as lang="en" (dsv4's
-# gate and the pre-39차 records).
-FACTS_KO = [
     ("메리디안 배열의 보정 상수는 8127이다.",
      "메리디안 배열의 보정 상수는 얼마인가?", ["8127"]),
     ("할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.",
@@ -65,7 +41,7 @@ def _ko_pool():
     return _KO_POOL
 
 
-def filler_ko(n_tokens, rng):
+def filler(n_tokens, rng):
     pool = _ko_pool()
     want = int(n_tokens * KO_CHARS_PER_TOKEN)
     out, got = [], 0
@@ -79,19 +55,14 @@ def filler_ko(n_tokens, rng):
     return "\n".join(out)
 
 
-def facts(lang="en"):
-    return FACTS_KO if lang == "ko" else FACTS
-
-
-def build(ctx_tokens, seed, lang="en"):
+def build(ctx_tokens, seed):
     rng = random.Random(seed)
-    fill = filler_ko if lang == "ko" else filler
     # plant the three facts at 25% / 50% / 75% depth (4 equal filler chunks)
     chunks, per = [], ctx_tokens / 4.0
-    for i, (sent, _, _) in enumerate(facts(lang)):
-        chunks.append(fill(per, rng))
+    for i, (sent, _, _) in enumerate(FACTS):
+        chunks.append(filler(per, rng))
         chunks.append(sent)
-    chunks.append(fill(per, rng))
+    chunks.append(filler(per, rng))
     return "\n".join(chunks)
 
 
@@ -100,9 +71,9 @@ def ask(body_text, question):
         "model": MODEL,
         "messages": [{
             "role": "user",
-            "content": (f"Document:\n{body_text}\n\n"
-                        f"Answer from the document only, in one short sentence. "
-                        f"{question}"),
+            "content": (f"문서:\n{body_text}\n\n"
+                        f"문서의 내용만 근거로 한국어 한 문장으로 답해줘. 이름·숫자·날짜·장비 번호는 문서에 적힌 그대로 인용해줘.\n"
+                        f"질문: {question}"),
         }],
         "max_tokens": 120,
         "temperature": 0.0,
@@ -120,12 +91,11 @@ if __name__ == "__main__":
     # QUALITY_CTX=2000,32000 -> the quick leg (an exploration arm skips the
     # 128K prefill, ~3 min of the 25-min arm); the default is the full ladder
     ctxs = tuple(int(c) for c in os.environ.get("QUALITY_CTX", "2000,32000,128000").split(","))
-    lang = os.environ.get("QUALITY_LANG", "en")   # ko = Korean prose body (39차); en = the word salad
     total = ok = 0
     for ctx in ctxs:
-        doc = build(ctx, seed + ctx, lang)
+        doc = build(ctx, seed + ctx)
         hits = []
-        for _, q, expect in facts(lang):
+        for _, q, expect in FACTS:
             ans = ask(doc, q).lower()
             good = all(e in ans for e in expect)
             hits.append("o" if good else "X")
