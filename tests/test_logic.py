@@ -6261,11 +6261,13 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
 
 
 def test_decode_first_scheduler_contracts() -> None:
-    """39차 item 2: the decode-first scheduler caps prefill chunks only on
-    steps that carry decoders AND pending prefill, restores the stock
-    threshold after every call (also on exceptions), paces prefill to every
-    N-th mixed step through the stock throttle path with the capacity flag
-    cleared, and is wired through DECODE_FIRST=1 -> --scheduler-cls."""
+    """39차 item 2 (v2): the decode-first scheduler caps prefill chunks on
+    steps that carry decoders AND pending prefill, shares the budget among
+    pending prefills when there is no decoder (FCFS head-of-line), boosts a
+    starving prefill by its deficit against the floor rate (never deferred),
+    restores the stock threshold after every call (also on exceptions), paces
+    prefill to every N-th mixed step through the stock throttle path with the
+    capacity flag cleared, and is wired through DECODE_FIRST=1 -> --scheduler-cls."""
     import importlib.util
     import os
     import sys
@@ -6283,6 +6285,7 @@ def test_decode_first_scheduler_contracts() -> None:
     class FakeAsyncScheduler:
         def __init__(self, *args, **kwargs):
             self.max_num_scheduled_tokens = 8192
+            self.max_num_running_reqs = 4
             self.scheduler_config = types.SimpleNamespace(long_prefill_token_threshold=0)
             self.running = []
             self.waiting = []
@@ -6312,43 +6315,54 @@ def test_decode_first_scheduler_contracts() -> None:
     fakes["vllm.v1.core.sched.async_scheduler"].AsyncScheduler = FakeAsyncScheduler  # type: ignore[attr-defined]
     fakes["vllm.v1.core.sched.output"].SchedulerOutput = object  # type: ignore[attr-defined]
     saved_modules = {name: sys.modules.get(name) for name in fakes}
-    env_keys = ("VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS")
+    env_keys = ("VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
+                "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
     saved_env = {k: os.environ.pop(k, None) for k in env_keys}
     sys.modules.update(fakes)
+    clock = [100.0]
     try:
         spec = importlib.util.spec_from_file_location("glm53_decode_first_under_test", os.path.join(REPO, rel))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        mod.time = types.SimpleNamespace(monotonic=lambda: clock[0])
         Sched = mod.Glm53DecodeFirstScheduler
-        dec = lambda: types.SimpleNamespace(is_prefill_chunk=False)  # noqa: E731
-        pre = lambda: types.SimpleNamespace(is_prefill_chunk=True)  # noqa: E731
+        _n = [0]
+
+        def dec():
+            _n[0] += 1
+            return types.SimpleNamespace(is_prefill_chunk=False, request_id=f"d{_n[0]}", num_computed_tokens=5000)
+
+        def pre(rid=None, computed=0):
+            _n[0] += 1
+            return types.SimpleNamespace(is_prefill_chunk=True, request_id=rid or f"p{_n[0]}", num_computed_tokens=computed)
 
         s = Sched()
-        check((s.mixed_chunk, s.prefill_every, s.min_decoders) == (512, 1, 1), "defaults 512 / every 1 / 1 decoder")
-        check(any("[decode-first] scheduler armed" in w for w in warnings), "init announces the armed anchor")
-        # passthrough: no decoders
-        s.running = [pre()]; s.waiting = [pre()]
-        check(s.schedule() == "output" and s.calls[-1] == (False, 0, True), "no decoders -> stock call, uncapped")
-        # passthrough: decoders but nothing to prefill
+        check((s.mixed_chunk, s.prefill_every, s.min_decoders, s.fair, s.prefill_floor, s.floor_grace_s)
+              == (576, 1, 1, True, 1000, 2.0), "defaults: chunk 576 / every 1 / 1 decoder / fair / floor 1000 tok/s after 2 s")
+        check(any("[decode-first] scheduler armed (v2" in w for w in warnings), "init announces the armed anchor")
+        # stock: one prefill alone, one prefill + nothing else
+        s.running = [pre()]; s.waiting = []
+        check(s.schedule() == "output" and s.calls[-1] == (False, 0, True), "a single prefill alone -> stock, uncapped")
+        # stock: decoders but nothing to prefill
         s.running = [dec(), dec()]; s.waiting = []
         s.schedule()
         check(s.calls[-1] == (False, 0, True) and s._mixed_steps == 0, "decoders without prefill work -> untouched")
-        # capped: decoder + waiting prefill; restored afterwards
+        # mixed: decoder + waiting prefill; restored afterwards
         s.waiting = [pre()]
         s.schedule()
-        check(s.calls[-1] == (False, 512, True), "decoder + pending prefill -> chunk capped at 512 for the call")
+        check(s.calls[-1] == (False, 576, True), "decoder + pending prefill -> chunk capped at 576 for the call")
         check(s.scheduler_config.long_prefill_token_threshold == 0 and s._capped_steps == 1, "stock threshold restored after the step")
-        # capped: decoder + in-progress prefill chunk in running
-        s.running = [dec(), pre()]; s.waiting = []
+        # mixed: decoder + in-progress prefill chunk in running
+        s.running = [dec(), pre("run1")]; s.waiting = []
         s.schedule()
-        check(s.calls[-1][1] == 512, "in-progress prefill beside a decoder is capped too")
+        check(s.calls[-1][1] == 576, "in-progress prefill beside a decoder is capped too")
         # a stricter stock threshold is kept, a looser one is capped and restored
         s.scheduler_config.long_prefill_token_threshold = 256
         s.schedule()
-        check(s.calls[-1][1] == 256 and s.scheduler_config.long_prefill_token_threshold == 256, "stock 256 < 512 stays")
+        check(s.calls[-1][1] == 256 and s.scheduler_config.long_prefill_token_threshold == 256, "stock 256 < 576 stays")
         s.scheduler_config.long_prefill_token_threshold = 4096
         s.schedule()
-        check(s.calls[-1][1] == 512 and s.scheduler_config.long_prefill_token_threshold == 4096, "stock 4096 capped to 512 and restored")
+        check(s.calls[-1][1] == 576 and s.scheduler_config.long_prefill_token_threshold == 4096, "stock 4096 capped to 576 and restored")
         # exceptions restore the threshold
         s.scheduler_config.long_prefill_token_threshold = 0
         s.boom = True
@@ -6359,7 +6373,58 @@ def test_decode_first_scheduler_contracts() -> None:
             pass
         s.boom = False
         check(s.scheduler_config.long_prefill_token_threshold == 0, "threshold restored when the stock call raises")
-        # pacing: every 2nd mixed step carries prefill; off-cadence steps take the throttle path
+        # fair: two prefills, no decoder -> half the budget each; three -> a third; floor at the mixed chunk
+        f = Sched()
+        f.running = [pre("big", 8192)]; f.waiting = [pre()]
+        f.schedule()
+        check(f.calls[-1] == (False, 4096, True) and f._fair_steps == 1 and f._mixed_steps == 0,
+              "prefill behind a prefill -> budget shared 8192//2, pure prefill (no throttle)")
+        f.waiting = [pre(), pre()]
+        f.schedule()
+        check(f.calls[-1][1] == 8192 // 3, "three pending prefills -> a third each")
+        f.running = [pre("a"), pre("b"), pre("c"), pre("d")]; f.waiting = [pre()]
+        f.schedule()
+        check(f.calls[-1][1] == 2048, "a waiting request that cannot be admitted (max_num_seqs) is not counted")
+        f.max_num_scheduled_tokens = 1024
+        f.schedule()
+        check(f.calls[-1][1] == 576, "the fair share never drops below the mixed chunk")
+        f.max_num_scheduled_tokens = 8192
+        f.running = [pre("solo", 100)]; f.waiting = []
+        f.schedule()
+        check(f.calls[-1][1] == 0, "back to one prefill -> stock")
+        os.environ["VLLM_GLM53_SCHED_FAIR"] = "0"
+        nf = Sched()
+        nf.running = [pre("big")]; nf.waiting = [pre()]
+        nf.schedule()
+        check(nf.calls[-1][1] == 0, "FAIR=0 -> FCFS as stock")
+        os.environ.pop("VLLM_GLM53_SCHED_FAIR")
+        # floor: a starving prefill gets its deficit added, up to the budget; caught up -> plain cap; pruned when gone
+        g = Sched()
+        req = pre("slow", 1000)
+        g.running = [dec(), req]; g.waiting = []
+        clock[0] = 100.0
+        g.schedule()
+        check(g.calls[-1][1] == 576 and g._prefill_starts["slow"] == (100.0, 1000), "admission is recorded on the first managed step")
+        clock[0] = 101.5
+        req.num_computed_tokens = 1100
+        g.schedule()
+        check(g.calls[-1][1] == 576 and g._boost_steps == 0, "inside the grace period no boost")
+        clock[0] = 104.0
+        req.num_computed_tokens = 1500
+        g.schedule()
+        check(g.calls[-1][1] == 576 + (4000 - 500) and g._boost_steps == 1 and g._max_boost == 3500,
+              "4 s at a 1000 tok/s floor = 4000 expected, 500 done -> chunk 576 + 3500")
+        clock[0] = 110.0
+        req.num_computed_tokens = 1500
+        g.schedule()
+        check(g.calls[-1][1] == 8192, "the boost is capped at the step budget")
+        req.num_computed_tokens = 12000
+        g.schedule()
+        check(g.calls[-1][1] == 576, "caught up -> the plain mixed cap")
+        g.running = [dec()]
+        g.schedule()
+        check(not g._prefill_starts, "a prefill that left the running queue is forgotten")
+        # pacing: every 2nd mixed step carries prefill; off-cadence steps take the throttle path; a boosted step is never deferred
         os.environ["VLLM_GLM53_SCHED_PREFILL_EVERY"] = "2"
         os.environ["VLLM_GLM53_SCHED_MIXED_CHUNK"] = "300"
         p = Sched()
@@ -6368,17 +6433,27 @@ def test_decode_first_scheduler_contracts() -> None:
         check([c[0] for c in p.calls] == [True, False, True], "every=2 -> throttle, prefill, throttle")
         check(p.calls[0][2] is False and p.calls[0][1] == 0, "off-cadence step clears the capacity flag and leaves the threshold")
         check(p.calls[1][1] == 300 and p._deferred_steps == 2 and p._capped_steps == 1, "cadence step capped at the configured chunk")
+        slow = pre("slow2", 0)
+        p.running = [dec(), slow]; p.waiting = []
+        clock[0] = 200.0
+        p.schedule()          # records admission (deferred or not)
+        clock[0] = 210.0      # 10 s, nothing done -> deficit 10000
+        p.schedule()
+        check(p.calls[-1][0] is False and p.calls[-1][1] == 8192, "a starving prefill is scheduled even off-cadence, at the budget")
         # min decoders and env hygiene
         os.environ["VLLM_GLM53_SCHED_MIN_DECODERS"] = "2"
         os.environ["VLLM_GLM53_SCHED_PREFILL_EVERY"] = "abc"
         os.environ["VLLM_GLM53_SCHED_MIXED_CHUNK"] = "0"
+        os.environ["VLLM_GLM53_SCHED_PREFILL_FLOOR"] = "0"
+        os.environ["VLLM_GLM53_SCHED_FLOOR_GRACE_S"] = "x"
         m = Sched()
-        check((m.mixed_chunk, m.prefill_every, m.min_decoders) == (1, 1, 2), "bad int -> default, 0 -> clamped to 1")
-        check(any("is not an integer" in w for w in warnings), "bad env value is logged")
-        m.running = [dec()]; m.waiting = [pre()]
+        check((m.mixed_chunk, m.prefill_every, m.min_decoders, m.prefill_floor, m.floor_grace_s) == (1, 1, 2, 0, 2.0),
+              "bad values -> defaults, 0 chunk -> clamped to 1, floor 0 = off")
+        check(any("is not an integer" in w for w in warnings) and any("is not a number" in w for w in warnings), "bad env values are logged")
+        m.running = [dec(), pre("x")]; m.waiting = []
         m.schedule()
-        check(m.calls[-1] == (False, 0, True), "below min_decoders -> stock call")
-        m.running = [dec(), dec()]
+        check(m.calls[-1] == (False, 0, True) and not m._prefill_starts, "below min_decoders, one prefill -> stock; floor off keeps no records")
+        m.running = [dec(), dec(), pre("x")]
         m.schedule()
         check(m.calls[-1][1] == 1, "at min_decoders -> capped")
     finally:
@@ -6402,7 +6477,8 @@ def test_decode_first_scheduler_contracts() -> None:
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
-          "profile declares DECODE_FIRST=0 and the three VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+          "profile declares DECODE_FIRST=0 and the six VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nVLLM_GLM53_SCHED_MIXED_CHUNK=576\n" in profile, "profile chunk default is a quarter of the 2304 block")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
     print("  decode-first scheduler contracts .. OK")
