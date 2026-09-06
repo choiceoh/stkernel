@@ -2220,6 +2220,16 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 **VISB-A**(이미지 1, `MM_ENCODER_TP_MODE=data` 만, vit 어텐션은 기본 FLASH_ATTN, 21:17) — 부팅 375 s, 이미지 OK(TTFT 0.51 s), 텍스트 OK → **범인은 TP 분할 인코더(`weights` 모드)**, flash vit 어텐션은 무죄. 같은 부팅의 사고 프로브: `thinking=true` 요청은 glm45 파서가 reasoning 으로 분리(268자, content 0) — 유출은 **`thinking=false` 요청에서만** 난다: vLLM 이 그 요청의 파서를 건너뛰는데 템플릿은 `<think>` 를 강제해 모델이 사고를 content 로 쓴다. 따라서 파서 교체는 불필요, 템플릿 v2 만으로 해결(TPL 팔 = v2 + 기본 glm45).
 
+**DF5**(v3.2 `SCHED_MODE=sequential`, 대기 상한 20 s, `PREFIX_CACHE=0` 격리, 21:34; 운영자 "둘 다 너무 느려지는데 순차실행이 나을지도") — 혼합 부하:
+
+| ctx | 디코더 겹침 ITL med/p95/max | 디코더 tok/s@겹침 | 새 프롬프트 첫 토큰 (스톡 / 번갈아 v3.1) |
+|---|---|---|---|
+| 32K | **46 / 49 / 57 ms** (단독 46/49/90) | 28.1 (151 스텝) | **17.8 s** (13.3 / 27.0) |
+| 100K | **46 / 49 / 54 ms** | 12.2 (174 스텝) | **42.5 s** (39.2 / 51.5) |
+
+- 계산 그대로: 디코더 남은 ~7.6 s 를 그대로 끝내고 순수 프리필(10.2 s / 34 s) 이 뒤따른다. 디코더는 전혀 영향받지 않고, 새 프롬프트의 첫 토큰은 스톡보다 +4.5 / +3.3 s, 번갈아보다 −9 s. onepass NEUTRAL(프리필 +0.4/+0.1%, 디코드 −2.3/−1.2%, tok/step +1.3%). 클럭·온도 정상, 128K 정상.
+- **판정: `SCHED_MODE=sequential` 기본값**(DECODE_FIRST=1 유지). 대기 상한 20 s 뒤에는 번갈아(v3.1) 로 넘어가 긴 답변 뒤의 프롬프트도 굶지 않는다. 롤백: `alternate` 또는 `DECODE_FIRST=0`.
+
 **비전 "행"의 원인**(운영자 "비전 킬 때마다 행 걸렸다" → "그 문제도 해결해봐"): 체크포인트에는 비전 타워가 있고(`model.visual.*` 347개) 우리 모델 오버레이의 멀티모달 코드는 이미지와 동일. 런처 `MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"` 의 매개변수 전개가 첫 `}` 에서 끝나 마지막 `}` 를 리터럴로 덧붙인다 → 덮어쓴 값이 `{"image":1,"video":0}}` (JSON `Extra data`) → vLLM argparse 사망 → 런처는 헬스를 예산(3,000 s)만큼 폴링 = "매번 행". 기본값 대입을 전개 밖으로 옮김(PR #408), 격리 노브 셋(`MM_ENCODER_TP_MODE`/`MM_ENCODER_ATTN`/`SKIP_MM_PROFILING`)과 `probes/vision_probe.py` 추가. 진단 체인 VIS(이미지 1 + 프로브 + 텍스트 onepass, 정말 멈추면 4 노드 py-spy 스냅샷) 큐.
 
 **비전 체인(VIS, 20:25~20:49)** — `MM_LIMIT` 수정본으로 이미지를 켠 첫 부팅 **VIS1 은 죽었다**(행이 아니라 사망): rank 1(srv1) 워커만 적재 뒤 `CUDA error: operation not permitted` (첫 발현 메가커널 셀프테스트의 `torch.randint`, 치명은 MoE `process_weights_after_loading` 의 `torch.allclose`) → rank 0/2/3 은 instanttensor 의 `avail_bytes.item()` 집합통신에서 대기 → NCCL 타임아웃. srv1 커널 로그에 Xid 없음, OOM 아님. rank 1·2 만 적재 중 dynamo/fake-tensor 추적(부팅 스탬프 60 s 덤프)이 찍혔지만 rank 2 는 살아남아 컴파일 자체가 원인은 아님.

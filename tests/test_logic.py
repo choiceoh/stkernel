@@ -6566,10 +6566,11 @@ def test_decode_first_scheduler_contracts() -> None:
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=1\n" in profile and all(f"\n{k}=" in profile for k in env_keys),  # 39차 DF4: promoted
           "profile declares DECODE_FIRST=1 and the eleven VLLM_GLM53_SCHED_* keys (forwarded to the container)")
-    check("\nVLLM_GLM53_SCHED_MODE=alternate\n" in profile and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
+    check("\nVLLM_GLM53_SCHED_MODE=sequential\n" in profile and "\nVLLM_GLM53_SCHED_MAX_WAIT_S=20\n" in profile
+          and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
           and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
           and "\nVLLM_GLM53_SCHED_CHUNK_MAX=4608\n" in profile,
-          "profile: alternate mode, 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
+          "profile: sequential mode (20 s wait cap), 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
     print("  decode-first scheduler contracts .. OK")
