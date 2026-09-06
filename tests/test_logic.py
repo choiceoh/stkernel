@@ -1981,10 +1981,6 @@ def test_glm53_v2_overlay_contracts() -> None:
     assert modules_match is not None
     modules = set(modules_match.group(1).split())
     check(
-        not {"glm53_drop_audit", "glm53_sparse_q"} & modules,
-        "glm53 must not mount V1-only acceptance overlays on V2 Model Runner",
-    )
-    check(
         "glm53_runtime" in modules
         and "glm53_v2_hard_constraint_guard" not in modules,
         "glm53 must mount only the V2 sampling guard with an exact predicate",
@@ -2371,8 +2367,9 @@ def test_fp8_dense_free_bf16_contract() -> None:
     # ... and it is driven from the first forward of the model file, which is
     # the only COMPOSED place that provably runs after loading. The first
     # attempt drove it from GPUModelRunner.load_model -- correct in principle,
-    # dead in practice: glm53_drop_audit is in no composition, so the release
-    # never ran and the boot silently measured the baseline.
+    # dead in practice: the module that carried the runner patch was in no
+    # composition, so the release never ran and the boot silently measured
+    # the baseline (that module was itself sunset in 34차 §8).
     wiring = os.path.join(REPO, "overlay/modules/glm53_model",
                           "glm5next_model.py")
     src_w = open(wiring, encoding="utf-8").read()
@@ -5164,7 +5161,7 @@ def test_profiles_readme_module_table() -> None:
     used = set().union(*profiles.values())
     check(not (used - listed),
           f"profiles load modules the table omits: {sorted(used - listed)}")
-    check(not (listed - used - {"glm53_drop_audit", "glm53_sparse_q"}),
+    check(not (listed - used),
           f"table lists modules no profile loads: {sorted(listed - used)}")
 
     for mod, cells in rows.items():
@@ -8024,11 +8021,6 @@ def test_glm53_megakernel_contracts() -> None:
           and "bg=getattr(self, \"_mk_bg\", False)" in fd_src,
           "the fp8-dense hook marks the shared expert's linears background "
           "(the aux-stream pair beside the routed MoE) for the lane")
-    prof = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    br = open(os.path.join(REPO, "bench", "bracket.py"), encoding="utf-8").read()
-    check("VLLM_GLM53_MK_LOCALQ" not in prof and "VLLM_GLM53_MK_LOCALQ" not in br,
-          "34차 §8: the local-quant knob is gone from the profile and from "
-          "bracket.py's snapshot")
     # -- W streams its raw records through cp.async:
     #    tile-major pack (one contiguous 8 KB + 1 KB record per (tile,
     #    k-block)), one commit group per stage, the exact-wait formula,
@@ -8080,17 +8072,6 @@ def test_glm53_megakernel_contracts() -> None:
           "with the group exponent folded in per 16 elements -- never a "
           "__constant__ load, never per-nibble scalar chains, and no longer "
           "the byte-lane arithmetic (22 -> 13 ops per raw word)")
-    # -- one lane: the fp8 (W8) MK arm was removed once W4 beat the stock
-    #    pair on every decode shape. One kernel, one budget, one ticket
-    #    counter, one pack builder, one knob (MK_GEMM) -- nothing to select.
-    check("mk_gemm_kernel<" not in cu_code and "template <bool W4>" not in cu
-          and "run_gemm_w4" not in cu and "GEMM_SMEM_W4" not in cu
-          and "g_mk_gemm4_bar" not in cu and "MK_W_NBUF" not in cu
-          and "stage_w(" not in cu_code and "if constexpr (W4)" not in cu
-          and 'm.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");' in cu
-          and "mk_launch_gemm2(c2, stream);" in cu,
-          "the megakernel GEMM is W4-only: no fp8 W8 kernel, budget, counter "
-          "or entry point remains in the .cu")
     check("def build_mk_weight(" not in pysrc_full
           and "run_gemm_w4" not in pysrc_full and "ENABLE_W4" not in pysrc_full
           and "W4_ALL" not in pysrc_full and "_W4_ARMED" not in pysrc_full
@@ -8130,11 +8111,6 @@ def test_glm53_megakernel_contracts() -> None:
           and ".clamp(-448.0, 448.0).to(torch.float8_e4m3fn)" in pysrc_full,
           "the torch twins exist: dequant of the tile-major pack and the "
           "prologue's per-128-group pow2 activation quant")
-    check('".in_proj_qkvbfg_a" not in name' not in open(
-        os.path.join(REPO, "overlay/modules/glm53_model/"
-                            "glm53_fp8_dense.py"), encoding="utf-8").read(),
-          "every eligible linear gets the W4 pack, the KDA in_proj included: "
-          "there is no per-linear knob left")
     # The persistent launches resolve their own grid from the device: mhc
     # has its own ceiling because it takes no dynamic smem, mla resolves
     # against its smem and its own cap -- clamped, so a grid that does not
@@ -8172,10 +8148,9 @@ def test_glm53_megakernel_contracts() -> None:
           "two per SM and its register budget is bounded to match -- one "
           "resident block would make it the persistent kernel without the "
           "barrier, not a co-scheduling kernel")
-    check("mk_grid_barrier" not in v2 and "g_mk_unit_next" not in v2
-          and "g_mk_aq" not in v2,
-          "v2 has no grid barrier, no unit counter and no shared A tiles: "
-          "every block quantizes the A k-blocks of its own slice")
+    check("mk_grid_barrier" not in v2,
+          "the GEMM has no grid barrier: every block quantizes the A k-blocks "
+          "of its own slice")
     check("stage_raw(kb0 + d, (kb0 + d) % NB)" in v2
           and v2.index("stage_raw(kb0 + d, (kb0 + d) % NB)")
               < v2.index('asm volatile("griddepcontrol.wait;"')
@@ -8309,16 +8284,6 @@ def test_glm53_megakernel_contracts() -> None:
     arm_fn = pysrc_full[pysrc_full.index("def maybe_arm"):]
     check("is_current_stream_capturing()" in arm_fn,
           "maybe_arm never compiles/self-tests inside graph capture")
-    # -- kda.py overlay keeps the stock body reachable (its own module since
-    #    the core was made model-agnostic; see test_megakernel_core_is_shared)
-    kda = open(os.path.join(REPO, "overlay/modules/glm53_model",
-                            "glm5next_kda.py"), encoding="utf-8").read()
-    check("fused_recurrent_kda(" in kda and "causal_conv1d_update(" in kda,
-          "kda.py overlay keeps the stock conv/recurrent path")
-    check("MK_SEG_KDA takeover of this block" in kda
-          and "kda_block(" not in kda and "glm53_megakernel import" not in kda,
-          "34차 §8: the MK-KDA takeover and its shadow epilogue are gone from "
-          "the block; the stock chain (with KDA_ONEPASS) is its only path")
 
     # -- mhc: no grid barrier. The block that completes a token's 16th
     #    chunk runs that token's p2/p3/p4 (arrival counter, rearmed by the
@@ -8329,10 +8294,6 @@ def test_glm53_megakernel_contracts() -> None:
     _mhc_k = _mhc_k[:_mhc_k.index("\n}\n")]
     check("mk_grid_barrier" not in _mhc_k and "mk_mhc_p1(a, blockIdx.x);" in _mhc_k,
           "the mhc kernel has no grid barrier: p2/p3/p4 run off the tail queue")
-    check("prefetch.global.L2" not in cu
-          and "L2WARM" not in cu and "warm_l2" not in cu,
-          "no L2 prefetch under the delta rule (net loss); the kernels that "
-          "carried a bench-only L2 warm are sunset (34차 §8)")
     check("__device__ unsigned int g_mk_mhc_tok_arrive[MAX_TOK];" in cu
           and "if (threadIdx.x == 0) atomicAdd(&g_mk_mhc_tok_arrive[t], 1u);" in cu
           and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu

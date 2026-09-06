@@ -11,6 +11,7 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 | `glm53_boot_stamps` | `deneb_boot_stamps.py`, `zz_deneb_boot_stamps.pth` | 부팅 단계 타이밍 스탬프 |
 | `glm53_dev_lab` | `glm53_dev_lab.py`, `glm53_lab_middleware.py` | 개발 랩 `/glm53/lab` (`DEV_LAB`, 개발 부팅 전용) |
 | `glm53_oneshot_wiring` | `cuda_communicator.py` | one-shot AR 의 glm53 이미지 배선 (`cuda_communicator.py`) |
+| `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP`·`PREFILL_SP_FP8`, 기본 0) |
 
 ---
 
@@ -277,3 +278,22 @@ one-shot path first. Whole-file replacement, so the contract is
 image-specific: `glm53:v13-b12x`.
 
 The kernel and shim are in `tp_oneshot_ar`.
+
+---
+
+## glm53_prefill_sp (368차 신규, 기본 0)
+
+Pure-prefill TP4 sequence parallelism (`VLLM_GLM53_PREFILL_SP=1`, optional
+FP8 transport `VLLM_GLM53_PREFILL_SP_FP8=1`; exact "1" arms). MHC/residual
+work is row-sharded across ranks; full-token attention and MoE see an
+all-gathered view; the terminal TP all-reduce is deferred and replaced by a
+reduce-scatter (`partial_tp_output` / `maybe_partial_all_reduce` hooks).
+Uneven token counts (T=8185 etc.) pad and trim exactly. Guards fail closed
+on metadata, topology, dtype, layout, graph capture, and reduction-contract
+drift — any miss keeps the untouched stock path; exactly one deferred
+terminal reduction per scope is enforced at scope exit. FP8 transport
+agrees one common block scale per rank group via a MAX all-reduce (4x
+headroom to +-448) and changes precision: it needs its own serving-quality
+gate. `probes/glm53_prefill_collectives_check.py` (WORLD_SIZE=4 torchrun)
+is the correctness probe; matched prefill throughput and quality are still
+pending. Keep both at 0 until the combined campaign.

@@ -460,7 +460,19 @@ fi
 if [ "${SPEC:-1}" = 0 ]; then
   SPECCFG_VAL=""
 elif [ "$DFLASH2" = 1 ]; then
-  [ "${DRY_RUN:-0}" = 1 ] || test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH"; exit 1; }
+  # 39차: every rank loads the drafter from ITS OWN node's mount. A worker
+  # whose node lacks the path gets an empty root-owned directory (docker
+  # creates a missing bind source), dies in SpeculativeConfig, and the other
+  # ranks hang in the TCPStore rendezvous for the whole health budget
+  # (R0831 attempt 2, 2026-09-06 15:05: srv4 had no -r0831 copy). Check all
+  # four nodes before anything is torn down.
+  if [ "${DRY_RUN:-0}" != 1 ]; then
+    test -f "$DRAFT_HOST_PATH/config.json" || { echo "ABORT: DFlash2 drafter missing at $DRAFT_HOST_PATH on the head"; exit 1; }
+    for _ip in "${WORKER_IPS[@]}"; do
+      ssh $SSHOPT choiceoh@"$_ip" "test -f '$DRAFT_HOST_PATH/config.json' && test -s '$DRAFT_HOST_PATH/model.safetensors'" \
+        || { echo "ABORT: DFlash2 drafter missing or empty at $DRAFT_HOST_PATH on $_ip (rank loads from its own node)"; exit 1; }
+    done
+  fi
   COMMON="$COMMON -v $DRAFT_HOST_PATH:/models/dflash2-draft:ro"
   # The drafter emits a block of 8 and one of them is the verified token, so
   # this path only works at 7. It was a literal before, which meant SPEC_K was
