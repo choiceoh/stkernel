@@ -489,6 +489,8 @@ def main():
     for cmd in ("worker", "execute", "result", "wait"):
         p = sub.add_parser(cmd)
         p.add_argument("id")
+        if cmd in {"result", "wait"}:
+            p.add_argument("--details", action="store_true", help="include the full pinned environment and input hashes")
         if cmd == "wait":
             p.add_argument("--timeout", type=float, default=60)
     inbox = sub.add_parser("inbox")
@@ -527,6 +529,10 @@ def main():
             if answer["state"] in TERMINAL or time.monotonic() >= deadline:
                 break
             time.sleep(.2)
+        if not args.details:
+            payload = answer.pop("payload")
+            answer.update(revision=payload["spec"]["revision"], checkout=payload["repo"],
+                          hypothesis=payload["spec"]["hypothesis"])
     elif args.action == "inbox":
         events = store.inbox(args.session, args.after)
         answer = dict(events=events, cursor=events[-1]["cursor"] if events else args.after)

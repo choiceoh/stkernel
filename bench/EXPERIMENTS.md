@@ -53,6 +53,8 @@ call in the agent. Workers, logs, subscriptions, reports and SQLite state live
 under `$FLEET_DIR/experiments`; no scheduler service needs installation. `inbox`
 provides durable events for agent supervisors to consume; it does not itself
 send a message to a Codex/Claude session or automatically resume that session.
+`result` returns evidence and artifact paths; add `--details` only when the full
+pinned environment and input hashes are needed.
 
 ## CPU checks and evidence quality
 

@@ -253,8 +253,8 @@ class SubmissionTests(unittest.TestCase):
         (self.repo / "next-change").write_text("agent continues implementation")
         result = self.wait(job["id"])
         self.assertEqual(result["state"], "succeeded", result)
-        self.assertNotEqual(result["payload"]["repo"], str(self.repo))
-        self.assertFalse((Path(result["payload"]["repo"]) / "next-change").exists())
+        self.assertNotEqual(result["checkout"], str(self.repo))
+        self.assertFalse((Path(result["checkout"]) / "next-change").exists())
 
     def test_explicit_repeat_is_new_sample_but_does_not_mutate_old_result(self):
         first = self.submit()
