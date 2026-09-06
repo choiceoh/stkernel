@@ -32,3 +32,4 @@ VLLM_GLM53_MEGAKERNEL	-	-
 # Startup artifact hits prove loading reuse, not a served kernel/quality result.
 VLLM_GLM53_FP8_CACHE	-	-
 VLLM_GLM53_RANK_CACHE	-	-
+VLLM_GLM53_MK_MHC_BF16	[megakernel] mhc-bf16 CAPTURED	[megakernel] mhc-bf16 CAPTURED

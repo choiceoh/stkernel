@@ -8429,11 +8429,11 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 8
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm2, mhc, mla, and the four MLA prefill "
+          "every segment kernel (gemm2, both mhc storage paths, mla, and four MLA prefill "
           "pair/group4 kernels of #368) triggers its dependents at entry and "
           "is launched programmatically behind the MK_PDL knob")
     # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
@@ -8596,7 +8596,7 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 4
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 5
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "

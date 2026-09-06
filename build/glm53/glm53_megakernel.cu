@@ -1308,7 +1308,8 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   __syncthreads();  // sqred reuse
 }
 
-__device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
+template <bool BF16_FN>
+__device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
   // streams for this thread's h -- lives in 96 REGISTERS, loaded once, and
   // the group's tokens run against it. At T=8 the old (token, chunk)-pair
@@ -1358,7 +1359,11 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
     for (int m = 0; m < NOUT; ++m)
 #pragma unroll
       for (int j = 0; j < HC; ++j)
-        fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+        if constexpr (BF16_FN)
+          fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
+              (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
+        else
+          fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
     int pend = -1;  // a token whose chunk is done but not yet published
     for (int t = g; t < a.num_tokens; t += groups) {
       float nxv = 0.0f, nres[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1487,6 +1492,10 @@ __device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
   }
 }
 
+__device__ void mk_mhc_p1(const MKMhcArgs& a, int bid) {
+  mk_mhc_p1_impl<false>(a, bid);
+}
+
 __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -1497,6 +1506,19 @@ __global__ void mk_mhc_kernel(const MKMhcArgs a) {
   // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
   // retired.)
   mk_mhc_p1(a, blockIdx.x);
+  MK_MHC_TS(7);
+}
+
+__global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  MK_MHC_TS(0);
+  // p1 over the (token, chunk) pairs; each token's p2 / p3 / p4 run on
+  // the block that completes its last chunk (see mk_mhc_p1) -- no grid
+  // barrier anywhere in this kernel. (There used to be three: p1|p2,
+  // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
+  // retired.)
+  mk_mhc_p1_impl<true>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
@@ -2593,7 +2615,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 // ints: num_tokens, sinkhorn_repeat
 // scalars: rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints) {
+                std::vector<int64_t> ints, bool bf16_fn = false) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -2631,6 +2653,22 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Ask the device rather than assume, and clamp to what it answers. Cached
   // because the barrier's ticket arithmetic also needs the grid to be the
   // SAME on every launch.
+  // The BF16 path differs only in lossless weight loads. Its register
+  // allocation may differ, so its persistent grid needs its own occupancy.
+  if (bf16_fn) {
+    static int bf16_grid = 0;
+    if (!bf16_grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &per_sm, mk_mhc_bf16_kernel, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      bf16_grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(bf16_grid > 0, "bf16 mhc has no resident blocks");
+    }
+    a.grid = bf16_grid;
+    mk_launch(mk_mhc_bf16_kernel, bf16_grid, 0, stream, a);
+    return;
+  }
   static int mhc_grid = 0;
   if (mhc_grid == 0) {
     int per_sm = 0, sms = 0;
@@ -3053,7 +3091,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_state", &mk_probe_state, "snapshot the raw GEMM probe knob");
   m.def("restore_probe_state", &mk_restore_probe_state, "restore the raw GEMM probe knob");
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
-  m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
+  m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
+        pybind11::arg("scalars"), pybind11::arg("ints"),
+        pybind11::arg("bf16_fn") = false);
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
