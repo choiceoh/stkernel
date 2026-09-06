@@ -2240,6 +2240,19 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - 이 부팅의 onepass(VISON): 32K 정상, **128K 프리필 −19.8% / 디코드 −55%** — 세 번째 재현(DF1 −31, DF3b −33). 4 노드 GPU 샘플: SM 1,573~1,592 MHz, 최고 62 °C, 전력 ≤23.5 W, 스로틀 사유 없음 → **열/클럭 아님**. MK/prep-fused DISARM 없음. 다음: DF4 onepass 에 CPU 주파수·SoC 온도·부하 샘플 추가(`clock-sample.sh` v2), 그리고 128K 답변 도중 무엇이 바뀌는지(블록 경계 2304 통과 시점과 대조).
 - **추론 유출 발견**(포럼 글의 문제가 우리에게도 있다): 서빙 템플릿의 생성 프롬프트가 항상 `<|assistant|><think>` 로 끝나 `chat_template_kwargs.thinking=false` 가 무시되고(모델은 늘 사고함), 시작 태그가 프롬프트에 있어 glm45 파서는 출력에서 `<think>` 를 못 보고 사고 본문을 **content 로 스트리밍**한다(스트리밍·비스트리밍 모두 `reasoning_content` 비어 있음, 실측 VIS2). onepass 도 사실은 사고 켜진 채 잰 것(참조들끼리는 동일 조건). 조치: MiaAI-Lab 의 5 줄 수정(`thinking`/`enable_thinking` 존중, off 면 `<think></think>`) 을 `launchers/chat_template_mm_v2.jinja` 로 저장·4 노드 모델 디렉터리에 배치, 런처 노브 `CHAT_TEMPLATE`/`REASONING_PARSER`(deepseek_r1 파서는 프롬프트에 시작 태그가 있어도 `</think>` 앞을 reasoning 으로 처리). VID 팔에서 실측 뒤 기본값 결정; 바뀌면 onepass 참조를 새로 잡아야 한다(답변 길이·수용률이 달라짐).
 
+### §4i 39차 저녁 라운드 요약 — 승격 5, 발견 4, 미해결 1 (18:15~22:00)
+
+| 항목 | 판정 | 근거(원장 절) |
+|---|---|---|
+| NVFP4 dense 프리필 `MIN_M=1024` | 기본값 | §4g P3C2 +3.5~5.1%, DEF40 2차 확인 |
+| 프리픽스 캐시 `PREFIX_CACHE=1` + `glm53_prefix_cache` + prep-fused align 지원 | 기본값 | §4h APC~APC4: 재사용 92~99.6%, TTFT 34 → 1.1~2.7 s, warm 수용률 = cold, 디코드 복원; 비용 cold 32K −7% |
+| 디코드 우선 `DECODE_FIRST=1` + `SCHED_MODE=sequential` | 기본값 | §4h DF5: 디코더 ITL 단독과 동일, 새 프롬프트 첫 토큰 17.8/42.5 s(스톡 13.3/39.2) |
+| 채팅 템플릿 v2 (`thinking` kwarg 존중) | 기본값 | §4h TPL1: 사고 off 유출 제거, on 분리 유지 |
+| fleet.sh 결함 둘(옛 항목·고아 waiter; 프리플라이트 origin/main·복사본) | 수정 | PR #395, #406 |
+| 비전 | 켜면 됨(텍스트 전용 유지) | `MM_LIMIT` 전개 버그(#408) + 일회성 rank 1 사망; 영상은 상류 결함 |
+| 혼합 스텝 비용(그래프·MK·SP 전부 off, ~0.4 s) | 발견 | §4h DF1 — 인터리빙보다 순차 |
+| 128K 디코드 −31~55% (3/11 부팅) | **미해결** | 열·클럭·MK·prep-fused 아님; 128K 답변 두 창 뒤 저하 |
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
