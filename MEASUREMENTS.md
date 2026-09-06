@@ -2114,6 +2114,9 @@ BASE39-stock 대비, 통일 onepass. 판정 규칙: 프리필 32K/128K +3% 이�
 - 배포 함정: 런처는 `~/stkernel` 이 아니라 4 노드 `/home/choiceoh/overlays/glm53`(deploy-overlays.sh) 를 마운트한다. P2B·P2C 는 git 만 당긴 체크아웃과 다른 옛 배포본으로 돌았다(앵커 부재). 이후 체인은 시작 시 배포.
 - 디코드 창의 +5% 는 잡음: 프리필 전용 노브(P2B) 에서도 같은 폭. 오늘 stock 부팅 20.4~21.4 step/s.
 - 후속(큐): P2D2(REUSE 단독 + KDA 둘, 죽으면 KDA 만), P3B(MLA pair group2 + `VLLM_GLM53_MLA_PAIR_STATS=1` 겹침 통계 + 32K 프로파일), P3C(NVFP4 + 32K 프로파일), P2A4(SP+FP8, 재컴파일 수정), P2A3(SP, BF16 전송), stock 복구 + BASE39-stock2 + stock 프로파일.
+- **P2D2** (REUSE 단독 + KDA 둘, 17:00): **부팅 사망** — N128 없이도 같은 CuTe-DSL MLIR 검증 실패(`dynamic_e288_k4096_n512_t8_b107080c`). #368 의 MoE 프리필 reuse 커널 자체가 이 이미지에서 컴파일 불가. b12x 세션에 통보.
+- **P2D3** (KDA_PREFILL_DIRECT_OUT + QK_NORM, 17:10): **NEUTRAL(+)** — 프리필 2K +1.0%, 32K +1.3%, 128K +2.4%, raw acc 49.4%, 디코드 불변, 9/9, 0/5. 앵커 `[kda-prefill] direct output engaged (tokens=8192)`. 예측 86 ms(0.6%) 수준의 공짜 절감.
+  **운영자 "기본값으로 올려" → 프로파일 기본값 1 (PR #386).**
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
