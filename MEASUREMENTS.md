@@ -2091,6 +2091,13 @@ rank 3 `parallel_state.py:2224`(받는 쪽) — **TP 그룹 CPU(gloo) 그룹의 
 
 (b) 302 s 는 다음 재발 때 §3 줄로 판독 — 09-04·09-05 의 세 부팅 중 한 번만 났다. → §6-b 로 판독됨.
 
+**§6-c gloo 포트 이동은 답이 아니었다 (10:31 부팅)**: `GLOO_SOCKET_IFNAME=enP2p1s0f0np0` 로도 `dist-group tp took 302.0s` 재발. 정지 중(10:38) 4 노드에서
+`ss` 로 본 결과 SYN-SENT 0, 10.10.11.x 의 gloo 리스너만 열려 있고 페어 연결은 없음 → 소켓 연결 시도조차 없는 **스토어 대기**(gloo 페어 주소
+랑데부 `store.wait`)로 좁혀진다. c10d 소켓 경고(`TORCH_CPP_LOG_LEVEL=WARNING`) 0줄. vLLM 은 `VLLM_DISTRIBUTED_USE_SPLIT_GROUP=False` 라 `new_group(…, backend="gloo",
+timeout=None)`(30 분 기본) 경로 — 300 s 는 c10d **TCPStore 의 기본 타임아웃(300 s)** 과 같은 값이라, 어느 랭크의 스토어 대기가 타임아웃까지 간 뒤 재시도로
+넘어가는 그림이 유력하다. 다음 부팅 진단: 런처 `TORCH_LOGS=+distributed`(스토어 배리어·그룹 생성 로그) + `TORCH_CPP_LOG_LEVEL=INFO`. 포트 변경은 되돌리지 않고
+둔다(무해, A/B 표본은 계속 쌓임).
+
 ### §7 k 스윕과 프로덕션 k=5 (09-06 09:10~09:55 KST, 운영자 "짧은 조사로 최적 k 찾아 바꿔라")
 
 | k | C=1 레그 tok/s | C=4 합산 tok/s | 비고 |
@@ -2115,6 +2122,13 @@ one-spark 프로젝트의 독립 스윕도 k=5 를 기본으로 골랐다(산문
 (요청당 블록 1개 + 채움 블록 1개 + KV 그룹당 패드 블록 1개, Q 토큰은 그냥 루프: 2의 거듭제곱 제약도 마스크도 없음). 포인터 33개·정수 23개를 위치로
 넘기므로 양쪽 순서를 이름으로 핀(`tests/test_logic.py`), 버퍼 dtype 은 플랜 빌드 때 검사해 어긋나면 Triton 커널로 낙하(`VLLM_GLM53_PREP_FUSED_KERNEL=triton`
 으로 강제 가능). GPU 없는 컨테이너 nvcc 컴파일 32 s 통과, `plan built: … kernel=cuda` 가 서빙 줄. 검증은 k=5 부팅 + C=4 트래픽의 자체점검(§7 위와 동일 기준).
+
+**융합 켠 k=5 재시험 1차(10:31 부팅) — profile-run 정지로 중단(10:47)**: 302 s 공백(포트 1 에서도) → 모델 로드 126 s → 메가커널 `armed={… 'mhc_pre': True …}`
+(md5 f5484978, 사전 빌드 .so 를 2 s 에 물려받음 = PREBUILD 증명) → **profile-run 이 240 s+ 멈춤**: rank 3 스택은 4회 덤프 모두 `hc_fused_post_pre → mhc_fused_post_pre_tilelang
+→ tilelang jit __call__ → tvm_ffi module.__call__`(**stock TileLang 커널 런치 안**), GPU 사용률 96% — 앞선 커널이 스핀 중이라 런치가 막힌 모양(체인 10 K5 정지의
+서명과 같다: 호스트 스택은 "다음 런치"에 멈춰 보인다). osar 는 `connected`·self-test PASS, STALL 줄 0. osar 의 `source md5 → connected` 70 s 는 빌드가 아니라 접속
+단계(사전 빌드로도 그대로) — 09-05 의 "osar nvcc 69 s" 귀속은 정정. 같은 구성으로 즉시 재부팅(PRODK5G, 예산 900 s)해 재발 여부를 본다; 재발하면 PREBUILD=0 →
+`VLLM_GLM53_PREP_FUSED_KERNEL=triton` → `VLLM_GLM53_MK_MHC_PRE=0` 순으로 이등분.
 
 **하니스 정정**: `bench/bracket.py`·`bench/onepass.py` 의 tokens/step·step/s 가 k=7 을 가정해(`--num-spec` 기본 7) k=5 에서 tokens/step 3.68 로 부풀렸다
 (진값 2.92 = 1 + 5×0.383). 카운터(`num_draft_tokens_total / num_drafts_total`)에서 실제 드래프트 길이를 읽어 쓰도록 고침(`spec_k_eff`). ab-lever 레그 줄의

@@ -367,6 +367,12 @@ ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
 # moves to the second RoCE port (10.10.11.x; NCCL bootstrap stays on port 0)
 # and c10d socket warnings are logged, so a recurrence names the socket.
 # GLOO_IFNAME=enp1s0f0np0 puts it back for an A/B.
+# Diagnostic passthrough for the 302 s gap (37차 §6-b): TORCH_LOGS="+distributed"
+# turns on torch.distributed's Python-level INFO/DEBUG (store-based barrier
+# waits, group creation), TORCH_DISTRIBUTED_DEBUG=DETAIL its collective
+# checks. Both off unless the caller sets them.
+[ -n "${TORCH_LOGS:-}" ] && ENVV="$ENVV -e TORCH_LOGS=$TORCH_LOGS"
+[ -n "${TORCH_DISTRIBUTED_DEBUG:-}" ] && ENVV="$ENVV -e TORCH_DISTRIBUTED_DEBUG=$TORCH_DISTRIBUTED_DEBUG"
 
 # MK-KDA indexes the conv state as DS (dim, state_len). vLLM's default is SD,
 # and the segment's layout gate then rejects EVERY layer for the life of the
