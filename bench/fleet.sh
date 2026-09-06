@@ -22,7 +22,8 @@
 #   fleet.sh kick    [--force]                       drop a DEAD holder (--force: any holder;
 #                                                    the operator's call, logged as such)
 #   fleet.sh busy                                    "<bench procs> <running+waiting requests>"
-#   fleet.sh preflight <session> [-- <cmd...>]       checks BEFORE a boot is spent: srv2 copies
+#   fleet.sh preflight [--probe] <session> [-- <cmd...>]
+#                                                    checks BEFORE a boot is spent: srv2 copies
 #                                                    (ab-lever2.sh, fleet.sh) == repo, chain syntax,
 #                                                    every VLLM_* knob the chain sets is declared in
 #                                                    the profile (the launcher forwards only those),
@@ -106,9 +107,10 @@ expected_min() {  # session est
   echo "${m:-$2}"
 }
 # ---- preflight: the traps that cost a boot on 09-06, checked before the boot
-preflight() {  # session [-- cmd...] -> 0 PASS, 1 FAIL
-  local ok=1 knobs="" chain=""
-  echo "preflight $1:"
+preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
+  local ok=1 knobs="" chain="" kind=boot
+  [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
+  echo "preflight $1 [$kind]:"
   for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"; do
     local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
     [ -f "$copy" ] || continue
@@ -123,15 +125,26 @@ preflight() {  # session [-- cmd...] -> 0 PASS, 1 FAIL
     knobs=$(grep -oE "VLLM_[A-Z0-9_]+=[^ \"'\\]*" "$chain" | sort -u)
   fi
   [ $# -gt 0 ] && knobs="$knobs $(printf '%s ' "$@" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"']*" | sort -u)"
-  local k undeclared=""
-  for k in $knobs; do
-    grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env" || undeclared="$undeclared ${k%%=*}"
-  done
-  if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys):$undeclared"; ok=0
-  elif [ -n "$knobs" ]; then echo "  PASS knobs declared: $(echo $knobs | tr ' ' ',')"; fi
-  if [ -f "$REPO/bench/baseline.py" ]; then
-    local kv; kv=$(echo $knobs | tr ' ' ',')
-    (cd "$REPO" && timeout 20 python3 bench/baseline.py --brief ${kv:+--knobs "$kv"} 2>/dev/null | sed 's/^/  /') || true
+  # The declared-knob rule is about the LAUNCHER: it forwards only the keys
+  # profiles/glm53.env declares, so a boot chain that sets an undeclared knob
+  # silently measures the default and costs a boot. A probe has no launcher --
+  # run_mk_probe.sh builds its own container and passes its own env -- so the
+  # VLLM_* names inside a probe runner are not knobs at all. Checking them
+  # FAILed a probe turn on 09-06 over run_mk_probe.sh's own PROBE_CACHE lines
+  # (VLLM_CACHE_ROOT, VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR).
+  if [ "$kind" = probe ]; then
+    echo "  SKIP declared-knob check (probe: no launcher in the path)"
+  else
+    local k undeclared=""
+    for k in $knobs; do
+      grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env" || undeclared="$undeclared ${k%%=*}"
+    done
+    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys):$undeclared"; ok=0
+    elif [ -n "$knobs" ]; then echo "  PASS knobs declared: $(echo $knobs | tr ' ' ',')"; fi
+    if [ -f "$REPO/bench/baseline.py" ]; then
+      local kv; kv=$(echo $knobs | tr ' ' ',')
+      (cd "$REPO" && timeout 20 python3 bench/baseline.py --brief ${kv:+--knobs "$kv"} 2>/dev/null | sed 's/^/  /') || true
+    fi
   fi
   [ $ok = 1 ] && { echo "  -> PASS"; return 0; }
   echo "  -> FAIL (FLEET_PREFLIGHT=skip to override, logged)"; return 1
@@ -357,7 +370,8 @@ case "$cmd" in
       logit "nogpu-done $s rc=$rc"; _event nogpu-done "$s" "$note"; exit $rc
     fi
     [ "$cls" = unknown ] && echo "no evidence either way -> queued as GPU (say --cpu to run in parallel)"
-    if ! preflight "$s" -- "$@"; then
+    pf=(); [ "$kind" = probe ] && pf=(--probe)
+    if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       if [ "${FLEET_PREFLIGHT:-}" = skip ]; then logit "preflight FAIL overridden by $s"; else logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3; fi
     fi
     with_lock _enqueue "$s" "$est" "$note" "$kind"
@@ -399,7 +413,9 @@ case "$cmd" in
     if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; exit 1; fi
     logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"; touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked";;
   busy) echo "$(busy_procs) $(busy_reqs)";;
-  preflight) s=${1:?session}; shift; preflight "$s" "$@";;
+  preflight)
+    [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
+    preflight "$@";;
   pair)
     s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
