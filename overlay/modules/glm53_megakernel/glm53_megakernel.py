@@ -78,6 +78,14 @@ ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
+# Experimental exact-selection pair reuse; the old span-scanning UNION lane
+# is not used. Default off until output/state and serving brackets close.
+ENABLE_MLA_PREFILL_PAIR = ENABLE_MLA and (
+    os.environ.get("VLLM_GLM53_MK_MLA_PREFILL_PAIR") == "1"
+)
+MLA_PREFILL_GROUP = (
+    4 if os.environ.get("VLLM_GLM53_MK_MLA_PREFILL_GROUP") == "4" else 2
+)
 # MK_SEG_SMLP2: the dense MLP (gate_up -> clamped SwiGLU -> down), T <= 32
 # -- the shared expert of every MoE layer and the three dense layers -- as
 # two PDL-chained v2 (non-persistent) launches: gate_up with the pair-
@@ -3050,6 +3058,12 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert (H, D) == (MLA_H, MLA_D), f"mla: shape {(H, D)} != {(MLA_H, MLA_D)}"
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
+    if (ENABLE_MLA_PREFILL_PAIR and 128 <= T <= 8192
+            and 1 <= slots.shape[1] <= 2176
+            and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
+            and ckv.element_size() == 1 and lens.is_contiguous()
+            and not torch.cuda.is_current_stream_capturing()):
+        return _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
     ws = _ensure_workspace(q_nope.device)
     splits = mla_splits(T)
     assert splits == 1 or T * splits <= MLA_WS_ROWS, (T, splits)
@@ -3063,6 +3077,37 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
          ws["barrier_mla"].data_ptr()],
         [float(sm_scale), float(ckv_scale)],
         [int(T), int(slots.shape[1]), int(splits)],
+    )
+    return out
+
+
+def _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
+    """Two or four adjacent rows reuse FP8 loads with independent membership.
+
+    The schedule holds only slot IDs and one membership bit per row, never gathered
+    KV. Its size is bounded by T*W, independent of the physical cache span.
+    Per-call storage is deliberately eager-only: it cannot invalidate the
+    fixed workspace used by captured decode graphs. Duplicate input slots
+    remain duplicate schedule entries, with each row's multiplicity intact.
+    Ordering can differ from the indexer, so this is not a bit-exact claim.
+    """
+    import torch
+
+    T, _, _ = q_nope.shape
+    W = slots.shape[1]
+    width = MLA_PREFILL_GROUP
+    groups = (T + width - 1) // width
+    schedule = torch.empty((groups, width * W), dtype=torch.int32, device=q_nope.device)
+    membership = torch.empty_like(schedule)
+    lengths = torch.empty(groups, dtype=torch.int32, device=q_nope.device)
+    if out is None:
+        out = torch.empty_like(q_nope)
+    launch = (_EXT.run_mla_prefill_group4 if width == 4
+              else _EXT.run_mla_prefill_pair)
+    launch(
+        [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
+         out.data_ptr(), schedule.data_ptr(), membership.data_ptr(), lengths.data_ptr()],
+        [float(sm_scale), float(ckv_scale)], [int(T), int(W)],
     )
     return out
 
@@ -3100,9 +3145,19 @@ def _selftest_mla() -> bool:
     worst = 0.0
     # 40 and 100 rows take the direct path (splits == 1: v5's prefill
     # store), which the decode shapes never exercise.
-    for T, W, ragged in ((8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
-                         (40, 2048, True), (100, 2048, True)):
-        num_slots = 4096
+    cases = [(8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
+             (40, 2048, True), (100, 2048, True)]
+    if ENABLE_MLA_PREFILL_PAIR:
+        # The optional path begins at T=128. Its boot gate must exercise
+        # shared selections, repeated slots, low overlap, odd T and empty
+        # rows before the existing MLA segment is allowed to arm.
+        cases += [(128, 2048, False), (129, 2176, True), (130, 64, True)]
+        if MLA_PREFILL_GROUP == 4:
+            cases += [(131, 2176, True)]
+    for T, W, ragged in cases:
+        num_slots = (max(4096, 4 * W)
+                     if ENABLE_MLA_PREFILL_PAIR and MLA_PREFILL_GROUP == 4 and T >= 128
+                     else 4096)
         q = torch.randn(T, MLA_H, MLA_D, dtype=torch.bfloat16, device=dev) * 0.3
         cache = (torch.randn(num_slots, MLA_D, device=dev) * 0.5).to(torch.float8_e4m3fn)
         slots = torch.randint(0, num_slots, (T, W), dtype=torch.int32, device=dev)
@@ -3110,6 +3165,29 @@ def _selftest_mla() -> bool:
             lens = torch.randint(1, W + 1, (T,), dtype=torch.int32, device=dev)
         else:
             lens = torch.full((T,), W, dtype=torch.int32, device=dev)
+        if ENABLE_MLA_PREFILL_PAIR and T >= 128:
+            slots[1].copy_(slots[0])
+            lens[1].copy_(lens[0])
+            if MLA_PREFILL_GROUP == 4 and not ragged:
+                slots[2].copy_(slots[0])
+                slots[3].copy_(slots[0])
+                lens[2:4].copy_(lens[0].expand(2))
+            if ragged:
+                lens[2:4].zero_()
+            if MLA_PREFILL_GROUP == 4:
+                # Four disjoint full lists force weak-reuse fallback; at
+                # W2176 their 8704 unique keys also exceed the hash capacity.
+                # The following group covers unequal per-row membership and
+                # multiplicity on the shared route instead of only identical
+                # lists. These fixtures run only with the explicit group knob.
+                col = torch.arange(W, dtype=torch.int32, device=dev)
+                common = 3 * W // 4
+                for row in range(4):
+                    slots[4 + row].copy_(col + row * W)
+                    slots[8 + row, :common].copy_(col[:common])
+                    slots[8 + row, common:].copy_(col[common:] + row * (W - common))
+                lens[4:12].fill_(W)
+                slots[9, common].copy_(slots[8, 0])
         sm, ks = MLA_D ** -0.5, 0.7
         got = mla_decode(q, cache.view(torch.uint8), slots, lens, sm, ks)
         ref = mla_decode_ref(q, cache, slots, lens, sm, ks)
@@ -3120,7 +3198,8 @@ def _selftest_mla() -> bool:
                            T, W, error)
             return False
         worst = max(worst, error)
-    logger.warning("[megakernel] selftest mla rel=%.2e -> ARM", worst)
+    logger.warning("[megakernel] selftest mla rel=%.2e pair_prefill=%s group=%d -> ARM",
+                   worst, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP)
     return True
 
 

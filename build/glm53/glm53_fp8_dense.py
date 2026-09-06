@@ -92,6 +92,8 @@ _BPROJ_INCLUDE = (
 )
 
 _BPROJ_ON = ("1", "true", "yes", "on")
+_PREFILL_BPROJ_ENV = "VLLM_GLM53_PREFILL_NVFP4_BPROJ"
+_PREFILL_BPROJ_ENABLED = os.environ.get(_PREFILL_BPROJ_ENV) == "1"
 
 # The DFlash2 drafter (Qwen3-style, glm53_dflash_loader_fp8 calls this pass
 # under its own knob) names its projections differently from the target:
@@ -148,6 +150,9 @@ def _register_compile_factor(env: str, getter) -> bool:
 
 
 _register_compile_factor(_DRAFTER_ENV, _drafter_knob_value)
+_register_compile_factor(
+    _PREFILL_BPROJ_ENV, lambda: "1" if _PREFILL_BPROJ_ENABLED else "0"
+)
 
 
 def _spec_k_value() -> str:
@@ -299,6 +304,7 @@ _NVFP4_BACKEND = os.environ.get("VLLM_GLM53_NVFP4_BACKEND", "cutlass")
 # layer it meant two real kernel launches on every one of ~180 linears,
 # inside a build pass that already died once for want of host memory.
 _NVFP4_ALPHA: list = [None]
+_NVFP4_SCALE_FUSED = os.environ.get("VLLM_GLM53_NVFP4_SCALE_FUSED") == "1"
 
 
 def _nvfp4_global_scale(t: torch.Tensor) -> torch.Tensor:
@@ -343,11 +349,19 @@ def _nvfp4_dense_gemm(
     from flashinfer import mm_fp4, nvfp4_quantize
 
     flat = x.reshape(-1, x.shape[-1])
-    x_gs = _nvfp4_global_scale(flat)
+    if (_NVFP4_SCALE_FUSED and flat.is_cuda and flat.dtype == torch.bfloat16
+            and flat.is_contiguous() and flat.numel() > 0
+            and w_gs.dtype == torch.float32 and w_gs.device == flat.device
+            and w_gs.numel() == 1):
+        from .glm53_nvfp4_scale import activation_scale_alpha
+
+        x_gs, alpha = activation_scale_alpha(flat, w_gs, alpha_scale)
+    else:
+        x_gs = _nvfp4_global_scale(flat)
+        alpha = (alpha_scale / (x_gs * w_gs)).to(torch.float32)
     xq, xsf = nvfp4_quantize(flat.to(torch.bfloat16), x_gs)
     # Both operands carry their global scale into the values, so the product
     # has to be divided back out once, in the epilogue.
-    alpha = (alpha_scale / (x_gs * w_gs)).to(torch.float32)
     out = torch.empty(
         flat.shape[0], out_rows, dtype=torch.bfloat16, device=flat.device
     )
@@ -981,6 +995,14 @@ def _kda_owns(model, name: str) -> bool:
     return hasattr(parent, "in_proj_qkvbfg_a")
 
 
+def _maybe_build_prefill_bproj(model, env):
+    if env != "VLLM_GLM53_FP8_DENSE" or not _PREFILL_BPROJ_ENABLED:
+        return False
+    from .glm53_nvfp4_bproj import maybe_build_nvfp4_bproj
+
+    return maybe_build_nvfp4_bproj(model)
+
+
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
 
@@ -994,7 +1016,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     stale copy behind."""
     raw = (os.environ.get(env) or "0").strip().lower()
     if raw in ("", "0", "false", "no", "off"):
-        return False
+        return _maybe_build_prefill_bproj(model, env)
     t_fold = time.perf_counter()  # 37차: this pass is ~45 s of the 118 s load
     # w4a8: weights one notch lower on the same kernel family
     # (fp8_fp4_gemm_nt, dense form of the MoE expert kernel); activations
@@ -1274,4 +1296,5 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             "landed",
             type(model).__name__, len(stale), ", ".join(stale[:8]),
         )
-    return bool(quantized or quantized_w4)
+    prefill_bproj = _maybe_build_prefill_bproj(model, env)
+    return bool(quantized or quantized_w4 or prefill_bproj)

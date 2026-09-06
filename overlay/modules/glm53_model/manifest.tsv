@@ -13,5 +13,7 @@ flashinfer_mla_sparse_sm90.py	vllm/v1/attention/backends/mla/flashinfer_mla_spar
 glm53_kda_onepass.py	vllm/model_executor/layers/glm53_kda_onepass.py	absent
 # -- glm53_fp8_dense
 glm53_fp8_dense.py	vllm/model_executor/layers/glm53_fp8_dense.py	absent
+glm53_nvfp4_scale.py	vllm/model_executor/layers/glm53_nvfp4_scale.py	absent
+glm53_nvfp4_bproj.py	vllm/model_executor/layers/glm53_nvfp4_bproj.py	absent
 # -- mtp.py (37차): the MTP block under an FP8-capable MoE backend (native MTP boots died under flashinfer_b12x)
 mtp.py	vllm/models/glm5next/nvidia/mtp.py	b183ed6e134e7126719b3c7208eef46039805d478916a5c876ec25d60be714ce

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from vllm.platforms import current_platform
+from vllm.triton_utils import tl, triton
 from vllm.utils.import_utils import has_tilelang
 from vllm.utils.math_utils import cdiv
 
@@ -53,6 +54,67 @@ else:
     T = None  # type: ignore[assignment]
 
 ENABLE_PDL = current_platform.is_arch_support_pdl() and current_platform.is_cuda()
+
+
+@triton.jit(do_not_specialize=["M"])
+def _mhc_prefill_post_prenorm_kernel(
+    Comb, Residual, Post, X, Fn, ResidualOut, GemmOut, Sqrsum,
+    M, HIDDEN: tl.constexpr, NSPLITS: tl.constexpr,
+    BM: tl.constexpr, BK: tl.constexpr, BN: tl.constexpr,
+):
+    """Reuse rounded post-map tiles for prenorm, across BM prompt rows.
+
+    The residual remains materialized for the following pre-map and future
+    layers. Only its separate prenorm read is removed. FP32 weight products
+    use TF32x3; the original BF16 post rounding stays before both the GEMM
+    and squared sum. Different split/reduction order remains a quality gate.
+    """
+    row = tl.program_id(0) * BM + tl.arange(0, BM)
+    split = tl.program_id(1)
+    col = tl.arange(0, BN)
+    h_tile = tl.arange(0, BK)
+    h_tiles_per_split: tl.constexpr = tl.cdiv(tl.cdiv(HIDDEN, BK), NSPLITS)
+    mul = tl.zeros((BM, BN), dtype=tl.float32)
+    sqr = tl.zeros((BM,), dtype=tl.float32)
+
+    for tile in range(h_tiles_per_split):
+        h = (split * h_tiles_per_split + tile) * BK + h_tile
+        mask = (row[:, None] < M) & (h[None, :] < HIDDEN)
+        residual_base = row[:, None] * (4 * HIDDEN) + h[None, :]
+        # Each of the four output channels uses these same five vectors.
+        r0 = tl.load(Residual + residual_base, mask, other=0).to(tl.float32)
+        r1 = tl.load(Residual + residual_base + HIDDEN, mask, other=0).to(tl.float32)
+        r2 = tl.load(Residual + residual_base + 2 * HIDDEN, mask, other=0).to(tl.float32)
+        r3 = tl.load(Residual + residual_base + 3 * HIDDEN, mask, other=0).to(tl.float32)
+        x = tl.load(X + row[:, None] * HIDDEN + h[None, :], mask, other=0).to(tl.float32)
+
+        for hc in tl.static_range(4):
+            p = tl.load(Post + row * 4 + hc, row < M, other=0)
+            c0 = tl.load(Comb + row * 16 + hc, row < M, other=0)
+            c1 = tl.load(Comb + row * 16 + 4 + hc, row < M, other=0)
+            c2 = tl.load(Comb + row * 16 + 8 + hc, row < M, other=0)
+            c3 = tl.load(Comb + row * 16 + 12 + hc, row < M, other=0)
+            # Match mhc_post's output-channel orientation and FMA sequence.
+            updated = p[:, None] * x
+            updated = tl.fma(c0[:, None], r0, updated)
+            updated = tl.fma(c1[:, None], r1, updated)
+            updated = tl.fma(c2[:, None], r2, updated)
+            updated = tl.fma(c3[:, None], r3, updated)
+            rounded = updated.to(tl.bfloat16)
+            tl.store(ResidualOut + residual_base + hc * HIDDEN, rounded, mask)
+            rounded_f32 = tl.where(h[None, :] < HIDDEN, rounded.to(tl.float32), 0.0)
+            sqr += tl.sum(rounded_f32 * rounded_f32, axis=1)
+            weights = tl.load(
+                Fn + col[None, :] * (4 * HIDDEN) + hc * HIDDEN + h[:, None],
+                (col[None, :] < 24) & (h[:, None] < HIDDEN), other=0,
+            )
+            mul = tl.dot(rounded_f32, weights, mul, input_precision="tf32x3")
+
+    tl.store(
+        GemmOut + (split * M + row[:, None]) * 24 + col[None, :],
+        mul, (row[:, None] < M) & (col[None, :] < 24),
+    )
+    tl.store(Sqrsum + split * M + row, sqr, row < M)
 
 
 # deneb fork: opt-in TileLang pass-config re-enable (VLLM_GLM53_MHC_PASSES).

@@ -9,6 +9,9 @@
 # ruff: noqa: E501
 
 import os
+from functools import lru_cache
+import hashlib
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -29,6 +32,133 @@ from .utils import FLA_CHUNK_SIZE, is_amd
 
 BT_LIST_AUTOTUNE = [32, 64, 128]
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
+
+
+_GLM53_KDA_QK_L2NORM_STRIDED = (
+    os.environ.get("VLLM_GLM53_KDA_PREFILL_QK_NORM") == "1"
+)
+_GLM53_L2NORM_SHA256 = "520f4513ef4fc97e6b88dc07877cca8e29da0d34e44673fe989e3af002d86381"
+
+
+@lru_cache(maxsize=1)
+def _glm53_l2norm_source_matches(fn):
+    """Pin the arithmetic copied from the image's default FLA norm kernel."""
+    try:
+        return hashlib.sha256(Path(fn.__code__.co_filename).read_bytes()).hexdigest() == _GLM53_L2NORM_SHA256
+    except (AttributeError, OSError, TypeError):
+        return False
+
+
+@triton.jit
+def _glm53_qk_l2norm_strided_kernel(
+    Q, K, QY, KY, eps, M,
+    QT: tl.constexpr, QH: tl.constexpr, QD: tl.constexpr,
+    KT: tl.constexpr, KH: tl.constexpr, KD: tl.constexpr,
+    H: tl.constexpr, N: tl.constexpr, BD: tl.constexpr, MBLOCK: tl.constexpr,
+):
+    # Exactly the pinned l2norm_fwd_kernel2 reduction shape and arithmetic:
+    # FP32 square -> sum(axis=1) -> rsqrt(sum + eps) -> multiply -> BF16.
+    # Only the load addresses and the independent Q/K launch axis differ.
+    xoffset = tl.program_id(0) * MBLOCK
+    row_idx = xoffset + tl.arange(0, MBLOCK)[:, None]
+    xmask = row_idx < M
+    rindex = tl.arange(0, BD)[None, :]
+    cmask = rindex < N
+    mask = xmask & cmask
+    # Flatten [1,T,H,D] in the same T/H order as stock's contiguous view.
+    # Positive strides can describe both channel-major conv output and a
+    # token-major split of a merged QKV projection. Use 64-bit offsets for
+    # views whose backing allocation extends beyond the logical tensor.
+    token_idx = (row_idx // H).to(tl.int64)
+    head_idx = (row_idx % H).to(tl.int64)
+    dim_idx = rindex.to(tl.int64)
+    if tl.program_id(1) == 0:
+        x_offsets = token_idx * QT + head_idx * QH + dim_idx * QD
+        xs = tl.load(Q + x_offsets, mask, other=0.0).to(tl.float32)
+        Y = QY
+    else:
+        x_offsets = token_idx * KT + head_idx * KH + dim_idx * KD
+        xs = tl.load(K + x_offsets, mask, other=0.0).to(tl.float32)
+        Y = KY
+    square = tl.broadcast_to(xs * xs, [MBLOCK, BD])
+    square_sum = tl.sum(tl.where(xmask, square, 0), 1)[:, None]
+    rsqrt = tl.rsqrt(square_sum + eps)
+    tl.store(Y + (rindex + N * row_idx), xs * rsqrt, mask)
+
+
+@triton.jit
+def _glm53_qk_l2norm_channel_major_kernel(
+    Q, K, QY, KY, TOKENS,
+    QH: tl.constexpr, QD: tl.constexpr,
+    KH: tl.constexpr, KD: tl.constexpr,
+    BT: tl.constexpr,
+):
+    # Conv output has contiguous TOKENS, not contiguous head dimensions.
+    # Put 32 adjacent tokens along the load's contiguous axis. Flattening
+    # T/H into stock's 32-row tile would expose only two adjacent tokens
+    # and can erase the copy saving with sparse memory transactions.
+    token = (tl.program_id(0) * BT + tl.arange(0, BT)[None, :]).to(tl.int64)
+    head = tl.program_id(1).to(tl.int64)
+    dim = tl.arange(0, 128)[:, None].to(tl.int64)
+    if tl.program_id(2) == 0:
+        xs = tl.load(Q + token + head * QH + dim * QD,
+                     token < TOKENS, other=0).to(tl.float32)
+        out = QY
+    else:
+        xs = tl.load(K + token + head * KH + dim * KD,
+                     token < TOKENS, other=0).to(tl.float32)
+        out = KY
+    # Same FP32 square/sum/rsqrt recipe; layout changes can still change the
+    # generated reduction schedule, so bit equality must be tested on GPU.
+    inv = tl.rsqrt(tl.sum(xs * xs, axis=0)[None, :] + 1.0e-6)
+    tl.store(out + (token * 16 + head) * 128 + dim,
+             xs * inv, token < TOKENS)
+
+
+def _glm53_qk_l2norm_strided(q, k):
+    """Return dense normalized Q/K, or None outside the pinned chunk lane.
+
+    Two noncontiguous BF16 inputs of S bytes each normally materialize two
+    contiguous copies before normalization. This removes 4*S bytes of copy
+    reads/writes (128 MiB at T=8192) and one normalization launch. Actual
+    memory transactions depend on the input strides; speed is unmeasured.
+    Source-equivalent arithmetic is not a GPU bit-equality result.
+    """
+    if not _GLM53_KDA_QK_L2NORM_STRIDED:
+        return None
+    if (
+        q.device.type != "cuda" or k.device != q.device
+        or q.dtype != torch.bfloat16 or k.dtype != q.dtype
+        or q.ndim != 4 or k.ndim != 4
+        or tuple(q.shape) != tuple(k.shape)
+        or q.shape[0] != 1 or not 0 < q.shape[1] <= 8192
+        or tuple(q.shape[2:]) != (16, 128)
+        or any(stride <= 0 for stride in (*q.stride(), *k.stride()))
+        or not _glm53_l2norm_source_matches(l2norm_fwd)
+        # The alternate FLA mode divides by sqrt instead of multiplying by
+        # rsqrt and autotunes its tile. Preserve that original path exactly.
+        or l2norm_fwd.__globals__.get("USE_DEFAULT_FLA_NORM") != 0
+    ):
+        return None
+    q_out = torch.empty(q.shape, dtype=q.dtype, device=q.device)
+    k_out = torch.empty_like(q_out)
+    if q.stride(1) == 1 and k.stride(1) == 1:
+        _glm53_qk_l2norm_channel_major_kernel[
+            (triton.cdiv(q.shape[1], 32), 16, 2)
+        ](
+            q, k, q_out, k_out, q.shape[1],
+            QH=q.stride(2), QD=q.stride(3),
+            KH=k.stride(2), KD=k.stride(3), BT=32, num_warps=4,
+        )
+        return q_out, k_out
+    rows = q.shape[1] * 16
+    _glm53_qk_l2norm_strided_kernel[(triton.cdiv(rows, 32), 2)](
+        q, k, q_out, k_out, 1e-6, rows,
+        QT=q.stride(1), QH=q.stride(2), QD=q.stride(3),
+        KT=k.stride(1), KH=k.stride(2), KD=k.stride(3),
+        H=16, N=128, BD=128, MBLOCK=32, num_warps=4,
+    )
+    return q_out, k_out
 
 
 # Deneb: opt-in, call-level split of the production GLM-5.3 KDA chunk
@@ -1844,8 +1974,12 @@ def chunk_kda_with_fused_gate(
         scale = k.shape[-1] ** -0.5
 
     if use_qk_l2norm_in_kernel:
-        q = l2norm_fwd(q.contiguous())
-        k = l2norm_fwd(k.contiguous())
+        normalized = _glm53_qk_l2norm_strided(q, k)
+        if normalized is None:
+            q = l2norm_fwd(q.contiguous())
+            k = l2norm_fwd(k.contiguous())
+        else:
+            q, k = normalized
 
     o, final_state = chunk_kda_with_fused_gate_fwd(
         q=q,

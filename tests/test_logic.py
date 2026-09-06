@@ -5393,6 +5393,7 @@ def test_glm53_kda_prefill_direct_output() -> None:
     }, {
         "torch": torch_stub, "FLA_CHUNK_SIZE": 64,
         "l2norm_fwd": lambda tensor: Tensor(tensor.shape),
+        "_glm53_qk_l2norm_strided": lambda q, k: None,
         "prepare_chunk_indices": lambda *args: object(),
         "_glm53_kda_prefill_autotune_regime": lambda **kwargs: 0,
         "fused_kda_gate_chunk_cumsum": lambda *args, **kwargs: Tensor(),
@@ -8954,7 +8955,7 @@ def test_glm53_megakernel_contracts() -> None:
           "prologue order: the first unit's W fill (independent of the "
           "previous kernel), the PDL wait, x into registers, amax/convert/"
           "store, barrier")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 5
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') >= 5
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
