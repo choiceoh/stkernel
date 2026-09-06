@@ -35,14 +35,63 @@ def filler(n_tokens, rng):
     return " ".join(rng.choice(WORDS) for _ in range(int(n_tokens / 1.3)))
 
 
-def build(ctx_tokens, seed):
+# 39차 (operator: "한국어 본문을 프리필해서 품질·프리필·디코드를 한 번에"): the
+# same three facts planted in KOREAN prose, so the document IS the Korean
+# workload -- prefill on real Korean text, answers decoded from a Korean
+# context, corruption scanned on those answers -- instead of an English
+# gibberish body plus a separate Korean prompt set. The filler is a fixed
+# pool of Korean Wikipedia paragraphs (bench/ko_filler.txt, CC BY-SA) drawn
+# in seeded order; the English word-salad body stays as lang="en" (dsv4's
+# gate and the pre-39차 records).
+FACTS_KO = [
+    ("메리디안 배열의 보정 상수는 8127이다.",
+     "메리디안 배열의 보정 상수는 얼마인가?", ["8127"]),
+    ("할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.",
+     "툰드라 조사 보고서에는 누가, 언제 서명했는가?",
+     ["할보르센", "1997년 3월 14일"]),
+    ("채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.",
+     "채석장의 비상 차단 밸브는 무엇이고 어디에 있는가?", ["k-42", "북쪽"]),
+]
+KO_CHARS_PER_TOKEN = 1.24      # GLM-5.3 tokenizer on the pool (39차: 170,026 chars -> 137,416 tokens)
+_KO_POOL = None
+
+
+def _ko_pool():
+    global _KO_POOL
+    if _KO_POOL is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ko_filler.txt")
+        with open(path, encoding="utf-8") as f:
+            _KO_POOL = [p for p in f.read().split("\n") if p]
+    return _KO_POOL
+
+
+def filler_ko(n_tokens, rng):
+    pool = _ko_pool()
+    want = int(n_tokens * KO_CHARS_PER_TOKEN)
+    out, got = [], 0
+    while got < want:
+        p = pool[rng.randrange(len(pool))]
+        if got + len(p) > want + 40:            # trim the last paragraph at a sentence end
+            cut = p.rfind("다.", 0, max(want - got, 1) + 2)
+            p = p[:cut + 2] if cut > 0 else p[:want - got]
+        out.append(p)
+        got += len(p) + 1
+    return "\n".join(out)
+
+
+def facts(lang="en"):
+    return FACTS_KO if lang == "ko" else FACTS
+
+
+def build(ctx_tokens, seed, lang="en"):
     rng = random.Random(seed)
+    fill = filler_ko if lang == "ko" else filler
     # plant the three facts at 25% / 50% / 75% depth (4 equal filler chunks)
     chunks, per = [], ctx_tokens / 4.0
-    for i, (sent, _, _) in enumerate(FACTS):
-        chunks.append(filler(per, rng))
+    for i, (sent, _, _) in enumerate(facts(lang)):
+        chunks.append(fill(per, rng))
         chunks.append(sent)
-    chunks.append(filler(per, rng))
+    chunks.append(fill(per, rng))
     return "\n".join(chunks)
 
 
@@ -71,11 +120,12 @@ if __name__ == "__main__":
     # QUALITY_CTX=2000,32000 -> the quick leg (an exploration arm skips the
     # 128K prefill, ~3 min of the 25-min arm); the default is the full ladder
     ctxs = tuple(int(c) for c in os.environ.get("QUALITY_CTX", "2000,32000,128000").split(","))
+    lang = os.environ.get("QUALITY_LANG", "en")   # ko = Korean prose body (39차); en = the word salad
     total = ok = 0
     for ctx in ctxs:
-        doc = build(ctx, seed + ctx)
+        doc = build(ctx, seed + ctx, lang)
         hits = []
-        for _, q, expect in FACTS:
+        for _, q, expect in facts(lang):
             ans = ask(doc, q).lower()
             good = all(e in ans for e in expect)
             hits.append("o" if good else "X")
