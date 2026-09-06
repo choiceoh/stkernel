@@ -122,6 +122,9 @@ python3 "$REPO/launchers/audit-runtime-guards.py" --self-test
 if [ -f "$REPO/tests/test_logic.py" ]; then
   python3 "$REPO/tests/test_logic.py" || { echo "ABORT: tests/test_logic.py failed"; exit 1; }
 fi
+if [ "$PROFILE" = glm53 ]; then
+  bash "$REPO/launchers/check-glm53-chat.sh" "${MODEL_HOST_PATH:-$PROFILE_MODEL_PATH}" "${IMAGE:-$PROFILE_IMAGE}"
+fi
 
 echo "=== head ($HEAD_OV) ==="
 mkdir -p "$HEAD_OV"

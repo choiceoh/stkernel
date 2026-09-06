@@ -12,6 +12,50 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 | `glm53_dev_lab` | `glm53_dev_lab.py`, `glm53_lab_middleware.py` | 개발 랩 `/glm53/lab` (`DEV_LAB`, 개발 부팅 전용) |
 | `glm53_oneshot_wiring` | `cuda_communicator.py` | one-shot AR 의 glm53 이미지 배선 (`cuda_communicator.py`) |
 | `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP`·`PREFILL_SP_FP8`, 기본 0) |
+| 채팅 옵션 계약 | `glm53_chat.py` | Chat Completions 옵션 검증과 정규화 |
+
+## Chat Completions 옵션과 템플릿
+
+`start-glm53-nvfp4-tp4.sh`는 `ChatContractMiddleware`를 등록하고, 기존
+`glm45` reasoning / `glm47` tool 파서를 사용한다. HTTP 응답과 SSE 청크,
+`finish_reason`은 수정하지 않는다. 추론 중 length 종료를 답변으로 변환하지 않는다.
+
+- `chat_template_kwargs.thinking`과 `enable_thinking`은 boolean만 받으며,
+  둘을 함께 지정하면 값이 같아야 한다. 명시적인 `false`는 기존 클라이언트의
+  `<think></think>` 호환 경로를 유지한다. 생략한 값은 서버 기본값에 맡긴다.
+- `reasoning_effort`는 `low`, `high`, `max`를 지원한다. 최상위 필드와
+  `chat_template_kwargs` 값이 충돌하거나 지원하지 않는 값을 지정하면 400이다.
+  `null`/생략은 기본값이며, 공식 템플릿의 기본 effort는 `max`다.
+- `clear_thinking`은 기존 기본값 false를 유지한다. 일반 채팅 클라이언트는
+  true를 명시할 수 있다. 이전 사용자 턴의 reasoning만 지우며 현재 도구 호출
+  라운드의 reasoning은 유지한다.
+- 이력의 reasoning은 `reasoning_content` 필드로 전달한다. 일반 본문의
+  `<think>`/`</think>`는 재해석하지 않는다. 과거의 태그 포함 이력을 복원할 때만
+  `legacy_reasoning_content=true`를 지정한다. 이때도 본문 맨 앞의 완성된 블록
+  하나만 분리하며 뒤의 본문과 태그는 보존한다. 명시적 reasoning 필드가 우선이다.
+- `content=null`은 빈 본문으로 렌더링한다. 도구 인자의 JSON 문자열→mapping
+  변환은 vLLM의 Chat API 전처리 책임이다.
+
+이 검증은 `/v1/chat/completions`에 적용된다. Responses API의 별도 입력 규약을
+추가로 구현한 것은 아니다. Hugging Face 직접 호출에는 Jinja 검증이 적용된다.
+
+런처는 저장소의 `launchers/chat_template_mm_v2.jinja`를 기준으로
+`chat_template.<SHA256>.jinja`를 모든 모델 디렉터리에 원자적으로 배치한다.
+기존 이름의 파일은 덮어쓰지 않는다. 전송된 파일과 실제 컨테이너 마운트의
+해시 검증이 끝나야 시작을 진행한다. 다른 템플릿을 명시하면 저장소 파일을
+우선하고, 없을 때 모델 폴더에서 읽는다. 런처 로그에 이름·해시·파서가 남는다.
+
+검증:
+
+```bash
+uv run --with jinja2 python tests/test_glm53_chat.py
+bash launchers/check-glm53-chat.sh /home/choiceoh/models/glm53-redhat-nvfp4 glm53:v13-b12x-it
+```
+
+두 번째 검사는 GPU 없이 선택한 이미지의 실제 parser/tokenizer로 추론 시작·종료,
+미완료 추론, off, 복수 도구 호출, 인자 타입, 청크 경계와 도구 결과 재입력을
+검사한다. `deploy-overlays.sh glm53`도 파일 배포 전에 이 검사를 실행한다.
+모델을 재시작하거나 생성 품질을 측정하는 검사는 별도로 수행해야 한다.
 
 ---
 
