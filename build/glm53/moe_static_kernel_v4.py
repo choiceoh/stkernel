@@ -375,12 +375,25 @@ class MoEStaticKernelV4:
         def _expect(lin: int, key_mask: int) -> int:
             return lin ^ (((lin >> 7) & key_mask) << 4)
 
+        # A B1 stage is 64 rows x 512 K held as TWO 8 KB K-half blocks: the
+        # staged layout's k mode is (256, 2) with strides (1, 16384), so the
+        # pre-swizzle element offset is NOT the flat r*512 + k but
+        #     lin = r*256 + k%256 + (k//256)*16384
+        # which is exactly what moe_dispatch._swizzle_perms inverts byte-wise
+        # (its khalf term). Reading it flat made this check reject the true
+        # layout at the first k >= 256 sample (39차: it cost cell z a GPU
+        # turn -- "(row 0, k 256) is 16384, expected 288").
+        def _b1_lin(r: int, k: int) -> int:
+            return r * 256 + (k % 256) + (k // 256) * 16384
+
+        # key = (lin>>7)&7 = (2*r + (k%256 >= 128)) & 7: these ten cover all
+        # eight key values and both K halves
         b1_samples = (
             (0, 0), (0, 8), (0, 16), (0, 24), (0, 31),
-            (1, 0), (2, 8), (3, 16), (63, 0), (63, 31),
+            (1, 0), (1, 8), (2, 0), (2, 8), (3, 16), (63, 0), (63, 31),
         )
-        for r, c in b1_samples:  # (row, 16-element chunk): plain lin = r*512 + c*16
-            lin = r * _FC1_TILE_K + c * 16
+        for r, c in b1_samples:  # (row, 16-element chunk)
+            lin = _b1_lin(r, c * 16)
             got = int(cute.crd2idx((r, c * 16, 0), self.b1_smem_layout_staged))
             if got != _expect(lin, 7):
                 raise ValueError(
