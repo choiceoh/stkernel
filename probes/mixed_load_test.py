@@ -39,6 +39,7 @@ def _load(fname, modname):
 def stream(model, content, max_tokens, stamps, done):
     """Append an arrival timestamp per content chunk; set done[0] at the end."""
     body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.0, "stream": True,
+                       "stream_options": {"include_usage": True},
                        "messages": [{"role": "user", "content": content}],
                        "chat_template_kwargs": {"thinking": False}}).encode()
     req = urllib.request.Request(BASE + "/v1/chat/completions", data=body, headers={"Content-Type": "application/json"})
@@ -110,6 +111,8 @@ def main():
         ttft = (p_stamps[0] - t0) if p_stamps else float("nan")
         t.join()
         prompt_tokens = (p_done[1] or {}).get("prompt_tokens") if len(p_done) > 1 else None
+        if not prompt_tokens:  # usage missing: estimate from the Korean filler ratio
+            prompt_tokens = int(len(prefill_prompt) / cq.KO_CHARS_PER_TOKEN)
         rate = (prompt_tokens / ttft) if prompt_tokens and ttft == ttft and ttft > 0 else float("nan")
         overlap = gaps(d_stamps, t0, p_done[0])
         n_overlap = sum(1 for s in d_stamps if t0 <= s <= p_done[0])
