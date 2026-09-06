@@ -68,6 +68,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_common import (
+    _bulk_g2s,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
@@ -91,6 +92,14 @@ _SF_VEC_SIZE = 16
 _COMPACT_STATIC_TILE_M = 128
 _TILE_M = 32
 _FC1_TILE_N = 64
+# packed FC1 scales (cell q, moe_sf_pack): one 4096 B scale block becomes two
+# byte-aligned planes (2048 + 1024) plus a 16 B tail holding the block's base,
+# so a stage moves 3088 B and the expansion writes the 4096 B back in place.
+_SF_BLOCK_BYTES = 4096
+_SF_PLANE_A = 2048
+_SF_PLANE_B = 1024
+_SF_BASE_OFF = 3072
+_SF_STAGE_BYTES = 3088
 _FC1_TILE_K = 512
 _FC2_TILE_N = 128
 _FC2_TILE_K = 128
@@ -114,6 +123,7 @@ class MoEStaticKernelV4:
         skip_sf: bool = False,
         skip_a: bool = False,
         a_ring: bool = False,
+        sf_pack: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -168,6 +178,22 @@ class MoEStaticKernelV4:
         self.a_ring = bool(a_ring)
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
+        # sf_pack (cell q, 39차 §4c): the FC1 weight scales arrive 6-bit packed
+        # (base + index per 4 KB block, two byte-aligned planes and the base in
+        # a 16 B tail = 3088 B a stage instead of 4096), and the MMA warps
+        # expand them IN PLACE in the stage's own scale buffer before reading
+        # the fragment. Scales are 7.7% of the item's traffic and the kernel is
+        # bandwidth-bound (§3e), so -25% of them is worth ~1.5% of the call
+        # (§4d measured the whole box at 6.2%); the expansion rides in the DMA's
+        # shadow, where the MMA warps are already waiting.
+        self.sf_pack = bool(sf_pack)
+        if self.sf_pack and self.skip_sf:
+            raise ValueError("xs (skip the FC1 SFB boxes) and sf_pack are exclusive")
+        if self.sf_pack and self.split:
+            raise ValueError(
+                "sf_pack needs every MMA warp at every FC1 stage; the split "
+                "roles send the two halves to different warps"
+            )
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
         self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
         self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
@@ -194,6 +220,12 @@ class MoEStaticKernelV4:
         self.buffer_align_bytes = 1024
         self.epilog_sync_barrier = pipeline.NamedBarrier(
             barrier_id=1,
+            num_threads=self.num_mma_warps * self.num_threads_per_warp,
+        )
+        # the 4 MMA warps expand a packed scale stage together: read, barrier,
+        # write (barrier 1 is the epilogue's, so this one is 2)
+        self.sf_expand_barrier = pipeline.NamedBarrier(
+            barrier_id=2,
             num_threads=self.num_mma_warps * self.num_threads_per_warp,
         )
         self.load_register_requirement = 32
@@ -255,6 +287,38 @@ class MoEStaticKernelV4:
             tiled_mma,
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
+
+    def _sf_expand_stage(self, stage_addr, tidx):
+        """Expand one packed FC1 scale stage in place (39차 §4c).
+
+        The stage holds 2048 B of low nibbles, 1024 B of high 2-bit fields and
+        the block's e4m3 base in a 16 B tail; the MMA fragment wants the 4096 B
+        the stock TMA box would have written, in the same byte order (the block
+        is one contiguous run -- §3b). Each of the 128 MMA threads owns 32
+        output bytes and reads its own 24 B of input FIRST; the barrier between
+        the two halves is what makes it safe in place, since thread 0's output
+        lands on plane A bytes thread 1 has not read yet.
+        """
+        a = []
+        for w in range(4):
+            a.append(_ld_shared_i32(stage_addr + Int32(16) * tidx + Int32(4 * w)))
+        b = []
+        for w in range(2):
+            b.append(_ld_shared_i32(
+                stage_addr + Int32(_SF_PLANE_A) + Int32(8) * tidx + Int32(4 * w)))
+        base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF)) & Int32(0xFF)
+        # (plain Python loops: this helper is inlined into the traced kernel at
+        # trace time, so every index below is a constant by the time IR is emitted)
+        self.sf_expand_barrier.arrive_and_wait()
+        for j in range(8):
+            word = Int32(0)
+            for m in range(4):
+                i = 4 * j + m
+                nib = (a[i >> 3] >> Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & Int32(0xF)
+                hi = (b[i >> 4] >> Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & Int32(0x3)
+                val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
+                word = word | (val << Int32(8 * m))
+            _st_shared_i32(stage_addr + Int32(32) * tidx + Int32(4 * j), word)
 
     def _smem_bytes_estimate(self) -> int:
         def _align_up(value: int, align: int) -> int:
@@ -399,6 +463,7 @@ class MoEStaticKernelV4:
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,   # even: item total (else unused)
+        sfb1_packed: cute.Tensor,   # cell q: 6-bit FC1 scales (u8), dummy otherwise
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -495,6 +560,7 @@ class MoEStaticKernelV4:
             token_weights,
             stamps,
             next_item,
+            sfb1_packed,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -552,6 +618,7 @@ class MoEStaticKernelV4:
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
+        sfb1_packed: cute.Tensor,   # sf_pack: (stage bytes, blocks/expert, E) u8
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -592,7 +659,10 @@ class MoEStaticKernelV4:
         if cutlass.const_expr(not self.skip_a and not self.a_ring):
             fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
-            fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
+            if cutlass.const_expr(self.sf_pack):
+                fc1_tma_bytes += _SF_STAGE_BYTES
+            else:
+                fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
         b2_smem_one = cute.slice_(b2_smem_staged, (None, None, 0))
         sfb2_smem_one = cute.slice_(sfb2_smem_staged, (None, None, 0))
         fc2_tma_bytes = cute.size_in_bytes(
@@ -712,6 +782,7 @@ class MoEStaticKernelV4:
             epi_smem_staged.outer, swizzle=epi_smem_staged.inner
         )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
+        sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
@@ -1300,6 +1371,12 @@ class MoEStaticKernelV4:
                             for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
+                                if cutlass.const_expr(self.sf_pack):
+                                    self._sf_expand_stage(
+                                        sfb1_base_addr
+                                        + fc1_cons_state.index * Int32(_SF_BLOCK_BYTES),
+                                        Int32(tidx),
+                                    )
                                 if cutlass.const_expr(self.a_ring):
                                     a_slot = a_cons_state.index
                                 else:
@@ -1676,6 +1753,10 @@ class MoEStaticKernelV4:
             accum_tile_m = Int32(0)
             item_no = Int32(0)
             is_dma_lane0 = Int32(tidx) == Int32(self.tma_load_warp_id * 32)
+            # packed FC1 scales: [E][row block][k tile] of _SF_STAGE_BYTES each,
+            # the order the host packer writes (moe_sf_pack.pack_sf_inline)
+            sfb1_packed_base = get_ptr_as_int64(sfb1_packed, Int32(0))
+            sf_blocks_per_expert = Int64(cute.size(sfb1_packed.shape[1]))
             role = Int32(2)
             if current_work_linear_idx >= split_base:
                 role = Int32(0)
@@ -1766,7 +1847,26 @@ class MoEStaticKernelV4:
                                         tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_sf):
-                                    if cutlass.const_expr(gu == 0):
+                                    if cutlass.const_expr(self.sf_pack):
+                                        # 3088 B of packed scales, one request,
+                                        # into the stage's own 4 KB buffer; the
+                                        # MMA warps expand it there (39차 §4c)
+                                        if is_dma_lane0:
+                                            if cutlass.const_expr(gu == 0):
+                                                sfb_blk = sfb_gate_idx
+                                            else:
+                                                sfb_blk = sfb_up_idx
+                                            _bulk_g2s(
+                                                sfb1_base_addr
+                                                + fc1_prod_state.index * Int32(_SF_BLOCK_BYTES),
+                                                sfb1_packed_base
+                                                + (Int64(weight_expert_idx) * sf_blocks_per_expert
+                                                   + Int64(sfb_blk) * Int64(k_tile_cnt1)
+                                                   + Int64(k_tile)) * Int64(_SF_STAGE_BYTES),
+                                                Int32(_SF_STAGE_BYTES),
+                                                shared_ptr_to_u32(bar),
+                                            )
+                                    elif cutlass.const_expr(gu == 0):
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_gate_nk[(None, k_tile)],
                                             tBsSFB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,

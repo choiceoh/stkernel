@@ -45,7 +45,7 @@ sources=(glm53_megakernel.py glm53_megakernel.cu
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
          moe_dynamic_prefill.py moe_dynamic_prefill_n128.py
          parallel_state.py glm53_prefill_collectives.py
-         moe_static_common.py moe_static_kernel_v4.py
+         moe_static_common.py moe_static_kernel_v4.py moe_sf_pack.py
          moe_static_kernel_v5.py moe_dynamic_gated_tiled.py)
 mounts=()
 for source in "${sources[@]}"; do
