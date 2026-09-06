@@ -33,9 +33,9 @@
 | 13 | AR 프리페치 | 브래킷 대기 | ✅ | `AR_PREFETCH=0` · 상한 −0.4~0.6 ms(27차 정정), EXP-6+12 위에만 |
 | 18 | osar 벡터화 + 캐시정책 | 브래킷 대기 | ✅ | 코드 반영 완료. 직렬 절감 단독은 ~0.2~0.3 ms 로 CV 미달 — **EXP-13 팔과 같은 부팅**에서 L2 위생 시너지로 판정(#303 정정) |
 | 20 | 미세 융합 묶음 2 (듀얼 GEMM·KDA 원패스·kpool) | 브래킷 대기 | ✅ | 노브 3개 기본 0 · 오프라인 게이트 PASS(31차), 런치 −249/1,548, **−0.18 ms/스텝**(C=1; 첫 판 −0.25 는 프로브 clone 편향) · C=4 −0.3. 원패스의 전제(순수 spec-verify 스텝)는 유니폼 디코드 그래프의 캡처 형상이다 — "이 러너엔 없다"(32차 §11 정정 전 가설)는 04:50 정정·KDAPROOF3 `n_spec=4` 캡처로 철회, 증명은 캡처 줄. 게이트 epilogue 축은 오프라인 기각 |
-| 9 | 인덱서 head-gate split-K | 얹기 대기 | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
+| 9 | 인덱서 head-gate split-K | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14) | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
-| 4 | b_proj/indexer fp8 | 대기 | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
+| 4 | b_proj/indexer fp8 | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14; 키 선언 PR #357) | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
 | 3 | MHC small-M 스윕 | 프로브 먼저 | — | `MHC_SMALLM` unset = 불활성 |
 | 17 | MHC TileLang 패스설정 | 프로브 먼저 · **표적 축소** | — | `MHC_PASSES` 기본 off (#301). 무장 뒤 디코드 몫은 잔여 mhc 14발뿐이고 주종은 **프리필 big_fuse**(#303 정정) |
 | 11 | dsv4 에 MK_SEG_MHC | 프로브 먼저 | — | 2단계는 무부팅, 이기면 dsv4 다운타임 창 |
@@ -758,7 +758,8 @@ plan(on/ksr/units/bps/tail)=[1, 1, 303, 2, 0], exact gate worst rel=… PASS`, `
 (VLLM_GLM53_MK_HEAD_DRAFT) vs fp8 head on its first served call: argmax agree N/N rows, |delta| mean …`.
 트레이스에선 `mk_gemm2_kernel<1>` 이 스텝당 +2(타깃·드래프트) 하고 deep_gemm 헤드 발사가 사라진다.
 
-**상태**: 구현(브랜치 `claude/mk-gemm-v2-lmhead`, 원장 §13) — GPU 벤치와 드래프트 헤드 브래킷은 플릿 창 대기.
+**상태**: 구현·머지(PR #341, 원장 §13). **보류** — 교환비(§13): 헤드당 +0.75% 에 로짓 잡음 3배(fp8 2.66% → W4 8.37%, 실가중치 실측). 노브 기본 0 유지;
+GPU 벤치는 srv2 `gap_bench9.sh` 가 유휴 창에 남긴다(`g2.head.out`). 다음 레버는 EXP-4+EXP-9 묶음(§14).
 
 
 ## EXP-20 — 자체 소유 미세 융합 묶음 2 (2026-09-04 추가, "소소한 이익 묶음" 방식)
