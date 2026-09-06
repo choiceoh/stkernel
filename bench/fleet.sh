@@ -29,6 +29,14 @@
 set -uo pipefail
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
+REPO=${REPO:-/home/choiceoh/stkernel}
+# "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
+# session spends a boot on a defaults arm, say whether the deployed build already
+# has one. bench/baseline.py reads the onepass records (overlay stamp + knobs).
+baseline_line() {
+  [ -f "$REPO/bench/baseline.py" ] || return 0
+  (cd "$REPO" 2>/dev/null && timeout 20 python3 bench/baseline.py --brief 2>/dev/null) || true
+}
 HEAD_URL=${HEAD_URL:-http://10.10.10.2:8000}
 mkdir -p "$FLEET_DIR"
 Q=$FLEET_DIR/queue; H=$FLEET_DIR/holder; L=$FLEET_DIR/log; LK=$FLEET_DIR/.lock
@@ -98,7 +106,7 @@ _release() {  # session
 cmd=${1:-status}; shift || true
 case "$cmd" in
   request)
-    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}"; echo "queued: $s at position $(_position "$s") of $(grep -c . "$Q")";;
+    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}"; echo "queued: $s at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
@@ -127,7 +135,8 @@ case "$cmd" in
     echo "legacy: $(busy_procs) bench/boot procs, $(busy_reqs) requests in flight$(booting && echo ', head booting')"
     echo "queue ($(grep -c . "$Q")):"; n=0; while IFS='|' read -r t s at est note; do n=$((n+1)); echo "  $n. $s (since $(date -d @$at +%H:%M), est ${est}m) $note"; done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
-    echo "log:"; tail -4 "$L" | sed 's/^/  /';;
+    echo "log:"; tail -4 "$L" | sed 's/^/  /'
+    baseline_line;;
   adopt)  # a job that is ALREADY running (started before this tool, or by hand) becomes the holder
     s=${1:?session}; pid=${2:?pid}; est=${3:-30}; note=${4:-}
     if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; exit 1; fi
