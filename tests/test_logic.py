@@ -6842,7 +6842,8 @@ def test_mk_smlp_hook_and_contracts() -> None:
     ns = load_defs(
         "overlay/glm53_megakernel.py",
         {"_ARMED", "MAX_TOK", "MK_GEMM_KMAX", "SMLP_GU_MAX", "_smlp_packs",
-         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
+         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward",
+         "_M8_CAPTURED", "_note_m8_capture"},
         {"os": os, "re": re,
          "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
          "_smlp2_call": lambda *a: calls.append(a) or "fused"},

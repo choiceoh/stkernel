@@ -1140,6 +1140,27 @@ def _ar_note(*tensors) -> None:
         _AR_NOTE(tensors)
 
 
+_M8_CAPTURED = set()
+
+
+def _note_m8_capture(m, n, k, lr=False):
+    """Record production-shaped launches, excluding the startup self-tests."""
+    if m != 6 or lr or not _ARMED["gemm"] or (n, k) in _M8_CAPTURED:
+        return
+    import torch
+    if not torch.cuda.is_current_stream_capturing():
+        return
+    _M8_CAPTURED.add((n, k))
+    plan = _EXT.gemm2_plan(m, n, k)
+    logger.warning("[megakernel] m8 shape CAPTURED M=%d N=%d K=%d plan=%s",
+                   m, n, k, plan)
+    if os.environ.get("VLLM_GLM53_MK_FP8_PACK2") == "1":
+        logger.warning("[megakernel] fp8-pack2 CAPTURED M=%d N=%d K=%d", m, n, k)
+    if os.environ.get("VLLM_GLM53_MK_GEMM_TRANSPOSE_M8") in ("1", "2"):
+        logger.warning("[megakernel] transpose-m8 CAPTURED M=%d N=%d K=%d compact=%s",
+                       m, n, k, int(plan[2]) == 3)
+
+
 def _gemm_call(x, mk_pack, n_rows, bg=False):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4. `bg`: the
     caller marks the launch background -- the shared expert's pair, which
@@ -1164,6 +1185,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else lr_a.data_ptr(),
                   0 if lr_b is None else lr_b.data_ptr(),
                   0 if lr_a is None else int(lr_a.shape[1]))
+    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None)
     return out
 
 
@@ -1497,6 +1519,8 @@ def smlp_forward(mlp, x):
         _SMLP_SAID.add("captured")
         logger.warning("[megakernel] smlp lane CAPTURED into the decode graph (smlp2): "
                        "T=%d n_int=%d", T, n_int)
+    _note_m8_capture(T, n_gu, k)
+    _note_m8_capture(T, n_out, n_int)
     return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                        limit, alpha, beta)
 

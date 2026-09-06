@@ -18,6 +18,8 @@ VLLM_GLM53_PREP_FUSED	[prep-fused] plan built: mode=on	[prep-fused] plan built: 
 VLLM_GLM53_INDEXER_GATE_SPLITK	split-K routing	[indexer-gate]
 VLLM_GLM53_MK_MHC	'mhc': True	[megakernel] armed=
 VLLM_GLM53_MK_GEMM	'gemm': True	[megakernel] armed=
+VLLM_GLM53_MK_FP8_PACK2	[megakernel] fp8-pack2 CAPTURED	[megakernel] fp8-pack2 CAPTURED
+VLLM_GLM53_MK_GEMM_TRANSPOSE_M8	[megakernel] transpose-m8 CAPTURED	[megakernel] transpose-m8 CAPTURED
 VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
 VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
 VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed

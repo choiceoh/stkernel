@@ -73,7 +73,7 @@ def _counter(text, name):
     return float(m.group(1)) if m else 0.0
 
 
-def ask_stream(url, model, content, max_tokens):
+def ask_stream(url, model, content, max_tokens, timing=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
     streamed chat completion: ttft = first chunk carrying content."""
     body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.0,
@@ -86,8 +86,9 @@ def ask_stream(url, model, content, max_tokens):
                        # decode windows (TPL1: no windows). Keep the condition constant.
                        "chat_template_kwargs": {"thinking": True}}).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    t0 = time.time()
+    t0 = time.monotonic()
     ttft = None
+    arrivals = []
     parts = []
     usage = {}
     finish = None
@@ -109,13 +110,26 @@ def ask_stream(url, model, content, max_tokens):
                 d = ch.get("delta") or {}
                 piece = d.get("content") or d.get("reasoning_content") or d.get("reasoning") or ""
                 if piece:
+                    arrived = time.monotonic()
+                    arrivals.append(arrived)
                     if ttft is None:
-                        ttft = time.time() - t0
+                        ttft = arrived - t0
                     parts.append(piece)
                 if ch.get("finish_reason"):
                     finish = ch["finish_reason"]
     if ttft is None:
-        ttft = time.time() - t0
+        ttft = time.monotonic() - t0
+    if timing is not None:
+        elapsed = time.monotonic() - t0
+        ctok = int(usage.get("completion_tokens", 0) or 0)
+        decode_s = elapsed - ttft
+        # Standard request TPOT includes the final stream/usage tail. SSE
+        # chunks can contain several speculative tokens; gaps are NOT ITL.
+        timing.update(completion_tokens=ctok, ttft_s=ttft, elapsed_s=elapsed,
+                      decode_s=decode_s, finish_reason=finish,
+                      tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
+                      decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,
+                      chunk_gaps_ms=[1000 * (b - a) for a, b in zip(arrivals, arrivals[1:])])
     return ("".join(parts), ttft, int(usage.get("prompt_tokens", 0) or 0),
             int(usage.get("completion_tokens", 0) or 0), finish)
 
@@ -203,6 +217,7 @@ def main() -> int:
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
+    rec["requests"] = []
     quality_ok = quality_total = 0
     gen_tokens = 0
 
@@ -223,7 +238,9 @@ def main() -> int:
                 qs = "\n".join(f"{qi + 1}. {q}" for qi, (_, q, _old) in enumerate(facts))
                 content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
                 t_req = time.monotonic()
-                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens * len(facts))
+                timing = {"ctx": ctx, "question": "all"}
+                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens * len(facts), timing)
+                rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
                 gen_tokens += ctok
@@ -240,7 +257,9 @@ def main() -> int:
             for qi, (_, q, _old) in enumerate([] if combined else facts):
                 content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
                 t_req = time.monotonic()
-                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens)
+                timing = {"ctx": ctx, "question": qi}
+                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens, timing)
+                rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
                 gen_tokens += ctok
