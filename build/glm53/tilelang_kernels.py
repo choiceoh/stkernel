@@ -63,7 +63,12 @@ def _mhc_prefill_post_prenorm_kernel(
     use TF32x3; the original BF16 post rounding stays before both the GEMM
     and squared sum. Different split/reduction order remains a quality gate.
     """
-    row = tl.program_id(0) * BM + tl.arange(0, BM)
+    # 64-bit row addressing: at m = 131072 the residual offset
+    # (row * 16384 + 3 * 4096 + 4095) already equals INT32_MAX, so 32-bit
+    # addressing has zero margin at the 128K rung and wraps past it into
+    # negative offsets. The dispatcher gate bounds splits and the lower m,
+    # never an upper m.
+    row = (tl.program_id(0) * BM + tl.arange(0, BM)).to(tl.int64)
     split = tl.program_id(1)
     col = tl.arange(0, BN)
     h_tile = tl.arange(0, BK)

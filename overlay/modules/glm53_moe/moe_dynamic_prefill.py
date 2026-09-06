@@ -7,7 +7,8 @@ static/micro call retain their existing implementation.
 Changes relative to the pinned upstream body:
 * Q0 aliases its eight-row (64 KiB) staging region across startup-idle sC
   and sA; route metadata moves to startup-idle sB. All eight math warps
-  work instead of four, without increasing shared-memory allocation.
+  work instead of four, with only the 8-byte q0_bulk_barrier shared word
+  added on top of aliased storage.
 * A nine-warp scan replaces the 288-expert serial prefix loop, and eight
   lanes reserve a token's expert rows concurrently.
 * Per-token route scales are compared once, outside the Q0 block loop.
@@ -1006,8 +1007,9 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
                 cute.struct.MemRange[self.b_dtype, cute.cosize(b_smem_staged)],
                 self.buffer_align_bytes,
             ]
-            # During FC1, the first B-sized part of sC is the contiguous
-            # third N128 B stage.  FC1 releases it before activation writes.
+            # N64 lane: FC1 B is two N64 halves of sB (sB_fc1_all); sC stays
+            # the FC2/epilogue buffer until activation writes it. N128 lane:
+            # sC[0:16KiB] is Up's two complete N128 B stages, Gate keeps sB.
             sC: cute.struct.Align[
                 cute.struct.MemRange[cutlass.BFloat16, cute.cosize(epi_smem_staged)],
                 self.buffer_align_bytes,
@@ -1138,8 +1140,12 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
         # expose the existing two-plus-one backing as one staged tensor.
         sSFB_phase2 = storage.sSFB.get_tensor(phase2_sfb_smem_staged)
         # Gate gets a contiguous third SFB stage from the existing phase2
-        # extra.  Up keeps its two allocated stages and uses a disjoint
-        # one-stage alias in sC immediately after the FC1 B-stage2 bytes.
+        # extra. The sC "extra" one-stage alias below is selected only when
+        # the FC1 pipeline index exceeds the two allocated Up SFB stages --
+        # the N64 lane's third stage, into sC while FC1 still owns it. The
+        # N128 lane pins ab_storage_stage = 2, so its index cycles 0..1 and
+        # the alias is unreachable by construction; it MUST stay unreachable
+        # there, because sC is live Up-B backing in that lane.
         sSFB_fc1 = storage.sSFB.get_tensor(fc1_sfb_smem_staged)
         sSFB_up_fc1 = (
             sSFB_fc1

@@ -1754,15 +1754,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
   }
 }
 
-// Exact-selection prefill pair reuse. The former UNION lane scanned the
-// physical cache span and synchronized min/max to the CPU. This schedule is
-// bounded by two top-k lists: shared hashing, multiset union, independent
-// membership, and no materialized KV or host read of device metadata.
+// Exact-selection prefill pair reuse (selection exact; tile order differs
+// from per-query attention, so output is not bit-exact). The former UNION
+// lane scanned the physical cache span and synchronized min/max to the CPU.
+// This schedule is bounded by two top-k lists: shared hashing, multiset
+// union, independent membership, and no materialized KV or host read of
+// device metadata.
 constexpr int MLA_PAIR_HASH = 8192;
 constexpr int MLA_PAIR_MAX_W = 2176;
-// Keep this arithmetic literal: the source contract checker evaluates the
-// launch-size expression without a C++ preprocessor.
-constexpr int MLA_PAIR_PREP_SMEM = (2 * MLA_PAIR_HASH + 2) * 4;
+// keys + counts + three control words: total, cursor, failed.
+constexpr int MLA_PAIR_PREP_SMEM = (2 * MLA_PAIR_HASH + 3) * 4;
 constexpr int MLA_PAIR_SMEM = MLA_SMEM_RING + 2 * MLA_SMEM_S
                              + 2 * MLA_SMEM_P + 2 * MLA_SMEM_C;
 constexpr int MLA_GROUP4_THREADS = 2 * MK_THREADS;
@@ -1777,6 +1778,9 @@ static_assert(MLA_SMEM_RING + 4 * (MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C)
                   <= MLA_GROUP4_SMEM,
               "four-row attention must fit the fallback shared allocation");
 static_assert(MLA_PAIR_MAX_W < 65536, "each packed multiplicity field is 16 bits");
+static_assert(2 * MLA_PAIR_MAX_W < MLA_PAIR_HASH,
+              "two full-width top-k lists must leave a free probe slot; a "
+              "wider W needs a larger table (or the bounded-probe fallback)");
 
 struct MKMlaPairArgs {
   MKMlaArgs a;
@@ -1792,6 +1796,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_pair_prepare(const MKMlaPai
   unsigned int* counts = table + MLA_PAIR_HASH;
   unsigned int* total = counts + MLA_PAIR_HASH;
   unsigned int* cursor = total + 1;
+  unsigned int* failed = cursor + 1;
   const int group = blockIdx.x, t = group * 2;
   const int lane = threadIdx.x & 31;
   asm volatile("griddepcontrol.launch_dependents;");
@@ -1806,23 +1811,34 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_pair_prepare(const MKMlaPai
     keys[i] = 0xffffffffu;
     counts[i] = 0;
   }
-  if (threadIdx.x == 0) { *total = 0; *cursor = 0; }
+  if (threadIdx.x == 0) { *total = 0; *cursor = 0; *failed = 0; }
   __syncthreads();
   for (int j = threadIdx.x; j < n0 + n1; j += MK_THREADS) {
     const int row = j >= n0;
     const int col = row ? j - n0 : j;
     const unsigned int slot = (unsigned int)p.a.slots[(size_t)(t + row) * p.a.W + col];
     unsigned int h = (slot * 2654435761u) & (MLA_PAIR_HASH - 1);
-    while (true) {
+    // Bounded like group4: static_assert above proves the table cannot fill
+    // under the enforced W cap, but a raised cap must degrade to original-list
+    // fallback here, never hang the device on a full-table probe.
+    bool inserted = false;
+#pragma unroll 1
+    for (int probe = 0; probe < 64; ++probe) {
       const unsigned int old = atomicCAS(keys + h, 0xffffffffu, slot);
       if (old == 0xffffffffu || old == slot) {
         atomicAdd(counts + h, row ? 65536u : 1u);
+        inserted = true;
         break;
       }
       h = (h + 1) & (MLA_PAIR_HASH - 1);
     }
+    if (!inserted) atomicExch(failed, 1u);
   }
   __syncthreads();
+  if (*failed) {
+    if (threadIdx.x == 0) p.pair_lens[group] = -1;
+    return;
+  }
   unsigned int local = 0;
   for (int i = threadIdx.x; i < MLA_PAIR_HASH; i += MK_THREADS) {
     const unsigned int c = counts[i];
@@ -1963,6 +1979,10 @@ __device__ __forceinline__ void mla_group_sync() {
   if constexpr (SUBGROUP) {
     // Fallback query pairs may have different loop lengths. Each half of
     // the 512-thread CTA owns a distinct named barrier and shared region.
+    // The arrival count is a PTX immediate, so it is pinned to MK_THREADS
+    // rather than derived from MLA_GROUP4_THREADS.
+    static_assert(MK_THREADS == 256,
+                  "subgroup barrier arrival count must match half the CTA");
     const int barrier_id = 1 + (threadIdx.x / MK_THREADS);
     asm volatile("bar.sync %0, 256;" :: "r"(barrier_id) : "memory");
   } else {
@@ -2914,8 +2934,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
-  m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection prefill pair reuse");
-  m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection four-query reuse");
+  m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
+  m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");
   m.def("run_smlp2", &mk_run_smlp2, "MK_SEG_SMLP2 (two PDL-chained v2 launches, no barrier)");
   m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");
 }
