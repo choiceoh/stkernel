@@ -68,6 +68,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_kernel_v2 import (
+    _bulk_g2s,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
@@ -115,6 +116,7 @@ class MoEStaticKernelV4:
         skip_a: bool = False,
         a_ring: bool = False,
         sf_half: bool = False,
+        bulk_b: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -175,6 +177,14 @@ class MoEStaticKernelV4:
         # of the item's ~830 KB, all DRAM). The smem block stays 128 rows; the
         # box lands in the half the MMA warps read (sSFB1_0 / sSFB1_1).
         self.sf_half = bool(sf_half)
+        # bulk_b (cell z, 39차 v6): the B tiles come in as ONE 1-D cp.async.bulk
+        # per stage (FC1 16 KB, FC2 8 KB) from tile-major storage the host has
+        # pre-swizzled into the smem layout's own byte order (moe_dispatch
+        # _tile_expert_weights(swizzled=True)), instead of a 2-D TMA box of
+        # 64 / 128 row segments -- the memory path is bound by L2 request
+        # rate (38차 §8), and a bulk copy is the fewest requests a stage can
+        # be. The B TMA atoms are still built and prefetched (unused).
+        self.bulk_b = bool(bulk_b)
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
         self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
         self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
@@ -518,6 +528,8 @@ class MoEStaticKernelV4:
             token_weights,
             stamps,
             next_item,
+            cute.recast_tensor(b_w13, cutlass.Uint8),    # packed bytes: bulk-copy base
+            cute.recast_tensor(b_down, cutlass.Uint8),
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -575,6 +587,8 @@ class MoEStaticKernelV4:
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
+        raw_w13: cute.Tensor,      # the packed weights as bytes (bulk_b source base)
+        raw_w2: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -1720,6 +1734,19 @@ class MoEStaticKernelV4:
             accum_tile_m = Int32(0)
             item_no = Int32(0)
             is_dma_lane0 = Int32(tidx) == Int32(self.tma_load_warp_id * 32)
+            # bulk_b: byte geometry of the pre-swizzled tile-major storage --
+            # w13 [E][K/512][rows/64][16 KB], w2 [E][I_tp/128][H/128][8 KB]
+            # (the kernel tiles' own smem order, so a stage is one linear copy)
+            bulk_w13_base = get_ptr_as_int64(raw_w13, Int32(0))
+            bulk_w2_base = get_ptr_as_int64(raw_w2, Int32(0))
+            bulk_b1_stage_b = Int32(_FC1_TILE_N * _FC1_TILE_K // 2)      # 16384
+            bulk_b2_stage_b = Int32(_FC2_TILE_N * _FC2_TILE_K // 2)      # 8192
+            bulk_w13_ktile_b = Int64(cute.size(raw_w13.shape[0]) // 2 * _FC1_TILE_K)  # rows x 256 B
+            bulk_w13_exp_b = bulk_w13_ktile_b * Int64(k_tile_cnt1)
+            bulk_w2_slice_b = Int64(cute.size(raw_w2.shape[0]) // 2 * _FC2_TILE_K)   # H rows x 64 B
+            bulk_w2_exp_b = bulk_w2_slice_b * Int64(self.output_tile_count_n)
+            sB1_base_addr = shared_ptr_to_u32(storage.sB1.data_ptr())
+            sB2_base_addr = shared_ptr_to_u32(storage.sB2.data_ptr())
             role = Int32(2)
             if current_work_linear_idx >= split_base:
                 role = Int32(0)
@@ -1802,7 +1829,25 @@ class MoEStaticKernelV4:
                                         tma_a, tAgA_mk[(None, k_tile)],
                                         tAsA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
-                                if cutlass.const_expr(gu == 0):
+                                if cutlass.const_expr(self.bulk_b):
+                                    # one 16 KB bulk copy of the pre-swizzled
+                                    # (64 rows x 512 K) tile: expert, k tile,
+                                    # 64-row tile (gate rows follow the up rows)
+                                    if is_dma_lane0:
+                                        if cutlass.const_expr(gu == 0):
+                                            bulk_tile = gate_tile
+                                        else:
+                                            bulk_tile = up_tile
+                                        _bulk_g2s(
+                                            sB1_base_addr + fc1_prod_state.index * bulk_b1_stage_b,
+                                            bulk_w13_base
+                                            + Int64(weight_expert_idx) * bulk_w13_exp_b
+                                            + Int64(k_tile) * bulk_w13_ktile_b
+                                            + Int64(bulk_tile) * Int64(bulk_b1_stage_b),
+                                            bulk_b1_stage_b,
+                                            shared_ptr_to_u32(bar),
+                                        )
+                                elif cutlass.const_expr(gu == 0):
                                     cute.copy(
                                         tma_b_w13, tBgB_gate_nk[(None, k_tile)],
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -1842,13 +1887,27 @@ class MoEStaticKernelV4:
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
-                    cute.copy(
-                        tma_b_down,
-                        tBgB_down[(None, output_tile_idx, intermediate_slice,
-                                   weight_expert_idx)],
-                        tBsB2[(None, fc2_prod_state.index)],
-                        tma_bar_ptr=bar2,
-                    )
+                    if cutlass.const_expr(self.bulk_b):
+                        # one 8 KB bulk copy of the pre-swizzled (128 rows x
+                        # 128 K) down tile: expert, slice, output tile
+                        if is_dma_lane0:
+                            _bulk_g2s(
+                                sB2_base_addr + fc2_prod_state.index * bulk_b2_stage_b,
+                                bulk_w2_base
+                                + Int64(weight_expert_idx) * bulk_w2_exp_b
+                                + Int64(intermediate_slice) * bulk_w2_slice_b
+                                + Int64(output_tile_idx) * Int64(bulk_b2_stage_b),
+                                bulk_b2_stage_b,
+                                shared_ptr_to_u32(bar2),
+                            )
+                    else:
+                        cute.copy(
+                            tma_b_down,
+                            tBgB_down[(None, output_tile_idx, intermediate_slice,
+                                       weight_expert_idx)],
+                            tBsB2[(None, fc2_prod_state.index)],
+                            tma_bar_ptr=bar2,
+                        )
                     cute.copy(
                         tma_sfb_down,
                         tBgSFB_down[(None, output_tile_idx, intermediate_slice,

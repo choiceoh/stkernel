@@ -35,6 +35,15 @@ row-major layout).
 
 Selected by spec cell ``t`` (v4 geometry: tile_m 32, FC1 K-512 gate/up
 stages, FC2 2 stages); ``v,t`` adds the A ring, ``t,s`` the stamps.
+
+Cell ``z`` (v6, same class): the tile-major storage is additionally
+PRE-SWIZZLED into the smem layouts' own byte order (B1 ``S<3,4,3>`` over
+(64 rows x 512 K), B2 ``S<2,4,3>`` over (128 x 128); measured with
+``probes/b12x_static_layout_print.py --dump``) and the DMA warp lands each
+stage's B tile with one 1-D ``cp.async.bulk`` (16 KB / 8 KB) instead of a
+2-D TMA box of 64 / 128 row segments -- the fewest requests a stage can be
+(38차 §8: the path is L2-request-rate bound). The B TMA atoms this
+``__call__`` builds over the (meaningless) 4-D view are then unused.
 """
 
 from __future__ import annotations
@@ -208,6 +217,8 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             token_weights,
             stamps,
             next_item,
+            cute.recast_tensor(b_w13, cutlass.Uint8),    # packed bytes: bulk-copy base
+            cute.recast_tensor(b_down, cutlass.Uint8),
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],

@@ -1230,7 +1230,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 moe_dispatch as _b12x_dispatch,
             )
 
-            if _b12x_dispatch.static_v2_weights_tiled(
+            _tiled, _swizzled = _b12x_dispatch.static_v2_weights_layout(
                 num_experts=self.global_num_experts,
                 num_local_experts=self.num_local_experts,
                 hidden_size=self.hidden_dim,
@@ -1240,9 +1240,10 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 activation=self._activation_str,
                 swiglu_limit=self._swiglu_limit,
                 activation_precision="fp4",
-            ):
+            )
+            if _tiled:
                 _b12x_dispatch.tile_expert_weights_inplace(
-                    layer.w13_weight, layer.w2_weight
+                    layer.w13_weight, layer.w2_weight, swizzled=_swizzled
                 )
                 logger.warning(
                     "[b12x static v5] expert weights re-laid out tile-major in place "

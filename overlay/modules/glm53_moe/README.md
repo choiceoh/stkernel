@@ -276,9 +276,19 @@ on the CPU check), `h` (v4/v5, 39차: the FC1 SFB TMA box covers the 64
 rows a gate/up stage reads instead of the 128-row scale block -- v4 loaded
 the whole 4 KB block per 64-row stage and read half, 32 KB of an item's
 ~830 KB from DRAM; the smem block stays 128 rows and the box lands in the
-half the MMA warps read), and the probe-only timing cells `xs` (skip the
-FC1 SFB boxes) and `xa` (skip the A + SFA boxes) that the serving parse
-rejects. The
+half the MMA warps read), `z` (39차 v6: `t`'s tile-major storage
+pre-swizzled into the smem layouts' own byte order -- B1 `S<3,4,3>` over
+(64 rows x 512 K): `lin = r*256 + k%256 + (k//256)*16384`, `phys = lin ^
+(((lin>>7)&7)<<4)`; B2 `S<2,4,3>` over (128 x 128): `phys = lin ^
+(((lin>>7)&3)<<4)`; measured with `probes/b12x_static_layout_print.py
+--dump` and cross-checked byte for byte -- so the DMA warp lands each B
+stage with ONE 1-D `cp.async.bulk` (16 KB / 8 KB) on the stage's mbarrier
+instead of a 2-D TMA box of 64 / 128 row segments: the path is L2 request
+rate bound (38차 §8) and a bulk copy is the fewest requests a stage can be.
+Probe only until the gated prefill kernel reads that order: the entry
+refuses the dynamic backend on swizzled storage), and the probe-only timing
+cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the A + SFA boxes) that
+the serving parse rejects. The
 cache key and on-disk kernel name carry the config; the source files are in
 `_kernel_source_files()`, so an edit invalidates the module cache like any
 other kernel file.

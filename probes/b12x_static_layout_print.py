@@ -27,6 +27,7 @@ from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_static_kernel_v4 import (
 
 
 def main() -> int:
+    dump = "--dump" in sys.argv
     k = MoEStaticKernelV4(sf_vec_size=16, output_tile_count_n=4,
                           activation="swigluoai_uninterleave", swiglu_alpha=1.0,
                           swiglu_beta=0.0, swiglu_limit=10.0)
@@ -47,6 +48,19 @@ def main() -> int:
                      "a2_smem_layout", "sfa2_smem_layout"):
             print(f"{name}: {getattr(k, name)}")
         print("smem bytes:", k.smem_bytes)
+        if dump:
+            # every (row, k) of stage 0 -> element offset, swizzle applied: the
+            # permutation a host pre-swizzle must reproduce for a 1-D bulk copy
+            for r in cutlass.range_constexpr(64):
+                offs = []
+                for c in cutlass.range_constexpr(32):
+                    offs.append(int(cute.crd2idx((r, c * 16, 0), k.b1_smem_layout_staged)))
+                print("MAP B1 " + str(r) + " " + " ".join(str(o) for o in offs))
+            for r in cutlass.range_constexpr(128):
+                offs = []
+                for c in cutlass.range_constexpr(8):
+                    offs.append(int(cute.crd2idx((r, c * 16, 0), k.b2_smem_layout_staged)))
+                print("MAP B2 " + str(r) + " " + " ".join(str(o) for o in offs))
 
     dummy = cute.runtime.make_fake_compact_tensor(cutlass.Int32, (1,), assumed_align=4)
     cute.compile(show, dummy)
