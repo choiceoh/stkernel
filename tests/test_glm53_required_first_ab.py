@@ -1,0 +1,176 @@
+"""CPU-only checks for paired quality evidence; no serving request is sent."""
+from copy import deepcopy
+import json
+import io
+from contextlib import redirect_stdout
+from types import SimpleNamespace
+from pathlib import Path
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "probes"))
+import glm53_required_first_ab as ab
+
+
+class PairedEvidenceTests(unittest.TestCase):
+    def test_balanced_pairs_differ_only_in_order_flag(self):
+        selected = ab.cases()
+        self.assertEqual(len(selected), 30)
+        rows = list(ab.schedule(selected))
+        for i in range(0, len(rows), 2):
+            pair, case, enabled = rows[i]
+            self.assertEqual(enabled, pair % 2 == 1)
+            before = deepcopy(case)
+            a = ab.request_body(case, "model", pair, False, 4096)
+            b = ab.request_body(case, "model", pair, True, 4096)
+            self.assertFalse(a.pop("glm53_required_first"))
+            self.assertTrue(b.pop("glm53_required_first"))
+            self.assertEqual(a, b)
+            self.assertEqual(case, before)
+        for effort in ("low", "high", "max"):
+            for stream in (False, True):
+                subset = [case for case in selected if case["choice"] == "auto" and
+                          case["effort"] == effort and case["stream"] == stream]
+                self.assertEqual(len(subset), 4)
+
+    def message(self, arguments):
+        return {"tool_calls": [{"id": "call_1", "type": "function", "function": {
+            "name": "collect_preferences", "arguments": arguments}}]}
+
+    def test_omission_is_separate_from_truncation_and_schema_error(self):
+        case = ab.cases()[0]
+        self.assertEqual(ab.classify(self.message('{"prompt":"choose"}'), "tool_calls", case),
+                         (["missing_required"], ["/tag"]))
+        self.assertEqual(ab.classify(self.message('{"prompt":'), "length", case),
+                         (["invalid_json", "length"], []))
+        errors, _ = ab.classify(self.message('{"prompt":3,"tag":"topic"}'), "stop", case)
+        self.assertEqual(errors, ["schema_invalid"])
+        self.assertEqual(ab.classify(self.message('{"prompt":"choose","tag":"topic"}'), "tool_calls", case), ([], []))
+
+    def test_nested_required_and_wrong_tool_envelope(self):
+        case = ab.cases()[24]
+        message = {"tool_calls": [{"function": {"name": "wrong", "arguments": json.dumps({
+            "tag": "engineering", "title": "developer", "location": {"notes": "test"},
+            "responsibilities": ["code"] * 10})}}]}
+        errors, paths = ab.classify(message, "tool_calls", case)
+        self.assertEqual(errors, ["missing_required", "short_description", "tool_envelope", "wrong_function"])
+        self.assertEqual(paths, ["/location/city", "/location/remote"])
+
+    def test_array_item_omission_keeps_nested_path(self):
+        case = ab.cases()[1]
+        self.assertEqual(ab.classify(self.message('{"questions":[{"prompt":"choose"}]}'),
+                         "tool_calls", case), (["missing_required"], ["/questions/0/tag"]))
+
+    def test_total_request_deadline_is_removed_after_transport_failure(self):
+        with (
+            patch.object(ab, "_send", side_effect=TimeoutError),
+            patch.object(ab.signal, "signal", return_value="previous") as handler,
+            patch.object(ab.signal, "setitimer") as timer,
+        ):
+            with self.assertRaises(TimeoutError):
+                ab.send("unused", {}, 5)
+            self.assertEqual(timer.call_args_list[0].args, (ab.signal.ITIMER_REAL, 5))
+            self.assertEqual(timer.call_args_list[-1].args, (ab.signal.ITIMER_REAL, 0))
+            self.assertEqual(handler.call_args_list[-1].args, (ab.signal.SIGALRM, "previous"))
+
+    def run_probe(self, identities, clock=None):
+        args = SimpleNamespace(identity="unused", container="glm53", model="model", url="unused",
+                               max_tokens=4096, timeout=180, budget_seconds=10)
+        output = io.StringIO()
+        clock_patch = (patch.object(ab.time, "monotonic", side_effect=clock) if clock else
+                       patch.object(ab.time, "monotonic", wraps=ab.time.monotonic))
+        with (
+            patch.dict(ab.os.environ, FLEET_EXPERIMENT_ID="unit-test"),
+            patch.object(ab.Path, "read_text", return_value='{"id":1}'),
+            patch.object(ab, "runtime_identity", side_effect=identities),
+            patch.object(ab, "cases", return_value=ab.cases()[:1]),
+            patch.object(ab, "send", return_value=(self.message('{"prompt":"choose","tag":"topic"}'),
+                         "tool_calls", {})) as sender,
+            clock_patch, redirect_stdout(output),
+        ):
+            rc = ab.run(args)
+        return rc, [json.loads(line) for line in output.getvalue().splitlines()], sender
+
+    def test_cleanup_failure_still_emits_unstable_summary(self):
+        identity = {"id": 1}
+        rc, rows, _ = self.run_probe([identity, identity, identity, RuntimeError("daemon down")])
+        self.assertEqual(rc, 2)
+        self.assertEqual(rows[-2]["kind"], "identity_after")
+        self.assertEqual(rows[-1]["kind"], "summary")
+        self.assertFalse(rows[-1]["gates"]["identity_stable"])
+
+    def test_expired_budget_after_identity_check_sends_no_request(self):
+        identity = {"id": 1}
+        rc, rows, sender = self.run_probe([identity, identity, identity], [0, 9, 11])
+        self.assertEqual(rc, 2)
+        sender.assert_not_called()
+        self.assertFalse(rows[-1]["gates"]["complete"])
+        self.assertEqual(rows[-3], {"kind": "interrupted", "reason": "wall_clock_budget"})
+
+    def test_fractional_remaining_budget_is_not_rounded_up(self):
+        identity = {"id": 1}
+        rc, rows, sender = self.run_probe([identity, identity, identity],
+                                         [0, 9, 9.2, 9.3, 9.75, 9.9, 11])
+        self.assertEqual(rc, 2)
+        self.assertEqual(sender.call_args.args[-1], 0.25)
+        self.assertFalse(rows[-1]["gates"]["complete"])
+
+    def records(self):
+        return [{"pair": pair, "required_first": enabled, "choice": case["choice"],
+                 "case": case["name"], "effort": case["effort"], "stream": case["stream"],
+                 "errors": ["missing_required"] if pair < 10 and not enabled else [], "seconds": 1.0}
+                for pair, case, enabled in ab.schedule(ab.cases())]
+
+    def test_promotion_requires_matched_benefit_and_complete_stable_guardrails(self):
+        rows = self.records()
+        self.assertTrue(ab.summarize(rows, 30, True)["promotion_review_supported"])
+        self.assertFalse(ab.summarize(rows, 30, False)["promotion_review_supported"])
+        self.assertFalse(ab.summarize(rows[:-1], 30, True)["promotion_review_supported"])
+        tied = deepcopy(rows)
+        for row in tied:
+            row["errors"] = []
+        self.assertFalse(ab.summarize(tied, 30, True)["promotion_review_supported"])
+        next(r for r in rows if r["pair"] == 29 and r["required_first"])["errors"] = ["length"]
+        self.assertFalse(ab.summarize(rows, 30, True)["promotion_review_supported"])
+
+    def test_stream_duplicates_cannot_manufacture_significance(self):
+        rows = self.records()
+        topics = {c["name"] for c in ab.cases()[:3]}
+        for row in rows:
+            row["errors"] = ["missing_required"] if (not row["required_first"] and
+                row["effort"] == "low" and row["case"] in topics) else []
+        result = ab.summarize(rows, 30, True)
+        self.assertEqual(result["candidate_wins"], 3)
+        self.assertEqual(result["unique_auto_cases"], 12)
+        self.assertEqual(result["one_sided_sign_p"], 0.125)
+        self.assertFalse(result["promotion_review_supported"])
+
+    def test_long_guardrail_cannot_pass_with_omitted_empty_or_short_description(self):
+        case = ab.cases()[24]
+        arguments = {"tag": "engineering", "title": "developer", "location": {
+            "city": "Seoul", "remote": False}, "responsibilities": ["code"] * 10}
+        for words in (None, 0, 249, 250):
+            if words is not None:
+                arguments["description"] = " ".join(["word"] * words)
+            message = self.message(json.dumps(arguments))
+            message["tool_calls"][0]["function"]["name"] = "record_job"
+            errors, _ = ab.classify(message, "tool_calls", case)
+            self.assertEqual(errors, [] if words == 250 else ["short_description"])
+
+    def test_regressions_sample_size_duplicates_and_latency_block_promotion(self):
+        rows = self.records()
+        with self.assertRaises(ValueError):
+            ab.summarize(rows + [rows[0]], 30, True)
+        self.assertFalse(ab.summarize(rows[:12], 6, True)["promotion_review_supported"])
+        slow = deepcopy(rows)
+        for row in slow:
+            if row["required_first"]:
+                row["seconds"] = 1.21
+        self.assertFalse(ab.summarize(slow, 30, True)["promotion_review_supported"])
+        next(r for r in rows if r["pair"] == 7 and r["required_first"])["errors"] = ["invalid_json"]
+        self.assertFalse(ab.summarize(rows, 30, True)["promotion_review_supported"])
+
+
+if __name__ == "__main__":
+    unittest.main()
