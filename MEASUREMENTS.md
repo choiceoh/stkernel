@@ -2140,7 +2140,8 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **4a 집행**: `vm.swappiness=0` (`/etc/sysctl.d/99-swap.conf`) 4 노드 영구화, srv4 에 16 G `/swapfile` 추가(다른 3 노드는 이미 있었음).
 - **항목 1 준비**(운영자 "1번 2번 4a 진행"): `overlay/modules/glm53_prefix_cache`(하이브리드 APC 조정자 수정 — stock 은 이 KV 레이아웃에서 모든 그룹을 EAGLE 로 찍어 히트 0; MODULES 9번째, `PREFIX_CACHE=0` 이면 무해) + `probes/apc_hit_test.py`. 측정 초점은 히트가 아니라 **warm 히트의 수용률**: 상류 #47926(초안, 리베이스 대기) — 캐시 복원 토큰은 타깃을 안 거쳐 드래프터 컨텍스트 KV 가 미기록이고, 드래프터 윈도 블록 재사용이 안 되면 수용률이 position-0 로 붕괴(상류 측정 0.6% → 마스킹 후 38.2%). 우리 조정자는 드래프터 SWA 그룹의 캐시 윈도를 재사용하므로 같은 접두사의 재질문(멀티턴)은 살아야 하고, 그것을 잰다.
 - **항목 2 준비**: `glm53_runtime/glm53_decode_first.py` — `AsyncScheduler` 서브클래스, 디코더가 있는 스텝은 요청당 프리필 청크를 `VLLM_GLM53_SCHED_MIXED_CHUNK`(512) 로 cap(stock `long_prefill_token_threshold` 를 그 스텝만), `…_PREFILL_EVERY`=N 이면 N 스텝 중 1 스텝만 프리필(나머지는 순수 디코드 스텝, stock DP throttle 경로 재사용). 순수 프리필은 불변(SP·KDA·NVFP4 레인 유지). 런처 `DECODE_FIRST=1` → `--scheduler-cls`. 브래킷은 `probes/mixed_load_test.py`(디코더 ITL med/p95/max + 프리필 TTFT) + onepass.
-- 체인(플릿 큐): DEF40(새 기본값 참조) → APC(`PREFIX_CACHE=1`) → DF1(chunk 512, every 1) → DF2(every 2) → 복구.
+- **스케줄러 v2**(운영자 "AsyncScheduler 더 개선할 수 있나" → 순위 제시 → "진행해"): v1 의 빈틈 둘을 메움. ① **프리필 간 공정성**(`SCHED_FAIR=1`): 디코더 없이 프리필이 둘 이상 대기하면 스텝 예산을 대기 수로 나눠 cap — stock FCFS 는 128K 뒤의 2K 프롬프트를 앞 프리필 전체(~45 s) 뒤에 admit 했다; 배치는 순수 프리필이라 SP 유지. ② **기아 방지**(`SCHED_PREFILL_FLOOR=1000` tok/s, `FLOOR_GRACE_S=2`): admit 뒤 진행률이 바닥 아래면 적자만큼 청크를 키우고(예산 상한) 페이싱에서 제외 — DF2 식 페이싱이 디코드 포화에서 프롬프트를 굶기지 못함. ③ 청크 기본값 512 → **576**(2304 블록의 1/4; APC 켜면 mamba 정렬 분할이 블록 경계에서 꼬리 청크를 만들지 않음). 지연 예산 컨트롤러(목표 ITL 로 청크 자동 조절)는 v3 후보로 보류. 논리 테스트 확장.
+- 체인(플릿 큐): DEF40(새 기본값 참조) → APC(`PREFIX_CACHE=1`) → DF1(v2 기본: chunk 576, every 1, fair, floor) → DF2(every 2) → 복구.
 
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
