@@ -1,8 +1,10 @@
 # C=1 MK-GEMM decode experiments, 2026-09-07
 
-**Serving follow-up:** no reproducible C=1 speedup. The clean 2K-context
-comparison was 75.074 → 73.153 tok/s (-2.56%), with all onepass quality gates
-passing. Both options remain off. See [serving results and raw evidence](serving/README.md).
+**Serving follow-up: inconclusive; candidate retained.** Clean 2K engine
+windows changed 21.432 → 21.689 step/s (+1.20%), while output speed changed
+75.074 → 73.153 tok/s (-2.56%). The small sample and acceptance variation do
+not justify rejection or promotion. Quality gates passed; both options remain
+off pending further evidence. See [serving results and raw evidence](serving/README.md).
 
 Base checkout: `de2a0b3`. All runtime arms in each round are built from the
 same composed CUDA source in an isolated checkout, in `glm53:v13-b12x-it`,

@@ -1,11 +1,15 @@
-# C=1 serving result: no reproducible speedup
+# C=1 serving result: inconclusive; candidate retained
 
-The kernel candidate did not reproduce a C=1 decoding speedup. In the clean
-2K-context samples, median output speed changed **75.074 → 73.153 tok/s
-(-2.56%)** and mean output-token latency changed **13.321 → 13.680 ms**.
-Keep both options off. This small sample establishes no general slowdown
-estimate, and it does not support the earlier microbenchmark gain as a
-whole-decoder gain.
+**The evidence is insufficient to reject or promote this candidate.** In the
+clean 2K-context samples, engine window speed changed **21.432 → 21.689 step/s
+(+1.20%)**, while output speed changed **75.074 → 73.153 tok/s (-2.56%)** and
+mean output-token latency changed **13.321 → 13.680 ms**. Acceptance varies,
+and only five baseline and six candidate 2K windows survived the phase filter.
+These observations do not isolate a kernel slowdown or establish a speedup.
+Retain the candidate for further measurement; defer default promotion and
+leave both options off. The earlier microbenchmark gain is not a measured
+whole-decoder gain. The initial emphasis on lower output tok/s was too strong
+as a reason to stop pursuing the candidate.
 
 ## Matched experiment
 
@@ -55,10 +59,32 @@ The table takes medians within each run, then medians across the two runs.
 The positive long-context deltas are within observed baseline variability.
 Output lengths and acceptance vary even between baseline repeats. Median of
 reciprocals need not equal reciprocal of medians, especially with two samples.
+## Engine window measurements and decision limits
+
+The 2-second window statistic counts engine steps inside response decode
+phases, excluding prefill and phase edges. Below, each run is summarized by
+its median, then the two run medians are combined. The two repeats share one
+boot per arm; individual windows are not independent boot replications.
+
+| Window population | Baseline step/s | Candidate step/s | Change | Baseline/candidate windows |
+|---|---:|---:|---:|---:|
+| 2K only | 21.432 | 21.689 | +1.20% | 5 / 6 |
+| 2K, 32K and 128K combined | 21.680 | 21.562 | -0.55% | 23 / 21 |
+
+One extra step in a two-second window changes its rate by about 0.5 step/s,
+roughly 2.3% at these rates. More windows can improve an aggregate estimate,
+but this small sample and the missing clean reverse arm cannot establish a
+1% effect. The reported baseline spread is an observed range, not a confidence
+interval or an equivalence bound.
+
 The existing engine-step judge also returns **inconclusive**: A1 +1.2% and A2
 +0.1% against B2, both within the same-build 2.3% baseline spread. These are
-engine steps, not output tokens. No further samples were taken to promote a
-candidate whose requested short-context C=1 speed did not improve.
+engine steps, not output tokens. Neither the negative output-rate observation
+nor the positive 2K step-rate observation is sufficient for a final verdict.
+The next adjudication needs an uncontaminated, counterbalanced boot sequence,
+fixed input/context and decoding length, more steady-state steps, and separate
+step-time and acceptance reporting. No additional GPU run was made as part of
+this interpretation correction.
 
 ## Correctness and execution evidence
 

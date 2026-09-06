@@ -159,6 +159,66 @@
       "baseline_spread_pct": 9.008125721418814
     }
   },
+  "window_comparison": {
+    "2000": {
+      "B": {
+        "step_s": 21.431805019501297,
+        "windows": 5,
+        "boots": 1
+      },
+      "A": {
+        "step_s": 21.689446730620965,
+        "windows": 6,
+        "boots": 1
+      },
+      "step_change_pct": 1.2021465802121378
+    },
+    "32000": {
+      "B": {
+        "step_s": 21.926995662461785,
+        "windows": 8,
+        "boots": 1
+      },
+      "A": {
+        "step_s": 21.56030669901604,
+        "windows": 10,
+        "boots": 1
+      },
+      "step_change_pct": -1.6723173985641049
+    },
+    "128000": {
+      "B": {
+        "step_s": 21.680186984072314,
+        "windows": 10,
+        "boots": 1
+      },
+      "A": {
+        "step_s": 21.79663426013061,
+        "windows": 5,
+        "boots": 1
+      },
+      "step_change_pct": 0.5371137995435316
+    },
+    "all": {
+      "B": {
+        "step_s": 21.68008483438669,
+        "windows": 23,
+        "boots": 1
+      },
+      "A": {
+        "step_s": 21.56185055034055,
+        "windows": 21,
+        "boots": 1
+      },
+      "step_change_pct": -0.5453589547703586
+    }
+  },
+  "assessment": {
+    "status": "inconclusive",
+    "candidate": "retained",
+    "default_promotion": "deferred",
+    "reason": "Too few windows, one clean boot per arm, acceptance variation and missing clean reversal"
+  },
   "excluded": {
     "name": "M8SERVB3",
     "reason": "External requests overlapped 128K; Running: 2 reqs"

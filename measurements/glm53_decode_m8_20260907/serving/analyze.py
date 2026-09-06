@@ -68,7 +68,20 @@ for ctx in ("2000", "32000", "128000"):
     stats["speed_change_pct"] = 100 * (stats["A"]["decode_tok_s"] / stats["B"]["decode_tok_s"] - 1)
     stats["baseline_spread_pct"] = 100 * (max(bases) - min(bases)) / median(bases)
     comparison[ctx] = stats
+window_comparison = {}
+for ctx in ("2000", "32000", "128000", "all"):
+    stats = {}
+    for arm in ("B", "A"):
+        windows = [r["decode"]["windows"] if ctx == "all" else r["decode"]["windows_by_ctx"][ctx]
+                   for r in rows if r["name"].startswith("M8SERV" + arm)]
+        stats[arm] = {"step_s": median(median(w) for w in windows),
+                      "windows": sum(len(w) for w in windows), "boots": 1}
+    stats["step_change_pct"] = 100 * (stats["A"]["step_s"] / stats["B"]["step_s"] - 1)
+    window_comparison[ctx] = stats
 (HERE / "summary.json").write_text(json.dumps({"per_run": per_run, "comparison": comparison,
+    "window_comparison": window_comparison,
+    "assessment": {"status": "inconclusive", "candidate": "retained", "default_promotion": "deferred",
+                   "reason": "Too few windows, one clean boot per arm, acceptance variation and missing clean reversal"},
     "excluded": {"name": excluded["name"], "reason": "External requests overlapped 128K; Running: 2 reqs"}}, indent=2) + "\n")
 for ctx, s in comparison.items():
     print(f"{ctx}: {s['B']['decode_tok_s']:.3f} -> {s['A']['decode_tok_s']:.3f} tok/s "

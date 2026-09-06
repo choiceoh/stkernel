@@ -6941,7 +6941,7 @@ trial. All **27** focused tests, **6,650** logic checks, **30** megakernel and
 the tested runtime. End-to-end repeated/balanced speedup and full-context
 acceptance remain unclaimed.
 
-### C=1 MK-GEMM serving follow-up — no speedup (2026-09-07)
+### C=1 MK-GEMM serving follow-up — inconclusive, candidate retained (2026-09-07)
 
 Fleet `glm53m8serve`, 05:14:55–05:40:47 KST, deployed source `f00a4eb`, stamp
 `1af1a93f83b5`: same four GB10 nodes, TP4, K5, C1, same model/image and request
@@ -6954,8 +6954,17 @@ output 75.074 → 73.153 tok/s (-2.56%), TPOT 13.321 → 13.680 ms**. The 32K
 and 128K deltas (+1.35%/+0.43%) are within baseline spreads of 11.03%/9.01%.
 All four runs pass quality 9/9 and Korean 0/5; both candidates prove 2/2 paths.
 The engine-step verdict is inconclusive within a 2.3% same-build noise floor.
-The two repeats per arm share a boot, so a general slowdown is not established;
-**a reproducible C1 speedup is not demonstrated, and both defaults remain 0**.
+The two repeats per arm share a boot. In 2K alone, window speed is actually
+21.432 → 21.689 step/s (+1.20%), with only five baseline and six candidate
+windows; the all-context aggregate is 21.680 → 21.562 (-0.55%). The observed
+baseline spread is not a confidence interval. Acceptance variation, few
+windows and the missing clean reverse arm prevent attribution of the output
+rate decline to the kernel. **The verdict is inconclusive: retain the candidate,
+defer promotion, and keep both defaults at 0. Rejection is not supported.**
+The initial emphasis on lower output tok/s was too strong as a reason to stop
+pursuing it. Further adjudication needs a clean counterbalanced sequence,
+fixed context/decoding length and more steady-state step samples. This
+interpretation correction does not add a GPU measurement.
 
 The intended final reversal B3 received unrelated external requests during
 128K: 11 external POSTs and two running requests. Its aggregate engine rate
