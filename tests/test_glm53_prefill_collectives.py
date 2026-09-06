@@ -30,13 +30,13 @@ class Tensor:
 class CollectiveContractTests(unittest.TestCase):
     def setUp(self):
         names = {"_PartialOutput", "_tp_comm", "partial_tp_output",
-                 "maybe_partial_all_reduce", "_check"}
+                 "maybe_partial_all_reduce", "_check", "_payload_bytes"}
         tree = ast.parse(SOURCE.read_text())
         body = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
                 and node.name in names]
         self.ns = dict(contextmanager=contextmanager, ContextVar=ContextVar, dataclass=dataclass,
                        _PARTIAL=ContextVar("test_partial", default=None),
-                       _ENABLED=True, _TP=4, _HIDDEN=4096,
+                       _ENABLED=True, _TP=4, _HIDDEN=4096, _BLOCK=2048,
                        torch=SimpleNamespace(bfloat16="bf16", cuda=SimpleNamespace(
                            is_current_stream_capturing=lambda: False)))
         exec(compile(ast.Module(body=body, type_ignores=[]), str(SOURCE), "exec"), self.ns)
@@ -55,6 +55,15 @@ class CollectiveContractTests(unittest.TestCase):
     def test_buffer_collectives_use_pynccl(self):
         self.assertIs(self.ns["_check"](Tensor()), self.pynccl)
         self.assertEqual(self.ns["_tp_comm"](), (self.device_comm, self.pynccl))
+
+    def test_packet_stride_aligns_every_peer_without_excess_padding(self):
+        for rows in (32, 33, 34, 35, 128, 1728, 2047, 2048):
+            with self.subTest(rows=rows):
+                size = self.ns["_payload_bytes"](rows * 4096)
+                self.assertGreaterEqual(size, rows * 4104)
+                self.assertLess(size - rows * 4104, 128)
+                for rank in range(4):
+                    self.assertEqual((512 + rank * size) % 128, 0)
 
     def test_rejects_wrong_tensor_contract(self):
         for tensor in (Tensor(rows=31), Tensor(width=2048), Tensor(dtype="fp32"),

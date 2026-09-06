@@ -118,6 +118,13 @@ def _check(tensor):
     return pynccl
 
 
+def _payload_bytes(local_n):
+    # Appending 4-byte scales skews peer-packet alignment for odd shard row
+    # counts. Keep every sender/receiver slice aligned, not just allocation 0.
+    used = local_n + 4 * (local_n // _BLOCK)
+    return ((used + 127) // 128) * 128
+
+
 # 39차 P2A2: the element counts were tl.constexpr, so every distinct prefill
 # length (every prompt) recompiled six kernels -- the 2K request after the
 # 8192-token warm-up paid 0.5 s (cold 1.48 s vs warm 0.87 s). They are
@@ -244,6 +251,13 @@ def _pack_rs_payload(X, Packed, Scales, N, LOCAL_N, PAYLOAD_BYTES,
              (x / scale).to(tl.float8e4nv))
     tl.store(Scales + rank * (PAYLOAD_BYTES // 4) + LOCAL_N // 4 + local_block,
              scale)
+    if local_block == local_blocks - 1:
+        # Initialize the alignment gap in this packet. One CTA owns it and
+        # its at-most-31 FP32 words never overlap actual scales or values.
+        tail = tl.arange(0, 32)
+        scale_end = LOCAL_N // 4 + local_blocks
+        tl.store(Scales + rank * (PAYLOAD_BYTES // 4) + scale_end + tail, 0.0,
+                 mask=scale_end + tail < PAYLOAD_BYTES // 4)
 
 
 @triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
@@ -322,12 +336,20 @@ def prefill_all_gather(tensor, *, num_tokens=None):
     # metadata collective and fuses the local absmax with quantization.
     n = tensor.numel()
     blocks = n // _BLOCK  # H=4096 guarantees complete, aligned blocks.
-    payload_bytes = n + 4 * blocks
+    payload_bytes = _payload_bytes(n) if _FP8_V3 else n + 4 * blocks
     payload = torch.empty(payload_bytes, device=tensor.device, dtype=torch.uint8)
-    _pack_gather[(blocks,)](
-        tensor, payload[:n].view(torch.float8_e4m3fn),
-        payload[n:].view(torch.float32), N=n, BLOCK=_BLOCK
-    )
+    if _FP8_V3:
+        # The RS encoder also packs a single local AG packet, including its
+        # alignment gap. Quantization is identical to _pack_gather.
+        _pack_rs_payload[(blocks,)](
+            tensor, payload.view(torch.float8_e4m3fn), payload.view(torch.float32),
+            N=n, LOCAL_N=n, PAYLOAD_BYTES=payload_bytes, BLOCK=_BLOCK,
+        )
+    else:
+        _pack_gather[(blocks,)](
+            tensor, payload[:n].view(torch.float8_e4m3fn),
+            payload[n:].view(torch.float32), N=n, BLOCK=_BLOCK
+        )
     gathered = torch.empty(payload_bytes * _TP, device=tensor.device,
                            dtype=torch.uint8)
     comm.all_gather(gathered, payload)
@@ -425,7 +447,7 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
 
     local_n = padded_rows * _HIDDEN // _TP
     local_blocks = local_n // _BLOCK
-    payload_bytes = local_n + 4 * local_blocks
+    payload_bytes = _payload_bytes(local_n)
     packed = torch.empty(payload_bytes * _TP, device=tensor.device,
                          dtype=torch.uint8)
     recv = torch.empty_like(packed)

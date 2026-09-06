@@ -7,7 +7,7 @@ The target is at least **1.40x input tokens/second** on matched requests,
 equivalent to reducing prefill wall time by at least **28.5714%**. It is not
 a 40% reduction in wall time. Cold and warmed measurements are separate.
 
-## Current evidence after rebase (2026-09-06)
+## Current evidence after rebase (2026-09-07)
 
 Rebased onto `3604d27` (including the latest video fix and MoE tile default).
 Follow-up branch:
@@ -34,7 +34,10 @@ block scales, FP8 values and ordered FP32 sum, but changes the wire layout
 to `[destination][FP8 values | FP32 scales]`. The pack kernel writes this
 layout directly and the unpack kernel reads it directly: no new copy or
 interleave launch. v2 actually uses **two** `all_to_all_single` calls per
-reduction; v3 uses **one**, with the same byte count and two compute kernels.
+reduction; v3 uses **one**, with two compute kernels. Each v3 packet is padded
+to a 128-byte stride (at most 120 additional bytes for this model's row width);
+the final pack CTA initializes the gap without another launch. All-gather
+uses the same aligned packet layout in v3; v1/v2 remain unchanged.
 This removes v2's extra metadata collective. BF16 already uses one native
 reduce-scatter, so a win against BF16 remains unproven. The default stays 0.
 
@@ -57,6 +60,15 @@ packet byte, padding, output bits versus v2 and an ordered reference, and
 one-call dispatch. It cannot prove actual NCCL behavior or serving quality.
 The real TP4 probe now covers v2/v3 against the ordered decoded reference.
 
+The first real TP4 run passed all 60 numerical cases but **rejected the
+unaligned v3 transport on latency**. At T=8185, the median paired
+reduce-scatter times were BF16 3871.696 us, v2 2480.416 us and v3
+47169.312 us (five mirrored-order rounds, maximum across ranks per sample).
+At T=128, whose packet stride was already aligned, v3 took 388.880 us
+versus BF16 420.144 us. The 128-byte alignment correction addresses a
+shape-dependent hypothesis; its benefit must be measured, not assumed.
+Raw evidence: `srv2:/tmp/glm53-prefill-tp4.o9CdNc/rank-0.log`.
+
 The later historical trace
 `dp0_pp0_tp0_dcp0_ep0_rank0.1788700171065354541.pt.trace.json.gz` also exposes
 another candidate to investigate: its MHC pre kernels use local row counts
@@ -65,8 +77,10 @@ prefill forward, that is six forwards: four 6912-row chunks, one 4608-row
 chunk and a final shard-padded 4600-row chunk. The sampler's nine calls also
 include decode and are not a prefill denominator. Under APC's 2304-token
 alignment, the configured 8192-token budget is not fully used. An aligned
-batch-budget experiment must account for speculative lookahead and memory
-before changing the default; these counts alone predict no throughput gain.
+batch budget is an observation, not a new performance candidate: the ledger's
+APC3 arm already tried `MAX_BATCHED=9216` without recovering the cost.
+Changing the budget again requires a demonstrated scheduler difference,
+including speculative lookahead and memory; these counts predict no gain.
 
 The operator requested continued implementation and **no tests until the
 combined expected gain exceeds 40%**. After that threshold, validation is one

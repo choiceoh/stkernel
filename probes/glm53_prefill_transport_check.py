@@ -71,7 +71,7 @@ def run_case(helper, rows, case):
     local_blocks = local_n // 2048
     blocks = local_blocks * 4
     n_padded = local_n * 4
-    packet_bytes = local_n + local_blocks * 4
+    packet_bytes = helper._payload_bytes(local_n)
     values, old_data, old_scales, packets = [], [], [], []
     generator = torch.Generator(device="cuda").manual_seed(401)
     common = torch.randn((rows, 4096), device="cuda", generator=generator)
@@ -103,8 +103,11 @@ def run_case(helper, rows, case):
             received = packet[dest * packet_bytes:(dest + 1) * packet_bytes]
             exact(received[:local_n], data[dest * local_n:(dest + 1) * local_n].view(torch.uint8),
                   f"{rows}/{case}: rank {rank}->{dest} values")
-            exact(received[local_n:], scales[dest * local_blocks:(dest + 1) * local_blocks].view(torch.uint8),
+            scale_end = local_n + local_blocks * 4
+            exact(received[local_n:scale_end], scales[dest * local_blocks:(dest + 1) * local_blocks].view(torch.uint8),
                   f"{rows}/{case}: rank {rank}->{dest} scales")
+            exact(received[scale_end:], torch.zeros_like(received[scale_end:]),
+                  f"{rows}/{case}: rank {rank}->{dest} alignment gap not initialized")
         exact(x, before, "pack changed input")
         values.append(x)
         old_data.append(data)

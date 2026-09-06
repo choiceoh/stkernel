@@ -5,8 +5,16 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 compile_only=0
 with_tp4=0
-case ${1:-} in --compile-only) compile_only=1; shift;; --tp4) with_tp4=1; shift;; esac
-if [[ $# != 0 ]]; then echo 'usage: run_glm53_prefill_transport_check.sh [--compile-only|--tp4]' >&2; exit 2; fi
+skip_scale=0
+while [[ $# != 0 ]]; do
+  case $1 in
+    --compile-only) compile_only=1;;
+    --tp4) with_tp4=1;;
+    --skip-scale) skip_scale=1;;
+    *) echo 'usage: run_glm53_prefill_transport_check.sh [--compile-only|--tp4] [--skip-scale]' >&2; exit 2;;
+  esac
+  shift
+done
 PROBE_LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/glm53-prefill-transport.XXXXXX")
 echo "validation log: $PROBE_LOG_DIR/run.log"
 exec > >(tee "$PROBE_LOG_DIR/run.log") 2>&1
@@ -33,9 +41,11 @@ fi
 docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
   -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
   /repo/probes/glm53_prefill_transport_check.py
-docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
-  -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
-  /repo/probes/glm53_nvfp4_scale_check.py
+if [[ $skip_scale == 0 ]]; then
+  docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
+    -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
+    /repo/probes/glm53_nvfp4_scale_check.py
+fi
 if [[ $with_tp4 == 1 ]]; then
   bash "$REPO/probes/run_glm53_prefill_tp4_check.sh" fp8-v3
 fi

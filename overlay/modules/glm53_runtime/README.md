@@ -379,7 +379,9 @@ profile default after the 39차 +12.6%/+13.3% 32K/128K prefill result.
 FP8 remains off: v1 agrees on common block scales before native FP8 SUM;
 v2 sends rank-local values and scales in two all-to-alls and sums decoded
 terms in FP32. v3 packs values and scales by destination directly into one
-all-to-all, preserving v2's numerical recipe. BF16 already has one native
+all-to-all, preserving v2's numerical recipe. Its packet stride is rounded
+to 128 bytes for both collectives; the pack kernel initializes the alignment
+gap. BF16 already has one native
 reduce-scatter, so v3 needs a fresh bracket against BF16. Every FP8 mode
 requires its own serving-quality gate.
 
