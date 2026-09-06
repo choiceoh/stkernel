@@ -9,7 +9,8 @@ a 40% reduction in wall time. Cold and warmed measurements are separate.
 
 ## Current evidence after rebase (2026-09-06)
 
-Rebased onto `3eb72d4` without conflicts. Follow-up branch:
+Rebased onto `3604d27` (including the latest video fix and MoE tile default).
+Follow-up branch:
 `codex/glm53-prefill-packed-transport`. **The original 41.2056% forecast below
 is superseded by measurements, not a current prediction or achieved gain.**
 The implementation gate already opened; subsequent corrections and candidates
