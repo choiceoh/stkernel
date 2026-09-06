@@ -167,6 +167,20 @@ def _compact_static_get_work_tile(
 
 
 @dsl_user_op
+def _prefetch_l2(addr, *, loc=None, ip=None):
+    """prefetch.global.L2 of the 128 B line holding the global byte address."""
+    llvm.inline_asm(
+        None,
+        [Int64(addr).ir_value(loc=loc, ip=ip)],
+        "prefetch.global.L2 [$0];",
+        "l",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+
+@dsl_user_op
 def _st_shared_i32(addr, val, *, loc=None, ip=None):
     llvm.inline_asm(
         None,
