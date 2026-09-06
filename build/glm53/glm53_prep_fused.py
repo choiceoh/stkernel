@@ -172,6 +172,45 @@ def selfcheck_every() -> int:
     return _every(ENV_SELFCHECK_EVERY, 64)
 
 
+ENV_KERNEL = "VLLM_GLM53_PREP_FUSED_KERNEL"
+
+
+def kernel_backend() -> str:
+    """'cuda' (default, 37차: the megakernel extension's mk_prep_kernel, any Q)
+    or 'triton' (the original kernel, Q_P2 masked lanes)."""
+    v = os.environ.get(ENV_KERNEL, "cuda").strip().lower()
+    return "triton" if v == "triton" else "cuda"
+
+
+_CUDA_EXT = [None, False]  # (ext or None, tried)
+
+
+def _cuda_ext():
+    """The megakernel extension when it carries run_prep, else None (once)."""
+    if not _CUDA_EXT[1]:
+        _CUDA_EXT[1] = True
+        try:
+            from vllm.model_executor.layers import glm53_megakernel as _mk
+            ext = _mk._build()
+            _CUDA_EXT[0] = ext if hasattr(ext, "run_prep") else None
+            if _CUDA_EXT[0] is None:
+                logger.warning("[prep-fused] megakernel extension has no run_prep -> triton kernel")
+        except Exception as e:  # noqa: BLE001 -- the Triton kernel stays available
+            logger.warning("[prep-fused] CUDA kernel unavailable (%r) -> triton kernel", e)
+            _CUDA_EXT[0] = None
+    return _CUDA_EXT[0]
+
+
+_CUDA_DTYPES = (  # (attribute path, dtype) the CUDA kernel hard-codes
+    ("num_computed", torch.int32), ("last_sampled", torch.int64), ("draft_tokens", torch.int64),
+    ("num_accepted", torch.int32), ("input_ids", torch.int32), ("positions", torch.int64),
+    ("query_start_loc", torch.int32), ("seq_lens", torch.int32), ("is_padding", torch.bool),
+    ("req_id_buf", torch.int32), ("exp_bt", torch.int32), ("dec_seq_lens", torch.int32),
+    ("dec_lens", torch.int32), ("per_req_dec_lens", torch.int32), ("idx_bt", torch.int32),
+    ("comp_slot", torch.int64),
+)
+
+
 def check_preimages(root: str) -> list[str]:
     """Return the relative paths whose sha256 differs from PREIMAGES."""
     bad = []
@@ -258,6 +297,7 @@ def _glm53_prep_fused_kernel(
     comp_slot_ptr,
     comp_slot_cap,
     Q: tl.constexpr,
+    Q_P2: tl.constexpr,  # 37차: next power of two of Q (tl.arange); lanes >= Q are masked
     NUM_SPEC: tl.constexpr,
     NS: tl.constexpr,
     NS_P2: tl.constexpr,
@@ -298,7 +338,8 @@ def _glm53_prep_fused_kernel(
         return
 
     r = pid
-    offs = tl.arange(0, Q)
+    offs = tl.arange(0, Q_P2)
+    qmask = offs < Q
     rs = tl.load(idx_mapping_ptr + r)
     ncomp = tl.load(num_computed_ptr + rs)
     qs = r * Q
@@ -306,7 +347,7 @@ def _glm53_prep_fused_kernel(
     tl.store(seq_lens_ptr + r, seq_len)
     tl.store(qsl_ptr + r, qs)
     pos = ncomp.to(tl.int64) + offs.to(tl.int64)
-    tl.store(positions_ptr + qs + offs, pos)
+    tl.store(positions_ptr + qs + offs, pos, mask=qmask)
 
     # combine_sampled_and_draft_tokens, NUM_NEW_SAMPLED_TOKENS=1
     prefill_len = tl.load(prefill_len_ptr + rs)
@@ -319,8 +360,8 @@ def _glm53_prep_fused_kernel(
         tl.store(input_ids_ptr + qs + 1 + offs, dr.to(tl.int32), mask=dmask)
 
     # expand_idx_mapping
-    tl.store(expanded_idx_ptr + qs + offs, tl.full([Q], 0, tl.int64) + rs)
-    tl.store(expanded_pos_ptr + qs + offs, offs.to(tl.int32))
+    tl.store(expanded_idx_ptr + qs + offs, tl.full([Q_P2], 0, tl.int64) + rs, mask=qmask)
+    tl.store(expanded_pos_ptr + qs + offs, offs.to(tl.int32), mask=qmask)
 
     # gather_block_tables + compute_slot_mappings, every group
     for g in tl.static_range(G):
@@ -339,9 +380,9 @@ def _glm53_prep_fused_kernel(
         bsz = bs.to(tl.int64)
         bidx = pos // bsz
         boff = pos % bsz
-        bn = tl.load(src_row + bidx)
+        bn = tl.load(src_row + bidx, mask=qmask, other=0)
         slot = (bn * bs).to(tl.int64) + boff
-        tl.store(slot_ptr + g * slot_stride + qs + offs, slot)
+        tl.store(slot_ptr + g * slot_stride + qs + offs, slot, mask=qmask)
 
     # the gathered rows are read back below by other threads of this program
     tl.debug_barrier()
@@ -361,7 +402,7 @@ def _glm53_prep_fused_kernel(
         mp = _load_ptr(gdn_mask_ptrs + k, tl.int8)
         tl.store(mp + r + tl.arange(0, 1), tl.full([1], 1, tl.int8))
         tp = _load_ptr(gdn_tok_ptrs + k, tl.int32)
-        tl.store(tp + qs + offs, (qs + offs).to(tl.int32))
+        tl.store(tp + qs + offs, (qs + offs).to(tl.int32), mask=qmask)
         qp = _load_ptr(gdn_qsl_ptrs + k, tl.int32)
         tl.store(qp + r, qs)
         ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
@@ -371,24 +412,27 @@ def _glm53_prep_fused_kernel(
     dsta = _load_ptr(dst_bt_ptrs + ATTN_G, tl.int32)
     wa = tl.load(bt_strides + ATTN_G)
     row = dsta + r * wa
-    tl.store(req_id_ptr + qs + offs, tl.full([Q], 0, tl.int32) + r)
-    tl.store(dec_lens_ptr + qs + offs, tl.full([Q], 1, tl.int32))
+    tl.store(req_id_ptr + qs + offs, tl.full([Q_P2], 0, tl.int32) + r, mask=qmask)
+    tl.store(dec_lens_ptr + qs + offs, tl.full([Q_P2], 1, tl.int32), mask=qmask)
     tl.store(per_req_dec_lens_ptr + r, Q)
     # _prepare_uniform_decode_kernel: per-token context length, then
     # `seq_lens //= compress_ratio` on the same buffer
     tok_seq = seq_len - Q + offs + 1
-    tl.store(dec_seq_lens_ptr + qs + offs, tok_seq // RATIO)
+    tl.store(dec_seq_lens_ptr + qs + offs, tok_seq // RATIO, mask=qmask)
     # get_compressed_slot_mapping over indexer_block_table = bt[:, ::F] // F
     pos32 = seq_len - Q + offs
-    valid = (pos32 + 1) % RATIO == 0
+    valid = ((pos32 + 1) % RATIO == 0) & qmask  # padded lanes never touch the table
     pc = pos32 // RATIO
     bid = pc // SBS
     bn = tl.load(row + bid.to(tl.int64) * FACTOR, mask=valid, other=0) // FACTOR
     cslot = bn * SBS + pc % SBS
     cslot = tl.where(valid, cslot, PAD_ID)
-    tl.store(comp_slot_ptr + qs + offs, cslot.to(tl.int64))
+    tl.store(comp_slot_ptr + qs + offs, cslot.to(tl.int64), mask=qmask)
     # expanded_block_table_buffer[t] = the gathered row, full width, for the
     # Q tokens of this request: read each chunk once, store it Q times.
+    # 37차: rows for the Q_P2 lanes -- the lanes >= Q are the NEXT request's
+    # rows, so both 2-D stores below carry the lane mask (the k=5 production
+    # boot's self-check caught exactly this at C=4: exp_bt/idx_bt drift).
     trow = (qs + offs).to(tl.int64)
     exp_rows = exp_bt_ptr + trow[:, None] * exp_bt_stride
     idx_rows = idx_bt_ptr + trow[:, None] * idx_bt_stride
@@ -396,13 +440,13 @@ def _glm53_prep_fused_kernel(
         off = i + tl.arange(0, BLOCK)
         msk = off < wa
         v = tl.load(row + off, mask=msk, other=0)
-        tl.store(exp_rows + off[None, :], v[None, :], mask=msk[None, :])
+        tl.store(exp_rows + off[None, :], v[None, :], mask=msk[None, :] & qmask[:, None])
     # indexer_decode_block_table_buffer[t, c] = row[c*F] // F
     for i in range(0, idx_bt_cols, BLOCK):
         off = i + tl.arange(0, BLOCK)
         msk = off < idx_bt_cols
         v = tl.load(row + off * FACTOR, mask=msk, other=0) // FACTOR
-        tl.store(idx_rows + off[None, :], v[None, :], mask=msk[None, :])
+        tl.store(idx_rows + off[None, :], v[None, :], mask=msk[None, :] & qmask[:, None])
 
 
 # ---------------------------------------------------------------------------
@@ -458,11 +502,14 @@ class PrepPlan:
     # the kpool tail builder whose circular slot buffer must stay dormant
     tail_builder: Any = None
     owned: dict[str, Any] = field(default_factory=dict)
+    kernel: str = "?"   # 37차: 'cuda' or 'triton (...)', set by warmup()
 
     def __post_init__(self) -> None:
         dev = self.device
-        if self.q & (self.q - 1):
-            raise RuntimeError(f"decode_query_len {self.q} is not a power of two (tl.arange)")
+        # 37차: any Q (k+1). tl.arange needs a power of two, so the kernel
+        # runs Q_P2 lanes and masks the ones >= Q (the NS_P2 pattern below);
+        # k=5 (Q=6) used to DISARM here and lose the fusion for the boot.
+        self.q_p2 = 1 << (self.q - 1).bit_length()
         # idx_mapping staging: the image's round-robin UVA pool, sized by the
         # runner to max_concurrent_batches, so a step's host write can never
         # land under the previous step's in-flight copy (async scheduling).
@@ -507,9 +554,57 @@ class PrepPlan:
                                "what the graph reads")
         return True
 
+    def cuda_dtype_reason(self) -> str | None:
+        """None when every buffer has the dtype mk_prep_kernel hard-codes."""
+        bad = [f"{n}:{getattr(self, n).dtype}" for n, dt in _CUDA_DTYPES
+               if getattr(self, n).dtype != dt]
+        bt = self.bt
+        for n, t, dt in (("prefill_len", self.prefill_len_src.gpu, torch.int32),
+                         ("block_table_ptrs", bt.block_table_ptrs, torch.uint64),
+                         ("input_block_table_ptrs", bt.input_block_table_ptrs, torch.uint64),
+                         ("block_table_strides", bt.block_table_strides, torch.int64),
+                         ("block_sizes", bt.block_sizes_tensor, torch.int32),
+                         ("num_blocks", bt.num_blocks.gpu, torch.int32),
+                         ("slot_mappings", bt.slot_mappings, torch.int64)):
+            if t.dtype != dt:
+                bad.append(f"{n}:{t.dtype}")
+        for n, ts, dt in (("gdn_state", self.gdn_state, torch.int32), ("gdn_tok", self.gdn_tok, torch.int32),
+                          ("gdn_qsl", self.gdn_qsl, torch.int32), ("gdn_nacc", self.gdn_nacc, torch.int32)):
+            bad += [f"{n}[{i}]:{t.dtype}" for i, t in enumerate(ts) if t.dtype != dt]
+        bad += [f"gdn_mask[{i}]:{t.dtype}" for i, t in enumerate(self.gdn_mask)
+                if t.dtype not in (torch.int8, torch.bool, torch.uint8)]
+        if self.last_sampled.dim() == 2 and self.last_sampled.stride(0) != 1:
+            bad.append(f"last_sampled stride {self.last_sampled.stride(0)}")
+        return None if not bad else "dtype mismatch: " + ", ".join(bad)
+
+    def _cuda_ptrs(self, idx: torch.Tensor) -> list[int]:
+        """The 33 device pointers mk_run_prep unpacks, in its order."""
+        o = self.owned
+        bt = self.bt
+        return [t.data_ptr() for t in (
+            idx, self.num_computed, self.prefill_len_src.gpu, self.last_sampled,
+            self.draft_tokens, self.num_accepted,
+            self.input_ids, self.positions, self.query_start_loc, self.seq_lens,
+            self.is_padding, o["expanded_idx"], o["expanded_pos"],
+            bt.block_table_ptrs, bt.input_block_table_ptrs, bt.block_table_strides,
+            bt.block_sizes_tensor, bt.num_blocks.gpu, bt.slot_mappings,
+            o["gdn_group_idx"], o["gdn_state_ptrs"], o["gdn_state_strides"],
+            o["gdn_mask_ptrs"], o["gdn_tok_ptrs"], o["gdn_qsl_ptrs"], o["gdn_nacc_ptrs"],
+            self.req_id_buf, self.exp_bt, self.dec_seq_lens, self.dec_lens,
+            self.per_req_dec_lens, self.idx_bt, self.comp_slot)]
+
+    def _cuda_ints(self, num_reqs: int, num_tokens: int) -> list[int]:
+        bt = self.bt
+        return [num_reqs, num_tokens, self.max_num_reqs, self.max_num_tokens,
+                self.draft_tokens.stride(0), bt.num_blocks.gpu.stride(0), bt.slot_mappings.stride(0),
+                self.req_id_buf.numel(), self.exp_bt.stride(0), self.dec_seq_lens.numel(),
+                self.idx_bt.stride(0), self.idx_bt_cols, self.comp_slot.numel(),
+                self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g,
+                self.factor, self.ratio, self.sbs, PAD_SLOT_ID]
+
     def _consts(self) -> dict[str, int]:
         return dict(
-            Q=self.q, NUM_SPEC=self.num_spec, NS=self.num_spec + 1, NS_P2=self.ns_p2,
+            Q=self.q, Q_P2=self.q_p2, NUM_SPEC=self.num_spec, NS=self.num_spec + 1, NS_P2=self.ns_p2,
             G=self.G, N_GDN=len(self.gdn_groups), ATTN_G=self.attn_g,
             FACTOR=self.factor, RATIO=self.ratio, SBS=self.sbs,
             PAD_ID=PAD_SLOT_ID, BLOCK=_BLOCK,
@@ -546,6 +641,11 @@ class PrepPlan:
         idx = o["idx_pool"].copy_to_gpu(
             idx_mapping_np.astype(np.int64, copy=False), out=o["idx_gpu"][:num_reqs])
         num_tokens = num_reqs * self.q
+        ext = o.get("cuda_ext")
+        if ext is not None:
+            ext.run_prep(self._cuda_ptrs(idx), self._cuda_ints(num_reqs, num_tokens))
+            self.schedule(num_tokens)
+            return idx
         args = self._args(idx, num_reqs, num_tokens)
         compiled = o.get("compiled")
         if compiled is not None:
@@ -565,6 +665,17 @@ class PrepPlan:
         Raises on failure so the caller can DISARM instead of JIT-ing (or
         failing) on the first real request. Keeps the compiled binary for
         direct launches when this Triton hands one back."""
+        self.owned["cuda_ext"] = None
+        if kernel_backend() == "cuda":
+            reason = self.cuda_dtype_reason()
+            ext = _cuda_ext() if reason is None else None
+            if ext is not None:
+                self.owned["cuda_ext"] = ext
+                self.kernel = "cuda"
+                return
+            self.kernel = f"triton ({reason or 'no extension'})"
+        else:
+            self.kernel = "triton"
         idx = self.owned["idx_gpu"][:1]
         compiled = _glm53_prep_fused_kernel.warmup(
             *self._args(idx, 1, self.q), **self._consts(), grid=(1,))
@@ -672,8 +783,6 @@ def build_plan(runner) -> PrepPlan:
     num_spec = int(runner.num_speculative_steps)
     if q != num_spec + 1 or num_spec <= 0:
         raise RuntimeError(f"decode_query_len {q} != num_spec {num_spec} + 1")
-    if q & (q - 1):
-        raise RuntimeError(f"decode_query_len {q} is not a power of two")
     if runner.model_state.num_new_sampled_tokens_per_step != 1:
         raise RuntimeError("num_new_sampled_tokens_per_step != 1")
     spec = runner.speculator
@@ -845,8 +954,9 @@ def _ensure_plan(runner, st: _State) -> bool:
         return False
     st.plan = plan
     runner.model_state._glm53_prep = st
-    logger.warning("[prep-fused] plan built: mode=%s groups=%d gdn=%s attn_g=%d factor=%d "
+    logger.warning("[prep-fused] plan built: mode=%s kernel=%s groups=%d gdn=%s attn_g=%d factor=%d "
                    "ratio=%d sbs=%d q=%d shadow_every=%d selfcheck_every=%d", st.mode,
+                   getattr(plan, "kernel", "?"),
                    plan.G, plan.gdn_groups, plan.attn_g, plan.factor, plan.ratio, plan.sbs,
                    plan.q, st.shadow_every, st.selfcheck_every)
     return True

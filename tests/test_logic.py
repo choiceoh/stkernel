@@ -7433,6 +7433,127 @@ def test_mk_smlp_hook_and_contracts() -> None:
     assert "\nVLLM_GLM53_MK_SMLP=0\n" in prof, "bracket-gated: off until the 32차 bracket"
 
 
+def test_mk_head_lane_contracts() -> None:
+    """The vocab head on the v2 lane (30차 §13, EXP-22): wired so that an
+    unarmed or failed lane serves the fp8/bf16 head exactly as before.
+
+    head_logits is None unless the GEMM segment is armed, the batch is a
+    2-D decode batch (m <= 32), the v2 lane is on (the persistent kernel
+    was never sized for 303 tiles) and the head object carries a pack; a
+    disarmed endpoint stays disarmed for the boot. The processor asks the
+    lane before its fp8 copy, and each construction site names its own
+    endpoint knob. The kernel's tile cap covers 38,720 / 128 = 303 tiles
+    and the partial bound is a split's contract only.
+    """
+    import types
+    said = []
+
+    class _T:
+        def __init__(self, shape, dtype="bf16"):
+            self.shape, self.dtype = shape, dtype
+        def dim(self):
+            return len(self.shape)
+    PACK = (_T((303, 32, 128, 64)), _T((303, 32, 128, 8)), 1.0)
+    ns = load_defs(
+        "overlay/glm53_megakernel.py",
+        {"_ARMED", "_HEAD", "_head_disarm", "head_pack", "head_logits",
+         "MK_GEMM_KMAX", "_flag"},
+        {"os": os,
+         "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
+         "build_mk_weight_w4": lambda w, name=None: PACK,
+         "note_pack_name": lambda p, n: None,
+         "gemm_w4a8": lambda x, p, n: "served",
+         "_EXT": types.SimpleNamespace(gemm2_plan=lambda m, n, k: [1, 1, 303, 2, 0]),
+         "_head_first_call_gate": lambda x, p, n, out: 1e-5,
+         "MKPack": tuple, "mk_pack_twin": None, "_exact_gate": None})
+    head_logits, head_pack = ns["head_logits"], ns["head_pack"]
+    torch_stub = types.ModuleType("torch")
+    torch_stub.bfloat16, torch_stub.float16 = "bf16", "fp16"
+    torch_stub.cuda = types.SimpleNamespace(is_current_stream_capturing=lambda: False)
+    saved = sys.modules.get("torch")
+    sys.modules["torch"] = torch_stub
+    try:
+        class _Head:
+            weight = _T((38720, 4096))
+        x = _T((8, 4096))
+        ns["_ARMED"]["gemm"] = False
+        check(head_logits(x, _Head(), "draft") is None,
+              "an unarmed GEMM segment never serves the head")
+        ns["_ARMED"]["gemm"] = True
+        check(head_logits(_T((8, 4096, 1)), _Head(), "draft") is None
+              and head_logits(_T((33, 4096)), _Head(), "draft") is None,
+              "a non-2-D or m > 32 batch is outside the lane's contract")
+        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
+        check(head_logits(x, _Head(), "draft") is None
+              and "draft" in ns["_HEAD"]["disarmed"]
+              and "GEMM2" in ns["_HEAD"]["disarmed"]["draft"],
+              "with the v2 lane off the head disarms itself (v1 was never sized for 303 tiles)")
+        ns["_HEAD"]["disarmed"].clear()
+        os.environ["VLLM_GLM53_MK_GEMM2"] = "1"
+        h = _Head()
+        check(head_logits(x, h, "draft") == "served"
+              and h._mk_head_pack is PACK
+              and "draft" in ns["_HEAD"]["said"]
+              and any("head lane serving" in a[0] for a in said),
+              "armed + v2 + pack: the lane serves and says so once")
+        n_said = len(said)
+        check(head_logits(x, h, "draft") == "served" and len(said) == n_said,
+              "the serving line is printed once per endpoint")
+        bad = _Head()
+        bad.weight = _T((38720, 4096), dtype="fp32")
+        check(head_pack(bad, "target") is None and bad._mk_head_pack_attempted
+              and head_pack(bad, "target") is None,
+              "a weight outside the contract fails the pack build once and latches")
+        check(head_logits(x, bad, "target") is None
+              and "target" in ns["_HEAD"]["disarmed"],
+              "no pack: the endpoint disarms and the fp8/bf16 head serves")
+        wide = _Head()
+        wide.weight = _T((38720, 8192))
+        check(head_pack(wide, "target") is None,
+              "K beyond one launch of the lane is refused (no k-chunk path for the head)")
+    finally:
+        if saved is not None:
+            sys.modules["torch"] = saved
+        else:
+            sys.modules.pop("torch", None)
+        os.environ.pop("VLLM_GLM53_MK_GEMM2", None)
+
+    fp8_source = open(_overlay_source("overlay/fp8_lm_head.py")).read()
+    tree = ast.parse(fp8_source)
+    cls = next(n for n in tree.body
+               if isinstance(n, ast.ClassDef) and n.name == "Fp8HeadLogitsProcessor")
+    apply_src = ast.get_source_segment(fp8_source, next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_apply_head"))
+    init_src = ast.get_source_segment(fp8_source, next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"))
+    check("mk_env: str | None = None" in init_src
+          and "self._deneb_mk_env = mk_env" in init_src,
+          "the processor takes its endpoint's MK knob name, None = never asks")
+    mk_at = apply_src.index("_mk_head_logits(lm_head, hidden_states, mk_env)")
+    fp8_at = apply_src.index("_fp8_gemm(flat, dg_w, lm_head._deneb_fp8_ws)")
+    check(mk_at < fp8_at and "if out is not None:\n            pass" in apply_src
+          and "embedding_bias is None" in apply_src[:mk_at],
+          "the lane is asked before the fp8 copy, only without a bias, and None falls through unchanged")
+    check("_read_bool_env(mk_env)" in apply_src,
+          "an endpoint whose knob is off never asks the lane (the knob, not the other endpoint's)")
+    model_src = open(_overlay_source("overlay/glm5next_model.py")).read()
+    draft_src = open(_overlay_source("overlay/qwen3_dflash2.py")).read()
+    check('mk_env="VLLM_GLM53_MK_HEAD_TARGET"' in model_src
+          and 'mk_env="VLLM_GLM53_MK_HEAD_DRAFT"' in draft_src,
+          "target and draft heads name their own knobs")
+    env = open(os.path.join(REPO, "profiles/glm53.env")).read()
+    check("VLLM_GLM53_MK_HEAD_DRAFT=0\n" in env and "VLLM_GLM53_MK_HEAD_TARGET=0\n" in env,
+          "both head knobs are declared off in the profile (the launcher forwards declared keys only)")
+    cu = open(_overlay_source("overlay/glm53_megakernel.cu")).read()
+    m = re.search(r"constexpr int MK2_TILES_MAX = (\d+);", cu)
+    check(m is not None and int(m.group(1)) >= -(-38720 // 128),
+          "the v2 tile cap covers the vocab head (38,720 / 128 = 303 tiles)")
+    check("} else if (nblk >= 2 * slots) {" in cu
+          and "(c2.ksr == 1 && c2.tail == 0)" in cu,
+          "the ksr rule takes one slice for >= 2 waves of tiles and the partial bound is a split's contract only")
+    print("  mk head lane contracts .......... OK")
+
+
 def test_mk_mla_workspace_is_fixed_and_splits_bounded() -> None:
     """28차: the MLA split scratch never moves under a captured graph.
 
@@ -8318,12 +8439,58 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "fires for a module already in sys.modules) and skips itself when "
           "resolving, so it cannot recurse")
     for phase in ("determine_available_memory", "initialize_from_config",
-                  "compile_or_warm_up_model", "profile_run", "capture_model"):
+                  "compile_or_warm_up_model", "profile_run", "capture_model",
+                  "init_device"):
         check(phase in src, f"the {phase} phase is stamped")
+    # 37차: the 2026-09-05 19:30 boot spent 302 s between the TP and EP
+    # groups of initialize_model_parallel with no line on any rank (1 s in
+    # the 09-04 20:16 and 09-05 00:03 boots). So the distributed groups are
+    # stamped by name, and a phase still running after DENEB_BOOT_STAMP_SLOW
+    # seconds gets its thread's stack logged -- a gap with no marker cannot
+    # be attributed afterwards.
+    check('"vllm.distributed.parallel_state"' in src
+          and '(None, "init_model_parallel_group", "dist-group")' in src
+          and '(None, "initialize_model_parallel", "dist-model-parallel")' in src
+          and '(None, "init_distributed_environment", "dist-world")' in src
+          and "cls = m if cls_name is None else getattr(m, cls_name, None)" in src
+          and 'group = kw.get("group_name")' in src,
+          "the world group and every model-parallel group are stamped by "
+          "name (module-level functions, cls None = the module)")
+    check('os.environ.get("DENEB_BOOT_STAMP_SLOW", "60")' in src
+          and "sys._current_frames().get(tid)" in src
+          and "while not done.wait(_SLOW) and n < _SLOW_MAX_DUMPS:" in src
+          and "done = _start_watch(lab, t)" in src
+          and "done.set()" in src
+          and "daemon=True" in src,
+          "a phase still running after DENEB_BOOT_STAMP_SLOW seconds logs its "
+          "thread's stack from a daemon watcher that is ended in finally, so "
+          "the gap is attributed while it happens and the watcher never "
+          "outlives the phase")
     # `Loading weights took Ns` covers the loader AND the model's
     # weight_loader. Read 296 s once and 63.5 s the next day on the same
     # code -- the first was measured while this repo's benches had all four
     # hosts busy. Timing the generator from both sides puts that in the log.
+    # 37차: the prep-fusion kernel ran tl.arange(0, Q) and DISARMed for any
+    # decode_query_len that is not a power of two (k=5 -> Q=6: "plan
+    # build/warmup failed"), so a k!=7 boot silently lost the fusion. Now it
+    # runs Q_P2 lanes and masks the ones >= Q, the NS_P2 pattern it already
+    # used for the GDN state -- every store over offs and the block-table load
+    # carry the mask, and neither raise remains.
+    pf2 = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                  "glm53_prep_fused.py"), encoding="utf-8").read()
+    kern = pf2[pf2.index("def _glm53_prep_fused_kernel("):]
+    kern = kern[:kern.index("\ndef ")] if "\ndef " in kern else kern
+    check("    Q_P2: tl.constexpr," in kern
+          and "    offs = tl.arange(0, Q_P2)\n    qmask = offs < Q\n" in kern
+          and not [l for l in kern.splitlines()
+                   if "tl.store(" in l and "+ offs" in l and "mask=" not in l]
+          and "bn = tl.load(src_row + bidx, mask=qmask, other=0)" in kern
+          and kern.count("v[None, :], mask=msk[None, :] & qmask[:, None])") == 2
+          and "not a power of two" not in pf2
+          and "self.q_p2 = 1 << (self.q - 1).bit_length()" in pf2
+          and "Q=self.q, Q_P2=self.q_p2," in pf2,
+          "prep-fused serves any decode_query_len: Q_P2 lanes, every offs "
+          "store and the block-table load masked, the power-of-two raises gone")
     check("def _wrap_weights_iter(cls, name):" in src
           and '_wrap_weights_iter(cls, "get_all_weights")' in src
           and "produce += time.monotonic() - t" in src
@@ -8388,6 +8555,144 @@ def test_self_built_kernels_persist_their_caches() -> None:
               and "except OSError:" in src,
               f"{name} prunes stale sibling builds, and a failed prune never "
               f"fails the build")
+    # 37차: chain 13's k=5 boot spun in deep_gemm's tf32 prenorm GEMM at
+    # M=6 (rank 0, CPU 200%, 19 min); M=8/16/24 (k=7 decode) and every
+    # prefill M run through it daily. So M < 8 -- only that -- is served as
+    # the proven M=8 shape: zero rows appended, GEMM, live rows copied back.
+    # Every call site goes through the wrapper, or a k=5 boot finds the one
+    # that does not.
+    check("def _deneb_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits):" in tl
+          and "_HC_PRENORM_MIN_M = 8" in tl
+          and "if m >= _HC_PRENORM_MIN_M:" in tl
+          and "x_pad[:m].copy_(x)" in tl
+          and "out_mul.copy_(mul_pad[:, :m])" in tl
+          and "out_sqrsum.copy_(sq_pad[:, :m])" in tl
+          and tl.count("_deneb_hc_prenorm_gemm(") == 4
+          and tl.count("tf32_hc_prenorm_gemm(") == 2
+          and tl.rindex("tf32_hc_prenorm_gemm(") < tl.index("def mhc_"),
+          "the prenorm GEMM's three call sites route through the M<8 padding "
+          "wrapper (def + 3 calls); the raw deep_gemm call appears only "
+          "inside the wrapper")
+    # 37차 "1+2": layer 0's standalone pre-mix is the one call of a decode
+    # step that still reached deep_gemm (every other layer's pre rides in the
+    # fused hook). The fused kernel's post step is v = pm*x + sum cm*res in
+    # fp32, so pm = 0, cm = I make it the identity and the same armed kernel
+    # serves the standalone pre with no kernel change. Static coefficient
+    # buffers at T_max, sliced per call; a self-test that checks the identity
+    # bitwise and the outputs against the stock pair, at T=8 and -- only when
+    # the boot's spec k is not 7 -- at T=k+1, so a production boot never runs
+    # a T it never serves; its own arm flag under the MHC segment's.
+    mkp = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                  "glm53_megakernel.py"), encoding="utf-8").read()
+    check('ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")' in mkp
+          and '_ARMED = {"mhc": False, "mhc_pre": False, ' in mkp
+          and "def mhc_pre_only(" in mkp and "def mhc_pre_hook(" in mkp
+          and "def _selftest_mhc_pre() -> bool:" in mkp
+          and 'if ENABLE_MHC_PRE and _ARMED["mhc"]:' in mkp
+          and '_ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)' in mkp,
+          "the pre-only MHC hook has its own knob (default on), arm flag and "
+          "self-test, gated under the fused segment's arm")
+    check("cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)" in mkp
+          and "x0[:num_tokens], residual.reshape(-1, hc_mult, hidden)," in mkp
+          and "pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base," in mkp
+          and "identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))" in mkp
+          and 'spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()' in mkp
+          and "ts.append(int(spec_k) + 1)" in mkp,
+          "identity post coefficients from static buffers sliced per call; "
+          "the self-test proves the identity bitwise and adds T=k+1 only on "
+          "a non-7 spec boot")
+    # 37차 (operator: "200줄 쿠다"): the fused decode-step preparation kernel
+    # is a CUDA kernel in the megakernel extension (mk_prep_kernel / run_prep),
+    # the request's Q tokens as plain loops -- no power-of-two lane constraint,
+    # no masks. The Triton kernel stays as the fallback (VLLM_GLM53_PREP_FUSED_
+    # KERNEL=triton, or no extension / dtype mismatch). The pointer and int
+    # lists are positional on both sides, so their ORDER is pinned by name.
+    mkcu = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                   "glm53_megakernel.cu"), encoding="utf-8").read()
+    pf3 = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                  "glm53_prep_fused.py"), encoding="utf-8").read()
+    check("__global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a)" in mkcu
+          and 'm.def("run_prep", &mk_run_prep,' in mkcu
+          and "TORCH_CHECK(ptrs.size() == 33 && ints.size() == 23" in mkcu
+          and "def kernel_backend() -> str:" in pf3
+          and 'os.environ.get(ENV_KERNEL, "cuda")' in pf3
+          and "def cuda_dtype_reason(self) -> str | None:" in pf3
+          and 'ext.run_prep(self._cuda_ptrs(idx), self._cuda_ints(num_reqs, num_tokens))' in pf3
+          and pf3.index('ext = o.get("cuda_ext")') < pf3.index('compiled = o.get("compiled")')
+          and 'self.owned["cuda_ext"] = ext' in pf3
+          and "kernel=%s" in pf3,
+          "the CUDA prep kernel is the default backend with the Triton kernel "
+          "as the fallback, and the plan line names which one serves")
+    cpp_ptrs = re.findall(r"P\(&a\.(\w+)\)", mkcu[mkcu.index("void mk_run_prep("):])
+    cpp_ints = re.findall(r"a\.(\w+) = (?:\(int\))?ints\[q\+\+\]", mkcu[mkcu.index("void mk_run_prep("):])
+    py_ptrs_src = pf3[pf3.index("def _cuda_ptrs("):pf3.index("def _cuda_ints(")]
+    py_ptrs = re.findall(r"(?:self\.|o\[\"|bt\.)?([A-Za-z_][\w.\[\]\"]*)", py_ptrs_src[py_ptrs_src.index("for t in ("):py_ptrs_src.index(")]")])
+    py_ptrs = [x.replace("]", "").strip('"') for x in py_ptrs if x not in ("t", "in", "for")]
+    rename = {"idx": "idx_mapping", "prefill_len_src.gpu": "prefill_len", "query_start_loc": "qsl",
+              "block_table_ptrs": "src_bt_ptrs", "input_block_table_ptrs": "dst_bt_ptrs",
+              "block_table_strides": "bt_strides", "block_sizes_tensor": "block_sizes",
+              "num_blocks.gpu": "num_blocks", "slot_mappings": "slot", "req_id_buf": "req_id"}
+    py_norm = [rename.get(x, x) for x in py_ptrs]
+    check(len(cpp_ptrs) == 33 and py_norm == cpp_ptrs,
+          f"the 33 pointers are passed in the order mk_run_prep unpacks them "
+          f"(py={py_norm[:6]}..., cpp={cpp_ptrs[:6]}...)")
+    py_ints_src = pf3[pf3.index("def _cuda_ints("):pf3.index("def _consts(")]
+    want_ints = ["num_reqs", "num_tokens", "max_num_reqs", "max_num_tokens", "draft_stride",
+                 "num_blocks_stride", "slot_stride", "req_id_cap", "exp_bt_stride", "dec_seq_cap",
+                 "idx_bt_stride", "idx_bt_cols", "comp_slot_cap", "Q", "NUM_SPEC", "NS", "G",
+                 "N_GDN", "ATTN_G", "FACTOR", "RATIO", "SBS", "PAD_ID"]
+    check(cpp_ints == want_ints and len(cpp_ints) == 23
+          and all(k in py_ints_src for k in ("self.draft_tokens.stride(0)", "bt.num_blocks.gpu.stride(0)",
+                                              "bt.slot_mappings.stride(0)", "self.req_id_buf.numel()",
+                                              "self.exp_bt.stride(0)", "self.dec_seq_lens.numel()",
+                                              "self.idx_bt.stride(0)", "self.idx_bt_cols", "self.comp_slot.numel()",
+                                              "self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g",
+                                              "self.factor, self.ratio, self.sbs, PAD_SLOT_ID")),
+          "the 23 ints are unpacked in the documented order on both sides")
+    # 37차 night round: the target's per-token features for drafter training
+    # (five aux hidden states, ids, positions, top-k logits + lse) from prefill
+    # steps. Inert without VLLM_GLM53_DRAFT_DUMP; wraps execute_model after
+    # the original; compute_logits is a TP collective so every rank runs the
+    # same 1024-token chunks and only rank 0 writes; a failing hook disables
+    # itself and never touches the step.
+    dd = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                 "glm53_draft_dump.py"), encoding="utf-8").read()
+    man_rt = open(os.path.join(REPO, "overlay/modules/glm53_runtime/manifest.tsv"),
+                  encoding="utf-8").read()
+    wiring_m = open(os.path.join(REPO, "overlay/modules/glm53_model/glm5next_model.py"),
+                    encoding="utf-8").read()
+    check("glm53_draft_dump.py\tvllm/models/glm5next/nvidia/glm53_draft_dump.py\tabsent" in man_rt
+          and "from .glm53_draft_dump import install_glm53_draft_dump" in wiring_m
+          and wiring_m.index("install_glm53_draft_dump()") > wiring_m.index("install_glm53_prep_fused()")
+          and "if _STATE[\"installed\"] or dump_dir() is None:" in dd
+          and "out = orig(self, scheduler_output, *args, **kwargs)" in dd
+          and dd.index("out = orig(self, scheduler_output") < dd.index("_dump_step(self)")
+          and "for i in range(0, hidden.shape[0], CHUNK):" in dd
+          and "top_ids, top_vals, lse = _topk_logits(runner, hidden, k)   # collective: all ranks" in dd
+          and "if rank == 0:" in dd and "os.replace(path + \".tmp\", path)" in dd
+          and "_STATE[\"disabled\"] = True" in dd
+          and "torch.cuda.is_current_stream_capturing()" in dd,
+          "the draft-dump hook is mounted beside prep_fused, installed after it, "
+          "inert without its env, runs after the original execute_model, computes "
+          "the head collectively in fixed chunks, writes on rank 0 atomically, and "
+          "disables itself on failure")
+    check("_HOOK_SERVED_PRE[0] += 1" in mkp
+          and "[megakernel] mhc-pre hook serving (T=%d)" in mkp
+          and mkp.index("maybe_arm()", mkp.index("def mhc_pre_hook(")) < mkp.index("out = mhc_pre_only(", mkp.index("def mhc_pre_hook(")),
+          "mhc_pre_hook arms before it calls and logs a serving receipt once")
+    pre_start = tl.index("def mhc_pre_tilelang(")
+    pre_end = tl.index("\ndef ", pre_start + 10)
+    pre = tl[pre_start:pre_end]
+    check("def _deneb_mk_pre_hook():" in tl
+          and "from vllm.model_executor.layers.glm53_megakernel import mhc_pre_hook" in tl
+          and "if num_tokens <= 16 and norm_weight is not None:" in pre
+          and "_mk_pre_hook = _deneb_mk_pre_hook()" in pre
+          and pre.index("_mk_pre_hook = _deneb_mk_pre_hook()") < pre.index("use_deep_gemm = is_deep_gemm_supported()")
+          and "_pm.view(*outer_shape, hc_mult, 1)," in pre
+          and tl.count("_mk_pre_hook = _deneb_mk_pre_hook()") == 1,
+          "the standalone pre wrapper offers the MK pre hook (T <= 16, with "
+          "norm) before any GEMM, returning the stock wrapper's shapes; the "
+          "fused wrapper's own hook block is untouched")
     print("  self-built kernels persist their caches .. OK")
 
 
@@ -9329,7 +9634,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "atomicAdd(&g_mk_mhc_tok_arrive[pend], 1u);" in cu
           and "int pend = -1;  // a token whose chunk is done but not yet published" in cu
           and "s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);" in cu
-          and "while (*v < (unsigned int)NCHUNK) __nanosleep(128);" in cu
+          and "MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, \"mhc token arrive\");" in cu
           and "g_mk_mhc_tok_arrive[t] = 0u;  // rearm for the next launch" in cu
           and "g_mk_mhc_tail_next = 0u;" in cu
           and "      mk_mhc_p2_token(a, t, s_pmix);\n      mk_mhc_p34_load(a, t, tr);" in cu
@@ -10320,13 +10625,20 @@ def test_glm53_prep_fused_contracts() -> None:
     post = ast.get_source_segment(src, funcs["__post_init__"])
     check("UvaBufferPool(" in post and "pin_memory=True" not in post,
           "idx_mapping staging must use the image's round-robin UVA pool (async-safe)")
-    check("self.q & (self.q - 1)" in post and "self.exp_bt.stride(0) != wa" in post,
-          "the plan must refuse a non-power-of-two Q and an expanded-table width mismatch")
+    # 37차: a non-power-of-two Q (k=5 -> 6) is served on Q_P2 masked lanes
+    # instead of refused -- refusing cost every k!=7 boot the fusion.
+    check("self.q_p2 = 1 << (self.q - 1).bit_length()" in post
+          and "self.q & (self.q - 1)" not in post
+          and "self.exp_bt.stride(0) != wa" in post,
+          "the plan pads Q to a power of two (masked lanes) and still refuses an "
+          "expanded-table width mismatch")
     plan_src = ast.get_source_segment(src, funcs["build_plan"])
     check("DFlash2Speculator" in src, "the fleet's DFlash2Speculator must be admitted")
     for guard in ("_SPECULATORS", "draft_attn_layer_names", "draft_kv_cache_group_ids",
-                  "tail_builder=tail_b", "q & (q - 1)"):
+                  "tail_builder=tail_b", "q != num_spec + 1"):
         check(guard in plan_src, f"build_plan must carry the guard {guard}")
+    check("q & (q - 1)" not in plan_src,
+          "build_plan no longer refuses a non-power-of-two Q (37차: masked lanes)")
     check("def tail_ok" in src and src.count("tail_ok()") >= 3,
           "the kpool tail builder's dormancy is asserted at plan build and on every verification")
     elig = ast.get_source_segment(src, funcs["_eligible"])
@@ -11903,6 +12215,7 @@ if __name__ == "__main__":
     test_sampler_profile_skip_contract()
     test_dev_lab_contracts()
     test_mk_smlp_hook_and_contracts()
+    test_mk_head_lane_contracts()
     test_fp8_dense_prefill_nvfp4_pair_routes_by_rows()
     test_ab_runner_measures_both_channels()
     test_osar_wait_is_split_by_message_size()

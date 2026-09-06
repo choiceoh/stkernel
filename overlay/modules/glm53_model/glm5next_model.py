@@ -133,6 +133,20 @@ if install_glm53_prep_fused is not None:
     except Exception:
         logger.exception("[prep-fused] install failed -> stock path")
 
+# deneb fork (glm53_draft_dump, 37차): the target's per-token features for
+# drafter training, from prefill steps; inert without VLLM_GLM53_DRAFT_DUMP.
+try:
+    from .glm53_draft_dump import install_glm53_draft_dump
+except ImportError as _e:
+    install_glm53_draft_dump = None
+    if _e.name != f"{__package__}.glm53_draft_dump":
+        logger.exception("[draft-dump] module import failed -> not installed")
+if install_glm53_draft_dump is not None:
+    try:
+        install_glm53_draft_dump()
+    except Exception:
+        logger.exception("[draft-dump] install failed -> not installed")
+
 # deneb fork (glm53_dflash_early_fc): the drafter's fc under the target head
 # + sampler. Same shape of install as prep_fused: import only, inert unless
 # VLLM_GLM53_DFLASH_EARLY_FC=1, loud on failure, never fatal.
@@ -1063,6 +1077,9 @@ class Glm5NextForCausalLM(
             self.config.vocab_size,
             scale=logit_scale,
             fp8_env="VLLM_TARGET_LM_HEAD_FP8",
+            # W4 head on the megakernel's v2 lane (30차 §13): the served
+            # logits, so its own knob, off until the operator arms it
+            mk_env="VLLM_GLM53_MK_HEAD_TARGET",
         )
         # LM head rows the tokenizer cannot decode are live argmax candidates
         # (see _decodable_vocab_size). Mask them in compute_logits.

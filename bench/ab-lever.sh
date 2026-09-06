@@ -78,7 +78,10 @@ grep -hE "armed=|MK W4 packs|fp8-dense\] (Drafter|DFlash|Glm)|drafter lane|mla s
 # packs; gptq=0 with calibration dumps on disk means the packer fell back
 # (cache purged, names mismatched) and production is silently RTN
 grep -hE "megakernel packs:" "$LOGD/glm53.log" 2>/dev/null | sed -E "s/^.*\[fp8-dense\] //" | cut -c1-200 | tail -2
-if grep -hE "megakernel packs:" "$LOGD/glm53.log" 2>/dev/null | grep -q "Glm5Next.*gptq=0" \
+# 37차: packs loaded from the cache report gptq=0 cached=N -- those ARE the
+# GPTQ packs (the cache key carries the lever set); only gptq=0 AND cached=0
+# is a fallback to RTN.
+if grep -hE "megakernel packs:" "$LOGD/glm53.log" 2>/dev/null | grep "Glm5Next.*gptq=0" | grep -q "cached=0 " \
    && [ -n "$(ls "$HOME/glm53-cache/mkcalib/rank0" 2>/dev/null)" ]; then
   echo "WARNING: [$ARM] the target's W4 packs are RTN (gptq=0) although calibration dumps exist -- check VLLM_GLM53_MK_PACK_GPTQ and the pack cache"
 fi

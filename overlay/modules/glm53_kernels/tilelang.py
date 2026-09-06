@@ -39,6 +39,41 @@ def _deneb_persist_tilelang_cache() -> None:
 
 _deneb_persist_tilelang_cache()
 
+
+_HC_PRENORM_MIN_M = 8
+
+
+def _deneb_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits):
+    """37차: deep_gemm's tf32 prenorm GEMM, with M padded to 8 rows when it is
+    smaller.
+
+    The one place a served M below 8 has ever reached this GEMM is a k=5
+    speculative boot (6 tokens per request); chain 13's K5 boot spun there
+    (rank 0, CPU 200%, 19 min, no new JIT files) and the M=8/16/24 decode
+    batches of k=7 and every prefill M (arbitrary, e.g. 27) run through it
+    daily. So M < 8 -- and only that -- is served as the proven M=8 shape:
+    zero rows appended, GEMM, the live rows copied back. Both outputs are
+    row-wise (out = x @ fn^T, sqrsum = |x|^2 per row), so the padding rows are
+    inert and never read. Cost at k=5, C=1: one 196 KB zero-copy and two
+    ~30 KB copies per layer; at k=7 this branch is never taken.
+    """
+    from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
+
+    m = x.shape[0]
+    if m >= _HC_PRENORM_MIN_M:
+        tf32_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits)
+        return
+    x_pad = torch.zeros((_HC_PRENORM_MIN_M,) + tuple(x.shape[1:]),
+                        dtype=x.dtype, device=x.device)
+    x_pad[:m].copy_(x)
+    mul_pad = torch.empty((out_mul.shape[0], _HC_PRENORM_MIN_M) + tuple(out_mul.shape[2:]),
+                          dtype=out_mul.dtype, device=out_mul.device)
+    sq_pad = torch.empty((out_sqrsum.shape[0], _HC_PRENORM_MIN_M),
+                         dtype=out_sqrsum.dtype, device=out_sqrsum.device)
+    tf32_hc_prenorm_gemm(x_pad, fn, mul_pad, sq_pad, n_splits)
+    out_mul.copy_(mul_pad[:, :m])
+    out_sqrsum.copy_(sq_pad[:, :m])
+
 import torch
 
 from vllm.utils.torch_utils import direct_register_custom_op
@@ -213,6 +248,27 @@ def _deneb_mk_hook():
     return _MK_HOOK
 
 
+# 37차: the pre-only entry point (layer 0's standalone pre-mix), resolved the
+# same way and cached separately -- a core without it disables THIS hook only.
+_MK_PRE_HOOK = None
+_MK_PRE_HOOK_TRIED = False
+
+
+def _deneb_mk_pre_hook():
+    global _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED
+    if not _MK_PRE_HOOK_TRIED:
+        try:
+            from vllm.model_executor.layers.glm53_megakernel import mhc_pre_hook
+        except ImportError as e:
+            if not isinstance(e, ModuleNotFoundError) or e.name == _MK_MODULE:
+                _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED = None, True
+            return None
+        except Exception:
+            return None
+        _MK_PRE_HOOK, _MK_PRE_HOOK_TRIED = mhc_pre_hook, True
+    return _MK_PRE_HOOK
+
+
 def _torch_hc_prenorm_gemm(
     x: torch.Tensor,
     fn: torch.Tensor,
@@ -370,6 +426,36 @@ def mhc_pre_tilelang(
     residual_flat = residual.view(-1, hc_mult, hidden_size)
     num_tokens = residual_flat.shape[0]
 
+    # deneb fork (glm53_megakernel), 37차: layer 0's standalone pre-mix in
+    # the MHC segment (the fused kernel under identity post coefficients),
+    # the same T <= 16 window as the fused wrapper's hook. Every miss returns
+    # None and falls through to the stock GEMM + big-fuse pair below, so a
+    # disarmed boot is byte-identical to before; an armed launch is not
+    # excepted into the stock path (async CUDA failures are uncontainable).
+    if num_tokens <= 16 and norm_weight is not None:
+        _mk_pre_hook = _deneb_mk_pre_hook()
+        if _mk_pre_hook is not None:
+            _mk_pre = _mk_pre_hook(
+                residual_flat,
+                fn.view(hc_mult3, hc_mult, hidden_size),
+                hc_scale,
+                hc_base,
+                rms_eps,
+                hc_pre_eps,
+                hc_sinkhorn_eps,
+                hc_post_mult_value,
+                sinkhorn_repeat,
+                norm_weight,
+                norm_eps,
+            )
+            if _mk_pre is not None:
+                _pm, _cm, _li = _mk_pre
+                return (
+                    _pm.view(*outer_shape, hc_mult, 1),
+                    _cm.view(*outer_shape, hc_mult, hc_mult),
+                    _li.view(*outer_shape, hidden_size),
+                )
+
     from vllm.utils.deep_gemm import is_deep_gemm_supported
 
     use_deep_gemm = is_deep_gemm_supported()
@@ -400,7 +486,7 @@ def mhc_pre_tilelang(
 
     residual_2d = residual_flat.view(num_tokens, hc_mult * hidden_size)
     if use_deep_gemm:
-        tf32_hc_prenorm_gemm(
+        _deneb_hc_prenorm_gemm(
             residual_2d,
             fn,
             gemm_out_mul,
@@ -583,7 +669,7 @@ def mhc_pre_broadcast_tilelang(
 
     from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
 
-    tf32_hc_prenorm_gemm(
+    _deneb_hc_prenorm_gemm(
         residual_flat,
         fn_broadcast,
         gemm_out_mul,
@@ -923,7 +1009,7 @@ def mhc_fused_post_pre_tilelang(
         if use_deep_gemm:
             from vllm.utils.deep_gemm import tf32_hc_prenorm_gemm
 
-            tf32_hc_prenorm_gemm(
+            _deneb_hc_prenorm_gemm(
                 residual_cur_2d,
                 fn,
                 gemm_out_mul,
