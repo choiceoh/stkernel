@@ -1,6 +1,9 @@
 """CPU-only checks for paired quality evidence; no serving request is sent."""
 from copy import deepcopy
 import json
+import io
+from contextlib import redirect_stdout
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 import unittest
@@ -60,12 +63,50 @@ class PairedEvidenceTests(unittest.TestCase):
                          "tool_calls", case), (["missing_required"], ["/questions/0/tag"]))
 
     def test_total_request_deadline_is_removed_after_transport_failure(self):
-        with patch.object(ab, "_send", side_effect=TimeoutError), patch.object(ab.signal, "signal", return_value="previous") as handler, patch.object(ab.signal, "setitimer") as timer:
+        with (
+            patch.object(ab, "_send", side_effect=TimeoutError),
+            patch.object(ab.signal, "signal", return_value="previous") as handler,
+            patch.object(ab.signal, "setitimer") as timer,
+        ):
             with self.assertRaises(TimeoutError):
                 ab.send("unused", {}, 5)
             self.assertEqual(timer.call_args_list[0].args, (ab.signal.ITIMER_REAL, 5))
             self.assertEqual(timer.call_args_list[-1].args, (ab.signal.ITIMER_REAL, 0))
             self.assertEqual(handler.call_args_list[-1].args, (ab.signal.SIGALRM, "previous"))
+
+    def run_probe(self, identities, clock=None):
+        args = SimpleNamespace(identity="unused", container="glm53", model="model", url="unused",
+                               max_tokens=4096, timeout=180, budget_seconds=10)
+        output = io.StringIO()
+        clock_patch = (patch.object(ab.time, "monotonic", side_effect=clock) if clock else
+                       patch.object(ab.time, "monotonic", wraps=ab.time.monotonic))
+        with (
+            patch.dict(ab.os.environ, FLEET_EXPERIMENT_ID="unit-test"),
+            patch.object(ab.Path, "read_text", return_value='{"id":1}'),
+            patch.object(ab, "runtime_identity", side_effect=identities),
+            patch.object(ab, "cases", return_value=ab.cases()[:1]),
+            patch.object(ab, "send", return_value=(self.message('{"prompt":"choose","tag":"topic"}'),
+                         "tool_calls", {})) as sender,
+            clock_patch, redirect_stdout(output),
+        ):
+            rc = ab.run(args)
+        return rc, [json.loads(line) for line in output.getvalue().splitlines()], sender
+
+    def test_cleanup_failure_still_emits_unstable_summary(self):
+        identity = {"id": 1}
+        rc, rows, _ = self.run_probe([identity, identity, identity, RuntimeError("daemon down")])
+        self.assertEqual(rc, 2)
+        self.assertEqual(rows[-2]["kind"], "identity_after")
+        self.assertEqual(rows[-1]["kind"], "summary")
+        self.assertFalse(rows[-1]["gates"]["identity_stable"])
+
+    def test_expired_budget_after_identity_check_sends_no_request(self):
+        identity = {"id": 1}
+        rc, rows, sender = self.run_probe([identity, identity, identity], [0, 9, 11])
+        self.assertEqual(rc, 2)
+        sender.assert_not_called()
+        self.assertFalse(rows[-1]["gates"]["complete"])
+        self.assertEqual(rows[-3], {"kind": "interrupted", "reason": "wall_clock_budget"})
 
     def records(self):
         return [{"pair": pair, "required_first": enabled, "choice": case["choice"],

@@ -251,13 +251,23 @@ def run(args):
                 stable = False
                 emit({"kind": "interrupted", "reason": "serving_identity_changed"})
                 break
+            # Identity checks can consume the last budget seconds. Recheck before
+            # starting generation and never round the remaining budget upward.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                emit({"kind": "interrupted", "reason": "wall_clock_budget"})
+                break
             body = request_body(case, args.model, pair, enabled, args.max_tokens)
             row = {"kind": "request", "pair": pair, "case": case["name"], "choice": case["choice"],
                    "stream": case["stream"], "effort": case["effort"], "seed": body["seed"],
                    "required_first": enabled, "request_sha256": digest(body), "errors": []}
             started = time.monotonic()
             try:
-                message, finish, usage = send(args.url, body, min(args.timeout, max(1, deadline - started)))
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    emit({"kind": "interrupted", "reason": "wall_clock_budget"})
+                    break
+                message, finish, usage = send(args.url, body, min(args.timeout, remaining))
                 row.update(message=message, finish_reason=finish, usage=usage)
                 row["errors"], row["missing_paths"] = classify(message, finish, case)
             except Exception as exc:
@@ -272,9 +282,13 @@ def run(args):
                 # A timed-out server may still be generating: never stack another request.
                 break
     finally:
-        after = runtime_identity(args.container)
-        stable = stable and before == after
-        emit({"kind": "identity_after", "identity": after, "stable": stable})
+        try:
+            after = runtime_identity(args.container)
+            stable = stable and before == after
+            emit({"kind": "identity_after", "identity": after, "stable": stable})
+        except Exception as exc:
+            stable = False
+            emit({"kind": "identity_after", "stable": False, "exception_type": type(exc).__name__})
         summary = summarize(records, len(selected), stable)
         emit(summary)
     return 0 if summary["gates"]["complete"] and stable else 2

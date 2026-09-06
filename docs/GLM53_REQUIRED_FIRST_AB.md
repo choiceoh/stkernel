@@ -55,3 +55,71 @@ and improved native-FP8 results after reordering. That is evidence for testing,
 not evidence that this NVFP4 server benefits. The forced-call checks also cover
 the long-output failure described in
 [vLLM issue #55541](https://github.com/vllm-project/vllm/issues/55541).
+
+## Measured decision — 2026-09-07
+
+**Keep the option off by default.** The complete 30-pair run did not show a
+benefit. It does not establish that ordering is generally harmful either.
+
+| Metric | Default order (`false`) | Required-first (`true`) |
+| --- | ---: | ---: |
+| Schema-complete responses, all cases | 29/30 (96.7%) | 28/30 (93.3%) |
+| Schema-complete automatic tool calls | 23/24 | 22/24 |
+| Missing required fields | 0 | 1 |
+| Other schema errors | 1 | 1 |
+| Required/named/none guardrails | 6/6 | 6/6 |
+| Invalid JSON / length / HTTP or stream errors | 0 / 0 / 0 | 0 / 0 / 0 |
+| Median request latency | 1.876 s | 2.040 s |
+
+There were zero candidate-only successes and one candidate-only failure in the
+24 automatic pairs (one-sided sign-test p = 1.0). Both arms returned an object
+instead of the required `questions` array for the low-effort, nonstreaming
+laptop question. The candidate additionally omitted `/questions/0/tag` for the
+low-effort streaming laptop question. High/max cases and all six guardrails
+passed in both arms. The candidate's median latency was 8.7% higher in this
+sample; output lengths differ, so this is not a controlled throughput verdict.
+"Schema-complete" measures response termination and the declared tool schema,
+not prose quality or exact compliance with the requested description length.
+
+The reorder was effective: required/named job calls changed their emitted key
+order from `description, responsibilities, location, title, tag` to
+`tag, title, location, responsibilities, description`. Automatic preference
+calls frequently retained `choices` first even in the candidate. These
+observations support keeping a per-request compatibility/experiment option,
+not a global default change.
+
+The probe ran from **06:25:37 to 06:29:03 KST**, taking 205.8 seconds, on the same
+four-GB10 TP4 NVFP4 serving process, image
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`,
+with DFlash k=5 and overlay
+`1af1a93f83b5148156125a1c2058b6c5888b56bf021f49bf8482202693852243`.
+The head container identity, command hash and loaded parser/middleware hashes
+remained unchanged throughout. The launcher had verified 56 overlay preimages
+and the staged template digest
+`0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42`.
+No candidate was deployed and no default was changed after this result.
+
+Before generation, the old serving process was stopped by a separate fleet
+probe. A normal fleet boot (`ORDERABRESTORE`) restored serving, then the new
+container identity was pinned. The initial 30-minute queued submission
+`c4bd265877774d92873d` was cancelled **before any model request**. It was replaced
+with a hard 900-second budget and 15-minute estimate to use the fleet's bounded
+probe lane while another boot was queued. The sample and decision rules stayed
+fixed, and all 30 pairs completed within that budget.
+
+Evidence:
+
+- CPU prerequisite: `833d550082064d43abf2`, seven tests passed on host Python
+  3.12.3 with jsonschema 4.10.3.
+- Live probe: `94cfe5a3443141bd8741`, source
+  `88d0a518f3f1f1cd833a4feb706a4cfa0d48a578`.
+- [All 60 synthetic responses, plan and summary](evidence/glm53-required-first-20260907.jsonl).
+- [Fleet manifest, input hashes and timing](evidence/glm53-required-first-20260907.meta.json).
+- Offline replay revalidated all 60 request hashes, classifications, the fixture
+  hash, paired summary and before/after identity against the saved evidence.
+
+Post-run review tightened the exhausted-budget check and made final identity
+read failures emit an unstable summary instead of losing the diagnostics.
+Nine focused CPU tests plus the five existing acceptance tests pass. These
+failure-path fixes do not change the fixtures, scoring, or the completed live
+run; no second GPU sample was needed.
