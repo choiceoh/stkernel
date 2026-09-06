@@ -12,6 +12,7 @@ GLM-5.3 모델 배선 — 모델·어텐션·KDA·MLA 파일 접수, 밀집 GEMM
 | `glm53_mk_mla_wiring` | `flashinfer_mla_sparse_sm90.py` | sparse MLA 백엔드 접수 — MK-MLA 라우팅 (`MK_MLA`) |
 | `glm53_kda_onepass` | `glm53_kda_onepass.py` | KDA 원패스·듀얼 게이트 GEMM (`KDA_ONEPASS`·`KDA_DUAL_GEMM`, EXP-20) |
 | `glm53_fp8_dense` | `glm53_fp8_dense.py` | 밀집 투영의 블록 fp8/W4 레인 (`FP8_DENSE`·`DFLASH2_FP8_DENSE`·`FP8_DENSE_BPROJ`) |
+| `glm53_prefill_nvfp4` (신규, 368차) | `glm53_nvfp4_scale.py`, `glm53_nvfp4_bproj.py` | 프리필 NVFP4 스케일 퓨전 + B-projection 라우팅 (`NVFP4_SCALE_FUSED`·`PREFILL_NVFP4_BPROJ`, 기본 0) |
 
 ---
 
@@ -546,3 +547,25 @@ does; a failed check keeps that layer's prefill on fp8. Cost ~+1 GB/rank of
 copies. Target only (the drafter's forward never sees prefill rows). Gate:
 prefill ladder (dense GEMM is 14% of a 32K prefill; expect ~-8%) plus the
 served-numerics gates, since A4 activations are a quality change.
+
+---
+
+## glm53_prefill_nvfp4 (368차 신규, 기본 0)
+
+Two opt-in prefill candidates on the fp8-dense lane. Both arm only with the
+exact string "1" (`true`/`yes`/`on` do not).
+
+`VLLM_GLM53_NVFP4_SCALE_FUSED=1` fuses the activation amax/scale pass with
+GEMM alpha setup (2688.0 == 448.0 x `_NVFP4_MAX` identity, same op order) —
+bit-exact vs the unfused helper by construction;
+`probes/glm53_nvfp4_scale_check.py` is the GPU assertion. The gate is
+tensor-property-only, so it changes every `_nvfp4_dense_gemm` caller,
+decode included; acceptability rests on that bit-exactness.
+
+`VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` routes pure-prefill rows of still-
+unquantized b_proj linears through an NVFP4 pair; decode and absorbed-MLA
+weights are untouched (`get_and_maybe_dequant_weights` still reads the BF16
+source, and the BF16 free pass skips this method). **No-op while
+`VLLM_GLM53_FP8_DENSE_BPROJ=1`** (this profile's default): the fp8 pattern
+already owns every b_proj linear. Neither knob has GPU validation yet —
+keep both at 0 until the combined campaign.

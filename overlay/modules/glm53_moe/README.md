@@ -9,6 +9,7 @@ GLM-5.3 MoE — b12x 공유 워크스페이스, EP 마이크로커널 레인, �
 | `b12x_shared_workspace` | `flashinfer_b12x_moe.py` | `B12xMoEWrapper` 형상당 하나 + EP 경로 |
 | `b12x_zero_weight_micro` | `moe_dispatch.py`, `moe_micro_kernel.py` | EP 마이크로커널 레인 (`B12X_EP_ZERO_WEIGHT_MICRO`, 실험) |
 | `glm53_b12x_out` | `b12x_moe.py` | b12x MoE 직접 출력 (`B12X_DIRECT_OUT`) |
+| `b12x_prefill_reuse` (신규, 368차) | `moe_dynamic_prefill.py`, `moe_dynamic_prefill_n128.py` | 대형 동적 MoE 프리필 Q0/FC2 재사용 + FC1 N128 페어링 (`B12X_PREFILL_REUSE`·`B12X_PREFILL_FC1_N128`, 기본 0) |
 
 ---
 
@@ -257,3 +258,25 @@ other kernel file.
 Measured by `probes/b12x_static_probe.py` (stock vs v2, DRAM-cold, graph
 replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the
 kernel's TMA access pattern vs a linear read, plain CUDA). Ledger: 35차.
+
+---
+
+## b12x_prefill_reuse (368차 신규, 기본 0)
+
+Two opt-in kernels for large dynamic MoE prefill (exact "1" arms):
+`VLLM_GLM53_B12X_PREFILL_REUSE` (Q0 eight-row staging, nine-warp E288 scan,
+task-local FC2 A/SFA register reuse) and `VLLM_GLM53_B12X_PREFILL_FC1_N128`
+(paired Gate/Up N128 FC1 staging, includes the reuse lane).
+
+The dispatcher admits them only on the exact E288/K4096/I512/top8/SM121/M128
+contract. Cache keys append `glm53_prefill_reuse_v1` /
+`glm53_prefill_fc1_n128_v1` (in-process and on-disk), so stock artifacts are
+never shared. All reuse is intra-launch — every counter/staging word is
+re-zeroed per launch, so there is no cross-step cached state. Shared memory
+comes from aliasing startup-idle sB/sC/sA (only the 8-byte `q0_bulk_barrier`
+word is new), pinned by compile-time size-contract checks that raise on
+drift. If the pinned stock gated-source hash or the deferred import fails,
+the lane declines to the stock dispatcher — with the knob armed that decline
+now logs `[b12x prefill reuse] declining the opt-in lane ...` instead of
+silently serving stock perf. GPU numerics/spill/occupancy validation is
+still pending; keep both at 0 until the combined campaign.

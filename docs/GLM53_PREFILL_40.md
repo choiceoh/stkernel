@@ -49,7 +49,14 @@ using the full I=2048 instead of per-rank I=512 overcount TP4 rank work by four.
 
 ## Implemented candidates and accounting rules
 
-All knobs remain default **0**. An armed knob is not evidence of invocation.
+Every knob here arms only with the exact string **"1"** and stays off
+otherwise, except `VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
+keeps the pair candidate's original arm and is inactive while the pair
+knob is 0. An armed knob is not evidence of invocation. Note that
+`VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
+`VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
+already owns every b_proj linear, and the candidate only adopts layers
+still unquantized.
 
 | Knob | Change | Forecast constraint |
 | --- | --- | --- |
@@ -64,7 +71,7 @@ All knobs remain default **0**. An armed knob is not evidence of invocation.
 | `VLLM_GLM53_NVFP4_SCALE_FUSED` | Two-launch activation maximum, global scale and alpha; no full abs temporary | Part of dense setup cost, not an independent full-bucket saving |
 | `VLLM_GLM53_PREFILL_NVFP4_BPROJ` | Pure-prefill q_b/indexer.wq_b/eligible kv_b; BF16 decode and absorbed weights | Sparse MK MLA does not call kv_b GEMM; installed packs alone earn no forecast credit |
 | `VLLM_GLM53_KDA_PREFILL_DIRECT_OUT` | Chunk kernel writes its final destination directly | Removes a copy, not chunk computation |
-| `VLLM_GLM53_KDA_PREFILL_QK_NORM` | Stock reduction body reads strided Q/K directly | At T8192 removes 128 MiB copy traffic/layer if both inputs are noncontiguous; strided efficiency unmeasured |
+| `VLLM_GLM53_KDA_PREFILL_QK_NORM` | Stock reduction body reads strided Q/K directly | At T8192 removes 128 MiB copy traffic/layer if both inputs are noncontiguous; strided efficiency unmeasured; arming gate is bit-equality probe `probes/qk_norm_strided_check.py` |
 
 The sequence-parallel gate accepts only eager, actual-token, pure-prefill TP4,
 PP1/DP1, no EP/static-SP/context parallelism, and the reviewed terminal

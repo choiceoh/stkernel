@@ -95,8 +95,11 @@ def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
     Upstream may remove a private symbol before the candidate can compare
     its source hash. That must decline this lane, including with the knob
     off, rather than break importing the otherwise unchanged dispatcher.
+    An armed knob declines loudly: the operator asked for this lane, so a
+    silent stock fallback would read as missing performance, not a guard.
     """
     global MoEGatedPrefillReuseKernel, MoEGatedPrefillN128Kernel
+    reason = None
     try:
         from .moe_dynamic_prefill import (
             MoEGatedPrefillReuseKernel as candidate,
@@ -106,9 +109,17 @@ def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
             from .moe_dynamic_prefill_n128 import (
                 MoEGatedPrefillN128Kernel as wide_candidate,
             )
-    except (ImportError, AttributeError):
-        return False
-    if not stock_contract_matches():
+    except (ImportError, AttributeError) as exc:
+        reason = f"deferred import failed: {exc!r}"
+    else:
+        if not stock_contract_matches():
+            reason = "stock gated-source SHA-256 pin drifted (image upgrade?)"
+    if reason is not None:
+        if _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128:
+            logging.getLogger("flashinfer.b12x").warning(
+                "[b12x prefill reuse] declining the opt-in lane, serving the "
+                "stock dispatcher instead: %s", reason,
+            )
         return False
     MoEGatedPrefillReuseKernel = candidate
     if fc1_n128:
