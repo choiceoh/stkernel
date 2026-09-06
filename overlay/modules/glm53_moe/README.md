@@ -275,11 +275,7 @@ kernel is an overlay of the image's `_moe_dynamic/gated.py`
 (`moe_dynamic_gated.py`, pinned preimage) that groups the 4-D weights into a
 hierarchical K -- its 64 B tiles divide the 256 B / 64 B chunks -- and is
 compiled and cached per layout (`dynamic_..._tiled`); both kernels compile
-on the CPU check), `h` (v4/v5, 39차: the FC1 SFB TMA box covers the 64
-rows a gate/up stage reads instead of the 128-row scale block -- v4 loaded
-the whole 4 KB block per 64-row stage and read half, 32 KB of an item's
-~830 KB from DRAM; the smem block stays 128 rows and the box lands in the
-half the MMA warps read), `z` (39차 v6: `t`'s tile-major storage
+on the CPU check), `z` (39차 v6: `t`'s tile-major storage
 pre-swizzled into the smem layouts' own byte order -- B1 `S<3,4,3>` over
 (64 rows x 512 K): `lin = r*256 + k%256 + (k//256)*16384`, `phys = lin ^
 (((lin>>7)&7)<<4)`; B2 `S<2,4,3>` over (128 x 128): `phys = lin ^

@@ -351,7 +351,7 @@ _STATIC_V2_DEFAULT = {
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
     # FC1 SFB boxes, z = t pre-swizzled + one cp.async.bulk per B stage
-    "tiled": False, "sf_half": False, "bulk_b": False,
+    "tiled": False, "bulk_b": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -402,11 +402,6 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             cfg["tiled"] = True
             cfg["bulk_b"] = True
             continue
-        if token == "h":
-            # 39차: FC1 SFB boxes of 64 rows (the half a stage reads) instead
-            # of the 128-row block
-            cfg["sf_half"] = True
-            continue
         if token in ("xs", "xa"):
             if not probe:
                 raise ValueError(
@@ -417,7 +412,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,z][,h] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,z] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -1809,7 +1804,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
         bool(config.get("tiled", False)),
-        bool(config.get("sf_half", False)),
         bool(config.get("bulk_b", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
@@ -1891,7 +1885,6 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         a_ring=bool(config.get("a_ring", False)),
-        sf_half=bool(config.get("sf_half", False)),
         bulk_b=bool(config.get("bulk_b", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
@@ -2015,7 +2008,7 @@ def _get_static_kernel_v2(
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
-        f"{'h' if config.get('sf_half') else ''}{'z' if config.get('bulk_b') else ''}"
+        f"{'z' if config.get('bulk_b') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

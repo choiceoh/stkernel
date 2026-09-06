@@ -3418,7 +3418,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_half": False, "bulk_b": False},
+                      "a_ring": False, "tiled": False, "bulk_b": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3440,15 +3440,20 @@ def test_b12x_static_v2_controls() -> None:
           and parse("t,s", probe=True)["stamps"]
           and not parse("u")["tiled"] and not parse("v")["tiled"],
           "t composes with v, g and s; u and v stay row-major")
-    half = parse("t,h")
-    check(half["sf_half"] and half["tiled"] and parse("u,h")["sf_half"]
-          and not parse("t")["sf_half"],
-          "h selects 64-row FC1 SFB boxes on the v4/v5 kernels")
+    # h (39차 §3b) is retired: an SF box of 64 rows is not expressible -- the
+    # 128-row block interleaves its four 32-row groups at 4 B, so half the
+    # rows is 8 B of every 16 and TMA's innermost box dim wants 16 B
+    for dead in ("h", "t,h", "u,h", "z,h"):
+        try:
+            parse(dead, probe=True)
+            check(False, f"the retired h cell must be rejected: {dead}")
+        except ValueError:
+            pass
     # z (39차 v6): t's tiles pre-swizzled into the smem order, one 1-D bulk
     # copy per B stage; probe-only until the gated prefill kernel reads it
     z = parse("z")
     check(z["bulk_b"] and z["tiled"] and z["v4"] and z["wide"] and z["fc2"] == 2
-          and not parse("t")["bulk_b"] and parse("z,h")["sf_half"] and parse("z,h")["bulk_b"],
+          and not parse("t")["bulk_b"] and parse("z,s", probe=True)["stamps"],
           "z selects the bulk-copy lane over pre-swizzled tile-major weights")
     try:
         parse("v,xa", probe=True)
