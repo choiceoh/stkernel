@@ -10,7 +10,7 @@ Example after mounting the candidate overlay, on each of four hosts:
   torchrun --nnodes=4 --nproc-per-node=1 --node-rank=<0..3> \
     --master-addr=<rank-0-address> --master-port=<unused-port> \
     probes/glm53_prefill_collectives_check.py --transport bf16
-Repeat with --transport fp8. --source-root names the checkout whose overlay
+Repeat with --transport fp8, fp8-v2 and fp8-v3. --source-root names the checkout whose overlay
 must exactly match imported files on every rank. This probe is not a latency,
 throughput, model-quality, or single-GPU substitute for NCCL validation.
 """
@@ -237,6 +237,19 @@ def _case(helper, group, rows, case, transport, device):
                  + 1.0e-30)
         reference = reference_full[start:stop]
 
+    if transport in ("fp8-v2", "fp8-v3"):
+        maxima = padded.float().view(-1, 2048).abs().amax(dim=1)
+        _, _, decoded = _quant_reference(padded, maxima, 448.0)
+        peers = [torch.empty_like(decoded) for _ in range(4)]
+        dist.all_gather(peers, decoded, group=group.device_group)
+        # Match the documented source-rank order, independently of the
+        # transport's packet layout and of NCCL's native reduction tree.
+        reference_full = torch.zeros_like(decoded)
+        for peer in peers:
+            reference_full.add_(peer)
+        reference = reference_full[start:stop].to(torch.bfloat16).float()
+        bound = torch.zeros_like(reference)
+
     reduced = helper.prefill_reduce_scatter(value)
     error = (reduced.float() - reference).abs()
     _require(tuple(reduced.shape) == (local_rows, 4096)
@@ -265,7 +278,7 @@ def _case(helper, group, rows, case, transport, device):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--transport", choices=("bf16", "fp8"), required=True)
+    parser.add_argument("--transport", choices=("bf16", "fp8", "fp8-v2", "fp8-v3"), required=True)
     parser.add_argument("--rows", type=int, nargs="+", default=[128, 129, 512, 8185, 8192])
     parser.add_argument("--source-root", type=Path,
                         default=Path(__file__).resolve().parents[1])
@@ -277,7 +290,9 @@ def main():
     if any(rows < 128 for rows in args.rows):
         parser.error("rows must be >=128")
     os.environ["VLLM_GLM53_PREFILL_SP"] = "1"
-    os.environ["VLLM_GLM53_PREFILL_SP_FP8"] = "1" if args.transport == "fp8" else "0"
+    os.environ["VLLM_GLM53_PREFILL_SP_FP8"] = {
+        "bf16": "0", "fp8": "1", "fp8-v2": "2", "fp8-v3": "3",
+    }[args.transport]
     # Keep the independent reference out of optional one-shot/custom AR arms.
     os.environ["VLLM_DSV4_ONESHOT_AR"] = "0"
     global torch, dist

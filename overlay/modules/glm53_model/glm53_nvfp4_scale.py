@@ -9,15 +9,15 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
-def _partials(X, Partial, N: tl.constexpr, BLOCK: tl.constexpr):
+@triton.jit(do_not_specialize=["N"])
+def _partials(X, Partial, N, BLOCK: tl.constexpr):
     offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     x = tl.load(X + offsets, offsets < N, other=0).to(tl.float32)
     tl.store(Partial + tl.program_id(0), tl.max(tl.abs(x), 0))
 
 
-@triton.jit
-def _finish(Partial, WeightScale, GlobalScale, Alpha, COUNT: tl.constexpr,
+@triton.jit(do_not_specialize=["COUNT"])
+def _finish(Partial, WeightScale, GlobalScale, Alpha, COUNT,
             ALPHA_SCALE: tl.constexpr, BLOCK: tl.constexpr):
     offsets = tl.arange(0, BLOCK)
     amax = tl.max(tl.load(Partial + offsets, offsets < COUNT, other=0), 0)
@@ -40,6 +40,8 @@ def activation_scale_alpha(x, weight_scale, alpha_scale):
             or x.numel() == 0 or weight_scale.dtype != torch.float32
             or weight_scale.device != x.device or weight_scale.numel() != 1):
         raise ValueError("NVFP4 fused scale requires contiguous BF16 and one FP32 scale")
+    # Prompt lengths are runtime values: warm-up should cover a power-of-two
+    # reduction capacity, not compile another pair of kernels for every M.
     blocks = triton.cdiv(x.numel(), 8192)
     partial = torch.empty(blocks, device=x.device, dtype=torch.float32)
     scale = torch.empty(1, device=x.device, dtype=torch.float32)

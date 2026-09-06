@@ -2280,6 +2280,26 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **VID2 재시도(00:07, 기본 인코더 경로, 이미지 1 + 영상 1)**: 영상 요청 OK — 답 "영상은 표준 컬러 테스트 패턴으로 시작해, 화면이 점차 붉은색으로 변하다가 마지막에는 완전히 붉은색으로 채워…" = 합성 영상의 실제 순서(ffmpeg `overlay … enable='lt(t,1.5)'`: 0~1.5 s 테스트 패턴, 그 뒤 빨간 화면) 그대로. TTFT 0.50 s, 1.7 s. 이미지 OK(0.63 s), 텍스트 OK, 사고 on 분리 OK(341자 reasoning). **영상 지원 확립.** 프로덕션 기본은 텍스트 전용 유지(`MM_LIMIT` 0); 켜려면 `MM_LIMIT='{"image":1,"video":1}'` — 텍스트 서빙 영향은 VISON 32K 정상(128K 는 별개 이상) 이며, 켤지는 운영자 판단.
 
 
+### §4l 프리필 40% 캠페인 재개 — packed FP8 v3, NVFP4 길이별 재컴파일 제거 (23:53~)
+
+- PR #368 후속을 `3eb72d4`로 충돌 없이 리베이스. 원래 기준 `8d36ee8`과 40% 목표는 유지하되,
+  옛 41.2056% 예상은 §4f~§4j 실측으로 **기각**한다. 서로 다른 기준선의 채택 레인 비율을 곱해 목표 달성으로 쓰지 않는다.
+- `PREFILL_SP_FP8=3`(기본 0): v2는 실제로 값과 스케일을 **두 번** all-to-all 했다. 목적지별
+  `[FP8 값 | FP32 스케일]` 패킷을 pack 커널에서 직접 만들고 unpack 커널이 직접 읽어 **한 번** 교환한다.
+  바이트 수·양자화·source-rank 순 FP32 합산은 v2와 같다. 추가 재배치/복사 커널은 없다.
+  BF16 기본 경로는 원래 한 번의 reduce-scatter이므로, v2 호출 절감이 BF16 대비 이득이라는 뜻은 아니다.
+- NVFP4 `_partials.N` / `_finish.COUNT`를 `do_not_specialize` 런타임 인자로 바꿔 같은 최종 리덕션 용량의
+  프롬프트 길이들이 JIT를 공유한다. 스케일 산식·반올림 순서는 유지.
+- **검증**: 로컬 6,585 checks + 30 메가커널 회귀 통과, 통신 객체/스코프 CPU 회귀 5개 통과.
+  실제 이미지 `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`에서
+  새 통신 커널 2개와 스케일 커널 2개 SM121 CPU 컴파일 통과.
+  fleet 순번 `prefill40`, srv2 23:53: **GPU 28개 형상/값 조합 × 4 모사 랭크**의 모든 패킷 바이트·패딩·합산이 v2/독립 참조와 동일.
+  NVFP4 9형상 × 4값 × 3가중치 스케일 × 2alpha = **216회** 스케일/alpha 비트 동일, 입력 보존·dispatch/거부 검사 통과.
+  기록: `srv2:/tmp/glm53-prefill-transport.5GFvfS/run.log`.
+- 통신 소스 SHA `577923d02ca9224daad1e6ec39c6059f2c6b0e41d4c34045db66f95e789b7c2c`,
+  스케일 소스 SHA `0bf4195f347682f9ad292f394661b55a41c165bc6f83b0cb4bdef38a439ba9f8` 확인.
+  실제 TP4 NCCL은 `prefill40tp4` 큐에서 별도 검증한다. 현재 새 처리율·품질 측정 없음, 40% 미달성.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.

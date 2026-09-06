@@ -22,21 +22,26 @@ from vllm.logger import init_logger
 logger = init_logger(__name__)
 _ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
 _FP8_MODE = os.environ.get("VLLM_GLM53_PREFILL_SP_FP8", "0").strip()
-_FP8 = _FP8_MODE in ("1", "2")
+_FP8 = _FP8_MODE in ("1", "2", "3")
 # 39차 v2 (operator "두개 도전해"): the v1 FP8 transport lost to BF16 (+7.1 % vs
 # +12.6 %) because its reduce-scatter first agreed on block maxima with an extra
 # all-reduce, then summed FP8 partials natively (headroom 448/4, rounding), then
 # decoded -- three kernels and two collectives per reduction. v2 keeps the FP8
 # all-gather (pack / all-gather / unpack) and turns the reduce-scatter into an
 # all-to-all of per-block-scaled FP8 partials that the receiver sums in FP32:
-# one pack kernel (absmax + quantize fused, no scale agreement), one NCCL
-# all-to-all (same bytes as the FP8 reduce-scatter), one unpack-sum kernel.
+# one pack kernel (absmax + quantize fused, no scale agreement), two NCCL
+# all-to-alls (values and scales), one unpack-sum kernel.
 _FP8_V2 = _FP8_MODE == "2"
+_FP8_V3 = _FP8_MODE == "3"
+# v2 actually launches TWO all-to-alls: values and scales. v3 packs each
+# destination's scales after its values, so both travel in one byte exchange.
+# Quantization and FP32 accumulation stay the same; this targets call cost.
 if _ENABLED:
     # 39차: the boot-log anchor the bracket greps -- an armed knob is not
     # evidence of invocation, but a missing anchor IS evidence of no arming.
     logger.warning("[prefill-sp] sequence-parallel prefill armed (fp8 transport=%s%s)", _FP8,
-                   " v2: per-block scales, all-to-all + fp32 sum" if _FP8_V2 else "")
+                   " v3: packed values+scales, one all-to-all + fp32 sum" if _FP8_V3 else
+                   " v2: per-block scales, two all-to-alls + fp32 sum" if _FP8_V2 else "")
 _BLOCK = 2048
 _TP = 4
 _HIDDEN = 4096
@@ -103,12 +108,14 @@ def maybe_partial_all_reduce(comm, tensor):
 
 
 def _check(tensor):
-    _, comm = _tp_comm()
+    # These are PyNcclCommunicator's in-place (out, input) collectives.
+    # CudaCommunicator has a different API and is only used for scope identity.
+    _, pynccl = _tp_comm()
     if (tensor.ndim != 2 or tensor.shape[0] < 32 or tensor.shape[1] != _HIDDEN
             or tensor.dtype != torch.bfloat16 or not tensor.is_cuda
-            or tensor.device != comm.device or not tensor.is_contiguous()):
+            or tensor.device != pynccl.device or not tensor.is_contiguous()):
         raise ValueError("prefill collective requires contiguous CUDA BF16 [rows,4096]")
-    return comm
+    return pynccl
 
 
 # 39차 P2A2: the element counts were tl.constexpr, so every distinct prefill
@@ -219,6 +226,41 @@ def _unpack_sum(Packed, Scales, Out, LOCAL_N, NUM_BLOCKS, TP: tl.constexpr,
     tl.store(Out + offsets, acc)
 
 
+@triton.jit(do_not_specialize=["N", "LOCAL_N", "PAYLOAD_BYTES"])
+def _pack_rs_payload(X, Packed, Scales, N, LOCAL_N, PAYLOAD_BYTES,
+                     BLOCK: tl.constexpr):
+    block = tl.program_id(0)
+    local_blocks = LOCAL_N // BLOCK
+    rank = block // local_blocks
+    local_block = block % local_blocks
+    offsets = block * BLOCK + tl.arange(0, BLOCK)
+    x = tl.load(X + offsets, mask=offsets < N, other=0.0).to(tl.float32)
+    amax = tl.max(tl.abs(x), axis=0)
+    scale = tl.exp2(tl.ceil(tl.log2(tl.maximum(amax, 1.0e-30) / 448.0)))
+    # Each equal-sized destination packet is [FP8 values | FP32 scales].
+    # LOCAL_N is whole BF16 rows, so both views and every packet are aligned.
+    local_offsets = local_block * BLOCK + tl.arange(0, BLOCK)
+    tl.store(Packed + rank * PAYLOAD_BYTES + local_offsets,
+             (x / scale).to(tl.float8e4nv))
+    tl.store(Scales + rank * (PAYLOAD_BYTES // 4) + LOCAL_N // 4 + local_block,
+             scale)
+
+
+@triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
+def _unpack_sum_payload(Packed, Scales, Out, LOCAL_N, PAYLOAD_BYTES,
+                        TP: tl.constexpr, BLOCK: tl.constexpr):
+    block = tl.program_id(0)
+    offsets = block * BLOCK + tl.arange(0, BLOCK)
+    acc = tl.zeros([BLOCK], dtype=tl.float32)
+    # all_to_all_single returns packets in source-rank order, matching v2.
+    for rank in tl.static_range(TP):
+        q = tl.load(Packed + rank * PAYLOAD_BYTES + offsets).to(tl.float32)
+        scale = tl.load(Scales + rank * (PAYLOAD_BYTES // 4)
+                        + LOCAL_N // 4 + block)
+        acc += q * scale
+    tl.store(Out + offsets, acc)
+
+
 def _quantize(tensor, maxima, limit, *, num_rows=None):
     shape = tensor.shape if num_rows is None else (num_rows, _HIDDEN)
     packed = torch.empty(shape, device=tensor.device, dtype=torch.float8_e4m3fn)
@@ -299,9 +341,9 @@ def prefill_all_gather(tensor, *, num_tokens=None):
 def prefill_reduce_scatter(tensor):
     """Reduce full-token rank partials directly to the local MHC shard.
 
-    FP8 mode first agrees on block maxima across ranks. Using unrelated local
-    scales with NCCL SUM is incorrect. Common scale and headroom avoid FP8
-    overflow; native FP8 reduction still changes rounding and needs quality
+    FP8 v1 agrees on block maxima before native FP8 SUM. v2/v3 instead send
+    each rank's local scales with its values and sum the decoded terms in
+    FP32 on the receiver. All FP8 modes change precision and need quality
     validation. Metadata collectives and quantization costs count in timing.
     """
     comm = _check(tensor)
@@ -319,6 +361,8 @@ def prefill_reduce_scatter(tensor):
             tensor = padded
         comm.reduce_scatter(out, tensor)
         return out
+    if _FP8_V3:
+        return _reduce_scatter_v3(tensor, out, padded_rows)
     if _FP8_V2:
         return _reduce_scatter_v2(tensor, out, padded_rows)
     # Encode padding directly into the FP8 payload: a full BF16 pad/copy
@@ -367,4 +411,34 @@ def _reduce_scatter_v2(tensor, out, padded_rows):
     _unpack_sum[(local_blocks,)](
         recv, recv_scales, out, LOCAL_N=local_n, NUM_BLOCKS=local_blocks, TP=_TP, BLOCK=_BLOCK
     )
+    return out
+
+
+def _reduce_scatter_v3(tensor, out, padded_rows):
+    """Same v2 quantization/reduction, with one values+scales exchange.
+
+    Every rank sends TP equal packets; no extra interleave/copy kernel is
+    needed. Both temporary allocations belong to this invocation so calls
+    on different streams cannot share or overwrite a scratch buffer.
+    """
+    from vllm.distributed import get_tp_group
+
+    local_n = padded_rows * _HIDDEN // _TP
+    local_blocks = local_n // _BLOCK
+    payload_bytes = local_n + 4 * local_blocks
+    packed = torch.empty(payload_bytes * _TP, device=tensor.device,
+                         dtype=torch.uint8)
+    recv = torch.empty_like(packed)
+    _pack_rs_payload[(local_blocks * _TP,)](
+        tensor, packed.view(torch.float8_e4m3fn), packed.view(torch.float32),
+        N=tensor.numel(), LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, BLOCK=_BLOCK,
+    )
+    torch.distributed.all_to_all_single(
+        recv, packed, group=get_tp_group().device_group,
+    )
+    _unpack_sum_payload[(local_blocks,)](
+        recv.view(torch.float8_e4m3fn), recv.view(torch.float32), out,
+        LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, TP=_TP, BLOCK=_BLOCK,
+    )
+    logger.info_once("[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)")
     return out

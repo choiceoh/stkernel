@@ -1,17 +1,66 @@
 # GLM-5.3-Flash prefill: 40% throughput campaign
 
-Baseline source: `8d36ee8`. Worktree: `work/glm53-flash-prefill-20260906`.
+Baseline source: `8d36ee8`. Original PR: #368 (merged).
 The earlier direct-output candidate is `fa1371e`.
 
 The target is at least **1.40x input tokens/second** on matched requests,
 equivalent to reducing prefill wall time by at least **28.5714%**. It is not
 a 40% reduction in wall time. Cold and warmed measurements are separate.
 
+## Current evidence after rebase (2026-09-06)
+
+Rebased onto `3eb72d4` without conflicts. Follow-up branch:
+`codex/glm53-prefill-packed-transport`. **The original 41.2056% forecast below
+is superseded by measurements, not a current prediction or achieved gain.**
+The implementation gate already opened; subsequent corrections and candidates
+can be tested without reusing the disproved assumptions to cross it again.
+
+MEASUREMENTS.md 39차 §4f/§4g/§4j records:
+
+- BF16 SP: +12.6% / +13.3% at 32K / 128K against BASE39-stock; adopted.
+- KDA direct output + QK norm: +1.3% / +2.4%; adopted.
+- NVFP4 dense with MIN_M=1024: +5.1% / +3.5% against BASE39-sp; adopted.
+- MLA group2: its kernel took 1.85x stock time; group4 also regressed.
+- MoE reuse now compiles but measured -1.9% / -2.0%; N128 measured
+  -71% / -74%. The old prediction of a MoE gain is rejected.
+- SP FP8 v2: -2.1% / +1.7% against REF41; neutral, still off.
+
+These arms have different references/configurations. Do not multiply their
+percentages into a claimed gain against `8d36ee8`. The 40% target is open.
+
+The new candidate `VLLM_GLM53_PREFILL_SP_FP8=3` preserves v2's rank-local
+block scales, FP8 values and ordered FP32 sum, but changes the wire layout
+to `[destination][FP8 values | FP32 scales]`. The pack kernel writes this
+layout directly and the unpack kernel reads it directly: no new copy or
+interleave launch. v2 actually uses **two** `all_to_all_single` calls per
+reduction; v3 uses **one**, with the same byte count and two compute kernels.
+This removes v2's extra metadata collective. BF16 already uses one native
+reduce-scatter, so a win against BF16 remains unproven. The default stays 0.
+
+NVFP4 scale construction also takes N/COUNT as non-specialized runtime
+arguments. Prompts sharing a power-of-two final reduction capacity can reuse
+the same kernels; the arithmetic and scale recipe are unchanged.
+
+Validation commands (the GPU commands require a fleet turn):
+
+```bash
+python3 -m unittest discover -s tests -p 'test_glm53_prefill_collectives.py'
+bash probes/run_glm53_prefill_transport_check.sh --compile-only
+bash probes/run_glm53_prefill_transport_check.sh
+# From srv2 with this checkout at the same path on all four hosts:
+bash probes/run_glm53_prefill_transport_check.sh --tp4
+```
+
+The small GPU probe simulates four ranks on one device and checks every
+packet byte, padding, output bits versus v2 and an ordered reference, and
+one-call dispatch. It cannot prove actual NCCL behavior or serving quality.
+The real TP4 probe now covers v2/v3 against the ordered decoded reference.
+
 The operator requested continued implementation and **no tests until the
 combined expected gain exceeds 40%**. After that threshold, validation is one
 combined campaign. During the implementation phase, source inspection and
-analysis of existing traces are allowed; no new test, compile, JIT warmup,
-model invocation or benchmark is being run. First-phase validation recorded
+analysis of existing traces were allowed; tests, compiles, JIT warmup,
+model invocations and benchmarks were deferred. First-phase validation recorded
 under `fa1371e` predates this instruction and does not validate this bundle.
 
 ## Historical evidence for the forecast
@@ -50,7 +99,8 @@ using the full I=2048 instead of per-rank I=512 overcount TP4 rank work by four.
 ## Implemented candidates and accounting rules
 
 Every knob here arms only with the exact string **"1"** and stays off
-otherwise, except `VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
+otherwise, except the FP8 transport modes **2**/**3** and
+`VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
 keeps the pair candidate's original arm and is inactive while the pair
 knob is 0. An armed knob is not evidence of invocation -- since 39차 every
 lane logs once whether it engaged (`[prefill-sp] MHC token shards selected`
@@ -62,8 +112,8 @@ engaged`, `[fp8-dense] nvfp4 prefill route engaged`).
 **ON by default since 2026-09-06** (39차: KDA lanes +1.0 / +1.3 / +2.4 %
 prefill at 2K / 32K / 128K; SP alone +13 / +12.6 / +13.3 % on the unified
 onepass, decode and acceptance unchanged). The measured state of the other
-lanes is in MEASUREMENTS.md 39차 §4d-§4f: the MoE reuse / N128 kernels fail
-CuTe-DSL IR verification on the image, the MLA pair kernel runs 1.85x the
+lanes is in MEASUREMENTS.md 39차 §4d-§4j: the MoE reuse / N128 compile failure
+was fixed but neither improved long prefill, the MLA pair kernel runs 1.85x the
 stock kernel's time (-10 % prefill even at group 2), the NVFP4 dense route's
 GEMM saving (-520 ms) is eaten by its per-call quantization kernels and
 launch glue (+850 ms), and FP8 transport for SP is slower than BF16 on this
@@ -111,9 +161,10 @@ numerical checks. Native FP8 NCCL support is documented by NVIDIA since
 and exists in the pinned PyNCCL datatype mapping. This is source support,
 not proof that this fleet's selected reduce-scatter algorithm executes it.
 
-## Forecast gate and combined validation
+## Historical forecast gate (superseded) and combined validation
 
-**Implementation forecast gate opened after source review, 2026-09-06.**
+**Implementation forecast gate opened after source review, 2026-09-06. The
+measurements above subsequently disproved this scenario.**
 The explicit nominal scenario below gives **41.2056% throughput improvement**.
 It is an unvalidated engineering forecast used to start testing, not achieved
 performance or a statistical confidence estimate. In particular, MLA0.53 is

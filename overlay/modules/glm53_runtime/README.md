@@ -11,7 +11,7 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 | `glm53_boot_stamps` | `deneb_boot_stamps.py`, `zz_deneb_boot_stamps.pth` | 부팅 단계 타이밍 스탬프 |
 | `glm53_dev_lab` | `glm53_dev_lab.py`, `glm53_lab_middleware.py` | 개발 랩 `/glm53/lab` (`DEV_LAB`, 개발 부팅 전용) |
 | `glm53_oneshot_wiring` | `cuda_communicator.py` | one-shot AR 의 glm53 이미지 배선 (`cuda_communicator.py`) |
-| `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP`·`PREFILL_SP_FP8`, 기본 0) |
+| `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP` 기본 1, `PREFILL_SP_FP8` 기본 0) |
 | 채팅 옵션 계약 | `glm53_chat.py` | Chat Completions 옵션 검증과 정규화 |
 | GLM 본문 보존 | `glm47_moe.py` | none의 리터럴 XML, 도구 호출 사이·뒤의 본문, 인자의 think 태그 보존 |
 
@@ -363,19 +363,28 @@ The kernel and shim are in `tp_oneshot_ar`.
 
 ---
 
-## glm53_prefill_sp (368차 신규, 기본 0)
+## glm53_prefill_sp
 
 Pure-prefill TP4 sequence parallelism (`VLLM_GLM53_PREFILL_SP=1`, optional
-FP8 transport `VLLM_GLM53_PREFILL_SP_FP8=1`; exact "1" arms). MHC/residual
+FP8 transport `VLLM_GLM53_PREFILL_SP_FP8=1/2/3`). MHC/residual
 work is row-sharded across ranks; full-token attention and MoE see an
 all-gathered view; the terminal TP all-reduce is deferred and replaced by a
 reduce-scatter (`partial_tp_output` / `maybe_partial_all_reduce` hooks).
 Uneven token counts (T=8185 etc.) pad and trim exactly. Guards fail closed
 on metadata, topology, dtype, layout, graph capture, and reduction-contract
 drift — any miss keeps the untouched stock path; exactly one deferred
-terminal reduction per scope is enforced at scope exit. FP8 transport
-agrees one common block scale per rank group via a MAX all-reduce (4x
-headroom to +-448) and changes precision: it needs its own serving-quality
-gate. `probes/glm53_prefill_collectives_check.py` (WORLD_SIZE=4 torchrun)
-is the correctness probe; matched prefill throughput and quality are still
-pending. Keep both at 0 until the combined campaign.
+terminal reduction per scope is enforced at scope exit. BF16 SP is the
+profile default after the 39차 +12.6%/+13.3% 32K/128K prefill result.
+
+FP8 remains off: v1 agrees on common block scales before native FP8 SUM;
+v2 sends rank-local values and scales in two all-to-alls and sums decoded
+terms in FP32. v3 packs values and scales by destination directly into one
+all-to-all, preserving v2's numerical recipe. BF16 already has one native
+reduce-scatter, so v3 needs a fresh bracket against BF16. Every FP8 mode
+requires its own serving-quality gate.
+
+`probes/glm53_prefill_collectives_check.py` (WORLD_SIZE=4 torchrun) covers
+all four transports. `probes/run_glm53_prefill_transport_check.sh` checks
+v3 packets and sums against v2 on one GPU with a simulated exchange;
+`--compile-only` compiles the new kernels on the CPU for SM121. Neither
+the compile nor the simulated exchange proves real NCCL speed or quality.
