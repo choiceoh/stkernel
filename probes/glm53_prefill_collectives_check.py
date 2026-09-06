@@ -11,8 +11,9 @@ Example after mounting the candidate overlay, on each of four hosts:
     --master-addr=<rank-0-address> --master-port=<unused-port> \
     probes/glm53_prefill_collectives_check.py --transport bf16
 Repeat with --transport fp8, fp8-v2 and fp8-v3. --source-root names the checkout whose overlay
-must exactly match imported files on every rank. This probe is not a latency,
-throughput, model-quality, or single-GPU substitute for NCCL validation.
+must exactly match imported files on every rank. Optional --timing compares
+isolated eager collectives in balanced order using the slowest rank per
+sample. It does not measure model throughput or quality.
 """
 
 import argparse
@@ -22,6 +23,8 @@ import importlib
 import json
 import os
 from pathlib import Path
+import statistics
+from unittest.mock import patch
 
 
 SOURCES = {
@@ -45,6 +48,12 @@ def _fingerprints(source_root):
         result[name] = {"path": str(actual), "sha256": actual_sha}
         if actual_sha != expected_sha:
             raise RuntimeError(f"imported source mismatch: {actual} != {expected}")
+    probe = Path(__file__).resolve()
+    probe_sha = hashlib.sha256(probe.read_bytes()).hexdigest()
+    expected = source_root / "probes/glm53_prefill_collectives_check.py"
+    if probe_sha != hashlib.sha256(expected.read_bytes()).hexdigest():
+        raise RuntimeError("probe source differs from the checkout")
+    result["probe"] = {"path": str(probe), "sha256": probe_sha}
     return result
 
 
@@ -276,6 +285,61 @@ def _case(helper, group, rows, case, transport, device):
     }
 
 
+def _timing(helper, group, rows, device, repeats):
+    """Probe-only mode overrides; every rank follows the same mirrored order."""
+    value = _input(rows, group.rank_in_group, "random", device)
+    shard = helper.prefill_shard(value)
+    order = ("bf16", "fp8-v2", "fp8-v3", "fp8-v3", "fp8-v2", "bf16")
+
+    def lane(mode):
+        # The serving helper normally latches these on import. Isolate the
+        # timing controls here; restore them before any other probe checks.
+        return patch.multiple(helper, _FP8=mode != "bf16", _FP8_V2=mode == "fp8-v2",
+                              _FP8_V3=mode == "fp8-v3")
+
+    def invoke(operation):
+        if operation == "all_gather":
+            return helper.prefill_all_gather(shard, num_tokens=rows)
+        return helper.prefill_reduce_scatter(value)
+
+    result = []
+    for operation in ("all_gather", "reduce_scatter"):
+        for mode in order:
+            with lane(mode):
+                invoke(operation)
+        torch.cuda.synchronize(device)
+        start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+        local_rounds = []
+        for _ in range(repeats):
+            samples = []
+            for mode in order:
+                with lane(mode):
+                    dist.barrier(group=group.device_group)
+                    start.record()
+                    output = invoke(operation)
+                    end.record()
+                    end.synchronize()
+                samples.append(start.elapsed_time(end) * 1000)
+                del output
+            local_rounds.append(samples)
+        peers = [None] * 4
+        dist.all_gather_object(peers, local_rounds, group=group.cpu_group)
+        # A TP operation finishes only when its slowest rank does. Preserve
+        # per-round pairs instead of comparing independent fastest samples.
+        rounds = [[max(peer[r][j] for peer in peers) for j in range(len(order))]
+                  for r in range(repeats)]
+        per_arm = {mode: [statistics.mean([row[j] for j, name in enumerate(order) if name == mode])
+                          for row in rounds] for mode in set(order)}
+        result.append({"rows": rows, "operation": operation, "order": order,
+                       "max_rank_rounds_us": rounds,
+                       "median_us": {mode: statistics.median(samples) for mode, samples in per_arm.items()},
+                       "v3_speedup_pct": {
+                           baseline: statistics.median(100 * (a / b - 1)
+                                                       for a, b in zip(per_arm[baseline], per_arm["fp8-v3"]))
+                           for baseline in ("bf16", "fp8-v2")}})
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--transport", choices=("bf16", "fp8", "fp8-v2", "fp8-v3"), required=True)
@@ -283,12 +347,17 @@ def main():
     parser.add_argument("--source-root", type=Path,
                         default=Path(__file__).resolve().parents[1])
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--timing", action="store_true",
+                        help="balanced BF16/v2/v3 isolated collective timings after correctness")
+    parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
     world = int(os.environ.get("WORLD_SIZE", "0"))
     if world != 4:
         parser.error("real WORLD_SIZE=4 torchrun environment is required; no local emulation")
     if any(rows < 128 for rows in args.rows):
         parser.error("rows must be >=128")
+    if args.repeats < 1:
+        parser.error("repeats must be positive")
     os.environ["VLLM_GLM53_PREFILL_SP"] = "1"
     os.environ["VLLM_GLM53_PREFILL_SP_FP8"] = {
         "bf16": "0", "fp8": "1", "fp8-v2": "2", "fp8-v3": "3",
@@ -333,7 +402,7 @@ def main():
             peer_identity = [None] * 4
             dist.all_gather_object(peer_identity,
                                    ({name: item["sha256"] for name, item in fingerprints.items()},
-                                    args.transport, args.rows), group=group.cpu_group)
+                                    args.transport, args.rows, args.timing, args.repeats), group=group.cpu_group)
             _require(all(item == peer_identity[0] for item in peer_identity),
                      "ranks disagree on source/transport/row cases", group)
             comm = group.device_communicator
@@ -348,11 +417,16 @@ def main():
             torch.cuda.synchronize(device)
             peer_results = [None] * 4
             dist.all_gather_object(peer_results, results, group=group.cpu_group)
+            timings = []
+            if args.timing:
+                for rows in args.rows:
+                    timings.extend(_timing(helper, group, rows, device, args.repeats))
             if rank == 0:
                 report = {"status": "passed", "transport": args.transport,
                           "world_size": 4, "sources": fingerprints,
                           "checks": peer_results,
-                          "scope": "eager collective numerics only; no model quality or timing claim"}
+                          "timings": timings,
+                          "scope": "eager collective numerics and optional isolated timing; no model quality/throughput claim"}
                 rendered = json.dumps(report, indent=2)
                 print(rendered, flush=True)
                 if args.output:

@@ -17,7 +17,8 @@ log_dir=$(mktemp -d "${TMPDIR:-/tmp}/glm53-prefill-tp4.XXXXXX")
 echo "TP4 probe logs: $log_dir; run=$run_id; transport=$transport"
 # Names are unique to this invocation; cleanup only touches these containers.
 cleanup() {
-  for rank in 0 1 2 3; do
+  docker stop -t 3 "$run_id-0" >/dev/null 2>&1 || true
+  for rank in 1 2 3; do
     ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
       "docker stop -t 3 $run_id-$rank >/dev/null 2>&1 || true" </dev/null &
   done
@@ -45,10 +46,15 @@ for rank in 0 1 2 3; do
   args+=("$IMAGE" -m torch.distributed.run --nnodes=4 --nproc-per-node=1
          --node-rank="$rank" --master-addr=10.10.10.2 --master-port="$port"
          /repo/probes/glm53_prefill_collectives_check.py --transport "$transport"
-         --rows 128 129 8185)
-  printf -v remote_command '%q ' "${args[@]}"
-  timeout 240 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
-    "$remote_command" >"$log_dir/rank-$rank.log" 2>&1 &
+         --rows 128 129 8185 --timing)
+  if [[ $rank == 0 ]]; then
+    # srv2 need not have an SSH key authorized for itself.
+    timeout 240 "${args[@]}" >"$log_dir/rank-$rank.log" 2>&1 &
+  else
+    printf -v remote_command '%q ' "${args[@]}"
+    timeout 240 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
+      "$remote_command" >"$log_dir/rank-$rank.log" 2>&1 &
+  fi
   pids+=("$!")
 done
 result=0
@@ -59,6 +65,7 @@ for rank in 0 1 2 3; do
     result=1
     echo "rank $rank: FAILED"
     tail -60 "$log_dir/rank-$rank.log"
+    break  # EXIT cleanup stops peers instead of waiting out rendezvous timeouts.
   fi
 done
 if [[ $result == 0 ]]; then
