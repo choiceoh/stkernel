@@ -68,8 +68,30 @@ def load(path: str = JSONL) -> list[dict]:
         return []
 
 
+BUILDS = os.environ.get("FLEET_BUILDS", "/home/choiceoh/glm53-logs/fleet/builds.tsv")
+
+
+def builds() -> list[tuple[str, str, str, str]]:
+    """(ts, stamp, sha, session) rows written by `fleet.sh deploy`."""
+    try:
+        with open(BUILDS) as fh:
+            return [tuple(l.rstrip("\n").split("\t"))[:4] for l in fh if l.strip() and not l.startswith("#")]
+    except Exception:
+        return []
+
+
+def sha_of_stamp(stamp: str | None) -> str | None:
+    for _, st, sha, _ in reversed(builds()):
+        if stamp and st.startswith(stamp[:12]):
+            return sha
+    return None
+
+
 def is_baseline(rec: dict) -> tuple[bool, str]:
-    """(baseline?, how we know). `knobs` is authoritative; the name is a guess."""
+    """(baseline?, how we know). `knobs` is authoritative; the name is a guess.
+    A rehearsal row (ab-lever under FLEET_REHEARSE=1) is never a baseline."""
+    if rec.get("rehearsal"):
+        return (False, "rehearsal")
     if "knobs" in rec:
         return (not rec["knobs"], "knobs")
     name = (rec.get("name") or "").upper()
@@ -80,7 +102,10 @@ def for_build(rows: list[dict], build: str | None, git: str | None = None) -> li
     """Records of that build: by overlay stamp when they carry one, else by the
     checkout's git sha (rows written before the stamp field existed)."""
     out = [r for r in rows if build and r.get("overlay") == build]
-    if out or not git:
+    if out:
+        return out
+    git = git or sha_of_stamp(build)          # a deploy registry row names the sha
+    if not git:
         return out
     return [r for r in rows if (r.get("git") or "").startswith(git[:7])]
 
@@ -144,7 +169,8 @@ def main() -> int:
                   f" -- skip a defaults arm and compare against it")
         return 0
 
-    print(f"deployed build: {label or 'unknown'}   records on it: {len(mine)}")
+    sha = sha_of_stamp(build)
+    print(f"deployed build: {label or 'unknown'}{' = ' + sha if sha and sha != label else ''}   records on it: {len(mine)}")
     if not mine:
         print("no measurement of this build yet: the first arm pays for its own baseline")
         return 0

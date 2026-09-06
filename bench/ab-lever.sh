@@ -18,11 +18,43 @@ NAME=${1:?usage: ab-lever.sh NAME "ENV"}
 LEVER_ENV=${2:-}
 LEGS=${LEGS:-onepass}
 has() { case ",$LEGS," in *",$1,"*) return 0;; esac; return 1; }
-REPO=/home/choiceoh/stkernel
-LOGD=/home/choiceoh/glm53-logs
-HEAD=10.10.10.2
+REPO=${REPO:-/home/choiceoh/stkernel}
+LOGD=${LOGD:-/home/choiceoh/glm53-logs}
+HEAD=${HEAD:-10.10.10.2}
 ARM=$NAME
 cd "$REPO" || exit 1
+# 39차 idea 2 -- rehearsal: no boot, no leg; the LAST real record is copied under
+# this arm's name with rehearsal=true (judge/baseline ignore such rows unless
+# asked), so a chain's flow, judge parsing and log handling can be checked
+# without a GPU. fleet.sh runs a FLEET_REHEARSE=1 job in parallel, never holding.
+if [ "${FLEET_REHEARSE:-0}" = 1 ]; then
+  echo "== [$ARM] REHEARSAL: no boot, no leg; fabricating a record from the last real one $(date +%T) =="
+  python3 - "$NAME" "$LEVER_ENV" "${ONEPASS_JSONL:-$LOGD/bracket-onepass.jsonl}" <<'PY'
+import json, sys, time, os
+name, env, path = sys.argv[1], sys.argv[2], sys.argv[3]
+rows = [json.loads(l) for l in open(path) if l.strip()] if os.path.exists(path) else []
+real = [r for r in rows if not r.get("rehearsal")]
+rec = dict(real[-1]) if real else {"decode": {"windows_med": 20.0, "tokens_per_step": 3.4, "acc_raw": 0.48},
+                                   "quality": {"ok": 9, "total": 9}, "korean": {"dirty": 0, "n": 5}, "prefill": [], "harness": 39}
+knobs = dict(kv.split("=", 1) for kv in env.split() if "=" in kv)
+rec.update({"name": name, "t": time.strftime("%F %T"), "rehearsal": True, "knobs": knobs,
+            "session": os.environ.get("FLEET_SESSION", ""), "proof_ok": f"{len(knobs)}/{len(knobs)}" if knobs else None})
+rec["proof"] = {k: True for k in knobs}
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+print(f"   rehearsal record {name} appended (copied from {real[-1]['name'] if real else 'nothing'})")
+PY
+  echo "== [$ARM] done (rehearsal) $(date +%T) =="; exit 0
+fi
+# 39차 idea 4 -- the first boot after a deploy compiles cold (~12 min) and inflates
+# the cold prefill column; tell onepass so the record carries cold_compile=true.
+STAMP_FILE=${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}
+SEEN=$LOGD/.boot-stamps
+_stamp=$(cut -c1-12 "$STAMP_FILE" 2>/dev/null)
+if [ -n "$_stamp" ] && ! grep -qx "$_stamp" "$SEEN" 2>/dev/null; then
+  export MK_COLD_COMPILE=1; echo "== [$ARM] first boot on build $_stamp: cold compile (cold prefill column not comparable) =="
+  echo "$_stamp" >> "$SEEN"
+fi
 snap() {  # snapshot head + worker logs on a failure, then abort
   D=$LOGD/fail-$NAME-$(date +%H%M%S); mkdir -p "$D"; cp "$LOGD/glm53.log" "$D/glm53.log.srv2" 2>/dev/null
   for ip in 10.10.10.1 10.10.10.3 10.10.10.4; do scp -q -o BatchMode=yes choiceoh@$ip:glm53-logs/glm53.log "$D/glm53.log.$ip" 2>/dev/null; done
