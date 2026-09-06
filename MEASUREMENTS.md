@@ -2195,6 +2195,31 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 **APC2**(`PREFIX_CACHE=1` + prep-fused 재수집 수정 #399, 19:33) — 히트/수용률 전과 같음(32K warm 1.37 s 92% / warm2 0.37 s 99.6%, 100K warm 2.12 s 96% / warm2 1.10 s 98%, 정답 6/6, acc 41.6~59.5% 잡음폭). onepass: 프리필 2K +14.7% / 32K **−3.2%**(2,972) / 128K **+1.1%**(2,972) — align 청크(6,912)의 순수 프리필 비용은 작다(APC 의 −8% 는 대부분 잡음). 디코드는 여전히 −9.3/−10.3%: prep-fused 가 **두 번째 관문**에서 빠졌다 — `mamba_cache_mode != none (block table select differs)`.
 - 원인: stock `mamba_get_block_table_tensor` 는 GDN 상태 블록 열을 `(seq_len−1)//mamba_block` 부터 `1+num_spec` 개 취하는데('align' 은 2304 블록을 넘을 때마다 열이 이동), 융합 커널은 0열부터 취했다(캐시 모드 'none' 은 블록 하나 = max_model_len 이라 항상 0열). 수정(PR #405): 커널이 실행 중 블록 열부터 모으고(런타임 인자 `mamba_block`, 'none' 은 그대로 0열), align 모드에선 0열만 아는 CUDA `run_prep` 대신 Triton 커널(호스트 ~12 µs/스텝). 셀프체크의 `gdn_state` 비교가 stock 빌더와의 일치를 검증한다. 후속 팔 **APC4**(두 수정 모두) 를 DF3 체인 끝에 붙임; CUDA run_prep 의 열 이동 지원은 APC 승격 뒤 후속.
 
+**DF3**(v3 alternate, K=6 디코드 스텝 / 청크 1,152, 20:06) — 혼합 부하(값: 스텝 = SSE 청크):
+
+| ctx | 스톡 겹침 ITL med/p95/max | 스톡 디코더 tok/s@겹침 | 스톡 TTFT | DF3 겹침 ITL | DF3 디코더 tok/s@겹침 (스텝) | DF3 TTFT (tok/s) |
+|---|---|---|---|---|---|---|
+| 32K | 69 / 3,446 / 6,640 ms | ~4.4 (17 스텝) | 13.3 s | **47 / 688 / 1,369 ms** | **19.5** (147 스텝) | 25.8 s (1,249) |
+| 100K | 71 / 3,144 / 3,179 ms | ~2.5 (30 스텝) | 39.2 s | **48 / 1,312 / 1,371 ms** | **7.0** (156 스텝) | 73.0 s (1,379) |
+
+- 섞지 않는 설계가 맞았다: 겹침 구간 중앙 ITL 이 단독(46 ms) 과 같고, 디코더 처리량은 스톡 혼합의 4.4배(32K)/2.8배(100K), DF1 대비 3.2배. 대가는 동시 프리필 −48%(32K) / −47%(100K). 단독 요청 경로는 불변(onepass 프리필 −0.3%/+0.4%, 디코드 0/−1.2%; tok/step −7.3% 는 DEF40 편차).
+- 긴 컨텍스트의 약점: 100K 에서 1,152 토큰 프리필 스텝이 1.3 s(890 tok/s) 로 32K(0.64 s) 의 두 배 — 청크가 작을수록 MLA/인덱서 프리필 커널의 효율이 떨어진다(솔로 8,192 청크 2,950 tok/s). 다음 개선: 청크를 컨텍스트(또는 직전 프리필 스텝 시간)에 맞춰 키우는 컨트롤러(목표 스텝 시간 ~0.7 s). DF3b(K=3) 결과와 함께 K·C 기본값을 정한다.
+
+**DF3b**(v3 alternate, K=3 / 청크 1,152, 20:13) — 32K: 겹침 ITL 49 / 695 / 1,359 ms, 디코더 **12.5** tok/s(96 스텝), TTFT 22.8 s(1,414); 100K: 48 / **699 / 747 ms**, 디코더 **9.1** tok/s(171 스텝), TTFT 57.3 s(1,756). K 를 반으로 줄이면 32K 에서 디코더 −36% / 프리필 +13% 뿐 — 디코드 스텝 3개는 0.14 s 인데 프리필 스텝이 0.64 s 라 사이클을 프리필 스텝의 고정 비용이 지배한다. 100K 에선 DF3(K=6) 보다 양쪽 다 나은데, DF3 의 100K 는 floor(1,000 tok/s) 가 청크를 키운 스텝(1.3 s) 이 섞인 것으로 본다.
+- onepass DF3b: 프리필 32K +0.3% / 128K −0.2% (불변), 32K 디코드 −2.3%, **128K 디코드 −33%** — DF1 과 같은 이상(창 [20.9, 21.4, 10.0, 14.5, 14.0]: 답변 두 창 뒤부터 저하). DF2·DF3 는 정상. 순차 요청 구간이라 스케줄러는 손을 대지 않는 곳이고(prep-fused DRIFT/DISARM 없음, 헤드 노드 피어 CPU 작업 없음), onepass 의 마지막·최장 단계에서만 나타나므로 연속 부하 뒤의 GPU 클럭/온도 스로틀 가설을 세움 → 이후 체인(VIS·DF4)의 onepass 동안 4 노드 `clock-sample.sh`(SM 클럭·온도·전력·스로틀 사유 5 s) 로 판별.
+- **v3.1**(PR #409): alternate 모드의 청크를 프롬프트 위치에 비례해 키움(`chunk = 1152 × pos/32768`, 상한 4,608, 128 배수; 32K 1,152 → 64K 2,304 → 100K 3,456). DF4 팔 큐.
+
+**APC4**(`PREFIX_CACHE=1` + prep-fused align 수정 둘 #399/#405, 20:18) — prep-fused 가 align 모드에서 plan 을 세움(`kernel=triton (mamba align mode: run_prep gathers state column 0)`, DRIFT/DISARM 없음). 히트/정답 전과 같음(32K warm 1.38 s 92% / warm2 0.37 s 99.6%; 100K warm 2.11 s 96% / warm2 1.12 s 98%; 6/6), 수용률 43.7~52.3%(잡음폭). onepass: **디코드 복원** 32K +2.3% / 128K −3.5% (21.4 step/s), 프리필 2K +9.6% / 32K −9.9%(2,768) / 128K −0.4%(2,927), 9/9, 0. tok/step 3.19(raw acc 43.8%) 는 낮은 쪽 표본.
+- APC 켠 네 부팅의 32K cold 프리필: −8.1 / −3.2 / −5.2 / −9.9% (평균 −6.6%), 128K 는 ±1%. align 모드 청크(6,912) 의 비용이며 `MAX_BATCHED=9216`(APC3) 로도 안 줄었다.
+- **판정: `PREFIX_CACHE=1` 기본값 승격.** 같은 접두사 재질문(멀티턴)의 TTFT 34 → 1.1~2.7 s(100K), 12.5 → 0.4~1.4 s(32K) 가 cold 32K 프리필 −7% 를 압도하고, 디코드·품질·warm 수용률이 유지된다. 롤백은 `PREFIX_CACHE=0`. 후속: CUDA run_prep 의 상태 열 이동 지원(호스트 ~12 µs/스텝 회수), 수용률 표본 누적.
+
+**비전 "행"의 원인**(운영자 "비전 킬 때마다 행 걸렸다" → "그 문제도 해결해봐"): 체크포인트에는 비전 타워가 있고(`model.visual.*` 347개) 우리 모델 오버레이의 멀티모달 코드는 이미지와 동일. 런처 `MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"` 의 매개변수 전개가 첫 `}` 에서 끝나 마지막 `}` 를 리터럴로 덧붙인다 → 덮어쓴 값이 `{"image":1,"video":0}}` (JSON `Extra data`) → vLLM argparse 사망 → 런처는 헬스를 예산(3,000 s)만큼 폴링 = "매번 행". 기본값 대입을 전개 밖으로 옮김(PR #408), 격리 노브 셋(`MM_ENCODER_TP_MODE`/`MM_ENCODER_ATTN`/`SKIP_MM_PROFILING`)과 `probes/vision_probe.py` 추가. 진단 체인 VIS(이미지 1 + 프로브 + 텍스트 onepass, 정말 멈추면 4 노드 py-spy 스냅샷) 큐.
+
+**비전 체인(VIS, 20:25~20:49)** — `MM_LIMIT` 수정본으로 이미지를 켠 첫 부팅 **VIS1 은 죽었다**(행이 아니라 사망): rank 1(srv1) 워커만 적재 뒤 `CUDA error: operation not permitted` (첫 발현 메가커널 셀프테스트의 `torch.randint`, 치명은 MoE `process_weights_after_loading` 의 `torch.allclose`) → rank 0/2/3 은 instanttensor 의 `avail_bytes.item()` 집합통신에서 대기 → NCCL 타임아웃. srv1 커널 로그에 Xid 없음, OOM 아님. rank 1·2 만 적재 중 dynamo/fake-tensor 추적(부팅 스탬프 60 s 덤프)이 찍혔지만 rank 2 는 살아남아 컴파일 자체가 원인은 아님.
+- **VIS2 는 살았다**: `MM_ENCODER_TP_MODE=data`(비전 타워 비분할, 인코더 안 TP 집합통신 없음) + `MM_ENCODER_ATTN=TORCH_SDPA`. 이미지 요청 OK(TTFT 0.51 s, 2.3 s, 빨간 사각형 인식), 텍스트 요청 OK. 범인은 기본 경로(TP 분할 인코더 또는 sm_121 의 FLASH_ATTN vit 어텐션) 중 하나 — 이분은 후속 팔.
+- 이 부팅의 onepass(VISON): 32K 정상, **128K 프리필 −19.8% / 디코드 −55%** — 세 번째 재현(DF1 −31, DF3b −33). 4 노드 GPU 샘플: SM 1,573~1,592 MHz, 최고 62 °C, 전력 ≤23.5 W, 스로틀 사유 없음 → **열/클럭 아님**. MK/prep-fused DISARM 없음. 다음: DF4 onepass 에 CPU 주파수·SoC 온도·부하 샘플 추가(`clock-sample.sh` v2), 그리고 128K 답변 도중 무엇이 바뀌는지(블록 경계 2304 통과 시점과 대조).
+- **추론 유출 발견**(포럼 글의 문제가 우리에게도 있다): 서빙 템플릿의 생성 프롬프트가 항상 `<|assistant|><think>` 로 끝나 `chat_template_kwargs.thinking=false` 가 무시되고(모델은 늘 사고함), 시작 태그가 프롬프트에 있어 glm45 파서는 출력에서 `<think>` 를 못 보고 사고 본문을 **content 로 스트리밍**한다(스트리밍·비스트리밍 모두 `reasoning_content` 비어 있음, 실측 VIS2). onepass 도 사실은 사고 켜진 채 잰 것(참조들끼리는 동일 조건). 조치: MiaAI-Lab 의 5 줄 수정(`thinking`/`enable_thinking` 존중, off 면 `<think></think>`) 을 `launchers/chat_template_mm_v2.jinja` 로 저장·4 노드 모델 디렉터리에 배치, 런처 노브 `CHAT_TEMPLATE`/`REASONING_PARSER`(deepseek_r1 파서는 프롬프트에 시작 태그가 있어도 `</think>` 앞을 reasoning 으로 처리). VID 팔에서 실측 뒤 기본값 결정; 바뀌면 onepass 참조를 새로 잡아야 한다(답변 길이·수용률이 달라짐).
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.

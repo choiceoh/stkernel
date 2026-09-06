@@ -8,7 +8,7 @@ not finish inside --timeout seconds (the serving side is then left for the
 stall watcher's py-spy snapshot). A second text-only request afterwards
 shows whether the engine still serves after the image request.
 
-    python3 probes/vision_probe.py [--timeout 180] [--size 224]
+    python3 probes/vision_probe.py [--timeout 180] [--size 224] [--video test.mp4]
 """
 import argparse
 import base64
@@ -57,14 +57,17 @@ def model_name() -> str:
     return mod.MODEL
 
 
-def ask(model: str, content, max_tokens: int, timeout: float):
+def ask(model: str, content, max_tokens: int, timeout: float, thinking: bool = False):
+    """Returns (content, ttft, total, reasoning): reasoning is what the server
+    streamed as delta.reasoning / delta.reasoning_content."""
     body = json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.0, "stream": True,
                        "messages": [{"role": "user", "content": content}],
-                       "chat_template_kwargs": {"thinking": False}}).encode()
+                       "chat_template_kwargs": {"thinking": thinking}}).encode()
     req = urllib.request.Request(BASE + "/v1/chat/completions", data=body, headers={"Content-Type": "application/json"})
     t0 = time.time()
     ttft = None
     parts = []
+    reasoning = []
     with urllib.request.urlopen(req, timeout=timeout) as r:
         for raw in r:
             line = raw.decode("utf-8", "replace").strip()
@@ -75,14 +78,18 @@ def ask(model: str, content, max_tokens: int, timeout: float):
             except ValueError:
                 continue
             for ch in obj.get("choices") or []:
-                piece = (ch.get("delta") or {}).get("content") or ""
+                delta = ch.get("delta") or {}
+                piece = delta.get("content") or ""
+                think = delta.get("reasoning") or delta.get("reasoning_content") or ""
+                if think:
+                    reasoning.append(think)
                 if piece:
                     if ttft is None:
                         ttft = time.time() - t0
                     parts.append(piece)
             if time.time() - t0 > timeout:
                 raise socket.timeout("stream exceeded the budget")
-    return "".join(parts), ttft, time.time() - t0
+    return "".join(parts), ttft, time.time() - t0, "".join(reasoning)
 
 
 def main() -> int:
@@ -90,16 +97,28 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--size", type=int, default=224)
     ap.add_argument("--max-tokens", type=int, default=120)
+    ap.add_argument("--video", default="", help="path of a small mp4 to send as a data-URL video_url (needs MM_LIMIT video>=1)")
     args = ap.parse_args()
     model = model_name()
     data_url = "data:image/png;base64," + base64.b64encode(png(args.size)).decode()
     content = [{"type": "image_url", "image_url": {"url": data_url}},
                {"type": "text", "text": "이 이미지에 어떤 색의 도형이 어디에 있는지 한 문장으로 설명해줘."}]
+    cases = [("image", content)]
+    if args.video:
+        with open(args.video, "rb") as fh:
+            vurl = "data:video/mp4;base64," + base64.b64encode(fh.read()).decode()
+        cases.append(("video", [{"type": "video_url", "video_url": {"url": vurl}},
+                                {"type": "text", "text": "이 짧은 영상에서 화면이 어떻게 바뀌는지 한 문장으로 설명해줘."}]))
+    cases.append(("text-after", "1부터 5까지 세어줘."))
+    cases.append(("think-on", "1부터 5까지 세어줘."))   # thinking=true: reasoning must land in reasoning_content, not content
     rc = 0
-    for label, payload in (("image", content), ("text-after", "1부터 5까지 세어줘.")):
+    for label, payload in cases:
         try:
-            text, ttft, total = ask(model, payload, args.max_tokens, args.timeout)
-            print(f"{label:>10}: OK  ttft={ttft if ttft is not None else float('nan'):.2f}s total={total:.1f}s -> {text[:160]!r}", flush=True)
+            text, ttft, total, reasoning = ask(model, payload, args.max_tokens, args.timeout, thinking=(label == "think-on"))
+            print(f"{label:>10}: OK  ttft={ttft if ttft is not None else float('nan'):.2f}s total={total:.1f}s "
+                  f"reasoning={len(reasoning)} chars content={len(text)} chars -> {text[:120]!r}", flush=True)
+            if label != "think-on" and text.lstrip().startswith(("The user", "Let me", "I ", "We ")):
+                print(f"{'':>10}  LEAK? content starts with English reasoning although thinking=false", flush=True)
         except (socket.timeout, TimeoutError) as e:
             print(f"{label:>10}: HANG (no completion within {args.timeout:.0f}s: {e})", flush=True)
             rc = 2

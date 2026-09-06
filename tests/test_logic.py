@@ -6079,7 +6079,7 @@ def test_dflash2_prefix_cache_fail_closed() -> None:
     ).read()
     profile = open("profiles/glm53.env", encoding="utf-8").read()
 
-    check("PREFIX_CACHE=0" in profile,
+    check("\nPREFIX_CACHE=1\n" in profile,  # 39차: promoted after APC4 (hits, warm acceptance, decode restored)
           "the DFlash2 profile must prefer valid draft KV over prefix TTFT reuse")
     check('PREFIX_CACHE="${PREFIX_CACHE:-0}"' in launcher,
           "a profile-less DFlash2 launch must also fail closed")
@@ -6504,7 +6504,8 @@ def test_decode_first_scheduler_contracts() -> None:
     fakes["vllm.v1.core.sched.async_scheduler"].AsyncScheduler = FakeAsyncScheduler  # type: ignore[attr-defined]
     fakes["vllm.v1.core.sched.output"].SchedulerOutput = object  # type: ignore[attr-defined]
     saved_modules = {name: sys.modules.get(name) for name in fakes}
-    env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_DECODE_STEPS",
+    env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_DECODE_STEPS", "VLLM_GLM53_SCHED_CHUNK_REF_CTX",
+                "VLLM_GLM53_SCHED_CHUNK_MAX",
                 "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
                 "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
     saved_env = {k: os.environ.pop(k, None) for k in env_keys}
@@ -6527,9 +6528,9 @@ def test_decode_first_scheduler_contracts() -> None:
             return types.SimpleNamespace(is_prefill_chunk=True, request_id=rid or f"p{_n[0]}", num_computed_tokens=computed)
 
         d = Sched()
-        check((d.mode, d.decode_steps, d.mixed_chunk, d.prefill_every, d.min_decoders, d.fair, d.prefill_floor, d.floor_grace_s)
-              == ("alternate", 6, 1152, 1, 1, True, 1000, 2.0),
-              "defaults: alternate, 6 decode steps per prefill step, chunk 1152, fair, floor 1000 tok/s after 2 s")
+        check((d.mode, d.decode_steps, d.mixed_chunk, d.chunk_ref_ctx, d.chunk_max, d.prefill_every, d.min_decoders, d.fair,
+               d.prefill_floor, d.floor_grace_s) == ("alternate", 6, 1152, 32768, 4608, 1, 1, True, 1000, 2.0),
+              "defaults: alternate, 6 decode steps per prefill step, chunk 1152 (x pos/32768, cap 4608), fair, floor 1000 tok/s after 2 s")
         check(any("[decode-first] scheduler armed (v3 alternate" in w for w in warnings), "init announces the armed anchor")
         os.environ["VLLM_GLM53_SCHED_MODE"] = "junk"
         check(Sched().mode == "alternate" and any("unknown; using alternate" in w for w in warnings), "unknown mode -> alternate")
@@ -6663,6 +6664,19 @@ def test_decode_first_scheduler_contracts() -> None:
         a.running = [d1, d2]; a.waiting = []
         a.schedule()
         check(a.calls[-1] == (False, 0, False) and not a._prefill_starts, "nothing to prefill -> stock")
+        # context-scaled chunk: the furthest running prefill's position over REF_CTX, multiples of 128, capped
+        far = pre("far", 100000)
+        check(a._chunk_for([pr, far]) == min(4608, 1152 * 100000 // 32768) // 128 * 128 == 3456 or a._chunk_for([pr, far]) == 3456,
+              "100K position -> chunk 3456 (1152 x 100000/32768, rounded down to 128)")
+        check(a._chunk_for([pre("near", 20000)]) == 1152 and a._chunk_for([pre("mid", 65536)]) == 2304
+              and a._chunk_for([pre("huge", 400000)]) == 4608, "below REF_CTX the floor, 2x at 64K, capped at 4608")
+        os.environ["VLLM_GLM53_SCHED_CHUNK_REF_CTX"] = "0"
+        fixed = Sched()
+        check(fixed._chunk_for([far]) == 1152, "REF_CTX=0 -> fixed chunk")
+        os.environ.pop("VLLM_GLM53_SCHED_CHUNK_REF_CTX")
+        s2 = Sched()
+        s2.mode = "mixed"; s2.alternate = False
+        check(s2._chunk_for([far]) == 1152, "mixed shape keeps the fixed chunk")
         os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
         # min decoders and env hygiene
         os.environ["VLLM_GLM53_SCHED_MIN_DECODERS"] = "2"
@@ -6701,9 +6715,11 @@ def test_decode_first_scheduler_contracts() -> None:
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
-          "profile declares DECODE_FIRST=0 and the eight VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+          "profile declares DECODE_FIRST=0 and the ten VLLM_GLM53_SCHED_* keys (forwarded to the container)")
     check("\nVLLM_GLM53_SCHED_MODE=alternate\n" in profile and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
-          and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile, "profile: alternate mode, 6 decode steps, chunk 1152 (half the 2304 block)")
+          and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile and "\nVLLM_GLM53_SCHED_CHUNK_REF_CTX=32768\n" in profile
+          and "\nVLLM_GLM53_SCHED_CHUNK_MAX=4608\n" in profile,
+          "profile: alternate mode, 6 decode steps, chunk 1152 (half the 2304 block) scaled to 4608 by position")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
     print("  decode-first scheduler contracts .. OK")
