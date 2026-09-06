@@ -29,7 +29,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -119,14 +119,14 @@ EAGER="${EAGER:-0}"
 GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
 MAX_SEQS="${MAX_SEQS:-4}"
-# Text-only by default: the RedHat checkpoint carries the BF16 vision tower
-# (347 model.visual.* tensors, vision_config). Every earlier boot with images
-# enabled "hung" (operator, 39차) -- the old default expression here,
-# ${MM_LIMIT:-{...}}, ended its parameter expansion at the first '}' and
-# appended the last one as a literal, so any override became
-# {"image":1,"video":0}} -- invalid JSON, vLLM's argparse died, and the
-# launcher polled /health for the whole budget. The default is now assigned
-# outside the expansion so an override passes through untouched.
+# Vision: the profile turns images and one video per prompt on (39차,
+# operator "이미지 영상 기본으로 켜"). The RedHat checkpoint carries the BF16
+# vision tower; the "hang" every earlier vision boot showed was this file's
+# old default expression, ${MM_LIMIT:-{...}}, ending its parameter expansion
+# at the first '}' and appending the last one as a literal (invalid JSON ->
+# argparse died -> the launcher polled /health for the budget). Video also
+# needed the glm53_model placeholder overlay (one block per frame pair).
+# Without a profile this launcher still defaults to text-only.
 MM_LIMIT="${MM_LIMIT:-}"
 [ -n "$MM_LIMIT" ] || MM_LIMIT='{"image":0,"video":0}'
 # The old value asked for FULL_AND_PIECEWISE *and* fuse_attn_quant, which vLLM
