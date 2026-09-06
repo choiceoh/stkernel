@@ -14,7 +14,7 @@ from pathlib import Path
 import statistics
 
 
-def candidate_source(source):
+def candidate_source(source, tensorcore=False):
     marker = "__device__ void mk_mhc_p2_token("
     start = source.index(marker)
     end = source.index("// p3 + p4 for ONE token", start)
@@ -25,15 +25,19 @@ def candidate_source(source):
     p2 = p2.replace("  MK_MHC_PROBE(1);", "  }\n  MK_MHC_PROBE(1);")
     source = source[:start] + "template <int CHUNKS = NCHUNK, bool READY = false>\n" + p2 + source[end:]
     candidate = Path(__file__).with_name("mhc_reuse_candidate.cuh").read_text()
+    if tensorcore:
+        candidate += "\n" + Path(__file__).with_name("mhc_tf32x3_candidate.cuh").read_text()
     source = source.replace("__device__ void mk_mhc_p1(", candidate + "\n__device__ void mk_mhc_p1(", 1)
     source = source.replace("void mk_run_mhc(", "int g_probe_mhc_reuse = 0;\nvoid mk_run_mhc(", 1)
     marker = "  static int mhc_grid = 0;"
     launch = []
     for mode, chunk in ((1, 64), (2, 128)):
         for tokens in (2, 6, 8):
+            producer = (f"mk_mhc_tf32x3_p1<{tokens}, {chunk}><<<HIDDEN/{chunk}, MK_THREADS, 0, stream>>>(a);"
+                        if tensorcore else f"mk_mhc_reuse_p1<2, {chunk}><<<(HIDDEN/{chunk})*({tokens}/2), MK_THREADS, 0, stream>>>(a);")
             launch.append(f"""
   if (g_probe_mhc_reuse == {mode} && a.num_tokens == {tokens}) {{
-    mk_mhc_reuse_p1<2, {chunk}><<<(HIDDEN/{chunk})*({tokens}/2), MK_THREADS, 0, stream>>>(a);
+    {producer}
     MK_CHECK_CUDA(cudaGetLastError());
     mk_mhc_reuse_tail<HIDDEN/{chunk}><<<{tokens}, MK_THREADS, 0, stream>>>(a);
     MK_CHECK_CUDA(cudaGetLastError());
@@ -49,6 +53,7 @@ def candidate_source(source):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=18)
+    ap.add_argument("--tensorcore", action="store_true", help="compensated TF32 projection; separate numeric gate")
     args = ap.parse_args()
     if args.reps < 6 or args.reps % 6:
         ap.error("reps must be a positive multiple of six for balanced orders")
@@ -61,7 +66,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     original = Path(mk._SRC).read_bytes()
     assert original == (root / "build/glm53/glm53_megakernel.cu").read_bytes()
-    source = candidate_source(original.decode())
+    source = candidate_source(original.decode(), args.tensorcore)
     sha = hashlib.sha256(source.encode()).hexdigest()
     directory = Path(os.environ.get("VLLM_GLM53_MK_BUILD_DIR", "/tmp/mhc-reuse"))
     directory = directory / ("prototype-" + sha[:12])
@@ -70,7 +75,8 @@ def main():
     path.write_text(source)
     print(json.dumps({"source_sha256": hashlib.sha256(original).hexdigest(),
                       "prototype_sha256": sha, "device": torch.cuda.get_device_name(),
-                      "torch": torch.__version__, "cuda": torch.version.cuda}), flush=True)
+                      "torch": torch.__version__, "cuda": torch.version.cuda,
+                      "projection": "tf32x3" if args.tensorcore else "simt-fp32"}), flush=True)
     ext = load(name="mhc_reuse_" + sha[:12], sources=[str(path)],
                extra_cuda_cflags=["-O2", "-gencode", "arch=compute_121a,code=sm_121a"],
                build_directory=str(directory), verbose=False)
