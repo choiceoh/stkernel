@@ -174,6 +174,9 @@ class MoEStaticKernelV4:
         self.sa1_tile_shape_mk = (_TILE_M, _FC1_TILE_K)
         self.sfa1_tile_shape_mk = (128, _FC1_TILE_K)   # SF blocks are 128 rows
         self.sfa_tiles_per_block = 128 // _TILE_M
+        # SFB gmem tiles are 128-row blocks: a 64-row box is not expressible
+        # (39차 §3b -- the block interleaves its four 32-row groups at 4 B, so
+        # half the rows is 8 B of every 16 and TMA wants 16 B contiguous)
         self.sfb1_tile_shape_nk = (128, _FC1_TILE_K)
         self.sfb1_tiles_per_block = 128 // _FC1_TILE_N   # 2 halves share a block
         self.sfb_tile_shape_nk = (128, _FC2_TILE_K)
@@ -954,6 +957,11 @@ class MoEStaticKernelV4:
             tma_b_w13, b_cta_crd, b_cta_layout,
             cute.group_modes(sB1, 0, 2), cute.group_modes(gB_w13_tiled, 0, 2),
         )
+        # the FC1 SFB smem block's two 64-row halves (the MMA side reads one
+        # per half; the DMA side always lands the whole 128-row block)
+        sfb1_tile = cute.slice_(self.fc1_tile_shape_mnk, (0, None, None))
+        sSFB1_0 = cute.local_tile(sSFB1, sfb1_tile, (0, 0, None))
+        sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
         tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
             tma_sfb_w13, b_cta_crd, b_cta_layout,
             cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
@@ -978,9 +986,6 @@ class MoEStaticKernelV4:
         tCrA1 = tiled_mma1.make_fragment_A(tCsA1[None, None, None, 0])
         tCsB1 = thr_mma1.partition_B(sB1)
         tCrB1 = tiled_mma1.make_fragment_B(tCsB1[None, None, None, 0])
-        sfb1_tile = cute.slice_(self.fc1_tile_shape_mnk, (0, None, None))
-        sSFB1_0 = cute.local_tile(sSFB1, sfb1_tile, (0, 0, None))
-        sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
         tCrSFB1_0 = self._dense_cls._partition_fragment_SFB(
             self, sSFB1_0[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
         tCrSFB1_1 = self._dense_cls._partition_fragment_SFB(
@@ -1717,14 +1722,12 @@ class MoEStaticKernelV4:
                         gate_tile = gate_tile_cnt + up_tile
                         tBgB_up_nk = tBgB_w13[(None, up_tile, None, weight_expert_idx)]
                         tBgB_gate_nk = tBgB_w13[(None, gate_tile, None, weight_expert_idx)]
-                        tBgSFB_up_nk = tBgSFB_w13[
-                            (None, up_tile // Int32(self.sfb1_tiles_per_block), None,
-                             weight_expert_idx)
-                        ]
-                        tBgSFB_gate_nk = tBgSFB_w13[
-                            (None, gate_tile // Int32(self.sfb1_tiles_per_block), None,
-                             weight_expert_idx)
-                        ]
+                        # the SFB gmem tile is the 128-row block both halves
+                        # share (39차 §3b: a 64-row box is not expressible)
+                        sfb_up_idx = up_tile // Int32(self.sfb1_tiles_per_block)
+                        sfb_gate_idx = gate_tile // Int32(self.sfb1_tiles_per_block)
+                        tBgSFB_up_nk = tBgSFB_w13[(None, sfb_up_idx, None, weight_expert_idx)]
+                        tBgSFB_gate_nk = tBgSFB_w13[(None, sfb_gate_idx, None, weight_expert_idx)]
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)

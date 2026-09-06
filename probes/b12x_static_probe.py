@@ -30,6 +30,8 @@ Rows:
 baseline measured in that same process. A device fault poisons a CUDA context
 for the life of a process, so without it the first faulting spec makes every
 later row of the table unreadable (39차 §3: one bad cell reported six).
+(probes/b12x_static_cells.sh isolates one level up -- a whole container per
+cell -- which also survives a cell that hangs or wedges its container.)
 """
 from __future__ import annotations
 
@@ -323,7 +325,6 @@ def main() -> int:
     us_list = [int(u) for u in args.us.split(",")]
     full = (set(specs) if args.full_sweep == "all"
             else set(args.full_sweep.replace(",m", "|m").split("|")))
-
     # before torch touches the device: the parent of an isolated run must stay
     # CUDA-free, it only spawns children and parses their rows
     if args.isolate and len(specs) > 1 and not args.hang_diag:

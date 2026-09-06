@@ -3390,6 +3390,84 @@ def test_glm53_b12x_tuning_controls() -> None:
     print("  GLM53 b12x tuning controls ..... OK")
 
 
+def test_b12x_sf_pack_is_lossless() -> None:
+    """6-bit block packing of the NVFP4 scales (39차 §4c) is exact, or it raises.
+
+    Every 16 fp4 values carry one e4m3 scale byte, 11.1% of an expert's packed
+    bytes, and the static kernel is bandwidth-bound (§3e), so removing scale
+    bytes buys time almost 1:1. Measured over 516 expert scale tensors: the
+    code span inside one 4096 B block (what the FC1 DMA stages) is median 21
+    and max 45, so a 6-bit ``base + index`` covers 100% of blocks with no
+    escape -- but only per block. Per tensor the span reaches 239, and the
+    global alphabet is 66 codes.
+
+    The kernel expands this in registers, so the bit layout below is a
+    contract: plane A holds the low nibbles two per byte, plane B the high two
+    bits four per byte, in the stock block's own byte order.
+    """
+    import typing
+    try:
+        import torch
+    except ImportError:
+        print("  b12x SF 6-bit pack ............ OK (skipped: no torch)")
+        return
+    ns = {"torch": torch, "Tuple": typing.Tuple}
+    load_defs("glm53_moe/moe_sf_pack.py", {
+        "SF_PACK_BLOCK", "SF_PACK_BLOCK_FC2", "SF_PACK_BITS", "SF_PACK_MAX_INDEX",
+        "SF_PACK_BYTES", "SF_PACK_PLANE_A", "SF_PACK_PLANE_B",
+        "sf_packed_block_bytes", "_blocks", "sf_pack_span", "pack_sf",
+        "unpack_sf", "sf_packed_bytes",
+    }, ns)
+    check(ns["SF_PACK_BITS"] == 6 and ns["SF_PACK_BLOCK"] == 4096
+          and ns["SF_PACK_BLOCK_FC2"] == 1024 and ns["SF_PACK_MAX_INDEX"] == 63,
+          "the packing unit is the kernel's own SF stage: 4096 B (FC1) / 1024 B "
+          "(FC2), 6-bit index")
+    check(ns["SF_PACK_BYTES"] == 3072 and ns["SF_PACK_PLANE_A"] == 2048
+          and ns["SF_PACK_PLANE_B"] == 1024,
+          "a 4096 B block packs to 2048 B of nibbles + 1024 B of 2-bit fields")
+
+    # the bit layout the kernel will invert
+    idx = torch.zeros(ns["SF_PACK_BLOCK"], dtype=torch.uint8)
+    idx[:4] = torch.tensor([0, 1, 16, 63], dtype=torch.uint8)
+    sf = (idx.to(torch.int16) + 0x40).to(torch.uint8)
+    packed, bases = ns["pack_sf"](sf)
+    check(int(bases[0]) == 0x40, "the base is the block's smallest e4m3 code")
+    check(int(packed[0][0]) == 0x10 and int(packed[0][1]) == 0xF0,
+          "plane A: low nibble of scale i at byte i>>1, half (i&1)")
+    check(int(packed[0][ns["SF_PACK_PLANE_A"]]) == 0xD0,
+          "plane B: high 2 bits of scale i at byte i>>2, field (i&3)")
+
+    # exactness over the real shape of the checkpoint's bands, both stages
+    gen = torch.Generator().manual_seed(11)
+    for block in (ns["SF_PACK_BLOCK"], ns["SF_PACK_BLOCK_FC2"]):
+        for base, span in ((0x5c, 45), (0x6e, 21), (0x00, 1), (0xc0, 64)):
+            raw = (base + torch.randint(0, span, (block * 3,), generator=gen,
+                                        dtype=torch.int16)).to(torch.uint8)
+            pk, bs = ns["pack_sf"](raw, block)
+            check(pk.shape[1] == block * 6 // 8 and bs.numel() == 3,
+                  f"block {block} packs to {block * 6 // 8} B plus one base")
+            check(bool(torch.equal(ns["unpack_sf"](pk, bs, block), raw)),
+                  f"pack/unpack is byte-exact (block {block}, base {base:#x}, span {span})")
+            check(int(ns["sf_pack_span"](raw, block).max()) <= span,
+                  "sf_pack_span reports the block's code span")
+
+    # a block wider than the index must raise, never round
+    wide = (0x40 + torch.arange(ns["SF_PACK_BLOCK"], dtype=torch.int16) % 65).to(torch.uint8)
+    try:
+        ns["pack_sf"](wide)
+        check(False, "a 65-code block must be refused, not rounded")
+    except ValueError:
+        pass
+    ragged = torch.zeros(ns["SF_PACK_BLOCK"] + 4, dtype=torch.uint8)
+    try:
+        ns["pack_sf"](ragged)
+        check(False, "scale bytes that are not a whole number of blocks must be refused")
+    except ValueError:
+        pass
+    check(ns["sf_packed_bytes"](4096 * 100) == 100 * 3073,
+          "packed size counts the per-block base byte")
+
+
 def test_b12x_static_v2_controls() -> None:
     """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
 
@@ -3418,8 +3496,9 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False},
-          "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring")
+                      "a_ring": False, "tiled": False},
+          "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
+          "row-major weights")
     v4 = parse("u")
     check(v4 == default and v4 is not default, "u is a copy of the default (v4) config")
     check(parse("u,g3")["fc2"] == 3 and parse("u,f3")["fc1"] == 3, "u composes with f and g")
@@ -3428,6 +3507,34 @@ def test_b12x_static_v2_controls() -> None:
           "v selects v4 with the A ring")
     check(parse("u,s")["stamps"] and parse("u,m32,a32")["tile_m"] == 32,
           "s, m32 and a32 cells parse")
+    # t (39차): v4 over tile-major expert weights (moe_static_kernel_v5) --
+    # the layout lives in the config so the cache key / kernel name carry it
+    # and the dispatcher builds tiled weight views for that lane only
+    tiled = parse("t")
+    check(tiled["tiled"] and tiled["v4"] and tiled["wide"] and tiled["fc2"] == 2
+          and not tiled["a_ring"],
+          "t selects the v5 kernel (v4 geometry) over tile-major weights")
+    check(parse("v,t")["tiled"] and parse("v,t")["a_ring"] and parse("t,g3")["fc2"] == 3
+          and parse("t,s", probe=True)["stamps"]
+          and not parse("u")["tiled"] and not parse("v")["tiled"],
+          "t composes with v, g and s; u and v stay row-major")
+    # h (39차 §3b) is retired: an SF box of 64 rows is not expressible -- the
+    # 128-row block interleaves its four 32-row groups at 4 B, so half the
+    # rows is 8 B of every 16 and TMA's innermost box dim wants 16 B
+    for dead in ("h", "t,h", "u,h", "z,h"):
+        try:
+            parse(dead, probe=True)
+            check(False, f"the retired h cell must be rejected: {dead}")
+        except ValueError:
+            pass
+    # z (39차 v6, sunset §3g/§3h): the pre-swizzled bulk-copy lane measured a
+    # wash and failed numerics; its token must be rejected like any dead cell
+    for dead in ("z", "z,s", "z,h"):
+        try:
+            parse(dead, probe=True)
+            check(False, f"the retired z cell must be rejected: {dead}")
+        except ValueError:
+            pass
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
@@ -3501,9 +3608,83 @@ def test_b12x_static_v2_controls() -> None:
 
     src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
     check("moe_static_kernel_v4.__file__" in src and "moe_static_common.__file__" in src
+          and "moe_static_kernel_v5.__file__" in src
+          and "moe_dynamic_gated_tiled.__file__" in src
           and "moe_static_kernel_v2" not in src and "MoEStaticKernelV3" not in src,
-          "the v4 kernel and the shared helpers are in the module cache key files; "
-          "v2/v3 are gone (34차 §8)")
+          "the v4/v5 kernels, the shared helpers and the tiled gated subclass are in "
+          "the module cache key files; v2/v3 are gone (34차 §8)")
+    # the tiled layout must never meet a row-major kernel: the wrapper keys
+    # its cached views on the lane's layout, the entry refuses backends that
+    # read row-major, the static launch checks views vs lane
+    check("def static_v2_weights_layout(" in src
+          and "tiled=weights_tiled," in src
+          and 'if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):' in src
+          and "def _tile_expert_weights(" in src
+          and "def invalidate_tile_major_if_reloaded(" in src
+          and "row-major static lane over tile-major storage" in src
+          and "kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4" in src
+          and 'stride_order=(1, 0, 2, 3), assumed_align=16,' in src,
+          "the tiled lane (t): re-layout helper, 4-D fake weight tensors, the v5 "
+          "class, and the guards that keep tiled views on the v5 kernel and "
+          "row-major lanes off tile-major storage")
+    # phase 2 (serving): the layer's bytes are re-laid out in place once, the
+    # micro lanes (row-major readers) are off under tiled weights, and the
+    # gated dynamic (prefill) kernel's subclass is compiled against the 4-D
+    # layout (the stock file stays untouched: #368 pins its hash)
+    check("def tile_expert_weights_inplace(" in src
+          and 'if getattr(w1_fp4, _TILE_MAJOR_ATTR, False):' in src
+          and "        not weights_tiled\n        and quant_mode == \"nvfp4\"" in src
+          and "    ) and not weights_tiled   # the micro kernels read row-major weights" in src
+          and 'if weights_tiled and forced_backend in ("micro", "direct_micro"):' in src
+          and "        tiled=bool(getattr(weights, \"tiled\", False)),\n    )" in src
+          and "if not isinstance(kernel, MoEGatedDynamicKernel):" in src
+          and "kernel = MoEGatedDynamicKernelTiled(" in src
+          and "{'_tiled' if tiled else ''}" in src
+          and 'backend not in ("static", "dynamic")' in src,
+          "phase 2: in-place re-layout, no micro lane on tiled weights, the tiled "
+          "gated subclass compiled and keyed for the tiled layout, static+dynamic only")
+    vllm_side = open(os.path.join(REPO, "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"),
+                     encoding="utf-8").read()
+    check("_b12x_dispatch.tile_expert_weights_inplace(" in vllm_side
+          and "_b12x_dispatch.invalidate_tile_major_if_reloaded(" in vllm_side
+          and "if not self._use_ep:" in vllm_side
+          and "[b12x static v5] expert weights re-laid out tile-major in place" in vllm_side,
+          "the vLLM wrapper re-lays the layer's expert weights out in place at weight "
+          "post-processing (TP only) and says so in the boot log; a re-load cycle "
+          "drops stale tile-major markers first")
+    gated = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py"),
+                 encoding="utf-8").read()
+    check("class MoEGatedDynamicKernelTiled(MoEGatedDynamicKernel):" in gated
+          and "if cutlass.const_expr(len(b_w13.shape) == 4):" in gated
+          and "b_w13 = cute.group_modes(b_w13, 1, 3)" in gated
+          and "b_down = cute.group_modes(b_down, 1, 3)" in gated
+          and "return MoEGatedDynamicKernel.__call__(" in gated
+          and "def kernel(" not in gated,
+          "the tiled gated prefill kernel is a subclass that groups 4-D weights into a "
+          "hierarchical K and delegates to the stock __call__ (stock file untouched)")
+    check("moe_dynamic_gated.py" not in open(os.path.join(
+              REPO, "overlay/modules/glm53_moe/manifest.tsv"), encoding="utf-8").read(),
+          "no overlay of the stock _moe_dynamic/gated.py: #368 pins its hash")
+    wrapper = open(os.path.join(REPO, "overlay/modules/glm53_moe/b12x_moe.py"),
+                   encoding="utf-8").read()
+    check("static_v2_weights_layout as _static_v2_weights_layout" in wrapper
+          and "                weights_tiled,\n"
+              "                w1_weight.data_ptr()," in wrapper
+          and "tiled=weights_tiled," in wrapper,
+          "the wrapper's weight-view cache key carries the lane's layout and "
+          "builds the tiled views for it")
+    v5_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v5.py"),
+                     encoding="utf-8").read()
+    check("class MoEStaticKernelV5(MoEStaticKernelV4):" in v5_kernel
+          and "b_w13_h = cute.group_modes(b_w13, 1, 3)" in v5_kernel
+          and "b_down_h = cute.group_modes(b_down, 1, 3)" in v5_kernel
+          and "(w13_rows, w13_k, w13_e), self.sf_vec_size" in v5_kernel
+          and "TILED_W13_K_IN = _FC1_TILE_K" in v5_kernel
+          and "TILED_W2_K_IN = _FC2_TILE_K" in v5_kernel
+          and "def kernel(" not in v5_kernel,
+          "v5 is v4's kernel body over grouped-K TMA tensors: only __call__ is "
+          "overridden, the SF layouts come from the flat shapes, the chunk widths "
+          "are the v4 k tiles")
     check("_STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None" in src,
           "the probe override is a module-level hook, not an env read at launch")
     kernel = open(os.path.join(
@@ -3525,18 +3706,26 @@ def test_b12x_static_v2_controls() -> None:
           "moe_static_kernel_v4.py\tabsent" in manifest
           and "moe_static_common.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
           "moe_static_common.py\tabsent" in manifest
+          and "moe_static_kernel_v5.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_static_kernel_v5.py\tabsent" in manifest
+          and "moe_dynamic_gated_tiled.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "moe_dynamic_gated_tiled.py\tabsent" in manifest
           and "moe_static_kernel_v2.py" not in manifest
           and "moe_static_kernel_v3.py" not in manifest,
-          "the v4 kernel and its helpers are new files (absent preimage) in the "
-          "module manifest; v2/v3 rows are gone")
+          "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
+          "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
           "the profile ships the v4 static kernel (spec u) as the default "
           "(38차, operator: decode windows +2% over v3, probes -3.5%)")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
-          and "moe_static_kernel_v2" not in runner,
-          "the probe runner must mount the v4 kernel and its helpers beside the dispatcher")
+          and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner
+          and "moe_static_kernel_v2" not in runner
+          and 'if [ "${MK_PROBE_NO_GPU:-0}" = 1 ]; then' in runner,
+          "the probe runner must mount the v4/v5 kernels, their helpers and the tiled "
+          "gated subclass beside the dispatcher, and offer the no-GPU form for the CPU "
+          "compile check")
 
     print("  b12x static v2 controls ........ OK")
 
@@ -11144,6 +11333,7 @@ if __name__ == "__main__":
     test_b12x_zero_weight_micro()
     test_glm53_b12x_tuning_controls()
     test_b12x_static_v2_controls()
+    test_b12x_sf_pack_is_lossless()
     test_b12x_micro_chunk_width()
     test_ep_tail_fixed_shape()
     test_ep_compact_shape_align()

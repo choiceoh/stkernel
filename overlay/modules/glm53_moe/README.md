@@ -251,15 +251,48 @@ bf16 atomic scatter adds the partials; the item count comes from the same
 separate stages, so every w13 TMA box row is 256 B -- the timing-only cells
 `xs`/`xa` showed FC1 at 200 GB/s = the streamer's 128 B-segment figure while
 FC2 sits at 237; 32 KB stages, FC2 2 stages by default, smem 101,376 B =
-the opt-in maximum), and the probe-only timing cells `xs` (skip the FC1 SFB
-boxes) and `xa` (skip the A + SFA boxes) that the serving parse rejects. The
+the opt-in maximum), `t` (`moe_static_kernel_v5.py`, 39차: v4 over
+**tile-major expert weights** -- the dispatcher's `_get_weight_views(tiled=
+True)` re-lays each expert's w13 out as [K/512 k-tiles][rows][256 B] and w2
+as [I_tp/128][rows][64 B], so a (64 rows x 512 K) FC1 box is one contiguous
+16 KB run and a (128 rows x 128 K) down box one 8 KB run instead of 64 / 128
+row segments 2 KB / 256 B apart; the kernel body is v4's, only `__call__`
+groups the 4-D tensors' two K modes into one hierarchical K for the TMA
+map, so results are bit-identical to v4 up to the scatter order. The 35차 §6
+streamer rated the kernel's 256 B-segment access at 222 GB/s against 239
+linear, and v4's own stamps sit at 200-206 (38차 §3, §5) while FC2 -- whose
+four slice CTAs happen to cover whole w2 rows -- streams at 237. Phase 1 wires
+the tiled layout to the v5 static kernel only: the wrapper keys its cached
+weight views on the lane's tiled flag, the entry refuses the dynamic
+(prefill) backend with tiled views, and the static launch checks views
+against lane -- a tiled view can never reach a kernel compiled for the
+row-major layout. Serving (phase 2, same round): the vLLM wrapper re-lays
+the layer's packed bytes out in place once at weight post-processing (TP
+only; proof line `[b12x static v5] expert weights re-laid out tile-major in
+place`), the dispatcher views them without a copy, the micro lanes are off
+under tiled weights (they read row-major), and the gated dynamic (prefill)
+kernel is a NEW file `moe_dynamic_gated_tiled.py` (manifest preimage
+`absent`) -- a subclass of the image's `_moe_dynamic/gated.py`
+`MoEGatedDynamicKernel`, not an overlay: the stock file stays byte-identical
+because #368's reuse lane pins its sha256. The subclass groups the 4-D
+weights into a hierarchical K -- its 64 B tiles divide the 256 B / 64 B
+chunks -- and delegates to the stock `__call__`; compiled and cached per
+layout (`dynamic_..._tiled`); both kernels compile
+on the CPU check; 39차 §3i measured it at -2.0~2.7% against `u` by
+interleaved repeats), and the probe-only timing
+cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the A + SFA boxes) that
+the serving parse rejects. The
 cache key and on-disk kernel name carry the config; the source files are in
 `_kernel_source_files()`, so an edit invalidates the module cache like any
 other kernel file.
 
 Measured by `probes/b12x_static_probe.py` (stock vs v2, DRAM-cold, graph
 replay, numerics gate, stamps) and `probes/b12x_dram_pattern_bench.py` (the
-kernel's TMA access pattern vs a linear read, plain CUDA). Ledger: 35차.
+kernel's TMA access pattern vs a linear read, plain CUDA). A kernel edit is
+compiled to its .o on the CPU first -- `MK_PROBE_NO_GPU=1 bash
+probes/run_mk_probe.sh probes/b12x_static_compile_check.py --specs "u|t"`
+(~1.5–4 s a spec, no CUDA context: the host may be serving). Ledger: 35차, 38차,
+39차 (`t`).
 
 ---
 

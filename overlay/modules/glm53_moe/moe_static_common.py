@@ -138,6 +138,7 @@ def _st_shared_i32(addr, val, *, loc=None, ip=None):
 
 
 @dsl_user_op
+@dsl_user_op
 def _ld_shared_i32(addr, *, loc=None, ip=None):
     return Int32(
         llvm.inline_asm(
