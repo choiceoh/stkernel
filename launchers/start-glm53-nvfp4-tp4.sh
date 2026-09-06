@@ -117,7 +117,16 @@ EAGER="${EAGER:-0}"
 GRAPH_CAP="${GRAPH_CAP:-16}"      # 256 is sized for MAX_SEQS=6
 MAX_BATCHED="${MAX_BATCHED:-2048}"
 MAX_SEQS="${MAX_SEQS:-4}"
-MM_LIMIT="${MM_LIMIT:-{\"image\":0,\"video\":0}}"
+# Text-only by default: the RedHat checkpoint carries the BF16 vision tower
+# (347 model.visual.* tensors, vision_config). Every earlier boot with images
+# enabled "hung" (operator, 39차) -- the old default expression here,
+# ${MM_LIMIT:-{...}}, ended its parameter expansion at the first '}' and
+# appended the last one as a literal, so any override became
+# {"image":1,"video":0}} -- invalid JSON, vLLM's argparse died, and the
+# launcher polled /health for the whole budget. The default is now assigned
+# outside the expansion so an override passes through untouched.
+MM_LIMIT="${MM_LIMIT:-}"
+[ -n "$MM_LIMIT" ] || MM_LIMIT='{"image":0,"video":0}'
 # The old value asked for FULL_AND_PIECEWISE *and* fuse_attn_quant, which vLLM
 # refuses together while use_inductor_graph_partition is off -- it dropped the
 # piecewise half and logged it. FULL is refused anyway by the sparse indexer
@@ -559,9 +568,20 @@ case "${DECODE_FIRST:-0}" in
   0) ;;
   1) [ "${ASYNC_SCHED:-1}" = 0 ] && { echo "ABORT: DECODE_FIRST=1 needs ASYNC_SCHED=1 (the scheduler subclasses AsyncScheduler)" >&2; exit 2; }
      SCHED_CLS_FLAG="--scheduler-cls vllm.v1.core.sched.glm53_decode_first.Glm53DecodeFirstScheduler"
-     echo "scheduler: decode-first v2 (mixed chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-576}, prefill every ${VLLM_GLM53_SCHED_PREFILL_EVERY:-1} mixed step, fair=${VLLM_GLM53_SCHED_FAIR:-1}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
+     echo "scheduler: decode-first v3 ${VLLM_GLM53_SCHED_MODE:-alternate} (decode steps ${VLLM_GLM53_SCHED_DECODE_STEPS:-6}, chunk ${VLLM_GLM53_SCHED_MIXED_CHUNK:-1152}, fair=${VLLM_GLM53_SCHED_FAIR:-1}, floor ${VLLM_GLM53_SCHED_PREFILL_FLOOR:-1000} tok/s)" ;;
   *) echo "ABORT: DECODE_FIRST must be 0 or 1 (got $DECODE_FIRST)" >&2; exit 2 ;;
 esac
+# Vision isolation knobs (39차, operator "비전 행도 잡아봐"): text-only serving
+# sets none of them. A diagnostic boot with images enabled (MM_LIMIT) uses them
+# to bisect the hang: MM_ENCODER_TP_MODE=data keeps the vision tower's linears
+# unsharded (no TP collectives inside the encoder), MM_ENCODER_ATTN=TORCH_SDPA
+# avoids the flash/triton vit attention on sm_121, SKIP_MM_PROFILING=1 skips
+# the boot-time dummy image run. Values pass straight to vLLM.
+MM_FLAGS=""
+[ -z "${MM_ENCODER_TP_MODE:-}" ] || MM_FLAGS="$MM_FLAGS --mm-encoder-tp-mode $MM_ENCODER_TP_MODE"
+[ -z "${MM_ENCODER_ATTN:-}" ] || MM_FLAGS="$MM_FLAGS --mm-encoder-attn-backend $MM_ENCODER_ATTN"
+[ "${SKIP_MM_PROFILING:-0}" = 0 ] || MM_FLAGS="$MM_FLAGS --skip-mm-profiling"
+[ -z "$MM_FLAGS" ] || echo "vision: $MM_FLAGS (limit $MM_LIMIT)"
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
 #
@@ -800,7 +820,7 @@ $SPECCFG_VAL \
 $ASYNC_FLAG \
 ${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\
 $EAGER_FLAG --enable-flashinfer-autotune \
---limit-mm-per-prompt '$MM_LIMIT' \
+--limit-mm-per-prompt '$MM_LIMIT'${MM_FLAGS:+ $MM_FLAGS} \
 --tool-call-parser glm47 --enable-auto-tool-choice \
 --reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
 --distributed-executor-backend mp \

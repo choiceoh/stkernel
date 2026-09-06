@@ -22,3 +22,7 @@ VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
 VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
 VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed
 VLLM_GLM53_B12X_STATIC_V2	[b12x static v2] lane serving	[b12x static
+VLLM_GLM53_PREFILL_NVFP4_BPROJ	[nvfp4-bproj] serving	[nvfp4-bproj] serving
+VLLM_GLM53_DEV_LAB	[dev-lab] installed: POST /glm53/lab	[dev-lab] installed: POST /glm53/lab
+# "-" = this knob has no serving line of its own (a master switch); the generator stays quiet about it
+VLLM_GLM53_MEGAKERNEL	-	-

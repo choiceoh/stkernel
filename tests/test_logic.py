@@ -6460,7 +6460,8 @@ def test_decode_first_scheduler_contracts() -> None:
     fakes["vllm.v1.core.sched.async_scheduler"].AsyncScheduler = FakeAsyncScheduler  # type: ignore[attr-defined]
     fakes["vllm.v1.core.sched.output"].SchedulerOutput = object  # type: ignore[attr-defined]
     saved_modules = {name: sys.modules.get(name) for name in fakes}
-    env_keys = ("VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
+    env_keys = ("VLLM_GLM53_SCHED_MODE", "VLLM_GLM53_SCHED_DECODE_STEPS",
+                "VLLM_GLM53_SCHED_MIXED_CHUNK", "VLLM_GLM53_SCHED_PREFILL_EVERY", "VLLM_GLM53_SCHED_MIN_DECODERS",
                 "VLLM_GLM53_SCHED_FAIR", "VLLM_GLM53_SCHED_PREFILL_FLOOR", "VLLM_GLM53_SCHED_FLOOR_GRACE_S")
     saved_env = {k: os.environ.pop(k, None) for k in env_keys}
     sys.modules.update(fakes)
@@ -6481,10 +6482,16 @@ def test_decode_first_scheduler_contracts() -> None:
             _n[0] += 1
             return types.SimpleNamespace(is_prefill_chunk=True, request_id=rid or f"p{_n[0]}", num_computed_tokens=computed)
 
+        d = Sched()
+        check((d.mode, d.decode_steps, d.mixed_chunk, d.prefill_every, d.min_decoders, d.fair, d.prefill_floor, d.floor_grace_s)
+              == ("alternate", 6, 1152, 1, 1, True, 1000, 2.0),
+              "defaults: alternate, 6 decode steps per prefill step, chunk 1152, fair, floor 1000 tok/s after 2 s")
+        check(any("[decode-first] scheduler armed (v3 alternate" in w for w in warnings), "init announces the armed anchor")
+        os.environ["VLLM_GLM53_SCHED_MODE"] = "junk"
+        check(Sched().mode == "alternate" and any("unknown; using alternate" in w for w in warnings), "unknown mode -> alternate")
+        # ---- the v2 mixed shape (MODE=mixed): caps inside mixed steps
+        os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
         s = Sched()
-        check((s.mixed_chunk, s.prefill_every, s.min_decoders, s.fair, s.prefill_floor, s.floor_grace_s)
-              == (576, 1, 1, True, 1000, 2.0), "defaults: chunk 576 / every 1 / 1 decoder / fair / floor 1000 tok/s after 2 s")
-        check(any("[decode-first] scheduler armed (v2" in w for w in warnings), "init announces the armed anchor")
         # stock: one prefill alone, one prefill + nothing else
         s.running = [pre()]; s.waiting = []
         check(s.schedule() == "output" and s.calls[-1] == (False, 0, True), "a single prefill alone -> stock, uncapped")
@@ -6495,19 +6502,19 @@ def test_decode_first_scheduler_contracts() -> None:
         # mixed: decoder + waiting prefill; restored afterwards
         s.waiting = [pre()]
         s.schedule()
-        check(s.calls[-1] == (False, 576, True), "decoder + pending prefill -> chunk capped at 576 for the call")
+        check(s.calls[-1] == (False, 1152, True), "decoder + pending prefill -> chunk capped at 1152 for the call")
         check(s.scheduler_config.long_prefill_token_threshold == 0 and s._capped_steps == 1, "stock threshold restored after the step")
         # mixed: decoder + in-progress prefill chunk in running
         s.running = [dec(), pre("run1")]; s.waiting = []
         s.schedule()
-        check(s.calls[-1][1] == 576, "in-progress prefill beside a decoder is capped too")
+        check(s.calls[-1][1] == 1152, "in-progress prefill beside a decoder is capped too")
         # a stricter stock threshold is kept, a looser one is capped and restored
         s.scheduler_config.long_prefill_token_threshold = 256
         s.schedule()
-        check(s.calls[-1][1] == 256 and s.scheduler_config.long_prefill_token_threshold == 256, "stock 256 < 576 stays")
+        check(s.calls[-1][1] == 256 and s.scheduler_config.long_prefill_token_threshold == 256, "stock 256 < 1152 stays")
         s.scheduler_config.long_prefill_token_threshold = 4096
         s.schedule()
-        check(s.calls[-1][1] == 576 and s.scheduler_config.long_prefill_token_threshold == 4096, "stock 4096 capped to 576 and restored")
+        check(s.calls[-1][1] == 1152 and s.scheduler_config.long_prefill_token_threshold == 4096, "stock 4096 capped to 1152 and restored")
         # exceptions restore the threshold
         s.scheduler_config.long_prefill_token_threshold = 0
         s.boom = True
@@ -6532,7 +6539,7 @@ def test_decode_first_scheduler_contracts() -> None:
         check(f.calls[-1][1] == 2048, "a waiting request that cannot be admitted (max_num_seqs) is not counted")
         f.max_num_scheduled_tokens = 1024
         f.schedule()
-        check(f.calls[-1][1] == 576, "the fair share never drops below the mixed chunk")
+        check(f.calls[-1][1] == 1152, "the fair share never drops below the mixed chunk")
         f.max_num_scheduled_tokens = 8192
         f.running = [pre("solo", 100)]; f.waiting = []
         f.schedule()
@@ -6549,23 +6556,23 @@ def test_decode_first_scheduler_contracts() -> None:
         g.running = [dec(), req]; g.waiting = []
         clock[0] = 100.0
         g.schedule()
-        check(g.calls[-1][1] == 576 and g._prefill_starts["slow"] == (100.0, 1000), "admission is recorded on the first managed step")
+        check(g.calls[-1][1] == 1152 and g._prefill_starts["slow"] == (100.0, 1000), "admission is recorded on the first managed step")
         clock[0] = 101.5
         req.num_computed_tokens = 1100
         g.schedule()
-        check(g.calls[-1][1] == 576 and g._boost_steps == 0, "inside the grace period no boost")
+        check(g.calls[-1][1] == 1152 and g._boost_steps == 0, "inside the grace period no boost")
         clock[0] = 104.0
         req.num_computed_tokens = 1500
         g.schedule()
-        check(g.calls[-1][1] == 576 + (4000 - 500) and g._boost_steps == 1 and g._max_boost == 3500,
-              "4 s at a 1000 tok/s floor = 4000 expected, 500 done -> chunk 576 + 3500")
+        check(g.calls[-1][1] == 1152 + (4000 - 500) and g._boost_steps == 1 and g._max_boost == 3500,
+              "4 s at a 1000 tok/s floor = 4000 expected, 500 done -> chunk 1152 + 3500")
         clock[0] = 110.0
         req.num_computed_tokens = 1500
         g.schedule()
         check(g.calls[-1][1] == 8192, "the boost is capped at the step budget")
         req.num_computed_tokens = 12000
         g.schedule()
-        check(g.calls[-1][1] == 576, "caught up -> the plain mixed cap")
+        check(g.calls[-1][1] == 1152, "caught up -> the plain mixed cap")
         g.running = [dec()]
         g.schedule()
         check(not g._prefill_starts, "a prefill that left the running queue is forgotten")
@@ -6585,6 +6592,34 @@ def test_decode_first_scheduler_contracts() -> None:
         clock[0] = 210.0      # 10 s, nothing done -> deficit 10000
         p.schedule()
         check(p.calls[-1][0] is False and p.calls[-1][1] == 8192, "a starving prefill is scheduled even off-cadence, at the budget")
+        # ---- v3 alternate (default mode): DECODE_STEPS pure decode steps, then one pure prefill step
+        for k in env_keys:
+            os.environ.pop(k, None)
+        os.environ["VLLM_GLM53_SCHED_DECODE_STEPS"] = "2"
+        a = Sched()
+        a.current_step = 40
+        d1, d2, pr = dec(), dec(), pre("alt", 0)
+        a.running = [d1, d2, pr]; a.waiting = []
+        clock[0] = 300.0
+        a.schedule(); a.schedule()
+        check([c[0] for c in a.calls] == [True, True] and all(c[2] is False for c in a.calls) and a._deferred_steps == 2,
+              "alternate: the first DECODE_STEPS managed steps are decode-only (prefill deferred, capacity flag cleared)")
+        check(not hasattr(d1, "next_decode_eligible_step"), "decoders are not gated on decode-only steps")
+        a.schedule()
+        check(a.calls[-1] == (False, 1152, False) and a._capped_steps == 1 and a._cycle == 0,
+              "then one prefill step: chunk 1152, no throttle, cycle reset")
+        check(d1.next_decode_eligible_step == 42 and d2.next_decode_eligible_step == 42,
+              "every decoder sits the prefill step out (eligible again at current_step + 2)")
+        a.schedule(); a.schedule(); a.schedule()
+        check([c[0] for c in a.calls[3:]] == [True, True, False] and a.calls[-1][1] == 1152, "the cycle repeats")
+        clock[0] = 310.0    # 10 s without progress -> deficit 10000: a prefill step right away, at the budget
+        a.schedule()
+        check(a.calls[-1][0] is False and a.calls[-1][1] == 8192 and a._boost_steps == 1,
+              "a starving prefill gets a boosted prefill step even inside the decode run")
+        a.running = [d1, d2]; a.waiting = []
+        a.schedule()
+        check(a.calls[-1] == (False, 0, False) and not a._prefill_starts, "nothing to prefill -> stock")
+        os.environ["VLLM_GLM53_SCHED_MODE"] = "mixed"
         # min decoders and env hygiene
         os.environ["VLLM_GLM53_SCHED_MIN_DECODERS"] = "2"
         os.environ["VLLM_GLM53_SCHED_PREFILL_EVERY"] = "abc"
@@ -6622,8 +6657,9 @@ def test_decode_first_scheduler_contracts() -> None:
           "DECODE_FIRST=1 reaches vLLM as --scheduler-cls and is a caller-overridable profile key")
     check('DECODE_FIRST=1 needs ASYNC_SCHED=1' in launcher, "launcher refuses DECODE_FIRST without the async scheduler")
     check("\nDECODE_FIRST=0\n" in profile and all(f"\n{k}=" in profile for k in env_keys),
-          "profile declares DECODE_FIRST=0 and the six VLLM_GLM53_SCHED_* keys (forwarded to the container)")
-    check("\nVLLM_GLM53_SCHED_MIXED_CHUNK=576\n" in profile, "profile chunk default is a quarter of the 2304 block")
+          "profile declares DECODE_FIRST=0 and the eight VLLM_GLM53_SCHED_* keys (forwarded to the container)")
+    check("\nVLLM_GLM53_SCHED_MODE=alternate\n" in profile and "\nVLLM_GLM53_SCHED_DECODE_STEPS=6\n" in profile
+          and "\nVLLM_GLM53_SCHED_MIXED_CHUNK=1152\n" in profile, "profile: alternate mode, 6 decode steps, chunk 1152 (half the 2304 block)")
     check("glm53_decode_first.py\tvllm/v1/core/sched/glm53_decode_first.py\tabsent" in manifest,
           "scheduler ships as a new file next to vLLM's schedulers")
     print("  decode-first scheduler contracts .. OK")
@@ -9591,6 +9627,29 @@ def test_glm53_prep_fused_contracts() -> None:
           "the SM90 sparse builder is accepted ONLY while MK_SEG_MLA is armed: it "
           "replans FlashInfer's wrapper every step from host lengths, which caching "
           "this group's metadata would skip")
+    # 39차: mamba 'align' mode (prefix caching) is served, not refused -- the
+    # fused step re-gathers num_accepted after the stock pre-copy reset
+    check('"mamba align mode: preprocess_state is not a no-op"' not in src
+          and "def _glm53_regather_nacc_kernel(" in src
+          and "def regather_num_accepted(self, idx_mapping: torch.Tensor, num_reqs: int)" in src,
+          "align mode: re-gather kernel + plan method exist, the refusal is gone")
+    _ms = src[src.index("def _patched_ms_prepare_attn("):src.index("def _patched_capture_model(")]
+    check('if getattr(self, "_align_mode", False):' in _ms
+          and "st.plan.regather_num_accepted(input_batch.idx_mapping, input_batch.num_reqs)" in _ms
+          and _ms.index("regather_num_accepted") > _ms.index("st.metadata_cache[key] = md"),
+          "align re-gather runs on every fused step, after the cached metadata is resolved")
+    check("postprocess_state" not in src[src.index("def install_glm53_prep_fused("):],
+          "postprocess_state (num_accepted scatter + align post-save) stays stock")
+    _k = src[src.index("def _glm53_prep_fused_kernel("):src.index("@dataclass\nclass PrepPlan:")]
+    check("mamba_cache_mode != none (block table select differs)" not in src
+          and '"mamba_block"' in src[src.index("_NO_SPECIALIZE = ["):src.index("]", src.index("_NO_SPECIALIZE = ["))]
+          and "start_col = tl.maximum((seq_len - 1) // mamba_block, 0)" in _k
+          and "st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)" in _k,
+          "align mode: the GDN state indices come from the running block column (stock mamba_get_block_table_tensor)")
+    check('reason = "mamba align mode: run_prep gathers state column 0"' in src
+          and "align_mode=runner.cache_config.mamba_cache_mode == \"align\"" in src
+          and "mamba_block=int(mamba_block or (1 << 30))" in src,
+          "align mode: the CUDA run_prep (column 0) yields to the Triton kernel; the block size reaches the plan")
     print("  glm53 prep fused contracts .. OK")
 
 
@@ -11017,8 +11076,14 @@ def test_fleet_reservation_tooling_contracts() -> None:
     for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
                 "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
         check(sub in fleet, f"fleet.sh carries {sub}")
-    check('grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env"' in fleet,
+    check('grep -qE "^${k%%=*}=" <<< "$prof_here"' in fleet and "FAIL undeclared in profiles/glm53.env" in fleet,
           "preflight refuses a knob the profile does not declare (the launcher forwards only declared keys)")
+    # 39차 손질: the profile that serves is origin/main's (chains pull it); the
+    # checkout's copy only adds a note, and the tool's own stale copy is synced
+    check('git -C "$REPO" show origin/main:profiles/glm53.env' in fleet
+          and "NOTE checkout is $behind commit(s) behind origin/main" in fleet
+          and 'SYNC $copy <- repo (was stale)' in fleet,
+          "preflight checks declarations against origin/main, notes checkout lag, syncs its own copy")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
     check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
@@ -11057,6 +11122,76 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check(subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "fleet.sh")], capture_output=True).returncode == 0
           and subprocess.run(["bash", "-n", os.path.join(REPO, "bench", "ab-lever.sh")], capture_output=True).returncode == 0,
           "fleet.sh and ab-lever.sh parse")
+
+    # -- round 2 (operator "1~10 도입하고 ... gpu 없이 할수 있는 작업 같으면 병렬로",
+    #    then "에이전트가 수동으로 gpu 작업인지 cpu 작업인지 지정")
+    for sub in ("pair)", "deploy)", "yield)", "nodes)", "notify)", "classify)", "_yield_requeue()",
+                "classify_cmd()", "production_line()", "deployed_line()", "nodes_check()", "_event()"):
+        check(sub in fleet, f"fleet.sh round 2 carries {sub}")
+    check("--cpu|--nogpu) force=nogpu" in fleet and "--gpu) force=gpu" in fleet,
+          "the agent says --gpu or --cpu; the classifier is the net, not the interface")
+    check('[ "$force" = nogpu ] && [ "$auto" = gpu ]; then' in fleet and "REFUSED" in fleet,
+          "a --cpu job that shows GPU use is refused")
+    check("*.py) text=" in fleet and "torch\\.cuda" in fleet,
+          "the classifier reads python files for device use only, not their docstrings (baseline.py said 'ab-lever')")
+    check("nice -n 19" in fleet and "nogpu-start" in fleet,
+          "a CPU job runs now, in parallel, under nice, and is logged")
+    check("FLEET_AUTO_RESTORE" in fleet and "NOT defaults" in fleet,
+          "an empty queue with production off the defaults prints the restore command (opt-in runs it)")
+    lever = open(os.path.join(REPO, "bench", "ab-lever.sh"), encoding="utf-8").read()
+    check('if [ "${FLEET_REHEARSE:-0}" = 1 ]; then' in lever and '"rehearsal": True' in lever,
+          "ab-lever rehearses without a boot and marks the fabricated record")
+    check("MK_COLD_COMPILE=1" in lever and ".boot-stamps" in lever,
+          "ab-lever tags the first boot on a build as a cold compile")
+    check("LOGD=${LOGD:-/home/choiceoh/glm53-logs}" in lever,
+          "ab-lever's paths are overridable (the rehearsal once wrote into the real log dir)")
+    for name in ("pair.sh", "judge.py"):
+        check(os.path.exists(os.path.join(REPO, "bench", name)), f"bench/{name} exists")
+    judge = open(os.path.join(REPO, "bench", "judge.py"), encoding="utf-8").read()
+    check("def floor_of(" in judge and "WITHIN the floor" in judge and "UNPROVED" in judge,
+          "judge prints the delta beside the noise floor and refuses a verdict on an unproved arm")
+    pair = open(os.path.join(REPO, "bench", "pair.sh"), encoding="utf-8").read()
+    check('yield "$S" 15' in pair and "restore-needed" in pair and "PAIR_FLOOR_N" in pair,
+          "pair.sh yields to a short probe, asks restore-needed, and takes a defaults sample only while the floor is thin")
+    onepass = open(os.path.join(REPO, "bench", "onepass.py"), encoding="utf-8").read()
+    check('rec["session"]' in onepass and 'rec["cold_compile"]' in onepass,
+          "onepass records the holder session and the cold-compile flag")
+    base = open(os.path.join(REPO, "bench", "baseline.py"), encoding="utf-8").read()
+    check("def sha_of_stamp(" in base and 'rec.get("rehearsal")' in base,
+          "baseline maps a stamp to its sha through the deploy registry and never counts a rehearsal")
+
+    # -- round 3 (operator "3 5 7"): the marker table must stay complete, a board, no name collisions
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("proof_markers_gen", os.path.join(REPO, "bench", "proof_markers_gen.py"))
+    gen = _ilu.module_from_spec(spec); spec.loader.exec_module(gen)
+    missing, stale, seen = gen.check(REPO)
+    check(not missing and not stale,
+          f"every serving line the generator attributes to a knob has a proof-marker row and no row is stale "
+          f"(missing={[m[0] for m in missing]}, stale={[s_[0] for s_ in stale]}) -- run bench/proof_markers_gen.py --propose")
+    check(len(seen) >= 10, f"the generator attributes serving lines to at least 10 knobs (got {len(seen)})")
+    check(os.path.exists(os.path.join(REPO, "bench", "board.py")) and "board)" in fleet,
+          "fleet.sh board shows every session's verdicts and boots")
+    check("already queued by a live process" in fleet and 'cut -d\'|\' -f7' in fleet,
+          "a second live process under a queued session name is refused (the ticket would merge)")
+
+    # -- round 4 (operator "우회를 못하게 막아 그리고 chain 헬퍼 만들어")
+    check("FLEET_PREFLIGHT" not in fleet and "forced" not in fleet and "--cpu --force" not in fleet,
+          "no bypass: neither the preflight nor the --cpu refusal has an override")
+    check('SYNC $copy <- repo (was stale)' in fleet and 'mv "$copy.new" "$copy"' in fleet
+          and 'for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"' in fleet,
+          "a stale srv2 copy -- the runner's as well as the tool's own -- is synced from the repo (atomic mv), never a reason to fail")
+    check('[ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"' in fleet,
+          "knobs may be declared by a tree the chain cd's into (a PR checkout)")
+    check("chain)" in fleet and "QUICKSTART" in fleet,
+          "fleet.sh chain exists and the header opens with a six-line quickstart")
+    chain = os.path.join(REPO, "bench", "chain.sh")
+    check(os.path.exists(chain) and subprocess.run(["bash", "-n", chain], capture_output=True).returncode == 0,
+          "bench/chain.sh parses")
+    chsrc = open(chain, encoding="utf-8").read()
+    check("--after)" in chsrc and "--legs)" in chsrc and 'yield "$S" 15' in chsrc
+          and "restore-needed" in chsrc and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
+          "chain.sh: N arms, --after checks, --legs, yield between arms, restore only when needed, a "
+          "defaults sample only while the floor is thin, judge per arm")
 
 
 def test_megakernel_regression_suite():

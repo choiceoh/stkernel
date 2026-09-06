@@ -2,6 +2,14 @@
 # fleet.sh -- turn-taking for the TP4 fleet among sessions (39차, operator:
 # "멀티세션간 플릿 테스트 대기 및 순번 같은거 프로그램 만들어").
 #
+# QUICKSTART (six lines; the rest of this header is the reference)
+#   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
+#   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
+#   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
+#   fleet.sh status | board | events                           where things stand
+#   fleet.sh cancel fusion                                     leave (stops your waiter too)
+#   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
+#
 # One FIFO queue and one hold, as files under $FLEET_DIR on srv2 (every
 # session's chains run there). A session REQUESTS a turn, WAITS until it is
 # at the head of the queue AND nobody holds the fleet AND no legacy bench /
@@ -28,7 +36,10 @@
 #                                                    every VLLM_* knob the chain sets is declared in
 #                                                    the profile (the launcher forwards only those),
 #                                                    baseline / duplicate-arm notice. `run` refuses
-#                                                    a FAILed preflight (FLEET_PREFLIGHT=skip overrides)
+#                                                    a FAILed preflight -- no override (operator).
+#                                                    A stale srv2 copy is SYNCED from the repo, not
+#                                                    failed; knobs may be declared by the repo profile
+#                                                    or by a tree the chain `cd`s into (a PR checkout)
 #   fleet.sh restore-needed <session>                "yes" when nobody with a BOOT is queued behind you
 #                                                    (the last holder restores production; a holder
 #                                                    with a boot job behind it may skip the restore)
@@ -37,8 +48,42 @@
 #                                                    (health 200, 0 requests) or no serving at all,
 #                                                    never a boot in progress; est <= 15 may slip
 #                                                    ahead of queued boot jobs (logged)
+#   fleet.sh board [n]                               every session's last n verdicts + today's boots
 #   fleet.sh ledger [days]                           per-session holds, minutes, boots, records and
 #                                                    boots that produced no measurement
+#   fleet.sh chain <session> [est] [note] -- NAME=KNOBS [NAME=KNOBS ...] [--after NAME 'cmd'] [--legs NAME none]
+#                                                    N arms in one hold (bench/chain.sh): proof per
+#                                                    arm, yield between arms, a defaults sample only
+#                                                    while the build's floor is thin, restore only when
+#                                                    nobody boots behind you, judge + verdicts. NAME=""
+#                                                    is a defaults arm; --after runs a check on that boot
+#   fleet.sh pair <session> <NAME> "<knobs>" [est] [note]
+#                                                    the standard bracket (bench/pair.sh): candidate
+#                                                    boot + onepass + proof, yield to a short probe,
+#                                                    defaults boot only when the build lacks a
+#                                                    baseline / a 3-sample floor and nobody boots
+#                                                    behind you, judge with the noise floor, verdict
+#   fleet.sh deploy <session> <rev>                  the holder deploys <rev> (git + overlays) and the
+#                                                    build registry gets stamp <-> sha <- session
+#   fleet.sh yield <session> [max_est]               holder lets a short queued probe run beside its
+#                                                    idle serving, keeps its place, resumes after
+#   fleet.sh nodes                                   the four nodes: ssh, GPU, stray containers, RAM,
+#                                                    model path -- run at GO (warn; FLEET_NODES=strict refuses)
+#   fleet.sh notify <session> "<cmd>"                hook run on GO / release / preflight-fail / yield
+#                                                    with args <event> <session> <note>; every event
+#                                                    also lands in $FLEET_DIR/events.log
+#   fleet.sh run --gpu|--cpu <session> ...           SAY which it is (operator): --gpu takes a turn in
+#                                                    the queue; --cpu runs NOW in parallel under nice,
+#                                                    never holding. A --cpu job whose script or command
+#                                                    shows GPU use (ab-lever, a boot, a probe container,
+#                                                    torch.cuda...) is REFUSED, no override: fix the
+#                                                    label or the classifier. Without a flag it decides:
+#                                                    GPU evidence -> queue; CPU evidence (rehearsal,
+#                                                    CPU probes, tests, compile checks) -> parallel;
+#                                                    no evidence -> queue, and it says so
+# `status` also prints what production is serving (defaults, or which knobs)
+# and the deployed build; a release with an empty queue and production not on
+# the defaults prints the restore command (FLEET_AUTO_RESTORE=1 runs it).
 # Records: every release appends to $FLEET_DIR/ledger.tsv; `status` derives ETAs
 # from a session's last actual holds and flags a holder that is SILENT (no
 # heartbeat for 10 min) or OVERDUE (2x its estimate) -- flags only, never a kill.
@@ -88,7 +133,12 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
     local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
     [ -f "$copy" ] || continue
     if [ "$(md5sum < "$copy")" = "$(md5sum < "$src")" ]; then echo "  PASS $copy == repo"
-    else echo "  FAIL $copy differs from $src (sync: cp $src $copy.new && mv $copy.new $copy)"; ok=0; fi
+    elif cp "$src" "$copy.new" 2>/dev/null && chmod +x "$copy.new" && bash -n "$copy.new" 2>/dev/null && mv "$copy.new" "$copy"; then
+      # a stale copy is only ever a stale copy: sync it from the repo (the
+      # source of truth) instead of costing the caller a turn (09-06: two
+      # queue attempts lost) -- both copies, the tool's own and the runner's
+      echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
+    else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
   shift
   [ "${1:-}" = "--" ] && shift
@@ -108,19 +158,103 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   if [ "$kind" = probe ]; then
     echo "  SKIP declared-knob check (probe: no launcher in the path)"
   else
-    local k undeclared=""
-    for k in $knobs; do
-      grep -qE "^${k%%=*}=" "$REPO/profiles/glm53.env" || undeclared="$undeclared ${k%%=*}"
+    # The profile that will serve is the one the chain deploys, and chains pull
+    # origin/main at their start (or the holder runs `fleet.sh deploy`): check
+    # against origin/main, falling back to the checkout when the fetch is
+    # impossible. A key declared only in the checkout (a branch not merged yet)
+    # passes with a note; a key declared only by a tree the chain `cd`s into (a
+    # PR checkout under ~/mkab) passes with a note; undeclared everywhere FAILs.
+    # 09-06: a key merged to main minutes earlier FAILed against the stale checkout.
+    local k undeclared="" prof_main="" prof_src=checkout behind=0
+    if timeout 20 git -C "$REPO" fetch -q origin 2>/dev/null; then
+      prof_main=$(git -C "$REPO" show origin/main:profiles/glm53.env 2>/dev/null) && prof_src=origin/main
+      behind=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+    fi
+    local prof_here; prof_here=$(cat "$REPO/profiles/glm53.env")
+    local profiles="" d
+    for d in $( { [ -n "$chain" ] && grep -vE '^\s*#' "$chain"; printf '%s ' "$@"; } 2>/dev/null | grep -oE "cd +[^ ;&|)]+" | awk '{print $2}' | sed "s|^~|$HOME|" | sort -u); do
+      [ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"
     done
-    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys):$undeclared"; ok=0
-    elif [ -n "$knobs" ]; then echo "  PASS knobs declared: $(echo $knobs | tr ' ' ',')"; fi
+    local only_here="" only_tree=""
+    for k in $knobs; do
+      if [ -n "$prof_main" ] && grep -qE "^${k%%=*}=" <<< "$prof_main"; then continue; fi
+      if grep -qE "^${k%%=*}=" <<< "$prof_here"; then only_here="$only_here ${k%%=*}"
+      elif [ -n "$profiles" ] && grep -qE "^${k%%=*}=" $profiles 2>/dev/null; then only_tree="$only_tree ${k%%=*}"
+      else undeclared="$undeclared ${k%%=*}"; fi
+    done
+    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys; checked $prof_src and checkout):$undeclared"; ok=0
+    elif [ -n "$knobs" ]; then echo "  PASS knobs declared in $prof_src: $(echo $knobs | tr ' ' ',')"; fi
+    [ -z "$only_here" ] || echo "  NOTE declared only in the checkout (not in origin/main yet):$only_here"
+    [ -z "$only_tree" ] || echo "  NOTE declared only by a tree the chain cd's into (a PR checkout):$only_tree"
+    [ "${behind:-0}" = 0 ] || echo "  NOTE checkout is $behind commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots"
     if [ -f "$REPO/bench/baseline.py" ]; then
       local kv; kv=$(echo $knobs | tr ' ' ',')
       (cd "$REPO" && timeout 20 python3 bench/baseline.py --brief ${kv:+--knobs "$kv"} 2>/dev/null | sed 's/^/  /') || true
     fi
   fi
   [ $ok = 1 ] && { echo "  -> PASS"; return 0; }
-  echo "  -> FAIL (FLEET_PREFLIGHT=skip to override, logged)"; return 1
+  echo "  -> FAIL: fix the cause above and run again (there is no override)"; return 1
+}
+# ---- events + notification hook (idea 7)
+_event() {  # event session note
+  echo "$(ts) $1 $2 $3" >> "$FLEET_DIR/events.log"
+  local hook="$FLEET_DIR/notify.$2"
+  [ -f "$hook" ] && ( timeout 20 bash -c "$(cat "$hook")" _ "$1" "$2" "$3" >/dev/null 2>&1 & )
+  return 0
+}
+# ---- GPU / no-GPU classification (operator: "gpu 없이 할수 있는 작업 같으면 병렬로")
+# Evidence for GPU wins over evidence for CPU; no evidence at all is treated as
+# GPU (queued) and says so. A rehearsal never needs the GPU.
+classify_cmd() {  # cmd... -> gpu|nogpu|unknown
+  [ "${FLEET_REHEARSE:-0}" = 1 ] && { echo nogpu; return; }
+  local text="$*" f
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      *.py) text="$text $(grep -vE '^\s*#' "$f" 2>/dev/null | grep -oE 'torch\.cuda|\.cuda\(|device=.cuda|--gpus|docker run' | head -3)";;   # code, not docstrings
+      *)    text="$text $(grep -vE '^\s*#' "$f" 2>/dev/null)";;
+    esac
+  done
+  local gpu='ab-lever|start-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
+  local cpu='MK_PROBE_NO_GPU=1|head_pack_accuracy_cpu|baseline\.py|judge\.py|test_logic\.py|b12x_static_compile_check|compile\.sh|nvcc |bash -n|^git |md5sum|proof\.py'
+  if echo "$text" | grep -qE "$gpu"; then echo gpu
+  elif echo "$text" | grep -qE "$cpu"; then echo nogpu
+  else echo unknown; fi
+}
+production_line() {  # what is serving, judged from the container's env (idea 9)
+  serving_up || { echo "production: no serving container"; return 0; }
+  local k; k=$( (cd "$REPO" 2>/dev/null && timeout 20 python3 - <<'PY'
+import sys; sys.path.insert(0, "bench")
+try:
+    from onepass import _served_build
+    b = _served_build(".") or {}
+    kn = {k: v for k, v in (b.get("knobs") or {}).items() if v not in ("0", "", "off")}
+    print(("NOT defaults: " + ",".join(f"{k}={v}" for k, v in sorted(kn.items()))) if kn else "defaults")
+except Exception as e:
+    print(f"unknown ({e.__class__.__name__})")
+PY
+) 2>/dev/null)
+  local h; h=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health" 2>/dev/null)
+  echo "production: ${k:-unknown} (health ${h:-000})"
+}
+deployed_line() {  # the build registry (idea 3): stamp <-> sha, and the checkout vs deployed
+  local stamp sha head; stamp=$(cut -c1-12 "${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}" 2>/dev/null)
+  [ -n "$stamp" ] || { echo "deployed: unknown (no overlay stamp)"; return 0; }
+  sha=$(awk -F'\t' -v st="$stamp" 'index($2, st)==1 {sha=$3; who=$4; at=$1} END {if (sha) print sha " (by " who ", " substr(at,12,5) ")"}' "$FLEET_DIR/builds.tsv" 2>/dev/null)
+  head=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null)
+  echo "deployed: $stamp${sha:+ = $sha}"
+  [ -n "$sha" ] && [ -n "$head" ] && [ "${sha%% *}" != "$head" ] && echo "  NOTE: the checkout ($head) is not the deployed build (${sha%% *}) -- a bench without a deploy runs the deployed one"
+  return 0
+}
+nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
+  local ok=0 ip out
+  for ip in ${FLEET_NODES_IPS:-10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4}; do
+    out=$(timeout 12 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$ip" "nvidia-smi -L >/dev/null 2>&1 && echo gpu=ok || echo gpu=FAIL; echo stray=\$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^glm53\$'); echo ram=\$(free -g | awk 'NR==2{print \$7}')G; for p in ${FLEET_NODE_PATHS:-/home/choiceoh/models/glm53-redhat-nvfp4}; do [ -e \"\$p\" ] && echo path=ok || echo path=MISSING:\$p; done" 2>/dev/null | tr '\n' ' ')
+    [ -n "$out" ] || { out="ssh=FAIL"; }
+    echo "  node $ip: $out"
+    echo "$out" | grep -qE "FAIL|MISSING|stray=[1-9]" && ok=1
+  done
+  return $ok
 }
 restore_needed() {  # session -> yes|no
   local next; next=$(grep -v "^[0-9]*|$1|" "$Q" | head -1)
@@ -157,13 +291,20 @@ holder_line() { [ -s "$H" ] && IFS='|' read -r s pid host t0 est note kind < "$H
 
 with_lock() { ( flock -x 9; "$@" ) 9>"$LK"; }
 
-_enqueue() {  # session est note [kind] -- idempotent per session; a repeat refreshes est/note/kind in place
-  local kind; kind=$(kind_of "${4:-}")
+_enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repeat refreshes est/note/kind in place
+  local kind pid; kind=$(kind_of "${4:-}"); pid=${5:-}
   if grep -q "^[0-9]*|$1|" "$Q"; then
-    awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" '$2==s {$4=est; $5=note; $6=kind} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
+    # two live processes under one session name would merge into one ticket
+    # and take one turn between them (09-06: `run fusion` twice); refuse
+    local qpid; qpid=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f7)
+    if [ -n "$qpid" ] && [ -n "$pid" ] && [ "$qpid" != "$pid" ] && kill -0 "$qpid" 2>/dev/null && [ "${FLEET_SAME_SESSION:-0}" != 1 ]; then
+      echo "session '$1' is already queued by a live process (pid $qpid): use another name (e.g. $1-2), or FLEET_SAME_SESSION=1 to share the ticket" >&2
+      logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
+    fi
+    awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
     return 0
   fi
-  echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
+  echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
 }
 _dequeue() { grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"; }
 _position() { grep -n "^[0-9]*|$1|" "$Q" | head -1 | cut -d: -f1; }
@@ -188,13 +329,14 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   legacy_busy && return 1
   echo "$s|$pid|$(me)|$(now)|$est|$note|$kind" > "$H"; _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
-  logit "GO $s (pid $pid)"; return 0
+  logit "GO $s (pid $pid)"; _event GO "$s" "$note"; return 0
 }
 _ledger_row() {  # session -- from the holder file, before it is removed
   IFS='|' read -r s pid host t0 est note kind < "$H"
   local held boots recs; held=$(( ($(now) - t0 + 30) / 60 ))
   boots=$(find "$LOGD" -maxdepth 1 -name 'boot-*.log' -newermt "@$t0" 2>/dev/null | wc -l)
-  [ "$boots" = 0 ] && [ -f "$LOGD/glm53.log" ] && [ "$(stat -c %Y "$LOGD/glm53.log")" -ge "$t0" ] && boots=1
+  [ "$boots" = 0 ] && [ "${kind:-boot}" = boot ] && [ -f "$LOGD/glm53.log" ] && [ "$(stat -c %Y "$LOGD/glm53.log")" -ge "$t0" ] && boots=1
+  [ "${kind:-boot}" = probe ] && boots=0
   recs=$(python3 - "$JSONL" "$t0" <<'PY' 2>/dev/null || echo 0
 import json, sys, time
 n = 0
@@ -212,10 +354,21 @@ PY
   logit "ledger $s held=${held}m boots=$boots records=$recs wasted=$wasted"
   ls -t "$LOGD"/boot-*.log 2>/dev/null | head -4 | while read -r f; do [ "$(stat -c %Y "$f")" -ge "$t0" ] && logit "  kept $f"; done
 }
+_yield_requeue() { _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"; }   # the yielding holder keeps its place: head of the queue
 _release() {  # session
   if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
     _ledger_row "$1"
-    rm -f "$H" "$LOGD/FLEET-held-by-$1.done" "$(hb_file "$1")"; logit "release $1"
+    rm -f "$H" "$LOGD/FLEET-held-by-$1.done" "$(hb_file "$1")"; logit "release $1"; _event release "$1" ""
+    if [ ! -s "$Q" ] && [ "${FLEET_NO_RESTORE_CHECK:-0}" != 1 ]; then
+      local pl; pl=$(production_line)
+      case "$pl" in *"NOT defaults"*|*"no serving"*|*"health 000"*|*"health 5"*)
+        if [ "${FLEET_AUTO_RESTORE:-0}" = 1 ]; then
+          logit "auto-restore after $1: $pl"; ( LEGS=none PREFILL_WARMUP=1 nohup bash "$LOGD/ab-lever2.sh" PRODRESTORE "" > "$LOGD/auto-restore.log" 2>&1 & )
+        else
+          echo "NOTE: queue empty and $pl -- restore with: LEGS=none bash $LOGD/ab-lever2.sh PRODRESTORE \"\" (FLEET_AUTO_RESTORE=1 does it)"
+        fi;;
+      esac
+    fi
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
     return 0
@@ -227,19 +380,19 @@ cmd=${1:-status}; shift || true
 case "$cmd" in
   request)
     kind=boot; [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
-    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind"; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
+    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind" "$PPID" || exit 6; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
-    [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind"; est=30; note=""; }
+    [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
     t_end=$(( $(now) + tmo * 60 )); last=""
     while [ "$(now)" -lt "$t_end" ]; do
       # an orphaned waiter (its run process gone) must not keep polling for a
       # dead pid; a request that vanished (a stale sibling took it, or a
       # cancel) is re-queued at the back instead of waiting forever at "pos /0"
       kill -0 "$pid" 2>/dev/null || { echo "parent $pid is gone; giving up $(ts)" >&2; with_lock _dequeue "$s"; exit 1; }
-      [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note" "$kind"; echo "re-queued: $s (entry was gone) $(ts)"; }
+      [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note" "$kind" "$pid" || exit 6; echo "re-queued: $s (entry was gone) $(ts)"; }
       if with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; then echo "GO $s $(ts)"; exit 0; fi
       why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
@@ -248,18 +401,40 @@ case "$cmd" in
     echo "TIMEOUT $s after ${tmo}m" >&2; exit 1;;
   release) with_lock _release "${1:?session}";;
   run)
-    kind=boot; [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
+    kind=boot; force=""
+    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; *) break;; esac; done
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
-    [ $# -gt 0 ] || { echo "usage: fleet.sh run [--probe] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
+    [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
+    export FLEET_SESSION=$s
+    auto=$(classify_cmd "$@"); cls=${force:-$auto}
+    if [ "$force" = nogpu ] && [ "$auto" = gpu ]; then
+      echo "REFUSED: you said --cpu but the job shows GPU use (a boot, ab-lever, a probe container, torch.cuda); run it --gpu, or fix the classifier if it is wrong" >&2
+      logit "refused --cpu $s: classifier saw GPU use"; exit 5
+    fi
+    [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
+    if [ "$cls" = nogpu ]; then
+      # no GPU needed: run now, in parallel, under nice; no hold, no queue
+      logit "nogpu-start $s $note"; _event nogpu-start "$s" "$note"; t0=$(now)
+      nice -n 19 "$@"; rc=$?
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$s" nogpu "$note" $(( ($(now) - t0 + 30) / 60 )) 0 0 0 >> "$LEDGER"
+      logit "nogpu-done $s rc=$rc"; _event nogpu-done "$s" "$note"; exit $rc
+    fi
+    [ "$cls" = unknown ] && echo "no evidence either way -> queued as GPU (say --cpu to run in parallel)"
     pf=(); [ "$kind" = probe ] && pf=(--probe)
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
-      if [ "${FLEET_PREFLIGHT:-}" = skip ]; then logit "preflight FAIL overridden by $s"; else logit "preflight FAIL $s (not queued)"; exit 3; fi
+      logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
-    with_lock _enqueue "$s" "$est" "$note" "$kind"
+    with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
     FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
+    if [ "$kind" = boot ]; then
+      echo "nodes:"; if ! nodes_check; then
+        if [ "${FLEET_NODES:-warn}" = strict ]; then logit "nodes FAIL $s -> released"; with_lock _release "$s"; exit 4; fi
+        echo "  (warnings only; FLEET_NODES=strict refuses)"
+      fi
+    fi
     # heartbeat: a holder that goes SILENT (hung chain, wedged node) shows in status
     ( while kill -0 $$ 2>/dev/null; do touch "$(hb_file "$s")"; sleep 30; done ) & hb=$!
     trap 'kill $hb 2>/dev/null; with_lock _release "$s"' EXIT
@@ -274,10 +449,10 @@ case "$cmd" in
       hbf=$(hb_file "$hs"); [ -f "$hbf" ] && [ $(( $(now) - $(stat -c %Y "$hbf") )) -gt 600 ] && echo "  SILENT: no heartbeat for $(( ($(now) - $(stat -c %Y "$hbf")) / 60 ))m"
     fi
     echo "legacy: $(busy_procs) bench/boot procs, $(busy_reqs) requests in flight$(booting && echo ', head booting')"
-    echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
+    echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind qpid; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
-    baseline_line;;
+    production_line; deployed_line; baseline_line;;
   adopt)  # a job that is ALREADY running (started before this tool, or by hand) becomes the holder
     s=${1:?session}; pid=${2:?pid}; est=${3:-30}; note=${4:-}
     if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; exit 1; fi
@@ -285,7 +460,12 @@ case "$cmd" in
     with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
     logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
-  cancel) with_lock _dequeue "${1:?session}"; logit "cancel $1"; echo "cancelled $1";;
+  cancel)
+    s=${1:?session}; qpid=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f7)
+    # a live waiter re-queues a vanished entry within 15 s (its wait loop), so
+    # the waiter goes first -- it is this tool's own process, recorded at request
+    if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -q "fleet.sh" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
+    with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
   kick)
     if [ ! -s "$H" ]; then echo "nothing held"; exit 0; fi
     if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; exit 1; fi
@@ -294,6 +474,44 @@ case "$cmd" in
   preflight)
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
+  chain)
+    s=${1:?session}; shift; est=30; note=""
+    [ "${1:-}" != "--" ] && { est=$1; shift; }
+    [ "${1:-}" != "--" ] && { note=$1; shift; }
+    [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...] [--after NAME cmd] [--legs NAME none]" >&2; exit 2; }
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "${note:-chain $*}" -- bash "$REPO/bench/chain.sh" "$@";;
+  pair)
+    s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/pair.sh" "$name" "$knobs";;
+  deploy)
+    s=${1:?session}; rev=${2:?rev}
+    [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "deploy needs the fleet: $s is not the holder ($(holder_line 2>/dev/null || echo none))" >&2; exit 1; }
+    ( cd "$REPO" && git fetch -q origin "$rev" && git checkout -q -B ab FETCH_HEAD && git log --oneline -1 && bash launchers/deploy-overlays.sh glm53 2>&1 | tail -3 ) || { logit "deploy FAILED $s $rev"; exit 1; }
+    stamp=$(cut -c1-12 "${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}" 2>/dev/null); sha=$(git -C "$REPO" rev-parse --short HEAD)
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$stamp" "$sha" "$s" "$rev" >> "$FLEET_DIR/builds.tsv"
+    logit "deploy $s $rev -> build $stamp = $sha"; echo "deployed build $stamp = $sha (registry: $FLEET_DIR/builds.tsv)";;
+  yield)
+    s=${1:?session}; max=${2:-15}
+    [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "not the holder"; exit 0; }
+    cand=$(awk -F'|' -v m="$max" '$6=="probe" && $4+0<=m {print $2; exit}' "$Q")
+    [ -n "$cand" ] || { echo "nothing to yield to"; exit 0; }
+    serving_idle || { echo "serving not idle; not yielding"; exit 0; }
+    IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"
+    logit "yield $s -> $cand"; _event yield "$s" "$cand"
+    with_lock _yield_requeue "$s" "$hest" "$hnote"
+    FLEET_NO_RESTORE_CHECK=1 with_lock _release "$s"
+    echo "yielded to $cand; waiting to resume"
+    # give the probe its head start: its waiter polls every 15 s, ours would win the race otherwise
+    for i in $(seq 1 15); do [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$cand" ] && break; sleep 3; done
+    FLEET_PID=${FLEET_PID:-$PPID} bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}";;
+  nodes) nodes_check;;
+  notify) s=${1:?session}; shift; [ $# -gt 0 ] && { echo "$*" > "$FLEET_DIR/notify.$s"; echo "hook for $s: $*"; } || { rm -f "$FLEET_DIR/notify.$s"; echo "hook for $s removed"; };;
+  events) tail -"${1:-20}" "$FLEET_DIR/events.log" 2>/dev/null;;
+  board) (cd "$REPO" && FLEET_DIR="$FLEET_DIR" LOGD="$LOGD" python3 bench/board.py --n "${1:-12}");;
+  classify) shift 0; classify_cmd "$@";;
   restore-needed) restore_needed "${1:?session}";;
   ledger)
     days=${1:-1}; since=$(date -d "-${days} days" +%F)

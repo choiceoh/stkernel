@@ -239,7 +239,7 @@ def _fill(ptr, start, end, value, BLOCK: tl.constexpr):
 _NO_SPECIALIZE = [
     "num_reqs", "num_tokens", "max_num_reqs", "max_num_tokens", "draft_stride",
     "num_blocks_stride", "slot_stride", "req_id_cap", "exp_bt_stride", "dec_seq_cap",
-    "idx_bt_stride", "idx_bt_cols", "comp_slot_cap",
+    "idx_bt_stride", "idx_bt_cols", "comp_slot_cap", "mamba_block",
 ]
 
 
@@ -296,6 +296,7 @@ def _glm53_prep_fused_kernel(
     idx_bt_cols,
     comp_slot_ptr,
     comp_slot_cap,
+    mamba_block,  # 39차: MambaSpec.block_size (max_model_len in cache mode 'none')
     Q: tl.constexpr,
     Q_P2: tl.constexpr,  # 37차: next power of two of Q (tl.arange); lanes >= Q are masked
     NUM_SPEC: tl.constexpr,
@@ -387,15 +388,21 @@ def _glm53_prep_fused_kernel(
     # the gathered rows are read back below by other threads of this program
     tl.debug_barrier()
 
-    # GDN builders (FULL-graph branch): spec rows only, no padding
+    # GDN builders (FULL-graph branch): spec rows only, no padding.
+    # spec_state_indices = the row's 1 + num_spec block columns starting at
+    # the running state block, (seq_len - 1) // mamba block size -- stock's
+    # mamba_get_block_table_tensor. Cache mode 'none' has one block of
+    # max_model_len tokens, so the start column is 0 there; 'align' (prefix
+    # caching) walks the columns as the sequence crosses 2304-token blocks.
     soffs = tl.arange(0, NS_P2)
     smask = soffs < NS
     nacc = tl.load(num_accepted_ptr + rs)
+    start_col = tl.maximum((seq_len - 1) // mamba_block, 0)
     for k in tl.static_range(N_GDN):
         gm = tl.load(gdn_group_idx_ptr + k)
         dst = _load_ptr(dst_bt_ptrs + gm, tl.int32)
         stride = tl.load(bt_strides + gm)
-        st = tl.load(dst + r * stride + soffs, mask=smask, other=0)
+        st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)
         sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
         ss = tl.load(gdn_state_strides + k)
         tl.store(sp + r * ss + soffs, st, mask=smask)
@@ -456,6 +463,21 @@ def _ptrs(tensors: list[torch.Tensor], device) -> torch.Tensor:
     return torch.tensor([t.data_ptr() for t in tensors], dtype=torch.uint64, device=device)
 
 
+@triton.jit(do_not_specialize=["num_reqs"])
+def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs, num_reqs,
+                                N_GDN: tl.constexpr, BLOCK: tl.constexpr):
+    """Mamba 'align' mode: gdn_nacc[k][row] = num_accepted[idx_mapping[row]],
+    the gather stock performs in model_state.prepare_attn -- after the align
+    pre-copy kernel may have reset a migrated request's count to 1."""
+    offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    mask = offs < num_reqs
+    slots = tl.load(idx_mapping_ptr + offs, mask=mask, other=0)
+    nacc = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    for k in tl.static_range(N_GDN):
+        ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
+        tl.store(ap + offs, nacc, mask=mask)
+
+
 @dataclass
 class PrepPlan:
     q: int
@@ -501,6 +523,11 @@ class PrepPlan:
     sched_buf: torch.Tensor
     # the kpool tail builder whose circular slot buffer must stay dormant
     tail_builder: Any = None
+    # 39차: MambaSpec.block_size of the GDN groups and whether the cache runs
+    # in 'align' mode (prefix caching): the state column gather above, and
+    # the CUDA run_prep (column 0 only) is skipped for the Triton kernel.
+    mamba_block: int = 1 << 30
+    align_mode: bool = False
     owned: dict[str, Any] = field(default_factory=dict)
     kernel: str = "?"   # 37차: 'cuda' or 'triton (...)', set by warmup()
 
@@ -631,7 +658,18 @@ class PrepPlan:
             self.dec_lens, self.per_req_dec_lens,
             self.idx_bt, self.idx_bt.stride(0), self.idx_bt_cols,
             self.comp_slot, self.comp_slot.numel(),
+            self.mamba_block,
         )
+
+    def regather_num_accepted(self, idx_mapping: torch.Tensor, num_reqs: int) -> None:
+        """Align mode: refresh the GDN builders' num_accepted from the request
+        state after the stock pre-copy ran (see build_plan)."""
+        n = len(self.gdn_groups)
+        if n == 0 or num_reqs == 0:
+            return
+        _glm53_regather_nacc_kernel[(triton.cdiv(num_reqs, 128),)](
+            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"], num_reqs,
+            N_GDN=n, BLOCK=128)
 
     def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
         """Stage idx_mapping, run the kernel, build the deep_gemm schedule.
@@ -668,6 +706,8 @@ class PrepPlan:
         self.owned["cuda_ext"] = None
         if kernel_backend() == "cuda":
             reason = self.cuda_dtype_reason()
+            if reason is None and self.align_mode:
+                reason = "mamba align mode: run_prep gathers state column 0"
             ext = _cuda_ext() if reason is None else None
             if ext is not None:
                 self.owned["cuda_ext"] = ext
@@ -804,7 +844,15 @@ def build_plan(runner) -> PrepPlan:
     if not hasattr(ms, "num_accepted_tokens_gpu"):
         raise RuntimeError("model_state has no num_accepted_tokens_gpu (not MambaHybrid)")
     if getattr(ms, "_align_mode", False):
-        raise RuntimeError("mamba align mode: preprocess_state is not a no-op")
+        # 39차: prefix caching puts the mamba cache in 'align' mode. The stock
+        # pre-copy (model_state.preprocess_state, run by the runner AFTER
+        # prepare_inputs) migrates states across block boundaries and resets
+        # num_accepted_tokens to 1 for a migrated request; the fused kernel
+        # has copied the pre-reset value into the GDN builders by then, so the
+        # fused step re-gathers it in the patched model_state.prepare_attn
+        # (stock's own gather point). postprocess_state stays stock.
+        logger.warning("[prep-fused] mamba align mode (prefix caching): num_accepted is "
+                       "re-gathered after the stock pre-copy on every fused step")
     bt = runner.block_tables
     if bt.cp_size != 1:
         raise RuntimeError("context parallel block tables")
@@ -816,6 +864,7 @@ def build_plan(runner) -> PrepPlan:
     draft_gids = set(getattr(spec, "draft_kv_cache_group_ids", ()) or ())
 
     gdn_groups, gdn_state, gdn_mask, gdn_tok, gdn_qsl, gdn_nacc = [], [], [], [], [], []
+    mamba_block = None
     attn_g = None
     mla_b = idx_b = tail_b = None
     for g in range(G):
@@ -834,8 +883,13 @@ def build_plan(runner) -> PrepPlan:
             b = builders[0]
             if not isinstance(spec_g, MambaSpec):
                 raise RuntimeError(f"group {g}: GDN builder on non-mamba spec")
-            if runner.cache_config.mamba_cache_mode != "none":
-                raise RuntimeError("mamba_cache_mode != none (block table select differs)")
+            if runner.cache_config.mamba_cache_mode not in ("none", "align"):
+                raise RuntimeError(f"mamba_cache_mode {runner.cache_config.mamba_cache_mode!r}: "
+                                   "block table select differs")
+            if mamba_block is None:
+                mamba_block = int(spec_g.block_size)
+            elif int(spec_g.block_size) != mamba_block:
+                raise RuntimeError(f"group {g}: mamba block size {spec_g.block_size} != {mamba_block}")
             if not b.use_full_cuda_graph or b.num_spec != num_spec:
                 raise RuntimeError(f"group {g}: GDN builder cudagraph/num_spec contract")
             if b.spec_state_indices_tensor.shape[1] != num_spec + 1:
@@ -912,6 +966,8 @@ def build_plan(runner) -> PrepPlan:
         bt=bt,
         gdn_groups=gdn_groups, gdn_state=gdn_state, gdn_mask=gdn_mask, gdn_tok=gdn_tok,
         gdn_qsl=gdn_qsl, gdn_nacc=gdn_nacc,
+        mamba_block=int(mamba_block or (1 << 30)),
+        align_mode=runner.cache_config.mamba_cache_mode == "align",
         attn_g=attn_g, req_id_buf=mla_b.req_id_per_token_buffer,
         exp_bt=idx_b.expanded_block_table_buffer, dec_seq_lens=idx_b.decode_seq_lens_buffer,
         dec_lens=idx_b.decode_lens_buffer, per_req_dec_lens=idx_b.per_req_decode_lens_buffer,
@@ -1173,6 +1229,10 @@ def _patched_ms_prepare_attn(self, input_batch, cudagraph_mode, block_tables, sl
                       attn_groups, kv_cache_config, for_capture)
             st.plan.tail_ok()
             st.metadata_cache[key] = md
+        if getattr(self, "_align_mode", False):
+            # the runner ran preprocess_state (align pre-copy, num_accepted
+            # reset) between prepare_inputs and this call: gather again
+            st.plan.regather_num_accepted(input_batch.idx_mapping, input_batch.num_reqs)
         return md
     return orig(self, input_batch, cudagraph_mode, block_tables, slot_mappings,
                 attn_groups, kv_cache_config, for_capture)

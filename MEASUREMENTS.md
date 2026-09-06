@@ -2143,6 +2143,58 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **스케줄러 v2**(운영자 "AsyncScheduler 더 개선할 수 있나" → 순위 제시 → "진행해"): v1 의 빈틈 둘을 메움. ① **프리필 간 공정성**(`SCHED_FAIR=1`): 디코더 없이 프리필이 둘 이상 대기하면 스텝 예산을 대기 수로 나눠 cap — stock FCFS 는 128K 뒤의 2K 프롬프트를 앞 프리필 전체(~45 s) 뒤에 admit 했다; 배치는 순수 프리필이라 SP 유지. ② **기아 방지**(`SCHED_PREFILL_FLOOR=1000` tok/s, `FLOOR_GRACE_S=2`): admit 뒤 진행률이 바닥 아래면 적자만큼 청크를 키우고(예산 상한) 페이싱에서 제외 — DF2 식 페이싱이 디코드 포화에서 프롬프트를 굶기지 못함. ③ 청크 기본값 512 → **576**(2304 블록의 1/4; APC 켜면 mamba 정렬 분할이 블록 경계에서 꼬리 청크를 만들지 않음). 지연 예산 컨트롤러(목표 ITL 로 청크 자동 조절)는 v3 후보로 보류. 논리 테스트 확장.
 - 체인(플릿 큐): DEF40(새 기본값 참조) → APC(`PREFIX_CACHE=1`) → DF1(v2 기본: chunk 576, every 1, fair, floor) → DF2(every 2) → 복구.
 
+### §4h 항목 1·2 체인 — DEF40 참조, 프리픽스 캐시 팔, 디코드 우선 v2 팔 (18:51~)
+
+체인 `apc-chain.sh`(srv2, fleet.sh 큐; 첫 턴은 fleet.sh 결함으로 유실 → PR #395 수정 뒤 18:51 재시작, 체크아웃 13f33dc = 스케줄러 v2 포함).
+
+**DEF40**(새 기본값 = P3C2 승격 뒤, `PREFIX_CACHE=0`, `DECODE_FIRST=0`) — 이후 팔의 참조.
+
+| 항목 | DEF40 | BASE39-sp 대비 | BASE39-stock2 대비 |
+|---|---|---|---|
+| 프리필 cold 2K / 32K / 128K tok/s | 2,008 / 3,071 / 2,940 | +1.6% / **+4.6%** / **+3.6%** | −5.0% / **+15.5%** / **+14.6%** |
+| 디코드 32K / 128K step/s | 21.4 / 21.7 | 0 / +1.1% | 0 / +1.2% |
+| raw acc / tok/step | 51.9% / 3.597 | tok/step +4.7% | +5.7% |
+| 품질 / 한국어 | 9/9 / 0 | ok | ok |
+
+- P3C2 승격의 두 번째 부팅 확인(프리필 +4.6/+3.6%). 2K cold −5% (stock2 대비) 는 SP 이후 이어진 소폭 비용(BASE39-sp 도 1,976).
+- 하니스 인공물: 2K 디코드 창이 0개(2K 답이 짧아 창 표본이 안 잡힘; 부팅마다 0~3개) → 체인 판정기가 −100% 로 REGRESS 를 찍었다. `judge.py`(srv2) 는 창 없는 컨텍스트를 n/a 로 두도록 고침; 위 표가 그 판정.
+- **혼합 부하 (stock 스케줄러, `mixed_load_test.py`)**: 단독 디코더 ITL med/p95/max 46/52/94 ms. 32K 프리필이 옆에서 돌 때 겹침 구간 ITL med 69 / p95 **3,446** / max **6,640 ms**, 13.3 s 동안 디코더 토큰 **17개**(≈1.3 tok/s), 프리필 TTFT 13.34 s(단독 10.6 s). 100K: 겹침 ITL p95 3,144 / max 3,179 ms, 39 s 동안 토큰 30개, TTFT 39.15 s. → 디코더는 프리필 청크(2.8 s)마다 한 토큰꼴이고 6.6 s 공백은 청크 둘을 연속으로 놓친 것.
+
+**APC**(`PREFIX_CACHE=1`, 하이브리드 APC 조정자 모듈; 앵커 `hybrid APC groups: … eagle_group_ids=[6]` = 드래프터 SWA 그룹만 EAGLE).
+
+| ctx | 단계 | TTFT | 히트/질의 | 정답 | raw acc (pos1/3/5) |
+|---|---|---|---|---|---|
+| 32K | cold | 12.53 s | 0 / 32,393 | o | 48.7% (82/43/21) |
+| 32K | warm | **1.35 s** | 29,952 / 32,400 (92%) | o | 47.4% (78/43/24) |
+| 32K | warm2 | **0.36 s** | 32,256 / 32,400 (99.6%) | o | 45.3% (77/40/22) |
+| 100K | cold | 34.14 s | 0 / 100,870 | o | 53.6% (80/48/36) |
+| 100K | warm | **2.72 s** | 96,768 / 100,877 (96%) | o | 53.3% (85/48/30) |
+| 100K | warm2 | **1.13 s** | 99,072 / 100,877 (98%) | o | 60.9% (87/57/36) |
+
+- **히트와 수용률은 산다**: 같은 접두사 재질문에서 92~99.6% 재사용, TTFT 34 → 1.1~2.7 s, 정답 6/6, warm 수용률 = cold 수준(#47926 의 position-0 붕괴 없음 — 드래프터 SWA 윈도 블록이 같이 재사용되기 때문).
+- **그러나 onepass 는 REGRESS**: DEF40 대비 프리필 2K +11.9% / 32K **−8.1%**(2,824) / 128K −0.5%(2,926), 디코드 32K **−9.4%** / 128K **−10.4%**(19.4 step/s), tok/step −7.0%(raw acc 46.9%). 부팅 로그에 원인: `glm53_prep_fused.py:953 RuntimeError("mamba align mode: preprocess_state is not a no-op")` — prefix caching 이 켜지면 vLLM 이 mamba 캐시를 **'align' 모드**로 바꾸고(`config.py:605`), prep-fused 가 그 모드를 거부해 스스로 꺼진다 → 디코드는 stock 호스트 체인(−10%, prep-fused 가 사던 만큼).
+- 원인 분석: align 사전복사 커널(`preprocess_mamba_align_fused_kernel`, 러너가 prepare_inputs 뒤에 실행)은 블록 경계를 넘은 요청의 `num_accepted_tokens` 를 1 로 리셋하는데, prep-fused 의 융합 커널은 그 전에 옛 값을 GDN 빌더 버퍼에 써 둔다(stock 은 `model_state.prepare_attn` 에서, 즉 리셋 뒤에 모은다). 수정: 융합 스텝의 `prepare_attn` 훅에서 재수집 커널(`_glm53_regather_nacc_kernel`, 1 런치) 로 stock 과 같은 시점에 다시 모은다; `postprocess_state`(산포 + align 사후 저장)는 stock 그대로. 거부 제거, 논리 테스트 핀.
+- 남은 의문: 32K 프리필 −8% 는 align 모드가 청크 끝을 2304 블록에 맞춰 8,192 예산이 6,912 청크가 되는 비용(청크 5개 vs 4개) 또는 단일 표본 잡음. 후속 팔 APC2(수정본) / APC3(`MAX_BATCHED=9216` = 4×2304 로 청크 재정렬) 로 가른다.
+- 'all' 모드는 불가: `supports_mamba_prefix_caching` 이 GLM5Next 에 없어 'align' 으로 강등되고, 우리 KDA 프리필 커널이 블록마다 중간 상태를 쓰지도 않는다.
+
+**DF1**(`DECODE_FIRST=1`, v2: 혼합 스텝 안에서 청크 576 cap, floor 1000) — 혼합 부하(`mixed_load_test.py`, 값은 SSE 청크 = 스텝 수):
+
+| ctx | 스톡: 겹침 ITL med/p95/max | 스톡 스텝@겹침 | 스톡 TTFT | DF1: 겹침 ITL med/p95/max | DF1 스텝@겹침 | DF1 TTFT (tok/s) |
+|---|---|---|---|---|---|---|
+| 32K | 69 / 3,446 / 6,640 ms | 17 | 13.3 s | 645 / 663 / 3,503 ms | 65 | **36.0 s** (895) |
+| 100K | 71 / 3,144 / 3,179 ms | 30 | 39.2 s | 652 / 702 / 859 ms | 166 | **101.5 s** (991) |
+
+- ITL 은 잡혔지만(p95 3.4 s → 0.7 s) 프리필이 2.7배 느려졌고 디코더 스텝은 3.8배(≈6 tok/s vs 4.4). 혼합 스텝 하나가 ~650 ms: 이 스택의 혼합 스텝은 그래프·MK·prep-fused·SP 가 전부 꺼진 eager 경로라 **고정 비용 ~0.4 s** 가 붙는다. 청크를 잘게 썰수록 고정 비용만 곱해진다. floor(1000 tok/s) 가 실제 지배 변수였다(달성 895~991).
+- DF1 onepass: 프리필 32K −10.8% / 128K −7.3%, **128K 디코드 −31%**(창 13.5~15.5 step/s 지속, 32K 는 정상 20.9~21.9), tok/step −7.2% → REGRESS. 순차 요청이라 스케줄러는 손대지 않아야 하는 구간이다; DF2 의 128K 창으로 스케줄러 기인 여부를 가른다(§ 아래).
+- **v3 = 번갈아 모드**(`SCHED_MODE=alternate`, 기본): 섞지 않는다. 순수 디코드 스텝 K(`SCHED_DECODE_STEPS`=6) 뒤에 디코더가 한 스텝 쉬고(stock 의 요청별 `next_decode_eligible_step` 게이트) 순수 프리필 청크 C(`SCHED_MIXED_CHUNK`=1152) 한 스텝. 양쪽 다 빠른 경로(그래프·MK·prep-fused / SP·KDA·NVFP4) 를 유지. 비용 모델: 사이클 = K×47 ms + C/2,950 + 프리필 스텝 고정 ~0.1 s → K=6, C=1152 면 사이클 ≈ 0.78 s, 프리필 ≈ 1,500 tok/s(스톡 혼합 2,480 의 60%), 디코더 7.7 step/s(스톡 혼합 1.3 의 6배), 최대 ITL ≈ 0.5 s(스톡 6.6 s, DF1 3.5 s). 논리 테스트 확장. 팔 DF3(K=6) / DF3b(K=3) 큐.
+
+**DF2**(v2 + `PREFILL_EVERY=2`: 혼합 스텝 사이에 순수 디코드 스텝 하나) — 혼합 부하: 32K 겹침 ITL med 74 / p95 1,581 / max 1,671 ms, 스텝 62, TTFT 33.0 s(977 tok/s); 100K 663 / 1,405 / 2,088 ms, 스텝 156, TTFT 101.3 s(993). 중앙값 ITL 은 순수 디코드 스텝 덕에 74 ms 지만 프리필 스텝이 1.4~2 s(floor 가 청크를 키움) 라 p95 는 DF1 보다 나쁘고 프리필은 같은 ~1,000 tok/s. onepass 는 정상(프리필 32K −0.8% / 128K +0.1%, 디코드 32K −1.4% / 128K −3.5%) → DF1 의 128K 디코드 −31% 는 재현되지 않은 일시 현상.
+- **참조 편차 주의**: DEF40 의 raw acc 51.9%(tok/step 3.597) 는 오늘 6 부팅 중 최고치(나머지 46.8~49.3%, tok/step 3.34~3.46). APC/DF1/DF2 의 "tok/step −7%" 는 이 편차이지 퇴행이 아니다. 이후 tok/step 판정은 3.35~3.46 띠 기준.
+- 판정 요약(체인 1): APC = 히트·수용률 PASS / prep-fused 꺼짐(수정 PR #399, 후속 APC2·APC3) ; DF1·DF2(v2 혼합) = 기각(혼합 스텝 고정 비용) → v3 번갈아 모드(PR #400, 후속 DF3·DF3b).
+
+**APC2**(`PREFIX_CACHE=1` + prep-fused 재수집 수정 #399, 19:33) — 히트/수용률 전과 같음(32K warm 1.37 s 92% / warm2 0.37 s 99.6%, 100K warm 2.12 s 96% / warm2 1.10 s 98%, 정답 6/6, acc 41.6~59.5% 잡음폭). onepass: 프리필 2K +14.7% / 32K **−3.2%**(2,972) / 128K **+1.1%**(2,972) — align 청크(6,912)의 순수 프리필 비용은 작다(APC 의 −8% 는 대부분 잡음). 디코드는 여전히 −9.3/−10.3%: prep-fused 가 **두 번째 관문**에서 빠졌다 — `mamba_cache_mode != none (block table select differs)`.
+- 원인: stock `mamba_get_block_table_tensor` 는 GDN 상태 블록 열을 `(seq_len−1)//mamba_block` 부터 `1+num_spec` 개 취하는데('align' 은 2304 블록을 넘을 때마다 열이 이동), 융합 커널은 0열부터 취했다(캐시 모드 'none' 은 블록 하나 = max_model_len 이라 항상 0열). 수정(PR #405): 커널이 실행 중 블록 열부터 모으고(런타임 인자 `mamba_block`, 'none' 은 그대로 0열), align 모드에선 0열만 아는 CUDA `run_prep` 대신 Triton 커널(호스트 ~12 µs/스텝). 셀프체크의 `gdn_state` 비교가 stock 빌더와의 일치를 검증한다. 후속 팔 **APC4**(두 수정 모두) 를 DF3 체인 끝에 붙임; CUDA run_prep 의 열 이동 지원은 APC 승격 뒤 후속.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
@@ -3415,6 +3467,52 @@ yes/no, 프로브 slip(부팅 작업이 선두인데 유휴라 프로브가 먼�
 
 한계(정직하게): 마커 표는 17개 노브만 덮는다(서빙 줄이 있는 것들). 표에 없는 노브는 `no-marker` 로 판정 유보. `PREFILL_SP`·`KDA_PREFILL_DIRECT_OUT` 은
 서빙 줄이 없어 arming 줄을 쓴다(3열에 명시). 부팅 수는 `boot-*.log` 로 세므로 ab-lever 를 안 타는 체인은 헤드 로그 mtime 으로 1 로만 잡힌다.
+
+### 14. 예약 도구 2라운드 — 표준 쌍 러너·리허설·노이즈 바닥·빌드 레지스트리·양보·알림·노드 점검·CPU 레인 (2026-09-06 밤, 운영자 "1~10 도입하고, gpu 없이 할 수 있는 작업은 병렬로")
+
+| # | 무엇 | 어디 |
+|---|---|---|
+| 1 | `fleet.sh pair <s> <NAME> "<knobs>"` = `bench/pair.sh`: 후보 부팅+onepass+증명 → 짧은 프로브에 양보 → 기본값 부팅은 이 빌드에 기준선이 없거나 바닥 표본이 3 미만이고 뒤에 부팅 작업이 없을 때만 → `judge.py` → 판정 기록 | bench/pair.sh |
+| 2 | 리허설 `FLEET_REHEARSE=1`: ab-lever 가 부팅·레그 없이 마지막 실기록을 복제(`rehearsal: true`) — 체인 흐름·판정 파싱을 GPU 없이 검증; fleet.sh 는 CPU 레인으로 병렬 실행 | bench/ab-lever.sh |
+| 3 | 배포 레지스트리 `fleet.sh deploy <s> <rev>`(홀더만) → `builds.tsv`(스탬프·sha·세션); `status` 가 "deployed: 스탬프 = sha" 와 체크아웃 불일치 경고; baseline.py 가 스탬프↔sha 를 옛 기록에도 적용 | bench/fleet.sh, baseline.py |
+| 4 | 콜드 컴파일 표시: 배포 뒤 첫 부팅이면 `cold_compile: true`(ab-lever `.boot-stamps`) — judge 표에 `cold` | bench/ab-lever.sh, onepass.py |
+| 5 | 노이즈 바닥: 같은 빌드 기준선들의 창 편차(없으면 같은 하니스 전체) — "+4.7% BEYOND/WITHIN the floor ±2.6% (n=3)" | bench/judge.py |
+| 6 | 팔 사이 양보 `fleet.sh yield <s> [max]`: 대기 중인 짧은 프로브가 있고 서빙이 유휴면 홀더가 자기 순번을 선두로 되돌리고 hold 를 놓아 프로브가 slip, 프로브 release 뒤 재GO | bench/fleet.sh |
+| 7 | 알림 `fleet.sh notify <s> "<cmd>"`: GO·release·preflight-fail·yield·nogpu 이벤트에 훅 실행, `events.log` 누적 | bench/fleet.sh |
+| 8 | GO 직후 노드 점검 `fleet.sh nodes`: 4 노드 ssh·GPU·떠도는 컨테이너·RAM·모델 경로(경고, `FLEET_NODES=strict` 면 거부) | bench/fleet.sh |
+| 9 | `status` 의 "production: defaults / NOT defaults: K=V"(컨테이너 env) — 큐가 비었는데 기본값이 아니면 복구 명령 출력, `FLEET_AUTO_RESTORE=1` 이면 실행 | bench/fleet.sh |
+| 10 | 기록에 `session`(FLEET_SESSION), 판정은 `verdicts.jsonl` | bench/onepass.py, judge.py |
+| + | **CPU 레인**: `run --gpu|--cpu` 를 에이전트가 지정(운영자: "수동으로 지정"); `--cpu` 는 즉시 병렬(nice), 홀드 없음, 원장 kind=nogpu. `--cpu` 인데 스크립트·명령에 GPU 사용 증거(ab-lever·부팅·프로브 컨테이너·torch.cuda)가 보이면 **거부**(`--force` 로 강제). 플래그가 없으면 분류기(셸 스크립트는 본문, 파이썬은 코드의 device 사용만 — docstring 의 "ab-lever" 에 속았던 사고)로 결정하고 증거 없으면 GPU 로 큐잉 | bench/fleet.sh |
+
+샌드박스 검증: 분류(baseline.py→CPU, 부팅 런처→GPU, pair.sh→GPU), `--cpu`+GPU 증거 → REFUSED, CPU 작업 즉시 실행+훅 발화+원장 kind=nogpu,
+리허설 pair 가 GPU 없이 끝까지(기본값 표본→judge "WITHIN the floor ±2.6% (n=3)"→verdicts.jsonl), status 의 production/deployed/NOTE 줄,
+yield(홀더 양보→프로브 slip→프로브 release→홀더 재GO→RESUMED). 계약 핀은 `test_fleet_reservation_tooling_contracts` 2라운드 절.
+
+### 15. 예약 도구 3라운드 — 마커 표 자동 채움·게시판·세션 이름 충돌 (2026-09-06 밤, 운영자 "3 5 7")
+
+- **마커 표 자동 채움** `bench/proof_markers_gen.py`: 오버레이 소스의 서빙 줄("… serving", "[tag] installed", "plan built")을 그 파일이 읽는 노브에
+  귀속(태그 토큰 ⊂ 노브 이름; "X lane/hook serving" 이 모듈 태그보다 우선 — `[megakernel] head lane serving` 은 헤드 레인의 줄). 실패·폴백 줄
+  ("failed", "not mounted", "-> stock", "NOT SERVING", "declin…")은 제외. `--check` 는 빠진 행·낡은 행이 있으면 실패하고 `test_logic` 이 그걸 핀한다
+  → **새 레인은 표 행 없이는 테스트를 못 넘는다.** 이번에 `PREFILL_NVFP4_BPROJ`·`DEV_LAB` 행이 추가됐고 `MEGAKERNEL` 은 "-"(서빙 줄 없는 마스터 스위치).
+  생성기가 오탐한 것: `[fp8-dense] drafter lane NOT SERVING`, `declining the opt-in lane, serving the …` — 부정 목록으로 걸렀다.
+- **게시판** `fleet.sh board [n]` = `bench/board.py`: 홀더·큐, 세션 전체의 최근 판정(델타·바닥·증명·판정), 오늘의 부팅 회계를 한 화면에.
+- **세션 이름 충돌**: 큐 항목이 요청 pid 를 기억한다(7열). 같은 이름을 다른 살아있는 pid 가 다시 걸면 **거부**(`FLEET_SAME_SESSION=1` 로 티켓 공유).
+  09-06 에 `run fusion` 을 두 번 걸어 티켓이 합쳐졌던 사고.
+샌드박스: 두 번째 `run fusion` 거부 메시지, 공유 옵션으로 2번 순번, 리허설 pair 뒤 board 에 판정 행. `tests/test_logic.py` 3라운드 핀.
+
+### 16. 예약 도구 4라운드 — 우회 제거, 사본 자동 동기화, PR 트리 노브, N팔 chain 헬퍼 (2026-09-06 밤, 운영자 "우회를 못하게 막아 그리고 chain 헬퍼 만들어")
+
+- **우회 제거**: `FLEET_PREFLIGHT=skip` 과 `--cpu --force` 를 없앴다. FAIL 은 큐에 못 들어가고 REFUSED 는 `--gpu` 로 다시 거는 것만 답이다.
+  (19:25 의 두 FAIL 은 제 머지가 사본 동기화와 경주한 것이었고 한쪽은 skip 으로 우회했다 — 우회가 습관이 되면 preflight 는 죽는다.)
+- 그래서 preflight 가 **원인을 스스로 없앤다**: srv2 사본이 리포와 다르면 리포 판으로 **원자 교체(SYNCED)** 하고, 체인이 `cd` 하는 트리
+  (PR 체크아웃)의 `profiles/glm53.env` 도 노브 선언처로 인정한다. 피어가 그 사이 넣은 "프로브는 노브 검사 생략"(run_mk_probe.sh 의
+  VLLM_CACHE_ROOT 류가 노브가 아님)은 유지.
+- **`fleet.sh chain <s> [est] [note] -- NAME=KNOBS … [--after NAME 'cmd'] [--legs NAME none]`** = `bench/chain.sh`: 피어 체인(p1/p4/apc2/df3)
+  의 모양 — 팔 둘셋 + 부팅 위의 사용자 검사 + 복구 — 를 플릿 규칙과 함께: 팔마다 증명, 팔 사이 `yield`, `NAME=""` 는 기본값 팔(기준선 표본),
+  기본값 표본은 바닥이 얇을 때만, 복구 부팅은 뒤에 부팅 작업이 없을 때만, 팔마다 judge. `FLEET_REHEARSE=1` 로 GPU 없이 끝까지 돈다.
+- 헤더 맨 위에 여섯 줄 퀵스타트.
+샌드박스: 낡은 사본 → `SYNCED … -> PASS`(md5 일치), 트리 전용 노브는 `cd` 가 있을 때만 PASS, `--cpu --force` 는 REFUSED, 리허설 chain
+(팔 둘 + `--after A` 검사 실행 + `--legs B none` + 기본값 표본 + 팔별 판정). `tests/test_logic.py` 4라운드 핀.
 
 ## ★★★32차 — 레버 2~7 브래킷 체인: EXP-7 이 +7%, 나머지는 0 이거나 죽었고, srv4 가 rank 3 이다 (2026-09-04 밤)
 

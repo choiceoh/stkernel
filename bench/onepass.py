@@ -173,7 +173,8 @@ def main() -> int:
     ap.add_argument("--combine-min-ctx", type=int, default=int(os.environ.get("ONEPASS_COMBINE_MIN_CTX", "32000")),
                     help="contexts at or above this size ask the three questions in ONE request (one prefill "
                          "instead of three; the fleet has no prefix cache). 0 = never combine")
-    ap.add_argument("--out", default=os.path.expanduser("~/glm53-logs/bracket-onepass.jsonl"))
+    ap.add_argument("--out", default=os.environ.get("ONEPASS_JSONL",
+                                                   os.path.expanduser("~/glm53-logs/bracket-onepass.jsonl")))
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
 
@@ -185,6 +186,10 @@ def main() -> int:
            "harness": 39, "doc_lang": "ko",
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if os.environ.get("FLEET_SESSION"):
+        rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)
+    if os.environ.get("MK_COLD_COMPILE") == "1":
+        rec["cold_compile"] = True                              # first boot on this build (ab-lever)
     t_all = time.time()
     texts = []          # (tag, text, finish) for the corruption scan
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
