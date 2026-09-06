@@ -681,7 +681,10 @@ def _weight_md5(weight) -> str:
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
-    return hashlib.md5(b.cpu().numpy().tobytes()).hexdigest()
+    # NumPy exposes this contiguous uint8 storage through the buffer
+    # protocol. Hash those same bytes directly: tobytes() otherwise makes
+    # another full host copy (50 MiB for a KDA in-projection) on every hit.
+    return hashlib.md5(b.cpu().numpy()).hexdigest()
 
 
 def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):

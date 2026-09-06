@@ -50,9 +50,8 @@ WORKER_IPS=(10.10.10.1 10.10.10.3 10.10.10.4)
 MPORT=29521
 PORT=8000
 
-# This launcher only does the right thing on the head node. Every HEAD_IP
-# command runs through `bash -c` (see run() below) and the head container is
-# started with a plain `docker run` here, so from any other node it quietly
+# This launcher only does the right thing on the head node. Head file checks
+# and Docker commands run locally, so from any other node it quietly
 # builds a different cluster: the head lands on the wrong machine carrying
 # VLLM_HOST_IP=$HEAD_IP, the workers rendezvous at an address nobody serves,
 # and the first thing that actually fails is an unrelated-looking ssh error on
@@ -285,17 +284,66 @@ fi
 [ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || {
   echo "ABORT: chat_template_mm.jinja missing in model dir (copy from ~/glm53-4x/)"; exit 1; }
 
-# Refuse to start over a live dsv4/q38 stack. Skipped under DRY_RUN: these ask
-# the machines about themselves, which a config print has no use for.
-for ip in $([ "${DRY_RUN:-0}" = 1 ] || echo "$HEAD_IP ${WORKER_IPS[@]}"); do
-  run() { if [ "$ip" = "$HEAD_IP" ]; then bash -c "$1"; else ssh $SSHOPT choiceoh@"$ip" "$1"; fi; }
-  run "test -f $MODEL_HOST_PATH/config.json" || { echo "ABORT: $ip missing weights"; exit 1; }
+# Verify the head once, then the independent workers concurrently. Each worker
+# checks model presence and overlay bytes in one SSH call; join every result
+# before continuing to any container teardown. DRY_RUN never contacts nodes.
+_verify_glm53_node_files() {
+  local _head_sum="" _check_dir _check_cmd _i _ip _rc
+  local -a _check_pids=() _check_status=()
+  test -f "$MODEL_HOST_PATH/config.json" \
+    || { echo "ABORT: $HEAD_IP missing weights" >&2; exit 1; }
   if (( ${#OVFILES[@]} )); then
-    _sum=$(cd "$OVERLAY_DIR" && sha256sum manifest.tsv "${OVFILES[@]}" 2>/dev/null)
-    [ "$(run "cd $OVERLAY_DIR && sha256sum manifest.tsv ${OVFILES[*]} 2>/dev/null")" = "$_sum" ] \
-      || { echo "ABORT: $ip overlays differ from head -- run deploy-overlays.sh glm53"; exit 1; }
+    _head_sum=$(cd "$OVERLAY_DIR" && sha256sum manifest.tsv "${OVFILES[@]}") \
+      || { echo "ABORT: head manifest/overlays missing ($OVERLAY_DIR)" >&2; exit 1; }
   fi
-done
+  _check_dir=$(mktemp -d "${TMPDIR:-/tmp}/glm53-attest.XXXXXX") || exit 1
+  _finish_glm53_file_checks() {
+    # Joining SSH preserves the check/teardown boundary on interruption too.
+    # Killing the client alone would not prove the remote command had stopped.
+    trap '' INT TERM
+    local _pid
+    for _pid in "${_check_pids[@]}"; do wait "$_pid" 2>/dev/null || true; done
+    rm -rf -- "$_check_dir"
+  }
+  trap _finish_glm53_file_checks EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  _check_cmd=$(printf '%q ' bash -c '
+    test -f "$1/config.json" || exit 20
+    dir=$2; shift 2
+    if (( $# )); then
+      cd "$dir" && sha256sum manifest.tsv "$@" || exit 21
+    fi
+  ' sh "$MODEL_HOST_PATH" "$OVERLAY_DIR" "${OVFILES[@]}")
+  for _i in "${!WORKER_IPS[@]}"; do
+    _ip=${WORKER_IPS[$_i]}
+    ssh $SSHOPT "choiceoh@$_ip" "$_check_cmd" \
+      > "$_check_dir/$_i.out" 2> "$_check_dir/$_i.err" &
+    _check_pids+=("$!")
+  done
+  for _i in "${!_check_pids[@]}"; do
+    _rc=0
+    wait "${_check_pids[$_i]}" || _rc=$?
+    _check_status+=("$_rc")
+  done
+  for _i in "${!WORKER_IPS[@]}"; do
+    _ip=${WORKER_IPS[$_i]}
+    if [ "${_check_status[$_i]}" = 20 ]; then
+      echo "ABORT: $_ip missing weights" >&2
+      exit 1
+    elif [ "${_check_status[$_i]}" != 0 ]; then
+      cat "$_check_dir/$_i.err" >&2
+      echo "ABORT: $_ip model/overlay verification failed" >&2
+      exit 1
+    elif [ "$(cat "$_check_dir/$_i.out")" != "$_head_sum" ]; then
+      echo "ABORT: $_ip overlays differ from head -- run deploy-overlays.sh glm53" >&2
+      exit 1
+    fi
+  done
+  _finish_glm53_file_checks
+  trap - EXIT INT TERM
+}
+if [ "${DRY_RUN:-0}" != 1 ]; then _verify_glm53_node_files; fi
 
 # The manifest pins each target's sha256 as the image ships it. A mismatch means
 # the overlay was written against a different build and would replace code it has
@@ -595,27 +643,74 @@ fi
 
 PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ] && [ "${DRY_RUN:-0}" != 1 ]; then
-  echo "== 이전 부팅 잔여 컨테이너 회수 =="
-  for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
-    if [ "$_ip" = "$HEAD_IP" ]; then
-      docker rm -f $NAME_HEAD $NAME_WORKER >/dev/null 2>&1 || true
-    else
-      ssh $SSHOPT choiceoh@"$_ip" "docker rm -f $NAME_HEAD $NAME_WORKER >/dev/null 2>&1; true" || true
-    fi
-  done
-
   # 37차 (2026-09-06 13:18): a worker killed mid-build (docker rm -f under a
   # torn-down boot) leaves torch's FileBaton lock in the extension build dir;
   # the next boot's worker then waits on it forever inside profile-run (rank 3
   # sat 10 min in cpp_extension.load -> baton.wait for /cache/osar_build/<key>/
-  # lock while rank 0 waited in an all_reduce). No build is running at this
-  # point of the launcher, so every lock under the two build roots is stale.
-  echo "== 확장 빌드 잔여 lock 제거 (mk_build·osar_build) =="
+  # lock while rank 0 waited in an all_reduce). The roots are node-local, so
+  # stop -> verify removal -> clear locks can run concurrently across nodes.
+  # Join every node before memory sizing; a missing/failed Docker daemon must
+  # not look like a successfully emptied host. PREBUILD can leave a live build
+  # past its timeout: keep its locks (successful builds already removed theirs).
+  echo "== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) =="
+  _reclaim_locks=1
+  if [ "$PREBUILD" = 1 ]; then
+    _reclaim_locks=0
+    echo "  PREBUILD=1: 사전 빌드가 소유할 수 있는 lock 유지"
+  fi
+  _reclaim_script=$(cat <<'RECLAIMEOF'
+set -eu
+docker rm -f "$1" "$2" >/dev/null 2>&1 || true
+remaining=$(docker ps -a --filter "name=^/($1|$2)$" --format '{{.Names}}')
+if [ -n "$remaining" ]; then
+  echo "containers remain after removal: $remaining" >&2
+  exit 1
+fi
+if [ "$5" = 1 ]; then
+  # A PREBUILD from a previous invocation may have outlived its 300 s wait.
+  # Inspect actual cache mounts, including old unnamed/unlabelled builders;
+  # this invocation's PREBUILD flag alone cannot establish lock ownership.
+  active=$(docker ps -q)
+  if [ -n "$active" ]; then
+    mounts=$(docker inspect --format '{{range .Mounts}}{{println .Source}}{{end}}' $active)
+    while IFS= read -r source; do
+      if [ "$source" = "$3" ]; then
+        echo "  active container uses $3: retaining extension build locks"
+        exit 0
+      fi
+    done <<< "$mounts"
+  fi
+  docker run --rm -v "$3:/cache" --entrypoint /bin/sh "$4" \
+    -c 'rm -f /cache/mk_build/*/lock /cache/osar_build/*/lock'
+fi
+RECLAIMEOF
+)
+  _reclaim_cmd=$(printf '%q ' /bin/bash -c "$_reclaim_script" glm53-reclaim \
+      "$NAME_HEAD" "$NAME_WORKER" "$CACHE_HOST_PATH" "$IMAGE" "$_reclaim_locks")
+  _reclaim_pids=()
+  _reclaim_nodes=("$HEAD_IP" "${WORKER_IPS[@]}")
+  _join_reclaims() {
+    trap '' INT TERM
+    local _pid
+    for _pid in "${_reclaim_pids[@]}"; do wait "$_pid" || true; done
+  }
+  trap _join_reclaims EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   for _ip in "$HEAD_IP" "${WORKER_IPS[@]}"; do
-    _rm='docker run --rm -v '"$CACHE_HOST_PATH"':/cache --entrypoint /bin/sh '"$IMAGE"' -c "rm -f /cache/mk_build/*/lock /cache/osar_build/*/lock 2>/dev/null; true"'
-    if [ "$_ip" = "$HEAD_IP" ]; then bash -c "$_rm" >/dev/null 2>&1 || true
-    else ssh $SSHOPT choiceoh@"$_ip" "$_rm" >/dev/null 2>&1 || true; fi
+    if [ "$_ip" = "$HEAD_IP" ]; then bash -c "$_reclaim_cmd" &
+    else ssh $SSHOPT choiceoh@"$_ip" "$_reclaim_cmd" & fi
+    _reclaim_pids+=($!)
   done
+  _reclaim_failed=0
+  for _i in "${!_reclaim_pids[@]}"; do
+    if ! wait "${_reclaim_pids[$_i]}"; then
+      echo "ABORT: ${_reclaim_nodes[$_i]} container/lock cleanup failed" >&2
+      _reclaim_failed=1
+    fi
+  done
+  [ "$_reclaim_failed" = 0 ] || exit 1
+  trap - EXIT INT TERM
 
   echo "== memfree preflight =="
   # Report goes to stderr (straight to the terminal); the computed GMU is the

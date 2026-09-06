@@ -1,4 +1,5 @@
-"""CPU regressions for lazy calibration loading during MK pack-cache hits."""
+"""CPU regressions for MK pack-cache hashing and lazy calibration loading."""
+import hashlib
 import importlib.util
 import logging
 import os
@@ -49,6 +50,73 @@ class CalibrationLoadingTests(unittest.TestCase):
     def save_hessian(self, *, legacy=False):
         torch.save({"H": self.hessian, "ntok": 37}, self.path,
                    _use_new_zipfile_serialization=not legacy)
+
+    @staticmethod
+    def historical_weight_md5(weight):
+        value = weight.detach().contiguous()
+        raw = value.view(torch.uint8) if value.dtype != torch.uint8 else value
+        return hashlib.md5(raw.cpu().numpy().tobytes()).hexdigest()
+
+    def test_weight_hash_preserves_every_byte_across_dtypes_and_layouts(self):
+        dtypes = (torch.bfloat16, torch.float16, torch.float32, torch.float64,
+                  torch.uint8, torch.int8, torch.int16, torch.int32,
+                  torch.int64, torch.bool, torch.complex64, torch.complex128,
+                  torch.float8_e4m3fn, torch.float8_e5m2)
+        for dtype in dtypes:
+            width = torch.empty((), dtype=dtype).element_size()
+            # Arbitrary raw bit patterns include NaNs, signed zeros and
+            # unnormalised bool bytes; hashing must not reinterpret values.
+            raw = torch.arange(128 * width).to(torch.uint8)
+            raw[:2 * width] = 0
+            raw[2 * width - 1] = 128
+            raw[-width:] = 255
+            value = raw.view(dtype).reshape(8, 16)
+            layouts = {
+                "contiguous": value,
+                "transpose": value.T,
+                "row_stride": value[::2],
+                "column_stride": value[:, ::2],
+                "offset": value[1:7],
+                "broadcast": value[:1].expand(8, -1),
+                "empty": value[:0],
+            }
+            for layout, tensor in layouts.items():
+                with self.subTest(dtype=dtype, layout=layout):
+                    self.assertEqual(self.mk._weight_md5(tensor),
+                                     self.historical_weight_md5(tensor))
+
+    def test_weight_hash_does_not_create_a_python_bytes_copy(self):
+        import numpy as np
+
+        class NoBytesCopy(np.ndarray):
+            def tobytes(self, *args, **kwargs):
+                raise AssertionError("weight hash copied the entire host buffer")
+
+        weight = torch.arange(512).reshape(4, 128).to(torch.bfloat16)
+        expected = self.historical_weight_md5(weight)
+        real_numpy = torch.Tensor.numpy
+
+        def numpy_view(tensor, *args, **kwargs):
+            return real_numpy(tensor, *args, **kwargs).view(NoBytesCopy)
+
+        with patch.object(torch.Tensor, "numpy", numpy_view):
+            self.assertEqual(self.mk._weight_md5(weight), expected)
+
+    def test_weight_hash_keeps_historical_cache_paths_and_detects_mutation(self):
+        weight = torch.arange(512).reshape(4, 128).to(torch.bfloat16)
+        root = Path(os.environ["VLLM_GLM53_MK_PACK_CACHE"]) / "rank0"
+        historical_hash = self.historical_weight_md5(weight)
+        for per_row in (False, True):
+            for gptq in (False, True):
+                for rank in (0, 8):
+                    expected = root / (
+                        f"{historical_hash}-4x128-bfloat16-v{self.mk.MK_PACK_VERSION}-"
+                        f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-lr{rank}.pt")
+                    self.assertEqual(Path(self.mk._pack_cache_path(weight, per_row, gptq, rank)),
+                                     expected)
+        before = self.mk._pack_cache_path(weight, True, True, 0)
+        weight[0, 0] = -1
+        self.assertNotEqual(self.mk._pack_cache_path(weight, True, True, 0), before)
 
     def test_zip_hessian_maps_storage_and_preserves_values(self):
         self.save_hessian()
