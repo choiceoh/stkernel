@@ -3566,13 +3566,13 @@ def test_b12x_static_v2_controls() -> None:
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False,
                       "dynamic": False, "wide": False, "even": False, "split": False,
                       "skip_sf": False, "skip_a": False, "v4": False, "a_ring": False,
-                      "tiled": False},
+                      "tiled": False, "sf_half": False},
           "the default v2 config is m32,f2,g4,a32, static schedule, no stamps, v2 body")
     check(parse("m32,f3,g2") == {"tile_m": 32, "fc1": 3, "fc2": 2, "a_rows": 32,
                                  "stamps": False, "dynamic": False, "wide": False,
                                  "even": False, "split": False, "skip_sf": False,
                                  "skip_a": False, "v4": False, "a_ring": False,
-                                 "tiled": False},
+                                 "tiled": False, "sf_half": False},
           "explicit cells override the defaults")
     check(parse("m32,f2,g4,d")["dynamic"] and not parse("m32,f2,g4,d")["stamps"],
           "d selects the dynamic item schedule")
@@ -3608,6 +3608,15 @@ def test_b12x_static_v2_controls() -> None:
           and parse("t,k")["split"] and parse("t,s", probe=True)["stamps"]
           and not parse("u")["tiled"] and not parse("v")["tiled"],
           "t composes with v, g, k and s; u and v stay row-major")
+    half = parse("t,h")
+    check(half["sf_half"] and half["tiled"] and parse("u,h")["sf_half"]
+          and not parse("t")["sf_half"],
+          "h selects 64-row FC1 SFB boxes on the v4/v5 kernels")
+    try:
+        parse("w,h")
+        check(False, "h without a v4-family kernel must be rejected")
+    except ValueError:
+        pass
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")

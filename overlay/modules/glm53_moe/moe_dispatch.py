@@ -301,7 +301,7 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
     "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
-    "v4": False, "a_ring": False, "tiled": False,
+    "v4": False, "a_ring": False, "tiled": False, "sf_half": False,
 }
 
 
@@ -368,6 +368,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
                 cfg["fc2"] = 2
             continue
+        if token == "h":
+            # v4/v5: FC1 SFB boxes of 64 rows (the half a stage reads) instead
+            # of the 128-row block (39차)
+            cfg["sf_half"] = True
+            continue
         if token == "k":
             # v3 last-wave split: each item of a partial last wave (p items,
             # 2p <= grid) runs on two CTAs, one FC1 half each, full FC2 with
@@ -404,6 +409,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         )
     if cfg["even"] and not cfg["wide"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: e (even waves) needs w (v3)")
+    if cfg["sf_half"] and not cfg["v4"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: h (half SFB boxes) needs u, v or t (v4/v5)")
     if cfg["split"] and (not cfg["wide"] or cfg["even"]):
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: k (last-wave split) needs w, not e")
     if (cfg["skip_sf"] or cfg["skip_a"]) and not cfg["wide"]:
@@ -1724,6 +1731,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
         bool(config.get("tiled", False)),
+        bool(config.get("sf_half", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1808,7 +1816,11 @@ def _get_static_kernel_v2(
             kernel_cls = MoEStaticKernelV4
         else:
             kernel_cls = MoEStaticKernelV3
-        v4_kwargs = {"a_ring": bool(config.get("a_ring", False))} if config.get("v4", False) else {}
+        v4_kwargs = (
+            {"a_ring": bool(config.get("a_ring", False)),
+             "sf_half": bool(config.get("sf_half", False))}
+            if config.get("v4", False) else {}
+        )
         kernel: Any = kernel_cls(
             **v4_kwargs,
             sf_vec_size=sf_vec_size,
@@ -1952,6 +1964,7 @@ def _get_static_kernel_v2(
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
+        f"{'h' if config.get('sf_half') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

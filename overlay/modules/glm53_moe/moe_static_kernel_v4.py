@@ -114,6 +114,7 @@ class MoEStaticKernelV4:
         skip_sf: bool = False,
         skip_a: bool = False,
         a_ring: bool = False,
+        sf_half: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -168,13 +169,20 @@ class MoEStaticKernelV4:
         self.a_ring = bool(a_ring)
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
+        # sf_half (cell h, 39차): the FC1 SFB TMA box covers the 64 rows the
+        # stage uses instead of the 128-row scale block -- v4 loaded the whole
+        # 4 KB block for each 64-row gate/up stage and read half of it (32 KB
+        # of the item's ~830 KB, all DRAM). The smem block stays 128 rows; the
+        # box lands in the half the MMA warps read (sSFB1_0 / sSFB1_1).
+        self.sf_half = bool(sf_half)
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
         self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
         self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
         self.sa1_tile_shape_mk = (_TILE_M, _FC1_TILE_K)
         self.sfa1_tile_shape_mk = (128, _FC1_TILE_K)   # SF blocks are 128 rows
         self.sfa_tiles_per_block = 128 // _TILE_M
-        self.sfb1_tile_shape_nk = (128, _FC1_TILE_K)
+        # SFB gmem tiles: 128-row blocks, or the 64-row halves under sf_half
+        self.sfb1_tile_shape_nk = (_FC1_TILE_N if self.sf_half else 128, _FC1_TILE_K)
         self.sfb1_tiles_per_block = 128 // _FC1_TILE_N   # 2 halves share a block
         self.sfb_tile_shape_nk = (128, _FC2_TILE_K)
         self.output_tile_count_n = output_tile_count_n
@@ -252,6 +260,24 @@ class MoEStaticKernelV4:
             tiled_mma,
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
+
+    def _sfb1_tma_smem_layout(self):
+        """The staged SFB smem layout the FC1 SFB TMA atom is built against:
+        the 128-row block, or its first 64-row half under sf_half (the atom
+        only needs the box's smem arrangement; the DMA warp targets either
+        half of the block through its own partition)."""
+        if self.sf_half:
+            # the staged block layout is (((32, 4), blocks), K..., stages) with
+            # row strides (16, 4): the first 64 rows are the same layout with
+            # the (32, 4) row mode's second extent halved -- a plain Layout
+            # (local_tile wants a view), rebuilt from the shape and strides
+            lay = self.sfb1_smem_layout_staged
+            shp, strd = lay.shape, lay.stride
+            rows = shp[0][0]
+            assert rows[0] * rows[1] == 128 and _FC1_TILE_N % rows[0] == 0, shp
+            half_rows = ((rows[0], _FC1_TILE_N // rows[0]), shp[0][1])
+            return cute.make_layout((half_rows, shp[1], shp[2]), stride=strd)
+        return self.sfb1_smem_layout_staged
 
     def _smem_bytes_estimate(self) -> int:
         def _align_up(value: int, align: int) -> int:
@@ -433,7 +459,7 @@ class MoEStaticKernelV4:
             b_w13, self.b1_smem_layout_staged, (_FC1_TILE_N, _FC1_TILE_K), 1
         )
         tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
-            sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
+            sfb_w13_tensor, self._sfb1_tma_smem_layout(), self.sfb1_tile_shape_nk, 1,
             internal_type=cutlass.Int16,
         )
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
@@ -589,7 +615,13 @@ class MoEStaticKernelV4:
         if cutlass.const_expr(not self.skip_a and not self.a_ring):
             fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
-            fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
+            if cutlass.const_expr(self.sf_half):
+                # the box is the 64-row half of the 128-row block: half the bytes
+                fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one) // (
+                    128 // _FC1_TILE_N
+                )
+            else:
+                fc1_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb1_smem_one)
         b2_smem_one = cute.slice_(b2_smem_staged, (None, None, 0))
         sfb2_smem_one = cute.slice_(sfb2_smem_staged, (None, None, 0))
         fc2_tma_bytes = cute.size_in_bytes(
@@ -954,11 +986,31 @@ class MoEStaticKernelV4:
             tma_b_w13, b_cta_crd, b_cta_layout,
             cute.group_modes(sB1, 0, 2), cute.group_modes(gB_w13_tiled, 0, 2),
         )
-        tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
-            tma_sfb_w13, b_cta_crd, b_cta_layout,
-            cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
-        )
-        tBsSFB1 = cute.filter_zeros(tBsSFB1)
+        # the FC1 SFB smem block's two 64-row halves (the MMA side reads one
+        # per half; under sf_half the DMA side targets one per half too)
+        sfb1_tile = cute.slice_(self.fc1_tile_shape_mnk, (0, None, None))
+        sSFB1_0 = cute.local_tile(sSFB1, sfb1_tile, (0, 0, None))
+        sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
+        if cutlass.const_expr(self.sf_half):
+            tBsSFB1_h0, tBgSFB_w13 = cpasync.tma_partition(
+                tma_sfb_w13, b_cta_crd, b_cta_layout,
+                cute.group_modes(sSFB1_0, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
+            )
+            tBsSFB1_h1, _tBgSFB_dup = cpasync.tma_partition(
+                tma_sfb_w13, b_cta_crd, b_cta_layout,
+                cute.group_modes(sSFB1_1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
+            )
+            tBsSFB1_h0 = cute.filter_zeros(tBsSFB1_h0)
+            tBsSFB1_h1 = cute.filter_zeros(tBsSFB1_h1)
+            tBsSFB1 = tBsSFB1_h0
+        else:
+            tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
+                tma_sfb_w13, b_cta_crd, b_cta_layout,
+                cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
+            )
+            tBsSFB1 = cute.filter_zeros(tBsSFB1)
+            tBsSFB1_h0 = tBsSFB1
+            tBsSFB1_h1 = tBsSFB1
         tBgSFB_w13 = cute.filter_zeros(tBgSFB_w13)
         tBsB2, tBgB_down = cpasync.tma_partition(
             tma_b_down, b_cta_crd, b_cta_layout,
@@ -978,9 +1030,6 @@ class MoEStaticKernelV4:
         tCrA1 = tiled_mma1.make_fragment_A(tCsA1[None, None, None, 0])
         tCsB1 = thr_mma1.partition_B(sB1)
         tCrB1 = tiled_mma1.make_fragment_B(tCsB1[None, None, None, 0])
-        sfb1_tile = cute.slice_(self.fc1_tile_shape_mnk, (0, None, None))
-        sSFB1_0 = cute.local_tile(sSFB1, sfb1_tile, (0, 0, None))
-        sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
         tCrSFB1_0 = self._dense_cls._partition_fragment_SFB(
             self, sSFB1_0[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
         tCrSFB1_1 = self._dense_cls._partition_fragment_SFB(
@@ -1717,14 +1766,20 @@ class MoEStaticKernelV4:
                         gate_tile = gate_tile_cnt + up_tile
                         tBgB_up_nk = tBgB_w13[(None, up_tile, None, weight_expert_idx)]
                         tBgB_gate_nk = tBgB_w13[(None, gate_tile, None, weight_expert_idx)]
-                        tBgSFB_up_nk = tBgSFB_w13[
-                            (None, up_tile // Int32(self.sfb1_tiles_per_block), None,
-                             weight_expert_idx)
-                        ]
-                        tBgSFB_gate_nk = tBgSFB_w13[
-                            (None, gate_tile // Int32(self.sfb1_tiles_per_block), None,
-                             weight_expert_idx)
-                        ]
+                        # SFB gmem tile: the 128-row block (v4) or this half's
+                        # 64-row tile (sf_half); the smem target is the half
+                        if cutlass.const_expr(self.sf_half):
+                            sfb_up_idx = up_tile
+                            sfb_gate_idx = gate_tile
+                        else:
+                            sfb_up_idx = up_tile // Int32(self.sfb1_tiles_per_block)
+                            sfb_gate_idx = gate_tile // Int32(self.sfb1_tiles_per_block)
+                        tBgSFB_up_nk = tBgSFB_w13[(None, sfb_up_idx, None, weight_expert_idx)]
+                        tBgSFB_gate_nk = tBgSFB_w13[(None, sfb_gate_idx, None, weight_expert_idx)]
+                        if cutlass.const_expr(h == 0):
+                            tBsSFB1_h = tBsSFB1_h0
+                        else:
+                            tBsSFB1_h = tBsSFB1_h1
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)
@@ -1766,12 +1821,12 @@ class MoEStaticKernelV4:
                                     if cutlass.const_expr(gu == 0):
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_gate_nk[(None, k_tile)],
-                                            tBsSFB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                            tBsSFB1_h[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                         )
                                     else:
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_up_nk[(None, k_tile)],
-                                            tBsSFB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                            tBsSFB1_h[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                         )
                                 fc1_pipeline.producer_commit(fc1_prod_state)
                                 fc1_prod_state.advance()

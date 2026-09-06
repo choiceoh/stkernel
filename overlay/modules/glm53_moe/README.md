@@ -272,8 +272,13 @@ kernel is an overlay of the image's `_moe_dynamic/gated.py`
 (`moe_dynamic_gated.py`, pinned preimage) that groups the 4-D weights into a
 hierarchical K -- its 64 B tiles divide the 256 B / 64 B chunks -- and is
 compiled and cached per layout (`dynamic_..._tiled`); both kernels compile
-on the CPU check), and the probe-only timing cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the
-A + SFA boxes) that the serving parse rejects. The
+on the CPU check), `h` (v4/v5, 39차: the FC1 SFB TMA box covers the 64
+rows a gate/up stage reads instead of the 128-row scale block -- v4 loaded
+the whole 4 KB block per 64-row stage and read half, 32 KB of an item's
+~830 KB from DRAM; the smem block stays 128 rows and the box lands in the
+half the MMA warps read), and the probe-only timing cells `xs` (skip the
+FC1 SFB boxes) and `xa` (skip the A + SFA boxes) that the serving parse
+rejects. The
 cache key and on-disk kernel name carry the config; the source files are in
 `_kernel_source_files()`, so an edit invalidates the module cache like any
 other kernel file.
