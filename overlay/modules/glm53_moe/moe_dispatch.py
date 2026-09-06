@@ -45,6 +45,7 @@ from .moe_static_kernel_v2 import (
     STAMP_SLOTS as _STATIC_V2_STAMP_SLOTS,
 )
 from .moe_static_kernel_v3 import MoEStaticKernelV3
+from .moe_static_kernel_v4 import MoEStaticKernelV4
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
     _W4A16_ALLOWED_ROUTED_SIZES,
@@ -293,12 +294,17 @@ _GLM53_B12X_DYNAMIC_MAC_LADDER = _parse_glm53_mac_ladder(
 _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 4, "a_rows": 32, "stamps": False, "dynamic": False,
-    "wide": False, "even": False,
+    "wide": False, "even": False, "split": False, "skip_sf": False, "skip_a": False,
+    "v4": False,
 }
 
 
-def _parse_glm53_static_v2(raw: str | None) -> dict | None:
-    """Parse the v2 static-kernel spec; None keeps the stock kernel."""
+def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | None:
+    """Parse the v2 static-kernel spec; None keeps the stock kernel.
+
+    probe=True admits the timing-only cells `xs` (skip FC1's SFB boxes) and
+    `xa` (skip the A + SFA boxes), whose numerics are garbage; the serving
+    parse (the env value) rejects them."""
     if raw is None:
         return None
     value = raw.strip()
@@ -327,6 +333,28 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
             # wave is fullest takes items (U=40: 40 CTAs x 4 items)
             cfg["even"] = True
             continue
+        if token == "u":
+            # v4 (moe_static_kernel_v4.py): FC1 halves over 512-wide K stages
+            # with gate and up in separate stages (256 B w13 row segments);
+            # implies w's geometry, FC2 2 stages unless g is given
+            cfg["wide"] = True
+            cfg["v4"] = True
+            if "g" not in "".join(t.strip()[:1] for t in value.split(",")):
+                cfg["fc2"] = 2
+            continue
+        if token == "k":
+            # v3 last-wave split: each item of a partial last wave (p items,
+            # 2p <= grid) runs on two CTAs, one FC1 half each, full FC2 with
+            # the other half zeroed (the scatter adds the partials)
+            cfg["split"] = True
+            continue
+        if token in ("xs", "xa"):
+            if not probe:
+                raise ValueError(
+                    f"{_GLM53_B12X_STATIC_V2_ENV}: {token} is a probe-only timing cell"
+                )
+            cfg["skip_sf" if token == "xs" else "skip_a"] = True
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0, 1 or comma-separated "
@@ -350,6 +378,10 @@ def _parse_glm53_static_v2(raw: str | None) -> dict | None:
         )
     if cfg["even"] and not cfg["wide"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: e (even waves) needs w (v3)")
+    if cfg["split"] and (not cfg["wide"] or cfg["even"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: k (last-wave split) needs w, not e")
+    if (cfg["skip_sf"] or cfg["skip_a"]) and not cfg["wide"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: xs/xa need w (v3)")
     return cfg
 
 
@@ -1077,6 +1109,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_kernel,
         moe_static_kernel_v2,
         moe_static_kernel_v3,
+        moe_static_kernel_v4,
     )
 
     return (
@@ -1085,6 +1118,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_kernel.__file__,
         moe_static_kernel_v2.__file__,
         moe_static_kernel_v3.__file__,
+        moe_static_kernel_v4.__file__,
         moe_micro_kernel.__file__,
         moe_dynamic_kernel.__file__,
         moe_dynamic_gated.__file__,
@@ -1528,6 +1562,10 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("dynamic", False)),
         bool(config.get("wide", False)),
         bool(config.get("even", False)),
+        bool(config.get("split", False)),
+        bool(config.get("v4", False)),
+        bool(config.get("skip_sf", False)),
+        bool(config.get("skip_a", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1605,13 +1643,17 @@ def _get_static_kernel_v2(
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     if config.get("wide", False):
-        kernel: Any = MoEStaticKernelV3(
+        kernel_cls = MoEStaticKernelV4 if config.get("v4", False) else MoEStaticKernelV3
+        kernel: Any = kernel_cls(
             sf_vec_size=sf_vec_size,
             output_tile_count_n=output_tile_count_n,
             fc1_stages=int(config["fc1"]),
             fc2_stages=int(config["fc2"]),
             stamps=bool(config["stamps"]),
             even=bool(config.get("even", False)),
+            split=bool(config.get("split", False)),
+            skip_sf=bool(config.get("skip_sf", False)),
+            skip_a=bool(config.get("skip_a", False)),
             fast_math=fast_math,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -1723,6 +1765,8 @@ def _get_static_kernel_v2(
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
+        f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
+        f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,

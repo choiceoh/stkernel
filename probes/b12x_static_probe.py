@@ -333,7 +333,7 @@ def main() -> int:
 
     results = {}
     for spec in specs:
-        cfg = md._parse_glm53_static_v2(spec)
+        cfg = md._parse_glm53_static_v2(spec, probe=True)
         label = f"v2[{spec}]"
         try:
             md._STATIC_V2_OVERRIDE = cfg
@@ -390,7 +390,7 @@ def main() -> int:
     # the static backend's largest shape (640 pairs, experts over 3 m-tiles),
     # after every timing row is in: a fault here must not cost the sweep
     for spec in specs:
-        cfg = md._parse_glm53_static_v2(spec)
+        cfg = md._parse_glm53_static_v2(spec, probe=True)
         label = f"v2[{spec}]"
         try:
             md._STATIC_V2_OVERRIDE = cfg
