@@ -46,6 +46,7 @@ from .moe_sf_pack import (
     SF_PACK_BLOCK,
     SF_STAGE_BYTES,
     pack_sf_inline,
+    unpack_sf_inline,
 )
 from .moe_static_kernel_v5 import (
     MoEStaticKernelV5,
@@ -1091,6 +1092,21 @@ def _packed_fc1_scales(sf: torch.Tensor, num_experts: int, raw: bool = False) ->
     packed = pack_sf_inline(flat, SF_PACK_BLOCK).reshape(
         num_experts, blocks // num_experts, SF_STAGE_BYTES
     )
+    if os.environ.get("VLLM_GLM53_B12X_SF_PACK_VERIFY") == "1":
+        # the packing runs on the device; prove the round trip THERE, not just
+        # in the CPU test, before blaming the kernel's expansion
+        back = unpack_sf_inline(packed.reshape(-1, SF_STAGE_BYTES), SF_PACK_BLOCK)
+        if not torch.equal(back, flat):
+            bad = int((back != flat).sum())
+            first = int((back != flat).nonzero()[0][0])
+            raise ValueError(
+                f"packed scales do not round-trip on {flat.device}: {bad} of "
+                f"{flat.numel()} bytes differ, first at {first} "
+                f"(packed {int(packed.reshape(-1)[0])}, want {int(flat[0])})"
+            )
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x q] packed scales round-trip on device: %d bytes OK", flat.numel()
+        )
     _SF_PACKED[key] = packed
     return packed
 
