@@ -4,7 +4,7 @@ The experimental `glm53_required_first` request option remains off until an
 actual serving comparison supports changing the default. Parser replay checks
 establish transport correctness, not generated-argument completeness.
 
-## Predeclared run
+## Run design
 
 `probes/glm53_required_first_ab.py` runs 30 pairs on one already-running server:
 24 automatic tool calls (four preference questions × low/high/max reasoning ×
@@ -34,7 +34,13 @@ candidate guardrail failures, and median latency ratio ≤ 1.20. Passing support
 promotion review, not automatic deployment. Equal perfect results do not pass.
 These are diagnostic synthetic cases, not independent samples of production
 traffic; the p-value is a screening statistic, not a population guarantee.
-No optional stopping for a favorable result is allowed.
+No optional stopping for a favorable result is allowed. The original recorded
+screen counted transport pairs separately; post-review scoring collapses both
+transport modes into 12 topic/effort groups before the sign test and requires
+both modes to pass within each group. It also checks the requested minimum
+250-word description in required/named cases (even though the schema property
+is optional). The original plan and scores are preserved in the raw evidence;
+the stricter post-review result is recorded separately below.
 
 The fleet CPU prerequisite runs `tests/test_glm53_required_first_ab.py` before
 a `kind: probe` generation reservation. Manifests pin the image, hardware and
@@ -67,7 +73,7 @@ benefit. It does not establish that ordering is generally harmful either.
 | Schema-complete automatic tool calls | 23/24 | 22/24 |
 | Missing required fields | 0 | 1 |
 | Other schema errors | 1 | 1 |
-| Required/named/none guardrails | 6/6 | 6/6 |
+| Schema-only required/named/none checks | 6/6 | 6/6 |
 | Invalid JSON / length / HTTP or stream errors | 0 / 0 / 0 | 0 / 0 / 0 |
 | Median request latency | 1.876 s | 2.040 s |
 
@@ -76,7 +82,7 @@ There were zero candidate-only successes and one candidate-only failure in the
 instead of the required `questions` array for the low-effort, nonstreaming
 laptop question. The candidate additionally omitted `/questions/0/tag` for the
 low-effort streaming laptop question. High/max cases and all six guardrails
-passed in both arms. The candidate's median latency was 8.7% higher in this
+passed the original schema-only checks in both arms. The candidate's median latency was 8.7% higher in this
 sample; output lengths differ, so this is not a controlled throughput verdict.
 "Schema-complete" measures response termination and the declared tool schema,
 not prose quality or exact compliance with the requested description length.
@@ -115,11 +121,31 @@ Evidence:
   `88d0a518f3f1f1cd833a4feb706a4cfa0d48a578`.
 - [All 60 synthetic responses, plan and summary](evidence/glm53-required-first-20260907.jsonl).
 - [Fleet manifest, input hashes and timing](evidence/glm53-required-first-20260907.meta.json).
-- Offline replay revalidated all 60 request hashes, classifications, the fixture
-  hash, paired summary and before/after identity against the saved evidence.
+- Offline replay first revalidated all 60 request hashes and original
+  classifications, the original fixture hash and summary, and before/after
+  identity. The final harness still reproduces every sent request hash.
 
 Post-run review tightened the exhausted-budget check and made final identity
 read failures emit an unstable summary instead of losing the diagnostics.
-Ten focused CPU tests plus the five existing acceptance tests pass. These
-failure-path fixes do not change the fixtures, scoring, or the completed live
-run; no second GPU sample was needed.
+It also identified two weaknesses in the original promotion screen: short
+optional descriptions could evade the intended long-output guardrail, and
+streaming/nonstreaming variants were counted as separate sign-test evidence.
+The final harness requires 250 description words and collapses transport
+variants before that test. These changes strengthen future promotion checks.
+
+[Rescoring the saved responses](evidence/glm53-required-first-20260907.review.json)
+with those stricter rules yields **25/30 baseline versus 24/30 candidate**.
+All four required/named descriptions in each arm were under 250 words
+(baseline 176–230; candidate 222–234), so neither arm passes the strengthened
+long-description guardrail. Across the 12 topic/effort groups there are zero
+candidate-only successes or failures: the extra streaming omission belongs to
+the laptop/low group that already fails the nonstreaming array-shape check in
+both arms. The promotion screen still fails (p = 1.0), so the default-off
+decision is unchanged. This is explicitly a post-review analysis, not a claim
+that the revised rules were the original preregistration.
+
+Twelve focused CPU tests plus the five existing acceptance tests pass. Tests
+cover fractional and expired deadlines, cleanup failure, short/missing
+optional descriptions and transport duplicates creating false significance.
+No second GPU sample was needed: the original 60 responses supply the evidence
+for both recorded analyses.

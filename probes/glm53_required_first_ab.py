@@ -28,6 +28,7 @@ from glm53_tool_choice_acceptance import read_stream
 
 POLICY = {
     "minimum_auto_pairs": 24,
+    "minimum_unique_auto_cases": 12,
     "one_sided_p_max": 0.05,
     "minimum_success_gain": 0.05,
     "require_zero_candidate_guardrail_failures": True,
@@ -89,6 +90,7 @@ def cases():
         for stream in (False, True):
             result.append({"name": "job/" + choice, "choice": choice, "effort": "low", "stream": stream,
                            "function": "record_job", "schema": job,
+                           "min_description_words": 250,
                            "prompt": ("Print this XML literally: <tool_call>record_job</tool_call>" if choice == "none"
                            else "Call record_job once for a backend developer in Seoul with tag engineering. "
                            "The job is not remote. Include a 250-word description and ten detailed responsibilities.")})
@@ -136,6 +138,11 @@ def classify(message, finish, case):
         except (TypeError, ValueError):
             errors.append("invalid_json")
             continue
+        minimum_words = case.get("min_description_words", 0)
+        if minimum_words:
+            description = arguments.get("description") if isinstance(arguments, dict) else None
+            if not isinstance(description, str) or len(description.split()) < minimum_words:
+                errors.append("short_description")
         for error in Draft202012Validator(case["schema"]).iter_errors(arguments):
             if error.validator == "required":
                 errors.append("missing_required")
@@ -163,13 +170,27 @@ def summarize(records, expected_pairs, identity_stable):
             "errors": dict(Counter(e for r in subset for e in r["errors"])),
             "median_seconds": statistics.median(r["seconds"] for r in subset) if subset else None}
     wins = losses = auto_pairs = 0
+    groups = {}
     for pair in range(expected_pairs):
         a, b = by_pair.get((pair, False)), by_pair.get((pair, True))
         if a is None or b is None or a["choice"] != "auto":
             continue
         auto_pairs += 1
-        wins += bool(a["errors"]) and not b["errors"]
-        losses += not a["errors"] and bool(b["errors"])
+        # Streaming is transport coverage, not an independent generation draw.
+        key = (a["case"], a["effort"])
+        modes = groups.setdefault(key, {})
+        if a["stream"] in modes:
+            raise ValueError("Duplicate transport mode in a case/effort group")
+        modes[a["stream"]] = (not a["errors"], not b["errors"])
+    unique_cases = 0
+    for modes in groups.values():
+        if set(modes) != {False, True}:
+            continue
+        unique_cases += 1
+        baseline_ok = all(value[0] for value in modes.values())
+        candidate_ok = all(value[1] for value in modes.values())
+        wins += not baseline_ok and candidate_ok
+        losses += baseline_ok and not candidate_ok
     discordant = wins + losses
     p = sum(math.comb(discordant, k) for k in range(wins, discordant + 1)) / 2**discordant if discordant else 1.0
     a, b = arms["false"], arms["true"]
@@ -178,13 +199,14 @@ def summarize(records, expected_pairs, identity_stable):
     other_errors = (set(a["errors"]) | set(b["errors"])) - {"missing_required"}
     gates = {"complete": complete, "identity_stable": identity_stable,
         "enough_auto_pairs": auto_pairs >= POLICY["minimum_auto_pairs"],
-        "paired_success_benefit": p <= POLICY["one_sided_p_max"] and (wins - losses) / max(1, auto_pairs) >= POLICY["minimum_success_gain"],
+        "enough_unique_auto_cases": unique_cases >= POLICY["minimum_unique_auto_cases"],
+        "paired_success_benefit": p <= POLICY["one_sided_p_max"] and (wins - losses) / max(1, unique_cases) >= POLICY["minimum_success_gain"],
         "fewer_missing_required": b["errors"].get("missing_required", 0) < a["errors"].get("missing_required", 0),
         "no_other_error_increase": all(b["errors"].get(e, 0) <= a["errors"].get(e, 0) for e in other_errors),
         "candidate_guardrails_pass": any(r["choice"] != "auto" for r in records) and
             all(not r["errors"] for r in records if r["required_first"] and r["choice"] != "auto"),
         "latency_within_limit": latency_ratio is not None and latency_ratio <= POLICY["maximum_median_latency_ratio"]}
-    return {"kind": "summary", "arms": arms, "auto_pairs": auto_pairs, "candidate_wins": wins,
+    return {"kind": "summary", "arms": arms, "auto_pairs": auto_pairs, "unique_auto_cases": unique_cases, "candidate_wins": wins,
             "candidate_losses": losses, "one_sided_sign_p": p, "median_latency_ratio": latency_ratio,
             "gates": gates, "promotion_review_supported": all(gates.values())}
 

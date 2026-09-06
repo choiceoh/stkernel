@@ -54,7 +54,7 @@ class PairedEvidenceTests(unittest.TestCase):
             "tag": "engineering", "title": "developer", "location": {"notes": "test"},
             "responsibilities": ["code"] * 10})}}]}
         errors, paths = ab.classify(message, "tool_calls", case)
-        self.assertEqual(errors, ["missing_required", "tool_envelope", "wrong_function"])
+        self.assertEqual(errors, ["missing_required", "short_description", "tool_envelope", "wrong_function"])
         self.assertEqual(paths, ["/location/city", "/location/remote"])
 
     def test_array_item_omission_keeps_nested_path(self):
@@ -118,7 +118,8 @@ class PairedEvidenceTests(unittest.TestCase):
 
     def records(self):
         return [{"pair": pair, "required_first": enabled, "choice": case["choice"],
-                 "errors": ["missing_required"] if pair < 6 and not enabled else [], "seconds": 1.0}
+                 "case": case["name"], "effort": case["effort"], "stream": case["stream"],
+                 "errors": ["missing_required"] if pair < 10 and not enabled else [], "seconds": 1.0}
                 for pair, case, enabled in ab.schedule(ab.cases())]
 
     def test_promotion_requires_matched_benefit_and_complete_stable_guardrails(self):
@@ -132,6 +133,30 @@ class PairedEvidenceTests(unittest.TestCase):
         self.assertFalse(ab.summarize(tied, 30, True)["promotion_review_supported"])
         next(r for r in rows if r["pair"] == 29 and r["required_first"])["errors"] = ["length"]
         self.assertFalse(ab.summarize(rows, 30, True)["promotion_review_supported"])
+
+    def test_stream_duplicates_cannot_manufacture_significance(self):
+        rows = self.records()
+        topics = {c["name"] for c in ab.cases()[:3]}
+        for row in rows:
+            row["errors"] = ["missing_required"] if (not row["required_first"] and
+                row["effort"] == "low" and row["case"] in topics) else []
+        result = ab.summarize(rows, 30, True)
+        self.assertEqual(result["candidate_wins"], 3)
+        self.assertEqual(result["unique_auto_cases"], 12)
+        self.assertEqual(result["one_sided_sign_p"], 0.125)
+        self.assertFalse(result["promotion_review_supported"])
+
+    def test_long_guardrail_cannot_pass_with_omitted_empty_or_short_description(self):
+        case = ab.cases()[24]
+        arguments = {"tag": "engineering", "title": "developer", "location": {
+            "city": "Seoul", "remote": False}, "responsibilities": ["code"] * 10}
+        for words in (None, 0, 249, 250):
+            if words is not None:
+                arguments["description"] = " ".join(["word"] * words)
+            message = self.message(json.dumps(arguments))
+            message["tool_calls"][0]["function"]["name"] = "record_job"
+            errors, _ = ab.classify(message, "tool_calls", case)
+            self.assertEqual(errors, [] if words == 250 else ["short_description"])
 
     def test_regressions_sample_size_duplicates_and_latency_block_promotion(self):
         rows = self.records()

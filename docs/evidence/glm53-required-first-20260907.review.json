@@ -1,0 +1,130 @@
+{
+  "method": "Post-review rescoring of the existing 60 responses; no new generation. Require 250 description words and collapse streaming/nonstreaming by case/effort for the sign test. Original evidence and original summary remain immutable.",
+  "policy": {
+    "minimum_auto_pairs": 24,
+    "minimum_unique_auto_cases": 12,
+    "one_sided_p_max": 0.05,
+    "minimum_success_gain": 0.05,
+    "require_zero_candidate_guardrail_failures": true,
+    "require_fewer_missing_required": true,
+    "require_no_increase_other_errors": true,
+    "maximum_median_latency_ratio": 1.2,
+    "note": "Screen for promotion review, not proof of broad model quality. No optional stopping."
+  },
+  "changed_request_verdicts": [
+    {
+      "pair": 24,
+      "required_first": false,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 229
+    },
+    {
+      "pair": 24,
+      "required_first": true,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 224
+    },
+    {
+      "pair": 25,
+      "required_first": true,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 222
+    },
+    {
+      "pair": 25,
+      "required_first": false,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 230
+    },
+    {
+      "pair": 26,
+      "required_first": false,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 209
+    },
+    {
+      "pair": 26,
+      "required_first": true,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 234
+    },
+    {
+      "pair": 27,
+      "required_first": true,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 224
+    },
+    {
+      "pair": 27,
+      "required_first": false,
+      "old_errors": [],
+      "errors": [
+        "short_description"
+      ],
+      "description_words": 176
+    }
+  ],
+  "summary": {
+    "kind": "summary",
+    "arms": {
+      "false": {
+        "requests": 30,
+        "successes": 25,
+        "errors": {
+          "schema_invalid": 1,
+          "short_description": 4
+        },
+        "median_seconds": 1.876
+      },
+      "true": {
+        "requests": 30,
+        "successes": 24,
+        "errors": {
+          "schema_invalid": 1,
+          "missing_required": 1,
+          "short_description": 4
+        },
+        "median_seconds": 2.04
+      }
+    },
+    "auto_pairs": 24,
+    "unique_auto_cases": 12,
+    "candidate_wins": 0,
+    "candidate_losses": 0,
+    "one_sided_sign_p": 1.0,
+    "median_latency_ratio": 1.0874200426439233,
+    "gates": {
+      "complete": true,
+      "identity_stable": true,
+      "enough_auto_pairs": true,
+      "enough_unique_auto_cases": true,
+      "paired_success_benefit": false,
+      "fewer_missing_required": false,
+      "no_other_error_increase": true,
+      "candidate_guardrails_pass": false,
+      "latency_within_limit": true
+    },
+    "promotion_review_supported": false
+  }
+}
