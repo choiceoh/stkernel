@@ -181,6 +181,7 @@ def main() -> int:
     # decode at 128K context is heavier than at 2K, and the legs' number is
     # the short-context one. Acceptance from the counters over the whole run.
     legacy, raw = br._spec_delta(m0, m1)
+    k_eff = br.spec_k_eff(m0, m1) or args.num_spec   # 37차: the served k, not the flag
     samp = sw.samples
     by_ctx = {}
     for i in range(len(samp) - 1):
@@ -201,14 +202,14 @@ def main() -> int:
                         for c, v in sorted(by_ctx.items()))
         print(f"decode: windows n={len(rates)} med {win_med:.1f} [{min(rates):.1f}, {max(rates):.1f}] step/s "
               f"(inside the answers only; per context: {per}), raw acc {(raw or 0) * 100:.1f}%, "
-              f"tokens/step {1 + args.num_spec * (raw or 0):.3f}, generated {gen_tokens} tokens over {wall:.0f}s",
+              f"tokens/step {1 + k_eff * (raw or 0):.3f} (k={k_eff:.1f}), generated {gen_tokens} tokens over {wall:.0f}s",
               flush=True)
     else:
         print("decode: no windows", flush=True)
     rec["decode"] = {"gen_tokens": gen_tokens, "wall_s": wall, "acc_raw": raw, "acc_legacy": legacy,
-                     "tokens_per_step": 1 + args.num_spec * (raw or 0), "windows": rates,
+                     "tokens_per_step": 1 + k_eff * (raw or 0), "windows": rates,
                      "windows_med": win_med, "windows_by_ctx": {str(k): v for k, v in by_ctx.items()},
-                     "num_spec": args.num_spec}
+                     "num_spec": k_eff}
 
     # ---- Korean corruption on every answer
     dirty, chars, kinds_tot = [], 0, {}

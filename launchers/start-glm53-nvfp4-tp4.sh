@@ -341,7 +341,8 @@ ENVV="-e VLLM_TORCH_PROFILER_DIR=/prof -e HF_HOME=/cache/huggingface -e HF_HUB_O
 -e TORCH_CUDA_ARCH_LIST=12.1a -e FLASHINFER_CUDA_ARCH_LIST=12.1a \
 -e FLASHINFER_DISABLE_VERSION_CHECK=1 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
--e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 \
+-e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=${GLOO_IFNAME:-enP2p1s0f0np0} \
+-e TORCH_CPP_LOG_LEVEL=${TORCH_CPP_LOG_LEVEL:-WARNING} \
 -e TP_SOCKET_IFNAME=enp1s0f0np0 -e MN_IF_NAME=enp1s0f0np0 \
 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \
 -e NCCL_IB_GID_INDEX=3 -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
@@ -359,6 +360,13 @@ done
 # ('expected size 7==5'). The fp8-dense module registers VLLM_GLM53_SPEC_K as a
 # compile factor; this is the value it hashes.
 ENVV="$ENVV -e VLLM_GLM53_SPEC_K=$SPEC_K"
+# 37차 (2026-09-06): three of eight boots today spent 302 s in the TP
+# group's FIRST gloo collective (in_the_same_node_as -> broadcast_object_list,
+# every rank inside it, then success) right after the NCCL communicator init
+# on the same port; a 4-node gloo probe without NCCL never stalls. So gloo
+# moves to the second RoCE port (10.10.11.x; NCCL bootstrap stays on port 0)
+# and c10d socket warnings are logged, so a recurrence names the socket.
+# GLOO_IFNAME=enp1s0f0np0 puts it back for an A/B.
 
 # MK-KDA indexes the conv state as DS (dim, state_len). vLLM's default is SD,
 # and the segment's layout gate then rejects EVERY layer for the life of the
