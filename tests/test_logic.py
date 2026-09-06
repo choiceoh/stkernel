@@ -9495,6 +9495,16 @@ def test_glm53_prep_fused_contracts() -> None:
           "align re-gather runs on every fused step, after the cached metadata is resolved")
     check("postprocess_state" not in src[src.index("def install_glm53_prep_fused("):],
           "postprocess_state (num_accepted scatter + align post-save) stays stock")
+    _k = src[src.index("def _glm53_prep_fused_kernel("):src.index("@dataclass\nclass PrepPlan:")]
+    check("mamba_cache_mode != none (block table select differs)" not in src
+          and '"mamba_block"' in src[src.index("_NO_SPECIALIZE = ["):src.index("]", src.index("_NO_SPECIALIZE = ["))]
+          and "start_col = tl.maximum((seq_len - 1) // mamba_block, 0)" in _k
+          and "st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)" in _k,
+          "align mode: the GDN state indices come from the running block column (stock mamba_get_block_table_tensor)")
+    check('reason = "mamba align mode: run_prep gathers state column 0"' in src
+          and "align_mode=runner.cache_config.mamba_cache_mode == \"align\"" in src
+          and "mamba_block=int(mamba_block or (1 << 30))" in src,
+          "align mode: the CUDA run_prep (column 0) yields to the Triton kernel; the block size reaches the plan")
     print("  glm53 prep fused contracts .. OK")
 
 
