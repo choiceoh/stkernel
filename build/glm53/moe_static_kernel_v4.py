@@ -68,7 +68,6 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_common import (
-    _spin_wait_global_ge_i32,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
@@ -115,7 +114,6 @@ class MoEStaticKernelV4:
         skip_sf: bool = False,
         skip_a: bool = False,
         a_ring: bool = False,
-        tail: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -168,18 +166,6 @@ class MoEStaticKernelV4:
         # `xa` diagnostic priced those loads at ~3%). Same smem: the A/SFA
         # staged buffers already exist per stage.
         self.a_ring = bool(a_ring)
-        # tail: the last partial wave's p items each run on f = grid // p CTAs
-        # (f >= 2). Per half the 16 FC1 stages (k tile x gate/up) are cut into
-        # f contiguous unit ranges; each CTA accumulates its range, dumps the
-        # fp32 accumulator fragments into its slot of split_ws, publishes a
-        # flag, waits for its f-1 siblings' flags and sums their slots in the
-        # same fragment order -- every CTA then holds the identical full
-        # accumulators and runs the activation/quant itself; FC2 covers the
-        # CTA's 32/f output tiles. The DMA warp never waits, so w2 keeps
-        # streaming during the flag wait. next_item[1 + bidz] are the flags.
-        self.tail = bool(tail)
-        if self.tail and (self.split or self.even or self.a_ring):
-            raise ValueError("t (tail) is exclusive with k, e and v")
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
@@ -409,8 +395,7 @@ class MoEStaticKernelV4:
         token_map: cute.Tensor,
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
-        next_item: cute.Tensor,   # [0] item total (even/split/tail), [1+bidz] tail flags
-        split_ws: cute.Tensor,    # tail: fp32 partial-accumulator slots [grid][2][2][128][n_acc]
+        next_item: cute.Tensor,   # even: item total (else unused)
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
     ):
@@ -507,7 +492,6 @@ class MoEStaticKernelV4:
             token_weights,
             stamps,
             next_item,
-            split_ws,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -565,7 +549,6 @@ class MoEStaticKernelV4:
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
-        split_ws: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -760,10 +743,8 @@ class MoEStaticKernelV4:
             i += flat_stride
         if flat_tid == Int32(0):
             active_expert_count[Int32(0)] = Int32(0)
-            if cutlass.const_expr(self.even or self.split or self.tail):
+            if cutlass.const_expr(self.even or self.split):
                 next_item[Int32(0)] = Int32(0)
-            if cutlass.const_expr(self.tail):
-                next_item[Int32(1) + Int32(bidz)] = Int32(0)
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
@@ -817,7 +798,7 @@ class MoEStaticKernelV4:
                     get_ptr_as_int64(row_counts, local_expert_id),
                     Int32(1),
                 )
-                if cutlass.const_expr(self.even or self.split or self.tail):
+                if cutlass.const_expr(self.even or self.split):
                     if row % Int32(_TILE_M) == Int32(0):
                         atomic_add_global_i32(
                             get_ptr_as_int64(next_item, Int32(0)),
@@ -902,7 +883,7 @@ class MoEStaticKernelV4:
         n_active = Int32(gdim_z)
         start_work_idx = Int32(bidz)
         total_items = Int32(0x3FFFFFFF)
-        if cutlass.const_expr(self.even or self.split or self.tail):
+        if cutlass.const_expr(self.even or self.split):
             total_items = next_item[Int32(0)]
         if cutlass.const_expr(self.even):
             best_waste = Int32(0x7FFFFFFF)
@@ -929,23 +910,6 @@ class MoEStaticKernelV4:
                     if Int32(bidz) >= p_last:
                         if Int32(bidz) < p_last * Int32(2):
                             helper_idx = split_base + Int32(bidz) - p_last
-        # tail plan: p_last items x f CTAs; CTA c takes item c % p with role c // p
-        tail_f = Int32(1)
-        tail_p = Int32(1)
-        tail_role = Int32(-1)
-        if cutlass.const_expr(self.tail):
-            full_waves = total_items // Int32(gdim_z)
-            p_last = total_items - full_waves * Int32(gdim_z)
-            if p_last > Int32(0):
-                f_cand = Int32(gdim_z) // p_last
-                if f_cand >= Int32(2):
-                    tail_f = f_cand
-                    tail_p = p_last
-                    split_base = full_waves * Int32(gdim_z)
-                    if Int32(bidz) < p_last * f_cand:
-                        tail_role = Int32(bidz) // p_last
-                        if Int32(bidz) >= p_last:
-                            helper_idx = split_base + Int32(bidz) % p_last
 
         # ------------------------------------------------------------------
         # Tiled views and TMA partitions
@@ -1217,14 +1181,12 @@ class MoEStaticKernelV4:
             accum_tile_m = Int32(0)
             item_no = Int32(0)
             role = Int32(2)
-            if cutlass.const_expr(self.split):
-                if current_work_linear_idx >= split_base:
-                    role = Int32(0)
+            if current_work_linear_idx >= split_base:
+                role = Int32(0)
             if helper_idx >= Int32(0):
                 if current_work_linear_idx >= total_items:
                     current_work_linear_idx = helper_idx
-                    if cutlass.const_expr(self.split):
-                        role = Int32(1)
+                    role = Int32(1)
                     helper_idx = Int32(-1)
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                 _compact_static_get_work_tile(
@@ -1299,20 +1261,6 @@ class MoEStaticKernelV4:
                     else:
                         gs_value = cutlass.Float32(1.0) / gs_value
 
-                # tail item? unit range per half and output-tile range
-                tail_on = Int32(0)
-                u_lo = Int32(0)
-                u_hi = Int32(2) * k_tile_cnt1
-                t_lo = Int32(0)
-                t_hi = output_tile_cnt
-                if cutlass.const_expr(self.tail):
-                    if current_work_linear_idx >= split_base:
-                        if tail_role >= Int32(0):
-                            tail_on = Int32(1)
-                            u_lo = (u_hi * tail_role) // tail_f
-                            u_hi = (u_hi * (tail_role + Int32(1))) // tail_f
-                            t_lo = (output_tile_cnt * tail_role) // tail_f
-                            t_hi = (output_tile_cnt * (tail_role + Int32(1))) // tail_f
                 if cutlass.const_expr(self.split):
                     if role != Int32(2):
                         # split item: the other half of the intermediate (and
@@ -1340,13 +1288,11 @@ class MoEStaticKernelV4:
                         up_acc.fill(0.0)
                         # per k tile: a gate stage, then an up stage (each
                         # A + one B + SFA + SFB over K 512 = 8 k blocks)
-                        for unit in range(u_lo, u_hi, 1, unroll=1):  # type: ignore[call-overload]
-                            gu = unit % Int32(2)
+                        for _k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
                             if cutlass.const_expr(self.a_ring):
-                                if gu == Int32(0):
-                                    apeek = a_pipeline.consumer_try_wait(a_cons_state)
-                                    a_pipeline.consumer_wait(a_cons_state, apeek)
-                            if True:
+                                apeek = a_pipeline.consumer_try_wait(a_cons_state)
+                                a_pipeline.consumer_wait(a_cons_state, apeek)
+                            for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                                 if cutlass.const_expr(self.a_ring):
@@ -1403,7 +1349,7 @@ class MoEStaticKernelV4:
                                                 WarpField.SFB,
                                                 tCrSFB1[None, _nt, k_block_idx].iterator,
                                             )
-                                            if gu == Int32(0):
+                                            if cutlass.const_expr(gu == 0):
                                                 cute.gemm(
                                                     mma_atom,
                                                     gate_acc[None, _mt, _nt],
@@ -1422,58 +1368,8 @@ class MoEStaticKernelV4:
                                 fc1_pipeline.consumer_release(fc1_cons_state)
                                 fc1_cons_state.advance()
                             if cutlass.const_expr(self.a_ring):
-                                if gu == Int32(1):
-                                    a_pipeline.consumer_release(a_cons_state)
-                                    a_cons_state.advance()
-
-                        # ---- tail item: exchange the partial accumulators ----
-                        if cutlass.const_expr(self.tail):
-                            if tail_on > Int32(0):
-                                n_slice = cute.size(tRS_rD1[(None, 0, 0)])
-                                n_acc = MmaNPerEpiN1 * MmaMPerEpiM1 * n_slice
-                                per_cta = 2 * 2 * 128 * n_acc
-                                my_base = Int32(bidz) * Int32(per_cta) + Int32(h) * Int32(2 * 128 * n_acc) \
-                                    + Int32(tidx) * Int32(n_acc)
-                                for mma_n_in_epi in cutlass.range_constexpr(MmaNPerEpiN1):
-                                    for mma_m_in_epi in cutlass.range_constexpr(MmaMPerEpiM1):
-                                        g_sl = tRS_rGate[(None, mma_m_in_epi, mma_n_in_epi)]
-                                        u_sl = tRS_rUp[(None, mma_m_in_epi, mma_n_in_epi)]
-                                        for e in cutlass.range_constexpr(n_slice):
-                                            fi = (mma_n_in_epi * MmaMPerEpiM1 + mma_m_in_epi) * n_slice + e
-                                            split_ws[my_base + Int32(fi)] = g_sl[e]
-                                            split_ws[my_base + Int32(128 * n_acc) + Int32(fi)] = u_sl[e]
-                                _threadfence()
-                                self.epilog_sync_barrier.arrive_and_wait()
-                                if Int32(tidx) == Int32(0):
-                                    _st_global_release_i32(
-                                        get_ptr_as_int64(next_item, Int32(1) + Int32(bidz)),
-                                        Int32(h) + Int32(1),
-                                    )
-                                    sib_r = Int32(0)
-                                    while sib_r < tail_f:
-                                        sib = Int32(bidz) % tail_p + tail_p * sib_r
-                                        if sib != Int32(bidz):
-                                            _spin_wait_global_ge_i32(
-                                                get_ptr_as_int64(next_item, Int32(1) + sib),
-                                                Int32(h) + Int32(1),
-                                            )
-                                        sib_r += Int32(1)
-                                self.epilog_sync_barrier.arrive_and_wait()
-                                sib_r = Int32(0)
-                                while sib_r < tail_f:
-                                    sib = Int32(bidz) % tail_p + tail_p * sib_r
-                                    if sib != Int32(bidz):
-                                        sb = sib * Int32(per_cta) + Int32(h) * Int32(2 * 128 * n_acc) \
-                                            + Int32(tidx) * Int32(n_acc)
-                                        for mma_n_in_epi in cutlass.range_constexpr(MmaNPerEpiN1):
-                                            for mma_m_in_epi in cutlass.range_constexpr(MmaMPerEpiM1):
-                                                g_sl = tRS_rGate[(None, mma_m_in_epi, mma_n_in_epi)]
-                                                u_sl = tRS_rUp[(None, mma_m_in_epi, mma_n_in_epi)]
-                                                for e in cutlass.range_constexpr(n_slice):
-                                                    fi = (mma_n_in_epi * MmaMPerEpiM1 + mma_m_in_epi) * n_slice + e
-                                                    g_sl[e] = g_sl[e] + split_ws[sb + Int32(fi)]
-                                                    u_sl[e] = u_sl[e] + split_ws[sb + Int32(128 * n_acc) + Int32(fi)]
-                                    sib_r += Int32(1)
+                                a_pipeline.consumer_release(a_cons_state)
+                                a_cons_state.advance()
 
                         # ---- activation of this half -> sC1 -> quant into sA2 ----
                         epi_m_valid = valid_rows - tile_m_base
@@ -1594,7 +1490,7 @@ class MoEStaticKernelV4:
                         fz_crSFA2[None, None, _kb],
                     )
 
-                for output_tile_idx in range(t_lo, t_hi, 1, unroll=4):  # type: ignore[call-overload]
+                for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
                     fc2_peek = fc2_pipeline.consumer_try_wait(fc2_cons_state)
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     csB2_p = csB2[None, None, None, fc2_cons_state.index]
@@ -1720,14 +1616,12 @@ class MoEStaticKernelV4:
                 item_no += Int32(1)
                 current_work_linear_idx += num_persistent_clusters
                 role = Int32(2)
-                if cutlass.const_expr(self.split):
-                    if current_work_linear_idx >= split_base:
-                        role = Int32(0)
+                if current_work_linear_idx >= split_base:
+                    role = Int32(0)
                 if helper_idx >= Int32(0):
                     if current_work_linear_idx >= total_items:
                         current_work_linear_idx = helper_idx
-                        if cutlass.const_expr(self.split):
-                            role = Int32(1)
+                        role = Int32(1)
                         helper_idx = Int32(-1)
                 tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                     _compact_static_get_work_tile(
@@ -1778,14 +1672,12 @@ class MoEStaticKernelV4:
             item_no = Int32(0)
             is_dma_lane0 = Int32(tidx) == Int32(self.tma_load_warp_id * 32)
             role = Int32(2)
-            if cutlass.const_expr(self.split):
-                if current_work_linear_idx >= split_base:
-                    role = Int32(0)
+            if current_work_linear_idx >= split_base:
+                role = Int32(0)
             if helper_idx >= Int32(0):
                 if current_work_linear_idx >= total_items:
                     current_work_linear_idx = helper_idx
-                    if cutlass.const_expr(self.split):
-                        role = Int32(1)
+                    role = Int32(1)
                     helper_idx = Int32(-1)
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                 _compact_static_get_work_tile(
@@ -1818,18 +1710,6 @@ class MoEStaticKernelV4:
                 sfa_tile_coord_m = tc[0] // self.sfa_tiles_per_block
                 tAgSFA_mk = tAgSFA[(None, sfa_tile_coord_m, None, local_expert_idx)]
 
-                # tail item? unit range per half and output-tile range
-                u_lo = Int32(0)
-                u_hi = Int32(2) * k_tile_cnt1
-                t_lo = Int32(0)
-                t_hi = output_tile_cnt
-                if cutlass.const_expr(self.tail):
-                    if current_work_linear_idx >= split_base:
-                        if tail_role >= Int32(0):
-                            u_lo = (u_hi * tail_role) // tail_f
-                            u_hi = (u_hi * (tail_role + Int32(1))) // tail_f
-                            t_lo = (output_tile_cnt * tail_role) // tail_f
-                            t_hi = (output_tile_cnt * (tail_role + Int32(1))) // tail_f
                 # ---- FC1: two 64-wide halves of the 128-wide slice ----
                 for h in cutlass.range_constexpr(2):
                     if (role - Int32(2)) * (role - Int32(h)) == Int32(0):
@@ -1845,24 +1725,21 @@ class MoEStaticKernelV4:
                             (None, gate_tile // Int32(self.sfb1_tiles_per_block), None,
                              weight_expert_idx)
                         ]
-                        for unit in range(u_lo, u_hi, 1, unroll=1):  # type: ignore[call-overload]
-                            k_tile = unit // Int32(2)
-                            gu = unit % Int32(2)
+                        for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
                             if cutlass.const_expr(self.a_ring):
-                                if gu == Int32(0):
-                                    a_pipeline.producer_acquire(a_prod_state)
-                                    abar = a_pipeline.producer_get_barrier(a_prod_state)
-                                    cute.copy(
-                                        tma_a, tAgA_mk[(None, k_tile)],
-                                        tAsA[(None, a_prod_state.index)], tma_bar_ptr=abar,
-                                    )
-                                    cute.copy(
-                                        tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                        tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
-                                    )
-                                    a_pipeline.producer_commit(a_prod_state)
-                                    a_prod_state.advance()
-                            if True:
+                                a_pipeline.producer_acquire(a_prod_state)
+                                abar = a_pipeline.producer_get_barrier(a_prod_state)
+                                cute.copy(
+                                    tma_a, tAgA_mk[(None, k_tile)],
+                                    tAsA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                )
+                                cute.copy(
+                                    tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                    tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                )
+                                a_pipeline.producer_commit(a_prod_state)
+                                a_prod_state.advance()
+                            for gu in cutlass.range_constexpr(2):
                                 fc1_pipeline.producer_acquire(fc1_prod_state)
                                 bar = fc1_pipeline.producer_get_barrier(fc1_prod_state)
                                 if cutlass.const_expr(not self.skip_a and not self.a_ring):
@@ -1870,7 +1747,7 @@ class MoEStaticKernelV4:
                                         tma_a, tAgA_mk[(None, k_tile)],
                                         tAsA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
-                                if gu == Int32(0):
+                                if cutlass.const_expr(gu == 0):
                                     cute.copy(
                                         tma_b_w13, tBgB_gate_nk[(None, k_tile)],
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -1886,7 +1763,7 @@ class MoEStaticKernelV4:
                                         tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_sf):
-                                    if gu == Int32(0):
+                                    if cutlass.const_expr(gu == 0):
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_gate_nk[(None, k_tile)],
                                             tBsSFB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -1906,8 +1783,8 @@ class MoEStaticKernelV4:
                                 cute.arch.globaltimer(),
                             )
 
-                # ---- FC2: the item's 32 down tiles (a tail CTA's share) ----
-                for output_tile_idx in range(t_lo, t_hi, 1, unroll=4):  # type: ignore[call-overload]
+                # ---- FC2: the item's 32 down tiles ----
+                for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
                     cute.copy(
@@ -1937,14 +1814,12 @@ class MoEStaticKernelV4:
                 item_no += Int32(1)
                 current_work_linear_idx += num_persistent_clusters
                 role = Int32(2)
-                if cutlass.const_expr(self.split):
-                    if current_work_linear_idx >= split_base:
-                        role = Int32(0)
+                if current_work_linear_idx >= split_base:
+                    role = Int32(0)
                 if helper_idx >= Int32(0):
                     if current_work_linear_idx >= total_items:
                         current_work_linear_idx = helper_idx
-                        if cutlass.const_expr(self.split):
-                            role = Int32(1)
+                        role = Int32(1)
                         helper_idx = Int32(-1)
                 tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
                     _compact_static_get_work_tile(
