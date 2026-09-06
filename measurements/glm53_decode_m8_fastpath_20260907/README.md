@@ -1,7 +1,7 @@
 # M8 exact fastpath and fixed-window follow-up
 
-Status: CPU and GPU kernel gates passed; fixed-window serving ABBA queued.
-Kernel latency improved. End-to-end decoding speed is not yet measured.
+Status: CPU and GPU kernel gates passed; fixed-window B1 passed and the
+remaining A/A/B boots are running. A serving speedup is not yet established.
 
 The prior candidate remains retained and inconclusive. This follow-up adds
 an opt-in reduction/scale-load path without changing its arithmetic result,
@@ -20,7 +20,7 @@ All three profile defaults remain 0. Implementation commit: `0421328`.
 
 CPU validation: `tests/test_logic.py` passed 6,663 checks, including 30
 megakernel and 20 fleet regressions. `tests/test_onepass_measurements.py`
-passed eight contamination/window/timing fixtures. Both composed overlays
+passed nine contamination/window/timing fixtures. Both composed overlays
 match their source, Python compilation and `git diff --check` passed.
 
 ## GPU gate and measurement protocol
@@ -89,3 +89,41 @@ memory/stack on those lanes. Runtime occupancy and split plans match.
 Negative deltas mean lower kernel latency. Warm gains are consistent in this
 round; cold changes are smaller and one shape is 0.6% slower than previous
 M8. These are single-GPU microbenchmarks and do not establish a serving gain.
+
+## Serving progress and storage recovery
+
+Serving source is `b13dc8b`, deployed stamp `83bc6639a0a2`. Before the first
+request, the host-only measurement code was finalized at `b319173`: stalled
+interior windows count toward elapsed time, and a decreasing step counter
+invalidates the record. Model overlays did not change. Every arm uses that
+same finalized harness. Both median request speed and aggregate
+`sum(completion_tokens-1)/sum(decode_seconds)` are reported; the primary
+engine metric remains pooled interior-window steps/second.
+
+`M8NEXTB1` finished at 07:11:20 KST: 36 fixed windows, **21.775064 step/s**,
+request speed median **70.962593 tok/s**, quality **18/18**, Korean **0/8**.
+Its eight completed requests exactly match the counter delta; no traffic
+issues were observed. See [raw records](records.raw.jsonl) and the
+[first chain log](serving.log).
+
+The first A1 launch stopped before container teardown while staging the
+chat template: srv1 had zero space available to the service account. B1
+stayed healthy with all three candidate flags at 0; the failed A1 produced
+no performance record. The cache identity includes all VLLM environment
+flags, so this build's FP8 cache entries were new and the previous entries
+were incompatible.
+
+857 older generated FP8 cache files (8,590,997,853 bytes), all predating this
+experiment's first boot, were archived to
+`srv2:/home/choiceoh/glm53-logs/M8NEXT/cache-archive-srv1`. Each backup and
+original was checked against SHA-256 before unlinking the original. The
+manifest is `cache-archive-manifest.json` beside that remote archive.
+Current B1 cache entries were retained. This freed 6.3 GiB available on
+srv1; [the archive helper](cache-archive.py), [audit](cache-removed.json) and
+[space check](srv1-space-after.txt) are retained. The original files can be
+restored from the archive; the archive is intentionally kept off Git.
+
+[resume.sh](resume.sh) verifies the existing deployment and archive, then
+resumes A1/A2/B2 without redeploying or repeating the valid B1. The resumed
+chain began at 07:20:03 KST. These are still four independent boots in B/A/A/B
+order, with a storage-recovery gap after B1.

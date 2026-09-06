@@ -36,27 +36,32 @@ def summarize(rows):
         first_reqs = [q for q in rows[0]["requests"] if q.get("fixed_decode")]
         assert [(q["request_sha256"], q["prompt_tokens"], q["seed"]) for q in reqs] == [
                 (q["request_sha256"], q["prompt_tokens"], q["seed"]) for q in first_reqs]
+        decoded = sum(q["completion_tokens"] - 1 for q in reqs)
+        duration = sum(q["decode_s"] for q in reqs)
         out.append({"name": r["name"], "arm": arm, "windows": len(windows),
                     "step_s": rate, "window_median_step_s": d["windows_med"],
                     "tok_s": median(q["decode_tok_s"] for q in reqs),
                     "tpot_ms": median(q["tpot_ms"] for q in reqs),
+                    "pooled_tok_s": decoded / duration,
+                    "pooled_tpot_ms": 1000 * duration / decoded,
                     "request_tok_s": [q["decode_tok_s"] for q in reqs],
                     "acceptance_all_requests": d["acc_raw"],
                     "tokens_per_step_all_requests": d["tokens_per_step"]})
+    metrics = ("step_s", "tok_s", "tpot_ms", "pooled_tok_s", "pooled_tpot_ms")
     stats = {arm: {key: median(r[key] for r in out if r["arm"] == arm)
-                   for key in ("step_s", "tok_s", "tpot_ms")} for arm in ("B", "A")}
+                   for key in metrics} for arm in ("B", "A")}
     paired = [{"candidate": out[a]["name"], "baseline": out[b]["name"],
                **{key + "_change_pct": 100 * (out[a][key] / out[b][key] - 1)
-                  for key in ("step_s", "tok_s")}} for b, a in ((0, 1), (3, 2))]
+                  for key in ("step_s", "tok_s", "pooled_tok_s")}} for b, a in ((0, 1), (3, 2))]
     spread = {}
     for arm in ("B", "A"):
         spread[arm] = {}
-        for key in ("step_s", "tok_s"):
+        for key in ("step_s", "tok_s", "pooled_tok_s"):
             values = [r[key] for r in out if r["arm"] == arm]
             spread[arm][key] = 100 * (max(values) - min(values)) / median(values)
     return {"per_boot": out, "arms": stats, "paired": paired,
             "change_pct": {key: 100 * (stats["A"][key] / stats["B"][key] - 1)
-                           for key in ("step_s", "tok_s", "tpot_ms")},
+                           for key in metrics},
             "within_arm_boot_spread_pct": spread,
             "independent_boots_per_arm": 2,
             "note": "Windows within one boot are correlated; two boots per arm do not support a narrow confidence interval."}
