@@ -1,0 +1,69 @@
+{
+  "id": "94cfe5a3443141bd8741",
+  "fingerprint": "b86f6c3c82d7f5163407122cf679caebf4f26cf02162132dd1542025358e7e9c",
+  "created": 1788729846.954113,
+  "started": 1788729937.7504463,
+  "finished": 1788730143.565068,
+  "state": "incomplete",
+  "result": {
+    "evidence": "probe-log",
+    "reason": "probe exited successfully; inspect its numeric and timing evidence before promotion",
+    "returncode": 0
+  },
+  "spec": {
+    "command": [
+      "python3",
+      "probes/glm53_required_first_ab.py",
+      "--identity",
+      "/home/choiceoh/glm53-logs/required-first-ab/identity.json",
+      "--budget-seconds",
+      "900"
+    ],
+    "context": {
+      "hardware": "srv1-srv4 NVIDIA GB10 TP4; head GPU-228e86e9-7996-4b27-21c3-35f9e4e60da1 driver580.159.03; container 5d60b8663d64d0c4d1cb8658f27dae538b2461b61fb8e69649a4e1df99214e6b",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "jsonschema": "4.10.3 host",
+      "model": "GLM-5.3-Flash-NVFP4 /home/choiceoh/models/glm53-redhat-nvfp4; index SHA256 015faae91e8189c7553f1d48ec3d0694b8c02b282d7f58af2d7b4064a81ce4c0",
+      "python": "CPython3.12.3 host"
+    },
+    "depends_on": [
+      "833d550082064d43abf2"
+    ],
+    "env": {},
+    "estimate_min": 15,
+    "hypothesis": "Required-first schema order reduces required argument omissions and improves completion on the same running NVFP4 server without guardrail regression; fixed 30 pairs, hard 15-minute budget to use the standard bounded-probe lane, incomplete if the budget expires",
+    "inputs": [
+      "/home/choiceoh/glm53-cache/.overlay-sha",
+      "/home/choiceoh/glm53-logs/required-first-ab/identity.json",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/config.json",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/model.safetensors.index.json",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/tokenizer_config.json",
+      "/home/choiceoh/overlays/glm53/glm47_moe.py",
+      "/home/choiceoh/overlays/glm53/glm53_chat.py",
+      "/home/choiceoh/overlays/glm53/manifest.tsv"
+    ],
+    "kind": "probe",
+    "knobs": {},
+    "revision": "88d0a518f3f1f1cd833a4feb706a4cfa0d48a578",
+    "timeout_s": 900
+  },
+  "snapshot": {
+    "build": "1af1a93f83b5148156125a1c2058b6c5888b56bf021f49bf8482202693852243",
+    "host": "srv2",
+    "inputs": {
+      "/home/choiceoh/glm53-cache/.overlay-sha": "dfcae14805a142aa0a2e5b8153db4cbcdf42fee8d13506c6dd2945d40e59a0fa",
+      "/home/choiceoh/glm53-logs/required-first-ab/identity.json": "16dca20013c68880a4e24d41cd11f94496fac7c323e119fdb6344d3b290129a1",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/config.json": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/model.safetensors.index.json": "015faae91e8189c7553f1d48ec3d0694b8c02b282d7f58af2d7b4064a81ce4c0",
+      "/home/choiceoh/models/glm53-redhat-nvfp4/tokenizer_config.json": "77af7d4769cd62c107b90495cac9b0ba81573c86486821bfba2980c04285ec7a",
+      "/home/choiceoh/overlays/glm53/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d",
+      "/home/choiceoh/overlays/glm53/glm53_chat.py": "d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0",
+      "/home/choiceoh/overlays/glm53/manifest.tsv": "1af1a93f83b5148156125a1c2058b6c5888b56bf021f49bf8482202693852243"
+    },
+    "platform": "Linux-6.17.0-1021-nvidia-aarch64-with-glibc2.39",
+    "python": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]",
+    "revision": "88d0a518f3f1f1cd833a4feb706a4cfa0d48a578",
+    "runner": "9eef16c2b6a9b91a1e9fab254111a4c7f11b15353e6769ac7893b6ca9ed737da"
+  },
+  "agent_verdict": "Complete matched serving sample; promotion not supported; default remains off. Fleet generic probe state remains incomplete by design."
+}
