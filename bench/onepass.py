@@ -188,7 +188,7 @@ def main() -> int:
     bd = _load("bench-dec.py", "onepass_bench_dec")
     br = _load("bracket.py", "onepass_bracket")
     rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
-           "harness": 39, "doc_lang": "ko", "thinking": True,
+           "harness": 40, "doc_lang": "ko", "thinking": True, "window_s": 1.0,
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     if os.environ.get("FLEET_SESSION"):
@@ -204,7 +204,10 @@ def main() -> int:
     m0 = bd._parse_spec_metrics(_metrics_text(bd.METRICS))
     print(f"{'ctx':>7} {'tok':>7} {'cold tok/s':>11} {'warm tok/s':>11} {'cold TTFT':>10} {'warm TTFT':>10}  quality", flush=True)
     t_dec0 = time.time()
-    with br._StepWindows(bd) as sw:
+    # 39차: 1 s windows (were 2 s) with 0.5 s margins -- the 2K answers decode
+    # for ~3-4 s and produced 0-3 windows per boot; medians of step/s are
+    # comparable across window sizes.
+    with br._StepWindows(bd, period=1.0) as sw:
         facts = cq.FACTS
         for ctx in (int(c) for c in args.ctx.split(",")):
             doc = cq.build(ctx, args.seed + ctx)
@@ -276,10 +279,10 @@ def main() -> int:
     for i in range(len(samp) - 1):
         (ta, sa), (tb, sb) = samp[i], samp[i + 1]
         for ctx, t0p, t1p in phases:
-            # 1 s margins: the first window after the first token still holds
-            # prefill tail, the last one before the end holds the stream's
-            # close (3 windows per answer make one low edge window the median)
-            if ta >= t0p + 1.0 and tb <= t1p - 1.0:
+            # 0.5 s margins (1 s windows): the first window after the first token
+            # still holds prefill tail, the last one before the end holds the
+            # stream's close
+            if ta >= t0p + 0.5 and tb <= t1p - 0.5:
                 r = (sb - sa) / max(tb - ta, 1e-6)
                 if r > 0:
                     by_ctx.setdefault(ctx, []).append(r)

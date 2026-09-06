@@ -57,17 +57,26 @@ lane logs once whether it engaged (`[prefill-sp] MHC token shards selected`
 / `NOT selected: <gate>`, `[kda-prefill] direct output engaged`,
 `[b12x prefill reuse] ENGAGED | NOT taken`, `[megakernel] mla prefill pair
 engaged`, `[fp8-dense] nvfp4 prefill route engaged`).
-`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT`, `VLLM_GLM53_KDA_PREFILL_QK_NORM` and
-`VLLM_GLM53_PREFILL_SP` (BF16 transport; `PREFILL_SP_FP8` stays 0) are
-**ON by default since 2026-09-06** (39차: KDA lanes +1.0 / +1.3 / +2.4 %
-prefill at 2K / 32K / 128K; SP alone +13 / +12.6 / +13.3 % on the unified
-onepass, decode and acceptance unchanged). The measured state of the other
-lanes is in MEASUREMENTS.md 39차 §4d-§4f: the MoE reuse / N128 kernels fail
-CuTe-DSL IR verification on the image, the MLA pair kernel runs 1.85x the
-stock kernel's time (-10 % prefill even at group 2), the NVFP4 dense route's
-GEMM saving (-520 ms) is eaten by its per-call quantization kernels and
-launch glue (+850 ms), and FP8 transport for SP is slower than BF16 on this
-fabric. Note that
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT`, `VLLM_GLM53_KDA_PREFILL_QK_NORM`,
+`VLLM_GLM53_PREFILL_SP` (BF16 transport; `PREFILL_SP_FP8` stays 0) and the
+NVFP4 dense route with `VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M=1024`
+(+ `NVFP4_SCALE_FUSED`) are **ON by default since 2026-09-06** (39차: KDA
+lanes +1.0 / +1.3 / +2.4 % prefill at 2K / 32K / 128K; SP alone
++13 / +12.6 / +13.3 % on the unified onepass; the NVFP4 route above 1024 rows
++3.9 / +5.1 / +3.5 %, twice; decode and acceptance unchanged). Two more
+defaults changed the prefill's surroundings the same day: `PREFIX_CACHE=1`
+(mamba cache mode 'align' chunks the prefill at 6912 tokens, cold 32K prefill
+-3..-10 % over four boots, 128K +-1 %, warm re-asks reuse 92-99.6 %) and
+`DECODE_FIRST=1` with `SCHED_MODE=sequential` (a pending prefill waits behind
+running decoders up to 20 s; pure prefill keeps every lane). The measured
+state of the other lanes is in MEASUREMENTS.md 39차 §4d-§4j: the MoE reuse
+kernel now compiles (per-region MMA atoms, §4j) and is correct but neutral
+(-2 %), its N128 variant runs at a quarter speed (rejected), the MLA pair
+kernel runs 1.85x the stock kernel's time (-10 % prefill even at group 2), and
+both FP8 transports for SP (v1 shared-scale, v2 per-block + all_to_all) are
+neutral-to-slower than BF16: the collectives cost the same with half the
+bytes, so what remains is HBM traffic of the pack/unpack passes -- only a
+producer-epilogue fusion could recover it. Note that
 `VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
 already owns every b_proj linear, and the candidate only adopts layers
