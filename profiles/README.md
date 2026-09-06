@@ -121,4 +121,9 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 레짐 분리를 끄지만 오버레이된 Triton ABI가 달라지므로 최초 stock bucket의
 재컴파일·autotune까지 없애는 byte-identical rollback은 아니다.
 
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1`은 별도의 기본-off 실험이다.
+순수 프리필에서 KDA 마지막 출력 커널이 층 버퍼에 직접 써서 병합 복사를
+제거한다. 혼합·디코드 경로는 그대로이며 GPU 수치·재생·속도 검증 전에는
+승격하지 않는다. [검증 명령과 계약](../overlay/modules/glm53_kernels/README.md#pure-prefill-direct-output-2026-09-06-default-off).
+
 `qwen38`은 이미지를 고정하지 않았다. 그 브링업은 스톡 이미지에서 돌았고 b12x 경로는 열린 문제가 아니라 닫힌 것이라(MEASUREMENTS.md), 프로필은 기록으로만 있다 — 실제로 합성해 배포한 적은 없다.

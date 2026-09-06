@@ -2424,6 +2424,38 @@ DSpark 의 확신도 헤드 이점도 같은 이유로 지금 스택에서는 �
 
 읽기: 128K 도 "병목 하나"가 아니라 32K 와 같은 비율로 커진다(어텐션만 14 → 17%). AllReduce 는 9-03 채널 스윕으로 패브릭 바닥(142 Gb/s)이고 mHC 는 콜사이트 튜닝 소진(원장 `mhc_post` R2) — 남은 큰 덩어리는 **프리필 MoE dynamic 커널(20~22%)** 로, 35차가 정적(디코드) 커널에 한 DRAM 행 세그먼트 진단을 그대로 적용할 수 있다(b12x 세션의 판정 규칙 "프리필 dynamic 커널도 같은 방법"). 그 다음이 MK-MLA(12~13%).
 
+#### §2 후속 — KDA 프리필 출력 복사 제거 (2026-09-06, 구현·정적 검증만)
+
+기준 소스 `8d36ee8`. `glm5next_kda.py`의 프리필 경로는 chunk 출력 커널이
+V 스크래치에 쓴 결과를 다시 `core_attn_out`으로 복사했다. 새 기본-off 노브
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1`은 **순수 프리필에만** 최종 출력
+목적지를 층 버퍼의 실제 토큰 접두로 넘겨 이 복사를 제거한다. 같은 커널의
+주소만 바꾸며 수학 연산·순환 상태·상태 scatter·gated norm은 그대로다.
+혼합 프리필/디코드 및 spec 경로는 기존 병합을 유지한다.
+
+소스 기준 제거량: TP4, BF16 `[1,8192,16,128]` = **32 MiB/층**, KDA 34층
+합계 **1.0625 GiB의 복사 payload/랭크/8K 청크**(읽기+쓰기 트래픽은 두 배).
+V 입력의 contiguous 변환은 남는다. **이 바이트 계산은 속도 측정값이 아니다.**
+MoE dynamic(20~22%) 최적화도 여전히 미해결이다.
+
+- 정적 검증: 44 overlays/8 modules 합성, 소스/build 일치, Python 컴파일,
+  shell 구문, diff-check, `tests/test_logic.py` **6,495 checks + 37 regressions** 통과.
+  로컬 PyTorch 의존 검사는 기존 SKIP 표시대로 미실행. 별도 fresh CPU-only
+  `glm53:v13-b12x-it` 컨테이너에서 입력 fixture/ABBA 계산/잘못된 길이 검사
+  **3 tests** 통과. CUDA를 노출하지 않았으며 GPU 커널 검증이 아니다.
+- 프로브: `probes/kda_prefill_direct_out.py`는 출력·최종 상태 비트 동일성,
+  입력/패딩 보존, 출력 poison 뒤 graph replay, 길이 1/63/64/65 및 8K까지,
+  uneven packed·연속/두 QKV stride 형상, ABBA, long-first/short-first를 제공한다.
+  기존 `kda_prefill_bench.py`의 float 크기 인자 오류(`r(..., 0.8)` 대신
+  `scale=0.8`)도 수정했다. 러너가 실제 변경된 `kda.py`와 `chunk_delta_h.py`를 마운트한다.
+- 미실행 사유: 14:03 KST 읽기 전용 확인에서 srv1–4 GPU가 모두 사용률 96%,
+  TP 워커 약 73.5 GiB/노드 및 MKG3 A/B 체인 실행 중. 서비스·다른 실험을
+  중단하지 않았다. 그 체인의 warm **2,716.6 tok/s**는 **이 후보의 값이 아니다**.
+- 판정: **기본 0 유지, 성능 향상 주장 없음**. 빈 플릿에서 두 fresh-cache
+  순서의 프로브를 먼저 통과한 뒤 explicit 0/1 onepass(2K/32K/128K), 품질,
+  한국어, 수용률 및 실제 prefill trace의 복사 제거를 확인해야 한다.
+  [명령/계약](overlay/modules/glm53_kernels/README.md#pure-prefill-direct-output-2026-09-06-default-off).
+
 ### §3 (6) 하니스 결함 둘
 
 - **레버 env 미적용(9-05 PRODRTN, `MK_PACK_GPTQ=0` 이 컨테이너에서 1로 읽힘)**: 재현 실패 — `ct_load_profile` 은 호출자 값을 다시 적용하고(`env KEY=0 bash -c '. common-tp4.sh; ct_load_profile …'` → 0 유지), `bash -x` 로 런처를 추적하면 `ENVV` 에 `-e VLLM_GLM53_MK_PACK_GPTQ=0` 이 들어간다. 원인 미상으로 남기되 **증명을 하니스에 넣었다**: `bench/ab-lever.sh`·srv2 `ab-lever2.sh` 가 health 뒤 `docker exec glm53 env` 에서 레버 키의 실제 값을 찍는다(다음 재발 때 판독).

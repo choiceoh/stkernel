@@ -39,7 +39,8 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 # The megakernel driver and everything its arm touches, plus the served MoE
 # path (vLLM's b12x experts, flashinfer's wrapper and its sm12x dispatch).
 sources=(glm53_megakernel.py glm53_megakernel.cu
-         glm5next_kda.py tilelang.py tilelang_kernels.py glm53_fp8_dense.py
+         glm5next_kda.py kda.py chunk_delta_h.py
+         tilelang.py tilelang_kernels.py glm53_fp8_dense.py
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
          moe_static_kernel_v2.py moe_static_kernel_v3.py moe_static_kernel_v4.py)
 mounts=()

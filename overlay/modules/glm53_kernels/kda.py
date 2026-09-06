@@ -1571,6 +1571,35 @@ def fused_kda_gate_chunk_cumsum(
     return y
 
 
+def _validate_chunk_kda_output(out, v, inputs):
+    """The output kernel uses dense offsets, with no support for input aliasing.
+
+    Reject shared storage conservatively, including disjoint views. A caller
+    supplying a destination relies on that destination being written, so an
+    invalid destination must fail before launching rather than silently use v.
+    """
+    if out is None:
+        return
+    if (
+        out.device.type != "cuda"
+        or out.device != v.device
+        or out.dtype != v.dtype
+        or out.ndim != 4
+        or tuple(out.shape) != tuple(v.shape)
+        or any(size <= 0 for size in out.shape)
+        or not out.is_contiguous()
+    ):
+        raise ValueError("chunk KDA out must match v shape/dtype/device and be CUDA contiguous")
+    storage = out.untyped_storage().data_ptr()
+    for tensor in inputs:
+        if (
+            tensor is not None
+            and tensor.device == out.device
+            and tensor.untyped_storage().data_ptr() == storage
+        ):
+            raise ValueError("chunk KDA out must not share storage with an input")
+
+
 def _chunk_kda_fwd_with_cumulative_g(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -1584,6 +1613,7 @@ def _chunk_kda_fwd_with_cumulative_g(
     chunk_indices: torch.Tensor | None = None,
     chunk_size: int = FLA_CHUNK_SIZE,
     autotune_regime: int = 0,
+    out: torch.Tensor | None = None,
 ):
     # `g` must already be chunk-local cumulatively-summed AND scaled by
     # RCP_LN2 (so the downstream exp2-based kernels reproduce exp(g)).
@@ -1634,7 +1664,7 @@ def _chunk_kda_fwd_with_cumulative_g(
         g=g,
         A=Aqk,
         h=h,
-        o=v,
+        o=out if out is not None else v,
         scale=scale,
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
@@ -1700,7 +1730,11 @@ def chunk_kda_with_fused_gate_fwd(
     cu_seqlens: torch.Tensor | None = None,
     safe_gate: bool = False,
     lower_bound: float = -5.0,
+    out: torch.Tensor | None = None,
 ):
+    _validate_chunk_kda_output(
+        out, v, (q, k, v, raw_g, beta, A_log, g_bias, initial_state, cu_seqlens)
+    )
     chunk_size = FLA_CHUNK_SIZE
     chunk_indices = (
         prepare_chunk_indices(cu_seqlens, chunk_size)
@@ -1745,6 +1779,7 @@ def chunk_kda_with_fused_gate_fwd(
         chunk_indices=chunk_indices,
         chunk_size=chunk_size,
         autotune_regime=autotune_regime,
+        out=out,
     )
 
 
@@ -1797,9 +1832,14 @@ def chunk_kda_with_fused_gate(
     cu_seqlens: torch.Tensor | None = None,
     safe_gate: bool = False,
     lower_bound: float = -5.0,
+    out: torch.Tensor | None = None,
     **kwargs,
 ):
     """Run chunk KDA from raw gate projection using fused gate+cumsum."""
+    # Validate before contiguous/l2norm copies can hide an input alias.
+    _validate_chunk_kda_output(
+        out, v, (q, k, v, raw_g, beta, A_log, g_bias, initial_state, cu_seqlens)
+    )
     if scale is None:
         scale = k.shape[-1] ** -0.5
 
@@ -1821,6 +1861,7 @@ def chunk_kda_with_fused_gate(
         cu_seqlens=cu_seqlens,
         safe_gate=safe_gate,
         lower_bound=lower_bound,
+        out=out,
     )
     return o, final_state
 

@@ -351,6 +351,49 @@ require the engine-down bracket above.
 
 ## glm53_kda_prefill_regime (was `overlay/modules/glm53_kernels/`)
 
+### Pure-prefill direct output (2026-09-06, default off)
+
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1` lets the existing final KDA output
+kernel write into the layer's `core_attn_out` prefix. Previously it wrote to
+the contiguous V scratch and the model copied the result into that buffer.
+The arithmetic, final recurrent state, state scatter, and gated RMSNorm are
+unchanged. The model admits BF16 pure-prefill batches only; mixed/spec/plain
+decode keep their current routes. The destination must have matching shape,
+dtype and CUDA device, be contiguous, and share no storage with any input.
+Invalid explicit `out` fails before launching, since a silent fallback would
+cause the caller to skip a necessary copy.
+
+For TP4's `[1,8192,16,128]` BF16 output this removes a 32 MiB copy per KDA
+layer, or 1.0625 GiB of copied payload across 34 layers per rank and full
+8K chunk. This is source-derived traffic accounting, **not a measured speedup**.
+The input V contiguous copy is still required by the preceding kernels.
+
+Validation in an idle fleet window (fresh containers, no serving workers or
+other GPU tenants; the runner does not acquire a fleet reservation):
+
+```bash
+bash probes/run_mk_probe.sh probes/kda_prefill_direct_out.py --order long-first \
+  | tee /tmp/kda-direct-long-first.log
+bash probes/run_mk_probe.sh probes/kda_prefill_direct_out.py --order short-first \
+  | tee /tmp/kda-direct-short-first.log
+```
+
+Leave `PROBE_CACHE` unset so each run starts with fresh caches. The probe
+checks bitwise output/final-state equality, input integrity, padded output
+sentinels and poisoned-output graph replay. It includes chunk boundaries,
+uneven packed sequences, contiguous V and both QKV split layouts. It records
+source hashes, library versions, first prewarm shape and autotuner selections.
+ABBA eager timing excludes input reset; graph timing includes reset only when
+stock actually overwrites V (including singleton strided fixtures).
+
+Before promotion, additionally compare 2K/32K/128K onepass prefill and the
+existing quality/Korean/acceptance controls at explicit knob values 0 and 1.
+Arm on the launcher as a caller variable, not through `EXTRA_ENV`:
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1 bash launchers/start-glm53-nvfp4-tp4.sh`.
+Rollback is the same caller variable set to 0. The import-time arming message
+alone does not prove this lane served: confirm a pure-prefill trace loses the
+KDA output-merge copies. GPU and service measurements remain pending.
+
 ## glm53_kda_prefill_regime
 
 Default-off, two-bucket Triton autotune-cache split for the generic
