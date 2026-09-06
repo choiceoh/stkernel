@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import statistics
 import sys
 
@@ -182,6 +183,92 @@ def _stamp_summary(st: torch.Tensor, label: str) -> None:
           f"mean {statistics.mean(tail):.1f}")
 
 
+# a measured row: "stock U=40   726.4  141.6   195" / "v2[v,t] U=40  630.8 ..."
+_ROW_RE = re.compile(
+    r"^(?P<who>stock|v2\[[^\]]*\]) U=(?P<u>\d+)\s+(?P<us>[\d.]+)\s+"
+    r"[\d.]+\s+(?P<gbs>[\d.]+)")
+_ERR_RE = re.compile(r"ERROR[^:]*:\s*(?P<exc>\w+)")
+
+
+def _isolate_run(args, specs) -> int:
+    """Run every config spec in a child process of its own.
+
+    A device fault is sticky: ``cudaErrorIllegalInstruction`` -- what an
+    unsupported instruction or a bad descriptor raises -- poisons the CUDA
+    context for the life of the process, so every config after the first
+    faulting one reports the same error whether or not it has a bug (39차 §3:
+    one bad cell took five more down with it, and the 640-pair numerics of a
+    config that had already passed). One child per spec makes each verdict
+    independent; each child measures its own stock rows, so a spec is always
+    judged against a baseline from its own window.
+
+    Costs one stock sweep per spec (~25 s). The child is this same probe with
+    a single ``--configs`` spec and no ``--isolate``.
+    """
+    import subprocess
+
+    argv0 = os.path.abspath(__file__)
+    rows = []
+    for i, spec in enumerate(specs, 1):
+        print(f"=== isolate {i}/{len(specs)}: {spec} (fresh process) ===",
+              flush=True)
+        proc = subprocess.Popen(
+            [sys.executable, argv0, "--configs", spec, "--us", args.us,
+             "--reps", str(args.reps), "--full-sweep", args.full_sweep],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            bufsize=1)
+        meas, npass, nfail, err, taken = {}, 0, 0, "", True
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            m = _ROW_RE.match(line)
+            if m:
+                meas[(m.group("who").startswith("stock"), int(m.group("u")))] = (
+                    float(m.group("us")), float(m.group("gbs")))
+                continue
+            if " -> PASS" in line:
+                npass += 1
+            elif " -> FAIL" in line:
+                nfail += 1
+            elif "NOT TAKEN" in line:
+                taken = False
+            elif " ERROR" in line and not err:
+                m = _ERR_RE.search(line)
+                err = m.group("exc") if m else "ERROR"
+        sys.stdout.flush()
+        rc = proc.wait()
+        rows.append((spec, meas, npass, nfail, err, taken, rc))
+
+    width = max(max(len(s) for s in specs) + 4, 12)
+    print()
+    print("isolated summary -- one process per spec, each vs the stock rows "
+          "measured in that same process")
+    print(f"{'spec':<{width}}{'U=40 us':>9}{'GB/s':>7}{'vs stock':>10}"
+          f"{'numerics':>16}  status")
+    for spec, meas, npass, nfail, err, taken, rc in rows:
+        v2 = meas.get((False, 40))
+        st = meas.get((True, 40))
+        cell = (f"{v2[0]:>9.1f}{v2[1]:>7.0f}" if v2 else f"{'-':>9}{'-':>7}")
+        gain = (f"{100 * (st[0] - v2[0]) / st[0]:>+9.1f}%"
+                if (v2 and st) else f"{'-':>10}")
+        num = f"{npass} PASS" + (f" {nfail} FAIL" if nfail else "")
+        if not taken:
+            status = "NOT TAKEN (stock kernel served)"
+        elif err:
+            status = f"ERROR {err}"
+        elif nfail:
+            status = "numerics FAIL"
+        elif rc != 0:
+            # killed before it could print an error: a device-side abort, or
+            # the enclosing timeout
+            status = "CRASHED (no error line)"
+        else:
+            status = "ok"
+        if rc != 0:
+            status += f" [child rc={rc}]"
+        print(f"{spec:<{width}}{cell}{gain}{num:>16}  {status}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs",
@@ -191,6 +278,12 @@ def main() -> int:
     ap.add_argument("--full-sweep", default="all",
                     help="v2 config specs that get the full U sweep, or 'all' "
                          "(others: U=40,64)")
+    ap.add_argument("--isolate", action="store_true",
+                    help="run every config spec in its own child process: a "
+                         "device fault (an illegal instruction poisons a CUDA "
+                         "context for good) then costs that one spec, and "
+                         "every spec is paired with a stock baseline measured "
+                         "in its own window")
     ap.add_argument("--hang-diag", default="",
                     help="run ONE served call of this v2 spec (use ',s') in a "
                          "thread; if it has not returned after 20 s, read the "
@@ -207,6 +300,10 @@ def main() -> int:
     us_list = [int(u) for u in args.us.split(",")]
     full = (set(specs) if args.full_sweep == "all"
             else set(args.full_sweep.replace(",m", "|m").split("|")))
+    # before torch touches the device: the parent of an isolated run must stay
+    # CUDA-free, it only spawns children and parses their rows
+    if args.isolate and len(specs) > 1 and not args.hang_diag:
+        return _isolate_run(args, specs)
 
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
 
