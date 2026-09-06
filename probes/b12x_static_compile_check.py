@@ -36,6 +36,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--specs", default="u|t", help="'|'-separated static v2 specs")
     ap.add_argument("--m", type=int, default=8, help="decode rows (the m of the kernel name)")
+    ap.add_argument("--dynamic", default="",
+                    help="also compile the gated dynamic (prefill) kernel: 'rowmajor', "
+                         "'tiled' or 'both' (the tiled form reads cell t's 4-D weights)")
     args = ap.parse_args()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
 
@@ -64,6 +67,24 @@ def main() -> int:
             continue
         names = [k[0] + ":" + "/".join(str(x) for x in k[1:6]) for k in md._STATIC_V2_KERNEL_CACHE]
         print(f"[{spec}] compiled in {time.time() - t0:.1f} s: {names} mac={mac}")
+    dyn = {"": (), "rowmajor": (False,), "tiled": (True,), "both": (False, True)}[args.dynamic]
+    for tiled in dyn:
+        md._DYNAMIC_KERNEL_CACHE.clear()
+        t0 = time.time()
+        try:
+            compiled, mac = md._get_dynamic_kernel(
+                E, 1024, HID, INTER, TOPK, 1024,
+                activation="swigluoai_uninterleave", swiglu_alpha=1.0,
+                swiglu_beta=0.0, swiglu_limit=10.0, tiled=tiled,
+            )
+        except Exception as exc:  # noqa: BLE001
+            ok = False
+            import traceback
+            print(f"[dynamic tiled={tiled}] COMPILE FAIL after {time.time() - t0:.1f} s: "
+                  f"{type(exc).__name__}: {str(exc)[:1200]}\n"
+                  + traceback.format_exc()[-1800:])
+            continue
+        print(f"[dynamic tiled={tiled}] compiled in {time.time() - t0:.1f} s mac={mac}")
     print("VERDICT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

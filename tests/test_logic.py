@@ -3691,13 +3691,45 @@ def test_b12x_static_v2_controls() -> None:
     # backend with tiled views, the static launch checks views vs lane
     check("def static_v2_weights_tiled(" in src
           and "tiled=weights_tiled," in src
-          and 'if bool(getattr(weights, "tiled", False)) and backend != "static":' in src
+          and 'if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):' in src
           and 'if bool(getattr(weights, "tiled", False)) != want_tiled:' in src
           and "def _tile_expert_weights(" in src
           and "kernel_cls = MoEStaticKernelV5" in src
           and 'stride_order=(1, 0, 2, 3), assumed_align=16,' in src,
           "the tiled lane (t): re-layout helper, 4-D fake weight tensors, the v5 "
           "class, and the three guards that keep tiled views on the v5 kernel")
+    # phase 2 (serving): the layer's bytes are re-laid out in place once, the
+    # micro lanes (row-major readers) are off under tiled weights, and the
+    # gated dynamic (prefill) kernel is compiled against the 4-D layout
+    check("def tile_expert_weights_inplace(" in src
+          and 'if getattr(w1_fp4, _TILE_MAJOR_ATTR, False):' in src
+          and "        not weights_tiled\n        and quant_mode == \"nvfp4\"" in src
+          and "    ) and not weights_tiled   # the micro kernels read row-major weights" in src
+          and 'if weights_tiled and forced_backend in ("micro", "direct_micro"):' in src
+          and "        tiled=bool(getattr(weights, \"tiled\", False)),\n    )" in src
+          and "if not isinstance(kernel, MoEGatedDynamicKernel):" in src
+          and "{'_tiled' if tiled else ''}" in src
+          and 'backend not in ("static", "dynamic")' in src,
+          "phase 2: in-place re-layout, no micro lane on tiled weights, the dynamic "
+          "kernel compiled and keyed for the tiled layout, static+dynamic only")
+    vllm_side = open(os.path.join(REPO, "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"),
+                     encoding="utf-8").read()
+    check("_b12x_dispatch.tile_expert_weights_inplace(" in vllm_side
+          and "if not self._use_ep:" in vllm_side
+          and "[b12x static v5] expert weights re-laid out tile-major in place" in vllm_side,
+          "the vLLM wrapper re-lays the layer's expert weights out in place at weight "
+          "post-processing (TP only) and says so in the boot log")
+    gated = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_dynamic_gated.py"),
+                 encoding="utf-8").read()
+    check("if cutlass.const_expr(len(b_w13.shape) == 4):" in gated
+          and "b_w13 = cute.group_modes(b_w13, 1, 3)" in gated
+          and "b_down = cute.group_modes(b_down, 1, 3)" in gated
+          and "w13_flat_shape, self.sf_vec_size" in gated
+          and "down_flat_shape, self.sf_vec_size" in gated
+          and "gate_tile_cnt_static = w13_flat_shape[0] // self.tile_shape_mnk[1] // 2" in gated
+          and gated.count("tile_atom_to_shape_SF(\n            b_w13.shape") == 0,
+          "the overlaid gated prefill kernel groups 4-D weights into a hierarchical K "
+          "and takes its SF layouts and gate tile count from the flat shape")
     wrapper = open(os.path.join(REPO, "overlay/modules/glm53_moe/b12x_moe.py"),
                    encoding="utf-8").read()
     check("static_v2_weights_tiled as _static_v2_weights_tiled" in wrapper
@@ -3733,14 +3765,19 @@ def test_b12x_static_v2_controls() -> None:
     check("moe_static_kernel_v2.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
           "moe_static_kernel_v2.py\tabsent" in manifest
           and "moe_static_kernel_v5.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
-          "moe_static_kernel_v5.py\tabsent" in manifest,
-          "the v2 and v5 kernels are new files (absent preimage) in the module manifest")
+          "moe_static_kernel_v5.py\tabsent" in manifest
+          and "moe_dynamic_gated.py\tflashinfer/fused_moe/cute_dsl/blackwell_sm12x/"
+          "_moe_dynamic/gated.py\t993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
+          in manifest,
+          "the v2 and v5 kernels are new files (absent preimage) in the module manifest, "
+          "the gated prefill kernel a pinned overlay of the image's file")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check('VLLM_GLM53_B12X_STATIC_V2=u' in profile,
           "the profile ships the v4 static kernel (spec u) as the default "
           "(38차, operator: decode windows +2% over v3, probes -3.5%; rollback = \"w\")")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v2.py" in runner and "moe_static_kernel_v5.py" in runner
+          and "moe_dynamic_gated.py" in runner
           and 'if [ "${MK_PROBE_NO_GPU:-0}" = 1 ]; then' in runner,
           "the probe runner must mount the v2 and v5 kernels beside the dispatcher "
           "and offer the no-GPU form for the CPU compile check")

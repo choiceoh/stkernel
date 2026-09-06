@@ -38,6 +38,7 @@ from .moe_dynamic_kernel import (
     _TASK_SLICE_CHUNK,
     MoEDynamicKernel,
 )
+from ._moe_dynamic.gated import MoEGatedDynamicKernel
 from .moe_micro_kernel import MoEMicroKernel
 from .moe_static_kernel import MoEStaticKernel
 from .moe_static_kernel_v2 import (
@@ -1008,6 +1009,29 @@ def _register_cache_eviction(cache: Dict, key: Tuple, *source_tensors) -> None:
 _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
 
 
+_TILE_MAJOR_ATTR = "_b12x_tile_major"
+
+
+def tile_expert_weights_inplace(w1_fp4: torch.Tensor, w2_fp4: torch.Tensor) -> None:
+    """Re-lay the packed expert weights out tile-major IN PLACE (serving).
+
+    The tensors keep their shapes ([E, rows, K/2] and [E, K, n/2] bytes);
+    their bytes become the layouts _tile_expert_weights documents, and the
+    tensors are marked (``_b12x_tile_major``) so _get_weight_views(tiled=True)
+    views them without a second copy. One transient copy of each tensor
+    (the layer's 0.9 + 0.45 GB per rank for GLM-5.3) at weight
+    post-processing; a second call is a no-op.
+    """
+    if getattr(w1_fp4, _TILE_MAJOR_ATTR, False):
+        return
+    w13_t, w2_t = _tile_expert_weights(w1_fp4, w2_fp4)
+    w1_fp4.view(-1).copy_(w13_t.view(-1))
+    w2_fp4.view(-1).copy_(w2_t.view(-1))
+    del w13_t, w2_t
+    setattr(w1_fp4, _TILE_MAJOR_ATTR, True)
+    setattr(w2_fp4, _TILE_MAJOR_ATTR, True)
+
+
 def _tile_expert_weights(
     w1_fp4: torch.Tensor, w2_fp4: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -1121,7 +1145,21 @@ def _get_weight_views(
         # Cache the fresh buffers (scale factors + fp32 alphas) -- and the
         # tile-major weight copies when the lane reads them.
         w1_rows = w1_fp4.shape[1]  # 2*n for gated, n for non-gated
-        tiled_storage = _tile_expert_weights(w1_fp4, w2_fp4) if tiled else (None, None)
+        if not tiled:
+            tiled_storage = (None, None)
+        elif getattr(w1_fp4, _TILE_MAJOR_ATTR, False):
+            # served in place (tile_expert_weights_inplace): the bytes are
+            # tile-major already -- reshape, no copy
+            e_, rows_, kb_ = w1_fp4.shape
+            e2_, hrows_, nb_ = w2_fp4.shape
+            if not getattr(w2_fp4, _TILE_MAJOR_ATTR, False):
+                raise ValueError("tiled expert weights: w13 is tile-major but w2 is not")
+            tiled_storage = (
+                w1_fp4.view(e_, kb_ // (TILED_W13_K_IN // 2), rows_, TILED_W13_K_IN // 2),
+                w2_fp4.view(e2_, nb_ // (TILED_W2_K_IN // 2), hrows_, TILED_W2_K_IN // 2),
+            )
+        else:
+            tiled_storage = _tile_expert_weights(w1_fp4, w2_fp4)
         cached = (
             convert_sf_from_mma_layout(
                 w1_blockscale,
@@ -1381,6 +1419,7 @@ def _dynamic_kernel_cache_key(
     swiglu_beta: float,
     swiglu_limit: float | None,
     share_input_across_experts: bool,
+    tiled: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1406,6 +1445,7 @@ def _dynamic_kernel_cache_key(
         swiglu_beta,
         swiglu_limit,
         share_input_across_experts,
+        bool(tiled),
     )
 
 
@@ -2403,8 +2443,15 @@ def launch_sm120_static_moe(
 
     # Direct micro takes its band before the MMA micro decision. It reads
     # weights by global expert id, so EP shapes keep the compact path.
+    weights_tiled = bool(getattr(weights, "tiled", False))
+    if weights_tiled and forced_backend in ("micro", "direct_micro"):
+        raise ValueError(
+            f"forced {forced_backend} backend reads row-major expert weights; the "
+            "static lane serves tile-major weights (VLLM_GLM53_B12X_STATIC_V2 cell t)"
+        )
     use_direct_micro = (
-        quant_mode == "nvfp4"
+        not weights_tiled
+        and quant_mode == "nvfp4"
         and workspace.state_E == num_experts
         and workspace.dm_barrier_count is not None
         and workspace.dm_barrier_count.numel() >= routed_rows + num_tokens * 16
@@ -2515,10 +2562,12 @@ def launch_sm120_static_moe(
         forced_backend=forced_backend,
     )
     use_micro = (
-        activation_precision == "fp4"
-        and num_tokens <= _MICRO_MAX_TOKENS
-        and routed_rows <= micro_cutover
-    ) or skip_zero_weight_expert_id is not None
+        (
+            activation_precision == "fp4"
+            and num_tokens <= _MICRO_MAX_TOKENS
+            and routed_rows <= micro_cutover
+        ) or skip_zero_weight_expert_id is not None
+    ) and not weights_tiled   # the micro kernels read row-major weights
     if forced_backend is not None:
         if forced_backend == "micro":
             # Forced mode raises on correctness violations, never falls back.
@@ -3144,8 +3193,14 @@ def _get_dynamic_kernel(
     share_input_across_experts: bool = False,
     tile_m: int = _LEVEL_TILE_M,
     quant_mode: str = "nvfp4",
+    tiled: bool = False,
 ):
-    """Compile (or retrieve cached) the SM120 dynamic MoE kernel."""
+    """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
+
+    tiled=True: the expert weights are tile-major (static v2 cell t,
+    moe_static_kernel_v5) and arrive as 4-D tensors; only the gated dynamic
+    kernel (the overlaid _moe_dynamic/gated.py) reads that layout.
+    """
     activation_precision = _normalize_activation_precision(activation_precision)
     if activation_precision == "bf16":
         raise ValueError(
@@ -3200,6 +3255,7 @@ def _get_dynamic_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
         share_input_across_experts=share_input_across_experts,
+        tiled=tiled,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3285,19 +3341,45 @@ def _get_dynamic_kernel(
         cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4
     )
 
-    b_w13_fake = cute.runtime.make_fake_compact_tensor(
-        weight_dtype,
-        (w1_rows, k, E),
-        stride_order=(1, 0, 2),
-        assumed_align=16,
-    )
+    if tiled:
+        # tile-major weights (moe_static_kernel_v5): the same 4-D shapes the
+        # static v5 compile uses; the gated kernel groups the two K modes
+        if not isinstance(kernel, MoEGatedDynamicKernel):
+            raise ValueError(
+                "tiled expert weights (static v2 cell t) need the gated dynamic "
+                f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
+            )
+        if k % TILED_W13_K_IN != 0 or n % TILED_W2_K_IN != 0:
+            raise ValueError(
+                f"tiled expert weights need K % {TILED_W13_K_IN} == 0 and "
+                f"I_tp % {TILED_W2_K_IN} == 0 (got K={k}, I_tp={n})"
+            )
+        b_w13_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype,
+            (w1_rows, TILED_W13_K_IN, k // TILED_W13_K_IN, E),
+            stride_order=(1, 0, 2, 3),
+            assumed_align=16,
+        )
+        b_down_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype,
+            (k, TILED_W2_K_IN, n // TILED_W2_K_IN, E),
+            stride_order=(1, 0, 2, 3),
+            assumed_align=16,
+        )
+    else:
+        b_w13_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype,
+            (w1_rows, k, E),
+            stride_order=(1, 0, 2),
+            assumed_align=16,
+        )
+        b_down_fake = cute.runtime.make_fake_compact_tensor(
+            weight_dtype,
+            (k, n, E),
+            stride_order=(1, 0, 2),
+            assumed_align=16,
+        )
     sfb_w13_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
-    b_down_fake = cute.runtime.make_fake_compact_tensor(
-        weight_dtype,
-        (k, n, E),
-        stride_order=(1, 0, 2),
-        assumed_align=16,
-    )
     sfb_down_fake = make_ptr(sf_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     row_counts_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (E,), assumed_align=4
@@ -3329,7 +3411,7 @@ def _get_dynamic_kernel(
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
-        _disk_kernel_name(f"dynamic_e{E}_k{k}_n{n}_t{num_topk}", cache_key),
+        _disk_kernel_name(f"dynamic_e{E}_k{k}_n{n}_t{num_topk}{'_tiled' if tiled else ''}", cache_key),
         lambda: cute.compile(
             launch,
             a_input_fake,
@@ -3437,6 +3519,7 @@ def launch_sm120_dynamic_moe(
         share_input_across_experts=input_gs_is_shared,
         tile_m=workspace.tile_m,
         quant_mode=quant_mode,
+        tiled=bool(getattr(weights, "tiled", False)),
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
@@ -4424,12 +4507,12 @@ def launch_sm120_moe(
             swiglu_limit=swiglu_limit,
         )
 
-    if bool(getattr(weights, "tiled", False)) and backend != "static":
-        # the tiled layout is served by the v5 static kernel only (39차 phase
-        # 1); the dynamic (prefill) kernel reads the row-major layout
+    if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):
+        # the tiled layout is read by the v5 static kernel and the overlaid
+        # gated dynamic kernel; every other lane reads row-major weights
         raise NotImplementedError(
             "tiled expert weights (VLLM_GLM53_B12X_STATIC_V2 cell t) reached the "
-            f"{backend} backend: only the static kernel reads the tiled layout"
+            f"{backend} backend, which reads the row-major layout"
         )
     if backend == "dynamic":
         return launch_sm120_dynamic_moe(

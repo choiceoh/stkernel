@@ -263,9 +263,16 @@ the tiled layout to the v5 static kernel only: the wrapper keys its cached
 weight views on the lane's tiled flag, the entry refuses the dynamic
 (prefill) backend with tiled views, and the static launch checks views
 against lane -- a tiled view can never reach a kernel compiled for the
-row-major layout. Serving needs phase 2: the re-layout in place at weight
-post-processing and the gated dynamic kernel reading the 4-D map), and the
-probe-only timing cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the
+row-major layout. Serving (phase 2, same round): the vLLM wrapper re-lays
+the layer's packed bytes out in place once at weight post-processing (TP
+only; proof line `[b12x static v5] expert weights re-laid out tile-major in
+place`), the dispatcher views them without a copy, the micro lanes are off
+under tiled weights (they read row-major), and the gated dynamic (prefill)
+kernel is an overlay of the image's `_moe_dynamic/gated.py`
+(`moe_dynamic_gated.py`, pinned preimage) that groups the 4-D weights into a
+hierarchical K -- its 64 B tiles divide the 256 B / 64 B chunks -- and is
+compiled and cached per layout (`dynamic_..._tiled`); both kernels compile
+on the CPU check), and the probe-only timing cells `xs` (skip the FC1 SFB boxes) and `xa` (skip the
 A + SFA boxes) that the serving parse rejects. The
 cache key and on-disk kernel name carry the config; the source files are in
 `_kernel_source_files()`, so an edit invalidates the module cache like any

@@ -5592,7 +5592,13 @@ v4 의 w13 TMA 박스는 64 행 × 256 B 인데 스톡 저장 `[E, N, K]` 에서
 - 프로브 도구: `run_mk_probe.sh` 에 v5 마운트 + `MK_PROBE_NO_GPU=1`(--gpus 없이, `CUTE_DSL_ARCH=sm_121a`) +
   `MK_PROBE_DOCKER_ARGS`; `probes/b12x_static_compile_check.py` = CPU 컴파일 검사(스펙당 ~1.5 s, CUDA 컨텍스트 없음).
 - CPU 컴파일: `u`·`t`·`v,t`·`t,s` 전부 .o PASS, smem 101,376 B 불변, 커널 이름 `…tm32f2g2a32wut`.
-- 서빙(2단계)은 미배선: 가중치 후처리에서 제자리 재배치 + gated 동적(프리필) 커널이 4-D 맵을 읽게 하는 오버레이.
+- 서빙(2단계, 같은 라운드에 배선): vLLM 래퍼 `process_weights_after_loading` 끝에서 층의 패킹 바이트를 **제자리** 재배치
+  (`tile_expert_weights_inplace`, TP 만; 증명 줄 `[b12x static v5] expert weights re-laid out tile-major in place`),
+  디스패처는 표식(`_b12x_tile_major`)을 보고 복사 없이 4-D 뷰; 마이크로 레인(행 우선 판독)은 tiled 면 꺼짐(강제 시 거부);
+  gated 동적(프리필) 커널은 이미지 `_moe_dynamic/gated.py` 의 오버레이(`moe_dynamic_gated.py`, preimage 고정)로 4-D
+  가중치를 계층 K 로 묶어 읽고(그 커널의 64 B 타일이 256/64 B 청크를 나눔) 배치별로 컴파일·캐시(`dynamic_…_tiled`).
+  CPU 컴파일: 동적 커널 행 우선 4.4 s / 타일 4.1 s PASS. cute-dsl 함정: `@cute.jit` 안의 파이썬 `if` 는 양 갈래에서
+  변수 구조가 같아야 한다(`CONTAINER_STRUCTURE_CHANGED`) — 텐서 랭크로 갈리는 분기는 `cutlass.const_expr(...)` 로.
 
 ### §3 측정 대기
 

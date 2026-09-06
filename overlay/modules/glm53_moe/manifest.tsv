@@ -11,3 +11,5 @@ moe_static_kernel_v2.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static
 moe_static_kernel_v3.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v3.py	absent
 moe_static_kernel_v4.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py	absent
 moe_static_kernel_v5.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py	absent
+# -- 39차: the gated dynamic (prefill) kernel reading the tile-major weights of cell t
+moe_dynamic_gated.py	flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py	993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445

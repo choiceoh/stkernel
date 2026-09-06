@@ -1219,6 +1219,36 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             k=k2,
             num_groups=num_experts_w2,
         )
+        # 39차: the v5 static lane (VLLM_GLM53_B12X_STATIC_V2 cell t) reads
+        # tile-major expert weights -- re-lay the layer's packed bytes out in
+        # place once here, so the dispatcher's views need no copy (38 GB of
+        # experts per rank leave no room for two layouts). TP only: the EP
+        # micro lanes read row-major weights. The dispatcher refuses every
+        # lane that would read a tiled tensor as row-major.
+        if not self._use_ep:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import (
+                moe_dispatch as _b12x_dispatch,
+            )
+
+            if _b12x_dispatch.static_v2_weights_tiled(
+                num_experts=self.global_num_experts,
+                num_local_experts=self.num_local_experts,
+                hidden_size=self.hidden_dim,
+                intermediate_size=self.intermediate_size_per_partition,
+                num_topk=self.topk,
+                quant_mode="nvfp4",
+                activation=self._activation_str,
+                swiglu_limit=self._swiglu_limit,
+                activation_precision="fp4",
+            ):
+                _b12x_dispatch.tile_expert_weights_inplace(
+                    layer.w13_weight, layer.w2_weight
+                )
+                logger.warning(
+                    "[b12x static v5] expert weights re-laid out tile-major in place "
+                    "(w13 %s, w2 %s bytes): the static lane reads 16 KB / 8 KB boxes",
+                    tuple(layer.w13_weight.shape), tuple(layer.w2_weight.shape),
+                )
         if self._use_ep:
             self._warm_compact_shapes(layer)
 
