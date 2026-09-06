@@ -2127,6 +2127,21 @@ BASE39-stock 대비, 통일 onepass. 판정 규칙: 프리필 32K/128K +3% 이�
 - **302초 공백 종결**: 17:21 스톨 스냅샷(4 랭크 py-spy)에서 rank 2 만 `CustomAllreduce.__init__ → _init_mnnvl_buffer → symmetric_memory.rendezvous` 에 300 s(TCPStore 타임아웃) 갇혀 있고 나머지는 TP 첫 브로드캐스트에서 대기.
   커스텀 AR 은 다중 노드라 생성자 직후 자기 비활성화("MNNVL multicast 미지원", 매 부팅) → 런처 `--disable-custom-all-reduce`(PR #387). 플래그 부팅 3/3 정상(P2A4 225 s·dist-group tp 1.8 s, P2A3 210 s, 복구), "Custom collectives" 줄 0. 서빙 커널 변화 없음.
 
+### §4g P4 — NVFP4 프리필 M 문턱 1024 = GAIN(기본값 승격), KDA REGIME = NEUTRAL, 혼합 배치의 SP 탈락 실측 (18:15~18:30)
+
+BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
+
+| 팔 | 노브 | 결과 |
+|---|---|---|
+| P3C2 | `FP8_DENSE_PREFILL_NVFP4=1` + `NVFP4_SCALE_FUSED=1` + `…_MIN_M=1024` | **GAIN**: 프리필 2K **+3.9%**(2,054), 32K **+5.1%**(3,087), 128K **+3.5%**(2,938); 디코드 2K +2.3%/32K 0/128K 0; raw acc 49.3%, tok/step +0.8%; 9/9, 0/5. P3C(MIN_M=32) 의 −520 ms GEMM 이득이 양자화 +390 ms·런치 글루 +460 ms 에 먹혔던 것을 문턱으로 회수. **프로파일 기본값(이 PR)** |
+| KREG | `KDA_PREFILL_REGIME=1` | **NEUTRAL**: 2K +3.6%, 32K +1.9%, 128K +0.3%; 128K 디코드 −2.4%, tok/step −2.4%(raw acc 47.1%) → 승격 안 함 |
+
+- **혼합 배치 SP 점검**(KREG 부팅, `sp_mixed_check.py`): 디코드 스트림 옆의 32K 프리필 13.12 s (SP 단독 10.9 s, stock 12.2 s). 그 30.9 s 동안 스트림은 308 청크(≈10 tok/s, 단독 ~70). 앵커 `[prefill-sp] NOT selected: metadata gate (T=8182: not a pure-prefill batch…)` — 혼합 스텝은 SP 를 잃고, 디코더는 8,192 토큰 청크 하나가 끝나야 다음 토큰을 받는다. → 항목 2(디코드 우선 스케줄러)의 표적 수치.
+- **4a 집행**: `vm.swappiness=0` (`/etc/sysctl.d/99-swap.conf`) 4 노드 영구화, srv4 에 16 G `/swapfile` 추가(다른 3 노드는 이미 있었음).
+- **항목 1 준비**(운영자 "1번 2번 4a 진행"): `overlay/modules/glm53_prefix_cache`(하이브리드 APC 조정자 수정 — stock 은 이 KV 레이아웃에서 모든 그룹을 EAGLE 로 찍어 히트 0; MODULES 9번째, `PREFIX_CACHE=0` 이면 무해) + `probes/apc_hit_test.py`. 측정 초점은 히트가 아니라 **warm 히트의 수용률**: 상류 #47926(초안, 리베이스 대기) — 캐시 복원 토큰은 타깃을 안 거쳐 드래프터 컨텍스트 KV 가 미기록이고, 드래프터 윈도 블록 재사용이 안 되면 수용률이 position-0 로 붕괴(상류 측정 0.6% → 마스킹 후 38.2%). 우리 조정자는 드래프터 SWA 그룹의 캐시 윈도를 재사용하므로 같은 접두사의 재질문(멀티턴)은 살아야 하고, 그것을 잰다.
+- **항목 2 준비**: `glm53_runtime/glm53_decode_first.py` — `AsyncScheduler` 서브클래스, 디코더가 있는 스텝은 요청당 프리필 청크를 `VLLM_GLM53_SCHED_MIXED_CHUNK`(512) 로 cap(stock `long_prefill_token_threshold` 를 그 스텝만), `…_PREFILL_EVERY`=N 이면 N 스텝 중 1 스텝만 프리필(나머지는 순수 디코드 스텝, stock DP throttle 경로 재사용). 순수 프리필은 불변(SP·KDA·NVFP4 레인 유지). 런처 `DECODE_FIRST=1` → `--scheduler-cls`. 브래킷은 `probes/mixed_load_test.py`(디코더 ITL med/p95/max + 프리필 TTFT) + onepass.
+- 체인(플릿 큐): DEF40(새 기본값 참조) → APC(`PREFIX_CACHE=1`) → DF1(chunk 512, every 1) → DF2(every 2) → 복구.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.

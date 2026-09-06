@@ -6254,7 +6254,10 @@ def test_fp8_dense_prefill_nvfp4_pair_routes_by_rows() -> None:
     assert 'prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"' in src
     assert "method._nvfp4 = pair" in src and "%d nvfp4 prefill " in src
     prof = open("profiles/glm53.env", encoding="utf-8").read()
-    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=0\n" in prof
+    # 39차 P3C2: the route is the default above 1024 rows (MIN_M=32 was neutral)
+    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4=1\n" in prof
+    assert "\nVLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M=1024\n" in prof
+    assert "\nVLLM_GLM53_NVFP4_SCALE_FUSED=1\n" in prof
 
 
 def test_spec_k_compile_factor() -> None:
