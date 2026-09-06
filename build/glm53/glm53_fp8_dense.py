@@ -949,38 +949,6 @@ def _attach_mk_pack(method, weight, cols, name=None) -> bool:
     return False
 
 
-def _kda_owns(model, name: str) -> bool:
-    """True when MK-KDA will serve this linear inside its own launch.
-
-    The KDA block fuses in_proj/o_proj into the kernel, so for those two the
-    layer's quant_method is never called at all -- whichever scheme won it
-    is dead weight, and the W4 pack it does read must exist. Ownership is
-    decided here, while the bf16 source is still alive: _kda_ensure_packs
-    runs on the first eager forward, which is AFTER
-    maybe_free_fp8_dense_bf16, so a pack it has to build itself would read
-    an emptied tensor.
-    """
-    try:
-        from vllm.model_executor.layers import glm53_megakernel as _mkmod
-
-        if not (_mkmod.ENABLE_KDA or _mkmod.KDA_SHADOW):
-            return False
-    except Exception:
-        return False
-    if "." not in name:
-        return False
-    leaf = name.rsplit(".", 1)[1]
-    if leaf not in ("in_proj_qkvbfg_a", "o_proj"):
-        return False
-    try:
-        parent = model.get_submodule(name.rsplit(".", 1)[0])
-    except Exception:
-        return False
-    # o_proj also names the attention block's output projection; the KDA one
-    # is the sibling of in_proj_qkvbfg_a.
-    return hasattr(parent, "in_proj_qkvbfg_a")
-
-
 def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     """Quantize the selected dense projections of a loaded model in place.
 
@@ -1015,7 +983,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     quantized, quantized_w4, skipped, stale, params, params_w4 = (
         [], [], [], [], 0, 0)
     mk_packs = 0
-    kda_owned = 0
     shapes: dict = {}   # (N, K) -> count, for the boot log: which launches are which
     prefill_nv = _prefill_nvfp4_enabled(env) and scheme == "w8a8"
     nv_prefill = 0
@@ -1060,18 +1027,6 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
             ) is False:
                 mod.quant_method = base
                 stale.append(name)
-                continue
-            if _kda_owns(model, name):
-                # MK-KDA serves this projection inside its kernel, so the
-                # dense scheme does not bid for it: an nvfp4/w4a8 copy here
-                # would be built, verified and never read. What MK-KDA does
-                # read is the W4 pack, and it must be attached now.
-                if attach_mk(method, weight, cols, f"{type(model).__name__}/{name}"):
-                    mk_packs += 1
-                    kda_owned += 1
-                mod.quant_method = method
-                quantized.append(name)
-                params += weight.numel()
                 continue
             if scheme == "nvfp4" and weight.shape[1] % _NVFP4_BLOCK == 0:
                 # Same discipline as w4a8 below: an experimental scheme arms
@@ -1227,12 +1182,12 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
     logger.warning(
         "[fp8-dense] %s (knob %s=%s): %d linears w4a8 (%.2f GB bf16), "
         "%d linears w8a8 (%.2f GB bf16), %d kept bf16, %d disarmed by the "
-        "copy check, %d MK W4 packs (%d held for MK-KDA), %d nvfp4 prefill "
+        "copy check, %d MK W4 packs, %d nvfp4 prefill "
         "pairs%s -- fingerprint for the boot log",
         type(model).__name__, env, scheme,
         len(quantized_w4), params_w4 * 2 / 1e9,
         len(quantized), params * 2 / 1e9, len(skipped), len(stale), mk_packs,
-        kda_owned, nv_prefill,
+        nv_prefill,
         "; skipped: " + ", ".join(skipped[:8]) if skipped else "",
     )
     try:  # 33차: how the W4 packs were made (rtn / gptq / cached / low-rank)
@@ -1252,7 +1207,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
         # nothing else said so: NvFp4DenseMethod/W4A8DenseMethod.apply never
         # reach the MK path, so an nvfp4 or w4a8 arm turns MK-GEMM off for
         # every layer it takes. Silence here is how "armed" stops meaning
-        # "serving" -- the same trap the MK-KDA layout gate was.
+        # "serving" -- the trap the (since sunset) MK-KDA layout gate was.
         try:
             from vllm.model_executor.layers import glm53_megakernel as _mkmod
 
@@ -1261,8 +1216,7 @@ def maybe_build_fp8_dense(model, env: str = "VLLM_GLM53_FP8_DENSE") -> bool:
                     "[fp8-dense] %s: VLLM_GLM53_MK_GEMM=1 but the %s arm took "
                     "every eligible linear, so NO layer carries an MK W4 pack "
                     "-- MK-GEMM will not run on the dense projections this "
-                    "boot. MK-KDA keeps its own two projections either way, "
-                    "and MK-MHC / MK-MLA never read a pack; the exclusion is "
+                    "boot. MK-MHC / MK-MLA never read a pack; the exclusion is "
                     "MK-GEMM vs this scheme, per layer.",
                     type(model).__name__, scheme)
         except Exception:

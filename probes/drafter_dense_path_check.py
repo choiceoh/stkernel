@@ -43,7 +43,6 @@ sys.path.insert(0, "/usr/local/lib/python3.12/dist-packages")
 os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
 os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
 os.environ.setdefault("VLLM_GLM53_MK_MHC", "0")
-os.environ.setdefault("VLLM_GLM53_MK_KDA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_MLA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 

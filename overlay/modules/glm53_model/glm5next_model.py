@@ -96,11 +96,7 @@ from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.glm5_next import Glm5NextConfig
 
 from .attention import Glm5NextMLAAttention
-from .glm53_prefill_fastpath import (
-    install_glm53_prefill_fastpath,
-    prepare_glm53_prefill_fastpath,
-    warm_glm53_prefill_metadata_runtime,
-)
+from .glm53_prefill_fastpath import warm_glm53_prefill_metadata_runtime
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -108,8 +104,6 @@ from .multimodal import (
     Glm5NextVisionTransformer,
 )
 
-# Install after .attention is fully imported and before any GLM layer is built.
-install_glm53_prefill_fastpath()
 
 logger = init_logger(__name__)
 
@@ -1241,30 +1235,10 @@ class Glm5NextForCausalLM(
         except Exception:
             pass
 
-        # Build the dense-prefill indexer's fused K+gate weight only after the
-        # outer loader has populated every source parameter. It is a
-        # non-persistent acceleration buffer; any failure keeps the original
-        # per-projection path.
-        try:
-            prepare_glm53_prefill_fastpath(self)
-        except Exception:
-            pass
-
         # Compile the exact pooled-prefill metadata launch signatures before
-        # the first request. Independent rollback from the dense-MLA arm.
+        # the first request.
         try:
             warm_glm53_prefill_metadata_runtime(self)
-        except Exception:
-            pass
-
-        # Build the optional fixed-shape radix KPool extension during startup,
-        # never on the first user prefill. A build failure is fail-closed.
-        try:
-            from vllm.model_executor.layers.glm53_kpool_topk import (
-                prepare_glm53_kpool_topk,
-            )
-
-            prepare_glm53_kpool_topk()
         except Exception:
             pass
 

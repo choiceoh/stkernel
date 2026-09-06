@@ -36,12 +36,12 @@
 | 9 | 인덱서 head-gate split-K | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14) | ✅ | `INDEXER_GATE_SPLITK=0` · 무장 트레이스에도 `gemmSN` 11발 그대로 |
 | 15 | 드래프터 early-fc | 얹기 대기 | ✅ | `DFLASH_EARLY_FC=0` · 상한 ~0.3 ms |
 | 4 | b_proj/indexer fp8 | **브래킷 큐**(MKG3 묶음 팔, 원장 30차 §14; 키 선언 PR #357) | ✅ | `FP8_DENSE_BPROJ` 프로필 미설정(= 모듈 기본 off) · 표적은 무장 뒤에도 bf16 201발 중 ~112발 |
-| 3 | MHC small-M 스윕 | 프로브 먼저 | — | `MHC_SMALLM` unset = 불활성 |
+| 3 | MHC small-M 스윕 | **일몰**(34차 §8) | — | `MHC_SMALLM`·`MHC_ONEPASS` 코드 삭제 — mk_mhc 가 디코드 쌍을 대체(EXP-19). 프리필 `MHC_BIGFUSE`·`MHC_PASSES`(EXP-17)는 유지 |
 | 17 | MHC TileLang 패스설정 | 프로브 먼저 · **표적 축소** | — | `MHC_PASSES` 기본 off (#301). 무장 뒤 디코드 몫은 잔여 mhc 14발뿐이고 주종은 **프리필 big_fuse**(#303 정정) |
 | 11 | dsv4 에 MK_SEG_MHC | 프로브 먼저 | — | 2단계는 무부팅, 이기면 dsv4 다운타임 창 |
-| 21 | MK-GEMM v2 (비상주 레인) | 프로브 먼저 · **선언 선행** | — | exact PASS, 규칙 확정 뒤 m ≤ 16 전 형상 v2 ≥ v1 — **노출 프로브·스탬프 대기**(30차 §4~5). 상한 스텝 −2.5 ms. **`VLLM_GLM53_MK_GEMM2` 가 프로필에 없다 → 런처의 `_vllm_keys` 가 안 나른다: 지금 부팅에 얹으면 caller env 로 줘도 조용히 v1 이 돈다**(메가커널 29차의 교훈, MEASUREMENTS:2380). 브래킷 전에 프로필 선언(기본 0)이 선행 |
+| 21 | MK-GEMM v2 (비상주 레인) | **채택 · 유일 커널**(32차 기본값 +2.8%; 34차 §8 v1 상주 커널·`MK_GEMM2` 노브 삭제) | — | GEMM 세그먼트의 유일한 커널. 킬스위치는 `MK_GEMM=0`(스톡 fp8 쌍). 벤치 `--segments gemm,exact`, 분할 강제 `--ksr2-sweep`. (29차 교훈이던 "프로필 미선언 노브는 런처가 안 나른다"는 노브 자체가 사라져 해소) |
 | 22 | 공유 전문가 GEMM 로컬 양자화 | **일몰**(34차 §8, 2026-09-06) | — | 코드·노브 삭제(`mk_gemm_lq_kernel`·`MK_LOCALQ`). 단독 손해, 서빙 이득 0(체인14), 같은 진단의 채택된 처방은 EXP-21 v2 레인. 기록은 아래 EXP-22 절 |
-| 23 | b12x 정적(디코드) MoE 커널 v2/v3/v4 | **v3 `w` 채택 · 프로필 기본값(35차 부록)** · **v4 `u` 승격 · 프로필 기본값**(38차 부록, 운영자) · A 링 `v` 프로브 대기 | ✅ | `VLLM_GLM53_B12X_STATIC_V2=u`(프로필; 서빙 반영은 다음 프로덕션 부팅, 증명 줄 `…wu`). v4 `u` 원샷(12:20~12:48, SPEC_K=5): 디코드 창 21.9/21.9/20.9 vs 21.4/21.4/20.7 step/s(**+2%**), 프리필 warm 불변, 9/9, 한국어 0/9; 프로브 U=40 648 vs 672 µs(−3.5%). `e` 짝수 웨이브 기각(합계 대역폭은 스트림 수에 준선형), `k` 분할 −1~2% |
+| 23 | b12x 정적(디코드) MoE 커널 v4 (v2/v3 은 34차 §8 삭제, 공유 헬퍼 `moe_static_common.py`) | **v4 `u` 프로필 기본값**(38차 부록, 운영자; v3 `w` 는 35차 부록의 전 기본값) · A 링 `v` 프로브 대기 | ✅ | `VLLM_GLM53_B12X_STATIC_V2=u`(프로필; 서빙 반영은 다음 프로덕션 부팅, 증명 줄 `…wu`). v4 `u` 원샷(12:20~12:48, SPEC_K=5): 디코드 창 21.9/21.9/20.9 vs 21.4/21.4/20.7 step/s(**+2%**), 프리필 warm 불변, 9/9, 한국어 0/9; 프로브 U=40 648 vs 672 µs(−3.5%). `e` 짝수 웨이브 기각(합계 대역폭은 스트림 수에 준선형), `k` 분할 −1~2% |
 | 19 | hc 가중치 bf16 | **사실상 초월** · 참조 측정 | — | mk_mhc 가 pair 를 대체해 ONEPASS 전제가 사라졌다 — 폴백 경로의 커널급 참조로만 유효(#303) |
 | 5 | 프리필: 캡처 → KDA 스윕 | 부분 완료 | — | 캡처·프로파일은 09-03 원장에 있고 KDA 청크 스윕이 남음 |
 | 16 | 드래프터 메가커널 | 제안 · 착수 승인 대기 | — | 상한 −0.8~1.0 ms, 공사 2주 |
@@ -243,7 +243,7 @@ sm_121a 계약(mma.sync e4m3 · 클러스터/WGMMA 금지 · 48블록 고정)과
 |---|---|---|---|
 | MK-MHC | hc post+pre (수학은 소유 TileLang 소스의 비트 충실 포팅) | 179 → 45 | **179 → 89** + stock 잔여 7 · 2.54 → 2.07 ms |
 | MK-GEMM | per-token quant + W8A8 GEMM, M≤32 | ~360 → ~180 | **376 → 187** (deep_gemm 197 + quant 179 → mk_gemm 185 + lm_head 2) · 밀집 GEMM 시간 14.06 → 14.13 ms(제자리), 양자화 몫 −1.5 ms |
-| MK-KDA | KDA 블록 전체(in_proj→conv→recurrent→norm→o_proj) | ~510 → 34 | **미무장** (`MK_SEG_KDA=0`) — KDA 102 발 그대로 |
+| MK-KDA | KDA 블록 전체(in_proj→conv→recurrent→norm→o_proj) | ~510 → 34 | **34차 §8 일몰**(코드 삭제; 세트로 +0.7% 뒤 되돌림 #322, `KDA_ONEPASS` 가 같은 블록의 채택 후보) |
 | MK-MLA | sparse MLA 디코드 (NoPE, fp8 KV) | — | 28차부터 기본 on · 디코드 +1.0%, 프리필 +15~18% |
 
 **세트는 2026-09-04 20:35 부터 프로덕션 기본값**이다(28차 §8: MEGAKERNEL·MK_MHC·
@@ -285,7 +285,7 @@ VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_GEMM=1 \
 - **MK-GEMM 암은 fp8 가중치 바이트 중복(~+4 GB/랭크)**: KV 라인 확인,
   모자라면 GMU 한 단계 하향(README의 memfree-preflight 계산).
 - 첫 암 부팅은 확장 컴파일(~1분, `/root/.mk_build`)만큼 느려진다.
-- MK-KDA는 3단계 섀도 로그가 깨끗하기 전에 4단계에 올리지 않는다.
+- (MK-KDA 의 섀도 게이트 규칙은 세그먼트와 함께 34차 §8 에서 일몰.)
 
 ## EXP-7 — 준비 커널 통합 (`glm53_prep_fused`, 2026-09-02 추가)
 
@@ -713,7 +713,7 @@ deep_gemm 은 독립 블록이라 같은 GEMM 을 MoE 꼬리 안에서 끝냈다
 
 **부팅 게이트**: base(기본값) → cand(`VLLM_GLM53_MK_GEMM2=1`) 브래킷, step/s(acc 정규화)
 + 프리필 동반 + 품질 9/9 + 한국어 0/16 + pos-1 ±2 pct. 통과하면 프로필 기본 1 로 올리고
-v1 상주 커널은 KDA 내장 phase 로만 남긴다(운영자 규칙: 이득 확인된 개선은 기본값, 반대쪽 삭제).
+v1 상주 커널은 KDA 내장 phase 로만 남겼다가 34차 §8 에서 KDA 세그먼트와 함께 삭제했다(운영자 규칙: 이득 확인된 개선은 기본값, 반대쪽 삭제 — `MK_GEMM2` 노브도 소멸, v2 가 유일 커널).
 **주의**: SMLP(EXP-20 계열, 상주+배리어)를 같은 자리에 켜면 이 진단의 직렬화가 되살아난다 —
 공유 전문가 융합은 v2 구조(독립 블록 + 타일 도착 의존) 위에 다시 지어야 한다.
 
@@ -748,7 +748,7 @@ bf16 1306 / fp8 918 / MK W4(v1 레인) 418 µs 가 바이트 절반의 값이고
 **팔**: `VLLM_GLM53_MK_HEAD_DRAFT=1`(기본 0) 먼저 — 거친 드래프트 헤드는 수용률만 움직인다(acc 정규화
 step/s, pos-1 ±2 pct, quality 9/9, 한국어 0/16). `VLLM_GLM53_MK_HEAD_TARGET`(기본 0)은 서빙 로짓 —
 `VLLM_TARGET_LM_HEAD_FP8` 의 운영자 결정과 같은 축이 한 단계 더 거칠어지는 것이라 운영자 결정 뒤에만.
-둘 다 MK_GEMM=1·MK_GEMM2=1 필요(GEMM2 off 면 헤드 레인이 스스로 해제하고 로그).
+둘 다 MK_GEMM=1 필요(34차 §8 뒤 v2 가 유일 커널이라 `MK_GEMM2` 조건은 사라짐).
 
 **오프라인 게이트**: `run_megakernel_bench.sh --segments gemm --gemm-shapes 8:38720:4096,7:38720:4096
 --gemm2 both --ksr2-sweep 1,2` — exact PASS + stock 열(= 서빙 fp8 헤드, 836) 대비 mk2 열, ksr 1 vs 2 로
@@ -784,7 +784,7 @@ GPU 벤치는 srv2 `gap_bench9.sh` 가 유휴 창에 남긴다(`g2.head.out`). �
 품질 9/9 + 한국어 0/16 + 수용률 ±2 pct 게이트를 진다. 듀얼 GEMM 은 M≤16 bit-exact(M=32 는
 cuBLAS 가 다른 커널을 골라 1 ulp 소수). kpool 은 값 동일.
 
-MK_SEG_KDA(`VLLM_GLM53_MK_KDA=1`)가 서빙되면 KDA 두 축은 무효(메가커널 분기가 먼저).
+(MK_SEG_KDA 는 34차 §8 에서 삭제 — KDA 두 축은 이제 스톡 체인의 유일한 처방이다.)
 
 **원패스의 서빙 조건 — 재정정(2026-09-05).** 진입 조건은 `use_spec`(순수 spec-verify 스텝:
 `num_prefills == 0`, `num_decodes == 0`, 비-spec 토큰 없음)이다. 09-05 07:04~07:11 의 "이 러너엔

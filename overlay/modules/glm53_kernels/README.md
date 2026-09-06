@@ -1,16 +1,16 @@
 # glm53_kernels
 
-GLM-5.3 층 커널 — kpool 희소 인덱서, tail 슬롯, SM121 MLA 프리필, KDA 프리필, MHC TileLang.
+GLM-5.3 층 커널 — kpool 희소 인덱서(tail-select 융합), tail 슬롯, MHC TileLang(프리필 big_fuse 오버라이드 + MK 훅).
+
+**34차 §8 (2026-09-06, 운영자 "전부 지워")**: radix top-k 확장(`glm53_kpool_topk.cu/.py`, `KPOOL_FUSED_TOPK`), SM121 MLA 프리필(`flash_attn.py`, `SM121_MLA_PREFILL`), KDA 프리필 버킷(`kda.py`·`chunk_delta_h.py`, `KDA_PREFILL_REGIME`), MHC 디코드 쪽 오버라이드(`MHC_SMALLM`·`MHC_ONEPASS`·`mhc_onepass_tilelang`)를 삭제했다 — opt-in 이었고 판정 기록이 없거나(top-k·SM121·KDA 버킷) mk_mhc 가 대체했다(ONEPASS/SMALLM). 아래 해당 절은 기록이다.
 
 2026-09-05 (34차, 운영자 "디폴트화된 모듈들을 4~5개씩 하나로 묶어라") 에 아래 모듈들을 이 디렉터리 하나로 합쳤다. **매니페스트 행·베이스 계약·소스 파일·노브·기본값은 그대로**이고 디렉터리와 `manifest.tsv`·`requires`·README 만 합쳐졌다(합성 결과 `build/glm53/` 의 파일은 바이트 동일(메가커널 .cu 주석의 경로 한 줄 제외), 행 순서만 바뀜). 옛 이름은 원장·런북·커밋에 그대로 남아 있고, 아래 절이 옛 모듈 하나씩이다.
 
 | 옛 모듈 | 파일 | 무엇 |
 |---|---|---|
-| `glm53_kpool_tail_select` | `glm53_kpool_topk.cu`, `glm53_kpool_topk.py`, `sparse_attn_indexer_kpool.py` | kpool 인덱서 op 접수 + top-k 커널 + tail-select 융합 (`INDEXER_DECODE_FUSED`, `KPOOL_*`) |
+| `glm53_kpool_tail_select` | `sparse_attn_indexer_kpool.py` | kpool 인덱서 op 접수 + tail-select 융합 (`INDEXER_DECODE_FUSED`, `KPOOL_UPDATE_DIRECT_POS`); radix top-k 확장은 34차 §8 일몰 |
 | `glm53_tail_slot_persistent` | `glm53_kpool_indexer.py` | kpool tail 슬롯 고정 버퍼 (이 이미지에서는 잠들어 있음) |
-| `glm53_sm121_mla_prefill` | `flash_attn.py` | SM121 짧은 프리필 (`SM121_MLA_PREFILL`, 기본 off) |
-| `glm53_kda_prefill_regime` | `chunk_delta_h.py`, `kda.py` | KDA 프리필 autotune 버킷 (`KDA_PREFILL_REGIME`, 기본 off) |
-| `glm53_mhc_tilelang` | `tilelang.py`, `tilelang_kernels.py` | MHC TileLang 접수 (small-M 타일; MK-MHC 훅) |
+| `glm53_mhc_tilelang` | `tilelang.py`, `tilelang_kernels.py` | MHC TileLang 접수 (프리필 big_fuse `MHC_BIGFUSE`·패스 `MHC_PASSES` 오버라이드; MK-MHC 훅) |
 
 ---
 
@@ -253,7 +253,7 @@ has not been measured.
 
 ---
 
-## glm53_sm121_mla_prefill (was `overlay/modules/glm53_kernels/`)
+## glm53_sm121_mla_prefill (was `overlay/modules/glm53_kernels/`; 34차 §8 일몰 — 기록)
 
 ## glm53_sm121_mla_prefill
 
@@ -349,7 +349,7 @@ require the engine-down bracket above.
 
 ---
 
-## glm53_kda_prefill_regime (was `overlay/modules/glm53_kernels/`)
+## glm53_kda_prefill_regime (was `overlay/modules/glm53_kernels/`; 34차 §8 일몰 — 기록)
 
 ## glm53_kda_prefill_regime
 
@@ -511,7 +511,7 @@ Format: `VLLM_GLM53_MHC_BIGFUSE="h_blk[,post_thr]"` — e.g. `"4096"` or
 shapes. Adopt via bracket + the standard gates; numerics class is bf16
 reduce-order (R3 measured layer_input rel 1.2e-3).
 
-### One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (default off)
+### One-pass decode kernel — `VLLM_GLM53_MHC_ONEPASS` (34차 §8 일몰 — 기록; mk_mhc 가 쌍을 대체)
 
 `tilelang_kernels.py` is also taken over now (preimage `03aeb3f7…`): the stock
 kernels are untouched, and one new kernel is appended — `mhc_onepass_tilelang`,

@@ -41,7 +41,7 @@ bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 sources=(glm53_megakernel.py glm53_megakernel.cu
          glm5next_kda.py tilelang.py tilelang_kernels.py glm53_fp8_dense.py
          flashinfer_b12x_moe.py b12x_moe.py moe_dispatch.py moe_micro_kernel.py
-         moe_static_kernel_v2.py moe_static_kernel_v3.py moe_static_kernel_v4.py)
+         moe_static_common.py moe_static_kernel_v4.py)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")

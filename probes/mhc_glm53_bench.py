@@ -16,8 +16,7 @@ with the dispatcher's allocation and argument order, CUDA-graph captured
 
 Run in a FRESH GPU container (never docker-exec CUDA in the serving one):
   cd /home/choiceoh/stkernel
-  probes/run_mhc_glm53_bench.sh [--quick|--onepass|--prefill|
-                                 --passes|--hcweight]
+  probes/run_mhc_glm53_bench.sh [--quick|--prefill|--passes]
 
 The wrapper composes GLM53, bind-mounts both MHC sources over their exact vLLM
 targets, and gives this process the composed files for SHA-256 verification.
@@ -25,7 +24,10 @@ Direct docker invocation is refused so a stock-image import cannot pass as an
 overlay verdict.
 
 Verdicts are kernel-time only -- adoption still needs the bracket boot
-(VLLM_GLM53_MHC_SMALLM="tile_n,n_splits", quality 9/9 + Korean 0/16 + C=1).
+(quality 9/9 + Korean 0/16 + C=1). The decode-side knobs this bench once fed
+(MHC_SMALLM's tile pair, MHC_ONEPASS) were sunset in 34차 §8; the stock-pair
+sweep stays as a kernel-level reference, --passes and --prefill are the live
+arms.
 """
 import argparse
 import hashlib
@@ -101,7 +103,7 @@ def _require_composed_source(module, source):
     print(f"source {source}: {actual} sha256={actual_hash}", flush=True)
 
 
-def _load_mhc_overlay(require_onepass=False):
+def _load_mhc_overlay():
     """Import vLLM only after mode env is set, then prove source identity."""
     global mhc_fused_tilelang, mhc_pre_big_fuse_with_norm_tilelang
     global _dispatcher_mod
@@ -115,13 +117,6 @@ def _load_mhc_overlay(require_onepass=False):
     _dispatcher_mod = dispatcher
     _require_composed_source(dispatcher, "tilelang.py")
     _require_composed_source(kernels, "tilelang_kernels.py")
-    if require_onepass:
-        if getattr(dispatcher, "_DENEB_ONEPASS", None) is not True:
-            raise RuntimeError(
-                "ONEPASS was not frozen ON before the dispatcher import"
-            )
-        if not hasattr(kernels, "mhc_onepass_tilelang"):
-            raise RuntimeError("the imported kernels lack mhc_onepass_tilelang")
     mhc_fused_tilelang = kernels.mhc_fused_tilelang
     mhc_pre_big_fuse_with_norm_tilelang = (
         kernels.mhc_pre_big_fuse_with_norm_tilelang
@@ -200,56 +195,9 @@ def rel_err(a, b):
     return float(d / den) if den > 0 else float("inf")
 
 
-def _onepass_rel_errors(out, ref):
-    """Compare op outputs after matching the stock harness' flat buffers."""
-    aligned = (
-        out[0],
-        out[1].reshape_as(ref[3]),
-        out[2].reshape_as(ref[4]),
-        out[3],
-    )
-    return [rel_err(actual, expected)
-            for actual, expected in zip(aligned, ref[2:])]
-
-
 def _pair_rel_errors(out, ref):
     """Compare only the pair's config-independent final outputs."""
     return [rel_err(out[index], ref[index]) for index in (2, 3, 4, 5)]
-
-
-def onepass_check():
-    """Fused single-launch (VLLM_GLM53_MHC_ONEPASS) vs the stock pair.
-
-    Must run with --onepass ALONE: the gate is frozen at the dispatcher's
-    import, so this mode arms it before importing the op module and compares
-    torch.ops.vllm.mhc_fused_post_pre_tilelang (which then routes to
-    mhc_onepass_tilelang) against the direct stock kernel pair."""
-    print("onepass vs stock pair (gate frozen ON for the op path):")
-    for m in (1, 2, 4, 8, 16):
-        tensors = make_inputs(m)
-        comb, residual, post, x, fn, norm_w, scale, base = tensors
-        stock_config = _stock_config(m)
-        ref = run_pair(tensors, *stock_config)
-        torch.cuda.synchronize()
-        out = torch.ops.vllm.mhc_fused_post_pre_tilelang(
-            x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
-            scale, base, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
-            1, 1, norm_w, NORM_EPS,
-        )
-        torch.cuda.synchronize()
-        errs = _onepass_rel_errors(out, ref)
-        t_stock = bench_us(lambda: run_pair(tensors, *stock_config))
-        t_one = bench_us(lambda: torch.ops.vllm.mhc_fused_post_pre_tilelang(
-            x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
-            scale, base, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
-            1, 1, norm_w, NORM_EPS))
-        flag = "" if max(errs) <= 1e-4 else "  ! MISMATCH"
-        print(f"M={m:<3d} stock{stock_config}={t_stock:7.1f}us "
-              f"onepass={t_one:7.1f}us "
-              f"({100 * (t_stock - t_one) / t_stock:+5.1f}%) "
-              f"rel_err(max)={max(errs):.2e}{flag}", flush=True)
-    print("adopt only if rel_err stays <=1e-4 and the bracket confirms "
-          "end-to-end (C=1 step/s + quality 9/9 + Korean 0/16).")
 
 
 def prefill_check():
@@ -303,8 +251,7 @@ def prefill_check():
 
 
 def passes_check(ref_path=None, load_path=None):
-    """Time the stock pair (and onepass, when its gate froze ON) under the
-    VLLM_GLM53_MHC_PASSES combo the wrapper set for THIS process, and check
+    """Time the stock pair under the VLLM_GLM53_MHC_PASSES combo the wrapper set for THIS process, and check
     the pair's final outputs against a stock-passes reference.
 
     The pass knob compiles into every mhc kernel at import, so the A/B is
@@ -328,7 +275,6 @@ def passes_check(ref_path=None, load_path=None):
                 tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED):
         print(f"  {key.name}={kernels.pass_configs[key]}")
 
-    onepass_on = getattr(_dispatcher_mod, "_DENEB_ONEPASS", False) is True
     saved = None
     if load_path:
         saved = torch.load(load_path, map_location="cuda")
@@ -343,14 +289,6 @@ def passes_check(ref_path=None, load_path=None):
         torch.cuda.synchronize()
         t_pair = bench_us(lambda: run_pair(tensors, *stock_config))
         line = f"M={m:<3d} pair{stock_config}={t_pair:7.1f}us"
-        if onepass_on:
-            op = lambda: torch.ops.vllm.mhc_fused_post_pre_tilelang(  # noqa: E731
-                x, residual, post, comb, fn.view(N_OUT, HC, HIDDEN),
-                scale, base, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
-                1, 1, norm_w, NORM_EPS)
-            op()
-            torch.cuda.synchronize()
-            line += f" onepass={bench_us(op):7.1f}us"
         if saved is not None:
             errs = [rel_err(outs[i], saved[m][j])
                     for j, i in enumerate((2, 3, 4, 5))]
@@ -365,286 +303,14 @@ def passes_check(ref_path=None, load_path=None):
         print(f"reference saved: {ref_path}")
 
 
-def _alloc_onepass_outs(m):
-    return (
-        torch.empty(m, HC, HIDDEN, device="cuda", dtype=torch.bfloat16),
-        torch.empty(m, HC, device="cuda", dtype=torch.float32),
-        torch.empty(m, HC * HC, device="cuda", dtype=torch.float32),
-        torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16),
-    )
-
-
-def _call_onepass(kern, tensors, fn3d, outs=None):
-    comb, residual, post, x, fn, norm_w, scale, base = tensors
-    if outs is None:
-        outs = _alloc_onepass_outs(len(x))
-    kern(comb, residual, post, x, fn3d, scale, base, norm_w, *outs,
-         HC, HIDDEN, N_OUT, RMS_EPS, HC_EPS, HC_EPS, POST_MULT, SINKHORN,
-         NORM_EPS)
-    return outs
-
-
-def hcweight_check():
-    """bf16 hc-weight onepass probe (numerics experiment, NOT a <=1e-4 axis).
-
-    The onepass kernel's dominant bytes are weight_t [n_out,hc,h] read as
-    fp32 (~2MB/call at GLM shapes); bf16 halves that. "hc weights are fp32 by
-    design" (P1) makes this a precision trade, so the probe separates the two
-    error sources:
-      control  = stock onepass fed the SAME rounded weights (bf16->fp32)
-      variant  = bf16-weight kernel (transcription below, 2-line delta)
-    Gate: variant vs control <= 1e-4 (that is only transcription fidelity);
-    variant vs stock-fp32 is REPORTED, not gated -- it is the quantization
-    cost the bracket's quality gates (9/9 + Korean 0/16) would have to
-    absorb."""
-    import math
-
-    import tilelang
-    import tilelang.language as T
-    from vllm.model_executor.kernels.mhc import tilelang_kernels as kernels
-
-    pass_configs = kernels.pass_configs
-    ENABLE_PDL = kernels.ENABLE_PDL
-
-    # Transcription of mhc_onepass_tilelang from the composed kernels module.
-    # The ONLY deltas: weight_t is declared bfloat16, and the phase-1 FMA
-    # casts it to fp32 before use (so all arithmetic stays fp32 exactly as
-    # stock). Everything else is line-for-line the overlay kernel.
-    @tilelang.jit(pass_configs=pass_configs)
-    def mhc_onepass_bf16w(
-        comb_mix, residual_in, post_mix, x_in, weight_t, hc_scale, hc_base,
-        norm_weight, residual_out, post_mix_out, comb_mix_out, layer_input,
-        hc: int, hidden: int, n_out: int,
-        rms_eps: float, hc_pre_eps: float, hc_sinkhorn_eps: float,
-        hc_post_mult_value: float, sinkhorn_repeat: int, norm_eps: float,
-        n_thr: int = 256,
-    ) -> tilelang.JITKernel:
-        m = T.dynamic("num_tokens")
-        h = hidden
-        h_blk = math.gcd(1024, h)
-
-        comb_mix: T.Tensor((m, hc, hc), T.float32)  # type: ignore[no-redef, valid-type]
-        residual_in: T.Tensor((m, hc, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-        post_mix: T.Tensor((m, hc), T.float32)  # type: ignore[no-redef, valid-type]
-        x_in: T.Tensor((m, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-        # DELTA 1/2: fp32 -> bfloat16 weight
-        weight_t: T.Tensor((n_out, hc, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-        hc_scale: T.Tensor((3,), T.float32)  # type: ignore[no-redef, valid-type]
-        hc_base: T.Tensor((n_out,), T.float32)  # type: ignore[no-redef, valid-type]
-        norm_weight: T.Tensor((h,), T.bfloat16)  # type: ignore[no-redef, valid-type]
-        residual_out: T.Tensor((m, hc, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-        post_mix_out: T.Tensor((m, hc), T.float32)  # type: ignore[no-redef, valid-type]
-        comb_mix_out: T.Tensor((m, hc * hc), T.float32)  # type: ignore[no-redef, valid-type]
-        layer_input: T.Tensor((m, h), T.bfloat16)  # type: ignore[no-redef, valid-type]
-
-        h_iters = h // n_thr
-        num_warps = n_thr // 32
-
-        with T.Kernel(m, threads=n_thr) as i_n:
-            tid = T.get_thread_binding()
-            warp_id = tid // 32
-            lane = tid % 32
-
-            s_post = T.alloc_shared((hc,), T.float32)
-            s_comb = T.alloc_shared((hc, hc), T.float32)
-            pm = T.alloc_local((hc,), T.float32)
-            cm = T.alloc_local((hc, hc), T.float32)
-            new_r = T.alloc_local((hc,), T.float32)
-            acc = T.alloc_local((n_out,), T.float32)
-            sqr = T.alloc_local((1,), T.float32)
-
-            s_warp = T.alloc_shared((num_warps, n_out + 1), T.float32)
-
-            if ENABLE_PDL:
-                T.pdl_sync()
-
-            T.copy(post_mix[i_n, 0], s_post)
-            T.copy(comb_mix[i_n, 0, 0], s_comb)
-            for j in T.unroll(hc):
-                pm[j] = s_post[j]
-            for j in T.unroll(hc):
-                for k in T.unroll(hc):
-                    cm[k, j] = s_comb[k, j]
-
-            T.clear(acc)
-            T.clear(sqr)
-            for it in T.serial(h_iters):
-                h_idx = it * n_thr + tid
-                for j in T.unroll(hc):
-                    new_r[j] = pm[j] * x_in[i_n, h_idx]
-                    for k in T.unroll(hc):
-                        new_r[j] += cm[k, j] * residual_in[i_n, k, h_idx]
-                for j in T.unroll(hc):
-                    residual_out[i_n, j, h_idx] = new_r[j]
-                    sqr[0] += new_r[j] * new_r[j]
-                for n in T.unroll(n_out):
-                    for j in T.unroll(hc):
-                        # DELTA 2/2: cast the bf16 weight to fp32 before the
-                        # FMA -- arithmetic dtype unchanged vs stock
-                        acc[n] += T.float32(weight_t[n, j, h_idx]) * new_r[j]
-
-            for n in T.unroll(n_out):
-                acc[n] = T.warp_reduce_sum(acc[n])
-            sqr[0] = T.warp_reduce_sum(sqr[0])
-
-            if lane == 0:
-                for n in T.unroll(n_out):
-                    s_warp[warp_id, n] = acc[n]
-                s_warp[warp_id, n_out] = sqr[0]
-            T.sync_threads()
-
-            rp = T.alloc_fragment((1,), T.float32)
-            rms = T.alloc_fragment((1,), T.float32)
-            mixes = T.alloc_fragment(n_out, T.float32)
-            rp[0] = 0
-            rms[0] = 0
-            for w in T.unroll(num_warps):
-                rp[0] += s_warp[w, n_out]
-            rms[0] = T.rsqrt(rp[0] / (hc * h) + rms_eps)
-            for n in T.Parallel(n_out):
-                mixes[n] = 0
-                for w in T.unroll(num_warps):
-                    mixes[n] += s_warp[w, n]
-                mixes[n] *= rms[0]
-            s_mixes = T.alloc_shared(n_out, T.float32)
-            T.copy(mixes, s_mixes)
-
-            if tid < 32:
-                for j in T.Parallel(hc):
-                    post_mix_out[i_n, j] = (
-                        T.sigmoid(
-                            s_mixes[j + hc] * hc_scale[1] + hc_base[j + hc]
-                        )
-                        * hc_post_mult_value
-                    )
-                cm_f = T.alloc_fragment((hc, hc), T.float32)
-                for j, k in T.Parallel(hc, hc):
-                    cm_f[j, k] = (
-                        s_mixes[j * hc + k + hc * 2] * hc_scale[2]
-                        + hc_base[j * hc + k + hc * 2]
-                    )
-
-                row_sum = T.alloc_fragment(hc, T.float32)
-                col_sum = T.alloc_fragment(hc, T.float32)
-                row_max = T.alloc_fragment(hc, T.float32)
-                T.reduce_max(cm_f, row_max, dim=1)
-                for j, k in T.Parallel(hc, hc):
-                    cm_f[j, k] = T.exp(cm_f[j, k] - row_max[j])
-                T.reduce_sum(cm_f, row_sum, dim=1)
-                for j, k in T.Parallel(hc, hc):
-                    cm_f[j, k] = cm_f[j, k] / row_sum[j] + hc_sinkhorn_eps
-
-                T.reduce_sum(cm_f, col_sum, dim=0)
-                for j, k in T.Parallel(hc, hc):
-                    cm_f[j, k] = cm_f[j, k] / (col_sum[k] + hc_sinkhorn_eps)
-
-                for _ in T.serial(sinkhorn_repeat - 1):
-                    T.reduce_sum(cm_f, row_sum, dim=1)
-                    for j, k in T.Parallel(hc, hc):
-                        cm_f[j, k] = cm_f[j, k] / (row_sum[j] + hc_sinkhorn_eps)
-
-                    T.reduce_sum(cm_f, col_sum, dim=0)
-                    for j, k in T.Parallel(hc, hc):
-                        cm_f[j, k] = cm_f[j, k] / (col_sum[k] + hc_sinkhorn_eps)
-
-                for j, k in T.Parallel(hc, hc):
-                    comb_mix_out[i_n, j * hc + k] = cm_f[j, k]
-
-            pre_mix_shared = T.alloc_shared(hc, T.float32)
-            for j in T.Parallel(hc):
-                pre_mix_shared[j] = (
-                    T.sigmoid(
-                        s_mixes[j] * hc_scale[0] + hc_base[j],
-                    )
-                    + hc_pre_eps
-                )
-
-            output_shared = T.alloc_shared(h, T.bfloat16)
-            sumsq_per_pos = T.alloc_fragment(h_blk, T.float32)
-            T.clear(sumsq_per_pos)
-
-            for i0_h in T.Pipelined(h // h_blk, num_stages=2):
-                xs = T.alloc_shared((hc, h_blk), T.bfloat16)
-                xl = T.alloc_fragment((hc, h_blk), T.float32)
-                T.copy(residual_out[i_n, 0, i0_h * h_blk], xs)
-                T.copy(xs, xl)
-
-                ol = T.alloc_fragment(h_blk, T.float32)
-                T.clear(ol)
-
-                for i_hc in T.serial(hc):
-                    pre = pre_mix_shared[i_hc]
-                    for i1_h in T.Parallel(h_blk):
-                        ol[i1_h] += pre * xl[i_hc, i1_h]
-
-                for i1_h in T.Parallel(h_blk):
-                    sumsq_per_pos[i1_h] += ol[i1_h] * ol[i1_h]
-                    output_shared[i0_h * h_blk + i1_h] = T.bfloat16(ol[i1_h])
-
-            sumsq = T.alloc_fragment(1, T.float32)
-            T.reduce_sum(sumsq_per_pos, sumsq, dim=0)
-            rsqrt_norm = T.alloc_fragment(1, T.float32)
-            rsqrt_norm[0] = T.rsqrt(sumsq[0] / h + norm_eps)
-
-            for i0_h in T.Pipelined(h // h_blk, num_stages=2):
-                w_shared = T.alloc_shared(h_blk, T.bfloat16)
-                w_local = T.alloc_fragment(h_blk, T.float32)
-                T.copy(norm_weight[i0_h * h_blk], w_shared)
-                T.copy(w_shared, w_local)
-
-                ol = T.alloc_fragment(h_blk, T.float32)
-                for i1_h in T.Parallel(h_blk):
-                    ol[i1_h] = (
-                        output_shared[i0_h * h_blk + i1_h]
-                        * rsqrt_norm[0]
-                        * w_local[i1_h]
-                    )
-
-                T.copy(ol, layer_input[i_n, i0_h * h_blk])
-
-            if ENABLE_PDL:
-                T.pdl_trigger()
-
-    onepass = kernels.mhc_onepass_tilelang
-    print("bf16 hc-weight onepass vs stock (control isolates transcription):")
-    for m in (1, 2, 4, 8, 16):
-        tensors = make_inputs(m)
-        fn = tensors[4]
-        fn_bf = fn.to(torch.bfloat16)
-        fn_ctl = fn_bf.to(torch.float32)
-
-        ref = _call_onepass(onepass, tensors, fn)
-        ctl = _call_onepass(onepass, tensors, fn_ctl)
-        var = _call_onepass(mhc_onepass_bf16w, tensors, fn_bf)
-        torch.cuda.synchronize()
-        e_trans = max(rel_err(var[i], ctl[i]) for i in range(4))
-        e_quant = max(rel_err(var[i], ref[i]) for i in range(4))
-
-        t_stock = bench_us(lambda: _call_onepass(onepass, tensors, fn, ref))
-        t_bf = bench_us(lambda: _call_onepass(mhc_onepass_bf16w, tensors,
-                                              fn_bf, var))
-        flag = "" if e_trans <= 1e-4 else "  ! TRANSCRIPTION MISMATCH"
-        print(f"M={m:<3d} stock={t_stock:7.1f}us bf16w={t_bf:7.1f}us "
-              f"({100 * (t_stock - t_bf) / t_stock:+5.1f}%) "
-              f"rel_err(trans)={e_trans:.2e} rel_err(quant)={e_quant:.2e}"
-              f"{flag}", flush=True)
-        del tensors, ref, ctl, var
-    print("transcription gate <=1e-4 vs control; quant error is REPORTED -- "
-          "adoption would need bind-time weight casting in the dispatcher "
-          "plus the full quality gates (9/9 + Korean 0/16 + C=1 bracket).")
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true",
                     help="stock neighborhood only (fewer JIT compiles)")
     ap.add_argument("--ms", default="1,2,4,6,8,12,16",
                     help="num_tokens values (comma separated)")
-    ap.add_argument("--onepass", action="store_true",
-                    help="verify the fused single-launch path against the "
-                         "stock pair, then time both (VLLM_GLM53_MHC_ONEPASS)")
     ap.add_argument("--passes", action="store_true",
-                    help="time the pair (+onepass if its env is on) under "
+                    help="time the pair under "
                          "the VLLM_GLM53_MHC_PASSES combo frozen for THIS "
                          "process; the wrapper loops the four combos and "
                          "carries the numerics reference across them")
@@ -654,22 +320,10 @@ def main():
     ap.add_argument("--ref-load", default=None, metavar="PATH",
                     help="with --passes (non-stock combos): rel_err the pair "
                          "against the saved reference (gate <=1e-4)")
-    ap.add_argument("--hcweight", action="store_true",
-                    help="bf16 hc-weight onepass numerics experiment: time "
-                         "and error vs a control that isolates transcription "
-                         "from quantization (no adoption gate here)")
     ap.add_argument("--prefill", action="store_true",
                     help="time the prefill big_fuse_with_norm across h_blk "
                          "(the VLLM_GLM53_MHC_BIGFUSE candidate set)")
     args = ap.parse_args()
-    if args.onepass:
-        # vllm.model_executor.kernels.mhc.__init__ imports the dispatcher, so
-        # this must happen before importing either MHC submodule.
-        os.environ["VLLM_GLM53_MHC_ONEPASS"] = "1"
-    if args.hcweight:
-        _load_mhc_overlay()
-        hcweight_check()
-        return
     if args.passes:
         if not os.environ.get("VLLM_GLM53_MHC_PASSES", "").strip():
             ap.error("--passes needs VLLM_GLM53_MHC_PASSES in the env "
@@ -677,10 +331,7 @@ def main():
         _load_mhc_overlay()
         passes_check(args.ref_save, args.ref_load)
         return
-    _load_mhc_overlay(require_onepass=args.onepass)
-    if args.onepass:
-        onepass_check()
-        return
+    _load_mhc_overlay()
     if args.prefill:
         prefill_check()
         return
@@ -729,16 +380,9 @@ def main():
         deltas = [100 * (s - t) / s for t, s in zip(times, stock)]
         print(f"{key:>10} " + " ".join(f"{d:+8.1f}%" for d in deltas))
 
-    lt8 = [i for i, m in enumerate(ms) if m < 8]
-    if lt8:
-        best = min(
-            (k for k in rows if k != f"({STOCK_LT8[0]},{STOCK_LT8[1]})"),
-            key=lambda k: sum(rows[k][i] for i in lt8),
-        )
-        print(f"\nsuggested VLLM_GLM53_MHC_SMALLM={best[1:-1]} "
-              f"(best summed M<8 kernel-time; bracket boot decides adoption)")
-    else:
-        print("\nno M<8 rows; no SMALLM suggestion", flush=True)
+    # (the sweep once suggested a VLLM_GLM53_MHC_SMALLM pair; that knob was
+    # sunset in 34차 §8 -- the megakernel's mk_mhc serves decode -- so this
+    # table is a kernel-level reference of the stock pair only)
 
 
 if __name__ == "__main__":
