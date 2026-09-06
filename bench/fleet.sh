@@ -13,7 +13,7 @@
 #   fleet.sh cancel fusion                                     leave (stops your waiter too)
 #   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
 #
-# One FIFO queue and one hold, as files under $FLEET_DIR on srv2 (every
+# One queue with aging and downstream priority, and one hold, under $FLEET_DIR on srv2 (every
 # session's chains run there). A session REQUESTS a turn, WAITS until it is
 # at the head of the queue AND nobody holds the fleet AND no legacy bench /
 # boot process is running (peers that never adopted this tool are still

@@ -11198,8 +11198,12 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
     check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
           "status flags an overdue or silent holder and the tool still never kills a live one")
-    check('[ "${est:-30}" -le 15 ] && serving_idle' in fleet,
-          "a probe slips ahead of boot jobs only when short and only beside an idle serving")
+    from fleet_priority import rank as rank_fleet
+    queued = ["1|boot|100|30|boot|boot|", "2|probe|100|5|probe|probe|"]
+    check(rank_fleet(queued, {}, 200)[0]["session"] == "probe"
+          and rank_fleet(queued, {}, 200, probes_ready=False)[0]["session"] == "boot"
+          and '[ "$kind" = probe ] && ! serving_idle && return 1' in fleet,
+          "priority admits the short probe only while serving is idle, otherwise the eligible boot")
 
     tsv = open(os.path.join(REPO, "bench", "proof-markers.tsv"), encoding="utf-8").read()
     src_all = ""
