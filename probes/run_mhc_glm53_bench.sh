@@ -37,8 +37,7 @@ if [ "${1:-}" = "--passes" ]; then
   # VLLM_GLM53_MHC_PASSES freezes into the kernels at import, so each combo
   # is its own container. The stock combo runs FIRST and saves the pair's
   # outputs as the cross-combo numerics reference; every other combo loads
-  # it and must hold rel_err <= 1e-4. ONEPASS is on in all four so each row
-  # times both paths under that combo's pass set.
+  # it and must hold rel_err <= 1e-4.
   refdir=$(mktemp -d /tmp/mhc-passes-ref.XXXXXX)
   trap 'rm -rf "$refdir"' EXIT
   for combo in "" tma ws "tma,ws"; do
@@ -49,12 +48,10 @@ if [ "${1:-}" = "--passes" ]; then
     # compare against without its reference.
     if [ -z "$combo" ]; then
       run_probe -e VLLM_GLM53_MHC_PASSES=none \
-        -e VLLM_GLM53_MHC_ONEPASS=1 \
         -v "$refdir:/refshare" \
         -- --passes --ref-save /refshare/stock_ref.pt
     else
       if ! run_probe -e VLLM_GLM53_MHC_PASSES="$combo" \
-        -e VLLM_GLM53_MHC_ONEPASS=1 \
         -v "$refdir:/refshare" \
         -- --passes --ref-load /refshare/stock_ref.pt; then
         echo "VERDICT: combo '$combo' FAILED (compile/divergence) -- axis closed for this combo" >&2

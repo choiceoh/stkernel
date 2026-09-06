@@ -22,8 +22,15 @@ stream at once.
 
 Nine answers of ~400 tokens are ~45 decode windows; the legacy Korean prompt
 set (the campaign's known near-tie sites) can be appended with --korean-extra.
-Prints the legs' numbers and appends one JSON record to
-~/glm53-logs/bracket-onepass.jsonl. ~5 min on a healthy boot.
+39차 (operator: "원패스 시간을 줄여"): contexts >= --combine-min-ctx (32K)
+carry their three questions in ONE request, so the document is prefilled once
+(the 128K document cost 3 x 48 s), and --korean-extra runs one round of the
+8 prompts (--korean-rounds). The decode windows and the acceptance counters
+are untouched (the same C=1 stream; a combined request generates three
+answers' worth of tokens); the prefill columns and the Korean count are not
+comparable with records before 2026-09-06 14:40 ("combined": true in the
+prefill rows). Prints the legs' numbers and appends one JSON record to
+~/glm53-logs/bracket-onepass.jsonl. ~4 min on a healthy boot.
 
     python3 bench/onepass.py --name PRODV3 [--ctx 2000,32000,128000] [--korean-extra]
 """
@@ -48,6 +55,10 @@ FACT_EXPECT = [
 ]
 INSTRUCTION = ("문서의 내용만 근거로 한국어로 두 문단 정도로 답해줘. 이름·숫자·날짜·장비 번호 같은 고유 표기는 "
                "문서에 적힌 그대로 인용해줘.\n질문: ")
+# 38차: the three questions of a context in ONE request (one prefill instead
+# of three): numbered answers of about two paragraphs each
+INSTRUCTION_COMBINED = ("문서의 내용만 근거로 아래 질문 세 개에 한국어로 번호를 붙여 각각 두 문단 정도로 답해줘. "
+                        "이름·숫자·날짜·장비 번호 같은 고유 표기는 문서에 적힌 그대로 인용해줘.\n질문:\n")
 
 
 def _load(fname, modname):
@@ -115,7 +126,12 @@ def main() -> int:
     ap.add_argument("--max-tokens", type=int, default=400)
     ap.add_argument("--num-spec", type=int, default=int(os.environ.get("SPEC_K", "7")))
     ap.add_argument("--korean-extra", action="store_true",
-                    help="also run the legacy 8 Korean prompts x 2 rounds (the known near-tie sites)")
+                    help="also run the legacy Korean prompt set (the known near-tie sites)")
+    ap.add_argument("--korean-rounds", type=int, default=int(os.environ.get("ONEPASS_KOREAN_ROUNDS", "1")),
+                    help="rounds of the Korean set with --korean-extra (38차: 1; the 2-round run cost ~3.5 min)")
+    ap.add_argument("--combine-min-ctx", type=int, default=int(os.environ.get("ONEPASS_COMBINE_MIN_CTX", "32000")),
+                    help="contexts at or above this size ask the three questions in ONE request (one prefill "
+                         "instead of three; the fleet has no prefix cache). 0 = never combine")
     ap.add_argument("--out", default=os.path.expanduser("~/glm53-logs/bracket-onepass.jsonl"))
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
@@ -139,7 +155,30 @@ def main() -> int:
         for ctx in (int(c) for c in args.ctx.split(",")):
             doc = cq.build(ctx, args.seed + ctx)
             ttfts, hits, tok = [], [], 0
-            for qi, (_, q, _old) in enumerate(cq.FACTS):
+            combined = bool(args.combine_min_ctx) and ctx >= args.combine_min_ctx
+            if combined:
+                # 38차: one request carries the three questions, so the document
+                # is prefilled ONCE (the 128K document cost 3 x 48 s before);
+                # three answers' worth of decode keeps the window count. The
+                # cold / warm TTFT pair survives at the contexts below the cut.
+                qs = "\n".join(f"{qi + 1}. {q}" for qi, (_, q, _old) in enumerate(cq.FACTS))
+                content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
+                t_req = time.monotonic()
+                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens * len(cq.FACTS))
+                phases.append((ctx, t_req + ttft, time.monotonic()))
+                tok = ptok or tok
+                gen_tokens += ctok
+                ttfts.append(ttft)
+                low = text.lower()
+                for qi, (_, q, _old) in enumerate(cq.FACTS):
+                    good = all(any(alt in low for alt in group) for group in FACT_EXPECT[qi])
+                    hits.append("o" if good else "X")
+                    quality_total += 1
+                    quality_ok += good
+                    if not good:
+                        print(f"    MISS ctx~{ctx // 1000}K q={q!r} (combined) -> {text[:100]!r}", flush=True)
+                texts.append((f"ctx{ctx // 1000}K q-all", text, finish))
+            for qi, (_, q, _old) in enumerate([] if combined else cq.FACTS):
                 content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
                 t_req = time.monotonic()
                 text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens)
@@ -158,10 +197,13 @@ def main() -> int:
             cold, warm = ttfts[0], min(ttfts[1:]) if len(ttfts) > 1 else ttfts[0]
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
                                    "cold_tok_s": tok / cold if cold > 0 else 0.0,
-                                   "warm_tok_s": tok / warm if warm > 0 else 0.0})
-            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {tok / warm:>11.0f} {cold:>9.2f}s {warm:>9.2f}s  {' '.join(hits)}", flush=True)
+                                   "warm_tok_s": tok / warm if warm > 0 else 0.0,
+                                   "combined": combined})
+            warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
+            warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
+            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t}  {' '.join(hits)}", flush=True)
         if args.korean_extra:
-            for r in range(2):
+            for r in range(args.korean_rounds):
                 for i, p in enumerate(kq.PROMPTS):
                     t_req = time.monotonic()
                     text, finish = kq.ask(p, args.max_tokens)

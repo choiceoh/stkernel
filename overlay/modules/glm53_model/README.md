@@ -6,9 +6,9 @@ GLM-5.3 모델 배선 — 모델·어텐션·KDA·MLA 파일 접수, 밀집 GEMM
 
 | 옛 모듈 | 파일 | 무엇 |
 |---|---|---|
-| `glm53_model_wiring` | `glm53_prefill_fastpath.py`, `glm53_union_prefill.py`, `glm5next_model.py` | 모델 파일(`model.py`) 접수 + 프리필 fastpath/union 프리필 |
+| `glm53_model_wiring` | `glm53_prefill_fastpath.py`, `glm5next_model.py` | 모델 파일(`model.py`) 접수 + 프리필 메타데이터 웜업 (union 프리필·fused K+gate·SM121 캐시 전용 경로는 34차 §8 일몰) |
 | `glm53_indexer_gate_splitk` | `glm53_indexer_gate.py`, `glm5next_attention.py` | 어텐션 파일 접수 + 인덱서 head-gate split-K (`INDEXER_GATE_SPLITK`, EXP-9) |
-| `glm53_mk_kda_wiring` | `glm5next_kda.py` | KDA 블록 파일 접수 — MK-KDA 인수 훅 (`MK_KDA`) |
+| `glm53_mk_kda_wiring` | `glm5next_kda.py` | KDA 블록 파일 접수 — MK-KDA 인수 훅은 34차 §8 일몰; 스톡 체인 + `KDA_ONEPASS` 배선만 남음 |
 | `glm53_mk_mla_wiring` | `flashinfer_mla_sparse_sm90.py` | sparse MLA 백엔드 접수 — MK-MLA 라우팅 (`MK_MLA`) |
 | `glm53_kda_onepass` | `glm53_kda_onepass.py` | KDA 원패스·듀얼 게이트 GEMM (`KDA_ONEPASS`·`KDA_DUAL_GEMM`, EXP-20) |
 | `glm53_fp8_dense` | `glm53_fp8_dense.py` | 밀집 투영의 블록 fp8/W4 레인 (`FP8_DENSE`·`DFLASH2_FP8_DENSE`·`FP8_DENSE_BPROJ`) |
@@ -23,8 +23,9 @@ Constructs the router through `DenebGateLinear` instead of `GateLinear`, so
 GLM takes the fused small-M gate. The kernel itself is `moe_gate_sm121`;
 this is only the construction site, which is why it is a separate module.
 
-It also installs a cache-only sparse-indexer path when the separate
-`VLLM_GLM53_SM121_MLA_PREFILL=1` arm admits a fresh dense-MLA prefill. Dense
+(The cache-only sparse-indexer path behind `VLLM_GLM53_SM121_MLA_PREFILL=1`
+was sunset in 34차 §8.) It once installed that path when the dense-MLA arm
+admitted a fresh prefill. Dense
 MLA never consumes the indexer's sparse scores, so the path projects and
 normalizes only K, computes the kpool gate, and lets the existing kpool op
 write its index-K and persistent tail caches. It avoids the otherwise dead
@@ -52,7 +53,7 @@ Base contract from `glm53:v13-b12x`.
 ## glm53_indexer_gate_splitk
 
 The sparse indexer's fp32 head-gate projection as a deterministic split-K
-Triton path, behind `VLLM_GLM53_INDEXER_GATE_SPLITK` (default `0`, stock
+Triton path, behind `VLLM_GLM53_INDEXER_GATE_SPLITK` (profile default `1` since 2026-09-06, MKG3 bracket; `0` = stock
 `torch.mm`). This README is the single home of the measured numbers; the
 ledger and RUNBOOK cite it.
 
@@ -87,8 +88,9 @@ only when the knob is `1` **and** `splitk_applicable` admits the shape:
 2-D x with unit inner stride, M <= 16 (C=1 verify batches are M=8, C=2 M=16),
 `x.shape[1] == w.shape[0]`, fp32 contiguous w with N <= 32, K a multiple of
 128. Everything else -- prefill, C>=3, unexpected layouts -- keeps `torch.mm`.
-The fused-indexer forward in `glm53_prefill_fastpath.py`
-(`VLLM_GLM53_FUSED_K_GATE=1`) routes through the same helper.
+(The fused-indexer forward in `glm53_prefill_fastpath.py`,
+`VLLM_GLM53_FUSED_K_GATE=1`, that routed through the same helper was sunset
+in 34차 §8; the file keeps the metadata warm-up only.)
 
 Both paths accumulate in fp32; only the summation order differs, so this is
 **not bit-exact** with stock -- it is a served-numerics change and carries the
@@ -156,7 +158,7 @@ fastpath optionally imports this module, not the reverse.
 
 ---
 
-## glm53_mk_kda_wiring (was `overlay/modules/glm53_model/`)
+## glm53_mk_kda_wiring (was `overlay/modules/glm53_model/`; the MK-KDA takeover was sunset in 34차 §8 -- history)
 
 ## glm53_mk_kda_wiring
 
@@ -446,7 +448,7 @@ module's default and what the fleet runs are different statements; profiles/READ
 carries the second one.
 The kernel pair is the one `fp8_lm_head` already runs under capture here.
 
-### b-projection arm — `VLLM_GLM53_FP8_DENSE_BPROJ` (default off)
+### b-projection arm — `VLLM_GLM53_FP8_DENSE_BPROJ` (profile default on since 2026-09-06, MKG3 bracket; module default off)
 
 STEP_KERNEL_MAP #108 §2: after W8A8, 145 `cutlass_80_wmma` bf16 GEMMs/step
 remain — the rear halves of the low-rank projections. This arm extends the

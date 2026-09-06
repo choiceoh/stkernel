@@ -79,10 +79,10 @@ def make_inputs(T, device):
         return torch.randn(*shape, generator=g, device=device,
                            dtype=torch.float32).mul(scale).to(dt)
 
-    q = r(1, T, H, K, 0.8)
-    k = r(1, T, H, K, 0.8)
-    v = r(1, T, H, V, 0.8)
-    raw_g = r(1, T, H, K, 0.3)          # f_b_proj output (raw gate)
+    q = r(1, T, H, K, scale=0.8)
+    k = r(1, T, H, K, scale=0.8)
+    v = r(1, T, H, V, scale=0.8)
+    raw_g = r(1, T, H, K, scale=0.3)    # f_b_proj output (raw gate)
     raw_beta = torch.rand(1, T, H, generator=g, device=device,
                           dtype=torch.float32).to(dt)
     # Production GLM applies its compiled fp32 sigmoid before generic FLA KDA.

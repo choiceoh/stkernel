@@ -3,14 +3,15 @@
 # deneb fork (2026-08-31, glm53_mhc_tilelang): byte-identical to the
 # glm53:v13-b12x image's vllm/model_executor/kernels/mhc/tilelang.py
 # (preimage sha256 c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce)
-# EXCEPT the mhc_fused_post_pre small-M (decode) launch heuristic, which the
-# base itself marks "TODO(gnovack): investigate autotuning": tile_n/n_splits
-# are env-overridable via VLLM_GLM53_MHC_SMALLM="tile_n,n_splits" (e.g. "6,4").
-# Unset or invalid = the stock pair, so an env typo can never change behavior
-# silently. Sweep harness: probes/mhc_glm53_bench.py. dsv4 precedent: the same
-# TODO heuristic swept to (6,4) at M<8 for +16 pct on the dsv4 lane
-# (dsv4_mhc_tilelang R1). Decode is the C=1 verdict channel here.
+# EXCEPT (a) the prefill big_fuse h_blk / mhc_post override behind
+# VLLM_GLM53_MHC_BIGFUSE (unset or invalid = stock, so an env typo can never
+# change behavior silently; sweep harness probes/mhc_glm53_bench.py) and (b)
+# the megakernel's MK_SEG_MHC hook on the small-M (decode) branch. The
+# decode-side overrides this file once carried -- VLLM_GLM53_MHC_SMALLM's
+# tile_n/n_splits pair and the VLLM_GLM53_MHC_ONEPASS one-launch route --
+# were sunset in 34차 §8: mk_mhc replaced the pair (RUNBOOK EXP-19).
 import os
+from functools import cache
 
 
 def _deneb_persist_tilelang_cache() -> None:
@@ -78,50 +79,6 @@ import torch
 
 from vllm.utils.torch_utils import direct_register_custom_op
 
-# deneb fork: parsed once at import -- a frozen constant is capture-safe (the
-# captured decode graph must not branch on an env read). Per-call validity is
-# re-checked in _deneb_smallm_pair against the runtime shapes; any doubt there
-# falls back to the stock heuristic.
-_SMALLM_ENV = "VLLM_GLM53_MHC_SMALLM"
-
-
-def _deneb_parse_smallm(raw: str):
-    """Parse "tile_n,n_splits" -> (int, int), or None unless unambiguous."""
-    try:
-        a, b = (s.strip() for s in raw.split(","))
-        tile_n, n_splits = int(a), int(b)
-    except Exception:
-        return None
-    if tile_n <= 0 or n_splits <= 0:
-        return None
-    return tile_n, n_splits
-
-
-_raw_smallm = (os.environ.get(_SMALLM_ENV) or "").strip()
-_DENEB_SMALLM = _deneb_parse_smallm(_raw_smallm) if _raw_smallm else None
-
-
-def _deneb_smallm_pair(num_tokens: int, hidden_size: int, hc_mult: int):
-    """(tile_n, n_splits) for this step, or None to run the stock heuristic.
-
-    The kernel's shape contracts, re-checked here because the constants live
-    in the caller's frames: tile_n must divide n_out = hc_mult*(hc_mult+2)
-    (n_tiles = n_out // tile_n), n_splits must be one the dispatcher's own
-    assert admits, and every thread of the default n_thr=256 must own work
-    (h_per_split % n_thr == 0, else the serial h-loop silently drops
-    elements)."""
-    if _DENEB_SMALLM is None:
-        return None
-    tile_n, n_splits = _DENEB_SMALLM
-    if (hc_mult * (hc_mult + 2)) % tile_n:
-        return None
-    if n_splits not in (1, 2, 4, 8):
-        return None
-    if hidden_size % n_splits or (hidden_size // n_splits) % 256:
-        return None
-    return tile_n, n_splits
-
-
 # deneb fork: prefill big_fuse h_blk override. dsv4 R3 precedent: h_blk=4096
 # (single pipelined block) won +5.6% on this kernel family at M=4096 (with
 # n_thr 96/160; GLM's stock 96 is in the winning set) while M<=64 is
@@ -159,6 +116,76 @@ _raw_bigfuse = (os.environ.get(_BIGFUSE_ENV) or "").strip()
 _DENEB_BIGFUSE = _deneb_parse_bigfuse(_raw_bigfuse) if _raw_bigfuse else None
 
 
+# Prefill post-map + prenorm experiment. The stock post result is rounded to
+# BF16 before its prenorm GEMM. The fused kernel retains that boundary while
+# avoiding the GEMM's reread of the complete HC-expanded residual. It changes
+# the dot/reduction schedule and requires GPU differential + serving gates.
+_DENEB_PREFILL_POST_PRENORM = (
+    os.environ.get("VLLM_GLM53_MHC_PREFILL_POST_PRENORM") == "1"
+)
+
+
+@cache
+def _deneb_prefill_post_prenorm_device(device):
+    return torch.cuda.get_device_capability(device) == (12, 1)
+
+
+def _deneb_prefill_post_prenorm(
+    comb, residual, post, x, fn, residual_out, gemm_out, sqrsum, n_splits,
+):
+    """Offer only the dense GLM prefill geometry to the fused experiment."""
+    if not _DENEB_PREFILL_POST_PRENORM:
+        return False
+    if (
+        residual.ndim != 3
+        or tuple(residual.shape[1:]) != (4, 4096)
+        or residual.shape[0] < 128
+        or residual.device.type != "cuda"
+        or n_splits < 1
+        or n_splits > 64
+    ):
+        return False
+    m = residual.shape[0]
+    layouts = (
+        (residual, (m, 4, 4096), torch.bfloat16),
+        (residual_out, (m, 4, 4096), torch.bfloat16),
+        (x, (m, 4096), torch.bfloat16),
+        (post, (m, 4), torch.float32),
+        (comb, (m, 4, 4), torch.float32),
+        (fn, (24, 16384), torch.float32),
+        (gemm_out, (n_splits, m, 24), torch.float32),
+        (sqrsum, (n_splits, m), torch.float32),
+    )
+    if any(
+        tuple(tensor.shape) != shape
+        or tensor.dtype != dtype
+        or tensor.device != residual.device
+        or not tensor.is_contiguous()
+        for tensor, shape, dtype in layouts
+    ):
+        return False
+    if not _deneb_prefill_post_prenorm_device(residual.device):
+        return False
+    from vllm.model_executor.kernels.mhc.tilelang_kernels import (
+        _mhc_prefill_post_prenorm_kernel,
+    )
+
+    # These outputs are fresh dispatcher allocations. Also reject aliases in
+    # direct probe calls: another CTA can still be reading the original row.
+    inputs = (residual, x, post, comb, fn)
+    input_storages = {tensor.untyped_storage().data_ptr() for tensor in inputs}
+    outputs = (residual_out, gemm_out, sqrsum)
+    output_storages = {tensor.untyped_storage().data_ptr() for tensor in outputs}
+    if len(output_storages) != len(outputs) or input_storages & output_storages:
+        return False
+    _mhc_prefill_post_prenorm_kernel[((m + 15) // 16, n_splits)](
+        comb, residual, post, x, fn, residual_out, gemm_out, sqrsum,
+        m, HIDDEN=4096, NSPLITS=n_splits, BM=16, BK=64, BN=32,
+        num_warps=4, num_stages=2,
+    )
+    return True
+
+
 def _deneb_bigfuse_hblk(num_tokens: int, hidden_size: int):
     """h_blk for the prefill big_fuse kernels, or None to run stock."""
     if _DENEB_BIGFUSE is None or num_tokens <= 64:
@@ -176,31 +203,6 @@ def _deneb_bigfuse_post(num_tokens: int):
     if post_thr is None:
         return None
     return post_thr, _DENEB_BIGFUSE[0]
-
-
-# deneb fork: one-launch decode path. VLLM_GLM53_MHC_ONEPASS=1 routes the
-# small-M branch of mhc_fused_post_pre through mhc_onepass_tilelang (in our
-# tilelang_kernels.py takeover) -- the FMA kernel and the big-fuse
-# (mixes/sinkhorn/norm) kernel folded into one launch per layer, with the
-# gemm_out global roundtrip gone. Frozen at import like its sibling knobs
-# (the serving process sets env before import; capture then bakes the chosen
-# branch). The per-call validator re-checks the kernel's shape contracts.
-# Default off: unvalidated on GPU until probes/mhc_glm53_bench.py --onepass
-# runs clean.
-_ONEPASS_ENV = "VLLM_GLM53_MHC_ONEPASS"
-_raw_onepass = (os.environ.get(_ONEPASS_ENV) or "").strip().lower()
-_DENEB_ONEPASS = _raw_onepass in ("1", "true", "yes", "on")
-
-
-def _deneb_onepass_enabled() -> bool:
-    return _DENEB_ONEPASS
-
-
-def _deneb_onepass_ok(hidden_size: int, hc_mult: int) -> bool:
-    """Kernel contracts: one tile spans n_out, one warp writes it, and every
-    thread owns exact work of the serial h-loop (h % n_thr == 0)."""
-    n_out = hc_mult * (hc_mult + 2)
-    return n_out <= 32 and hidden_size % 256 == 0
 
 
 # deneb fork (glm53_megakernel): resolve the MK_SEG_MHC entry point ONCE.
@@ -822,23 +824,15 @@ def mhc_fused_post_pre_tilelang(
     use_small_fma = num_tokens <= 16
     if use_small_fma:
         # TODO(gnovack): investigate autotuning these heuristics
-        # deneb fork: VLLM_GLM53_MHC_SMALLM="tile_n,n_splits" overrides the
-        # stock pair for the whole small-M branch when it passes the kernel's
-        # shape contracts; anything doubtful falls back to stock.
-        _tuned = _deneb_smallm_pair(num_tokens, hidden_size, hc_mult)
-        if _tuned is not None:
-            tile_n, n_splits = _tuned
-        else:
-            tile_n = 2 if num_tokens < 8 else 3
-            n_splits = 8 if (num_tokens < 8 and hidden_size <= 4096) else 4
+        tile_n = 2 if num_tokens < 8 else 3
+        n_splits = 8 if (num_tokens < 8 and hidden_size <= 4096) else 4
 
     # deneb fork (glm53_megakernel): MK_SEG_MHC -- the same small-M fusion in
     # ONE persistent nvcc launch (48 blocks, no TileLang JIT for decode
     # shapes). Arms on the first eligible call, after a self-test that diffs
     # it against the stock pair below; every miss (module not mounted,
     # unarmed, shape, dtype) returns None and falls through, so a disarmed
-    # boot is byte-identical to today. Takes precedence over ONEPASS when both
-    # are set: it is the same fusion with fewer launches. The arm-then-call
+    # boot is byte-identical to today. The arm-then-call
     # contract lives in the core's `mhc_hook`, so this block is the same code
     # dsv4_mhc_tilelang carries -- two image forks, one hook.
     #
@@ -872,63 +866,6 @@ def mhc_fused_post_pre_tilelang(
             if _mk is not None:
                 return _mk
 
-    # deneb fork: ONEPASS -- the whole small-M pair in one launch. Placed
-    # before the gemm_out allocations because the fused kernel has no
-    # gemm_out. Requires the fused norm (the with_norm half of big_fuse is
-    # what it inlines); without norm_weight the stock path below runs.
-    if (
-        use_small_fma
-        and _deneb_onepass_enabled()
-        and norm_weight is not None
-        and _deneb_onepass_ok(hidden_size, hc_mult)
-    ):
-        from vllm.model_executor.kernels.mhc.tilelang_kernels import (
-            mhc_onepass_tilelang,
-        )
-
-        residual_cur = torch.empty_like(residual_flat)
-        post_mix_cur = torch.empty(
-            num_tokens, hc_mult, dtype=torch.float32, device=residual.device
-        )
-        comb_mix_cur = torch.empty(
-            num_tokens, hc_mult2, dtype=torch.float32, device=residual.device
-        )
-        layer_input_cur = torch.empty(
-            num_tokens, hidden_size, dtype=torch.bfloat16, device=residual.device
-        )
-        mhc_onepass_tilelang(
-            comb_res_mix_flat,
-            residual_flat,
-            post_layer_mix_flat,
-            x_flat,
-            fn.view(hc_mult3, hc_mult, hidden_size),
-            hc_scale,
-            hc_base,
-            norm_weight,
-            residual_cur,
-            post_mix_cur,
-            comb_mix_cur,
-            layer_input_cur,
-            hc_mult,
-            hidden_size,
-            hc_mult3,
-            rms_eps,
-            hc_pre_eps,
-            hc_sinkhorn_eps,
-            hc_post_mult_value,
-            sinkhorn_repeat,
-            norm_eps,
-        )
-        return (
-            residual_cur.view(*outer_shape, hc_mult, hidden_size),
-            post_mix_cur.view(*outer_shape, hc_mult, 1),
-            comb_mix_cur.view(*outer_shape, hc_mult, hc_mult),
-            layer_input_cur.view(*outer_shape, hidden_size),
-        )
-    # ONEPASS is only an optional early return.  The stock small-M path must
-    # keep the 4/8-way split selected above when ONEPASS is disabled; running
-    # the generic DeepGEMM planner here can produce a split outside this
-    # dispatcher's supported set (48 on GB10) for the 256-thread kernel.
     if not use_small_fma:
         if use_deep_gemm:
             # these number are from deepgemm kernel impl
@@ -989,7 +926,10 @@ def mhc_fused_post_pre_tilelang(
             tile_n=tile_n,
             n_splits=n_splits,
         )
-    else:
+    elif not _deneb_prefill_post_prenorm(
+        comb_res_mix_flat, residual_flat, post_layer_mix_flat, x_flat,
+        fn, residual_cur, gemm_out_mul, gemm_out_sqrsum, n_splits,
+    ):
         _post_kw = {}
         _post = _deneb_bigfuse_post(num_tokens)
         if _post is not None:

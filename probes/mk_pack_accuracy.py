@@ -138,12 +138,11 @@ def main():
 
     os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
     os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
-    os.environ.setdefault("VLLM_GLM53_MK_GEMM2", "1")
     os.environ["VLLM_GLM53_MK_PACK_CACHE"] = "off"
     from vllm.model_executor.layers import glm53_megakernel as mk
     from vllm.model_executor.layers.glm53_fp8_dense import _fp8_dense_gemm
     ext = mk._build()
-    ext.set_gemm2(1, 0, -1)   # the v2 lane (the production lane)
+    ext.set_gemm2(0)   # the rule's split (the production lane)
 
     cases = []
     if not args.no_real:

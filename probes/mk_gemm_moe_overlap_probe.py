@@ -31,7 +31,6 @@ import sys
 os.environ.setdefault("VLLM_GLM53_MEGAKERNEL", "1")
 os.environ.setdefault("VLLM_GLM53_MK_GEMM", "1")
 os.environ.setdefault("VLLM_GLM53_MK_MHC", "0")
-os.environ.setdefault("VLLM_GLM53_MK_KDA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_MLA", "0")
 os.environ.setdefault("VLLM_GLM53_MK_PDL", "1")
 sys.path.insert(0, os.environ.get("MK_PKG_PATH",
@@ -144,29 +143,27 @@ def main() -> int:
     def nothing():
         pass
 
-    print(f"v2 plans (on, ksr, units, blocks/SM): up={list(ext.gemm2_plan(T, SHARED_N, HID))} "
+    print(f"plans (ksr, units, blocks/SM): up={list(ext.gemm2_plan(T, SHARED_N, HID))} "
           f"down={list(ext.gemm2_plan(T, HID, SHARED_K))}")
     print(f"{'row':<36}{'us':>9}{'exposed_us':>12}")
     t_moe = _time(_capture(moe, nothing, "moe-first"))
     print(f"{'moe alone (U=40)':<36}{t_moe:>9.1f}")
+    # one lane since 34차 §8: the v2 non-persistent kernel is the GEMM
+    # segment's only kernel (the persistent v1 row this probe compared
+    # against is gone with it)
     rows = {}
-    for lane in (0, 1):
-        ext.set_gemm2(lane, 0, -1)
-        tag = f"v{lane + 1}"
-        t_pair = _time(_capture(nothing, pair, "moe-first"))
-        print(f"{'pair alone ' + tag:<36}{t_pair:>9.1f}")
-        for order in ("moe-first", "pair-first"):
-            t = _time(_capture(moe, pair, order))
-            rows[(lane, order)] = t - t_moe
-            print(f"{'moe || pair ' + tag + ' ' + order:<36}{t:>9.1f}"
-                  f"{t - t_moe:>12.1f}")
-    ext.set_gemm2(1 if os.environ.get("VLLM_GLM53_MK_GEMM2") == "1" else 0, 0, -1)
+    t_pair = _time(_capture(nothing, pair, "moe-first"))
+    print(f"{'pair alone v2':<36}{t_pair:>9.1f}")
+    for order in ("moe-first", "pair-first"):
+        t = _time(_capture(moe, pair, order))
+        rows[order] = t - t_moe
+        print(f"{'moe || pair v2 ' + order:<36}{t:>9.1f}"
+              f"{t - t_moe:>12.1f}")
     # the number that maps onto the step: 42 layers x the exposed pair
-    for lane in (0, 1):
-        worst = max(rows[(lane, o)] for o in ("moe-first", "pair-first"))
-        best = min(rows[(lane, o)] for o in ("moe-first", "pair-first"))
-        print(f"v{lane + 1}: exposed per layer {best:.1f}..{worst:.1f} us -> "
-              f"x42 = {42 * best / 1e3:.2f}..{42 * worst / 1e3:.2f} ms/step")
+    worst = max(rows.values())
+    best = min(rows.values())
+    print(f"v2: exposed per layer {best:.1f}..{worst:.1f} us -> "
+          f"x42 = {42 * best / 1e3:.2f}..{42 * worst / 1e3:.2f} ms/step")
     return 0
 
 

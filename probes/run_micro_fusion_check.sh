@@ -27,11 +27,7 @@ BUILD="$REPO/build/$PROFILE"
 MANIFEST="$BUILD/manifest.tsv"
 bash "$REPO/launchers/compose-overlays.sh" "$PROFILE" >&2
 
-# glm53_kpool_topk.{py,cu} ride along: the mounted indexer imports the
-# radix top-k module at import time, and the glm5next package import pulls
-# the indexer in.
-sources=(glm53_kda_onepass.py glm5next_kda.py
-         sparse_attn_indexer_kpool.py glm53_kpool_topk.py glm53_kpool_topk.cu)
+sources=(glm53_kda_onepass.py glm5next_kda.py sparse_attn_indexer_kpool.py)
 mounts=()
 for source in "${sources[@]}"; do
   target=$(awk -F '\t' -v source="$source" '$1 == source {print $2}' "$MANIFEST")
