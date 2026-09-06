@@ -68,8 +68,6 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_static_common import (
-    _bulk_g2s,
-    _prefetch_l2,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
@@ -96,8 +94,6 @@ _FC1_TILE_N = 64
 _FC1_TILE_K = 512
 _FC2_TILE_N = 128
 _FC2_TILE_K = 128
-# prefetch-ahead (cell p<n>): n FC1 k tiles / n+1 FC2 down tiles ahead of the
-# TMA loads, into L2 -- a deeper pipeline without smem (default n = 2)
 
 
 class MoEStaticKernelV4:
@@ -118,9 +114,6 @@ class MoEStaticKernelV4:
         skip_sf: bool = False,
         skip_a: bool = False,
         a_ring: bool = False,
-        prefetch: bool = False,
-        prefetch_dist: int = 2,
-        bulk_sf: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -173,24 +166,6 @@ class MoEStaticKernelV4:
         # `xa` diagnostic priced those loads at ~3%). Same smem: the A/SFA
         # staged buffers already exist per stage.
         self.a_ring = bool(a_ring)
-        # prefetch: the DMA warp's 32 lanes issue prefetch.global.L2 for the
-        # w13 rows + SF block _PF_D1 k tiles ahead and the w2 rows + SF _PF_D2
-        # down tiles ahead of the TMA loads (8 + 1 / 4 + 1 lines per lane per
-        # stage), so DRAM sees ~2x the requests in flight per CTA at no smem.
-        self.prefetch = bool(prefetch)
-        # k tiles ahead for FC1 (n) and down tiles ahead for FC2 (n + 1)
-        self.pf_d1 = int(prefetch_dist)
-        self.pf_d2 = int(prefetch_dist) + 1
-        if self.prefetch and not (1 <= self.pf_d1 <= 6):
-            raise ValueError("prefetch distance must be 1..6")
-        # bulk_sf: the three scale-factor boxes (FC1 SFA 4 KB, FC1 SFB 4 KB,
-        # FC2 SFB 1 KB) come in as 1-D cp.async.bulk copies of the contiguous
-        # global block instead of 128-row TMA boxes -- 32 / 32 / 8 line
-        # requests instead of 128 each (the memory system looks request-rate
-        # bound: xs/xa, and the L2 prefetch that doubled requests lost 3~5%)
-        self.bulk_sf = bool(bulk_sf)
-        if self.bulk_sf and (self.skip_sf or self.skip_a):
-            raise ValueError("bulk SF and the xs/xa timing cells are exclusive")
         if self.a_ring and self.skip_a:
             raise ValueError("xa (skip A) and the A ring are exclusive")
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
@@ -517,10 +492,6 @@ class MoEStaticKernelV4:
             token_weights,
             stamps,
             next_item,
-            cute.recast_tensor(b_w13, cutlass.Uint8),    # (N, K/2, E) bytes
-            sfb_w13_tensor,
-            cute.recast_tensor(b_down, cutlass.Uint8),   # (H, I/2, E) bytes
-            sfb_down_tensor,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -578,10 +549,6 @@ class MoEStaticKernelV4:
         token_weights: cute.Tensor,
         stamps: cute.Tensor,
         next_item: cute.Tensor,
-        raw_w13: cute.Tensor,      # the packed weights as bytes (prefetch addresses)
-        raw_sf13: cute.Tensor,
-        raw_w2: cute.Tensor,
-        raw_sf2: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -742,12 +709,6 @@ class MoEStaticKernelV4:
             epi_smem_staged.outer, swizzle=epi_smem_staged.inner
         )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
-        sfa1_base_addr = shared_ptr_to_u32(storage.sSFA1.data_ptr())
-        sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
-        sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
-        sfa1_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfa1_smem_one))
-        sfb1_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfb1_smem_one))
-        sfb2_stage_b = Int32(cute.size_in_bytes(self.sf_dtype, sfb2_smem_one))
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
@@ -1710,29 +1671,6 @@ class MoEStaticKernelV4:
             accum_tile_m = Int32(0)
             item_no = Int32(0)
             is_dma_lane0 = Int32(tidx) == Int32(self.tma_load_warp_id * 32)
-            dma_lane = Int32(tidx) - Int32(self.tma_load_warp_id * 32)
-            # byte geometry of the packed weights for the L2 prefetch (p):
-            # w13 (N, K, E) K-major fp4 -> row K/2 B; w2 (H, I, E) -> row I/2 B;
-            # SF blocks: 512 B per (128-row block, 64 K elements), K-major
-            w13_rows = cute.size(raw_w13.shape[0])
-            w13_kb = cute.size(raw_w13.shape[1])       # K/2 bytes per row
-            w2_rows = cute.size(raw_w2.shape[0])
-            w2_kb = cute.size(raw_w2.shape[1])
-            w13_row_b = Int64(w13_kb)
-            w13_exp_b = Int64(w13_rows * w13_kb)
-            w2_row_b = Int64(w2_kb)
-            w2_exp_b = Int64(w2_rows * w2_kb)
-            sf13_blk_b = Int64(128 * (2 * w13_kb // 16))   # one 128-row SF block
-            sf13_exp_b = Int64((w13_rows // 128) * 128 * (2 * w13_kb // 16))
-            sf2_blk_b = Int64(128 * (2 * w2_kb // 16))
-            sf2_exp_b = Int64((w2_rows // 128) * 128 * (2 * w2_kb // 16))
-            sfa_base = get_ptr_as_int64(scale_storage, Int32(0))
-            sfa_exp_b = Int64(expert_scale_stride)
-            sfa_blk_b = Int64(128 * (2 * w13_kb // 16))          # 128-row block of A scales
-            pf_w13 = get_ptr_as_int64(raw_w13, Int32(0))
-            pf_w2 = get_ptr_as_int64(raw_w2, Int32(0))
-            pf_sf13 = get_ptr_as_int64(raw_sf13, Int32(0))
-            pf_sf2 = get_ptr_as_int64(raw_sf2, Int32(0))
             role = Int32(2)
             if current_work_linear_idx >= split_base:
                 role = Int32(0)
@@ -1788,33 +1726,6 @@ class MoEStaticKernelV4:
                              weight_expert_idx)
                         ]
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
-                            if cutlass.const_expr(self.prefetch):
-                                # k tile _PF_D1 ahead (same half; the last ones
-                                # reach into the next half / stop at the end)
-                                pf_kt = k_tile + Int32(self.pf_d1)
-                                pf_up = up_tile
-                                if pf_kt >= k_tile_cnt1:
-                                    pf_kt = pf_kt - k_tile_cnt1
-                                    pf_up = up_tile + Int32(1)   # half 1 of this slice
-                                if pf_up < Int32(2) * (intermediate_slice + Int32(1)):
-                                    pf_gate = gate_tile_cnt + pf_up
-                                    e_off13 = Int64(weight_expert_idx) * w13_exp_b
-                                    col_b = Int64(pf_kt) * Int64(_FC1_TILE_K // 2)
-                                    # 64 rows x 256 B per B tile: 2 rows x 2 lines per lane
-                                    for j in cutlass.range_constexpr(2):
-                                        r_up = Int64(pf_up) * Int64(_FC1_TILE_N) + Int64(dma_lane * Int32(2) + Int32(j))
-                                        r_g = Int64(pf_gate) * Int64(_FC1_TILE_N) + Int64(dma_lane * Int32(2) + Int32(j))
-                                        for half_line in cutlass.range_constexpr(2):
-                                            lb = Int64(half_line * 128)
-                                            _prefetch_l2(pf_w13 + e_off13 + r_up * w13_row_b + col_b + lb)
-                                            _prefetch_l2(pf_w13 + e_off13 + r_g * w13_row_b + col_b + lb)
-                                    # SF block of the 128-row block: 4 KB per k tile = 32 lines
-                                    sf_kt_b = Int64(pf_kt) * Int64((_FC1_TILE_K // 64) * 512)
-                                    e_sf13 = Int64(weight_expert_idx) * sf13_exp_b
-                                    blk_up = Int64(pf_up // Int32(self.sfb1_tiles_per_block))
-                                    blk_g = Int64(pf_gate // Int32(self.sfb1_tiles_per_block))
-                                    _prefetch_l2(pf_sf13 + e_sf13 + blk_up * sf13_blk_b + sf_kt_b + Int64(dma_lane) * Int64(128))
-                                    _prefetch_l2(pf_sf13 + e_sf13 + blk_g * sf13_blk_b + sf_kt_b + Int64(dma_lane) * Int64(128))
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)
                                 abar = a_pipeline.producer_get_barrier(a_prod_state)
@@ -1822,21 +1733,10 @@ class MoEStaticKernelV4:
                                     tma_a, tAgA_mk[(None, k_tile)],
                                     tAsA[(None, a_prod_state.index)], tma_bar_ptr=abar,
                                 )
-                                if cutlass.const_expr(self.bulk_sf):
-                                    if is_dma_lane0:
-                                        _bulk_g2s(
-                                            sfa1_base_addr + a_prod_state.index * sfa1_stage_b,
-                                            sfa_base + Int64(tc[2]) * sfa_exp_b
-                                            + Int64(sfa_tile_coord_m) * sfa_blk_b
-                                            + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
-                                            sfa1_stage_b,
-                                            shared_ptr_to_u32(abar),
-                                        )
-                                else:
-                                    cute.copy(
-                                        tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                        tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
-                                    )
+                                cute.copy(
+                                    tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                    tAsSFA[(None, a_prod_state.index)], tma_bar_ptr=abar,
+                                )
                                 a_pipeline.producer_commit(a_prod_state)
                                 a_prod_state.advance()
                             for gu in cutlass.range_constexpr(2):
@@ -1858,36 +1758,11 @@ class MoEStaticKernelV4:
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_a and not self.a_ring):
-                                    if cutlass.const_expr(self.bulk_sf):
-                                        if is_dma_lane0:
-                                            _bulk_g2s(
-                                                sfa1_base_addr + fc1_prod_state.index * sfa1_stage_b,
-                                                sfa_base + Int64(tc[2]) * sfa_exp_b
-                                                + Int64(sfa_tile_coord_m) * sfa_blk_b
-                                                + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
-                                                sfa1_stage_b,
-                                                shared_ptr_to_u32(bar),
-                                            )
-                                    else:
-                                        cute.copy(
-                                            tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                            tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
-                                        )
-                                if cutlass.const_expr(self.bulk_sf):
-                                    if is_dma_lane0:
-                                        if cutlass.const_expr(gu == 0):
-                                            blk_sf = Int64(gate_tile // Int32(self.sfb1_tiles_per_block))
-                                        else:
-                                            blk_sf = Int64(up_tile // Int32(self.sfb1_tiles_per_block))
-                                        _bulk_g2s(
-                                            sfb1_base_addr + fc1_prod_state.index * sfb1_stage_b,
-                                            pf_sf13 + Int64(weight_expert_idx) * sf13_exp_b
-                                            + blk_sf * sf13_blk_b
-                                            + Int64(k_tile) * Int64((_FC1_TILE_K // 64) * 512),
-                                            sfb1_stage_b,
-                                            shared_ptr_to_u32(bar),
-                                        )
-                                elif cutlass.const_expr(not self.skip_sf):
+                                    cute.copy(
+                                        tma_sfa, tAgSFA_mk[(None, k_tile)],
+                                        tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                    )
+                                if cutlass.const_expr(not self.skip_sf):
                                     if cutlass.const_expr(gu == 0):
                                         cute.copy(
                                             tma_sfb_w13, tBgSFB_gate_nk[(None, k_tile)],
@@ -1910,21 +1785,6 @@ class MoEStaticKernelV4:
 
                 # ---- FC2: the item's 32 down tiles ----
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
-                    if cutlass.const_expr(self.prefetch):
-                        pf_t = output_tile_idx + Int32(self.pf_d2)
-                        if pf_t < output_tile_cnt:
-                            e_off2 = Int64(weight_expert_idx) * w2_exp_b
-                            # 128 rows x 64 B chunk (slice) per tile: the line holding
-                            # this slice's chunk, 4 rows per lane
-                            line_b = Int64((intermediate_slice * Int32(_FC2_TILE_K // 2)) // Int32(128)) * Int64(128)
-                            for j in cutlass.range_constexpr(4):
-                                r = Int64(pf_t) * Int64(_FC2_TILE_N) + Int64(dma_lane * Int32(4) + Int32(j))
-                                _prefetch_l2(pf_w2 + e_off2 + r * w2_row_b + line_b)
-                            # SF: 1 KB (this slice's 2 units) of the tile's 128-row block
-                            if dma_lane < Int32(8):
-                                e_sf2 = Int64(weight_expert_idx) * sf2_exp_b
-                                sf_off = Int64(pf_t) * sf2_blk_b + Int64(intermediate_slice) * Int64((_FC2_TILE_K // 64) * 512)
-                                _prefetch_l2(pf_sf2 + e_sf2 + sf_off + Int64(dma_lane) * Int64(128))
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
                     cute.copy(
@@ -1934,24 +1794,13 @@ class MoEStaticKernelV4:
                         tBsB2[(None, fc2_prod_state.index)],
                         tma_bar_ptr=bar2,
                     )
-                    if cutlass.const_expr(self.bulk_sf):
-                        if is_dma_lane0:
-                            _bulk_g2s(
-                                sfb2_base_addr + fc2_prod_state.index * sfb2_stage_b,
-                                pf_sf2 + Int64(weight_expert_idx) * sf2_exp_b
-                                + Int64(output_tile_idx) * sf2_blk_b
-                                + Int64(intermediate_slice) * Int64((_FC2_TILE_K // 64) * 512),
-                                sfb2_stage_b,
-                                shared_ptr_to_u32(bar2),
-                            )
-                    else:
-                        cute.copy(
-                            tma_sfb_down,
-                            tBgSFB_down[(None, output_tile_idx, intermediate_slice,
-                                         weight_expert_idx)],
-                            tBsSFB2[(None, fc2_prod_state.index)],
-                            tma_bar_ptr=bar2,
-                        )
+                    cute.copy(
+                        tma_sfb_down,
+                        tBgSFB_down[(None, output_tile_idx, intermediate_slice,
+                                     weight_expert_idx)],
+                        tBsSFB2[(None, fc2_prod_state.index)],
+                        tma_bar_ptr=bar2,
+                    )
                     fc2_pipeline.producer_commit(fc2_prod_state)
                     fc2_prod_state.advance()
                 if cutlass.const_expr(self.stamps):

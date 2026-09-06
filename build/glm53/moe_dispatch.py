@@ -91,8 +91,11 @@ def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
     Upstream may remove a private symbol before the candidate can compare
     its source hash. That must decline this lane, including with the knob
     off, rather than break importing the otherwise unchanged dispatcher.
+    An armed knob declines loudly: the operator asked for this lane, so a
+    silent stock fallback would read as missing performance, not a guard.
     """
     global MoEGatedPrefillReuseKernel, MoEGatedPrefillN128Kernel
+    reason = None
     try:
         from .moe_dynamic_prefill import (
             MoEGatedPrefillReuseKernel as candidate,
@@ -102,9 +105,17 @@ def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
             from .moe_dynamic_prefill_n128 import (
                 MoEGatedPrefillN128Kernel as wide_candidate,
             )
-    except (ImportError, AttributeError):
-        return False
-    if not stock_contract_matches():
+    except (ImportError, AttributeError) as exc:
+        reason = f"deferred import failed: {exc!r}"
+    else:
+        if not stock_contract_matches():
+            reason = "stock gated-source SHA-256 pin drifted (image upgrade?)"
+    if reason is not None:
+        if _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128:
+            logging.getLogger("flashinfer.b12x").warning(
+                "[b12x prefill reuse] declining the opt-in lane, serving the "
+                "stock dispatcher instead: %s", reason,
+            )
         return False
     MoEGatedPrefillReuseKernel = candidate
     if fc1_n128:
@@ -331,7 +342,6 @@ _GLM53_B12X_STATIC_V2_ENV = "VLLM_GLM53_B12X_STATIC_V2"
 _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
-    "prefetch": False, "prefetch_dist": 2, "bulk_sf": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -369,19 +379,6 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "u":
             # v4 (moe_static_kernel_v4.py), the default configuration
             continue
-        if token == "b":
-            # scale-factor boxes as 1-D cp.async.bulk copies of the contiguous
-            # global block (32/32/8 line requests instead of 128 each; 38차 §9)
-            cfg["bulk_sf"] = True
-            continue
-        if token == "p" or (token[:1] == "p" and token[1:].isdigit()):
-            # L2 prefetch-ahead by the DMA warp, n k tiles / n+1 down tiles
-            # ahead (p = p2); measured a loss at every distance (38차 §8),
-            # kept as an opt-in for the record
-            cfg["prefetch"] = True
-            if token[1:]:
-                cfg["prefetch_dist"] = int(token[1:])
-            continue
         if token in ("xs", "xa"):
             if not probe:
                 raise ValueError(
@@ -392,7 +389,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,b][,p<n>][,m32][,a32][,s] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -402,10 +399,6 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
-    if cfg["prefetch"] and not (1 <= int(cfg["prefetch_dist"]) <= 6):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: p<n> distance must be 1..6")
-    if cfg["bulk_sf"] and (cfg["skip_sf"] or cfg["skip_a"]):
-        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: b (bulk SF) and xs/xa are exclusive")
     return cfg
 
 
@@ -1592,9 +1585,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         int(config["a_rows"]),
         bool(config["stamps"]),
         bool(config.get("a_ring", False)),
-        bool(config.get("prefetch", False)),
-        int(config.get("prefetch_dist", 2)),
-        bool(config.get("bulk_sf", False)),
         bool(config.get("skip_sf", False)),
         bool(config.get("skip_a", False)),
     )
@@ -1675,9 +1665,6 @@ def _get_static_kernel_v2(
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     kernel: Any = MoEStaticKernelV4(
         a_ring=bool(config.get("a_ring", False)),
-        prefetch=bool(config.get("prefetch", False)),
-        prefetch_dist=int(config.get("prefetch_dist", 2)),
-        bulk_sf=bool(config.get("bulk_sf", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -1781,8 +1768,6 @@ def _get_static_kernel_v2(
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}"
-        f"{('p' + str(config.get('prefetch_dist', 2))) if config.get('prefetch') else ''}"
-        f"{'b' if config.get('bulk_sf') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

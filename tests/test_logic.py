@@ -3418,7 +3418,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "prefetch": False, "prefetch_dist": 2, "bulk_sf": False},
+                      "a_ring": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring")
     v4 = parse("u")
     check(v4 == default and v4 is not default, "u is a copy of the default (v4) config")
@@ -3433,16 +3433,6 @@ def test_b12x_static_v2_controls() -> None:
         check(False, "v with xa must be rejected")
     except ValueError:
         pass
-    check(parse("v,p")["prefetch"] and parse("u,p")["v4"], "p adds the L2 prefetch to v4/v5")
-    check(parse("v,p4")["prefetch_dist"] == 4 and parse("v,p")["prefetch_dist"] == 2,
-          "p<n> sets the prefetch distance (p = p2)")
-    check(parse("u,b")["bulk_sf"] and parse("v,b")["v4"], "b selects the bulk SF copies on v4/v5")
-    for bad in ("v,p9", "u,b,xs"):
-        try:
-            parse(bad, probe=True)
-            check(False, f"{bad!r} must be rejected")
-        except ValueError:
-            pass
     for bad in ("1", "d", "w", "e", "k", "w,e,k", "u,k", "w,g2", "m32,f2,g4,d"):
         try:
             parse(bad)
