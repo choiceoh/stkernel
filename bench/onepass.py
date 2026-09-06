@@ -149,6 +149,10 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
         name = next((n for n in names if n.startswith("glm53")), None)
         if not name:
             return out
+        boot = subprocess.run(["docker", "inspect", "-f", "{{.Id}}|{{.State.StartedAt}}", name],
+                              capture_output=True, text=True, timeout=10)
+        if boot.returncode == 0 and "|" in boot.stdout.strip():
+            out["boot_id"] = boot.stdout.strip()
         raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
                              capture_output=True, text=True, timeout=10).stdout
         served = dict(e.split("=", 1) for e in json.loads(raw or "[]")
