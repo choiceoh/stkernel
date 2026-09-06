@@ -52,7 +52,19 @@ using the full I=2048 instead of per-rank I=512 overcount TP4 rank work by four.
 Every knob here arms only with the exact string **"1"** and stays off
 otherwise, except `VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
 keeps the pair candidate's original arm and is inactive while the pair
-knob is 0. An armed knob is not evidence of invocation. Note that
+knob is 0. An armed knob is not evidence of invocation -- since 39차 every
+lane logs once whether it engaged (`[prefill-sp] MHC token shards selected`
+/ `NOT selected: <gate>`, `[kda-prefill] direct output engaged`,
+`[b12x prefill reuse] ENGAGED | NOT taken`, `[megakernel] mla prefill pair
+engaged`, `[fp8-dense] nvfp4 prefill route engaged`).
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT` and `VLLM_GLM53_KDA_PREFILL_QK_NORM` are
+**ON by default since 2026-09-06** (39차 P2D3: +1.0 / +1.3 / +2.4 % prefill
+at 2K / 32K / 128K on the unified onepass, nothing else moved). The measured
+state of the other lanes is in MEASUREMENTS.md 39차 §4d-§4f: the MoE reuse /
+N128 kernels fail CuTe-DSL IR verification on the image, the MLA pair lane
+reads -16 % prefill, the NVFP4 dense route is neutral, SP reads +5 % prefill
+with a per-length recompile (fixed) and an FP8-transport acceptance cost
+under test. Note that
 `VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
 already owns every b_proj linear, and the candidate only adopts layers
