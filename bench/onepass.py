@@ -412,6 +412,8 @@ def main() -> int:
                      "hits": [(tag, k) for tag, k, _ in dirty]}
     issues = list(traffic_issues) if args.require_exclusive else []
     if args.fixed_decode_tokens:
+        if any(sb < sa for (_, sa), (_, sb) in zip(samp, samp[1:])):
+            issues.append("engine step counter reset during workload")
         if any(q["completion_tokens"] != args.fixed_decode_tokens for q in rec["requests"] if q.get("fixed_decode")):
             issues.append("fixed decode token count differs from requested length")
         if len(fixed_intervals) < 20:

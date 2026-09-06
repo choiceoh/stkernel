@@ -28,7 +28,7 @@ def summarize(rows):
         d = r["decode"]
         assert d["primary"] == "fixed-2K" and d["num_spec"] == 5
         windows = d["fixed_intervals"]
-        assert len(windows) >= 20 and all(w["seconds"] > 0 and w["steps"] > 0 for w in windows)
+        assert len(windows) >= 20 and all(w["seconds"] > 0 and w["steps"] >= 0 for w in windows)
         rate = sum(w["steps"] for w in windows) / sum(w["seconds"] for w in windows)
         assert math.isclose(rate, d["fixed_pooled_step_s"])
         reqs = [q for q in r["requests"] if q.get("fixed_decode")]

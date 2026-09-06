@@ -36,13 +36,15 @@ def decode_windows(samples, phases, fixed_phases=(), margin=1.0):
     """Keep intervals wholly inside one response, excluding both edge tails."""
     by_ctx, fixed = {}, []
     for (ta, sa), (tb, sb) in zip(samples, samples[1:]):
-        if tb <= ta or sb <= sa:
+        if tb <= ta or sb < sa:
             continue
         for phase in phases:
             ctx, start, end = phase
             if ta >= start + margin and tb <= end - margin:
-                by_ctx.setdefault(ctx, []).append((sb - sa) / (tb - ta))
+                if sb > sa:  # preserve the legacy positive-window summary
+                    by_ctx.setdefault(ctx, []).append((sb - sa) / (tb - ta))
                 if phase in fixed_phases:
+                    # A stall inside an active fixed response costs time too.
                     fixed.append({"request": fixed_phases.index(phase),
                                   "steps": sb - sa, "seconds": tb - ta,
                                   "start": ta, "end": tb})

@@ -59,6 +59,12 @@ class WindowTests(unittest.TestCase):
         by_ctx, fixed = decode_windows([(2, 100), (2, 120), (4, 0), (6, 0)], [(2000, 0, 10)])
         self.assertEqual((by_ctx, fixed), ({}, []))
 
+    def test_fixed_active_stall_still_costs_elapsed_time(self):
+        phase = (2000, 0, 10)
+        _, fixed = decode_windows([(2, 0), (4, 40), (6, 40), (8, 80)], [phase], [phase])
+        self.assertEqual([w["steps"] for w in fixed], [40, 0, 40])
+        self.assertAlmostEqual(sum(w["steps"] for w in fixed) / sum(w["seconds"] for w in fixed), 80 / 6)
+
 
 class StreamTests(unittest.TestCase):
     def test_fixed_length_payload_and_tpot_use_tokens_not_chunks(self):
