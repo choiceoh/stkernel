@@ -391,6 +391,9 @@ def _glm53_prep_fused_kernel(
     tl.store(comp_slot_ptr + qs + offs, cslot.to(tl.int64), mask=qmask)
     # expanded_block_table_buffer[t] = the gathered row, full width, for the
     # Q tokens of this request: read each chunk once, store it Q times.
+    # 37차: rows for the Q_P2 lanes -- the lanes >= Q are the NEXT request's
+    # rows, so both 2-D stores below carry the lane mask (the k=5 production
+    # boot's self-check caught exactly this at C=4: exp_bt/idx_bt drift).
     trow = (qs + offs).to(tl.int64)
     exp_rows = exp_bt_ptr + trow[:, None] * exp_bt_stride
     idx_rows = idx_bt_ptr + trow[:, None] * idx_bt_stride
@@ -398,13 +401,13 @@ def _glm53_prep_fused_kernel(
         off = i + tl.arange(0, BLOCK)
         msk = off < wa
         v = tl.load(row + off, mask=msk, other=0)
-        tl.store(exp_rows + off[None, :], v[None, :], mask=msk[None, :])
+        tl.store(exp_rows + off[None, :], v[None, :], mask=msk[None, :] & qmask[:, None])
     # indexer_decode_block_table_buffer[t, c] = row[c*F] // F
     for i in range(0, idx_bt_cols, BLOCK):
         off = i + tl.arange(0, BLOCK)
         msk = off < idx_bt_cols
         v = tl.load(row + off * FACTOR, mask=msk, other=0) // FACTOR
-        tl.store(idx_rows + off[None, :], v[None, :], mask=msk[None, :])
+        tl.store(idx_rows + off[None, :], v[None, :], mask=msk[None, :] & qmask[:, None])
 
 
 # ---------------------------------------------------------------------------
