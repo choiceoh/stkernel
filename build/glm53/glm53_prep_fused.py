@@ -456,6 +456,21 @@ def _ptrs(tensors: list[torch.Tensor], device) -> torch.Tensor:
     return torch.tensor([t.data_ptr() for t in tensors], dtype=torch.uint64, device=device)
 
 
+@triton.jit(do_not_specialize=["num_reqs"])
+def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs, num_reqs,
+                                N_GDN: tl.constexpr, BLOCK: tl.constexpr):
+    """Mamba 'align' mode: gdn_nacc[k][row] = num_accepted[idx_mapping[row]],
+    the gather stock performs in model_state.prepare_attn -- after the align
+    pre-copy kernel may have reset a migrated request's count to 1."""
+    offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    mask = offs < num_reqs
+    slots = tl.load(idx_mapping_ptr + offs, mask=mask, other=0)
+    nacc = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    for k in tl.static_range(N_GDN):
+        ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
+        tl.store(ap + offs, nacc, mask=mask)
+
+
 @dataclass
 class PrepPlan:
     q: int
@@ -633,6 +648,16 @@ class PrepPlan:
             self.comp_slot, self.comp_slot.numel(),
         )
 
+    def regather_num_accepted(self, idx_mapping: torch.Tensor, num_reqs: int) -> None:
+        """Align mode: refresh the GDN builders' num_accepted from the request
+        state after the stock pre-copy ran (see build_plan)."""
+        n = len(self.gdn_groups)
+        if n == 0 or num_reqs == 0:
+            return
+        _glm53_regather_nacc_kernel[(triton.cdiv(num_reqs, 128),)](
+            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"], num_reqs,
+            N_GDN=n, BLOCK=128)
+
     def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
         """Stage idx_mapping, run the kernel, build the deep_gemm schedule.
 
@@ -804,7 +829,15 @@ def build_plan(runner) -> PrepPlan:
     if not hasattr(ms, "num_accepted_tokens_gpu"):
         raise RuntimeError("model_state has no num_accepted_tokens_gpu (not MambaHybrid)")
     if getattr(ms, "_align_mode", False):
-        raise RuntimeError("mamba align mode: preprocess_state is not a no-op")
+        # 39차: prefix caching puts the mamba cache in 'align' mode. The stock
+        # pre-copy (model_state.preprocess_state, run by the runner AFTER
+        # prepare_inputs) migrates states across block boundaries and resets
+        # num_accepted_tokens to 1 for a migrated request; the fused kernel
+        # has copied the pre-reset value into the GDN builders by then, so the
+        # fused step re-gathers it in the patched model_state.prepare_attn
+        # (stock's own gather point). postprocess_state stays stock.
+        logger.warning("[prep-fused] mamba align mode (prefix caching): num_accepted is "
+                       "re-gathered after the stock pre-copy on every fused step")
     bt = runner.block_tables
     if bt.cp_size != 1:
         raise RuntimeError("context parallel block tables")
@@ -1173,6 +1206,10 @@ def _patched_ms_prepare_attn(self, input_batch, cudagraph_mode, block_tables, sl
                       attn_groups, kv_cache_config, for_capture)
             st.plan.tail_ok()
             st.metadata_cache[key] = md
+        if getattr(self, "_align_mode", False):
+            # the runner ran preprocess_state (align pre-copy, num_accepted
+            # reset) between prepare_inputs and this call: gather again
+            st.plan.regather_num_accepted(input_batch.idx_mapping, input_batch.num_reqs)
         return md
     return orig(self, input_batch, cudagraph_mode, block_tables, slot_mappings,
                 attn_groups, kv_cache_config, for_capture)

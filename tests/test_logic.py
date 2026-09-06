@@ -9446,6 +9446,19 @@ def test_glm53_prep_fused_contracts() -> None:
           "the SM90 sparse builder is accepted ONLY while MK_SEG_MLA is armed: it "
           "replans FlashInfer's wrapper every step from host lengths, which caching "
           "this group's metadata would skip")
+    # 39차: mamba 'align' mode (prefix caching) is served, not refused -- the
+    # fused step re-gathers num_accepted after the stock pre-copy reset
+    check('"mamba align mode: preprocess_state is not a no-op"' not in src
+          and "def _glm53_regather_nacc_kernel(" in src
+          and "def regather_num_accepted(self, idx_mapping: torch.Tensor, num_reqs: int)" in src,
+          "align mode: re-gather kernel + plan method exist, the refusal is gone")
+    _ms = src[src.index("def _patched_ms_prepare_attn("):src.index("def _patched_capture_model(")]
+    check('if getattr(self, "_align_mode", False):' in _ms
+          and "st.plan.regather_num_accepted(input_batch.idx_mapping, input_batch.num_reqs)" in _ms
+          and _ms.index("regather_num_accepted") > _ms.index("st.metadata_cache[key] = md"),
+          "align re-gather runs on every fused step, after the cached metadata is resolved")
+    check("postprocess_state" not in src[src.index("def install_glm53_prep_fused("):],
+          "postprocess_state (num_accepted scatter + align post-save) stays stock")
     print("  glm53 prep fused contracts .. OK")
 
 

@@ -2143,6 +2143,40 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 - **스케줄러 v2**(운영자 "AsyncScheduler 더 개선할 수 있나" → 순위 제시 → "진행해"): v1 의 빈틈 둘을 메움. ① **프리필 간 공정성**(`SCHED_FAIR=1`): 디코더 없이 프리필이 둘 이상 대기하면 스텝 예산을 대기 수로 나눠 cap — stock FCFS 는 128K 뒤의 2K 프롬프트를 앞 프리필 전체(~45 s) 뒤에 admit 했다; 배치는 순수 프리필이라 SP 유지. ② **기아 방지**(`SCHED_PREFILL_FLOOR=1000` tok/s, `FLOOR_GRACE_S=2`): admit 뒤 진행률이 바닥 아래면 적자만큼 청크를 키우고(예산 상한) 페이싱에서 제외 — DF2 식 페이싱이 디코드 포화에서 프롬프트를 굶기지 못함. ③ 청크 기본값 512 → **576**(2304 블록의 1/4; APC 켜면 mamba 정렬 분할이 블록 경계에서 꼬리 청크를 만들지 않음). 지연 예산 컨트롤러(목표 ITL 로 청크 자동 조절)는 v3 후보로 보류. 논리 테스트 확장.
 - 체인(플릿 큐): DEF40(새 기본값 참조) → APC(`PREFIX_CACHE=1`) → DF1(v2 기본: chunk 576, every 1, fair, floor) → DF2(every 2) → 복구.
 
+### §4h 항목 1·2 체인 — DEF40 참조, 프리픽스 캐시 팔, 디코드 우선 v2 팔 (18:51~)
+
+체인 `apc-chain.sh`(srv2, fleet.sh 큐; 첫 턴은 fleet.sh 결함으로 유실 → PR #395 수정 뒤 18:51 재시작, 체크아웃 13f33dc = 스케줄러 v2 포함).
+
+**DEF40**(새 기본값 = P3C2 승격 뒤, `PREFIX_CACHE=0`, `DECODE_FIRST=0`) — 이후 팔의 참조.
+
+| 항목 | DEF40 | BASE39-sp 대비 | BASE39-stock2 대비 |
+|---|---|---|---|
+| 프리필 cold 2K / 32K / 128K tok/s | 2,008 / 3,071 / 2,940 | +1.6% / **+4.6%** / **+3.6%** | −5.0% / **+15.5%** / **+14.6%** |
+| 디코드 32K / 128K step/s | 21.4 / 21.7 | 0 / +1.1% | 0 / +1.2% |
+| raw acc / tok/step | 51.9% / 3.597 | tok/step +4.7% | +5.7% |
+| 품질 / 한국어 | 9/9 / 0 | ok | ok |
+
+- P3C2 승격의 두 번째 부팅 확인(프리필 +4.6/+3.6%). 2K cold −5% (stock2 대비) 는 SP 이후 이어진 소폭 비용(BASE39-sp 도 1,976).
+- 하니스 인공물: 2K 디코드 창이 0개(2K 답이 짧아 창 표본이 안 잡힘; 부팅마다 0~3개) → 체인 판정기가 −100% 로 REGRESS 를 찍었다. `judge.py`(srv2) 는 창 없는 컨텍스트를 n/a 로 두도록 고침; 위 표가 그 판정.
+- **혼합 부하 (stock 스케줄러, `mixed_load_test.py`)**: 단독 디코더 ITL med/p95/max 46/52/94 ms. 32K 프리필이 옆에서 돌 때 겹침 구간 ITL med 69 / p95 **3,446** / max **6,640 ms**, 13.3 s 동안 디코더 토큰 **17개**(≈1.3 tok/s), 프리필 TTFT 13.34 s(단독 10.6 s). 100K: 겹침 ITL p95 3,144 / max 3,179 ms, 39 s 동안 토큰 30개, TTFT 39.15 s. → 디코더는 프리필 청크(2.8 s)마다 한 토큰꼴이고 6.6 s 공백은 청크 둘을 연속으로 놓친 것.
+
+**APC**(`PREFIX_CACHE=1`, 하이브리드 APC 조정자 모듈; 앵커 `hybrid APC groups: … eagle_group_ids=[6]` = 드래프터 SWA 그룹만 EAGLE).
+
+| ctx | 단계 | TTFT | 히트/질의 | 정답 | raw acc (pos1/3/5) |
+|---|---|---|---|---|---|
+| 32K | cold | 12.53 s | 0 / 32,393 | o | 48.7% (82/43/21) |
+| 32K | warm | **1.35 s** | 29,952 / 32,400 (92%) | o | 47.4% (78/43/24) |
+| 32K | warm2 | **0.36 s** | 32,256 / 32,400 (99.6%) | o | 45.3% (77/40/22) |
+| 100K | cold | 34.14 s | 0 / 100,870 | o | 53.6% (80/48/36) |
+| 100K | warm | **2.72 s** | 96,768 / 100,877 (96%) | o | 53.3% (85/48/30) |
+| 100K | warm2 | **1.13 s** | 99,072 / 100,877 (98%) | o | 60.9% (87/57/36) |
+
+- **히트와 수용률은 산다**: 같은 접두사 재질문에서 92~99.6% 재사용, TTFT 34 → 1.1~2.7 s, 정답 6/6, warm 수용률 = cold 수준(#47926 의 position-0 붕괴 없음 — 드래프터 SWA 윈도 블록이 같이 재사용되기 때문).
+- **그러나 onepass 는 REGRESS**: DEF40 대비 프리필 2K +11.9% / 32K **−8.1%**(2,824) / 128K −0.5%(2,926), 디코드 32K **−9.4%** / 128K **−10.4%**(19.4 step/s), tok/step −7.0%(raw acc 46.9%). 부팅 로그에 원인: `glm53_prep_fused.py:953 RuntimeError("mamba align mode: preprocess_state is not a no-op")` — prefix caching 이 켜지면 vLLM 이 mamba 캐시를 **'align' 모드**로 바꾸고(`config.py:605`), prep-fused 가 그 모드를 거부해 스스로 꺼진다 → 디코드는 stock 호스트 체인(−10%, prep-fused 가 사던 만큼).
+- 원인 분석: align 사전복사 커널(`preprocess_mamba_align_fused_kernel`, 러너가 prepare_inputs 뒤에 실행)은 블록 경계를 넘은 요청의 `num_accepted_tokens` 를 1 로 리셋하는데, prep-fused 의 융합 커널은 그 전에 옛 값을 GDN 빌더 버퍼에 써 둔다(stock 은 `model_state.prepare_attn` 에서, 즉 리셋 뒤에 모은다). 수정: 융합 스텝의 `prepare_attn` 훅에서 재수집 커널(`_glm53_regather_nacc_kernel`, 1 런치) 로 stock 과 같은 시점에 다시 모은다; `postprocess_state`(산포 + align 사후 저장)는 stock 그대로. 거부 제거, 논리 테스트 핀.
+- 남은 의문: 32K 프리필 −8% 는 align 모드가 청크 끝을 2304 블록에 맞춰 8,192 예산이 6,912 청크가 되는 비용(청크 5개 vs 4개) 또는 단일 표본 잡음. 후속 팔 APC2(수정본) / APC3(`MAX_BATCHED=9216` = 4×2304 로 청크 재정렬) 로 가른다.
+- 'all' 모드는 불가: `supports_mamba_prefix_caching` 이 GLM5Next 에 없어 'align' 으로 강등되고, 우리 KDA 프리필 커널이 블록마다 중간 상태를 쓰지도 않는다.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
