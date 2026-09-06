@@ -2093,11 +2093,15 @@ def _get_static_kernel_v2(
         _sf_blocks = (n * 2 // 128) * (k // TILED_W13_K_IN)
         sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
             cutlass.Uint8, (weight_E, _sf_blocks, SF_STAGE_BYTES),
+            # row-major, the torch tensor's own order: without this the fake is
+            # compact in the OTHER direction (strides (1, E, ...)) and the call
+            # fails with "Mismatched sfb1_packed.strides[0]"
+            stride_order=(2, 1, 0),
             assumed_align=16,
         )
     else:
         sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
-            cutlass.Uint8, (1, 1, 16), assumed_align=16
+            cutlass.Uint8, (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16
         )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     name = (
