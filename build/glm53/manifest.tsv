@@ -40,3 +40,4 @@ zz_deneb_boot_stamps.pth	/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_s
 glm53_dev_lab.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py	absent
 glm53_lab_middleware.py	/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py	absent
 cuda_communicator.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py	a9a0242175c3d3e0d46d586a38cb76139e6e4e92d15032d5b1e33237af2f6757
+glm53_draft_dump.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py	absent
