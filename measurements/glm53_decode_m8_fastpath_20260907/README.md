@@ -1,7 +1,49 @@
 # M8 exact fastpath and fixed-window follow-up
 
-Status: CPU and GPU kernel gates passed; fixed-window B1 passed and the
-remaining A/A/B boots are running. A serving speedup is not yet established.
+Status: complete. Kernel latency improved; serving shows a small positive
+step-rate signal but remains **inconclusive**. Candidate retained, defaults off.
+
+Four independent B/A/A/B boots on one deployed build produced 147 eligible
+fixed-response windows: 74 baseline, 73 candidate. Each fixed request used
+2,257 input tokens and exactly 2,048 output tokens, with matching request
+hashes and seeds. The ordinary 2K/32K/128K quality ladder also ran per boot.
+
+| Metric, median across two boots per arm | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| Pooled interior-window step/s | 21.800487 | 21.872279 | +0.33% |
+| Pooled fixed-response output tok/s | 70.517759 | 71.338854 | +1.16% |
+| Fixed-response TPOT, ms | 14.194733 | 14.017761 | -1.25% |
+
+Pooling is performed within each boot; the arm estimate is the median of
+the two boot estimates (equal to their arithmetic mean at n=2). Per-request
+medians are retained in [summary.json](summary.json) as a separate statistic.
+The output-speed median-of-medians would read +4.04%; it is not the pooled
+response-rate result reported above.
+
+The forward and reverse pairs give **+0.60% / +0.06%** for engine step/s,
+but **-1.58% / +4.09%** for pooled output tok/s. Baseline output speed varies
+by **6.26%** across its boots, versus the average +1.16% change. Pooled step
+spread is 0.23% for baseline and 0.30% for candidate; with only two boots per
+arm these observed ranges are not confidence intervals. Same-setting
+repeated boots match generated output hashes 0/3 in both arms, even though
+their request hashes match 3/3. Acceptance varies too. The evidence supports
+retaining a small step-rate improvement hypothesis, not claiming a stable
+large C=1 speedup or rejecting the candidate.
+
+All four boots pass **18/18 retrieval, 0/8 Korean corruption**, totaling
+72/72 and 0/32. Every run has exactly its own eight completed requests and
+no sampled concurrency or traffic issues. Both candidates prove all three
+paths, including actual M=6 fastpath capture and both compact geometries.
+The final server is healthy, all three flags are 0 and the fleet is released:
+[final state](final-state.txt). The stale canonical fleet checkout labels the
+already-enabled cache paths and SPEC_K alias as non-default; the served
+three experiment flags above and the current harness's empty baseline
+`knobs` are the authoritative result.
+
+Reproduce with `python3 analyze.py`: it verifies source/settings, all gates,
+archived boot/capture proof and paired inputs before writing the summary.
+See [raw records](records.raw.jsonl), [completed resume log](serving-resume.log)
+and the per-node runtime identity files for the source/model/image evidence.
 
 The prior candidate remains retained and inconclusive. This follow-up adds
 an opt-in reduction/scale-load path without changing its arithmetic result,
@@ -21,7 +63,10 @@ All three profile defaults remain 0. Implementation commit: `0421328`.
 CPU validation: `tests/test_logic.py` passed 6,663 checks, including 30
 megakernel and 20 fleet regressions. `tests/test_onepass_measurements.py`
 passed nine contamination/window/timing fixtures. Both composed overlays
-match their source, Python compilation and `git diff --check` passed.
+match their source, Python compilation and source/documentation
+`git diff --check` passed. Archived `.log` files preserve the logger's
+original carriage returns and trailing whitespace and are excluded from
+that whitespace check.
 
 ## GPU gate and measurement protocol
 
@@ -90,7 +135,7 @@ Negative deltas mean lower kernel latency. Warm gains are consistent in this
 round; cold changes are smaller and one shape is 0.6% slower than previous
 M8. These are single-GPU microbenchmarks and do not establish a serving gain.
 
-## Serving progress and storage recovery
+## Serving provenance and storage recovery
 
 Serving source is `b13dc8b`, deployed stamp `83bc6639a0a2`. Before the first
 request, the host-only measurement code was finalized at `b319173`: stalled
@@ -117,7 +162,7 @@ were incompatible.
 experiment's first boot, were archived to
 `srv2:/home/choiceoh/glm53-logs/M8NEXT/cache-archive-srv1`. Each backup and
 original was checked against SHA-256 before unlinking the original. The
-manifest is `cache-archive-manifest.json` beside that remote archive.
+manifest is [cache-archive-manifest.json](cache-archive-manifest.json), also beside that remote archive.
 Current B1 cache entries were retained. This freed 6.3 GiB available on
 srv1; [the archive helper](cache-archive.py), [audit](cache-removed.json) and
 [space check](srv1-space-after.txt) are retained. The original files can be
@@ -125,5 +170,6 @@ restored from the archive; the archive is intentionally kept off Git.
 
 [resume.sh](resume.sh) verifies the existing deployment and archive, then
 resumes A1/A2/B2 without redeploying or repeating the valid B1. The resumed
-chain began at 07:20:03 KST. These are still four independent boots in B/A/A/B
-order, with a storage-recovery gap after B1.
+chain ran from 07:20:03 to 07:44:30 KST. These are four independent boots in
+B/A/A/B order, with a storage-recovery gap after B1. No invalid performance
+record or contaminated arm was substituted into the completed comparison.

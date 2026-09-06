@@ -114,6 +114,14 @@ extra completed requests, observed concurrency, wrong output length or fewer
 than 20 fixed windows invalidate the performance record. Windows within one
 boot are correlated; independent reversed-order boots remain necessary.
 
+The completed follow-up passed exact GPU gates and four independent serving
+boots. M=6 warm kernels were 3.8–6.6% lower latency than previous M8, while
+cold changes were smaller. Across 147 fixed-response windows, mean boot
+estimates changed by +0.33% step/s and +1.16% output tok/s; baseline output
+spread was 6.26%, and forward/reverse output deltas disagreed. The candidate
+is retained and all defaults remain off. See the
+[complete evidence](../../../measurements/glm53_decode_m8_fastpath_20260907/README.md).
+
 The first same-source GPU round passed 1,114,880 converter inputs, GEMM
 and SMLP2 oracles, and bit-equal graph replay on all 12 geometries. At M=6,
 pack2 plus mode 1 reduced warm latency by 2.7–3.5%; cold-weight changes

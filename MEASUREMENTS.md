@@ -6978,3 +6978,52 @@ original/corrected rows and corrected inconclusive verdicts are preserved.
 No other runs or metrics were changed. Final health 200, knobs 0/0, fleet free.
 
 [Full serving result, raw records, correction audit and reproduction script](measurements/glm53_decode_m8_20260907/serving/README.md).
+
+### C=1 M8 fastpath and independent fixed-window follow-up (2026-09-07)
+
+Added opt-in `VLLM_GLM53_MK_M8_FASTPATH=1`: a full-warp unsigned maximum
+over nonnegative FP32 activation maxima and aligned two-byte FP4 scale reads.
+It preserves the previous M8 candidate's output bits and leaves the RQ=2/4
+and low-rank paths unchanged. All three experiment defaults remain 0.
+
+Same-source GB10 GPU probe passed 1,114,880 FP8 converter inputs and the same
+number of warp-amax inputs with zero bit mismatches; all 12 GEMM shapes and
+SMLP2 graphs passed oracle/replay gates. Relative to previous M8, five M=6
+shapes improved warm latency 3.8–6.6%. Cold changes ranged from 2.68% lower
+to 0.60% higher latency. Register counts, occupancy and split plans match.
+
+Serving source `b13dc8b`, overlay `83bc6639a0a2`, measurement harness
+`b319173`, TP4/GB10, K5, C1: B1/A1/A2/B2 are **four independent boots**.
+Each runs the Korean 2K/32K/128K ladder and three fixed responses with 2,257
+input tokens and 2,048 output tokens, matched request hashes and seeds.
+The primary rate pools complete interior-window steps/time within each boot;
+the arm result is the median of its two boot estimates.
+
+| Metric | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| Fixed interior-window step/s | 21.800487 | 21.872279 | +0.33% |
+| Pooled fixed-response output tok/s | 70.517759 | 71.338854 | +1.16% |
+| TPOT, ms | 14.194733 | 14.017761 | -1.25% |
+| Fixed windows | 74 | 73 | 147 total |
+
+The two ordered pairs give step changes **+0.60% / +0.06%**, but output
+changes **-1.58% / +4.09%**. Baseline output spread is **6.26%**; pooled
+step spread is 0.23% baseline and 0.30% candidate. These two-boot ranges are
+not confidence intervals. Same-setting repeated boots produce different
+output hashes for all three fixed requests in both arms. Thus output-rate
+and acceptance differences cannot be cleanly attributed to the candidate.
+**Small positive step signal; serving verdict remains inconclusive. Retain
+the candidate, defer default promotion. A stable large speedup is unproven.**
+
+All four records pass quality **18/18** and Korean **0/8** (total **72/72**
+and **0/32**). Each has exactly eight completed requests and no traffic
+issues; candidate proof is **3/3** on both boots, with actual M6 capture.
+The first A1 launch failed before teardown because srv1 had no user-available
+disk space. Its stale generated FP8 caches (857 files, 8.0 GiB) were backed
+up to srv2, verified by SHA-256 and then removed from srv1; current B1 cache
+entries were retained. The valid B1 was preserved and the same build resumed
+without redeploying. No failed or contaminated measurement was substituted.
+
+Final live state at 07:44 KST: health **200**, all three candidate flags **0**,
+fleet released. Local gates: 6,663 logic checks and nine measurement fixtures.
+[Full evidence, raw records, archive audit and reproducer](measurements/glm53_decode_m8_fastpath_20260907/README.md).

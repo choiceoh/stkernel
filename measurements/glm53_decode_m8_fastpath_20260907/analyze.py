@@ -14,6 +14,9 @@ def summarize(rows):
     assert [r["name"] for r in rows] == list(NAMES), "need four distinct, complete boots in ABBA order"
     out = []
     for r in rows:
+        log = (HERE / ("boot-" + r["name"] + ".log")).read_text()
+        assert "source md5=e666d899" in log
+        assert "'num_speculative_tokens': 5" in log and "'tensor_parallel_size': 4" in log
         assert not r.get("rehearsal") and not r.get("evidence_issues")
         assert r["overlay"] == rows[0]["overlay"]
         assert all(r.get(k) == rows[0].get(k) for k in ("workload", "runtime", "harness", "thinking", "doc_lang"))
@@ -25,6 +28,10 @@ def summarize(rows):
         assert r["knobs"] == (KNOBS if arm == "A" else {})
         if arm == "A":
             assert r["proof_ok"] == "3/3" and all(r["proof"].get(k) is True for k in KNOBS)
+            assert "m8-fastpath CAPTURED M=6" in log
+            assert "N=4096 K=2048 compact=True" in log and "N=6144 K=4096 compact=True" in log
+        else:
+            assert "m8-fastpath CAPTURED" not in log
         d = r["decode"]
         assert d["primary"] == "fixed-2K" and d["num_spec"] == 5
         windows = d["fixed_intervals"]
@@ -59,11 +66,21 @@ def summarize(rows):
         for key in ("step_s", "tok_s", "pooled_tok_s"):
             values = [r[key] for r in out if r["arm"] == arm]
             spread[arm][key] = 100 * (max(values) - min(values)) / median(values)
+    output_matches = []
+    for i, j in ((0, 3), (1, 2), (0, 1), (3, 2)):
+        left = [q for q in rows[i]["requests"] if q.get("fixed_decode")]
+        right = [q for q in rows[j]["requests"] if q.get("fixed_decode")]
+        output_matches.append({"left": rows[i]["name"], "right": rows[j]["name"],
+                               "same_output": sum(a["output_sha256"] == b["output_sha256"]
+                                                  for a, b in zip(left, right)), "requests": 3})
     return {"per_boot": out, "arms": stats, "paired": paired,
             "change_pct": {key: 100 * (stats["A"][key] / stats["B"][key] - 1)
                            for key in metrics},
             "within_arm_boot_spread_pct": spread,
+            "fixed_output_matches": output_matches,
             "independent_boots_per_arm": 2,
+            "assessment": {"status": "inconclusive", "candidate": "retained", "default_promotion": "deferred",
+                           "reason": "Small positive engine-step signal; output-rate pairs disagree and baseline output variation exceeds the average gain."},
             "note": "Windows within one boot are correlated; two boots per arm do not support a narrow confidence interval."}
 
 
