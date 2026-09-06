@@ -50,8 +50,8 @@ __global__ void mk_mhc_tf32x3_p1(const MKMhcArgs a) {
           s += v * v;
         }
         const uint32_t vh = mhc_tf32(v);
-        hi[t][k][h0] = vh;
-        lo[t][k][h0] = mhc_tf32(v - __uint_as_float(vh));
+        hi[t][k][h0 ^ (t << 2)] = vh;
+        lo[t][k][h0 ^ (t << 2)] = mhc_tf32(v - __uint_as_float(vh));
       }
       if (t < TOK) sq[t][h0] = s;
     }
@@ -70,8 +70,8 @@ __global__ void mk_mhc_tf32x3_p1(const MKMhcArgs a) {
       ah[i] = mhc_tf32(f);
       al[i] = mhc_tf32(f - __uint_as_float(ah[i]));
     }
-    bh[0] = hi[g][j][k + q]; bh[1] = hi[g][j][k + q + 4];
-    bl[0] = lo[g][j][k + q]; bl[1] = lo[g][j][k + q + 4];
+    bh[0] = hi[g][j][(k + q) ^ (g << 2)]; bh[1] = hi[g][j][(k + q + 4) ^ (g << 2)];
+    bl[0] = lo[g][j][(k + q) ^ (g << 2)]; bl[1] = lo[g][j][(k + q + 4) ^ (g << 2)];
     // Low products first to avoid discarding both correction terms when
     // adding them to the much larger high product in a single instruction.
     mhc_mma_tf32(acc, ah, bl);
@@ -82,14 +82,14 @@ __global__ void mk_mhc_tf32x3_p1(const MKMhcArgs a) {
   for (int i = 0; i < 4; ++i) {
     const int row = out_base + g + ((i & 2) ? 8 : 0);
     const int token = 2 * q + (i & 1);
-    partial[j][token][row] = acc[i];
+    partial[j][token][row ^ (token << 2)] = acc[i];
   }
   __syncthreads();
   for (int i = tid; i < TOK * NOUT; i += MK_THREADS) {
     const int t = i / NOUT, m = i % NOUT;
     float v = 0.0f;
 #pragma unroll
-    for (int k = 0; k < HC; ++k) v += partial[k][t][m];
+    for (int k = 0; k < HC; ++k) v += partial[k][t][m ^ (t << 2)];
     a.yp[((size_t)c * MAX_TOK + t) * NOUT + m] = v;
   }
   // One warp per token, using the same eight-lane reduction grouping as
