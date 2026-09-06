@@ -16,6 +16,7 @@
 #   fleet.sh run     <session> [est_min] [note] -- <cmd...>
 #                                                    request + wait + run + release (trap)
 #   fleet.sh status                                  holder, queue, liveness, legacy busy
+#   fleet.sh adopt   <session> <pid> [est_min] [note] a job already running becomes the holder
 #   fleet.sh front   <session>                       move to the head of the queue
 #   fleet.sh cancel  <session>                       leave the queue
 #   fleet.sh kick    [--force]                       drop a DEAD holder (--force: any holder;
@@ -127,6 +128,12 @@ case "$cmd" in
     echo "queue ($(grep -c . "$Q")):"; n=0; while IFS='|' read -r t s at est note; do n=$((n+1)); echo "  $n. $s (since $(date -d @$at +%H:%M), est ${est}m) $note"; done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     echo "log:"; tail -4 "$L" | sed 's/^/  /';;
+  adopt)  # a job that is ALREADY running (started before this tool, or by hand) becomes the holder
+    s=${1:?session}; pid=${2:?pid}; est=${3:-30}; note=${4:-}
+    if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; exit 1; fi
+    kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; exit 1; }
+    with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
+    logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
   cancel) with_lock _dequeue "${1:?session}"; logit "cancel $1"; echo "cancelled $1";;
   kick)
