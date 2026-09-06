@@ -284,7 +284,10 @@ class MoEStaticKernelV4:
             lay = self.sfb1_smem_layout_staged
             shp, strd = lay.shape, lay.stride
             rows = shp[0][0]
-            assert rows[0] * rows[1] == 128 and _FC1_TILE_N % rows[0] == 0, shp
+            if rows[0] * rows[1] != 128 or _FC1_TILE_N % rows[0] != 0:
+                raise ValueError(
+                    f"sf_half SFB layout contract drifted: row mode {rows}"
+                )
             half_rows = ((rows[0], _FC1_TILE_N // rows[0]), shp[0][1])
             return cute.make_layout((half_rows, shp[1], shp[2]), stride=strd)
         return self.sfb1_smem_layout_staged
@@ -380,6 +383,51 @@ class MoEStaticKernelV4:
                 f"v4 smem {self.smem_bytes} B exceeds {self.smem_capacity} B "
                 f"(fc1 {self.fc1_stages} x fc2 {self.fc2_stages} stages)"
             )
+        if self.bulk_b:
+            self._assert_bulk_swizzle_contract()
+
+    def _assert_bulk_swizzle_contract(self) -> None:
+        """Trace-time pin of the cell-z pre-swizzle byte order (host side).
+
+        moe_dispatch._swizzle_perms hardcodes the smem byte order these
+        staged B layouts produce so a bulk-copy stage is one 1-D
+        cp.async.bulk. The order was measured once by dumping crd2idx
+        (probes/b12x_static_layout_print.py --dump, 39차 §2c); this check
+        re-derives the same XOR closed form from the live layout at every
+        z-cell compile, so a flashinfer/cutlass layout change fails the
+        compile loudly instead of silently corrupting every B byte.
+        Sampled coordinates cover every value the XOR key bits take.
+        """
+        def _expect(lin: int, key_mask: int) -> int:
+            return lin ^ (((lin >> 7) & key_mask) << 4)
+
+        b1_samples = (
+            (0, 0), (0, 8), (0, 16), (0, 24), (0, 31),
+            (1, 0), (2, 8), (3, 16), (63, 0), (63, 31),
+        )
+        for r, c in b1_samples:  # (row, 16-element chunk): plain lin = r*512 + c*16
+            lin = r * _FC1_TILE_K + c * 16
+            got = int(cute.crd2idx((r, c * 16, 0), self.b1_smem_layout_staged))
+            if got != _expect(lin, 7):
+                raise ValueError(
+                    f"bulk_b swizzle contract drifted: B1 smem offset for "
+                    f"(row {r}, k {c * 16}) is {got}, the host pre-swizzle "
+                    f"expects {_expect(lin, 7)} -- re-dump with "
+                    "probes/b12x_static_layout_print.py --dump and update "
+                    "moe_dispatch._swizzle_perms"
+                )
+        b2_samples = ((0, 0), (0, 4), (0, 7), (1, 0), (2, 4), (127, 0), (127, 7))
+        for r, c in b2_samples:  # plain lin = r*128 + c*16
+            lin = r * _FC2_TILE_K + c * 16
+            got = int(cute.crd2idx((r, c * 16, 0), self.b2_smem_layout_staged))
+            if got != _expect(lin, 3):
+                raise ValueError(
+                    f"bulk_b swizzle contract drifted: B2 smem offset for "
+                    f"(row {r}, k {c * 16}) is {got}, the host pre-swizzle "
+                    f"expects {_expect(lin, 3)} -- re-dump with "
+                    "probes/b12x_static_layout_print.py --dump and update "
+                    "moe_dispatch._swizzle_perms"
+                )
 
     @cute.jit
     def _resident_grid_barrier(

@@ -397,8 +397,14 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             continue
         if token == "z":
             # v6 (39차): t's storage pre-swizzled into the smem order + one
-            # 1-D cp.async.bulk per B stage (probe only until the gated
-            # prefill kernel reads that order)
+            # 1-D cp.async.bulk per B stage. Probe only until the gated
+            # prefill kernel reads that order -- reject it at boot (here),
+            # not at the first >640-pair prefill launch.
+            if not probe:
+                raise ValueError(
+                    f"{_GLM53_B12X_STATIC_V2_ENV}: z is a probe-only cell "
+                    "(pre-swizzled storage the dynamic kernel cannot read)"
+                )
             cfg["tiled"] = True
             cfg["bulk_b"] = True
             continue
@@ -431,6 +437,20 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
 
 
 _GLM53_B12X_STATIC_V2 = _parse_glm53_static_v2(os.environ.get(_GLM53_B12X_STATIC_V2_ENV))
+# A tiled cell and the #368 prefill-reuse lane are mutually exclusive (the
+# reuse kernels read row-major storage). Diagnose it here, at import/boot,
+# instead of at the first m>=3456 prefill; the launch-time check below stays
+# for the _STATIC_V2_OVERRIDE probe hook.
+if (
+    _GLM53_B12X_STATIC_V2
+    and _GLM53_B12X_STATIC_V2.get("tiled")
+    and (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
+):
+    raise ValueError(
+        f"{_GLM53_B12X_STATIC_V2_ENV}: a tiled cell (t) cannot serve together "
+        "with VLLM_GLM53_B12X_PREFILL_REUSE/FC1_N128 -- the reuse lane reads "
+        "row-major expert weights; unset one of the knobs"
+    )
 # Probe hook: a config dict overrides the import-time env value; module-level
 # (a monkeypatch target), never read from the environment at launch time.
 _STATIC_V2_OVERRIDE: dict | None = None
@@ -1028,7 +1048,63 @@ _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
 
 
 _TILE_MAJOR_ATTR = "_b12x_tile_major"   # False / "plain" / "swz" on a weight tensor
+# sha256 of three 64-byte samples, recorded with _TILE_MAJOR_ATTR so a later
+# load cycle that overwrote the bytes can be detected (the marker itself
+# survives a plain param.data.copy_ of fresh row-major checkpoint bytes).
+_TILE_MAJOR_FP_ATTR = "_b12x_tile_major_fp"
 _SWZ_PERM: Dict[Tuple[str, str], torch.Tensor] = {}
+
+
+def _tile_major_fingerprint(w: torch.Tensor) -> str:
+    """Cheap content probe: first/middle/last 64 bytes of the packed bytes."""
+    flat = w.view(-1)
+    n = flat.numel()
+    sample = torch.cat([flat[:64], flat[n // 2 : n // 2 + 64], flat[-64:]])
+    return hashlib.sha256(sample.cpu().numpy().tobytes()).hexdigest()
+
+
+def _evict_weight_cache_for(*tensors: torch.Tensor) -> None:
+    """Drop _WEIGHT_CACHE entries built over any of these tensors' storage."""
+    ptrs = {tensor.data_ptr() for tensor in tensors if tensor is not None}
+    stale = [
+        key
+        for key in _WEIGHT_CACHE
+        if any(ptr in ptrs for ptr in key[4:])
+    ]
+    for key in stale:
+        del _WEIGHT_CACHE[key]
+
+
+def invalidate_tile_major_if_reloaded(
+    w1_fp4: torch.Tensor, w2_fp4: torch.Tensor
+) -> bool:
+    """Drop tile-major markers when the bytes were rewritten since the relayout.
+
+    A vLLM re-load cycle copies fresh row-major checkpoint bytes over
+    the same Parameters (same pointers) -- a surviving ``_b12x_tile_major``
+    marker would then serve those bytes as tile-major. Call at the top of
+    every process_weights_after_loading: a matching fingerprint (bytes
+    untouched) keeps the markers and the call is a no-op; a mismatch clears
+    them so the relayout below re-lays the fresh bytes, and every cached
+    weight view over this storage is dropped. Weight writes that bypass
+    process_weights_after_loading entirely are outside this guard; the
+    serving contract is that every load cycle runs it.
+    """
+    cleared = False
+    for w in (w1_fp4, w2_fp4):
+        fp = getattr(w, _TILE_MAJOR_FP_ATTR, None)
+        if fp is None:
+            continue
+        if _tile_major_fingerprint(w) != fp:
+            for attr in (_TILE_MAJOR_ATTR, _TILE_MAJOR_FP_ATTR):
+                try:
+                    delattr(w, attr)
+                except AttributeError:
+                    pass
+            cleared = True
+    if cleared:
+        _evict_weight_cache_for(w1_fp4, w2_fp4)
+    return cleared
 
 
 def _swizzle_perms(device: "torch.device") -> Tuple[torch.Tensor, torch.Tensor]:
@@ -1068,7 +1144,10 @@ def tile_expert_weights_inplace(
     tensors are marked (``_b12x_tile_major``) so _get_weight_views(tiled=True)
     views them without a second copy. One transient copy of each tensor
     (the layer's 0.9 + 0.45 GB per rank for GLM-5.3) at weight
-    post-processing; a second call is a no-op.
+    post-processing; a second call is a no-op. The marker carries a content
+    fingerprint: invalidate_tile_major_if_reloaded (called by the wrapper at
+    every process_weights_after_loading) clears it when a later load cycle
+    overwrote the bytes.
     """
     kind = "swz" if swizzled else "plain"
     have = getattr(w1_fp4, _TILE_MAJOR_ATTR, False)
@@ -1082,6 +1161,10 @@ def tile_expert_weights_inplace(
     del w13_t, w2_t
     setattr(w1_fp4, _TILE_MAJOR_ATTR, kind)
     setattr(w2_fp4, _TILE_MAJOR_ATTR, kind)
+    # Content probe for invalidate_tile_major_if_reloaded: a later load
+    # cycle that overwrites the bytes must not inherit the marker.
+    setattr(w1_fp4, _TILE_MAJOR_FP_ATTR, _tile_major_fingerprint(w1_fp4))
+    setattr(w2_fp4, _TILE_MAJOR_FP_ATTR, _tile_major_fingerprint(w2_fp4))
 
 
 def _tile_expert_weights(
@@ -1125,39 +1208,11 @@ def _tile_expert_weights(
     return w13_t, w2_t
 
 
-def static_v2_weights_tiled(
-    *,
-    num_experts: int,
-    num_local_experts: int,
-    hidden_size: int,
-    intermediate_size: int,
-    num_topk: int,
-    quant_mode: str,
-    activation: str,
-    swiglu_limit: float | None,
-    activation_precision: str,
-) -> bool:
-    """Whether the static lane this process would take for the geometry reads
-    tile-major weights -- the wrapper keys its cached weight views on it, so
-    a lane switch (probe) rebuilds them and a tiled view never meets a
-    row-major kernel."""
-    cfg = _static_v2_config_for(
-        num_experts=num_experts,
-        num_local_experts=num_local_experts,
-        hidden_size=hidden_size,
-        intermediate_size=intermediate_size,
-        num_topk=num_topk,
-        quant_mode=quant_mode,
-        activation=activation,
-        swiglu_limit=swiglu_limit,
-        activation_precision=activation_precision,
-    )
-    return bool(cfg is not None and cfg.get("tiled", False))
-
-
 def static_v2_weights_layout(**geometry) -> Tuple[bool, bool]:
-    """(tiled, swizzled) the static lane reads for the geometry -- see
-    static_v2_weights_tiled; swizzled (cell z) is the bulk-copy byte order."""
+    """(tiled, swizzled) the static lane reads for the geometry -- the wrapper
+    keys its cached weight views on it, so a lane switch (probe) rebuilds
+    them and a tiled view never meets a row-major kernel; swizzled (cell z)
+    is the bulk-copy byte order."""
     cfg = _static_v2_config_for(**geometry)
     if cfg is None:
         return False, False
@@ -1219,6 +1274,19 @@ def _get_weight_views(
         # tile-major weight copies when the lane reads them.
         w1_rows = w1_fp4.shape[1]  # 2*n for gated, n for non-gated
         if not tiled:
+            # Symmetric with the kind check below: the storage must not be
+            # tile-major when the lane reads row-major. The in-place relayout
+            # (serving cell t) rewrites the ONLY copy, so a later switch to a
+            # row-major lane in this process (the _STATIC_V2_OVERRIDE probe
+            # hook) would silently misread the bytes -- refuse it instead.
+            if getattr(w1_fp4, _TILE_MAJOR_ATTR, False) or getattr(
+                w2_fp4, _TILE_MAJOR_ATTR, False
+            ):
+                raise ValueError(
+                    "row-major static lane over tile-major storage: these "
+                    "weights were re-laid in place for a tiled cell (t/z) "
+                    "and cannot serve a row-major kernel in this process"
+                )
             tiled_storage = (None, None)
         elif getattr(w1_fp4, _TILE_MAJOR_ATTR, False):
             # served in place (tile_expert_weights_inplace): the bytes are
@@ -1532,8 +1600,10 @@ def _dynamic_kernel_cache_key(
         share_input_across_experts,
         bool(tiled),
     )
-    # Preserve the stock key exactly; the opt-in kernel must never reuse a
-    # stock artifact (or poison a later stock call in the same process).
+    # tiled is part of every key (stock too): the gated subclass and the
+    # stock kernel must never share an artifact. Adding it renames stock
+    # on-disk artifacts once (a one-time recompile) -- the suffixes below
+    # keep the reuse lanes separately keyed on top of it.
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
@@ -4122,6 +4192,7 @@ def clear_sm120_moe_caches() -> None:
     _DIRECT_MICRO_LAUNCH_CACHE.clear()
     _DIRECT_MICRO_KERNEL_CACHE.clear()
     _DYNAMIC_KERNEL_CACHE.clear()
+    _SWZ_PERM.clear()
 
 
 def allocate_sm120_moe_workspace(

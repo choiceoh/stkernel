@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Compile b12x static-lane specs to their .o on the CPU -- no GPU, ~3 s a
-spec -- so a kernel edit is checked before it waits for a fleet window.
+"""Compile b12x static-lane specs to their .o on the CPU -- no GPU, ~1.5-4 s
+a spec -- so a kernel edit is checked before it waits for a fleet window.
 
 The cute-dsl compiler only needs the target name (CUTE_DSL_ARCH=sm_121a, set
 by the runner's MK_PROBE_NO_GPU=1) and a few device queries, which this
@@ -9,6 +9,9 @@ script answers for a GB10 (cc 12.1, 48 SMs) without a CUDA context. What it
 proves: the spec parses, the kernel traces, the TMA descriptors and smem
 layouts are consistent, ptxas accepts the code. What it does not prove:
 numerics, timing (the probe on a quiet GPU).
+
+A run that compiles nothing (every spec parses to stock and --dynamic is
+empty) FAILs: PASS must mean "the requested kernels compiled".
 
     MK_PROBE_NO_GPU=1 bash probes/run_mk_probe.sh probes/b12x_static_compile_check.py --specs "u|t|v,t|t,s"
 """
@@ -46,6 +49,7 @@ def main() -> int:
     md.get_max_active_clusters = lambda n=1: 48  # type: ignore[assignment]
     max_rows = md._align_up(args.m * TOPK, 128)
     ok = True
+    compiled_count = 0
     for spec in [p.strip() for p in args.specs.split("|") if p.strip()]:
         cfg = md._parse_glm53_static_v2(spec, probe=True)
         if cfg is None:
@@ -65,6 +69,7 @@ def main() -> int:
             print(f"[{spec}] COMPILE FAIL after {time.time() - t0:.1f} s: "
                   f"{type(exc).__name__}: {str(exc)[:1200]}")
             continue
+        compiled_count += 1
         names = [k[0] + ":" + "/".join(str(x) for x in k[1:6]) for k in md._STATIC_V2_KERNEL_CACHE]
         print(f"[{spec}] compiled in {time.time() - t0:.1f} s: {names} mac={mac}")
     dyn = {"": (), "rowmajor": (False,), "tiled": (True,), "both": (False, True)}[args.dynamic]
@@ -84,7 +89,12 @@ def main() -> int:
                   f"{type(exc).__name__}: {str(exc)[:1200]}\n"
                   + traceback.format_exc()[-1800:])
             continue
+        compiled_count += 1
         print(f"[dynamic tiled={tiled}] compiled in {time.time() - t0:.1f} s mac={mac}")
+    if compiled_count == 0:
+        ok = False
+        print("no kernel was compiled (every spec parsed to stock and no "
+              "--dynamic arm) -- PASS must mean the requested kernels built")
     print("VERDICT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

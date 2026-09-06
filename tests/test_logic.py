@@ -3445,11 +3445,19 @@ def test_b12x_static_v2_controls() -> None:
           and not parse("t")["sf_half"],
           "h selects 64-row FC1 SFB boxes on the v4/v5 kernels")
     # z (39차 v6): t's tiles pre-swizzled into the smem order, one 1-D bulk
-    # copy per B stage; probe-only until the gated prefill kernel reads it
-    z = parse("z")
+    # copy per B stage; probe-only until the gated prefill kernel reads it --
+    # the serving parse rejects it at boot, exactly like xs/xa
+    z = parse("z", probe=True)
     check(z["bulk_b"] and z["tiled"] and z["v4"] and z["wide"] and z["fc2"] == 2
-          and not parse("t")["bulk_b"] and parse("z,h")["sf_half"] and parse("z,h")["bulk_b"],
+          and not parse("t")["bulk_b"]
+          and parse("z,h", probe=True)["sf_half"]
+          and parse("z,h", probe=True)["bulk_b"],
           "z selects the bulk-copy lane over pre-swizzled tile-major weights")
+    try:
+        parse("z")
+        check(False, "z must be rejected by the serving parse (probe-only cell)")
+    except ValueError:
+        pass
     try:
         parse("v,xa", probe=True)
         check(False, "v with xa must be rejected")
@@ -3531,15 +3539,18 @@ def test_b12x_static_v2_controls() -> None:
     # the tiled layout must never meet a row-major kernel: the wrapper keys
     # its cached views on the lane's layout, the entry refuses backends that
     # read row-major, the static launch checks views vs lane
-    check("def static_v2_weights_tiled(" in src
+    check("def static_v2_weights_layout(" in src
           and "tiled=weights_tiled," in src
           and 'if bool(getattr(weights, "tiled", False)) and backend not in ("static", "dynamic"):' in src
           and 'or bool(getattr(weights, "swizzled", False)) != want_swz):' in src
           and "def _tile_expert_weights(" in src
+          and "def invalidate_tile_major_if_reloaded(" in src
+          and "row-major static lane over tile-major storage" in src
           and "kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4" in src
           and 'stride_order=(1, 0, 2, 3), assumed_align=16,' in src,
           "the tiled lane (t): re-layout helper, 4-D fake weight tensors, the v5 "
-          "class, and the guards that keep tiled views on the v5 kernel")
+          "class, and the guards that keep tiled views on the v5 kernel and "
+          "row-major lanes off tile-major storage")
     # phase 2 (serving): the layer's bytes are re-laid out in place once, the
     # micro lanes (row-major readers) are off under tiled weights, and the
     # gated dynamic (prefill) kernel's subclass is compiled against the 4-D
@@ -3570,6 +3581,8 @@ def test_b12x_static_v2_controls() -> None:
                      encoding="utf-8").read()
     check("if cutlass.const_expr(self.bulk_b):" in v4_kernel
           and v4_kernel.count("_bulk_g2s(") == 2
+          and "self._assert_bulk_swizzle_contract()" in v4_kernel
+          and "bulk_b swizzle contract drifted" in v4_kernel
           and "sB1_base_addr + fc1_prod_state.index * bulk_b1_stage_b," in v4_kernel
           and "sB2_base_addr + fc2_prod_state.index * bulk_b2_stage_b," in v4_kernel
           and "shared_ptr_to_u32(bar)," in v4_kernel and "shared_ptr_to_u32(bar2)," in v4_kernel
@@ -3586,10 +3599,12 @@ def test_b12x_static_v2_controls() -> None:
     vllm_side = open(os.path.join(REPO, "overlay/modules/glm53_moe/flashinfer_b12x_moe.py"),
                      encoding="utf-8").read()
     check("_b12x_dispatch.tile_expert_weights_inplace(" in vllm_side
+          and "_b12x_dispatch.invalidate_tile_major_if_reloaded(" in vllm_side
           and "if not self._use_ep:" in vllm_side
           and "[b12x static v5] expert weights re-laid out tile-major in place" in vllm_side,
           "the vLLM wrapper re-lays the layer's expert weights out in place at weight "
-          "post-processing (TP only) and says so in the boot log")
+          "post-processing (TP only) and says so in the boot log; a re-load cycle "
+          "drops stale tile-major markers first")
     gated = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py"),
                  encoding="utf-8").read()
     check("class MoEGatedDynamicKernelTiled(MoEGatedDynamicKernel):" in gated
