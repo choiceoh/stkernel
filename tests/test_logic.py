@@ -8601,6 +8601,54 @@ def test_self_built_kernels_persist_their_caches() -> None:
           "identity post coefficients from static buffers sliced per call; "
           "the self-test proves the identity bitwise and adds T=k+1 only on "
           "a non-7 spec boot")
+    # 37차 (operator: "200줄 쿠다"): the fused decode-step preparation kernel
+    # is a CUDA kernel in the megakernel extension (mk_prep_kernel / run_prep),
+    # the request's Q tokens as plain loops -- no power-of-two lane constraint,
+    # no masks. The Triton kernel stays as the fallback (VLLM_GLM53_PREP_FUSED_
+    # KERNEL=triton, or no extension / dtype mismatch). The pointer and int
+    # lists are positional on both sides, so their ORDER is pinned by name.
+    mkcu = open(os.path.join(REPO, "overlay/modules/glm53_megakernel/"
+                                   "glm53_megakernel.cu"), encoding="utf-8").read()
+    pf3 = open(os.path.join(REPO, "overlay/modules/glm53_runtime/"
+                                  "glm53_prep_fused.py"), encoding="utf-8").read()
+    check("__global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a)" in mkcu
+          and 'm.def("run_prep", &mk_run_prep,' in mkcu
+          and "TORCH_CHECK(ptrs.size() == 33 && ints.size() == 23" in mkcu
+          and "def kernel_backend() -> str:" in pf3
+          and 'os.environ.get(ENV_KERNEL, "cuda")' in pf3
+          and "def cuda_dtype_reason(self) -> str | None:" in pf3
+          and 'ext.run_prep(self._cuda_ptrs(idx), self._cuda_ints(num_reqs, num_tokens))' in pf3
+          and pf3.index('ext = o.get("cuda_ext")') < pf3.index('compiled = o.get("compiled")')
+          and 'self.owned["cuda_ext"] = ext' in pf3
+          and "kernel=%s" in pf3,
+          "the CUDA prep kernel is the default backend with the Triton kernel "
+          "as the fallback, and the plan line names which one serves")
+    cpp_ptrs = re.findall(r"P\(&a\.(\w+)\)", mkcu[mkcu.index("void mk_run_prep("):])
+    cpp_ints = re.findall(r"a\.(\w+) = (?:\(int\))?ints\[q\+\+\]", mkcu[mkcu.index("void mk_run_prep("):])
+    py_ptrs_src = pf3[pf3.index("def _cuda_ptrs("):pf3.index("def _cuda_ints(")]
+    py_ptrs = re.findall(r"(?:self\.|o\[\"|bt\.)?([A-Za-z_][\w.\[\]\"]*)", py_ptrs_src[py_ptrs_src.index("for t in ("):py_ptrs_src.index(")]")])
+    py_ptrs = [x.replace("]", "").strip('"') for x in py_ptrs if x not in ("t", "in", "for")]
+    rename = {"idx": "idx_mapping", "prefill_len_src.gpu": "prefill_len", "query_start_loc": "qsl",
+              "block_table_ptrs": "src_bt_ptrs", "input_block_table_ptrs": "dst_bt_ptrs",
+              "block_table_strides": "bt_strides", "block_sizes_tensor": "block_sizes",
+              "num_blocks.gpu": "num_blocks", "slot_mappings": "slot", "req_id_buf": "req_id"}
+    py_norm = [rename.get(x, x) for x in py_ptrs]
+    check(len(cpp_ptrs) == 33 and py_norm == cpp_ptrs,
+          f"the 33 pointers are passed in the order mk_run_prep unpacks them "
+          f"(py={py_norm[:6]}..., cpp={cpp_ptrs[:6]}...)")
+    py_ints_src = pf3[pf3.index("def _cuda_ints("):pf3.index("def _consts(")]
+    want_ints = ["num_reqs", "num_tokens", "max_num_reqs", "max_num_tokens", "draft_stride",
+                 "num_blocks_stride", "slot_stride", "req_id_cap", "exp_bt_stride", "dec_seq_cap",
+                 "idx_bt_stride", "idx_bt_cols", "comp_slot_cap", "Q", "NUM_SPEC", "NS", "G",
+                 "N_GDN", "ATTN_G", "FACTOR", "RATIO", "SBS", "PAD_ID"]
+    check(cpp_ints == want_ints and len(cpp_ints) == 23
+          and all(k in py_ints_src for k in ("self.draft_tokens.stride(0)", "bt.num_blocks.gpu.stride(0)",
+                                              "bt.slot_mappings.stride(0)", "self.req_id_buf.numel()",
+                                              "self.exp_bt.stride(0)", "self.dec_seq_lens.numel()",
+                                              "self.idx_bt.stride(0)", "self.idx_bt_cols", "self.comp_slot.numel()",
+                                              "self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g",
+                                              "self.factor, self.ratio, self.sbs, PAD_SLOT_ID")),
+          "the 23 ints are unpacked in the documented order on both sides")
     check("_HOOK_SERVED_PRE[0] += 1" in mkp
           and "[megakernel] mhc-pre hook serving (T=%d)" in mkp
           and mkp.index("maybe_arm()", mkp.index("def mhc_pre_hook(")) < mkp.index("out = mhc_pre_only(", mkp.index("def mhc_pre_hook(")),

@@ -2111,6 +2111,11 @@ one-spark 프로젝트의 독립 스윕도 k=5 를 기본으로 골랐다(산문
 (C=1 에서는 비교 범위 밖이라 64~320 스텝 점검이 통과했고 C=4 에서 드러났다). 두 저장에 레인 마스크를 붙여 고침(PR 대기); 검증은 k=5 부팅 + C=4 트래픽에서
 `checks ok` 가 쌓이고 DISARM 이 없는 것. 따라서 §7 표의 "5 프로덕션" 수치는 융합 꺼진 stock 경로의 값이고, 40.3 vs 43.3 은 같은 경로의 회차 잡음이다.
 
+**운영자 "패딩 말고 다른 해법" → "200줄 쿠다면 10분"(10:20)**: 준비 융합 커널을 CUDA 로 다시 썼다 — 메가커널 확장의 `mk_prep_kernel`/`run_prep`
+(요청당 블록 1개 + 채움 블록 1개 + KV 그룹당 패드 블록 1개, Q 토큰은 그냥 루프: 2의 거듭제곱 제약도 마스크도 없음). 포인터 33개·정수 23개를 위치로
+넘기므로 양쪽 순서를 이름으로 핀(`tests/test_logic.py`), 버퍼 dtype 은 플랜 빌드 때 검사해 어긋나면 Triton 커널로 낙하(`VLLM_GLM53_PREP_FUSED_KERNEL=triton`
+으로 강제 가능). GPU 없는 컨테이너 nvcc 컴파일 32 s 통과, `plan built: … kernel=cuda` 가 서빙 줄. 검증은 k=5 부팅 + C=4 트래픽의 자체점검(§7 위와 동일 기준).
+
 **하니스 정정**: `bench/bracket.py`·`bench/onepass.py` 의 tokens/step·step/s 가 k=7 을 가정해(`--num-spec` 기본 7) k=5 에서 tokens/step 3.68 로 부풀렸다
 (진값 2.92 = 1 + 5×0.383). 카운터(`num_draft_tokens_total / num_drafts_total`)에서 실제 드래프트 길이를 읽어 쓰도록 고침(`spec_k_eff`). ab-lever 레그 줄의
 "raw acc" 는 드래프트당 비율이고 표기에 `(k=…)` 를 붙였다.

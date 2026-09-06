@@ -4288,6 +4288,190 @@ std::vector<int64_t> mk_read_ts2() {
 #endif
 }
 
+// ---------------------------------------------------------------------------
+// MK_PREP (37차, 2026-09-06): the fused decode-step preparation kernel in
+// CUDA -- the same contract as glm53_prep_fused's Triton kernel, one block
+// per program (num_reqs request blocks, one fill block, one pad block per
+// KV group), with the request's Q tokens as plain loops: no power-of-two
+// lane constraint, no masks to forget (the k=5 boot's self-check caught a
+// padded-lane store crossing into the next request's rows).
+// Pointer element types are the runner's (asserted on the Python side):
+// int32 input_ids/qsl/seq_lens/num_computed/prefill_len/num_accepted/
+// block tables/gdn state/req_id/exp_bt/dec_*/idx_bt; int64 positions/
+// idx_mapping/last_sampled/draft_tokens/slot mappings/expanded_idx/
+// comp_slot/strides; uint64 pointer tables; int8 is_padding/gdn masks.
+// ---------------------------------------------------------------------------
+struct MKPrepArgs {
+  int num_reqs, num_tokens, max_num_reqs, max_num_tokens;
+  const int64_t* idx_mapping; const int32_t* num_computed; const int32_t* prefill_len;
+  const int64_t* last_sampled; const int64_t* draft_tokens; int64_t draft_stride;
+  const int32_t* num_accepted;
+  int32_t* input_ids; int64_t* positions; int32_t* qsl; int32_t* seq_lens; int8_t* is_padding;
+  int64_t* expanded_idx; int32_t* expanded_pos;
+  const uint64_t* src_bt_ptrs; const uint64_t* dst_bt_ptrs; const int64_t* bt_strides;
+  const int32_t* block_sizes; const int32_t* num_blocks; int64_t num_blocks_stride;
+  int64_t* slot; int64_t slot_stride;
+  const int32_t* gdn_group_idx; const uint64_t* gdn_state_ptrs; const int64_t* gdn_state_strides;
+  const uint64_t* gdn_mask_ptrs; const uint64_t* gdn_tok_ptrs; const uint64_t* gdn_qsl_ptrs;
+  const uint64_t* gdn_nacc_ptrs;
+  int32_t* req_id; int64_t req_id_cap; int32_t* exp_bt; int64_t exp_bt_stride;
+  int32_t* dec_seq_lens; int64_t dec_seq_cap; int32_t* dec_lens; int32_t* per_req_dec_lens;
+  int32_t* idx_bt; int64_t idx_bt_stride; int64_t idx_bt_cols;
+  int64_t* comp_slot; int64_t comp_slot_cap;
+  int Q, NUM_SPEC, NS, G, N_GDN, ATTN_G, FACTOR, RATIO, SBS; int64_t PAD_ID;
+};
+
+#define MK_PREP_THREADS 256
+
+template <typename T>
+__device__ __forceinline__ void mk_prep_fill(T* p, int64_t start, int64_t end, T v) {
+  for (int64_t i = start + threadIdx.x; i < end; i += blockDim.x) p[i] = v;
+}
+
+__global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a) {
+  const int pid = blockIdx.x;
+  if (pid >= a.num_reqs) {
+    const int role = pid - a.num_reqs;
+    if (role == 0) {
+      mk_prep_fill<int32_t>(a.qsl, a.num_reqs, a.max_num_reqs + 1, a.num_tokens);
+      mk_prep_fill<int32_t>(a.seq_lens, a.num_reqs, a.max_num_reqs, 0);
+      mk_prep_fill<int8_t>(a.is_padding, 0, a.num_tokens, 0);
+      if (threadIdx.x < a.N_GDN) {
+        int32_t* qp = reinterpret_cast<int32_t*>(a.gdn_qsl_ptrs[threadIdx.x]);
+        qp[a.num_reqs] = a.num_tokens;
+      }
+      mk_prep_fill<int32_t>(a.req_id, a.num_tokens, a.req_id_cap, 0);
+      mk_prep_fill<int32_t>(a.dec_seq_lens, a.num_tokens, a.dec_seq_cap, 0);
+      mk_prep_fill<int64_t>(a.comp_slot, a.num_tokens, a.comp_slot_cap, a.PAD_ID);
+    } else {
+      const int g = role - 1;
+      mk_prep_fill<int64_t>(a.slot + (int64_t)g * a.slot_stride, a.num_tokens, a.max_num_tokens,
+                            a.PAD_ID);
+    }
+    return;
+  }
+  const int r = pid;
+  const int64_t rs = a.idx_mapping[r];
+  const int32_t ncomp = a.num_computed[rs];
+  const int Q = a.Q;
+  const int64_t qs = (int64_t)r * Q;
+  const int32_t seq_len = ncomp + Q;
+  const int t = threadIdx.x;
+  if (t == 0) {
+    a.seq_lens[r] = seq_len;
+    a.qsl[r] = (int32_t)qs;
+    a.per_req_dec_lens[r] = Q;
+  }
+  // per-token scalars (Q <= 32 threads)
+  if (t < Q) {
+    const int64_t pos = (int64_t)ncomp + t;
+    a.positions[qs + t] = pos;
+    a.expanded_idx[qs + t] = rs;
+    a.expanded_pos[qs + t] = t;
+    a.req_id[qs + t] = r;
+    a.dec_lens[qs + t] = 1;
+    a.dec_seq_lens[qs + t] = (seq_len - Q + t + 1) / a.RATIO;
+    // combine_sampled_and_draft_tokens, NUM_NEW_SAMPLED_TOKENS=1
+    const int32_t prefill_len = a.prefill_len[rs];
+    if (seq_len > prefill_len) {
+      if (t == 0 && seq_len - Q >= prefill_len)
+        a.input_ids[qs] = (int32_t)a.last_sampled[rs];
+      if (t < a.NUM_SPEC)
+        a.input_ids[qs + 1 + t] = (int32_t)a.draft_tokens[rs * a.draft_stride + t];
+    }
+  }
+  // gather_block_tables + compute_slot_mappings, every group
+  for (int g = 0; g < a.G; ++g) {
+    const int32_t* src = reinterpret_cast<const int32_t*>(a.src_bt_ptrs[g]);
+    int32_t* dst = reinterpret_cast<int32_t*>(a.dst_bt_ptrs[g]);
+    const int64_t stride = a.bt_strides[g];
+    const int32_t bs = a.block_sizes[g];
+    const int32_t nb = a.num_blocks[(int64_t)g * a.num_blocks_stride + rs];
+    const int32_t* src_row = src + rs * stride;
+    int32_t* dst_row = dst + (int64_t)r * stride;
+    for (int i = t; i < nb; i += blockDim.x) dst_row[i] = src_row[i];
+    if (t < Q) {
+      const int64_t pos = (int64_t)ncomp + t;
+      const int64_t bsz = bs;
+      const int32_t bn = src_row[pos / bsz];
+      a.slot[(int64_t)g * a.slot_stride + qs + t] = (int64_t)bn * bs + pos % bsz;
+    }
+  }
+  __syncthreads();  // the gathered rows are read back below
+  // GDN builders (FULL-graph branch): spec rows only, no padding
+  const int32_t nacc = a.num_accepted[rs];
+  for (int k = 0; k < a.N_GDN; ++k) {
+    const int32_t gm = a.gdn_group_idx[k];
+    const int32_t* dst = reinterpret_cast<const int32_t*>(a.dst_bt_ptrs[gm]);
+    const int64_t stride = a.bt_strides[gm];
+    int32_t* sp = reinterpret_cast<int32_t*>(a.gdn_state_ptrs[k]);
+    const int64_t ss = a.gdn_state_strides[k];
+    if (t < a.NS) sp[(int64_t)r * ss + t] = dst[(int64_t)r * stride + t];
+    if (t == 0) {
+      reinterpret_cast<int8_t*>(a.gdn_mask_ptrs[k])[r] = 1;
+      reinterpret_cast<int32_t*>(a.gdn_qsl_ptrs[k])[r] = (int32_t)qs;
+      reinterpret_cast<int32_t*>(a.gdn_nacc_ptrs[k])[r] = nacc;
+    }
+    if (t < Q) reinterpret_cast<int32_t*>(a.gdn_tok_ptrs[k])[qs + t] = (int32_t)(qs + t);
+  }
+  // attention group: sparse MLA req ids + indexer decode buffers
+  const int32_t* dsta = reinterpret_cast<const int32_t*>(a.dst_bt_ptrs[a.ATTN_G]);
+  const int64_t wa = a.bt_strides[a.ATTN_G];
+  const int32_t* row = dsta + (int64_t)r * wa;
+  if (t < Q) {
+    // get_compressed_slot_mapping over indexer_block_table = bt[:, ::F] // F
+    const int32_t pos32 = seq_len - Q + t;
+    const bool valid = ((pos32 + 1) % a.RATIO) == 0;
+    int64_t cslot = a.PAD_ID;
+    if (valid) {
+      const int32_t pc = pos32 / a.RATIO;
+      const int32_t bid = pc / a.SBS;
+      const int32_t bn = row[(int64_t)bid * a.FACTOR] / a.FACTOR;
+      cslot = (int64_t)bn * a.SBS + pc % a.SBS;
+    }
+    a.comp_slot[qs + t] = cslot;
+  }
+  // expanded_block_table_buffer[t] = the gathered row, full width, Q times;
+  // indexer_decode_block_table_buffer[t, c] = row[c*F] // F
+  for (int j = 0; j < Q; ++j) {
+    int32_t* erow = a.exp_bt + (qs + j) * a.exp_bt_stride;
+    int32_t* irow = a.idx_bt + (qs + j) * a.idx_bt_stride;
+    for (int64_t c = t; c < wa; c += blockDim.x) erow[c] = row[c];
+    for (int64_t c = t; c < a.idx_bt_cols; c += blockDim.x) irow[c] = row[c * a.FACTOR] / a.FACTOR;
+  }
+}
+
+// ptrs: 33 device pointers in the Python order (see PrepPlan._cuda_args);
+// ints: num_reqs, num_tokens, max_num_reqs, max_num_tokens, draft_stride,
+// num_blocks_stride, slot_stride, req_id_cap, exp_bt_stride, dec_seq_cap,
+// idx_bt_stride, idx_bt_cols, comp_slot_cap, Q, NUM_SPEC, NS, G, N_GDN,
+// ATTN_G, FACTOR, RATIO, SBS, PAD_ID
+void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
+  TORCH_CHECK(ptrs.size() == 33 && ints.size() == 23, "mk_run_prep: 33 ptrs + 23 ints");
+  MKPrepArgs a;
+  int p = 0;
+  auto P = [&](auto** dst) { *dst = reinterpret_cast<std::remove_reference_t<decltype(*dst)>>(ptrs[p++]); };
+  P(&a.idx_mapping); P(&a.num_computed); P(&a.prefill_len); P(&a.last_sampled); P(&a.draft_tokens);
+  P(&a.num_accepted); P(&a.input_ids); P(&a.positions); P(&a.qsl); P(&a.seq_lens); P(&a.is_padding);
+  P(&a.expanded_idx); P(&a.expanded_pos); P(&a.src_bt_ptrs); P(&a.dst_bt_ptrs); P(&a.bt_strides);
+  P(&a.block_sizes); P(&a.num_blocks); P(&a.slot); P(&a.gdn_group_idx); P(&a.gdn_state_ptrs);
+  P(&a.gdn_state_strides); P(&a.gdn_mask_ptrs); P(&a.gdn_tok_ptrs); P(&a.gdn_qsl_ptrs);
+  P(&a.gdn_nacc_ptrs); P(&a.req_id); P(&a.exp_bt); P(&a.dec_seq_lens); P(&a.dec_lens);
+  P(&a.per_req_dec_lens); P(&a.idx_bt); P(&a.comp_slot);
+  int q = 0;
+  a.num_reqs = (int)ints[q++]; a.num_tokens = (int)ints[q++]; a.max_num_reqs = (int)ints[q++];
+  a.max_num_tokens = (int)ints[q++]; a.draft_stride = ints[q++]; a.num_blocks_stride = ints[q++];
+  a.slot_stride = ints[q++]; a.req_id_cap = ints[q++]; a.exp_bt_stride = ints[q++];
+  a.dec_seq_cap = ints[q++]; a.idx_bt_stride = ints[q++]; a.idx_bt_cols = ints[q++];
+  a.comp_slot_cap = ints[q++]; a.Q = (int)ints[q++]; a.NUM_SPEC = (int)ints[q++]; a.NS = (int)ints[q++];
+  a.G = (int)ints[q++]; a.N_GDN = (int)ints[q++]; a.ATTN_G = (int)ints[q++]; a.FACTOR = (int)ints[q++];
+  a.RATIO = (int)ints[q++]; a.SBS = (int)ints[q++]; a.PAD_ID = ints[q++];
+  TORCH_CHECK(a.Q > 0 && a.Q <= 32 && a.NS <= MK_PREP_THREADS && a.N_GDN <= MK_PREP_THREADS,
+              "mk_run_prep: Q/NS/N_GDN out of range");
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  mk_prep_kernel<<<a.num_reqs + 1 + a.G, MK_PREP_THREADS, 0, stream>>>(a);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
@@ -4304,6 +4488,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("restore_probe_state", &mk_restore_probe_state, "restore raw GEMM probe knobs");
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC");
+  m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_kda", &mk_run_kda, "MK_SEG_KDA");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_smlp", &mk_run_smlp, "MK_SEG_SMLP (gate_up -> SwiGLU -> down, one launch)");
