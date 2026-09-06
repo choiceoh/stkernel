@@ -101,7 +101,6 @@ from .glm53_prefill_fastpath import (
     prepare_glm53_prefill_fastpath,
     warm_glm53_prefill_metadata_runtime,
 )
-from .glm53_union_prefill import install_glm53_union_prefill
 from .kda import Glm5NextLinearAttention
 from .multimodal import (
     Glm5NextMultiModalProcessor,
@@ -111,7 +110,6 @@ from .multimodal import (
 
 # Install after .attention is fully imported and before any GLM layer is built.
 install_glm53_prefill_fastpath()
-install_glm53_union_prefill()
 
 logger = init_logger(__name__)
 

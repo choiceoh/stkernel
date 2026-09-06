@@ -6,7 +6,7 @@ GLM-5.3 모델 배선 — 모델·어텐션·KDA·MLA 파일 접수, 밀집 GEMM
 
 | 옛 모듈 | 파일 | 무엇 |
 |---|---|---|
-| `glm53_model_wiring` | `glm53_prefill_fastpath.py`, `glm53_union_prefill.py`, `glm5next_model.py` | 모델 파일(`model.py`) 접수 + 프리필 fastpath/union 프리필 |
+| `glm53_model_wiring` | `glm53_prefill_fastpath.py`, `glm5next_model.py` | 모델 파일(`model.py`) 접수 + 프리필 fastpath (union 프리필은 34차 §8 일몰) |
 | `glm53_indexer_gate_splitk` | `glm53_indexer_gate.py`, `glm5next_attention.py` | 어텐션 파일 접수 + 인덱서 head-gate split-K (`INDEXER_GATE_SPLITK`, EXP-9) |
 | `glm53_mk_kda_wiring` | `glm5next_kda.py` | KDA 블록 파일 접수 — MK-KDA 인수 훅 (`MK_KDA`) |
 | `glm53_mk_mla_wiring` | `flashinfer_mla_sparse_sm90.py` | sparse MLA 백엔드 접수 — MK-MLA 라우팅 (`MK_MLA`) |

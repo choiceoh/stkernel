@@ -1,3 +1,0 @@
-# source	container_target(relative)	base_preimage_sha256
-rejection_sampler.py	vllm/v1/sample/rejection_sampler.py	4bb87d7984d967be9c7e5b6a6b489c02571ef2f2913211cb3f1eea74b2e1f32f
-gpu_model_runner.py	vllm/v1/worker/gpu_model_runner.py	5be64e11d25f9802a1970089e9203ae4b18977b340471a6d0761f0274b54c4b6

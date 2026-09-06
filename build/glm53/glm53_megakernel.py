@@ -78,16 +78,15 @@ ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_KDA = MASTER and _flag("VLLM_GLM53_MK_KDA")
 KDA_SHADOW = MASTER and _flag("VLLM_GLM53_MK_KDA_SHADOW")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
-# MK_SEG_SMLP: the dense MLP (gate_up -> clamped SwiGLU -> down) as one
-# launch, T <= 32 -- the shared expert of every MoE layer and the three
-# dense layers. Served-numerics unchanged by construction (same packs, same
-# rounding points); the bracket is the gate (32차).
-ENABLE_SMLP = MASTER and _flag("VLLM_GLM53_MK_SMLP")
-# MK_SEG_SMLP2: the same MLP as two PDL-chained v2 (non-persistent) launches --
-# gate_up with the pair-activation epilogue, down on the published fp8 groups
-# -- no grid barrier, so it shares SMs with the routed MoE kernel the way the
-# standalone v2 lane does (30차 §2/§6). Wins the hook over MK_SMLP when both
-# are armed.
+# MK_SEG_SMLP2: the dense MLP (gate_up -> clamped SwiGLU -> down), T <= 32
+# -- the shared expert of every MoE layer and the three dense layers -- as
+# two PDL-chained v2 (non-persistent) launches: gate_up with the pair-
+# activation epilogue, down on the published fp8 groups -- no grid barrier,
+# so it shares SMs with the routed MoE kernel the way the standalone v2 lane
+# does (30차 §2/§6). Served-numerics unchanged by construction (same packs,
+# same rounding points); the bracket is the gate (32차). (The one-launch
+# persistent variant, MK_SMLP, was sunset in 34차 §8: never promoted, and
+# the barrier held 48 SMs under the routed MoE kernel.)
 ENABLE_SMLP2 = MASTER and _flag("VLLM_GLM53_MK_SMLP2")
 # The vocab head on the v2 lane (30차 §13): W4 packs of lm_head, one knob per
 # endpoint because the two ends of speculative decoding carry different risk
@@ -168,7 +167,7 @@ def _mk_mhc_eligible(num_tokens: int, hc_mult: int, hidden: int) -> bool:
 # ---------------------------------------------------------------------------
 _EXT = None
 _WS = None
-_ARMED = {"mhc": False, "mhc_pre": False, "gemm": False, "kda": False, "mla": False, "smlp": False,
+_ARMED = {"mhc": False, "mhc_pre": False, "gemm": False, "kda": False, "mla": False,
           "smlp2": False}
 
 
@@ -313,7 +312,6 @@ def _ensure_workspace(device):
         # kernels run 48, and the ticket barrier only releases correctly
         # when the counter is aligned to THIS launch's grid.
         "barrier_mla": z(8, dt=torch.int32),
-        "barrier_smlp": z(8, dt=torch.int32),
         "yp": z(NCHUNK * MAX_TOK * NOUT),
         "rp": z(NCHUNK * MAX_TOK),
         # [NCHUNK][MAX_TOK]: p3 stores one sumsq per (chunk, token) and
@@ -1149,9 +1147,9 @@ def _ar_note(*tensors) -> None:
 def _gemm_call(x, mk_pack, n_rows, bg=False):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4. `bg`: the
     caller marks the launch background -- the shared expert's pair, which
-    serving forks onto the aux stream beside the routed MoE -- and the lane
-    may then take its barrier-free kernel on as few blocks as it has units
-    (VLLM_GLM53_MK_LOCALQ=1; README, 29차)."""
+    serving forks onto the aux stream beside the routed MoE -- which the
+    v2 lane's LoRC slot keys on (the barrier-free local-quant kernel that
+    once keyed on it was sunset in 34차 §8)."""
     import torch
 
     out = torch.empty(x.shape[0], n_rows, dtype=torch.bfloat16,
@@ -1191,12 +1189,12 @@ def gemm_w4a8(x, mk_pack, n_rows, bg=False):
             import torch
             if torch.cuda.is_current_stream_capturing():
                 _GEMM_CAPTURED["said"] = True
-                # the extension's plan (grid, ksr, units, localq, lgrid, bar),
-                # not the env string; v2 has no plan query, so its knob is read
+                # the extension's plan (grid, ksr, units), not the env
+                # string; v2 has no plan query, so its knob is read
                 plan = _EXT.gemm_plan(int(x.shape[0]), int(n_rows), int(x.shape[1]), 0)
                 logger.warning("[megakernel] gemm lane CAPTURED into the decode graph: "
-                               "M=%d plan grid=%d ksr=%d localq=%d gemm2=%d",
-                               int(x.shape[0]), int(plan[0]), int(plan[1]), int(plan[3]),
+                               "M=%d plan grid=%d ksr=%d units=%d gemm2=%d",
+                               int(x.shape[0]), int(plan[0]), int(plan[1]), int(plan[2]),
                                1 if _flag("VLLM_GLM53_MK_GEMM2") else 0)
         except Exception:
             _GEMM_CAPTURED["said"] = True
@@ -1371,7 +1369,7 @@ def head_logits(x, lm_head, endpoint: str):
                 return None
         plan = list(_EXT.gemm2_plan(int(x.shape[0]), n, int(x.shape[1])))
         logger.warning("[megakernel] head lane serving: %s endpoint, first eligible "
-                       "call m=%d n=%d k=%d plan(on/ksr/units/bps/tail)=%s, exact "
+                       "call m=%d n=%d k=%d plan(on/ksr/units/bps)=%s, exact "
                        "gate worst rel=%.1e %s", endpoint, int(x.shape[0]), n,
                        int(x.shape[1]), plan, worst,
                        "SKIPPED (capturing)" if capturing else "PASS")
@@ -1379,33 +1377,9 @@ def head_logits(x, lm_head, endpoint: str):
 
 
 # ---------------------------------------------------------------------------
-# MK_SEG_SMLP
+# MK_SEG_SMLP2
 # ---------------------------------------------------------------------------
-SMLP_GU_MAX = 8192
-
-
-def _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
-               beta=0.0):
-    """One launch: x [T, k] bf16 -> out [T, n_out] bf16 through the gate_up
-    pack, the clamped SwiGLU and the down pack (packs from
-    build_mk_weight_w4: (wq4, ws4, gscale))."""
-    import torch
-
-    out = torch.empty(x.shape[0], n_out, dtype=torch.bfloat16, device=x.device)
-    ws = _ensure_workspace(x.device)
-    _ar_note(gu_pack[0], gu_pack[1])
-    _EXT.run_smlp(
-        [x.data_ptr(), gu_pack[0].data_ptr(), gu_pack[1].data_ptr(),
-         d_pack[0].data_ptr(), d_pack[1].data_ptr(), out.data_ptr(),
-         ws["barrier_smlp"].data_ptr(), _rgs_ptr(gu_pack), _rgs_ptr(d_pack)],
-        [float(gu_pack[2]), float(d_pack[2]), float(limit), float(alpha),
-         float(beta)],
-        [int(x.shape[0]), int(x.shape[1]), int(n_gu), int(n_int), int(n_out),
-         int(gu_pack[0].shape[0]), int(gu_pack[0].shape[1]),
-         int(d_pack[0].shape[0]), int(d_pack[0].shape[1])],
-    )
-    return out
-
+SMLP_GU_MAX = 8192  # gate_up scratch width: the dense MLP's 2 x 3072 is the widest per rank
 
 _SMLP2_GU = None
 
@@ -1414,8 +1388,8 @@ def _smlp2_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
                 beta=0.0):
     """Two PDL-chained v2 launches: gate_up into a static bf16 scratch
     (its pair epilogue emits the fp8 A groups), then down on those groups
-    (a_ready). Same packs, same activation, same rounding points as
-    _smlp_call; no grid barrier and no 48-block residency."""
+    (a_ready). Same packs, same activation, same rounding points as the
+    stock three-launch chain; no grid barrier and no 48-block residency."""
     import torch
 
     global _SMLP2_GU
@@ -1488,7 +1462,7 @@ def smlp_forward(mlp, x):
     import torch
 
     global _SMLP_FUSED_CALLS
-    if not (_ARMED["smlp"] or _ARMED["smlp2"]):
+    if not _ARMED["smlp2"]:
         return None
     if x.dim() != 2 or x.dtype != torch.bfloat16:
         return _smlp_stock("x is %s %s, not a 2-D bf16 row batch"
@@ -1523,22 +1497,17 @@ def smlp_forward(mlp, x):
     except Exception:
         pass
     if _SMLP_FUSED_CALLS == 1:
-        logger.warning("[megakernel] smlp lane serving: first fused call (%s) "
+        logger.warning("[megakernel] smlp lane serving: first fused call (smlp2) "
                        "T=%d k=%d n_int=%d n_out=%d limit=%.1f capturing=%s",
-                       "smlp2" if _ARMED["smlp2"] else "smlp",
                        T, k, n_int, n_out, limit, capturing)
     # the served decode is a graph replay: the capture-time call is the
     # proof that replays run the fused block (29차 KDA lesson)
     if capturing and "captured" not in _SMLP_SAID:
         _SMLP_SAID.add("captured")
-        logger.warning("[megakernel] smlp lane CAPTURED into the decode graph (%s): "
-                       "T=%d n_int=%d", "smlp2" if _ARMED["smlp2"] else "smlp",
-                       T, n_int)
-    if _ARMED["smlp2"]:
-        return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
-                           limit, alpha, beta)
-    return _smlp_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
-                      limit, alpha, beta)
+        logger.warning("[megakernel] smlp lane CAPTURED into the decode graph (smlp2): "
+                       "T=%d n_int=%d", T, n_int)
+    return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
+                       limit, alpha, beta)
 
 
 def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
@@ -1560,9 +1529,9 @@ def _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit, alpha=1.0,
 
 
 def _selftest_smlp2() -> bool:
-    """MK_SEG_SMLP2's gate: the exact fixture of _selftest_smlp (e2m1-grid
-    packs at the shared expert's and the dense MLP's geometry) through the
-    two-launch v2 chain, with replay stability."""
+    """MK_SEG_SMLP2's gate: an exact fixture (e2m1-grid packs at the shared
+    expert's and the dense MLP's geometry) through the two-launch v2 chain,
+    with replay stability."""
     import torch
 
     torch.manual_seed(0)
@@ -1599,71 +1568,6 @@ def _selftest_smlp2() -> bool:
             logger.warning("[megakernel] selftest smlp2 replay drift -> DISARM")
             return False
     logger.warning("[megakernel] selftest smlp2 exact=%.2e -> ARM", worst)
-    return True
-
-
-def _selftest_smlp() -> bool:
-    """Exact gate on e2m1-grid weights (both packs) at the shared expert's
-    and the dense MLP's geometry, then a by-design check on random weights
-    against the three-launch chain the fused launch replaces."""
-    import torch
-
-    torch.manual_seed(0)
-    dev = "cuda"
-    grid = torch.tensor(_E2M1_GRID, device=dev)
-
-    def exact_weight(n, k):
-        code = torch.randint(0, 8, (n, k // 16, 16), device=dev)
-        sexp = torch.randint(-12, -2, (n, k // 16, 1), device=dev)
-        w = (grid[code] * torch.exp2(sexp.float())) * torch.where(
-            torch.randn_like(code.float()) < 0, -1.0, 1.0)
-        return w.view(n, k).to(torch.bfloat16)
-
-    limit = 10.0
-    for T, n_int, k, n_out in ((8, 512, HIDDEN, HIDDEN), (16, 3072, HIDDEN, HIDDEN),
-                               (32, 512, HIDDEN, HIDDEN)):
-        n_gu = 2 * n_int
-        w_gu = exact_weight(n_gu, k)
-        w_d = exact_weight(n_out, n_int)
-        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
-        gu_pack = build_mk_weight_w4(w_gu)
-        d_pack = build_mk_weight_w4(w_d)
-        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
-        ref = _smlp_ref(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
-        torch.cuda.synchronize()
-        ok, e_exact, n_ulp = _smlp_gate(got, ref)
-        if not ok:
-            logger.warning("[megakernel] selftest smlp grid rel=%.2e over-ulp=%d "
-                           "(T=%d n_int=%d) -> DISARM", e_exact, n_ulp, T, n_int)
-            return False
-        # replay stability over the shared workspace
-        again = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
-        torch.cuda.synchronize()
-        if _rel_err(got, again) > 1e-6:
-            logger.warning("[megakernel] selftest smlp replay drift -> DISARM")
-            return False
-    # by-design: random weights, the fused launch vs the three-launch chain
-    # (two W4 GEMM launches + the clamped SwiGLU in torch)
-    worst = 0.0
-    for T, n_int in ((8, 512), (8, 3072)):
-        n_gu, k, n_out = 2 * n_int, HIDDEN, HIDDEN
-        w_gu = torch.randn(n_gu, k, dtype=torch.bfloat16, device=dev) * 0.05
-        w_d = torch.randn(n_out, n_int, dtype=torch.bfloat16, device=dev) * 0.05
-        x = torch.randn(T, k, dtype=torch.bfloat16, device=dev)
-        gu_pack = build_mk_weight_w4(w_gu)
-        d_pack = build_mk_weight_w4(w_d)
-        gu = _gemm_call(x, gu_pack, n_gu)
-        g = gu[:, :n_int].float().clamp(max=limit)
-        u = gu[:, n_int:].float().clamp(min=-limit, max=limit)
-        a = (g * torch.sigmoid(g) * u).to(torch.bfloat16)
-        ref = _gemm_call(a, d_pack, n_out)
-        got = _smlp_call(x, gu_pack, d_pack, n_gu, n_int, n_out, limit)
-        torch.cuda.synchronize()
-        worst = max(worst, _rel_err(got.float(), ref.float()))
-    if worst > 1e-2:
-        logger.warning("[megakernel] selftest smlp vs three-launch chain rel=%.2e -> DISARM", worst)
-        return False
-    logger.warning("[megakernel] selftest smlp grid + chain rel=%.2e -> ARM", worst)
     return True
 
 
@@ -2505,29 +2409,24 @@ def _gemm_probe_scope():
         _EXT.restore_probe_state(state)
 
 
-def run_both_kernels(x, pack, n, ksr=0):
-    """The lane's output on the global kernel (knob 0) and on the local one
-    (knob 2, the model's split, its own launched grid), with the plan each
-    ran under -- {0: out, 2: out}, {0: plan, 2: plan}. Explicitly select v1:
-    set_probe only controls v1's plan, so leaving GEMM2 on would execute v2
-    twice while reporting hypothetical global/local plans. All overrides
-    are restored even on failure. ksr=3 exercises odd-start LOCALQ slices."""
-    got, plans = {}, {}
+def run_v1_kernel(x, pack, n, ksr=0):
+    """The lane's output on the v1 (persistent) kernel with the plan it ran
+    under -- (out, plan). Explicitly select v1: set_probe only controls
+    v1's split, so leaving GEMM2 on would execute v2 while reporting a
+    hypothetical v1 plan. All overrides are restored even on failure.
+    ksr=3 exercises odd-start slices."""
     with _gemm_probe_scope():
-        _EXT.set_gemm2(0, -1, -1)
-        for lq in (0, 2):
-            _EXT.set_probe(ksr, lq, 0, 0)
-            if _EXT.gemm2_plan(x.shape[0], n, x.shape[1])[0] != 0:
-                raise RuntimeError("exact gate failed to select GEMM v1")
-            plans[lq] = _EXT.gemm_plan(x.shape[0], n, x.shape[1], 0)
-            if bool(plans[lq][3]) != bool(lq):
-                raise RuntimeError(f"exact gate selected wrong v1 kernel: {plans[lq]}")
-            got[lq] = _gemm_call(x, pack, n)
-    return got, plans
+        _EXT.set_gemm2(0, -1)
+        _EXT.set_probe(ksr)
+        if _EXT.gemm2_plan(x.shape[0], n, x.shape[1])[0] != 0:
+            raise RuntimeError("exact gate failed to select GEMM v1")
+        plan = _EXT.gemm_plan(x.shape[0], n, x.shape[1], 0)
+        got = _gemm_call(x, pack, n)
+    return got, plan
 
 
 def _selftest_gemm_exact() -> float:
-    """All three kernels, each v2 row class, and an odd-start v1 split.
+    """Both kernels, each v2 row class, and an odd-start v1 split.
 
     Return the worst finite error; raise on failure so the normal arm gate
     disarms GEMM. Reuse each weight pack across row classes to keep boot
@@ -2542,29 +2441,27 @@ def _selftest_gemm_exact() -> float:
         x_all, pack, _w, ref_all = exact_fixture(shape=shape)
         for m in rows:
             x, ref = x_all[:m], ref_all[:m]
-            got, plans = run_both_kernels(x, pack, n, ksr=ksr)
+            got = {}
+            got[0], plan1 = run_v1_kernel(x, pack, n, ksr=ksr)
             with _gemm_probe_scope():
-                _EXT.set_gemm2(1, -1, -1)
+                _EXT.set_gemm2(1, -1)
                 plan2 = _EXT.gemm2_plan(m, n, k)
                 if plan2[0] != 1:
                     raise RuntimeError("exact gate failed to select GEMM v2")
                 got[1] = _gemm_call(x, pack, n)
                 again = _gemm_call(x, pack, n)
             torch.cuda.synchronize()
-            for lane, name in ((0, "v1 global"), (2, "v1 local"), (1, "v2")):
+            for lane, name in ((0, "v1"), (1, "v2")):
                 e, n_ulp = _exact_gate(got[lane], ref)
                 if not e <= 1e-3 or n_ulp > 0:
                     raise RuntimeError(
                         f"GEMM exact {name} m={m} n={n} k={k}: "
                         f"rel={e:.2e} over-ulp={n_ulp}")
                 worst = max(worst, e)
-            if not torch.equal(got[0], got[2]):
-                raise RuntimeError(f"GEMM v1 global/local differ: m={m} n={n} ksr={ksr}")
             if not _rel_err(got[1], again) <= 1e-6:
                 raise RuntimeError(f"GEMM v2 replay drift: m={m} n={n}")
-            logger.warning("[megakernel] exact gemm m=%d n=%d: v1 global/local "
-                           "ksr=%d/%d bitwise same; v2 plan=%s PASS",
-                           m, n, plans[0][1], plans[2][1], list(plan2))
+            logger.warning("[megakernel] exact gemm m=%d n=%d: v1 ksr=%d; "
+                           "v2 plan=%s PASS", m, n, plan1[1], list(plan2))
     return worst
 
 
@@ -2603,10 +2500,9 @@ def _selftest_gemm() -> bool:
     # the served plan of the shared expert's gate_up under THIS process's
     # knobs (the extension's reading of the env, not the raw string)
     plan = _EXT.gemm_plan(8, 1024, HIDDEN, 1)
-    logger.warning("[megakernel] selftest gemm exact=%.2e (v1 global/local, "
-                   "v2 m=8/16/32) -> ARM; bg [1024x4096] plan: ksr=%d "
-                   "units=%d localq=%d lgrid=%d", e_exact, plan[1], plan[2],
-                   plan[3], plan[4])
+    logger.warning("[megakernel] selftest gemm exact=%.2e (v1, v2 m=8/16/32) "
+                   "-> ARM; bg [1024x4096] plan: grid=%d ksr=%d units=%d",
+                   e_exact, plan[0], plan[1], plan[2])
     # which lane the boot serves, in the fingerprint: v2 is the non-
     # persistent kernel (VLLM_GLM53_MK_GEMM2), plan = (on, ksr, units,
     # blocks/SM) for the in_proj shape. A boot log without this line is
@@ -3035,8 +2931,6 @@ def arm() -> None:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
-    if ENABLE_SMLP:
-        _ARMED["smlp"] = _gate("smlp", _selftest_smlp)
     if ENABLE_SMLP2:
         _ARMED["smlp2"] = _gate("smlp2", _selftest_smlp2)
     if ENABLE_KDA:

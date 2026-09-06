@@ -2,7 +2,7 @@
 """Execute extracted CUDA control flow as C++ without CUDA or torch.
 
 The operand labels and synchronization counters below replace device operations,
-but the ring, window movement, and publication branches come from the shipped
+but the window movement and publication branches come from the shipped
 .cu file. These tests catch indexing and missing-barrier regressions; GPU
 racecheck and stock-op numerical comparisons remain necessary before deployment.
 """
@@ -37,15 +37,6 @@ def _statement(source: str, marker: str) -> str:
 
 
 def harness_source(source: str) -> str:
-    initial = "\n".join(_statement(source, s) for s in (
-        "stage_a_load(kb0, 0)",
-        "if (local_q && kb0 + 1 < kbn) stage_a_load",
-        "if (local_q) lq_quant(0)",
-    ))
-    advance = "\n".join(_statement(source, s) for s in (
-        "if (kb + 2 < kbn) stage_a_load",
-        "if (kb + 1 < kbn) lq_quant",
-    ))
     publication = source[source.index("if (pend >= 0)"):
                          source.index("      xv = nxv;")]
     window = _block(source[source.index("// Write the WHOLE window"):],
@@ -67,35 +58,9 @@ void require(bool ok, const char* what) {
 }
 #define TORCH_CHECK(ok, ...) require((ok), "probe-state validation")
 constexpr int KBLK_MAX = 32, MK_GRID_CAP = 96;
-int g_probe_ksr, g_probe_localq, g_probe_lq_grid, g_probe_bg_grid;
-int g_probe_gemm2, g_probe_ksr2, g_probe_ktail;
+int g_probe_ksr, g_probe_gemm2, g_probe_ksr2;
 ''' + probe + "\n" + restore + r'''
 
-void ring_test() {
-  // All split starts, including odd starts and one-block/empty slices.
-  // m does not change buffer selection; label kb identifies its A operand.
-  const bool local_q = true;
-  for (int kblk = 1; kblk <= 32; ++kblk) {
-    for (int ksr = 1; ksr <= 32; ++ksr) {
-      for (int sp = 0; sp < ksr; ++sp) {
-        const int kb0 = kblk * sp / ksr, kbn = kblk * (sp + 1) / ksr;
-        if (kb0 == kbn) continue;
-        int ring[2] = {-1, -1}, expected = kb0, quantized = 0;
-        auto stage_a_load = [&](int kb, int slot) { ring[slot] = kb; };
-        auto lq_quant = [&](int slot) {
-          require(ring[slot] == expected, "LOCALQ consumed the wrong A k-block");
-          ++quantized;
-        };
-''' + initial + r'''
-        for (int kb = kb0; kb < kbn; ++kb) {
-          expected = kb + 1;
-''' + advance + r'''
-        }
-        require(quantized == kbn - kb0, "LOCALQ skipped or repeated quantization");
-      }
-    }
-  }
-}
 
 struct { int x = 0; } threadIdx;
 int syncs = 0, fences = 0;
@@ -163,10 +128,10 @@ void window_test() {
 void probe_state_test() {
   const int64_t imax = std::numeric_limits<int>::max();
   const int64_t imin = std::numeric_limits<int>::min();
+  // (ksr, gemm2, ksr2) since 34차 §8: the local-quant, bg-control and tail
+  // knobs are gone with their lanes
   const std::vector<std::vector<int64_t>> snapshots = {
-    {-1,-1,0,0,-1,-1,-1}, {3,2,24,16,0,5,2},
-    {32,2,96,96,imax,imax,imin}, {0,0,0,0,1,imin,imax},
-    {0,0,0,0,1,-2,-2}
+    {-1,-1,-1}, {3,0,5}, {32,imax,imin}, {0,1,imax}, {0,1,-2}
   };
   for (const auto& snapshot : snapshots) {
     mk_restore_probe_state(snapshot);
@@ -180,11 +145,11 @@ void probe_state_test() {
     require(mk_probe_state() == before, "invalid snapshot partially changed probe state");
   };
   reject({});
-  reject({0,0,0,0,0,0});
-  reject({0,0,0,0,0,0,0,0});
-  const int64_t low[] = {-2,-2,-1,-1,-2,imin-1,imin-1};
-  const int64_t high[] = {33,3,97,97,imax+1,imax+1,imax+1};
-  for (int i = 0; i < 7; ++i) {
+  reject({0,0});
+  reject({0,0,0,0});
+  const int64_t low[] = {-2,-2,imin-1};
+  const int64_t high[] = {33,imax+1,imax+1};
+  for (int i = 0; i < 3; ++i) {
     auto bad = before; bad[i] = low[i]; reject(bad);
     bad[i] = high[i]; reject(bad);
   }
@@ -194,8 +159,7 @@ int main(int argc, char** argv) {
   try {
     require(argc == 2, "select a regression case");
     const std::string test = argv[1];
-    if (test == "ring") ring_test();
-    else if (test == "mhc") mhc_test();
+    if (test == "mhc") mhc_test();
     else if (test == "window") window_test();
     else if (test == "probe") probe_state_test();
     else throw std::runtime_error("unknown regression case");
@@ -227,9 +191,6 @@ class MegakernelCudaRegressions(unittest.TestCase):
     def _run(self, case):
         result = subprocess.run([str(self.exe), case], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_localq_split_starts(self):
-        self._run("ring")
 
     def test_mhc_shared_tile_reuse(self):
         self._run("mhc")
