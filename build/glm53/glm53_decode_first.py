@@ -12,8 +12,16 @@ a 128K prompt is admitted only after the long one's whole prefill (~45 s).
 This AsyncScheduler subclass evaluates three policies per step from the
 running and waiting queues (stock scheduling otherwise):
 
-  mixed  >= MIN_DECODERS decoders and prefill work pending. Two shapes:
-         MODE=alternate (v3, default): the steps never mix. DECODE_STEPS pure
+  mixed  >= MIN_DECODERS decoders and prefill work pending. Three shapes:
+         MODE=sequential (v3.2): while decoders run, pending prefill work
+         simply waits (pure decode steps at full speed) until the decoders
+         finish or the oldest pending prefill has waited MAX_WAIT_S; after
+         that the alternate cadence below takes over so nobody starves. On
+         this stack every interleaving costs both sides (a 32K prompt next
+         to a 600-token answer: stock 21 s / 13 s, alternate 32 s / 27 s,
+         sequential 8.6 s / 19.6 s for the running answer / the new prompt's
+         first token), so waiting is the better deal (operator, 39차).
+         MODE=alternate (v3): the steps never mix. DECODE_STEPS pure
          decode steps (graph-captured, megakernel, prep-fused, full draft
          acceptance) are followed by ONE pure prefill step in which the
          decoders sit out (the stock per-request decode eligibility gate)
@@ -41,7 +49,10 @@ Pure prefill of a single prompt (no decoders, nothing waiting) is untouched.
 Knobs (env, read once at init; the launcher forwards the profile's
 VLLM_GLM53_* keys):
 
-  VLLM_GLM53_SCHED_MODE           alternate (default) | mixed
+  VLLM_GLM53_SCHED_MODE           sequential | alternate (default) | mixed
+  VLLM_GLM53_SCHED_MAX_WAIT_S     sequential: seconds a pending prefill waits
+                                  behind running decoders before the alternate
+                                  cadence starts (20)
   VLLM_GLM53_SCHED_DECODE_STEPS   alternate: pure decode steps per prefill step (6)
   VLLM_GLM53_SCHED_MIXED_CHUNK    prefill tokens per request per prefill step
                                   (1152 = half of the 2304-token block)
@@ -104,11 +115,13 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         mode = os.environ.get("VLLM_GLM53_SCHED_MODE", "alternate").strip().lower() or "alternate"
-        if mode not in ("alternate", "mixed"):
+        if mode not in ("sequential", "alternate", "mixed"):
             logger.warning("[decode-first] VLLM_GLM53_SCHED_MODE=%r unknown; using alternate", mode)
             mode = "alternate"
         self.mode = mode
-        self.alternate = mode == "alternate"
+        self.alternate = mode in ("alternate", "sequential")
+        self.sequential = mode == "sequential"
+        self.max_wait_s = _float_env("VLLM_GLM53_SCHED_MAX_WAIT_S", 20.0, 0.0)
         self.decode_steps = _int_env("VLLM_GLM53_SCHED_DECODE_STEPS", 6, 1)
         self.mixed_chunk = _int_env("VLLM_GLM53_SCHED_MIXED_CHUNK", 1152, 1)
         self.chunk_ref_ctx = _int_env("VLLM_GLM53_SCHED_CHUNK_REF_CTX", 32768, 0)
@@ -120,6 +133,10 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self.floor_grace_s = _float_env("VLLM_GLM53_SCHED_FLOOR_GRACE_S", 2.0, 0.0)
         # request_id -> (admission time, num_computed_tokens at admission)
         self._prefill_starts: dict[str, tuple[float, int]] = {}
+        # sequential: request_id -> when a running prefill chunk was first
+        # seen behind decoders (the wait clock; the floor clock above is
+        # re-based while it waits so no deficit accumulates during the wait)
+        self._pending_since: dict[str, float] = {}
         self._mixed_steps = 0
         self._capped_steps = 0
         self._deferred_steps = 0
@@ -127,11 +144,13 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         self._boost_steps = 0
         self._max_boost = 0
         self._cycle = 0
+        self._waited_steps = 0
         logger.warning(
-            "[decode-first] scheduler armed (v3 %s: decode_steps=%d, chunk=%d (x pos/%d up to %d), "
+            "[decode-first] scheduler armed (v3 %s: max_wait=%.0fs, decode_steps=%d, chunk=%d (x pos/%d up to %d), "
             "prefill_every=%d, min_decoders=%d, fair=%s, prefill_floor=%d tok/s after %.1fs, "
             "max_num_batched_tokens=%d, max_num_seqs=%d, stock threshold=%d)",
             self.mode,
+            self.max_wait_s,
             self.decode_steps,
             self.mixed_chunk,
             self.chunk_ref_ctx,
@@ -190,6 +209,31 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
             return None
         if boost > 0:
             threshold = min(self.max_num_scheduled_tokens, threshold + boost)
+        if self.sequential and mode == "mixed":
+            # the oldest pending prefill: a running chunk's time behind
+            # decoders, or a waiting request's age since arrival (stock
+            # Request.arrival_time)
+            pending = self._pending_since
+            live = set()
+            waited = 0.0
+            for request in prefills:
+                rid = request.request_id
+                live.add(rid)
+                waited = max(waited, now - pending.setdefault(rid, now))
+            if len(pending) != len(live):
+                for rid in [rid for rid in pending if rid not in live]:
+                    del pending[rid]
+            if admissible > 0:
+                for request in self.waiting:
+                    arrival = getattr(request, "arrival_time", None)
+                    if arrival is not None:
+                        waited = max(waited, now - arrival)
+            if waited < self.max_wait_s:
+                for request in prefills:   # the floor clock starts after the wait
+                    starts[request.request_id] = (now, request.num_computed_tokens)
+                return "wait", threshold, 0, decoders
+        elif self._pending_since:
+            self._pending_since.clear()
         return mode, threshold, boost, decoders
 
     def _chunk_for(self, prefills: list) -> int:
@@ -218,6 +262,12 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         if plan is None:
             return super().schedule(throttle_prefills)
         mode, threshold, boost, decoders = plan
+        if mode == "wait":
+            # sequential: decoders keep their full-speed pure steps; the
+            # prefill waits (its floor boost is not applied inside the grace)
+            self._mixed_steps += 1
+            self._waited_steps += 1
+            return self._decode_only_step()
         if mode == "mixed":
             self._mixed_steps += 1
             if self.alternate:
@@ -245,11 +295,12 @@ class Glm53DecodeFirstScheduler(AsyncScheduler):
         managed = self._mixed_steps + self._fair_steps
         if managed % _REPORT_EVERY == 0:
             logger.info(
-                "[decode-first] %s steps mixed=%d (prefill=%d decode-only=%d) fair=%d boosted=%d max_boost=%d",
+                "[decode-first] %s steps mixed=%d (prefill=%d decode-only=%d waited=%d) fair=%d boosted=%d max_boost=%d",
                 self.mode,
                 self._mixed_steps,
                 self._capped_steps,
                 self._deferred_steps,
+                self._waited_steps,
                 self._fair_steps,
                 self._boost_steps,
                 self._max_boost,
