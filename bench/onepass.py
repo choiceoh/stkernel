@@ -174,6 +174,11 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
                 if line.startswith("VLLM_") and "=" in line:
                     k, v = line.split("=", 1)
                     declared[k] = v.strip().strip('"')
+                elif line.startswith("SPEC_K="):
+                    # The launcher exports this profile setting under a
+                    # VLLM alias for the compile-cache key. It is a default,
+                    # not an unknown experimental knob when values match.
+                    declared["VLLM_GLM53_SPEC_K"] = line.split("=", 1)[1].strip().strip('"')
         knobs = {k: v for k, v in served.items() if k in declared and v != declared[k]}
         knobs.update({k: v for k, v in served.items()
                       if k.startswith("VLLM_GLM53_") and k not in declared})
