@@ -2442,16 +2442,39 @@ dsv4 와 공유하는 `tp_oneshot_ar`·`moe_gate_sm121`·`glm53_megakernel` 은 
 미판정), `DECODABLE_VOCAB`·`VOCAB_MASK_AUDIT`(한국어 품질 도구), `glm53_tail_slot_persistent` 행(잠들어 있지만
 prep-fused 가 그 파일의 preimage 를 고정 — 지우면 이미지 원본으로 바뀌어 DISARM).
 
-### 9. 체인24 — EXP-24 브래킷 (srv2 `lever-chain24-fusion.sh`, 배포 = 접기 브랜치; 결과는 아래 표에)
+### 9. 체인24 — EXP-24 브래킷 결과 (2026-09-06 07:43~08:49, 배포 = 접기 브랜치 904dd48 = main 1ed6634)
 
-팔 셋, 팔마다 전체 다리(디코드 3회·프리필·수용률·품질·한국어) + 한국어 2회 추가. 첫 부팅은 오버레이 sha 변경으로
-컴파일 캐시가 비워진 콜드 부팅. 판정은 창 통계(`judge_windows.py`, 32차 §13 형식)와 `judge_lever.py` 의 게이트 줄.
+첫 부팅은 오버레이 sha 변경으로 컴파일 캐시가 비워진 콜드 부팅(12분). PRODT·FUSION3 은 옛 다리(디코드 3회·프리필·수용률·
+품질·한국어 ×3), 그 뒤 운영자 지시("원큐 사다리만, 부팅 테스트가 플릿을 너무 오래 잡는다")로 ARPF1 의 옛 다리를 끊고
+`bench/onepass.py`(35차 한큐 하네스, 팔당 ~6분)로 ARPF1 과 기본값(PRODB)을 쟀다. 08:49 프로덕션을 기본값(PRODB)으로 올린 채
+플릿 반환. 창 통계는 `judge_windows.py`(2 s 창 풀 중앙값).
 
-| 팔 | env | 디코드 창(중앙·q1·q3, n) | rep step/s | 프리필 | 품질 | 한국어 ×3 | 증명 줄 | 판정 |
-|---|---|---|---|---|---|---|---|---|
-| PRODT | 기본값 + `DRAFTER_PREP=time` | (대기) | | | | | `[drafter-prep] stock build host us` | 기준 + 호스트 µs 실측 |
-| FUSION3 | `DRAFTER_PREP=1 INDEXER_DECODE_FUSED=1 INDEXER_GATE_SPLITK=1 DFLASH_EARLY_FC=1 KDA_ONEPASS=1 KDA_DUAL_GEMM=1 KPOOL_UPDATE_DIRECT_POS=1 MK_SMLP2=1 DRAFTER_CTX_KV_W4=1` | (대기) | | | | | `serving: FULL replay`, `tail-select fused`, `-> split-K`, `one-pass KDA serving`, `drafter-ctx-kv] serving`, smlp2 캡처 | |
-| ARPF1 | `AR_PREFETCH=1` | (대기) | | | | | prefetch hints learned | 한국어 3회가 판정 |
+| 팔 | env | 디코드 창 (부팅 3회 중앙 / 풀 n·중앙·q1·q3·평균) | rep step/s · raw acc | 프리필 cold/warm | 품질 | 한국어 | 증명 줄 |
+|---|---|---|---|---|---|---|---|
+| PRODT | 기본값 + `DRAFTER_PREP=time` | 19.4·18.9·18.4 / n=23 **18.93** 18.42 19.43 18.58 | 17.6 18.3 18.1 · 18.4/25.2/20.2% | 2K 2,575/2,615 · 8K 2,714/2,718 | 9/9 | 0/16 ×3 | `[drafter-prep] stock build host us median=48,710`(§ 아래) |
+| **FUSION3** | 9 노브 전부 | 19.7·19.2·18.9 / n=23 **19.44** 18.94 19.94 18.97 (**+2.7% 중앙, +2.1% 평균**) | 18.4 18.7 18.7 (+3.4%) · 17.0/20.9/25.4% | 2K 2,545/2,603 · 8K 2,689/2,685 | 9/9 | 0/16 ×3 | 6종 전부(아래) |
+| ARPF1 (onepass) | `AR_PREFETCH=1` | n=34 **18.9** [14.0, 20.4] (ko 19.2 · 2K 18.2 · 32K 18.4 · 128K 17.5) · 26.7% · 2.869 tok/step | — | 2K 1,115/2,056 · 32K 2,650/2,630 · 128K 2,526/2,602 | 9/9 | 0/25 | prefetch 힌트 |
+| PRODB (onepass) | 기본값 | n=38 **18.9** [15.4, 20.4] (ko 18.9 · 2K 18.4 · 32K 18.2 · 128K 18.4) · 26.1% · 2.828 tok/step | — | 2K 1,119/2,070 · 32K 2,528/2,663 · 128K 2,576/2,585 | 9/9 | 0/25 | — |
+
+**FUSION3 의 증명 줄(4 랭크, 캡처 시점)**: `[drafter-prep] serving: FULL replay -> draft metadata cached for key=(1,1,8,8)`·`(2,2,16,8)`·
+`(4,4,32,8)`, `[indexer-fused] tail-select fused: rows=32`, `[indexer-gate] ... first split-K routing x(16,4096)`(프리필 8192 행은
+스톡 `torch.mm` 유지), `[kda-onepass] self-test PASS -> ARMED` + `one-pass KDA serving: 4 requests x 8 verify tokens`,
+`[drafter-ctx-kv] serving: context K/V projection on the W4 lane (rows=32)`, `[megakernel] armed={... 'smlp2': True}` +
+`smlp lane serving: first fused call (smlp2) T=32`, `[dflash-early-fc] installed`. 드래프터 팩 줄에 문맥 K/V 팩이 `rtn=1` 로 잡힌다.
+
+**판정.**
+1. **FUSION3 = +2.7%(창 중앙, 한 쌍의 부팅)**, 품질·한국어 깨끗. 묶음 상한(프로파일러 값 3.5~4.5%)의 안쪽, 32차 §13 의 v2 승격
+   판정(+2.9%)과 같은 눈금. 규칙(§14 "한국어만 안 깨지면 +0.7% 도 도입")을 넘는다. 단 (a) 부팅 쌍이 하나뿐이고, (b) 수치를
+   바꾸는 두 노브(split-K fp32 합산 순서, 문맥 K/V W4)가 섞여 있으며, (c) 수용률 프로파일이 pos-0 77.7 → 73.0(4 프롬프트, p3 가
+   238자로 짧은 표본; 디코드 레그의 raw acc 평균은 21.3 vs 21.1 로 같음)이다. → **권고**: 비트 동일·수치 불변 7 노브(`DRAFTER_PREP`·
+   `INDEXER_DECODE_FUSED`·`DFLASH_EARLY_FC`·`KDA_ONEPASS`·`KDA_DUAL_GEMM`·`KPOOL_UPDATE_DIRECT_POS`·`MK_SMLP2`)는 원큐 사다리 확인
+   부팅 1회(6분) 뒤 기본값으로, `INDEXER_GATE_SPLITK`·`DRAFTER_CTX_KV_W4` 둘은 원큐 사다리 한 쌍(수용률·한국어)으로 따로 판정.
+2. **ARPF1 = 0**(18.9 vs 18.9, 한국어 0/25) → `AR_PREFETCH` 기본 0 유지, 재론 없음(27차 상한 정정 −0.4~0.6 ms 가 창 해상도 아래).
+3. `DRAFTER_PREP=time` 의 "빌드 48.7 ms" 는 빌드 안 DtoH 동기가 GPU 를 기다린 시간이다 — 호스트가 GPU 보다 ~48 ms 앞서 달린다는
+   뜻(비동기 스케줄링이 산다)이지 호스트 비용이 아니다. 캐시가 없애는 것은 그 뒤 파이썬(프로파일러 300~460 µs)뿐이라 이 노브의
+   단독 이득은 창 해상도 아래이고, 묶음 안에서만 판정된다. `time` 모드는 다음 판에서 동기 뒤부터 재도록 고친다.
+4. 프로세스: 옛 다리 체인은 팔당 35분이라 이번처럼 다른 세션과 플릿을 다투면 안 된다 — **이후 부팅 판정은 원큐 사다리로만**
+   (운영자). 세션 간 조율은 srv2 `FLEET-QUEUE.md` 와 `FLEET-free-for-*.done` 마커.
 
 _이 항목의 측정: 캡처 1회(체인22 PRODSET 부팅 유휴 시, 다른 세션 레그와 겹치지 않음), 분석은 srv4 에서
 `nice -n 19 taskset -c 19`(rank 3 규칙; 부팅 창). GPU 프로브·전체 테스트는 플릿이 조용한 창에서._
