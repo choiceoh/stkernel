@@ -23,7 +23,8 @@ eval "$(
   . "$REPO/profiles/glm53.env"
   printf 'IMAGE=%q\nTARGET_PREFIX=%q\n' "$PROFILE_IMAGE" "$TARGET_PREFIX"
 )"
-docker image inspect "$IMAGE" --format 'image={{.Id}}'
+IMAGE=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+echo "image=$IMAGE"
 mounts=(-v "$REPO:/repo:ro")
 for pair in \
   'glm53_runtime/glm53_prefill_collectives.py:vllm/distributed/device_communicators/glm53_prefill_collectives.py' \
@@ -47,5 +48,5 @@ if [[ $skip_scale == 0 ]]; then
     /repo/probes/glm53_nvfp4_scale_check.py
 fi
 if [[ $with_tp4 == 1 ]]; then
-  bash "$REPO/probes/run_glm53_prefill_tp4_check.sh" fp8-v3
+  PREFILL_PROBE_IMAGE_ID="$IMAGE" bash "$REPO/probes/run_glm53_prefill_tp4_check.sh" fp8-v3
 fi

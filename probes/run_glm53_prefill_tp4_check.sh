@@ -11,10 +11,17 @@ eval "$(
   . "$REPO/profiles/glm53.env"
   printf 'IMAGE=%q\nTARGET_PREFIX=%q\n' "$PROFILE_IMAGE" "$TARGET_PREFIX"
 )"
+IMAGE=$(docker image inspect "${PREFILL_PROBE_IMAGE_ID:-$IMAGE}" --format '{{.Id}}')
 ips=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
+# Resolve the mutable profile tag once and require the identical local image
+# everywhere before starting a GPU process. A missing image fails this probe.
+for rank in 1 2 3; do
+  ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
+    "docker image inspect $IMAGE --format '{{.Id}}'" </dev/null >/dev/null
+done
 run_id="prefill-tp4-$(date +%s)-$$"
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/glm53-prefill-tp4.XXXXXX")
-echo "TP4 probe logs: $log_dir; run=$run_id; transport=$transport"
+echo "TP4 probe logs: $log_dir; run=$run_id; transport=$transport; image=$IMAGE"
 # Names are unique to this invocation; cleanup only touches these containers.
 cleanup() {
   docker stop -t 3 "$run_id-0" >/dev/null 2>&1 || true
