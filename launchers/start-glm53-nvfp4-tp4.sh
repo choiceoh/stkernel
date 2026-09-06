@@ -27,7 +27,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -581,6 +581,20 @@ MM_FLAGS=""
 [ -z "${MM_ENCODER_ATTN:-}" ] || MM_FLAGS="$MM_FLAGS --mm-encoder-attn-backend $MM_ENCODER_ATTN"
 [ "${SKIP_MM_PROFILING:-0}" = 0 ] || MM_FLAGS="$MM_FLAGS --skip-mm-profiling"
 [ -z "$MM_FLAGS" ] || echo "vision: $MM_FLAGS (limit $MM_LIMIT)"
+# Chat template + reasoning parser (39차, the forum's "thinking leaked into
+# content"): the served template always pre-fills '<think>' in the assistant
+# prompt, so chat_template_kwargs thinking=false was ignored (the model
+# reasoned anyway) and, with the start tag in the prompt, the glm45 parser saw
+# no '<think>' in the output and streamed the reasoning as content.
+# CHAT_TEMPLATE=chat_template_mm_v2.jinja honours thinking/enable_thinking
+# (MiaAI-Lab's 5-line fix: '<think></think>' when off); REASONING_PARSER
+# picks the parser (deepseek_r1 treats text before '</think>' as reasoning
+# even when '<think>' came from the prompt). Defaults unchanged until measured.
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-chat_template_mm.jinja}"
+REASONING_PARSER="${REASONING_PARSER:-glm45}"
+[ "${DRY_RUN:-0}" = 1 ] || test -f "$MODEL_HOST_PATH/$CHAT_TEMPLATE" || {
+  echo "ABORT: $CHAT_TEMPLATE missing in $MODEL_HOST_PATH (repo copy: launchers/chat_template_mm_v2.jinja)"; exit 1; }
+[ "$CHAT_TEMPLATE $REASONING_PARSER" = "chat_template_mm.jinja glm45" ] || echo "chat: template $CHAT_TEMPLATE, reasoning parser $REASONING_PARSER"
 # Reclaim stale containers, then page cache, then size GMU -- in that order,
 # and before SERVE_ARGS bakes the number in.
 #
@@ -821,7 +835,7 @@ ${SCHED_CLS_FLAG:+$SCHED_CLS_FLAG }\
 $EAGER_FLAG --enable-flashinfer-autotune \
 --limit-mm-per-prompt '$MM_LIMIT'${MM_FLAGS:+ $MM_FLAGS} \
 --tool-call-parser glm47 --enable-auto-tool-choice \
---reasoning-parser glm45 --chat-template $MODEL_PATH/chat_template_mm.jinja \
+--reasoning-parser $REASONING_PARSER --chat-template $MODEL_PATH/$CHAT_TEMPLATE \
 --distributed-executor-backend mp \
 --disable-custom-all-reduce \
 --nnodes 4 --master-addr $HEAD_IP --master-port $MPORT"
