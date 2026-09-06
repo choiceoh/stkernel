@@ -901,6 +901,7 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
             for layer in self._active_layers
         )
         self._prefill_sp_announced = False
+        self._prefill_sp_declined = False
 
         world_size = get_tensor_model_parallel_world_size()
         assert config.num_attention_heads % world_size == 0, (
@@ -910,9 +911,20 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
+    def _prefill_sp_decline(self, reason: str) -> bool:
+        # 39차: an armed knob whose gate declines every forward reads as
+        # "no effect" in a bracket; say WHY, once, so P1's silence (0 %
+        # at 32K with eight knobs armed) cannot repeat unexplained.
+        if _PREFILL_SP_ENABLED and not self._prefill_sp_declined:
+            logger.warning("[prefill-sp] NOT selected: %s", reason)
+            self._prefill_sp_declined = True
+        return False
+
     def _can_prefill_sequence_parallel(self, hidden_states, positions) -> bool:
         if not self._prefill_sp_config_ok:
-            return False
+            return self._prefill_sp_decline(
+                "config gate (needs mhc, hidden 4096, 4 streams, TP4/PP1/DP1, no EP/EPLB/DCP/PCP, "
+                "no sequence-parallel MoE, all layers on this rank)")
         if (
             torch.compiler.is_compiling()
             or hidden_states.device.type != "cuda"
@@ -923,21 +935,30 @@ class Glm5NextModel(nn.Module, EagleModelMixin):
             or positions.ndim != 1
             or positions.device != hidden_states.device
             or positions.shape[0] != hidden_states.shape[0]
-            or positions.shape[0] < 128
             or torch.cuda.is_current_stream_capturing()
             or not is_forward_context_available()
         ):
-            return False
+            return self._prefill_sp_decline(
+                f"tensor/context gate (compiling={torch.compiler.is_compiling()} "
+                f"capturing={torch.cuda.is_current_stream_capturing()} T={positions.shape[0]})")
+        if positions.shape[0] < 128:
+            return False   # decode-sized forward: silently stock, not a decline worth a line
         if not _prefill_sp_metadata_ok(
             get_forward_context().attn_metadata,
             self._prefill_sp_metadata_layers,
             positions.shape[0],
         ):
-            return False
+            return self._prefill_sp_decline(
+                f"metadata gate (T={positions.shape[0]}: not a pure-prefill batch on every layer, "
+                "or metadata names/kinds unknown)")
         # Quant kernels and wrappers are installed after construction, so
         # their reduction contract is checked on the actual serving objects.
-        if not all(_prefill_sp_layer_reduction_ok(layer) for layer in self._active_layers):
-            return False
+        for layer in self._active_layers:
+            if not _prefill_sp_layer_reduction_ok(layer):
+                o = getattr(getattr(layer.self_attn, "o_proj", None), "reduce_results", None)
+                return self._prefill_sp_decline(
+                    f"layer reduction contract (layer {layer.layer_idx}: o_proj.reduce_results={o}, "
+                    f"moe={layer._mlp_is_moe}, mhc={layer.mhc}, seq_parallel={layer.is_sequence_parallel})")
         if not self._prefill_sp_announced:
             logger.info(
                 "[prefill-sp] MHC token shards selected (T=%d, TP=4, full-token attention/MoE)",

@@ -2199,6 +2199,14 @@ def _mla_prefill_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
     T, _, _ = q_nope.shape
     W = slots.shape[1]
     width = MLA_PREFILL_GROUP
+    _fn = _mla_prefill_pair
+    if not getattr(_fn, "_announced", False):
+        # 39차: the bracket's proof that the optional path ran (P1 had none);
+        # self-contained so a def exec'd alone in a stub namespace still runs
+        _fn._announced = True
+        _lg = globals().get("logger")
+        if _lg is not None:
+            _lg.warning("[megakernel] mla prefill pair engaged (T=%d, W=%d, group=%d)", T, W, width)
     groups = (T + width - 1) // width
     schedule = torch.empty((groups, width * W), dtype=torch.int32, device=q_nope.device)
     membership = torch.empty_like(schedule)
