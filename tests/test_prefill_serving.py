@@ -96,6 +96,20 @@ class ServingTests(unittest.TestCase):
                 write();(repo/'build/glm53/module.py').write_text('untested edit')
                 with self.assertRaisesRegex(RuntimeError,'source changed'):m.verify_gate('moe-overlap',gate,repo)
 
+    def test_fresh_gpu_failure_prevents_gate_admission_or_serving_deploy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args=SimpleNamespace(source=ROOT,out=Path(directory)/'serving',revision='c'*40,
+                candidate='moe-overlap',gate_dir=Path(directory)/'gpu',refresh_gate=True)
+            with patch.object(m,'check_holder'),patch.object(m,'pinned'),patch.object(m.subprocess,'run'),\
+                 patch.object(m,'run_owned',side_effect=RuntimeError('GPU failed')) as run,\
+                 patch.object(m,'verify_gate') as verify:
+                with self.assertRaisesRegex(RuntimeError,'GPU failed'):m.run_bracket(args)
+                self.assertEqual(run.call_count,1)
+                command=run.call_args.args[0]
+                self.assertEqual(command[command.index('--probe-revision')+1],m.CANDIDATES['moe-overlap'][2])
+                self.assertEqual(run.call_args.kwargs['env']['OFFLINE_SOURCE_REV'],'c'*40)
+                verify.assert_not_called();self.assertFalse(args.out.exists())
+
     def test_arm_primes_then_measures_and_records_both_phases(self):
         self.collect(False)
 

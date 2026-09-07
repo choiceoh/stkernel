@@ -195,6 +195,18 @@ def pinned(path, revision):
         raise RuntimeError('frozen source changed: ' + path)
 
 
+def probe_api_preflight(path, revision):
+    """Read/check the frozen distributed API on all ranks before stop/start."""
+    code = "import json,subprocess\n" + f"path={str(path)!r}\nrevision={revision!r}\n" + """
+assert subprocess.check_output(['git','-C',path,'rev-parse','HEAD'],text=True).strip()==revision
+assert not subprocess.check_output(['git','-C',path,'status','--porcelain'],text=True).strip()
+result=subprocess.check_output(['python3',path+'/probes/glm53_moe_overlap_check.py','--transport','bf16','--check-api'],text=True)
+print(json.dumps(json.loads(result)))
+"""
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return dict(zip(NODES, pool.map(lambda node: remote(node, code), NODES)))
+
+
 def run_probe(cmd, path, log):
     child = subprocess.Popen(cmd, cwd=path, start_new_session=True,
         env=dict(os.environ, IMAGE=IMAGE, MOE_STREAM_LOCAL_ONLY='1', PREFILL32_LOCAL_ONLY='1'),
@@ -269,6 +281,7 @@ def main():
         pinned(str(Path(__file__).resolve().parents[1]), os.environ['OFFLINE_SOURCE_REV'])
         for _, path, rev, _ in PINS:
             pinned(path, rev)
+            save('api-preflight.json', probe_api_preflight(path, rev))
         resources = {}
         for node in NODES:
             resources[node] = remote(node, "import json,shutil; print(json.dumps(dict(disk_free_gib=shutil.disk_usage('/home/choiceoh').free/2**30)))")
