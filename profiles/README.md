@@ -57,7 +57,7 @@ eight original K slices and sums their partials within one CTA. The independent
 startup gate falls back to the existing input-reuse kernel; setting the knob
 to `0` selects that previous route explicitly. Repeated kernel measurements
 show 24.5% lower warm latency and 7.9% lower read-evicted latency. That
-2026-09-07 promotion ran no serving bracket of its own, so its serving
+2026-09-08 promotion ran no serving bracket of its own, so its serving
 step/output and quality acceptance were left unmeasured after baseline boot
 failures; the separate value `4` bracket described below is not evidence for
 it. [Measurements and failure receipts](../measurements/glm53_input_cta_20260907/README.md).
