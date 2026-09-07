@@ -44,7 +44,8 @@ def normalized(value, tensors, path='root'):
     if isinstance(value, (list, tuple)):
         return [normalized(v, tensors, f'{path}.{i}') for i, v in enumerate(value)]
     if isinstance(value, slice):
-        return [value.start, value.stop, value.step]
+        return {name: normalized(getattr(value, name), tensors, f'{path}.{name}')
+                for name in ('start', 'stop', 'step')}
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise TypeError(f'unsupported value {path}: {type(value)}')
