@@ -101,6 +101,24 @@ for stage in "${stages[@]}"; do
     DEPLOY_PRESERVE_IDENTICAL=$preserve bash launchers/deploy-overlays.sh glm53 > "$EVIDENCE/$current_arm-deploy.log" 2>&1
     printf '%s\t%s\n' "$current_arm" "$(( $(date +%s) - deploy_start ))" >> "$EVIDENCE/deployment-seconds.tsv"
     python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-deploy.json"
+    python3 - "$EVIDENCE" "$current_arm" "$stage" <<'DEPLOY_GATE'
+import json, sys
+from pathlib import Path
+root, arm, stage = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+before = json.loads((root / f"{arm}-before-deploy.json").read_text())
+after = json.loads((root / f"{arm}-after-deploy.json").read_text())
+assert set(before) == set(after) == {"srv1", "srv2", "srv3", "srv4"}
+if stage != "PRIME":
+    for node in before:
+        a, b = before[node]["files"], after[node]["files"]
+        assert a.keys() == b.keys()
+        assert all(a[k]["sha256"] == b[k]["sha256"] for k in a), (node, "runtime content changed")
+        if stage.startswith("FAST"):
+            assert all(a[k]["mtime_ns"] == b[k]["mtime_ns"] and a[k]["inode"] == b[k]["inode"] for k in a), (node, "identical source rewritten")
+        else:
+            assert all(a[k]["mtime_ns"] != b[k]["mtime_ns"] for k in a if k.endswith(".cu")), (node, "control did not rewrite CUDA sources")
+print("all-rank same-content deployment path verified")
+DEPLOY_GATE
   fi
   start=$(date +%s)
   previous=$(docker inspect --format '{{.Id}}' glm53 2>/dev/null || true)
@@ -192,6 +210,20 @@ PY
   snapshot "$current_arm"
   if [ "$MODE" = overlay-deploy ]; then
     python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-boot.json"
+    python3 - "$EVIDENCE" "$current_arm" "$stage" <<'NINJA_GATE'
+import json, sys
+from pathlib import Path
+root, arm, stage = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+before = json.loads((root / f"{arm}-after-deploy.json").read_text())
+after = json.loads((root / f"{arm}-after-boot.json").read_text())
+if stage != "PRIME":
+    for node in before:
+        a, b = before[node]["ninja"], after[node]["ninja"]
+        assert a and b, (node, "missing compile receipts")
+        changed = [k for k in b if k not in a or a[k]["sha256"] != b[k]["sha256"]]
+        assert bool(changed) != stage.startswith("FAST"), (node, stage, changed)
+        print(node, "Ninja logs changed:", changed)
+NINJA_GATE
   fi
   python3 - "$EVIDENCE/onepass.jsonl" <<'PY'
 import json, sys
