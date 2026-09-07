@@ -84,9 +84,17 @@ def main():
         rel = mk._rel_err(candidate[:sub].float(), ref.float())
         base_rel = mk._rel_err(baseline[:sub].float(), ref.float())
         full_delta = mk._rel_err(candidate.float(), baseline.float())
+        # A global norm can hide one broken row in a large chunk. Check
+        # every row as well, including all rows outside the FP32 subsample.
+        def worst_row(got, expected):
+            g, r = got.float().flatten(1), expected.float().flatten(1)
+            return ((g - r).norm(dim=1) / r.norm(dim=1).clamp_min(1e-6)).max().item()
+        max_row_ref = worst_row(candidate[:sub], ref)
+        max_row_delta = worst_row(candidate, baseline)
         assert torch.isfinite(candidate).all().item()
         assert torch.count_nonzero(candidate[0]).item() == 0
         assert rel <= .02 and full_delta <= .02, (T, W, rel, full_delta)
+        assert max_row_ref <= .02 and max_row_delta <= .03, (T, W, max_row_ref, max_row_delta)
         snapshot = candidate.clone()
         cand(); torch.cuda.synchronize()
         assert torch.equal(snapshot, candidate), "same-input replay changed output"
@@ -103,6 +111,7 @@ def main():
         ref2 = mk.mla_decode_ref(q[2:3], cache, slots[2:3], lens[2:3], sm, scale)
         assert mk._rel_err(candidate[2:3].float(), ref2.float()) <= .02
         result = dict(T=T, W=W, rel=rel, base_rel=base_rel, full_delta=full_delta,
+                      max_row_ref=max_row_ref, max_row_delta=max_row_delta,
                       replay=True, graph_changed_inputs=True)
         if not args.sanitize:
             times = {"base": [], "candidate": []}

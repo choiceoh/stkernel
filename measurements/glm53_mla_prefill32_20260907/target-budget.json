@@ -1,0 +1,22 @@
+{
+  "PATTR32KP": {
+    "trace": "measurements/glm53_prefill_profile_20260907/traces/PATTR32KP/local/dp0_pp0_tp0_dcp0_ep0_rank0.1788765884028548380.pt.trace.json.gz",
+    "span_ms": 10546.3637578125,
+    "all_mla_ms": 1503.4334189453125,
+    "eligible_mla_ms": 1269.9518671875,
+    "eligible_pct_span": 12.041608808028732,
+    "eligible_calls": 44,
+    "all_calls": 66,
+    "note": "Observed occupied time budget, not removable latency or a speedup prediction"
+  },
+  "PATTR128KP": {
+    "trace": "measurements/glm53_prefill_profile_20260907/traces/PATTR128KP/local/dp0_pp0_tp0_dcp0_ep0_rank0.1788765970185263056.pt.trace.json.gz",
+    "span_ms": 41961.92298632812,
+    "all_mla_ms": 6127.876006835938,
+    "eligible_mla_ms": 6127.876006835938,
+    "eligible_pct_span": 14.603420364773317,
+    "eligible_calls": 209,
+    "all_calls": 209,
+    "note": "Observed occupied time budget, not removable latency or a speedup prediction"
+  }
+}
