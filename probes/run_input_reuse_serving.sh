@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Actual-source GPU gates, then matched B/A/A/B with a guaranteed public restore.
 set -euo pipefail
-# The literal checkout lets fleet preflight inspect the profile being deployed.
-cd /home/choiceoh/stkernel-input-reuse-real-20260907
+# REPO selects the committed candidate checkout supplied to fleet preflight.
+cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 export REPO=$PWD
 CANONICAL=/home/choiceoh/stkernel
-RESTORE_REPO=/home/choiceoh/stkernel-input-reuse-restore-20260907
+RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel}
 export FLEET=$CANONICAL/bench/fleet.sh LEVER=$REPO/probes/input_reuse_lever.sh
 export IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 export INPUT_REUSE_SERVING_OUT=${INPUT_REUSE_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTSERVE0907}
@@ -19,14 +19,14 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT before stopping s
 [[ ! -s $out/source.commit ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out/build"
 git rev-parse HEAD > "$out/source.commit"
-requests=$(curl -fsS --max-time 5 http://10.10.10.2:8000/metrics | awk '/^vllm:num_requests_(running|waiting)/ {s+=$2} END {print s+0}')
-[[ $requests == 0 ]] || { echo 'ABORT: active requests'; exit 2; }
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
+
 touched=0
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   docker stop -t 2 "inputserve-$session" >/dev/null 2>&1 || true
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} != 1 ]]; then
     if (
       cd "$RESTORE_REPO"
       git fetch origin || exit 1
@@ -47,15 +47,15 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cp /home/choiceoh/glm53-logs/glm53.log "$out/before-head.log"
+cp /home/choiceoh/glm53-logs/glm53.log "$out/before-head.log" 2>/dev/null || true
 if [[ -n ${INPUT_REUSE_GPU_EVIDENCE:-} ]]; then
   python3 probes/reuse_input_gpu_evidence.py "$INPUT_REUSE_GPU_EVIDENCE" "$out"
 else
 touched=1
-docker stop -t 30 glm53 >/dev/null
+if docker inspect glm53 >/dev/null 2>&1; then docker stop -t 30 glm53 >/dev/null; fi
 pids=()
 for node in 1 3 4; do
-  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" docker stop -t 30 glm53-worker >/dev/null &
+  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" 'if docker inspect glm53-worker >/dev/null 2>&1; then docker stop -t 30 glm53-worker; else docker info >/dev/null; fi' >/dev/null &
   pids+=($!)
 done
 stop_failed=0
