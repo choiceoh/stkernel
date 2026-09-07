@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import time
+import traceback
 
 import numpy as np
 from PIL import Image
@@ -88,8 +89,12 @@ def main():
             for label, processor in (('main', renderer.mm_processor), ('readonly', renderer._readonly_mm_processor)):
                 apply = processor.apply
                 def recorded(*a, _apply=apply, _label=label, **kw):
-                    out = _apply(*a, **kw)
-                    results['warmup'].append({'processor': _label, **fingerprint(out)})
+                    try:
+                        out = _apply(*a, **kw)
+                        results['warmup'].append({'processor': _label, **fingerprint(out)})
+                    except Exception:
+                        traceback.print_exc()
+                        raise
                     return out
                 processor.apply = recorded
             before_threads = torch.get_num_threads()
