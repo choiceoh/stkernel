@@ -3,13 +3,43 @@
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
-python3 probes/glm53_probe_memory.py
+revision=${PREFILL32_SOURCE_REV:-$(git rev-parse HEAD)}
+# The public head can have less spare UMA than a worker. Choose a node using
+# the same unmodified admission guard, before starting any GPU process.
+# All four nodes are covered by the fleet hold. This never changes serving.
+if ! python3 probes/glm53_probe_memory.py; then
+  if [[ ${PREFILL32_LOCAL_ONLY:-0} == 1 ]]; then
+    exit 3
+  fi
+  selected=""
+  for node in 10.10.10.1 10.10.10.3 10.10.10.4; do
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$node" python3 - \
+        < probes/glm53_probe_memory.py; then
+      selected=$node
+      break
+    fi
+  done
+  [[ -n $selected ]] || { echo 'No node has probe memory headroom; GPU gate not run'; exit 3; }
+  remote_dir=$(ssh -o BatchMode=yes "choiceoh@$selected" mktemp -d /tmp/glm53-mla32-probe.XXXXXXXX)
+  [[ $remote_dir =~ ^/tmp/glm53-mla32-probe\.[A-Za-z0-9]+$ ]] || exit 3
+  tar -czf - probes/glm53_probe_memory.py probes/mk_mla_prefill32_check.py \
+    probes/run_mk_mla_prefill32_check.sh profiles/glm53.env \
+    overlay/modules/glm53_megakernel/glm53_megakernel.{py,cu} | \
+    ssh -o BatchMode=yes "choiceoh@$selected" "tar -xzf - -C '$remote_dir'"
+  echo "probe_node=$selected source=$revision remote_dir=$remote_dir"
+  # Values are a git SHA, a Docker image ID and a mktemp path, never arbitrary
+  # shell snippets. A pin is required when forwarding IMAGE to the worker.
+  [[ $revision =~ ^[a-f0-9]{40}$ ]] || exit 3
+  [[ ${IMAGE:-} =~ ^sha256:[a-f0-9]{64}$ ]] || exit 3
+  exec ssh -o BatchMode=yes "choiceoh@$selected" \
+    "cd '$remote_dir' && PREFILL32_LOCAL_ONLY=1 PREFILL32_SOURCE_REV='$revision' IMAGE='$IMAGE' bash probes/run_mk_mla_prefill32_check.sh"
+fi
 eval "$(
   . profiles/glm53.env
   printf 'PROFILE_IMAGE=%q\nTARGET_PREFIX=%q\n' "$PROFILE_IMAGE" "$TARGET_PREFIX"
 )"
 IMAGE=$(docker image inspect "${IMAGE:-$PROFILE_IMAGE}" --format '{{.Id}}')
-echo "revision=$(git rev-parse HEAD) image=$IMAGE"
+echo "probe_node=$(hostname) revision=$revision image=$IMAGE"
 probe_container="mla32-probe-${FLEET_SESSION:-manual}-$$"
 trap 'docker rm -f "$probe_container" >/dev/null 2>&1 || true' EXIT
 docker run --rm --name "$probe_container" --network none --gpus all --cpus 4 --memory 6g \

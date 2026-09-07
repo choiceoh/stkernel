@@ -2426,10 +2426,14 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
     if (ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR
-            and 128 <= T <= 8192 and 1 <= slots.shape[1] <= 2176
+            and 4096 <= T <= 8192 and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
             and ckv.element_size() == 1 and lens.is_contiguous()
             and not torch.cuda.is_current_stream_capturing()):
+        if not getattr(_mla_prefill32, "_announced", False):
+            _mla_prefill32._announced = True
+            logger.warning("[megakernel] mla prefill32 ENGAGED T=%d W=%d register-Q tile=32",
+                           T, slots.shape[1])
         return _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
     if (ENABLE_MLA_PREFILL_PAIR and 128 <= T <= 8192
             and 1 <= slots.shape[1] <= 2176
@@ -2459,10 +2463,6 @@ def _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
 
     if out is None:
         out = torch.empty_like(q_nope)
-    if not getattr(_mla_prefill32, "_announced", False):
-        _mla_prefill32._announced = True
-        logger.warning("[megakernel] mla prefill32 ENGAGED T=%d W=%d register-Q tile=32",
-                       q_nope.shape[0], slots.shape[1])
     _EXT.run_mla_prefill32(
         [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
          out.data_ptr()], [float(sm_scale), float(ckv_scale)],
@@ -2626,7 +2626,12 @@ def _selftest_mla() -> bool:
                 lens[4:12].fill_(W)
                 slots[9, common].copy_(slots[8, 0])
         sm, ks = MLA_D ** -0.5, 0.7
-        got = mla_decode(q, cache.view(torch.uint8), slots, lens, sm, ks)
+        # Small edge fixtures exercise the new device kernel directly; the
+        # serving selector keeps actual chunks below 4096 on the old kernel.
+        # This does not emit the serving-path engagement marker.
+        mla_call = (_mla_prefill32 if ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR
+                    and T >= 128 else mla_decode)
+        got = mla_call(q, cache.view(torch.uint8), slots, lens, sm, ks)
         ref = mla_decode_ref(q, cache, slots, lens, sm, ks)
         torch.cuda.synchronize()
         error = _rel_err(got.float(), ref.float())
