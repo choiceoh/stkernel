@@ -34,8 +34,8 @@ first result and submission timings isolate the benefit to the dependent stages.
 This measures a short CPU workflow, not production GPU queue or serving latency.
 The five-round sample does not establish production tail behavior.
 
-Waiting workers now perform up to 20 state reads per second, batched in groups
-of at most 256 IDs. Full payload decoding and worker recovery are excluded from
+Waiting workers now poll at up to 20 Hz, with each poll reading batches of at
+most 256 IDs. Full payload decoding and worker recovery are excluded from
 that fast loop. Database overhead under large production DAGs is not measured
 by this small workflow.
 
