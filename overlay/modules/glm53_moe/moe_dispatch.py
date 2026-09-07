@@ -3118,6 +3118,7 @@ def allocate_sm120_dynamic_workspace(
     activation_precision: str = "fp4",
     activation: str = "silu",
     quant_mode: str = "nvfp4",
+    tile_m: int | None = None,
 ) -> Sm120DynamicMoEWorkspace:
     """Allocate workspace buffers for the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -3128,7 +3129,12 @@ def allocate_sm120_dynamic_workspace(
         )
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
-    tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation)
+    if tile_m is None:
+        tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation)
+    elif type(tile_m) is not int or tile_m not in (16, 32, 64, 128):
+        raise ValueError("dynamic tile_m must be 16, 32, 64 or 128")
+    elif not is_gated_activation(activation):
+        raise ValueError("explicit dynamic tile_m requires a gated activation")
     physical_tiles, _, max_tasks = _dynamic_task_geometry(
         state_E,
         n,

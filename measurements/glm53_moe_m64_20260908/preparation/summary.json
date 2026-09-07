@@ -1,0 +1,11 @@
+{
+  "cpu_results": {
+    "test_glm53_prefill_m64.py": 0,
+    "test_glm53_moe_m64_probe.py": 0,
+    "test_glm53_offline_checks.py": 0,
+    "test_glm53_prefill_collectives.py": 0
+  },
+  "logic": "6685 checks; 30 megakernel regressions; 92 fleet regressions PASS",
+  "gpu": "not run",
+  "serving_ttft": "not run"
+}
