@@ -3480,7 +3480,7 @@ def _get_dynamic_kernel(
     )
     # Separate the M64 gated port from the factory's generic M64 kernel.
     if prefill_m64:
-        cache_key = (*cache_key, "glm53_prefill_m64_v1")
+        cache_key = (*cache_key, "glm53_prefill_m64_v2")
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached

@@ -105,6 +105,10 @@ class PortTests(unittest.TestCase):
         source=ROOT/'overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py'
         tree=ast.parse(source.read_text())
         cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='MoEGatedDynamicKernelM64Tiled')
+        # Execute the host-side constructor/layout override, leaving the GPU
+        # DSL bodies to the real image compiler and numerical probes.
+        cls.body=[n for n in cls.body if isinstance(n,ast.FunctionDef)
+                  and n.name in ('__init__','_setup_attributes')]
         class Base:
             def __init__(self,**kw):
                 self.stock_kwargs=kw
@@ -113,7 +117,17 @@ class PortTests(unittest.TestCase):
                 self.epi_tile=(128,128)
                 self.num_mma_warps=8
                 self.fc1_sfb_tile_shape_nk=(128,128)
-        ns=dict(MoEGatedDynamicKernelTiled=Base,m64_stock_contract_matches=lambda:True)
+            def _setup_attributes(self,hidden_size):
+                self.setup_hidden=hidden_size
+                for name in ('a_dtype','a_layout','b_dtype','b_layout','c_layout','epi_stage','sf_vec_size','tiled_mma'):
+                    setattr(self,name,name)
+                self.b_smem_layout_staged='stock_b'
+                self.sfb_smem_layout_staged='stock_sfb'
+                self._dense_cls=SimpleNamespace(_make_smem_layouts=Mock(
+                    side_effect=[('physical_a5','discard','discard','discard','discard'),
+                                 ('discard','discard','physical_sfa4','discard','discard')]))
+        ns=dict(MoEGatedDynamicKernelTiled=Base,m64_stock_contract_matches=lambda:True,
+                cutlass=SimpleNamespace(BFloat16='bf16'))
         exec(compile(ast.Module(body=[cls],type_ignores=[]),str(source),'exec'),ns)
         args=dict(sf_vec_size=16,mma_tiler_mn=(64,128),hidden_size=4096,intermediate_size=512,
                   num_topk=8,activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,swiglu_limit=10.)
@@ -121,6 +135,17 @@ class PortTests(unittest.TestCase):
         self.assertEqual(obj.stock_kwargs['mma_tiler_mn'],(128,128))
         self.assertEqual((obj.tile_shape_mnk,obj.fc1_tile_shape_mnk,obj.epi_tile),((64,128,128),(64,64,128),(64,128)))
         self.assertEqual((obj.num_mma_warps,obj.fc1_sfb_tile_shape_nk),(8,(128,128)))
+        self.assertEqual((obj.sa_tile_shape_mk,obj.sfa_tile_shape_mk),((128,128),(128,128)))
+        self.assertEqual((obj.sa_tiles_per_block,obj.sfa_tiles_per_block),(2,2))
+        obj._setup_attributes(4096)
+        self.assertEqual(obj.setup_hidden,4096)
+        self.assertEqual((obj.a_smem_layout_staged,obj.sfa_smem_layout_staged),('physical_a5','physical_sfa4'))
+        self.assertEqual((obj.b_smem_layout_staged,obj.sfb_smem_layout_staged),('stock_b','stock_sfb'))
+        for call,stages in zip(obj._dense_cls._make_smem_layouts.call_args_list,(5,4)):
+            self.assertEqual(call.args[:2],((128,128,128),(64,128)))
+            self.assertEqual(call.args[6],stages)
+            self.assertEqual(call.args[-1],'tiled_mma')
+        with self.assertRaises(ValueError):obj._setup_attributes(8192)
         for field,value in dict(hidden_size=8192,intermediate_size=1024,num_topk=4,sf_vec_size=32,
                                 mma_tiler_mn=(32,128),swiglu_limit=None).items():
             with self.subTest(field=field),self.assertRaises(ValueError):ns['MoEGatedDynamicKernelM64Tiled'](**dict(args,**{field:value}))

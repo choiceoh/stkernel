@@ -61,7 +61,7 @@ def main():
             for _ in range(3):compare(call(True),b,repeat)
             assert torch.equal(a,retained),'retained output changed'
             torch.cuda.synchronize()
-            assert any('glm53_prefill_m64_v1' in key for key in md._DYNAMIC_KERNEL_CACHE)
+            assert any('glm53_prefill_m64_v2' in key for key in md._DYNAMIC_KERNEL_CACHE)
             results.append(dict(rows=rows,skew=skew,bad_rows=0))
             print(json.dumps(results[-1]),flush=True)
     print(json.dumps(dict(verdict='MOE_M64_SANITIZER_CASES_PASS',provenance=provenance,results=results)),flush=True)

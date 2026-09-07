@@ -58,8 +58,9 @@ Only a passing GPU gate can proceed to a matched same-build fresh-cache
 Status: PR #455 remains draft and default-off. Both check1 and check3 failed
 before candidate execution and completed exact incoming fleet recovery. No M64
 speedup, numerical pass, sanitizer pass or serving TTFT result exists. Check3's
-TMA failure is now reproducible without GPU access; the next port must pass the
-CPU compiler before any new serving stop. Details and raw evidence follow.
+TMA failure was reproduced without GPU access. The physical-block port below
+now passes the real CPU compiler; a fresh GPU gate is still required. Details
+and raw evidence follow.
 
 ## Check1 failure and gated M64 port
 
@@ -72,8 +73,9 @@ source identity and recovery proof are in `check1/`. Do not rerun check1 unchang
 
 The follow-up is an actual port of the pinned gated implementation, not merely
 a workspace selector. `MoEGatedDynamicKernelM64Tiled` initializes stock attributes
-and changes its three M-dependent constructor dimensions before the inherited
-`__call__` derives layouts: compute (64,128,128), FC1 (64,64,128), epilogue (64,128).
+and uses compute (64,128,128), FC1 (64,64,128), epilogue (64,128). Its adapted
+`__call__` and kernel explicitly retain M128 physical A/SFA storage and select
+the appropriate M64 half, as described in the latest follow-up below.
 The stock 4x2 MMA warp grid has a 64-row atom; M64 runs one M iteration. N128,
 paired N64 branches, K128, physical N128 scale blocks, barriers and weight grouping
 are retained. Its Q0 holds 8192 BF16 elements, larger than scoped H4096. This
@@ -120,3 +122,28 @@ Changing only the TMA tile to 128 would select wrong rows. Do not claim a fix
 from constructor dimensions, relax the source/numerical gate, or perform another
 GPU restart until both dispatcher paths compile. CPU compile success will still
 require fresh TP4 numeric/capture/sanitizer and direct TTFT evidence afterward.
+
+
+## Physical-block port after check3
+
+The candidate now retains physical (128,128) A/SFA TMA loads and A5/SFA4
+shared-memory storage. The MMA and epilogue remain M64. The producer addresses
+physical block `task_m_tile_idx // 2`; FC1 selects half `task_m_tile_idx % 2`,
+including tasks whose expert base falls on an odd half. FC2 always reads the
+first half written by the original Q1 byte-swizzle helpers. The weight grouping
+adapter remains in place, and B/SFB, pipeline, quantization and scatter helpers
+stay pinned to the original image. The new cache suffix is
+`glm53_prefill_m64_v2`; stock cache keys are unchanged.
+
+The two adapted method bodies were diffed against the exact pinned source;
+changes are limited to weight grouping and A/SFA layout, descriptor, indexing
+and copy-partition selection. Host-side regression checks cover the original
+compute geometry, physical A5/SFA4 layouts and unchanged B/SFB attributes.
+
+A CPU-only staging compile on 2026-09-08 around 02:03 KST used the actual
+dispatcher in the pinned image, runtime runc, no network and no GPU access.
+Both M128 (9.74 s) and the physical-block M64 port (6.94 s) compiled successfully.
+These are compiler wall times, not kernel performance. A clean, frozen-source
+compile is required again before queue admission, followed by all TP4, capture,
+memcheck and racecheck gates. Loading 128 physical rows per 64-row task may
+offset reduced padded arithmetic; only matched full-model TTFT can decide.
