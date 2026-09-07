@@ -1,0 +1,87 @@
+{
+  "source_sha256": "24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62",
+  "protocol": "same-build CTA2/CTA4/CTA2; three fixed 2048-token responses per arm",
+  "request_hashes_identical": true,
+  "rows": [
+    {
+      "name": "ICTA3B1",
+      "step_median": 21.8483930873608,
+      "step_pooled": 21.752236316717788,
+      "window_count": 74,
+      "fixed_tok_s_median": 75.91256750674378,
+      "fixed_tok_s_pooled": 76.00072162493969,
+      "acceptance": 0.5019485580670304,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "traffic_issues": []
+    },
+    {
+      "name": "ICTA3A1",
+      "step_median": 21.851538072440274,
+      "step_pooled": 21.96242241763296,
+      "window_count": 79,
+      "fixed_tok_s_median": 73.022264525583,
+      "fixed_tok_s_pooled": 71.22463664556903,
+      "acceptance": 0.44646974063400574,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "traffic_issues": []
+    },
+    {
+      "name": "ICTA3B2",
+      "step_median": 21.856327290858292,
+      "step_pooled": 21.891599047347267,
+      "window_count": 82,
+      "fixed_tok_s_median": 69.87434897940906,
+      "fixed_tok_s_pooled": 69.28219985633923,
+      "acceptance": 0.4527816411682893,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "traffic_issues": []
+    }
+  ],
+  "baseline_step_pooled": 21.825476637547517,
+  "candidate_step_pooled": 21.96242241763296,
+  "observed_step_delta_pct": 0.6274583705990988,
+  "baseline_boot_spread_pct": 0.6406823123853655,
+  "verdict": "kernel improvement verified; serving gain unresolved within boot variation; profile remains CTA2"
+}

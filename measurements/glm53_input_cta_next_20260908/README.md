@@ -122,8 +122,43 @@ probe's minimum available memory was 93.71 GiB, with no guard issues.
 For the N6144 warm comparison, the integrated candidate won 32/32 pairs;
 both changed shapes won 31/32 read-evicted pairs.
 
-The CTA2 → CTA4 → CTA2 serving bracket is running. It requests three
-fixed 2K/2,048-token decode samples per arm, step windows, and the existing
-2K/32K/128K quality gates. The first CTA2 baseline reached health at
-04:31:43 KST and started actual requests. Serving results and final
-recovery are still pending.
+## Serving bracket: small step change, no established output-speed gain
+
+The CTA2 → CTA4 → CTA2 bracket completed on the same integrated build.
+Each arm used three fixed 2K/2,048-token responses and the existing
+2K/32K/128K quality requests. All request hashes matched across arms.
+Every arm passed 18/18 factual checks, had zero broken responses out of
+eight, and reported no foreign-traffic or measurement-validity issues.
+All four ranks proved actual CTA4 capture of N4096/N6144 with split3 and
+N6416 with split8. Prepared and post-traffic receipts are under `serving/`.
+
+| Arm | Fixed windows | Median step/s | Pooled step/s | Pooled fixed output tok/s | Acceptance over all requests |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| CTA2 before | 74 | 21.848 | 21.752 | 76.001 | 50.19% |
+| CTA4 candidate | 79 | 21.852 | 21.962 | 71.225 | 44.65% |
+| CTA2 after | 82 | 21.856 | 21.892 | 69.282 | 45.28% |
+
+Pooled step/s is total engine steps divided by total duration of retained
+fixed-output windows; it avoids the one-second window median's coarse
+integer-step resolution. Combining the two baseline arms gives 21.8255
+step/s versus 21.9624 for CTA4, an observed **+0.627%**. The baseline
+arms themselves differ by **0.641%**. This single bracket therefore does
+not establish a repeatable whole-model speedup. The canonical median
+judge also classified the result within its noise floor.
+
+Output speed and speculative acceptance varied substantially even between
+the two CTA2 boots. The candidate did not establish an output tok/s gain;
+the first baseline-to-candidate acceptance drop alone cannot be assigned
+to the new kernel given the second baseline. Do not describe the 19.5%
+kernel result as whole-model decoding acceleration, and do not interpret
+the 235 windows as 235 independent boot trials.
+
+**Decision:** retain CTA4 as an opt-in kernel improvement and keep the
+profile at CTA2. The broader serving gain remains unresolved. Full raw
+records, separate SSE channels, canonical verdicts, and calculated totals
+are in `serving/`; `summary.json` records the calculation and decision.
+Approved main `4b0f1d1` was restored at 04:59:30 KST; the runner exited
+zero. At 05:00:09 KST, a fresh live check confirmed HTTP 200, all four
+containers running with CTA=2/input-reuse=1, the fixed image, and the
+approved CUDA SHA256 `0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae`.
+The new CTA4 code was not left deployed. See `serving/restore-live.json`.

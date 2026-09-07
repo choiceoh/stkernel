@@ -1,0 +1,47 @@
+{
+  "checked_utc": "2026-09-07T20:00:09.932529+00:00",
+  "health": 200,
+  "nodes": [
+    {
+      "host": "srv2",
+      "container": "glm53",
+      "boot_id": "f5f0d30af97045a22170e3ed072c9de9f8b4c1516c029cc559b77b0111d1f68a",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "cta": "2",
+      "reuse": "1",
+      "cuda_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae"
+    },
+    {
+      "host": "srv1",
+      "container": "glm53-worker",
+      "boot_id": "82ff6fa370970e7198a832e6b3ff714ba414836f716e84aa9f3275f78dcd8619",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "cta": "2",
+      "reuse": "1",
+      "cuda_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae"
+    },
+    {
+      "host": "srv3",
+      "container": "glm53-worker",
+      "boot_id": "b2f84300993e55269e616254d6bac35b869500a35b05543b9a766c34d65c1732",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "cta": "2",
+      "reuse": "1",
+      "cuda_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae"
+    },
+    {
+      "host": "srv4",
+      "container": "glm53-worker",
+      "boot_id": "38fade0b5a154327313e68eb2e5d095a8032aac26d61d1663ba84ae6c23c1956",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "cta": "2",
+      "reuse": "1",
+      "cuda_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae"
+    }
+  ],
+  "restore_commit": "4b0f1d15a1608848faa3c1a957be8f4933ae951d"
+}
