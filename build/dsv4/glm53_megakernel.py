@@ -1168,6 +1168,24 @@ def _note_m8_capture(m, n, k, lr=False):
             logger.warning("[megakernel] m8-fastpath CAPTURED M=%d N=%d K=%d", m, n, k)
 
 
+_INPUT_CAPTURED = set()
+
+
+def _note_input_capture(m, n, k, bg, lr):
+    if (not _ARMED["gemm"] or m != 6 or bg or lr
+            or (n, k) not in ((6528, 4096), (4096, 512))
+            or (m, n, k, bg, lr) in _INPUT_CAPTURED):
+        return
+    plan = _EXT.gemm_input_plan(m, n, k, bool(bg), bool(lr))
+    if not plan[0]:
+        return
+    import torch
+    if torch.cuda.is_current_stream_capturing():
+        _INPUT_CAPTURED.add((m, n, k, bg, lr))
+        logger.warning("[megakernel] input-reuse CAPTURED M=%d N=%d K=%d split=%d bps=%d scratch=%d",
+                       m, n, k, plan[1], plan[2], plan[3])
+
+
 def _gemm_call(x, mk_pack, n_rows, bg=False):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4. `bg`: the
     caller marks the launch background -- the shared expert's pair, which
@@ -1193,6 +1211,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_b is None else lr_b.data_ptr(),
                   0 if lr_a is None else int(lr_a.shape[1]))
     _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None)
+    _note_input_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
     return out
 
 
@@ -2130,6 +2149,42 @@ def _selftest_gemm() -> bool:
     return True
 
 
+def _selftest_input_reuse():
+    """Check the actual M6 routes with changing captured inputs before arming."""
+    import torch
+    mode = _EXT.gemm_input_mode()
+    armed = _ARMED["gemm"]
+    _ARMED["gemm"] = False  # self-test captures are not serving receipts
+    try:
+        for n, k in ((6528, 4096), (4096, 512)):
+            x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
+            w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
+            pack = build_mk_weight_w4(w)
+            wr = mk_w4_dequant(pack[0], pack[1], n, pack[2],
+                              pack[3] if len(pack) > 3 else None).float()
+            graph = torch.cuda.CUDAGraph()
+            _gemm_call(x, pack, n)
+            torch.cuda.synchronize()
+            with torch.cuda.graph(graph):
+                y = _gemm_call(x, pack, n)
+            for case in ("random", "zero", "random2"):
+                if case == "zero":
+                    x.zero_()
+                else:
+                    x.normal_().mul_(.3)
+                graph.replay()
+                ref = _mk_quant_x_ref(x) @ wr.T
+                torch.cuda.synchronize()
+                relative, over = _exact_gate(y, ref)
+                if not bool(torch.isfinite(y).all()) or relative > 1e-3 or over:
+                    raise RuntimeError(f"input reuse N={n} K={k} case={case}: {relative=} {over=}")
+            logger.warning("[megakernel] input-reuse exact graph M=6 N=%d K=%d PASS", n, k)
+        return True
+    finally:
+        _EXT.set_gemm_input(mode)
+        _ARMED["gemm"] = armed
+
+
 def hc_scale_ones():
     import torch
 
@@ -2176,6 +2231,10 @@ def arm() -> None:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
         _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
+        if _ARMED["gemm"] and _EXT.gemm_input_mode():
+            if not _gate("input_reuse", _selftest_input_reuse):
+                _EXT.set_gemm_input(0)
+                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_SMLP2:
