@@ -7435,3 +7435,32 @@ evidence is preserved. The promotion integrates main `bb123cf` without
 changing the measured CUDA source bytes.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
+### GLM53 CPU renderer warmup overlap (2026-09-08, PR456)
+
+PR #452를 `bb123cf`로 먼저 머지한 뒤, main `4b0f1d1` 위의 동일 런타임
+`c001cb9`로 4노드 재부팅을 PRIME/B/A/A/B 순서로 검증했다.
+일반·읽기 전용 CPU MM 전처리기의 기존 예열을 입력 처리기 초기화 뒤부터
+엔진 시작과 겹친다. 실제 ChatParams 예열 및 HTTP 준비 전에 완료를 기다리고,
+실패한 전처리기는 기존 위치에서 재시도한다. 입력 처리기의 전역 Torch 스레드
+설정과 겹치지 않는 순서, 종료 시 캐시를 닫기 전 join도 검증했다.
+
+| 경로 | HTTP 준비 시간 | 평균 |
+|---|---|---:|
+| 기존 순서 | 218 / 221 s | 219.5 s |
+| 앞당긴 CPU 예열 | 213 / 211 s | 212.0 s |
+
+**7.5초 / 3.4% 단축**. 모델 로딩 79.30 → 79.25초, 메모리 프로파일링
+36.45 → 36.55초로 유지되며, 기본 경로의 마지막 예열 6.901 / 9.685초가
+엔진 시작과 겹친다. PRIME 314초는 컴파일 준비를 포함하므로 비교에서 제외했다.
+모든 부팅 품질 6/6, 한국어 깨짐 0/4. 네 랭크 캐시 적중, FP8 976 hits/0 errors,
+랭크마다 W4 SHA256 캐시 255개 적중과 재팩·fallback·alias 오류 0을 확인했다.
+실제 이미지·영상 CPU 전처리 6개 검사/20개 텐서 필드가 정확히 일치했다.
+CPU 검사: 로직 71,014, 메가커널 30, 플릿 107, 렌더러 9, 수집 증거 4 통과.
+
+응답 검사 중 외부 API 요청이 있어 처리량·TTFT·수용률 개선 주장은 하지 않는다.
+각 실행에서 첫 health 응답이 기록된 POST 완료보다 먼저 나온 것을 확인했다.
+`VLLM_GLM53_EARLY_MM_WARMUP=1`을 프로필 기본값으로 채택했다. 마지막 control=0의
+정상 상태·품질 확인 후 02:41:53 KST 플릿을 반납했고, 다음 작업이 02:41:58에
+획득했다. 기본값은 다음 배포부터 적용된다.
+[조건·한계·원본 식별자·재현 절차](measurements/glm53_early_mm_20260908/README.md).

@@ -1,6 +1,7 @@
 """Exercise the real boot receipt gate without restarting a fleet."""
 import contextlib
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -9,10 +10,15 @@ from unittest.mock import patch
 
 
 class BootReceiptTests(unittest.TestCase):
-    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs=""):
+    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
+            if mode == 'campaign':
+                Path(root, 'campaign.json').write_text(json.dumps(dict(arms=[dict(stage=stage, knobs=campaign_knobs if campaign_knobs is not None else {
+                    'VLLM_GLM53_MK_PACK_FAST_IO':str(fast), 'VLLM_GLM53_MK_PACK_SHA256':'0'})])))
+                Path(root, 'TEST-cache-env.json').write_text(json.dumps([
+                    'VLLM_GLM53_MK_PACK_FAST_IO='+str(fast), 'VLLM_GLM53_MK_PACK_SHA256=0']))
             for node in (1, 2, 3, 4):
                 Path(root, f"TEST-srv{node}.log").write_text(
                     "[rank-cache] hit rank=0\n" + 2 * (
@@ -49,12 +55,36 @@ class BootReceiptTests(unittest.TestCase):
                                     mode="pack-key", key_fields=fields,
                                     packs=args["packs"].replace("rtn=0", "rtn=1"))
 
+    def test_renderer_warmup_requires_completed_overlap_and_both_reuses(self):
+        packs = "packs: rtn=0 gptq=0 gptq_failed=0 cached=254\n"
+        suffix = ("[early-mm-warmup] submitted processors=2 before engine startup\n"
+                  "[early-mm-warmup] completed processors=2/2 elapsed_s=10.0\n"
+                  "[boot-stamp] load-model took 80.0s\n"
+                  "[early-mm-warmup] reused Multi-modal join_s=0.000\n"
+                  "[early-mm-warmup] reused Readonly multi-modal join_s=0.000\n")
+        self.check_receipts("BASE1", 1, 254, 0, mode="renderer-warmup", packs=packs)
+        self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=suffix)
+        for bad in (suffix.replace("processors=2/2", "processors=1/2"),
+                    suffix.replace("reused Readonly", "failed Readonly"),
+                    "[boot-stamp] load-model took 80.0s\n" + suffix):
+            with self.assertRaises(AssertionError):
+                self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=bad)
+
     def test_prime_still_rejects_wrong_path_and_restore_errors(self):
         for fast, hits, suffix in ((1, 0, ""), (0, 1, ""),
                                   (0, 0, "pack cache example unreadable\n"),
                                   (0, 0, "MK W4 pack build FAILED\n")):
             with self.subTest(fast=fast, hits=hits, suffix=suffix), self.assertRaises(AssertionError):
                 self.check_receipts("PRIME", fast, hits, 0, suffix)
+
+    def test_shared_campaign_retains_per_node_warm_pack_receipts(self):
+        self.check_receipts('FASTIOR1', 1, 253, 0, mode='campaign')
+        self.check_receipts('BASE1', 0, 0, 253, mode='campaign')
+        with self.assertRaisesRegex(AssertionError, 'campaign pack IO mismatch'):
+            self.check_receipts('FASTIOR1', 1, 0, 0, mode='campaign')
+
+    def test_unrelated_campaign_does_not_infer_pack_gate_from_profile_defaults(self):
+        self.check_receipts('OTHERR1', 1, 0, 0, mode='campaign', campaign_knobs={'VLLM_OTHER':'1'})
 
 
 if __name__ == "__main__":

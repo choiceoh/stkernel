@@ -1,3 +1,4 @@
+# source_commit=c001cb9e335db488390125347b133b80f0e60de2
 moe_gate_sm121.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py	absent
 dsv4_oneshot_shim.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent

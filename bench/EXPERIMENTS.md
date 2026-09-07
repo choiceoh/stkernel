@@ -609,3 +609,80 @@ include another boot; do not sum overlapping phases. Legacy runners without the
 managed experiment environment do not emit these markers. These observations
 explain turnaround and guide estimates; fixture boot counts or CPU-cache timings
 alone do not establish a live GPU wait-time or serving speedup.
+
+## Finish once and hand off stopped serving
+
+`fleet.sh run --gpu` now supervises boot payloads. Nested `pair`, `chain`, and
+managed serving groups defer their bare restore to that supervisor. Measurement
+baselines remain measurements. At completion, the supervisor selects the next
+job using queue priority and requires a live boot supervisor receipt, including
+PID start time. It records restore responsibility, pins the successor, releases,
+and waits up to 30 seconds for admission. A cancelled receiver makes the donor
+reclaim the hold through normal admission and restore. A receiver that fails
+before boot still restores. Probes and unsupervised waiters cannot inherit this
+responsibility. No live holder is preempted.
+
+The final holder uses `bench/fleet_restore.sh`: clean approved main, public
+port 8000, profile defaults, warmup, no measurement leg. Candidate environment
+overrides are removed. An already healthy public defaults arm of that approved
+build avoids a duplicate boot. `FLEET_PRODUCTION_REPO` selects the production
+checkout; it defaults to `/home/choiceoh/stkernel`. Restore failures return
+nonzero and retain `restore-debt.json`; a subsequent supervised boot can recover
+it before probes are admitted. SIGKILL/host loss cannot run a process's cleanup:
+the debt remains visible for recovery; this is not a host-level watchdog.
+An operator can put the path of a dedicated approved-main checkout in
+`fleet/production-repo`; this separates restoration from a common checkout that
+contains unmerged experiment work. An explicit `FLEET_PRODUCTION_REPO` wins.
+
+Custom boot scripts must accept stopped serving. Before stopping anything, use:
+
+```bash
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
+```
+
+This allows an absent/stopped container while requiring health and both zero
+request counters for a live one, including an isolated experiment port. Validate
+the immutable image with `docker image inspect`; an existing stopped container
+can also attest its image. Guard a standalone restore fallback with
+`[[ ${FLEET_RESTORE_MANAGED:-0} != 1 ]]`. The tracked CTA/reuse wrappers demonstrate
+this contract; preflight rejects their old unconditional `touched` cleanup
+pattern before queuing. Arbitrary shell code is not exhaustively linted.
+
+`lifecycle.jsonl` records ready/source hashes, acceptance, payload completion,
+handoff, reclaim and restore duration. `fleet.sh version` exposes the active
+protocol and source hashes. Fleet waiters now poll at one second instead of
+15 seconds. Nested legacy yields defer to the supervised finish boundary.
+Control scripts are pinned by content under `fleet/runners/` before admission;
+updating the shared checkout affects new submissions, not an in-flight
+supervisor's queue/restore helpers. Payload checkouts retain their own source
+validation contract.
+
+## Share startup controls across a campaign
+
+Commit/deploy one build containing the candidate toggles, then use:
+
+```bash
+REPO="$PWD" bash bench/fleet.sh startup startup-agent bench/startup-campaign.example.json 45
+```
+
+The example runs `PRIME, BASE1, FASTIOR1, SHAKEYR1, SHAKEYR2, FASTIOR2, BASE2`:
+seven boots instead of two independent five-boot trials. Each candidate still
+has two boots. Three candidates use nine instead of fifteen. These are boot
+counts, not measured wall-clock savings. Both shared cache directories stay
+fixed; every arm explicitly sets the same knob keys. Malformed, duplicate,
+cache-off or changed-cache campaigns fail validation.
+
+Every arm retains four-node cache receipts, canonical onepass response/quality
+evidence and a distinct matching boot. Pack IO/key campaigns retain their GPU
+checks on PRIME. The campaign pins source/profile/deployed manifest/workload,
+rejects changed identities and compares its two controls for drift (10% default,
+at most 25%). `campaign-result.json` contains health timings and paired candidate
+summaries. It is exploration evidence with `promotion_ready: false`; drift
+makes the result incomplete. Final promotion still needs the relevant direct
+consumer metric and independent matched validation. Older unrelated builds'
+baselines are never reused.
+
+CPU validation of these changes uses the regular fleet suite, startup campaign
+and receipt tests. Run `tests/test_boot_supervisor_linux.py` explicitly on Linux
+for real shell admission, cancellation and handoff with fake system commands;
+it never accesses GPUs, SSH or production containers.

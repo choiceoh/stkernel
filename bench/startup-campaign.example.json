@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "baseline": {"VLLM_GLM53_MK_PACK_FAST_IO": "0", "VLLM_GLM53_MK_PACK_SHA256": "0"},
+  "prime": {"VLLM_GLM53_MK_PACK_FAST_IO": "1", "VLLM_GLM53_MK_PACK_SHA256": "1"},
+  "candidates": [
+    {"name": "FASTIO", "knobs": {"VLLM_GLM53_MK_PACK_FAST_IO": "1", "VLLM_GLM53_MK_PACK_SHA256": "0"}},
+    {"name": "SHAKEY", "knobs": {"VLLM_GLM53_MK_PACK_FAST_IO": "1", "VLLM_GLM53_MK_PACK_SHA256": "1"}}
+  ],
+  "max_drift_fraction": 0.1
+}
