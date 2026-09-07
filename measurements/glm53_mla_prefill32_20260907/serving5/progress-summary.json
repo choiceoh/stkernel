@@ -1,0 +1,44 @@
+{
+  "status": "PENDING_B2_AND_PUBLIC_RESTORE",
+  "source_revision": "6e8d1a9e8438d456b43b682abc19789869a5e395",
+  "phase_issues": [],
+  "unique_cache_salts": 20,
+  "candidate_launch_proof": {
+    "10.10.10.2": true,
+    "10.10.10.1": true,
+    "10.10.10.3": true,
+    "10.10.10.4": true
+  },
+  "requests_prompt_tokens": [
+    2121,
+    2128,
+    2128,
+    32545,
+    128559
+  ],
+  "preliminary": [
+    {
+      "ctx": 2000,
+      "B1_ttft_s": 0.8797469933439667,
+      "A_ttft_s": 0.8646583126586241,
+      "preliminary_latency_reduction_vs_B1_pct": 1.7151159139503935
+    },
+    {
+      "ctx": 32000,
+      "B1_ttft_s": 10.474451399000827,
+      "A_ttft_s": 10.009738240973093,
+      "preliminary_latency_reduction_vs_B1_pct": 4.436634820531649
+    },
+    {
+      "ctx": 128000,
+      "B1_ttft_s": 41.58450981701026,
+      "A_ttft_s": 39.171937879989855,
+      "preliminary_latency_reduction_vs_B1_pct": 5.801612060925465
+    }
+  ],
+  "limitations": [
+    "B2 and final public restoration are not complete at this snapshot.",
+    "B1 versus A alone is not the complete matched bracket or a campaign improvement verdict.",
+    "One candidate boot and reduced serving capacity remain limitations."
+  ]
+}

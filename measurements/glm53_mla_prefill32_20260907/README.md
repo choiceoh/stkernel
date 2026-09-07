@@ -290,3 +290,15 @@ measured request still has a new cache salt and zero prefix hits.
 Candidate A began booting at21:35:20. A/B2 and final public recovery are
 still pending; these B1 numbers do not establish any candidate improvement
 or the original40% campaign target.
+
+## Serving5 B1 and candidate complete; final baseline pending
+
+At 23:45 KST, the corrected file-log collector preserved nonempty logs on
+all four ranks and actual candidate launch proof on all four. B1/A priming
+and measured requests passed retrieval 9/9 and Korean corruption 0/5 with
+fresh cache identities and exclusive traffic. Candidate TTFT is 0.864658 s
+at 2K (three-question mean), 10.009738 s at 32K and 39.171938 s at 128K.
+The first baseline is 0.879747 / 10.474451 / 41.584510 s respectively.
+B2 began booting at 23:45:05; comparison and public restore remain pending.
+These preliminary values do not establish a complete bracket or the 40%
+campaign target. [Source pins, controls and raw B1/A evidence](serving5/README.md).
