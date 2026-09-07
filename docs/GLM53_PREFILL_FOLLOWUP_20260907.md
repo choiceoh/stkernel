@@ -151,3 +151,60 @@ as do 14 transport dispatch tests, four probe-admission tests, and the existing
 6,684 logic checks with 30 megakernel and 32 fleet regressions (the same
 torch-dependent host skips remain). Device code is unchanged from the
 numerically tested helper. Serving results remain pending.
+
+The retry was admitted as fleet `spfrt0907` at 13:56:11 KST on immutable
+source `6f797df28c29e7e4cb606724e2416dbc1c5dcfcc`. All 56 overlay files and
+the manifest were verified on four nodes before the first defaults boot at
+13:57:10. The planned order is `SPFRT0907B1` / `SPFRT0907A` /
+`SPFRT0907B2`, with a public production-capacity restore when required by
+fleet ownership. Requests use loopback port 18000 and the exclusive onepass
+gate. Run directory: `srv2:/tmp/glm53-prefill-retry.3rfahoko`; its dedicated
+`onepass.jsonl` must not be mixed into production-capacity baselines.
+
+
+The first retry baseline completed at 14:10:44: retrieval **15/15**, Korean
+corruption **0/11**, 11 completed requests and no traffic evidence issues.
+The 128K TTFT was **41.401 s**. The memory guard recorded 106 observations,
+with minimum available GiB of **20.700 / 26.239 / 21.785 / 24.250** on
+srv2/srv1/srv3/srv4 and no guard issues. This reduced-capacity workload did
+not reproduce the earlier memory termination.
+
+The post-leg attestation then failed because its original implementation
+attempted to read the head-only `glm53-cache/.overlay-sha` on workers. This
+is an experiment-harness error, not a failed model request. Chain recovery
+started before the candidate; no A/B conclusion follows from this run. The
+corrected attestation verifies the deployed manifest and all 56 mounted
+source hashes against the composed pinned tree on every node, and checks the
+cache stamp only on the head. A read-only check on all four recovery
+containers passed. It also binds the head container ID/start time to the
+onepass record. The recovery observation is not represented as an
+attestation of the earlier baseline container.
+
+A fresh bracket was registered at 14:14:26 as `spfrt20907` in
+`srv2:/tmp/glm53-prefill-retry2.7gy5_ruh`, with the same immutable source,
+image and workload. Its arms are `SPFR20907B1` / `SPFR20907A` /
+`SPFR20907B2`; only the external attestation helper changed. It waits for
+the previous owner's recovery and does not bypass the queue.
+
+
+At 14:17:16 the corrected bracket acquired the fleet, then refused **before
+deploy**: srv1 had only **18.9 GiB** free disk, below the runner's 32 GiB
+floor. No candidate ran. A read-only inventory found **five 44.8 GiB rank
+cache artifacts (224 GiB total)**; the entire GLM cache occupied about 264
+GiB. The latest three rank-cache writes were 13:33, 13:51 and 14:03, during
+the interval when available disk fell from the earlier observation. No data
+was deleted. This admission failure is a disk constraint, separate from the
+previous srv2 RAM termination. The first baseline remains a completed
+workload with incomplete post-leg attestation, not an A/B speedup verdict.
+
+The original recovery had retained the test capacity/private endpoint because
+a following boot was queued. The pre-deploy refusal therefore required an
+additional official recovery of public port 8000 and production capacity.
+That recovery is tracked with the raw results in the [scheduled retry
+report](../measurements/glm53_prefill_retry_20260907/README.md).
+
+Public recovery `SPFR20907PUBLIC` finished at **14:25:02 KST**. Verification
+confirmed the pinned image and expected defaults on all four nodes, public
+port 8000, max length 1,048,576, block override 1,056, and health **200**
+from both srv2 and srv1. The repeat automation is paused pending sufficient
+disk capacity. The candidate remains unmeasured in this retry.

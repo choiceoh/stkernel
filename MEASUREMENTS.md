@@ -7392,3 +7392,15 @@ received a verified defaults recovery; probe launchers now refuse inadequate
 host memory, which does not resolve the separate long-context serving issue.
 
 [Failure analysis, recovery details and device evidence](docs/GLM53_PREFILL_FOLLOWUP_20260907.md).
+
+
+The scheduled retry on `6f797df` (main `0b6dc75` included) used a dedicated
+ledger and common reduced capacity (KV_TOKENS 524288, MAX_LEN 262144).
+Its defaults workload completed 128K: retrieval 15/15, Korean corruption
+0/11, no traffic issues, minimum observed head MemAvailable 20.7 GiB.
+128K TTFT was 41.401 s; this is a single baseline, not an improvement result.
+A head-only stamp assumption in the post-leg helper stopped the first chain.
+After correction, the next admission refused before deploy because srv1
+had only 18.9 GiB free disk (32 GiB test floor); five rank-cache artifacts
+occupied 224 GiB. No candidate/baseline comparison completed and no default
+promotion is warranted. [Retry, memory and disk evidence](measurements/glm53_prefill_retry_20260907/README.md).
