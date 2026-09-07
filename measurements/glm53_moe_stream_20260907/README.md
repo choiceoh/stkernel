@@ -91,3 +91,18 @@ identical image/build/settings and fresh prefix-cache inputs. The prepared
 `serving-plan.json` records all three TTFT objectives. It must be bound to the
 then-verified deployment, model and hardware before submission; no deployment
 or serving bracket is claimed by the CPU/GPU-probe artifacts.
+
+## Queue preparation correction
+
+The initial `moestreamprobe0907` request passed fleet preflight and queued,
+but was cancelled **before GPU admission** after the separate MLA probe
+revealed that the pinned runtime image has no `compute-sanitizer` executable.
+No MoE GPU result was produced by that request.
+
+The corrected runner mounts `/usr/local/cuda/compute-sanitizer` from the
+selected host read-only, including its injection libraries. All four hosts
+reported version 2025.3.1.0 and executable SHA-256
+`7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b`.
+The mounted executable's `--version` also succeeded inside the pinned image
+in a CPU-only runc container. The GPU runner repeats that check before
+launching the numerical tests and logs its tool hash.

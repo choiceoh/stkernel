@@ -28,7 +28,16 @@ if ! python3 probes/glm53_probe_memory.py; then
 fi
 log_dir=$(mktemp -d /tmp/glm53-moe-stream-evidence.XXXXXXXX)
 echo "probe_node=$(hostname) revision=$revision image=$IMAGE evidence=$log_dir"
-mounts=(-v "$REPO:/repo:ro" -v "$log_dir:/evidence")
+tool_dir=/usr/local/cuda/compute-sanitizer
+[[ -x $tool_dir/compute-sanitizer ]] || { echo 'Host compute-sanitizer missing'; exit 3; }
+sha256sum "$tool_dir/compute-sanitizer"
+mounts=(-v "$REPO:/repo:ro" -v "$log_dir:/evidence"
+        -v "$tool_dir:/opt/glm-probe-sanitizer:ro")
+# The runtime image lacks this developer tool. Mount its complete host
+# installation (including injection libraries), read-only, into the probe.
+docker run --rm --runtime runc --network none --memory 256m --cpus 1 \
+  -v "$tool_dir:/opt/glm-probe-sanitizer:ro" \
+  --entrypoint /opt/glm-probe-sanitizer/compute-sanitizer "$IMAGE" --version
 while IFS=$'\t' read -r source target rest; do
   if [[ $target == */flashinfer/* || $source == flashinfer_b12x_moe.py ]]; then
     [[ -f "$REPO/build/glm53/$source" ]] || exit 3
@@ -42,7 +51,7 @@ timeout --signal=TERM --kill-after=30s 12m docker run --rm --name "$probe_contai
   "${mounts[@]}" -e MAX_JOBS=1 "$IMAGE" -lc '
     set -euo pipefail
     python3 /repo/probes/b12x_prefill_stream_check.py --output /evidence/numerics.json
-    compute-sanitizer --error-exitcode 99 --tool memcheck python3 /repo/probes/b12x_prefill_stream_check.py --sanitize --output /evidence/memcheck.json
-    compute-sanitizer --error-exitcode 99 --tool racecheck python3 /repo/probes/b12x_prefill_stream_check.py --sanitize --output /evidence/racecheck.json
+    /opt/glm-probe-sanitizer/compute-sanitizer --error-exitcode 99 --tool memcheck python3 /repo/probes/b12x_prefill_stream_check.py --sanitize --output /evidence/memcheck.json
+    /opt/glm-probe-sanitizer/compute-sanitizer --error-exitcode 99 --tool racecheck python3 /repo/probes/b12x_prefill_stream_check.py --sanitize --output /evidence/racecheck.json
     echo MOE_STREAM_ALL_GATES_PASS
   ' 2>&1 | tee "$log_dir/run.log"
