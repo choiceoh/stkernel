@@ -12,8 +12,8 @@ def main():
     path = Path(os.environ["STARTUP_CACHE_RESPONSES"])
     original = onepass.ask_stream
 
-    def recorded(url, model, content, max_tokens):
-        result = original(url, model, content, max_tokens)
+    def recorded(url, model, content, max_tokens, *args, **kwargs):
+        result = original(url, model, content, max_tokens, *args, **kwargs)
         text, ttft, prompt_tokens, completion_tokens, finish = result
         record = {"prompt_sha256": hashlib.sha256(content.encode()).hexdigest(),
                   "response": text, "response_sha256": hashlib.sha256(text.encode()).hexdigest(),
@@ -24,7 +24,10 @@ def main():
         return result
 
     onepass.ask_stream = recorded
-    return onepass.main()
+    try:
+        return onepass.main()
+    finally:
+        onepass.ask_stream = original
 
 
 if __name__ == "__main__":
