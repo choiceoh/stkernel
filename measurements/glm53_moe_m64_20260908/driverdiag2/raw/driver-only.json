@@ -1,0 +1,69 @@
+{
+  "mode": "driver-only",
+  "exit_code": 0,
+  "error_count": 0,
+  "api_reports": {},
+  "program": {
+    "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+    "mode": "driver-only",
+    "calls": [
+      {
+        "round": 0,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 0,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 0,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 1,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      }
+    ],
+    "versions": {
+      "cuda-bindings": "13.3.1",
+      "cuda-python": "13.3.1",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "torch": "2.13.0+cu130"
+    },
+    "positive_control": null,
+    "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+    "serving_gate": false,
+    "numerical_acceptance": false
+  },
+  "log_sha256": "926d5e0037537a9d139cecfda858489aaf268df03d3aad1fded7b99cdc6a7503",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

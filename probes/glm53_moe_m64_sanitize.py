@@ -12,16 +12,24 @@ from pathlib import Path
 
 os.environ.update(VLLM_GLM53_B12X_PREFILL_M64='1',VLLM_GLM53_B12X_STATIC_V2='t',
                   VLLM_GLM53_B12X_PREFILL_REUSE='0',VLLM_GLM53_B12X_PREFILL_FC1_N128='0')
-import torch
-from flashinfer.fused_moe import B12xMoEWrapper
-from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
-from b12x_static_probe import expert_set
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--int8',action='store_true')
     args=ap.parse_args()
+    # Initialize the CUDA driver before PyTorch creates a runtime context.
+    # Keep sanitizer API reporting enabled and check every requested status.
+    from cuda.bindings import driver
+    status,version=driver.cuDriverGetVersion()
+    assert int(status)==0,status
+    initialized=driver.cuInit(0)
+    assert int(initialized[0])==0,initialized
+    print(json.dumps(dict(kind='CUDA_DRIVER_INITIALIZED_BEFORE_TORCH',driver_version=version)),flush=True)
+    import torch
+    from flashinfer.fused_moe import B12xMoEWrapper
+    from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
+    from b12x_static_probe import expert_set
     assert torch.cuda.get_device_capability()==(12,1)
     manifest=Path('/repo/build/glm53/manifest.tsv');provenance={}
     for line in manifest.read_text().splitlines():

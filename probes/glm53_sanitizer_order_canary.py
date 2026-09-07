@@ -1,7 +1,9 @@
 """Deliberately bad, isolated CuTe kernels verify sanitizer detection after driver-first init."""
 import argparse
+import hashlib
 import json
 import os
+from pathlib import Path
 os.environ.setdefault('CUTE_DSL_ARCH','sm_121a')
 
 
@@ -13,7 +15,7 @@ def kernels():
     @cute.kernel
     def out_of_bounds(output:cute.Tensor):
         tid,_,_=cute.arch.thread_idx()
-        output[tid+32]=cutlass.Float32(tid)
+        output[tid+64]=cutlass.Float32(tid)
 
     @cute.kernel
     def shared_race(output:cute.Tensor):
@@ -29,7 +31,7 @@ def kernels():
 
     @cute.jit
     def launch_race(output:cute.Tensor):
-        shared_race(output).launch(grid=(1,1,1),block=(32,1,1))
+        shared_race(output).launch(grid=(1,1,1),block=(64,1,1))
     return launch_memory,launch_race
 
 
@@ -50,13 +52,13 @@ def main():
     from cutlass import cute
     memory,race=kernels()
     if args.compile_only:
-        fake=cute.runtime.make_fake_compact_tensor(cutlass.Float32,(32,),stride_order=(0,),assumed_align=16)
+        fake=cute.runtime.make_fake_compact_tensor(cutlass.Float32,(64,),stride_order=(0,),assumed_align=16)
         for function in (memory,race):cute.compile(function,fake)
         print(json.dumps(dict(kind='SANITIZER_CANARY_CPU_COMPILE_PASS',gpu_execution=False)),flush=True)
         return
     import torch
     from cutlass.cute.runtime import from_dlpack
-    value=torch.zeros(32,device='cuda',dtype=torch.float32)
+    value=torch.zeros(64,device='cuda',dtype=torch.float32)
     tensor=from_dlpack(value,assumed_align=16)
     compiled=cute.compile(memory if args.tool=='memcheck' else race,tensor)
     print(json.dumps(dict(kind='INTENTIONAL_BAD_KERNEL_BEGIN',tool=args.tool,driver_first=True)),flush=True)
@@ -66,6 +68,7 @@ def main():
     except RuntimeError as exc:
         error=str(exc)
     print(json.dumps(dict(kind='INTENTIONAL_BAD_KERNEL_END',tool=args.tool,error=error,
+        source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         serving_gate=False,numerical_acceptance=False)),flush=True)
 
 

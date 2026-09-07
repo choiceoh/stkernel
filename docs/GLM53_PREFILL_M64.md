@@ -13,6 +13,16 @@ TTFT were not reached. Exact incoming fleet recovery completed at 05:21:40 KST.
 See `measurements/glm53_moe_m64_20260908/int8gate1/`. A separate minimal CUDA
 binding diagnostic will isolate the API reports without weakening checks.
 
+Follow-up at 05:49 KST: two minimal diagnostics isolated the reports to CUDA
+Python initialization after PyTorch CUDA initialization. Driver-first produces
+zero bootstrap reports and still detects an intentionally invalid driver call.
+The second diagnostic stopped on a singular/plural error-count parser defect;
+its device controls were not reached. The new normal runner corrects parsing
+and requires API, out-of-bounds CuTe write and shared-memory race detector
+controls to succeed before running the TP4 cases or driver-first sanitizers.
+Their deliberately bad kernels run only in separate diagnostic containers.
+The serving collector requires this detector evidence and exact source hashes.
+
 Earlier at 05:05 KST, the separate RS-only INT8 diagnostic
 completed 72 TP4 trials and exact incoming fleet recovery. All 442,368 row-trials
 per arm have zero INT8 candidate/control failures under the original thresholds;

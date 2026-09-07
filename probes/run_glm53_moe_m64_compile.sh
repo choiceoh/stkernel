@@ -17,6 +17,8 @@ while IFS=$'\t' read -r source target _; do
 done < "$REPO/build/glm53/manifest.tsv"
 args+=("$IMAGE" /repo/probes/glm53_moe_m64_compile.py)
 timeout --signal=TERM --kill-after=10s 120s "${args[@]}"
+args[${#args[@]}-1]=/repo/probes/glm53_sanitizer_order_canary.py
+timeout --signal=TERM --kill-after=10s 120s "${args[@]}" --compile-only
 if [[ $int8 == 1 ]]; then
   args[${#args[@]}-1]=/repo/probes/glm53_prefill_int8_check.py
   args+=(--compile-only)

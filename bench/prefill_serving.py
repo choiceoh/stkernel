@@ -187,11 +187,26 @@ def verify_gate(candidate, directory, repo):
     contracts=('profiles/glm53.env', 'launchers/start-glm53-nvfp4-tp4.sh',
                  'probes/glm53_moe_m64_check.py', 'probes/run_glm53_moe_m64_tp4_check.sh',
                  'probes/glm53_moe_m64_sanitize.py')
-    if int8:contracts+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py')
+    if int8:contracts+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py',
+        'probes/glm53_cuda_driver_lookup_check.py','probes/glm53_sanitizer_order_canary.py',
+        'probes/run_glm53_cuda_driver_lookup_check.sh','probes/glm53_sanitizer_report.py')
     for path in contracts:
         old, new = (frozen/path).read_bytes(), (repo/path).read_bytes()
         if old != new:raise RuntimeError('GPU-validated launch/probe contract changed: '+path)
         hashes[path] = hashlib.sha256(new).hexdigest()
+    if int8:
+        from glm53_sanitizer_report import validate_canaries
+        controls=[]
+        for line in log.splitlines():
+            if not line.startswith(b'{'):continue
+            try:record=json.loads(line)
+            except json.JSONDecodeError:continue
+            if record.get('verdict')=='SANITIZER_DETECTOR_CONTROLS_PASS':controls.append(record)
+        if len(controls)!=1:raise RuntimeError('sanitizer detector control proof missing')
+        try:
+            validate_canaries('\n'.join(json.dumps(r) for r in controls[0]['controls']),frozen/'probes')
+        except (KeyError,TypeError,ValueError) as exc:
+            raise RuntimeError('sanitizer detector control proof is invalid') from exc
     reports = []
     for line in log.splitlines():
         if not line.startswith(b'{'):continue

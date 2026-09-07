@@ -100,7 +100,9 @@ class ServingTests(unittest.TestCase):
             relative=('build/glm53/manifest.tsv','build/glm53/module.py','profiles/glm53.env',
                       'launchers/start-glm53-nvfp4-tp4.sh','probes/glm53_moe_m64_check.py',
                       'probes/run_glm53_moe_m64_tp4_check.sh','probes/glm53_moe_m64_sanitize.py')
-            if int8:relative+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py')
+            if int8:relative+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py',
+                'probes/glm53_cuda_driver_lookup_check.py','probes/glm53_sanitizer_order_canary.py',
+                'probes/run_glm53_cuda_driver_lookup_check.sh','probes/glm53_sanitizer_report.py')
             for tree in (frozen,repo):
                 for path in relative:
                     p=tree/path;p.parent.mkdir(parents=True,exist_ok=True)
@@ -125,9 +127,13 @@ class ServingTests(unittest.TestCase):
                             source_unchanged=True,finite=True,retained_unchanged=True)
                             for n in ROWS for c in (False,True) for d in range(4)])
             full_marker='MOE_M64_INT8_ALL_GATES_PASS' if int8 else 'MOE_M64_ALL_GATES_PASS'
-            def write(c=complete,r=reports,marker=True,sanitizers=sanitizers):
+            detector=[]
+            if int8:
+                from test_glm53_sanitizer_report import control_fixture
+                detector=[dict(verdict='SANITIZER_DETECTOR_CONTROLS_PASS',controls=control_fixture(repo/'probes'))]
+            def write(c=complete,r=reports,marker=True,sanitizers=sanitizers,detectors=detector):
                 m.save(gate/'completion.json',c)
-                (gate/(key+'.log')).write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in r+sanitizers)+'\nMOE_M64_MEMCHECK_PASS\nMOE_M64_RACECHECK_PASS'+
+                (gate/(key+'.log')).write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in detectors+r+sanitizers)+'\nMOE_M64_MEMCHECK_PASS\nMOE_M64_RACECHECK_PASS'+
                     ('\n'+full_marker+'\n' if marker else '\n'))
             candidate=('VLLM_GLM53_B12X_PREFILL_M64','marker','a'*40,str(frozen))
             with patch.dict(m.CANDIDATES,{key:candidate}),patch.object(m,'pinned'):
@@ -164,6 +170,11 @@ class ServingTests(unittest.TestCase):
                 write(sanitizers=changed)
                 with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate(key,gate,repo)
                 if int8:
+                    write(detectors=[])
+                    with self.assertRaisesRegex(RuntimeError,'detector control'):m.verify_gate(key,gate,repo)
+                    damaged=copy.deepcopy(detector);damaged[0]['controls'][2]['deliberate_error_detected']=False
+                    write(detectors=damaged)
+                    with self.assertRaisesRegex(RuntimeError,'detector control'):m.verify_gate(key,gate,repo)
                     for field in ('packet_equal','output_equal','retained_unchanged'):
                         changed=copy.deepcopy(sanitizers);changed[1]['int8']['cases'][-1][field]=False
                         write(sanitizers=changed)

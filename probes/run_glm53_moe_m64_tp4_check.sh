@@ -54,6 +54,18 @@ for rank in 0 1 2 3; do
     ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" "$command" </dev/null
   fi
 done
+if [[ $diagnostic == 0 && $trace == 0 && $int8 == 0 ]]; then
+  # Driver-first initialization is admissible only while all detectors work.
+  if ! bash "$REPO/probes/run_glm53_cuda_driver_lookup_check.sh" --canaries-only >"$log_dir/bootstrap-canaries.log" 2>&1; then
+    tail -40 "$log_dir/bootstrap-canaries.log"; exit 1
+  fi
+  python3 - "$log_dir/bootstrap-canaries.log" "$REPO/probes" <<'DETECTORS'
+import json,pathlib,sys
+sys.path.insert(0,sys.argv[2])
+from glm53_sanitizer_report import validate_canaries
+print(json.dumps(validate_canaries(pathlib.Path(sys.argv[1]).read_text(),sys.argv[2])),flush=True)
+DETECTORS
+fi
 for transport in "${transports[@]}"; do
   pids=()
   for rank in 0 1 2 3; do
