@@ -1,0 +1,18 @@
+{
+  "pid": 2351000,
+  "repo": "/home/choiceoh/stkernel-prefill32-check-0907",
+  "revision": "4be95a59ad9dab650a2fef22f065531338d70cef",
+  "command": [
+    "bash",
+    "bench/fleet.sh",
+    "run",
+    "--gpu",
+    "--probe",
+    "mla32probe30907",
+    "10",
+    "Large MLA register-Q: every-row numerics, graph replay, paired timing, memcheck and racecheck; no boot",
+    "--",
+    "bash",
+    "probes/run_mk_mla_prefill32_check.sh"
+  ]
+}

@@ -68,6 +68,18 @@ remains disabled in both unless explicitly requested through its driver gate.
   Korean corruption, memory and path-engagement proof. No default promotion
   follows from the queued probe alone.
 
+The final queued gate is `mla32probe30907`, source
+`4be95a59ad9dab650a2fef22f065531338d70cef`, in the private detached checkout
+`srv2:/home/choiceoh/stkernel-prefill32-check-0907`. Its durable runner log,
+eventual `completion.json` and `exit_code` live under
+`srv2:/tmp/glm53-mla32-check3-0907`. The submitted request and initial
+preflight/queue receipt are [gpu-request.json](gpu-request.json) and
+[gpu-fleet.log](gpu-fleet.log). Two earlier waiters were cancelled before
+GPU execution while the admission and per-row checks were completed; there
+has been no GPU result from those revisions. The final job has passed
+preflight and is waiting behind other fleet work. The direct serving bracket
+has not yet been submitted; it depends on this numerical gate.
+
 Commands:
 
 ```bash

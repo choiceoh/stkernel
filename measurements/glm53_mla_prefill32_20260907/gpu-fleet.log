@@ -1,0 +1,7 @@
+preflight mla32probe30907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax probes/run_mk_mla_prefill32_check.sh
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+waiting: pos 2/2, held by mkpackio20907 [boot] (pid 2189044@srv2, since 17:02, est 30m, Retry W4 warm boot bracket after onepass timing-wrapper fix; preserve runtime if all-node hashes match), legacy busy (2 procs, 0 reqs) 2026-09-07_17:17:18
