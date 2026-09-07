@@ -7373,3 +7373,22 @@ its first baseline and stopped before the candidate; approved main was
 restored at 20:25:15 KST, with health 200 verified after recovery.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
+
+### GLM prefill fusion / split thresholds / direct packets (2026-09-07)
+
+PR #439, tested source `52b23e2`: the first GPU run exposed a production-MHC
+first-product rounding mismatch. Corrected order passes 28 fused-post cases
+and 260 real TP4 transport/threshold cases, including bit-exact next-pre
+continuation and nondefault streams. Direct PyNCCL exchange is numerically
+correct but has severe 4K latency cliffs; leave it off.
+
+The subsequent exclusive serving arm `SPFUSED0907` (overlay `284770d1a222`)
+proved 3/3 selected paths and completed 2K/4K/8K/32K requests. At 128K,
+earlyoom terminated the head worker with 6,114 MiB available; the request
+returned no content. The arm is invalid and its baseline never ran. No
+serving gain or original 40% target claim is supported. Keep all new options
+at their existing defaults. The earlier probe-induced headroom incident
+received a verified defaults recovery; probe launchers now refuse inadequate
+host memory, which does not resolve the separate long-context serving issue.
+
+[Failure analysis, recovery details and device evidence](docs/GLM53_PREFILL_FOLLOWUP_20260907.md).

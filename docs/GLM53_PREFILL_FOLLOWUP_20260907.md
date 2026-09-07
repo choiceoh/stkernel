@@ -74,8 +74,46 @@ the [raw evidence](GLM53_PREFILL_FOLLOWUP_20260907.json). The direct arm also
 has high variance, so ratios of independent medians must not be described as
 its paired estimator. No per-kernel percentage is an end-to-end gain.
 
-A matched serving pair is queued as `spfusedserv` on the tested source,
-with `FUSE_MHC=1`, AG minimum 2048, RS minimum 4096, and direct exchange off.
-It uses 2K/4K/8K/32K/128K onepass requests with exclusivity required. Quality,
-Korean corruption and traffic contamination are gates. The actual serving
-result and original 40% target remain unresolved.
+## Serving gate: failed at 128K; no A/B verdict
+
+Fleet `spfusedserv` ran at 12:15:55–12:25:25 KST on the numerically tested
+source `52b23e229231e470236d36ea74bfebc352d512ea`, with `FUSE_MHC=1`,
+AG minimum 2048, RS minimum 4096, and direct exchange off. Before boot,
+deployment verified all 56 overlays and the manifest on all four nodes.
+The actual serving overlay stamp was `284770d1a222`; the initial fleet
+deployment message still showed the previous cache stamp `f2cfb08ce330`.
+The onepass record uses the actual new stamp and has **3/3 serving proof**.
+
+The exclusive onepass began at 12:23:12 and completed ten requests through
+32K with all twelve retrieval checks passing. The 128K request returned no
+content or usage because the head worker died. At 12:25:11, earlyoom observed
+6,114 MiB available (4.99%) and sent SIGTERM to host worker PID 884391;
+the engine reported its death at 12:25:23. This occurred during serving
+alone, without the additional probe containers from the earlier incident.
+It is a separate long-context headroom failure. The new probe-admission
+guard does **not** solve it. The journal establishes host memory pressure
+as the immediate cause; it does not isolate the candidate's contribution
+without a baseline under the same resource conditions.
+
+The recorded result is **12/15 retrieval, 0/11 Korean corruption**, with
+invalid evidence flags `requests remain after the workload` and
+`completed requests 10 != own requests 11`. These flags reflect the aborted
+request; they are not evidence of external traffic. The 128K field's
+40.88 seconds is time until the failed stream ended, **not a valid TTFT**.
+The complete arm is excluded from performance conclusions, including its
+otherwise completed shorter requests. The baseline arm never ran.
+
+The fleet failure handler released the slot because the queued boot job
+`dec3follow0907` took ownership at 12:25:35. A second recovery by this
+experiment would interfere with that owner, so none was launched. The
+earlier 12:11 recovery remains verified; no post-failure recovery is claimed
+here without a new health observation.
+
+**Decision:** keep fusion and direct exchange off, and leave both thresholds
+inheriting the current shared default. Direct exchange is rejected for this
+candidate due to its size cliffs. Fusion and separate thresholds remain
+unpromoted pending a valid matched serving pair with sufficient UMA
+headroom. The original 40% throughput target remains unproven.
+
+Raw serving record, journal, failure-log tails, fleet log and surviving-worker
+attestation are included under `serving_attempt` in the JSON evidence.
