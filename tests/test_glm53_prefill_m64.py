@@ -101,6 +101,42 @@ class M64Tests(unittest.TestCase):
         with self.assertRaises(ValueError):allocate(**args,tile_m=64,activation='relu2')
 
 class PortTests(unittest.TestCase):
+    def test_q0_scale_writes_match_physical_atoms_across_task_boundaries(self):
+        source=ROOT/'overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py'
+        ns=functions(source,{'_m64_q0_scale_row'},dict(Int32=int))
+        coordinates=ns['_m64_q0_scale_row']
+        cls=next(n for n in ast.parse(source.read_text()).body
+                 if isinstance(n,ast.ClassDef) and n.name=='MoEGatedDynamicKernelM64Tiled')
+        q0=next(n for n in cls.body if isinstance(n,ast.FunctionDef)
+                and n.name=='initialize_route_q0_and_publish')
+        calls=[n for n in ast.walk(q0) if isinstance(n,ast.Call)
+               and isinstance(n.func,ast.Name) and n.func.id=='_m64_q0_scale_row']
+        self.assertEqual(len(calls),4)  # shared top8, other top-k, equal/different scale paths
+        offsets=[n.value for n in ast.walk(q0) if isinstance(n,ast.Assign)
+                 and any(isinstance(t,ast.Name) and t.id=='scale_offset' for t in n.targets)]
+        self.assertEqual(len(offsets),3)
+        self.assertEqual(len({ast.dump(n) for n in offsets}),1)
+        packed=compile(ast.Expression(offsets[0]),str(source),'eval')
+        capacity=(65536//64+287)*64
+        scale_capacity=((capacity+127)//128)*128*256
+        # All rows in three adjacent atoms plus end-of-allocation boundaries.
+        # This crosses even/odd M64 tasks and independent expert bases.
+        rows=list(range(384))+list(range(capacity-129,capacity))
+        for row in rows:
+            block,within=coordinates(row)
+            for sf in range(256):
+                value=eval(packed,dict(Int32=int,phys_tile=block,num_k_tiles=64,
+                    k_tile_idx=sf//4,outer_m_idx=within%32,inner_m_idx=within//32,inner_k_idx=sf%4))
+                # Canonical (block, K64, outer-M32, inner-M4, inner-K4) storage.
+                expected=((((row//128)*64+sf//4)*32+row%32)*4+(row%128)//32)*4+sf%4
+                self.assertEqual(value,expected)
+                self.assertLess(value,scale_capacity)
+        self.assertEqual(coordinates(64),(0,64))
+        # The original M64 Q0 wrote row 64's first scale at 32768, not 8;
+        # its final-row address also exceeded the allocated scale plane.
+        self.assertNotEqual((64//64)*64*512,8)
+        self.assertGreater((capacity-1)//64*64*512,scale_capacity)
+
     def test_port_changes_m_dimensions_after_stock_initialization(self):
         source=ROOT/'overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py'
         tree=ast.parse(source.read_text())

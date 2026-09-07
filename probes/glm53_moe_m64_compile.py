@@ -27,7 +27,7 @@ def main():
             compiled,mac=md._get_dynamic_kernel(288,8192,4096,512,8,
                 (65536//tile_m+287)*tile_m,tile_m=tile_m,tiled=True,
                 activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,swiglu_limit=10.)
-            if tile_m==64 and not any('glm53_prefill_m64_v2' in key for key in md._DYNAMIC_KERNEL_CACHE):
+            if tile_m==64 and not any('glm53_prefill_m64_v3' in key for key in md._DYNAMIC_KERNEL_CACHE):
                 raise RuntimeError('requested M64 port did not compile')
             record.update(compiled=True,mac=mac)
         except Exception as exc:

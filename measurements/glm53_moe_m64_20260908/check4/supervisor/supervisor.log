@@ -1,0 +1,70 @@
+preflight moem64serve10908 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 1b6cf60d -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:15:05
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:15:50
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:18:51
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 2 reqs) 2026-09-08_02:19:21
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:19:51
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (2 procs, 0 reqs) 2026-09-08_02:20:22
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:20:52
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:21:37
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:22:37
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:24:07
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup) 2026-09-08_02:24:38
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:24:53
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 2 reqs) 2026-09-08_02:25:08
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (2 procs, 0 reqs, booting) 2026-09-08_02:25:38
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:25:53
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:26:53
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:27:53
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:29:09
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 1 reqs) 2026-09-08_02:29:24
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:29:39
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 2 reqs) 2026-09-08_02:29:54
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 3 reqs) 2026-09-08_02:30:09
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 2 reqs) 2026-09-08_02:30:39
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (2 procs, 1 reqs) 2026-09-08_02:31:40
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:31:55
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:32:55
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:33:55
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:35:11
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 3 reqs) 2026-09-08_02:35:41
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:35:56
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 2 reqs) 2026-09-08_02:36:11
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:36:56
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (2 procs, 0 reqs) 2026-09-08_02:37:11
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:37:26
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:38:27
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs, booting) 2026-09-08_02:39:27
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (1 procs, 0 reqs) 2026-09-08_02:40:42
+waiting: pos 1/1, held by earlymm0908e [boot] (pid 785338@srv2, since 02:10, est 40m, GLM renderer warmup after budget guard: exact preprocessing and matched startup), legacy busy (0 procs, 1 reqs) 2026-09-08_02:41:12
+GO moem64serve10908 2026-09-08_02:41:58
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+START moe-m64 2026-09-08 02:43:10
+DONE moe-m64 rc=1
+{"started": 1788802920.360429, "exit_code": 1, "probes": {"moe-m64": {"revision": "ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73", "started": 1788802990.7818089, "command": ["bash", "probes/run_glm53_moe_m64_tp4_check.sh"], "exit_code": 1, "ended": 1788803053.3829699}}, "restored_original": true, "ended": 1788803210.8530612}
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-moe-m64-serving1-0908/bench/prefill_serving.py", line 438, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/choiceoh/stkernel-moe-m64-serving1-0908/bench/prefill_serving.py", line 434, in main
+    return run_bracket(args)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-moe-m64-serving1-0908/bench/prefill_serving.py", line 344, in run_bracket
+    refresh_gpu_gate(args.candidate, source, args.revision, args.gate_dir)
+  File "/home/choiceoh/stkernel-moe-m64-serving1-0908/bench/prefill_serving.py", line 330, in refresh_gpu_gate
+    run_owned(['python3', str(source/'probes/glm53_offline_checks.py'),
+  File "/home/choiceoh/stkernel-moe-m64-serving1-0908/bench/prefill_serving.py", line 241, in run_owned
+    if rc:raise subprocess.CalledProcessError(rc,command)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+subprocess.CalledProcessError: Command '['python3', '/home/choiceoh/stkernel-moe-m64-serving1-0908/probes/glm53_offline_checks.py', '--probe-source', '/home/choiceoh/stkernel-moe-m64-check4-0908', '--probe-revision', 'ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73', '--out', '/tmp/glm53-moe-m64-check4-0908/evidence']' returned non-zero exit status 1.
+{"started": "2026-09-08T02:15:02.276820", "exit_code": 1, "ended": "2026-09-08T02:46:51.135891"}
