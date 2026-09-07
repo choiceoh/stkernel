@@ -729,5 +729,18 @@
       "scheduling": "duration-balanced",
       "timing_hints": 92
     }
+  },
+  "review_followup": {
+    "commit": "c668f1b93dc7b2d3817f1f722da88e9ac5437858",
+    "change": "Refresh queued slot/RAM metadata on retry while retaining the FIFO ticket; extended existing fairness regression.",
+    "source_sha256": {
+      "bench/experiment_resources.py": "b6235b09913c93346a004d3c2fb47fdbdae274a3f4ad203ed3bad2c62d726eb1",
+      "bench/cpu_evidence.py": "ae35339e44131c93d33fa5ab4592dce2ffc18b49270a9f676fc4a03b7c3a3939",
+      "tests/test_fleet_runtime.py": "3769a77b6daaa9f8bdf78551e21b3da1066fab3bdf9151d17e4a57d2d4a75b62"
+    },
+    "tests_run_per_platform": 15,
+    "passed": true,
+    "macos_log": "...............\n----------------------------------------------------------------------\nRan 15 tests in 1.877s\n\nOK\n",
+    "linux_log": "...............\n----------------------------------------------------------------------\nRan 15 tests in 5.014s\n\nOK\n"
   }
 }

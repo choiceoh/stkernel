@@ -1,7 +1,7 @@
 # Fleet CPU turnaround, fair admission and unused reservations
 
-The six-job CPU artifact chain completed in a median **2.267 s → 1.573 s
-(30.6% less wall time)** over five alternating baseline/candidate rounds on the
+The six-job CPU artifact chain completed in a median **2.248 s → 1.562 s
+(30.5% less wall time)** over five alternating baseline/candidate rounds on the
 same macOS host. Four deliberately heterogeneous fixture tests completed in
 **1.286 s → 0.789 s (38.7% less)** when their recorded durations balanced two
 shards. These are isolated CPU workflow measurements, not production GPU queue
@@ -37,14 +37,14 @@ verify and extend an artifact from `1` to `5`. Both arms use fresh databases,
 identical commands, budgets and fixture dependencies; no cache hit is accepted.
 The helper records source hashes for the five runner files replaced between
 baseline `bb123cfa1fc47e2b9e87fde3b55eb4400412785d` and candidate. Candidate hashes
-match implementation commit `df20601`.
+match implementation commit `c668f1b`.
 
 | CPU chain metric (median, five rounds per arm) | Baseline | Candidate |
 | --- | ---: | ---: |
-| All six results available | 2.267 s | 1.573 s |
-| First CPU result available | 0.735 s | 0.689 s |
-| Sum of five dependency handoff gaps | 0.707 s | 0.693 s |
-| Plan command returns | 0.347 s | 0.347 s |
+| All six results available | 2.248 s | 1.562 s |
+| First CPU result available | 0.741 s | 0.673 s |
+| Sum of five dependency handoff gaps | 0.678 s | 0.680 s |
+| Plan command returns | 0.347 s | 0.345 s |
 
 The chain gain is primarily shorter CPU command completion overhead. Its
 handoff gaps and plan-return time changed little; this does not establish a
@@ -74,7 +74,11 @@ See [validation receipt](validation.json) for the exact runs, executed IDs and
 runner hashes. The cold macOS gate executed 106 cases; after adding the live
 worker regression, the learned scheduler executed all 107 with 92 valid timing
 hints. Linux also executes the complete gate in an isolated temporary clone
-with GPUs hidden. Timing history is scheduling evidence only; skipped, failed,
+with GPUs hidden. The final review follow-up refreshes stored waiter budgets without changing
+ticket age; all 15 runtime regressions pass again on both platforms, and the
+CPU chain comparison was rerun on those final source hashes.
+
+Timing history is scheduling evidence only; skipped, failed,
 missing or duplicated tests never satisfy the CPU gate.
 
 ## Reproduce
