@@ -101,6 +101,8 @@ class PackIOTests(unittest.TestCase):
         with patch.dict(os.environ, {"VLLM_GLM53_MK_PACK_FAST_IO": "0"}):
             baseline = self.common.environment_identity()
         self.assertEqual(self.common.environment_identity(), baseline)
+        with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}):
+            self.assertEqual(self.common.environment_identity(), baseline)
         with patch.dict(os.environ, {"VLLM_GLM53_MK_PACK_ROWSHIFT": "different"}):
             self.assertNotEqual(self.common.environment_identity(), baseline)
 

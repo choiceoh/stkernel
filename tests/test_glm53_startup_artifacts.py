@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -386,9 +387,65 @@ class RankArtifactTests(unittest.TestCase):
         raw = bytearray(path.read_bytes())
         raw[20] ^= 1  # second chunk, after a first chunk may have been restored
         path.write_bytes(raw)
-        with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
-            self.load(self.model(), value=19)
+        for prefetch in ("0", "1"):
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": prefetch}), \
+                    self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                self.load(self.model(), value=19)
         self.assertEqual(self.loader.call_count, 1)
+
+    def test_prefetch_restores_identical_bytes_and_aliases(self):
+        first = self.model()
+        first.register_buffer("alias", first.packed)
+        loaded = self.load(first)
+        for prefetch in ("0", "1"):
+            second = self.model(-3)
+            second.register_buffer("alias", second.packed)
+            pointers = {name: tensor.data_ptr() for name, tensor in second.state_dict().items()}
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": prefetch}):
+                self.assertEqual(self.load(second), loaded)
+            for name, tensor in second.state_dict().items():
+                self.assertTrue(torch.equal(tensor, first.state_dict()[name]), name)
+                self.assertEqual(tensor.data_ptr(), pointers[name])
+        self.assertEqual(self.loader.call_count, 1)
+
+    def test_prefetch_overlaps_cpu_hash_with_copy_and_joins_after_copy_failure(self):
+        self.load(self.model())
+        manifest = json.loads((self.artifact() / "manifest.json").read_text())["manifest"]
+        original_hash = self.rank.hashlib.sha256
+        original_copy = self.common.HostStaging.copy_from_cpu
+        caller = threading.get_ident()
+        for fail in (False, True):
+            waiting, release, done = threading.Event(), threading.Event(), threading.Event()
+            lock = threading.Lock()
+            calls = []
+            def checksum(data):
+                self.assertNotEqual(threading.get_ident(), caller)
+                with lock:
+                    calls.append(1)
+                    index = len(calls)
+                if index == 1:
+                    self.assertTrue(waiting.wait(5))
+                elif index == 2:
+                    waiting.set()
+                    self.assertTrue(release.wait(5))
+                    done.set()
+                return original_hash(data)
+            def copy(staging, target, raw):
+                self.assertEqual(threading.get_ident(), caller)
+                self.assertTrue(waiting.is_set())
+                release.set()
+                if fail:
+                    raise OSError("copy failed")
+                return original_copy(staging, target, raw)
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}), \
+                    patch.object(self.rank.hashlib, "sha256", side_effect=checksum), \
+                    patch.object(self.common.HostStaging, "copy_from_cpu", copy):
+                if fail:
+                    with self.assertRaisesRegex(OSError, "copy failed"):
+                        self.rank._restore(self.artifact(), manifest, self.model().state_dict())
+                else:
+                    self.rank._restore(self.artifact(), manifest, self.model().state_dict())
+            self.assertTrue(done.is_set(), "checksum worker outlived the mapping")
 
     def test_disk_failure_and_unpublished_directory_keep_source_path(self):
         with patch.object(self.rank.os, "rename", side_effect=OSError("disk failure")):
