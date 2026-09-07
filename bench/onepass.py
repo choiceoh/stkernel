@@ -164,6 +164,11 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
                 if line.startswith("VLLM_") and "=" in line:
                     k, v = line.split("=", 1)
                     declared[k] = v.strip().strip('"')
+                elif line.startswith("SPEC_K="):
+                    # The launcher exports this profile setting under a
+                    # VLLM alias for the compile-cache key. Matching values
+                    # belong to the baseline, not an experimental knob.
+                    declared["VLLM_GLM53_SPEC_K"] = line.split("=", 1)[1].strip().strip('"')
         knobs = {k: v for k, v in served.items() if k in declared and v != declared[k]}
         knobs.update({k: v for k, v in served.items()
                       if k.startswith("VLLM_GLM53_") and k not in declared})
@@ -261,6 +266,7 @@ def main() -> int:
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
                                    "cold_tok_s": tok / cold if cold > 0 else 0.0,
                                    "warm_tok_s": tok / warm if warm > 0 else 0.0,
+                                   "ttft_samples_s": ttfts,
                                    "combined": combined})
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"

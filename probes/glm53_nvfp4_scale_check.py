@@ -108,7 +108,10 @@ def main():
         raise RuntimeError("candidate scale knob was not latched before import")
     generator = torch.Generator(device=device).manual_seed(20260906)
     checks = []
-    for shape in ((128, 512), (512, 1536), (8192, 4096), (129, 513), (2, 31, 128)):
+    # Neighbouring sizes exercise non-specialized N/COUNT and the final
+    # reduction's power-of-two capacity boundary (1024 -> 1025 rows).
+    for shape in ((128, 512), (512, 1536), (8192, 4096), (129, 513), (2, 31, 128),
+                  (129, 4096), (130, 4096), (1024, 4096), (1025, 4096)):
         for case in ("zeros", "random", "outlier", "small_finite"):
             x = torch.randn(shape, device=device, generator=generator).to(torch.bfloat16)
             if case == "zeros":

@@ -1,0 +1,462 @@
+{
+  "source_revision": "60a7de0eba3cea759277146ded353eb76db7dd6c",
+  "base_main": "05c4a65",
+  "overlay": "7cb8c033a0b2",
+  "threshold_real_chunk_tokens": 4096,
+  "assessment": {
+    "2K": "Native BF16 gather/scatter invoked. Best post-first TTFT 843.019 ms baseline vs 844.359 ms candidate; two samples per arm are insufficient for a stable percentage verdict. No prefix hits or concurrent requests observed in this phase.",
+    "4K": "Warm measurements include prefix reuse; not a clean codec crossover measurement.",
+    "8K_32K_128K": "Timing comparison excluded from a speedup verdict: baseline includes non-loopback requests, mixed batches, and queued traffic starting in the 8K phase.",
+    "overall": "No stable overall speedup or original 40 percent gain established. FP8 remains off by default."
+  },
+  "records": [
+    {
+      "name": "SPGATE0907A",
+      "t": "2026-09-07 08:19:31",
+      "git": "60a7de0",
+      "harness": 39,
+      "doc_lang": "ko",
+      "thinking": true,
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 2.064988851547241,
+          "warm_s": 0.8443586826324463,
+          "cold_tok_s": 1030.514038080906,
+          "warm_tok_s": 2520.2559572971545,
+          "ttft_samples_s": [
+            2.064988851547241,
+            0.8443586826324463,
+            0.8811399936676025
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 4000,
+          "tok": 4209,
+          "cold_s": 1.5306308269500732,
+          "warm_s": 0.8878834247589111,
+          "cold_tok_s": 2749.8466161084907,
+          "warm_tok_s": 4740.48718855505,
+          "ttft_samples_s": [
+            1.5306308269500732,
+            1.948007345199585,
+            0.8878834247589111
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 8000,
+          "tok": 8243,
+          "cold_s": 2.944239854812622,
+          "warm_s": 0.7513942718505859,
+          "cold_tok_s": 2799.7039665522097,
+          "warm_tok_s": 10970.272610274986,
+          "ttft_samples_s": [
+            2.944239854812622,
+            1.8324007987976074,
+            0.7513942718505859
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.793092012405396,
+          "warm_s": 10.793092012405396,
+          "cold_tok_s": 3015.354632629216,
+          "warm_tok_s": 3015.354632629216,
+          "ttft_samples_s": [
+            10.793092012405396
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 42.96012830734253,
+          "warm_s": 42.96012830734253,
+          "cold_tok_s": 2992.518995294233,
+          "warm_tok_s": 2992.518995294233,
+          "ttft_samples_s": [
+            42.96012830734253
+          ],
+          "combined": true
+        }
+      ],
+      "quality": {
+        "ok": 15,
+        "total": 15
+      },
+      "decode": {
+        "gen_tokens": 4879,
+        "wall_s": 134.06758093833923,
+        "acc_raw": 0.471939477303989,
+        "acc_legacy": 0.7865657955066483,
+        "tokens_per_step": 3.359697386519945,
+        "windows": [
+          21.936797716343268,
+          21.93452028036954,
+          21.439391440571715,
+          21.443068235620917,
+          21.938761807852753,
+          21.43681703989949,
+          21.443492366381868,
+          21.44393312117914,
+          21.935544683424165,
+          21.93610110270022,
+          21.938881172734643,
+          21.94078926933934,
+          21.425858879357968,
+          21.940806424931473
+        ],
+        "windows_med": 21.935032481896855,
+        "windows_by_ctx": {
+          "2000": [
+            21.936797716343268,
+            21.93452028036954,
+            21.439391440571715
+          ],
+          "4000": [
+            21.443068235620917,
+            21.938761807852753,
+            21.43681703989949
+          ],
+          "8000": [
+            21.443492366381868
+          ],
+          "32000": [
+            21.44393312117914,
+            21.935544683424165,
+            21.93610110270022,
+            21.938881172734643
+          ],
+          "128000": [
+            21.94078926933934,
+            21.425858879357968,
+            21.940806424931473
+          ]
+        },
+        "num_spec": 5.0
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 11,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "workload": {
+        "ctx": [
+          2000,
+          4000,
+          8000,
+          32000,
+          128000
+        ],
+        "seed": 7,
+        "max_tokens": 400,
+        "combine_min_ctx": 32000
+      },
+      "overlay": "7cb8c033a0b2",
+      "boot_id": "4fdc411474c5531e8a271f9cf5682115273c3d10d8c2ae479c3abb36e2f6b27b|2026-09-06T23:12:54.969896788Z",
+      "knobs": {
+        "VLLM_GLM53_PREFILL_SP_FP8": "3"
+      },
+      "session": "prefillgate",
+      "proof": {
+        "VLLM_GLM53_PREFILL_SP_FP8": true
+      },
+      "proof_ok": "1/1"
+    },
+    {
+      "name": "SPGATE0907ABASE",
+      "t": "2026-09-07 08:27:37",
+      "git": "60a7de0",
+      "harness": 39,
+      "doc_lang": "ko",
+      "thinking": true,
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 1.9779009819030762,
+          "warm_s": 0.8430192470550537,
+          "cold_tok_s": 1075.888034573148,
+          "warm_tok_s": 2524.260279268606,
+          "ttft_samples_s": [
+            1.9779009819030762,
+            0.846921443939209,
+            0.8430192470550537
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 4000,
+          "tok": 4209,
+          "cold_s": 2.560622215270996,
+          "warm_s": 0.8549962043762207,
+          "cold_tok_s": 1643.7411090548367,
+          "warm_tok_s": 4922.828871586346,
+          "ttft_samples_s": [
+            2.560622215270996,
+            1.924220323562622,
+            0.8549962043762207
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 8000,
+          "tok": 8243,
+          "cold_s": 3.187843084335327,
+          "warm_s": 1.2766342163085938,
+          "cold_tok_s": 2585.760899118623,
+          "warm_tok_s": 6456.822083176458,
+          "ttft_samples_s": [
+            3.187843084335327,
+            3.153960704803467,
+            1.2766342163085938
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 16.614229679107666,
+          "warm_s": 16.614229679107666,
+          "cold_tok_s": 1958.8630125250538,
+          "warm_tok_s": 1958.8630125250538,
+          "ttft_samples_s": [
+            16.614229679107666
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 43.67115521430969,
+          "warm_s": 43.67115521430969,
+          "cold_tok_s": 2943.796640347979,
+          "warm_tok_s": 2943.796640347979,
+          "ttft_samples_s": [
+            43.67115521430969
+          ],
+          "combined": true
+        }
+      ],
+      "quality": {
+        "ok": 15,
+        "total": 15
+      },
+      "decode": {
+        "gen_tokens": 5431,
+        "wall_s": 155.94982409477234,
+        "acc_raw": 0.49661508704061896,
+        "acc_legacy": 0.8273084281542644,
+        "tokens_per_step": 3.4761904761904763,
+        "windows": [
+          21.91618618109859,
+          16.947513559004125,
+          11.963189367967251,
+          21.915966284297745,
+          21.41810810995796,
+          14.945085650347588,
+          20.94508235007461,
+          20.946761407632142,
+          21.423982898984583,
+          21.420734019689885,
+          21.423235064208246,
+          21.915096686058714,
+          21.42097374353271,
+          21.42027236459457,
+          21.42194050535348,
+          21.90487323607168,
+          21.423198518565023,
+          21.919911297015428
+        ],
+        "windows_med": 21.421457124443094,
+        "windows_by_ctx": {
+          "2000": [
+            21.91618618109859,
+            16.947513559004125,
+            11.963189367967251
+          ],
+          "4000": [
+            21.915966284297745,
+            21.41810810995796
+          ],
+          "8000": [
+            14.945085650347588,
+            20.94508235007461,
+            20.946761407632142,
+            21.423982898984583
+          ],
+          "32000": [
+            21.420734019689885,
+            21.423235064208246,
+            21.915096686058714,
+            21.42097374353271,
+            21.42027236459457
+          ],
+          "128000": [
+            21.42194050535348,
+            21.90487323607168,
+            21.423198518565023,
+            21.919911297015428
+          ]
+        },
+        "num_spec": 4.9861362266425555
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 11,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "workload": {
+        "ctx": [
+          2000,
+          4000,
+          8000,
+          32000,
+          128000
+        ],
+        "seed": 7,
+        "max_tokens": 400,
+        "combine_min_ctx": 32000
+      },
+      "overlay": "7cb8c033a0b2",
+      "boot_id": "3743efbec505429fb5b4081612e24734cfecfd12ae76dbce2eb868460bd32afc|2026-09-06T23:23:16.9878271Z",
+      "knobs": {},
+      "session": "prefillgate",
+      "cold_compile": true
+    }
+  ],
+  "attestations": {
+    "candidate": {
+      "nodes": {
+        "10.10.10.1": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "3e0d3356e4ced239b64beef6a73af69c675c80347c9502d121569343034ac32a",
+          "started_at": "2026-09-06T23:12:54.478304556Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "3",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.2": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "4fdc411474c5531e8a271f9cf5682115273c3d10d8c2ae479c3abb36e2f6b27b",
+          "started_at": "2026-09-06T23:12:54.969896788Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "3",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.3": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "d5d28ead9d0affee1f806ef47e79d3d3a2e1f9cbe6248cb6a4de73012318e824",
+          "started_at": "2026-09-06T23:12:54.394552597Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "3",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.4": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "1b54810b4f70b8a22262bd415ad24ec1572d641298ce5e5e2c3ab7974c0ede65",
+          "started_at": "2026-09-06T23:12:54.428331045Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "3",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        }
+      },
+      "revision": "60a7de0eba3cea759277146ded353eb76db7dd6c",
+      "manifest_sha256": "7cb8c033a0b2db1cdc3c41342d6e942291da52e59e73d1a073ad954164a1d1fd"
+    },
+    "baseline": {
+      "nodes": {
+        "10.10.10.1": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "9c2beaaf0319c9f0b5f5ac2a6125249af6d1f66a7b9a42942072ce127eaba185",
+          "started_at": "2026-09-06T23:23:16.45144788Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "0",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.2": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "3743efbec505429fb5b4081612e24734cfecfd12ae76dbce2eb868460bd32afc",
+          "started_at": "2026-09-06T23:23:16.9878271Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "0",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.3": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "d5d6052908b9e1b1524febf1be9077c7a36e4bc39ffbed3990111e5cc99bd5f1",
+          "started_at": "2026-09-06T23:23:16.403844845Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "0",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        },
+        "10.10.10.4": {
+          "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+          "boot_id": "3659700a4341607e22285ea57371e176c7b95dfe880bb9886f441fea2a7ff25c",
+          "started_at": "2026-09-06T23:23:16.397527398Z",
+          "knobs": {
+            "VLLM_GLM53_PREFILL_SP_FP8": "0",
+            "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+            "VLLM_GLM53_SPEC_K": "5"
+          }
+        }
+      },
+      "revision": "60a7de0eba3cea759277146ded353eb76db7dd6c",
+      "manifest_sha256": "7cb8c033a0b2db1cdc3c41342d6e942291da52e59e73d1a073ad954164a1d1fd"
+    }
+  },
+  "selected_boot_log_evidence": {
+    "SPGATE0907A": [
+      "(Worker_TP0 pid=261) INFO 09-06 23:19:31 [glm53_prefill_collectives.py:348] [prefill-sp] short chunk BF16 all-gather engaged",
+      "(Worker_TP0 pid=261) INFO 09-06 23:19:31 [glm53_prefill_collectives.py:395] [prefill-sp] short chunk BF16 reduce-scatter engaged"
+    ],
+    "SPGATE0907ABASE": [
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK",
+      "(APIServer pid=29) INFO 09-06 23:28:24 [loggers.py:310] Engine 000: Avg prompt throughput: 1014.0 tokens/s, Avg generation throughput: 44.6 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 7.8%",
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK",
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK",
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK",
+      "(APIServer pid=29) INFO 09-06 23:28:44 [loggers.py:310] Engine 000: Avg prompt throughput: 533.0 tokens/s, Avg generation throughput: 56.3 tokens/s, Running: 1 reqs, Waiting: 1 reqs, GPU KV cache usage: 2.9%, Prefix cache hit rate: 29.7%",
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK",
+      "(APIServer pid=29) INFO 09-06 23:29:24 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 36.3 tokens/s, Running: 1 reqs, Waiting: 1 reqs, Deferred: 1 reqs, GPU KV cache usage: 4.8%, Prefix cache hit rate: 6.6%",
+      "(APIServer pid=29) INFO 09-06 23:29:34 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 1 reqs, Deferred: 1 reqs, GPU KV cache usage: 8.2%, Prefix cache hit rate: 6.6%",
+      "(APIServer pid=29) INFO:     <external-client> - \"POST /v1/chat/completions HTTP/1.1\" 200 OK"
+    ]
+  },
+  "log_paths": [
+    "srv2:/home/choiceoh/glm53-logs/boot-SPGATE0907A.log",
+    "srv2:/home/choiceoh/glm53-logs/boot-SPGATE0907ABASE.log",
+    "srv2:/tmp/glm53-prefill-gated-request/pair.log"
+  ]
+}

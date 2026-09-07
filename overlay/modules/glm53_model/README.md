@@ -552,15 +552,18 @@ served-numerics gates, since A4 activations are a quality change.
 
 ---
 
-## glm53_prefill_nvfp4 (368차 신규, 기본 0)
+## glm53_prefill_nvfp4
 
-Two opt-in prefill candidates on the fp8-dense lane. Both arm only with the
+Two prefill paths on the fp8-dense lane. Both arm only with the
 exact string "1" (`true`/`yes`/`on` do not).
 
 `VLLM_GLM53_NVFP4_SCALE_FUSED=1` fuses the activation amax/scale pass with
 GEMM alpha setup (2688.0 == 448.0 x `_NVFP4_MAX` identity, same op order) —
-bit-exact vs the unfused helper by construction;
-`probes/glm53_nvfp4_scale_check.py` is the GPU assertion. The gate is
+validated against the unfused helper after matching PyTorch's reciprocal
+then multiply rounding (39차 §4e). It is now a profile default.
+`probes/glm53_nvfp4_scale_check.py` is the GPU assertion. N/COUNT are runtime
+arguments so warm kernels cover varying prompt lengths within each reduction
+capacity. The gate is
 tensor-property-only, so it changes every `_nvfp4_dense_gemm` caller,
 decode included; acceptability rests on that bit-exactness.
 
@@ -569,8 +572,8 @@ unquantized b_proj linears through an NVFP4 pair; decode and absorbed-MLA
 weights are untouched (`get_and_maybe_dequant_weights` still reads the BF16
 source, and the BF16 free pass skips this method). **No-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1`** (this profile's default): the fp8 pattern
-already owns every b_proj linear. Neither knob has GPU validation yet —
-keep both at 0 until the combined campaign.
+already owns every b_proj linear. This BPROJ candidate remains off and
+requires independent invocation, numerical and serving proof.
 
 ### Startup artifacts: FP8 copies and rank checkpoints (2026-09-06)
 

@@ -4,10 +4,18 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "probes"))
-import torch
-from kda_prefill_direct_out import fixture, paired_summary, sequence_cases
+try:
+    import torch
+    import triton
+except ModuleNotFoundError as exc:
+    if exc.name not in ("torch", "triton"):
+        raise
+    torch = None
+else:
+    from kda_prefill_direct_out import fixture, paired_summary, sequence_cases
 
 
+@unittest.skipIf(torch is None, "probe fixture checks require CPU torch and triton")
 class PrefillProbeTests(unittest.TestCase):
     def test_fixture_shapes_and_layouts(self):
         for lengths in ((1,), (65,), (1, 63, 64, 65, 127)):
