@@ -122,3 +122,32 @@ headroom. The original 40% throughput target remains unproven.
 
 Raw serving record, journal, failure-log tails, fleet log and surviving-worker
 attestation are included under `serving_attempt` in the JSON evidence.
+
+## Scheduled retest preparation
+
+The 13:30 KST read-only check found 143 GiB available disk space on srv1
+and no new earlyoom terminations since the 12:25 incident. The fleet was
+owned by `dec3step0907`, so no deployment or GPU work was started then.
+Main `0b6dc75` has since promoted calibrated NVFP4 scale 16; it is merged
+into this branch and will be common to both arms of the new comparison.
+
+The retest uses a dedicated onepass ledger and identical **KV_TOKENS=524288,
+MAX_LEN=262144** settings on both sides to leave additional UMA headroom.
+The five requested contexts still fit; this is a comparison with reduced
+cache capacity, not acceptance at the production 2,000,000-token cache and
+1,048,576 maximum length. The test runner restores production capacity after
+the bracket if no subsequent boot owns that responsibility.
+
+`ONEPASS_MEMORY_DIR` enables an opt-in guard around the unchanged onepass
+workload. It samples MemAvailable on all four nodes before starting its
+client and throughout the run. Below 10 GiB, missing memory counters or a
+failed SSH observation causes the guard to terminate only its own onepass
+client, closing its requests and failing the fleet leg. It never signals
+serving workers or changes earlyoom. The guard is sampled and cannot reserve
+RAM or guarantee protection from instantaneous spikes. Four model-free
+behavioral tests cover malformed counters, refusal before launch, propagation
+of the child's exit code and cancellation after a memory drop. They pass,
+as do 14 transport dispatch tests, four probe-admission tests, and the existing
+6,684 logic checks with 30 megakernel and 32 fleet regressions (the same
+torch-dependent host skips remain). Device code is unchanged from the
+numerically tested helper. Serving results remain pending.

@@ -452,3 +452,13 @@ work. Missing counters or insufficient headroom refuse the next container;
 there is no override. Large probes may need an offline fleet boot turn.
 See [follow-up evidence](../../../docs/GLM53_PREFILL_FOLLOWUP_20260907.md)
 for the fixed numerical failure, memory incident, and unpromoted direct path.
+
+For serving retests, `ONEPASS_MEMORY_DIR=/absolute/run/directory` makes
+`ab-lever.sh` run the existing onepass client through `bench/onepass_memory.py`.
+It checks available host RAM on the head and all three workers before sending
+requests and while the owned client runs. Less than 10 GiB, missing counters
+or an unreachable node cancels that client and fails the leg; serving workers
+and host OOM policy are untouched. Per-arm JSONL samples are kept in that
+directory. This is a sampled cancellation guard, not a memory reservation or
+a guarantee against an instantaneous allocation spike. It needs real spare
+memory before the workload, and it must be enabled on both comparison arms.
