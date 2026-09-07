@@ -25,7 +25,7 @@ eval "$(
   . "$REPO/profiles/glm53.env"
   printf 'IMAGE=%q\nTARGET_PREFIX=%q\n' "$PROFILE_IMAGE" "$TARGET_PREFIX"
 )"
-IMAGE=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+IMAGE=$(docker image inspect "${PREFILL_PROBE_IMAGE_ID:-$IMAGE}" --format '{{.Id}}')
 echo "image=$IMAGE"
 mounts=(-v "$REPO:/repo:ro")
 for pair in \

@@ -428,7 +428,7 @@ earlier percentages or treated as reaching the original 40% target.
 Validation in a current fleet turn (same checkout path on all four nodes):
 
 ```bash
-# CPU compilation is GPU-free; run it through fleet.sh run --cpu.
+# GPU-free compilation; the combined probe turn also runs this first.
 bash probes/run_glm53_prefill_transport_check.sh --compile-only
 # GPU probes require fleet.sh run --gpu --probe.
 bash probes/run_glm53_prefill_transport_check.sh --skip-scale --fuse-mhc
