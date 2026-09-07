@@ -18,7 +18,6 @@ from pathlib import Path
 import platform
 import re
 import shutil
-import signal
 import sqlite3
 import statistics
 import subprocess
@@ -98,7 +97,8 @@ def normalize(raw, repo):
     if not isinstance(raw, dict):
         raise ValueError("manifest must be a JSON object")
     allowed = {"kind", "revision", "hypothesis", "command", "knobs", "inputs", "context",
-               "env", "depends_on", "estimate_min", "timeout_s", "probe_contract"}
+               "env", "depends_on", "estimate_min", "timeout_s", "probe_contract", "evaluations",
+               "resources", "outputs", "api_port"}
     if set(raw) - allowed:
         raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
     kind = raw.get("kind")
@@ -119,6 +119,9 @@ def normalize(raw, repo):
     command, knobs = raw.get("command", []), raw.get("knobs", {})
     if not isinstance(command, list) or any(not isinstance(v, str) or not v or "\0" in v for v in command):
         raise ValueError("command must be an argv array")
+    if kind == 'cpu':
+        from cpu_checks import canonical
+        command = canonical(command, repo)
     if not isinstance(knobs, dict) or any(
         not re.fullmatch(r"VLLM_[A-Z0-9_]+", k) or not isinstance(v, str)
         or not re.fullmatch(r"[A-Za-z0-9_.,:/+%-]+", v) for k, v in knobs.items()
@@ -163,10 +166,25 @@ def normalize(raw, repo):
         if not re.fullmatch(r"sha256:[a-f0-9]{64}", context["image"]):
             raise ValueError("structured probe context.image must be an immutable sha256 image ID")
         contract(probe_contract)
+    from measurement_contract import evaluations
+    from experiment_resources import normalize as resource_spec
+    evals = evaluations(raw) if kind == 'pair' else None
+    if raw.get('evaluations') is not None and kind != 'pair':
+        raise ValueError('evaluations only applies to pair')
+    outputs = raw.get('outputs', [])
+    if not isinstance(outputs, list) or any(not isinstance(p, str) for p in outputs) or (outputs and kind != 'cpu'):
+        raise ValueError('outputs must be a list of CPU build output paths')
+    from prepared_artifacts import output_path
+    for output in outputs:
+        output_path(repo, output)
+    port = raw.get('api_port', 8000)
+    if type(port) is not int or not 1024 <= port <= 65535 or (kind == 'cpu' and port != 8000):
+        raise ValueError('GPU api_port must be 1024..65535')
     return dict(kind=kind, revision=revision, hypothesis=raw["hypothesis"], command=command,
                 knobs=knobs, env=env, inputs=inputs, context=context,
                 depends_on=sorted(set(deps)), estimate_min=estimate, timeout_s=timeout,
-                probe_contract=probe_contract)
+                probe_contract=probe_contract, evaluations=evals, resources=resource_spec(raw.get('resources')),
+                outputs=sorted(set(outputs)), api_port=port)
 
 
 class Store:
@@ -193,6 +211,11 @@ class Store:
                 PRIMARY KEY(job, dependency, kind));
             CREATE TABLE IF NOT EXISTS cpu_cache (
                 key TEXT PRIMARY KEY, job TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS cpu_leases (
+                job TEXT PRIMARY KEY, pid INTEGER NOT NULL, slots INTEGER NOT NULL, memory_mb INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS deliveries (
+                session TEXT NOT NULL, cursor INTEGER NOT NULL, delivered REAL NOT NULL, acknowledged REAL,
+                PRIMARY KEY(session, cursor));
         """)
 
     def event(self, job, kind, data):
@@ -223,6 +246,8 @@ class Store:
         identity["spec"] = {k: v for k, v in payload["spec"].items()
                             if k not in {"hypothesis", "estimate_min"}}
         identity["environment"] = {k: v for k, v in payload["environment"].items() if k != "SSH_AUTH_SOCK"}
+        if 'prepared_artifacts' in identity:
+            identity['prepared_artifacts'] = [{k:v for k,v in r.items() if k != 'path'} for r in identity['prepared_artifacts']]
         fingerprint = hashlib.sha256(encoded(identity).encode()).hexdigest()
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
@@ -252,8 +277,19 @@ class Store:
         rows = self.db.execute("SELECT e.* FROM events e JOIN subscribers s ON s.job=e.job "
                                "WHERE s.session=? AND e.cursor>? ORDER BY e.cursor LIMIT 200",
                                (session, after)).fetchall()
+        with self.db:
+            self.db.executemany('INSERT OR IGNORE INTO deliveries(session,cursor,delivered) VALUES(?,?,?)',
+                                [(session, r['cursor'], time.time()) for r in rows])
         return [dict(cursor=r["cursor"], id=r["job"], at=r["at"], event=r["kind"],
                      data=json.loads(r["data"])) for r in rows]
+
+    def acknowledge(self, session, cursor):
+        if not self.db.execute('SELECT 1 FROM deliveries WHERE session=? AND cursor=?', (session, cursor)).fetchone():
+            raise ValueError('only delivered events can be acknowledged')
+        with self.db:
+            self.db.execute('UPDATE deliveries SET acknowledged=COALESCE(acknowledged,?) WHERE session=? AND cursor<=?',
+                            (time.time(), session, cursor))
+        return dict(session=session, acknowledged=cursor)
 
 
 def worker_lock(store, job):
@@ -278,7 +314,7 @@ def ensure_worker(store, job):
             return
         probe.close()
         state = store.get(job)["state"]
-        if state not in {"queued", "waiting_dependencies", "waiting_baseline"}:
+        if state not in {"queued", "waiting_dependencies", "waiting_baseline", "waiting_cpu"}:
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
@@ -309,6 +345,11 @@ def child_env(payload, store, job):
                FLEET_CONTEXT=encoded(payload["spec"]["context"]))
     if payload["spec"]["kind"] != "cpu":
         env["IMAGE"] = payload["spec"]["context"]["image"]
+        env['GLM53_API_PORT'] = str(payload['spec'].get('api_port', 8000))
+        env['HEAD_URL'] = 'http://127.0.0.1:' + env['GLM53_API_PORT']
+    if payload['spec']['kind'] in {'pair', 'baseline'}:
+        from measurement_contract import evaluations, environment
+        env.update(environment(evaluations(payload['spec'])[0]))
     # Always execute the reviewed repo runners, not a stale log-directory copy.
     env["FLEET"] = str(Path(payload["repo"]) / "bench/fleet.sh")
     env["LEVER"] = str(Path(payload["repo"]) / "bench/ab-lever.sh")
@@ -319,13 +360,32 @@ def verify(payload):
     current = snapshot(Path(payload["repo"]), payload["spec"], payload["paths"]["MK_OVERLAY_STAMP"])
     if current != payload["snapshot"]:
         raise ValueError("source, build, runner or external inputs changed while queued; resubmit after checking the new context")
+    from prepared_artifacts import intact
+    if not intact(payload.get('prepared_artifacts', [])):
+        raise ValueError('prepared build artifacts changed')
 
 
-def pair_result(payload, job):
+def knob_mismatch(record, knobs, repo):
+    profile = {}
+    for line in (Path(repo) / 'profiles/glm53.env').read_text().splitlines():
+        line = line.strip()
+        if line.startswith(('VLLM_', 'SPEC_K=')) and '=' in line:
+            key, value = line.split('=', 1)
+            profile['VLLM_GLM53_SPEC_K' if key == 'SPEC_K' else key] = value.strip().strip('"\'')
+    expected = {k:v for k,v in knobs.items() if v != profile.get(k)}
+    return record.get('knobs') != expected
+
+
+def pair_result_one(payload, job, index=0):
     from baseline import load
     from judge import baselines_on, judge
     rows = load(payload["paths"]["ONEPASS_JSONL"])
-    name = "EXP-" + job
+    from measurement_contract import evaluations
+    from serving_group import name_for
+    from experiment_baselines import reference
+    from judge import compatible
+    evaluation = evaluations(payload["spec"])[index]
+    name = name_for("EXP-" + job, payload["spec"], index)
     candidates = [r for r in rows if r.get("name") == name and r.get("experiment_id") == job
                   and not r.get("rehearsal")]
     if not candidates:
@@ -333,19 +393,28 @@ def pair_result(payload, job):
     cand = candidates[-1]
     if (cand.get("overlay") != payload["snapshot"]["build"][:12]
             or not payload["spec"]["revision"].startswith(cand.get("git") or "MISSING")
-            or not cand.get("workload")):
+            or not compatible(cand, reference(payload, index))):
         return "incomplete", {"evidence": "unmatched", "reason": "record build/revision/workload does not match submission"}
-    profile = dict(line.split("=", 1) for line in (Path(payload["repo"]) / "profiles/glm53.env").read_text().splitlines()
-                   if line.startswith("VLLM_") and "=" in line)
-    for k, v in payload["spec"]["knobs"].items():
-        actual = (cand.get("knobs") or {}).get(k, profile.get(k, "").strip().strip('"'))
-        if actual != v:
-            return "incomplete", {"evidence": "unmatched", "reason": "requested knob not attested: " + k}
+    if knob_mismatch(cand, payload['spec']['knobs'], payload['repo']):
+        return 'incomplete', dict(evidence='unmatched', reason='serving knobs do not exactly match the requested configuration')
     bases, _ = baselines_on(rows, cand)
-    verdict = judge(cand, bases[-1] if bases else None, rows)
+    from measurement_contract import metric_compatible, metric_value
+    obj = evaluation['objective']
+    bases = [b for b in bases if metric_compatible(b, cand, obj)
+             and (obj['metric'] == 'quality' or metric_value(b, obj) is not None)]
+    verdict = judge(cand, bases[-1] if bases else None, rows, evaluation["objective"])
     result = dict(evidence="gpu-pair", verdict=verdict, candidate=cand,
                   baseline=bases[-1] if bases else None)
     return ("succeeded" if verdict["status"] == "valid" else "incomplete"), result
+
+
+def pair_result(payload, job):
+    from measurement_contract import evaluations
+    results = [pair_result_one(payload, job, i) for i, _ in enumerate(evaluations(payload['spec']))]
+    if len(results) == 1:
+        return results[0]
+    state = 'succeeded' if all(s == 'succeeded' for s, _ in results) else 'incomplete'
+    return state, dict(evidence='gpu-pair', evaluations=[r for _, r in results])
 
 
 def execute(store, job):
@@ -357,6 +426,10 @@ def execute(store, job):
         if not holder.exists() or holder.read_text().split("|", 1)[0] != "exp-" + job:
             raise ValueError("execute requires this experiment's fleet hold")
     verify(payload)
+    if spec["kind"] != "cpu":
+        from experiment_resources import readiness
+        with store.db:
+            store.event(job, "admission_ready", {"nodes": readiness(spec["resources"])})
     store.state(job, "running")
     if spec["kind"] == "baseline":
         from experiment_baselines import run
@@ -367,10 +440,11 @@ def execute(store, job):
             refresh_result(store, item["id"])
         return 0 if state == "succeeded" else 4
     if spec["kind"] == "pair":
-        command = [payload["bash"], str(Path(payload["repo"]) / "bench/pair.sh"),
-                   "EXP-" + job, " ".join(k + "=" + v for k, v in sorted(spec["knobs"].items()))]
-    else:
-        command = spec["command"]
+        from serving_group import run_pair
+        state, result = run_pair(store, job, payload)
+        store.state(job, state, result)
+        return 0 if state in {'succeeded', 'incomplete'} else 4
+    command = spec['command']
     nonce = uuid.uuid4().hex
     binding = dict(revision=spec["revision"], snapshot=payload["snapshot"], context=spec["context"])
     if spec["kind"] == "probe":
@@ -378,36 +452,26 @@ def execute(store, job):
         report_path.unlink(missing_ok=True)
         os.environ.update(FLEET_PROBE_REPORT=str(report_path), FLEET_PROBE_NONCE=nonce,
                           FLEET_PROBE_BINDING=encoded(binding))
+    failure_reason = None
     if spec["kind"] == "cpu":
-        proc = subprocess.Popen(command, cwd=payload["repo"], start_new_session=True)
-        try:
-            rc = proc.wait(timeout=spec["timeout_s"])
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-            store.state(job, "failed", {"returncode": 124, "evidence": "cpu-only",
-                                       "reason": "CPU time budget exceeded; dependent jobs will not execute"})
-            return 124
+        from experiment_resources import run_cpu
+        rc, failure_reason = run_cpu(store, job, command, payload)
     else:
         rc = subprocess.call(command, cwd=payload["repo"])
     if rc:
         result = {"returncode": rc, "evidence": "cpu-only" if spec["kind"] == "cpu" else "process-exit",
-                  "reason": "experiment failed; dependent jobs will not execute"}
+                  "reason": failure_reason or "experiment failed; dependent jobs will not execute"}
         report = store.root / job / "cpu-report.json"
         if spec["kind"] == "cpu" and report.exists():
             result["checks"] = json.loads(report.read_text())
         store.state(job, "failed", result)
         return rc
     verify(payload)
-    if spec["kind"] == "pair":
-        state, result = pair_result(payload, job)
-    elif spec["kind"] == "cpu":
+    if spec["kind"] == "cpu":
         state, result = "succeeded", {"returncode": 0, "evidence": "cpu-only", "command": command,
                                      "revision": spec["revision"], "context": spec["context"]}
+        from prepared_artifacts import capture
+        result["artifacts"] = capture(payload)
         report = store.root / job / "cpu-report.json"
         if report.exists():
             result["checks"] = json.loads(report.read_text())
@@ -483,16 +547,25 @@ def worker(store, job):
                     hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
                     if hit and not store.get(job)["repeat_reason"]:
                         source = store.get(hit["job"])
-                        if (source["state"] == "succeeded" and source["result"].get("checks", {}).get("coverage_complete") is True):
+                        from prepared_artifacts import intact
+                        if (source["state"] == "succeeded" and intact((source["result"] or {}).get("artifacts", [])) and source["result"].get("checks", {}).get("coverage_complete") is True):
                             result = dict(source["result"], revision=spec["revision"], cache_source=source["id"],
                                           tested_revision=source["payload"]["spec"]["revision"],
                                           cache_identity=payload["cpu_identity"])
                             verify(payload)
                             store.state(job, "succeeded", result)
                             return 0
+            if spec["kind"] != "cpu":
+                from experiment_resources import readiness
+                from prepared_artifacts import materialize
+                payload['prepared_artifacts'] = materialize(store, payload)
+                with store.db:
+                    store.db.execute('UPDATE jobs SET payload=? WHERE id=?', (encoded(payload), job))
+                    store.event(job, 'prepared', {'artifacts': payload['prepared_artifacts'],
+                                                'nodes': readiness(spec['resources'])})
             if spec["kind"] == "pair":
-                from experiment_baselines import reserve, samples
-                if len(samples(payload)) < 3:
+                from experiment_baselines import reserve, samples, ready
+                if not ready(payload):
                     baseline = reserve(store, job)
                     store.state(job, "waiting_baseline", {"baseline_job": baseline})
                     while True:
@@ -505,12 +578,12 @@ def worker(store, job):
                             break
                         time.sleep(.2)
                     verify(payload)
-                    if len(samples(payload)) < 3:
+                    if not ready(payload):
                         raise ValueError("shared baseline evidence changed; resubmit after checking its ledger")
             elif spec["kind"] == "baseline":
-                from experiment_baselines import samples
+                from experiment_baselines import samples, ready
                 bases = samples(payload)
-                if len(bases) >= payload["baseline_samples"]:
+                if ready(payload):
                     store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
                     return 0
             store.state(job, "queued_fleet")
@@ -559,7 +632,43 @@ def stats(store):
             group[field + "_p95"] = round(values[max(0, math.ceil(.95 * len(values)) - 1)], 2) if values else None
     dispositions = {r["kind"]: r["n"] for r in store.db.execute(
         "SELECT kind,count(*) AS n FROM events WHERE kind IN ('submitted','joined','reused') GROUP BY kind")}
-    return dict(by_kind=groups, requests=dispositions)
+    latencies = {}
+    for prefix, kinds in [('', ['succeeded']), ('terminal_', sorted(TERMINAL))]:
+        for field, column in [('delivery_s', 'delivered'), ('acknowledgment_s', 'acknowledged')]:
+            placeholders = ','.join('?' for _ in kinds)
+            values = sorted(r[0] for r in store.db.execute(
+                f"SELECT d.{column}-e.at FROM deliveries d JOIN events e ON e.cursor=d.cursor "
+                f"WHERE e.kind IN ({placeholders}) AND d.{column} IS NOT NULL", kinds))
+            latencies[prefix + field] = dict(n=len(values), p50=statistics.median(values) if values else None,
+                                    p95=values[max(0, math.ceil(.95*len(values))-1)] if values else None)
+    return dict(by_kind=groups, requests=dispositions, result_consumption=latencies)
+
+
+def collect(store, session, path, repo):
+    """Archive private ledgers without converting unverified data into a pass."""
+    data = path.read_bytes()
+    if len(data) > 64 * 1024 * 1024:
+        raise ValueError('collect one result file of at most 64 MiB')
+    if path.suffix == '.jsonl':
+        rows = [json.loads(line) for line in data.splitlines() if line.strip()]
+    else:
+        value = json.loads(data)
+        rows = value if isinstance(value, list) else [value]
+    sha = hashlib.sha256(data).hexdigest()
+    payload = dict(repo=str(repo), environment={}, snapshot={}, paths={},
+                   spec=dict(kind='observation', revision=git(repo, 'rev-parse', 'HEAD'),
+                             hypothesis='Collected result file: ' + path.name, depends_on=[],
+                             artifact_sha256=sha, original_path=str(path.resolve())))
+    answer = store.submit(session, payload)
+    job = answer['id']
+    destination = store.root / job / ('collected' + path.suffix)
+    destination.parent.mkdir(exist_ok=True)
+    destination.write_bytes(data)
+    if answer['disposition'] == 'submitted':
+        store.state(job, 'incomplete', dict(evidence='external-archive', records=len(rows),
+                    artifact=str(destination), sha256=sha,
+                    reason='archived for discovery; performance and provenance have not been adjudicated'))
+    return dict(answer, artifact=str(destination), records=len(rows))
 
 
 def main():
@@ -571,6 +680,13 @@ def main():
     submit.add_argument("session")
     submit.add_argument("manifest", type=Path)
     submit.add_argument("--repeat", metavar="REASON", help="request an additional sample, with a recorded reason")
+    plan = sub.add_parser('plan')
+    plan.add_argument('session')
+    plan.add_argument('manifest', type=Path)
+    plan.add_argument('--base', help='compare committed changes with this explicit git ref to select CPU suites')
+    mode = plan.add_mutually_exclusive_group()
+    mode.add_argument('--submit', action='store_true')
+    mode.add_argument('--prepare-only', action='store_true', help='submit CPU stages before deployment; retain the resolved GPU manifest')
     for cmd in ("worker", "execute", "result", "wait"):
         p = sub.add_parser(cmd)
         p.add_argument("id")
@@ -581,10 +697,19 @@ def main():
     inbox = sub.add_parser("inbox")
     inbox.add_argument("session")
     inbox.add_argument("--after", type=int, default=0)
+    inbox.add_argument('--wait', type=float, default=0, help='long poll for at most 60 seconds')
+    ack = sub.add_parser('ack')
+    ack.add_argument('session')
+    ack.add_argument('cursor', type=int)
+    collector = sub.add_parser('collect')
+    collector.add_argument('session')
+    collector.add_argument('path', type=Path)
     sub.add_parser("jobs")
     sub.add_parser("stats")
     args = ap.parse_args()
     store = Store(args.root)
+    if hasattr(args, 'session') and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
+        raise ValueError('session must be a short alphanumeric name')
     if args.action == "submit":
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
             raise ValueError("session must be a short alphanumeric name")
@@ -605,6 +730,13 @@ def main():
             payload["cpu_identity"] = identity(repo, spec, payload["environment"])
         answer = store.submit(args.session, payload, args.repeat)
         ensure_worker(store, answer["id"])
+    elif args.action == 'plan':
+        from experiment_plan import run
+        answer = run(args, store, Path(os.environ.get('REPO', HERE.parent)).resolve())
+    elif args.action == 'ack':
+        answer = store.acknowledge(args.session, args.cursor)
+    elif args.action == 'collect':
+        answer = collect(store, args.session, args.path, Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == "worker":
         return worker(store, args.id)
     elif args.action == "execute":
@@ -622,7 +754,12 @@ def main():
             answer.update(revision=payload["spec"]["revision"], checkout=payload["repo"],
                           hypothesis=payload["spec"]["hypothesis"])
     elif args.action == "inbox":
-        events = store.inbox(args.session, args.after)
+        deadline = time.monotonic() + max(0, min(args.wait, 60))
+        while True:
+            events = store.inbox(args.session, args.after)
+            if events or time.monotonic() >= deadline:
+                break
+            time.sleep(.2)
         answer = dict(events=events, cursor=events[-1]["cursor"] if events else args.after)
     elif args.action == "stats":
         answer = stats(store)
@@ -630,7 +767,7 @@ def main():
         answer = [dict(r) for r in store.db.execute(
             "SELECT id,state,created,started,finished FROM jobs ORDER BY created DESC LIMIT 100")]
     print(encoded(answer))
-    return 0
+    return 2 if args.action == "plan" and "error" in answer else 0
 
 
 if __name__ == "__main__":
