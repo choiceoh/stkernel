@@ -1,28 +1,6 @@
 {
-  "status": "COMPLETE_MATCHED_BRACKET_PUBLIC_RESTORED",
-  "source_revision": "6e8d1a9e8438d456b43b682abc19789869a5e395",
-  "unique_cache_salts": 30,
-  "candidate_launch_proof": {
-    "10.10.10.2": true,
-    "10.10.10.1": true,
-    "10.10.10.3": true,
-    "10.10.10.4": true
-  },
-  "requests_prompt_tokens": [
-    2121,
-    2128,
-    2128,
-    32545,
-    128559
-  ],
-  "limitations": [
-    "Two independent baseline boots and one candidate boot; no confidence interval.",
-    "TTFT includes request processing and first content generation, not isolated kernel time.",
-    "Throughput denotes prompt tokens divided by TTFT, not full-request throughput.",
-    "Priming is excluded. Every measured request has a fresh prefix-cache identity.",
-    "Reduced measurement KV capacity does not establish production-capacity acceptance.",
-    "This bracket does not establish cumulative improvement from the original campaign baseline."
-  ],
+  "schema": 1,
+  "issues": [],
   "comparison": [
     {
       "ctx": 2000,
@@ -121,11 +99,14 @@
       ]
     }
   ],
-  "issues": [],
-  "completion": {
-    "started": 1788790854.3731673,
-    "exit_code": 0,
-    "restored": true,
-    "ended": 1788793046.478792
-  }
+  "limitations": [
+    "Two independent baseline boots and one candidate boot; no confidence interval.",
+    "TTFT includes request processing and first content generation, not isolated kernel time.",
+    "Throughput denotes prompt tokens divided by TTFT, not full-request throughput.",
+    "Priming is excluded. Every measured request has a fresh prefix-cache identity.",
+    "Reduced measurement KV capacity does not establish production-capacity acceptance.",
+    "This bracket does not establish cumulative improvement from the original campaign baseline."
+  ],
+  "revision": "6e8d1a9e8438d456b43b682abc19789869a5e395",
+  "knob": "VLLM_GLM53_MK_MLA_PREFILL32"
 }

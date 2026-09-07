@@ -291,14 +291,17 @@ Candidate A began booting at21:35:20. A/B2 and final public recovery are
 still pending; these B1 numbers do not establish any candidate improvement
 or the original40% campaign target.
 
-## Serving5 B1 and candidate complete; final baseline pending
+## Serving5 direct prefill result complete
 
-At 23:45 KST, the corrected file-log collector preserved nonempty logs on
-all four ranks and actual candidate launch proof on all four. B1/A priming
-and measured requests passed retrieval 9/9 and Korean corruption 0/5 with
-fresh cache identities and exclusive traffic. Candidate TTFT is 0.864658 s
-at 2K (three-question mean), 10.009738 s at 32K and 39.171938 s at 128K.
-The first baseline is 0.879747 / 10.474451 / 41.584510 s respectively.
-B2 began booting at 23:45:05; comparison and public restore remain pending.
-These preliminary values do not establish a complete bracket or the 40%
-campaign target. [Source pins, controls and raw B1/A evidence](serving5/README.md).
+The same-source B1/A/B2 bracket completed at 23:52:49 KST and public default
+restoration passed at 23:57:26, exit 0. Strict comparison has no issues.
+Against the two-baseline mean, TTFT decreased 1.82% at 2K, 4.45% at 32K and
+5.59% at 128K; reciprocal prompt-tokens/TTFT gains are 1.86% / 4.66% / 5.92%.
+Baseline spreads are 0.22% / 0.03% / 0.46%. All measured phases passed
+retrieval 27/27 and Korean corruption 0/15, with fresh cache identities,
+exclusive traffic and actual candidate launch proof on all four ranks.
+The 2K route is unchanged, so its small observed shift is not established
+as a direct kernel gain. One candidate boot, reduced measurement capacity,
+and the unmatched original campaign baseline limit the conclusion. The
+candidate remains default-off and the 40% target is not established.
+[Full matched results and public restoration evidence](serving5/README.md).
