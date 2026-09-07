@@ -9891,10 +9891,10 @@ def test_nvfp4_static_scale_contracts() -> None:
           and "return _nvfp4_dense_gemm_scaled_op(" in src
           and '"glm53_fp8_dense::gemm_nvfp4_scaled", mutates_args=()' in src
           and "return _nvfp4_dense_gemm_scaled(x, wq, wsf, x_gs, alpha, out_rows)" in src,
-          "the static scale is opt-in (0 = dynamic default), rides the pair tuple as a 6th element, and "
+          "the static scale (profile default 16 since 39차 §4m; 0 = dynamic) rides the pair tuple as a 6th element, and "
           "the dynamic route is the scaled body with per-call scales")
     prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
-    for env in ("VLLM_GLM53_NVFP4_STATIC_SCALE=0", "VLLM_GLM53_NVFP4_STATIC_HEADROOM=2.0",
+    for env in ("VLLM_GLM53_NVFP4_STATIC_SCALE=16", "VLLM_GLM53_NVFP4_STATIC_HEADROOM=2.0",
                 "VLLM_GLM53_NVFP4_STATIC_CHECK=16"):
         check(env in prof, f"{env} declared in profiles/glm53.env (the launcher forwards declared keys only)")
 
