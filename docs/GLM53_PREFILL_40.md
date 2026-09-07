@@ -43,8 +43,10 @@ chunk counts. Its newest-file heuristic cannot select the next capture's evidenc
 `probes/glm53_prefill_profile.sh` also lacks protected profiler cleanup and uses
 the public endpoint. Reuse suitable parsing/client helpers while adding the
 missing collection contracts; do not launch either script unchanged for this
-campaign. This collection path is not implemented or submitted yet. Historical
-traces below are context for hypotheses and cannot replace the current baseline.
+campaign. The temporary worker observer, one-request cleanup helper and CPU trace
+validator are implemented; the isolated boot runner and all-rank file collection
+are still pending, and no GPU run is submitted. See `GLM53_PREFILL_OBSERVATION.md`.
+Historical traces below are context for hypotheses and cannot replace the current baseline.
 
 ## Current evidence after rebase (2026-09-07)
 
