@@ -2,7 +2,10 @@
 
 **No production change selected.** Both direct-register variants regress;
 warp-owned shared staging is effectively unchanged at the representative
-M6/U40 shape. All three pass the bounded numerical/replay gate.
+M6/U40 shape. The subsequent actual onepass B-A-B also did not establish a
+step benefit: 21.947 -> 21.836 -> 21.848 step/s. All three variants pass the
+bounded numerical/replay gate, and all onepass arms pass 18/18 quality with
+0/8 corrupt responses.
 
 The existing `t` MoE lane spends 22.87 ms in 42 calls in the retained
 September 7 rank-0 trace. This is profiled attribution, not a fresh timing
@@ -100,8 +103,9 @@ slower. Full raw results are in [warp/](warp/), with order-specific comparisons
 in [warp-summary.json](warp-summary.json). Recompute with
 `python3 probes/analyze_moe_direct.py <warp-evidence> --variants warp`.
 
-No full-model step/s, output tok/s, acceptance or serving-quality comparison
-was collected for these variants. Approved-main restoration completed at
+At the end of this microbenchmark round, no full-model step/s, output tok/s,
+acceptance or serving-quality comparison had been collected. The subsequent
+onepass follow-up below addresses that omission. Approved-main restoration completed at
 05:58:53 KST and the runner exited 0. The read-only
 [all-rank restoration proof](warp/restore-live.json) confirms HTTP 200,
 all four containers running the immutable image, matching approved-main
@@ -132,3 +136,78 @@ warm weights and read-drained L2 eviction while keeping inputs hot.
 Recompute measured medians and order-specific reductions with
 `python3 probes/analyze_moe_direct.py <evidence-directory>`.
 No profile/default changes are included.
+
+
+## Actual onepass follow-up
+
+**No measured step improvement.** The candidate is 0.28% below the two-baseline
+mean; the baseline boot spread is 0.45%. Output tok/s is 0.91% below that mean,
+within an 8.00% baseline spread. One candidate boot does not establish a stable
+speedup or a stable regression. The default remains `t`, with CTA=2.
+
+| Arm | Pooled step/s | Window median step/s | Fixed output tok/s | All-request acceptance | Fixed windows |
+|---|---:|---:|---:|---:|---:|
+| Baseline 1 (`t`) | 21.947 | 21.849 | 68.62 | 43.55% | 83 |
+| Candidate (`t,ws`) | 21.836 | 21.827 | 70.83 | 46.62% | 81 |
+| Baseline 2 (`t`) | 21.848 | 21.822 | 74.34 | 48.70% | 76 |
+
+Every arm passed 18/18 factual checks and had 0/8 corrupt combined-channel
+responses. All request hashes, source hashes and rank/boot identities match
+across the intended comparisons, and no traffic-exclusivity issue was recorded.
+
+Prefill is the onepass input-token count divided by TTFT, not an isolated GPU
+prefill-kernel duration. 2K warm uses the lowest TTFT of the repeated requests;
+32K and 128K each have one combined-question request per boot.
+
+| Context | Baseline 1 tok/s | Candidate tok/s | Baseline 2 tok/s | Candidate TTFT | Change vs baseline mean |
+|---|---:|---:|---:|---:|---:|
+| 2K warm | 2,410 | 2,410 | 2,500 | 0.883 s | -1.83% |
+| 32K | 2,972 | 3,023 | 2,993 | 10.765 s | +1.35% |
+| 128K | 3,083 | 3,085 | 3,089 | 41.669 s | -0.02% |
+
+The first 2K requests took 2.409 / 1.942 / 1.921 seconds, so their apparent
+first-baseline improvement is affected by startup/JIT warmup. The `ws` kernel
+is M<=8 only; these prefill differences do not establish a prefill-kernel gain.
+
+The chain completed at 07:15:12 KST. The unconditional restore deployed
+approved main `4b0f1d15a1608848faa3c1a957be8f4933ae951d`, verified all four overlay
+copies, booted the public API, and completed at **07:23:12 KST with exit 0**.
+The restore receipt records HTTP 200. Subsequent fleet work belongs to the
+next holder and is outside this bracket.
+
+The user's explicit onepass request escalated the inconclusive warp candidate
+to actual serving, without requiring a microbenchmark speed threshold. Commit
+`27c4a1a` integrates the tested warp mapping behind `VLLM_GLM53_B12X_STATIC_V2=t,ws`.
+The profile still defaults to `t`. The parser admits `ws` only with the plain
+`t` configuration; exact GLM TP geometry retains the existing dispatcher gate,
+and M>8 retains the original barriers and scatter mapping. The cache key and
+M<=8 serving marker distinguish the two compiled kernels.
+
+The same-build B-A-B run is `moewsonepass0908`, using the immutable checkout
+`/home/choiceoh/stkernel-moe-onepass-20260908` and the canonical fleet boot lane.
+`probes/run_moe_warp_onepass.sh` runs the integrated numerical fixture, deploys
+the same source once, and calls the unchanged `bench/onepass.py` through the
+SSE channel recorder. Each arm uses C=1, TP=4, SPEC_K=5, CTA=2, contexts
+2K/32K/128K and three fixed 2,048-token outputs. The API binds to loopback
+port 18000, and the harness requires exclusive request counters.
+
+The primary step metric pools engine steps and elapsed seconds from intervals
+wholly inside those fixed outputs, excluding 0.5 seconds at each response edge.
+Output tok/s pools the three fixed responses' post-first-token tokens and decode
+time. Acceptance covers the entire onepass workload, so it is reported separately.
+Individual windows are correlated; independent boots are the replication unit.
+
+The integrated GPU fixture passed all 130 stock-differential and mutated-graph
+rows, including M1/2/6/8 and M16/32 fallback, with unchanged tolerances. CPU
+baseline/candidate compilation passed, as did 6,691 logic checks, 30 megakernel
+regressions and 107 fleet regressions on Linux. The initial macOS attempt and
+its stale audit / platform-specific mock failure remain in the evidence; the
+logic audit was refreshed after verifying only the MoE control test changed.
+
+Raw records, SSE channels, all-rank source/capture receipts and the unconditional
+approved-main restore receipt are under [onepass/](onepass/). Recompute the final
+comparison with:
+
+```sh
+python3 probes/analyze_moe_onepass.py measurements/glm53_moe_direct_scatter_20260908/onepass
+```

@@ -1,0 +1,231 @@
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+ ok
+test_cross_build_floor_is_only_inconclusive (test_fleet_experiments.EvidenceTests.test_cross_build_floor_is_only_inconclusive) ... ok
+test_decode_tokens_measures_requests_and_rejects_truncation (test_fleet_experiments.EvidenceTests.test_decode_tokens_measures_requests_and_rejects_truncation) ... ok
+test_missing_and_nonfinite_gates_are_rejected (test_fleet_experiments.EvidenceTests.test_missing_and_nonfinite_gates_are_rejected) ... ok
+test_prefill_uses_ttft_and_does_not_mix_compile_regimes (test_fleet_experiments.EvidenceTests.test_prefill_uses_ttft_and_does_not_mix_compile_regimes) ... ok
+test_probe_report_rejects_stale_partial_and_nonfinite_evidence (test_fleet_experiments.EvidenceTests.test_probe_report_rejects_stale_partial_and_nonfinite_evidence) ... ok
+test_replays_of_one_boot_do_not_establish_a_noise_floor (test_fleet_experiments.EvidenceTests.test_replays_of_one_boot_do_not_establish_a_noise_floor) ... ok
+test_unknown_zero_of_zero_proof_cannot_be_valid (test_fleet_experiments.EvidenceTests.test_unknown_zero_of_zero_proof_cannot_be_valid) ... ok
+test_valid_negative_result_and_neutral_are_distinguished (test_fleet_experiments.EvidenceTests.test_valid_negative_result_and_neutral_are_distinguished) ... ok
+test_wrong_context_and_failed_baseline_are_not_reused (test_fleet_experiments.EvidenceTests.test_wrong_context_and_failed_baseline_are_not_reused) ... ok
+test_downstream_counts_unique_pending_jobs_including_shared_baseline (test_fleet_experiments.PriorityTests.test_downstream_counts_unique_pending_jobs_including_shared_baseline) ... ok
+test_short_unlocking_job_wins_then_aging_protects_long_job (test_fleet_experiments.PriorityTests.test_short_unlocking_job_wins_then_aging_protects_long_job) ... ok
+test_baseline_failure_blocks_candidates_without_measuring_them (test_fleet_experiments.SubmissionTests.test_baseline_failure_blocks_candidates_without_measuring_them) ... ok
+test_candidate_with_unrequested_enabled_knob_is_rejected (test_fleet_experiments.SubmissionTests.test_candidate_with_unrequested_enabled_knob_is_rejected) ... ok
+test_chain_stops_after_failed_arm_and_preserves_failure_status (test_fleet_experiments.SubmissionTests.test_chain_stops_after_failed_arm_and_preserves_failure_status) ... ok
+test_collect_delivery_and_ack_preserve_evidence_scope (test_fleet_experiments.SubmissionTests.test_collect_delivery_and_ack_preserve_evidence_scope) ... ok
+test_cpu_cleanup_covers_child_after_leader_exits (test_fleet_experiments.SubmissionTests.test_cpu_cleanup_covers_child_after_leader_exits) ... ok
+test_cpu_gpu_misclassification_is_refused (test_fleet_experiments.SubmissionTests.test_cpu_gpu_misclassification_is_refused) ... ok
+test_cpu_probe_pair_dependencies_complete_without_manual_promotion (test_fleet_experiments.SubmissionTests.test_cpu_probe_pair_dependencies_complete_without_manual_promotion) ... ok
+test_cpu_timeout_blocks_dependents (test_fleet_experiments.SubmissionTests.test_cpu_timeout_blocks_dependents) ... ok
+test_detached_cpu_work_and_shared_result (test_fleet_experiments.SubmissionTests.test_detached_cpu_work_and_shared_result) ... ok
+test_empty_skipped_and_failing_unittests_never_report_complete_pass (test_fleet_experiments.SubmissionTests.test_empty_skipped_and_failing_unittests_never_report_complete_pass) ... ok
+test_failed_prerequisite_blocks_gpu_before_admission (test_fleet_experiments.SubmissionTests.test_failed_prerequisite_blocks_gpu_before_admission) ... ok
+test_generic_cpu_command_is_never_content_cached (test_fleet_experiments.SubmissionTests.test_generic_cpu_command_is_never_content_cached) ... ok
+test_group_failure_stops_remaining_workloads_and_restores_once (test_fleet_experiments.SubmissionTests.test_group_failure_stops_remaining_workloads_and_restores_once) ... ok
+test_plan_preserves_cpu_submission_when_deployment_is_missing (test_fleet_experiments.SubmissionTests.test_plan_preserves_cpu_submission_when_deployment_is_missing) ... ok
+test_skipped_cpu_math_is_partial_and_does_not_unlock_gpu (test_fleet_experiments.SubmissionTests.test_skipped_cpu_math_is_partial_and_does_not_unlock_gpu) ... ok
+test_stale_worker_does_not_blindly_repeat_gpu_work (test_fleet_experiments.SubmissionTests.test_stale_worker_does_not_blindly_repeat_gpu_work) ... ok
+test_baseline_cannot_expand_after_start_but_accepts_covered_quality (test_fleet_feedback.FeedbackTests.test_baseline_cannot_expand_after_start_but_accepts_covered_quality) ... ok
+test_baseline_objectives_share_required_samples_without_extra_boots (test_fleet_feedback.FeedbackTests.test_baseline_objectives_share_required_samples_without_extra_boots) ... ok
+test_cpu_results_and_ids_are_available_before_gpu_attestation (test_fleet_feedback.FeedbackTests.test_cpu_results_and_ids_are_available_before_gpu_attestation) ... ok
+test_dependency_completion_is_observed_without_a_second_of_idle_time (test_fleet_feedback.FeedbackTests.test_dependency_completion_is_observed_without_a_second_of_idle_time) ... ok
+test_dependency_recovery_is_throttled_and_skips_completed_workers (test_fleet_feedback.FeedbackTests.test_dependency_recovery_is_throttled_and_skips_completed_workers) ... ok
+test_explicit_preparation_edge_transfers_verified_outputs (test_fleet_feedback.FeedbackTests.test_explicit_preparation_edge_transfers_verified_outputs) ... ok
+test_failed_worker_start_remains_recoverable_in_final_launch (test_fleet_feedback.FeedbackTests.test_failed_worker_start_remains_recoverable_in_final_launch) ... ok
+test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits (test_fleet_feedback.FeedbackTests.test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits) ... FAIL
+test_incomplete_dependency_is_refreshed_before_blocking (test_fleet_feedback.FeedbackTests.test_incomplete_dependency_is_refreshed_before_blocking) ... ok
+test_preparation_runs_while_checks_wait_but_gpu_remains_blocked (test_fleet_feedback.FeedbackTests.test_preparation_runs_while_checks_wait_but_gpu_remains_blocked) ... ok
+test_failed_transaction_restores_baseline_demand_and_queue (test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue) ... ok
+test_finished_child_uses_wait_instead_of_a_fixed_sleep (test_fleet_runtime.RuntimeTests.test_finished_child_uses_wait_instead_of_a_fixed_sleep) ... ERROR
+test_group_probe_filters_other_groups_and_fails_closed (test_fleet_runtime.RuntimeTests.test_group_probe_filters_other_groups_and_fails_closed) ... ok
+test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries (test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries) ... ok
+test_live_workers_admit_wide_request_before_later_small_request (test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request) ... ok
+test_resource_timeout_cleans_only_its_waiter (test_fleet_runtime.RuntimeTests.test_resource_timeout_cleans_only_its_waiter) ... ok
+test_retirement_after_admission_releases_capacity_without_spawning (test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning) ... ok
+test_duration_assignment_balances_cost_and_keeps_exact_coverage (test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage) ... ok
+test_malformed_assignment_cannot_skip_or_duplicate_tests (test_fleet_runtime.TimingTests.test_malformed_assignment_cannot_skip_or_duplicate_tests) ... ok
+test_recorded_timings_are_reused_but_changed_test_files_are_not (test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not) ... ok
+
+======================================================================
+ERROR: test_finished_child_uses_wait_instead_of_a_fixed_sleep (test_fleet_runtime.RuntimeTests.test_finished_child_uses_wait_instead_of_a_fixed_sleep)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/tests/test_fleet_runtime.py", line 159, in test_finished_child_uses_wait_instead_of_a_fixed_sleep
+    self.assertEqual(resources.run_cpu(store,job,['true'],store.get(job)['payload']),(0,None))
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/bench/experiment_resources.py", line 187, in run_cpu
+    while not acquire(store, job, resources):
+              ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/bench/experiment_resources.py", line 115, in acquire
+    total = total_memory()
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/bench/experiment_resources.py", line 42, in total_memory
+    return int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True)) // 1048576
+               ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 473, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               **kwargs).stdout
+               ^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 555, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'unittest.mock.Mock' object does not support the context manager protocol (missed __exit__ method)
+
+======================================================================
+FAIL: test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults (test_fleet_coalescing.CoalescingTests.test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/tests/test_fleet_coalescing.py", line 322, in test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults
+    self.assertEqual(cpu_contracts.changed_contracts(self.repo,base),['math'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != ['math']
+
+======================================================================
+FAIL: test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs (test_fleet_coalescing.CoalescingTests.test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/tests/test_fleet_coalescing.py", line 307, in test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs
+    self.assertEqual(first['scope'],'audited-contracts')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'full-tree' != 'audited-contracts'
+- full-tree
++ audited-contracts
+
+
+======================================================================
+FAIL: test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits (test_fleet_feedback.FeedbackTests.test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/Documents/Github2/stkernel2-glm53-decode-followup-0908/tests/test_fleet_feedback.py", line 323, in test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits
+    self.assertEqual(one['scope'],'audited-fleet')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'full-tree' != 'audited-fleet'
+- full-tree
++ audited-fleet
+
+
+----------------------------------------------------------------------
+Ran 61 tests in 35.239s
+
+FAILED (failures=3, errors=1)
+
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (79 files across dsv4, glm53) .... OK
+  composed snapshot sync (79 files) . OK
+  overlay symbol contracts (110, per composition incl. orphans) ... OK
+  profile env carried (97 knobs) ... OK
+  profile keys have readers (139) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 107 tests in 2 isolated shards: FAILED
+FAIL: fleet asynchronous submissions, prerequisites and evidence contracts

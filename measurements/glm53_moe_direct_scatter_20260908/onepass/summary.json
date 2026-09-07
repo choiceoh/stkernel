@@ -1,0 +1,256 @@
+{
+  "per_boot": [
+    {
+      "name": "MOEWSB1",
+      "mode": "t",
+      "windows": 83,
+      "step_s": 21.947015036974214,
+      "ms_per_step": 45.56428281091057,
+      "median_step_s": 21.849408566908718,
+      "output_tok_s": 68.62210344511716,
+      "acceptance_all_requests": 0.4354953670705631,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 2.4085904989624396,
+          "warm_s": 0.8829303460079245,
+          "cold_tok_s": 883.5042739380933,
+          "warm_tok_s": 2410.1561460895814,
+          "ttft_samples_s": [
+            2.4085904989624396,
+            0.8829303460079245,
+            0.884692988009192
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.9490434799809,
+          "warm_s": 10.9490434799809,
+          "cold_tok_s": 2972.40576855,
+          "warm_tok_s": 2972.40576855,
+          "ttft_samples_s": [
+            10.9490434799809
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 41.70238613901893,
+          "warm_s": 41.70238613901893,
+          "cold_tok_s": 3082.773239196342,
+          "warm_tok_s": 3082.773239196342,
+          "ttft_samples_s": [
+            41.70238613901893
+          ],
+          "combined": true
+        }
+      ]
+    },
+    {
+      "name": "MOEWSA1",
+      "mode": "t,ws",
+      "windows": 81,
+      "step_s": 21.83588888614744,
+      "ms_per_step": 45.796166357779654,
+      "median_step_s": 21.827494581434806,
+      "output_tok_s": 70.82976496441744,
+      "acceptance_all_requests": 0.46621113768363515,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 1.9415618119528517,
+          "warm_s": 0.8828863779781386,
+          "cold_tok_s": 1096.0248532389633,
+          "warm_tok_s": 2410.2761726523004,
+          "ttft_samples_s": [
+            1.9415618119528517,
+            0.8828863779781386,
+            1.3454242119914852
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.764809915039223,
+          "warm_s": 10.764809915039223,
+          "cold_tok_s": 3023.2767932606284,
+          "warm_tok_s": 3023.2767932606284,
+          "ttft_samples_s": [
+            10.764809915039223
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 41.66851397999562,
+          "warm_s": 41.66851397999562,
+          "cold_tok_s": 3085.279212542091,
+          "warm_tok_s": 3085.279212542091,
+          "ttft_samples_s": [
+            41.66851397999562
+          ],
+          "combined": true
+        }
+      ]
+    },
+    {
+      "name": "MOEWSB2",
+      "mode": "t",
+      "windows": 76,
+      "step_s": 21.847590403030015,
+      "ms_per_step": 45.77163804120528,
+      "median_step_s": 21.82245249482299,
+      "output_tok_s": 74.343244186682,
+      "acceptance_all_requests": 0.4870403427347376,
+      "quality": {
+        "ok": 18,
+        "total": 18
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2128,
+          "cold_s": 1.9212015679804608,
+          "warm_s": 0.8511085230275057,
+          "cold_tok_s": 1107.640153675766,
+          "warm_tok_s": 2500.268699496067,
+          "ttft_samples_s": [
+            1.9212015679804608,
+            0.8805080989841372,
+            0.8511085230275057
+          ],
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 32545,
+          "cold_s": 10.871917460986879,
+          "warm_s": 10.871917460986879,
+          "cold_tok_s": 2993.4921890996206,
+          "warm_tok_s": 2993.4921890996206,
+          "ttft_samples_s": [
+            10.871917460986879
+          ],
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 128559,
+          "cold_s": 41.61976924096234,
+          "warm_s": 41.61976924096234,
+          "cold_tok_s": 3088.8926667443347,
+          "warm_tok_s": 3088.8926667443347,
+          "ttft_samples_s": [
+            41.61976924096234
+          ],
+          "combined": true
+        }
+      ]
+    }
+  ],
+  "baseline_equal_boot_mean": {
+    "step_s": 21.897302720002116,
+    "output_tok_s": 71.48267381589957,
+    "median_step_s": 21.835930530865852
+  },
+  "change_pct": {
+    "step_s": -0.28046300788716616,
+    "output_tok_s": -0.9133805671059148,
+    "median_step_s": -0.03863334067271129
+  },
+  "baseline_boot_spread_pct": {
+    "step_s": 0.45404968463709355,
+    "output_tok_s": 8.003534893363643,
+    "median_step_s": 0.12344824072243891
+  },
+  "matched_requests": true,
+  "matched_source_sha256": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "abf5142841a6df1cde31d5ff131c74ce626e56500651994cb1e682e403b9560c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "85b037fe202c393b88006b9e2873837ff90ba93423024072a8086cc1460814bc"
+  },
+  "source_commit": "27c4a1a",
+  "prefill_comparison": [
+    {
+      "ctx": 2000,
+      "kind": "repeat-min-TTFT",
+      "per_boot_tok_s": [
+        2410.1561460895814,
+        2410.2761726523004,
+        2500.268699496067
+      ],
+      "baseline_mean_tok_s": 2455.2124227928243,
+      "candidate_change_pct": -1.8302387900680506
+    },
+    {
+      "ctx": 32000,
+      "kind": "single-request",
+      "per_boot_tok_s": [
+        2972.40576855,
+        3023.2767932606284,
+        2993.4921890996206
+      ],
+      "baseline_mean_tok_s": 2982.94897882481,
+      "candidate_change_pct": 1.3519444925841784
+    },
+    {
+      "ctx": 128000,
+      "kind": "single-request",
+      "per_boot_tok_s": [
+        3082.773239196342,
+        3085.279212542091,
+        3088.8926667443347
+      ],
+      "baseline_mean_tok_s": 3085.8329529703383,
+      "candidate_change_pct": -0.017944601560959672
+    }
+  ],
+  "note": "B-A-B bracket, one candidate boot. Within-boot windows are correlated. Acceptance covers all requests; output tok/s covers fixed 2K decode only."
+}
