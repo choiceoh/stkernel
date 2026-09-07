@@ -39,7 +39,7 @@ CANDIDATES = {
 }
 
 SNAPSHOT = r'''
-import base64,gzip,hashlib,json,pathlib,re,shlex,subprocess
+import base64,datetime,gzip,hashlib,json,pathlib,re,shlex,subprocess
 sha=lambda value:hashlib.sha256(value).hexdigest()
 names=subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True).splitlines()
 if name not in names:raise RuntimeError('expected serving container missing: '+name)
@@ -75,8 +75,26 @@ gpu=subprocess.check_output(['nvidia-smi','--query-gpu=uuid,name,driver_version'
 if not gpu or not model:raise RuntimeError('model/hardware identity unavailable')
 state=dict(id=c['Id'],started_at=c['State']['StartedAt'],image=c['Image'],args=args,env=env,
            mounts=mounts,manifest_sha=sha(manifest),model=model,hardware=gpu)
+# This launcher's shell redirects both streams to its bind-mounted file;
+# Docker logs is empty even when the candidate executes. Bind proof to this
+# inspected container, its exact redirection and a fresh, nonempty log file.
+log_mounts=[m for m in c['Mounts'] if m['Destination']=='/glmlogs']
+if len(log_mounts)!=1 or not re.search(r'(?<!>)> /glmlogs/glm53\.log 2>&1(?:\s|$)',cmd):
+    raise RuntimeError('serving log redirection/mount contract missing')
+log_path=pathlib.Path(log_mounts[0]['Source'])/'glm53.log'
+log_stat=log_path.stat()
+started=datetime.datetime.fromisoformat(c['State']['StartedAt'].replace('Z','+00:00')).timestamp()
+if log_path.is_symlink() or not log_path.is_file() or log_stat.st_size==0 or log_stat.st_mtime < started:
+    raise RuntimeError('serving file log is empty or predates this container')
+state['log_source']=dict(path=str(log_path),container_id=c['Id'],
+                         device=log_stat.st_dev,inode=log_stat.st_ino)
 if archive:
-    raw=subprocess.check_output(['docker','logs','--since',c['State']['StartedAt'],c['Id']],stderr=subprocess.STDOUT)
+    raw=log_path.read_bytes()
+    again=log_path.stat()
+    current=json.loads(subprocess.check_output(['docker','inspect',c['Id']],text=True))[0]
+    if ((again.st_dev,again.st_ino)!=(log_stat.st_dev,log_stat.st_ino)
+            or not current['State']['Running'] or current['State']['StartedAt']!=c['State']['StartedAt']):
+        raise RuntimeError('serving container or log changed during capture')
     text=raw.decode(errors='replace')
     state['launch_proof']=marker in text
     state['launch_lines']=[line for line in text.splitlines() if marker in line]
@@ -243,7 +261,8 @@ def collect_arm(args):
     attest(after,contract,knob,args.enabled)
     arm['after']=after
     arm['launch_proof']={node:state['launch_proof'] for node,state in after.items()}
-    if any(before[n].get(k)!=after[n].get(k) for n in NODES for k in prefill_compare.NODE_FIELDS):
+    save(out/(args.name+'.incomplete.json'),arm)
+    if any(before[n].get(k)!=after[n].get(k) for n in NODES for k in (*prefill_compare.NODE_FIELDS, 'log_source')):
         raise RuntimeError('node identity changed during traffic')
     if args.enabled and not all(arm['launch_proof'].values()):
         raise RuntimeError('actual candidate launch missing on a rank')

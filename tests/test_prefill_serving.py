@@ -1,5 +1,13 @@
 """CPU-only failure-path checks. All serving/GPU operations are fakes."""
 import copy
+import base64
+import datetime
+import gzip
+import hashlib
+import io
+import os
+import re
+from contextlib import redirect_stdout
 import importlib.util
 import json
 from pathlib import Path
@@ -17,6 +25,37 @@ from test_prefill_compare import fixture
 
 
 class ServingTests(unittest.TestCase):
+    def test_redirected_file_logs_prove_launch_and_reject_stale_empty_or_changed_file(self):
+        section = m.SNAPSHOT[m.SNAPSHOT.index('# This launcher'):]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'glm53.log'
+            raw = b'[megakernel] mla prefill32 LAUNCHED T=6912 W=2048\n'
+            path.write_bytes(raw)
+            started = datetime.datetime.fromtimestamp(path.stat().st_mtime-1, datetime.timezone.utc).isoformat()
+            container = dict(Id='container-A', Mounts=[dict(Destination='/glmlogs',Source=directory)],
+                             State=dict(StartedAt=started, Running=True))
+            def execute(c=container, command='vllm serve model > /glmlogs/glm53.log 2>&1', check=None):
+                ns=dict(c=c, cmd=command, archive=True, state={}, marker='mla prefill32 LAUNCHED',
+                        pathlib=__import__('pathlib'),datetime=datetime,re=re,json=json,gzip=gzip,base64=base64,
+                        sha=lambda b:hashlib.sha256(b).hexdigest(),
+                        subprocess=SimpleNamespace(check_output=check or (lambda *a,**k:json.dumps([c]))))
+                with redirect_stdout(io.StringIO()):exec(section,ns)
+                return ns['state']
+            state=execute()
+            self.assertTrue(state['launch_proof'])
+            self.assertEqual(gzip.decompress(base64.b64decode(state['log_gzip_base64'])),raw)
+            self.assertEqual(state['log_source']['container_id'],'container-A')
+            with self.assertRaisesRegex(RuntimeError,'redirection'):
+                execute(command='vllm serve model >> /glmlogs/glm53.log 2>&1')
+            path.write_bytes(b'')
+            with self.assertRaisesRegex(RuntimeError,'empty'):execute()
+            path.write_bytes(raw);os.utime(path,(1,1))
+            with self.assertRaisesRegex(RuntimeError,'predates'):execute()
+            path.write_bytes(raw)
+            stopped=copy.deepcopy(container);stopped['State']['Running']=False
+            with self.assertRaisesRegex(RuntimeError,'changed during capture'):
+                execute(check=lambda *a,**k:json.dumps([stopped]))
+
     def test_fresh_gpu_failure_stops_before_gate_admission_and_deploy(self):
         with tempfile.TemporaryDirectory() as directory:
             args=SimpleNamespace(source=ROOT,out=Path(directory)/'serving',revision='c'*40,
