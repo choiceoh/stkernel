@@ -55,15 +55,13 @@ memory guards, and restores the exact incoming containers in `finally`.
 Only a passing GPU gate can proceed to a matched same-build fresh-cache
 2K/32K/128K B1/A/B2 TTFT bracket and public recovery.
 
-Status: PR #455 opened. GPU check1 (source `2e2ede9719c319f039cd95ec63ca0268b0d620d8`)
-started under `moem64check10908` at 2026-09-08 01:14:58 KST; probe started 01:15:50.
-The independent serving collector is prepared while that frozen check runs.
-Its gate requires every rank of both transport reports, stock-control success,
-changed-input reuse and M128 capture replay, unchanged composed source/profile,
-and completed recovery before deployment. Its 10 failure-path tests and the
-7 comparator / 4 fresh-cache / 4 memory tests pass. GPU and TTFT results remain
-pending; no serving run has been submitted yet.
-
+Status: PR #455 remains draft and default-off. Check1 failed before M64 launch
+and restored the original serving fleet; see below. The gated M64 port is pinned
+as `50c76f75a91390e19aa66496013d9a6efcdee597` for a new check2 run. CPU checks
+pass (6685 logic, 30 megakernel, 92 fleet; 6 M64 contracts, 3 API, 8 recovery;
+10 serving gate, 7 comparator, 4 fresh-cache and 4 memory tests). The serving
+collector requires check2's TP4 numerics, both sanitizers, matching source and
+recovery. No candidate speedup or direct TTFT result is available yet.
 
 ## Check1 failure and gated M64 port
 
