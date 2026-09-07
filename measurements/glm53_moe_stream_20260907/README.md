@@ -148,3 +148,24 @@ request, fleet log, progress and completion live under
 `srv2:/tmp/glm53-prefill-offline-0907` (probe evidence under `evidence/`).
 The two probe source pins remain unchanged. Six recovery/ownership CPU tests
 and eight fresh-request/memory-watcher tests passed. No new GPU result yet.
+
+## Direct-serving comparison preparation (19:06 KST)
+
+`bench/prefill_compare.py` checks B1/A/B2 evidence before computing any
+improvement: one full source revision and immutable image, four consistent
+overlay snapshots, only the intended knob changed, independent boots, private
+18000 endpoint, 415-block/262144-token measurement capacity, excluded priming,
+identical request bodies and actual token counts, every-request cache salt
+uniqueness and zero prefix hits, idle traffic, 9/9 retrieval and 0/5 Korean
+corruption, and candidate launch proof on all four ranks. Each input arm
+contains before/after node snapshots and canonical priming/measured
+record+fresh reports as specified in the module docstring.
+
+It preserves each matched question's TTFT and reports latency reduction and
+reciprocal prefill rate separately, including both baseline comparisons and
+baseline spread. It does not treat a later short request's minimum as a warm
+prefix-cache result. Invalid evidence yields issues and no performance table.
+Seven CPU tests cover valid arithmetic and cache, build, runtime, priming,
+traffic, quality, token, nonfinite timing and capacity failures. Their inputs
+are synthetic test fixtures, not serving evidence. The GPU queue remains
+unchanged and the direct-serving bracket has not yet been submitted.
