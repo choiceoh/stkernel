@@ -9946,6 +9946,51 @@ def test_nvfp4_static_scale_contracts() -> None:
     print("  nvfp4 static scale contracts .. OK")
 
 
+def test_rank_cache_eviction_contracts() -> None:
+    """39차 §4m: after a successful save the rank cache keeps only the newest
+    VLLM_GLM53_RANK_CACHE_KEEP artifacts per node (the new one counts), removes
+    abandoned staging dirs older than a day, never touches the current one and
+    never raises."""
+    import tempfile, time as _time, shutil as _shutil, logging as _logging
+    from pathlib import Path as _Path
+    src = open(os.path.join(REPO, "overlay/modules/glm53_model/glm53_rank_cache.py"), encoding="utf-8").read()
+    check('_evict_stale(root, directory,' in src
+          and 'int(os.environ.get("VLLM_GLM53_RANK_CACHE_KEEP", "2") or 0))' in src
+          and src.index("def _evict_stale(") < src.index("def load_rank_cached(")
+          and src.index("[rank-cache] saved rank=") < src.index("_evict_stale(root, directory,"),
+          "eviction runs right after a successful save with the declared knob (default 2)")
+    prof = open(os.path.join(REPO, "profiles/glm53.env"), encoding="utf-8").read()
+    check("VLLM_GLM53_RANK_CACHE_KEEP=2" in prof, "VLLM_GLM53_RANK_CACHE_KEEP=2 declared in profiles/glm53.env")
+    logs = []
+    ns = {"Path": _Path, "shutil": _shutil, "time": _time, "os": os,
+          "logger": types.SimpleNamespace(warning=lambda *a: logs.append(a[0] % a[1:]))}
+    fn = src[src.index("def _evict_stale("):src.index("def load_rank_cached(")]
+    exec(fn, ns)
+    root = _Path(tempfile.mkdtemp())
+    try:
+        names = ["a" * 64, "b" * 64, "c" * 64, "d" * 64]
+        for i, n in enumerate(names):
+            d = root / n; d.mkdir(); (d / "manifest.json").write_text("{}"); (d / "weights.bin").write_bytes(b"x" * (i + 1))
+            os.utime(d, (1000 + i, 1000 + i))
+        stale = root / ".rank-old"; stale.mkdir(); os.utime(stale, (1, 1))
+        fresh = root / ".rank-new"; fresh.mkdir()
+        other = root / "notes.txt"; other.write_text("keep")
+        current = root / names[3]
+        ns["_evict_stale"](root, current, 2)
+        left = sorted(p.name for p in root.iterdir())
+        check(left == sorted([names[2], names[3], ".rank-new", "notes.txt"]),
+              f"keep=2 keeps the current and the newest other artifact, drops older ones and day-old staging (left {left})")
+        check(sum("evicted stale artifact" in l for l in logs) == 2 and any("abandoned staging" in l for l in logs),
+              "each removal is logged")
+        ns["_evict_stale"](root, current, 0)
+        check(sorted(p.name for p in root.iterdir()) == left, "keep=0 never evicts")
+        ns["_evict_stale"](root / "missing", current, 2)
+        check(any("eviction skipped" in l for l in logs), "a missing root is logged, not raised")
+    finally:
+        _shutil.rmtree(root, ignore_errors=True)
+    print("  rank cache eviction contracts .. OK")
+
+
 def test_launcher_multiline_assignments_have_no_embedded_comments() -> None:
     """A `#` line inside a backslash-continued shell string ends the string.
 
@@ -11518,6 +11563,7 @@ def test_megakernel_regression_suite():
 
 if __name__ == "__main__":
     test_skip_topk()
+    test_rank_cache_eviction_contracts()
     test_nvfp4_static_scale_contracts()
     test_prefill_chunker()
     test_sp_ranges()
