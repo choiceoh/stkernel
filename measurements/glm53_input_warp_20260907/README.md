@@ -125,6 +125,9 @@ checkout after the GPU test had stopped the service. A first current-main
 recovery verified all 56 overlays on four nodes, but its shell runner was
 modified during execution and failed before boot. A separate immutable
 recovery runner then started the verified current-main service at 17:42:27.
+Recovery finished at 17:49:22 with quality 3/3, Korean corruption 0/3, and
+health 200 checked before the next campaign. See [recovery records](recovery-current-main/records.jsonl)
+and the preserved [stale deployment rejection](stale-deploy/deploy.log).
 These failures are orchestration failures, not GPU numerical failures.
 
 The serving runner now checks current-main ancestry **before stopping the
