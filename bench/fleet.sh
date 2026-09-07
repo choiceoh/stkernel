@@ -101,7 +101,7 @@ REPO=${REPO:-/home/choiceoh/stkernel}
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
 case "${1:-}" in
-  submit|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
+  submit|batch|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac

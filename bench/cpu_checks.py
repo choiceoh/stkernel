@@ -19,6 +19,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "logic": [[sys.executable, "tests/test_logic.py"]],
+    "core": [[sys.executable, "tests/test_logic.py", "--component", "core"]],
     "fleet": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_fleet*.py", "-v"]],
     "startup": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", name, "-v"]
                 for name in ("test_glm53_startup.py", "test_glm53_attestation.py",
@@ -84,7 +85,7 @@ def main():
         text = log.read_text()
         counts = json.loads(counts_path.read_text()) if counts_path.exists() else None
         skipped = counts['skipped'] if counts else [line.strip() for line in text.splitlines() if re.search(r"\bskip(?:ped)?\b", line, re.I)]
-        matches = re.findall(r'^all OK \((\d+) checks;', text, re.M)
+        matches = re.findall(r'^(?:all|core) OK \((\d+) checks;', text, re.M)
         executed = counts['tests_run'] if counts else int(matches[-1]) if matches else 0
         complete = counts['coverage_complete'] if counts else executed > 0 and not skipped
         report['tests_run'] += executed
