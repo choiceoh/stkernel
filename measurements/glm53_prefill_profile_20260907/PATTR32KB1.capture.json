@@ -1,0 +1,30 @@
+{
+  "name": "PATTR32KB1",
+  "ctx": 32000,
+  "capture": false,
+  "start_epoch": 1788765794.4172099,
+  "events": [],
+  "issues": [],
+  "cache_salt": "prefill-attribution:PATTR32KB1:1788765794476876893",
+  "before": {
+    "traffic": {
+      "finished": 0.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 0.0
+  },
+  "unsalted_request_sha256": "c3463c6e8116db5558e3b809b6b59a1f438fe68b0ad0be391ef96480da7de9ed",
+  "wire_request_sha256": "9d064b71a63278480511c3b2dbb29f1b7a286554bf907886521a02a796bec212",
+  "end_epoch": 1788765823.157851,
+  "after": {
+    "traffic": {
+      "finished": 1.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 32545.0
+  }
+}

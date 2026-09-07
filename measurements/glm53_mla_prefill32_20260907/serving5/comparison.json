@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "issues": [],
+  "comparison": [
+    {
+      "ctx": 2000,
+      "mean_ttft_s": {
+        "B1": 0.8797469933439667,
+        "A": 0.8646583126586241,
+        "B2": 0.8816880943486467
+      },
+      "latency_reduction_pct": 1.8234258304368423,
+      "throughput_gain_pct": 1.8572921757155303,
+      "throughput_gain_vs_each_baseline_pct": [
+        1.7450454664511783,
+        1.9695388849798823
+      ],
+      "baseline_spread_pct": 0.2206430961817496,
+      "requests": [
+        {
+          "question": 0,
+          "prompt_tokens": 2121,
+          "ttft_s": [
+            0.8721675859997049,
+            0.8660337059991434,
+            0.8749024860444479
+          ]
+        },
+        {
+          "question": 1,
+          "prompt_tokens": 2128,
+          "ttft_s": [
+            0.8924966690246947,
+            0.880432492995169,
+            0.896715888986364
+          ]
+        },
+        {
+          "question": 2,
+          "prompt_tokens": 2128,
+          "ttft_s": [
+            0.8745767250075005,
+            0.8475087389815599,
+            0.8734459080151282
+          ]
+        }
+      ]
+    },
+    {
+      "ctx": 32000,
+      "mean_ttft_s": {
+        "B1": 10.474451399000827,
+        "A": 10.009738240973093,
+        "B2": 10.477625082945451
+      },
+      "latency_reduction_pct": 4.451110136046344,
+      "throughput_gain_pct": 4.658463476011088,
+      "throughput_gain_vs_each_baseline_pct": [
+        4.642610494303567,
+        4.674316457718608
+      ],
+      "baseline_spread_pct": 0.030299285601986803,
+      "requests": [
+        {
+          "question": "all",
+          "prompt_tokens": 32545,
+          "ttft_s": [
+            10.474451399000827,
+            10.009738240973093,
+            10.477625082945451
+          ]
+        }
+      ]
+    },
+    {
+      "ctx": 128000,
+      "mean_ttft_s": {
+        "B1": 41.58450981701026,
+        "A": 39.171937879989855,
+        "B2": 41.39442877197871
+      },
+      "latency_reduction_pct": 5.5858304623148225,
+      "throughput_gain_pct": 5.916305242811304,
+      "throughput_gain_vs_each_baseline_pct": [
+        6.158929242693434,
+        5.673681242929174
+      ],
+      "baseline_spread_pct": 0.4591947531843221,
+      "requests": [
+        {
+          "question": "all",
+          "prompt_tokens": 128559,
+          "ttft_s": [
+            41.58450981701026,
+            39.171937879989855,
+            41.39442877197871
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Two independent baseline boots and one candidate boot; no confidence interval.",
+    "TTFT includes request processing and first content generation, not isolated kernel time.",
+    "Throughput denotes prompt tokens divided by TTFT, not full-request throughput.",
+    "Priming is excluded. Every measured request has a fresh prefix-cache identity.",
+    "Reduced measurement KV capacity does not establish production-capacity acceptance.",
+    "This bracket does not establish cumulative improvement from the original campaign baseline."
+  ],
+  "revision": "6e8d1a9e8438d456b43b682abc19789869a5e395",
+  "knob": "VLLM_GLM53_MK_MLA_PREFILL32"
+}

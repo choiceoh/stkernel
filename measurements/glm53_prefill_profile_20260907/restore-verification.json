@@ -1,0 +1,62 @@
+{
+  "local": {
+    "command_equal": true,
+    "image_equal": true,
+    "mounts_equal": true,
+    "manifest_equal": true,
+    "extra_env_keys": [
+      "VLLM_GLM53_PREFILL_SP_DIRECT_NCCL",
+      "VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FUSE_MHC"
+    ],
+    "changed_common_env": {},
+    "memory_gib": 9.772987365722656,
+    "disk_gib": 669.5183639526367
+  },
+  "10.10.10.1": {
+    "command_equal": true,
+    "image_equal": true,
+    "mounts_equal": true,
+    "manifest_equal": true,
+    "extra_env_keys": [
+      "VLLM_GLM53_PREFILL_SP_DIRECT_NCCL",
+      "VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FUSE_MHC"
+    ],
+    "changed_common_env": {},
+    "memory_gib": 15.647735595703125,
+    "disk_gib": 266.5843048095703
+  },
+  "10.10.10.3": {
+    "command_equal": true,
+    "image_equal": true,
+    "mounts_equal": true,
+    "manifest_equal": true,
+    "extra_env_keys": [
+      "VLLM_GLM53_PREFILL_SP_DIRECT_NCCL",
+      "VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FUSE_MHC"
+    ],
+    "changed_common_env": {},
+    "memory_gib": 11.089759826660156,
+    "disk_gib": 1501.6677513122559
+  },
+  "10.10.10.4": {
+    "command_equal": true,
+    "image_equal": true,
+    "mounts_equal": true,
+    "manifest_equal": true,
+    "extra_env_keys": [
+      "VLLM_GLM53_PREFILL_SP_DIRECT_NCCL",
+      "VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS",
+      "VLLM_GLM53_PREFILL_SP_FUSE_MHC"
+    ],
+    "changed_common_env": {},
+    "memory_gib": 13.646053314208984,
+    "disk_gib": 1848.996208190918
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "started": 1788780634.590958,
+  "exit_code": 1,
+  "probes": {
+    "moe": {
+      "revision": "924b1be06e146381019fb1ee1144bd6d64b2914d",
+      "started": 1788780685.1755736,
+      "command": [
+        "bash",
+        "probes/run_b12x_prefill_stream_check.sh"
+      ],
+      "exit_code": 1,
+      "ended": 1788780710.5587897
+    },
+    "mla": {
+      "revision": "e74b15e5a846827e554835ca73eda71e7698e4ac",
+      "started": 1788780710.5651014,
+      "command": [
+        "bash",
+        "probes/run_mk_mla_prefill32_check.sh",
+        "--sanitize-only"
+      ],
+      "exit_code": 0,
+      "ended": 1788780955.0237837
+    }
+  },
+  "restored_original": true,
+  "ended": 1788781134.022851
+}

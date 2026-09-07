@@ -1,0 +1,43 @@
+preflight pattr20907 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-profile2.yfJv5Fe8/run.sh
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 2 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 2/2, held by pattr0907 [boot] (pid 1941668@srv2, since 15:59, est 25m, Profile current GLM 32K and 128K prefill with matched controls and restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_16:10:32
+waiting: pos 2/2, held by pattr0907 [boot] (pid 1941668@srv2, since 15:59, est 25m, Profile current GLM 32K and 128K prefill with matched controls and restore), legacy busy (1 procs, 0 reqs) 2026-09-07_16:11:47
+waiting: pos 2/2, held by pattr0907 [boot] (pid 1941668@srv2, since 15:59, est 25m, Profile current GLM 32K and 128K prefill with matched controls and restore) 2026-09-07_16:12:17
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward) 2026-09-07_16:12:33
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward), legacy busy (2 procs, 0 reqs) 2026-09-07_16:14:03
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_16:14:18
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward), legacy busy (1 procs, 0 reqs) 2026-09-07_16:15:18
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_16:16:18
+waiting: pos 1/1, held by inputwarp0907 [boot] (pid 1956319@srv2, since 16:12, est 15m, Bounded warp-independent FP8 consumer sweep; restore public defaults afterward), legacy busy (1 procs, 0 reqs) 2026-09-07_16:18:04
+GO pattr20907 2026-09-07_16:18:34
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=12G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+boot PATTR0907 2026-09-07T16:18:37.593233
+healthy PATTR0907 2026-09-07T16:23:13.389575
+request PATTR32KB1 2026-09-07T16:23:14.035730
+completed PATTR32KB1
+request PATTR128KB1 2026-09-07T16:23:43.255341
+completed PATTR128KB1
+request PATTR32KP 2026-09-07T16:24:32.048712
+completed PATTR32KP
+archived traces PATTR32KP
+request PATTR128KP 2026-09-07T16:25:24.646843
+completed PATTR128KP
+archived traces PATTR128KP
+request PATTR32KB2 2026-09-07T16:27:31.836711
+completed PATTR32KB2
+request PATTR128KB2 2026-09-07T16:27:57.542123
+completed PATTR128KB2
+boot PATTR0907RESTORE 2026-09-07T16:28:56.485334
+healthy PATTR0907RESTORE 2026-09-07T16:33:32.245444
+{"started": "2026-09-07T16:18:37.593220", "exit_code": 0, "production_health": 200, "restored": true, "ended": "2026-09-07T16:33:32.990204"}

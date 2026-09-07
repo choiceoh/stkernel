@@ -1,0 +1,8 @@
+{
+  "REPO": "/home/choiceoh/stkernel-prefill-fused-serving",
+  "RETRY_JOB": "/tmp/glm53-prefill-retry.3rfahoko",
+  "RETRY_REV": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "IMAGE": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "requested_at_kst": "2026-09-07T13:42:22.541294",
+  "reason": "Deliberate retry of SPFUSED0907 after host memory termination: common reduced cache capacity, all-node 10 GiB client-cancellation guard, private endpoint and separate ledger; baseline/candidate/baseline with production restore"
+}

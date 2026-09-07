@@ -131,7 +131,12 @@ if has onepass; then
   _k=$(sed -nE 's/^SPEC_K=([0-9]+).*/\1/p' profiles/glm53.env | tail -1)
   echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} k=${SPEC_K:-${_k:-7}} =="
   phase measure start
-  env SPEC_K="${SPEC_K:-${_k:-7}}" BENCH_MODEL=glm-5.3-flash python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1
+  _onepass=(python3 bench/onepass.py --name "$NAME")
+  if [ -n "${ONEPASS_MEMORY_DIR:-}" ]; then
+    _onepass=(python3 bench/onepass_memory.py --report "$ONEPASS_MEMORY_DIR/$NAME.memory.jsonl"
+      -- "${_onepass[@]}")
+  fi
+  env SPEC_K="${SPEC_K:-${_k:-7}}" BENCH_MODEL=glm-5.3-flash "${_onepass[@]}" > /tmp/leg.$$ 2>&1
   leg_rc=$?
   if [ "$leg_rc" = 0 ]; then phase measure end; else phase measure end --failed; fi
   grep -vE "^\s*$" /tmp/leg.$$ | tail -40

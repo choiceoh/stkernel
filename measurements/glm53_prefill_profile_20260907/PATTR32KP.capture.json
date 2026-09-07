@@ -1,0 +1,46 @@
+{
+  "name": "PATTR32KP",
+  "ctx": 32000,
+  "capture": true,
+  "start_epoch": 1788765872.4281695,
+  "events": [
+    {
+      "path": "/start_profile",
+      "start_epoch": 1788765872.4590738,
+      "end_epoch": 1788765872.494788,
+      "status": 200,
+      "body": ""
+    },
+    {
+      "path": "/stop_profile",
+      "start_epoch": 1788765883.1853514,
+      "end_epoch": 1788765901.1836202,
+      "status": 200,
+      "body": ""
+    }
+  ],
+  "issues": [],
+  "cache_salt": "prefill-attribution:PATTR32KP:1788765872454435756",
+  "before": {
+    "traffic": {
+      "finished": 2.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 161104.0
+  },
+  "unsalted_request_sha256": "c3463c6e8116db5558e3b809b6b59a1f438fe68b0ad0be391ef96480da7de9ed",
+  "wire_request_sha256": "71284f50597c087565aadbf4db8461c075423e54633f1c640a0838b39b7d82e0",
+  "first_piece_epoch": 1788765883.1849506,
+  "end_epoch": 1788765916.0033765,
+  "after": {
+    "traffic": {
+      "finished": 3.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 193649.0
+  }
+}

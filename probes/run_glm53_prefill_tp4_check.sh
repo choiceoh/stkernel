@@ -4,6 +4,9 @@
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 transport=${1:-fp8-v3}
+if [[ $# != 0 ]]; then shift; fi
+probe_args=("$@")
+if [[ ${#probe_args[@]} == 0 ]]; then probe_args=(--rows 128 129 8185 --timing); fi
 case "$transport" in bf16|fp8|fp8-v2|fp8-v3) ;; *) echo 'unknown transport' >&2; exit 2;; esac
 port=${PREFILL_PROBE_PORT:-29673}
 if [[ -n $(ss -ltnH "sport = :$port") ]]; then echo "port $port is in use" >&2; exit 1; fi
@@ -18,6 +21,11 @@ ips=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 for rank in 1 2 3; do
   ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
     "docker image inspect $IMAGE --format '{{.Id}}'" </dev/null >/dev/null
+done
+python3 "$REPO/probes/glm53_probe_memory.py"
+for rank in 1 2 3; do
+  ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
+    "python3 $REPO/probes/glm53_probe_memory.py" </dev/null
 done
 run_id="prefill-tp4-$(date +%s)-$$"
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/glm53-prefill-tp4.XXXXXX")
@@ -52,16 +60,19 @@ for rank in 0 1 2 3; do
     'parallel_state.py:parallel_state.py'; do
     args+=(-v "$REPO/overlay/modules/glm53_runtime/${pair%%:*}:${TARGET_PREFIX%/}/vllm/distributed/${pair#*:}:ro")
   done
+  for name in tilelang tilelang_kernels; do
+    args+=(-v "$REPO/overlay/modules/glm53_kernels/$name.py:${TARGET_PREFIX%/}/vllm/model_executor/kernels/mhc/$name.py:ro")
+  done
   args+=("$IMAGE" -m torch.distributed.run --nnodes=4 --nproc-per-node=1
          --node-rank="$rank" --master-addr=10.10.10.2 --master-port="$port"
          /repo/probes/glm53_prefill_collectives_check.py --transport "$transport"
-         --rows 128 129 8185 --timing)
+         "${probe_args[@]}")
   if [[ $rank == 0 ]]; then
     # srv2 need not have an SSH key authorized for itself.
-    timeout 240 "${args[@]}" >"$log_dir/rank-$rank.log" 2>&1 &
+    timeout 600 "${args[@]}" >"$log_dir/rank-$rank.log" 2>&1 &
   else
     printf -v remote_command '%q ' "${args[@]}"
-    timeout 240 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
+    timeout 600 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
       "$remote_command" >"$log_dir/rank-$rank.log" 2>&1 &
   fi
   pids+=("$!")

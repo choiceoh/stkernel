@@ -1,0 +1,40 @@
+{
+  "arm": "MLAPREF30907B1",
+  "revision": "1f24cf327fa18fe52aad7322cbf3b2b86ba68e04",
+  "candidate_enabled": false,
+  "ttft_s": {
+    "ctx2k_requests": [
+      0.8840861750068143,
+      0.8780513179954141,
+      0.8719480619765818
+    ],
+    "ctx2k_mean": 0.87802851832627,
+    "ctx32k": 10.465541179990396,
+    "ctx128k": 41.16535203898093
+  },
+  "prompt_tokens": [
+    2121,
+    2128,
+    2128,
+    32545,
+    128559
+  ],
+  "quality": {
+    "ok": 9,
+    "total": 9
+  },
+  "korean_corruption": {
+    "dirty": 0,
+    "n": 5
+  },
+  "fresh_cache_issues": [],
+  "external_traffic_issues": [],
+  "boot_controls": {
+    "GMU": "0.6229",
+    "MAX_BATCHED": "8192",
+    "MAX_SEQS": "4",
+    "GRAPH_CAP": "32",
+    "CG_UTIL_DELTA": "0"
+  },
+  "comparison_status": "Candidate A and baseline B2 pending; no improvement verdict"
+}

@@ -1,0 +1,46 @@
+{
+  "name": "PATTR128KP",
+  "ctx": 128000,
+  "capture": true,
+  "start_epoch": 1788765925.0592117,
+  "events": [
+    {
+      "path": "/start_profile",
+      "start_epoch": 1788765925.1008782,
+      "end_epoch": 1788765925.230716,
+      "status": 200,
+      "body": ""
+    },
+    {
+      "path": "/stop_profile",
+      "start_epoch": 1788765967.4559457,
+      "end_epoch": 1788766030.143498,
+      "status": 200,
+      "body": ""
+    }
+  ],
+  "issues": [],
+  "cache_salt": "prefill-attribution:PATTR128KP:1788765925096199593",
+  "before": {
+    "traffic": {
+      "finished": 3.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 193649.0
+  },
+  "unsalted_request_sha256": "ee7545109ae85229ab3c88185749ca056baf52f376547da4dd57b2fa18d70228",
+  "wire_request_sha256": "cb5e4231e7300b72f172ede8b08ab46245850141bd82b4c7b116c5a51214882b",
+  "first_piece_epoch": 1788765967.4554582,
+  "end_epoch": 1788766043.5022733,
+  "after": {
+    "traffic": {
+      "finished": 4.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 322208.0
+  }
+}

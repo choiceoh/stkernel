@@ -1,0 +1,184 @@
+preflight spfrt30907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-retry3.p4vlb5hz/run.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=2048,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=4096,VLLM_GLM53_PREFILL_SP_FUSE_MHC=1
+  NOTE declared only in the checkout (not in origin/main yet): VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FUSE_MHC
+  this arm (VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FUSE_MHC) has no record on build 6f797df
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+GO spfrt30907 2026-09-07_14:32:36
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+6f797df test(glm53): guard onepass client memory for scoped serving retry
+56 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+deployed build 0aca81454720 = 6f797df (registry: /home/choiceoh/glm53-logs/fleet/builds.tsv)
+== chain SPFR30907B1 SPFR30907A SPFR30907B2 14:33:32 session=spfrt30907 rehearse=0
+   baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+== 14:33:32 arm SPFR30907B1: (defaults)
+(Worker_TP0 pid=260) WARNING 09-07 05:39:19 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=149) WARNING 09-07 05:39:24 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 70.8 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.8 s
+== [SPFR30907B1] onepass 14:40:00 ctx=2000,4000,8000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        1098        2506      1.94s      0.85s  o o o
+   4000    4209        2626        4923      1.60s      0.85s  o o o
+   8000    8243        2779       10749      2.97s      0.77s  o o o
+  32000   32545        3048     (1 req)     10.68s          -  o o o
+ 128000  128559        3118     (1 req)     41.23s          -  o o o
+  warm 처리량: 2506 -> 3118 tok/s (over 2128 -> 128559 tokens)
+=> 15/15 correct
+decode: windows n=60 med 21.8 [20.8, 22.8] step/s (inside the answers only; per context: 2K: n=10 med 21.8  4K: n=11 med 21.9  8K: n=12 med 21.8  32K: n=13 med 21.8  128K: n=14 med 21.8), raw acc 45.5%, tokens/step 3.275 (k=5.0), generated 5803 tokens over 146s
+응답 11개 · 문자 15,823
+  깨진 응답: 0/11 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass SPFR30907B1: 147s total
+== [SPFR30907B1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 1775.0
+vllm:spec_decode_num_draft_tokens_total 8875.0
+vllm:spec_decode_num_accepted_tokens_total 4038.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1390.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 990.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 721.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 534.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 403.0
+== [SPFR30907B1] head log kept: /home/choiceoh/glm53-logs/boot-SPFR30907B1.log ==
+== [SPFR30907B1] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [SPFR30907B1] gate lines after traffic ==
+(APIServer pid=28) WARNING 09-07 05:34:25 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 05:34:45 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=260) WARNING 09-07 05:39:19 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=260) WARNING 09-07 05:39:19 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=149) WARNING 09-07 05:39:24 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFR30907B1] done 14:42:27 ==
+== 14:42:27 after SPFR30907B1: python3 '/tmp/glm53-prefill-retry3.p4vlb5hz/attest.py' SPFR30907B1
+{"name": "SPFR30907B1", "issues": [], "quality": {"ok": 15, "total": 15}, "overlay": "0aca81454720", "nodes": 4}
+   nothing to yield to
+== 14:42:27 arm SPFR30907A: VLLM_GLM53_PREFILL_SP_FUSE_MHC=1 VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=2048 VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=4096
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 8.3 s
+== [SPFR30907A] onepass 14:49:04 ctx=2000,4000,8000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        1110        2552      1.92s      0.83s  o o o
+   4000    4209        2715        4700      1.55s      0.90s  o o o
+   8000    8243        2754       10933      2.99s      0.75s  o o o
+  32000   32545        3055     (1 req)     10.65s          -  o o o
+ 128000  128559        3116     (1 req)     41.26s          -  o o o
+  warm 처리량: 2552 -> 3116 tok/s (over 2128 -> 128559 tokens)
+=> 15/15 correct
+decode: windows n=47 med 21.9 [20.8, 22.9] step/s (inside the answers only; per context: 2K: n=10 med 21.9  4K: n=9 med 21.8  8K: n=11 med 21.8  32K: n=14 med 21.9  128K: n=3 med 21.8), raw acc 48.2%, tokens/step 3.411 (k=5.0), generated 5191 tokens over 135s
+응답 11개 · 문자 16,049
+  깨진 응답: 0/11 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass SPFR30907A: 135s total
+== [SPFR30907A] acceptance counters ==
+vllm:spec_decode_num_drafts_total 1522.0
+vllm:spec_decode_num_draft_tokens_total 7610.0
+vllm:spec_decode_num_accepted_tokens_total 3669.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1219.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 899.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 661.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 508.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 382.0
+== [SPFR30907A] head log kept: /home/choiceoh/glm53-logs/boot-SPFR30907A.log ==
+== [SPFR30907A] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS
+  PASS      VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS
+  PASS      VLLM_GLM53_PREFILL_SP_FUSE_MHC
+  -> 3/3 lanes proved serving (171452 bytes of /home/choiceoh/glm53-logs/boot-SPFR30907A.log)
+== [SPFR30907A] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 05:43:14 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 05:43:31 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-07 05:48:12 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 05:48:12 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 05:48:17 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFR30907A] done 14:51:20 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> SPFR30907A      21.85    3.41   48.2%  15/15  0/11     3055  3/3        09-07 14:49
+judge> SPFR30907B1     21.83    3.27   45.5%  15/15  0/11     3048  -          09-07 14:40
+judge> verdict: +0.1% with no floor yet (n=1): one more baseline sample
+judge> written to /tmp/glm53-prefill-retry3.p4vlb5hz/verdicts.jsonl
+== 14:51:20 after SPFR30907A: python3 '/tmp/glm53-prefill-retry3.p4vlb5hz/attest.py' SPFR30907A
+{"name": "SPFR30907A", "issues": [], "quality": {"ok": 15, "total": 15}, "overlay": "0aca81454720", "nodes": 4}
+   nothing to yield to
+== 14:51:20 arm SPFR30907B2: (defaults)
+(Worker_TP0 pid=262) WARNING 09-07 05:55:30 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=150) WARNING 09-07 05:55:35 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 38.4 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.8 s
+== [SPFR30907B2] onepass 14:56:18 ctx=2000,4000,8000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        1084        2520      1.96s      0.84s  o o o
+   4000    4209        2694        4653      1.56s      0.90s  o o o
+   8000    8243        2828       10963      2.91s      0.75s  o o o
+  32000   32545        3017     (1 req)     10.79s          -  o o o
+ 128000  128559        3097     (1 req)     41.51s          -  o o o
+  warm 처리량: 2520 -> 3097 tok/s (over 2128 -> 128559 tokens)
+=> 15/15 correct
+decode: windows n=49 med 21.9 [20.9, 22.9] step/s (inside the answers only; per context: 2K: n=10 med 21.9  4K: n=10 med 21.9  8K: n=11 med 21.9  32K: n=13 med 21.9  128K: n=5 med 21.8), raw acc 48.7%, tokens/step 3.433 (k=5.0), generated 5320 tokens over 137s
+응답 11개 · 문자 15,169
+  깨진 응답: 0/11 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass SPFR30907B2: 137s total
+== [SPFR30907B2] acceptance counters ==
+vllm:spec_decode_num_drafts_total 1551.0
+vllm:spec_decode_num_draft_tokens_total 7755.0
+vllm:spec_decode_num_accepted_tokens_total 3774.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1233.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 901.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 684.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 546.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 410.0
+== [SPFR30907B2] head log kept: /home/choiceoh/glm53-logs/boot-SPFR30907B2.log ==
+== [SPFR30907B2] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [SPFR30907B2] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 05:52:13 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 05:52:35 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=262) WARNING 09-07 05:55:30 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=262) WARNING 09-07 05:55:30 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 05:55:35 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFR30907B2] done 14:58:35 ==
+== 14:58:35 after SPFR30907B2: python3 '/tmp/glm53-prefill-retry3.p4vlb5hz/attest.py' SPFR30907B2
+{"name": "SPFR30907B2", "issues": [], "quality": {"ok": 15, "total": 15}, "overlay": "0aca81454720", "nodes": 4}
+   nothing to yield to
+== 14:58:36 production stays on the last arm (SPFR30907B2 = defaults)
+== 14:58:36 judge
+   judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+   judge> SPFR30907A      21.85    3.41   48.2%  15/15  0/11     3055  3/3        09-07 14:49
+   judge> SPFR30907B2     21.86    3.43   48.7%  15/15  0/11     3017  -          09-07 14:56
+   judge> verdict: -0.1% WITHIN the floor ±0.1% (n=2, same build): one more sample
+   judge> written to /tmp/glm53-prefill-retry3.p4vlb5hz/verdicts.jsonl
+== chain done 14:58:36
+== restoring full production cache capacity 14:58:36
+(Worker_TP0 pid=261) WARNING 09-07 06:02:30 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 06:02:30 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=150) WARNING 09-07 06:02:35 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 37.0 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.9 s
+== [SPFR30907PROD] head log kept: /home/choiceoh/glm53-logs/boot-SPFR30907PROD.log ==
+== [SPFR30907PROD] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [SPFR30907PROD] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 05:59:23 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 05:59:46 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-07 06:02:30 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 06:02:30 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 06:02:35 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFR30907PROD] done 15:03:13 ==

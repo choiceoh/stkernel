@@ -1,0 +1,31 @@
+source_sha256 716cf13ae2092fabcb17bcfafd4beee256fecc040abd3dfd40b36b5146a64d04
+extracted_sha256 51931b3ab5d8f80f0cd3ee26ddcda4343f7ef823cb89fc82fef719f4b71d8532
+/tmp/mla-prefill32-compile-wccg__4d/prefill.cu(23): warning #177-D: variable "MLA_VD" was declared but never referenced
+  constexpr int MLA_VD = MLA_D / 32;
+                ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/tmp/mla-prefill32-compile-wccg__4d/prefill.cu(26): warning #177-D: variable "MLA_SPLITS_MAX" was declared but never referenced
+  constexpr int MLA_SPLITS_MAX = 64;
+                ^
+
+/tmp/mla-prefill32-compile-wccg__4d/prefill.cu(61): warning #177-D: variable "MLA_NG" was declared but never referenced
+  constexpr int MLA_NG = MLA_WARPS / MLA_KQ;
+                ^
+
+/tmp/mla-prefill32-compile-wccg__4d/prefill.cu(70): warning #177-D: variable "MLA_SMEM" was declared but never referenced
+  constexpr int MLA_SMEM = MLA_SMEM_RING + MLA_SMEM_Q + MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C;
+                ^
+
+/tmp/mla-prefill32-compile-wccg__4d/prefill.cu(113): warning #177-D: variable "MLA_PREFILL_SMEM" was declared but never referenced
+  constexpr int MLA_PREFILL_SMEM = MLA_PREFILL_RING + MLA_PREFILL_SCORES
+                ^
+
+DEVICE COMPILE PASS (no GPU validation)
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z23mk_mla_prefill32_kernel9MKMlaArgs' for 'sm_121a'
+ptxas info    : Function properties for _Z23mk_mla_prefill32_kernel9MKMlaArgs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 99.534 ms
