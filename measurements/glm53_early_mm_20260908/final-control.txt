@@ -1,0 +1,19 @@
+2026-09-08T02:43:27+09:00
+health=000
+exited 137 false sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+VLLM_GLM53_MK_PACK_SHA256=1
+VLLM_GLM53_MK_PACK_FAST_IO=1
+VLLM_GLM53_EARLY_MM_WARMUP=0
+fleet: HELD by moem64serve10908 [boot] (pid 846629@srv2, since 02:41, est 60m, PR455 M64 physical-block port: full TP4 and sanitizers then direct fresh 2K/32K/128K B1/A/B2 TTFT; recovery)
+legacy: 0 bench/boot procs, 0 requests in flight
+queue (0):
+  marker 02:41 FLEET-held-by-moem64serve10908.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-08_02:41:53   kept /home/choiceoh/glm53-logs/boot-EARLYMMFAST1.log
+  2026-09-08_02:41:53   kept /home/choiceoh/glm53-logs/boot-EARLYMMBASE1.log
+  2026-09-08_02:41:53 release earlymm0908e
+  2026-09-08_02:41:58 GO moem64serve10908 (pid 846629)
+production: no serving container
+deployed: 74ef4d98ce20
+baseline: EARLYMMBASE2 on build 74ef4d98ce20 -- 21.85 step/s, 3.17 tok/step, 43.3% acc, 2026-09-08 02:41:08 -- skip a defaults arm and compare against it

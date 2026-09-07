@@ -112,10 +112,11 @@ def environment_identity():
     values = {k: v for k, v in os.environ.items()
               if k.startswith(("VLLM_", "DG_", "DEEP_GEMM_", "FLASHINFER_",
                                "CUTE_DSL_", "TORCH_", "CUDA_", "NVIDIA_TF32_"))
-              # W4 transport/key policies preserve identical pack bytes.
+              # Cache transport/key and frontend warmup policies preserve model bytes.
               # Keep rank/FP8 artifacts usable across their matched boot brackets.
               and k not in ("VLLM_GLM53_RANK_CACHE", "VLLM_GLM53_FP8_CACHE",
-                            "VLLM_GLM53_MK_PACK_FAST_IO", "VLLM_GLM53_MK_PACK_SHA256")
+                            "VLLM_GLM53_MK_PACK_FAST_IO", "VLLM_GLM53_MK_PACK_SHA256",
+                            "VLLM_GLM53_EARLY_MM_WARMUP")
               and not any(word in k for word in ("API_KEY", "SECRET", "PASSWORD", "ACCESS_TOKEN"))}
     return digest_json(values)
 

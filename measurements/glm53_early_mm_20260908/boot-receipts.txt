@@ -1,0 +1,262 @@
+
+=== EARLYMMPRIME srv1 ===
+(Worker_TP1 pid=164) WARNING 09-07 17:15:41 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 53.239s; post-load hooks follow
+(Worker_TP1 pid=164) WARNING 09-07 17:16:41 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.046 read=2.229 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:16:41 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.637 mk=3.148 empty_cache=0.056 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:16:41 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.149 key_s=2.156 read_s=0.258 copy_s=0.612 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) WARNING 09-07 17:16:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.394 read=0.388 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.039 mk=0.559 empty_cache=0.075 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.180 key_s=2.528 read_s=0.304 copy_s=0.706 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 134.7s (at 162.1s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 17:18:30 [gpu_worker.py:564] Available KV cache memory: 8.88 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 90.8s (at 253.5s since interpreter start)
+
+=== EARLYMMPRIME srv2 ===
+(APIServer pid=29) INFO 09-07 17:14:24 [glm53_renderer_warmup.py:106] [early-mm-warmup] submitted processors=2 before engine startup
+(APIServer pid=29) INFO 09-07 17:14:28 [base.py:235] Multi-modal warmup completed in 4.789s
+(APIServer pid=29) INFO 09-07 17:14:34 [base.py:235] Readonly multi-modal warmup completed in 4.995s
+(APIServer pid=29) INFO 09-07 17:14:34 [glm53_renderer_warmup.py:61] [early-mm-warmup] completed processors=2/2 elapsed_s=9.863
+(Worker_TP0 pid=263) WARNING 09-07 17:15:35 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 46.624s; post-load hooks follow
+(Worker_TP0 pid=263) WARNING 09-07 17:16:51 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.984 read=2.197 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 17:16:51 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.620 mk=3.281 empty_cache=0.068 (includes existing syncs)
+(Worker_TP0 pid=263) WARNING 09-07 17:16:51 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.194 key_s=2.134 read_s=0.374 copy_s=0.634 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) WARNING 09-07 17:16:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.405 read=0.400 quantize=0.000 write=0.000
+(Worker_TP0 pid=263) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.037 mk=0.568 empty_cache=0.101 (includes existing syncs)
+(Worker_TP0 pid=263) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.234 key_s=2.497 read_s=0.430 copy_s=0.728 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=263) [boot-stamp] load-model took 135.3s (at 147.9s since interpreter start)
+(Worker_TP0 pid=263) INFO 09-07 17:18:30 [gpu_worker.py:564] Available KV cache memory: 7.22 GiB
+(Worker_TP0 pid=263) [boot-stamp] profile/determine-memory took 90.9s (at 238.9s since interpreter start)
+(APIServer pid=29) INFO 09-07 17:18:45 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Multi-modal join_s=0.000
+(APIServer pid=29) INFO 09-07 17:18:45 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Readonly multi-modal join_s=0.000
+
+=== EARLYMMPRIME srv3 ===
+(Worker_TP2 pid=208) WARNING 09-07 17:15:36 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 47.884s; post-load hooks follow
+(Worker_TP2 pid=208) WARNING 09-07 17:16:30 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.002 read=2.071 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 17:16:30 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.549 mk=3.087 empty_cache=0.069 (includes existing syncs)
+(Worker_TP2 pid=208) WARNING 09-07 17:16:30 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.145 key_s=2.145 read_s=0.254 copy_s=0.606 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) WARNING 09-07 17:16:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.390 read=0.351 quantize=0.000 write=0.000
+(Worker_TP2 pid=208) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.038 mk=0.537 empty_cache=0.078 (includes existing syncs)
+(Worker_TP2 pid=208) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.175 key_s=2.511 read_s=0.293 copy_s=0.695 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=208) [boot-stamp] load-model took 135.0s (at 166.2s since interpreter start)
+(Worker_TP2 pid=208) INFO 09-07 17:18:30 [gpu_worker.py:564] Available KV cache memory: 7.42 GiB
+(Worker_TP2 pid=208) [boot-stamp] profile/determine-memory took 90.8s (at 257.3s since interpreter start)
+
+=== EARLYMMPRIME srv4 ===
+(Worker_TP3 pid=208) WARNING 09-07 17:15:36 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 48.102s; post-load hooks follow
+(Worker_TP3 pid=208) WARNING 09-07 17:16:35 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.031 read=2.080 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:16:35 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.654 mk=3.164 empty_cache=0.071 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:16:35 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.164 key_s=2.178 read_s=0.278 copy_s=0.587 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) WARNING 09-07 17:16:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.389 read=0.359 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.041 mk=0.543 empty_cache=0.105 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:16:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.198 key_s=2.545 read_s=0.318 copy_s=0.674 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] load-model took 134.1s (at 162.1s since interpreter start)
+(Worker_TP3 pid=208) INFO 09-07 17:18:30 [gpu_worker.py:564] Available KV cache memory: 10.68 GiB
+(Worker_TP3 pid=208) [boot-stamp] profile/determine-memory took 90.8s (at 254.2s since interpreter start)
+
+=== EARLYMMBASE1 srv1 ===
+(Worker_TP1 pid=164) WARNING 09-07 17:22:37 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 53.486s; post-load hooks follow
+(Worker_TP1 pid=164) WARNING 09-07 17:22:51 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.026 read=2.227 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:22:51 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.634 mk=3.183 empty_cache=0.054 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:22:51 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.159 key_s=2.149 read_s=0.276 copy_s=0.622 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) WARNING 09-07 17:22:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.394 read=0.379 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.038 mk=0.532 empty_cache=0.075 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.188 key_s=2.509 read_s=0.315 copy_s=0.709 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 77.1s (at 113.0s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 17:23:36 [gpu_worker.py:564] Available KV cache memory: 9.06 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 36.7s (at 151.1s since interpreter start)
+
+=== EARLYMMBASE1 srv2 ===
+(Worker_TP0 pid=261) WARNING 09-07 17:22:33 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 48.304s; post-load hooks follow
+(Worker_TP0 pid=261) WARNING 09-07 17:22:49 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.995 read=2.261 quantize=0.000 write=0.000
+(Worker_TP0 pid=261) WARNING 09-07 17:22:49 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.628 mk=3.298 empty_cache=0.068 (includes existing syncs)
+(Worker_TP0 pid=261) WARNING 09-07 17:22:49 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.197 key_s=2.136 read_s=0.395 copy_s=0.645 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=261) WARNING 09-07 17:22:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.373 read=0.379 quantize=0.000 write=0.000
+(Worker_TP0 pid=261) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.035 mk=0.555 empty_cache=0.080 (includes existing syncs)
+(Worker_TP0 pid=261) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.236 key_s=2.495 read_s=0.449 copy_s=0.735 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=261) [boot-stamp] load-model took 78.3s (at 97.0s since interpreter start)
+(Worker_TP0 pid=261) INFO 09-07 17:23:36 [gpu_worker.py:564] Available KV cache memory: 7.86 GiB
+(Worker_TP0 pid=261) [boot-stamp] profile/determine-memory took 36.4s (at 133.6s since interpreter start)
+(APIServer pid=29) INFO 09-07 17:23:54 [base.py:235] Multi-modal warmup completed in 3.396s
+(APIServer pid=29) INFO 09-07 17:23:58 [base.py:235] Readonly multi-modal warmup completed in 3.505s
+
+=== EARLYMMBASE1 srv3 ===
+(Worker_TP2 pid=206) WARNING 09-07 17:22:32 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 48.115s; post-load hooks follow
+(Worker_TP2 pid=206) WARNING 09-07 17:22:46 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.981 read=2.043 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:22:46 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.539 mk=3.072 empty_cache=0.068 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:22:46 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.144 key_s=2.119 read_s=0.260 copy_s=0.611 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) WARNING 09-07 17:22:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.388 read=0.360 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.036 mk=0.537 empty_cache=0.101 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.173 key_s=2.486 read_s=0.299 copy_s=0.701 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) [boot-stamp] load-model took 78.2s (at 116.3s since interpreter start)
+(Worker_TP2 pid=206) INFO 09-07 17:23:36 [gpu_worker.py:564] Available KV cache memory: 7.64 GiB
+(Worker_TP2 pid=206) [boot-stamp] profile/determine-memory took 36.7s (at 153.1s since interpreter start)
+
+=== EARLYMMBASE1 srv4 ===
+(Worker_TP3 pid=208) WARNING 09-07 17:22:33 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 47.716s; post-load hooks follow
+(Worker_TP3 pid=208) WARNING 09-07 17:22:48 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.043 read=2.094 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:22:48 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.658 mk=3.176 empty_cache=0.071 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:22:48 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.167 key_s=2.193 read_s=0.283 copy_s=0.586 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) WARNING 09-07 17:22:56 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.384 read=0.356 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.039 mk=0.540 empty_cache=0.107 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:22:56 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.200 key_s=2.559 read_s=0.324 copy_s=0.670 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] load-model took 78.3s (at 114.5s since interpreter start)
+(Worker_TP3 pid=208) INFO 09-07 17:23:36 [gpu_worker.py:564] Available KV cache memory: 11.66 GiB
+(Worker_TP3 pid=208) [boot-stamp] profile/determine-memory took 36.7s (at 151.3s since interpreter start)
+
+=== EARLYMMFAST1 srv1 ===
+(Worker_TP1 pid=164) WARNING 09-07 17:27:45 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 53.337s; post-load hooks follow
+(Worker_TP1 pid=164) WARNING 09-07 17:27:58 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.025 read=2.193 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:27:58 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.556 mk=3.125 empty_cache=0.055 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:27:58 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.148 key_s=2.144 read_s=0.257 copy_s=0.608 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) WARNING 09-07 17:28:03 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.381 quantize=0.000 write=0.000
+(Worker_TP1 pid=164) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.039 mk=0.550 empty_cache=0.074 (includes existing syncs)
+(Worker_TP1 pid=164) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.178 key_s=2.515 read_s=0.297 copy_s=0.700 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=164) [boot-stamp] load-model took 79.0s (at 114.8s since interpreter start)
+(Worker_TP1 pid=164) INFO 09-07 17:28:43 [gpu_worker.py:564] Available KV cache memory: 9.17 GiB
+(Worker_TP1 pid=164) [boot-stamp] profile/determine-memory took 36.6s (at 151.7s since interpreter start)
+
+=== EARLYMMFAST1 srv2 ===
+(APIServer pid=29) INFO 09-07 17:26:19 [glm53_renderer_warmup.py:106] [early-mm-warmup] submitted processors=2 before engine startup
+(APIServer pid=29) INFO 09-07 17:26:24 [base.py:235] Multi-modal warmup completed in 4.940s
+(APIServer pid=29) INFO 09-07 17:26:29 [base.py:235] Readonly multi-modal warmup completed in 4.960s
+(APIServer pid=29) INFO 09-07 17:26:29 [glm53_renderer_warmup.py:61] [early-mm-warmup] completed processors=2/2 elapsed_s=9.902
+(Worker_TP0 pid=223) WARNING 09-07 17:27:38 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 46.448s; post-load hooks follow
+(Worker_TP0 pid=223) WARNING 09-07 17:27:53 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.994 read=2.321 quantize=0.000 write=0.000
+(Worker_TP0 pid=223) WARNING 09-07 17:27:53 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.559 mk=3.322 empty_cache=0.069 (includes existing syncs)
+(Worker_TP0 pid=223) WARNING 09-07 17:27:53 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.200 key_s=2.142 read_s=0.395 copy_s=0.647 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=223) WARNING 09-07 17:28:03 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.408 quantize=0.000 write=0.000
+(Worker_TP0 pid=223) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.043 mk=0.573 empty_cache=0.102 (includes existing syncs)
+(Worker_TP0 pid=223) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.239 key_s=2.507 read_s=0.453 copy_s=0.745 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=223) [boot-stamp] load-model took 78.9s (at 102.3s since interpreter start)
+(Worker_TP0 pid=223) INFO 09-07 17:28:43 [gpu_worker.py:564] Available KV cache memory: 8.51 GiB
+(Worker_TP0 pid=223) [boot-stamp] profile/determine-memory took 36.6s (at 139.0s since interpreter start)
+(APIServer pid=29) INFO 09-07 17:28:59 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Multi-modal join_s=0.000
+(APIServer pid=29) INFO 09-07 17:28:59 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Readonly multi-modal join_s=0.000
+
+=== EARLYMMFAST1 srv3 ===
+(Worker_TP2 pid=206) WARNING 09-07 17:27:40 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 49.548s; post-load hooks follow
+(Worker_TP2 pid=206) WARNING 09-07 17:27:54 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.020 read=2.089 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:27:54 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.610 mk=3.134 empty_cache=0.069 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:27:54 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.148 key_s=2.163 read_s=0.264 copy_s=0.626 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) WARNING 09-07 17:28:03 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.383 read=0.367 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.037 mk=0.546 empty_cache=0.101 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.177 key_s=2.533 read_s=0.306 copy_s=0.718 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) [boot-stamp] load-model took 78.8s (at 118.5s since interpreter start)
+(Worker_TP2 pid=206) INFO 09-07 17:28:43 [gpu_worker.py:564] Available KV cache memory: 7.29 GiB
+(Worker_TP2 pid=206) [boot-stamp] profile/determine-memory took 36.6s (at 155.4s since interpreter start)
+
+=== EARLYMMFAST1 srv4 ===
+(Worker_TP3 pid=208) WARNING 09-07 17:27:39 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 47.975s; post-load hooks follow
+(Worker_TP3 pid=208) WARNING 09-07 17:27:55 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.048 read=2.096 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:27:55 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.641 mk=3.181 empty_cache=0.072 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:27:55 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.168 key_s=2.193 read_s=0.283 copy_s=0.590 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) WARNING 09-07 17:28:03 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.366 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.041 mk=0.546 empty_cache=0.105 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:28:03 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.204 key_s=2.561 read_s=0.321 copy_s=0.679 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] load-model took 79.0s (at 114.9s since interpreter start)
+(Worker_TP3 pid=208) INFO 09-07 17:28:43 [gpu_worker.py:564] Available KV cache memory: 11.63 GiB
+(Worker_TP3 pid=208) [boot-stamp] profile/determine-memory took 36.6s (at 151.6s since interpreter start)
+
+=== EARLYMMFAST2 srv1 ===
+(Worker_TP1 pid=163) WARNING 09-07 17:33:50 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 53.256s; post-load hooks follow
+(Worker_TP1 pid=163) WARNING 09-07 17:34:05 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.993 read=2.172 quantize=0.000 write=0.000
+(Worker_TP1 pid=163) WARNING 09-07 17:34:05 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.566 mk=3.082 empty_cache=0.054 (includes existing syncs)
+(Worker_TP1 pid=163) WARNING 09-07 17:34:05 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.144 key_s=2.126 read_s=0.250 copy_s=0.605 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=163) WARNING 09-07 17:34:10 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.377 read=0.373 quantize=0.000 write=0.000
+(Worker_TP1 pid=163) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.036 mk=0.545 empty_cache=0.053 (includes existing syncs)
+(Worker_TP1 pid=163) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.174 key_s=2.495 read_s=0.288 copy_s=0.696 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=163) [boot-stamp] load-model took 79.6s (at 116.4s since interpreter start)
+(Worker_TP1 pid=163) INFO 09-07 17:34:49 [gpu_worker.py:564] Available KV cache memory: 7.58 GiB
+(Worker_TP1 pid=163) [boot-stamp] profile/determine-memory took 36.2s (at 152.8s since interpreter start)
+
+=== EARLYMMFAST2 srv2 ===
+(APIServer pid=29) INFO 09-07 17:32:26 [glm53_renderer_warmup.py:106] [early-mm-warmup] submitted processors=2 before engine startup
+(APIServer pid=29) INFO 09-07 17:32:31 [base.py:235] Multi-modal warmup completed in 4.815s
+(APIServer pid=29) INFO 09-07 17:32:35 [base.py:235] Readonly multi-modal warmup completed in 3.370s
+(APIServer pid=29) INFO 09-07 17:32:35 [glm53_renderer_warmup.py:61] [early-mm-warmup] completed processors=2/2 elapsed_s=8.254
+(Worker_TP0 pid=242) WARNING 09-07 17:33:43 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 45.303s; post-load hooks follow
+(Worker_TP0 pid=242) WARNING 09-07 17:33:57 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.994 read=2.281 quantize=0.000 write=0.000
+(Worker_TP0 pid=242) WARNING 09-07 17:33:57 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.629 mk=3.301 empty_cache=0.068 (includes existing syncs)
+(Worker_TP0 pid=242) WARNING 09-07 17:33:57 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.198 key_s=2.133 read_s=0.391 copy_s=0.636 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=242) WARNING 09-07 17:34:10 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.391 read=0.411 quantize=0.000 write=0.000
+(Worker_TP0 pid=242) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.038 mk=0.569 empty_cache=0.101 (includes existing syncs)
+(Worker_TP0 pid=242) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.239 key_s=2.498 read_s=0.446 copy_s=0.729 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=242) [boot-stamp] load-model took 79.6s (at 101.5s since interpreter start)
+(Worker_TP0 pid=242) INFO 09-07 17:34:49 [gpu_worker.py:564] Available KV cache memory: 7.17 GiB
+(Worker_TP0 pid=242) [boot-stamp] profile/determine-memory took 36.5s (at 138.2s since interpreter start)
+(APIServer pid=29) INFO 09-07 17:35:05 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Multi-modal join_s=0.000
+(APIServer pid=29) INFO 09-07 17:35:05 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Readonly multi-modal join_s=0.000
+
+=== EARLYMMFAST2 srv3 ===
+(Worker_TP2 pid=206) WARNING 09-07 17:33:47 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 50.830s; post-load hooks follow
+(Worker_TP2 pid=206) WARNING 09-07 17:34:02 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.995 read=2.061 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:34:02 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.535 mk=3.069 empty_cache=0.068 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:34:02 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.144 key_s=2.132 read_s=0.252 copy_s=0.616 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) WARNING 09-07 17:34:10 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.393 read=0.361 quantize=0.000 write=0.000
+(Worker_TP2 pid=206) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.036 mk=0.525 empty_cache=0.099 (includes existing syncs)
+(Worker_TP2 pid=206) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.171 key_s=2.493 read_s=0.287 copy_s=0.707 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=206) [boot-stamp] load-model took 78.5s (at 116.0s since interpreter start)
+(Worker_TP2 pid=206) INFO 09-07 17:34:49 [gpu_worker.py:564] Available KV cache memory: 6.67 GiB
+(Worker_TP2 pid=206) [boot-stamp] profile/determine-memory took 36.5s (at 153.9s since interpreter start)
+
+=== EARLYMMFAST2 srv4 ===
+(Worker_TP3 pid=207) WARNING 09-07 17:33:45 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 48.219s; post-load hooks follow
+(Worker_TP3 pid=207) WARNING 09-07 17:34:01 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.053 read=2.092 quantize=0.000 write=0.000
+(Worker_TP3 pid=207) WARNING 09-07 17:34:01 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.648 mk=3.185 empty_cache=0.072 (includes existing syncs)
+(Worker_TP3 pid=207) WARNING 09-07 17:34:01 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.168 key_s=2.182 read_s=0.290 copy_s=0.594 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) WARNING 09-07 17:34:10 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.380 read=0.367 quantize=0.000 write=0.000
+(Worker_TP3 pid=207) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.039 mk=0.554 empty_cache=0.103 (includes existing syncs)
+(Worker_TP3 pid=207) WARNING 09-07 17:34:10 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.203 key_s=2.555 read_s=0.332 copy_s=0.683 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=207) [boot-stamp] load-model took 79.8s (at 113.6s since interpreter start)
+(Worker_TP3 pid=207) INFO 09-07 17:34:49 [gpu_worker.py:564] Available KV cache memory: 10.44 GiB
+(Worker_TP3 pid=207) [boot-stamp] profile/determine-memory took 36.5s (at 150.2s since interpreter start)
+
+=== EARLYMMBASE2 srv1 ===
+(Worker_TP1 pid=163) WARNING 09-07 17:39:12 [glm53_rank_cache.py:344] [rank-cache] hit rank=1 bytes=48092653608 in 54.244s; post-load hooks follow
+(Worker_TP1 pid=163) WARNING 09-07 17:39:27 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.004 read=2.165 quantize=0.000 write=0.000
+(Worker_TP1 pid=163) WARNING 09-07 17:39:27 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.625 mk=3.057 empty_cache=0.054 (includes existing syncs)
+(Worker_TP1 pid=163) WARNING 09-07 17:39:27 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.144 key_s=2.118 read_s=0.252 copy_s=0.591 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=163) WARNING 09-07 17:39:32 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.394 read=0.389 quantize=0.000 write=0.000
+(Worker_TP1 pid=163) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.038 mk=0.556 empty_cache=0.077 (includes existing syncs)
+(Worker_TP1 pid=163) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.173 key_s=2.489 read_s=0.294 copy_s=0.688 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP1 pid=163) [boot-stamp] load-model took 80.4s (at 115.8s since interpreter start)
+(Worker_TP1 pid=163) INFO 09-07 17:40:11 [gpu_worker.py:564] Available KV cache memory: 9.18 GiB
+(Worker_TP1 pid=163) [boot-stamp] profile/determine-memory took 36.5s (at 152.4s since interpreter start)
+
+=== EARLYMMBASE2 srv2 ===
+(Worker_TP0 pid=260) WARNING 09-07 17:39:06 [glm53_rank_cache.py:344] [rank-cache] hit rank=0 bytes=48092653608 in 47.142s; post-load hooks follow
+(Worker_TP0 pid=260) WARNING 09-07 17:39:22 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.042 read=2.314 quantize=0.000 write=0.000
+(Worker_TP0 pid=260) WARNING 09-07 17:39:22 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.573 mk=3.376 empty_cache=0.070 (includes existing syncs)
+(Worker_TP0 pid=260) WARNING 09-07 17:39:22 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.203 key_s=2.187 read_s=0.411 copy_s=0.646 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=260) WARNING 09-07 17:39:32 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.374 read=0.390 quantize=0.000 write=0.000
+(Worker_TP0 pid=260) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.036 mk=0.566 empty_cache=0.101 (includes existing syncs)
+(Worker_TP0 pid=260) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.240 key_s=2.550 read_s=0.462 copy_s=0.748 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP0 pid=260) [boot-stamp] load-model took 80.3s (at 99.2s since interpreter start)
+(Worker_TP0 pid=260) INFO 09-07 17:40:11 [gpu_worker.py:564] Available KV cache memory: 8.46 GiB
+(Worker_TP0 pid=260) [boot-stamp] profile/determine-memory took 36.5s (at 135.9s since interpreter start)
+(APIServer pid=28) INFO 09-07 17:40:31 [base.py:235] Multi-modal warmup completed in 4.743s
+(APIServer pid=28) INFO 09-07 17:40:36 [base.py:235] Readonly multi-modal warmup completed in 4.942s
+
+=== EARLYMMBASE2 srv3 ===
+(Worker_TP2 pid=207) WARNING 09-07 17:39:08 [glm53_rank_cache.py:344] [rank-cache] hit rank=2 bytes=48092653608 in 49.435s; post-load hooks follow
+(Worker_TP2 pid=207) WARNING 09-07 17:39:21 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=1.999 read=2.083 quantize=0.000 write=0.000
+(Worker_TP2 pid=207) WARNING 09-07 17:39:21 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.544 mk=3.082 empty_cache=0.069 (includes existing syncs)
+(Worker_TP2 pid=207) WARNING 09-07 17:39:21 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.144 key_s=2.139 read_s=0.252 copy_s=0.614 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=207) WARNING 09-07 17:39:32 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.365 read=0.337 quantize=0.000 write=0.000
+(Worker_TP2 pid=207) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.031 mk=0.499 empty_cache=0.100 (includes existing syncs)
+(Worker_TP2 pid=207) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.168 key_s=2.481 read_s=0.282 copy_s=0.705 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP2 pid=207) [boot-stamp] load-model took 78.9s (at 115.7s since interpreter start)
+(Worker_TP2 pid=207) INFO 09-07 17:40:11 [gpu_worker.py:564] Available KV cache memory: 7.51 GiB
+(Worker_TP2 pid=207) [boot-stamp] profile/determine-memory took 36.5s (at 153.7s since interpreter start)
+
+=== EARLYMMBASE2 srv4 ===
+(Worker_TP3 pid=208) WARNING 09-07 17:39:07 [glm53_rank_cache.py:344] [rank-cache] hit rank=3 bytes=48092653608 in 49.005s; post-load hooks follow
+(Worker_TP3 pid=208) WARNING 09-07 17:39:23 [glm53_startup_cache.py:293] [fp8-cache] Glm5NextForCausalLM enabled=True hit=213 miss=0 errors=0 host-seconds=key=2.046 read=2.084 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:39:23 [glm53_fp8_dense.py:1327] [fp8-dense] Glm5NextForCausalLM host-seconds=check=0.652 mk=3.165 empty_cache=0.072 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:39:23 [glm53_fp8_dense.py:1346] [mk-pack-io] Glm5NextForCausalLM fast=1 sha256=1 calib_s=0.165 key_s=2.182 read_s=0.284 copy_s=0.589 fast_hits=220 legacy_hits=0 sha_hits=220 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) WARNING 09-07 17:39:32 [glm53_startup_cache.py:293] [fp8-cache] DFlash2Qwen3ForCausalLM enabled=True hit=31 miss=0 errors=0 host-seconds=key=0.388 read=0.364 quantize=0.000 write=0.000
+(Worker_TP3 pid=208) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1327] [fp8-dense] DFlash2Qwen3ForCausalLM host-seconds=check=0.041 mk=0.551 empty_cache=0.092 (includes existing syncs)
+(Worker_TP3 pid=208) WARNING 09-07 17:39:32 [glm53_fp8_dense.py:1346] [mk-pack-io] DFlash2Qwen3ForCausalLM fast=1 sha256=1 calib_s=0.197 key_s=2.553 read_s=0.325 copy_s=0.682 fast_hits=255 legacy_hits=0 sha_hits=255 md5_fallback=0 aliases=0 alias_errors=0
+(Worker_TP3 pid=208) [boot-stamp] load-model took 80.3s (at 112.5s since interpreter start)
+(Worker_TP3 pid=208) INFO 09-07 17:40:11 [gpu_worker.py:564] Available KV cache memory: 11.1 GiB
+(Worker_TP3 pid=208) [boot-stamp] profile/determine-memory took 36.5s (at 149.1s since interpreter start)

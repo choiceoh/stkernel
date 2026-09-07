@@ -15,6 +15,7 @@ case "$MODE" in
   artifacts) stages=(BASE COLD WARM); restore_knobs='VLLM_GLM53_FP8_CACHE=0 VLLM_GLM53_RANK_CACHE=0' ;;
   pack-io) stages=(PRIME FAST1 BASE1 BASE2 FAST2); restore_knobs='VLLM_GLM53_MK_PACK_FAST_IO=0' ;;
   pack-key) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_MK_PACK_SHA256=0 VLLM_GLM53_MK_PACK_FAST_IO=1' ;;
+  renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_EARLY_MM_WARMUP=0' ;;
   campaign) stages=(); restore_knobs='' ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
@@ -37,6 +38,9 @@ snapshot() {
   cp "$LOGD/glm53.log" "$EVIDENCE/$arm-srv2.log" || true
   docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.Image}}' glm53 > "$EVIDENCE/$arm-srv2.state" 2>&1 || true
   docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py > "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
+  if [ "$MODE" = renderer-warmup ]; then
+    docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py /usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py >> "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
+  fi
   for ip in 1 3 4; do
     scp -q -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip:glm53-logs/glm53.log" "$EVIDENCE/$arm-srv$ip.log" || true
     ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker inspect --format "{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.Image}}" glm53-worker; df -B1 /home/choiceoh/glm53-cache | tail -1; grep -E "MemFree:|MemAvailable:" /proc/meminfo; docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py' > "$EVIDENCE/$arm-srv$ip.state" 2>&1 || true
@@ -60,6 +64,10 @@ failed() {
   exit "$rc"
 }
 trap failed EXIT
+# A handled signal exits after the foreground boot returns, so failed() can
+# restore control without leaving an orphan boot or recording exit code zero.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for stage in "${stages[@]}"; do
   current_arm=${PREFIX}${stage}
@@ -72,6 +80,10 @@ for stage in "${stages[@]}"; do
   if [ "$MODE" = pack-key ]; then
     knobs='VLLM_GLM53_MK_PACK_FAST_IO=1 VLLM_GLM53_MK_PACK_SHA256=1'
     [[ "$stage" != BASE* ]] || knobs='VLLM_GLM53_MK_PACK_FAST_IO=1 VLLM_GLM53_MK_PACK_SHA256=0'
+  fi
+  if [ "$MODE" = renderer-warmup ]; then
+    knobs='VLLM_GLM53_EARLY_MM_WARMUP=1'
+    [[ "$stage" != BASE* ]] || knobs='VLLM_GLM53_EARLY_MM_WARMUP=0'
   fi
   [ "$MODE" != campaign ] || knobs=${campaign_knobs[$stage]}
   start=$(date +%s)
@@ -105,7 +117,7 @@ for node in (1, 2, 3, 4):
     rows = re.findall(r"\[fp8-cache\].*?enabled=True hit=(\d+) miss=(\d+) errors=(\d+)", text)
     assert len(rows) >= 2, f"srv{node}: target/drafter FP8 cache receipts missing"
     assert all(int(e) == 0 for h, m, e in rows), f"srv{node}: FP8 cache errors: {rows}"
-    if stage == "WARM" or (mode in ("pack-io", "pack-key", "campaign") and stage != "PRIME"):
+    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "campaign") and stage != "PRIME"):
         assert re.search(r"\[rank-cache\] hit rank=", text), f"srv{node}: rank cache missed"
         assert all(int(h) > 0 and int(m) == 0 for h, m, e in rows), f"srv{node}: FP8 warm misses: {rows}"
     if mode == "campaign":
@@ -142,6 +154,22 @@ for node in (1, 2, 3, 4):
         assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
                                     for r, g, e, h in packs), f"srv{node}: unexpected repack: {packs}"
         assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text), f"srv{node}: pack restore failure"
+    if mode == "renderer-warmup":
+        packs = re.findall(r"packs: rtn=(\d+) gptq=(\d+) gptq_failed=(\d+) cached=(\d+)", text)
+        assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
+                                    for r, g, e, h in packs), f"srv{node}: unexpected repack"
+        assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text)
+        if node == 2:
+            early = stage == "PRIME" or stage.startswith("FAST")
+            if early:
+                assert "[early-mm-warmup] submitted processors=2 before engine startup" in text
+                assert "[early-mm-warmup] completed processors=2/2" in text
+                assert len(re.findall(r"\[early-mm-warmup\] reused .*? join_s=", text)) == 2
+                assert text.index("[early-mm-warmup] completed") < text.index("[boot-stamp] load-model took"), "warmup did not overlap model startup"
+                assert not re.search(r"\[early-mm-warmup\].*(?:failed|skipped|unavailable)", text)
+            else:
+                assert "[early-mm-warmup]" not in text
+            assert "multi-modal warmup failed" not in text.lower()
 print("all four nodes have the required cache receipts")
 PY
   fi
