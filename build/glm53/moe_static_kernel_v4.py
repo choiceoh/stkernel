@@ -1221,6 +1221,11 @@ class MoEStaticKernelV4:
             crB1 = thr_ld_B1.retile(tCrB1)
             csSFB1_0 = thr_ld_SFB1.partition_S(sSFB1_0)
             csSFB1_1 = thr_ld_SFB1.partition_S(sSFB1_1)
+            if cutlass.const_expr(self.decode_reform):
+                print("REFORM_SFB_FRAGMENT", tCrSFB1_0.layout)
+                print("REFORM_SFB_COPY_SOURCE", csSFB1_0.layout)
+                print("REFORM_SFB_COPY", smem_copy_SFB1)
+                print("REFORM_MMA", tiled_mma1)
             fz_crSFB1_0 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_0))
             fz_crSFB1_1 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_1))
             csA2 = thr_ld_A.partition_S(sA2)
