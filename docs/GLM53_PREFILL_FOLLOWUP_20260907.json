@@ -9923,6 +9923,27 @@
       }
     },
     "attestation_note": "Captured after head termination: all three surviving worker containers have the pinned image, candidate flags and 56 overlay mounts; the head container is already gone. The onepass record retains its boot ID, actual overlay stamp, flags and 3/3 serving proof. Deployment before boot verified all four nodes.",
-    "conclusion": "No valid serving A/B or throughput verdict. The first ten requests at 2K/4K/8K/32K completed; 128K failed without usage or content. The baseline arm was not run. Keep all new paths off by default. Probe headroom admission does not fix the separate long-context serving headroom failure."
+    "conclusion": "No valid serving A/B or throughput verdict. The first ten requests at 2K/4K/8K/32K completed; 128K failed without usage or content. The baseline arm was not run. Keep all new paths off by default. Probe headroom admission does not fix the separate long-context serving headroom failure.",
+    "post_failure_recovery_observation": {
+      "t_kst": "2026-09-07T12:36:50.076186",
+      "health": 200,
+      "container_id": "606b80aee001b1036dca14003e9b3196273fdbb5c30743c26bfdb273cacae2a2",
+      "started_at": "2026-09-07T03:30:04.147931312Z",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "prefill_env": {
+        "VLLM_GLM53_PREFILL_SP_FUSE_MHC": null,
+        "VLLM_GLM53_PREFILL_SP_DIRECT_NCCL": null,
+        "VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS": null,
+        "VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS": null,
+        "VLLM_GLM53_PREFILL_SP": "1",
+        "VLLM_GLM53_PREFILL_SP_FP8": "3",
+        "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+        "VLLM_GLM53_PREFILL_NVFP4_BPROJ": "0",
+        "VLLM_GLM53_NVFP4_STATIC_SCALE": "0"
+      },
+      "overlay_stamp": "f2cfb08ce3301546812a588e09fb4d573def695718f494126b088b4ba037fee1",
+      "fleet_status": "fleet: HELD by nvs3 [boot] (pid 916833@srv2, since 12:28, est 60m, DEF3+NVS3: paired second measurement of NVFP4 static scale 16 for promotion; restore after)\nlegacy: 1 bench/boot procs, 0 requests in flight\nqueue (0):\n  marker 12:28 FLEET-held-by-nvs3.done\n  marker 11:08 FLEET-held-by-alignprod.done\nlog:\n  2026-09-07_12:25:35 GO dec3follow0907 (pid 912721)\n  2026-09-07_12:28:55 ledger dec3follow0907 held=3m boots=0 records=0 wasted=0\n  2026-09-07_12:28:55 release dec3follow0907\n  2026-09-07_12:28:58 GO nvs3 (pid 916833)\nproduction: defaults (health 200)\ndeployed: f2cfb08ce330 = 52b23e2 (by spfusedserv, 12:16)\n  NOTE: the checkout (e1a88d7) is not the deployed build (52b23e2) -- a bench without a deploy runs the deployed one\nbaseline: none for build f2cfb08ce330; 1 candidate run(s) on it\n",
+      "note": "Read-only availability observation after successor fleet job nvs3 booted defaults. Not a recovery boot launched by this experiment, not a matched baseline for SPFUSED0907, and not an end-of-next-job acceptance."
+    }
   }
 }

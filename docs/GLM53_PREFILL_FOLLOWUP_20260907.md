@@ -106,8 +106,13 @@ otherwise completed shorter requests. The baseline arm never ran.
 The fleet failure handler released the slot because the queued boot job
 `dec3follow0907` took ownership at 12:25:35. A second recovery by this
 experiment would interfere with that owner, so none was launched. The
-earlier 12:11 recovery remains verified; no post-failure recovery is claimed
-here without a new health observation.
+earlier 12:11 recovery remains verified. At **12:36:50 KST**, a read-only
+observation of the subsequent `nvs3` defaults boot confirmed **health 200**,
+the same immutable image, the existing SP v3/shared-4096 settings, and none
+of this PR's new flags in the head container environment. That boot's stamp
+is `f2cfb08ce330`, so it is not a baseline for our `284770d1a222` candidate.
+This confirms restored availability; it is neither a recovery launched by
+this experiment nor acceptance of the next owner's still-active experiment.
 
 **Decision:** keep fusion and direct exchange off, and leave both thresholds
 inheriting the current shared default. Direct exchange is rejected for this
