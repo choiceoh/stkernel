@@ -9,6 +9,13 @@ a 40% reduction in wall time. Cold and warmed measurements are separate.
 
 ## Current evidence after rebase (2026-09-07)
 
+**Current default (operator request, PR #425):** gated FP8 v3 is enabled
+with `VLLM_GLM53_PREFILL_SP_FP8=3` and a 4096-real-token chunk threshold.
+Short chunks use BF16; set the mode to 0 for BF16 at every length.
+This promotion supersedes the historical off-by-default decisions below;
+it does not establish a long-context speedup or the original 40% target.
+The gated serving source was rebased onto `05c4a65`.
+
 Rebased onto `41af400` (including the chat contract, startup caches and SF
 packing). The two prefill helper changes are unchanged by these upstream commits.
 Follow-up branch:
@@ -40,7 +47,8 @@ to a 128-byte stride (at most 120 additional bytes for this model's row width);
 the final pack CTA initializes the gap without another launch. All-gather
 uses the same aligned packet layout in v3; v1/v2 remain unchanged.
 This removes v2's extra metadata collective. BF16 already uses one native
-reduce-scatter, so a win against BF16 remains unproven. The default stays 0.
+reduce-scatter, so a stable win against BF16 remains unproven. The later
+operator promotion above enables v3 with the short-chunk BF16 gate.
 
 NVFP4 scale construction also takes N/COUNT as non-specialized runtime
 arguments. Prompts sharing a power-of-two final reduction capacity can reuse
@@ -132,7 +140,7 @@ the pair's `runtime` field and is not silently injected into its automatic
 baseline pool. This does not erase the measured prefill figures, and it
 does not establish a stable overall performance win.
 
-**Decision: keep FP8 transport off by default.** The direct serving gain is
+**Decision at 07:00 (before the later operator promotion): keep FP8 off.** The direct serving gain is
 small on long contexts, warm 2K regresses, and the original 40% target is
 not achieved. No extra baseline was run just to improve the verdict label.
 Raw records: [three onepass records](GLM53_PREFILL_V3_SERVING_20260907.json).
@@ -191,7 +199,7 @@ not accepted. 8K/128K timing deltas are excluded from a speedup verdict too.
 Warm 4K/8K requests also reuse prefixes, so they do not establish a pure
 codec crossover. No additional traffic was sent outside the fleet hold.
 
-Decision: retain the short-chunk gate in the opt-in candidate, keep FP8 off
+Decision at 08:30 (before the later operator promotion): retain the short-chunk gate in the opt-in candidate, keep FP8 off
 by default, and leave the optimal threshold and long-context benefit
 unresolved. The original 40% target is not established. The pair released
 the fleet on BF16 at 08:30:14. Raw records, node attestations and selected
@@ -265,16 +273,18 @@ lane logs once whether it engaged (`[prefill-sp] MHC token shards selected`
 `[b12x prefill reuse] ENGAGED | NOT taken`, `[megakernel] mla prefill pair
 engaged`, `[fp8-dense] nvfp4 prefill route engaged`).
 `VLLM_GLM53_KDA_PREFILL_DIRECT_OUT`, `VLLM_GLM53_KDA_PREFILL_QK_NORM` and
-`VLLM_GLM53_PREFILL_SP` (BF16 transport; `PREFILL_SP_FP8` stays 0) are
+`VLLM_GLM53_PREFILL_SP` (originally BF16 transport) are
 **ON by default since 2026-09-06** (39차: KDA lanes +1.0 / +1.3 / +2.4 %
 prefill at 2K / 32K / 128K; SP alone +13 / +12.6 / +13.3 % on the unified
-onepass, decode and acceptance unchanged). The measured state of the other
+onepass, decode and acceptance unchanged). Gated FP8 v3 became the transport
+default on 2026-09-07 by operator request, with BF16 below 4096 real chunk
+tokens. The measured state of the other
 lanes is in MEASUREMENTS.md 39차 §4d-§4j: the MoE reuse / N128 compile failure
 was fixed but neither improved long prefill, the MLA pair kernel runs 1.85x the
 stock kernel's time (-10 % prefill even at group 2), the NVFP4 dense route's
 GEMM saving (-520 ms) is eaten by its per-call quantization kernels and
-launch glue (+850 ms), and FP8 transport for SP is slower than BF16 on this
-fabric. Note that
+launch glue (+850 ms), and historical FP8 v1 transport for SP was slower than
+BF16 on this fabric. Note that
 `VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
 already owns every b_proj linear, and the candidate only adopts layers

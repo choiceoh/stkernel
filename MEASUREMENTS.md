@@ -2356,6 +2356,12 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
   08:30:14 BF16 상태로 플릿 반환. 원시 표본·4노드 부팅 지문·간섭 증거:
   `docs/GLM53_PREFILL_GATED_SERVING_20260907.json`.
 
+- **기본값 승격 (09-07, PR #425)**: 운영자의 "기본값으로 해서 머지해버려" 지시로
+  `PREFILL_SP_FP8=3`, `PREFILL_SP_FP8_MIN_TOKENS=4096`을 기본 설정으로 채택.
+  실제 짧은 청크는 BF16, 큰 청크는 packed FP8 v3이며, 전 길이 BF16 복귀는 `PREFILL_SP_FP8=0`.
+  앞선 기본 off 판단을 대체하는 운영 결정이며 장문 이득·최적 경계·40% 달성 판정으로 해석하지 않는다.
+  이미 측정한 gated v3 실행 코드는 동일하고 프로파일 기본값과 설명만 갱신했다.
+
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.

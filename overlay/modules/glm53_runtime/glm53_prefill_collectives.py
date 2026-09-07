@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Opt-in eager GLM TP4 prefill collectives for sharded residual/MHC work.
+"""Profile-selected eager GLM TP4 prefill collectives for sharded residual/MHC work.
 
 The model gathers normalized local rows before each unchanged TP attention or
 MLP. A lexical scope defers its single terminal all-reduce; reduce-scatter
 then sums the rank partials directly into the local residual shard. Decode
-never enters this scope. Optional FP8 transport is a separate precision
-experiment, not a lossless encoding or a serving default.
+never enters this scope. The profile selects lossy FP8 v3 transport for
+large chunks and native BF16 for short chunks; mode 0 uses BF16 throughout.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
