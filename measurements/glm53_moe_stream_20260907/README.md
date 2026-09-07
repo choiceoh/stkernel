@@ -140,3 +140,11 @@ token counts, TTFT and prefix-hit deltas are retained. Metrics reads stay
 outside the measured request interval. The existing four-node memory watcher
 is included for the planned 2K/32K/128K comparison. These CPU-tested helpers
 are preparation; no direct-serving measurement is claimed.
+
+Offline request `prefilloff10907` was submitted at 18:45 KST, runner source
+`4e0f226d17d78648aea48028279cb4b347c3e994`, clean detached checkout
+`srv2:/home/choiceoh/stkernel-prefill-offline-0907`. Supervisor PID 2792656;
+request, fleet log, progress and completion live under
+`srv2:/tmp/glm53-prefill-offline-0907` (probe evidence under `evidence/`).
+The two probe source pins remain unchanged. Six recovery/ownership CPU tests
+and eight fresh-request/memory-watcher tests passed. No new GPU result yet.
