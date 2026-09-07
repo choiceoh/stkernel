@@ -1,0 +1,18 @@
+{
+  "started": 1788788777.2591598,
+  "exit_code": 1,
+  "probes": {
+    "moe-overlap": {
+      "revision": "44d76c0264c335db69745f61c9ef5a0fe0cd4103",
+      "started": 1788788827.6360078,
+      "command": [
+        "bash",
+        "probes/run_glm53_moe_overlap_tp4_check.sh"
+      ],
+      "exit_code": 1,
+      "ended": 1788788853.3197644
+    }
+  },
+  "restored_original": true,
+  "ended": 1788789021.522781
+}

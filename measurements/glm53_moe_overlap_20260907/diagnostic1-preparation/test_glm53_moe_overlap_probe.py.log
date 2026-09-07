@@ -1,0 +1,12 @@
+test_actual_frozen_distributed_signatures_accept_probe_calls (test_glm53_moe_overlap_probe.ProbeTests.test_actual_frozen_distributed_signatures_accept_probe_calls) ... ok
+test_diagnostic_cannot_emit_serving_gate_pass (test_glm53_moe_overlap_probe.ProbeTests.test_diagnostic_cannot_emit_serving_gate_pass) ... ok
+test_diagnostic_keeps_per_row_limits_and_records_control_failures (test_glm53_moe_overlap_probe.ProbeTests.test_diagnostic_keeps_per_row_limits_and_records_control_failures) ... ok
+test_original_keyword_typo_is_rejected_without_importing_cuda (test_glm53_moe_overlap_probe.ProbeTests.test_original_keyword_typo_is_rejected_without_importing_cuda) ... ok
+test_real_count_tile_budget_exposes_extra_stripe_padding (test_glm53_moe_overlap_probe.ProbeTests.test_real_count_tile_budget_exposes_extra_stripe_padding) ... ok
+test_three_arm_timings_balance_order_and_position (test_glm53_moe_overlap_probe.ProbeTests.test_three_arm_timings_balance_order_and_position) ... ok
+test_world_cleanup_runs_after_model_init_body_and_teardown_failures (test_glm53_moe_overlap_probe.ProbeTests.test_world_cleanup_runs_after_model_init_body_and_teardown_failures) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.015s
+
+OK

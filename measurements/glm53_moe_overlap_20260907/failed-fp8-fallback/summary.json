@@ -1,0 +1,41 @@
+{
+  "status": "GPU_FAILED_FP8_FALLBACK_SERVING_NOT_RUN",
+  "revision": "ce71af658a7c95ab2b23e04612fb7de39f05a64c",
+  "bf16_passed_cases": 8,
+  "failed_transport": "fp8-v3",
+  "failed_rows": 4143,
+  "failed_skew": true,
+  "failed_phase": "eager",
+  "overlap_admitted_at_failure": false,
+  "failed_rows_per_rank": [
+    1,
+    0,
+    0,
+    2
+  ],
+  "restored_original": true,
+  "completion": {
+    "started": 1788793050.6433475,
+    "exit_code": 1,
+    "probes": {
+      "moe-overlap": {
+        "revision": "ce71af658a7c95ab2b23e04612fb7de39f05a64c",
+        "started": 1788793101.4151306,
+        "command": [
+          "bash",
+          "probes/run_glm53_moe_overlap_tp4_check.sh"
+        ],
+        "exit_code": 1,
+        "ended": 1788793199.9762464
+      }
+    },
+    "restored_original": true,
+    "ended": 1788793378.963461
+  },
+  "limitations": [
+    "FP8 overlapped cases were not reached.",
+    "Failure is in the shared fallback path and is not attributed to the overlap candidate.",
+    "BF16 kernel/transport timing is not full-model TTFT.",
+    "Do not widen tolerance or repeat the unchanged gate as a fix."
+  ]
+}

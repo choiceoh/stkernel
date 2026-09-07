@@ -1,0 +1,15 @@
+test_arm_primes_then_measures_and_records_both_phases (test_prefill_serving.ServingTests.test_arm_primes_then_measures_and_records_both_phases) ... {"name": "TESTB1", "complete": true, "launch_proof": {"10.10.10.3": false, "10.10.10.2": false, "10.10.10.1": false, "10.10.10.4": false}}
+ok
+test_attestation_rejects_wrong_worker_source_and_capacity (test_prefill_serving.ServingTests.test_attestation_rejects_wrong_worker_source_and_capacity) ... ok
+test_bad_priming_quality_stops_before_measured_traffic (test_prefill_serving.ServingTests.test_bad_priming_quality_stops_before_measured_traffic) ... ok
+test_deploy_failure_still_attempts_public_restore_and_reports_failure (test_prefill_serving.ServingTests.test_deploy_failure_still_attempts_public_restore_and_reports_failure) ... ok
+test_failed_gate_never_reaches_deploy_or_creates_run_directory (test_prefill_serving.ServingTests.test_failed_gate_never_reaches_deploy_or_creates_run_directory) ... ok
+test_fresh_gpu_failure_prevents_gate_admission_or_serving_deploy (test_prefill_serving.ServingTests.test_fresh_gpu_failure_prevents_gate_admission_or_serving_deploy) ... ok
+test_gpu_gate_requires_both_transports_all_cases_source_and_recovery (test_prefill_serving.ServingTests.test_gpu_gate_requires_both_transports_all_cases_source_and_recovery) ... ok
+test_later_boot_uses_first_baseline_budget_without_second_deduction (test_prefill_serving.ServingTests.test_later_boot_uses_first_baseline_budget_without_second_deduction) ... ok
+test_redirected_file_logs_prove_launch_and_reject_stale_empty_or_changed_file (test_prefill_serving.ServingTests.test_redirected_file_logs_prove_launch_and_reject_stale_empty_or_changed_file) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.014s
+
+OK

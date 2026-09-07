@@ -1,0 +1,27 @@
+{
+  "source": "/home/choiceoh/stkernel-moe-overlap-check1-0907",
+  "revision": "44d76c0264c335db69745f61c9ef5a0fe0cd4103",
+  "session": "moeoverlap10907",
+  "created": "2026-09-07T22:13:51.993342",
+  "pr": 453,
+  "candidate": "VLLM_GLM53_PREFILL_MOE_OVERLAP",
+  "status": "SUBMITTING",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moeoverlap10907",
+    "35",
+    "PR453 MoE two-stripe TP overlap: four-rank BF16/FP8 numerics, changed inputs and matched kernel timings; exact container restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-overlap-check1-0907/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-overlap-check1-0907",
+    "--probe-revision",
+    "44d76c0264c335db69745f61c9ef5a0fe0cd4103",
+    "--out",
+    "/tmp/glm53-moe-overlap-check1-0907/evidence"
+  ]
+}

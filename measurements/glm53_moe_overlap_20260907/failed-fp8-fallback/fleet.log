@@ -1,0 +1,64 @@
+preflight moeoverlap20907 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 0c49a69 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:01:44
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:10:31
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore) 2026-09-07_23:11:01
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (3 procs, 0 reqs) 2026-09-07_23:12:17
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:12:32
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:13:32
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:14:32
+waiting: pos 2/2, held by inputctaserve0907 [boot] (pid 3855291@srv2, since 22:50, est 65m, C1 input-CTA actual-source gates, choose a stable kernel winner, fixed-window B/A/A/B and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:20:33
+waiting: pos 2/2 2026-09-07_23:20:49
+waiting: pos 1/1, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore) 2026-09-07_23:21:04
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore) 2026-09-07_23:21:49
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_23:22:19
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:22:34
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:23:34
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:24:34
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:31:36
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:34:37
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (3 procs, 0 reqs) 2026-09-07_23:35:07
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:35:22
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:36:07
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:37:08
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:41:54
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_23:45:10
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:45:25
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_23:46:25
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:47:25
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:49:41
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_23:52:57
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:53:12
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:54:12
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_23:55:12
+waiting: pos 1/2, held by mlaprefill50907 [boot] (pid 3879191@srv2, since 23:20, est 45m, PR439 current-main file-log proof: matched fresh 2K/32K/128K TTFT B1/A/B2 and public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_23:56:58
+GO moeoverlap20907 2026-09-07_23:57:28
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=11G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+START moe-overlap 2026-09-07 23:58:21
+DONE moe-overlap rc=1
+{"started": 1788793050.6433475, "exit_code": 1, "probes": {"moe-overlap": {"revision": "ce71af658a7c95ab2b23e04612fb7de39f05a64c", "started": 1788793101.4151306, "command": ["bash", "probes/run_glm53_moe_overlap_tp4_check.sh"], "exit_code": 1, "ended": 1788793199.9762464}}, "restored_original": true, "ended": 1788793378.963461}
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-moe-overlap-serving2-0907/bench/prefill_serving.py", line 410, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/choiceoh/stkernel-moe-overlap-serving2-0907/bench/prefill_serving.py", line 406, in main
+    return run_bracket(args)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-moe-overlap-serving2-0907/bench/prefill_serving.py", line 316, in run_bracket
+    refresh_gpu_gate(args.candidate, source, args.revision, args.gate_dir)
+  File "/home/choiceoh/stkernel-moe-overlap-serving2-0907/bench/prefill_serving.py", line 302, in refresh_gpu_gate
+    run_owned(['python3', str(source/'probes/glm53_offline_checks.py'),
+  File "/home/choiceoh/stkernel-moe-overlap-serving2-0907/bench/prefill_serving.py", line 213, in run_owned
+    if rc:raise subprocess.CalledProcessError(rc,command)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+subprocess.CalledProcessError: Command '['python3', '/home/choiceoh/stkernel-moe-overlap-serving2-0907/probes/glm53_offline_checks.py', '--probe-source', '/home/choiceoh/stkernel-moe-overlap-check2-0907', '--probe-revision', 'ce71af658a7c95ab2b23e04612fb7de39f05a64c', '--out', '/tmp/glm53-moe-overlap-serving2-0907/gpu-gate']' returned non-zero exit status 1.
+{"started": "2026-09-07T23:01:41.458554", "exit_code": 1, "ended": "2026-09-08T00:02:59.111845"}
