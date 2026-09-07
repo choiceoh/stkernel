@@ -32,6 +32,10 @@ t,r specializes to the original t geometry. `cpu/logic.log`: 6,701 checks,
 30 megakernel regressions and 107 fleet regressions pass. CPU compilation is
 not a numerical or performance verdict.
 
+The corrected source `4fae87c` passes fresh M2/M6 compilation and all 1,024
+consumer-address checks (`cpu/corrected/`). Its full Linux CPU gate passes
+6,742 checks, 38 megakernel regressions and 115 fleet regressions.
+
 ## One integrated GPU campaign
 
 The corrected `moereformfix0908` maintenance campaign runs:

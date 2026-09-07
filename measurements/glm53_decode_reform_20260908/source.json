@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "See corrected campaign numerics/source.commit and runtime record git",
+  "candidate_commit": "4fae87c2a96adf54fa4d7ef72ea706d93d8c9422",
   "cpu_compile_commit": "088c04f",
   "cpu_full_gate_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
   "cpu_scope": "Historical compile logs predate the FP4 byte-address fix. Corrected candidate requires a fresh device-free compile and GPU campaign.",
@@ -22,7 +22,7 @@
   },
   "fleet_session": "moereformfix0908",
   "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-0908",
-  "status": "FP4 address corrected; original speed-only waiter cancelled; integrated corrected numerics and A-B pending",
+  "status": "Corrected CPU compilation and contracts PASS; integrated corrected GPU numerics and A-B queued",
   "numerics_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
   "numerics": {
     "status": "FAIL",
@@ -35,5 +35,21 @@
       "limit": 0.1875
     },
     "speed_continuation": "Cancelled before measurement: user requested correction in the speed candidate."
+  },
+  "corrected_cpu": {
+    "source_commit": "4fae87c2a96adf54fa4d7ef72ea706d93d8c9422",
+    "compile_shapes": [
+      2,
+      6
+    ],
+    "source_sha256": {
+      "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "overlay/modules/glm53_moe/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "overlay/modules/glm53_moe/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343"
+    },
+    "checks": 6742,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 115,
+    "status": "PASS"
   }
 }
