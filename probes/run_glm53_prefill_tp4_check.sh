@@ -22,6 +22,11 @@ for rank in 1 2 3; do
   ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
     "docker image inspect $IMAGE --format '{{.Id}}'" </dev/null >/dev/null
 done
+python3 "$REPO/probes/glm53_probe_memory.py"
+for rank in 1 2 3; do
+  ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" \
+    "python3 $REPO/probes/glm53_probe_memory.py" </dev/null
+done
 run_id="prefill-tp4-$(date +%s)-$$"
 log_dir=$(mktemp -d "${TMPDIR:-/tmp}/glm53-prefill-tp4.XXXXXX")
 echo "TP4 probe logs: $log_dir; run=$run_id; transport=$transport; image=$IMAGE"

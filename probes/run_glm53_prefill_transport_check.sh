@@ -43,10 +43,12 @@ if [[ $compile_only == 1 ]]; then
     -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
     /repo/probes/glm53_prefill_transport_check.py --compile-only
 fi
+python3 "$REPO/probes/glm53_probe_memory.py"
 docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
   -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
   /repo/probes/glm53_prefill_transport_check.py
 if [[ $skip_scale == 0 ]]; then
+  python3 "$REPO/probes/glm53_probe_memory.py"
   docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
     -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
     /repo/probes/glm53_nvfp4_scale_check.py
@@ -55,6 +57,7 @@ if [[ $with_tp4 == 1 ]]; then
   PREFILL_PROBE_IMAGE_ID="$IMAGE" bash "$REPO/probes/run_glm53_prefill_tp4_check.sh" fp8-v3
 fi
 if [[ $fuse_mhc == 1 ]]; then
+  python3 "$REPO/probes/glm53_probe_memory.py"
   docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
     -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
     /repo/probes/glm53_prefill_fused_check.py
