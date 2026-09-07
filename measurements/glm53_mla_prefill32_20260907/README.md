@@ -195,3 +195,15 @@ three-snapshot/four-node live check is in `offline2-readonly-identity.json`.
 Neither check is a GPU result. Earlier 11 numerical cases still pass, but
 sanitation and direct serving remain pending. Prepared serving has not been
 submitted and needs the successful retry gate path before launch.
+
+The corrected runner was frozen as `30c32840a5d4159a2ff82539f2dac09a2e109a08`
+at `srv2:/home/choiceoh/stkernel-prefill-offline2-0907`; the same eight tests
+also passed on the remote host before submission. Normal fleet request
+`prefilloff20907` was accepted at 20:17:15 with supervisor PID 3272342.
+It is queue position 2 behind inputchan0907 and rankstream20907, estimated
+GO 21:20 at the 20:17 snapshot. This is an estimate, not executed evidence.
+Logs/completion are under `/tmp/glm53-prefill-offline2-0907`, with detailed
+gates and restore evidence in `evidence/`. The probe source pins are unchanged.
+Prepared serving requests now reference this retry evidence path; original
+requests were archived, no serving worker was started, and actual GPU gate
+plus recovery/current-main/source-parity checks remain mandatory.
