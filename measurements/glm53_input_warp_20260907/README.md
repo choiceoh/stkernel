@@ -98,8 +98,8 @@ The JSON still says RUNNING because the assertion interrupted it; the
 Inspection found that the test retained X, reference weights and graphs,
 but released the original packed-weight tensors between shapes. Those
 external CUDA graph arguments must stay alive. The retry retains each pack
-with its graphs and replays the baseline alongside the candidate. This
-diagnosis still requires the corrected GPU test to pass.
+with its graphs and replays the baseline alongside the candidate. The
+corrected GPU test below confirmed that this fixes the failure.
 
 The interrupted run's timings below are preliminary only, not acceptance:
 
@@ -219,7 +219,7 @@ See the [partial summary](serving/partial-summary.json), [raw records](serving/r
 [verdicts](serving/verdicts.jsonl) and [printed excerpts](serving/runner.log).
 
 Approved main `757ea2b` was restored at 19:26:50 KST, with health 200 verified
-at 19:28. The outer runner exited 1 because the quality gate failed;
+at 19:28. The outer runner exited 4 because the quality gate failed;
 `restore.status` is `restored`.
 
 The diagnostic `probes/input_reuse_channels.py` retains the unchanged
@@ -227,6 +227,16 @@ onepass requests, combined text and existing gates while recording separate
 SSE content/reasoning fields. It verifies request/output hashes and writes
 after the timed request. Three transport tests pass. Its follow-up uses
 pre/post four-rank capture proof and the normal chain/judge/restore flow.
+
+Follow-up fleet session `inputchan0907` was queued at 19:33 on immutable source
+`6560212`, with order IRCHANB1/IRCHANA1/IRCHANB2. Preflight passed. At submission
+it was second in the queue, after a 40-minute running startup campaign and
+a queued 45-minute GPU campaign (estimated start 20:52, not a deadline).
+Output directory: `/home/choiceoh/glm53-logs/INPUTCHANNELS0907`. It reuses
+the exact CUDA/driver/fixture/profile GPU evidence only after byte comparisons,
+checks current-main ancestry before stopping service, and restores approved
+main on exit. It does not automatically change the default or erase the
+preceding failed gate.
 
 After merging main's fleet update, a worker-completion race was reproduced:
 `ensure_worker` could overwrite a terminal result as `interrupted` after
