@@ -7464,3 +7464,9 @@ CPU 검사: 로직 71,014, 메가커널 30, 플릿 107, 렌더러 9, 수집 증�
 정상 상태·품질 확인 후 02:41:53 KST 플릿을 반납했고, 다음 작업이 02:41:58에
 획득했다. 기본값은 다음 배포부터 적용된다.
 [조건·한계·원본 식별자·재현 절차](measurements/glm53_early_mm_20260908/README.md).
+
+### GLM startup unused graph profile (2026-09-08, PR #460)
+
+`VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE` remains **0**. Fleet `graphmem0908`, same source `b945723`, four nodes, warm B/A/A/B: health **205 / 212 / 202 / 205 s** (baseline 205, candidate 207). Head memory profile + subsequent warmup fell **46.85 -> 44.25 s**, but total readiness did not improve. All boots: first text/image/video outputs passed; quality 6/6, corruption 0/4. Timed ranks: 976 FP8 hits, four rank hits, W4 255/rank, no cache errors. FAST2 had two non-loopback POST completions, so its request timings are contaminated. [Evidence](measurements/glm53_graph_profile_20260908/README.md).
+
+The cold PRIME also exposed redundant CUDA extension compilation after deploying unchanged `.cu` bytes: deploy rewrites file mtimes while Ninja consumes those bind-mounted timestamps. A separate identical-content deployment bracket is the next candidate; no full-boot improvement is claimed for it yet.

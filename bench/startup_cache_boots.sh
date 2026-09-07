@@ -17,6 +17,7 @@ case "$MODE" in
   pack-key) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_MK_PACK_SHA256=0 VLLM_GLM53_MK_PACK_FAST_IO=1' ;;
   renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_EARLY_MM_WARMUP=0' ;;
   graph-profile) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
+  overlay-deploy) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
 monitor_pid=
@@ -36,14 +37,14 @@ snapshot() {
   if [ "$MODE" = renderer-warmup ]; then
     docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py /usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py >> "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
   fi
-  if [ "$MODE" = graph-profile ]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
     docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py /usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py >> "$EVIDENCE/$arm-srv2.sha256"
   fi
   for ip in 1 3 4; do
     scp -q -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip:glm53-logs/glm53.log" "$EVIDENCE/$arm-srv$ip.log" || true
     ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker inspect --format "{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.Image}}" glm53-worker; df -B1 /home/choiceoh/glm53-cache | tail -1; grep -E "MemFree:|MemAvailable:" /proc/meminfo; docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py' > "$EVIDENCE/$arm-srv$ip.state" 2>&1 || true
   done
-  if [ "$MODE" = graph-profile ]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
     for ip in 1 3 4; do
       ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py /usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py' >> "$EVIDENCE/$arm-srv$ip.state"
     done
@@ -91,6 +92,16 @@ for stage in "${stages[@]}"; do
     knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=1'
     [[ "$stage" != BASE* ]] || knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
   fi
+  if [ "$MODE" = overlay-deploy ]; then
+    knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
+    python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-before-deploy.json"
+    deploy_start=$(date +%s)
+    preserve=1
+    [[ "$stage" != BASE* ]] || preserve=0
+    DEPLOY_PRESERVE_IDENTICAL=$preserve bash launchers/deploy-overlays.sh glm53 > "$EVIDENCE/$current_arm-deploy.log" 2>&1
+    printf '%s\t%s\n' "$current_arm" "$(( $(date +%s) - deploy_start ))" >> "$EVIDENCE/deployment-seconds.tsv"
+    python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-deploy.json"
+  fi
   start=$(date +%s)
   previous=$(docker inspect --format '{{.Id}}' glm53 2>/dev/null || true)
   (
@@ -122,7 +133,7 @@ for node in (1, 2, 3, 4):
     rows = re.findall(r"\[fp8-cache\].*?enabled=True hit=(\d+) miss=(\d+) errors=(\d+)", text)
     assert len(rows) >= 2, f"srv{node}: target/drafter FP8 cache receipts missing"
     assert all(int(e) == 0 for h, m, e in rows), f"srv{node}: FP8 cache errors: {rows}"
-    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile") and stage != "PRIME"):
+    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile", "overlay-deploy") and stage != "PRIME"):
         assert re.search(r"\[rank-cache\] hit rank=", text), f"srv{node}: rank cache missed"
         assert all(int(h) > 0 and int(m) == 0 for h, m, e in rows), f"srv{node}: FP8 warm misses: {rows}"
     if mode == "pack-io":
@@ -145,7 +156,7 @@ for node in (1, 2, 3, 4):
         assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
                                     for r, g, e, h in packs), f"srv{node}: unexpected repack: {packs}"
         assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text), f"srv{node}: pack restore failure"
-    if mode in ("renderer-warmup", "graph-profile"):
+    if mode in ("renderer-warmup", "graph-profile", "overlay-deploy"):
         packs = re.findall(r"packs: rtn=(\d+) gptq=(\d+) gptq_failed=(\d+) cached=(\d+)", text)
         assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
                                     for r, g, e, h in packs), f"srv{node}: unexpected repack"
@@ -161,8 +172,8 @@ for node in (1, 2, 3, 4):
             else:
                 assert "[early-mm-warmup]" not in text
             assert "multi-modal warmup failed" not in text.lower()
-    if mode == "graph-profile":
-        fast = stage == "PRIME" or stage.startswith("FAST")
+    if mode in ("graph-profile", "overlay-deploy"):
+        fast = mode == "graph-profile" and (stage == "PRIME" or stage.startswith("FAST"))
         assert ("[glm53-graph-profile] skipped unused estimate" in text) == fast, f"srv{node}: wrong graph profile path"
         assert ("[boot-stamp] cudagraph-memory-profile took" in text) != fast, f"srv{node}: wrong dry capture path"
         for phase in ("encoder-profile", "profile-run", "cudagraph-capture", "compile+warmup"):
@@ -171,7 +182,7 @@ for node in (1, 2, 3, 4):
 print("all four nodes have the required cache receipts")
 PY
   fi
-  if [ "$MODE" = graph-profile ]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
     python3 bench/startup_first_requests.py --out "$EVIDENCE/$current_arm-first-requests.json" > "$EVIDENCE/$current_arm-first-requests.out" 2>&1
   fi
   STARTUP_CACHE_RESPONSES="$EVIDENCE/$current_arm-responses.jsonl" \
@@ -179,6 +190,9 @@ PY
   tail -1 "$EVIDENCE/onepass.jsonl" >> "$LOGD/bracket-onepass.jsonl"
   cat "$EVIDENCE/$current_arm-onepass.out"
   snapshot "$current_arm"
+  if [ "$MODE" = overlay-deploy ]; then
+    python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-boot.json"
+  fi
   python3 - "$EVIDENCE/onepass.jsonl" <<'PY'
 import json, sys
 row = json.loads(open(sys.argv[1]).readlines()[-1])
