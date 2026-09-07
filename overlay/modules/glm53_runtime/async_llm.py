@@ -133,12 +133,6 @@ class AsyncLLM(EngineClient):
             )
 
         self.renderer = renderer = renderer_from_config(self.vllm_config)
-        # GLM53: overlap the existing CPU MM warmup with engine startup. The
-        # normal renderer warmup still joins it before HTTP readiness.
-        if os.environ.get("VLLM_GLM53_EARLY_MM_WARMUP", "0") == "1":
-            from vllm.renderers.glm53_renderer_warmup import start_renderer_warmup
-            start_renderer_warmup(renderer)
-
         # Convert EngineInput --> EngineCoreRequest.
         self.input_processor = InputProcessor(self.vllm_config, renderer)
 
@@ -149,6 +143,13 @@ class AsyncLLM(EngineClient):
             stream_interval=self.vllm_config.scheduler_config.stream_interval,
             tracing_enabled=tracing_endpoint is not None,
         )
+
+        # GLM53: InputProcessor's MultiModalBudget uses a global Torch thread
+        # guard. Start CPU MM warmup only after that initialization completes;
+        # normal renderer warmup joins it before HTTP readiness.
+        if os.environ.get("VLLM_GLM53_EARLY_MM_WARMUP", "0") == "1":
+            from vllm.renderers.glm53_renderer_warmup import start_renderer_warmup
+            start_renderer_warmup(renderer)
 
         # EngineCore (starts the engine in background process).
         self.engine_core = EngineCoreClient.make_async_mp_client(

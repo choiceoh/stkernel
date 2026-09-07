@@ -1,5 +1,6 @@
 """Early MM warmup joins before readiness and preserves retry/cache semantics."""
 from concurrent.futures import ThreadPoolExecutor
+import ast
 from contextlib import contextmanager
 import importlib.util
 import os
@@ -193,6 +194,43 @@ class RendererWarmupTests(unittest.TestCase):
         before = common.environment_identity()
         with patch.dict(os.environ, {'VLLM_GLM53_EARLY_MM_WARMUP': '0'}):
             self.assertEqual(before, common.environment_identity())
+
+    def test_async_engine_schedules_after_input_budget_thread_guard(self):
+        # Run the actual initialization statements with a guarded budget stub:
+        # scheduling before InputProcessor would overlap two process-wide guards.
+        tree = ast.parse((ROOT / 'overlay/modules/glm53_runtime/async_llm.py').read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'AsyncLLM')
+        init = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '__init__')
+        selected = []
+        for node in init.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Attribute) and t.attr in
+                    ('renderer', 'input_processor', 'output_processor', 'engine_core') for t in node.targets):
+                selected.append(node)
+            if isinstance(node, ast.If) and 'VLLM_GLM53_EARLY_MM_WARMUP' in ast.unparse(node.test):
+                selected.append(node)
+        events = []
+        renderer = types.SimpleNamespace(tokenizer=None)
+        def budget(*args):
+            self.assertNotIn('warmup', events, 'early warmup overlaps budget thread guard')
+            events.append('budget')
+        def start(r):
+            self.assertIs(r, renderer)
+            self.assertEqual(events, ['budget'])
+            events.append('warmup')
+        def engine(**kwargs):
+            self.assertEqual(events, ['budget', 'warmup'])
+            events.append('engine')
+        owner = types.SimpleNamespace(vllm_config=types.SimpleNamespace(
+            scheduler_config=types.SimpleNamespace(stream_interval=1)), log_stats=False)
+        namespace = dict(self=owner, os=os, renderer_from_config=lambda config: renderer,
+            InputProcessor=budget, OutputProcessor=lambda *a, **kw: None,
+            EngineCoreClient=types.SimpleNamespace(make_async_mp_client=engine),
+            vllm_config=owner.vllm_config, executor_class=None, tracing_endpoint=None,
+            client_addresses=None, client_count=1, client_index=0)
+        with patch.dict(sys.modules, {'vllm.renderers.glm53_renderer_warmup':
+                                      types.SimpleNamespace(start_renderer_warmup=start)}):
+            exec(compile(ast.Module(body=selected, type_ignores=[]), '<async-init>', 'exec'), namespace)
+        self.assertEqual(events, ['budget', 'warmup', 'engine'])
 
 
 if __name__ == '__main__':
