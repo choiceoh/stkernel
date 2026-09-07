@@ -205,3 +205,21 @@ are component observations from one run, not full-model prefill evidence.
 The full table, raw eight-rank-process logs, recovery and fixed next diagnostic
 plan are in `measurements/glm53_moe_m64_20260908/check5/`. No numerical tolerance
 was changed, and check5/serving2 must not be rerun unchanged.
+
+
+## Fixed FP8 comparison diagnostic
+
+`--fp8-diagnostic` now selects a distinct offline label and emits only
+`MOE_M64_FP8_DIAGNOSTIC_COMPLETE`, with serving/numerical acceptance false.
+It reuses the exact MoE and TP fixture with fixed cases (4096/skew,
+8192/balanced, 6144/balanced), three input seeds (9211+rows with offsets
+0/104729/209759), and eight alternating trials per seed. Every trial includes
+a fresh stock baseline/repeat and independent control/candidate, both before
+and after TP transport. All failing row IDs, errors, unchanged limits, repeat
+noise and intersections are retained. Input identity and all-rank source and
+trial coverage are checked. This diagnostic cannot satisfy the serving gate.
+
+The M64 kernel and thresholds are unchanged from check5. A completed diagnostic
+may still contain numerical failures; it reports them rather than approving
+the candidate. Its statistics group rows by case/seed/phase and describe row-
+trial counts without treating rows or reused trials as independent experiments.

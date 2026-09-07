@@ -273,12 +273,15 @@ def main():
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--probe-source', type=Path, required=True)
     ap.add_argument('--probe-revision', required=True)
+    ap.add_argument('--fp8-diagnostic', action='store_true', help='Separate FP8 comparison diagnostic; cannot approve serving')
     args = ap.parse_args()
     if not re.fullmatch('[0-9a-f]{40}', args.probe_revision):
         ap.error('exact frozen probe commit required')
     global PINS
-    label = 'moe-m64'
+    label = 'moe-m64-fp8-diagnostic' if args.fp8_diagnostic else 'moe-m64'
     command = ['bash', 'probes/run_glm53_moe_m64_tp4_check.sh']
+    if args.fp8_diagnostic:
+        command.append('--fp8-diagnostic')
     PINS = ((label, str(args.probe_source.resolve()), args.probe_revision, command),)
     args.out.mkdir(parents=True, exist_ok=False)
     def save(file, value):

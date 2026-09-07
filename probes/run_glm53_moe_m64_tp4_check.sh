@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Called only by glm53_offline_checks.py within our normal fleet boot hold.
 set -euo pipefail
-if [[ $# != 0 ]]; then echo "no arguments accepted" >&2; exit 2; fi
+diagnostic=0
+probe_args=()
+transports=(bf16 fp8-v3)
+if [[ $# == 1 && $1 == --fp8-diagnostic ]]; then
+  diagnostic=1
+  probe_args+=(--fp8-diagnostic)
+  transports=(fp8-v3)
+elif [[ $# != 0 ]]; then
+  echo 'only --fp8-diagnostic is accepted' >&2; exit 2
+fi
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 python3 -c 'import sys;sys.path.insert(0,sys.argv[1]+"/probes");from glm53_offline_checks import check_holder;check_holder()' "$REPO"
 revision=$(git -C "$REPO" rev-parse HEAD)
@@ -31,7 +40,7 @@ for rank in 0 1 2 3; do
     ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@${ips[$rank]}" "$command" </dev/null
   fi
 done
-for transport in bf16 fp8-v3; do
+for transport in "${transports[@]}"; do
   pids=()
   for rank in 0 1 2 3; do
     args=(docker run --rm --name "$run_id-$rank" --gpus all --network host
@@ -52,7 +61,7 @@ for transport in bf16 fp8-v3; do
     done < "$REPO/build/glm53/manifest.tsv"
     args+=("$IMAGE" -m torch.distributed.run --nnodes=4 --nproc-per-node=1
       --node-rank="$rank" --master-addr=10.10.10.2 --master-port="$port"
-      /repo/probes/glm53_moe_m64_check.py --transport "$transport")
+      /repo/probes/glm53_moe_m64_check.py --transport "$transport" "${probe_args[@]}")
     if [[ $rank == 0 ]]; then
       timeout 900 "${args[@]}" >"$log_dir/$transport-rank-$rank.log" 2>&1 &
     else
@@ -69,6 +78,22 @@ for transport in bf16 fp8-v3; do
   done
   cat "$log_dir/$transport-rank-0.log"
 done
+if [[ $diagnostic == 1 ]]; then
+  python3 - "$log_dir/fp8-v3-rank-0.log" "$REPO/probes" <<'DIAGNOSTIC'
+import json,pathlib,sys
+sys.path.insert(0,sys.argv[2])
+from glm53_moe_m64_fp8_diagnostic import MARKER,completion
+records=[json.loads(l) for l in pathlib.Path(sys.argv[1]).read_text().splitlines() if l.startswith('{')]
+trials=[r for r in records if r.get('kind')=='MOE_M64_FP8_DIAGNOSTIC_TRIAL']
+reports=[r for r in records if r.get('verdict')==MARKER]
+assert len(reports)==1
+report=reports[0]
+assert completion(trials,report['provenance'])==report
+assert report['serving_gate'] is False and report['numerical_acceptance'] is False
+print(MARKER)
+DIAGNOSTIC
+  exit 0
+fi
 # The image does not contain compute-sanitizer; use the pinned host tool,
 # as the MLA probe does. Version/hash are evidence, not GPU acceptance.
 tool_dir=/usr/local/cuda/compute-sanitizer

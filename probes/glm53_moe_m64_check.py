@@ -69,10 +69,13 @@ def main():
     ap.add_argument('--transport',choices=('bf16','fp8-v3'),required=True)
     ap.add_argument('--rows',nargs='+',type=int,default=[4096,6143,6144,6912,8192])
     ap.add_argument('--check-api',action='store_true',help='CPU-only binding against the frozen distributed API')
+    ap.add_argument('--fp8-diagnostic',action='store_true',help='Fixed repeated FP8 controls; never a serving gate')
     args=ap.parse_args()
     checked=validate_distributed_api()
     if args.check_api:
         print(json.dumps(dict(distributed_api='PASS',calls=checked)));return
+    if args.fp8_diagnostic and args.transport != 'fp8-v3':
+        ap.error('diagnostic requires FP8-v3')
     if int(os.environ.get('WORLD_SIZE','0'))!=4 or any(not 4096<=n<=8192 for n in args.rows):
         ap.error('four real ranks and 4096..8192 rows required')
     os.environ.update(VLLM_GLM53_PREFILL_SP='1',VLLM_GLM53_B12X_PREFILL_M64='1',
@@ -175,6 +178,34 @@ def main():
             report['finite']=finite
             report['pass']=finite and not report['bad_rows']
             return reports(report)
+        if args.fp8_diagnostic:
+            from glm53_moe_m64_fp8_diagnostic import run as run_diagnostic
+            def case_factory(rows, skew, seed):
+                mlp.skew=skew
+                generator=torch.Generator(device='cuda').manual_seed(seed)
+                full=torch.randn(rows,4096,generator=generator,device='cuda',dtype=torch.bfloat16)*.5
+                shard=h.prefill_shard(full);original=shard.clone()
+                gathered=h.prefill_all_gather(shard,num_tokens=rows)
+                ids,scales=mlp.routes(gathered)
+                def select(candidate):
+                    wrapper._prefill_m64_workspace=candidate_workspace if candidate else None
+                    expected=candidate_workspace if candidate and rows>=6144 else wrapper._dynamic_workspace
+                    if wrapper._workspace_for_prefill(wrapper._dynamic_workspace,rows) is not expected:
+                        raise AssertionError('diagnostic selected wrong workspace')
+                def call(candidate):
+                    select(candidate)
+                    with override_forward_context(context):
+                        x=h.prefill_all_gather(shard,num_tokens=rows)
+                        with h.partial_tp_output(num_tokens=rows):x=mlp(x)
+                        return h.prefill_reduce_scatter(x)
+                def local_call(candidate):
+                    select(candidate)
+                    return wrapper.run(gathered,w13,sf13,w2,sf2,ids,scales,
+                        w1_alpha=ones,w2_alpha=ones,fc2_input_scale=ones,out=torch.empty_like(gathered))
+                return call,local_call,lambda:torch.equal(shard,original)
+            run_diagnostic(torch=torch,rank=rank,provenance=provenance,reports=reports,
+                           require=require,case_factory=case_factory)
+            return
         for rows in args.rows:
             for skew in (False,True):
                 mlp.skew=skew
