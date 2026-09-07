@@ -66,7 +66,7 @@ class ServingTests(unittest.TestCase):
             root=Path(directory);frozen=root/'frozen';repo=root/'serving';gate=root/'gate';gate.mkdir()
             relative=('build/glm53/manifest.tsv','build/glm53/module.py','profiles/glm53.env',
                       'launchers/start-glm53-nvfp4-tp4.sh','probes/glm53_moe_m64_check.py',
-                      'probes/run_glm53_moe_m64_tp4_check.sh')
+                      'probes/run_glm53_moe_m64_tp4_check.sh','probes/glm53_moe_m64_sanitize.py')
             for tree in (frozen,repo):
                 for path in relative:
                     p=tree/path;p.parent.mkdir(parents=True,exist_ok=True)
@@ -80,9 +80,12 @@ class ServingTests(unittest.TestCase):
                               changed=[[dict(bad_rows=0,finite=True,**{'pass':True}) for _ in range(4)] for _ in range(3)])
                          for rows in (4096,6143,6144,6912,8192) for skew in (False,True)])
                      for transport in ('bf16','fp8-v3')]
-            def write(c=complete,r=reports,marker=True):
+            sanitizers=[dict(verdict='MOE_M64_SANITIZER_CASES_PASS',sanitizer=tool,provenance=provenance,
+                summary='ERROR SUMMARY: 0 errors' if tool=='memcheck' else 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)',
+                results=[dict(rows=n,skew=s,bad_rows=0) for n in (6144,6912,8192) for s in (False,True)]) for tool in ('memcheck','racecheck')]
+            def write(c=complete,r=reports,marker=True,sanitizers=sanitizers):
                 m.save(gate/'completion.json',c)
-                (gate/'moe-m64.log').write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in r)+
+                (gate/'moe-m64.log').write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in r+sanitizers)+'\nMOE_M64_MEMCHECK_PASS\nMOE_M64_RACECHECK_PASS'+
                     ('\nMOE_M64_ALL_GATES_PASS\n' if marker else '\n'))
             candidate=('VLLM_GLM53_B12X_PREFILL_M64','marker','a'*40,str(frozen))
             with patch.dict(m.CANDIDATES,{'moe-m64':candidate}),patch.object(m,'pinned'):
@@ -107,6 +110,11 @@ class ServingTests(unittest.TestCase):
                     elif case=='diagnostic_command':c['probes']['moe-m64']['command'].append('--diagnose')
                     write(c,r,case!='marker')
                     with self.subTest(case=case),self.assertRaises(RuntimeError):m.verify_gate('moe-m64',gate,repo)
+                write(sanitizers=[])
+                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate('moe-m64',gate,repo)
+                changed=copy.deepcopy(sanitizers);changed[1]['summary']='RACECHECK SUMMARY: 1 hazard'
+                write(sanitizers=changed)
+                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate('moe-m64',gate,repo)
                 write();(repo/'build/glm53/module.py').write_text('untested edit')
                 with self.assertRaisesRegex(RuntimeError,'source changed'):m.verify_gate('moe-m64',gate,repo)
 

@@ -65,6 +65,7 @@ class M64Tests(unittest.TestCase):
                 candidate=Mock(side_effect=lambda **kw: SimpleNamespace(**kw))
                 self.ns.update(_GLM53_PREFILL_M64=enabled,
                     allocate_sm120_moe_workspace=stock,allocate_sm120_dynamic_workspace=candidate,
+                    m64_stock_contract_matches=lambda:True,static_v2_weights_layout=lambda **kw:True,
                     select_sm120_moe_backend=lambda **kw:'dynamic',
                     _get_static_compact_cutover_pairs=lambda *a:640,
                     _effective_glm53_static_cutover=lambda *a,**kw:640)
@@ -98,5 +99,44 @@ class M64Tests(unittest.TestCase):
         for tile in (0,-64,63,65,256,True,64.0):
             with self.subTest(tile=tile),self.assertRaises(ValueError):allocate(**args,tile_m=tile)
         with self.assertRaises(ValueError):allocate(**args,tile_m=64,activation='relu2')
+
+class PortTests(unittest.TestCase):
+    def test_port_changes_m_dimensions_after_stock_initialization(self):
+        source=ROOT/'overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py'
+        tree=ast.parse(source.read_text())
+        cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='MoEGatedDynamicKernelM64Tiled')
+        class Base:
+            def __init__(self,**kw):
+                self.stock_kwargs=kw
+                self.tile_shape_mnk=(128,128,128)
+                self.fc1_tile_shape_mnk=(128,64,128)
+                self.epi_tile=(128,128)
+                self.num_mma_warps=8
+                self.fc1_sfb_tile_shape_nk=(128,128)
+        ns=dict(MoEGatedDynamicKernelTiled=Base,m64_stock_contract_matches=lambda:True)
+        exec(compile(ast.Module(body=[cls],type_ignores=[]),str(source),'exec'),ns)
+        args=dict(sf_vec_size=16,mma_tiler_mn=(64,128),hidden_size=4096,intermediate_size=512,
+                  num_topk=8,activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,swiglu_limit=10.)
+        obj=ns['MoEGatedDynamicKernelM64Tiled'](**args)
+        self.assertEqual(obj.stock_kwargs['mma_tiler_mn'],(128,128))
+        self.assertEqual((obj.tile_shape_mnk,obj.fc1_tile_shape_mnk,obj.epi_tile),((64,128,128),(64,64,128),(64,128)))
+        self.assertEqual((obj.num_mma_warps,obj.fc1_sfb_tile_shape_nk),(8,(128,128)))
+        for field,value in dict(hidden_size=8192,intermediate_size=1024,num_topk=4,sf_vec_size=32,
+                                mma_tiler_mn=(32,128),swiglu_limit=None).items():
+            with self.subTest(field=field),self.assertRaises(ValueError):ns['MoEGatedDynamicKernelM64Tiled'](**dict(args,**{field:value}))
+        ns['m64_stock_contract_matches']=lambda:False
+        with self.assertRaises(ValueError):ns['MoEGatedDynamicKernelM64Tiled'](**args)
+
+    def test_source_hash_is_checked_and_missing_or_changed_source_is_rejected(self):
+        import hashlib,tempfile
+        source=ROOT/'overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);stock=root/'_moe_dynamic/gated.py';stock.parent.mkdir()
+            stock.write_bytes(b'pinned body')
+            ns=functions(source,{'m64_stock_contract_matches'},dict(Path=Path,hashlib=hashlib,
+                __file__=str(root/'moe_dynamic_gated_tiled.py'),_M64_GATED_SHA256=hashlib.sha256(stock.read_bytes()).hexdigest()))
+            self.assertTrue(ns['m64_stock_contract_matches']())
+            stock.write_bytes(b'new body');self.assertFalse(ns['m64_stock_contract_matches']())
+            stock.unlink();self.assertFalse(ns['m64_stock_contract_matches']())
 
 if __name__=='__main__':unittest.main()

@@ -1,0 +1,65 @@
+TP4 M64 logs: /tmp/glm53-moe-m64.LwdD9l source=2e2ede9719c319f039cd95ec63ca0268b0d620d8 image=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+source and memory PASS
+source and memory PASS
+source and memory PASS
+source and memory PASS
+[rank0]:   File "/repo/probes/glm53_moe_m64_check.py", line 264, in <module>
+[rank0]:     if __name__=='__main__':main()
+[rank0]:                             ^^^^^^
+[rank0]:   File "/repo/probes/glm53_moe_m64_check.py", line 193, in main
+[rank0]:     b=call(False);b2=call(False);control=call(False);a=call(True);torch.cuda.synchronize()
+[rank0]:                                                        ^^^^^^^^^^
+[rank0]:   File "/repo/probes/glm53_moe_m64_check.py", line 191, in call
+[rank0]:     with h.partial_tp_output(num_tokens=rows):x=mlp(x)
+[rank0]:                                                 ^^^^^^
+[rank0]:   File "/repo/probes/glm53_moe_m64_check.py", line 146, in __call__
+[rank0]:     wrapper.run(x,w13,sf13,w2,sf2,ids,scales,
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+[rank0]:     return _inner(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py", line 809, in run
+[rank0]:     result = launch_sm120_moe(
+[rank0]:              ^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 4783, in launch_sm120_moe
+[rank0]:     return launch_sm120_dynamic_moe(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 3756, in launch_sm120_dynamic_moe
+[rank0]:     compiled, mac = _get_dynamic_kernel(
+[rank0]:                     ^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 3504, in _get_dynamic_kernel
+[rank0]:     raise ValueError(
+[rank0]: ValueError: tiled expert weights (static v2 cell t) need the gated dynamic kernel for prefill; the dispatcher selected MoEDynamicKernel
+E0907 16:16:37.695000 1 torch/distributed/elastic/multiprocessing/api.py:1002] failed (exitcode: 1) local_rank: 0 (pid: 10) of binary: /usr/bin/python3
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1032, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 367, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1028, in main
+    run(args)
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1019, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 194, in __call__
+    return launch_agent(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 383, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/repo/probes/glm53_moe_m64_check.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-07_16:16:37
+  host      : srv2.tail7fec17.ts.net
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 10) 
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

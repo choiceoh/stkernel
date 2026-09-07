@@ -518,6 +518,8 @@ class B12xMoEWrapper:
             # across all matching layers. Never replace the stock workspace:
             # its maximum-capacity geometry also serves short calls/capture.
             if _GLM53_PREFILL_M64 and self.max_num_tokens >= 6144:
+                from .blackwell_sm12x.moe_dynamic_gated_tiled import m64_stock_contract_matches
+                from .blackwell_sm12x.moe_dispatch import static_v2_weights_layout
                 eligible = _glm53_prefill_m64_geometry(
                     enabled=_GLM53_PREFILL_M64, num_experts=self.num_experts,
                     num_local_experts=self.num_local_experts,
@@ -528,7 +530,13 @@ class B12xMoEWrapper:
                     capability=torch.cuda.get_device_capability(self.device),
                     output_dtype=self.output_dtype,
                 )
-                if eligible:
+                if eligible and m64_stock_contract_matches() and static_v2_weights_layout(
+                    num_experts=self.num_experts, num_local_experts=self.num_local_experts,
+                    hidden_size=self.hidden_size, intermediate_size=self.intermediate_size,
+                    num_topk=self.top_k, quant_mode=self.quant_mode,
+                    activation=self.activation, swiglu_limit=self.swiglu_limit,
+                    activation_precision=self.activation_precision,
+                ):
                     from .blackwell_sm12x.moe_dispatch import allocate_sm120_dynamic_workspace
                     self._prefill_m64_workspace = allocate_sm120_dynamic_workspace(
                         state_E=self.num_local_experts, weight_E=self.num_experts,

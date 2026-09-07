@@ -19,11 +19,30 @@ when that source changes, so the stock file must stay byte-identical.
 
 from __future__ import annotations
 
+import hashlib
+from functools import lru_cache
+from pathlib import Path
+
 import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 
 from ._moe_dynamic.gated import MoEGatedDynamicKernel
+
+
+_M64_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
+
+
+@lru_cache(maxsize=1)
+def m64_stock_contract_matches():
+    # This experiment changes the three M-dependent constructor dimensions.
+    # The inherited MMA, staging, route packing and scatter body must be the
+    # exact source audited for that change, not a future image implementation.
+    try:
+        source = Path(__file__).parent / "_moe_dynamic/gated.py"
+        return hashlib.sha256(source.read_bytes()).hexdigest() == _M64_GATED_SHA256
+    except OSError:
+        return False
 
 
 class MoEGatedDynamicKernelTiled(MoEGatedDynamicKernel):
@@ -105,4 +124,31 @@ class MoEGatedDynamicKernelTiled(MoEGatedDynamicKernel):
         )
 
 
-__all__ = ["MoEGatedDynamicKernelTiled"]
+class MoEGatedDynamicKernelM64Tiled(MoEGatedDynamicKernelTiled):
+    """Experimental M64 port of the pinned branch-paired gated kernel.
+
+    The stock constructor/factory accepts only M128. Keep it unchanged and
+    initialize its shared attributes, then replace all three M-dependent
+    constructor dimensions before __call__ derives layouts and pipeline state.
+    The 4x2 warp grid has a 64-row M atom, so this uses one M iteration instead
+    of two. N128, dual-N64 FC1, physical N128 SFB, K128 and barriers stay fixed.
+    Q0 holds 64*128 BF16 elements, enough for the scoped H4096 input row.
+    """
+
+    def __init__(self, *, sf_vec_size, mma_tiler_mn, hidden_size,
+                 intermediate_size, num_topk, **kwargs):
+        if (mma_tiler_mn != (64, 128) or sf_vec_size != 16
+                or hidden_size != 4096 or intermediate_size != 512 or num_topk != 8
+                or kwargs.get("activation") != "swigluoai_uninterleave"
+                or kwargs.get("swiglu_alpha") != 1.0
+                or kwargs.get("swiglu_beta") != 0.0
+                or kwargs.get("swiglu_limit") != 10.0
+                or not m64_stock_contract_matches()):
+            raise ValueError("M64 requires the pinned GLM gated kernel contract")
+        super().__init__(sf_vec_size=sf_vec_size, mma_tiler_mn=(128, 128), **kwargs)
+        self.tile_shape_mnk = (64, 128, 128)
+        self.fc1_tile_shape_mnk = (64, 64, 128)
+        self.epi_tile = (64, 128)
+
+
+__all__ = ["MoEGatedDynamicKernelTiled", "MoEGatedDynamicKernelM64Tiled", "m64_stock_contract_matches"]

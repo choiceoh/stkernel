@@ -10,8 +10,8 @@ H4096, I512, top-8, NVFP4, BF16 output, SwiGLU-OAI alpha=1/beta=0/limit=10,
 and SM121. Short calls, capture, other geometry, forced static backend and the
 functional API retain their original workspace. Failure to query capture state
 also uses the original workspace. MoE is called once on the complete chunk;
-transport, per-expert quantization scales, FC1/activation/FC2 and scatter remain
-stock. Existing M128-only prefill reuse kernels are not eligible for M64.
+transport and per-expert quantization scales remain stock. The candidate now
+ports the pinned gated kernel to M64 as described below. Existing M128-only prefill reuse kernels are not eligible for M64.
 
 The separately allocated workspace is bounded at 8,192 tokens even if the wrapper
 has a larger capacity. It adds approximately 185 MiB of device storage at that
@@ -63,3 +63,36 @@ changed-input reuse and M128 capture replay, unchanged composed source/profile,
 and completed recovery before deployment. Its 10 failure-path tests and the
 7 comparator / 4 fresh-cache / 4 memory tests pass. GPU and TTFT results remain
 pending; no serving run has been submitted yet.
+
+
+## Check1 failure and gated M64 port
+
+Check1 ended before the first M64 kernel launch. The image factory deliberately
+chooses its generic kernel for M64, while the production tile-major weights are
+supported only by the optimized gated subclass. All four BF16 fallback cases
+passed; FP8, candidate numerics and candidate timings were not reached. Exact
+incoming container recovery completed at 2026-09-08 01:19:28 KST. Raw logs,
+source identity and recovery proof are in `check1/`. Do not rerun check1 unchanged.
+
+The follow-up is an actual port of the pinned gated implementation, not merely
+a workspace selector. `MoEGatedDynamicKernelM64Tiled` initializes stock attributes
+and changes its three M-dependent constructor dimensions before the inherited
+`__call__` derives layouts: compute (64,128,128), FC1 (64,64,128), epilogue (64,128).
+The stock 4x2 MMA warp grid has a 64-row atom; M64 runs one M iteration. N128,
+paired N64 branches, K128, physical N128 scale blocks, barriers and weight grouping
+are retained. Its Q0 holds 8192 BF16 elements, larger than scoped H4096. This
+reasoning does not prove numerical correctness or race freedom. Every GPU gate
+must be rerun for this new kernel geometry, with sanitizer checks before serving.
+
+The original image source remains unchanged. A cached SHA-256 contract admits
+only gated.py `993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445`.
+Unknown source or non-tiled weights retain the original wrapper workspace.
+The M64 port has a distinct compiled-cache suffix; default M128 keys stay unchanged.
+
+
+The follow-up runner also executes local M64 memcheck and racecheck after both
+TP4 transport processes pass, using the host CUDA tool mounted read-only into
+the same pinned image (Compute Sanitizer 2025.3.1.0). Each tool checks balanced
+and concentrated 6144/6912/8192 rows with changed routes and retained outputs.
+The serving gate requires both zero-error/zero-hazard tool summaries, source
+provenance and all six cases; a missing report or warning blocks deployment.

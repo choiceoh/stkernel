@@ -69,4 +69,36 @@ for transport in bf16 fp8-v3; do
   done
   cat "$log_dir/$transport-rank-0.log"
 done
+# The image does not contain compute-sanitizer; use the pinned host tool,
+# as the MLA probe does. Version/hash are evidence, not GPU acceptance.
+tool_dir=/usr/local/cuda/compute-sanitizer
+[[ -x $tool_dir/compute-sanitizer ]] || { echo 'host sanitizer missing' >&2; exit 3; }
+sha256sum "$tool_dir/compute-sanitizer"
+for sanitizer in memcheck racecheck; do
+  args=(docker run --rm --name "$run_id-0" --gpus all --network none
+    --cpus 4 --memory 16g --shm-size 1g
+    -v "$REPO:/repo:ro" -v "$tool_dir:/opt/glm-probe-sanitizer:ro"
+    -e CUTE_DSL_ARCH=sm_121a -e OMP_NUM_THREADS=1 -e PYTHONPATH=/repo/probes
+    --entrypoint /opt/glm-probe-sanitizer/compute-sanitizer)
+  while IFS=$'\t' read -r source target _; do
+    [[ -z $source || $source == \#* ]] && continue
+    args+=(-v "$REPO/build/glm53/$source:$target:ro")
+  done < "$REPO/build/glm53/manifest.tsv"
+  args+=("$IMAGE" --error-exitcode 99 --tool "$sanitizer"
+    python3 /repo/probes/glm53_moe_m64_sanitize.py)
+  if ! timeout --signal=TERM --kill-after=30s 15m "${args[@]}" >"$log_dir/$sanitizer.log" 2>&1; then
+    tail -60 "$log_dir/$sanitizer.log";exit 1
+  fi
+  python3 - "$log_dir/$sanitizer.log" "$sanitizer" <<'CHECK'
+import json,pathlib,sys
+log=pathlib.Path(sys.argv[1]).read_text();tool=sys.argv[2]
+summary='ERROR SUMMARY: 0 errors' if tool=='memcheck' else 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)'
+assert summary in log, 'missing clean sanitizer summary'
+reports=[json.loads(l) for l in log.splitlines() if l.startswith('{')]
+record=next(r for r in reports if r.get('verdict')=='MOE_M64_SANITIZER_CASES_PASS')
+assert [(r['rows'],r['skew'],r['bad_rows']) for r in record['results']]==[(n,s,0) for n in (6144,6912,8192) for s in (False,True)]
+print(json.dumps(dict(sanitizer=tool,summary=summary,**record)))
+CHECK
+  echo "MOE_M64_${sanitizer^^}_PASS"
+done
 echo MOE_M64_ALL_GATES_PASS

@@ -175,7 +175,8 @@ def verify_gate(candidate, directory, repo):
         if old != new:raise RuntimeError('GPU-validated source changed: '+path)
         hashes[path] = provenance[name] = hashlib.sha256(new).hexdigest()
     for path in ('profiles/glm53.env', 'launchers/start-glm53-nvfp4-tp4.sh',
-                 'probes/glm53_moe_m64_check.py', 'probes/run_glm53_moe_m64_tp4_check.sh'):
+                 'probes/glm53_moe_m64_check.py', 'probes/run_glm53_moe_m64_tp4_check.sh',
+                 'probes/glm53_moe_m64_sanitize.py'):
         old, new = (frozen/path).read_bytes(), (repo/path).read_bytes()
         if old != new:raise RuntimeError('GPU-validated launch/probe contract changed: '+path)
         hashes[path] = hashlib.sha256(new).hexdigest()
@@ -213,6 +214,21 @@ def verify_gate(candidate, directory, repo):
                     raise RuntimeError('GPU all-rank numerical coverage incomplete')
                 if any(r.get('bad_rows') != 0 or r.get('finite') is not True or r.get('pass') is not True for r in ranks):
                     raise RuntimeError('GPU numerical gate failed or missing')
+    sanitizer_reports=[]
+    for line in log.splitlines():
+        if not line.startswith(b'{'):continue
+        try:record=json.loads(line)
+        except json.JSONDecodeError:continue
+        if record.get('verdict')=='MOE_M64_SANITIZER_CASES_PASS':sanitizer_reports.append(record)
+    if [r.get('sanitizer') for r in sanitizer_reports]!=['memcheck','racecheck']:
+        raise RuntimeError('both sanitizer reports required')
+    for record in sanitizer_reports:
+        tool=record['sanitizer']
+        summary='ERROR SUMMARY: 0 errors' if tool=='memcheck' else 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)'
+        if (record.get('summary')!=summary or record.get('provenance')!=provenance
+                or ('MOE_M64_'+tool.upper()+'_PASS').encode() not in log.splitlines()
+                or record.get('results')!=[dict(rows=n,skew=s,bad_rows=0) for n in (6144,6912,8192) for s in (False,True)]):
+            raise RuntimeError('sanitizer coverage, source or result is invalid')
     return dict(revision=revision, files=hashes, log_sha256=hashlib.sha256(log).hexdigest(),
                 completion_sha256=hashlib.sha256((directory/'completion.json').read_bytes()).hexdigest())
 

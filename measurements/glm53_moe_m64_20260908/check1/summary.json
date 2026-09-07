@@ -1,0 +1,14 @@
+{
+  "result": "FAILED_BEFORE_M64_LAUNCH",
+  "revision": "2e2ede9719c319f039cd95ec63ca0268b0d620d8",
+  "short_fallback_cases": "BF16 4096/6143 balanced and concentrated passed on all ranks",
+  "error": "tiled expert weights require the gated dynamic kernel; stock factory selected generic M64",
+  "fp8": "not reached",
+  "m64_numerics": "not reached",
+  "m64_timing": "not reached",
+  "serving_ttft": "not run",
+  "restored_original": true,
+  "completed_kst": "2026-09-08 01:19:28",
+  "stock_gated_sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+  "stock_factory_sha256": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072"
+}

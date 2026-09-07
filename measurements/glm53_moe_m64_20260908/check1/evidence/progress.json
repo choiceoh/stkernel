@@ -1,0 +1,16 @@
+{
+  "started": 1788797699.3533185,
+  "exit_code": 1,
+  "probes": {
+    "moe-m64": {
+      "revision": "2e2ede9719c319f039cd95ec63ca0268b0d620d8",
+      "started": 1788797750.4831638,
+      "command": [
+        "bash",
+        "probes/run_glm53_moe_m64_tp4_check.sh"
+      ],
+      "exit_code": 1,
+      "ended": 1788797799.9717555
+    }
+  }
+}

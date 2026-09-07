@@ -1,0 +1,17 @@
+preflight moem64check10908 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 2e2ede9 -- a defaults arm is worth its boot
+  -> PASS
+GO moem64check10908 2026-09-08_01:14:58
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+START moe-m64 2026-09-08 01:15:50
+DONE moe-m64 rc=1
+{"started": 1788797699.3533185, "exit_code": 1, "probes": {"moe-m64": {"revision": "2e2ede9719c319f039cd95ec63ca0268b0d620d8", "started": 1788797750.4831638, "command": ["bash", "probes/run_glm53_moe_m64_tp4_check.sh"], "exit_code": 1, "ended": 1788797799.9717555}}, "restored_original": true, "ended": 1788797968.082264}
+{"started": "2026-09-08T01:14:54.800951", "exit_code": 1, "ended": "2026-09-08T01:19:28.249749"}
