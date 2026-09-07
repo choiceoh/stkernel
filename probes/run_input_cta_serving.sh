@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Exact eight-slice CTA probe; same-build controls and unconditional public restore.
 set -euo pipefail
-cd "${INPUT_CTA_REPO:-/home/choiceoh/stkernel-input-cta-serving-20260907}"
+cd /home/choiceoh/stkernel-input-cta-serving-retry-20260907
 export REPO=$PWD
-RESTORE_REPO=${INPUT_CTA_RESTORE_REPO:-/home/choiceoh/stkernel-input-cta-serving-restore-20260907}
+RESTORE_REPO=/home/choiceoh/stkernel-input-cta-serving-retry-restore-20260907
 IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
-export INPUT_CTA_SERVING_OUT=${INPUT_CTA_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTCTASERVE0907}
+export INPUT_CTA_SERVING_OUT=${INPUT_CTA_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTCTASERVE20907}
 out=$INPUT_CTA_SERVING_OUT
 export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/input_cta_lever.sh
 session=${FLEET_SESSION:?}

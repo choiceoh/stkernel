@@ -7403,4 +7403,3 @@ attempt. Failure logs are preserved, and approved-main recovery was started.
 `VLLM_GLM53_MK_INPUT_CTA=0` remains the default pending serving acceptance.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
-
