@@ -1,1 +1,0 @@
-import deneb_boot_stamps; deneb_boot_stamps.install()
