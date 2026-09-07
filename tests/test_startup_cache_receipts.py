@@ -15,6 +15,8 @@ class BootReceiptTests(unittest.TestCase):
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
             if mode == 'campaign':
+                Path(root, 'campaign.json').write_text(json.dumps(dict(arms=[dict(stage=stage, knobs={
+                    'VLLM_GLM53_MK_PACK_FAST_IO':str(fast), 'VLLM_GLM53_MK_PACK_SHA256':'0'})])))
                 Path(root, 'TEST-cache-env.json').write_text(json.dumps([
                     'VLLM_GLM53_MK_PACK_FAST_IO='+str(fast), 'VLLM_GLM53_MK_PACK_SHA256=0']))
             for node in (1, 2, 3, 4):

@@ -434,7 +434,7 @@ case "$cmd" in
       sleep 1
     done
     echo "TIMEOUT $s after ${tmo}m" >&2; exit 1;;
-  version) sha256sum "$REPO/bench/fleet.sh" "$REPO/bench/fleet_boot.py" "$REPO/bench/fleet_handoff.py"; echo "handoff_protocol=1";;
+  version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=1";;
   release) with_lock _release "${1:?session}";;
   run)
     kind=boot; force=""
