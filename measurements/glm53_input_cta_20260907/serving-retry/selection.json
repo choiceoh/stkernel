@@ -1,0 +1,10 @@
+{
+  "mode": 2,
+  "eligible_modes": [
+    "1",
+    "2",
+    "3"
+  ],
+  "rule": "at least 1 percent lower median and 29/32 faster pairs in both cache regimes; lowest warm median",
+  "source_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae"
+}

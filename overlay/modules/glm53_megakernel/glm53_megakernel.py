@@ -1281,6 +1281,7 @@ def _note_m8_capture(m, n, k, lr=False, bg=False):
 
 
 _INPUT_CAPTURED = set()
+_INPUT_CTA_CAPTURED = set()
 
 
 def _note_input_capture(m, n, k, bg, lr):
@@ -1296,6 +1297,20 @@ def _note_input_capture(m, n, k, bg, lr):
         _INPUT_CAPTURED.add((m, n, k, bg, lr))
         logger.warning("[megakernel] input-reuse CAPTURED M=%d N=%d K=%d split=%d bps=%d scratch=%d",
                        m, n, k, plan[1], plan[2], plan[3])
+
+
+def _note_input_cta_capture(m, n, k, bg, lr):
+    if (not _ARMED["gemm"] or m != 6 or bg or lr
+            or (n, k) != (6416, 4096) or (m, n, k) in _INPUT_CTA_CAPTURED):
+        return
+    plan = _EXT.gemm_input_cta_plan(m, n, k, bool(bg), bool(lr))
+    if not plan[0]:
+        return
+    import torch
+    if torch.cuda.is_current_stream_capturing():
+        _INPUT_CTA_CAPTURED.add((m, n, k))
+        logger.warning("[megakernel] input-cta CAPTURED M=%d N=%d K=%d mode=%d split=%d bps=%d smem=%d",
+                       m, n, k, *plan)
 
 
 def _gemm_call(x, mk_pack, n_rows, bg=False):
@@ -1324,6 +1339,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else int(lr_a.shape[1]))
     _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None, bg)
     _note_input_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
+    _note_input_cta_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
     return out
 
 
@@ -2303,6 +2319,24 @@ def _selftest_input_reuse():
         _ARMED["gemm"] = armed
 
 
+def _arm_gemm(gate):
+    """Validate the established routes before testing the independent CTA lane."""
+    cta = _EXT.gemm_input_cta_mode()
+    _EXT.set_input_cta(0)
+    try:
+        _ARMED["gemm"] = gate("gemm", _selftest_gemm)
+        if _ARMED["gemm"] and _EXT.gemm_input_mode():
+            if not gate("input_reuse", _selftest_input_reuse):
+                _EXT.set_gemm_input(0)
+                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
+    finally:
+        _EXT.set_input_cta(cta)
+    if cta and _ARMED["gemm"] and _EXT.gemm_input_mode():
+        if not gate("input_cta", _selftest_input_reuse):
+            _EXT.set_input_cta(0)
+            logger.warning("[megakernel] input-cta DISARM; input-reuse GEMM retained")
+
+
 def hc_scale_ones():
     import torch
 
@@ -2348,11 +2382,7 @@ def arm() -> None:
         if ENABLE_MHC_PRE and _ARMED["mhc"]:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
-        _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
-        if _ARMED["gemm"] and _EXT.gemm_input_mode():
-            if not _gate("input_reuse", _selftest_input_reuse):
-                _EXT.set_gemm_input(0)
-                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
+        _arm_gemm(_gate)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_SMLP2:

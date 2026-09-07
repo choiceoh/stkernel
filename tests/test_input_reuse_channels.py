@@ -66,5 +66,23 @@ class RecordingTests(unittest.TestCase):
                 self.assertIs(urllib.request.urlopen, opening)
             self.assertFalse(output.exists())
 
+    def test_metrics_sampler_retains_unwrapped_response(self):
+        metrics = object()
+        response = Response([{'content': '답'}])
+        def transport(request, *args, **kwargs):
+            return response if isinstance(request, urllib.request.Request) else metrics
+        def ask(*args, **kwargs):
+            # The standard step sampler passes a URL string, concurrently
+            # with ask_stream. Its response must not enter the SSE recorder.
+            self.assertIs(urllib.request.urlopen('http://example.invalid/metrics'), metrics)
+            return onepass.ask_stream(*args, **kwargs)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'channels.jsonl'
+            with patch.object(urllib.request, 'urlopen', side_effect=transport):
+                result = recorder(ask, output)(
+                    'http://example.invalid/v1/chat/completions', 'fixture', '질문', 2048)
+            self.assertEqual(result[0], '답')
+            self.assertEqual(len(output.read_text().splitlines()), 1)
+
 
 if __name__ == '__main__': unittest.main()

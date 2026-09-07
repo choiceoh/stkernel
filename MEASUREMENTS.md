@@ -7391,3 +7391,47 @@ B 21.9/21.9, A 21.9/21.8 step/s: 처리량·수용률 개선 주장은 하지 �
 `VLLM_GLM53_MK_PACK_SHA256=1`을 프로필 기본값으로 채택; `=0`은 기존 MD5 경로.
 마지막 control SHA256=0·HTTP 200 확인 후 플릿 반납, 새 기본값은 다음 배포부터 적용.
 상세 조건·한계·실행 절차·증거: [측정 묶음](measurements/glm53_pack_key_20260907/README.md).
+
+### GLM53 C=1 CTA-local split-K reduction (2026-09-07, PR454)
+
+Compared against PR449's enabled input-reuse default on the exact
+M6/N6416/K4096 projection. Eight warps retain the original eight K slices;
+shared-memory reduction replaces global partial traffic, arrival atomics and
+device fences. The W4 packs, FP8 input bytes and output rounding are unchanged.
+
+Actual serving source `916adc0` on GB10, 32 alternating samples per mode,
+including input preparation:
+
+| Kernel | Warm us | Read-evicted us |
+|---|---:|---:|
+| Enabled input reuse | 32.512 | 75.360 |
+| Fixed geometry CTA, mode 2 | 24.544 (-24.51%) | 69.424 (-7.88%) |
+
+Mode 2 wins 31/32 pairs in each regime. All 160 numerical rows match baseline
+bits and the independent FP32 oracle; 120 changing-input retained-graph checks,
+startup checks, racecheck and memcheck pass. The 64-register/four-block variant
+is slower than the selected 75-register/three-block variant. CPU validation:
+6,687 logic checks, 30 megakernel regressions, 92 fleet checks and 12 focused
+driver/transport tests pass; native nvcc compilation has no register spills.
+
+The first B/A/A/B serving attempt failed in its CTA=0 baseline: srv1's initial
+MHC check raised CUDA error 800 and its worker exited before health. Other
+ranks passed startup checks. No step/output measurement exists for this
+attempt. Failure logs are preserved. Approved main `944f65c` was restored at
+23:20:48 KST, with health 200 observed at 23:20:22. Retry `inputctaserve20907`
+on unchanged runtime source `d920bea` reproduced **32.368 -> 24.416 us warm
+(-24.57%)** and **75.648 -> 69.712 us read-evicted (-7.85%)**. Numerical,
+retained-graph, sanitizer and independent four-node startup checks all pass.
+Its CTA=0 serving baseline failed at 00:18:35 on 2026-09-08 with an unhealthy
+one-shot proxy during warmup. No step/output/quality rows were produced.
+Approved-main restoration completed at 00:33:16; exit code 1 is retained.
+
+After both attempts were reported, the operator explicitly requested default
+promotion and PR merge on 2026-09-08. `VLLM_GLM53_MK_INPUT_CTA=2` is now the
+GLM profile default; `0` restores the existing input-reuse kernel. This is an
+operator promotion based on repeated kernel gains, not a serving acceptance
+verdict. Independent startup fallback remains active, and the failed serving
+evidence is preserved. The promotion integrates main `bb123cf` without
+changing the measured CUDA source bytes.
+
+[Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).

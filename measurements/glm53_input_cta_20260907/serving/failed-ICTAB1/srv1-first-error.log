@@ -1,0 +1,53 @@
+(Worker_TP1 pid=164) WARNING 09-07 14:02:15 [glm53_megakernel.py:221] [megakernel] source md5=fc2c7f1d kernels=12 (/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu)
+(Worker_TP1 pid=164) [boot-stamp] load-model still running after 180s; its thread is at:
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1427, in run_post_load
+(Worker_TP1 pid=164)     maybe_build_fp8_dense(self)
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py", line 1289, in maybe_build_fp8_dense
+(Worker_TP1 pid=164)     pair = _nvfp4_pair_for(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py", line 987, in _nvfp4_pair_for
+(Worker_TP1 pid=164)     if _copy_matches_source(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py", line 864, in _copy_matches_source
+(Worker_TP1 pid=164)     ref = method._base.apply(mod, x, None)
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py", line 824, in apply
+(Worker_TP1 pid=164)     _mk_arm()
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2657, in maybe_arm
+(Worker_TP1 pid=164)     arm()
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2327, in arm
+(Worker_TP1 pid=164)     ext = _build()
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 244, in _build
+(Worker_TP1 pid=164)     _EXT = load(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 1927, in load
+(Worker_TP1 pid=164)     return _jit_compile(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2382, in _jit_compile
+(Worker_TP1 pid=164)     _write_ninja_file_and_build_library(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2543, in _write_ninja_file_and_build_library
+(Worker_TP1 pid=164)     _run_ninja_build(
+(Worker_TP1 pid=164)   File "/usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py", line 2893, in _run_ninja_build
+(Worker_TP1 pid=164)     subprocess.run(
+(Worker_TP1 pid=164)   File "/usr/lib/python3.12/subprocess.py", line 550, in run
+(Worker_TP1 pid=164)     stdout, stderr = process.communicate(input, timeout=timeout)
+(Worker_TP1 pid=164)   File "/usr/lib/python3.12/subprocess.py", line 1196, in communicate
+(Worker_TP1 pid=164)     stdout = self.stdout.read()
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340] [megakernel] selftest mhc_bf16 raised -> DISARM that segment only
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340] Traceback (most recent call last):
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2338, in _gate
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]     return bool(fn())
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]                 ^^^^
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2010, in _selftest_bf16_mhc
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]     ref = _mhc_call(*values, _fp32_fn=True)
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 1773, in _mhc_call
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340]     _EXT.run_mhc(
+(Worker_TP1 pid=164) ERROR 09-07 14:02:53 [glm53_megakernel.py:2340] RuntimeError: megakernel cuda error: operation not permitted
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] [megakernel] selftest mhc raised -> DISARM that segment only
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] Traceback (most recent call last):
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2338, in _gate
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]     return bool(fn())
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]                 ^^^^
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py", line 2031, in _selftest_mhc
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]     x = torch.randn(T, HIDDEN, dtype=torch.bfloat16, device=dev) * 0.1
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] torch.AcceleratorError: CUDA error: operation not permitted
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] Search for `cudaErrorNotPermitted' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] For more detailed error information, run with CUDA_LOG_FILE=stderr
+(Worker_TP1 pid=164) ERROR 09-07 14:02:54 [glm53_megakernel.py:2340] 
