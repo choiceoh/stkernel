@@ -342,8 +342,12 @@ def _unpack_sum_mhc_post(Packed, Scales, Residual, Post, Comb, Out,
     r3 = tl.load(Residual + base + 12288).to(tl.float32)
     for hc in tl.static_range(4):
         p = tl.load(Post + row * 4 + hc)
-        updated = p * x
-        updated = tl.fma(tl.load(Comb + row * 16 + hc), r0, updated)
+        # Match the mounted TileLang kernel's compiled PTX: it rounds the
+        # first residual product, then contracts post*x into that product.
+        # Rounding post*x first changes BF16 outputs near a tie, even though
+        # both expressions have the same source-level sum and rank order.
+        updated = tl.load(Comb + row * 16 + hc) * r0
+        updated = tl.fma(p, x, updated)
         updated = tl.fma(tl.load(Comb + row * 16 + 4 + hc), r1, updated)
         updated = tl.fma(tl.load(Comb + row * 16 + 8 + hc), r2, updated)
         updated = tl.fma(tl.load(Comb + row * 16 + 12 + hc), r3, updated)
