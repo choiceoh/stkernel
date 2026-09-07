@@ -7173,6 +7173,33 @@ performance or quality verdict, and does not restart the running service.
 
 [Matched serving and kernel evidence, raw records and reproduction](measurements/glm53_decode_followup_20260907/README.md).
 
+### C=1 one-time FP8 input preparation, retained wide-projection candidate (2026-09-07)
+
+Private-source GB10 probe `c475b65` quantizes each activation group once and
+uses the existing `a_ready` GEMM consumer. Production kernel sources and
+defaults are unchanged. Thirty changed-input graph cases pass exact output,
+FP8 byte/scale, finite and independent FP32 oracle checks. Each of six
+geometries has 24 alternating samples per arm in cold and warm conditions;
+timing includes the extra preparation kernel.
+
+M6/N6528/K4096 improves **42.720 -> 38.480 us warm (-9.93% latency)** and
+**133.104 -> 131.824 us cold (-0.96%)**. M6/N6144/K4096 improves 6.84% warm
+but regresses 0.82% cold. Small controls regress up to 5.09%. Retain the
+N6528 candidate and exclude regressing shapes from a future selective path.
+Warm-cache gains are useful evidence; mixed results do not justify either
+universal deployment or rejection of the winning shape. The 64 MiB flush
+does not reproduce the full model, and **candidate step/s and output tok/s
+remain unmeasured**.
+
+Two earlier attempts produced no GPU timing: a compile error, then a probe
+aborted when the public head gracefully exited during compilation. Initial
+host memory admission was inadequate (about 9 GiB available, falling to
+6.8 GiB); the corrected runner requires 16 GiB and aborts below 12 GiB.
+The initiating shutdown cause remains unresolved. The user reported no
+intentional shutdown, so restoration was submitted through the canonical
+fleet runner. See the evidence page for the final recovery state.
+
+[Full timings, numerical gates, source hashes, failed attempts and recovery](measurements/glm53_input_reuse_20260907/README.md).
 ### W4 startup cache transport — warm boots 28 s faster (2026-09-07)
 
 PR #442 replaces the W4 cache's pageable weight copy for MD5 with a reusable
@@ -7306,3 +7333,43 @@ The full output is also retained on srv2 under
 `/home/choiceoh/glm53-logs/compile-cache-20260907` and locally in
 `runs/compile-cache-20260907`. Reproduce in the CPU lane with
 `python3 probes/glm53_compile_cache_check.py`; it only mutates disposable copies.
+
+### GLM53 C=1 input reuse with warp-local weight staging (2026-09-07)
+
+The actual M6/N6416/K4096 projection now quantizes X once per K group, stages
+only each warp's W rows, and skips the seven padded tail warps. It keeps the
+original split 8, fixed-order reduction and BF16 output bits. Invocation-owned
+scratch is retained by CUDA graph pools; other shapes, background calls and
+low-rank correction use the original path. A failing startup gate disables
+only input reuse.
+
+Fleet `inputserve40907`, source `e997de1`, passes 100 numerical rows, baseline
+bit equality, 40 alternating graph replays, startup self-test, racecheck
+(0 hazards/errors/warnings) and memcheck (0 errors). On the actual serving
+source, 32 alternating pairs give **42.624 -> 32.352 us warm (-24.10%)** and
+**78.000 -> 75.488 us read-evicted (-3.22%)**, including preparation. The
+candidate wins all 32 warm pairs and 30/32 read-evicted pairs. The earlier
+simple prototype's warm reduction was 9.93% on padded-width weights.
+
+An earlier serving A1 was correctly rejected as inactive: its selector used
+logical N6528, while the model uses logical N6416 padded to N6528. Its output
+tok/s increased 1.65% without executing the candidate, so it is not a gain
+claim. The corrected B/A/A/B requires all-rank real-shape capture before
+traffic. The real B1/A1/A2 boots measure pooled step/s **21.641/21.724/21.870**,
+window medians **21.865/21.853/21.855**, and output tok/s
+**69.558/71.147/69.959**. Facts pass 24/24 for each. A2 fails the existing
+Korean gate on two `Halvorsen博士` expressions (four Han characters, no
+replacement/jamo/control errors), and the chain stops before B2. Because
+the harness combines reasoning and final content, the affected channel is
+unknown. Preserve the gate failure and incomplete bracket. Approved main was
+restored at 19:26:50 KST with health 200 verified at 19:28.
+
+After these results were reported, the operator explicitly requested default
+promotion. `VLLM_GLM53_MK_INPUT_REUSE` now defaults to **1**; **0** restores
+the original GEMM. Startup numerical/replay fallback remains active. This
+promotion does not relabel the Korean gate or establish a stable serving
+speedup. The channel-recording follow-up failed on zero decode windows in
+its first baseline and stopped before the candidate; approved main was
+restored at 20:25:15 KST, with health 200 verified after recovery.
+
+[Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).

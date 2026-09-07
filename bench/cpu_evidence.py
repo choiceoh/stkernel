@@ -16,7 +16,9 @@ import subprocess
 # fakes. The digest pins that dependency audit; changing a test automatically
 # expands the scope to the full tree until this registry is reviewed again.
 STARTUP_AUDIT = {'tests/test_glm53_startup.py': '62cc4553b2661fc39d178100d29ce0540a38cecf924c66b09e4c8762a23a4503', 'tests/test_glm53_attestation.py': '24d0a73afea17bd5b91366d03d0bacc2008a4d371261589ee0d2e569c6ce3b9c', 'tests/test_glm53_reclaim.py': '5b38bfe90dc96e6a9144b9f4a35a6c69480f25511142a8b00232c52b36c9f57b', 'tests/test_memfree_preflight.py': 'af09f6e117c48865021038db64484fc89e685bdb76004fd4f914d86c9dc93869'}
-FLEET_AUDIT = {'tests/test_fleet_coalescing.py': 'f93a92e2f60c265c0b9861824ecec4a2b4ea2aa325e4339088698cbf6d9ca98a', 'tests/test_fleet_experiments.py': 'dc0ae7aafe53e0d0ca7b9075c41f0aa64531e24cc3d4fd9db8f2b2c4b1cfcc32', 'tests/test_fleet_feedback.py': '4124c1545f97fdfd335448d41ffd9235be279fa773ecae57f8437da80bfbdc25'}
+# The completion-race test only uses the existing temporary Store/worker-lock
+# fixture and bench module dependencies; the fleet dependency closure is kept.
+FLEET_AUDIT = {'tests/test_fleet_coalescing.py': 'f93a92e2f60c265c0b9861824ecec4a2b4ea2aa325e4339088698cbf6d9ca98a', 'tests/test_fleet_experiments.py': '6013261b76a9a11d29923e3f741021b6fef33e03ef6224190c1549f59aa964f4', 'tests/test_fleet_feedback.py': '4124c1545f97fdfd335448d41ffd9235be279fa773ecae57f8437da80bfbdc25'}
 
 
 def sha(path):

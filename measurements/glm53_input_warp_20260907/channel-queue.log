@@ -1,0 +1,11 @@
+preflight inputchan0907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/stkernel-input-reuse-channels-20260907/probes/run_input_reuse_channels.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_MK_INPUT_REUSE=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_INPUT_REUSE
+  NOTE checkout is 19 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  this arm (VLLM_GLM53_MK_INPUT_REUSE) has no record on build 698947d83da4
+  baseline: DEF3 on build 698947d83da4 -- 21.82 step/s, 3.27 tok/step, 45.3% acc, 2026-09-07 12:36:55 -- skip a defaults arm and compare against it
+  -> PASS
+waiting: pos 2/2, held by rankprefetch0907 [boot] (pid 2747505@srv2, since 19:27, est 40m, GLM rank-cache bounded checksum prefetch: PRIME GPU byte check then B/A/A/B warm boots with all-rank and Korean gates), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_19:33:52

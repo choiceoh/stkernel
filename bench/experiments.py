@@ -357,6 +357,9 @@ def ensure_worker(store, job):
             return
         probe.close()
         state = store.get(job)["state"]
+        # A worker may finish between the initial read and acquiring its lock.
+        if state in TERMINAL:
+            return
         if state not in {"queued", "waiting_dependencies", "waiting_baseline", "waiting_cpu",
                          "waiting_cpu_evidence", "waiting_group", "ready_pair"}:
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})

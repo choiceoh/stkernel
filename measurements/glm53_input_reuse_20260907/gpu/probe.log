@@ -1,0 +1,14 @@
+{"base_sha256": "2101eb5a0d271637dceff069180dba2050f0df5faf217b7a4a5e06740688fa13", "candidate_sha256": "ba5d2fcb5265d8949e341298d48455f722d4f5c1f5b008f7700428b70188bc5b", "flags": ["-O2", "-gencode", "arch=compute_121a,code=sm_121a", "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1", "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]}
+{"shape": [6, 4096, 4096], "cache": "cold", "plan": [3, 96, 2], "baseline_us": 90.7839983701706, "candidate_us": 91.79199859499931, "latency_reduction_pct": -1.1103280786539187, "wins": 7, "samples": 24}
+{"shape": [6, 4096, 4096], "cache": "warm", "plan": [3, 96, 2], "baseline_us": 24.335999973118305, "candidate_us": 24.032000452280045, "latency_reduction_pct": 1.2491762046928845, "wins": 22, "samples": 24}
+{"shape": [6, 6144, 4096], "cache": "cold", "plan": [3, 144, 3], "baseline_us": 125.59999525547028, "candidate_us": 126.62400305271149, "latency_reduction_pct": -0.8152928629960375, "wins": 9, "samples": 24}
+{"shape": [6, 6144, 4096], "cache": "warm", "plan": [3, 144, 3], "baseline_us": 32.735999673604965, "candidate_us": 30.49599938094616, "latency_reduction_pct": 6.8426207080668995, "wins": 24, "samples": 24}
+{"shape": [6, 6528, 4096], "cache": "cold", "plan": [8, 408, 2], "baseline_us": 133.10399651527405, "candidate_us": 131.82400166988373, "latency_reduction_pct": 0.9616501975156222, "wins": 18, "samples": 24}
+{"shape": [6, 6528, 4096], "cache": "warm", "plan": [8, 408, 2], "baseline_us": 42.7200011909008, "candidate_us": 38.4799987077713, "latency_reduction_pct": 9.925099168846947, "wins": 24, "samples": 24}
+{"shape": [8, 4096, 4096], "cache": "cold", "plan": [3, 96, 2], "baseline_us": 90.73599800467491, "candidate_us": 91.40799939632416, "latency_reduction_pct": -0.7406116716924448, "wins": 6, "samples": 24}
+{"shape": [8, 4096, 4096], "cache": "warm", "plan": [3, 96, 2], "baseline_us": 24.320000782608986, "candidate_us": 24.320000782608986, "latency_reduction_pct": 0.0, "wins": 13, "samples": 24}
+{"shape": [6, 1024, 4096], "cache": "cold", "plan": [8, 64, 2], "baseline_us": 33.40800106525421, "candidate_us": 32.416000962257385, "latency_reduction_pct": 2.9693488726224624, "wins": 19, "samples": 24}
+{"shape": [6, 1024, 4096], "cache": "warm", "plan": [8, 64, 2], "baseline_us": 13.75999953597784, "candidate_us": 13.887999579310417, "latency_reduction_pct": -0.930232904426334, "wins": 8, "samples": 24}
+{"shape": [6, 4096, 512], "cache": "cold", "plan": [1, 32, 2], "baseline_us": 20.128000527620316, "candidate_us": 21.15200087428093, "latency_reduction_pct": -5.087441970480111, "wins": 7, "samples": 24}
+{"shape": [6, 4096, 512], "cache": "warm", "plan": [1, 32, 2], "baseline_us": 9.488000068813562, "candidate_us": 9.711999911814928, "latency_reduction_pct": -2.360875225303155, "wins": 5, "samples": 24}
+PASS numerical gates; timing verdict requires all recorded shapes

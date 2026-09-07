@@ -13,7 +13,9 @@ from pathlib import Path
 import subprocess
 import __future__
 
-LOGIC_AUDIT = 'ba6ba8e9539f23dc86ff09ecfdefa429ac4f97a5586e9756aaea80a44886d0f6'
+# Re-audited: only megakernel launch/helper/occupancy counts changed; the
+# extracted math/layout/dispatch contracts and their loader are unchanged.
+LOGIC_AUDIT = '9bc7550ffc2fe5e9287676bd842cf0479195cf76af38f6dc98723184fd7552ce'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

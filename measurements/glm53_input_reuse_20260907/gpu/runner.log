@@ -1,0 +1,8 @@
+preflight inputreuse30907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+GO inputreuse30907 2026-09-07_15:34:31
+PASS: bounded GPU probe completed; server identity and traffic unchanged
+NOTE: queue empty and production: no serving container -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

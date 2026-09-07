@@ -1,0 +1,4 @@
+{"shape": [6, 6416, 4096], "cache": "cold", "plans": {"0": [0, 8, 3, 0], "1": [1, 8, 3, 33792]}, "baseline_us": 77.99999788403511, "candidate_us": 75.48800110816956, "reduction_pct": 3.2205087743722944}
+{"shape": [6, 6416, 4096], "cache": "warm", "plans": {"0": [0, 8, 3, 0], "1": [1, 8, 3, 33792]}, "baseline_us": 42.62400045990944, "candidate_us": 32.35200047492981, "reduction_pct": 24.099098803832582}
+WARNING 09-07 09:36:41 [glm53_megakernel.py:2265] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+PASS serving-source numerics, fallback, scratch lifetime and replay gates

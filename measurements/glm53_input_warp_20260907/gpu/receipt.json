@@ -1,0 +1,41 @@
+{
+  "started_utc": "2026-09-07T07:12:26.023499+00:00",
+  "before": {
+    "id": "5097e0fde3b7a20c9f7974ea1ee2e862036ff8e6125a3f753eac1304ed9ebcfe",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 1980030,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-07T07:07:41.651934635Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    }
+  },
+  "source_commit": "9c3efdcf69a2a84fe23e6da60e005c788399a846",
+  "probe_returncode": 0,
+  "restore_returncode": 0,
+  "after": {
+    "id": "d825744307a6b5128d413a34f9e8d90892a4dde590d6c58d4a2cb7beacfb2c69",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 2014201,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-07T07:14:05.744866363Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    }
+  },
+  "finished_utc": "2026-09-07T07:18:26.741982+00:00"
+}

@@ -549,6 +549,25 @@ class SubmissionTests(unittest.TestCase):
         ex.ensure_worker(store, job)
         self.assertEqual(store.get(job)["state"], "interrupted")
 
+    def test_worker_finishing_during_lock_check_keeps_terminal_result(self):
+        store = ex.Store(self.jobs)
+        self.addCleanup(store.db.close)
+        original_lock = ex.worker_lock
+        for terminal in sorted(ex.TERMINAL):
+            with self.subTest(terminal=terminal):
+                payload = dict(spec=dict(depends_on=[], revision=self.sha,
+                                         hypothesis=terminal, command=["true", terminal]), environment={})
+                job = store.submit("agent", payload)["id"]
+                def finish_then_lock(current, identifier):
+                    current.state(identifier, terminal, {"completed": True})
+                    return original_lock(current, identifier)
+                with patch.object(ex, "worker_lock", side_effect=finish_then_lock), \
+                     patch.object(ex.subprocess, "Popen") as launch:
+                    ex.ensure_worker(store, job)
+                    launch.assert_not_called()
+                self.assertEqual(store.get(job)["state"], terminal)
+                self.assertEqual(store.get(job)["result"], {"completed": True})
+
     def test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence(self):
         context = dict(image=self.image, model="immutable-model-fixture", hardware="fake-nodes")
         bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime=context) for n in (99,100,101)]
