@@ -7406,14 +7406,13 @@ per path do not establish general quality or throughput equivalence. Across
 GiB** on srv1/2/3/4 with no net swap-use growth; these include PRIME and are
 not CUDA peak measurements. The fleet holder released with exit 0 at 20:00 KST.
 
-The current follow-up replaces mapped parallel reads with one sequential
+The second candidate replaced mapped parallel reads with one sequential
 `readinto` worker and two reusable 64 MiB slots, checking before copy and
 synchronizing before slot reuse. The reader alone selects the highest
 available CPU capacity tier inside its inherited affinity mask when Linux
 provides complete topology data. The head has heterogeneous CPU capacities;
 thread placement was not recorded in the first trial, so it is not a proven
-cause of that regression. This revised design remains default-off pending
-separate full-payload screening and matched fleet boots (`rankstream20907`).
+cause of that regression. Its separate screening result is recorded below.
 
 [Scoped first-trial report](measurements/glm53_rank_prefetch_20260907/report.json),
 [per-node timing table](measurements/glm53_rank_prefetch_20260907/report.md), and
@@ -7423,3 +7422,34 @@ samples and report scripts are on srv2 under
 `/home/choiceoh/glm53-logs/rank-prefetch-20260907` and locally in the matching
 `runs/` directory. The original GPU stdout contains logging before JSON;
 `gpu.json` is its parsed JSON record, with original bytes retained and hashed.
+
+### GLM sequential readinto rank restore: rejected before deployment (2026-09-07)
+
+Normal fleet job `rankstream20907` screened revision
+`f5c60fb692c0f9288a42b90a14b564c45fe9685b` in an isolated GPU container using
+the serving image and a read-only real rank-cache mount. It performed all
+**46 exact checks**, including the existing offset/alias/BF16/other-stream/
+corruption fixture and every real payload's CPU chunk checksum. The full
+48,092,653,608-byte payload (2,241 chunks) used one reusable GPU destination;
+the final chunk was checked on GPU after each pass. This is a transport
+screen, not a four-node full-model or serving-quality result.
+
+In order BASE1, FAST1, FAST2, BASE2, restore times were **50.223, 70.757,
+74.511, 47.207 s**. Medians **48.715 → 72.634 s** are a clear regression.
+FAST spent **51.056 / 54.815 s** reading and **19.364 / 19.364 s** checking
+bytes. Direct slot-to-GPU copies fell to about 1.5 s, but did not recover that
+cost. The reader used allowed performance CPUs `5–9,15–19`; the caller's
+affinity stayed unchanged. Pinning/copy integrity passed; performance did not.
+
+The gate stopped **before deployment or any service restart**, exiting 1
+and releasing the holder at 20:30 KST. The default remains 0. The next
+candidate (`rankmmap30907`) keeps mmap and its kernel readahead, checks only
+one chunk ahead using one worker with the same CPU affinity policy, and
+retains the baseline's 64 MiB pinned staging. It is separately queued and
+has no new GPU or startup speed claim yet.
+
+[Source-attested screening receipt](measurements/glm53_rank_stream_20260907/report.json)
+and [phase log](measurements/glm53_rank_stream_20260907/screen.log) retain the
+rejection. Full raw evidence is on srv2 under
+`/home/choiceoh/glm53-logs/rank-stream-20260907-r2` and locally in the matching
+`runs/` directory, with its hashes beside the committed receipt.
