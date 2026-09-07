@@ -77,3 +77,8 @@ Integrated CPU gate: 6,686 core checks, 30 megakernel regressions, four CTA
 fallback/capture tests, four input-reuse driver tests and four channel recorder
 tests pass. Only the two kernel/occupancy source-count expectations changed
 in the audited logic file; its pure math/layout helpers and loaders are unchanged.
+
+After integrating current main `944f65c`, the combined CPU suite passes 6,687
+logic checks, 30 megakernel regressions and 92 fleet regressions. The final
+plan receipt reports the CTA variant's actual occupancy. Both generated
+overlays match source bytes and the focused kernel/12 driver-transport tests pass.

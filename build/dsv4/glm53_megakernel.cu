@@ -3211,7 +3211,9 @@ std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
   const int n_pad = ((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
   const int ordinary = mk_choose_ksr2(m, n_pad, k, lr);
   const int split = ordinary;  // retain the existing FP32 reduction order
-  return {enabled, split, g_gemm_input_bps, enabled ? (k / KSTEP) * 1056 : 0};
+  const int cta = enabled && split == 8 ? mk_gemm_input_cta_mode() : 0;
+  return {enabled, split, cta ? g_input_cta_bps[cta-1] : g_gemm_input_bps,
+          enabled ? (k / KSTEP) * 1056 : 0};
 }
 std::vector<int64_t> mk_gemm_input_cta_plan(int m,int n,int k,bool bg,bool lr) {
   const auto input=mk_gemm_input_plan(m,n,k,bg,lr);
