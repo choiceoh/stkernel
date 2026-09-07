@@ -1,0 +1,29 @@
+preflight pattr0907 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-profile.JjntmWN5/run.sh
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 2 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+GO pattr0907 2026-09-07_15:59:45
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=7G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=11G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+boot PATTR0907 2026-09-07T15:59:47.809226
+healthy PATTR0907 2026-09-07T16:07:25.495161
+request PATTR32KB1 2026-09-07T16:07:26.132954
+boot PATTR0907RESTORE 2026-09-07T16:07:26.698415
+healthy PATTR0907RESTORE 2026-09-07T16:12:17.635136
+{"started": "2026-09-07T15:59:47.809212", "exit_code": 1, "error": "CalledProcessError(1, ['python3', '/home/choiceoh/stkernel-prefill-fused-serving/bench/onepass_memory.py', '--minimum-gib', '12', '--report', '/tmp/glm53-prefill-profile.JjntmWN5/PATTR32KB1.memory.jsonl', '--', 'python3', '/tmp/glm53-prefill-profile.JjntmWN5/glm53_prefill_attribution.py', '--repo', '/home/choiceoh/stkernel-prefill-fused-serving', '--out', '/tmp/glm53-prefill-profile.JjntmWN5', '--name', 'PATTR32KB1', '--ctx', '32000'])", "production_health": 200, "restored": true, "ended": "2026-09-07T16:12:18.359825"}
+Traceback (most recent call last):
+  File "/tmp/glm53-prefill-profile.JjntmWN5/run.py", line 201, in <module>
+    main()
+  File "/tmp/glm53-prefill-profile.JjntmWN5/run.py", line 163, in main
+    subprocess.run(cmd, env=env, cwd=REPO, stdout=log,
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', '/home/choiceoh/stkernel-prefill-fused-serving/bench/onepass_memory.py', '--minimum-gib', '12', '--report', '/tmp/glm53-prefill-profile.JjntmWN5/PATTR32KB1.memory.jsonl', '--', 'python3', '/tmp/glm53-prefill-profile.JjntmWN5/glm53_prefill_attribution.py', '--repo', '/home/choiceoh/stkernel-prefill-fused-serving', '--out', '/tmp/glm53-prefill-profile.JjntmWN5', '--name', 'PATTR32KB1', '--ctx', '32000']' returned non-zero exit status 1.

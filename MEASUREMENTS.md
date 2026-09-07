@@ -7415,3 +7415,39 @@ Relative to the two baseline means, prefill/first-content throughput changed
 deltas are inside baseline variation; the 40% target remains unmet and new
 options remain unpromoted. Capacity is still the common reduced test setting.
 [Matched results and full raw evidence](measurements/glm53_prefill_retry3_20260907/README.md).
+
+
+### Current GLM prefill attribution (2026-09-07, pattr20907)
+
+Profiled the actually deployed settings on source `6f797df`, manifest
+`0aca81454720`, pinned `a3dd4c0f...` image. Actual NVFP4 static scale was **0**,
+unlike the earlier #439 bracket's 16. Preserve this scope difference.
+Matched Korean onepass inputs with distinct cache salts: 32,545 / 128,559
+actual tokens, clean control → profile → clean control, all four rank traces.
+All six requests: retrieval **18/18**, Korean corruption **0/6**, cache hits 0,
+no traffic or 12 GiB memory-guard errors (minimum head headroom 17.40 GiB).
+
+Mean per-rank occupied prefill time: MoE **32.08 / 28.15%**, MLA/indexer
+**16.40 / 20.42%**, dense GEMM/quant **12.94 / 13.12%**, NCCL **12.67 / 12.11%**,
+KDA **10.77 / 10.73%**, MHC **4.95 / 5.06%** (32K / 128K). Communication and
+compute overlap is effectively zero. Explicit pure-prefill ranges, not a
+decode-step estimate, identify six / nineteen chunks; token totals match all
+requests and ranks. Occupancy unions avoid double-counting streams.
+
+The FP8 RS-unpack + MHC-post scope of #439's standalone microbenchmark is
+only **2.64 / 3.08%** of prefill. A hypothetical 12.7% reduction of that work
+would save roughly 0.34–0.39% of total time, not 12.7% end-to-end. This is a
+budget illustration, not a new performance verdict. Larger remaining
+candidates are communication/MLP overlap and MoE/MLA kernel design; previous
+MoE reuse and MLA pair/group regressions do not justify re-enabling them.
+
+Clean TTFT before/profile/after: 32K **11.880 / 10.647 / 10.553 s**;
+128K **42.055 / 42.177 / 41.855 s**. The first 32K control has a first-process
+cost that is not isolated; profile-vs-later-control differs by <1% at both
+sizes. This diagnostic proves no new speedup or cumulative 40% gain.
+Reduced KV capacity (415 blocks, maximum length 262144) is retained as a
+limitation. Initial reset-API 404 occurred before any model request and was
+corrected with supported request cache salts; both recovery receipts remain.
+Final full-capacity public recovery **16:33:32**, health 200, four-node
+command/image/mount/env verification passed, fleet exit 0. Six attribution
+CPU tests pass. [Report, per-rank analysis and raw trace manifest](measurements/glm53_prefill_profile_20260907/README.md).

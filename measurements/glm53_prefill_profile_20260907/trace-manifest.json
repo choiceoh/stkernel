@@ -1,0 +1,56 @@
+{
+  "remote_job": "srv2:/tmp/glm53-prefill-profile2.yfJv5Fe8",
+  "files": [
+    {
+      "path": "traces/PATTR128KP/10.10.10.1/dp0_pp0_tp1_dcp0_ep1_rank1.1788765969300667921.pt.trace.json.gz",
+      "bytes": 22848552,
+      "sha256": "f05dd3c10be03364be7d5957f0ce999261f52bbd7f7a3f051c00d55b1b591e44"
+    },
+    {
+      "path": "traces/PATTR128KP/10.10.10.3/dp0_pp0_tp2_dcp0_ep2_rank2.1788765969352617113.pt.trace.json.gz",
+      "bytes": 22853698,
+      "sha256": "45ae61342655f31669d2a1eac07f61e58c3103653b198667b02399a232378f4a"
+    },
+    {
+      "path": "traces/PATTR128KP/10.10.10.4/dp0_pp0_tp3_dcp0_ep3_rank3.1788765970239316340.pt.trace.json.gz",
+      "bytes": 23261367,
+      "sha256": "286afe1e06c247c9d493cfa4c3f40bae5a535ed0dce792b1f87659901576c500"
+    },
+    {
+      "path": "traces/PATTR128KP/local/dp0_pp0_tp0_dcp0_ep0_rank0.1788765970185263056.pt.trace.json.gz",
+      "bytes": 23260176,
+      "sha256": "67ea87e6dda5ef062e1db4c165c9f9d7e652f941700b1d314999cc30bfb339c5"
+    },
+    {
+      "path": "traces/PATTR128KP/local/srv2_29.async_llm.1788765967458135166.pt.trace.json.gz",
+      "bytes": 744,
+      "sha256": "24dd033687be556aefe029893107795e4451c8828e9721cf4ba7d2992b024a7d"
+    },
+    {
+      "path": "traces/PATTR32KP/10.10.10.1/dp0_pp0_tp1_dcp0_ep1_rank1.1788765883777656961.pt.trace.json.gz",
+      "bytes": 6826185,
+      "sha256": "604b6e3fdb104d0cc52c76b7cd87521efa66d59cbb8edab0b963dd88cf9fef61"
+    },
+    {
+      "path": "traces/PATTR32KP/10.10.10.3/dp0_pp0_tp2_dcp0_ep2_rank2.1788765883778124565.pt.trace.json.gz",
+      "bytes": 6840149,
+      "sha256": "6100741d0f2b64c16af478b2a0d72e4981e01064b37ae5a7f4b918015acee557"
+    },
+    {
+      "path": "traces/PATTR32KP/10.10.10.4/dp0_pp0_tp3_dcp0_ep3_rank3.1788765884077410334.pt.trace.json.gz",
+      "bytes": 7005555,
+      "sha256": "f0689e2958dc2e2b8fd8ef0ece947d9687f1914e15177b9cda5fcc1afda20e99"
+    },
+    {
+      "path": "traces/PATTR32KP/local/dp0_pp0_tp0_dcp0_ep0_rank0.1788765884028548380.pt.trace.json.gz",
+      "bytes": 7001496,
+      "sha256": "49c977e1519b7d93dd864771390dfc64e0122607e95a8f3d7c7c37b82af17cad"
+    },
+    {
+      "path": "traces/PATTR32KP/local/srv2_29.async_llm.1788765883197296672.pt.trace.json.gz",
+      "bytes": 745,
+      "sha256": "cf192cb0d074e754b16a150c308a4936ce36b41f1cecb3fe344a11999667e52e"
+    }
+  ],
+  "remote_archive": "srv2:/home/choiceoh/glm53-logs/prefill-attribution-20260907-pattr20907"
+}

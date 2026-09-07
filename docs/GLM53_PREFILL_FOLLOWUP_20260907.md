@@ -248,3 +248,16 @@ Production recovery `SPFR30907PROD` completed at **15:03:13 KST**. All
 four nodes were verified on the pinned source/image and defaults, public
 port 8000, max length 1,048,576 and block override 1,056. Health was **200**
 from srv2 and srv1. The fleet exited 0; srv1 had **360.71 GiB** free afterward.
+
+## Current-production bottleneck attribution
+
+The completed `pattr20907` profile isolates pure-prefill ranges on all four
+ranks, with matched clean controls and zero prefix-cache hits. The narrow
+FP8 RS-unpack/MHC-post target is only 2.64% at 32K and 3.08% at 128K; total
+MHC is about 5%. MoE and MLA/indexer together occupy 48–49%, and NCCL
+occupies 12–13% with essentially no compute overlap. This supports changing
+the optimization target, not claiming a global hardware limit or a new gain.
+The observed production setting has NVFP4 static scale 0 rather than this
+bracket's 16, so the two runs are not a matched performance pair. All six
+requests passed retrieval 18/18 and Korean 0/6, with public service restored
+and verified at 16:33:32 KST. [Full attribution and scope](../measurements/glm53_prefill_profile_20260907/README.md).

@@ -1,0 +1,3 @@
+# Full four-rank profiler traces remain local and on srv2; trace-manifest.json
+# records their sizes and SHA-256 values. Commit the derived evidence instead.
+/traces/

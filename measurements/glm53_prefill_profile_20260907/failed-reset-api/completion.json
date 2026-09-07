@@ -1,0 +1,8 @@
+{
+  "started": "2026-09-07T15:59:47.809212",
+  "exit_code": 1,
+  "error": "CalledProcessError(1, ['python3', '/home/choiceoh/stkernel-prefill-fused-serving/bench/onepass_memory.py', '--minimum-gib', '12', '--report', '/tmp/glm53-prefill-profile.JjntmWN5/PATTR32KB1.memory.jsonl', '--', 'python3', '/tmp/glm53-prefill-profile.JjntmWN5/glm53_prefill_attribution.py', '--repo', '/home/choiceoh/stkernel-prefill-fused-serving', '--out', '/tmp/glm53-prefill-profile.JjntmWN5', '--name', 'PATTR32KB1', '--ctx', '32000'])",
+  "production_health": 200,
+  "restored": true,
+  "ended": "2026-09-07T16:12:18.359825"
+}
