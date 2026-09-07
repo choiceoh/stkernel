@@ -4,6 +4,13 @@ The user requested a substantially larger gain than the earlier input-reuse
 prototype, followed by default promotion. This remains conditional on the
 actual serving-source and C=1 step/output gates; the new profile flag is 0.
 
+The real-width kernel now measures **24.10% lower warm latency** and **3.22%
+lower read-evicted latency**, with numerical, graph and sanitizer gates passed.
+Three real serving boots completed. Window medians were essentially unchanged;
+A2 triggered the existing Korean gate on two `Halvorsen博士` expressions.
+The gate failure and incomplete B/A/A/B remain recorded, and default promotion
+is pending channel-resolved quality evidence.
+
 ## Completed private-source sweep
 
 Source `9c3efdc`, generated CUDA SHA-256
@@ -73,8 +80,8 @@ ladder plus five fixed 2,048-token C=1 responses per arm, a loopback endpoint,
 and all-rank receipts collected **before** the chain's failure judge. A
 snapshot of approved main supplies the unconditional public recovery path.
 
-Actual production-source GPU results, racecheck/memcheck, paired C=1 rates,
-quality and default promotion remain pending. No serving gain is claimed yet.
+The sections below retain each stage's result. Actual-source GPU gates are
+complete; the final serving acceptance and default promotion remain open.
 
 ## First actual-source run: incomplete graph-lifetime gate
 
@@ -186,3 +193,45 @@ regressions, 73 fleet regressions, four driver behavior tests and nine
 compile-cache lifecycle tests. The CPU contract audit hash was refreshed
 after reviewing the three changed megakernel source-count assertions; the
 audited math/layout/dispatch functions and loader are unchanged.
+
+## Three real serving boots; Korean gate unresolved
+
+| Boot | Mode | Pooled step/s | Window median step/s | Output tok/s | Facts | Korean gate |
+|---|---|---:|---:|---:|---:|---:|
+| IR6416B1 | Original | 21.641 | 21.865 | 69.558 | 24/24 | 0/10 |
+| IR6416A1 | Input reuse | 21.724 | 21.853 | 71.147 | 24/24 | 0/10 |
+| IR6416A2 | Input reuse | 21.870 | 21.855 | 69.959 | 24/24 | 2/10 |
+
+All boots have five fixed 2,048-token C=1 responses, the same 2K/32K/128K
+workload and image, no foreign requests, and unchanged four-rank receipts
+before/after traffic. Both candidates prove the real 6416-wide capture on
+all four nodes. The first pair changes pooled step/s by +0.385%, output tok/s
+by +2.285%, and the window median by -0.055%. The larger standalone kernel
+gain is not a comparable whole-model gain.
+
+A2's existing gate fails on `Halvorsen博士` in fixed responses 2 and 4:
+four Han characters total, no replacement characters, welded jamo or control
+characters. It is a meaningful Doctor title in an English sentence, but the
+record does not preserve whether it came from reasoning or final content.
+The gate is **not** relabeled as passed. The chain stopped before B2; one
+baseline and two candidate boots do not establish a balanced serving result.
+See the [partial summary](serving/partial-summary.json), [raw records](serving/records.raw.jsonl),
+[verdicts](serving/verdicts.jsonl) and [printed excerpts](serving/runner.log).
+
+Approved main `757ea2b` was restored at 19:26:50 KST, with health 200 verified
+at 19:28. The outer runner exited 1 because the quality gate failed;
+`restore.status` is `restored`.
+
+The diagnostic `probes/input_reuse_channels.py` retains the unchanged
+onepass requests, combined text and existing gates while recording separate
+SSE content/reasoning fields. It verifies request/output hashes and writes
+after the timed request. Three transport tests pass. Its follow-up uses
+pre/post four-rank capture proof and the normal chain/judge/restore flow.
+
+After merging main's fleet update, a worker-completion race was reproduced:
+`ensure_worker` could overwrite a terminal result as `interrupted` after
+the worker finished between two reads. A post-lock terminal check fixes it;
+the regression exercises every terminal state without launching a process.
+The added test uses the existing temporary Store fixture, so its reviewed
+fleet dependency hash was updated. The final combined CPU run passes
+**6,685 logic checks, 30 megakernel regressions and 85 fleet regressions**.

@@ -1,0 +1,167 @@
+{
+  "source_commit": "e997de195930c162092f6062a8439ff905b21525",
+  "per_boot": [
+    {
+      "name": "IR6416B1",
+      "arm": "B",
+      "windows": 136,
+      "step_s": 21.641078627047794,
+      "window_step_counts": {
+        "21": 46,
+        "22": 75,
+        "23": 15
+      },
+      "ms_per_step": 46.20841766870919,
+      "window_median_step_s": 21.865303694187617,
+      "pooled_output_tok_s": 69.55767466571496,
+      "pooled_tpot_ms": 14.376558802545782,
+      "median_request_tok_s": 69.0357091681522,
+      "fixed_outputs_matching_first_baseline": 5,
+      "acceptance_all_requests": 0.45044466403162053,
+      "tokens_per_step_all_requests": 3.2522233201581026,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "quality_pass": true
+    },
+    {
+      "name": "IR6416A1",
+      "arm": "A",
+      "windows": 133,
+      "step_s": 21.72432298304768,
+      "window_step_counts": {
+        "19": 1,
+        "20": 1,
+        "21": 24,
+        "22": 95,
+        "23": 12
+      },
+      "ms_per_step": 46.03135392437031,
+      "window_median_step_s": 21.853287430463087,
+      "pooled_output_tok_s": 71.14722426694296,
+      "pooled_tpot_ms": 14.055362107283624,
+      "median_request_tok_s": 70.19557158080654,
+      "fixed_outputs_matching_first_baseline": 0,
+      "acceptance_all_requests": 0.4512678885262365,
+      "tokens_per_step_all_requests": 3.2563394426311825,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "quality_pass": true
+    },
+    {
+      "name": "IR6416A2",
+      "arm": "A",
+      "windows": 135,
+      "step_s": 21.870227931848692,
+      "window_step_counts": {
+        "21": 18,
+        "22": 96,
+        "23": 21
+      },
+      "ms_per_step": 45.7242605388553,
+      "window_median_step_s": 21.855138807128476,
+      "pooled_output_tok_s": 69.95910996730882,
+      "pooled_tpot_ms": 14.29406406781461,
+      "median_request_tok_s": 69.05987815623551,
+      "fixed_outputs_matching_first_baseline": 0,
+      "acceptance_all_requests": 0.4505109489051095,
+      "tokens_per_step_all_requests": 3.2525547445255474,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 2,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 4,
+          "control": 0
+        },
+        "hits": [
+          [
+            "fixed2K rep2",
+            {
+              "cjk_mixed": 2
+            }
+          ],
+          [
+            "fixed2K rep4",
+            {
+              "cjk_mixed": 2
+            }
+          ]
+        ]
+      },
+      "quality_pass": false
+    }
+  ],
+  "arms": {
+    "B": {
+      "window_median_step_s": 21.865303694187617,
+      "step_s": 21.641078627047794,
+      "pooled_output_tok_s": 69.55767466571496,
+      "pooled_tpot_ms": 14.376558802545782,
+      "ms_per_step": 46.20841766870919
+    },
+    "A": {
+      "window_median_step_s": 21.854213118795784,
+      "step_s": 21.797275457448187,
+      "pooled_output_tok_s": 70.5531671171259,
+      "pooled_tpot_ms": 14.174713087549117,
+      "ms_per_step": 45.877807231612806
+    }
+  },
+  "paired": [
+    {
+      "baseline": "IR6416B1",
+      "candidate": "IR6416A1",
+      "window_median_step_s_change_pct": -0.05495585102586187,
+      "step_s_change_pct": 0.3846589970605496,
+      "pooled_output_tok_s_change_pct": 2.2852253311617554
+    }
+  ],
+  "change_pct": {
+    "window_median_step_s": -0.05072225635165406,
+    "step_s": 0.7217608377669826,
+    "pooled_output_tok_s": 1.4311755765199718,
+    "pooled_tpot_ms": -1.403991857640663,
+    "ms_per_step": -0.7154766464125495
+  },
+  "within_arm_boot_spread_pct": null,
+  "independent_boots_per_arm": {
+    "B": 1,
+    "A": 2
+  },
+  "complete_abba": false,
+  "missing_runtime_receipts": [],
+  "all_quality_gates_passed": false,
+  "new_defaults_promoted": false,
+  "note": "3 of four boots completed; the chain stopped before B2. The first pair is reported separately and every completed arm is retained. See the recorded verdict and receipts; this partial bracket cannot establish a stable serving speedup."
+}

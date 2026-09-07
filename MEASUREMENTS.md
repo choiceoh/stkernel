@@ -7355,7 +7355,14 @@ An earlier serving A1 was correctly rejected as inactive: its selector used
 logical N6528, while the model uses logical N6416 padded to N6528. Its output
 tok/s increased 1.65% without executing the candidate, so it is not a gain
 claim. The corrected B/A/A/B requires all-rank real-shape capture before
-traffic. Actual step/output acceptance is pending; the profile flag remains
-0 until that comparison closes.
+traffic. The real B1/A1/A2 boots measure pooled step/s **21.641/21.724/21.870**,
+window medians **21.865/21.853/21.855**, and output tok/s
+**69.558/71.147/69.959**. Facts pass 24/24 for each. A2 fails the existing
+Korean gate on two `Halvorsen博士` expressions (four Han characters, no
+replacement/jamo/control errors), and the chain stops before B2. Because
+the harness combines reasoning and final content, the affected channel is
+unknown. Preserve the gate failure and incomplete bracket; the profile
+remains **0** pending channel-resolved quality evidence. Approved main was
+restored at 19:26:50 KST with health 200 verified at 19:28.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).

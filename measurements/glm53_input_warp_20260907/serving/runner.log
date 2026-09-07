@@ -1,0 +1,154 @@
+preflight inputserve40907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/stkernel-input-reuse-real-20260907/probes/run_input_reuse_serving.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_MK_INPUT_REUSE=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_INPUT_REUSE
+  NOTE checkout is 18 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  this arm (VLLM_GLM53_MK_INPUT_REUSE) has no record on build 53b9a17f2b88
+  baseline: DEF3 on build 53b9a17f2b88 -- 21.82 step/s, 3.27 tok/step, 45.3% acc, 2026-09-07 12:36:55 -- skip a defaults arm and compare against it
+  -> PASS
+GO inputserve40907 2026-09-07_18:34:51
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+== chain IR6416B1 IR6416A1 IR6416A2 IR6416B2 18:41:16 session=inputserve40907 rehearse=0
+   baseline: NONE for build e997de1 -- a defaults arm is worth its boot
+== 18:41:16 arm IR6416B1: (defaults)
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 6.1 s
+== [IR6416B1] onepass 18:50:56 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         878        2515      2.42s      0.85s  o o o
+  32000   32545        2957     (1 req)     11.01s          -  o o o
+ 128000  128559        3087     (1 req)     41.64s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=69.04 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=72.01 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=68.17 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=68.58 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=70.13 tok/s
+  warm 처리량: 2515 -> 3087 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=136 med 21.9 [20.8, 22.9] step/s (inside the answers only; per context: 2K: n=147 med 21.9  32K: n=11 med 21.8  128K: n=7 med 21.8), raw acc 45.0%, tokens/step 3.252 (k=5.0), generated 13159 tokens over 248s
+응답 10개 · 문자 32,980
+  깨진 응답: 0/10 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass IR6416B1: 248s total
+== [IR6416B1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 4048.0
+vllm:spec_decode_num_draft_tokens_total 20240.0
+vllm:spec_decode_num_accepted_tokens_total 9117.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3088.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2230.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1609.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1232.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 958.0
+== [IR6416B1] head log kept: /home/choiceoh/glm53-logs/boot-IR6416B1.log ==
+== [IR6416B1] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [IR6416B1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 09:42:02 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 09:42:24 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-07 09:49:46 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-07 09:49:46 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 09:49:51 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [IR6416B1] done 18:55:05 ==
+   nothing to yield to
+== 18:55:06 arm IR6416A1: VLLM_GLM53_MK_INPUT_REUSE=1
+== [IR6416A1] onepass 19:03:50 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         914        2528      2.33s      0.84s  o o o
+  32000   32545        2952     (1 req)     11.02s          -  o o o
+ 128000  128559        3091     (1 req)     41.59s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=68.55 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=72.46 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=76.01 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=70.20 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=69.03 tok/s
+  warm 처리량: 2528 -> 3091 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=133 med 21.9 [18.9, 22.9] step/s (inside the answers only; per context: 2K: n=145 med 21.9  32K: n=5 med 21.8  128K: n=13 med 21.9), raw acc 45.1%, tokens/step 3.256 (k=5.0), generated 12959 tokens over 245s
+응답 10개 · 문자 32,251
+  깨진 응답: 0/10 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass IR6416A1: 245s total
+== [IR6416A1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 3983.0
+vllm:spec_decode_num_draft_tokens_total 19915.0
+vllm:spec_decode_num_accepted_tokens_total 8987.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3054.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2175.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1578.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1237.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 943.0
+== [IR6416A1] head log kept: /home/choiceoh/glm53-logs/boot-IR6416A1.log ==
+== [IR6416A1] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_MK_INPUT_REUSE
+  -> 1/1 lanes proved serving (192610 bytes of /home/choiceoh/glm53-logs/boot-IR6416A1.log)
+== [IR6416A1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 09:55:54 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 09:56:11 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 10:02:42 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=242) WARNING 09-07 10:02:42 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 10:02:47 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [IR6416A1] done 19:07:55 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> IR6416A1        21.85    3.26   45.1%  24/24  0/10     2952  1/1        09-07 19:03
+judge> IR6416B1        21.87    3.25   45.0%  24/24  0/10     2957  -     cold 09-07 18:50
+judge> verdict: -0.1% with no floor yet (n=1): one more baseline sample
+judge> written to /home/choiceoh/glm53-logs/INPUTSERVE40907/verdicts.jsonl
+   nothing to yield to
+== 19:07:57 arm IR6416A2: VLLM_GLM53_MK_INPUT_REUSE=1
+fixed2K rep=1 tokens=2048/2048 decode=69.06 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=74.75 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=68.72 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=66.83 tok/s
+  warm 처리량: 2411 -> 3097 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=135 med 21.9 [20.8, 22.9] step/s (inside the answers only; per context: 2K: n=145 med 21.9  32K: n=14 med 21.9  128K: n=8 med 21.9), raw acc 45.1%, tokens/step 3.253 (k=5.0), generated 13364 tokens over 249s
+응답 10개 · 문자 30,854
+  깨진 응답: 2/10 (20%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        4   129.6/백만자
+  control          0     0.0/백만자
+  [fixed2K rep2] cjk_mixed=2
+    …'info, Francis Crick biography, Halvorsen博士 signing tundra report, Jimmy Carter (카'…
+  [fixed2K rep4] cjk_mixed=2
+    …'info, Francis Crick biography, Halvorsen博士 tundra report, Jimmy Carter foundation'…
+== onepass IR6416A2: 249s total
+== [IR6416A2] acceptance counters ==
+vllm:spec_decode_num_drafts_total 4110.0
+vllm:spec_decode_num_draft_tokens_total 20550.0
+vllm:spec_decode_num_accepted_tokens_total 9258.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3169.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2217.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1672.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1229.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 971.0
+== [IR6416A2] head log kept: /home/choiceoh/glm53-logs/boot-IR6416A2.log ==
+== [IR6416A2] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_MK_INPUT_REUSE
+  -> 1/1 lanes proved serving (177737 bytes of /home/choiceoh/glm53-logs/boot-IR6416A2.log)
+== [IR6416A2] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 10:08:44 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 10:09:03 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 10:11:26 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=242) WARNING 09-07 10:11:26 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 10:11:30 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 10:16:34 [glm53_prep_fused.py:1160] [prep-fused] on timing (n=64): fused host=218 us stock chain host=6170 us per step
+(Worker_TP0 pid=242) WARNING 09-07 10:16:34 [glm53_prep_fused.py:1200] [prep-fused] on: fused_steps=4096 stock_steps=37 checks ok=64 drift=0
+== [IR6416A2] done 19:16:35 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> IR6416A2        21.86    3.25   45.1%  24/24  2/10     2994  1/1        09-07 19:12
+judge> IR6416B1        21.87    3.25   45.0%  24/24  0/10     2957  -     cold 09-07 18:50
+judge> verdict: GATE FAIL: korean 2/10
+judge> written to /home/choiceoh/glm53-logs/INPUTSERVE40907/verdicts.jsonl

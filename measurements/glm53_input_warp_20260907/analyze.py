@@ -14,11 +14,11 @@ IMAGE='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 
 
 def summarize(rows, *, incomplete=False):
-    expected=NAMES[:2] if incomplete else NAMES
+    expected=NAMES[:len(rows)] if incomplete else NAMES
     assert [r['name'] for r in rows]==list(expected), 'four complete independent B/A/A/B boots required unless explicitly reporting the failed first pair'
     assert len({r['boot_id'] for r in rows})==len(expected)
     if incomplete:
-        assert len(rows)==2, 'partial report must preserve the completed first pair'
+        assert len(rows) in (2,3), 'partial report must preserve every completed arm before the failed gate'
         verdicts=[json.loads(line) for line in (ROOT/'verdicts.jsonl').read_text().splitlines() if line.strip()]
         assert verdicts, 'partial report requires the recorded verdict'
     assert len({r['overlay'] for r in rows})==1
@@ -103,19 +103,21 @@ def summarize(rows, *, incomplete=False):
                for k in ('window_median_step_s','step_s','pooled_output_tok_s')} for a in ('B','A')} if not incomplete else None
     return {'source_commit':source,'per_boot':out,'arms':stats,'paired':paired,
             'change_pct':{k:100*(stats['A'][k]/stats['B'][k]-1) for k in metrics},
-            'within_arm_boot_spread_pct':spread,'independent_boots_per_arm':1 if incomplete else 2,
+            'within_arm_boot_spread_pct':spread,
+            'independent_boots_per_arm':{arm:sum(r['arm']==arm for r in out) for arm in ('B','A')},
             'complete_abba':not incomplete,'missing_runtime_receipts':missing_receipts,
             'all_quality_gates_passed':all(r['quality_pass'] for r in out),
             'new_defaults_promoted':False,
-            'note':('First B/A pair only: the chain stopped before A2/B2. '
-                    'See the recorded verdict and receipts; no stable speedup can be concluded from this partial bracket.'
+            'note':(f'{len(rows)} of four boots completed; the chain stopped before B2. '
+                    'The first pair is reported separately and every completed arm is retained. '
+                    'See the recorded verdict and receipts; this partial bracket cannot establish a stable serving speedup.'
                     if incomplete else
                     'Each boot has equal weight. Windows within a boot are correlated; four boots do not give a narrow confidence interval.')}
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--incomplete',action='store_true',help='Report the completed first pair explicitly; never writes summary.json')
+    parser.add_argument('--incomplete',action='store_true',help='Report all completed arms of the failed bracket; never writes summary.json')
     args=parser.parse_args()
     rows=[json.loads(line) for line in (ROOT/'records.raw.jsonl').read_text().splitlines() if line.strip()]
     result=summarize(rows,incomplete=args.incomplete)
