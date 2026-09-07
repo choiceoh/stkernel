@@ -17,8 +17,8 @@ def load(name, namespace):
 
 
 class CtaDriver(unittest.TestCase):
-    def gate_case(self, failure=None):
-        state={'cta':3,'reuse':1};calls=[]
+    def gate_case(self, failure=None, cta=3):
+        state={'cta':cta,'reuse':1};calls=[]
         ext=types.SimpleNamespace(
             gemm_input_cta_mode=lambda:state['cta'],
             set_input_cta=lambda mode:state.update(cta=mode),
@@ -52,6 +52,22 @@ class CtaDriver(unittest.TestCase):
         self.assertEqual(state,{'cta':3,'reuse':1})
         self.assertTrue(armed['gemm'])
         self.assertEqual([n for n,_ in calls],['gemm','input_reuse','input_cta'])
+
+    def test_three_slice_failure_preserves_validated_cta2(self):
+        state,armed,calls=self.gate_case('input_cta3',cta=4)
+        self.assertEqual(state,{'cta':2,'reuse':1})
+        self.assertTrue(armed['gemm'])
+        self.assertEqual([s['cta'] for _,s in calls],[0,0,2,4])
+
+    def test_three_slice_never_overrides_failed_existing_cta(self):
+        state,armed,calls=self.gate_case('input_cta',cta=4)
+        self.assertEqual(state,{'cta':0,'reuse':1})
+        self.assertNotIn('input_cta3',[n for n,_ in calls])
+
+    def test_three_slice_success_arms_requested_mode(self):
+        state,armed,calls=self.gate_case(cta=4)
+        self.assertEqual(state,{'cta':4,'reuse':1})
+        self.assertEqual([n for n,_ in calls],['gemm','input_reuse','input_cta','input_cta3'])
 
     def test_receipt_requires_real_eligible_capture_and_enabled_plan(self):
         captured=set();logs=[];calls=[];mode=[2]

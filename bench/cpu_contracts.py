@@ -13,9 +13,9 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited: only the static-v2 config test gained integrated decode geometry
-# cases. Contract loaders and extracted math/layout/dispatch tests are unchanged.
-LOGIC_AUDIT = 'cac3c445485edd1d596892280e93c6a3ea1050de10424748e976d78f5cd1a365'
+# Re-audited against current main: only static-v2 controls differ.
+# All upstream loaders, math/layout/dispatch contracts and launch tests are retained.
+LOGIC_AUDIT = '1bd9c345fce7ee54b929109d9c56a974b9f0d9d0589b16f960ae2d3a34ac29d8'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

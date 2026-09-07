@@ -23,14 +23,14 @@ with torch.inference_mode():
     ext.set_input_cta(0)
     assert mk._selftest_bf16_mhc(), 'MHC BF16 differential gate'
     assert mk._selftest_gemm(), 'GEMM independent oracle gate'
-    for mode in (0,2):
+    for mode in (0,2,4):
         ext.set_input_cta(mode)
         assert ext.gemm_input_mode()==1
         assert mk._selftest_input_reuse(), ('input replay gate',mode)
     torch.cuda.synchronize()
 print('NODE_CHECK='+json.dumps({'status':'PASS','torch':torch.__version__,
     'source_sha256':hashlib.sha256(path.with_suffix('.cu').read_bytes()).hexdigest(),
-    'mhc_bf16':True,'gemm':True,'input_modes':[0,2]}),flush=True)
+    'mhc_bf16':True,'gemm':True,'input_modes':[0,2,4]}),flush=True)
 '''
 
 

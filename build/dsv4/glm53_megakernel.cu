@@ -1359,6 +1359,116 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
   }
 }
 
+// Opt-in CTA=4: preserve 10/11/11 groups for foreground N4096/N6144.
+template <int TILES, int NB>
+__global__ void __launch_bounds__(TILES*96,TILES==1?6:3)
+mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
+  constexpr int MODE=0,m=6;
+  constexpr int RAW_NIB=TILES*48*64,RAW_BYTES=TILES*48*72;
+  asm volatile("griddepcontrol.launch_dependents;");
+  extern __shared__ uint8_t smem[];
+  uint8_t* sraw=smem;
+  const uint32_t sm=(uint32_t)__cvta_generic_to_shared(sraw);
+  sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
+  float* partial=reinterpret_cast<float*>(sraw+NB*RAW_BYTES);
+  const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
+  const int kblk=32,nt=blockIdx.x*TILES+warp/3,slice=warp%3;
+  const int kb0=32*slice/3,kbn=32*(slice+1)/3;
+  constexpr int DIST=NB-1;
+  auto stage_raw=[&](int kb,int buf) {
+    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
+    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    uint8_t* d=sraw+buf*RAW_BYTES;
+#pragma unroll
+    for(int u=0;u<2;++u) {
+      const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)(lane+u*32)*16);
+    }
+    if(lane<8) {
+      const int st=warp*8+lane;
+      mk_cp_async16(d+RAW_NIB+st*16,s+(size_t)lane*16);
+    }
+    mk_cp_commit();
+  };
+  float acc[4]={};
+  auto mma_fold=[&](int kb) {
+    const uint8_t* raw=sraw+(kb%NB)*RAW_BYTES;
+    uint32_t l0a[2],l1a[2],l0b[2],l1b[2];int slot[2];
+#pragma unroll
+    for(int j=0;j<2;++j) {
+      const int r=warp*16+j*8+g;
+      const uint32_t ex=*(const uint16_t*)(raw+RAW_NIB+r*8+2*q);
+      const uint32_t ea=ex&255u,eb=ex>>8;
+      const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
+    }
+    float ka[4]={};
+#pragma unroll
+    for(int ks=0;ks<4;++ks) {
+      const int wsel=(ks+q)&3;uint32_t wb[2][2];
+#pragma unroll
+      for(int j=0;j<2;++j) {
+        const uint32_t w=*(const uint32_t*)(raw+slot[j]+4*wsel);
+        const uint32_t l0=wsel<2?l0a[j]:l0b[j],l1=wsel<2?l1a[j]:l1b[j];
+        wb[j][0]=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+        wb[j][1]=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+      }
+      uint2 x=make_uint2(0,0);
+      if(g<m)x=*(const uint2*)(c.input_q+(size_t)kb*1024+ks*256+lane*8);
+      asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+          : "r"(wb[0][0]),"r"(wb[1][0]),"r"(wb[0][1]),"r"(wb[1][1]),"r"(x.x),"r"(x.y));
+    }
+    const float s0=2*q<m?c.input_s[kb*8+2*q]*c.wgs:0.f;
+    const float s1=2*q+1<m?c.input_s[kb*8+2*q+1]*c.wgs:0.f;
+    acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s1;acc[2]+=ka[2]*s0;acc[3]+=ka[3]*s1;
+  };
+#pragma unroll
+  for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
+  if constexpr (MODE) {
+#pragma unroll
+    for(int offset=0;offset<4;++offset) {
+      const int kb=kb0+offset;
+      if(offset+DIST<4)stage_raw(kb+DIST,(kb+DIST)%NB);
+      mma_fold(kb);
+      if(offset+1<4) {mk_cp_wait_upto(0);__syncwarp();}
+    }
+  } else {
+  for(int kb=kb0;;++kb) {
+    if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
+    mma_fold(kb);
+    if(kb+1>=kbn)break;
+    mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
+  }
+  }
+  // Each three-warp group owns the original three K slices. Publish all
+  // 6x16 partials inside this CTA, then reduce in exactly the old slice order.
+  // This removes device-wide partial traffic, arrival atomics and fences.
+#pragma unroll
+  for(int i=0;i<4;++i) {
+    const int row=2*q+(i&1),col=g+(i>=2?8:0);
+    if(row<m)partial[(warp*m+row)*16+col]=acc[i];
+  }
+  __syncthreads();
+  for(int t=threadIdx.x;t<TILES*96;t+=TILES*96) {
+    const int tile=t/96,local=t%96,row=local/16;
+    const int col=(blockIdx.x*TILES+tile)*16+local%16;
+    float value=0.f;
+#pragma unroll
+    for(int s=0;s<3;++s)value+=partial[(tile*3+s)*96+local];
+    value*=c.rgs?c.rgs[col]:1.f;
+    c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
+  }
+}
+
 // ===========================================================================
 // MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MAX_TOK.
 // Port of mhc_fused_tilelang + mhc_pre_big_fuse_with_norm_tilelang
@@ -2598,10 +2708,15 @@ int g_gemm2_m8_bps = 0;
 int g_gemm_input_bps = 0;
 int g_input_cta_bps[3] = {};
 constexpr int INPUT_CTA_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+8*6*16*sizeof(float);
+constexpr int INPUT_CTA3_SMEM=MK_SMEM_ALIGN+2*2*48*72+2*3*96*sizeof(float);
+int g_input_cta3_bps=0;
 int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
 void set_kernel_attrs() {
   if (g_attrs_set) return;
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
+  MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &g_input_cta3_bps,mk_gemm_input_cta3_kernel<2,2>,192,INPUT_CTA3_SMEM));
   auto input_cta_attrs=[&](auto kernel,int mode) {
     MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA_SMEM));
     MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -2695,12 +2810,12 @@ bool mk_pdl_enabled() {
   return v == 1;
 }
 
-template <typename K, typename A>
+template <int THREADS=MK_THREADS, typename K, typename A>
 void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
                const A& args) {
   cudaLaunchConfig_t cfg = {};
   cfg.gridDim = dim3(grid);
-  cfg.blockDim = dim3(MK_THREADS);
+  cfg.blockDim = dim3(THREADS);
   cfg.dynamicSmemBytes = smem;
   cfg.stream = stream;
   cudaLaunchAttribute at[1];
@@ -2715,7 +2830,7 @@ int g_input_cta_mode = -1;
 int mk_gemm_input_cta_mode() {
   if (g_input_cta_mode < 0) {
     const char* value=std::getenv("VLLM_GLM53_MK_INPUT_CTA");
-    g_input_cta_mode=value && value[0]>='1' && value[0]<='3' && value[1]=='\0'
+    g_input_cta_mode=value && value[0]>='1' && value[0]<='4' && value[1]=='\0'
         ? value[0]-'0' : 0;
   }
   return g_input_cta_mode;
@@ -2730,7 +2845,8 @@ int mk_gemm_input_mode() {
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
-  return !bg && !lr && m == 6 && n == 6416 && k == 4096;
+  return !bg && !lr && m == 6 && k == 4096 &&
+      (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
@@ -2906,7 +3022,8 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
   const bool input_reuse = mk_gemm_input_mode() &&
-      mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0);
+      mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0) &&
+      (c2.n_orig==6416 || c2.ksr==3);
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -2927,10 +3044,12 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k});
     const int cta=mk_gemm_input_cta_mode();
-    if (cta && c2.ksr==8) {
+    if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+    } else if (cta && c2.ksr==8) {
       if (cta==1)
         mk_launch(mk_gemm_input_cta_kernel<0>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
-      else if (cta==2)
+      else if (cta==2 || cta==4)
         mk_launch(mk_gemm_input_cta_kernel<1>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
       else
         mk_launch(mk_gemm_input_cta_kernel<2>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
@@ -3205,20 +3324,24 @@ std::vector<int64_t> mk_gemm2_plan(int64_t m, int64_t n, int64_t k) {
 }
 std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
   set_kernel_attrs();
-  const bool enabled = mk_gemm_input_mode() && mk_input_shape(m, n, k, bg, lr);
+  const bool shape = mk_gemm_input_mode() && mk_input_shape(m, n, k, bg, lr);
   TORCH_CHECK(m >= 1 && m <= 32 && n >= 1 && k >= KSTEP && k % KSTEP == 0,
               "input plan dimensions out of contract");
   const int n_pad = ((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
   const int ordinary = mk_choose_ksr2(m, n_pad, k, lr);
   const int split = ordinary;  // retain the existing FP32 reduction order
-  const int cta = enabled && split == 8 ? mk_gemm_input_cta_mode() : 0;
-  return {enabled, split, cta ? g_input_cta_bps[cta-1] : g_gemm_input_bps,
+  const bool enabled=shape && (n==6416 || split==3);
+  const int cta = enabled && n==6416 && split == 8 ? mk_gemm_input_cta_mode() : 0;
+  const bool cta3=enabled && n!=6416;
+  return {enabled, split, cta3 ? g_input_cta3_bps : cta ? g_input_cta_bps[cta==4?1:cta-1] : g_gemm_input_bps,
           enabled ? (k / KSTEP) * 1056 : 0};
 }
 std::vector<int64_t> mk_gemm_input_cta_plan(int m,int n,int k,bool bg,bool lr) {
   const auto input=mk_gemm_input_plan(m,n,k,bg,lr);
-  const int mode=input[0] && input[1]==8 ? mk_gemm_input_cta_mode() : 0;
-  return {mode,8,mode?g_input_cta_bps[mode-1]:0,mode?INPUT_CTA_SMEM:0};
+  const bool cta3=input[0] && n!=6416 && input[1]==3;
+  const int mode=input[0] && (input[1]==8 || cta3) ? mk_gemm_input_cta_mode() : 0;
+  return {mode,cta3?3:8,cta3?g_input_cta3_bps:mode?g_input_cta_bps[mode==4?1:mode-1]:0,
+          cta3?INPUT_CTA3_SMEM:mode?INPUT_CTA_SMEM:0};
 }
 void mk_set_gemm2(int64_t ksr) {
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
@@ -3451,7 +3574,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("gemm_input_cta_mode", &mk_gemm_input_cta_mode);
   m.def("gemm_input_cta_plan", &mk_gemm_input_cta_plan);
   m.def("set_input_cta", [](int mode) {
-    TORCH_CHECK(mode>=0 && mode<=3); g_input_cta_mode=mode;
+    TORCH_CHECK(mode>=0 && mode<=4); g_input_cta_mode=mode;
   }, "independent input-CTA gate; 0 preserves the input-reuse default");
   m.def("input_cta_info", []() {
     set_kernel_attrs();std::vector<int64_t> out;
@@ -3465,6 +3588,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     note(mk_gemm_input_cta_kernel<0>,INPUT_CTA_SMEM);
     note(mk_gemm_input_cta_kernel<1>,INPUT_CTA_SMEM);
     note(mk_gemm_input_cta_kernel<2>,INPUT_CTA_SMEM);
+    cudaFuncAttributes a{};
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a,mk_gemm_input_cta3_kernel<2,2>));
+    out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,g_input_cta3_bps,INPUT_CTA3_SMEM});
     return out;
   });
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
