@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Actual-source GPU gates, then matched B/A/A/B with a guaranteed public restore.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# The literal checkout lets fleet preflight inspect the profile being deployed.
+cd /home/choiceoh/stkernel-input-reuse-retry-20260907
 export REPO=$PWD
 CANONICAL=/home/choiceoh/stkernel
 RESTORE_REPO=/home/choiceoh/stkernel-input-reuse-restore-20260907
