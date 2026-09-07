@@ -148,3 +148,13 @@ balance stock, serial stripes and overlap in every timing position; serial
 AG/MoE/RS spans are recorded separately. Those component spans must not be
 added together to infer overlapped runtime. Diagnostics report failures
 without converting them to a passing numerical gate or a serving speedup.
+
+The frozen diagnostic source is
+`6b8c2b3ec561f962282142e6ede123e2ed48d702` at
+`/home/choiceoh/stkernel-moe-overlap-diagnostic1-0908` on all four nodes.
+API/source checks passed before submission. Session `moeoverlapdiag10908`
+uses one normal 25-minute estimated boot hold; job and receipts are in
+`/tmp/glm53-moe-overlap-diagnostic1-0908`, supervisor PID 358968. This is a
+new diagnostic submission, not a retry of serving2 or a serving acceptance
+gate. CPU evidence and request/submission receipts are in
+`measurements/glm53_moe_overlap_20260907/diagnostic1-preparation/`.

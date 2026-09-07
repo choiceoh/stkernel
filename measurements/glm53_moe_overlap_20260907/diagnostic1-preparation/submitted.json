@@ -1,0 +1,53 @@
+{
+  "submitted": "2026-09-08T00:32:26.746567",
+  "revision": "6b8c2b3ec561f962282142e6ede123e2ed48d702",
+  "api_preflight": {
+    "local": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.1": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.3": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.4": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    }
+  },
+  "diagnostic_sha256": {
+    "local": "b25cf0903c5eab3168ad38f7623efca6c76acd7272c6cc3c03bbc29a40161c7f",
+    "10.10.10.1": "b25cf0903c5eab3168ad38f7623efca6c76acd7272c6cc3c03bbc29a40161c7f",
+    "10.10.10.3": "b25cf0903c5eab3168ad38f7623efca6c76acd7272c6cc3c03bbc29a40161c7f",
+    "10.10.10.4": "b25cf0903c5eab3168ad38f7623efca6c76acd7272c6cc3c03bbc29a40161c7f"
+  },
+  "serving_gate": false
+}

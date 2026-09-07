@@ -1,0 +1,27 @@
+{
+  "status": "SUBMITTING_DIAGNOSTIC_ONLY",
+  "source": "/home/choiceoh/stkernel-moe-overlap-diagnostic1-0908",
+  "revision": "6b8c2b3ec561f962282142e6ede123e2ed48d702",
+  "session": "moeoverlapdiag10908",
+  "created": "2026-09-08T00:32:24.429473",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moeoverlapdiag10908",
+    "25",
+    "PR453 attribution: fixed-seed MoE/FP8 repeat errors, actual expert tile padding and stock/serial/overlap timings; exact original recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-overlap-diagnostic1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-overlap-diagnostic1-0908",
+    "--probe-revision",
+    "6b8c2b3ec561f962282142e6ede123e2ed48d702",
+    "--out",
+    "/tmp/glm53-moe-overlap-diagnostic1-0908/evidence",
+    "--diagnose"
+  ],
+  "serving_gate": false
+}
