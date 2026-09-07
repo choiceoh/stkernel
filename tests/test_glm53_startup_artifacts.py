@@ -412,7 +412,7 @@ class RankArtifactTests(unittest.TestCase):
         self.load(self.model())
         manifest = json.loads((self.artifact() / "manifest.json").read_text())["manifest"]
         original_hash = self.rank.hashlib.sha256
-        original_copy = self.common.HostStaging.copy_from_cpu
+        original_copy = self.rank._copy_streamed_chunk
         caller = threading.get_ident()
         for fail in (False, True):
             waiting, release, done = threading.Event(), threading.Event(), threading.Event()
@@ -423,29 +423,60 @@ class RankArtifactTests(unittest.TestCase):
                 with lock:
                     calls.append(1)
                     index = len(calls)
-                if index == 1:
-                    self.assertTrue(waiting.wait(5))
-                elif index == 2:
+                if index == 2:
                     waiting.set()
                     self.assertTrue(release.wait(5))
                     done.set()
                 return original_hash(data)
-            def copy(staging, target, raw):
+            def copy(target, raw):
                 self.assertEqual(threading.get_ident(), caller)
-                self.assertTrue(waiting.is_set())
+                self.assertTrue(waiting.wait(5))
                 release.set()
                 if fail:
                     raise OSError("copy failed")
-                return original_copy(staging, target, raw)
+                return original_copy(target, raw)
             with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}), \
                     patch.object(self.rank.hashlib, "sha256", side_effect=checksum), \
-                    patch.object(self.common.HostStaging, "copy_from_cpu", copy):
+                    patch.object(self.rank, "_copy_streamed_chunk", copy):
                 if fail:
                     with self.assertRaisesRegex(OSError, "copy failed"):
                         self.rank._restore(self.artifact(), manifest, self.model().state_dict())
                 else:
                     self.rank._restore(self.artifact(), manifest, self.model().state_dict())
-            self.assertTrue(done.is_set(), "checksum worker outlived the mapping")
+            self.assertTrue(done.is_set(), "checksum worker outlived the file")
+
+    def test_streamed_short_reads_are_completed_and_eof_is_fatal(self):
+        reference = self.model()
+        self.load(reference)
+        manifest = json.loads((self.artifact() / "manifest.json").read_text())["manifest"]
+        original_open = Path.open
+        class ShortRead:
+            def __init__(self, stream):
+                self.stream = stream
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.stream.close()
+            def tell(self):
+                return self.stream.tell()
+            def fileno(self):
+                return self.stream.fileno()
+            def readinto(self, view):
+                return self.stream.readinto(view[:7])
+        def open_path(path, *args, **kwargs):
+            stream = original_open(path, *args, **kwargs)
+            return ShortRead(stream) if path.name == "weights.bin" else stream
+        target = self.model(-1)
+        with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}), \
+                patch.object(Path, "open", open_path):
+            self.rank._restore(self.artifact(), manifest, target.state_dict())
+        for name, value in reference.state_dict().items():
+            self.assertTrue(torch.equal(value, target.state_dict()[name]), name)
+        with original_open(self.artifact() / "weights.bin", "r+b") as out:
+            out.truncate(20)
+        with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}), \
+                self.assertRaisesRegex(EOFError, "short rank-cache read"):
+            self.rank._restore(self.artifact(), manifest, self.model().state_dict())
 
     def test_disk_failure_and_unpublished_directory_keep_source_path(self):
         with patch.object(self.rank.os, "rename", side_effect=OSError("disk failure")):

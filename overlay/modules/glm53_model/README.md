@@ -648,15 +648,18 @@ Pinned allocation failure retains synchronous copies. The final trial restored
 44.8 GiB per rank in 38.4–48.0 seconds; pinned staging and alias deduplication
 were introduced together, so their individual contributions are not isolated.
 
-`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps the next chunks' mapped reads and
-SHA-256 checks with restoration. It is **off by default pending fleet timing**.
-Two CPU workers keep at most two chunks (128 MiB) ahead; GPU copies remain on
-the caller's CUDA stream with the same 64 MiB pinned buffer and synchronization.
-Every chunk must pass its checksum before copying, and worker jobs are joined
-before closing the mapping even on failure. This transport-only flag does not
+`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps sequential file reads and SHA-256
+checks with restoration. It is **off by default pending fleet timing**.
+One CPU reader fills two 64 MiB slots (128 MiB total, 64 MiB above baseline).
+GPU copies use the verified slot directly on the caller's stream; the slot is
+only reused after stream synchronization. Pinned allocation failures use
+synchronous copies. Every chunk must pass its checksum before copying, and
+the reader is joined before closing the file even on failure. This transport-only flag does not
 change artifact identity. `[rank-cache-io]` reports checksum worker time, time
 waiting for checksums, copies, page discard and total restoration. Worker times
-overlap and must not be added to the total as independent phases.
+overlap and must not be added to the total as independent phases. An earlier
+two-worker mmap variant increased restore time; the sequential reader avoids
+concurrent mapped faults and the extra mmap-to-pinned copy.
 
 Rank identity includes the local checkpoint index/config and every source
 file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model

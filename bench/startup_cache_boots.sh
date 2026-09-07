@@ -130,7 +130,8 @@ PY
   fi
   if [ "$MODE" = rank-prefetch ] && [ "$stage" = PRIME ]; then
     docker cp "$REPO/probes/glm53_rank_prefetch_check.py" glm53:/tmp/glm53_rank_prefetch_check.py
-    docker exec glm53 python3 /tmp/glm53_rank_prefetch_check.py > "$EVIDENCE/rank-prefetch-gpu.json" 2> "$EVIDENCE/rank-prefetch-gpu.log"
+    docker exec glm53 python3 /tmp/glm53_rank_prefetch_check.py --out /tmp/rank-prefetch-gpu.json > "$EVIDENCE/rank-prefetch-gpu.log" 2>&1
+    docker cp glm53:/tmp/rank-prefetch-gpu.json "$EVIDENCE/rank-prefetch-gpu.json"
     cat "$EVIDENCE/rank-prefetch-gpu.json"
   fi
   echo "=== $current_arm complete $(date -Is) ==="
