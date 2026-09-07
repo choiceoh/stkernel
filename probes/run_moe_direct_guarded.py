@@ -17,6 +17,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out',type=Path,required=True)
     ap.add_argument('--maintenance',action='store_true')
+    ap.add_argument('--variants',nargs='+',choices=('pair','vector','warp'),default=['pair','vector'])
     args=ap.parse_args()
     session=os.environ['FLEET_SESSION']
     assert re.fullmatch('[a-zA-Z0-9_-]+',session)
@@ -67,7 +68,7 @@ def main():
                 '-e','MK_PKG_PATH=/usr/local/lib/python3.12/dist-packages',
                 *mounts(),'--workdir','/repo']
         thread=threading.Thread(target=watch,daemon=True);thread.start()
-        for variant in ('pair','vector'):
+        for variant in args.variants:
             for tool in ('probe',):
                 assert not issues,issues
                 target=f'/repo/probes/moe_direct_scatter_ab.py'

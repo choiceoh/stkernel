@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fleet maintenance lane; restore latest approved main even if a probe fails.
 set -euo pipefail
-cd /home/choiceoh/stkernel-moe-direct-gpu-20260908
+cd "$(dirname "$0")/.."
 export REPO=$PWD
 RESTORE_REPO=/home/choiceoh/stkernel-moe-direct-restore-20260908
 out=${MOE_DIRECT_OUT:-/home/choiceoh/glm53-logs/MOEDIRECT0908}
@@ -59,4 +59,4 @@ for node in 1 3 4; do
   pids+=($!)
 done
 for pid in "${pids[@]}"; do wait "$pid"; done
-python3 probes/run_moe_direct_guarded.py --maintenance --out "$out"
+python3 probes/run_moe_direct_guarded.py --maintenance --out "$out" "$@"

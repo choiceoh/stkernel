@@ -25,13 +25,15 @@ def mounts():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--variants', nargs='+', choices=('baseline','pair','vector','warp'),
+                    default=['baseline','pair','vector'])
     args = ap.parse_args()
     assert not subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True).strip()
     args.out.mkdir(parents=True, exist_ok=False)
     available = int(next(l.split()[1] for l in Path('/proc/meminfo').read_text().splitlines()
                          if l.startswith('MemAvailable:'))) * 1024
     assert available >= 12*1024**3, ('need 12 GiB before CPU compile',available)
-    for variant in ('baseline','pair','vector'):
+    for variant in args.variants:
         name = 'moe-direct-cpu-' + variant + '-' + str(os.getpid())
         cmd = ['docker','run','--rm','--runtime=runc','--network=none','--name',name,
                '--cpuset-cpus=14-15','--memory=2g','--memory-swap=2g',

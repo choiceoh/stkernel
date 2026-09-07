@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 import tempfile
 
-VARIANTS = ('pair', 'vector')
+VARIANTS = ('pair', 'vector', 'warp')
 
 
 def replace_once(source, old, new):
@@ -71,6 +71,32 @@ LAYOUT_CHECK = '''    def _check_direct_scatter_layout(self):
 def render(source, variant):
     if variant not in VARIANTS:
         raise ValueError(variant)
+    if variant == 'warp':
+        # Only M<=8: each valid output row is written and scattered by the
+        # same warp. Larger batches retain the original CTA-wide barriers.
+        check = LAYOUT_CHECK.replace(
+            '                r1, c1 = coords[i + 1]',
+            '                if r < 8:\n'
+            '                    assert tid // 32 == c // 64\n'
+            '                r1, c1 = coords[i + 1]')
+        source = replace_once(source, '    def _make_tiled_mma(self, tile_shape_mnk):',
+                              check + '    def _make_tiled_mma(self, tile_shape_mnk):')
+        source = replace_once(source, '        self.mma_atom = cute.make_mma_atom(mma_op)',
+                              '        self._check_direct_scatter_layout()\n'
+                              '        self.mma_atom = cute.make_mma_atom(mma_op)')
+        begin = source.index('                    tile_n_base_cur = output_tile_idx * Int32(_FC2_TILE_N)')
+        end = source.index('\n                if cutlass.const_expr(self.stamps):', begin)
+        body = source[begin:end]
+        barrier = '                    self.epilog_sync_barrier.arrive_and_wait()'
+        assert body.count(barrier) == 2
+        body = body.replace(barrier,
+            '                    if cutlass.const_expr(a_input.shape[0] <= 8):\n'
+            '                        cute.arch.sync_warp()\n'
+            '                    else:\n'
+            '                        self.epilog_sync_barrier.arrive_and_wait()')
+        body += ('\n                if cutlass.const_expr(a_input.shape[0] <= 8):\n'
+                 '                    self.epilog_sync_barrier.arrive_and_wait()\n')
+        return source[:begin] + body + source[end:]
     source = replace_once(source, 'class MoEStaticKernelV4:', PAIR_HELPER + 'class MoEStaticKernelV4:')
     source = replace_once(source, '    def _make_tiled_mma(self, tile_shape_mnk):',
                           LAYOUT_CHECK + '    def _make_tiled_mma(self, tile_shape_mnk):')
