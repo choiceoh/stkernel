@@ -77,16 +77,32 @@ def render(source, variant):
         check = LAYOUT_CHECK.replace(
             '                r1, c1 = coords[i + 1]',
             '                if r < 8:\n'
-            '                    assert tid // 32 == c // 64\n'
+            '                    assert tid // 32 == 2 * ((c // 16) % 2), (tid, r, c)\n'
             '                r1, c1 = coords[i + 1]')
         source = replace_once(source, '    def _make_tiled_mma(self, tile_shape_mnk):',
                               check + '    def _make_tiled_mma(self, tile_shape_mnk):')
         source = replace_once(source, '        self.mma_atom = cute.make_mma_atom(mma_op)',
                               '        self._check_direct_scatter_layout()\n'
                               '        self.mma_atom = cute.make_mma_atom(mma_op)')
+        source = replace_once(source,
+            '            warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)\n'
+            '            warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)',
+            '            if cutlass.const_expr(a_input.shape[0] <= 8):\n'
+            '                warp_m_base = (warp_in_tile & Int32(1)) * Int32(64)\n'
+            '                warp_n_base = (warp_in_tile >> Int32(1)) * Int32(16)\n'
+            '            else:\n'
+            '                warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)\n'
+            '                warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)')
         begin = source.index('                    tile_n_base_cur = output_tile_idx * Int32(_FC2_TILE_N)')
         end = source.index('\n                if cutlass.const_expr(self.stamps):', begin)
         body = source[begin:end]
+        body = replace_once(body,
+            '                        local_col = warp_n_base + local_vec_col * Int32(8)',
+            '                        if cutlass.const_expr(a_input.shape[0] <= 8):\n'
+            '                            local_col = (warp_n_base + (local_vec_col % Int32(2)) * Int32(8)\n'
+            '                                         + (local_vec_col // Int32(2)) * Int32(32))\n'
+            '                        else:\n'
+            '                            local_col = warp_n_base + local_vec_col * Int32(8)')
         barrier = '                    self.epilog_sync_barrier.arrive_and_wait()'
         assert body.count(barrier) == 2
         body = body.replace(barrier,

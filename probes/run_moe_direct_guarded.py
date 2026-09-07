@@ -78,6 +78,24 @@ def main():
                     rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=480).returncode
                 assert rc==0,(variant,rc)
                 assert json.loads((out/(variant+'.json')).read_text())['status']=='PASS'
+            result=json.loads((out/(variant+'.json')).read_text())
+            def gain(shape,cache):
+                row=result['median_us'][shape][cache]
+                return 1-row['candidate']/row['baseline']
+            selected=(gain('M6-U40','cold')>=.015 or gain('M6-U8','warm')>=.03)
+            (out/(variant+'-sanitizer-selection.json')).write_text(json.dumps({
+                'selected':selected,'cold_m6u40_gain':gain('M6-U40','cold'),
+                'warm_m6u8_gain':gain('M6-U8','warm')},indent=2)+'\n')
+            if selected:
+                for tool in ('racecheck','memcheck'):
+                    command=common+['--entrypoint','/san/compute-sanitizer',IMAGE,
+                        '--tool',tool,'--target-processes','application-only',
+                        '--error-exitcode','77','python3',target,'--variant',variant,
+                        '--check-only','--out',f'/evidence/{variant}-{tool}.json']
+                    with (out/(variant+'-'+tool+'.log')).open('w') as log:
+                        rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=300).returncode
+                    assert rc==0,(variant,tool,rc)
+                    assert json.loads((out/(variant+'-'+tool+'.json')).read_text())['status']=='PASS'
     except BaseException as exc:
         issues.append(str(exc));raise
     finally:
