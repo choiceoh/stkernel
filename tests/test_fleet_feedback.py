@@ -157,6 +157,29 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(self.wait(gpu['submission']['id'])['state'],'succeeded')
         self.assertEqual((self.logs/'arms').read_text().count('onepass'),2)
 
+    def test_failed_worker_start_remains_recoverable_in_final_launch(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_launch.py').write_text('import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
+        self.commit()
+        raw=dict(hypothesis='recover CPU launch',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                 cpu_suites=[],cpu_tests=['tests/test_launch.py'])
+        path=self.root/'launch-plan.json';path.write_text(json.dumps(raw))
+        args=SimpleNamespace(manifest=path,base=None,submit=False,prepare_only=True,session='launch',supersedes=[])
+        store=self.store();original=ex.ensure_worker;calls=[]
+        def launch(current,job):
+            calls.append(job)
+            if len(calls)==1:
+                raise OSError('temporary worker launch failure')
+            return original(current,job)
+        with patch.dict(os.environ,self.env,clear=True),patch.object(ex,'ensure_worker',side_effect=launch):
+            value=plan.run(args,store,self.repo)
+        job=value['stages'][0]['submission']['id']
+        self.assertEqual(calls,[job,job])
+        self.assertEqual(value['error'],'temporary worker launch failure')
+        self.assertEqual(json.loads(Path(value['path']).read_text())['stages'][0]['submission']['id'],job)
+        self.assertEqual(self.wait(job)['state'],'succeeded')
+        self.assertFalse((self.logs/'arms').exists())
+
     def test_preparation_runs_while_checks_wait_but_gpu_remains_blocked(self):
         release=self.root/'release'
         (self.repo/'tests').mkdir()

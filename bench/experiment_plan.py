@@ -120,8 +120,8 @@ def run(args, store, repo):
         from experiments import ensure_worker
         for submission in submissions.values():
             if submission['id'] not in launched:
-                launched.add(submission['id'])
                 ensure_worker(store,submission['id'])
+                launched.add(submission['id'])
     # Persist a preview before registration. The batch validates all included
     # stages first, shares source/runtime reads and registers the DAG atomically.
     selected = [s for s in plan['stages'] if s['name']!='gpu']

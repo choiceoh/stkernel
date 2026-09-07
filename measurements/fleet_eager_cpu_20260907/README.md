@@ -18,8 +18,8 @@ the caller's start to the actual result publication timestamp in the database.
 
 | Median over five rounds | Baseline | Candidate |
 | --- | ---: | ---: |
-| First CPU result published | 2.66 s | 0.62 s |
-| Both CPU results published | 3.55 s | 1.51 s |
+| First CPU result published | 2.65 s | 0.61 s |
+| Both CPU results published | 3.55 s | 1.50 s |
 | Plan call returns | 2.20 s | 2.17 s |
 | CPU IDs visible in saved plan during attestation | 0/5 | 5/5 |
 
@@ -38,14 +38,17 @@ CUDA_VISIBLE_DEVICES='' python3 measurements/fleet_eager_cpu_20260907/compare.py
   --output /tmp/fleet-eager-cpu-comparison.json
 ```
 
-Validation passed all 86 fleet regression tests in two isolated shards on
-macOS/Python 3.14, with exact coverage, zero failures, errors, or skips. Four
+Validation passed all 87 fleet regression tests in two isolated shards on
+macOS/Python 3.14, with exact coverage, zero failures, errors, or skips. Five
 focused integration cases also passed on Linux/Python 3.12 with GPUs hidden:
 CPU completion and persisted IDs before both deployment attestations,
 independent preparation with a failing CPU gate blocking GPU execution,
-explicit artifact dependencies, and preserved CPU work after missing deployment.
+explicit artifact dependencies, preserved CPU work after missing deployment,
+and recovery from a transient worker-launch error. A job is marked launched only
+after `ensure_worker` returns; the final launch pass can recover a failed start.
 The new early-feedback regression fails on the baseline because the persisted
-plan has no CPU submission IDs yet. Python syntax and diff checks also pass.
+plan has no CPU submission IDs yet. The launch-recovery regression also fails
+before the launch-bookkeeping fix. Python syntax and diff checks pass.
 
 ```sh
 FLEET_CPU_SLOTS=2 CUDA_VISIBLE_DEVICES='' python3 bench/cpu_unittest.py \
