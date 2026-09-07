@@ -630,6 +630,9 @@ checkout; it defaults to `/home/choiceoh/stkernel`. Restore failures return
 nonzero and retain `restore-debt.json`; a subsequent supervised boot can recover
 it before probes are admitted. SIGKILL/host loss cannot run a process's cleanup:
 the debt remains visible for recovery; this is not a host-level watchdog.
+An operator can put the path of a dedicated approved-main checkout in
+`fleet/production-repo`; this separates restoration from a common checkout that
+contains unmerged experiment work. An explicit `FLEET_PRODUCTION_REPO` wins.
 
 Custom boot scripts must accept stopped serving. Before stopping anything, use:
 
