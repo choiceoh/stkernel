@@ -46,10 +46,13 @@ class RuntimeTests(unittest.TestCase):
             self.assertTrue(resources.acquire(store,busy,one))
             self.assertFalse(resources.acquire(store,wide,two))
             ticket=store.db.execute('SELECT ticket FROM cpu_waiters WHERE job=?',(wide,)).fetchone()[0]
+            # Recovery must refresh declared budgets without losing FIFO age.
+            with store.db:store.db.execute('UPDATE cpu_waiters SET slots=1,memory_mb=32 WHERE job=?',(wide,))
             for _ in range(3):
                 self.assertFalse(resources.acquire(store,small,one))
                 self.assertFalse(resources.acquire(store,wide,two))
             self.assertEqual(probes.call_count,1)
+            self.assertEqual(tuple(store.db.execute('SELECT slots,memory_mb FROM cpu_waiters WHERE job=?',(wide,)).fetchone()),(2,64))
             self.assertEqual(store.db.execute('SELECT ticket FROM cpu_waiters WHERE job=?',(wide,)).fetchone()[0],ticket)
             with store.db:store.db.execute('DELETE FROM cpu_leases WHERE job=?',(busy,))
             self.assertFalse(resources.acquire(store,small,one))

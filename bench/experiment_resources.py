@@ -137,7 +137,7 @@ def acquire(store, job, resources):
         if lease:
             return lease['pid'] == os.getpid()
         store.db.execute('INSERT INTO cpu_waiters(job,pid,slots,memory_mb) VALUES(?,?,?,?) '
-                         'ON CONFLICT(job) DO UPDATE SET pid=excluded.pid',
+                         'ON CONFLICT(job) DO UPDATE SET pid=excluded.pid,slots=excluded.slots,memory_mb=excluded.memory_mb',
                          (job, os.getpid(), resources['cpu_slots'], resources['cpu_memory_mb']))
         if store.db.execute('SELECT job FROM cpu_waiters ORDER BY ticket LIMIT 1').fetchone()['job'] != job:
             return False
