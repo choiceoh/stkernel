@@ -5,10 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export REPO=$PWD
 [[ ${1:-} == --acknowledge-numerics-failed ]] || exit 2
-resume_pid=${MOE_RESUME_PID:?paused owner required}
+resume_pid=${MOE_RESUME_PID:-0}
 [[ $resume_pid =~ ^[0-9]+$ ]] || exit 2
 # Restore/release responsibility remains with the original fleet owner.
-trap 'kill -CONT "$resume_pid" 2>/dev/null || true' EXIT
+resume_owner() {
+  if [[ $resume_pid != 0 ]]; then kill -CONT "$resume_pid" 2>/dev/null || true; fi
+}
+trap resume_owner EXIT
 RESTORE_REPO=/home/choiceoh/stkernel-moe-reform-restore-20260908
 out=${MOE_ONEPASS_OUT:-/home/choiceoh/glm53-logs/MOEREFORMSPEED0908}
 session=${FLEET_SESSION:?}
@@ -45,7 +48,7 @@ cleanup() {
     fi
   fi
   echo "$rc" > "$out/runner.exit"
-  kill -CONT "$resume_pid" 2>/dev/null || true
+  resume_owner
   exit "$rc"
 }
 trap cleanup EXIT
