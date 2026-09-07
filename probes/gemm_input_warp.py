@@ -13,12 +13,32 @@ from gemm_input_reuse import FLAGS, ROOT, render as render_reuse, replace_once
 
 def render(original):
     source=render_reuse(original)
+    source=replace_once(source, '__global__ void mk_probe_pack_input(MKProbeInput args)',
+                        'template <bool WARP_LAYOUT>\n__global__ void mk_probe_pack_input(MKProbeInput args)')
+    source=replace_once(source,
+        '    *(uint32_t*)(g_mk2_aq + ((size_t)kb * 32 + row) * KSTEP + lane * 4) = packed;', """
+    size_t offset;
+    if constexpr (WARP_LAYOUT) {
+      const int q = lane >> 3, word = lane & 7;
+      const int ks = ((word >> 1) - q) & 3;
+      offset = (size_t)kb * 32 * KSTEP + ks * 256 + (row * 4 + q) * 8 + (word & 1) * 4;
+    } else {
+      offset = ((size_t)kb * 32 + row) * KSTEP + lane * 4;
+    }
+    *(uint32_t*)(g_mk2_aq + offset) = packed;""")
+    source=replace_once(source,
+        '    mk_launch(mk_probe_pack_input, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});', """
+    if (g_probe_input_reuse == 3)
+      mk_launch(mk_probe_pack_input<true>, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});
+    else
+      mk_launch(mk_probe_pack_input<false>, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});""")
     start=original.index('template <int RQ, bool LR, bool COMPACT = false>')
     end=original.index('// ===========================================================================\n// MK_SEG_MHC',start)
     kernel=original[start:end]
     kernel=replace_once(kernel, '''template <int RQ, bool LR, bool COMPACT = false>
 __global__ void __launch_bounds__(MK_THREADS, (MK_COMPACT_M8 && COMPACT) ? 3 : 2)
-mk_gemm2_kernel(const MKGemm2Ctx c) {''', '''__global__ void __launch_bounds__(MK_THREADS, 3)
+mk_gemm2_kernel(const MKGemm2Ctx c) {''', '''template <bool WARP_LAYOUT>
+__global__ void __launch_bounds__(MK_THREADS, 3)
 mk_probe_warp_kernel(const MKGemm2Ctx c) {
   constexpr int RQ = 1;
   constexpr bool LR = false, COMPACT = true;''')
@@ -37,7 +57,8 @@ mk_probe_warp_kernel(const MKGemm2Ctx c) {
     kernel=replace_once(kernel, 'auto mma_fold = [&](int rbuf, int abuf) {',
                         'auto mma_fold = [&](int rbuf, int kb) {\n    constexpr int abuf = 0;')
     kernel=replace_once(kernel, '''          x0 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff));
-          x1 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff + 4));''', '''          const uint2 xv = *(const uint2*)(g_mk2_aq + ((size_t)kb * 32 + g) * KSTEP + koff);
+          x1 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff + 4));''', '''          const size_t xoff = WARP_LAYOUT ? ks * 256 + lane * 8 : g * KSTEP + koff;
+          const uint2 xv = *(const uint2*)(g_mk2_aq + (size_t)kb * 32 * KSTEP + xoff);
           x0 = xv.x; x1 = xv.y;''')
     kernel=replace_once(kernel, 'const float s0 = (2 * q < c.m) ? sxs[abuf * 32 + 2 * q] : 0.0f;',
                         'const float s0 = (2 * q < c.m) ? g_mk2_axs[(2*q)*KBLK_MAX+kb] * c.wgs : 0.0f;')
@@ -57,24 +78,35 @@ mk_probe_warp_kernel(const MKGemm2Ctx c) {
     source=replace_once(source,'bool g_attrs_set = false;',
         'constexpr int MK_PROBE_WARP_SMEM = MK_SMEM_ALIGN + W4_RAW_NBUF2 * W4_RAW_BYTES;\n'+kernel+'\nbool g_attrs_set = false;')
     source=replace_once(source,'  if (g_attrs_set) return;', '''  if (g_attrs_set) return;
-  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_probe_warp_kernel,
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_probe_warp_kernel<false>,
+      cudaFuncAttributeMaxDynamicSharedMemorySize, MK_PROBE_WARP_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_probe_warp_kernel<true>,
       cudaFuncAttributeMaxDynamicSharedMemorySize, MK_PROBE_WARP_SMEM));''')
     source=replace_once(source,'    TORCH_CHECK(mode == 0 || mode == 1); g_probe_input_reuse = mode;',
-                        '    TORCH_CHECK(mode >= 0 && mode <= 2); g_probe_input_reuse = mode;')
-    source=replace_once(source,'  mk_launch_gemm2(c2, stream);\n}', '''  if (g_probe_input_reuse == 2 && c2.m >= 1 && c2.m <= 8 && !bg && !c2.lr_r) {
-    mk_launch(mk_probe_warp_kernel, (c2.n / SMEM_W_ROWS) * c2.ksr,
-              MK_PROBE_WARP_SMEM, stream, c2);
+                        '    TORCH_CHECK(mode >= 0 && mode <= 3); g_probe_input_reuse = mode;')
+    source=replace_once(source,'  mk_launch_gemm2(c2, stream);\n}', '''  if (g_probe_input_reuse >= 2 && c2.m >= 1 && c2.m <= 8 && !bg && !c2.lr_r) {
+    if (g_probe_input_reuse == 3)
+      mk_launch(mk_probe_warp_kernel<true>, (c2.n / SMEM_W_ROWS) * c2.ksr,
+                MK_PROBE_WARP_SMEM, stream, c2);
+    else
+      mk_launch(mk_probe_warp_kernel<false>, (c2.n / SMEM_W_ROWS) * c2.ksr,
+                MK_PROBE_WARP_SMEM, stream, c2);
   } else {
     mk_launch_gemm2(c2, stream);
   }
 }''')
     source=replace_once(source,'  m.def("run_gemm",', '''  m.def("warp_info", []() {
     cudaFuncAttributes a{};
-    MK_CHECK_CUDA(cudaFuncGetAttributes(&a, mk_probe_warp_kernel));
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a, mk_probe_warp_kernel<false>));
     int bps=0;
     MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &bps, mk_probe_warp_kernel, MK_THREADS, MK_PROBE_WARP_SMEM));
-    return std::vector<int64_t>{a.numRegs, (int64_t)a.localSizeBytes, bps, MK_PROBE_WARP_SMEM};
+        &bps, mk_probe_warp_kernel<false>, MK_THREADS, MK_PROBE_WARP_SMEM));
+    std::vector<int64_t> info{a.numRegs, (int64_t)a.localSizeBytes, bps, MK_PROBE_WARP_SMEM};
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a, mk_probe_warp_kernel<true>));
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &bps, mk_probe_warp_kernel<true>, MK_THREADS, MK_PROBE_WARP_SMEM));
+    info.insert(info.end(), {a.numRegs, (int64_t)a.localSizeBytes, bps, MK_PROBE_WARP_SMEM});
+    return info;
   });
   m.def("run_gemm",''')
     return source
@@ -105,7 +137,7 @@ def main():
     identity={'original_sha256':hashlib.sha256(original.encode()).hexdigest(),
               'generated_sha256':sha,'flags':FLAGS,'device':torch.cuda.get_device_name(),
               'torch':torch.__version__,'cuda':torch.version.cuda,
-              'warp_info_regs_local_bytes_bps_smem':ext.warp_info()}
+              'warp_info_natural_then_coalesced_regs_local_bytes_bps_smem':ext.warp_info()}
     r={'identity':identity,'gates':[],'timings':[],'status':'RUNNING'}
     def save():args.out.write_text(json.dumps(r,indent=2)+'\n')
     args.out.parent.mkdir(parents=True,exist_ok=True);save();print(json.dumps(identity),flush=True)
@@ -121,6 +153,7 @@ def main():
         configs=[('base',0,default),('reuse',1,default)]
         splits=(1,2,3,4,6,8) if m==6 and k==4096 and n>=4096 else (default,)
         configs += [('warp-k'+str(s),2,s) for s in splits]
+        configs += [('coalesced-k'+str(s),3,s) for s in splits]
         graphs={};outputs={}
         for name,mode,split in configs:
             ext.set_input_reuse(mode);ext.set_gemm2(split)
