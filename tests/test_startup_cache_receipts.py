@@ -49,6 +49,21 @@ class BootReceiptTests(unittest.TestCase):
                                     mode="pack-key", key_fields=fields,
                                     packs=args["packs"].replace("rtn=0", "rtn=1"))
 
+    def test_renderer_warmup_requires_completed_overlap_and_both_reuses(self):
+        packs = "packs: rtn=0 gptq=0 gptq_failed=0 cached=254\n"
+        suffix = ("[early-mm-warmup] submitted processors=2 before engine startup\n"
+                  "[early-mm-warmup] completed processors=2/2 elapsed_s=10.0\n"
+                  "[boot-stamp] load-model took 80.0s\n"
+                  "[early-mm-warmup] reused Multi-modal join_s=0.000\n"
+                  "[early-mm-warmup] reused Readonly multi-modal join_s=0.000\n")
+        self.check_receipts("BASE1", 1, 254, 0, mode="renderer-warmup", packs=packs)
+        self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=suffix)
+        for bad in (suffix.replace("processors=2/2", "processors=1/2"),
+                    suffix.replace("reused Readonly", "failed Readonly"),
+                    "[boot-stamp] load-model took 80.0s\n" + suffix):
+            with self.assertRaises(AssertionError):
+                self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=bad)
+
     def test_prime_still_rejects_wrong_path_and_restore_errors(self):
         for fast, hits, suffix in ((1, 0, ""), (0, 1, ""),
                                   (0, 0, "pack cache example unreadable\n"),

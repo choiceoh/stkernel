@@ -403,3 +403,12 @@ all four transports. `probes/run_glm53_prefill_transport_check.sh` checks
 v3 packets and sums against v2 on one GPU with a simulated exchange;
 `--compile-only` compiles the new kernels on the CPU for SM121. Neither
 the compile nor the simulated exchange proves real NCCL speed or quality.
+
+## 엔진 시작과 겹치는 CPU 멀티모달 예열
+
+`async_llm.py`의 렌더러 생성 직후 `glm53_renderer_warmup.py`를 호출한다.
+`VLLM_GLM53_EARLY_MM_WARMUP=1`일 때만 GLM5-next, 단일 API 프로세스,
+spawn, CPU 영상 처리 구성을 지원한다. 기존 단일 MM executor에서 일반·읽기 전용
+전처리기 예열과 캐시 비우기를 동일 순서로 수행한다. 정상 warmup과 shutdown은
+이 작업을 먼저 기다린다. 실패한 전처리기는 정상 위치에서 다시 예열하며 실제
+ChatParams를 쓰는 템플릿 예열은 기존 위치에 남는다. 기본값은 검증 전 0이다.
