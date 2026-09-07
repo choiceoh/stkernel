@@ -27,9 +27,9 @@ def identity(repo, spec, environment):
     if len(cmd) < 4 or cmd[1] != "bench/cpu_checks.py":
         return None
     args = cmd[2:]
-    if len(args) % 2 or any(args[i] != "--suite" for i in range(0, len(args), 2)):
+    if len(args) % 2 or any(args[i] not in {"--suite", "--test"} for i in range(0, len(args), 2)):
         return None
-    suites = sorted(set(args[1::2]))
+    suites = sorted({args[i+1] for i in range(0, len(args), 2) if args[i] == '--suite'})
     if any(s not in {"startup", "fleet", "logic"} for s in suites):
         return None
     # Git object IDs cover transitive source dependencies without re-reading
@@ -37,7 +37,7 @@ def identity(repo, spec, environment):
     tree = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-rz", "HEAD"])
     entries = [v.decode() for v in tree.split(b"\0") if v]
     scope = "full-tree"
-    if suites == ["startup"] and STARTUP_AUDIT and all(
+    if '--test' not in args and suites == ["startup"] and STARTUP_AUDIT and all(
             (repo / p).is_file() and sha(repo / p) == h for p, h in STARTUP_AUDIT.items()):
         scope = "audited-startup"
         entries = [v for v in entries if v.split("\t", 1)[1].startswith(
@@ -77,6 +77,6 @@ print(json.dumps([sys.version,sys.executable,platform.platform(),sorted(rows)]))
     data = dict(scope=scope, tree=entries, suites=suites, command=cmd, runtime=runtime,
                 tools=tools, environment={k: v for k, v in env.items() if k != "SSH_AUTH_SOCK"},
                 context=spec["context"], inputs={p: sha(p) for p in spec["inputs"]},
-                timeout_s=spec["timeout_s"])
+                timeout_s=spec["timeout_s"], resources=spec.get('resources'), outputs=spec.get('outputs', []))
     return dict(key=hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest(),
                 scope=scope, files=len(entries))

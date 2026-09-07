@@ -101,7 +101,7 @@ REPO=${REPO:-/home/choiceoh/stkernel}
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
 case "${1:-}" in
-  submit|result|inbox|jobs|stats) exec python3 "$REPO/bench/experiments.py" "$@";;
+  submit|result|inbox|jobs|stats|plan|ack|collect) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
@@ -217,6 +217,13 @@ _event() {  # event session note
 # GPU (queued) and says so. A rehearsal never needs the GPU.
 classify_cmd() {  # cmd... -> gpu|nogpu|unknown
   [ "${FLEET_REHEARSE:-0}" = 1 ] && { echo nogpu; return; }
+  # This reviewed entrypoint invokes nvcc --compile only. A .cu input is not
+  # device execution; its argument parser rejects runtime/launcher commands.
+  case "${1##*/}" in python|python3|python3.*)
+    if [ "${2:-}" = bench/cpu_compile.py ] || [ "${2:-}" = "$REPO/bench/cpu_compile.py" ]; then
+      echo nogpu; return
+    fi;;
+  esac
   local text="$*" f
   for f in "$@"; do
     [ -f "$f" ] || continue

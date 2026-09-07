@@ -8,3 +8,6 @@ __pycache__/
 # default; deploy-overlays.sh refuses a dirty checkout, so the records must
 # not count as changes.
 runs/
+
+# Private CPU preparation outputs; experiment manifests pin these by hash.
+/build/
