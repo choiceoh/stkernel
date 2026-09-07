@@ -178,3 +178,13 @@ match the pinned source after qualifying original helpers. The cache suffix
 is `glm53_prefill_m64_v3`. CPU tests cover canonical offsets across even/odd
 M64 boundaries and the allocation end. A fresh GPU gate is required to prove
 the numerical fix; check4/serving1 are failed, completed jobs.
+
+
+The Q0-corrected source `f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb` is frozen
+on all four nodes as check5. Actual CPU compilation passed M128 (3.94 s) and
+M64 (2.95 s) at 02:57 KST. CPU address contracts and the full 6689 logic /
+30 megakernel / 107 fleet gate pass. Two existing macOS fixture cases needed
+their uncached total-memory query mocked along with worker Popen; that fixture
+correction and its dependency audit are included. Evidence is in
+`preparation-q0/`. The collector now pins check5 and still requires full GPU
+correctness/recovery before direct TTFT.

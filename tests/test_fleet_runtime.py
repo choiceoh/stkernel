@@ -132,7 +132,8 @@ class RuntimeTests(unittest.TestCase):
             answer=original(*args)
             if answer:store.state(job,'retired')
             return answer
-        with patch.object(resources,'memory',return_value=(1024,1024)),patch.object(resources,'acquire',side_effect=acquire), \
+        with patch.object(resources,'memory',return_value=(1024,1024)),patch.object(resources,'total_memory',return_value=1024), \
+             patch.object(resources,'acquire',side_effect=acquire), \
              patch.object(resources.subprocess,'Popen') as launch,self.assertRaises(ex.RetiredJob):
             resources.run_cpu(store,job,['true'],store.get(job)['payload'])
         launch.assert_not_called()
@@ -153,7 +154,10 @@ class RuntimeTests(unittest.TestCase):
         from unittest.mock import Mock
         proc=Mock(pid=os.getpid(),returncode=0)
         proc.poll.side_effect=[None,0]
-        with patch.object(resources,'memory',return_value=(1024,1024)),patch.object(resources,'group_snapshot',return_value=[('S',1)]), \
+        # macOS total_memory uses subprocess on its first call. Keep its
+        # result explicit so the mocked worker Popen never intercepts sysctl.
+        with patch.object(resources,'memory',return_value=(1024,1024)),patch.object(resources,'total_memory',return_value=1024), \
+             patch.object(resources,'group_snapshot',return_value=[('S',1)]), \
              patch.object(resources.subprocess,'Popen',return_value=proc),patch.object(resources,'stop'), \
              patch.object(resources.time,'sleep',side_effect=AssertionError('fixed sleep delayed completion')):
             self.assertEqual(resources.run_cpu(store,job,['true'],store.get(job)['payload']),(0,None))

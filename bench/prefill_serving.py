@@ -32,7 +32,7 @@ IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 NODES = ('10.10.10.2', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 CANDIDATES = {
     'moe-m64': ('VLLM_GLM53_B12X_PREFILL_M64', 'GLM53_MOE_PREFILL_M64_LAUNCHED',
-        'ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73', '/home/choiceoh/stkernel-moe-m64-check4-0908'),
+        'f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb', '/home/choiceoh/stkernel-moe-m64-check5-0908'),
 }
 
 SNAPSHOT = r'''

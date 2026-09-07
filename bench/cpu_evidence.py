@@ -18,7 +18,7 @@ import subprocess
 STARTUP_AUDIT = {'tests/test_glm53_startup.py': '62cc4553b2661fc39d178100d29ce0540a38cecf924c66b09e4c8762a23a4503', 'tests/test_glm53_attestation.py': '24d0a73afea17bd5b91366d03d0bacc2008a4d371261589ee0d2e569c6ce3b9c', 'tests/test_glm53_reclaim.py': '5b38bfe90dc96e6a9144b9f4a35a6c69480f25511142a8b00232c52b36c9f57b', 'tests/test_memfree_preflight.py': 'af09f6e117c48865021038db64484fc89e685bdb76004fd4f914d86c9dc93869'}
 # Fleet cases use per-test temporary repositories, stores, queues and timing
 # profiles. Runtime admission/retirement tests retain the bench dependency closure.
-FLEET_AUDIT = {'tests/test_fleet_coalescing.py': 'f93a92e2f60c265c0b9861824ecec4a2b4ea2aa325e4339088698cbf6d9ca98a', 'tests/test_fleet_experiments.py': '6013261b76a9a11d29923e3f741021b6fef33e03ef6224190c1549f59aa964f4', 'tests/test_fleet_feedback.py': '03e4a88855ff51520a6016daffa8db54553facd8bc4d0a45b9bf0bdf00fde04e', 'tests/test_fleet_runtime.py': '3769a77b6daaa9f8bdf78551e21b3da1066fab3bdf9151d17e4a57d2d4a75b62'}
+FLEET_AUDIT = {'tests/test_fleet_coalescing.py': 'f93a92e2f60c265c0b9861824ecec4a2b4ea2aa325e4339088698cbf6d9ca98a', 'tests/test_fleet_experiments.py': '6013261b76a9a11d29923e3f741021b6fef33e03ef6224190c1549f59aa964f4', 'tests/test_fleet_feedback.py': '03e4a88855ff51520a6016daffa8db54553facd8bc4d0a45b9bf0bdf00fde04e', 'tests/test_fleet_runtime.py': '37d812370cade2dc13b26d6ab78ec67a93b44de7c2b9e3a2703d2a464561607a'}
 
 
 def sha(path):

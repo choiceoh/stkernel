@@ -1,0 +1,8 @@
+M64 CPU compile source=f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb image=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+2026-09-07 17:57:38,380 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+2026-09-07 17:57:42,290 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f.o
+{"tile_m": 128, "compiled": true, "gpu_execution": false, "mac": 48, "elapsed_s": 3.9424491549725644}
+2026-09-07 17:57:42,291 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_84d9c159348cd380
+2026-09-07 17:57:45,241 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_84d9c159348cd380.o
+{"tile_m": 64, "compiled": true, "gpu_execution": false, "mac": 48, "elapsed_s": 2.9524539450067095}
+{"verdict": "M64_CPU_COMPILE_PASS", "results": [{"tile_m": 128, "compiled": true, "gpu_execution": false, "mac": 48, "elapsed_s": 3.9424491549725644}, {"tile_m": 64, "compiled": true, "gpu_execution": false, "mac": 48, "elapsed_s": 2.9524539450067095}]}
