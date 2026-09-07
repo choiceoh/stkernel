@@ -146,3 +146,17 @@ The queued offline runner and its e74b15e MLA checkout are unchanged. The
 CUDA source, GPU probe and candidate `_mla_prefill32` call function remain
 identical to the pending gate; hashes and AST parity are recorded in
 serving-proof-preparation.json. This preparation is not a new GPU result.
+
+## Connected direct-serving preparation
+
+The same fresh-request client, strict B1/A/B2 comparator and fleet serving
+runner from PR #444 are now present in this separate MLA tree. Run
+`bench/prefill_serving.py run --candidate mla` only through the owned fleet
+GPU queue after its e74b15e sanitizer gate and offline recovery complete.
+The runner verifies CUDA/candidate call-function parity with that gate, uses
+this checkout's canonical onepass and current-main source, collects priming
+and measured phases on every boot, verifies LAUNCHED markers on all four
+ranks, and restores the public default arm and full capacity even on failure.
+The helper command and evidence schema are documented in PR #444 under
+measurements/glm53_moe_stream_20260907. Neither serving bracket is submitted
+yet; the pending shared GPU gate remains the only registered request.
