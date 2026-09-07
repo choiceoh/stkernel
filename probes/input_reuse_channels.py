@@ -63,6 +63,11 @@ def recorder(ask, output):
         original = urllib.request.urlopen
         def opening(request, *args, **options):
             response = original(request, *args, **options)
+            # The step sampler concurrently calls urlopen with a metrics URL.
+            # Wrap only this completion request; a metrics response is not SSE.
+            if (not isinstance(request, urllib.request.Request)
+                    or request.full_url != url or request.get_method() != 'POST'):
+                return response
             trace = Channels(response, request)
             traces.append(trace)
             return trace
