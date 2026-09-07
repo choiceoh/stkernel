@@ -648,18 +648,18 @@ Pinned allocation failure retains synchronous copies. The final trial restored
 44.8 GiB per rank in 38.4–48.0 seconds; pinned staging and alias deduplication
 were introduced together, so their individual contributions are not isolated.
 
-`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps sequential file reads and SHA-256
+`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps sequential mapped reads and SHA-256
 checks with restoration. It is **off by default pending fleet timing**.
-One CPU reader fills two 64 MiB slots (128 MiB total, 64 MiB above baseline).
-GPU copies use the verified slot directly on the caller's stream; the slot is
-only reused after stream synchronization. Pinned allocation failures use
-synchronous copies. Every chunk must pass its checksum before copying, and
+One CPU reader checks at most one 64 MiB chunk ahead of the caller, preserving
+kernel readahead. Copies retain the existing 64 MiB pinned staging allocation
+and synchronization; no additional pinned slot is allocated. Every chunk must
+pass its checksum before copying, and
 the reader is joined before closing the file even on failure. This transport-only flag does not
 change artifact identity. `[rank-cache-io]` reports checksum worker time, time
 waiting for checksums, copies, page discard and total restoration. Worker times
-overlap and must not be added to the total as independent phases. An earlier
-two-worker mmap variant increased restore time; the sequential reader avoids
-concurrent mapped faults and the extra mmap-to-pinned copy.
+overlap and must not be added to the total as independent phases. Earlier
+two-worker mmap and sequential `readinto` variants were slower on the head;
+the current reader avoids concurrent mapped faults and retains mmap readahead.
 On heterogeneous Linux CPUs the reader stays within the caller's permitted
 CPU set and selects its higher-capacity tier. Missing topology or denied
 affinity retains normal scheduling. This applies only to the short-lived

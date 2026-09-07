@@ -9,6 +9,7 @@ on the same path on every rank. No process-wide loader patches are added.
 """
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import hashlib
 import json
 import logging
@@ -227,14 +228,6 @@ def _read_manifest(directory, identity, state):
     return manifest
 
 
-def _copy_streamed_chunk(target, raw):
-    target.copy_(raw, non_blocking=target.device.type == "cuda" and raw.is_pinned())
-    if target.device.type == "cuda":
-        # The reader cannot overwrite this slot until DMA on the caller's
-        # stream has finished, including when a non-default stream is active.
-        torch.cuda.current_stream(target.device).synchronize()
-
-
 def _init_reader_affinity():
     """Keep this short-lived reader on the allowed performance CPU tier."""
     if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
@@ -257,73 +250,6 @@ def _init_reader_affinity():
         return
 
 
-def _restore_streamed(directory, manifest, state):
-    """One sequential reader fills/checks two bounded slots before GPU use."""
-    started = time.perf_counter()
-    pin = any(t.device.type == "cuda" for t in state.values())
-    slots = []
-    for _ in range(2):
-        try:
-            slots.append(torch.empty(CHUNK_BYTES, dtype=torch.uint8, device="cpu", pin_memory=pin))
-        except RuntimeError:
-            if not pin:
-                raise
-            logger.warning("[rank-cache] pinned read slot unavailable; using synchronous copies")
-            slots.append(torch.empty(CHUNK_BYTES, dtype=torch.uint8, device="cpu"))
-    read_time = checksum_time = wait_time = copy_time = discard_time = 0.0
-    with (directory / "weights.bin").open("rb", buffering=0) as source:
-        def read_chunk(chunk, slot):
-            before = time.perf_counter()
-            if source.tell() != chunk["offset"]:
-                raise ValueError("non-sequential rank-cache chunk")
-            with memoryview(slot[:chunk["size"]].numpy()) as view:
-                done = 0
-                while done < len(view):
-                    count = source.readinto(view[done:])
-                    if not count:
-                        raise EOFError("short rank-cache read")
-                    done += count
-                read_s = time.perf_counter() - before
-                before = time.perf_counter()
-                value = hashlib.sha256(view).hexdigest()
-                return value, read_s, time.perf_counter() - before
-
-        # A single reader preserves sequential disk access. Its next slot can
-        # overlap the current GPU copy, but a slot is only queued again after
-        # the copy's stream synchronization. Join before closing the file even
-        # on I/O, checksum, or copy failure; workers never invoke CUDA.
-        with ThreadPoolExecutor(max_workers=1, initializer=_init_reader_affinity) as pool, torch.no_grad():
-            remaining = iter(manifest["chunks"])
-            pending = deque()
-            for slot in slots:
-                chunk = next(remaining, None)
-                if chunk is not None:
-                    pending.append((chunk, slot, pool.submit(read_chunk, chunk, slot)))
-            while pending:
-                chunk, slot, future = pending.popleft()
-                before = time.perf_counter()
-                value, read_s, checksum_s = future.result()
-                wait_time += time.perf_counter() - before
-                read_time += read_s
-                checksum_time += checksum_s
-                if value != chunk["sha256"]:
-                    raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
-                before = time.perf_counter()
-                target = state[chunk["name"]].reshape(-1).view(torch.uint8)
-                _copy_streamed_chunk(target[chunk["start"]:chunk["start"] + chunk["size"]], slot[:chunk["size"]])
-                copy_time += time.perf_counter() - before
-                before = time.perf_counter()
-                _drop_file_pages(source.fileno(), chunk["offset"], chunk["size"])
-                discard_time += time.perf_counter() - before
-                following = next(remaining, None)
-                if following is not None:
-                    pending.append((following, slot, pool.submit(read_chunk, following, slot)))
-    logger.warning("[rank-cache-io] prefetch=1 chunks=%d bytes=%d hash_work_s=%.3f hash_wait_s=%.3f copy_s=%.3f discard_s=%.3f total_s=%.3f read_s=%.3f checksum_s=%.3f strategy=readinto",
-                   len(manifest["chunks"]), manifest["size"], read_time + checksum_time, wait_time,
-                   copy_time, discard_time, time.perf_counter() - started, read_time, checksum_time)
-    return set(manifest["loaded"])
-
-
 def _restore(directory, manifest, state):
     """Checksum each mapped chunk before copying. A mid-restore error is fatal.
 
@@ -332,9 +258,8 @@ def _restore(directory, manifest, state):
     """
     if manifest["size"] == 0:
         return set(manifest["loaded"])
-    if os.environ.get("VLLM_GLM53_RANK_CACHE_PREFETCH", "0") == "1":
-        return _restore_streamed(directory, manifest, state)
     staging = HostStaging()
+    prefetch = os.environ.get("VLLM_GLM53_RANK_CACHE_PREFETCH", "0") == "1"
     started = time.perf_counter()
     hash_work = hash_wait = copy_time = discard_time = 0.0
     with (directory / "weights.bin").open("rb") as source:
@@ -345,14 +270,29 @@ def _restore(directory, manifest, state):
                     value = hashlib.sha256(view).hexdigest()
                 return value, time.perf_counter() - before
 
-            with torch.no_grad():
+            # One CPU worker checks only the next chunk (at most 64 MiB)
+            # while the caller copies the current verified chunk. Sequential
+            # mmap preserves kernel readahead without an extra readinto copy.
+            # Join before closing the mapping, including on any copy failure.
+            executor = (ThreadPoolExecutor(max_workers=1, initializer=_init_reader_affinity)
+                        if prefetch else nullcontext())
+            with executor as pool, torch.no_grad():
+                remaining = iter(manifest["chunks"])
+                pending = deque()
+                if pool is not None:
+                    for chunk in manifest["chunks"][:1]:
+                        pending.append(pool.submit(checksum, next(remaining)))
                 for chunk in manifest["chunks"]:
                     before = time.perf_counter()
-                    value, elapsed = checksum(chunk)
+                    value, elapsed = pending.popleft().result() if pool is not None else checksum(chunk)
                     hash_wait += time.perf_counter() - before
                     hash_work += elapsed
                     if value != chunk["sha256"]:
                         raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
+                    if pool is not None:
+                        following = next(remaining, None)
+                        if following is not None:
+                            pending.append(pool.submit(checksum, following))
                     view = memoryview(mapped)[chunk["offset"]:chunk["offset"] + chunk["size"]]
                     raw = None
                     try:
@@ -367,8 +307,8 @@ def _restore(directory, manifest, state):
                     before = time.perf_counter()
                     _drop_file_pages(source.fileno(), chunk["offset"], chunk["size"], mapped)
                     discard_time += time.perf_counter() - before
-    logger.warning("[rank-cache-io] prefetch=%d chunks=%d bytes=%d hash_work_s=%.3f hash_wait_s=%.3f copy_s=%.3f discard_s=%.3f total_s=%.3f",
-                   0, len(manifest["chunks"]), manifest["size"], hash_work, hash_wait,
+    logger.warning("[rank-cache-io] prefetch=%d chunks=%d bytes=%d hash_work_s=%.3f hash_wait_s=%.3f copy_s=%.3f discard_s=%.3f total_s=%.3f strategy=mmap",
+                   prefetch, len(manifest["chunks"]), manifest["size"], hash_work, hash_wait,
                    copy_time, discard_time, time.perf_counter() - started)
     return set(manifest["loaded"])
 
