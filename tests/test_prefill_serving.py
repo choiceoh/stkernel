@@ -82,7 +82,7 @@ class ServingTests(unittest.TestCase):
             with patch.dict(m.CANDIDATES,{'moe-overlap':candidate}),patch.object(m,'pinned'):
                 write();result=m.verify_gate('moe-overlap',gate,repo)
                 self.assertEqual(result['revision'],'a'*40)
-                for case in ('transport','coverage','numerics','source','routing','marker','recovery','outer_failure'):
+                for case in ('transport','coverage','numerics','source','routing','marker','recovery','outer_failure','diagnostic_report','diagnostic_command'):
                     c,r=copy.deepcopy(complete),copy.deepcopy(reports)
                     if case=='transport':r=r[:1]
                     elif case=='coverage':r[1]['results'].pop()
@@ -91,6 +91,9 @@ class ServingTests(unittest.TestCase):
                     elif case=='routing':r[0]['results'][4]['overlap_admitted']=False
                     elif case=='recovery':c['restored_original']=False
                     elif case=='outer_failure':c['exit_code']=1
+                    elif case=='diagnostic_report':
+                        for report in r:report.update(verdict='MOE_OVERLAP_DIAGNOSTIC_COMPLETE',serving_gate=False)
+                    elif case=='diagnostic_command':c['probes']['moe-overlap']['command'].append('--diagnose')
                     write(c,r,case!='marker')
                     with self.subTest(case=case),self.assertRaises(RuntimeError):m.verify_gate('moe-overlap',gate,repo)
                 write();(repo/'build/glm53/module.py').write_text('untested edit')

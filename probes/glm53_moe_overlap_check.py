@@ -69,6 +69,7 @@ def main():
     ap.add_argument('--transport',choices=('bf16','fp8-v3'),required=True)
     ap.add_argument('--rows',nargs='+',type=int,default=[4096,4143,6912,8192])
     ap.add_argument('--check-api',action='store_true',help='CPU-only binding against the frozen distributed API')
+    ap.add_argument('--diagnose',action='store_true',help='Collect component diagnostics; never emits a serving gate pass')
     args=ap.parse_args()
     checked=validate_distributed_api()
     if args.check_api:
@@ -114,7 +115,8 @@ def main():
             provenance[name]=actual
             require(actual==expected,'source mismatch: '+name)
         identities=[None]*4
-        dist.all_gather_object(identities,(provenance,args.transport,args.rows),group=group.cpu_group)
+        diagnostic_sha=hashlib.sha256(Path(__file__).with_name('glm53_moe_overlap_diagnostics.py').read_bytes()).hexdigest() if args.diagnose else None
+        dist.all_gather_object(identities,(provenance,args.transport,args.rows,args.diagnose,diagnostic_sha),group=group.cpu_group)
         require(all(x==identities[0] for x in identities),'rank source/plan mismatch')
         md._STATIC_V2_OVERRIDE=md._parse_glm53_static_v2('t',probe=True)
         torch.manual_seed(73209+rank)
@@ -130,11 +132,14 @@ def main():
         class MLP:
             experts=SimpleNamespace(layer_name='probe.moe')
             skew=False
-            def __call__(self,x):
+            def routes(self,x):
                 # Routing depends on token content, never stripe row index.
                 ids=((x[:,0].float().abs()*1024).int()[:,None]+torch.arange(8,device=x.device))% (8 if self.skew else 288)
                 ids=ids.to(torch.int32)
                 scales=torch.softmax(x[:,:8].float(),dim=1)
+                return ids,scales
+            def __call__(self,x):
+                ids,scales=self.routes(x)
                 stream=torch.cuda.current_stream();shared_stream.wait_stream(stream)
                 x.record_stream(shared_stream)
                 with torch.cuda.stream(shared_stream):
@@ -153,6 +158,11 @@ def main():
             dp_metadata:object=None
             ubatch_slices:object=None
         context=Context({'probe.moe':mlp.experts})
+        if args.diagnose:
+            from glm53_moe_overlap_diagnostics import run_diagnostics
+            run_diagnostics(args=args,torch=torch,dist=dist,h=h,md=md,mlp=mlp,
+                context=context,group=group,rank=rank,provenance=provenance,require=require)
+            return
         results=[]
         def compare(a,b,repeat):
             a,b,r=(v.float() for v in (a,b,repeat))

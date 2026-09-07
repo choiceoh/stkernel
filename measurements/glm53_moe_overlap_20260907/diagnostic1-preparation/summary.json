@@ -1,0 +1,48 @@
+{
+  "created": "2026-09-08T00:29:47.755402",
+  "status": "CPU_PREPARATION_PASS_GPU_PENDING",
+  "checks": [
+    [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_glm53_moe_overlap_probe.py",
+      "-v"
+    ],
+    [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_glm53_offline_checks.py",
+      "-v"
+    ],
+    [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_prefill_serving.py",
+      "-v"
+    ]
+  ],
+  "tests": [
+    7,
+    8,
+    9
+  ],
+  "formal_comparator_ast_unchanged": true,
+  "runtime_overlay_build_profile_launcher_unchanged": true,
+  "diagnostic_source_sha256": "b25cf0903c5eab3168ad38f7623efca6c76acd7272c6cc3c03bbc29a40161c7f",
+  "serving_gate": false
+}

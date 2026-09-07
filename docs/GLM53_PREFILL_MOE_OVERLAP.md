@@ -123,3 +123,28 @@ kernel/transport results and not direct prefill speed claims. Keep the
 option off, diagnose stock-repeat/FP8 error without changing thresholds,
 and explain routing-sensitive cost before the next matched serving gate.
 [Raw failure, BF16 results and exact restoration evidence](../measurements/glm53_moe_overlap_20260907/failed-fp8-fallback/README.md).
+
+## Component diagnostic after the FP8 fallback failure
+
+The offline helper now accepts `--diagnose`. It keeps the same fixed weights,
+activation seeds, routes and numerical thresholds, but emits attribution
+records instead of a GPU correctness pass. This mode cannot satisfy the
+serving runner: its command, log label and final marker are different.
+It never connects directly to candidate deployment.
+
+For each original size/routing case, it compares independent stock calls
+and the candidate, then gathers once and repeats MoE on exactly the same
+input. Replaying one fixed rank-partial buffer through reduce-scatter
+isolates transport repeatability; transporting independently computed
+partials shows whether the observed variation increases after FP8 packing.
+All reports include rank, transport, size, routing, phase and failing row
+indices. Device-computed per-row limits preserve the original gate's
+floating-point thresholds. The formal gate's comparator is unchanged.
+
+At 6912/8192, actual expert route counts and the dispatcher's selected M tile
+quantify per-expert padding in the full and split calls. The full counts
+must exactly equal the sum of the two stripes' counts. Six permutations
+balance stock, serial stripes and overlap in every timing position; serial
+AG/MoE/RS spans are recorded separately. Those component spans must not be
+added together to infer overlapped runtime. Diagnostics report failures
+without converting them to a passing numerical gate or a serving speedup.

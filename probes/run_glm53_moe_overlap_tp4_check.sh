@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Called only by glm53_offline_checks.py within our normal fleet boot hold.
 set -euo pipefail
+probe_args=()
+if [[ $# == 1 && ${1:-} == --diagnose ]]; then
+  probe_args+=(--diagnose)
+elif [[ $# != 0 ]]; then
+  echo 'only --diagnose is accepted' >&2; exit 2
+fi
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 python3 -c 'import sys;sys.path.insert(0,sys.argv[1]+"/probes");from glm53_offline_checks import check_holder;check_holder()' "$REPO"
 revision=$(git -C "$REPO" rev-parse HEAD)
@@ -51,7 +57,7 @@ for transport in bf16 fp8-v3; do
     done < "$REPO/build/glm53/manifest.tsv"
     args+=("$IMAGE" -m torch.distributed.run --nnodes=4 --nproc-per-node=1
       --node-rank="$rank" --master-addr=10.10.10.2 --master-port="$port"
-      /repo/probes/glm53_moe_overlap_check.py --transport "$transport")
+      /repo/probes/glm53_moe_overlap_check.py --transport "$transport" "${probe_args[@]}")
     if [[ $rank == 0 ]]; then
       timeout 900 "${args[@]}" >"$log_dir/$transport-rank-$rank.log" 2>&1 &
     else
@@ -68,4 +74,8 @@ for transport in bf16 fp8-v3; do
   done
   cat "$log_dir/$transport-rank-0.log"
 done
-echo MOE_OVERLAP_ALL_GATES_PASS
+if [[ ${#probe_args[@]} == 0 ]]; then
+  echo MOE_OVERLAP_ALL_GATES_PASS
+else
+  echo MOE_OVERLAP_DIAGNOSTIC_COMPLETE
+fi

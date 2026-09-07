@@ -263,12 +263,14 @@ def main():
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--probe-source', type=Path, required=True)
     ap.add_argument('--probe-revision', required=True)
+    ap.add_argument('--diagnose', action='store_true', help='Run attribution only; cannot satisfy the serving gate')
     args = ap.parse_args()
     if not re.fullmatch('[0-9a-f]{40}', args.probe_revision):
         ap.error('exact frozen probe commit required')
     global PINS
-    PINS = (('moe-overlap', str(args.probe_source.resolve()), args.probe_revision,
-             ['bash', 'probes/run_glm53_moe_overlap_tp4_check.sh']),)
+    label = 'moe-overlap-diagnostic' if args.diagnose else 'moe-overlap'
+    command = ['bash', 'probes/run_glm53_moe_overlap_tp4_check.sh'] + (['--diagnose'] if args.diagnose else [])
+    PINS = ((label, str(args.probe_source.resolve()), args.probe_revision, command),)
     args.out.mkdir(parents=True, exist_ok=False)
     def save(file, value):
         (args.out / file).write_text(json.dumps(value, indent=2) + '\n')
