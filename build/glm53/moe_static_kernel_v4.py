@@ -252,6 +252,20 @@ class MoEStaticKernelV4:
     def _thrfrg_SFB(self, sfb_tensor, tiled_mma):
         return self._dense_cls._thrfrg_SFB(self, sfb_tensor, tiled_mma)
 
+    def _partition_fragment_SFB(self, tensor, thr_mma, tidx):
+        fragment = self._dense_cls._partition_fragment_SFB(self, tensor, thr_mma, tidx)
+        if self.decode_reform:
+            # The legacy helper folds N and K together when the M atom extent
+            # is one. Restore (values, N tiles, K blocks) without changing the
+            # scale bytes or their lane assignment.
+            assert cute.rank(fragment) == 2
+            shape, stride = fragment.shape, fragment.stride
+            assert len(shape[1]) == 2
+            fragment = cute.make_tensor(fragment.iterator, cute.make_layout(
+                (shape[0], shape[1][0], shape[1][1]),
+                stride=(stride[0], stride[1][0], stride[1][1])))
+        return fragment
+
     def _get_layoutSFA_TV(self, tiled_mma):
         return self._dense_cls._get_layoutSFA_TV(self, tiled_mma)  # type: ignore[arg-type]
 
@@ -1095,10 +1109,10 @@ class MoEStaticKernelV4:
         tCrA1 = tiled_mma1.make_fragment_A(tCsA1[None, None, None, 0])
         tCsB1 = thr_mma1.partition_B(sB1)
         tCrB1 = tiled_mma1.make_fragment_B(tCsB1[None, None, None, 0])
-        tCrSFB1_0 = self._dense_cls._partition_fragment_SFB(
-            self, sSFB1_0[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
-        tCrSFB1_1 = self._dense_cls._partition_fragment_SFB(
-            self, sSFB1_1[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
+        tCrSFB1_0 = self._partition_fragment_SFB(
+            sSFB1_0[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
+        tCrSFB1_1 = self._partition_fragment_SFB(
+            sSFB1_1[None, None, 0], thr_mma1, tidx)  # type: ignore[arg-type]
 
         # FC2 fragments (tiled_mma), A from the quantized intermediate
         tCsA2 = thr_mma.partition_A(sA2)
@@ -1113,8 +1127,8 @@ class MoEStaticKernelV4:
         )
         tCsB2 = thr_mma.partition_B(sB2)
         tCrB2 = tiled_mma.make_fragment_B(tCsB2[None, None, None, 0])
-        tCrSFB2 = self._dense_cls._partition_fragment_SFB(
-            self, sSFB2[None, None, 0], thr_mma, tidx  # type: ignore[arg-type]
+        tCrSFB2 = self._partition_fragment_SFB(
+            sSFB2[None, None, 0], thr_mma, tidx  # type: ignore[arg-type]
         )
 
         tCsC1_for_shape = thr_mma1.partition_C(sC1[None, None, 0])
@@ -1221,11 +1235,6 @@ class MoEStaticKernelV4:
             crB1 = thr_ld_B1.retile(tCrB1)
             csSFB1_0 = thr_ld_SFB1.partition_S(sSFB1_0)
             csSFB1_1 = thr_ld_SFB1.partition_S(sSFB1_1)
-            if cutlass.const_expr(self.decode_reform):
-                print("REFORM_SFB_FRAGMENT", tCrSFB1_0.layout)
-                print("REFORM_SFB_COPY_SOURCE", csSFB1_0.layout)
-                print("REFORM_SFB_COPY", smem_copy_SFB1)
-                print("REFORM_MMA", tiled_mma1)
             fz_crSFB1_0 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_0))
             fz_crSFB1_1 = cute.filter_zeros(thr_ld_SFB1.retile(tCrSFB1_1))
             csA2 = thr_ld_A.partition_S(sA2)
