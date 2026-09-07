@@ -2,14 +2,19 @@
 # Called only by glm53_offline_checks.py within our normal fleet boot hold.
 set -euo pipefail
 diagnostic=0
+trace=0
 probe_args=()
 transports=(bf16 fp8-v3)
 if [[ $# == 1 && $1 == --fp8-diagnostic ]]; then
   diagnostic=1
   probe_args+=(--fp8-diagnostic)
   transports=(fp8-v3)
+elif [[ $# == 1 && $1 == --fp8-trace ]]; then
+  trace=1
+  probe_args+=(--fp8-trace)
+  transports=(fp8-v3)
 elif [[ $# != 0 ]]; then
-  echo 'only --fp8-diagnostic is accepted' >&2; exit 2
+  echo 'only --fp8-diagnostic or --fp8-trace is accepted' >&2; exit 2
 fi
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 python3 -c 'import sys;sys.path.insert(0,sys.argv[1]+"/probes");from glm53_offline_checks import check_holder;check_holder()' "$REPO"
@@ -78,6 +83,17 @@ for transport in "${transports[@]}"; do
   done
   cat "$log_dir/$transport-rank-0.log"
 done
+if [[ $trace == 1 ]]; then
+  python3 - "$log_dir" "$REPO/probes" <<'TRACE'
+import pathlib,sys
+sys.path.insert(0,sys.argv[2])
+from glm53_moe_m64_fp8_trace import MARKER,verify_logs
+report=verify_logs(pathlib.Path(sys.argv[1]))
+assert report['serving_gate'] is False and report['numerical_acceptance'] is False
+print(MARKER)
+TRACE
+  exit 0
+fi
 if [[ $diagnostic == 1 ]]; then
   python3 - "$log_dir/fp8-v3-rank-0.log" "$REPO/probes" <<'DIAGNOSTIC'
 import json,pathlib,sys

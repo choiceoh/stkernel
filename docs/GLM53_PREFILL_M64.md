@@ -241,3 +241,19 @@ values/scales and raw comparison numerators. No gate or threshold has changed.
 All raw logs, per-seed counts, CPU validation and exact recovery are archived
 in `measurements/glm53_moe_m64_20260908/fp8diag1/`. This result does not provide
 new full-model TTFT evidence or a cumulative 40% improvement.
+
+`--fp8-trace` implements the bounded follow-up as a separate collection mode.
+It keeps the original 72-trial plan and normalized comparisons, captures each
+actual invocation's pre-reduce-scatter partial, checks its frozen FP8 replay
+against both the original output and the unmodified helper, and compares native
+BF16 reductions of those same partials. It retains the production pack kernel's
+outgoing FP8 bytes/scales and the unpack kernel's FP32 sum before BF16 storage.
+Raw comparison numerators/denominators accompany the original failure values.
+
+For the union of failed rows, every rank logs a compressed NPZ payload containing
+all four arms' partial bits, packet bytes/scales and owned output/sum rows. A
+128-row per-trial budget fails collection explicitly instead of dropping rows.
+All 72 payloads from all four process logs are hash-checked against collective
+metadata. The dedicated `MOE_M64_FP8_TRACE_COMPLETE` marker never grants numerical
+or serving acceptance, including when frozen replay is bitwise equal. No kernel,
+normal gate, tolerance or default has changed. GPU trace evidence is pending.
