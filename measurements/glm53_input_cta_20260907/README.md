@@ -114,3 +114,32 @@ The other common M6/N6144/K4096 and M6/N4096/K4096 plans use three K slices
 under their established occupancy rules. They cannot reuse this eight-slice
 kernel while preserving the original summation order, so their existing paths
 remain selected. Extending coverage would require a separate three-slice layout.
+
+## Actual serving-source GPU gate
+
+Fleet `inputctaserve0907` began at 22:50:28 KST on source `916adc0`, including
+main `944f65c`. CUDA SHA-256:
+`0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae`.
+All 160 numerical rows pass exact baseline bits, the independent FP32 oracle
+and finite checks. All three candidates pass 120 alternating retained-graph
+checks and startup checks. Racecheck reports zero hazards/errors/warnings;
+memcheck reports zero errors.
+
+| Mode | Registers / blocks per SM | Warm us | Read-evicted us | Warm reduction | Read-evicted reduction |
+|---|---:|---:|---:|---:|---:|
+| Enabled input reuse | 80 / 3 | 32.512 | 75.360 | baseline | baseline |
+| 1: generic CTA | 78 / 3 | 28.416 | 70.240 | 12.60% | 6.79% |
+| **2: fixed geometry** | **75 / 3** | **24.544** | **69.424** | **24.51%** | **7.88%** |
+| 3: fixed geometry, four blocks | 64 / 4 | 26.368 | 71.296 | 18.90% | 5.39% |
+
+All modes have zero local spills. Mode 2 wins 31/32 pairs in each cache regime;
+its paired median reductions are 24.11% warm and 7.78% read-evicted. Mode 1
+wins only 28/32 warm pairs, below the predeclared 29-pair selection threshold.
+Mode 2 is selected for serving. Increasing occupancy to four blocks did not
+beat the three-block specialized kernel; the CPU register result alone would
+have chosen incorrectly. No outliers are removed from the raw evidence.
+
+[Full GPU results](serving/result.json), [paired summary](serving/paired-kernel-summary.json),
+[selection receipt](serving/selection.json), [racecheck](serving/racecheck.log),
+[memcheck](serving/memcheck.log). These are kernel results; the B/A/A/B serving
+chain began at 22:58:10 KST and is still in progress.

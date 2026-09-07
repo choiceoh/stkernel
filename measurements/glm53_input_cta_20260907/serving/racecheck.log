@@ -1,0 +1,7 @@
+========= COMPUTE-SANITIZER
+{"source_sha256": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae", "flags": ["-O2", "-gencode", "arch=compute_121a,code=sm_121a", "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1", "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"], "torch": "2.13.0+cu130", "device": "NVIDIA GB10", "mode_names": ["default", "generic_nb2", "fixed_nb2_bps3", "fixed_nb2_bps4"], "kernel_info_regs_local_bps_smem": [80, 0, 3, 28672, 78, 0, 3, 22528, 75, 0, 3, 22528, 64, 0, 4, 22528], "status": "RUNNING"}
+WARNING 09-07 13:54:47 [glm53_megakernel.py:2281] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 13:54:50 [glm53_megakernel.py:2281] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 13:54:53 [glm53_megakernel.py:2281] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+PASS exact outputs, independent oracle, retained graphs and startup gate
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
