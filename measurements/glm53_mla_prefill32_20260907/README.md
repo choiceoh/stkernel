@@ -112,3 +112,9 @@ version 2025.3.1.0, executable SHA-256
 7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b; its
 --version succeeded inside the pinned image without exposing a GPU.
 The candidate remains off pending sanitizer and direct-serving evidence.
+
+Sanitizer-only retry `mla32san40907` passed preflight and queued at 17:56 KST
+behind the new MoE probe. Frozen source: e74b15e5a846827e554835ca73eda71e7698e4ac;
+checkout: srv2:/home/choiceoh/stkernel-prefill32-check4-0907; supervisor PID
+2554596; logs/completion: srv2:/tmp/glm53-mla32-check4-0907. The GPU kernel
+is unchanged from the 11-case numerical/timing run.

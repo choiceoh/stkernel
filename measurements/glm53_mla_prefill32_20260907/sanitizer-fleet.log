@@ -1,0 +1,7 @@
+preflight mla32san40907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax probes/run_mk_mla_prefill32_check.sh
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_17:56:00
