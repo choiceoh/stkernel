@@ -231,3 +231,27 @@ recovery to B1/A/B2 in one normal fleet turn. Failed fresh GPU or restoration
 never reaches serving deployment; source parity is still checked afterward.
 The previous unsubmitted serving1 requests are superseded by this new
 current-main plan and must not be launched. Both candidates remain off.
+
+## Connected GPU + serving request submitted at 20:48 KST
+
+Fleet session `mlaprefill30907` passed admission and entered queue position 1
+at 20:48:00, behind rankmmap30907. The 20:48 snapshot estimates GO 21:19;
+this is not a guaranteed start or completed measurement. Supervisor PID is
+3429303; request, worker, receipt, log and completion live in
+`srv2:/tmp/glm53-mla-prefill-serving3-0907`. Detailed fresh GPU evidence goes
+to `gpu-gate/`, followed only on success/recovery by serving `evidence/`.
+The 75-minute normal boot request includes --refresh-gate and B1/A/B2.
+It has not begun GPU or serving execution at this snapshot.
+
+The clean frozen runner is
+`srv2:/home/choiceoh/stkernel-mla-prefill-serving3-0907`, revision
+`1f24cf327fa18fe52aad7322cbf3b2b86ba68e04`, based on main 767469f. The earlier
+serving2 checkout was rejected before queue submission when main advanced
+with PR #450; it is preserved. That fleet-only change leaves the whole MLA
+CUDA file and _mla_prefill32 AST identical to fresh GPU source 3eb219d.
+Thirteen fleet-feedback tests and eight serving tests passed after rebase;
+the remote frozen runner also passed eight serving and eight offline tests.
+
+Old unsubmitted serving1 workers were archived as worker.retired.py. MoE is
+marked REJECTED_GPU_NOT_SUBMITTED; MLA is SUPERSEDED_NOT_SUBMITTED. They must
+not be launched. Their requests and the new queue receipt are retained.
