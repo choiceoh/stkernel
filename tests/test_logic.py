@@ -11538,7 +11538,7 @@ def test_fleet_reservation_tooling_contracts() -> None:
 
 def test_fleet_experiment_behaviors():
     import unittest
-    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet_experiments.py")
+    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet*.py")
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
     return result.testsRun

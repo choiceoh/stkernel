@@ -27,17 +27,29 @@ def identity(repo, spec, environment):
     if len(cmd) < 4 or cmd[1] != "bench/cpu_checks.py":
         return None
     args = cmd[2:]
-    if len(args) % 2 or any(args[i] not in {"--suite", "--test"} for i in range(0, len(args), 2)):
+    if len(args) % 2 or any(args[i] not in {"--suite", "--test", "--contract"} for i in range(0, len(args), 2)):
         return None
     suites = sorted({args[i+1] for i in range(0, len(args), 2) if args[i] == '--suite'})
-    if any(s not in {"startup", "fleet", "logic"} for s in suites):
+    if any(s not in {"startup", "fleet", "logic", "sensitivity"} for s in suites):
+        return None
+    from cpu_contracts import CONTRACTS, dependencies
+    contracts = sorted({args[i+1] for i in range(0,len(args),2) if args[i] == '--contract'})
+    if any(c not in CONTRACTS for c in contracts):
         return None
     # Git object IDs cover transitive source dependencies without re-reading
     # all source bytes. No caller supplied include/exclude paths are accepted.
     tree = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-rz", "HEAD"])
     entries = [v.decode() for v in tree.split(b"\0") if v]
     scope = "full-tree"
-    if '--test' not in args and suites == ["startup"] and STARTUP_AUDIT and all(
+    audit_names = list(CONTRACTS) if suites == ['sensitivity'] else contracts
+    closure = dependencies(repo,audit_names) if audit_names else None
+    if closure and '--test' not in args and (not suites or suites == ['sensitivity']):
+        scope = 'audited-contracts'
+        # Module path inventory also pins the loader's unique-name resolution.
+        entries = [v if v.split('\t',1)[1] in closure or v.split('\t',1)[1].startswith('bench/')
+                   else 'path\t'+v.split('\t',1)[1] for v in entries if v.split('\t',1)[1] in closure
+                   or v.split('\t',1)[1].startswith(('bench/','overlay/'))]
+    if not contracts and '--test' not in args and suites == ["startup"] and STARTUP_AUDIT and all(
             (repo / p).is_file() and sha(repo / p) == h for p, h in STARTUP_AUDIT.items()):
         scope = "audited-startup"
         entries = [v for v in entries if v.split("\t", 1)[1].startswith(

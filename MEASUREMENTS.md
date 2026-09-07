@@ -7200,3 +7200,86 @@ intentional shutdown, so restoration was submitted through the canonical
 fleet runner. See the evidence page for the final recovery state.
 
 [Full timings, numerical gates, source hashes, failed attempts and recovery](measurements/glm53_input_reuse_20260907/README.md).
+### W4 startup cache transport — warm boots 28 s faster (2026-09-07)
+
+PR #442 replaces the W4 cache's pageable weight copy for MD5 with a reusable
+64 MiB pinned host buffer, and uses mmap plus bounded transfers for cached
+pack tensors. Existing MD5 keys, pack filenames, format 4, quantization and
+serving kernels are unchanged. The transfer flag is excluded from rank/FP8
+identity so both paths can reuse exactly the same artifacts. The new flag is
+`VLLM_GLM53_MK_PACK_FAST_IO`; the GLM profile now defaults to **1**, with **0**
+restoring the legacy path. It adds one bounded host buffer per worker and no
+new on-disk artifact type. Pinned allocation failures and unsupported layouts
+retain synchronous copies; legacy serialization retains the eager reader.
+
+The first normal fleet attempt (`mkpackio0907`, runtime `3adbb0f`) exposed a
+benchmark compatibility defect after priming: canonical `onepass.ask_stream`
+now accepts a timing argument, but the startup response recorder accepted
+only four positional arguments. No quality request was sent. Its cache
+receipts passed, then the failed gate restored control serving successfully.
+The recorder now forwards positional/keyword timing and decode controls and
+restores the original callable even on failure. A regression exercises the
+actual timing-object mutation and response record. This did not change the
+model runtime. Initial evidence: `/home/choiceoh/glm53-logs/pack-io-20260907-run1`.
+
+The successful retry (`mkpackio20907`) ran through the normal fleet queue on
+runtime **`3a2a223e24084c465712b6c75cb512965d7d9ed6`**, overlay **`853856f14b53`**.
+All 56 overlays were verified on four nodes at deployment; each boot retained
+matching hashes for the three cache/pack helpers. The same profile, effective
+speculative K **5**, `PREFILL_WARMUP=0` and canonical Korean **2K/32K** onepass
+were used throughout. PRIME warmed compilation/artifacts and is excluded
+from the comparison. Timed order was **FAST1 → BASE1 → BASE2 → FAST2**, two
+boots per path, with all-rank, FP8 and W4 receipt gates before each onepass.
+
+| Metric | BASE1 | BASE2 | FAST1 | FAST2 |
+|---|---:|---:|---:|---:|
+| Health-ready wall, seconds | 252 | 255 | 223 | 228 |
+| Head load-model, seconds | 109.9 | 106.8 | 85.7 | 85.2 |
+| Head W4 attachment, seconds | 28.250 | 29.013 | 11.826 | 11.893 |
+| Head W4 key generation, seconds | 25.897 | 26.503 | 10.163 | 10.224 |
+| Head W4 file reads, seconds | 2.639 | 2.676 | 0.842 | 0.849 |
+| Head W4 device copies, seconds | 0.127 | 0.132 | 0.745 | 0.752 |
+| Head memory-profile phase, seconds | 36.1 | 36.2 | 37.2 | 36.5 |
+| Korean facts / corrupt responses | 6/6; 0/4 | 6/6; 0/4 | 6/6; 0/4 | 6/6; 0/4 |
+| Raw speculative acceptance | 46.57% | 50.31% | 48.43% | 48.09% |
+
+Mean health-ready time is **253.5 → 225.5 s**, a **28.0 s (11.0%)** reduction
+in this matched warm bracket. Head model loading is **108.35 → 85.45 s**;
+W4 attachment is **28.632 → 11.860 s**. Key generation is the dominant saved
+phase (**26.200 → 10.194 s**). Mapping reduces file-read time, while staging
+actually adds about **0.62 s** to device copies; the combined path still wins.
+The cumulative W4 I/O counters include pack callers outside the dense-attach
+wrapper, so their sum is not exactly its timer. All timers are host wall time
+with synchronization, not isolated GPU kernel timings. Unlike comparing
+PRIME (**358 s**) with a warm boot, the four timed memory-profile phases are
+all warm (**36.1–37.2 s**). Other startup/peer timings vary, so the exact 28 s
+wall difference is an observed bracket result, not a guaranteed saving.
+
+Every timed boot had **4/4 rank hits**, **976/976 FP8 hits**, and **1,012 W4
+cache hits** (253 per node) on the requested transfer path. There were zero
+cache errors, failed pack restores, pinned-allocation warnings or FP8
+source-copy disarms. The separate GPU probe passed **74** byte/hash/layout
+checks using three real format-4 packs, multiple weight shapes, another CUDA
+stream, the 64 MiB boundary and synchronous fallback. All prompt hashes match
+across arms, but generated text differs (0/4 exact matches against BASE1 for
+FAST1, BASE2 and FAST2). Raw acceptance means are **48.44% / 48.26%** for
+BASE/FAST; this small sample does not establish broad acceptance equivalence
+or a decode-throughput improvement. The full 128K warmup is outside this run.
+
+Across 162 ten-second host samples per node, minimum available RAM was
+**14.04 / 7.01 / 9.34 / 11.75 GiB** on srv1/2/3/4, with no net swap-use increase.
+These include priming/teardown and are sampled OS values, not CUDA peak memory.
+The successful final FAST2 boot passed health/quality checks and the holder
+was released with exit **0** at 17:31 KST. No further GPU runs were needed.
+
+Validation also passed **7 focused pack/recorder tests**, the existing **27
+startup-artifact tests**, **70,979 CPU logic checks**, **30 megakernel** and
+**32 fleet regressions** locally with Torch. The deployment's lightweight
+logic gate passed **6,683 checks** plus those megakernel/fleet regressions.
+The final default/comment/result update and optional-Torch test guard do not
+change the runtime exercised by the bracket.
+
+Evidence on srv2: `/home/choiceoh/glm53-logs/pack-io-20260907-run2` contains
+node logs/states/hashes, exact response files, onepass JSON, health timers,
+resource samples, `pack-io-gpu.json`, `report.json` and `report.md`. The same
+files and report scripts are retained locally under `runs/pack-io-20260907-run2`.

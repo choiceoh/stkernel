@@ -55,9 +55,15 @@ def reserve(store, job):
 
 
 def ready(payload):
+    return not missing_workloads(payload)
+
+
+def missing_workloads(payload):
     from measurement_contract import evaluations
-    return all(len(samples(payload, i)) >= (1 if e['objective']['metric'] == 'quality' else 3)
-               for i, e in enumerate(evaluations(payload['spec'])))
+    from serving_group import workloads
+    values = workloads(payload['spec'])
+    return sorted({values.index(e['workload']) for i, e in enumerate(evaluations(payload['spec']))
+                   if len(samples(payload, i)) < (1 if e['objective']['metric'] == 'quality' else 3)})
 
 
 def run(store, job, payload):
@@ -70,12 +76,13 @@ def run(store, job, payload):
         for index in range(target + extra):
             if ready(payload):
                 break
-            before = {r['boot_id'] for r in samples(payload)}
-            records = measure(store, job, payload, f'EXP-{job}-BASE-{index + 1}', {})
+            before = {r['boot_id'] for i, _ in enumerate(evaluations(payload['spec'])) for r in samples(payload, i)}
+            missing = missing_workloads(payload)
+            records = measure(store, job, payload, f'EXP-{job}-BASE-{index + 1}', {}, work_indices=missing)
             if records[0]['boot_id'] in before:
                 raise ValueError('defaults sample reused an earlier boot')
             with store.db:
-                store.event(job, 'baseline_sample', {'records': records})
+                store.event(job, 'baseline_sample', {'records': records, 'measured_workload_indices': missing})
         state = 'succeeded' if ready(payload) else 'incomplete'
         return state, dict(evidence='gpu-baseline', samples=len(samples(payload)),
                            baseline=samples(payload), scope='same build/workload/runtime')

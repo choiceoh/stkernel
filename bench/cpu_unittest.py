@@ -10,7 +10,7 @@ def run(target, out, root):
     path = (root / target).resolve()
     if path.parent != (root / 'tests').resolve() or not path.name.startswith('test_') or path.suffix != '.py':
         raise ValueError('test must be a tests/test_*.py file')
-    if not path.is_file():
+    if not path.is_file() and path.name != 'test_fleet*.py':
         raise ValueError('test does not exist: ' + target)
     suite = unittest.defaultTestLoader.discover(str(path.parent), pattern=path.name)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
