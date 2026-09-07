@@ -1,8 +1,10 @@
 """Execute the real dispatch function against shape-only tensors, without CUDA."""
 import ast
+import importlib.util
 from pathlib import Path
 import sys
 import types
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -80,6 +82,38 @@ class DispatchTest(unittest.TestCase):
     def test_pair_experiment_takes_precedence_without_combining(self):
         self.ns["ENABLE_MLA_PREFILL_PAIR"] = True
         self.assertEqual(self.route(), "pair")
+
+    def test_serving_marker_follows_successful_candidate_call(self):
+        events = []
+        def launched(*args):
+            events.append('launch')
+            return 'prefill32'
+        self.ns['_mla_prefill32'] = launched
+        self.ns['logger'].warning = lambda *a: events.append('proof')
+        self.assertEqual(self.route(), 'prefill32')
+        self.assertEqual(self.route(), 'prefill32')
+        self.assertEqual(events, ['launch', 'proof', 'launch'])
+        def failed(*args):
+            raise RuntimeError('candidate launch failed')
+        self.ns['_mla_prefill32'] = failed
+        events.clear()
+        with self.assertRaises(RuntimeError):
+            self.route()
+        self.assertFalse(getattr(failed, '_announced', False))
+        self.assertEqual(events, [])
+
+    def test_arming_or_engaged_marker_is_not_launch_proof(self):
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location('mla32_proof_test', root/'bench/proof.py')
+        proof = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(proof)
+        knob = 'VLLM_GLM53_MK_MLA_PREFILL32'
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory)/'boot.log'
+            log.write_text('[megakernel] mla prefill32 ENGAGED T=6912\nselftest mla prefill32=True -> ARM\n')
+            self.assertIs(proof.check([knob], str(log))['proof'][knob], False)
+            log.write_text('[megakernel] mla prefill32 LAUNCHED T=6912 W=2048\n')
+            self.assertIs(proof.check([knob], str(log))['proof'][knob], True)
 
 
 if __name__ == "__main__":

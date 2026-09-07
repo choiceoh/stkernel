@@ -133,3 +133,16 @@ runner source `4e0f226d17d78648aea48028279cb4b347c3e994`, supervisor 2792656,
 `srv2:/tmp/glm53-prefill-offline-0907`. Preflight passed and it was queue
 position 2 with an estimated 20:10 KST admission. This is a queue estimate,
 not a measured result or a guaranteed start. The MLA source pin is unchanged.
+
+## Direct-serving proof preparation (19:06 KST)
+
+The future serving checkout now emits `mla prefill32 LAUNCHED T=` after
+the actual eligible candidate call returns, and registers that exact marker
+with bench/proof.py. The earlier `ENGAGED` line preceded the call. A failed
+call cannot claim serving proof. Eight targeted dispatch/proof tests and
+composed snapshot parity passed on CPU.
+
+The queued offline runner and its e74b15e MLA checkout are unchanged. The
+CUDA source, GPU probe and candidate `_mla_prefill32` call function remain
+identical to the pending gate; hashes and AST parity are recorded in
+serving-proof-preparation.json. This preparation is not a new GPU result.

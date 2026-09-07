@@ -2430,11 +2430,12 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
             and ckv.element_size() == 1 and lens.is_contiguous()
             and not torch.cuda.is_current_stream_capturing()):
+        result = _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
         if not getattr(_mla_prefill32, "_announced", False):
             _mla_prefill32._announced = True
-            logger.warning("[megakernel] mla prefill32 ENGAGED T=%d W=%d register-Q tile=32",
+            logger.warning("[megakernel] mla prefill32 LAUNCHED T=%d W=%d register-Q tile=32",
                            T, slots.shape[1])
-        return _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
+        return result
     if (ENABLE_MLA_PREFILL_PAIR and 128 <= T <= 8192
             and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
