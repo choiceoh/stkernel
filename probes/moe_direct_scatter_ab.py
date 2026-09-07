@@ -37,6 +37,7 @@ def main():
     assert md._GLM53_B12X_STATIC_V2 is None
     stock_classes = md.MoEStaticKernelV4, md.MoEStaticKernelV5
     stock_sources = md._kernel_source_files
+    stock_disk_name = md._disk_kernel_name
     w13, sf13, w2, sf2 = fixture.expert_set(torch.Generator().manual_seed(53))
     scales = torch.ones(fixture.E, device='cuda')
     wrapper = fixture.served_wrapper()
@@ -49,6 +50,10 @@ def main():
         md.MoEStaticKernelV4, md.MoEStaticKernelV5 = (
             candidate_classes if arm == 'candidate' else stock_classes)
         md._kernel_source_files = candidate_sources if arm == 'candidate' else stock_sources
+        # A distinct outer JIT key prevents a same-process baseline executable
+        # from being reused before extra source dependencies are consulted.
+        md._disk_kernel_name = (lambda prefix,key: stock_disk_name(
+            prefix+'_direct_'+info['source_sha256'][:12],key)) if arm == 'candidate' else stock_disk_name
         md._STATIC_V2_KERNEL_CACHE.clear()
         if arm == 'stock':
             md._STATIC_V2_OVERRIDE = None
