@@ -115,3 +115,28 @@ PID is 2552739 and logs/completion are under
 and it was queue position 1 behind `inputserve30907`. GPU checks had not
 yet run. The second queued job, `mla32san40907`, belongs to PR #439 and
 completes only that candidate's remaining sanitizer checks.
+
+## Memory admission refusal and offline retry
+
+The corrected probe received GO at 18:30:48 KST and exited 3 at 18:30:49,
+before any GPU container launched. All four nodes were below the unchanged
+UMA guard with production serving resident (about 9.9–14.6 GiB available,
+about 20 GiB required). The raw log and completion are preserved. This is
+an admission failure, not a numerical or speed result.
+
+`probes/glm53_offline_checks.py` moves both candidates into one normal fleet
+boot turn. It pins the same two previously queued checkouts; MoE runs its
+full gate and MLA runs only its missing sanitizers. A strict ownership and
+four-node inventory check precedes any stop. Running persistent containers
+are stopped by exact ID, then restarted even on probe/stop failure, with
+configuration, image, overlay and manifest hashes and endpoint health checked.
+The probe memory guard is unchanged. The runner also requires 128 GiB spare
+disk per node. If the predecessor leaves no serving, the runner follows the
+standard last-holder public restore policy. It refuses a partial fleet.
+
+Direct-serving preparation adds `bench/onepass_fresh.py`: every canonical
+onepass request gets a distinct cache salt, while original request hashes,
+token counts, TTFT and prefix-hit deltas are retained. Metrics reads stay
+outside the measured request interval. The existing four-node memory watcher
+is included for the planned 2K/32K/128K comparison. These CPU-tested helpers
+are preparation; no direct-serving measurement is claimed.
