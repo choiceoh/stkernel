@@ -7,27 +7,30 @@ The reservation goes through normal fleet preflight/admission and never holds
 the GPU while waiting for a CPU/probe prerequisite.
 """
 import copy
-from pathlib import Path
 import subprocess
 
 
-def reference(payload):
+def reference(payload, index=0):
+    from measurement_contract import metadata, evaluations
     return dict(overlay=payload["snapshot"]["build"][:12], git=payload["spec"]["revision"],
-                harness=39, doc_lang="ko", thinking=True, runtime=payload["spec"]["context"],
-                workload=dict(ctx=[int(c) for c in payload["spec"]["env"].get(
-                    "QUALITY_CTX", "2000,32000,128000").split(",")], seed=7,
-                    max_tokens=400, combine_min_ctx=32000))
+                runtime=payload["spec"]["context"], **metadata(evaluations(payload['spec'])[index]['workload']))
 
 
-def samples(payload):
+def samples(payload, index=0):
+    from measurement_contract import evaluations, metric_value
     from baseline import load
     from judge import baselines_on, record_errors
-    rows, _ = baselines_on(load(payload["paths"]["ONEPASS_JSONL"]), reference(payload))
+    rows, _ = baselines_on(load(payload["paths"]["ONEPASS_JSONL"]), reference(payload, index))
     # Actual container ID + StartedAt distinguishes independent boots. Replays
     # of one boot and historical records without this evidence cannot pad n.
     distinct = {}
+    obj = evaluations(payload['spec'])[index]['objective']
     for r in rows:
-        if isinstance(r.get("boot_id"), str) and r["boot_id"] and not record_errors(r):
+        usable = obj['metric'] == 'quality' or metric_value(r, obj) is not None
+        if obj['metric'] == 'prefill_ttft' and r.get('cold_compile'):
+            usable = False
+        if (isinstance(r.get("boot_id"), str) and r["boot_id"] and not record_errors(r) and usable
+                and payload['spec']['revision'].startswith(r.get('git') or 'MISSING')):
             distinct[r["boot_id"]] = r
     return list(distinct.values())
 
@@ -51,32 +54,30 @@ def reserve(store, job):
     return request["id"]
 
 
+def ready(payload):
+    from measurement_contract import evaluations
+    return all(len(samples(payload, i)) >= (1 if e['objective']['metric'] == 'quality' else 3)
+               for i, e in enumerate(evaluations(payload['spec'])))
+
+
 def run(store, job, payload):
-    from baseline import load
-    from judge import compatible, is_baseline, record_errors
-    from experiments import verify
-    target = payload["baseline_samples"]
-    ref = reference(payload)
-    for index in range(target):
-        before = samples(payload)
-        if len(before) >= target:
-            break
-        verify(payload)
-        name = f"EXP-{job}-BASE-{index + 1}"
-        command = [payload["bash"], str(Path(payload["repo"]) / "bench/ab-lever.sh"), name, ""]
-        rc = subprocess.call(command, cwd=payload["repo"])
-        if rc:
-            return "failed", dict(evidence="gpu-baseline", returncode=rc, reason="shared defaults arm failed")
-        verify(payload)
-        fresh = [r for r in load(payload["paths"]["ONEPASS_JSONL"])
-                 if r.get("name") == name and r.get("experiment_id") == job and not r.get("rehearsal")]
-        if (len(fresh) != 1 or not compatible(fresh[0], ref) or not is_baseline(fresh[0])[0]
-                or record_errors(fresh[0]) or not fresh[0].get("boot_id")
-                or fresh[0]["boot_id"] in {r["boot_id"] for r in before}
-                or not payload["spec"]["revision"].startswith(fresh[0].get("git") or "MISSING")):
-            return "failed", dict(evidence="gpu-baseline", reason="defaults sample lacks fresh independent boot/gate evidence")
-        with store.db:
-            store.event(job, "baseline_sample", fresh[0])
-    bases = samples(payload)
-    return ("succeeded" if len(bases) >= target else "incomplete"), dict(
-        evidence="gpu-baseline", samples=len(bases), baseline=bases, scope="same build/workload/runtime")
+    from serving_group import measure
+    target = payload['baseline_samples']
+    try:
+        # A first compile-cold record cannot supply a steady-compile TTFT sample.
+        from measurement_contract import evaluations
+        extra = int(any(e['objective']['metric'] == 'prefill_ttft' for e in evaluations(payload['spec'])))
+        for index in range(target + extra):
+            if ready(payload):
+                break
+            before = {r['boot_id'] for r in samples(payload)}
+            records = measure(store, job, payload, f'EXP-{job}-BASE-{index + 1}', {})
+            if records[0]['boot_id'] in before:
+                raise ValueError('defaults sample reused an earlier boot')
+            with store.db:
+                store.event(job, 'baseline_sample', {'records': records})
+        state = 'succeeded' if ready(payload) else 'incomplete'
+        return state, dict(evidence='gpu-baseline', samples=len(samples(payload)),
+                           baseline=samples(payload), scope='same build/workload/runtime')
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return 'failed', dict(evidence='gpu-baseline', reason=str(exc))
