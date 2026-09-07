@@ -47,6 +47,85 @@ class FeedbackTests(unittest.TestCase):
         spec.update(changes)
         return spec
 
+    def test_dependency_completion_is_observed_without_a_second_of_idle_time(self):
+        store=self.store()
+        prerequisite=self.manual_job(store,'gate')
+        consumer=self.manual_job(store,'consumer',depends_on=[prerequisite])
+        clock=[0.0];observed=[]
+        def advance(seconds):
+            clock[0]+=seconds
+            if clock[0]>=.04:
+                store.state(prerequisite,'succeeded')
+        def verified(payload):
+            observed.append(clock[0])
+            self.assertEqual(store.get(prerequisite)['state'],'succeeded')
+            raise ValueError('verification boundary reached')
+        with patch.object(ex.time,'monotonic',side_effect=lambda:clock[0]),patch.object(ex.time,'sleep',side_effect=advance), \
+             patch.object(ex,'ensure_worker'),patch.object(ex,'verify',side_effect=verified):
+            ex.worker(store,consumer)
+        self.assertEqual(len(observed),1)
+        self.assertLessEqual(observed[0],.1)
+        self.assertEqual(store.get(consumer)['result']['reason'],'verification boundary reached')
+
+    def test_dependency_recovery_is_throttled_and_skips_completed_workers(self):
+        store=self.store()
+        completed=self.manual_job(store,'complete');store.state(completed,'succeeded')
+        waiting=self.manual_job(store,'waiting')
+        consumer=self.manual_job(store,'consumer',depends_on=[completed,waiting])
+        clock=[0.0];calls=[];polls=[]
+        def advance(seconds):
+            polls.append(seconds);clock[0]+=seconds
+            self.assertLess(clock[0],3)
+        def recover(current,job):
+            calls.append((job,clock[0]))
+            if len(calls)==2:
+                current.state(job,'succeeded')
+        with patch.object(ex.time,'monotonic',side_effect=lambda:clock[0]),patch.object(ex.time,'sleep',side_effect=advance), \
+             patch.object(ex,'ensure_worker',side_effect=recover),patch.object(ex,'verify',side_effect=ValueError('verification boundary reached')):
+            ex.worker(store,consumer)
+        self.assertEqual([job for job,_ in calls],[waiting,waiting])
+        self.assertGreaterEqual(calls[1][1]-calls[0][1],1)
+        self.assertLessEqual(max(polls),.05)
+        self.assertEqual(store.get(consumer)['result']['reason'],'verification boundary reached')
+
+    def test_incomplete_dependency_is_refreshed_before_blocking(self):
+        store=self.store()
+        prerequisite=self.manual_job(store,'gate',kind='pair');store.state(prerequisite,'incomplete')
+        consumer=self.manual_job(store,'consumer',depends_on=[prerequisite])
+        def refresh(current,job):
+            self.assertEqual(job,prerequisite)
+            current.state(job,'succeeded')
+            return current.get(job)
+        with patch.object(ex,'refresh_result',side_effect=refresh) as refreshed, \
+             patch.object(ex,'verify',side_effect=ValueError('verification boundary reached')):
+            ex.worker(store,consumer)
+        refreshed.assert_called_once()
+        self.assertEqual(store.get(consumer)['result']['reason'],'verification boundary reached')
+
+    def test_completed_dependencies_use_one_state_query_without_payload_reads(self):
+        store=self.store()
+        dependencies=[self.manual_job(store,'gate-'+str(i)) for i in range(8)]
+        for job in dependencies:store.state(job,'succeeded')
+        consumer=self.manual_job(store,'consumer',depends_on=dependencies)
+        statements=[];store.db.set_trace_callback(statements.append)
+        try:
+            with patch.object(store,'get',wraps=store.get) as reads, \
+                 patch.object(ex,'verify',side_effect=ValueError('verification boundary reached')):
+                ex.worker(store,consumer)
+            self.assertTrue(all(call.args[0]==consumer for call in reads.call_args_list))
+            self.assertEqual(len([s for s in statements if s.startswith('SELECT id,state FROM jobs WHERE id IN')]),1)
+        finally:store.db.set_trace_callback(None)
+
+    def test_retired_dependent_exits_before_verification(self):
+        store=self.store()
+        prerequisite=self.manual_job(store,'gate')
+        consumer=self.manual_job(store,'consumer',depends_on=[prerequisite])
+        with patch.object(ex.time,'sleep',side_effect=lambda _:store.state(consumer,'retired')), \
+             patch.object(ex,'ensure_worker'),patch.object(ex,'verify') as verified:
+            ex.worker(store,consumer)
+        verified.assert_not_called()
+        self.assertEqual(store.get(consumer)['state'],'retired')
+
     def test_cache_hit_needs_no_new_checkout_and_keeps_own_gates(self):
         (self.repo/'tests').mkdir()
         (self.repo/'tests/test_fast.py').write_text('import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertEqual(2+2,4)\n')
