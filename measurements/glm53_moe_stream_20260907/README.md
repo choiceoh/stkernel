@@ -216,3 +216,20 @@ controls for A/B2, with CG_UTIL_DELTA=0 for the already-adjusted value. This
 avoids per-boot automatic memory-budget drift and double graph-budget
 deduction. Six serving-runner tests and seven comparison tests pass, as do
 the MoE dispatch tests and composed snapshot checks.
+
+## Remote preparation at 19:55 KST — not submitted
+
+A clean serving checkout now exists at
+`srv2:/home/choiceoh/stkernel-moe-prefill-serving1-0907`, pinned to
+`72bb40ed3689eb025f9ef364d6f807ce462da6b5`, with the real GitHub origin and
+current-main ancestry verified. `prefill_serving.py --help` succeeded on the
+remote host without starting GPU or serving work. The prepared request and
+worker are under `srv2:/tmp/glm53-moe-prefill-serving1-0907`; the receipt
+explicitly says PREPARED_ONLY_NOT_SUBMITTED. No worker process was launched
+and no serving queue entry was added.
+
+After the selected offline GPU gate and recovery pass, the worker rechecks
+source cleanliness, gate parity and current-main ancestry before recording
+submission and entering the normal fleet queue as `moeprefill10907`. A changed
+main or failed gate is refused before reservation. Do not mistake this
+preparation receipt for executed or queued serving evidence.
