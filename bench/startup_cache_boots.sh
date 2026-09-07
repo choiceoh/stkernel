@@ -18,6 +18,7 @@ case "$MODE" in
   renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_EARLY_MM_WARMUP=0' ;;
   graph-profile) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
   overlay-deploy) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
+  campaign) stages=(); restore_knobs='' ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
 monitor_pid=
@@ -28,6 +29,11 @@ export PREFILL_WARMUP=0 QUALITY_CTX=${QUALITY_CTX:-2000,32000}
 export REPO LOGD
 printf '%s\n' "$(git rev-parse HEAD)" > "$EVIDENCE/source-commit.txt"
 cp profiles/glm53.env "$EVIDENCE/profile.env"
+declare -A campaign_knobs=()
+if [ "$MODE" = campaign ]; then
+  python3 bench/startup_campaign.py plan --spec "${STARTUP_CAMPAIGN_SPEC:?provide a campaign JSON}" --evidence "$EVIDENCE" > "$EVIDENCE/plan.tsv"
+  while IFS=$'\t' read -r stage knobs; do stages+=("$stage"); campaign_knobs[$stage]=$knobs; done < "$EVIDENCE/plan.tsv"
+fi
 
 snapshot() {
   local arm=$1 ip container
@@ -50,7 +56,7 @@ snapshot() {
     done
     docker inspect --format '{{json .Config.Env}}' glm53 | python3 -c 'import json,sys; print(json.dumps([v for v in json.load(sys.stdin) if v.startswith(("VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=", "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS="))]))' > "$EVIDENCE/$arm-graph-env.json"
   fi
-  docker inspect --format '{{json .Config.Env}}' glm53 | python3 -c 'import json,sys; print(json.dumps([v for v in json.load(sys.stdin) if v.startswith(("VLLM_GLM53_FP8_CACHE=", "VLLM_GLM53_RANK_CACHE=", "VLLM_GLM53_MK_PACK_FAST_IO=", "VLLM_GLM53_MK_PACK_SHA256=", "VLLM_GLM53_EARLY_MM_WARMUP="))]))' > "$EVIDENCE/$arm-cache-env.json" || true
+  docker inspect --format '{{json .Config.Env}}' glm53 | python3 -c 'import json,sys; print(json.dumps([v for v in json.load(sys.stdin) if v.startswith("VLLM_")]))' > "$EVIDENCE/$arm-cache-env.json" || true
 }
 
 failed() {
@@ -59,9 +65,11 @@ failed() {
   if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true; fi
   if [ "$rc" != 0 ]; then
     echo "startup-cache trial failed rc=$rc; restoring control serving"
-    snapshot "${current_arm:-failure}"
-    LEGS=none HEALTH_BUDGET_S=1800 bash bench/ab-lever.sh "${PREFIX}RESTORE" "$restore_knobs" > "$EVIDENCE/restore.log" 2>&1 || true
-    snapshot RESTORE
+    snapshot "${current_arm:-failure}" || true
+    if [ "${FLEET_RESTORE_MANAGED:-0}" != 1 ]; then
+      LEGS=none HEALTH_BUDGET_S=1800 bash bench/ab-lever.sh "${PREFIX}RESTORE" "$restore_knobs" > "$EVIDENCE/restore.log" 2>&1 || true
+      snapshot RESTORE || true
+    fi
   fi
   printf '%s\n' "$rc" > "$EVIDENCE/exit-code"
   exit "$rc"
@@ -120,6 +128,7 @@ if stage != "PRIME":
 print("all-rank same-content deployment path verified")
 DEPLOY_GATE
   fi
+  [ "$MODE" != campaign ] || knobs=${campaign_knobs[$stage]}
   start=$(date +%s)
   previous=$(docker inspect --format '{{.Id}}' glm53 2>/dev/null || true)
   (
@@ -151,9 +160,22 @@ for node in (1, 2, 3, 4):
     rows = re.findall(r"\[fp8-cache\].*?enabled=True hit=(\d+) miss=(\d+) errors=(\d+)", text)
     assert len(rows) >= 2, f"srv{node}: target/drafter FP8 cache receipts missing"
     assert all(int(e) == 0 for h, m, e in rows), f"srv{node}: FP8 cache errors: {rows}"
-    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile", "overlay-deploy") and stage != "PRIME"):
+    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile", "overlay-deploy", "campaign") and stage != "PRIME"):
         assert re.search(r"\[rank-cache\] hit rank=", text), f"srv{node}: rank cache missed"
         assert all(int(h) > 0 and int(m) == 0 for h, m, e in rows), f"srv{node}: FP8 warm misses: {rows}"
+    if mode == "campaign":
+        import json
+        env = dict(v.split("=", 1) for v in json.loads((root / f"{arm}-cache-env.json").read_text()))
+        if "VLLM_GLM53_MK_PACK_FAST_IO" in env:
+            fast = int(env["VLLM_GLM53_MK_PACK_FAST_IO"])
+            io = re.findall(r"\[mk-pack-io\].*?fast=(\d+).*?fast_hits=(\d+) legacy_hits=(\d+)", text)
+            assert len(io) >= 2, f"srv{node}: pack IO receipts missing"
+            assert all(int(f) == fast and (stage == "PRIME" or int(h if fast else l) > 0)
+                       and int(l if fast else h) == 0 for f, h, l in io), f"srv{node}: campaign pack IO mismatch: {io}"
+        if env.get("VLLM_GLM53_MK_PACK_SHA256") == "1" and stage != "PRIME":
+            keys = re.findall(r"sha_hits=(\d+) md5_fallback=(\d+) aliases=(\d+) alias_errors=(\d+)", text)
+            assert len(keys) >= 2 and all(int(h) > 0 and int(m) == int(a) == int(e) == 0 for h,m,a,e in keys), f"srv{node}: campaign SHA alias miss"
+        assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text), f"srv{node}: campaign pack failure"
     if mode == "pack-io":
         fast = int(stage.startswith("FAST"))
         io = re.findall(r"\[mk-pack-io\].*?fast=(\d+).*?fast_hits=(\d+) legacy_hits=(\d+)", text)
@@ -231,16 +253,23 @@ row = json.loads(open(sys.argv[1]).readlines()[-1])
 assert row['quality']['ok'] == row['quality']['total'], row['quality']
 assert row['korean']['dirty'] == 0, row['korean']
 PY
-  if [ "$MODE" = pack-io ] && [ "$stage" = PRIME ]; then
+  if [ "$stage" = PRIME ] && { [ "$MODE" = pack-io ] || { [ "$MODE" = campaign ] && [[ $knobs == *VLLM_GLM53_MK_PACK_FAST_IO=* ]]; }; }; then
     docker cp "$REPO/probes/glm53_pack_io_check.py" glm53:/tmp/glm53_pack_io_check.py
     docker exec glm53 python3 /tmp/glm53_pack_io_check.py > "$EVIDENCE/pack-io-gpu.json" 2> "$EVIDENCE/pack-io-gpu.log"
     cat "$EVIDENCE/pack-io-gpu.json"
   fi
-  if [ "$MODE" = pack-key ] && [ "$stage" = PRIME ]; then
+  if [ "$stage" = PRIME ] && { [ "$MODE" = pack-key ] || { [ "$MODE" = campaign ] && [[ $knobs == *VLLM_GLM53_MK_PACK_SHA256=1* ]]; }; }; then
     docker cp "$REPO/probes/glm53_pack_key_check.py" glm53:/tmp/glm53_pack_key_check.py
     docker exec glm53 python3 /tmp/glm53_pack_key_check.py --out /tmp/pack-key-gpu.json > "$EVIDENCE/pack-key-gpu.log" 2>&1
     docker cp glm53:/tmp/pack-key-gpu.json "$EVIDENCE/pack-key-gpu.json"
     cat "$EVIDENCE/pack-key-gpu.json"
   fi
+  if [ "$MODE" = campaign ]; then
+    python3 bench/startup_campaign.py check --evidence "$EVIDENCE" --stage "$stage"
+  fi
   echo "=== $current_arm complete $(date -Is) ==="
 done
+
+if [ "$MODE" = campaign ]; then
+  python3 bench/startup_campaign.py summarize --evidence "$EVIDENCE"
+fi
