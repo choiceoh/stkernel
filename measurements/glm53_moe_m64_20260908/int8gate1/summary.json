@@ -1,0 +1,141 @@
+{
+  "source_revision": "183df3a2065c5c7bab1729c66282e633cbbe3fa0",
+  "gate_pass": false,
+  "serving_acceptance": false,
+  "numeric_cases": {
+    "bf16": 10,
+    "fp8-v3-rs-int8": 10
+  },
+  "memcheck": {
+    "error_count": 34,
+    "api_report": "========= Program hit CUDA_ERROR_INVALID_VALUE (error 1) due to \"invalid argument\" on CUDA API call to cuGetProcAddress_v2.",
+    "program_numerical_cases": 6,
+    "program_int8_fidelity_cases": 40,
+    "sanitizer_pass": false
+  },
+  "racecheck_reached": false,
+  "direct_ttft_reached": false,
+  "exact_incoming_recovery": {
+    "local": true,
+    "10.10.10.1": true,
+    "10.10.10.3": true,
+    "10.10.10.4": true
+  },
+  "outer_completion": {
+    "started": "2026-09-08T05:14:07.700632",
+    "exit_code": 1,
+    "ended": "2026-09-08T05:21:40.549933"
+  },
+  "synthetic_component_timings": [
+    {
+      "transport": "bf16",
+      "rows": 6144,
+      "skew": false,
+      "baseline_ms": 17.63923168182373,
+      "candidate_ms": 14.461488246917725,
+      "latency_reduction_pct": 18.015203225549204
+    },
+    {
+      "transport": "bf16",
+      "rows": 6144,
+      "skew": true,
+      "baseline_ms": 13.075263977050781,
+      "candidate_ms": 15.335247993469238,
+      "latency_reduction_pct": -17.284423629114464
+    },
+    {
+      "transport": "bf16",
+      "rows": 6912,
+      "skew": false,
+      "baseline_ms": 18.764351844787598,
+      "candidate_ms": 15.854288101196289,
+      "latency_reduction_pct": 15.508469291464877
+    },
+    {
+      "transport": "bf16",
+      "rows": 6912,
+      "skew": true,
+      "baseline_ms": 14.757520198822021,
+      "candidate_ms": 17.12492847442627,
+      "latency_reduction_pct": -16.04204665627509
+    },
+    {
+      "transport": "bf16",
+      "rows": 8192,
+      "skew": false,
+      "baseline_ms": 20.75721549987793,
+      "candidate_ms": 17.757568359375,
+      "latency_reduction_pct": 14.451105643339158
+    },
+    {
+      "transport": "bf16",
+      "rows": 8192,
+      "skew": true,
+      "baseline_ms": 17.30451202392578,
+      "candidate_ms": 19.984944343566895,
+      "latency_reduction_pct": -15.489788535701333
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 6144,
+      "skew": false,
+      "baseline_ms": 14.35038423538208,
+      "candidate_ms": 12.69649600982666,
+      "latency_reduction_pct": 11.525044893764026
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 6144,
+      "skew": true,
+      "baseline_ms": 12.266079902648926,
+      "candidate_ms": 14.236512184143066,
+      "latency_reduction_pct": -16.064075051953775
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 6912,
+      "skew": false,
+      "baseline_ms": 15.49342393875122,
+      "candidate_ms": 14.809136390686035,
+      "latency_reduction_pct": 4.416632183888591
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 6912,
+      "skew": true,
+      "baseline_ms": 14.374879837036133,
+      "candidate_ms": 16.020048141479492,
+      "latency_reduction_pct": -11.444744742872004
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 8192,
+      "skew": false,
+      "baseline_ms": 17.55172824859619,
+      "candidate_ms": 17.015088081359863,
+      "latency_reduction_pct": 3.057477643429496
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "rows": 8192,
+      "skew": true,
+      "baseline_ms": 17.024080276489258,
+      "candidate_ms": 19.14900779724121,
+      "latency_reduction_pct": -12.481893213852736
+    }
+  ],
+  "observed_packages": {
+    "cuda_bindings": "13.3.1",
+    "cuda_python": "13.3.1",
+    "cutlass_dsl": "4.6.2",
+    "torch": "2.13.0+cu130",
+    "host_driver": "580.159.03",
+    "sanitizer": "2025.3.1.0"
+  },
+  "next_step": "Isolate cuGetProcAddress_v2 reports in a minimal CUDA binding program; retain all sanitizer checks.",
+  "limitations": [
+    "All 34 reported errors are CUDA API lookup errors. Their cause still needs isolated reproduction.",
+    "Program-level numerical/fidelity completion does not override sanitizer failure.",
+    "Synthetic component timing is not serving TTFT and does not establish cumulative 40 percent improvement."
+  ]
+}

@@ -5,7 +5,15 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
-Latest status (2026-09-08 05:05 KST): the separate RS-only INT8 diagnostic has
+Latest status (2026-09-08 05:21 KST): the full INT8 combination gate passed all
+20 BF16/compressed TP4 numerical cases but failed memcheck with 34
+`cuGetProcAddress_v2` invalid-value API reports. Six M64 and forty INT8 sanitizer
+program checks completed; the sanitizer itself failed. Racecheck and direct
+TTFT were not reached. Exact incoming fleet recovery completed at 05:21:40 KST.
+See `measurements/glm53_moe_m64_20260908/int8gate1/`. A separate minimal CUDA
+binding diagnostic will isolate the API reports without weakening checks.
+
+Earlier at 05:05 KST, the separate RS-only INT8 diagnostic
 completed 72 TP4 trials and exact incoming fleet recovery. All 442,368 row-trials
 per arm have zero INT8 candidate/control failures under the original thresholds;
 the same actual partials through FP8 have 94/17 failures. All 1,152 packet and
