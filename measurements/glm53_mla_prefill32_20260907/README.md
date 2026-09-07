@@ -169,3 +169,14 @@ A/B2; it sets CG_UTIL_DELTA=0 when reusing the already-adjusted GMU, so the
 graph-memory deduction is not applied twice. Six serving-runner CPU tests,
 seven evidence-comparison tests, eight MLA dispatch/proof tests, the memory
 watcher tests and composed snapshot checks passed after preparation.
+
+At 19:55 KST a clean remote serving checkout was prepared at
+`srv2:/home/choiceoh/stkernel-mla-prefill-serving1-0907`, revision
+`4855dcaa3643aea791107a1d112e5e7a64e6e1b5`, with real GitHub origin and
+current-main ancestry checked. The request and worker are under
+`srv2:/tmp/glm53-mla-prefill-serving1-0907`. Its state is explicitly
+PREPARED_ONLY_NOT_SUBMITTED; no worker was launched or serving job queued.
+After the offline sanitizer gate and recovery pass, the worker rechecks the
+gate, unchanged candidate source and current-main ancestry before submitting
+`mlaprefill10907`. The remote CLI import/argument check passed without GPU
+work. This preparation is not a measured result.
