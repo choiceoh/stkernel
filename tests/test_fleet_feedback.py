@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import test_fleet_experiments as fixtures
 import test_fleet_coalescing as coalescing
@@ -120,6 +121,64 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(stages['checks-fleet']['manifest']['resources']['cpu_slots'],2)
         self.assertEqual(set(stages['gpu']['requires']),set(stages)-{'gpu'})
         self.assertTrue(all(not stages[n]['requires'] for n in stages if n!='gpu'))
+
+    def test_cpu_results_and_ids_are_available_before_gpu_attestation(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_early.py').write_text('import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
+        self.refresh_deployed_fixture()
+        raw=dict(hypothesis='early CPU feedback',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                 objective={'metric':'quality'},cpu_suites=[],cpu_tests=['tests/test_early.py'],
+                 prepare=[dict(command=[sys.executable,'-c','print("prepared")'],requires=['checks'])])
+        path=self.root/'early-plan.json';path.write_text(json.dumps(raw))
+        args=SimpleNamespace(manifest=path,base=None,submit=True,prepare_only=False,session='early',supersedes=[])
+        store=self.store();original=ex.snapshot;observed=[]
+        def attestation(repo,spec,stamp):
+            if spec['kind']=='pair':
+                saved=json.loads(next((store.root/'plans').glob('*/plan.json')).read_text())
+                stages={s['name']:s for s in saved['stages']}
+                ids=[stages[name]['submission']['id'] for name in ('checks','prepare-1')]
+                self.assertNotIn('submission',stages['gpu'])
+                self.assertEqual(stages['gpu']['manifest']['depends_on'],sorted(ids))
+                self.assertTrue(stages['gpu']['dependencies_resolved'])
+                for name in ('checks','prepare-1'):
+                    stage=stages[name]
+                    self.assertEqual(json.loads(Path(stage['path']).read_text()),stage['manifest'])
+                    self.assertEqual(self.wait(stage['submission']['id'])['state'],'succeeded')
+                self.assertFalse((self.logs/'arms').exists())
+                observed.append(ids)
+            return original(repo,spec,stamp)
+        with patch.dict(os.environ,self.env,clear=True),patch.object(ex,'snapshot',side_effect=attestation):
+            value=plan.run(args,store,self.repo)
+        self.assertNotIn('error',value)
+        self.assertEqual(len(observed),2)  # Both fresh deployment attestations still run.
+        gpu=value['stages'][-1]
+        self.assertEqual(gpu['manifest']['depends_on'],sorted(observed[0]))
+        self.assertFalse(any(d.startswith('pending-stage:') for d in gpu['manifest']['depends_on']))
+        self.assertEqual(self.wait(gpu['submission']['id'])['state'],'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'),2)
+
+    def test_failed_worker_start_remains_recoverable_in_final_launch(self):
+        (self.repo/'tests').mkdir()
+        (self.repo/'tests/test_launch.py').write_text('import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
+        self.commit()
+        raw=dict(hypothesis='recover CPU launch',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
+                 cpu_suites=[],cpu_tests=['tests/test_launch.py'])
+        path=self.root/'launch-plan.json';path.write_text(json.dumps(raw))
+        args=SimpleNamespace(manifest=path,base=None,submit=False,prepare_only=True,session='launch',supersedes=[])
+        store=self.store();original=ex.ensure_worker;calls=[]
+        def launch(current,job):
+            calls.append(job)
+            if len(calls)==1:
+                raise OSError('temporary worker launch failure')
+            return original(current,job)
+        with patch.dict(os.environ,self.env,clear=True),patch.object(ex,'ensure_worker',side_effect=launch):
+            value=plan.run(args,store,self.repo)
+        job=value['stages'][0]['submission']['id']
+        self.assertEqual(calls,[job,job])
+        self.assertEqual(value['error'],'temporary worker launch failure')
+        self.assertEqual(json.loads(Path(value['path']).read_text())['stages'][0]['submission']['id'],job)
+        self.assertEqual(self.wait(job)['state'],'succeeded')
+        self.assertFalse((self.logs/'arms').exists())
 
     def test_preparation_runs_while_checks_wait_but_gpu_remains_blocked(self):
         release=self.root/'release'

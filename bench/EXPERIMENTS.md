@@ -144,8 +144,12 @@ its stage remains `checks`; contracts retain `checks-math`, `checks-layout` and
 `checks-dispatch`. The GPU stage requires every check and preparation stage.
 Fleet stages reserve up to two CPU slots by default (respecting a one-slot pool
 policy); set `cpu_jobs` to 1..8 to choose explicitly. The CPU stages are submitted
-as one batch. If GPU deployment attestation then fails, the CPU IDs and resolved
-GPU manifest remain available, including in the saved plan.
+as one batch. Their IDs and resolved manifests are saved and their workers start
+before GPU deployment attestation. While deployment checks are still pending,
+agents can read `plans/<plan-id>/plan.json` and use the recorded CPU IDs with
+`result`, `wait`, or their session inbox. Explicit preparation dependencies and
+all GPU prerequisites still apply. If deployment attestation fails, CPU work
+continues and its IDs remain available in the saved plan and error response.
 
 For multiple goals on the **same knobs/image/configuration**, replace
 `objective`/`workload` with `evaluations`, an array of up to six objects of that
