@@ -26,15 +26,16 @@ class BootReceiptTests(unittest.TestCase):
             self.assertEqual(Path(root, 'exit-code').read_text().strip(), '1')
             self.assertEqual(Path(root, 'restored').read_text().strip(), 'restored')
 
-    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None):
+    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None, observed_knobs=None):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
             if mode == 'campaign':
                 Path(root, 'campaign.json').write_text(json.dumps(dict(arms=[dict(stage=stage, knobs=campaign_knobs if campaign_knobs is not None else {
                     'VLLM_GLM53_MK_PACK_FAST_IO':str(fast), 'VLLM_GLM53_MK_PACK_SHA256':'0'})])))
-                Path(root, 'TEST-cache-env.json').write_text(json.dumps([
-                    'VLLM_GLM53_MK_PACK_FAST_IO='+str(fast), 'VLLM_GLM53_MK_PACK_SHA256=0']))
+                env = observed_knobs if observed_knobs is not None else (campaign_knobs if campaign_knobs is not None else {
+                    'VLLM_GLM53_MK_PACK_FAST_IO':str(fast), 'VLLM_GLM53_MK_PACK_SHA256':'0'})
+                Path(root, 'TEST-cache-env.json').write_text(json.dumps([k+'='+v for k,v in env.items()]))
             for node in (1, 2, 3, 4):
                 Path(root, f"TEST-srv{node}.log").write_text(
                     "[rank-cache] hit rank=0\n" + 2 * (
@@ -107,13 +108,28 @@ class BootReceiptTests(unittest.TestCase):
                 self.check_receipts("PRIME", fast, hits, 0, suffix)
 
     def test_shared_campaign_retains_per_node_warm_pack_receipts(self):
-        self.check_receipts('FASTIOR1', 1, 253, 0, mode='campaign')
-        self.check_receipts('BASE1', 0, 0, 253, mode='campaign')
+        self.check_receipts('FASTIOR1', 1, 253, 0, mode='campaign', campaign_knobs={'VLLM_GLM53_MK_PACK_FAST_IO':'1'})
+        self.check_receipts('BASE1', 0, 0, 253, mode='campaign', campaign_knobs={'VLLM_GLM53_MK_PACK_FAST_IO':'0'})
         with self.assertRaisesRegex(AssertionError, 'campaign pack IO mismatch'):
             self.check_receipts('FASTIOR1', 1, 0, 0, mode='campaign')
 
     def test_unrelated_campaign_does_not_infer_pack_gate_from_profile_defaults(self):
         self.check_receipts('OTHERR1', 1, 0, 0, mode='campaign', campaign_knobs={'VLLM_OTHER':'1'})
+
+    def test_campaign_rejects_wrong_observed_env_before_quality_work(self):
+        with self.assertRaisesRegex(AssertionError, 'env differs from plan'):
+            self.check_receipts('BASE1', 1, 253, 0, mode='campaign',
+                campaign_knobs={'VLLM_GLM53_MK_PACK_FAST_IO':'0'}, observed_knobs={'VLLM_GLM53_MK_PACK_FAST_IO':'1'})
+
+    def test_campaign_checks_both_enabled_and_disabled_sha_paths(self):
+        for sha in (0,1):
+            knobs = {'VLLM_GLM53_MK_PACK_SHA256':str(sha), 'VLLM_GLM53_MK_PACK_FAST_IO':'1'}
+            fields = f' sha_hits={253 if sha else 0} md5_fallback=0 aliases=0 alias_errors=0'
+            self.check_receipts('BASE1', f'1 sha256={sha}', 253, 0, mode='campaign', campaign_knobs=knobs, key_fields=fields)
+            for bad in (fields.replace(f'sha_hits={253 if sha else 0}', 'sha_hits=1'),
+                        fields.replace('md5_fallback=0', 'md5_fallback=1'), fields.replace('aliases=0','aliases=1')):
+                with self.assertRaisesRegex(AssertionError, 'SHA path mismatch'):
+                    self.check_receipts('BASE1', f'1 sha256={sha}', 253, 0, mode='campaign', campaign_knobs=knobs, key_fields=bad)
 
 
 if __name__ == "__main__":

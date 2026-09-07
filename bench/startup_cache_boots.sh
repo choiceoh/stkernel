@@ -172,15 +172,19 @@ for node in (1, 2, 3, 4):
         import json
         env = dict(v.split("=", 1) for v in json.loads((root / f"{arm}-cache-env.json").read_text()))
         planned = next(row["knobs"] for row in json.loads((root / "campaign.json").read_text())["arms"] if row["stage"] == stage)
+        assert all(env.get(key) == value for key, value in planned.items()), f"srv{node}: campaign env differs from plan"
         if "VLLM_GLM53_MK_PACK_FAST_IO" in planned:
-            fast = int(env["VLLM_GLM53_MK_PACK_FAST_IO"])
+            fast = int(planned["VLLM_GLM53_MK_PACK_FAST_IO"])
             io = re.findall(r"\[mk-pack-io\].*?fast=(\d+).*?fast_hits=(\d+) legacy_hits=(\d+)", text)
             assert len(io) >= 2, f"srv{node}: pack IO receipts missing"
             assert all(int(f) == fast and (stage == "PRIME" or int(h if fast else l) > 0)
                        and int(l if fast else h) == 0 for f, h, l in io), f"srv{node}: campaign pack IO mismatch: {io}"
-        if planned.get("VLLM_GLM53_MK_PACK_SHA256") == "1" and stage != "PRIME":
-            keys = re.findall(r"sha_hits=(\d+) md5_fallback=(\d+) aliases=(\d+) alias_errors=(\d+)", text)
-            assert len(keys) >= 2 and all(int(h) > 0 and int(m) == int(a) == int(e) == 0 for h,m,a,e in keys), f"srv{node}: campaign SHA alias miss"
+        if "VLLM_GLM53_MK_PACK_SHA256" in planned and stage != "PRIME":
+            sha = int(planned["VLLM_GLM53_MK_PACK_SHA256"])
+            keys = re.findall(r"\[mk-pack-io\].*?sha256=(\d+).*?fast_hits=(\d+) legacy_hits=(\d+) sha_hits=(\d+) md5_fallback=(\d+) aliases=(\d+) alias_errors=(\d+)", text)
+            assert len(keys) >= 2 and all(int(s) == sha and int(m) == int(a) == int(e) == 0
+                and (int(h) > 0 and int(sh) == int(h) if sha else int(sh) == 0)
+                for s,h,l,sh,m,a,e in keys), f"srv{node}: campaign SHA path mismatch: {keys}"
         assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text), f"srv{node}: campaign pack failure"
     if mode == "pack-io":
         fast = int(stage.startswith("FAST"))

@@ -77,7 +77,7 @@ test ! -e "$LOGD/fail-restore"
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
-        second = self.launch('second', "import os,subprocess,hashlib; from pathlib import Path; p=Path(os.environ['FLEET_RUNNER_REPO'],'bench/fleet.sh'); assert hashlib.sha256(p.read_bytes()).hexdigest() in subprocess.check_output(['bash',os.environ['FLEET'],'version'],text=True)")
+        second = self.launch('second', "import os,subprocess,hashlib; from pathlib import Path; p=Path(os.environ['FLEET_RUNNER_REPO'],'bench/fleet.sh')\nif hashlib.sha256(p.read_bytes()).hexdigest() not in subprocess.check_output(['bash',os.environ['FLEET'],'version'],text=True): raise RuntimeError('version is not pinned')")
         self.until(lambda:self.ready('second'))
         # A common checkout update must not replace either in-flight controller.
         (self.repo/'bench/fleet_restore.sh').write_text('exit 99\n')
@@ -153,6 +153,19 @@ test ! -e "$LOGD/fail-restore"
         code = "import os,subprocess; assert subprocess.call(['bash',os.environ['FLEET'],'restore-needed',os.environ['FLEET_SESSION']])==1"
         self.assertEqual(self.wait(self.launch('nested', code)), 0)
         self.assertEqual((self.logs/'restores').read_text().splitlines(), ['nested'])
+
+    def test_cancel_between_holder_and_debt_transfer_restores(self):
+        source = self.repo/'bench/fleet_handoff.py'
+        source.write_text(source.read_text().replace(
+            "    if managed:\n        claim_held(directory, session, pid)",
+            "    if managed:\n        (directory / 'admission-gap').touch()\n        time.sleep(60)\n        claim_held(directory, session, pid)"))
+        receiver = self.launch('receiver', 'raise RuntimeError("payload must not start")')
+        self.until(lambda:(self.logs/'fleet/admission-gap').exists())
+        receiver.terminate()
+        self.assertEqual(self.wait(receiver), 143)
+        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['receiver'])
+        self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
+        self.assertFalse(self.held('receiver'))
 
 
 if __name__ == '__main__':

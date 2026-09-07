@@ -1,0 +1,68 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_fleet_runtime.py",
+        "build/boundary-runtime-linux-individual-0.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 3.41,
+      "log": "build/boundary-runtime-linux-individual-0.log",
+      "skipped": [],
+      "tests_run": 15,
+      "counts": {
+        "tests_run": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_fleet_runtime.RuntimeTests.test_baseline_worker_reclaims_legacy_orphan_before_verification",
+          "test_fleet_runtime.RuntimeTests.test_dead_retired_or_oversized_head_does_not_strand_followers",
+          "test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue",
+          "test_fleet_runtime.RuntimeTests.test_finished_child_uses_wait_instead_of_a_fixed_sleep",
+          "test_fleet_runtime.RuntimeTests.test_group_probe_filters_other_groups_and_fails_closed",
+          "test_fleet_runtime.RuntimeTests.test_large_waiter_cannot_be_overtaken_by_repeated_small_arrivals",
+          "test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries",
+          "test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request",
+          "test_fleet_runtime.RuntimeTests.test_resource_timeout_cleans_only_its_waiter",
+          "test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning",
+          "test_fleet_runtime.RuntimeTests.test_running_held_manual_and_incomplete_baseline_demand_is_preserved",
+          "test_fleet_runtime.RuntimeTests.test_shared_baseline_survives_until_its_last_consumer_fails",
+          "test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage",
+          "test_fleet_runtime.TimingTests.test_malformed_assignment_cannot_skip_or_duplicate_tests",
+          "test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_fleet_runtime.RuntimeTests.test_baseline_worker_reclaims_legacy_orphan_before_verification": 0.1250431850203313,
+          "test_fleet_runtime.RuntimeTests.test_dead_retired_or_oversized_head_does_not_strand_followers": 0.3727979179820977,
+          "test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue": 0.11707778600975871,
+          "test_fleet_runtime.RuntimeTests.test_finished_child_uses_wait_instead_of_a_fixed_sleep": 0.11805587995331734,
+          "test_fleet_runtime.RuntimeTests.test_group_probe_filters_other_groups_and_fails_closed": 0.01714693894609809,
+          "test_fleet_runtime.RuntimeTests.test_large_waiter_cannot_be_overtaken_by_repeated_small_arrivals": 0.16824940597871318,
+          "test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries": 0.11723858601180837,
+          "test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request": 1.1219294239999726,
+          "test_fleet_runtime.RuntimeTests.test_resource_timeout_cleans_only_its_waiter": 0.20649999397573993,
+          "test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning": 0.1224310029647313,
+          "test_fleet_runtime.RuntimeTests.test_running_held_manual_and_incomplete_baseline_demand_is_preserved": 0.4975488660275005,
+          "test_fleet_runtime.RuntimeTests.test_shared_baseline_survives_until_its_last_consumer_fails": 0.1317475500400178,
+          "test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage": 5.699199391528964e-05,
+          "test_fleet_runtime.TimingTests.test_malformed_assignment_cannot_skip_or_duplicate_tests": 0.0008728289976716042,
+          "test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not": 0.19626333803171292
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 15
+}

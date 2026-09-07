@@ -622,17 +622,28 @@ reclaim the hold through normal admission and restore. A receiver that fails
 before boot still restores. Probes and unsupervised waiters cannot inherit this
 responsibility. No live holder is preempted.
 
+Protocol 2 commits the holder before transferring restore debt. If admission is
+cancelled between those writes, the receiver reconciles ownership from its own
+hold before recovery; the donor never accepts a transfer with no receiver hold.
+Older pinned protocols finish at a restored boundary instead of receiving a new
+protocol handoff.
+
 The final holder uses `bench/fleet_restore.sh`: clean approved main, public
 port 8000, profile defaults, warmup, no measurement leg. Candidate environment
 overrides are removed. An already healthy public defaults arm of that approved
-build avoids a duplicate boot. `FLEET_PRODUCTION_REPO` selects the production
+build and approved immutable image avoids a duplicate boot. The public bind is
+read from the launcher's decoded static command, without executing shell text.
+`FLEET_PRODUCTION_REPO` selects the production
 checkout; it defaults to `/home/choiceoh/stkernel`. Restore failures return
 nonzero and retain `restore-debt.json`; a subsequent supervised boot can recover
 it before probes are admitted. SIGKILL/host loss cannot run a process's cleanup:
 the debt remains visible for recovery; this is not a host-level watchdog.
 An operator can put the path of a dedicated approved-main checkout in
-`fleet/production-repo`; this separates restoration from a common checkout that
+`$FLEET_DIR/production-repo`; this separates restoration from a common checkout that
 contains unmerged experiment work. An explicit `FLEET_PRODUCTION_REPO` wins.
+The path may contain spaces and need not end with a newline. A clean checkout
+ahead of main is detached at approved main, preserving its candidate branch;
+dirty work is refused.
 
 Custom boot scripts must accept stopped serving. Before stopping anything, use:
 
