@@ -57,10 +57,11 @@ Only a passing GPU gate can proceed to a matched same-build fresh-cache
 
 Status: PR #455 remains draft and default-off. Check1 failed before M64 launch
 and restored the original serving fleet; see below. The gated M64 port is pinned
-as `50c76f75a91390e19aa66496013d9a6efcdee597` for a new check2 run. CPU checks
+as `a1622f17fc4be5d0d5325130f533270427e16886` for check3 on main `d489639`.
+Check2 was rejected before submission because main advanced; it never ran CUDA. CPU checks
 pass (6685 logic, 30 megakernel, 92 fleet; 6 M64 contracts, 3 API, 8 recovery;
 10 serving gate, 7 comparator, 4 fresh-cache and 4 memory tests). The serving
-collector requires check2's TP4 numerics, both sanitizers, matching source and
+collector requires check3's TP4 numerics, both sanitizers, matching source and
 recovery. No candidate speedup or direct TTFT result is available yet.
 
 ## Check1 failure and gated M64 port
