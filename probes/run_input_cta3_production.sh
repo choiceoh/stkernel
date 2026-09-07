@@ -91,5 +91,7 @@ export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$out/records.raw.jsonl ONEPASS_VERDICTS=$out/verdicts.jsonl
-# The default is CTA2; return to that same-build baseline to bound boot drift.
-bash bench/chain.sh 'ICTA3B1=' 'ICTA3A1=VLLM_GLM53_MK_INPUT_CTA=4' 'ICTA3B2='
+# Pin the CTA2 baseline explicitly; the profile default is CTA4 since #465.
+# Returning to that same-build baseline bounds boot drift.
+bash bench/chain.sh 'ICTA3B1=VLLM_GLM53_MK_INPUT_CTA=2' \
+  'ICTA3A1=VLLM_GLM53_MK_INPUT_CTA=4' 'ICTA3B2=VLLM_GLM53_MK_INPUT_CTA=2'
