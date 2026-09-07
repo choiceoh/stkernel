@@ -93,8 +93,19 @@ _GLM53_B12X_PREFILL_REUSE = (
 _GLM53_B12X_PREFILL_FC1_N128 = (
     os.environ.get("VLLM_GLM53_B12X_PREFILL_FC1_N128") == "1"
 )
+_GLM53_B12X_PREFILL_STREAM_FC2 = (
+    os.environ.get("VLLM_GLM53_B12X_PREFILL_STREAM_FC2") == "1"
+)
+if _GLM53_B12X_PREFILL_STREAM_FC2 and (
+    _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128
+):
+    raise ValueError(
+        "PREFILL_STREAM_FC2 must be tested separately from PREFILL_REUSE/FC1_N128")
 MoEGatedPrefillReuseKernel = None
 MoEGatedPrefillN128Kernel = None
+MoEGatedPrefillStreamKernel = None
+_prefill_stream_announce = [False]
+_prefill_stream_launch_announce = [False]
 _prefill_reuse_announce = [False]
 if _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128:
     # 39차: boot-log anchor for the bracket -- the decline warning below only
@@ -140,6 +151,22 @@ def _prefill_reuse_stock_contract_matches(*, fc1_n128: bool = False) -> bool:
     MoEGatedPrefillReuseKernel = candidate
     if fc1_n128:
         MoEGatedPrefillN128Kernel = wide_candidate
+    return True
+
+
+def _prefill_stream_stock_contract_matches() -> bool:
+    global MoEGatedPrefillStreamKernel
+    if not _prefill_reuse_stock_contract_matches(fc1_n128=True):
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill stream] DECLINED: inherited source contract changed")
+        return False
+    try:
+        from .moe_dynamic_prefill_n128 import MoEGatedPrefillStreamKernel as candidate
+    except (ImportError, AttributeError) as exc:
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill stream] DECLINED: deferred import failed: %r", exc)
+        return False
+    MoEGatedPrefillStreamKernel = candidate
     return True
 
 # Micro kernel cutover thresholds (routed pairs)
@@ -1584,6 +1611,7 @@ def _dynamic_kernel_cache_key(
     share_input_across_experts: bool,
     prefill_reuse: bool = False,
     prefill_fc1_n128: bool = False,
+    prefill_stream_fc2: bool = False,
     tiled: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
@@ -1616,6 +1644,8 @@ def _dynamic_kernel_cache_key(
     # stock kernel must never share an artifact. Adding it renames stock
     # on-disk artifacts once (a one-time recompile) -- the suffixes below
     # keep the reuse lanes separately keyed on top of it.
+    if prefill_stream_fc2:
+        return key + ("glm53_prefill_stream_fc2_v1",)
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
@@ -2960,6 +2990,7 @@ def launch_sm120_static_moe(
         )
     compiled(*runtime_args)
 
+
     return scatter_output
 
 
@@ -3424,6 +3455,22 @@ def _get_dynamic_kernel(
         )
     )
     prefill_fc1_n128 = prefill_reuse and _GLM53_B12X_PREFILL_FC1_N128
+    prefill_stream = (
+        _GLM53_B12X_PREFILL_STREAM_FC2
+        and 4096 <= m <= 8192
+        and E == 288 and k == 4096 and n == 512 and num_topk == 8
+        and activation_precision == "fp4" and quant_mode == "nvfp4"
+        and mma_tiler_mn == (128, 128)
+        and activation == "swigluoai_uninterleave"
+        and swiglu_alpha == 1.0 and swiglu_beta == 0.0 and swiglu_limit == 10.0
+        and torch.cuda.get_device_capability() == (12, 1)
+        and _prefill_stream_stock_contract_matches()
+    )
+    if prefill_stream and not _prefill_stream_announce[0]:
+        _prefill_stream_announce[0] = True
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill stream] ENGAGED m=%d E=%d k=%d n=%d topk=%d tiled=%s",
+            m, E, k, n, num_topk, tiled)
     _announce = globals().get("_prefill_reuse_announce")
     if ((_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128) and m >= 3456
             and _announce is not None and not _announce[0]):
@@ -3458,6 +3505,7 @@ def _get_dynamic_kernel(
         tiled=tiled,
         prefill_reuse=prefill_reuse,
         prefill_fc1_n128=prefill_fc1_n128,
+        prefill_stream_fc2=prefill_stream,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3510,11 +3558,11 @@ def _get_dynamic_kernel(
             swiglu_limit=swiglu_limit,
             share_input_across_experts=share_input_across_experts,
         )
-    if prefill_reuse:
+    if prefill_reuse or prefill_stream:
         candidate_cls = (
-            MoEGatedPrefillN128Kernel
-            if prefill_fc1_n128
-            else MoEGatedPrefillReuseKernel
+            MoEGatedPrefillStreamKernel if prefill_stream else (
+                MoEGatedPrefillN128Kernel
+                if prefill_fc1_n128 else MoEGatedPrefillReuseKernel)
         )
         kernel = candidate_cls(
             sf_vec_size=sf_vec_size,
@@ -3692,6 +3740,12 @@ def _get_dynamic_kernel(
         extra_key_files=_kernel_source_files(),
     )
 
+    if prefill_stream:
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill stream] COMPILED: N128 FC1, one live FC2 slice; "
+            "m=%d k=%d n=%d experts=%d mac=%d tiled=%s",
+            m, k, n, E, mac, tiled,
+        )
     if prefill_reuse:
         logging.getLogger("flashinfer.b12x").warning(
             "[b12x prefill reuse] compiled exact GLM M128 lane: "
@@ -3806,6 +3860,15 @@ def launch_sm120_dynamic_moe(
         workspace.task_capacity,
     )
     compiled(*runtime_args)
+
+    if (_GLM53_B12X_PREFILL_STREAM_FC2 and not _prefill_stream_launch_announce[0]
+            and any(key[-1] == "glm53_prefill_stream_fc2_v1" and value[0] is compiled
+                    for key, value in _DYNAMIC_KERNEL_CACHE.items())):
+        _prefill_stream_launch_announce[0] = True
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x prefill stream] LAUNCHED m=%d tiled=%s",
+            num_tokens, bool(getattr(weights, "tiled", False)),
+        )
 
     return scatter_output
 

@@ -15,9 +15,10 @@ Every output keeps its increasing-K64 MMA accumulation order, gate/up
 activation and BF16 conversion. Task routing and atomic scatter remain the
 parent reuse candidate's contract. This lane also includes its Q0/FC2 reuse.
 
-VLLM_GLM53_B12X_PREFILL_FC1_N128=1 is required at dispatch. Defaults, small
-batches and decode remain stock. Compile/spill, GPU numerical and throughput
-validation have deliberately not been run for this implementation.
+The original lane uses VLLM_GLM53_B12X_PREFILL_FC1_N128=1. The separate
+MoEGatedPrefillStreamKernel uses PREFILL_STREAM_FC2=1, retains this FC1 and
+streams the FC2 fragments instead of caching all four. Both are default-off;
+see measurements/glm53_moe_stream_20260907 for the current validation scope.
 """
 import cutlass
 import cutlass.cute as cute
@@ -25,6 +26,7 @@ from cutlass.cutlass_dsl import Int32
 
 from ._moe_dynamic.gated import _dynamic_gated_activation_f32
 from .moe_dynamic_prefill import MoEGatedPrefillReuseKernel
+from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
 
 
 class MoEGatedPrefillN128Kernel(MoEGatedPrefillReuseKernel):
@@ -1021,4 +1023,67 @@ class MoEGatedPrefillN128Kernel(MoEGatedPrefillReuseKernel):
         return prod_state, up_prod_state
 
 
-__all__ = ["MoEGatedPrefillN128Kernel"]
+class MoEGatedPrefillStreamKernel(MoEGatedPrefillN128Kernel):
+    """Wide FC1 with only the current Q1 slice live during FC2.
+
+    The old N128 lane also retained four complete FC2 A/SFA fragments and
+    statically unrolled their consumers. Here a dynamic loop reuses one
+    fragment pair, trading repeated shared loads for a smaller register
+    live set and code footprint. Q1 stays in the same immutable shared slots
+    as stock until the final task barrier. The N128 TMA/activation path and
+    increasing-slice MMA order are unchanged. This is a candidate, not a
+    numerical or throughput claim.
+
+    The existing tile-major adapter groups 4-D K modes before calling the
+    stock host entrypoint, which dispatches this subclass's kernel. Thus
+    the production STATIC_V2=t layout needs no per-request weight transform.
+    """
+
+    prefill_stream_fc2 = True
+    __call__ = MoEGatedDynamicKernelTiled.__call__
+
+    @cute.jit
+    def consume_fc2_streamed(
+        self, num_k_blocks, slice_count, valid_rows, warp_m_coord,
+        down_acc, pipeline_args, a_storage, a_fragments, a_copies,
+        fc2_storage, fc2_fragments, fc2_copies,
+    ):
+        phase2_pipeline, state = pipeline_args
+        slice_idx = Int32(0)
+        while slice_idx < slice_count:
+            # Stock's retained Q1 stage map. FC2's third B stage aliases A0,
+            # so none of the retained A slices may use that stage.
+            a_stage, sf_stage = Int32(3), Int32(3)
+            if slice_idx == Int32(1):
+                a_stage, sf_stage = Int32(4), Int32(1)
+            elif slice_idx == Int32(2):
+                a_stage, sf_stage = Int32(2), Int32(2)
+            elif slice_idx == Int32(3):
+                a_stage, sf_stage = Int32(1), Int32(0)
+            self.load_fc2_a_fragments(
+                num_k_blocks, a_stage, sf_stage,
+                a_storage, a_fragments, a_copies,
+            )
+            # Atom mutation is region-local. Sharing an atom between the
+            # full/tail scf.if regions caused the earlier dominance failure.
+            if valid_rows == Int32(self.tile_shape_mnk[0]):
+                op = cute.nvgpu.warp.MmaMXF4NVF4Op(
+                    self.a_dtype, self.acc_dtype, self.sf_dtype)
+                atom = cute.make_mma_atom(op)
+                state = self.fc2_accumulate_slice(
+                    num_k_blocks, atom, down_acc, (phase2_pipeline, state),
+                    fc2_storage, fc2_fragments, fc2_copies,
+                )
+            else:
+                tail_op = cute.nvgpu.warp.MmaMXF4NVF4Op(
+                    self.a_dtype, self.acc_dtype, self.sf_dtype)
+                tail_atom = cute.make_mma_atom(tail_op)
+                state = self.fc2_accumulate_slice_tail(
+                    num_k_blocks, tail_atom, down_acc, valid_rows, warp_m_coord,
+                    (phase2_pipeline, state), fc2_storage, fc2_fragments, fc2_copies,
+                )
+            slice_idx += Int32(1)
+        return state
+
+
+__all__ = ["MoEGatedPrefillN128Kernel", "MoEGatedPrefillStreamKernel"]
