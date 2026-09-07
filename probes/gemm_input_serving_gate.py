@@ -69,7 +69,7 @@ def main():
                 row={'shape':[m,n,k],'bg':bg,'mode':mode,'case':case,'relative':rel,'over_ulp':over,'finite':finite}
                 result['gates'].append(row);save()
                 assert finite and rel<=1e-3 and over==0,row
-            if not active:assert torch.equal(ys[0],ys[1]),'fallback changed output'
+            assert torch.equal(ys[0],ys[1]), ('output bits changed',m,n,k,bg,case)
         x.normal_().mul_(.3)
         if active and not args.check_only:
             for cache in ('cold','warm'):

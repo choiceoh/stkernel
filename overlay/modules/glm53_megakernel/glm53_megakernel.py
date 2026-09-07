@@ -1148,12 +1148,16 @@ def _ar_note(*tensors) -> None:
 _M8_CAPTURED = set()
 
 
-def _note_m8_capture(m, n, k, lr=False):
+def _note_m8_capture(m, n, k, lr=False, bg=False):
     """Record production-shaped launches, excluding the startup self-tests."""
     if m != 6 or lr or not _ARMED["gemm"] or (n, k) in _M8_CAPTURED:
         return
     import torch
     if not torch.cuda.is_current_stream_capturing():
+        return
+    # The input-reuse marker reports that kernel's split and occupancy.
+    # Do not label its launch as the ordinary compact/transposed GEMM.
+    if _EXT.gemm_input_plan(m, n, k, bool(bg), bool(lr))[0]:
         return
     _M8_CAPTURED.add((n, k))
     plan = _EXT.gemm2_plan(m, n, k)
@@ -1210,7 +1214,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else lr_a.data_ptr(),
                   0 if lr_b is None else lr_b.data_ptr(),
                   0 if lr_a is None else int(lr_a.shape[1]))
-    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None)
+    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None, bg)
     _note_input_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
     return out
 
@@ -2156,29 +2160,35 @@ def _selftest_input_reuse():
     armed = _ARMED["gemm"]
     _ARMED["gemm"] = False  # self-test captures are not serving receipts
     try:
-        for n, k in ((6528, 4096), (4096, 512)):
-            x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
-            w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
-            pack = build_mk_weight_w4(w)
-            wr = mk_w4_dequant(pack[0], pack[1], n, pack[2],
-                              pack[3] if len(pack) > 3 else None).float()
-            graph = torch.cuda.CUDAGraph()
-            _gemm_call(x, pack, n)
-            torch.cuda.synchronize()
-            with torch.cuda.graph(graph):
-                y = _gemm_call(x, pack, n)
-            for case in ("random", "zero", "random2"):
-                if case == "zero":
-                    x.zero_()
-                else:
-                    x.normal_().mul_(.3)
-                graph.replay()
-                ref = _mk_quant_x_ref(x) @ wr.T
+        with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+            for n, k in ((6528, 4096), (4096, 512)):
+                x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
+                w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
+                pack = build_mk_weight_w4(w)
+                wr = mk_w4_dequant(pack[0], pack[1], n, pack[2],
+                                  pack[3] if len(pack) > 3 else None).float()
+                graph = torch.cuda.CUDAGraph()
+                _gemm_call(x, pack, n)
                 torch.cuda.synchronize()
-                relative, over = _exact_gate(y, ref)
-                if not bool(torch.isfinite(y).all()) or relative > 1e-3 or over:
-                    raise RuntimeError(f"input reuse N={n} K={k} case={case}: {relative=} {over=}")
-            logger.warning("[megakernel] input-reuse exact graph M=6 N=%d K=%d PASS", n, k)
+                with torch.cuda.graph(graph):
+                    y = _gemm_call(x, pack, n)
+                for case in ("random", "zero", "random2"):
+                    if case == "zero":
+                        x.zero_()
+                    else:
+                        x.normal_().mul_(.3)
+                    graph.replay()
+                    _EXT.set_gemm_input(0)
+                    baseline = _gemm_call(x, pack, n)
+                    _EXT.set_gemm_input(mode)
+                    ref = _mk_quant_x_ref(x) @ wr.T
+                    torch.cuda.synchronize()
+                    if not torch.equal(y, baseline):
+                        raise RuntimeError(f"input reuse changed output bits N={n} K={k} case={case}")
+                    relative, over = _exact_gate(y, ref)
+                    if not bool(torch.isfinite(y).all()) or relative > 1e-3 or over:
+                        raise RuntimeError(f"input reuse N={n} K={k} case={case}: {relative=} {over=}")
+                logger.warning("[megakernel] input-reuse exact graph M=6 N=%d K=%d PASS", n, k)
         return True
     finally:
         _EXT.set_gemm_input(mode)

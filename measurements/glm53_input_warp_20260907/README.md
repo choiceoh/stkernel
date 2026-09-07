@@ -32,8 +32,8 @@ Selected coalesced routes (microseconds; all preparation included):
 
 | M,N,K / split | Cache | Baseline | Candidate | Latency reduction |
 |---|---|---:|---:|---:|
-| 6,6528,4096 / 4 | Warm | 42.752 | 32.448 | 24.10% |
-| 6,6528,4096 / 4 | Cold | 133.232 | 131.744 | 1.12% |
+| 6,6528,4096 / 8 | Warm | 42.752 | 32.512 | 23.95% |
+| 6,6528,4096 / 8 | Cold | 132.768 | 132.080 | 0.52% |
 | 6,4096,512 / 1 | Warm | 9.680 | 7.936 | 18.02% |
 | 6,4096,512 / 1 | Cold | 20.400 | 20.128 | 1.33% |
 
@@ -53,8 +53,9 @@ or convert these microseconds to model step/output gains.
 
 The production candidate uses invocation-owned packed storage, retained by
 the CUDA graph pool, instead of the prototype's global shared-expert scratch.
-It is restricted to the two M6 foreground geometries above, with K splits
-4 and 1. A startup numerical/replay gate disables only input reuse on failure,
+It is restricted to the two M6 foreground geometries above, with the original K splits
+8 and 1. These preserve the baseline reduction order and exact output bits.
+The marginally faster split 4 (24.10% warm) is not selected. A startup numerical/replay gate disables only input reuse on failure,
 keeping the existing GEMM available. Startup captures cannot emit a serving
 receipt. The profile flag `VLLM_GLM53_MK_INPUT_REUSE` is currently **0**.
 

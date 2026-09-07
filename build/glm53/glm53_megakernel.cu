@@ -2770,7 +2770,6 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
   const bool input_reuse = mk_gemm_input_mode() && c2.n_orig == c2.n &&
       mk_input_shape(c2.m, c2.n, c2.k, bg != 0, c2.lr_r != 0);
-  if (input_reuse && g_probe_ksr2 == 0) c2.ksr = c2.k == 4096 ? 4 : 1;
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -3064,7 +3063,7 @@ std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
               "input plan dimensions out of contract");
   const int n_pad = ((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
   const int ordinary = mk_choose_ksr2(m, n_pad, k, lr);
-  const int split = enabled && g_probe_ksr2 == 0 ? (k == 4096 ? 4 : 1) : ordinary;
+  const int split = ordinary;  // retain the existing FP32 reduction order
   return {enabled, split, g_gemm_input_bps, enabled ? (k / KSTEP) * 1056 : 0};
 }
 void mk_set_gemm2(int64_t ksr) {
