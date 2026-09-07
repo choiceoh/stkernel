@@ -1,0 +1,20 @@
+{
+  "collected": "2026-09-08T08:15:21.812358",
+  "command": [
+    "sudo",
+    "-n",
+    "journalctl",
+    "-k",
+    "-n",
+    "3500",
+    "--no-pager",
+    "-o",
+    "short-iso"
+  ],
+  "exit_code": 0,
+  "stderr": "",
+  "matching_lines": [
+    "2026-09-08T06:23:58+09:00 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359",
+    "2026-09-08T07:27:37+09:00 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359"
+  ]
+}

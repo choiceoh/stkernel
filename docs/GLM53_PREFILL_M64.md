@@ -5,7 +5,47 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
-Latest status (2026-09-08 07:30 KST): `reusediag2` again stopped after 40/48
+## Current decision (2026-09-08 08:15 KST)
+
+Deprioritize the current M64 port as a route to the campaign's 40% throughput
+target. Do not automatically submit further M64 diagnostics, full gates or
+serving brackets. Both M64 and INT8 remain default-off. The queued `reusediag3`
+has now ended and exact incoming four-node recovery completed at 08:14:45 KST.
+
+The latest `int8gate2` component measurements compare M128/M64 with the same
+FP8 gather and INT8 reduce-scatter in both arms. They show the following **time
+reductions**, computed from `median_speedup_pct` as `100*s/(100+s)`:
+
+| Actual chunk rows | Balanced | Concentrated |
+| --- | ---: | ---: |
+| 6144 | 6.91% | -16.24% |
+| 6912 | 5.08% | -13.13% |
+| 8192 | 4.33% | -13.09% |
+
+These timings do not isolate the INT8 codec's speed contribution. The full
+correctness gate failed and direct TTFT was not reached. Production routing
+distribution and current prefill component shares are missing. Repeated physical
+M128 TMA requests are visible in the implementation, but do not establish exactly
+twice the DRAM bytes without traffic counters. Similar padding and timing
+percentages also do not prove padding is the only performance mechanism.
+The admission window is actual executed chunk length, not total request length.
+
+`reusediag3` again recorded 40/48 memcheck trials (274,432 row-trials per arm,
+candidate/control failures 0/0), then exited 15 before the last case. Racecheck
+was not reached. Completed-case tensor/cache release did not prevent live CUDA
+allocations from accumulating to 97,876,293,632 bytes; the last observed CUDA
+free memory was 14,269,620,224 bytes. The container did not hit its 16 GiB cgroup
+limit. Unlike the two earlier exits, the retained journal query contains no new
+driver allocation error for this run. The exact retained allocation and exit
+cause remain unresolved. This is incomplete evidence, not acceptance. Raw source,
+memory, detector, numerical and recovery proof are in
+`measurements/glm53_moe_m64_20260908/reusediag3/`.
+
+Next work is baseline serving attribution and actual routing census, as specified
+in `GLM53_PREFILL_40.md`. The historical next-step descriptions below retain the
+experiment's chronology and reopening requirements, not an active retry plan.
+
+Earlier (2026-09-08 07:30 KST): `reusediag2` again stopped after 40/48
 memcheck trials with exit 15; this time all recorded candidate/control rows
 passed. Docker/cgroup evidence shows no OOM or limit event and a peak of
 2,909,007,872 bytes against the 16 GiB limit. However, the kernel journal records

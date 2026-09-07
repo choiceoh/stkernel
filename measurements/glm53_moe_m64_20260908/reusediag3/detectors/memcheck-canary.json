@@ -1,0 +1,9 @@
+{
+  "tool": "memcheck",
+  "exit_code": 99,
+  "deliberate_error_detected": true,
+  "log_sha256": "8d01e57bc42a6b17059be5440e3901e56093bd35118269968c16db7438d5e6e0",
+  "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

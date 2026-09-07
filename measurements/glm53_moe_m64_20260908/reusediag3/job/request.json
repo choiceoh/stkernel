@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-reusediag3-0908",
+  "revision": "2afb45e3dcc56b7a156f13177b134d10a4b62287",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-reusediag3-0908",
+  "probe_revision": "2afb45e3dcc56b7a156f13177b134d10a4b62287",
+  "session": "moem64reuse30908",
+  "created": "2026-09-08T07:43:29.996775",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64reuse30908",
+    "40",
+    "PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-reusediag3-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-reusediag3-0908",
+    "--probe-revision",
+    "2afb45e3dcc56b7a156f13177b134d10a4b62287",
+    "--out",
+    "/tmp/glm53-moe-m64-reusediag3-0908/evidence",
+    "--reuse-diagnostic"
+  ]
+}

@@ -1,0 +1,436 @@
+{
+  "source_revision": "2afb45e3dcc56b7a156f13177b134d10a4b62287",
+  "serving_gate": false,
+  "numerical_acceptance": false,
+  "modes": [
+    {
+      "mode": "memcheck",
+      "trials": 40,
+      "complete": false,
+      "row_trials_per_arm": 274432,
+      "groups": [
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        }
+      ],
+      "candidate_bad": 0,
+      "control_bad": 0,
+      "failure_payloads_verified": true,
+      "reported_sanitizer_errors": 0
+    }
+  ],
+  "detectors": {
+    "verdict": "SANITIZER_DETECTOR_CONTROLS_PASS",
+    "controls": [
+      {
+        "mode": "driver-torch-invalid",
+        "exit_code": 99,
+        "error_count": 1,
+        "api_reports": {
+          "========= Program hit CUDA_ERROR_INVALID_DEVICE (error 101) due to \"invalid device ordinal\" on CUDA API call to cuDeviceGet.": 1
+        },
+        "program": {
+          "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+          "mode": "driver-torch-invalid",
+          "calls": [
+            {
+              "round": 0,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 0,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 0,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 1,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            }
+          ],
+          "versions": {
+            "cuda-bindings": "13.3.1",
+            "cuda-python": "13.3.1",
+            "nvidia-cutlass-dsl": "4.6.2",
+            "torch": "2.13.0+cu130"
+          },
+          "positive_control": {
+            "call": "cuDeviceGet",
+            "code": 101,
+            "intentional": true
+          },
+          "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+          "serving_gate": false,
+          "numerical_acceptance": false
+        },
+        "log_sha256": "96e0b6260d832ee8e55aaa48855929b4d8ffe3e923cbff8eb76fbccb52baa4d9",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "memcheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "8d01e57bc42a6b17059be5440e3901e56093bd35118269968c16db7438d5e6e0",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "racecheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "714d8fcbd9b73f5c6abc14bcf8a9dafb2b2a322996b8484a5fd4dd339c75939a",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      }
+    ]
+  },
+  "exact_incoming_recovery": true,
+  "outer": {
+    "started": "2026-09-08T07:43:30.026131",
+    "exit_code": 1,
+    "ended": "2026-09-08T08:14:45.713615"
+  },
+  "process": {
+    "exit_code": 15,
+    "samples": 640,
+    "observed_memory_peak_bytes": 2902802432,
+    "min_host_mem_available_bytes": 6683123712,
+    "last_resource": {
+      "container_id": "513e210c68a62a4c50957ae361e3e850e4cd10ff5e1b294f68b5d7889ba81512",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2542582,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-07T23:09:16.205817818Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      },
+      "memory_limit_bytes": 17179869184,
+      "host_mem_available_bytes": 110316179456,
+      "memory": {
+        "memory.current": "38486016",
+        "memory.peak": "2902802432",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+        "memory.max": "17179869184"
+      }
+    },
+    "final_container": {
+      "container_id": "513e210c68a62a4c50957ae361e3e850e4cd10ff5e1b294f68b5d7889ba81512",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 15,
+        "Error": "",
+        "StartedAt": "2026-09-07T23:09:16.205817818Z",
+        "FinishedAt": "2026-09-07T23:12:06.015074307Z"
+      },
+      "memory_limit_bytes": 17179869184,
+      "host_mem_available_bytes": 110313213952
+    },
+    "sampler_errors": []
+  },
+  "case_memory": [
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 6144,
+      "skew": false,
+      "allocated_bytes": 1943091200,
+      "reserved_bytes": 1996488704,
+      "cuda_free_bytes": 103372025856,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_complete",
+      "rows": 6144,
+      "skew": false,
+      "allocated_bytes": 19276150784,
+      "reserved_bytes": 19581108224,
+      "cuda_free_bytes": 84811862016,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_released",
+      "rows": 6144,
+      "skew": false,
+      "allocated_bytes": 19125155840,
+      "reserved_bytes": 19279118336,
+      "cuda_free_bytes": 85116014592,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 6144,
+      "skew": true,
+      "allocated_bytes": 19125155840,
+      "reserved_bytes": 19279118336,
+      "cuda_free_bytes": 85116014592,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_complete",
+      "rows": 6144,
+      "skew": true,
+      "allocated_bytes": 36458215424,
+      "reserved_bytes": 36763074560,
+      "cuda_free_bytes": 67375177728,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_released",
+      "rows": 6144,
+      "skew": true,
+      "allocated_bytes": 36307220480,
+      "reserved_bytes": 36511416320,
+      "cuda_free_bytes": 67628539904,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 6912,
+      "skew": false,
+      "allocated_bytes": 36307220480,
+      "reserved_bytes": 36511416320,
+      "cuda_free_bytes": 67628539904,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_complete",
+      "rows": 6912,
+      "skew": false,
+      "allocated_bytes": 55806916608,
+      "reserved_bytes": 56239325184,
+      "cuda_free_bytes": 47398694912,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_released",
+      "rows": 6912,
+      "skew": false,
+      "allocated_bytes": 55637047296,
+      "reserved_bytes": 55954112512,
+      "cuda_free_bytes": 47684919296,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 6912,
+      "skew": true,
+      "allocated_bytes": 55637047296,
+      "reserved_bytes": 55954112512,
+      "cuda_free_bytes": 47684919296,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_complete",
+      "rows": 6912,
+      "skew": true,
+      "allocated_bytes": 75136743424,
+      "reserved_bytes": 75568775168,
+      "cuda_free_bytes": 27621666816,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_released",
+      "rows": 6912,
+      "skew": true,
+      "allocated_bytes": 74966874112,
+      "reserved_bytes": 75342282752,
+      "cuda_free_bytes": 27849170944,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 8192,
+      "skew": false,
+      "allocated_bytes": 74966874112,
+      "reserved_bytes": 75342282752,
+      "cuda_free_bytes": 27849170944,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_complete",
+      "rows": 8192,
+      "skew": false,
+      "allocated_bytes": 98077620224,
+      "reserved_bytes": 98721333248,
+      "cuda_free_bytes": 13932503040,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "case_released",
+      "rows": 8192,
+      "skew": false,
+      "allocated_bytes": 97876293632,
+      "reserved_bytes": 98385788928,
+      "cuda_free_bytes": 14269620224,
+      "cuda_total_bytes": 128520081408
+    },
+    {
+      "kind": "MOE_M64_REUSE_MEMORY",
+      "stage": "before_case",
+      "rows": 8192,
+      "skew": true,
+      "allocated_bytes": 97876293632,
+      "reserved_bytes": 98385788928,
+      "cuda_free_bytes": 14269620224,
+      "cuda_total_bytes": 128520081408
+    }
+  ],
+  "driver_allocation_observations": {
+    "collected": "2026-09-08T08:15:21.812358",
+    "command": [
+      "sudo",
+      "-n",
+      "journalctl",
+      "-k",
+      "-n",
+      "3500",
+      "--no-pager",
+      "-o",
+      "short-iso"
+    ],
+    "exit_code": 0,
+    "stderr": "",
+    "matching_lines": [
+      "2026-09-08T06:23:58+09:00 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359",
+      "2026-09-08T07:27:37+09:00 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359"
+    ]
+  },
+  "memcheck_termination_cause": "Unresolved. Live CUDA allocations accumulated despite completed-fixture release; no container cgroup OOM. The retained kernel-journal query contains only the two earlier allocation failures, no new failure for this run.",
+  "racecheck": "not reached"
+}
