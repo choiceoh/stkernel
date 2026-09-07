@@ -169,3 +169,41 @@ Seven CPU tests cover valid arithmetic and cache, build, runtime, priming,
 traffic, quality, token, nonfinite timing and capacity failures. Their inputs
 are synthetic test fixtures, not serving evidence. The GPU queue remains
 unchanged and the direct-serving bracket has not yet been submitted.
+
+## Connected serving runner (prepared, not submitted)
+
+`bench/prefill_serving.py run` now joins the pieces: it requires the selected
+candidate's completed offline GPU gate and recovery, checks the validated
+kernel sources are unchanged, checks current-main ancestry and spare disk,
+then uses fleet deploy and chain for B1/A/B2. Each after hook captures all
+four ranks, runs canonical fresh onepass for excluded priming and measurement
+under the 12 GiB memory watcher, rejects a failed quality/traffic phase,
+archives container logs, and writes the arm inputs for prefill_compare.py.
+Only the candidate knob changes. Runtime environment values other than that
+knob are hashed in evidence so other changes remain detectable without
+printing credentials. Model config/tokenizer/index hashes and weight-file
+size/mtime inventories are retained; these are identity/change checks, not
+a fresh full-weight cryptographic validation.
+
+The finalizer always attempts the standard public default arm on the tested
+source with KV_TOKENS=2000000/MAX_LEN=1048576 and verifies 1056 blocks,
+public port 8000, all four source/image/knob fingerprints, model/hardware
+continuity and health. A failed restore keeps the run failed. Five CPU tests
+cover actual arm ordering, bad priming, wrong-rank source/capacity, failed GPU
+admission and restoration failure. No production/GPU action was run by them.
+
+After the offline gate passes, rebase/freeze a clean current-main candidate
+checkout with the real GitHub origin and register (do not run directly):
+
+```bash
+REPO=/home/choiceoh/stkernel bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu \
+  moe_prefill_serving 60 'Matched fresh 2K/32K/128K B1/A/B2 and public restore' -- \
+  python3 "$SOURCE/bench/prefill_serving.py" run --candidate moe --name MOEPREFILL \
+  --source "$SOURCE" --revision "$REV" \
+  --gate-dir /tmp/glm53-prefill-offline-0907/evidence --out "$JOB/evidence"
+```
+
+`SOURCE` must be the checkout containing that runner; `REV` is its full
+committed SHA. Use a unique session, name and output path for each candidate.
+The analogous MLA run uses `--candidate mla` from its separate source tree.
+This prepared command is not a serving queue receipt or a measured result.
