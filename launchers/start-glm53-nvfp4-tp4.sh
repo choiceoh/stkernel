@@ -891,35 +891,14 @@ fi
 
 mkdir -p "$CACHE_HOST_PATH" "$LOG_HOST_DIR"
 
-# torch.compile caches under the mounted /cache and outlives boots, but the
-# overlays that shape the compiled graph are not part of its key -- so after an
-# overlay change a stale entry is still found and then fails to load
-# ("Compiling model again due to a load failure"). Stamp the manifest sha beside
-# the cache and clear it when that moves.
-# Maintenance, not a precondition: a stale cache costs time, a launcher that
-# exits costs the boot. Anything in here reports and continues.
-best_effort() {
-  local what="$1"; shift
-  if ! "$@" >/dev/null 2>&1; then
-    echo "  ! $what 실패 — 계속 진행합니다 (부팅을 막을 이유가 아님)"
-    return 0
-  fi
-}
-
-if [ -f "$OVERLAY_MANIFEST" ]; then
-  _ov_sha=$(sha256sum "$OVERLAY_MANIFEST" | cut -d" " -f1)
-  _stamp="$CACHE_HOST_PATH/.overlay-sha"
-  if [ "$(cat "$_stamp" 2>/dev/null)" != "$_ov_sha" ]; then
-    echo "overlays changed -> clearing torch.compile cache"
-    # The container writes this cache as root, so the host user cannot remove
-    # it. Delete from inside a container instead of reaching for sudo.
-    best_effort "컴파일 캐시 삭제" \
-      docker run --rm -v "$CACHE_HOST_PATH":/cache --entrypoint rm "$IMAGE" \
-        -rf /cache/vllm/torch_compile_cache
-    best_effort "오버레이 sha 기록" \
-      bash -c "printf '%s' \"$_ov_sha\" > \"$_stamp\""
-  fi
-fi
+# A deployment's source_commit also changes for docs/bench-only commits.
+# Preserve head torch.compile artifacts when overlay bytes, bindings, base
+# contracts and the attested image ID are identical. The separate receipt is
+# linked to .overlay-sha, which keeps its existing fleet provenance meaning.
+# Missing/old receipts invalidate once; failed invalidation cannot mark stale
+# artifacts reusable or start the head with a falsely successful stamp.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/glm53-compile-cache.py" \
+  --cache "$CACHE_HOST_PATH" --manifest "$OVERLAY_MANIFEST" --image-id "$CT_IMAGE_ID"
 
 # Workers first (rank 1..3), head last. Start independent nodes concurrently,
 # then join EVERY docker-run result before starting rank 0. Docker's detached

@@ -7250,9 +7250,59 @@ startup-artifact tests**, **70,979 CPU logic checks**, **30 megakernel** and
 **32 fleet regressions** locally with Torch. The deployment's lightweight
 logic gate passed **6,683 checks** plus those megakernel/fleet regressions.
 The final default/comment/result update and optional-Torch test guard do not
-change the runtime exercised by the bracket.
+change the runtime exercised by the bracket. Before merge, review follow-ups
+preserved Tensor.to semantics for CPU destinations and allowed zero W4 hits
+during PRIME. Timed arms still require hits. All **9** focused pack/recorder/
+receipt tests passed; the measured CUDA path is unchanged. PR #442 merged as
+`e00df24d837610cf9536c3f88a1c67dd61d5bdb9`.
 
 Evidence on srv2: `/home/choiceoh/glm53-logs/pack-io-20260907-run2` contains
 node logs/states/hashes, exact response files, onepass JSON, health timers,
 resource samples, `pack-io-gpu.json`, `report.json` and `report.md`. The same
 files and report scripts are retained locally under `runs/pack-io-20260907-run2`.
+
+### GLM compile cache survives identical-runtime redeploys (2026-09-07)
+
+The launcher previously cleared the head's torch.compile cache whenever the
+deployed manifest SHA changed. Deployment adds `# source_commit=...`, so a
+docs/benchmark-only commit cleared usable compiled artifacts even when every
+overlay byte and binding stayed identical. The new helper keys reuse on all
+overlay bytes, canonical source/target/base-contract rows, and the already
+attested immutable image ID. Manifest comments and row order do not affect
+this content key. `.overlay-sha` still records the exact deployment manifest
+SHA consumed by fleet/onepass; a separate `.compile-overlay.json` receipt
+links content to that provenance. Missing/invalid receipts, changed content,
+or an intervening older launcher cause invalidation. First adoption clears
+once. Deletion or stamp errors abort before worker/head start; failed deletion
+cannot publish a successful reuse receipt. The scope remains the existing
+head compile directory; this does not alter worker cache policy or model code.
+
+Normal fleet CPU job **`compilecache0907`**, source **`3c3a30e`**, passed using
+copies of all **56** live overlay files and serving image
+`sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+Real Docker containers created/deleted a tiny **root-owned** compiled-file
+fixture in a disposable directory; no serving cache/model mount, GPU operation,
+or service restart was involved (host Docker default runtime: `runc`).
+
+- Changing only deployment metadata would trigger legacy invalidation. The
+  new path preserved the artifact's bytes, inode and nanosecond mtime through
+  two reuse calls while updating the fleet SHA correctly.
+- Changing a copied runtime file with an unchanged manifest invalidated and
+  removed the fixture, proving that the new key covers actual source bytes.
+- Content hashing/receipt updates took **3.93 / 3.67 ms** on those reuse calls.
+  These are helper timings, **not measured boot-time savings**. End-to-end
+  restart latency, generated output and compiler cache-hit behavior were not
+  remeasured for this launcher-only change. The prior **225.5 s** warm-boot
+  result remains the latest matched startup result, not a new baseline claim.
+
+Validation: **9 lifecycle tests**, **4 actual worker-launch-block tests**,
+**70,979 CPU logic checks**, **30 megakernel** and **73 fleet regressions** pass;
+Python compilation, launcher shell syntax and diff checks pass. The lifecycle
+tests cover mapping/base/image changes, migration/corrupt receipts, old-launcher
+intervention, deletion failure and interrupted stamp writes.
+
+[Raw CPU lifecycle receipt](measurements/glm53_compile_cache_20260907/report.json).
+The full output is also retained on srv2 under
+`/home/choiceoh/glm53-logs/compile-cache-20260907` and locally in
+`runs/compile-cache-20260907`. Reproduce in the CPU lane with
+`python3 probes/glm53_compile_cache_check.py`; it only mutates disposable copies.
