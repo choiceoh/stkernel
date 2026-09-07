@@ -648,6 +648,26 @@ Pinned allocation failure retains synchronous copies. The final trial restored
 44.8 GiB per rank in 38.4–48.0 seconds; pinned staging and alias deduplication
 were introduced together, so their individual contributions are not isolated.
 
+`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps sequential mapped reads and SHA-256
+checks with restoration. It is **off by default: the matched full-boot bracket
+did not improve startup** (2026-09-07, PR #447). A real-payload transport screen
+improved 52.859 → 40.464 s, but actual warm boot means regressed
+222.5 → 231.0 s. See `MEASUREMENTS.md` for the rejected variants and raw proof.
+One CPU reader checks at most one 64 MiB chunk ahead of the caller, preserving
+kernel readahead. Copies retain the existing 64 MiB pinned staging allocation
+and synchronization; no additional pinned slot is allocated. Every chunk must
+pass its checksum before copying, and
+the reader is joined before closing the file even on failure. This transport-only flag does not
+change artifact identity. `[rank-cache-io]` reports checksum worker time, time
+waiting for checksums, copies, page discard and total restoration. Worker times
+overlap and must not be added to the total as independent phases. Earlier
+two-worker mmap and sequential `readinto` variants were slower on the head;
+the current reader avoids concurrent mapped faults and retains mmap readahead.
+On heterogeneous Linux CPUs the reader stays within the caller's permitted
+CPU set and selects its higher-capacity tier. Missing topology or denied
+affinity retains normal scheduling. This applies only to the short-lived
+reader thread; the model/serving thread's affinity is unchanged.
+
 Rank identity includes the local checkpoint index/config and every source
 file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model
 config, TP/rank, environment and runtime code. This is an immutable-source,

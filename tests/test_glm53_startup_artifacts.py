@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -386,9 +387,81 @@ class RankArtifactTests(unittest.TestCase):
         raw = bytearray(path.read_bytes())
         raw[20] ^= 1  # second chunk, after a first chunk may have been restored
         path.write_bytes(raw)
-        with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
-            self.load(self.model(), value=19)
+        for prefetch in ("0", "1"):
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": prefetch}), \
+                    self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                self.load(self.model(), value=19)
         self.assertEqual(self.loader.call_count, 1)
+
+    def test_prefetch_restores_identical_bytes_and_aliases(self):
+        first = self.model()
+        first.register_buffer("alias", first.packed)
+        loaded = self.load(first)
+        for prefetch in ("0", "1"):
+            second = self.model(-3)
+            second.register_buffer("alias", second.packed)
+            pointers = {name: tensor.data_ptr() for name, tensor in second.state_dict().items()}
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": prefetch}):
+                self.assertEqual(self.load(second), loaded)
+            for name, tensor in second.state_dict().items():
+                self.assertTrue(torch.equal(tensor, first.state_dict()[name]), name)
+                self.assertEqual(tensor.data_ptr(), pointers[name])
+        self.assertEqual(self.loader.call_count, 1)
+
+    def test_prefetch_overlaps_cpu_hash_with_copy_and_joins_after_copy_failure(self):
+        self.load(self.model())
+        manifest = json.loads((self.artifact() / "manifest.json").read_text())["manifest"]
+        original_hash = self.rank.hashlib.sha256
+        original_copy = self.rank.HostStaging.copy_from_cpu
+        caller = threading.get_ident()
+        for fail in (False, True):
+            waiting, release, done = threading.Event(), threading.Event(), threading.Event()
+            lock = threading.Lock()
+            calls = []
+            def checksum(data):
+                self.assertNotEqual(threading.get_ident(), caller)
+                with lock:
+                    calls.append(1)
+                    index = len(calls)
+                if index == 2:
+                    waiting.set()
+                    self.assertTrue(release.wait(5))
+                    done.set()
+                return original_hash(data)
+            def copy(staging, target, raw):
+                self.assertEqual(threading.get_ident(), caller)
+                self.assertTrue(waiting.wait(5))
+                release.set()
+                if fail:
+                    raise OSError("copy failed")
+                return original_copy(staging, target, raw)
+            with patch.dict(os.environ, {"VLLM_GLM53_RANK_CACHE_PREFETCH": "1"}), \
+                    patch.object(self.rank.hashlib, "sha256", side_effect=checksum), \
+                    patch.object(self.rank.HostStaging, "copy_from_cpu", copy):
+                if fail:
+                    with self.assertRaisesRegex(OSError, "copy failed"):
+                        self.rank._restore(self.artifact(), manifest, self.model().state_dict())
+                else:
+                    self.rank._restore(self.artifact(), manifest, self.model().state_dict())
+            self.assertTrue(done.is_set(), "checksum worker outlived the file")
+
+    def test_reader_affinity_is_a_subset_and_unknown_topology_keeps_scheduling(self):
+        for capacities, expected in (({"cpu0": "700", "cpu1": "1000"}, {1}),
+                                     ({"cpu0": "1000", "cpu1": "990"}, None),
+                                     ({"cpu0": "0", "cpu1": "1000"}, None)):
+            with patch.object(self.rank.os, "sched_getaffinity", return_value={0, 1}, create=True), \
+                    patch.object(self.rank.os, "sched_setaffinity", create=True) as setter, \
+                    patch.object(Path, "read_text", lambda path: capacities[path.parent.name]):
+                self.rank._init_reader_affinity()
+                if expected:
+                    setter.assert_called_once_with(0, expected)
+                else:
+                    setter.assert_not_called()
+        with patch.object(self.rank.os, "sched_getaffinity", return_value={0, 1}, create=True), \
+                patch.object(self.rank.os, "sched_setaffinity", create=True) as setter, \
+                patch.object(Path, "read_text", side_effect=FileNotFoundError):
+            self.rank._init_reader_affinity()
+            setter.assert_not_called()
 
     def test_disk_failure_and_unpublished_directory_keep_source_path(self):
         with patch.object(self.rank.os, "rename", side_effect=OSError("disk failure")):

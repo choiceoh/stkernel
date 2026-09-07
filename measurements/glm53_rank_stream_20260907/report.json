@@ -1,0 +1,88 @@
+{
+  "source_commit": "f5c60fb692c0f9288a42b90a14b564c45fe9685b",
+  "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "strategy": "single sequential readinto reader, two 64 MiB slots, reader CPU affinity",
+  "decision": "reject before deployment: full-payload restore regressed",
+  "fleet_session": "rankstream20907",
+  "fleet_exit_code": 1,
+  "deployment_performed": false,
+  "full_boots_performed": false,
+  "remote_evidence": "/home/choiceoh/glm53-logs/rank-stream-20260907-r2",
+  "screen": {
+    "bytes": 536875025,
+    "caller_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "checks": 46,
+    "full_payload": {
+      "bytes": 48092653608,
+      "cache_manifest": "/cache/glm53-ranks/02acbd2b1f6a8e032775df2ae6a389c043b810cb03d5f16456c1f6442a628792/manifest.json",
+      "chunks": 2241,
+      "median_restore_s": {
+        "0": 48.71482281302451,
+        "1": 72.63393553049536
+      },
+      "samples": [
+        {
+          "prefetch": 0,
+          "restore_s": 50.22257310099667
+        },
+        {
+          "prefetch": 1,
+          "restore_s": 70.756827211997
+        },
+        {
+          "prefetch": 1,
+          "restore_s": 74.51104384899372
+        },
+        {
+          "prefetch": 0,
+          "restore_s": 47.207072525052354
+        }
+      ]
+    },
+    "median_restore_s": {
+      "0": 0.6393863369885366,
+      "1": 0.8633590589743108
+    },
+    "module_sha256": "1709aa4a41b03cac618388b06618f75e45fe00762fe85f8dce1a1c859d2fc9b0",
+    "ok": true,
+    "samples": [
+      {
+        "prefetch": 0,
+        "restore_s": 0.7494145350065082
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.8762697519850917
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.8504483659635298
+      },
+      {
+        "prefetch": 0,
+        "restore_s": 0.529358138970565
+      }
+    ]
+  }
+}

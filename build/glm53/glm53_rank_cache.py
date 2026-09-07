@@ -7,6 +7,9 @@ order. This is not a dump of a serving model or vLLM's postprocessed sharded_sta
 format. One readiness vote keeps InstantTensor's distributed source iterator
 on the same path on every rank. No process-wide loader patches are added.
 """
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import hashlib
 import json
 import logging
@@ -225,6 +228,28 @@ def _read_manifest(directory, identity, state):
     return manifest
 
 
+def _init_reader_affinity():
+    """Keep this short-lived reader on the allowed performance CPU tier."""
+    if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
+        return
+    try:
+        allowed = os.sched_getaffinity(0)
+        capacities = {cpu: int(Path(f"/sys/devices/system/cpu/cpu{cpu}/cpu_capacity").read_text())
+                      for cpu in allowed}
+        if not capacities or min(capacities.values()) <= 0:
+            return
+        best = max(capacities.values())
+        fast = {cpu for cpu, capacity in capacities.items() if capacity >= best * 0.9}
+        if fast != allowed:
+            # pid=0 changes only this calling worker thread. Never widen the
+            # caller's affinity/cpuset, or change the model/serving thread.
+            os.sched_setaffinity(0, fast)
+            logger.warning("[rank-cache] reader affinity cpus=%s", ",".join(map(str, sorted(fast))))
+    except (OSError, ValueError):
+        # Uniform/unknown hardware and denied affinity retain normal scheduling.
+        return
+
+
 def _restore(directory, manifest, state):
     """Checksum each mapped chunk before copying. A mid-restore error is fatal.
 
@@ -234,22 +259,57 @@ def _restore(directory, manifest, state):
     if manifest["size"] == 0:
         return set(manifest["loaded"])
     staging = HostStaging()
+    prefetch = os.environ.get("VLLM_GLM53_RANK_CACHE_PREFETCH", "0") == "1"
+    started = time.perf_counter()
+    hash_work = hash_wait = copy_time = discard_time = 0.0
     with (directory / "weights.bin").open("rb") as source:
         with mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_COPY) as mapped:
-            with torch.no_grad():
+            def checksum(chunk):
+                before = time.perf_counter()
+                with memoryview(mapped)[chunk["offset"]:chunk["offset"] + chunk["size"]] as view:
+                    value = hashlib.sha256(view).hexdigest()
+                return value, time.perf_counter() - before
+
+            # One CPU worker checks only the next chunk (at most 64 MiB)
+            # while the caller copies the current verified chunk. Sequential
+            # mmap preserves kernel readahead without an extra readinto copy.
+            # Join before closing the mapping, including on any copy failure.
+            executor = (ThreadPoolExecutor(max_workers=1, initializer=_init_reader_affinity)
+                        if prefetch else nullcontext())
+            with executor as pool, torch.no_grad():
+                remaining = iter(manifest["chunks"])
+                pending = deque()
+                if pool is not None:
+                    for chunk in manifest["chunks"][:1]:
+                        pending.append(pool.submit(checksum, next(remaining)))
                 for chunk in manifest["chunks"]:
+                    before = time.perf_counter()
+                    value, elapsed = pending.popleft().result() if pool is not None else checksum(chunk)
+                    hash_wait += time.perf_counter() - before
+                    hash_work += elapsed
+                    if value != chunk["sha256"]:
+                        raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
+                    if pool is not None:
+                        following = next(remaining, None)
+                        if following is not None:
+                            pending.append(pool.submit(checksum, following))
                     view = memoryview(mapped)[chunk["offset"]:chunk["offset"] + chunk["size"]]
                     raw = None
                     try:
-                        if hashlib.sha256(view).hexdigest() != chunk["sha256"]:
-                            raise RuntimeError("rank-cache payload checksum mismatch; remove cache and retry")
+                        before = time.perf_counter()
                         raw = torch.frombuffer(view, dtype=torch.uint8)
                         target = state[chunk["name"]].reshape(-1).view(torch.uint8)
                         staging.copy_from_cpu(target[chunk["start"]:chunk["start"] + chunk["size"]], raw)
+                        copy_time += time.perf_counter() - before
                     finally:
                         del raw
                         view.release()
+                    before = time.perf_counter()
                     _drop_file_pages(source.fileno(), chunk["offset"], chunk["size"], mapped)
+                    discard_time += time.perf_counter() - before
+    logger.warning("[rank-cache-io] prefetch=%d chunks=%d bytes=%d hash_work_s=%.3f hash_wait_s=%.3f copy_s=%.3f discard_s=%.3f total_s=%.3f strategy=mmap",
+                   prefetch, len(manifest["chunks"]), manifest["size"], hash_work, hash_wait,
+                   copy_time, discard_time, time.perf_counter() - started)
     return set(manifest["loaded"])
 
 

@@ -1,0 +1,2754 @@
+{
+  "runtime_source_commit": "50223132e14a9a59fe07b03f2db7fc53de4579cf",
+  "exit_code": 0,
+  "rank_comparison": {
+    "BASE": {
+      "health_wall_s": {
+        "samples": [
+          225,
+          220
+        ],
+        "mean": 222.5
+      },
+      "srv1_total_s": {
+        "samples": [
+          45.402,
+          45.974
+        ],
+        "mean": 45.688
+      },
+      "srv1_hash_work_s": {
+        "samples": [
+          38.112,
+          38.544
+        ],
+        "mean": 38.328
+      },
+      "srv1_hash_wait_s": {
+        "samples": [
+          38.115,
+          38.548
+        ],
+        "mean": 38.331500000000005
+      },
+      "srv1_copy_s": {
+        "samples": [
+          2.892,
+          2.883
+        ],
+        "mean": 2.8875
+      },
+      "srv1_discard_s": {
+        "samples": [
+          4.363,
+          4.511
+        ],
+        "mean": 4.437
+      },
+      "srv2_total_s": {
+        "samples": [
+          44.984,
+          43.892
+        ],
+        "mean": 44.438
+      },
+      "srv2_hash_work_s": {
+        "samples": [
+          41.25,
+          40.152
+        ],
+        "mean": 40.701
+      },
+      "srv2_hash_wait_s": {
+        "samples": [
+          41.253,
+          40.155
+        ],
+        "mean": 40.704
+      },
+      "srv2_copy_s": {
+        "samples": [
+          2.85,
+          2.858
+        ],
+        "mean": 2.854
+      },
+      "srv2_discard_s": {
+        "samples": [
+          0.851,
+          0.848
+        ],
+        "mean": 0.8494999999999999
+      },
+      "srv3_total_s": {
+        "samples": [
+          37.609,
+          44.029
+        ],
+        "mean": 40.819
+      },
+      "srv3_hash_work_s": {
+        "samples": [
+          33.91,
+          40.257
+        ],
+        "mean": 37.0835
+      },
+      "srv3_hash_wait_s": {
+        "samples": [
+          33.913,
+          40.26
+        ],
+        "mean": 37.0865
+      },
+      "srv3_copy_s": {
+        "samples": [
+          2.83,
+          2.888
+        ],
+        "mean": 2.859
+      },
+      "srv3_discard_s": {
+        "samples": [
+          0.836,
+          0.851
+        ],
+        "mean": 0.8434999999999999
+      },
+      "srv4_total_s": {
+        "samples": [
+          39.084,
+          44.3
+        ],
+        "mean": 41.692
+      },
+      "srv4_hash_work_s": {
+        "samples": [
+          35.507,
+          40.822
+        ],
+        "mean": 38.164500000000004
+      },
+      "srv4_hash_wait_s": {
+        "samples": [
+          35.511,
+          40.825
+        ],
+        "mean": 38.168000000000006
+      },
+      "srv4_copy_s": {
+        "samples": [
+          2.582,
+          2.558
+        ],
+        "mean": 2.57
+      },
+      "srv4_discard_s": {
+        "samples": [
+          0.959,
+          0.884
+        ],
+        "mean": 0.9215
+      }
+    },
+    "FAST": {
+      "health_wall_s": {
+        "samples": [
+          234,
+          228
+        ],
+        "mean": 231
+      },
+      "srv1_total_s": {
+        "samples": [
+          39.347,
+          39.199
+        ],
+        "mean": 39.272999999999996
+      },
+      "srv1_hash_work_s": {
+        "samples": [
+          37.733,
+          37.652
+        ],
+        "mean": 37.692499999999995
+      },
+      "srv1_hash_wait_s": {
+        "samples": [
+          30.437,
+          30.856
+        ],
+        "mean": 30.646500000000003
+      },
+      "srv1_copy_s": {
+        "samples": [
+          2.887,
+          2.931
+        ],
+        "mean": 2.909
+      },
+      "srv1_discard_s": {
+        "samples": [
+          5.954,
+          5.345
+        ],
+        "mean": 5.6495
+      },
+      "srv2_total_s": {
+        "samples": [
+          46.275,
+          45.64
+        ],
+        "mean": 45.957499999999996
+      },
+      "srv2_hash_work_s": {
+        "samples": [
+          45.335,
+          44.732
+        ],
+        "mean": 45.033500000000004
+      },
+      "srv2_hash_wait_s": {
+        "samples": [
+          42.576,
+          41.959
+        ],
+        "mean": 42.2675
+      },
+      "srv2_copy_s": {
+        "samples": [
+          2.788,
+          2.804
+        ],
+        "mean": 2.796
+      },
+      "srv2_discard_s": {
+        "samples": [
+          0.839,
+          0.809
+        ],
+        "mean": 0.8240000000000001
+      },
+      "srv3_total_s": {
+        "samples": [
+          36.853,
+          38.541
+        ],
+        "mean": 37.697
+      },
+      "srv3_hash_work_s": {
+        "samples": [
+          35.918,
+          37.588
+        ],
+        "mean": 36.753
+      },
+      "srv3_hash_wait_s": {
+        "samples": [
+          33.09,
+          34.764
+        ],
+        "mean": 33.92700000000001
+      },
+      "srv3_copy_s": {
+        "samples": [
+          2.8,
+          2.841
+        ],
+        "mean": 2.8205
+      },
+      "srv3_discard_s": {
+        "samples": [
+          0.895,
+          0.865
+        ],
+        "mean": 0.88
+      },
+      "srv4_total_s": {
+        "samples": [
+          37.405,
+          39.291
+        ],
+        "mean": 38.348
+      },
+      "srv4_hash_work_s": {
+        "samples": [
+          36.67,
+          38.547
+        ],
+        "mean": 37.6085
+      },
+      "srv4_hash_wait_s": {
+        "samples": [
+          33.869,
+          35.754
+        ],
+        "mean": 34.811499999999995
+      },
+      "srv4_copy_s": {
+        "samples": [
+          2.561,
+          2.571
+        ],
+        "mean": 2.566
+      },
+      "srv4_discard_s": {
+        "samples": [
+          0.909,
+          0.901
+        ],
+        "mean": 0.905
+      }
+    }
+  },
+  "head_comparison": {
+    "BASE": {
+      "health_s": {
+        "n": 2,
+        "mean": 222.5,
+        "min": 220,
+        "max": 225,
+        "samples": [
+          225,
+          220
+        ]
+      },
+      "model_s": {
+        "n": 2,
+        "mean": 80.80000000000001,
+        "min": 80.7,
+        "max": 80.9,
+        "samples": [
+          80.7,
+          80.9
+        ]
+      },
+      "mk_attach_s": {
+        "n": 2,
+        "mean": 11.725,
+        "min": 11.227,
+        "max": 12.222999999999999,
+        "samples": [
+          11.227,
+          12.222999999999999
+        ]
+      },
+      "key_s": {
+        "n": 2,
+        "mean": 10.142,
+        "min": 9.784,
+        "max": 10.5,
+        "samples": [
+          9.784,
+          10.5
+        ]
+      },
+      "read_s": {
+        "n": 2,
+        "mean": 0.839,
+        "min": 0.783,
+        "max": 0.895,
+        "samples": [
+          0.783,
+          0.895
+        ]
+      },
+      "copy_s": {
+        "n": 2,
+        "mean": 0.747,
+        "min": 0.729,
+        "max": 0.765,
+        "samples": [
+          0.729,
+          0.765
+        ]
+      },
+      "profile_s": {
+        "n": 2,
+        "mean": 36.599999999999994,
+        "min": 36.4,
+        "max": 36.8,
+        "samples": [
+          36.8,
+          36.4
+        ]
+      }
+    },
+    "FAST": {
+      "health_s": {
+        "n": 2,
+        "mean": 231,
+        "min": 228,
+        "max": 234,
+        "samples": [
+          234,
+          228
+        ]
+      },
+      "model_s": {
+        "n": 2,
+        "mean": 83.75,
+        "min": 82.0,
+        "max": 85.5,
+        "samples": [
+          85.5,
+          82.0
+        ]
+      },
+      "mk_attach_s": {
+        "n": 2,
+        "mean": 11.9405,
+        "min": 11.712,
+        "max": 12.168999999999999,
+        "samples": [
+          12.168999999999999,
+          11.712
+        ]
+      },
+      "key_s": {
+        "n": 2,
+        "mean": 10.307500000000001,
+        "min": 10.087,
+        "max": 10.528,
+        "samples": [
+          10.528,
+          10.087
+        ]
+      },
+      "read_s": {
+        "n": 2,
+        "mean": 0.8755,
+        "min": 0.827,
+        "max": 0.924,
+        "samples": [
+          0.924,
+          0.827
+        ]
+      },
+      "copy_s": {
+        "n": 2,
+        "mean": 0.7515000000000001,
+        "min": 0.742,
+        "max": 0.761,
+        "samples": [
+          0.761,
+          0.742
+        ]
+      },
+      "profile_s": {
+        "n": 2,
+        "mean": 36.8,
+        "min": 36.8,
+        "max": 36.8,
+        "samples": [
+          36.8,
+          36.8
+        ]
+      }
+    }
+  },
+  "host_resource_samples": {
+    "srv1": {
+      "n": 171,
+      "first_epoch": 1788781465,
+      "last_epoch": 1788783234,
+      "min_available_gib": 13.413646697998047,
+      "min_disk_available_gib": 298.5129699707031,
+      "swap_used_increase_mib": 0.0
+    },
+    "srv2": {
+      "n": 171,
+      "first_epoch": 1788781464,
+      "last_epoch": 1788783234,
+      "min_available_gib": 7.604099273681641,
+      "min_disk_available_gib": 880.3600807189941,
+      "swap_used_increase_mib": -0.0078125
+    },
+    "srv3": {
+      "n": 171,
+      "first_epoch": 1788781465,
+      "last_epoch": 1788783234,
+      "min_available_gib": 9.47256851196289,
+      "min_disk_available_gib": 1716.2201309204102,
+      "swap_used_increase_mib": 0.0
+    },
+    "srv4": {
+      "n": 171,
+      "first_epoch": 1788781465,
+      "last_epoch": 1788783234,
+      "min_available_gib": 11.942310333251953,
+      "min_disk_available_gib": 2062.5811729431152,
+      "swap_used_increase_mib": 0.0
+    }
+  },
+  "strategy": "one mapped checksum worker, one chunk ahead, allowed performance CPU affinity",
+  "decision": "reject default promotion: no end-to-end startup benefit",
+  "default_prefetch": 0,
+  "remote_evidence": "/home/choiceoh/glm53-logs/rank-mmap-20260907-r3",
+  "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "gpu": {
+    "bytes": 536875025,
+    "caller_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "checks": 42,
+    "median_restore_s": {
+      "0": 0.4843964840110857,
+      "1": 0.5074584615067579
+    },
+    "module_sha256": "dc38ff52105b6e1a627567f3d9c99f1ab3db4e37e2156c3cd71b809dfbe8a5c4",
+    "ok": true,
+    "samples": [
+      {
+        "prefetch": 0,
+        "restore_s": 0.5014881250099279
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.5749401359935291
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.43997678701998666
+      },
+      {
+        "prefetch": 0,
+        "restore_s": 0.4673048430122435
+      }
+    ]
+  },
+  "full_payload_screen": {
+    "bytes": 536875025,
+    "caller_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "checks": 46,
+    "full_payload": {
+      "bytes": 48092653608,
+      "cache_manifest": "/cache/glm53-ranks/02acbd2b1f6a8e032775df2ae6a389c043b810cb03d5f16456c1f6442a628792/manifest.json",
+      "chunks": 2241,
+      "median_restore_s": {
+        "0": 52.859054864471545,
+        "1": 40.46436471102061
+      },
+      "samples": [
+        {
+          "prefetch": 0,
+          "restore_s": 52.27188411797397
+        },
+        {
+          "prefetch": 1,
+          "restore_s": 38.4673981530359
+        },
+        {
+          "prefetch": 1,
+          "restore_s": 42.46133126900531
+        },
+        {
+          "prefetch": 0,
+          "restore_s": 53.44622561096912
+        }
+      ]
+    },
+    "median_restore_s": {
+      "0": 0.7699175974703394,
+      "1": 0.4804594700108282
+    },
+    "module_sha256": "dc38ff52105b6e1a627567f3d9c99f1ab3db4e37e2156c3cd71b809dfbe8a5c4",
+    "ok": true,
+    "samples": [
+      {
+        "prefetch": 0,
+        "restore_s": 0.5191265509929508
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.5028465909999795
+      },
+      {
+        "prefetch": 1,
+        "restore_s": 0.45807234902167693
+      },
+      {
+        "prefetch": 0,
+        "restore_s": 1.020708643947728
+      }
+    ]
+  },
+  "arms": {
+    "RANKMMAP3PRIME": {
+      "health_wall_s": 473,
+      "overlay": "aaf81aa57e94",
+      "quality": {
+        "ok": 6,
+        "total": 6
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 4,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "raw_acceptance": 0.48633879781420764,
+      "response_comparison": {
+        "baseline": "RANKMMAP3BASE1",
+        "n": 4,
+        "matching_prompts": 4,
+        "exact_responses": 0
+      },
+      "nodes": {
+        "srv1": {
+          "rank": [
+            {
+              "kind": "saved",
+              "rank": 1,
+              "bytes": 48092653608,
+              "seconds": 107.721
+            }
+          ],
+          "rank_io": [],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 213,
+              "errors": 0,
+              "times_s": {
+                "key": 2.008,
+                "read": 0.031,
+                "quantize": 4.614,
+                "write": 5.689
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 31,
+              "errors": 0,
+              "times_s": {
+                "key": 0.392,
+                "read": 0.003,
+                "quantize": 3.062,
+                "write": 0.652
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              26.6
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              29.9
+            ],
+            "load-model": [
+              254.9
+            ],
+            "profile-run": [
+              106.7
+            ],
+            "profile/determine-memory": [
+              110.4
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.1
+            ]
+          }
+        },
+        "srv2": {
+          "rank": [
+            {
+              "kind": "saved",
+              "rank": 0,
+              "bytes": 48092653608,
+              "seconds": 53.101
+            }
+          ],
+          "rank_io": [],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 213,
+              "errors": 0,
+              "times_s": {
+                "key": 2.021,
+                "read": 0.062,
+                "quantize": 5.594,
+                "write": 5.015
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 31,
+              "errors": 0,
+              "times_s": {
+                "key": 0.384,
+                "read": 0.005,
+                "quantize": 1.641,
+                "write": 0.808
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              7.9
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              11.4
+            ],
+            "load-model": [
+              253.5
+            ],
+            "profile-run": [
+              106.9
+            ],
+            "profile/determine-memory": [
+              110.7
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.0
+            ]
+          }
+        },
+        "srv3": {
+          "rank": [
+            {
+              "kind": "saved",
+              "rank": 2,
+              "bytes": 48092653608,
+              "seconds": 44.096
+            }
+          ],
+          "rank_io": [],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 213,
+              "errors": 0,
+              "times_s": {
+                "key": 2.035,
+                "read": 0.076,
+                "quantize": 4.594,
+                "write": 3.098
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 31,
+              "errors": 0,
+              "times_s": {
+                "key": 0.394,
+                "read": 0.003,
+                "quantize": 3.037,
+                "write": 0.552
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              25.0
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              28.3
+            ],
+            "load-model": [
+              254.4
+            ],
+            "profile-run": [
+              106.7
+            ],
+            "profile/determine-memory": [
+              110.4
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.1
+            ]
+          }
+        },
+        "srv4": {
+          "rank": [
+            {
+              "kind": "saved",
+              "rank": 3,
+              "bytes": 48092653608,
+              "seconds": 47.627
+            }
+          ],
+          "rank_io": [],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 213,
+              "errors": 0,
+              "times_s": {
+                "key": 2.029,
+                "read": 0.038,
+                "quantize": 5.46,
+                "write": 4.228
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 0,
+              "miss": 31,
+              "errors": 0,
+              "times_s": {
+                "key": 0.392,
+                "read": 0.004,
+                "quantize": 3.121,
+                "write": 0.846
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              20.3
+            ],
+            "dist-group tp": [
+              1.8
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              23.8
+            ],
+            "load-model": [
+              255.1
+            ],
+            "profile-run": [
+              106.7
+            ],
+            "profile/determine-memory": [
+              110.7
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.1
+            ]
+          }
+        }
+      }
+    },
+    "RANKMMAP3BASE1": {
+      "health_wall_s": 225,
+      "overlay": "aaf81aa57e94",
+      "quality": {
+        "ok": 6,
+        "total": 6
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 4,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "raw_acceptance": 0.5027818448023426,
+      "response_comparison": {
+        "baseline": "RANKMMAP3BASE1",
+        "n": 4,
+        "matching_prompts": 4,
+        "exact_responses": 4
+      },
+      "nodes": {
+        "srv1": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 1,
+              "bytes": 48092653608,
+              "seconds": 47.635
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 38.112,
+              "hash_wait_s": 38.115,
+              "copy_s": 2.892,
+              "discard_s": 4.363,
+              "total_s": 45.402
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.977,
+                "read": 2.183,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.394,
+                "read": 0.386,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              28.4
+            ],
+            "dist-group tp": [
+              1.8
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              31.6
+            ],
+            "load-model": [
+              82.5
+            ],
+            "profile-run": [
+              33.2
+            ],
+            "profile/determine-memory": [
+              36.9
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.4
+            ]
+          }
+        },
+        "srv2": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 0,
+              "bytes": 48092653608,
+              "seconds": 47.729
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 41.25,
+              "hash_wait_s": 41.253,
+              "copy_s": 2.85,
+              "discard_s": 0.851,
+              "total_s": 44.984
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.958,
+                "read": 2.209,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.344,
+                "read": 0.352,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              7.8
+            ],
+            "dist-group tp": [
+              1.8
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              11.2
+            ],
+            "load-model": [
+              80.7
+            ],
+            "profile-run": [
+              33.4
+            ],
+            "profile/determine-memory": [
+              36.8
+            ],
+            "kv-cache-alloc": [
+              0.7
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.4
+            ]
+          }
+        },
+        "srv3": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 2,
+              "bytes": 48092653608,
+              "seconds": 39.75
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 33.91,
+              "hash_wait_s": 33.913,
+              "copy_s": 2.83,
+              "discard_s": 0.836,
+              "total_s": 37.609
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.977,
+                "read": 2.052,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.394,
+                "read": 0.322,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              28.4
+            ],
+            "dist-group tp": [
+              1.8
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              31.8
+            ],
+            "load-model": [
+              82.2
+            ],
+            "profile-run": [
+              33.2
+            ],
+            "profile/determine-memory": [
+              36.8
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.4
+            ]
+          }
+        },
+        "srv4": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 3,
+              "bytes": 48092653608,
+              "seconds": 41.596
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 35.507,
+              "hash_wait_s": 35.511,
+              "copy_s": 2.582,
+              "discard_s": 0.959,
+              "total_s": 39.084
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.034,
+                "read": 2.09,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.389,
+                "read": 0.356,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              16.2
+            ],
+            "dist-group tp": [
+              1.8
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              19.6
+            ],
+            "load-model": [
+              82.3
+            ],
+            "profile-run": [
+              33.2
+            ],
+            "profile/determine-memory": [
+              37.1
+            ],
+            "kv-cache-alloc": [
+              0.7
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.5
+            ]
+          }
+        }
+      }
+    },
+    "RANKMMAP3FAST1": {
+      "health_wall_s": 234,
+      "overlay": "aaf81aa57e94",
+      "quality": {
+        "ok": 6,
+        "total": 6
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 4,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "raw_acceptance": 0.46206896551724136,
+      "response_comparison": {
+        "baseline": "RANKMMAP3BASE1",
+        "n": 4,
+        "matching_prompts": 4,
+        "exact_responses": 0
+      },
+      "nodes": {
+        "srv1": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 1,
+              "bytes": 48092653608,
+              "seconds": 41.777
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 37.733,
+              "hash_wait_s": 30.437,
+              "copy_s": 2.887,
+              "discard_s": 5.954,
+              "total_s": 39.347
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.981,
+                "read": 2.233,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.375,
+                "read": 0.372,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              27.2
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.3
+            ],
+            "dist-model-parallel": [
+              3.3
+            ],
+            "init-device": [
+              30.8
+            ],
+            "load-model": [
+              85.5
+            ],
+            "profile-run": [
+              33.3
+            ],
+            "profile/determine-memory": [
+              36.9
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.2
+            ],
+            "compile+warmup": [
+              9.5
+            ]
+          }
+        },
+        "srv2": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 0,
+              "bytes": 48092653608,
+              "seconds": 48.496
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 45.335,
+              "hash_wait_s": 42.576,
+              "copy_s": 2.788,
+              "discard_s": 0.839,
+              "total_s": 46.275
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.026,
+                "read": 2.38,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.38,
+                "read": 0.374,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              9.9
+            ],
+            "dist-group tp": [
+              2.0
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.3
+            ],
+            "dist-model-parallel": [
+              3.3
+            ],
+            "init-device": [
+              13.5
+            ],
+            "load-model": [
+              85.5
+            ],
+            "profile-run": [
+              33.2
+            ],
+            "profile/determine-memory": [
+              36.8
+            ],
+            "kv-cache-alloc": [
+              0.5
+            ],
+            "cudagraph-capture": [
+              1.2
+            ],
+            "compile+warmup": [
+              9.3
+            ]
+          }
+        },
+        "srv3": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 2,
+              "bytes": 48092653608,
+              "seconds": 39.827
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 35.918,
+              "hash_wait_s": 33.09,
+              "copy_s": 2.8,
+              "discard_s": 0.895,
+              "total_s": 36.853
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.026,
+                "read": 2.109,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.382,
+                "read": 0.343,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              31.3
+            ],
+            "dist-group tp": [
+              2.0
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.3
+            ],
+            "dist-model-parallel": [
+              3.3
+            ],
+            "init-device": [
+              34.8
+            ],
+            "load-model": [
+              85.6
+            ],
+            "profile-run": [
+              33.1
+            ],
+            "profile/determine-memory": [
+              36.9
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.2
+            ],
+            "compile+warmup": [
+              9.5
+            ]
+          }
+        },
+        "srv4": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 3,
+              "bytes": 48092653608,
+              "seconds": 39.981
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 36.67,
+              "hash_wait_s": 33.869,
+              "copy_s": 2.561,
+              "discard_s": 0.909,
+              "total_s": 37.405
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.033,
+                "read": 2.082,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.395,
+                "read": 0.359,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              24.7
+            ],
+            "dist-group tp": [
+              2.0
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.3
+            ],
+            "dist-model-parallel": [
+              3.3
+            ],
+            "init-device": [
+              28.4
+            ],
+            "load-model": [
+              85.7
+            ],
+            "profile-run": [
+              33.3
+            ],
+            "profile/determine-memory": [
+              36.9
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.2
+            ],
+            "compile+warmup": [
+              9.5
+            ]
+          }
+        }
+      }
+    },
+    "RANKMMAP3FAST2": {
+      "health_wall_s": 228,
+      "overlay": "aaf81aa57e94",
+      "quality": {
+        "ok": 6,
+        "total": 6
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 4,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "raw_acceptance": 0.494356005788712,
+      "response_comparison": {
+        "baseline": "RANKMMAP3BASE1",
+        "n": 4,
+        "matching_prompts": 4,
+        "exact_responses": 0
+      },
+      "nodes": {
+        "srv1": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 1,
+              "bytes": 48092653608,
+              "seconds": 41.596
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 37.652,
+              "hash_wait_s": 30.856,
+              "copy_s": 2.931,
+              "discard_s": 5.345,
+              "total_s": 39.199
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.997,
+                "read": 2.206,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.375,
+                "read": 0.378,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              30.1
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.2
+            ],
+            "init-device": [
+              33.6
+            ],
+            "load-model": [
+              81.6
+            ],
+            "profile-run": [
+              33.3
+            ],
+            "profile/determine-memory": [
+              36.5
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.8
+            ],
+            "compile+warmup": [
+              10.5
+            ]
+          }
+        },
+        "srv2": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 0,
+              "bytes": 48092653608,
+              "seconds": 48.441
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 44.732,
+              "hash_wait_s": 41.959,
+              "copy_s": 2.804,
+              "discard_s": 0.809,
+              "total_s": 45.64
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.975,
+                "read": 2.222,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.394,
+                "read": 0.382,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              8.5
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.2
+            ],
+            "init-device": [
+              11.9
+            ],
+            "load-model": [
+              82.0
+            ],
+            "profile-run": [
+              33.3
+            ],
+            "profile/determine-memory": [
+              36.8
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.8
+            ],
+            "compile+warmup": [
+              10.5
+            ]
+          }
+        },
+        "srv3": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 2,
+              "bytes": 48092653608,
+              "seconds": 41.339
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 37.588,
+              "hash_wait_s": 34.764,
+              "copy_s": 2.841,
+              "discard_s": 0.865,
+              "total_s": 38.541
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.014,
+                "read": 2.131,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.394,
+                "read": 0.37,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              28.4
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.2
+            ],
+            "init-device": [
+              31.8
+            ],
+            "load-model": [
+              81.9
+            ],
+            "profile-run": [
+              33.0
+            ],
+            "profile/determine-memory": [
+              36.8
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.8
+            ],
+            "compile+warmup": [
+              10.3
+            ]
+          }
+        },
+        "srv4": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 3,
+              "bytes": 48092653608,
+              "seconds": 41.432
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 1,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 38.547,
+              "hash_wait_s": 35.754,
+              "copy_s": 2.571,
+              "discard_s": 0.901,
+              "total_s": 39.291
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.039,
+                "read": 2.096,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.382,
+                "read": 0.363,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              23.4
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.2
+            ],
+            "dist-model-parallel": [
+              3.2
+            ],
+            "init-device": [
+              26.9
+            ],
+            "load-model": [
+              81.8
+            ],
+            "profile-run": [
+              33.2
+            ],
+            "profile/determine-memory": [
+              36.9
+            ],
+            "kv-cache-alloc": [
+              0.7
+            ],
+            "cudagraph-capture": [
+              1.8
+            ],
+            "compile+warmup": [
+              10.5
+            ]
+          }
+        }
+      }
+    },
+    "RANKMMAP3BASE2": {
+      "health_wall_s": 220,
+      "overlay": "aaf81aa57e94",
+      "quality": {
+        "ok": 6,
+        "total": 6
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 4,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "raw_acceptance": 0.4923520923520924,
+      "response_comparison": {
+        "baseline": "RANKMMAP3BASE1",
+        "n": 4,
+        "matching_prompts": 4,
+        "exact_responses": 0
+      },
+      "nodes": {
+        "srv1": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 1,
+              "bytes": 48092653608,
+              "seconds": 48.384
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 38.544,
+              "hash_wait_s": 38.548,
+              "copy_s": 2.883,
+              "discard_s": 4.511,
+              "total_s": 45.974
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.015,
+                "read": 2.225,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.396,
+                "read": 0.392,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              22.3
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              25.7
+            ],
+            "load-model": [
+              82.3
+            ],
+            "profile-run": [
+              32.8
+            ],
+            "profile/determine-memory": [
+              36.2
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              9.9
+            ]
+          }
+        },
+        "srv2": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 0,
+              "bytes": 48092653608,
+              "seconds": 46.128
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 40.152,
+              "hash_wait_s": 40.155,
+              "copy_s": 2.858,
+              "discard_s": 0.848,
+              "total_s": 43.892
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.027,
+                "read": 2.345,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.375,
+                "read": 0.376,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              3.9
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              7.3
+            ],
+            "load-model": [
+              80.9
+            ],
+            "profile-run": [
+              33.1
+            ],
+            "profile/determine-memory": [
+              36.4
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              9.9
+            ]
+          }
+        },
+        "srv3": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 2,
+              "bytes": 48092653608,
+              "seconds": 46.254
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 40.257,
+              "hash_wait_s": 40.26,
+              "copy_s": 2.888,
+              "discard_s": 0.851,
+              "total_s": 44.029
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 1.952,
+                "read": 2.06,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.391,
+                "read": 0.358,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              19.5
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              22.9
+            ],
+            "load-model": [
+              82.2
+            ],
+            "profile-run": [
+              32.7
+            ],
+            "profile/determine-memory": [
+              36.2
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              9.9
+            ]
+          }
+        },
+        "srv4": {
+          "rank": [
+            {
+              "kind": "hit",
+              "rank": 3,
+              "bytes": 48092653608,
+              "seconds": 47.05
+            }
+          ],
+          "rank_io": [
+            {
+              "prefetch": 0,
+              "chunks": 2241,
+              "bytes": 48092653608,
+              "hash_work_s": 40.822,
+              "hash_wait_s": 40.825,
+              "copy_s": 2.558,
+              "discard_s": 0.884,
+              "total_s": 44.3
+            }
+          ],
+          "fp8": [
+            {
+              "label": "Glm5NextForCausalLM",
+              "enabled": true,
+              "hit": 213,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 2.032,
+                "read": 2.1,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            },
+            {
+              "label": "DFlash2Qwen3ForCausalLM",
+              "enabled": true,
+              "hit": 31,
+              "miss": 0,
+              "errors": 0,
+              "times_s": {
+                "key": 0.388,
+                "read": 0.347,
+                "quantize": 0.0,
+                "write": 0.0
+              }
+            }
+          ],
+          "cache_warnings": [],
+          "copy_disarmed": [
+            0,
+            0
+          ],
+          "phase_s": {
+            "dist-world": [
+              15.9
+            ],
+            "dist-group tp": [
+              1.9
+            ],
+            "dist-group dcp": [
+              0.0
+            ],
+            "dist-group pcp": [
+              0.0
+            ],
+            "dist-group pp": [
+              0.0
+            ],
+            "dist-group dp": [
+              0.0
+            ],
+            "dist-group ep": [
+              1.1
+            ],
+            "dist-model-parallel": [
+              3.0
+            ],
+            "init-device": [
+              19.3
+            ],
+            "load-model": [
+              82.4
+            ],
+            "profile-run": [
+              32.9
+            ],
+            "profile/determine-memory": [
+              36.5
+            ],
+            "kv-cache-alloc": [
+              0.6
+            ],
+            "cudagraph-capture": [
+              1.7
+            ],
+            "compile+warmup": [
+              10.0
+            ]
+          }
+        }
+      }
+    }
+  }
+}
