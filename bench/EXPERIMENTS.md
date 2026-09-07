@@ -151,6 +151,13 @@ agents can read `plans/<plan-id>/plan.json` and use the recorded CPU IDs with
 all GPU prerequisites still apply. If deployment attestation fails, CPU work
 continues and its IDs remain available in the saved plan and error response.
 
+Dependency completion is checked every 50 ms using batched, indexed ID/state
+reads, so short checks and preparation chains avoid a one-second sleep at each
+edge. Full pinned payloads are not decoded on each poll. Recovery of unfinished
+workers remains limited to one pass per second per waiting worker; completed
+workers are skipped. Incomplete evidence is still refreshed before a dependent
+job is blocked, and retirement ends the dependency wait before execution.
+
 For multiple goals on the **same knobs/image/configuration**, replace
 `objective`/`workload` with `evaluations`, an array of up to six objects of that
 shape. Identical workloads produce one record used by multiple objectives;
