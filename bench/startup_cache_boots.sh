@@ -32,6 +32,9 @@ snapshot() {
   cp "$LOGD/glm53.log" "$EVIDENCE/$arm-srv2.log" || true
   docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' glm53 > "$EVIDENCE/$arm-srv2.state" 2>&1 || true
   docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py > "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
+  if [ "$MODE" = renderer-warmup ]; then
+    docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py /usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py >> "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
+  fi
   for ip in 1 3 4; do
     scp -q -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip:glm53-logs/glm53.log" "$EVIDENCE/$arm-srv$ip.log" || true
     ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker inspect --format "{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}" glm53-worker; df -B1 /home/choiceoh/glm53-cache | tail -1; grep -E "MemFree:|MemAvailable:" /proc/meminfo; docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py' > "$EVIDENCE/$arm-srv$ip.state" 2>&1 || true
