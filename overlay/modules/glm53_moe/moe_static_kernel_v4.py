@@ -254,16 +254,16 @@ class MoEStaticKernelV4:
 
     def _partition_fragment_SFB(self, tensor, thr_mma, tidx):
         fragment = self._dense_cls._partition_fragment_SFB(self, tensor, thr_mma, tidx)
-        if self.decode_reform:
+        if self.decode_reform and cute.rank(fragment) == 2:
             # The legacy helper folds N and K together when the M atom extent
             # is one. Restore (values, N tiles, K blocks) without changing the
             # scale bytes or their lane assignment.
-            assert cute.rank(fragment) == 2
             shape, stride = fragment.shape, fragment.stride
             assert len(shape[1]) == 2
             fragment = cute.make_tensor(fragment.iterator, cute.make_layout(
                 (shape[0], shape[1][0], shape[1][1]),
                 stride=(stride[0], stride[1][0], stride[1][1])))
+        assert cute.rank(fragment) == 3
         return fragment
 
     def _get_layoutSFA_TV(self, tiled_mma):
