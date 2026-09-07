@@ -21,7 +21,7 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'experiment_metrics.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'experiment_metrics.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
@@ -79,6 +79,8 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:self.held('first'))
         second = self.launch('second', 'pass')
         self.until(lambda:self.ready('second'))
+        # A common checkout update must not replace either in-flight controller.
+        (self.repo/'bench/fleet_restore.sh').write_text('exit 99\n')
         gate.touch()
         self.assertEqual(self.wait(first), 0)
         self.assertEqual(self.wait(second), 0)

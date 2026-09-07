@@ -649,6 +649,10 @@ pattern before queuing. Arbitrary shell code is not exhaustively linted.
 handoff, reclaim and restore duration. `fleet.sh version` exposes the active
 protocol and source hashes. Fleet waiters now poll at one second instead of
 15 seconds. Nested legacy yields defer to the supervised finish boundary.
+Control scripts are pinned by content under `fleet/runners/` before admission;
+updating the shared checkout affects new submissions, not an in-flight
+supervisor's queue/restore helpers. Payload checkouts retain their own source
+validation contract.
 
 ## Share startup controls across a campaign
 

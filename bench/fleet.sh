@@ -347,7 +347,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   # priority cannot interrupt a pair/chain or steal a yielded holder's place.
   local eligibility=""
   serving_idle || eligibility=--boot-only
-  python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
   [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
   [ "$kind" = probe ] && ! serving_idle && return 1
   # never hand the fleet to a dead job (an orphaned waiter whose run process
@@ -355,7 +355,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   # later, dropping the live request with the same session name)
   [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
   legacy_busy && return 1
-  python3 "$REPO/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" || return 1
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" || return 1
   echo "$s|$pid|$(me)|$(now)|$est|$note|$kind" > "$H"; _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
   logit "GO $s (pid $pid)"; _event GO "$s" "$note"; return 0
@@ -463,9 +463,12 @@ case "$cmd" in
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
+    if [ "$kind" = boot ]; then
+      runner=$(python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
+    fi
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
     if [ "$kind" = boot ]; then
-      exec python3 "$REPO/bench/fleet_boot.py" "$(realpath "$0")" "$s" "$est" "$note" "$@"
+      exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@"
     fi
     FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
     if [ "$kind" = boot ]; then
