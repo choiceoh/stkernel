@@ -158,3 +158,19 @@ uses one normal 25-minute estimated boot hold; job and receipts are in
 new diagnostic submission, not a retry of serving2 or a serving acceptance
 gate. CPU evidence and request/submission receipts are in
 `measurements/glm53_moe_overlap_20260907/diagnostic1-preparation/`.
+
+## Component collection completed
+
+The diagnostic completed both transports and exact recovery at 00:39:05
+KST. Fixed-input gather and fixed-partial reduce-scatter repeats were exact
+in every measured case, while variation appeared in repeated local MoE
+partials and could be amplified after FP8 transport. Independent stock
+controls reproduce the fallback comparison problem. Separately, FP8 active
+overlap fails 887 / 708 rows at 6912 / 8192 skew despite exact whole-stock
+repeats, so it remains unfit for serving.
+
+BF16 overlap was slower than serial stripes in all four timed cases. The
+balanced regression is already present in serial splitting; observed extra
+padding explains only part of it. Keep the option off and target work
+within one full-chunk MoE call next.
+[Completed diagnostic, exact recovery and raw data](../measurements/glm53_moe_overlap_20260907/diagnostic1/README.md).

@@ -1,0 +1,831 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE_NOT_A_SERVING_GATE",
+  "source_revision": "6b8c2b3ec561f962282142e6ede123e2ed48d702",
+  "serving_gate": false,
+  "restored_original": true,
+  "completion": {
+    "started": 1788795210.905061,
+    "exit_code": 0,
+    "probes": {
+      "moe-overlap-diagnostic": {
+        "revision": "6b8c2b3ec561f962282142e6ede123e2ed48d702",
+        "started": 1788795261.766684,
+        "command": [
+          "bash",
+          "probes/run_glm53_moe_overlap_tp4_check.sh",
+          "--diagnose"
+        ],
+        "exit_code": 0,
+        "ended": 1788795366.5270512
+      }
+    },
+    "restored_original": true,
+    "ended": 1788795545.1700854
+  },
+  "results": {
+    "bf16": {
+      "4096-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.006185939069837332,
+          0.006141012068837881,
+          0.006248201709240675,
+          0.006173041649162769
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005342984572052956,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4096-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.004626385401934385,
+          0.004468574188649654,
+          0.00427430821582675,
+          0.004227123688906431
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.004514008294790983,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4143-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.006131765898317099,
+          0.006087345536798239,
+          0.006136923562735319,
+          0.006124972831457853
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005311272107064724,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4143-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.002510148799046874,
+          0.00217609154060483,
+          0.0027909171767532825,
+          0.0024036425165832043
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.003668686607852578,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "6912-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.006133632268756628,
+          0.006274182349443436,
+          0.006157085299491882,
+          0.006137838587164879
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005389797035604715,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 592,
+        "stripe_tiles": 604,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 18.787983894348145,
+          "serial": 25.80894374847412,
+          "overlap": 25.933823585510254
+        }
+      },
+      "6912-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.0,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 432,
+        "stripe_tiles": 432,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 14.97606372833252,
+          "serial": 13.60856008529663,
+          "overlap": 13.94704008102417
+        }
+      },
+      "8192-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.006209521554410458,
+          0.006132747977972031,
+          0.006237989291548729,
+          0.0061925551854074
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005404572933912277,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 650,
+        "stripe_tiles": 733,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 20.120847702026367,
+          "serial": 28.51694393157959,
+          "overlap": 28.704975128173828
+        }
+      },
+      "8192-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.0,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 512,
+        "stripe_tiles": 512,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 17.71726417541504,
+          "serial": 16.349424362182617,
+          "overlap": 16.773903846740723
+        }
+      }
+    },
+    "fp8-v3": {
+      "4096-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          1,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.018420284613966942,
+          0.017832675948739052,
+          0.018533937633037567,
+          0.018197884783148766
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005224460735917091,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4096-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          2
+        ],
+        "stock_repeat_l2": [
+          0.0126876849681139,
+          0.01265700627118349,
+          0.011699426919221878,
+          0.0118319783359766
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.00426016328856349,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4143-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.01832304336130619,
+          0.01794249378144741,
+          0.017989156767725945,
+          0.01785123720765114
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005294822156429291,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "4143-skew": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          1,
+          0
+        ],
+        "stock_control_bad_rows": [
+          1,
+          0,
+          0,
+          1
+        ],
+        "stock_repeat_l2": [
+          0.00855578575283289,
+          0.008841193281114101,
+          0.008426460437476635,
+          0.007474912330508232
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.00338875874876976,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ]
+      },
+      "6912-balanced": {
+        "candidate_bad_rows": [
+          0,
+          0,
+          11,
+          7
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          1,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.01790829747915268,
+          0.01854816824197769,
+          0.018362000584602356,
+          0.01843418926000595
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005381849128752947,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 518,
+        "stripe_tiles": 636,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 15.090943813323975,
+          "serial": 21.658559799194336,
+          "overlap": 20.365471839904785
+        }
+      },
+      "6912-skew": {
+        "candidate_bad_rows": [
+          178,
+          165,
+          253,
+          291
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.0,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 432,
+        "stripe_tiles": 432,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 13.963007926940918,
+          "serial": 12.747183799743652,
+          "overlap": 12.500080108642578
+        }
+      },
+      "8192-balanced": {
+        "candidate_bad_rows": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.01808025874197483,
+          0.018116643652319908,
+          0.01742030493915081,
+          0.01784684881567955
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.005343216005712748,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 614,
+        "stripe_tiles": 672,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 16.705087661743164,
+          "serial": 23.21784019470215,
+          "overlap": 22.50214385986328
+        }
+      },
+      "8192-skew": {
+        "candidate_bad_rows": [
+          223,
+          236,
+          157,
+          92
+        ],
+        "stock_control_bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "stock_repeat_l2": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "gather_equal": true,
+        "max_partial_repeat_l2": 0.0,
+        "fixed_transport_equal": true,
+        "varying_partial_transport_bad_rows": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "stock_tiles": 512,
+        "stripe_tiles": 512,
+        "tile_m": [
+          128,
+          128,
+          128
+        ],
+        "serial_vs_overlap_bad_rows": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "median_slowest_rank_ms": {
+          "stock": 16.40056037902832,
+          "serial": 15.701824188232422,
+          "overlap": 14.933824062347412
+        }
+      }
+    }
+  }
+}
