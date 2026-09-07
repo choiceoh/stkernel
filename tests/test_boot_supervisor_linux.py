@@ -14,7 +14,7 @@ class LinuxSupervisorTests(unittest.TestCase):
     """Run this suite on Linux; fixture commands replace all system/GPU I/O."""
     def setUp(self):
         if not Path('/proc/self/stat').exists() or not shutil.which('flock'):
-            self.fail('Linux supervisor integration requires Linux and flock; run on the CPU validation host')
+            self.skipTest('Linux supervisor integration requires Linux and flock; run on the CPU validation host')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -77,10 +77,11 @@ test ! -e "$LOGD/fail-restore"
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
-        second = self.launch('second', 'pass')
+        second = self.launch('second', "import os,subprocess,hashlib; from pathlib import Path; p=Path(os.environ['FLEET_RUNNER_REPO'],'bench/fleet.sh'); assert hashlib.sha256(p.read_bytes()).hexdigest() in subprocess.check_output(['bash',os.environ['FLEET'],'version'],text=True)")
         self.until(lambda:self.ready('second'))
         # A common checkout update must not replace either in-flight controller.
         (self.repo/'bench/fleet_restore.sh').write_text('exit 99\n')
+        (self.repo/'bench/fleet.sh').write_text('exit 99\n')
         gate.touch()
         self.assertEqual(self.wait(first), 0)
         self.assertEqual(self.wait(second), 0)

@@ -10,11 +10,13 @@ from unittest.mock import patch
 
 
 class BootReceiptTests(unittest.TestCase):
-    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs=""):
+    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
             if mode == 'campaign':
+                Path(root, 'campaign.json').write_text(json.dumps(dict(arms=[dict(stage=stage, knobs=campaign_knobs if campaign_knobs is not None else {
+                    'VLLM_GLM53_MK_PACK_FAST_IO':str(fast), 'VLLM_GLM53_MK_PACK_SHA256':'0'})])))
                 Path(root, 'TEST-cache-env.json').write_text(json.dumps([
                     'VLLM_GLM53_MK_PACK_FAST_IO='+str(fast), 'VLLM_GLM53_MK_PACK_SHA256=0']))
             for node in (1, 2, 3, 4):
@@ -65,6 +67,9 @@ class BootReceiptTests(unittest.TestCase):
         self.check_receipts('BASE1', 0, 0, 253, mode='campaign')
         with self.assertRaisesRegex(AssertionError, 'campaign pack IO mismatch'):
             self.check_receipts('FASTIOR1', 1, 0, 0, mode='campaign')
+
+    def test_unrelated_campaign_does_not_infer_pack_gate_from_profile_defaults(self):
+        self.check_receipts('OTHERR1', 1, 0, 0, mode='campaign', campaign_knobs={'VLLM_OTHER':'1'})
 
 
 if __name__ == "__main__":
