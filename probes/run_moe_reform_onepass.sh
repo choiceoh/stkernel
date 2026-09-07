@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export REPO=$PWD
-RESTORE_REPO=/home/choiceoh/stkernel-moe-reform-restore-20260908
+RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel-moe-reform-restore-20260908}
 out=${MOE_ONEPASS_OUT:-/home/choiceoh/glm53-logs/MOEREFORM0908}
 session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
@@ -13,21 +13,13 @@ git fetch origin
 git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs current main'; exit 2; }
 [[ ! -e $out ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out"
-curl -fsS --max-time 5 http://127.0.0.1:8000/metrics > "$out/before-metrics.txt"
-python3 - "$out/before-metrics.txt" <<'PY'
-from pathlib import Path
-import sys
-lines=Path(sys.argv[1]).read_text().splitlines()
-for key in ('num_requests_running','num_requests_waiting'):
-    values=[float(line.rsplit(' ',1)[1]) for line in lines if line.startswith('vllm:'+key+'{')]
-    assert values and sum(values)==0,(key,values)
-PY
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
 touched=0
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   docker stop -t 2 "moereform-$session" >/dev/null 2>&1 || true
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} != 1 ]]; then
     if (
       cd "$RESTORE_REPO"
       git fetch origin || exit 1

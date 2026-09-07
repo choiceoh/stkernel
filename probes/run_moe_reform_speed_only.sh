@@ -12,7 +12,7 @@ resume_owner() {
   if [[ $resume_pid != 0 ]]; then kill -CONT "$resume_pid" 2>/dev/null || true; fi
 }
 trap resume_owner EXIT
-RESTORE_REPO=/home/choiceoh/stkernel-moe-reform-restore-20260908
+RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel-moe-reform-restore-20260908}
 out=${MOE_ONEPASS_OUT:-/home/choiceoh/glm53-logs/MOEREFORMSPEED0908}
 session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
@@ -23,12 +23,13 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
 [[ ! -e $out ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out"
 printf '%s\n' 'User explicitly requested speed comparison after M2/U8 numerical failure; no promotion verdict.' > "$out/known-numerics-failure.txt"
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
 touched=0
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   docker stop -t 2 "moereform-$session" >/dev/null 2>&1 || true
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} != 1 ]]; then
     if (
       cd "$RESTORE_REPO"
       git fetch origin || exit 1
