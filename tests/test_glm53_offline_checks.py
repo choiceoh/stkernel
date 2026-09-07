@@ -13,6 +13,19 @@ SPEC.loader.exec_module(m)
 
 
 class OfflineTests(unittest.TestCase):
+    def test_failed_compile_prevents_snapshot_or_container_transition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)/'evidence'
+            argv=['offline','--out',str(out),'--probe-source','/frozen','--probe-revision','a'*40]
+            with patch('sys.argv',argv),patch.dict(os.environ,OFFLINE_SOURCE_REV='a'*40),patch.object(m,'check_holder'),patch.object(m,'pinned'),patch.object(m,'probe_api_preflight',return_value={}),patch.object(m,'compile_preflight',side_effect=RuntimeError('compile failed')) as compile,patch.object(m,'snapshot') as snapshot,patch.object(m,'transition_all') as transition,patch.object(m.signal,'signal'):
+                self.assertEqual(m.main(),1)
+                compile.assert_called_once()
+                self.assertEqual(compile.call_args.args[:2],('/frozen','a'*40))
+                snapshot.assert_not_called();transition.assert_not_called()
+            result=json.loads((out/'completion.json').read_text())
+            self.assertIn('compile failed',result['error'])
+            self.assertEqual(result['probes'],{})
+
     def states(self):
         return {n: dict(id=n, running=True, auto_remove=False, image=m.IMAGE,
                         overlays={'file':'hash'}, manifest='hash', port=8000) for n in m.NODES}

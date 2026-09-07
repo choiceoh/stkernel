@@ -1,0 +1,65 @@
+TP4 M64 logs: /tmp/glm53-moe-m64.Xy1WJW source=a1622f17fc4be5d0d5325130f533270427e16886 image=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+source and memory PASS
+source and memory PASS
+source and memory PASS
+source and memory PASS
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 309, in build_and_load_cute_dsl_kernel
+[rank0]:     return spec.build_and_load()
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/core.py", line 320, in build_and_load
+[rank0]:     self.build()
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 178, in build
+[rank0]:     self._compiled_kernel = self.compile_fn()
+[rank0]:                             ^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 3677, in <lambda>
+[rank0]:     lambda: cute.compile(
+[rank0]:             ^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 3316, in __call__
+[rank0]:     self._kernel(
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py", line 92, in __call__
+[rank0]:     return MoEGatedDynamicKernel.__call__(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py", line 3738, in __call__
+[rank0]:     tma_sfa, gSFA = self._dense_cls._make_tma_atoms_and_tensors(
+[rank0]:                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py", line 2441, in _make_tma_atoms_and_tensors
+[rank0]:     tma_atom, tma_tensor = cpasync.make_tiled_tma_atom(
+[rank0]:                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/dialects/_cute_nvgpu_ops_gen.py", line 2069, in __init__
+[rank0]:     super().__init__(self.OPERATION_NAME, self._ODS_REGIONS, self._ODS_OPERAND_SEGMENTS, self._ODS_RESULT_SEGMENTS, attributes=attributes, results=results, operands=operands, successors=_ods_successors, regions=regions, loc=loc, ip=ip)
+[rank0]: cutlass._mlir._mlir_libs._site_initialize.<locals>.MLIRError: Operation creation failed:
+[rank0]: error: unknown: expected top-level shape equivalence between the SMEM layout and the CTA V-map, but got '!cute.layout<"(((32,4),1),((16,4),1,2)):(((16,4),512),((0,1),4,512))">' and '!cute.layout<"((32,2),(16,4,2)):((1@0@0@0,1@1@0@0),(1@0@0@1,1@1@0@1,1@1@1))">'
+E0907 16:35:15.661000 1 torch/distributed/elastic/multiprocessing/api.py:1002] failed (exitcode: 1) local_rank: 0 (pid: 10) of binary: /usr/bin/python3
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1032, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 367, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1028, in main
+    run(args)
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1019, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 194, in __call__
+    return launch_agent(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 383, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/repo/probes/glm53_moe_m64_check.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-07_16:35:15
+  host      : srv2.tail7fec17.ts.net
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 10) 
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

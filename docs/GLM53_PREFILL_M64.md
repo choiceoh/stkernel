@@ -55,14 +55,11 @@ memory guards, and restores the exact incoming containers in `finally`.
 Only a passing GPU gate can proceed to a matched same-build fresh-cache
 2K/32K/128K B1/A/B2 TTFT bracket and public recovery.
 
-Status: PR #455 remains draft and default-off. Check1 failed before M64 launch
-and restored the original serving fleet; see below. The gated M64 port is pinned
-as `a1622f17fc4be5d0d5325130f533270427e16886` for check3 on main `d489639`.
-Check2 was rejected before submission because main advanced; it never ran CUDA. CPU checks
-pass (6685 logic, 30 megakernel, 92 fleet; 6 M64 contracts, 3 API, 8 recovery;
-10 serving gate, 7 comparator, 4 fresh-cache and 4 memory tests). The serving
-collector requires check3's TP4 numerics, both sanitizers, matching source and
-recovery. No candidate speedup or direct TTFT result is available yet.
+Status: PR #455 remains draft and default-off. Both check1 and check3 failed
+before candidate execution and completed exact incoming fleet recovery. No M64
+speedup, numerical pass, sanitizer pass or serving TTFT result exists. Check3's
+TMA failure is now reproducible without GPU access; the next port must pass the
+CPU compiler before any new serving stop. Details and raw evidence follow.
 
 ## Check1 failure and gated M64 port
 
@@ -95,3 +92,31 @@ the same pinned image (Compute Sanitizer 2025.3.1.0). Each tool checks balanced
 and concentrated 6144/6912/8192 rows with changed routes and retained outputs.
 The serving gate requires both zero-error/zero-hazard tool summaries, source
 provenance and all six cases; a missing report or warning blocks deployment.
+
+
+## Check3: scale-atom mismatch, reproduced without GPU
+
+Check3 on main `d489639`, source `a1622f17fc4be5d0d5325130f533270427e16886`,
+entered the normal boot hold at 01:33:35 KST. Its probe ran 01:34:28–01:35:17;
+exact original fleet recovery completed at 01:38:05. Four BF16 fallback cases
+passed. M64 tracing reached the SFA TMA descriptor and rejected the physical
+M128 shared scale layout versus the logical M64 CTA V-map. Candidate execution,
+FP8, sanitizers and direct TTFT were not reached. Raw rank logs, full lifecycle
+and source identity are retained in `check3/`; this frozen job must not be rerun.
+
+The actual dispatcher now has a CPU compile harness. In the identical image,
+with runtime `runc`, no GPU devices and no network, M128 compiled in 3.96 seconds;
+M64 reproduced the same MLIR error in 0.013 seconds. Constructor-only checks
+were insufficient to catch this mismatch. The offline driver now runs that
+compiler before the serving snapshot/stop; a regression test proves a compiler
+failure never reaches any container transition.
+
+The next change must handle 128-row A/SFA physical blocks explicitly, including
+TMA block indexing and the correct M64 half. The image's generic kernel already
+uses `sa_tile_shape_mk`, `sfa_tile_shape_mk`, `*_tiles_per_block`, per-task half
+selection and first-half FC2 staging for sub-128 tiles. Those semantics need to
+be reconciled with this gated kernel's Q1 reuse and aliased A5/SFA4 storage.
+Changing only the TMA tile to 128 would select wrong rows. Do not claim a fix
+from constructor dimensions, relax the source/numerical gate, or perform another
+GPU restart until both dispatcher paths compile. CPU compile success will still
+require fresh TP4 numeric/capture/sanitizer and direct TTFT evidence afterward.
