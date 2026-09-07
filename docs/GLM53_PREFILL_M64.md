@@ -256,4 +256,23 @@ all four arms' partial bits, packet bytes/scales and owned output/sum rows. A
 All 72 payloads from all four process logs are hash-checked against collective
 metadata. The dedicated `MOE_M64_FP8_TRACE_COMPLETE` marker never grants numerical
 or serving acceptance, including when frozen replay is bitwise equal. No kernel,
-normal gate, tolerance or default has changed. GPU trace evidence is pending.
+normal gate, tolerance or default has changed.
+
+The trace completed at 04:15:20 KST with exact recovery at 04:17:57. Every frozen
+FP8 replay and helper comparison was bitwise equal; actual partial and native
+BF16 comparisons all passed. Candidate/control FP8 failing row-trials were
+83/2 at 8192, 7/1 at 6144 and 10/10 in the stock-only 4096 fallback. CPU packet
+and source-order sum reconstruction matches the retained GPU trace exactly.
+Small partial differences can cross E4M3 rounding boundaries and become much
+larger output differences, including -0.21875 before quantization versus -4.25
+afterward without a scale change. The normalized 1-ULP boundary explains some
+but not all failures; the unchanged numerical gate still blocks serving.
+
+A CPU-only symmetric INT8 replay over the 106 previously selected failed-row
+unions produces zero candidate/control failures under the same thresholds and
+reduces quantization error in that subset. It is selected-row evidence only,
+with no GPU implementation or performance proof. The next experiment is an
+explicit default-off, RS-only INT8 encoding at the same payload width, with
+unchanged FP8 all-gather and short BF16 routing. GPU pack fidelity and full-row
+comparisons must precede any full gate/TTFT. Full trace, CPU reconstruction,
+INT8 recipe, tests and recovery are in `measurements/glm53_moe_m64_20260908/fp8trace1/`.

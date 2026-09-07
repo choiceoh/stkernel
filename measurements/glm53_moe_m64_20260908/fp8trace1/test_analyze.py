@@ -9,6 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import torch
 import analyze as a
+import int8_replay
 from glm53_moe_m64_fp8_trace import ARMS, PHASES, encode_arrays, metrics, pair_summary
 
 
@@ -71,6 +72,24 @@ class AnalyzerTests(unittest.TestCase):
             with patch.object(a,'verify_logs',return_value={'cpu_fixture':True}), \
                  self.assertRaisesRegex(ValueError,'CPU pack reconstruction differs'):
                 a.analyze(root)
+
+
+class Int8ReplayTests(unittest.TestCase):
+    def test_symmetric_round_to_even_and_power_of_two_scale(self):
+        value=torch.zeros((1,4096),dtype=torch.float32)
+        value[0,:8]=torch.tensor([-127.,-126.5,-1.5,-.5,.5,1.5,126.5,127.])
+        value[0,2048:2052]=torch.tensor([-128.,-3.,3.,128.])
+        result=int8_replay.quantize(value)
+        self.assertEqual(result[0,:8].tolist(),[-127.,-126.,-2.,0.,0.,2.,126.,127.])
+        self.assertEqual(result[0,2048:2052].tolist(),[-128.,-4.,4.,128.])
+
+    def test_zero_and_empty_rows_are_finite_and_shape_preserved(self):
+        for rows in (0,2):
+            value=torch.zeros((rows,4096),dtype=torch.float32)
+            result=int8_replay.quantize(value)
+            self.assertEqual(result.shape,value.shape)
+            self.assertTrue(torch.isfinite(result).all())
+            self.assertTrue(torch.equal(result,value))
 
 
 if __name__=='__main__':unittest.main()
