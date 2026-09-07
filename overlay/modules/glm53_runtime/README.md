@@ -444,3 +444,11 @@ continuation, and checks repeated consumers and nondefault streams. TP4
 adds actual exchange plus MHC equality, threshold-edge padding cases, and
 mirrored BF16/v2/v3/direct timings using the slowest rank in each sample.
 Neither gate substitutes for a clean, matched serving throughput/quality pair.
+
+After a probe triggered host `earlyoom` beside idle serving on 2026-09-07,
+the GPU launchers require spare UMA memory on every participating node:
+8 GiB probe budget plus 10% of total RAM (minimum 8 GiB) left for existing
+work. Missing counters or insufficient headroom refuse the next container;
+there is no override. Large probes may need an offline fleet boot turn.
+See [follow-up evidence](../../../docs/GLM53_PREFILL_FOLLOWUP_20260907.md)
+for the fixed numerical failure, memory incident, and unpromoted direct path.
