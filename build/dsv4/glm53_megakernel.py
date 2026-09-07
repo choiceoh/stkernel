@@ -714,7 +714,8 @@ def _pack_tensor_to_device(tensor, device, fast):
     import torch
     if tensor is None:
         return None
-    if not fast or tensor.device.type != "cpu" or not tensor.is_contiguous():
+    if (not fast or torch.device(device).type != "cuda"
+            or tensor.device.type != "cpu" or not tensor.is_contiguous()):
         return tensor.to(device)
     # Pack files contain dense contiguous tensors. Copy logical bytes into an
     # independent allocation, including offset views; mapped input stays alive

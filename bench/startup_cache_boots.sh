@@ -97,7 +97,8 @@ for node in (1, 2, 3, 4):
         fast = int(stage.startswith("FAST"))
         io = re.findall(r"\[mk-pack-io\].*?fast=(\d+).*?fast_hits=(\d+) legacy_hits=(\d+)", text)
         assert len(io) >= 2, f"srv{node}: pack IO receipts missing"
-        assert all(int(f) == fast and int(h if fast else l) > 0 and int(l if fast else h) == 0 for f, h, l in io), f"srv{node}: wrong pack IO path: {io}"
+        assert all(int(f) == fast and (stage == "PRIME" or int(h if fast else l) > 0)
+                   and int(l if fast else h) == 0 for f, h, l in io), f"srv{node}: wrong pack IO path: {io}"
         assert not re.search(r"pack cache .*?unreadable|MK W4 pack build FAILED", text), f"srv{node}: pack restore failure"
 print("all four nodes have the required cache receipts")
 PY

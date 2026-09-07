@@ -50,12 +50,13 @@ class PackIOTests(unittest.TestCase):
             self.mk._pack_tensor_to_device(torch.ones(4, 4), "cpu", False)
 
     def test_restore_dense_offset_and_strided_views_and_optional_fields(self):
-        with patch.object(self.common, "TRANSFER_BYTES", 1024):
+        with patch.object(self.mk, "_pack_staging", side_effect=AssertionError("CPU staging used")):
             for dtype in (torch.uint8, torch.int8, torch.float32, torch.bfloat16):
                 base = torch.arange(7000).to(dtype).reshape(70, 100)
                 for value in (base, base[1:43], base[:, ::2], base.T):
                     actual = self.mk._pack_tensor_to_device(value, "cpu", True)
                     expected = value.to("cpu")
+                    self.assertIs(actual, value)
                     self.assertEqual(actual.shape, expected.shape)
                     self.assertEqual(actual.dtype, expected.dtype)
                     self.assertEqual(actual.stride(), expected.stride())
