@@ -1,17 +1,231 @@
 # GLM-5.3-Flash prefill: 40% throughput campaign
 
-Baseline source: `8d36ee8`. Worktree: `work/glm53-flash-prefill-20260906`.
+Baseline source: `8d36ee8`. Original PR: #368 (merged).
 The earlier direct-output candidate is `fa1371e`.
 
 The target is at least **1.40x input tokens/second** on matched requests,
 equivalent to reducing prefill wall time by at least **28.5714%**. It is not
 a 40% reduction in wall time. Cold and warmed measurements are separate.
 
+## Current evidence after rebase (2026-09-07)
+
+**Current default (operator request, PR #425):** gated FP8 v3 is enabled
+with `VLLM_GLM53_PREFILL_SP_FP8=3` and a 4096-real-token chunk threshold.
+Short chunks use BF16; set the mode to 0 for BF16 at every length.
+This promotion supersedes the historical off-by-default decisions below;
+it does not establish a long-context speedup or the original 40% target.
+The gated serving source was rebased onto `05c4a65`.
+
+Rebased onto `41af400` (including the chat contract, startup caches and SF
+packing). The two prefill helper changes are unchanged by these upstream commits.
+Follow-up branch:
+`codex/glm53-prefill-packed-transport`. **The original 41.2056% forecast below
+is superseded by measurements, not a current prediction or achieved gain.**
+The implementation gate already opened; subsequent corrections and candidates
+can be tested without reusing the disproved assumptions to cross it again.
+
+MEASUREMENTS.md 39차 §4f/§4g/§4j records:
+
+- BF16 SP: +12.6% / +13.3% at 32K / 128K against BASE39-stock; adopted.
+- KDA direct output + QK norm: +1.3% / +2.4%; adopted.
+- NVFP4 dense with MIN_M=1024: +5.1% / +3.5% against BASE39-sp; adopted.
+- MLA group2: its kernel took 1.85x stock time; group4 also regressed.
+- MoE reuse now compiles but measured -1.9% / -2.0%; N128 measured
+  -71% / -74%. The old prediction of a MoE gain is rejected.
+- SP FP8 v2: -2.1% / +1.7% against REF41; neutral, still off.
+
+These arms have different references/configurations. Do not multiply their
+percentages into a claimed gain against `8d36ee8`. The 40% target is open.
+
+The new candidate `VLLM_GLM53_PREFILL_SP_FP8=3` preserves v2's rank-local
+block scales, FP8 values and ordered FP32 sum, but changes the wire layout
+to `[destination][FP8 values | FP32 scales]`. The pack kernel writes this
+layout directly and the unpack kernel reads it directly: no new copy or
+interleave launch. v2 actually uses **two** `all_to_all_single` calls per
+reduction; v3 uses **one**, with two compute kernels. Each v3 packet is padded
+to a 128-byte stride (at most 120 additional bytes for this model's row width);
+the final pack CTA initializes the gap without another launch. All-gather
+uses the same aligned packet layout in v3; v1/v2 remain unchanged.
+This removes v2's extra metadata collective. BF16 already uses one native
+reduce-scatter, so a stable win against BF16 remains unproven. The later
+operator promotion above enables v3 with the short-chunk BF16 gate.
+
+NVFP4 scale construction also takes N/COUNT as non-specialized runtime
+arguments. Prompts sharing a power-of-two final reduction capacity can reuse
+the same kernels; the arithmetic and scale recipe are unchanged.
+
+Validation commands (the GPU commands require a fleet turn):
+
+```bash
+python3 -m unittest discover -s tests -p 'test_glm53_prefill_collectives.py'
+bash probes/run_glm53_prefill_transport_check.sh --compile-only
+bash probes/run_glm53_prefill_transport_check.sh
+# From srv2 with this checkout at the same path on all four hosts:
+bash probes/run_glm53_prefill_transport_check.sh --tp4
+```
+
+The small GPU probe simulates four ranks on one device and checks every
+packet byte, padding, output bits versus v2 and an ordered reference, and
+one-call dispatch. It cannot prove actual NCCL behavior or serving quality.
+The real TP4 probe now covers v2/v3 against the ordered decoded reference.
+
+The first real TP4 run passed all 60 numerical cases but **rejected the
+unaligned v3 transport on latency**. At T=8185, the median paired
+reduce-scatter times were BF16 3871.696 us, v2 2480.416 us and v3
+47169.312 us (five mirrored-order rounds, maximum across ranks per sample).
+At T=128, whose packet stride was already aligned, v3 took 388.880 us
+versus BF16 420.144 us. This motivated the 128-byte alignment correction.
+Raw evidence: `srv2:/tmp/glm53-prefill-tp4.o9CdNc/rank-0.log`.
+
+The aligned follow-up ran on 2026-09-07 00:59:38–01:00:23 KST under fleet
+`prefill40align`. All 28 simulated-rank cases and all 60 real TP4 numerical
+checks passed; every TP4 output matched the ordered transport reference
+exactly. The same pinned image and helper SHA recorded in the ledger were
+used on all four ranks. Five mirrored-order rounds gave these medians:
+
+| Rows | Operation | BF16 us | v2 us | Aligned v3 us |
+| --- | --- | ---: | ---: | ---: |
+| 128 | all-gather | 505.104 | 446.960 | 427.808 |
+| 128 | reduce-scatter | 427.664 | 418.528 | 338.480 |
+| 129 | all-gather | 428.320 | 472.048 | 436.816 |
+| 129 | reduce-scatter | 436.480 | 364.608 | 326.000 |
+| 8185 | all-gather | 3263.872 | 5609.456 | 2258.656 |
+| 8185 | reduce-scatter | 3965.456 | 2535.296 | 2079.712 |
+
+At T=8185, v3 reduces collective latency by 30.8% for all-gather and 47.6%
+for reduce-scatter versus BF16 (ratios of the displayed medians). T=129
+all-gather remains slightly slower than BF16. These are isolated collective
+results, not a model prefill throughput or quality verdict; the 40% target
+and the default-off gate remain open. The unchanged NVFP4 checks were not
+repeated. Logs: `srv2:/tmp/glm53-prefill-transport.N910dY/run.log` and
+`srv2:/tmp/glm53-prefill-tp4.vg9y8E/rank-0.log`.
+
+### Direct serving comparison
+
+The serving build is source `5d44ef99284b47199f9c6064a52c9a67ed7a5ddf`,
+overlay `67048ebe4790`, with the same pinned image as the TP4 probe. CPU
+prerequisite `1f2ac74627e74966b7be` passed before GPU admission. Both modes use
+SPEC_K=5 and the same 2K/32K/128K Korean onepass workload on independent boots.
+
+The initial BF16 arm `SPV3S0907B1` (06:37 KST) measured 2955.886 tok/s at
+32K (11.010 s TTFT), and 2968.183 tok/s at 128K (43.312 s). It passed
+retrieval 9/9 and Korean corruption 0/5; decode median was 21.44 step/s.
+The 2K cold/warm figures were 831.007 / 2423.427 tok/s and are separate
+from the long-context comparison.
+
+The legacy chain stalled after yielding because `busy_procs` counted its own
+waiting `chain.sh` as legacy work. Only this yielded chain and its wait
+children were stopped; the completed baseline was retained. The remaining
+candidate/BF16 pair was experiment `754d6f2f4f1940d49b79`, using the standard
+asynchronous pair path and the same CPU prerequisite. It completed at
+07:00:31 KST; the fleet was released on BF16 at 07:00:32.
+
+| Context | First BF16 tok/s | v3 tok/s | Pair BF16 tok/s | v3 vs pair BF16 |
+| --- | ---: | ---: | ---: | ---: |
+| 2K warm | 2423.427 | 2288.031 | 2519.934 | -9.20% |
+| 32K | 2955.886 | 3021.035 | 2971.994 | +1.65% |
+| 128K | 2968.183 | 3063.626 | 2963.025 | +3.40% |
+
+The same pair's TTFTs were 10.951 → 10.773 s at 32K and 43.388 →
+41.963 s at 128K. Against the first BF16 arm, v3 gained 2.20% / 3.22%
+on the two long contexts, corroborating only a small improvement. All three
+arms passed retrieval 9/9 and Korean corruption 0/5. v3's serving proof was
+1/1. The 2K cold numbers are not a steady-state comparison: the first
+source boot and the candidate's `cold_compile` flag differ.
+
+Decode medians were 21.445 / 21.436 / 21.924 step/s in run order. The
+generic pair judge evaluates decode and returned `incomplete` (-2.2%, one
+compatible baseline and no noise floor). The initial manual baseline lacks
+the pair's `runtime` field and is not silently injected into its automatic
+baseline pool. This does not erase the measured prefill figures, and it
+does not establish a stable overall performance win.
+
+**Decision at 07:00 (before the later operator promotion): keep FP8 off.** The direct serving gain is
+small on long contexts, warm 2K regresses, and the original 40% target is
+not achieved. No extra baseline was run just to improve the verdict label.
+Raw records: [three onepass records](GLM53_PREFILL_V3_SERVING_20260907.json).
+
+### Short-chunk BF16 candidate
+
+The follow-up v3 path uses native BF16 all-gather/reduce-scatter below
+`VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS=4096`. The gate uses the actual
+scheduled chunk's real global rows before TP padding, including auxiliary
+and final gathers, rather than the entire request or a rank's local rows.
+It runs before FP8 scratch allocation or codec launches. At/above the
+boundary v3 retains its aligned packed transport. `0` restores ungated v3
+for experiments; modes 1/2 and the default FP8-off mode are unchanged.
+
+4096 is an initial candidate between the observed 2128-token short request
+and the 6912-token chunks used by long requests, not a measured optimum.
+Native BF16 already uses one collective; v3's two-to-one reduction applies
+only against v2. Its codec/temporary-buffer costs are the leading explanation
+for the short-request regression, not a measured GPU time breakdown.
+
+All three previous boots reported prefix-cache hit rate 0%. The onepass
+"warm" value is the minimum of two post-first-run requests, not a cache-hit
+measurement or a repeated-sample median. Future records now retain every
+TTFT sample.
+
+The follow-up ran 2K/4K/8K/32K/128K onepass requests on source `60a7de0`
+(main `05c4a65`), overlay `7cb8c033a0b2`, and the same pinned image on all
+four ranks. CPU prerequisite `62328ea3d97047cb9571` passed nine contracts.
+The deployment gate passed 6656 available logic checks, 30 megakernel and
+32 fleet regressions (torch-dependent CPU portions remain skipped on the
+host); all 56 overlays were verified on all nodes. The asynchronous pair
+submission rejected the stale pre-boot cache stamp after deployment, so the
+documented `fleet.sh pair` path performed the boots and matched comparison.
+No stamp was overwritten to bypass that check.
+
+Candidate `SPGATE0907A` ran at 08:19:31 KST; BF16 `SPGATE0907ABASE` at
+08:27:37. Both passed retrieval 15/15 and Korean corruption 0/11. The
+candidate's short BF16 gather/scatter markers fired at the first real 2121
+token request, and repeated requests used 2128 tokens. Its packed FP8 marker
+also passed. Node attestations confirm mode 3 versus 0 with threshold 4096,
+SPEC_K=5, identical image and manifest, and independent container boots.
+
+**Short-request result:** BF16's post-first 2K TTFT samples were 846.921 /
+843.019 ms; gated v3's were 844.359 / 881.140 ms. The harness's best sample
+is 843.019 → 844.359 ms (2524.260 → 2520.256 tok/s, -0.16%). The two-sample
+medians are 844.970 → 862.749 ms (+2.10% latency). The earlier 9.2% loss is
+not reproduced, but two samples do not establish a stable percentage. This
+2K phase had no observed prefix hits or concurrent requests.
+
+**Long-context timing is not a clean comparison.** During baseline 8K and
+later phases, a non-loopback client submitted requests. At 08:28:24 the log
+shows two running requests and a mixed-batch metadata fallback; at 08:28:44
+it shows a queued request, and at 08:29:24/34 a deferred request. Baseline
+32K took 16.614 s versus candidate 10.793 s, but the apparent 53.9% gain is
+not accepted. 8K/128K timing deltas are excluded from a speedup verdict too.
+Warm 4K/8K requests also reuse prefixes, so they do not establish a pure
+codec crossover. No additional traffic was sent outside the fleet hold.
+
+Decision at 08:30 (before the later operator promotion): retain the short-chunk gate in the opt-in candidate, keep FP8 off
+by default, and leave the optimal threshold and long-context benefit
+unresolved. The original 40% target is not established. The pair released
+the fleet on BF16 at 08:30:14. Raw records, node attestations and selected
+traffic evidence: [gated serving report](GLM53_PREFILL_GATED_SERVING_20260907.json).
+Remote logs: `srv2:/home/choiceoh/glm53-logs/fleet/experiments/754d6f2f4f1940d49b79/run.log`
+and `boot-SPV3S0907B1.log`, `boot-EXP-754d6f2f4f1940d49b79.log`,
+`boot-EXP-754d6f2f4f1940d49b79BASE.log` under `srv2:/home/choiceoh/glm53-logs/`.
+
+The later historical trace
+`dp0_pp0_tp0_dcp0_ep0_rank0.1788700171065354541.pt.trace.json.gz` also exposes
+another candidate to investigate: its MHC pre kernels use local row counts
+1728 (360 calls), 1152 (90), and 1150 (90). With 90 such calls per target
+prefill forward, that is six forwards: four 6912-row chunks, one 4608-row
+chunk and a final shard-padded 4600-row chunk. The sampler's nine calls also
+include decode and are not a prefill denominator. Under APC's 2304-token
+alignment, the configured 8192-token budget is not fully used. An aligned
+batch budget is an observation, not a new performance candidate: the ledger's
+APC3 arm already tried `MAX_BATCHED=9216` without recovering the cost.
+Changing the budget again requires a demonstrated scheduler difference,
+including speculative lookahead and memory; these counts predict no gain.
+
 The operator requested continued implementation and **no tests until the
 combined expected gain exceeds 40%**. After that threshold, validation is one
 combined campaign. During the implementation phase, source inspection and
-analysis of existing traces are allowed; no new test, compile, JIT warmup,
-model invocation or benchmark is being run. First-phase validation recorded
+analysis of existing traces were allowed; tests, compiles, JIT warmup,
+model invocations and benchmarks were deferred. First-phase validation recorded
 under `fa1371e` predates this instruction and does not validate this bundle.
 
 ## Historical evidence for the forecast
@@ -50,33 +264,34 @@ using the full I=2048 instead of per-rank I=512 overcount TP4 rank work by four.
 ## Implemented candidates and accounting rules
 
 Every knob here arms only with the exact string **"1"** and stays off
-otherwise, except `VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
+otherwise, except the FP8 transport modes **2**/**3** and
+`VLLM_GLM53_MK_MLA_PREFILL_GROUP`, whose default **2**
 keeps the pair candidate's original arm and is inactive while the pair
 knob is 0. An armed knob is not evidence of invocation -- since 39차 every
 lane logs once whether it engaged (`[prefill-sp] MHC token shards selected`
 / `NOT selected: <gate>`, `[kda-prefill] direct output engaged`,
 `[b12x prefill reuse] ENGAGED | NOT taken`, `[megakernel] mla prefill pair
 engaged`, `[fp8-dense] nvfp4 prefill route engaged`).
-`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT`, `VLLM_GLM53_KDA_PREFILL_QK_NORM`,
-`VLLM_GLM53_PREFILL_SP` (BF16 transport; `PREFILL_SP_FP8` stays 0) and the
-NVFP4 dense route with `VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M=1024`
-(+ `NVFP4_SCALE_FUSED`) are **ON by default since 2026-09-06** (39차: KDA
-lanes +1.0 / +1.3 / +2.4 % prefill at 2K / 32K / 128K; SP alone
-+13 / +12.6 / +13.3 % on the unified onepass; the NVFP4 route above 1024 rows
-+3.9 / +5.1 / +3.5 %, twice; decode and acceptance unchanged). Two more
-defaults changed the prefill's surroundings the same day: `PREFIX_CACHE=1`
-(mamba cache mode 'align' chunks the prefill at 6912 tokens, cold 32K prefill
+`VLLM_GLM53_KDA_PREFILL_DIRECT_OUT`, `VLLM_GLM53_KDA_PREFILL_QK_NORM` and
+`VLLM_GLM53_PREFILL_SP` (originally BF16 transport) are
+**ON by default since 2026-09-06** (39차: KDA lanes +1.0 / +1.3 / +2.4 %
+prefill at 2K / 32K / 128K; SP alone +13 / +12.6 / +13.3 % on the unified
+onepass, decode and acceptance unchanged). Gated FP8 v3 became the transport
+default on 2026-09-07 by operator request, with BF16 below 4096 real chunk
+tokens. The measured state of the other
+lanes is in MEASUREMENTS.md 39차 §4d-§4j: the MoE reuse / N128 compile failure
+was fixed but neither improved long prefill, the MLA pair kernel runs 1.85x the
+stock kernel's time (-10 % prefill even at group 2), the NVFP4 dense route's
+GEMM saving (-520 ms) is eaten by its per-call quantization kernels and
+launch glue (+850 ms), and historical FP8 v1 transport for SP was slower than
+BF16 on this fabric. Note that
+Two more defaults changed the prefill's surroundings on 2026-09-06: `PREFIX_CACHE=1`
+(mamba cache mode 'align' chunks the prefill at 6912 tokens; cold 32K prefill
 -3..-10 % over four boots, 128K +-1 %, warm re-asks reuse 92-99.6 %) and
 `DECODE_FIRST=1` with `SCHED_MODE=sequential` (a pending prefill waits behind
-running decoders up to 20 s; pure prefill keeps every lane). The measured
-state of the other lanes is in MEASUREMENTS.md 39차 §4d-§4j: the MoE reuse
-kernel now compiles (per-region MMA atoms, §4j) and is correct but neutral
-(-2 %), its N128 variant runs at a quarter speed (rejected), the MLA pair
-kernel runs 1.85x the stock kernel's time (-10 % prefill even at group 2), and
-both FP8 transports for SP (v1 shared-scale, v2 per-block + all_to_all) are
-neutral-to-slower than BF16: the collectives cost the same with half the
-bytes, so what remains is HBM traffic of the pack/unpack passes -- only a
-producer-epilogue fusion could recover it. Note that
+running decoders up to 20 s; pure prefill keeps every lane). The MoE reuse
+kernel compiles since 39차 §4j (per-region MMA atoms), is correct but neutral
+(-2 %), and its N128 variant runs at a quarter speed (rejected).
 `VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
 already owns every b_proj linear, and the candidate only adopts layers
@@ -121,9 +336,10 @@ numerical checks. Native FP8 NCCL support is documented by NVIDIA since
 and exists in the pinned PyNCCL datatype mapping. This is source support,
 not proof that this fleet's selected reduce-scatter algorithm executes it.
 
-## Forecast gate and combined validation
+## Historical forecast gate (superseded) and combined validation
 
-**Implementation forecast gate opened after source review, 2026-09-06.**
+**Implementation forecast gate opened after source review, 2026-09-06. The
+measurements above subsequently disproved this scenario.**
 The explicit nominal scenario below gives **41.2056% throughput improvement**.
 It is an unvalidated engineering forecast used to start testing, not achieved
 performance or a statistical confidence estimate. In particular, MLA0.53 is
