@@ -7399,7 +7399,9 @@ driver/transport tests pass; native nvcc compilation has no register spills.
 The first B/A/A/B serving attempt failed in its CTA=0 baseline: srv1's initial
 MHC check raised CUDA error 800 and its worker exited before health. Other
 ranks passed startup checks. No step/output measurement exists for this
-attempt. Failure logs are preserved, and approved-main recovery was started.
+attempt. Failure logs are preserved. Approved main `944f65c` was restored at
+23:20:48 KST, with health 200 observed at 23:20:22. Retry `inputctaserve20907`
+is queued from unchanged runtime source in a fresh worktree/evidence directory.
 `VLLM_GLM53_MK_INPUT_CTA=0` remains the default pending serving acceptance.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).

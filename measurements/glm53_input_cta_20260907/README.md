@@ -159,8 +159,16 @@ was produced. This is an initialization failure, not a performance result,
 and the cause is not established by the logs.
 
 All four logs were preserved before stopping the blocked head at 23:10:53.
-The canonical lever detected the failure, and the runner entered its approved
-main restore path. [First srv1 error](serving/failed-ICTAB1/srv1-first-error.log)
+The canonical lever detected the failure, and the runner restored approved
+main `944f65c`; `/health=200` was observed at 23:20:22 KST and restoration
+completed at 23:20:48. The original runner exits 1, preserving the failed test.
+[First srv1 error](serving/failed-ICTAB1/srv1-first-error.log)
 and [failed baseline preparation](serving/failed-ICTAB1/prepare.log) are retained.
 The next immutable runner checks fresh-process MHC and both input modes on
 all four nodes before loading the model; it does not edit the running attempt.
+
+Retry `inputctaserve20907` is queued from immutable source `d920bea`, with
+unchanged serving CUDA/Python bytes, in a separate clean checkout. It uses
+`/home/choiceoh/glm53-logs/INPUTCTASERVE20907` and follows the two earlier
+GPU reservations. Preflight passes. No step gain or default promotion is
+claimed while the serving bracket is pending.
