@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Fleet maintenance lane; restore latest approved main even if a probe fails.
+# One owned campaign: corrected bundle numerics, then one serving A/B.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export REPO=$PWD
 RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel-moe-reform-restore-20260908}
-out=${MOE_ONEPASS_OUT:-/home/choiceoh/glm53-logs/MOEREFORM0908}
+out=${MOE_ONEPASS_OUT:-/home/choiceoh/glm53-logs/MOEREFORMFIX0908}
 session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
 [[ $held == "$session" && $kind == boot ]] || exit 2
@@ -61,4 +61,11 @@ export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$out/records.raw.jsonl ONEPASS_VERDICTS=$out/verdicts.jsonl
-bash bench/chain.sh 'MOERFA1=VLLM_GLM53_B12X_STATIC_V2=t,r' 'MOERFB1='
+# Complete both arms in the same hold; the supervisor owns final recovery.
+# Serving quality is retained by judge even if it disqualifies a speed win.
+rc=0
+bash "$LEVER" MOERFA1 'VLLM_GLM53_B12X_STATIC_V2=t,r' > "$out/arm-A.log" 2>&1 || rc=1
+bash "$LEVER" MOERFB1 '' > "$out/arm-B.log" 2>&1 || rc=1
+python3 bench/judge.py MOERFA1 --write > "$out/judge.log" 2>&1 || rc=1
+python3 probes/analyze_moe_reform_onepass.py "$out" > "$out/analysis.log" 2>&1 || rc=1
+exit "$rc"

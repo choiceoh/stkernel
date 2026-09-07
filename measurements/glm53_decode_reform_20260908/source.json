@@ -1,10 +1,10 @@
 {
-  "candidate_commit": "4e9907a0204afda9ff8ad2cc872993b077ce5223",
+  "candidate_commit": "See corrected campaign numerics/source.commit and runtime record git",
   "cpu_compile_commit": "088c04f",
-  "cpu_full_gate_commit": "088c04f",
-  "cpu_scope": "device-free sm_121a compilation on srv1; full Linux CPU logic gate. Candidate executable code is unchanged after the CPU gate; module docstring and restore harness were updated.",
+  "cpu_full_gate_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
+  "cpu_scope": "Historical compile logs predate the FP4 byte-address fix. Corrected candidate requires a fresh device-free compile and GPU campaign.",
   "source_sha256": {
-    "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "f9db08bfea321c21fdf028c132496700b17d7361f23c176171d86b04e4f00329",
+    "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
     "overlay/modules/glm53_moe/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
     "overlay/modules/glm53_moe/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343"
   },
@@ -20,7 +20,20 @@
     "experts": 288,
     "topk": 8
   },
-  "fleet_session": "moereform0908",
-  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-0908",
-  "status": "queued; no GPU or performance verdict yet"
+  "fleet_session": "moereformfix0908",
+  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-0908",
+  "status": "FP4 address corrected; original speed-only waiter cancelled; integrated corrected numerics and A-B pending",
+  "numerics_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
+  "numerics": {
+    "status": "FAIL",
+    "passed": "M1/U8 five graph replays including exact-zero",
+    "failed": {
+      "M": 2,
+      "unique_experts": 8,
+      "replay": 0,
+      "candidate_max_abs_error": 3.5,
+      "limit": 0.1875
+    },
+    "speed_continuation": "Cancelled before measurement: user requested correction in the speed candidate."
+  }
 }

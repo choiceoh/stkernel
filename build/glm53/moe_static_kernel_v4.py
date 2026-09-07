@@ -428,13 +428,21 @@ class MoEStaticKernelV4:
                         seen.add(point)
                 assert seen == {(m,n) for m in range(shape[0]) for n in range(shape[1])}
             seen_bytes = set()
+            # Shared pointers apply S<2,4,3> to BYTE offsets, whereas the
+            # FP4 outer layout counts nibbles. Check against the consumer
+            # mapping, not just a bijection (the wrong map is also bijective).
+            assert self.a2_smem_layout.inner == cute.make_swizzle(2, 4, 3)
             for row in range(self.tile_m):
                 for col in range(0, self.fc2_tile_k, 2):
-                    lo = int(cute.crd2idx((row,col,0), self.a2_smem_layout))
-                    hi = int(cute.crd2idx((row,col+1,0), self.a2_smem_layout))
+                    lo = int(cute.crd2idx((row,col,0), self.a2_smem_layout.outer))
+                    hi = int(cute.crd2idx((row,col+1,0), self.a2_smem_layout.outer))
                     assert lo % 2 == 0 and hi == lo + 1, (row,col,lo,hi)
-                    assert lo // 2 not in seen_bytes
-                    seen_bytes.add(lo // 2)
+                    byte = lo // 2
+                    byte ^= (byte >> 3) & 0x30
+                    consumer = row * (self.fc2_tile_k // 2) + ((col // 2) ^ (((row >> 1) & 3) << 4))
+                    assert byte == consumer, (row, col, byte, consumer)
+                    assert byte not in seen_bytes
+                    seen_bytes.add(byte)
             print('DECODE_REFORM_LAYOUT_PASS', len(seen_bytes), flush=True)
         self.smem_bytes = self._smem_bytes_estimate()
         if self.smem_bytes > self.smem_capacity:
@@ -1565,12 +1573,14 @@ class MoEStaticKernelV4:
                                     (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
                                 )
                                 if cutlass.const_expr(self.decode_reform):
-                                    # Address through the actual swizzled layout;
-                                    # the legacy hand-coded M32 map is not M16.
+                                    # Convert the outer FP4 nibble offset to
+                                    # bytes BEFORE applying the pointer swizzle.
                                     fp4_offset = cute.crd2idx(
-                                        (row, src_pcol * Int32(2), 0), a2_smem_layout
+                                        (row, src_pcol * Int32(2), 0), a2_smem_layout.outer
                                     )
-                                    st_shared_u8(a2_base_addr + fp4_offset // Int32(2), byte_val)
+                                    byte_offset = fp4_offset // Int32(2)
+                                    byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+                                    st_shared_u8(a2_base_addr + byte_offset, byte_val)
                                 else:
                                     sA2_u8[dst_flat] = byte_val
                             outer_m_idx = row % Int32(32)

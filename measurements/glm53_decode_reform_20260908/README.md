@@ -20,8 +20,9 @@ latency predictions. Weight payload bytes and the per-128-column BF16 rounding
 boundary remain the same. Larger M uses the original t executable geometry.
 
 The one-M-warp arrangement requires restoring separate N/K axes in the FC1
-scale fragment. FP4 intermediate byte stores use the actual swizzled layout.
-Compile-time checks cover every MMA output coordinate and packed byte address.
+scale fragment. FP4 intermediate byte stores now convert nibble offsets to bytes before
+applying the shared-pointer swizzle. Compile-time checks cover every MMA
+output coordinate and verify every packed byte address against the consumer.
 
 ## Completed CPU gate
 
@@ -33,7 +34,7 @@ not a numerical or performance verdict.
 
 ## One integrated GPU campaign
 
-Fleet maintenance session `moereform0908` owns:
+The corrected `moereformfix0908` maintenance campaign runs:
 
 1. Stock/baseline/candidate numerical differential, five graph replays with
    changed inputs/routes and exact-zero route weights, M=1/2/6/8/16/32.
@@ -42,12 +43,16 @@ Fleet maintenance session `moereform0908` owns:
    three fixed 2K decode requests per arm and the 2K/32K/128K prefill ladder.
 4. All-rank source and active M6 lane proof before/after each arm, private
    endpoint isolation, separate reasoning/content channels, exact request hashes.
-5. Unconditional approved-main restore, public health, default knobs and
-   all-rank source verification before releasing the reservation.
+5. Fleet supervisor manages the final approved-main restore or handoff to the
+   next waiting job; no intermediate restoration between numerics and A/B.
 
 The two serving arms are `MOERFA1` (t,r), then `MOERFB1` (t). This is one
 candidate boot and one baseline boot: within-boot windows are correlated and
 boot drift is not independently measured. Report pooled step/s and output
 tok/s separately from speculative acceptance.
 
-Pending GPU results; no speedup claimed.
+The original bundle failed M2/U8 (3.5 max error versus 0.1875 limit), after
+passing all M1/U8 replays. Its speed-only queue was cancelled before any
+measurement at the user's direction. See `ADDRESS_DIAGNOSIS.md` for the
+byte-versus-nibble swizzle correction. Corrected GPU results are pending;
+no speedup is claimed.
