@@ -7404,3 +7404,14 @@ After correction, the next admission refused before deploy because srv1
 had only 18.9 GiB free disk (32 GiB test floor); five rank-cache artifacts
 occupied 224 GiB. No candidate/baseline comparison completed and no default
 promotion is warranted. [Retry, memory and disk evidence](measurements/glm53_prefill_retry_20260907/README.md).
+
+
+After disk recovery, the fresh `spfrt30907` bracket on the same `6f797df`
+source completed B1/A/B2 by 14:58:36 KST. All 33 requests completed with
+retrieval 45/45, Korean corruption 0/33, no traffic or memory-guard issues,
+and matching four-node attestations. Request bodies and token counts match.
+Relative to the two baseline means, prefill/first-content throughput changed
+**2K +1.74%, 4K +2.09%, 8K -1.75%, 32K +0.74%, 128K +0.27%**. Long-context
+deltas are inside baseline variation; the 40% target remains unmet and new
+options remain unpromoted. Capacity is still the common reduced test setting.
+[Matched results and full raw evidence](measurements/glm53_prefill_retry3_20260907/README.md).

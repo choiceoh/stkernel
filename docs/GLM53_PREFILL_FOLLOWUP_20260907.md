@@ -4,6 +4,12 @@ PR #439 adds FP8 unpack/MHC post fusion, independent AG/RS thresholds, and
 direct grouped PyNCCL packet exchange. Both new execution paths remain off
 by default; the separate thresholds inherit the existing shared boundary.
 
+**Latest serving result:** the matched bracket after disk recovery passed all
+quality and runtime gates, but measured only +0.74% at 32K and +0.27% at
+128K versus the mean of two baselines, within baseline variation; 8K was
+1.75% slower. No new default promotion or 40% gain is supported. See the
+[matched serving report](../measurements/glm53_prefill_retry3_20260907/README.md).
+
 ## First GPU gate: rejected
 
 Fleet `spfused0907` ran 2026-09-07 11:46:31–11:47:10 KST on source
@@ -208,3 +214,37 @@ confirmed the pinned image and expected defaults on all four nodes, public
 port 8000, max length 1,048,576, block override 1,056, and health **200**
 from both srv2 and srv1. The repeat automation is paused pending sufficient
 disk capacity. The candidate remains unmeasured in this retry.
+
+
+## Matched serving after disk recovery
+
+The user's request to recover disk space and resume was followed by a live
+check showing srv1 already had 279 GiB available and two rank-cache artifacts;
+that cleanup occurred outside this run. Fleet `spfrt30907` admitted at
+14:32:36 KST on the same immutable source `6f797df` and image. The original
+kernel numerical tests remain applicable because device code did not change.
+The corrected attestation also passed synthetic baseline/candidate fixtures
+and an altered-overlay rejection before GPU admission.
+
+`SPFR30907B1` / `SPFR30907A` / `SPFR30907B2` completed by 14:58:36.
+All three used identical reduced capacity and request bodies. Each completed
+11 requests with retrieval 15/15, Korean corruption 0/11, clean traffic
+counters, and matching four-node source/image/arguments/boot attestations.
+The candidate executed its fused consumer and proved 3/3 selected knobs.
+Client memory guards passed throughout; head minima were 20.92 / 20.74 /
+20.68 GiB. This does not establish acceptance at production KV capacity.
+
+Compared with the mean of the two defaults boots, first-request throughput
+changed **2K +1.74%, 4K +2.09%, 8K -1.75%, 32K +0.74%, 128K +0.27%**.
+The long-context gains are within the observed baseline variation (1.01%
+for 32K and 0.68% for 128K). The 128K comparison changes sign against the
+two individual baselines. Warm short-request minima and every individual
+TTFT are retained separately in the report. This is one candidate boot and
+two baseline boots, not a confidence interval or a 40% improvement result.
+The new options remain unpromoted. Public production-capacity recovery began
+after the bracket; its final verification is recorded in the linked report.
+
+Production recovery `SPFR30907PROD` completed at **15:03:13 KST**. All
+four nodes were verified on the pinned source/image and defaults, public
+port 8000, max length 1,048,576 and block override 1,056. Health was **200**
+from srv2 and srv1. The fleet exited 0; srv1 had **360.71 GiB** free afterward.

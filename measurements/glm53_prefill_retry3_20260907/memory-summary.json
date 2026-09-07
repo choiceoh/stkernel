@@ -1,0 +1,32 @@
+{
+  "SPFR30907B2.memory.jsonl": {
+    "samples": 100,
+    "minimum_available_gib": {
+      "local": 20.678970336914062,
+      "choiceoh@10.10.10.1": 25.191295623779297,
+      "choiceoh@10.10.10.3": 22.195842742919922,
+      "choiceoh@10.10.10.4": 25.01403045654297
+    },
+    "issues": []
+  },
+  "SPFR30907B1.memory.jsonl": {
+    "samples": 107,
+    "minimum_available_gib": {
+      "local": 20.922012329101562,
+      "choiceoh@10.10.10.1": 26.34040069580078,
+      "choiceoh@10.10.10.3": 22.280742645263672,
+      "choiceoh@10.10.10.4": 25.161334991455078
+    },
+    "issues": []
+  },
+  "SPFR30907A.memory.jsonl": {
+    "samples": 99,
+    "minimum_available_gib": {
+      "local": 20.741161346435547,
+      "choiceoh@10.10.10.1": 22.958477020263672,
+      "choiceoh@10.10.10.3": 22.18445587158203,
+      "choiceoh@10.10.10.4": 24.785945892333984
+    },
+    "issues": []
+  }
+}

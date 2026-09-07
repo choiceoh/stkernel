@@ -1,0 +1,24 @@
+{
+  "status": "completed",
+  "performance_verdict": "no substantial prefill gain; new defaults not promoted; 40 percent target unmet",
+  "source": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "fleet": "spfrt30907",
+  "exit_code": 0,
+  "quality": {
+    "ok": 45,
+    "total": 45
+  },
+  "korean": {
+    "dirty": 0,
+    "n": 33
+  },
+  "reduced_capacity": true,
+  "production_capacity_acceptance": false,
+  "recovery_finished_kst": "2026-09-07 15:03:13",
+  "recovery_attestation_issues": [],
+  "public_health": {
+    "choiceoh@srv2": "200",
+    "srv1": "200"
+  },
+  "srv1_final_free_gib": 360.7111473083496
+}

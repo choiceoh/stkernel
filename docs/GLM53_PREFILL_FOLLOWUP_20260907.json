@@ -9945,5 +9945,47 @@
       "fleet_status": "fleet: HELD by nvs3 [boot] (pid 916833@srv2, since 12:28, est 60m, DEF3+NVS3: paired second measurement of NVFP4 static scale 16 for promotion; restore after)\nlegacy: 1 bench/boot procs, 0 requests in flight\nqueue (0):\n  marker 12:28 FLEET-held-by-nvs3.done\n  marker 11:08 FLEET-held-by-alignprod.done\nlog:\n  2026-09-07_12:25:35 GO dec3follow0907 (pid 912721)\n  2026-09-07_12:28:55 ledger dec3follow0907 held=3m boots=0 records=0 wasted=0\n  2026-09-07_12:28:55 release dec3follow0907\n  2026-09-07_12:28:58 GO nvs3 (pid 916833)\nproduction: defaults (health 200)\ndeployed: f2cfb08ce330 = 52b23e2 (by spfusedserv, 12:16)\n  NOTE: the checkout (e1a88d7) is not the deployed build (52b23e2) -- a bench without a deploy runs the deployed one\nbaseline: none for build f2cfb08ce330; 1 candidate run(s) on it\n",
       "note": "Read-only availability observation after successor fleet job nvs3 booted defaults. Not a recovery boot launched by this experiment, not a matched baseline for SPFUSED0907, and not an end-of-next-job acceptance."
     }
+  },
+  "matched_serving_after_disk_recovery": {
+    "source": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+    "fleet": "spfrt30907",
+    "status": "completed_no_material_prefill_gain",
+    "quality": {
+      "ok": 45,
+      "total": 45
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 33
+    },
+    "same_request_and_runtime_issues": [],
+    "evidence": "../measurements/glm53_prefill_retry3_20260907/README.md",
+    "comparison": "../measurements/glm53_prefill_retry3_20260907/comparison.json",
+    "production_capacity_acceptance": false,
+    "default_promotion": false,
+    "recovery": {
+      "status": "completed",
+      "performance_verdict": "no substantial prefill gain; new defaults not promoted; 40 percent target unmet",
+      "source": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+      "fleet": "spfrt30907",
+      "exit_code": 0,
+      "quality": {
+        "ok": 45,
+        "total": 45
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 33
+      },
+      "reduced_capacity": true,
+      "production_capacity_acceptance": false,
+      "recovery_finished_kst": "2026-09-07 15:03:13",
+      "recovery_attestation_issues": [],
+      "public_health": {
+        "choiceoh@srv2": "200",
+        "srv1": "200"
+      },
+      "srv1_final_free_gib": 360.7111473083496
+    }
   }
 }
