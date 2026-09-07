@@ -53,8 +53,11 @@ or convert these microseconds to model step/output gains.
 
 The production candidate uses invocation-owned packed storage, retained by
 the CUDA graph pool, instead of the prototype's global shared-expert scratch.
-It is restricted to the two M6 foreground geometries above, with the original K splits
-8 and 1. These preserve the baseline reduction order and exact output bits.
+It now selects the real M6/N6416/K4096 foreground projection, with the original
+K split 8. N6528 is its padded storage width, not its logical output width.
+The final tile has only 16 live rows: seven warps skip weight reads and MMA,
+and the reducer skips padded columns. K512 calls are background calls and
+remain on the existing path. The original split preserves reduction order.
 The marginally faster split 4 (24.10% warm) is not selected. A startup numerical/replay gate disables only input reuse on failure,
 keeping the existing GEMM available. Startup captures cannot emit a serving
 receipt. The profile flag `VLLM_GLM53_MK_INPUT_REUSE` is currently **0**.
@@ -109,8 +112,8 @@ The CUDA source is unchanged from the first attempt. Retaining the external
 packed weights fixes the graph test: all 90 numerical rows, exact baseline
 bits, 40 alternating candidate graph replays and the startup gate pass.
 Compute Sanitizer racecheck reports **0 hazards, 0 errors, 0 warnings**;
-memcheck reports **0 errors**. See the [GPU result](serving/production-gate.json),
-[racecheck log](serving/racecheck.log) and [memcheck log](serving/memcheck.log).
+memcheck reports **0 errors**. See the [GPU result](inactive-shapes/production-gate.json),
+[racecheck log](inactive-shapes/racecheck.log) and [memcheck log](inactive-shapes/memcheck.log).
 
 N6528/K4096 again improves: warm 42.560 -> 30.464 us (-28.42%), read-eviction
 77.360 -> 75.472 us (-2.44%). N4096/K512 read-eviction improves
@@ -132,7 +135,26 @@ These failures are orchestration failures, not GPU numerical failures.
 
 The serving runner now checks current-main ancestry **before stopping the
 service**, and refreshes its approved-main recovery checkout at cleanup.
-Main's update leaves the tested CUDA, Python driver, GPU fixture and profile
-byte-identical. `reuse_input_gpu_evidence.py` checks all five files against
-the measured commit and verifies every PASS/sanitizer receipt before copying
-the evidence. The next campaign reuses those gates and starts with B/A/A/B.
+`reuse_input_gpu_evidence.py` allows gate reuse only with byte-identical
+CUDA, Python driver, fixture and profile, and valid PASS/sanitizer receipts.
+
+## Runtime routing correction
+
+Fleet `inputserve30907`, source `aaaa9c2`, reused the preceding identical GPU
+source. Its B1 measured 21.732 pooled step/s, 21.826 median window step/s and
+69.395 output tok/s; quality was 24/24 and Korean corruption 0/10. The A1
+startup numerical gate passed but all four ranks had **no input-reuse capture**.
+The model captures logical N6416 (padded to N6528); the old predicate selected
+logical N6528. The other selected K512 calls were background calls. Thus A1
+did not execute the new kernel and cannot establish a serving gain. The
+wrapper rejected it and the remaining arms were not run. Preserve its raw
+[records](inactive-shapes/records.raw.jsonl) and four-rank receipts as a no-op
+control, not candidate acceptance.
+
+Approved main `e00df24` was restored at 18:30:34 KST with health 200. The next
+candidate routes logical N6416 and skips the padded tail warps. It requires
+fresh GPU numeric/replay/sanitizer gates. Both baseline and candidate must
+prove the real capture on all four ranks **before** running onepass traffic.
+Short-kernel timings now initialize events first and replay 16 warm-ups before
+the measured window; this addresses a possible CPU enqueue gap without
+discarding the older noisy K512 samples.
