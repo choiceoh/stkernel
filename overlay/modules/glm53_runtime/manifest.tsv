@@ -20,3 +20,6 @@ parallel_state.py	vllm/distributed/parallel_state.py	c6d65b96a260ea0d779da1073d1
 glm53_draft_dump.py	vllm/models/glm5next/nvidia/glm53_draft_dump.py	absent
 # -- glm53_decode_first (39차: decode-first prefill admission; inert unless DECODE_FIRST=1 passes --scheduler-cls)
 glm53_decode_first.py	vllm/v1/core/sched/glm53_decode_first.py	absent
+# -- GLM53 CPU renderer warmup overlapped with engine startup
+async_llm.py	vllm/v1/engine/async_llm.py	bceed0b3f5f0c834fef79525f2462a092f082390f0070526280abc95945837dd
+glm53_renderer_warmup.py	vllm/renderers/glm53_renderer_warmup.py	absent

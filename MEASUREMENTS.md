@@ -7451,3 +7451,94 @@ corrected with supported request cache salts; both recovery receipts remain.
 Final full-capacity public recovery **16:33:32**, health 200, four-node
 command/image/mount/env verification passed, fleet exit 0. Six attribution
 CPU tests pass. [Report, per-rank analysis and raw trace manifest](measurements/glm53_prefill_profile_20260907/README.md).
+
+## GLM53 W4 키 SHA256 — warm 부팅 234 → 226.5초 (2026-09-07)
+
+PR #452, 런타임 `7132fd15306166f15ce783fe2580dad661f22801` (main #451 위).
+4× GB10 TP4에서 같은 코드·이미지·준비된 rank/FP8/compile 캐시로 B/A/A/B.
+기존 MD5 부팅 **236/232초**, SHA256 **224/229초**: 평균 **7.5초(3.2%) 단축**.
+헤드 W4 키는 **10.3045 → 2.4990초**, 모델 로딩 **84.85 → 77.40초**;
+profile은 **36.65 → 36.85초**. 기존 팩은 최초 1회 hardlink로 재사용하고
+이후 MD5 계산을 생략한다. 가중치·팩·추론 산술은 그대로다.
+
+준비 부팅 541초는 비교에서 제외. timed 4회 모두 compile reuse, rank 4/4 hit,
+FP8 976/976 hit, 랭크당 W4 254 hit; 후보 MD5 fallback/alias error/repack 0.
+준비 포함 5회 모두 품질 6/6·한국어 손상 0/4. GPU exact 36+36개 통과.
+raw acceptance는 B 51.77/49.19%, A 49.87/45.65%로 변동했고 디코드는
+B 21.9/21.9, A 21.9/21.8 step/s: 처리량·수용률 개선 주장은 하지 않는다.
+`VLLM_GLM53_MK_PACK_SHA256=1`을 프로필 기본값으로 채택; `=0`은 기존 MD5 경로.
+마지막 control SHA256=0·HTTP 200 확인 후 플릿 반납, 새 기본값은 다음 배포부터 적용.
+상세 조건·한계·실행 절차·증거: [측정 묶음](measurements/glm53_pack_key_20260907/README.md).
+
+### GLM53 C=1 CTA-local split-K reduction (2026-09-07, PR454)
+
+Compared against PR449's enabled input-reuse default on the exact
+M6/N6416/K4096 projection. Eight warps retain the original eight K slices;
+shared-memory reduction replaces global partial traffic, arrival atomics and
+device fences. The W4 packs, FP8 input bytes and output rounding are unchanged.
+
+Actual serving source `916adc0` on GB10, 32 alternating samples per mode,
+including input preparation:
+
+| Kernel | Warm us | Read-evicted us |
+|---|---:|---:|
+| Enabled input reuse | 32.512 | 75.360 |
+| Fixed geometry CTA, mode 2 | 24.544 (-24.51%) | 69.424 (-7.88%) |
+
+Mode 2 wins 31/32 pairs in each regime. All 160 numerical rows match baseline
+bits and the independent FP32 oracle; 120 changing-input retained-graph checks,
+startup checks, racecheck and memcheck pass. The 64-register/four-block variant
+is slower than the selected 75-register/three-block variant. CPU validation:
+6,687 logic checks, 30 megakernel regressions, 92 fleet checks and 12 focused
+driver/transport tests pass; native nvcc compilation has no register spills.
+
+The first B/A/A/B serving attempt failed in its CTA=0 baseline: srv1's initial
+MHC check raised CUDA error 800 and its worker exited before health. Other
+ranks passed startup checks. No step/output measurement exists for this
+attempt. Failure logs are preserved. Approved main `944f65c` was restored at
+23:20:48 KST, with health 200 observed at 23:20:22. Retry `inputctaserve20907`
+on unchanged runtime source `d920bea` reproduced **32.368 -> 24.416 us warm
+(-24.57%)** and **75.648 -> 69.712 us read-evicted (-7.85%)**. Numerical,
+retained-graph, sanitizer and independent four-node startup checks all pass.
+Its CTA=0 serving baseline failed at 00:18:35 on 2026-09-08 with an unhealthy
+one-shot proxy during warmup. No step/output/quality rows were produced.
+Approved-main restoration completed at 00:33:16; exit code 1 is retained.
+
+After both attempts were reported, the operator explicitly requested default
+promotion and PR merge on 2026-09-08. `VLLM_GLM53_MK_INPUT_CTA=2` is now the
+GLM profile default; `0` restores the existing input-reuse kernel. This is an
+operator promotion based on repeated kernel gains, not a serving acceptance
+verdict. Independent startup fallback remains active, and the failed serving
+evidence is preserved. The promotion integrates main `bb123cf` without
+changing the measured CUDA source bytes.
+
+[Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
+### GLM53 CPU renderer warmup overlap (2026-09-08, PR456)
+
+PR #452를 `bb123cf`로 먼저 머지한 뒤, main `4b0f1d1` 위의 동일 런타임
+`c001cb9`로 4노드 재부팅을 PRIME/B/A/A/B 순서로 검증했다.
+일반·읽기 전용 CPU MM 전처리기의 기존 예열을 입력 처리기 초기화 뒤부터
+엔진 시작과 겹친다. 실제 ChatParams 예열 및 HTTP 준비 전에 완료를 기다리고,
+실패한 전처리기는 기존 위치에서 재시도한다. 입력 처리기의 전역 Torch 스레드
+설정과 겹치지 않는 순서, 종료 시 캐시를 닫기 전 join도 검증했다.
+
+| 경로 | HTTP 준비 시간 | 평균 |
+|---|---|---:|
+| 기존 순서 | 218 / 221 s | 219.5 s |
+| 앞당긴 CPU 예열 | 213 / 211 s | 212.0 s |
+
+**7.5초 / 3.4% 단축**. 모델 로딩 79.30 → 79.25초, 메모리 프로파일링
+36.45 → 36.55초로 유지되며, 기본 경로의 마지막 예열 6.901 / 9.685초가
+엔진 시작과 겹친다. PRIME 314초는 컴파일 준비를 포함하므로 비교에서 제외했다.
+모든 부팅 품질 6/6, 한국어 깨짐 0/4. 네 랭크 캐시 적중, FP8 976 hits/0 errors,
+랭크마다 W4 SHA256 캐시 255개 적중과 재팩·fallback·alias 오류 0을 확인했다.
+실제 이미지·영상 CPU 전처리 6개 검사/20개 텐서 필드가 정확히 일치했다.
+CPU 검사: 로직 71,014, 메가커널 30, 플릿 107, 렌더러 9, 수집 증거 4 통과.
+
+응답 검사 중 외부 API 요청이 있어 처리량·TTFT·수용률 개선 주장은 하지 않는다.
+각 실행에서 첫 health 응답이 기록된 POST 완료보다 먼저 나온 것을 확인했다.
+`VLLM_GLM53_EARLY_MM_WARMUP=1`을 프로필 기본값으로 채택했다. 마지막 control=0의
+정상 상태·품질 확인 후 02:41:53 KST 플릿을 반납했고, 다음 작업이 02:41:58에
+획득했다. 기본값은 다음 배포부터 적용된다.
+[조건·한계·원본 식별자·재현 절차](measurements/glm53_early_mm_20260908/README.md).

@@ -1,0 +1,41 @@
+== [ICTAB1] boot 22:58:10 caller env:  (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+overlays: 56 base contracts verified against glm53:v13-b12x-it
+  KV pinned: 2000000 tokens -> 1056 blocks (2304/block + 187 hybrid)
+scheduler: decode-first v3 sequential (decode steps 6, chunk 1152, fair=1, floor 1000 tok/s)
+== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) ==
+== memfree preflight ==
+# node          MemFree   AnonPages   (GiB, after reclaim)
+  10.10.10.2     106.7       0.3
+  10.10.10.1     110.5       0.6
+  10.10.10.3     102.9       3.9
+  10.10.10.4      96.5      12.5
+  ! 10.10.10.4 holds 12.5 GiB anon against 10.10.10.2's 0.3 -- an unexpected tenant
+  min=96.5  -boot=11  -margin=10  => usable 75.5 GiB => GMU 0.63
+  GMU 0.73 -> 0.63 (실측 채택)
+  cudagraph mem profiling off: GMU 0.63 -> 0.6229 (KV unchanged, -12 s boot)
+[compile-cache] {"action": "invalidate", "content_sha256": "7d9e436d188d8acc42e198d9e80aa44bdf8ad3685c6daaae35fad31563053be6", "deployment_sha256": "ef8e856af5ca5a4e7703de4e84fe5c2a990e93a335ec7502f4418bb7088dc438", "elapsed_s": 0.527857, "version": 1}
+ba72c3181fd4e5b666eb1ab310d85d230e9664aec55b8c8a456d84da37a966c9
+57df2ae3a6df84908fa351055d3e95a065695d479c49f50c801cf48081b96847
+6c01278fa8c80481f649742792e58c721d41b7e02b224a2255b56b377bbcc13a
+worker rank=1 @10.10.10.1 launched
+worker rank=2 @10.10.10.3 launched
+worker rank=3 @10.10.10.4 launched
+94901ba0291476b9b4d0654702244ce633bc445e4caa89318f4c9204a3201812
+head rank=0 launched — poll :18000/v1/models (cold boot ~15min)
+== [ICTAB1] wait for health 22:58:22 ==
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xc8 (0xe848fb94e158 in /usr/local/lib/python3.12/dist-packages/torc
+frame #1: c10::DistError::DistError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe848fb94ed48 in /usr/local/lib/python3.12/dist-packa
+frame #2: c10::DistNetworkError::DistNetworkError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe848fb94f0c8 in /usr/local/lib/python3
+[rank3]:[W907 14:10:53.502273949 ProcessGroupNCCL.cpp:1876] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: 
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xc8 (0xe848fb94e158 in /usr/local/lib/python3.12/dist-packages/torc
+frame #1: c10::DistError::DistError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe848fb94ed48 in /usr/local/lib/python3.12/dist-packa
+frame #2: c10::DistNetworkError::DistNetworkError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xe848fb94f0c8 in /usr/local/lib/python3
+[rank3]:[W907 14:10:54.512072871 ProcessGroupNCCL.cpp:1876] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: 
+(APIServer pid=29) INFO 09-07 13:58:43 [api_utils.py:273] non-default args: {'model_tag': '/models/glm-5.3-flash-nvfp4', 'chat_template': '/models/glm-5.3-flash-nvfp4/chat_template.0b76cfb35dfd15db110
+(EngineCore pid=150) INFO 09-07 13:59:02 [core.py:122] Initializing a V1 LLM engine (v0.1.dev20051+g487ecf187) with config: model='/models/glm-5.3-flash-nvfp4', speculative_config=SpeculativeConfig(me
+(Worker_TP0 pid=242) WARNING 09-07 14:02:10 [glm53_startup_cache.py:292] [fp8-cache] Glm5NextForCausalLM enabled=True hit=0 miss=213 errors=0 host-seconds=key=2.053 read=0.060 quantize=5.803 write=3.7
+(Worker_TP0 pid=242) WARNING 09-07 14:02:10 [glm53_fp8_dense.py:1343] [fp8-dense] Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=219 lorc=0 (mean captured error energy 0.00) b
+ABORT: [ICTAB1] boot died before health 23:10:54 -- logs in /home/choiceoh/glm53-logs/fail-ICTAB1-231053

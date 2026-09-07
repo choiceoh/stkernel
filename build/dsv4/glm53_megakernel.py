@@ -669,7 +669,8 @@ def _calib_hessian_for(name, k=None):
 
 _PACK_STAGING = None
 _PACK_IO_STATS = dict(calib_s=0.0, key_s=0.0, read_s=0.0, copy_s=0.0,
-                      fast_hits=0, legacy_hits=0)
+                      fast_hits=0, legacy_hits=0, sha_hits=0, md5_fallback=0,
+                      aliases=0, alias_errors=0)
 
 
 def _pack_staging():
@@ -685,20 +686,28 @@ def _pack_fast_io():
     return os.environ.get("VLLM_GLM53_MK_PACK_FAST_IO", "0") == "1"
 
 
-def _weight_md5(weight) -> str:
+def _pack_sha256():
+    return os.environ.get("VLLM_GLM53_MK_PACK_SHA256", "0") == "1"
+
+
+def _weight_digest(weight, algorithm) -> str:
     import torch
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
     if _pack_fast_io():
-        digest = hashlib.md5()
+        digest = hashlib.new(algorithm)
         for _, chunk in _pack_staging().chunks_to_cpu(b.reshape(-1)):
             digest.update(memoryview(chunk.numpy()))
         return digest.hexdigest()
     # NumPy exposes this contiguous uint8 storage through the buffer
     # protocol. Hash those same bytes directly: tobytes() otherwise makes
     # another full host copy (50 MiB for a KDA in-projection) on every hit.
-    return hashlib.md5(b.cpu().numpy()).hexdigest()
+    return hashlib.new(algorithm, b.cpu().numpy()).hexdigest()
+
+
+def _weight_md5(weight) -> str:
+    return _weight_digest(weight, "md5")
 
 
 def _load_pack_blob(path, fast):
@@ -737,11 +746,36 @@ def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
     # the bytes AND the shape: two weights of the same seed and element
     # count are byte-identical at different shapes (the bench's [2048 x
     # 4096] and [4096 x 2048] collided on the first run of this cache)
-    key = (f"{_weight_md5(weight)}-{weight.shape[0]}x{weight.shape[1]}-"
-           f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
-           f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
-           f"lr{rank}")
-    return os.path.join(root, f"rank{_mk_rank()}", key + ".pt")
+    suffix = (f"-{weight.shape[0]}x{weight.shape[1]}-"
+              f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
+              f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
+              f"lr{rank}.pt")
+    directory = os.path.join(root, f"rank{_mk_rank()}")
+    if not _pack_sha256():
+        return os.path.join(directory, _weight_md5(weight) + suffix)
+    path = os.path.join(directory, "sha256-" + _weight_digest(weight, "sha256") + suffix)
+    if os.path.isfile(path):
+        _PACK_IO_STATS["sha_hits"] += 1
+        return path
+    # Migrate lazily using the live weight's historical key. Hardlinking keeps
+    # the exact pack bytes, consumes no duplicate tensor storage, and publishes
+    # atomically without overwriting a concurrent writer. A warm hit above
+    # never computes MD5; disabling this policy retains the historical path.
+    _PACK_IO_STATS["md5_fallback"] += 1
+    legacy = os.path.join(directory, _weight_md5(weight) + suffix)
+    if os.path.isfile(legacy):
+        try:
+            os.link(legacy, path)
+            _PACK_IO_STATS["aliases"] += 1
+        except FileExistsError:
+            if not os.path.isfile(path):
+                _PACK_IO_STATS["alias_errors"] += 1
+                return legacy
+        except OSError:
+            # Read-only or non-linkable caches still reuse the existing pack.
+            _PACK_IO_STATS["alias_errors"] += 1
+            return legacy
+    return path
 
 
 def build_mk_weight_w4(weight, name=None, per_row=None):
@@ -952,7 +986,7 @@ def pack_stats_line() -> str:
 
 def pack_io_stats_line() -> str:
     """Cumulative startup host times, including the transfer synchronizations."""
-    return (f"fast={int(_pack_fast_io())} "
+    return (f"fast={int(_pack_fast_io())} sha256={int(_pack_sha256())} "
             + " ".join(f"{key}={value:.3f}" if key.endswith("_s")
                        else f"{key}={value}" for key, value in _PACK_IO_STATS.items()))
 
@@ -1250,6 +1284,7 @@ def _note_m8_capture(m, n, k, lr=False, bg=False):
 
 
 _INPUT_CAPTURED = set()
+_INPUT_CTA_CAPTURED = set()
 
 
 def _note_input_capture(m, n, k, bg, lr):
@@ -1265,6 +1300,21 @@ def _note_input_capture(m, n, k, bg, lr):
         _INPUT_CAPTURED.add((m, n, k, bg, lr))
         logger.warning("[megakernel] input-reuse CAPTURED M=%d N=%d K=%d split=%d bps=%d scratch=%d",
                        m, n, k, plan[1], plan[2], plan[3])
+
+
+def _note_input_cta_capture(m, n, k, bg, lr):
+    if (not _ARMED["gemm"] or m != 6 or bg or lr
+            or k != 4096 or n not in (4096, 6144, 6416)
+            or (m, n, k) in _INPUT_CTA_CAPTURED):
+        return
+    plan = _EXT.gemm_input_cta_plan(m, n, k, bool(bg), bool(lr))
+    if not plan[0]:
+        return
+    import torch
+    if torch.cuda.is_current_stream_capturing():
+        _INPUT_CTA_CAPTURED.add((m, n, k))
+        logger.warning("[megakernel] input-cta CAPTURED M=%d N=%d K=%d mode=%d split=%d bps=%d smem=%d",
+                       m, n, k, *plan)
 
 
 def _gemm_call(x, mk_pack, n_rows, bg=False):
@@ -1293,6 +1343,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else int(lr_a.shape[1]))
     _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None, bg)
     _note_input_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
+    _note_input_cta_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), bg, lr_a is not None)
     return out
 
 
@@ -2238,7 +2289,8 @@ def _selftest_input_reuse():
     _ARMED["gemm"] = False  # self-test captures are not serving receipts
     try:
         with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
-            for n, k in ((6416, 4096),):
+            shapes = ((6416, 4096), (4096, 4096), (6144, 4096)) if _EXT.gemm_input_cta_mode() == 4 else ((6416, 4096),)
+            for n, k in shapes:
                 x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
                 w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
                 pack = build_mk_weight_w4(w)
@@ -2270,6 +2322,33 @@ def _selftest_input_reuse():
     finally:
         _EXT.set_gemm_input(mode)
         _ARMED["gemm"] = armed
+
+
+def _arm_gemm(gate):
+    """Validate the established routes before testing the independent CTA lane."""
+    cta = _EXT.gemm_input_cta_mode()
+    _EXT.set_input_cta(0)
+    try:
+        _ARMED["gemm"] = gate("gemm", _selftest_gemm)
+        if _ARMED["gemm"] and _EXT.gemm_input_mode():
+            if not gate("input_reuse", _selftest_input_reuse):
+                _EXT.set_gemm_input(0)
+                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
+    finally:
+        _EXT.set_input_cta(cta)
+    if cta and _ARMED["gemm"] and _EXT.gemm_input_mode():
+        if cta == 4:
+            # Validate the enabled default first. A three-slice-only failure
+            # must preserve the separately validated eight-slice CTA route.
+            _EXT.set_input_cta(2)
+        if not gate("input_cta", _selftest_input_reuse):
+            _EXT.set_input_cta(0)
+            logger.warning("[megakernel] input-cta DISARM; input-reuse GEMM retained")
+        elif cta == 4:
+            _EXT.set_input_cta(4)
+            if not gate("input_cta3", _selftest_input_reuse):
+                _EXT.set_input_cta(2)
+                logger.warning("[megakernel] input-cta3 DISARM; validated CTA=2 retained")
 
 
 def hc_scale_ones():
@@ -2317,11 +2396,7 @@ def arm() -> None:
         if ENABLE_MHC_PRE and _ARMED["mhc"]:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
-        _ARMED["gemm"] = _gate("gemm", _selftest_gemm)
-        if _ARMED["gemm"] and _EXT.gemm_input_mode():
-            if not _gate("input_reuse", _selftest_input_reuse):
-                _EXT.set_gemm_input(0)
-                logger.warning("[megakernel] input-reuse DISARM; original GEMM retained")
+        _arm_gemm(_gate)
     if ENABLE_MLA:
         _ARMED["mla"] = _gate("mla", _selftest_mla)
     if ENABLE_SMLP2:

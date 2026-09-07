@@ -1,0 +1,20 @@
+INFO 09-07 17:11:57 [model.py:679] Resolved architecture: Glm5NextForConditionalGeneration
+INFO 09-07 17:11:57 [model.py:1972] Using max model len 1048576
+WARNING 09-07 17:11:57 [model.py:970] Model does not support mm_device_do_normalize, forcing mm_device_do_normalize = False.
+INFO 09-07 17:11:58 [import_utils.py:464] DeepEP v2 requires NCCL >= 2.30.4 but found 2.29.7. deepep_v2 backend will not be available.
+INFO 09-07 17:12:02 [arg_utils.py:2168] Inferred data_parallel_rank 0 from node_rank 0
+INFO 09-07 17:12:02 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 09-07 17:12:02 [config.py:605] Mamba cache mode is set to 'align' for Glm5NextForConditionalGeneration by default when prefix caching is enabled
+INFO 09-07 17:12:02 [vllm.py:1342] Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1. Set VLLM_USE_BREAKABLE_CUDAGRAPH=0 to opt out.
+INFO 09-07 17:12:02 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+INFO 09-07 17:12:02 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+INFO 09-07 17:12:03 [hf.py:551] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+INFO 09-07 17:12:07 [base.py:235] Multi-modal warmup completed in 3.675s
+INFO 09-07 17:12:11 [base.py:235] Readonly multi-modal warmup completed in 3.740s
+INFO 09-07 17:12:13 [glm53_renderer_warmup.py:106] [early-mm-warmup] submitted processors=2 before engine startup
+INFO 09-07 17:12:18 [base.py:235] Multi-modal warmup completed in 5.195s
+INFO 09-07 17:12:23 [base.py:235] Readonly multi-modal warmup completed in 5.242s
+INFO 09-07 17:12:23 [glm53_renderer_warmup.py:61] [early-mm-warmup] completed processors=2/2 elapsed_s=10.632
+INFO 09-07 17:12:23 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Multi-modal join_s=0.000
+INFO 09-07 17:12:23 [glm53_renderer_warmup.py:76] [early-mm-warmup] reused Readonly multi-modal join_s=0.000
+{"ok": true, "checks": 6, "tensor_fields": 20}

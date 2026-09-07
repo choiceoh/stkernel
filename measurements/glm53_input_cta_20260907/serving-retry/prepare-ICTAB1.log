@@ -1,0 +1,41 @@
+== [ICTAB1] boot 00:12:12 caller env:  (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+overlays: 56 base contracts verified against glm53:v13-b12x-it
+  KV pinned: 2000000 tokens -> 1056 blocks (2304/block + 187 hybrid)
+scheduler: decode-first v3 sequential (decode steps 6, chunk 1152, fair=1, floor 1000 tok/s)
+== 이전 컨테이너 회수·잔여 lock 정리 (노드 병렬) ==
+== memfree preflight ==
+# node          MemFree   AnonPages   (GiB, after reclaim)
+  10.10.10.2     106.3       0.3
+  10.10.10.1     110.9       0.7
+  10.10.10.3     102.8       4.0
+  10.10.10.4      96.4      12.5
+  ! 10.10.10.4 holds 12.5 GiB anon against 10.10.10.2's 0.3 -- an unexpected tenant
+  min=96.4  -boot=11  -margin=10  => usable 75.4 GiB => GMU 0.63
+  GMU 0.73 -> 0.63 (실측 채택)
+  cudagraph mem profiling off: GMU 0.63 -> 0.6229 (KV unchanged, -12 s boot)
+[compile-cache] {"action": "invalidate", "content_sha256": "7d9e436d188d8acc42e198d9e80aa44bdf8ad3685c6daaae35fad31563053be6", "deployment_sha256": "9b8cca44ae7e7cb402f12dc4114ac67d5b0908cf045d10dc68e0e0fe497d8f2e", "elapsed_s": 0.575845, "version": 1}
+8a9d4e0f6a9f97d4ba505eafe915c1725ae177e7939573cc809ba326be194f75
+509d2dcfbc5ec475ec16088222c53ad40836719924a49d38886699f5b5fbf6d7
+b35bf694a8eb5fe4922706e00a765f013ed146e60e5e55406e82dce6b6ea00c9
+worker rank=1 @10.10.10.1 launched
+worker rank=2 @10.10.10.3 launched
+worker rank=3 @10.10.10.4 launched
+c45088a488113e084f48bbf824a3f280c2f28e60e227aadb93ed6986835e6a1f
+head rank=0 launched — poll :18000/v1/models (cold boot ~15min)
+== [ICTAB1] wait for health 00:12:24 ==
+(Worker_TP0 pid=357) ERROR 09-07 15:18:35 [multiproc_executor.py:1033] Traceback (most recent call last):
+(Worker_TP0 pid=357) ERROR 09-07 15:18:35 [multiproc_executor.py:1033]     forward_fn(CUDAGraphMode.NONE)
+(EngineCore pid=245) ERROR 09-07 15:18:35 [core.py:1355] Traceback (most recent call last):
+(EngineCore pid=245) ERROR 09-07 15:18:35 [core.py:1355]     raise RuntimeError(
+(EngineCore pid=245) ERROR 09-07 15:18:35 [core.py:1355] RuntimeError: Worker failed with error 'one-shot proxy unhealthy after real-mode commit; refusing rank-local NCCL fallback', please check the s
+(EngineCore pid=245) ERROR 09-07 15:18:41 [multiproc_executor.py:310] Worker proc VllmWorker-0 died unexpectedly (exit code: None), shutting down executor.
+(EngineCore pid=245) Traceback (most recent call last):
+(EngineCore pid=245)     raise RuntimeError(
+(EngineCore pid=245) RuntimeError: Worker failed with error 'one-shot proxy unhealthy after real-mode commit; refusing rank-local NCCL fallback', please check the stack trace above for the root cause
+(APIServer pid=29) Traceback (most recent call last):
+(APIServer pid=29)     raise RuntimeError(
+(APIServer pid=29) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+ABORT: [ICTAB1] boot died before health 00:18:56 -- logs in /home/choiceoh/glm53-logs/fail-ICTAB1-001855
