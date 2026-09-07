@@ -7435,3 +7435,23 @@ evidence is preserved. The promotion integrates main `bb123cf` without
 changing the measured CUDA source bytes.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
+
+### GLM53 MoE FC2 epilogue follow-up — no candidate selected (2026-09-08)
+
+Tested three private lossless-operator variants against the unchanged `t`
+MoE lane: direct BF16 pair scatter, warp-gathered vector scatter, and shared
+staging with scatter remapped to each MMA warp's own 16-column segments.
+All retain the existing rounding sequence, packed weights and MMA order.
+Each passes 130 bounded numerical differential rows and changed-input/routing
+CUDA-graph tests. The first two increase M6/U40 cold latency by **2.15% and
+3.39%**, and U8 warm latency by **3.88% and 10.52%**. The final warp variant
+changes U40 cold **637.456 -> 637.136 us (+0.05%)**, with order-specific signs
+reversed, and U8 warm **98.368 -> 98.048 us (+0.33%; 17/32 faster pairs)**.
+No stable gain, new serving/default path, or measured full-model step/output
+improvement. CPU ownership guards caught invalid warp mapping assumptions
+before device execution. All GPU work uses immutable fleet maintenance
+snapshots with continuous 16/12 GiB admission/runtime guards and approved-main
+restoration. The serving profile remains CTA=2 and MoE static `t`.
+
+[Raw results, source hashes, CPU gates and restoration evidence](measurements/glm53_moe_direct_scatter_20260908/README.md).

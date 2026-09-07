@@ -27,9 +27,10 @@ def summarize(report):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('directory', type=Path)
+    ap.add_argument('--variants',nargs='+',choices=('pair','vector','warp'),default=['pair','vector'])
     args = ap.parse_args()
     results = [summarize(json.loads((args.directory/(variant+'.json')).read_text()))
-               for variant in ('pair','vector')]
+               for variant in args.variants]
     print(json.dumps(results, indent=2))
 
 
