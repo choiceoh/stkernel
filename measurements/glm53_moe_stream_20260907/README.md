@@ -106,3 +106,12 @@ reported version 2025.3.1.0 and executable SHA-256
 The mounted executable's `--version` also succeeded inside the pinned image
 in a CPU-only runc container. The GPU runner repeats that check before
 launching the numerical tests and logs its tool hash.
+
+The corrected request is `moestreamprobe20907`, source
+`924b1be06e146381019fb1ee1144bd6d64b2914d`, with a clean detached checkout
+at `srv2:/home/choiceoh/stkernel-moe-stream-check2-0907`. The supervisor
+PID is 2552739 and logs/completion are under
+`srv2:/tmp/glm53-moe-stream-check2-0907`. At 17:56 KST preflight passed
+and it was queue position 1 behind `inputserve30907`. GPU checks had not
+yet run. The second queued job, `mla32san40907`, belongs to PR #439 and
+completes only that candidate's remaining sanitizer checks.
