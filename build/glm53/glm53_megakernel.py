@@ -66,6 +66,9 @@ ENABLE_MHC_BF16 = ENABLE_MHC and os.environ.get("VLLM_GLM53_MK_MHC_BF16") == "1"
 ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")
 ENABLE_GEMM = MASTER and _flag("VLLM_GLM53_MK_GEMM")
 ENABLE_MLA = MASTER and _flag("VLLM_GLM53_MK_MLA")
+# Large prefill only: register-resident Q and 32-slot softmax tiles. Exact
+# selected slots and BF16 Q, with a different reduction/rounding order.
+ENABLE_MLA_PREFILL32 = ENABLE_MLA and _flag("VLLM_GLM53_MK_MLA_PREFILL32")
 # Experimental exact-selection pair reuse; the old span-scanning UNION lane
 # is not used. Default off until output/state and serving brackets close.
 ENABLE_MLA_PREFILL_PAIR = ENABLE_MLA and (
@@ -2422,6 +2425,12 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert (H, D) == (MLA_H, MLA_D), f"mla: shape {(H, D)} != {(MLA_H, MLA_D)}"
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
+    if (ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR
+            and 128 <= T <= 8192 and 1 <= slots.shape[1] <= 2176
+            and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
+            and ckv.element_size() == 1 and lens.is_contiguous()
+            and not torch.cuda.is_current_stream_capturing()):
+        return _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
     if (ENABLE_MLA_PREFILL_PAIR and 128 <= T <= 8192
             and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
@@ -2441,6 +2450,23 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
          ws["barrier_mla"].data_ptr()],
         [float(sm_scale), float(ckv_scale)],
         [int(T), int(slots.shape[1]), int(splits)],
+    )
+    return out
+
+
+def _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):
+    import torch
+
+    if out is None:
+        out = torch.empty_like(q_nope)
+    if not getattr(_mla_prefill32, "_announced", False):
+        _mla_prefill32._announced = True
+        logger.warning("[megakernel] mla prefill32 ENGAGED T=%d W=%d register-Q tile=32",
+                       q_nope.shape[0], slots.shape[1])
+    _EXT.run_mla_prefill32(
+        [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
+         out.data_ptr()], [float(sm_scale), float(ckv_scale)],
+        [int(q_nope.shape[0]), int(slots.shape[1])],
     )
     return out
 
@@ -2551,6 +2577,8 @@ def _selftest_mla() -> bool:
     # store), which the decode shapes never exercise.
     cases = [(8, 2048, False), (16, 2048, True), (32, 512, True), (1, 64, False),
              (40, 2048, True), (100, 2048, True)]
+    if ENABLE_MLA_PREFILL32 and not ENABLE_MLA_PREFILL_PAIR:
+        cases += [(128, 1, True), (129, 33, True), (131, 2176, True)]
     if ENABLE_MLA_PREFILL_PAIR:
         # The optional path begins at T=128. Its boot gate must exercise
         # shared selections, repeated slots, low overlap, odd T and empty
@@ -2569,6 +2597,11 @@ def _selftest_mla() -> bool:
             lens = torch.randint(1, W + 1, (T,), dtype=torch.int32, device=dev)
         else:
             lens = torch.full((T,), W, dtype=torch.int32, device=dev)
+        if ENABLE_MLA_PREFILL32 and T >= 128:
+            lens[0] = 0
+            slots[0].fill_(-1)
+            lens[1] = W
+            slots[1].fill_(0)  # repeated selections preserve multiplicity
         if ENABLE_MLA_PREFILL_PAIR and T >= 128:
             slots[1].copy_(slots[0])
             lens[1].copy_(lens[0])
@@ -2602,8 +2635,8 @@ def _selftest_mla() -> bool:
                            T, W, error)
             return False
         worst = max(worst, error)
-    logger.warning("[megakernel] selftest mla rel=%.2e pair_prefill=%s group=%d -> ARM",
-                   worst, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP)
+    logger.warning("[megakernel] selftest mla rel=%.2e pair_prefill=%s group=%d prefill32=%s -> ARM",
+                   worst, ENABLE_MLA_PREFILL_PAIR, MLA_PREFILL_GROUP, ENABLE_MLA_PREFILL32)
     return True
 
 
