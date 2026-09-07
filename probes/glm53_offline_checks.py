@@ -48,7 +48,7 @@ def inspect(name):
     return dict(id=c['Id'],image=c['Image'],running=c['State']['Running'],
         started=c['State']['StartedAt'],auto_remove=c['HostConfig']['AutoRemove'],
         config=digest(c['Config']),host_config=digest(c['HostConfig']),
-        mounts=digest(c['Mounts']),overlays=overlays,
+        mounts=digest(sorted(c['Mounts'],key=lambda m:m['Destination'])),overlays=overlays,
         manifest=hashlib.sha256(manifest.read_bytes()).hexdigest() if manifest.exists() else None,
         port=int(port.group(1)) if port else None)
 '''
@@ -58,7 +58,14 @@ def remote(node, code, timeout=45):
     cmd = ['python3', '-c', code] if node == 'local' else [
         'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
         'choiceoh@' + node, 'python3 -c ' + shlex.quote(code)]
-    return json.loads(subprocess.check_output(cmd, text=True, timeout=timeout))
+    try:
+        return json.loads(subprocess.check_output(cmd, text=True, timeout=timeout,stderr=subprocess.PIPE))
+    except subprocess.CalledProcessError as exc:
+        # The command contains an entire source/config-hash payload. Printing
+        # its repr recursively obscures the actual remote failure.
+        raise RuntimeError(f'{node}: remote exit {exc.returncode}: {(exc.stderr or "")[-1600:]}') from None
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f'{node}: remote timeout after {timeout}s') from None
 
 
 def name(node):
@@ -106,6 +113,8 @@ def identity(state):
 
 
 def transition(node, before, action):
+    if action not in ('stop','start'):
+        raise ValueError('only stop/start transitions are supported')
     check_holder()
     code = INSPECT + '\n' + f'''
 expected={before!r}
@@ -113,7 +122,7 @@ current=inspect({name(node)!r})
 immutable=lambda s:{{k:v for k,v in s.items() if k not in ('running','started')}}
 if current is None or immutable(current)!=immutable(expected):
     raise RuntimeError('container identity/config/source changed before {action}')
-cmd=['docker',{action}] + (['--time','45'] if {action!r}=='stop' else []) + [expected['id']]
+cmd=['docker',{action!r}] + (['--time','45'] if {action!r}=='stop' else []) + [expected['id']]
 subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,timeout=75)
 after=inspect({name(node)!r})
 if after is None or immutable(after)!=immutable(expected) or after['running']!={action == 'start'!r}:

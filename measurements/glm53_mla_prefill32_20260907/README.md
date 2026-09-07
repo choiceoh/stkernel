@@ -180,3 +180,18 @@ After the offline sanitizer gate and recovery pass, the worker rechecks the
 gate, unchanged candidate source and current-main ancestry before submitting
 `mlaprefill10907`. The remote CLI import/argument check passed without GPU
 work. This preparation is not a measured result.
+
+## Offline retry required (20:14 KST)
+
+The shared `prefilloff10907` turn failed at 20:00:28 before either GPU probe.
+Docker returned Mounts in varying order, causing false identity failures,
+and the generated start command also contained an unquoted identifier. No
+Docker stop/start command executed. `offline1-failure.json` records this;
+full compressed originals are retained in the MoE PR measurement directory.
+The shared runner now sorts full mount records, quotes actions, and bounds
+remote errors. Eight CPU tests include executing the complete generated
+Python through real child processes with a stateful fake Docker. A read-only
+three-snapshot/four-node live check is in `offline2-readonly-identity.json`.
+Neither check is a GPU result. Earlier 11 numerical cases still pass, but
+sanitation and direct serving remain pending. Prepared serving has not been
+submitted and needs the successful retry gate path before launch.
