@@ -1,0 +1,30 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-int8diag1-0908",
+  "revision": "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-int8diag1-0908",
+  "probe_revision": "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+  "session": "moem64int810908",
+  "created": "2026-09-08T04:58:30.920986",
+  "cpu_compile_log": "/tmp/glm53-moe-m64-int8diag1-0908/cpu-compile.log",
+  "cpu_math_log": "/tmp/glm53-moe-m64-int8diag1-0908/cpu-math.log",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64int810908",
+    "20",
+    "PR455 INT8 full-row TP4 diagnostic; CPU byte fidelity, unchanged numerical limits, exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-int8diag1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-int8diag1-0908",
+    "--probe-revision",
+    "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+    "--out",
+    "/tmp/glm53-moe-m64-int8diag1-0908/evidence",
+    "--int8-diagnostic"
+  ]
+}

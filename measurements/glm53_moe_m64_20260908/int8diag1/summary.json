@@ -1,0 +1,132 @@
+{
+  "source_revision": "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+  "diagnostic_complete": true,
+  "numerical_acceptance": false,
+  "serving_acceptance": false,
+  "speed_measured": false,
+  "trials": 72,
+  "row_trials_per_arm": 442368,
+  "packet_checks": 1152,
+  "cpu_packet_checks": 144,
+  "codec_cases": 128,
+  "short_identity_cases": 8,
+  "thresholds": {
+    "l2": 0.02,
+    "peak": 0.04,
+    "repeat_multiplier": 3
+  },
+  "cases": [
+    {
+      "rows": 4096,
+      "skew": true,
+      "trials": 24,
+      "row_trials": 98304,
+      "failures": {
+        "fp8": {
+          "candidate_bad": 10,
+          "control_bad": 9
+        },
+        "int8": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        },
+        "partial": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        }
+      },
+      "candidate_quantization": {
+        "fp8": {
+          "median_of_rank_trial_median_l2": 0.026707245968282223,
+          "worst_row_l2": 0.02845695987343788,
+          "worst_row_peak": 0.06303995847702026
+        },
+        "int8": {
+          "median_of_rank_trial_median_l2": 0.011981835588812828,
+          "worst_row_l2": 0.017450878396630287,
+          "worst_row_peak": 0.017505470663309097
+        }
+      }
+    },
+    {
+      "rows": 6144,
+      "skew": false,
+      "trials": 24,
+      "row_trials": 147456,
+      "failures": {
+        "fp8": {
+          "candidate_bad": 1,
+          "control_bad": 0
+        },
+        "int8": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        },
+        "partial": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        }
+      },
+      "candidate_quantization": {
+        "fp8": {
+          "median_of_rank_trial_median_l2": 0.02671418245881796,
+          "worst_row_l2": 0.028348777443170547,
+          "worst_row_peak": 0.06396801769733429
+        },
+        "int8": {
+          "median_of_rank_trial_median_l2": 0.01201080484315753,
+          "worst_row_l2": 0.017067261040210724,
+          "worst_row_peak": 0.017276423051953316
+        }
+      }
+    },
+    {
+      "rows": 8192,
+      "skew": false,
+      "trials": 24,
+      "row_trials": 196608,
+      "failures": {
+        "fp8": {
+          "candidate_bad": 83,
+          "control_bad": 8
+        },
+        "int8": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        },
+        "partial": {
+          "candidate_bad": 0,
+          "control_bad": 0
+        }
+      },
+      "candidate_quantization": {
+        "fp8": {
+          "median_of_rank_trial_median_l2": 0.02671496942639351,
+          "worst_row_l2": 0.028596391901373863,
+          "worst_row_peak": 0.06042654067277908
+        },
+        "int8": {
+          "median_of_rank_trial_median_l2": 0.011998499277979136,
+          "worst_row_l2": 0.01760774478316307,
+          "worst_row_peak": 0.01770922541618347
+        }
+      }
+    }
+  ],
+  "exact_incoming_recovery": {
+    "local": true,
+    "10.10.10.1": true,
+    "10.10.10.3": true,
+    "10.10.10.4": true
+  },
+  "worker_completion": {
+    "started": "2026-09-08T04:58:30.980125",
+    "exit_code": 0,
+    "ended": "2026-09-08T05:05:10.094270"
+  },
+  "limitations": [
+    "Synthetic MoE and transport cases; no full-model quality or TTFT measurement.",
+    "Row-trials are repeated observations, not independent samples.",
+    "The diagnostic completion marker never substitutes for the full acceptance gate."
+  ]
+}
