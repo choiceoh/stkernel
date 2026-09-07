@@ -227,7 +227,7 @@ def main() -> int:
     bd = _load("bench-dec.py", "onepass_bench_dec")
     br = _load("bracket.py", "onepass_bracket")
     rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
-           "harness": 39, "doc_lang": "ko", "thinking": True,
+           "harness": 40, "doc_lang": "ko", "thinking": True, "window_s": 1.0,
            "prefill": [], "quality": {}, "decode": {}, "korean": {}}
     rec["workload"] = {"ctx": [int(c) for c in args.ctx.split(",")], "seed": args.seed,
                        "max_tokens": args.max_tokens, "combine_min_ctx": args.combine_min_ctx,
@@ -259,7 +259,10 @@ def main() -> int:
     m0 = bd._parse_spec_metrics(metrics_before)
     print(f"{'ctx':>7} {'tok':>7} {'cold tok/s':>11} {'warm tok/s':>11} {'cold TTFT':>10} {'warm TTFT':>10}  quality", flush=True)
     t_dec0 = time.time()
-    with br._StepWindows(bd) as sw:
+    # 39차: 1 s windows (were 2 s) with 0.5 s margins -- the 2K answers decode
+    # for ~3-4 s and produced 0-3 windows per boot; medians of step/s are
+    # comparable across window sizes.
+    with br._StepWindows(bd, period=1.0) as sw:
         facts = cq.FACTS
         for ctx in (int(c) for c in args.ctx.split(",")):
             doc = cq.build(ctx, args.seed + ctx)
@@ -361,7 +364,10 @@ def main() -> int:
     legacy, raw = br._spec_delta(m0, m1)
     k_eff = br.spec_k_eff(m0, m1) or args.num_spec   # 37차: the served k, not the flag
     samp = sw.samples
-    by_ctx, fixed_intervals = decode_windows(samp, phases, fixed_phases)
+    # 39차: 1 s windows with 0.5 s margins (were 2 s / 1 s) so the 2K answers
+    # (~3-4 s of decode) yield windows every boot; medians of step/s are
+    # comparable across window sizes.
+    by_ctx, fixed_intervals = decode_windows(samp, phases, fixed_phases, margin=0.5)
     rates = [r for v in by_ctx.values() for r in v]
     if args.fixed_decode_tokens:
         rates = [w["steps"] / w["seconds"] for w in fixed_intervals]

@@ -627,7 +627,8 @@ class PrepPlan:
                 self.req_id_buf.numel(), self.exp_bt.stride(0), self.dec_seq_lens.numel(),
                 self.idx_bt.stride(0), self.idx_bt_cols, self.comp_slot.numel(),
                 self.q, self.num_spec, self.num_spec + 1, self.G, len(self.gdn_groups), self.attn_g,
-                self.factor, self.ratio, self.sbs, PAD_SLOT_ID]
+                self.factor, self.ratio, self.sbs, PAD_SLOT_ID,
+                self.mamba_block]  # 39차: align-mode state column, 24th int
 
     def _consts(self) -> dict[str, int]:
         return dict(
@@ -706,8 +707,8 @@ class PrepPlan:
         self.owned["cuda_ext"] = None
         if kernel_backend() == "cuda":
             reason = self.cuda_dtype_reason()
-            if reason is None and self.align_mode:
-                reason = "mamba align mode: run_prep gathers state column 0"
+            # 39차: run_prep gathers the state columns from the running mamba
+            # block like the Triton kernel (24th int), so align mode keeps it.
             ext = _cuda_ext() if reason is None else None
             if ext is not None:
                 self.owned["cuda_ext"] = ext

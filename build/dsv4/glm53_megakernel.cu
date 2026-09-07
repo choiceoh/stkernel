@@ -2928,6 +2928,7 @@ struct MKPrepArgs {
   int32_t* idx_bt; int64_t idx_bt_stride; int64_t idx_bt_cols;
   int64_t* comp_slot; int64_t comp_slot_cap;
   int Q, NUM_SPEC, NS, G, N_GDN, ATTN_G, FACTOR, RATIO, SBS; int64_t PAD_ID;
+  int64_t MAMBA_BLOCK;  // MambaSpec.block_size; 1<<30 in cache mode 'none' (column 0)
 };
 
 #define MK_PREP_THREADS 256
@@ -3007,15 +3008,20 @@ __global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a) 
     }
   }
   __syncthreads();  // the gathered rows are read back below
-  // GDN builders (FULL-graph branch): spec rows only, no padding
+  // GDN builders (FULL-graph branch): spec rows only, no padding. The state
+  // block-table columns start at the request's running mamba block,
+  // (seq_len - 1) / block, as stock mamba_get_block_table_tensor does in
+  // cache mode 'align' (prefix caching); in mode 'none' the block is the
+  // whole context and that is column 0 (39차, same as the Triton kernel).
   const int32_t nacc = a.num_accepted[rs];
+  const int64_t state_col = ((int64_t)seq_len - 1) / a.MAMBA_BLOCK;
   for (int k = 0; k < a.N_GDN; ++k) {
     const int32_t gm = a.gdn_group_idx[k];
     const int32_t* dst = reinterpret_cast<const int32_t*>(a.dst_bt_ptrs[gm]);
     const int64_t stride = a.bt_strides[gm];
     int32_t* sp = reinterpret_cast<int32_t*>(a.gdn_state_ptrs[k]);
     const int64_t ss = a.gdn_state_strides[k];
-    if (t < a.NS) sp[(int64_t)r * ss + t] = dst[(int64_t)r * stride + t];
+    if (t < a.NS) sp[(int64_t)r * ss + t] = dst[(int64_t)r * stride + state_col + t];
     if (t == 0) {
       reinterpret_cast<int8_t*>(a.gdn_mask_ptrs[k])[r] = 1;
       reinterpret_cast<int32_t*>(a.gdn_qsl_ptrs[k])[r] = (int32_t)qs;
@@ -3056,7 +3062,7 @@ __global__ void __launch_bounds__(MK_PREP_THREADS) mk_prep_kernel(MKPrepArgs a) 
 // idx_bt_stride, idx_bt_cols, comp_slot_cap, Q, NUM_SPEC, NS, G, N_GDN,
 // ATTN_G, FACTOR, RATIO, SBS, PAD_ID
 void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
-  TORCH_CHECK(ptrs.size() == 33 && ints.size() == 23, "mk_run_prep: 33 ptrs + 23 ints");
+  TORCH_CHECK(ptrs.size() == 33 && ints.size() == 24, "mk_run_prep: 33 ptrs + 24 ints");
   MKPrepArgs a;
   int p = 0;
   auto P = [&](auto** dst) { *dst = reinterpret_cast<std::remove_reference_t<decltype(*dst)>>(ptrs[p++]); };
@@ -3075,6 +3081,8 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
   a.comp_slot_cap = ints[q++]; a.Q = (int)ints[q++]; a.NUM_SPEC = (int)ints[q++]; a.NS = (int)ints[q++];
   a.G = (int)ints[q++]; a.N_GDN = (int)ints[q++]; a.ATTN_G = (int)ints[q++]; a.FACTOR = (int)ints[q++];
   a.RATIO = (int)ints[q++]; a.SBS = (int)ints[q++]; a.PAD_ID = ints[q++];
+  a.MAMBA_BLOCK = ints[q++];
+  TORCH_CHECK(a.MAMBA_BLOCK > 0, "mk_run_prep: MAMBA_BLOCK must be positive");
   TORCH_CHECK(a.Q > 0 && a.Q <= 32 && a.NS <= MK_PREP_THREADS && a.N_GDN <= MK_PREP_THREADS,
               "mk_run_prep: Q/NS/N_GDN out of range");
   auto stream = c10::cuda::getCurrentCUDAStream();
