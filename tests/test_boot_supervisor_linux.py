@@ -77,10 +77,11 @@ test ! -e "$LOGD/fail-restore"
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
-        second = self.launch('second', 'pass')
+        second = self.launch('second', "import os,subprocess,hashlib; from pathlib import Path; p=Path(os.environ['FLEET_RUNNER_REPO'],'bench/fleet.sh'); assert hashlib.sha256(p.read_bytes()).hexdigest() in subprocess.check_output(['bash',os.environ['FLEET'],'version'],text=True)")
         self.until(lambda:self.ready('second'))
         # A common checkout update must not replace either in-flight controller.
         (self.repo/'bench/fleet_restore.sh').write_text('exit 99\n')
+        (self.repo/'bench/fleet.sh').write_text('exit 99\n')
         gate.touch()
         self.assertEqual(self.wait(first), 0)
         self.assertEqual(self.wait(second), 0)
