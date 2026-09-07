@@ -43,7 +43,8 @@ def main():
         del weight, cpu
 
     root = Path(os.environ.get("VLLM_GLM53_MK_PACK_CACHE", "/cache/mkpacks")) / "rank0"
-    files = sorted(root.glob("*.pt"), key=lambda p: p.stat().st_size, reverse=True)[:3]
+    files = sorted(root.glob(f"*-v{mk.MK_PACK_VERSION}-*.pt"),
+                   key=lambda p: p.stat().st_size, reverse=True)[:3]
     assert files, f"no existing W4 packs in {root}"
     for path in files:
         reference = torch.load(path, map_location="cpu", weights_only=True)
