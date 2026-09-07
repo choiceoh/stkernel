@@ -21,12 +21,11 @@ import urllib.request
 NODES = ('local', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 PINS = (
-    ('moe', '/home/choiceoh/stkernel-moe-stream-check2-0907',
-     '924b1be06e146381019fb1ee1144bd6d64b2914d',
-     ['bash', 'probes/run_b12x_prefill_stream_check.sh']),
-    ('mla', '/home/choiceoh/stkernel-prefill32-check4-0907',
-     'e74b15e5a846827e554835ca73eda71e7698e4ac',
-     ['bash', 'probes/run_mk_mla_prefill32_check.sh', '--sanitize-only']),
+    # Current-main CUDA translation unit: repeat numerics and both sanitizers
+    # before the matched serving bracket in the same normal fleet hold.
+    ('mla', '/home/choiceoh/stkernel-prefill32-check5-0907',
+     '3eb219dd2d938479326a5a6704f3789d854367dd',
+     ['bash', 'probes/run_mk_mla_prefill32_check.sh']),
 )
 
 # Full environment values are never logged. Configuration hashes cover them.

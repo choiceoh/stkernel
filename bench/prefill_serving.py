@@ -27,7 +27,7 @@ import prefill_compare
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'probes'))
-from glm53_offline_checks import check_holder, pinned, remote
+from glm53_offline_checks import PINS, check_holder, pinned, remote
 
 IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 NODES = ('10.10.10.2', '10.10.10.1', '10.10.10.3', '10.10.10.4')
@@ -35,7 +35,7 @@ CANDIDATES = {
     'moe': ('VLLM_GLM53_B12X_PREFILL_STREAM_FC2', '[b12x prefill stream] LAUNCHED m=',
             '924b1be06e146381019fb1ee1144bd6d64b2914d', '/home/choiceoh/stkernel-moe-stream-check2-0907'),
     'mla': ('VLLM_GLM53_MK_MLA_PREFILL32', '[megakernel] mla prefill32 LAUNCHED T=',
-            'e74b15e5a846827e554835ca73eda71e7698e4ac', '/home/choiceoh/stkernel-prefill32-check4-0907'),
+            '3eb219dd2d938479326a5a6704f3789d854367dd', '/home/choiceoh/stkernel-prefill32-check5-0907'),
 }
 
 SNAPSHOT = r'''
@@ -251,6 +251,18 @@ def collect_arm(args):
     print(json.dumps(dict(name=args.name,complete=True,launch_proof=arm['launch_proof'])),flush=True)
 
 
+def refresh_gpu_gate(candidate, source, revision, directory):
+    """Revalidate the frozen current-main kernel before any serving deploy."""
+    _, _, probe_revision, probe_source = CANDIDATES[candidate]
+    expected = ((candidate, probe_source, probe_revision,
+                 ['bash', 'probes/run_mk_mla_prefill32_check.sh']),)
+    if candidate != 'mla' or PINS != expected:
+        raise RuntimeError('refresh requires the exact single-candidate full GPU plan')
+    run_owned(['python3', str(source/'probes/glm53_offline_checks.py'),
+               '--out', str(directory)], cwd=source,
+              env=dict(os.environ, OFFLINE_SOURCE_REV=revision))
+
+
 def run_bracket(args):
     check_holder()
     source=args.source.resolve();out=args.out.resolve()
@@ -258,6 +270,8 @@ def run_bracket(args):
     pinned(str(source),args.revision)
     subprocess.run(['git','-C',str(source),'fetch','--quiet','origin','main'],check=True)
     subprocess.run(['git','-C',str(source),'merge-base','--is-ancestor','origin/main',args.revision],check=True)
+    if getattr(args, 'refresh_gate', False):
+        refresh_gpu_gate(args.candidate, source, args.revision, args.gate_dir)
     gate=verify_gate(args.candidate,args.gate_dir,source)
     out.mkdir(parents=True,exist_ok=False)
     save(out/'gpu-gate.json',gate)
@@ -339,6 +353,8 @@ def main():
     run.add_argument('--name',required=True);run.add_argument('--candidate',choices=CANDIDATES,required=True)
     run.add_argument('--source',type=Path,required=True);run.add_argument('--revision',required=True)
     run.add_argument('--gate-dir',type=Path,required=True);run.add_argument('--out',type=Path,required=True)
+    run.add_argument('--refresh-gate',action='store_true',
+                     help='Run the pinned full MLA GPU gate and recover before serving, in this same owned turn')
     args=ap.parse_args()
     if not re.fullmatch('[A-Za-z0-9_-]+',args.name):ap.error('invalid arm name')
     def interrupted(signum, frame):raise InterruptedError('termination requested')

@@ -1,0 +1,40 @@
+{
+  "session": "prefilloff20907",
+  "source": "30c32840a5d4159a2ff82539f2dac09a2e109a08",
+  "go_kst": "2026-09-07T20:30:33+09:00",
+  "restored_kst": "2026-09-07T20:38:54+09:00",
+  "restored_original": true,
+  "moe": {
+    "status": "FAILED_NUMERICS_NOT_ADMITTED_TO_SERVING",
+    "passing_case": {
+      "m": 4096,
+      "routing": "balanced",
+      "stock_median_ms": 9.851942443847657,
+      "candidate_median_ms": 12.081868743896486,
+      "latency_increase_pct": 22.63438213081903,
+      "rate_change_pct": -18.45679958388343
+    },
+    "failing_case": {
+      "m": 6912,
+      "routing": "skew",
+      "bad_rows": 40,
+      "max_row_relative_l2": 0.031222660094499588,
+      "max_row_relative_abs": 0.12884794175624847,
+      "stock_repeat_l2": 0.0
+    },
+    "root_cause": "Not established; do not relax tolerances or infer text quality. Full-tile path is a diagnostic hypothesis because balanced 4096 and skew 6912 use different per-expert occupancy.",
+    "sanitizers_executed": false
+  },
+  "mla": {
+    "status": "SANITIZERS_PASS_OLD_TRANSLATION_UNIT",
+    "memcheck_cases": 7,
+    "memcheck_errors": 0,
+    "racecheck_cases": 7,
+    "racecheck_errors": 0,
+    "racecheck_warnings": 0,
+    "racecheck_hazards": 0,
+    "serving_ttft": null,
+    "needs_current_main_revalidation": true
+  },
+  "campaign_40_percent_proven": false
+}

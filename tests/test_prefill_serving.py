@@ -17,6 +17,30 @@ from test_prefill_compare import fixture
 
 
 class ServingTests(unittest.TestCase):
+    def test_fresh_gpu_failure_stops_before_gate_admission_and_deploy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args=SimpleNamespace(source=ROOT,out=Path(directory)/'serving',revision='c'*40,
+                                 candidate='mla',gate_dir=Path(directory)/'gpu',refresh_gate=True)
+            with patch.object(m,'check_holder'),patch.object(m,'pinned'),patch.object(m.subprocess,'run'),\
+                 patch.object(m,'run_owned',side_effect=RuntimeError('fresh GPU failed')) as run,\
+                 patch.object(m,'verify_gate') as verify:
+                with self.assertRaisesRegex(RuntimeError,'fresh GPU failed'):m.run_bracket(args)
+                self.assertEqual(run.call_count,1)
+                self.assertIn(str(ROOT/'probes/glm53_offline_checks.py'),run.call_args.args[0])
+                self.assertEqual(run.call_args.kwargs['env']['OFFLINE_SOURCE_REV'],'c'*40)
+                verify.assert_not_called()
+                self.assertFalse(args.out.exists())
+
+    def test_refresh_refuses_wrong_candidate_or_sanitizer_only_plan(self):
+        with patch.object(m,'run_owned') as run:
+            with self.assertRaisesRegex(RuntimeError,'exact single-candidate'):
+                m.refresh_gpu_gate('moe',ROOT,'c'*40,ROOT/'unused')
+            bad=list(m.PINS)
+            bad[0]=(*bad[0][:3],[*bad[0][3],'--sanitize-only'])
+            with patch.object(m,'PINS',tuple(bad)),self.assertRaisesRegex(RuntimeError,'exact single-candidate'):
+                m.refresh_gpu_gate('mla',ROOT,'c'*40,ROOT/'unused')
+            run.assert_not_called()
+
     def test_arm_primes_then_measures_and_records_both_phases(self):
         self.collect(False)
 

@@ -207,3 +207,27 @@ gates and restore evidence in `evidence/`. The probe source pins are unchanged.
 Prepared serving requests now reference this retry evidence path; original
 requests were archived, no serving worker was started, and actual GPU gate
 plus recovery/current-main/source-parity checks remain mandatory.
+
+## Sanitizers passed; current-main revalidation connected
+
+The retry completed MLA memcheck and racecheck on seven cases each, with
+zero errors, hazards or warnings. Exact original container/source restoration
+and health completed at 20:38:54. MoE failed numerics independently; the
+overall exit 1 does not mean MLA failed, and no serving TTFT has run yet.
+Original logs/completion and compressed lifecycle inventories are retained.
+
+Main 69ea76f merged input-reuse changes into the same CUDA translation unit.
+Rebase preserved both measurement records and all eleven programmatic kernel
+launch markers. Recomposition fixed the DSV4 launch-proof snapshot. The only
+changed test_logic AST definition is the megakernel contract count/message;
+its extracted CPU helper/loader definitions are unchanged, so the audited
+digest was refreshed. Full CPU logic passed 6697 checks, 38 megakernel and
+85 fleet regressions; eight MLA and seven comparator tests also pass.
+
+Fresh gate source 3eb219dd2d938479326a5a6704f3789d854367dd will run all eleven
+MLA numerical/graph/timing cases plus both sanitizers. The serving runner's
+--refresh-gate option connects this exact single-candidate full gate and
+recovery to B1/A/B2 in one normal fleet turn. Failed fresh GPU or restoration
+never reaches serving deployment; source parity is still checked afterward.
+The previous unsubmitted serving1 requests are superseded by this new
+current-main plan and must not be launched. Both candidates remain off.
