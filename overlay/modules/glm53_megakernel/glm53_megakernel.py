@@ -59,6 +59,8 @@ def _flag(name: str, default: str = "0") -> bool:
 
 MASTER = _flag("VLLM_GLM53_MEGAKERNEL")
 ENABLE_MHC = MASTER and _flag("VLLM_GLM53_MK_MHC")
+# Exact storage only: non-BF16-representable FP32 weights stay on the old path.
+ENABLE_MHC_BF16 = ENABLE_MHC and os.environ.get("VLLM_GLM53_MK_MHC_BF16") == "1"
 # 37차: layer 0's standalone pre-mix through the same kernel (identity post),
 # so a decode step touches deep_gemm nowhere. Rides on the MHC segment.
 ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")
@@ -233,6 +235,10 @@ def _build():
         f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
         # the v2 (non-persistent) lane's ring depth; 2..4 keep two blocks/SM
         f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+        f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
+        f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
+        f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
+        f"-DMK_M8_FASTPATH_DEF={int(os.environ.get('VLLM_GLM53_MK_M8_FASTPATH') == '1')}",
     ] + (["-DMK_PHASE_TS=1"]
          if os.environ.get("VLLM_GLM53_MK_PHASE_TS") == "1" else [])
     _EXT = load(
@@ -250,7 +256,7 @@ def rebuild(src_path: str) -> dict:
     in and re-run the self-tests. The kernels already baked into captured
     graphs stay until a recapture; every eager call sees the new module."""
     import torch
-    global _EXT, _armed_once
+    global _EXT, _armed_once, _MHC_BF16_OK
     from torch.utils.cpp_extension import load
 
     with open(src_path, "rb") as f:
@@ -259,12 +265,17 @@ def rebuild(src_path: str) -> dict:
         f"-DMK_GRID_DEF={os.environ.get('VLLM_GLM53_MK_GRID', '96')}",
         f"-DMK_MHC_GRID_DEF={os.environ.get('VLLM_GLM53_MK_MHC_GRID', '144')}",
         f"-DMK_NBUF2_DEF={os.environ.get('VLLM_GLM53_MK_NBUF2', '3')}",
+        f"-DMK_FP8_PACK2_DEF={int(os.environ.get('VLLM_GLM53_MK_FP8_PACK2') == '1')}",
+        f"-DMK_GEMM_TRANSPOSE_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') in ('1', '2'))}",
+        f"-DMK_GEMM_COMPACT_M8_DEF={int(os.environ.get('VLLM_GLM53_MK_GEMM_TRANSPOSE_M8') == '2')}",
+        f"-DMK_M8_FASTPATH_DEF={int(os.environ.get('VLLM_GLM53_MK_M8_FASTPATH') == '1')}",
     ]
     t0 = time.perf_counter()
     ext = load(name=f"glm53_megakernel_{md5}", sources=[src_path],
                extra_cuda_cflags=flags, build_directory=_build_dir(md5, flags),
                verbose=False)
     _EXT = ext
+    _MHC_BF16_OK = False
     for k in _ARMED:
         _ARMED[k] = False
     _armed_once = False
@@ -1134,6 +1145,29 @@ def _ar_note(*tensors) -> None:
         _AR_NOTE(tensors)
 
 
+_M8_CAPTURED = set()
+
+
+def _note_m8_capture(m, n, k, lr=False):
+    """Record production-shaped launches, excluding the startup self-tests."""
+    if m != 6 or lr or not _ARMED["gemm"] or (n, k) in _M8_CAPTURED:
+        return
+    import torch
+    if not torch.cuda.is_current_stream_capturing():
+        return
+    _M8_CAPTURED.add((n, k))
+    plan = _EXT.gemm2_plan(m, n, k)
+    logger.warning("[megakernel] m8 shape CAPTURED M=%d N=%d K=%d plan=%s",
+                   m, n, k, plan)
+    if os.environ.get("VLLM_GLM53_MK_FP8_PACK2") == "1":
+        logger.warning("[megakernel] fp8-pack2 CAPTURED M=%d N=%d K=%d", m, n, k)
+    if os.environ.get("VLLM_GLM53_MK_GEMM_TRANSPOSE_M8") in ("1", "2"):
+        logger.warning("[megakernel] transpose-m8 CAPTURED M=%d N=%d K=%d compact=%s",
+                       m, n, k, int(plan[2]) == 3)
+        if os.environ.get("VLLM_GLM53_MK_M8_FASTPATH") == "1":
+            logger.warning("[megakernel] m8-fastpath CAPTURED M=%d N=%d K=%d", m, n, k)
+
+
 def _gemm_call(x, mk_pack, n_rows, bg=False):
     """mk_pack is (wq4, ws4, gscale) from build_mk_weight_w4. `bg`: the
     caller marks the launch background -- the shared expert's pair, which
@@ -1158,6 +1192,7 @@ def _gemm_call(x, mk_pack, n_rows, bg=False):
                   0 if lr_a is None else lr_a.data_ptr(),
                   0 if lr_b is None else lr_b.data_ptr(),
                   0 if lr_a is None else int(lr_a.shape[1]))
+    _note_m8_capture(int(x.shape[0]), int(n_rows), int(x.shape[1]), lr_a is not None)
     return out
 
 
@@ -1491,6 +1526,8 @@ def smlp_forward(mlp, x):
         _SMLP_SAID.add("captured")
         logger.warning("[megakernel] smlp lane CAPTURED into the decode graph (smlp2): "
                        "T=%d n_int=%d", T, n_int)
+    _note_m8_capture(T, n_gu, k)
+    _note_m8_capture(T, n_out, n_int)
     return _smlp2_call(x.contiguous(), gu_pack, d_pack, n_gu, n_int, n_out,
                        limit, alpha, beta)
 
@@ -1559,9 +1596,46 @@ def _selftest_smlp2() -> bool:
 # ---------------------------------------------------------------------------
 # MK_SEG_MHC
 # ---------------------------------------------------------------------------
+# Strong references keep both source storage and every captured pack alive.
+# Versioned entries are retained, never replaced under an existing graph.
+# Weight updates require graph recapture, as with the other packed weights.
+_MHC_BF16_CACHE = {}
+_MHC_BF16_CACHE_LIMIT = 256
+_MHC_BF16_OK = False
+_MHC_BF16_CAPTURED = set()
+
+
+def _mhc_bf16_weight(fn):
+    import torch
+
+    if (fn.dtype != torch.float32 or not fn.is_cuda
+            or tuple(fn.shape) != (NOUT, HC * HIDDEN) or not fn.is_contiguous()):
+        return None
+    try:
+        version = fn._version
+    except RuntimeError:
+        # Inference tensors have no mutation counter. Do not cache a copy
+        # whose freshness cannot be checked by subsequent eager calls.
+        return None
+    key = (fn.device, fn.data_ptr(), version)
+    entry = _MHC_BF16_CACHE.get(key)
+    if entry is not None:
+        return entry[1]
+    if (torch.cuda.is_current_stream_capturing()
+            or len(_MHC_BF16_CACHE) >= _MHC_BF16_CACHE_LIMIT):
+        return None
+    packed = fn.to(torch.bfloat16)
+    restored = packed.float()
+    if (not bool(torch.isfinite(fn).all())
+            or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
+        packed = None
+    _MHC_BF16_CACHE[key] = (fn, packed)
+    return packed
+
+
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
               hc_base, norm_weight, num_tokens, rms_eps, pre_eps,
-              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat):
+              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat, *, _fp32_fn=False):
     import torch
 
     hc_mult, hidden = residual_flat.shape[1], residual_flat.shape[2]
@@ -1574,9 +1648,18 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
                                   device=x_flat.device)
     ws = _ensure_workspace(x_flat.device)
     _ar_note(fn)
+    packed = (_mhc_bf16_weight(fn) if ENABLE_MHC_BF16 and _MHC_BF16_OK
+              and not _fp32_fn else None)
+    weight = fn if packed is None else packed
+    if (packed is not None and _ARMED["mhc"]
+            and num_tokens not in _MHC_BF16_CAPTURED
+            and torch.cuda.is_current_stream_capturing()):
+        _MHC_BF16_CAPTURED.add(num_tokens)
+        logger.warning("[megakernel] mhc-bf16 CAPTURED T=%d cached=%d",
+                       num_tokens, len(_MHC_BF16_CACHE))
     _EXT.run_mhc(
         [x_flat.data_ptr(), residual_flat.data_ptr(), pm_flat.data_ptr(),
-         cm_flat.data_ptr(), fn.data_ptr(), hc_scale.data_ptr(),
+         cm_flat.data_ptr(), weight.data_ptr(), hc_scale.data_ptr(),
          hc_base.data_ptr(), norm_weight.data_ptr(),
          residual_cur.data_ptr(), post_mix_cur.data_ptr(),
          comb_mix_cur.data_ptr(), layer_input_cur.data_ptr(),
@@ -1586,6 +1669,7 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
         [float(rms_eps), float(pre_eps), float(sinkhorn_eps),
          float(post_mult), float(norm_eps)],
         [num_tokens, int(sinkhorn_repeat)],
+        packed is not None,
     )
     return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur
 
@@ -1788,6 +1872,38 @@ def _exact_gate(got, ref32) -> tuple:
     floor = refb.abs().amax(dim=-1, keepdim=True) * 1e-2
     ulp = torch.maximum(refb.abs(), floor) * (2.0 ** -7)
     return _rel_err(got, refb), int((diff > ulp).sum().item())
+
+
+def _selftest_bf16_mhc() -> bool:
+    """Exact differential gate of the actually selected storage path."""
+    import torch
+    global _MHC_BF16_OK
+
+    _MHC_BF16_OK = True
+    ok = False
+    try:
+        # Disable inference mode so the fixture has a version counter, like
+        # loaded Parameters; this gate must not pass by falling back.
+        with torch.inference_mode(False):
+            fn = (torch.randn(NOUT, HC * HIDDEN, device="cuda") * .02).bfloat16().float()
+        assert _mhc_bf16_weight(fn) is not None
+        for t in (2, 6, 8):
+            values = (torch.randn(t, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
+                      torch.randn(t, HC, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
+                      torch.rand(t, HC, device="cuda"), torch.rand(t, HC * HC, device="cuda"),
+                      fn, hc_scale_ones(), hc_base_zeros(),
+                      torch.randn(HIDDEN, device="cuda", dtype=torch.bfloat16),
+                      t, 1e-6, 1e-6, 1e-6, 1., 1e-6, SINKHORN_SERVED)
+            ref = _mhc_call(*values, _fp32_fn=True)
+            got = _mhc_call(*values)
+            torch.cuda.synchronize()
+            if not all(torch.equal(a, b) for a, b in zip(ref, got)):
+                return False
+        ok = True
+        logger.warning("[megakernel] selftest mhc-bf16 all outputs bit equal -> ARM")
+        return True
+    finally:
+        _MHC_BF16_OK = ok
 
 
 def _selftest_mhc() -> bool:
@@ -2053,6 +2169,8 @@ def arm() -> None:
             return False
 
     if ENABLE_MHC:
+        if ENABLE_MHC_BF16:
+            _gate("mhc_bf16", _selftest_bf16_mhc)
         _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
         if ENABLE_MHC_PRE and _ARMED["mhc"]:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)

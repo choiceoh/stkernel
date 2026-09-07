@@ -1,0 +1,275 @@
+{
+  "per_boot": [
+    {
+      "name": "MHCBF16LB1",
+      "arm": "B",
+      "windows": 62,
+      "median_chunk_gap_ms": 46.16543550218921,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 1,
+        "n": 10,
+        "kinds": {
+          "replacement": 1,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": [
+          [
+            "fixed2K rep0",
+            {
+              "replacement": 1
+            }
+          ]
+        ]
+      },
+      "quality_issues": [
+        "Korean corruption 1/10"
+      ],
+      "step_s": 21.63242345567384,
+      "window_median_step_s": 21.41010857832528,
+      "tok_s": 70.15267754914285,
+      "tpot_ms": 14.254623414758292,
+      "pooled_tok_s": 71.02810662977846,
+      "pooled_tpot_ms": 14.078933642597635,
+      "request_tok_s": [
+        67.40331275652082,
+        69.30368704507907,
+        73.1896211718149,
+        75.69110194460286,
+        70.15267754914285
+      ],
+      "acceptance_all_requests": 0.4615031847133758,
+      "tokens_per_step_all_requests": 3.307515923566879
+    },
+    {
+      "name": "MHCBF16LA1",
+      "arm": "A",
+      "windows": 63,
+      "median_chunk_gap_ms": 45.31045799376443,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "quality_issues": [],
+      "step_s": 22.04819699991301,
+      "window_median_step_s": 21.929647202768038,
+      "tok_s": 71.29260774101826,
+      "tpot_ms": 14.026699705426111,
+      "pooled_tok_s": 70.80034089528928,
+      "pooled_tpot_ms": 14.124225778502362,
+      "request_tok_s": [
+        68.45103973640444,
+        64.66287132911395,
+        73.80406034424746,
+        77.09367877959988,
+        71.29260774101826
+      ],
+      "acceptance_all_requests": 0.4586422725084256,
+      "tokens_per_step_all_requests": 3.293211362542128
+    },
+    {
+      "name": "MHCBF16LA2",
+      "arm": "A",
+      "windows": 60,
+      "median_chunk_gap_ms": 45.824392000213265,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "quality_issues": [],
+      "step_s": 21.832432243853837,
+      "window_median_step_s": 21.91693656944549,
+      "tok_s": 73.25160017427079,
+      "tpot_ms": 13.651578909142305,
+      "pooled_tok_s": 71.52477135504013,
+      "pooled_tpot_ms": 13.981170174401866,
+      "request_tok_s": [
+        67.19049207142938,
+        73.25160017427079,
+        74.90372136096791,
+        74.51647109182308,
+        68.4889734744549
+      ],
+      "acceptance_all_requests": 0.45623034115654487,
+      "tokens_per_step_all_requests": 3.281151705782724
+    },
+    {
+      "name": "MHCBF16LB2",
+      "arm": "B",
+      "windows": 63,
+      "median_chunk_gap_ms": 46.030247991438955,
+      "quality": {
+        "ok": 24,
+        "total": 24
+      },
+      "korean": {
+        "dirty": 2,
+        "n": 10,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 5,
+          "control": 0
+        },
+        "hits": [
+          [
+            "fixed2K rep0",
+            {
+              "cjk_mixed": 2
+            }
+          ],
+          [
+            "fixed2K rep2",
+            {
+              "cjk_mixed": 3
+            }
+          ]
+        ]
+      },
+      "quality_issues": [
+        "Korean corruption 2/10"
+      ],
+      "step_s": 21.724011309491125,
+      "window_median_step_s": 21.903918276557313,
+      "tok_s": 69.0432610419921,
+      "tpot_ms": 14.483672771362873,
+      "pooled_tok_s": 69.12562684901822,
+      "pooled_tpot_ms": 14.466414925743315,
+      "request_tok_s": [
+        69.09687827658652,
+        69.0432610419921,
+        67.6643762594731,
+        66.62288409908865,
+        73.59822017606609
+      ],
+      "acceptance_all_requests": 0.44376102848500126,
+      "tokens_per_step_all_requests": 3.218805142425006
+    }
+  ],
+  "arms": {
+    "B": {
+      "step_s": 21.67821738258248,
+      "tok_s": 69.59796929556748,
+      "tpot_ms": 14.369148093060582,
+      "pooled_tok_s": 70.07686673939834,
+      "pooled_tpot_ms": 14.272674284170474
+    },
+    "A": {
+      "step_s": 21.940314621883424,
+      "tok_s": 72.27210395764453,
+      "tpot_ms": 13.839139307284208,
+      "pooled_tok_s": 71.16255612516471,
+      "pooled_tpot_ms": 14.052697976452114
+    }
+  },
+  "paired": [
+    {
+      "candidate": "MHCBF16LA1",
+      "baseline": "MHCBF16LB1",
+      "step_s_change_pct": 1.9219924438476088,
+      "tok_s_change_pct": 1.624927560429712,
+      "pooled_tok_s_change_pct": -0.3206698661930685
+    },
+    {
+      "candidate": "MHCBF16LA2",
+      "baseline": "MHCBF16LB2",
+      "step_s_change_pct": 0.4990834004737543,
+      "tok_s_change_pct": 6.095220690284586,
+      "pooled_tok_s_change_pct": 3.47070198909305
+    }
+  ],
+  "all_quality_gates_passed": false,
+  "promotion_blockers": [
+    "Quality guard failed; timings remain descriptive only."
+  ],
+  "change_pct": {
+    "step_s": 1.2090350173881381,
+    "tok_s": 3.8422596077775983,
+    "tpot_ms": -3.688519196432638,
+    "pooled_tok_s": 1.5492835742839883,
+    "pooled_tpot_ms": -1.5412409989789433
+  },
+  "within_arm_boot_spread_pct": {
+    "B": {
+      "step_s": 0.4224879389339042,
+      "tok_s": 1.594035743254668,
+      "pooled_tok_s": 2.714847094741239
+    },
+    "A": {
+      "step_s": 0.9834168733568086,
+      "tok_s": 2.7105789453709708,
+      "pooled_tok_s": 1.0179938709293688
+    }
+  },
+  "fixed_output_matches": [
+    {
+      "left": "MHCBF16LB1",
+      "right": "MHCBF16LB2",
+      "same_output": 0,
+      "requests": 5
+    },
+    {
+      "left": "MHCBF16LA1",
+      "right": "MHCBF16LA2",
+      "same_output": 0,
+      "requests": 5
+    },
+    {
+      "left": "MHCBF16LB1",
+      "right": "MHCBF16LA1",
+      "same_output": 0,
+      "requests": 5
+    },
+    {
+      "left": "MHCBF16LB2",
+      "right": "MHCBF16LA2",
+      "same_output": 0,
+      "requests": 5
+    }
+  ],
+  "independent_boots_per_arm": 2,
+  "assessment": {
+    "status": "inconclusive",
+    "candidate": "retained",
+    "default_promotion": "deferred",
+    "reason": "Engine-step pairs are positive, but pooled output pairs disagree, output gain is below baseline variation, and baseline quality guards failed."
+  },
+  "runtime_baseline_knobs": {
+    "VLLM_GLM53_FP8_CACHE": "0"
+  },
+  "candidate_knobs": {
+    "VLLM_GLM53_MK_FP8_PACK2": "1",
+    "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8": "2",
+    "VLLM_GLM53_MK_M8_FASTPATH": "1",
+    "VLLM_GLM53_MK_MHC_BF16": "1"
+  },
+  "baseline_scope": "Matched runtime baseline with disk FP8 cache disabled; not a reusable profile-default baseline",
+  "note": "Windows within one boot are correlated; two boots per arm do not support a narrow confidence interval."
+}

@@ -17,8 +17,11 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-URL = "http://127.0.0.1:8000/v1/chat/completions"
-METRICS = "http://127.0.0.1:8000/metrics"
+API_PORT = int(os.environ.get("GLM53_API_PORT", "8000"))
+if not 1024 <= API_PORT <= 65535:
+    raise ValueError("GLM53_API_PORT must be 1024..65535")
+URL = f"http://127.0.0.1:{API_PORT}/v1/chat/completions"
+METRICS = f"http://127.0.0.1:{API_PORT}/metrics"
 # Served name of the model under test. Default keeps every existing
 # invocation and every recorded number pointing at the same target.
 import sys as _sys, os as _os

@@ -43,6 +43,118 @@ W4 packs, so the KDA shadow diff against stock is gated at the e2m1
 by-design class (0.15), not the 2e-2 noise class the fixture uses (the
 fixture snaps its weights to the grid so both arms see the same values).
 
+## GLM C=1 defaults (2026-09-07)
+
+The operator promoted the measured four-option bundle in `profiles/glm53.env`:
+`VLLM_GLM53_MK_FP8_PACK2=1`, `VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2`,
+`VLLM_GLM53_MK_M8_FASTPATH=1`, and `VLLM_GLM53_MK_MHC_BF16=1`.
+The module's environment fallbacks remain off for other profiles. Set all four
+to `0` to restore the measured baseline; runtime numerical gates remain active.
+
+The lossless MHC path reads an exact BF16 copy of BF16-origin FP32 weights,
+halving projection weight traffic while preserving all four output tensors
+bit for bit. It retains versioned copies for captured graphs and falls back
+to the original FP32 path for unsupported or inexact weights, cache misses
+during capture, capacity exhaustion, or a failed runtime gate. Same-extension
+T=6 cold latency fell 23.344 → 20.256 us (13.23%).
+
+Four independent B/A/A/B serving boots with 248 interior windows measured
+21.68 → 21.94 step/s (+1.21%) and 70.08 → 71.16 output tok/s (+1.55%).
+Output pairs disagree and baseline output variation is 2.71%, so a stable
+output-throughput gain remains unproven. Candidate retrieval passed 48/48
+with Korean corruption 0/20; baseline retrieval passed 48/48 with corruption
+3/20. Promotion is the operator's decision, not a clean automated quality or
+throughput verdict. See the [complete evidence](../../../measurements/glm53_decode_followup_20260907/README.md).
+These measurements predate integration with main's chunk-gated FP8 prefill
+default; the combined default profile has not been rebracketed.
+
+## Packed FP8 activation conversion (2026-09-07)
+
+`VLLM_GLM53_MK_FP8_PACK2=1` replaces four scalar FP32-to-e4m3
+conversions with two `__nv_cvt_float2_to_fp8x2` calls in the GEMM activation
+quantizer and SMLP2 gate/up epilogue. FP32 scaling, round-to-nearest-even,
+finite saturation, byte order and weight packs stay the same. There is no
+intermediate FP16 cast. The flag is part of both native build cache keys
+(`_build` and `rebuild`); the GLM profile defaults to 1 as part of the bundle above.
+
+`probes/mk_fp8_pack_bench.py` compiles the production conversion helper in
+both modes, checks all BF16 encodings, FP8 rounding boundaries and random
+FP32 bit patterns, then builds the full kernel twice from the same source.
+It checks the GEMM oracle and SMLP2, and balances the order of three CUDA
+graph variants: baseline, pack2, and pack2 plus transposed M<=8. It covers
+M=1/2/6/7/8/12/24/32, including a non-tile-aligned output width.
+Cold-weight measurements reuse the campaign's L2
+flush and drain; warm replay is reported separately. Run from an isolated
+checkout through `fleet.sh run --gpu --probe` and `run_mk_probe.sh`. It
+does not load a model or restart serving. Kernel timings do not establish
+an end-to-end decoding gain.
+
+## Transposed C=1 GEMM (2026-09-07)
+
+`VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=1` specializes the ordinary M<=8 lane
+for the six-token C=1 speculative verification shape. Each warp computes
+`W[16,32] @ X[8,32]^T` in one m16n8k32 MMA instead of the two MMAs used
+for `X[16,32] @ W[16,32]^T`. The accumulator fragment shrinks from eight
+to four FP32 registers per thread, with two instead of four activation
+fragment loads. Weight expansion, FP8 activation quantization, K permutation,
+split-K reduction order and BF16 output rounding are preserved. The output
+fragment is transposed at the existing store epilogue; absent activation
+rows are explicitly zero-filled. Larger M and low-rank correction retain
+the existing path. Both native build paths hash this flag; the GLM profile
+defaults to mode 2 as part of the bundle above. Halving the MMA count does not
+halve weight traffic or establish a 2x kernel speedup.
+
+Mode `2` selects a separate compact kernel only for M=6 with
+`(N,K)=(4096,2048)` or `(6144,4096)`. These shapes retained a warm win;
+the initial cold-weight gain did not reproduce at the same size. Its two activation stages have eight rows, and
+the three-block launch bound uses 30,976 dynamic shared-memory bytes at
+ring depth 3. Actual device occupancy determines these shapes' split plan.
+All other shapes and low-rank correction retain the original allocation
+and split planner. Applying the compact kernel universally regressed the
+small shared-expert GEMMs and did not improve the 51-tile in-projection.
+Mode 2 can change FP32 accumulation order, so it requires the independent
+GEMM oracle as well as replay stability; mode 1 retains a bit-equality gate.
+Use `probes/mk_fp8_pack_bench.py --compact` for baseline / mode 1 / mode 2;
+it also checks the compact SMLP2 producer and consumer in CUDA graphs.
+The bundle's serving bracket and promotion decision are recorded above.
+
+`VLLM_GLM53_MK_M8_FASTPATH=1` adds two exact transformations inside the
+transposed lane: unsigned warp reduction of nonnegative activation maxima,
+and an aligned halfword read of the two FP4 scale bytes each lane needs.
+The ordinary RQ=2/4 and low-rank lanes keep their existing reductions and
+loads. Quantization and accumulation order are unchanged relative to the
+previous M8 candidate. The GLM profile defaults to 1; the flag is in both build
+cache keys. `probes/mk_fp8_pack_bench.py --fastpath` compares baseline,
+previous M8, and this new variant from one source, including a special-value
+warp-reduction gate and bit equality against previous M8 on every replay.
+The full-warp reduction follows NVIDIA's
+[warp reduce contract](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html).
+
+For follow-up serving evidence, onepass accepts `--fixed-decode-tokens 2048
+--fixed-decode-reps 3 --require-exclusive`. It keeps the normal quality
+ladder and adds three 2K-document responses with equal minimum/maximum
+generation lengths and matched seeds. It records step counts and elapsed
+time for complete interior windows, plus request TPOT. Missing counters,
+extra completed requests, observed concurrency, wrong output length or fewer
+than 20 fixed windows invalidate the performance record. Windows within one
+boot are correlated; independent reversed-order boots remain necessary.
+
+The completed follow-up passed exact GPU gates and four independent serving
+boots. M=6 warm kernels were 3.8–6.6% lower latency than previous M8, while
+cold changes were smaller. Across 147 fixed-response windows, mean boot
+estimates changed by +0.33% step/s and +1.16% output tok/s; baseline output
+spread was 6.26%, and forward/reverse output deltas disagreed. The candidate
+was retained with defaults off at that stage, before the later bundle promotion. See the
+[complete evidence](../../../measurements/glm53_decode_m8_fastpath_20260907/README.md).
+
+The first same-source GPU round passed 1,114,880 converter inputs, GEMM
+and SMLP2 oracles, and bit-equal graph replay on all 12 geometries. At M=6,
+pack2 plus mode 1 reduced warm latency by 2.7–3.5%; cold-weight changes
+ranged from -1.8% to +0.4%, with outliers. See
+[`measurements/glm53_decode_m8_20260907`](../../../measurements/glm53_decode_m8_20260907/README.md)
+for raw samples and the compact mode's separate status. These are kernel
+measurements; the later serving results and their limits are recorded above.
+
 ## K-chunked lane (2026-09-04)
 
 The kernel's K contract is one launch of `MK_GEMM_KMAX` = 4096 (KBLK_MAX =

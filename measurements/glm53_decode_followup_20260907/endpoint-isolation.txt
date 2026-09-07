@@ -1,0 +1,5 @@
+2026-09-07T09:19:36+09:00
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
+LISTEN 0      2048       127.0.0.1:18000      0.0.0.0:*          
+loopback=200
+lan=000

@@ -1,0 +1,49 @@
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(24): warning #177-D: variable "<unnamed>::MK_GRID_CAP" was declared but never referenced
+  constexpr int MK_GRID_CAP = 96;
+                ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(35): warning #177-D: variable "<unnamed>::MK_MHC_GRID_CAP" was declared but never referenced
+  constexpr int MK_MHC_GRID_CAP = 144;
+                ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(43): warning #177-D: variable "<unnamed>::NOUT" was declared but never referenced
+  constexpr int NOUT = HC * (2 + HC);
+                ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(44): warning #177-D: variable "<unnamed>::MAX_TOK" was declared but never referenced
+  constexpr int MAX_TOK = 32;
+                ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(46): warning #177-D: variable "<unnamed>::NCHUNK" was declared but never referenced
+  constexpr int NCHUNK = HIDDEN / HCHUNK;
+                ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(129): warning #177-D: function "<unnamed>::mk_grid_barrier" was declared but never referenced
+  __attribute__((device)) __inline__ __attribute__((always_inline)) void mk_grid_barrier(unsigned long long* ctr,
+                                                                         ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(176): warning #177-D: function "<unnamed>::mk_f32_to_e4m3" was declared but never referenced
+  __attribute__((device)) __inline__ __attribute__((always_inline)) uint8_t mk_f32_to_e4m3(float x) {
+                                                                            ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(342): warning #177-D: variable "<unnamed>::GEMM2_M8_SMEM" was declared but never referenced
+  constexpr int GEMM2_M8_SMEM = MK_COMPACT_M8
+                ^
+
+/home/choiceoh/stkernel-fp8-pack2/.probe-cache/m8-selected-source(352): warning #177-D: variable "<unnamed>::MK2_KSR_MAX" was declared but never referenced
+  constexpr int MK2_KSR_MAX = 8;
+                ^
+
+ptxas info    : 3488272 bytes gmem
+ptxas info    : Compiling entry function '_ZN59_GLOBAL__N__e8fb26be_18_m8_selected_source_20ca0e0b_192881115mk_gemm2_kernelILi1ELb0ELb1EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN59_GLOBAL__N__e8fb26be_18_m8_selected_source_20ca0e0b_192881115mk_gemm2_kernelILi1ELb0ELb1EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 91.101 ms
+ptxas info    : Compiling entry function '_ZN59_GLOBAL__N__e8fb26be_18_m8_selected_source_20ca0e0b_192881115mk_gemm2_kernelILi1ELb0ELb0EEEvNS_10MKGemm2CtxE' for 'sm_121a'
+ptxas info    : Function properties for _ZN59_GLOBAL__N__e8fb26be_18_m8_selected_source_20ca0e0b_192881115mk_gemm2_kernelILi1ELb0ELb0EEEvNS_10MKGemm2CtxE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 112 registers, used 1 barriers, 16 bytes smem
+ptxas info    : Compile time = 42.710 ms

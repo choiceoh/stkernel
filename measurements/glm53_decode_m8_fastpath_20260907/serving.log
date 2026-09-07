@@ -1,0 +1,109 @@
+preflight m8nextserve [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/glm53-logs/M8NEXT/runner.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_MK_FP8_PACK2=1,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2,VLLM_GLM53_MK_M8_FASTPATH=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_FP8_PACK2 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8 VLLM_GLM53_MK_M8_FASTPATH
+  NOTE checkout is 22 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  this arm (VLLM_GLM53_MK_FP8_PACK2,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8,VLLM_GLM53_MK_M8_FASTPATH) has no record on build 67048ebe4790
+  baseline: SPV3S0907B1 on build 67048ebe4790 -- 21.44 step/s, 3.54 tok/step, 50.8% acc, 2026-09-07 06:37:07 -- skip a defaults arm and compare against it
+  -> PASS
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs) 2026-09-07_06:49:26
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_06:50:26
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs) 2026-09-07_06:52:12
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (2 procs, 1 reqs) 2026-09-07_06:52:42
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (2 procs, 0 reqs) 2026-09-07_06:54:12
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_06:54:43
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs) 2026-09-07_06:55:43
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_06:56:43
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (1 procs, 0 reqs) 2026-09-07_06:58:28
+waiting: pos 1/1, held by exp-754d6f2f4f1940d49b79 [boot] (pid 3493508@srv2, since 06:48, est 25m, experiment 754d6f2f4f1940d49b79), legacy busy (2 procs, 1 reqs) 2026-09-07_06:58:59
+GO m8nextserve 2026-09-07_07:00:44
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=13G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=9G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+== chain M8NEXTB1 M8NEXTA1 M8NEXTA2 M8NEXTB2 07:01:27 session=m8nextserve rehearse=0
+   baseline: EXP-754d6f2f4f1940d49b79BASE on build 67048ebe4790 -- 21.92 step/s, 3.31 tok/step, 46.1% acc, 2026-09-07 06:58:49 -- skip a defaults arm and compare against it
+== 07:01:27 arm M8NEXTB1: (defaults)
+(EngineCore pid=150) WARNING 09-06 22:07:38 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 82.9 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 7.1 s
+== [M8NEXTB1] onepass 07:08:18 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         894        2536      2.38s      0.84s  o o o
+  32000   32545        2923     (1 req)     11.13s          -  o o o
+ 128000  128559        2963     (1 req)     43.39s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=69.39 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=70.96 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=78.44 tok/s
+  warm 처리량: 2536 -> 2963 tok/s (over 2128 -> 128559 tokens)
+=> 18/18 correct
+decode: windows n=36 med 21.7 [21.4, 22.4] step/s (inside the answers only; per context: 2K: n=39 med 21.4  32K: n=5 med 21.9  128K: n=1 med 21.4), raw acc 46.9%, tokens/step 3.347 (k=5.0), generated 8716 tokens over 181s
+응답 8개 · 문자 22,265
+  깨진 응답: 0/8 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass M8NEXTB1: 181s total
+== [M8NEXTB1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 2604.0
+vllm:spec_decode_num_draft_tokens_total 13020.0
+vllm:spec_decode_num_accepted_tokens_total 6111.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2026.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1478.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1093.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 848.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 666.0
+== [M8NEXTB1] head log kept: /home/choiceoh/glm53-logs/boot-M8NEXTB1.log ==
+== [M8NEXTB1] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [M8NEXTB1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-06 22:02:12 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-06 22:02:27 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=261) WARNING 09-06 22:07:32 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=261) WARNING 09-06 22:07:32 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-06 22:07:38 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [M8NEXTB1] done 07:11:20 ==
+== 07:11:20 after M8NEXTB1: python3 bench/judge.py M8NEXTB1 --fail-invalid
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> M8NEXTB1        21.68    3.35   46.9%  18/18  0/8      2923  -          09-07 07:08
+judge> M8NEXTB1        21.68    3.35   46.9%  18/18  0/8      2923  -          09-07 07:08
+judge> verdict: +0.0% with no floor yet (n=1): one more baseline sample
+   nothing to yield to
+== 07:11:20 arm M8NEXTA1: VLLM_GLM53_MK_FP8_PACK2=1 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2 VLLM_GLM53_MK_M8_FASTPATH=1
+== [M8NEXTA1] first boot on build 83bc6639a0a2: cold compile (cold prefill column not comparable) ==
+== [M8NEXTA1] boot 07:11:20 caller env: VLLM_GLM53_MK_FP8_PACK2=1 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2 VLLM_GLM53_MK_M8_FASTPATH=1 (profile defaults otherwise) ==
+load-format: instanttensor (default is instanttensor)
+prefix-cache: enabled (hybrid-APC coordinator, mamba align mode)
+chat: chat_template_mm_v2.jinja -> chat_template.0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42.jinja (reasoning=glm45, tools=glm47)
+cat: write error: No space left on device
+(Worker_TP0 pid=261) WARNING 09-06 22:05:26 [glm53_fp8_dense.py:858] [fp8-dense] drafter: VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 0.73 GB of bf16 sources (0 linears kept theirs for a bias); the bia
+(Worker_TP0 pid=261) WARNING 09-06 22:06:59 [glm53_fp8_dense.py:858] [fp8-dense] VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 4.04 GB of bf16 sources (0 linears kept theirs for a bias); the bias and err
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):   0%|          | 0/4 [00:00<?, ?it/s][b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, s
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.25it/s][b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18,
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  50%|█████     | 2/4 [00:00<00:00,  2.69it/s](Worker_TP0 pid=261) WARNING 09-06 22:07:24 [glm53_megakernel.py:1774] [megakernel] mhc
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  75%|███████▌  | 3/4 [00:01<00:00,  3.03it/s][b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wut (mac=
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL): 100%|██████████| 4/4 [00:01<00:00,  3.30it/s]Profiling CUDA graph memory (FULL): 100%|██████████| 4/4
+(Worker_TP0 pid=261) INFO 09-06 22:07:25 [model_runner.py:952] Estimated CUDA graph memory: 0.00 GiB total
+(Worker_TP0 pid=261) Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.92it/s]Capturing CUDA graphs (FULL)
+(Worker_TP0 pid=261) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=261) WARNING 09-06 22:07:32 [glm53_fp8_dense.py:530] [fp8-dense] drafter lane serving: 
+Capturing dflash2 CUDA graphs (FULL): 100%|██████████| 4/4 [00:00<00:00, 45.73it/s]
+(Worker_TP0 pid=261) INFO 09-06 22:07:32 [gpu_worker.py:790] Free memory on device (94.39/119.69 GiB) on startup. Desired GPU memory utilization is (0.6229, 74.56 GiB). Actual usage is 63.6 GiB for co
+ABORT: [M8NEXTA1] launcher failed 07:11:25 -- logs in /home/choiceoh/glm53-logs/fail-M8NEXTA1-071124
+(Worker_TP0 pid=261) WARNING 09-06 22:06:59 [glm53_fp8_dense.py:858] [fp8-dense] VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 4.04 GB of bf16 sources (0 linears kept theirs for a bias); the bias and err
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):   0%|          | 0/4 [00:00<?, ?it/s][b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, s
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.25it/s][b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18,
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  50%|█████     | 2/4 [00:00<00:00,  2.69it/s](Worker_TP0 pid=261) WARNING 09-06 22:07:24 [glm53_megakernel.py:1774] [megakernel] mhc
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL):  75%|███████▌  | 3/4 [00:01<00:00,  3.03it/s][b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wut (mac=
+(Worker_TP0 pid=261) Profiling CUDA graph memory (FULL): 100%|██████████| 4/4 [00:01<00:00,  3.30it/s]Profiling CUDA graph memory (FULL): 100%|██████████| 4/4
+(Worker_TP0 pid=261) INFO 09-06 22:07:25 [model_runner.py:952] Estimated CUDA graph memory: 0.00 GiB total
+(Worker_TP0 pid=261) Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.92it/s]Capturing CUDA graphs (FULL)
+(Worker_TP0 pid=261) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=261) WARNING 09-06 22:07:32 [glm53_fp8_dense.py:530] [fp8-dense] drafter lane serving: 
+Capturing dflash2 CUDA graphs (FULL): 100%|██████████| 4/4 [00:00<00:00, 45.73it/s]
+(Worker_TP0 pid=261) INFO 09-06 22:07:32 [gpu_worker.py:790] Free memory on device (94.39/119.69 GiB) on startup. Desired GPU memory utilization is (0.6229, 74.56 GiB). Actual usage is 63.6 GiB for co
+ABORT: [M8NEXTA1RECOVER] launcher failed 07:11:29 -- logs in /home/choiceoh/glm53-logs/fail-M8NEXTA1RECOVER-071128
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_FP8_CACHE=/cache/glm53-fp8,VLLM_GLM53_RANK_CACHE=/cache/glm53-ranks,VLLM_GLM53_SPEC_K=5 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

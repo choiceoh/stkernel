@@ -1,0 +1,28 @@
+preflight mhcbf16serving [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/glm53-logs/MHCBF16/runner.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_FP8_CACHE=0,VLLM_GLM53_MK_FP8_PACK2=1,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2,VLLM_GLM53_MK_M8_FASTPATH=1,VLLM_GLM53_MK_MHC_BF16=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_FP8_PACK2 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8 VLLM_GLM53_MK_M8_FASTPATH VLLM_GLM53_MK_MHC_BF16
+  this arm (VLLM_GLM53_MK_FP8_PACK2,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8,VLLM_GLM53_MK_M8_FASTPATH,VLLM_GLM53_MK_MHC_BF16) has no record on build 7cb8c033a0b2
+  baseline: SPGATE0907ABASE on build 7cb8c033a0b2 -- 21.42 step/s, 3.48 tok/step, 49.7% acc, 2026-09-07 08:27:37 -- skip a defaults arm and compare against it
+  -> PASS
+GO mhcbf16serving 2026-09-07_08:52:51
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=9G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+Traceback (most recent call last):
+  File "/tmp/mhcbf16-cache-archive.py", line 35, in <module>
+    entries.append(dict(name=name, size=size, mtime_ns=mtime_ns, sha256=sha(p)))
+                                                                        ^^^^^^
+  File "/tmp/mhcbf16-cache-archive.py", line 15, in sha
+    with path.open('rb') as f:
+         ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: '/home/choiceoh/glm53-cache/glm53-fp8/96c03fcbb466b1f725db7d42311e6865e15f4b5006a9475f0f207cffc8414bc4.pt'
+NOTE: queue empty and production: no serving container -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

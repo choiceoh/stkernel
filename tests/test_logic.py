@@ -6920,7 +6920,8 @@ def test_mk_smlp_hook_and_contracts() -> None:
     ns = load_defs(
         "overlay/glm53_megakernel.py",
         {"_ARMED", "MAX_TOK", "MK_GEMM_KMAX", "SMLP_GU_MAX", "_smlp_packs",
-         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward"},
+         "_SMLP_SAID", "_SMLP_FUSED_CALLS", "_smlp_stock", "smlp_forward",
+         "_M8_CAPTURED", "_note_m8_capture"},
         {"os": os, "re": re,
          "logger": types.SimpleNamespace(warning=lambda *a, **k: said.append(a)),
          "_smlp2_call": lambda *a: calls.append(a) or "fused"},
@@ -8319,6 +8320,11 @@ def test_glm53_megakernel_contracts() -> None:
         import ast as _ast
 
         expr = " ".join(expr.split())  # multi-line constexprs are legal C++
+        if "?" in expr:
+            condition, arms = expr.split("?", 1)
+            yes, no = arms.split(":", 1)
+            return ev(yes.strip() if ev(condition.strip()) else no.strip())
+        expr = expr.replace("&&", " and ")
         tree = _ast.parse(expr, mode="eval")
 
         def walk(n):
@@ -8328,6 +8334,8 @@ def test_glm53_megakernel_contracts() -> None:
                 return n.value
             if isinstance(n, _ast.Name):
                 return consts[n.id]
+            if isinstance(n, _ast.BoolOp) and isinstance(n.op, _ast.And):
+                return all(walk(v) for v in n.values)
             if isinstance(n, _ast.BinOp):
                 l, r = walk(n.left), walk(n.right)
                 return (l + r if isinstance(n.op, _ast.Add)
@@ -8345,7 +8353,7 @@ def test_glm53_megakernel_contracts() -> None:
     # below reference names that only exist as macros.
     for m in re.finditer(r"^#define (\w+) (\d+)$", cu, re.M):
         consts[m.group(1)] = int(m.group(2))
-    for m in re.finditer(r"^constexpr int (\w+) = ([^;]+);", cu, re.M):
+    for m in re.finditer(r"^constexpr (?:int|bool) (\w+) = ([^;]+);", cu, re.M):
         consts[m.group(1)] = ev(m.group(2))
     for name, want in (("HC", 4), ("HIDDEN", 4096), ("NOUT", 24),
                        ("MAX_TOK", 32), ("NCHUNK", 16), ("KDA_H", 16),
@@ -8359,6 +8367,14 @@ def test_glm53_megakernel_contracts() -> None:
     check(consts["GEMM2_SMEM"] <= 51200,
           "the GEMM's dynamic smem stays inside half the SM (two blocks per SM "
           "is the point of the non-persistent lane)")
+    check(consts["GEMM2_M8_SMEM"] == consts["GEMM2_SMEM"],
+          "default-off M8 specialization keeps the original shared-memory budget")
+    compact_expr = re.search(r"^constexpr int GEMM2_M8_SMEM = ([^;]+);", cu, re.M).group(1)
+    consts["MK_COMPACT_M8"] = True
+    compact_smem = ev(compact_expr)
+    consts["MK_COMPACT_M8"] = False
+    check(compact_smem == 30976 and 3 * (compact_smem + 1040) <= 102400,
+          "compact M8 ring plus static shared memory fits three blocks at depth 3")
 
     # -- driver geometry must be the same numbers (drift here = silent
     #    shape-mismatch bugs the boot self-test would hunt blind)
@@ -8417,11 +8433,11 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 7
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 8
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
-          "every segment kernel (gemm2, mhc, mla, and the four MLA prefill "
+          "every segment kernel (gemm2, both mhc storage paths, mla, and four MLA prefill "
           "pair/group4 kernels of #368) triggers its dependents at entry and "
           "is launched programmatically behind the MK_PDL knob")
     # -- 34차 §8: the persistent v1 GEMM (grid barrier, shared A quant,
@@ -8584,11 +8600,12 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 3
-          and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu,
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 5
+          and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
+          and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "
           "that does not fit deadlocks on the grid barrier, it does not "
-          "merely run slowly (one query is the GEMM's blocks per SM, "
+          "merely run slowly (two queries are the GEMM's blocks per SM, "
           "which sizes its grid and is not a residency contract)")
 
     # -- MK-GEMM v2 (30차): the same GEMM as a NON-persistent grid. The
@@ -8603,7 +8620,7 @@ def test_glm53_megakernel_contracts() -> None:
     check(consts.get("W4_RAW_NBUF2", 0) >= 2
           and 2 * (consts["GEMM2_SMEM"] + 1024) <= 102400
           and 'static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");' in cu
-          and "__launch_bounds__(MK_THREADS, 2)" in cu,
+          and "__launch_bounds__(MK_THREADS, (MK_COMPACT_M8 && COMPACT) ? 3 : 2)" in cu,
           "the v2 block's smem (with the SM's ~1 KB per-block reserve) fits "
           "two per SM and its register budget is bounded to match -- one "
           "resident block would make it the persistent kernel without the "
@@ -8652,16 +8669,24 @@ def test_glm53_megakernel_contracts() -> None:
           "the driver arms smlp2 behind its own knob with the exact + replay "
           "gate, the MLP hook serves it alone (the v1 SMLP sunset in 34차 §8), "
           "and the serving line names the lane")
-    check("template <int RQ, bool LR>" in cu
+    check("template <int RQ, bool LR, bool COMPACT = false>" in cu
           and "constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present" in v2
           and "constexpr int LPR = 32 / RQ;            // lanes per quantized row" in v2
           and "for (int off = LPR / 2; off; off >>= 1)  // stays inside the row's lane group" in v2
           and "mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
+          and "mk_launch(mk_gemm2_kernel<1, false, true>, grid2, GEMM2_M8_SMEM, stream, c2);" in cu
           and "mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);" in cu
           and "mk_launch(mk_gemm2_kernel<4, false>, grid2, GEMM2_SMEM, stream, c2);" in cu,
           "v2 is instantiated per m class (rows quantized per warp 1/2/4 -> "
           "m-tiles and the x lane mapping at compile time) and the host picks "
           "the instantiation from m")
+    check("#define MK_M8_FASTPATH_DEF 0" in cu
+          and v2.count("if constexpr (MK_M8_FASTPATH_DEF && TRANSPOSE)") == 2
+          and "__reduce_max_sync(0xffffffffu, __float_as_uint(mx))" in v2
+          and "*(const uint16_t*)(rr + W4_RAW_NIB + nrow * 8 + 2 * q)" in v2
+          and pysrc_full.count("-DMK_M8_FASTPATH_DEF=") == 2,
+          "M8 fastpath is opt-in and limited to full-warp transposed rows; "
+          "normal and rebuild cache keys both include it")
     check("((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
           and "((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64" in v2
           and "l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);" in v2
@@ -8703,7 +8728,7 @@ def test_glm53_megakernel_contracts() -> None:
           "34차 §8: v2's tail units (VLLM_GLM53_MK_KTAIL; 30차 §11: noise on two "
           "shapes, 5-17% worse on the rest) are sunset -- one unit per slice, "
           "ksr partials per tile, the setter takes the split only")
-    check("int mk_choose_ksr2(int m, int n, int k)" in cu
+    check("int mk_choose_ksr2(int m, int n, int k, bool lr = false)" in cu
           and "(g_mk_sms > 0 ? g_mk_sms : 48);" in cu
           and "MK_CHECK_CUDA(cudaGetDevice(&dev));" in cu
           and "&g_mk_sms, cudaDevAttrMultiProcessorCount, dev));" in cu

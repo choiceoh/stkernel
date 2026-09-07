@@ -1,0 +1,20 @@
+srv2
+NVIDIA GB10, GPU-228e86e9-7996-4b27-21c3-35f9e4e60da1, 580.159.03
+9666915b05368cadc0988000171b62836905af10c34213a320c9e045c689723f  /home/choiceoh/overlays/glm53/glm53_megakernel.py
+4cabebb9919abbddb778d3c6addec09afb16133c6c10bf3cd43acaee2cb936d9  /home/choiceoh/overlays/glm53/glm53_megakernel.cu
+srv1
+NVIDIA GB10, GPU-bce7dc58-5c15-dfb3-5fcc-a40f36bdefd5, 580.159.03
+9666915b05368cadc0988000171b62836905af10c34213a320c9e045c689723f  /home/choiceoh/overlays/glm53/glm53_megakernel.py
+4cabebb9919abbddb778d3c6addec09afb16133c6c10bf3cd43acaee2cb936d9  /home/choiceoh/overlays/glm53/glm53_megakernel.cu
+srv3
+NVIDIA GB10, GPU-2d7d1afa-edbf-66f3-a4e4-35576c986b6e, 580.159.03
+9666915b05368cadc0988000171b62836905af10c34213a320c9e045c689723f  /home/choiceoh/overlays/glm53/glm53_megakernel.py
+4cabebb9919abbddb778d3c6addec09afb16133c6c10bf3cd43acaee2cb936d9  /home/choiceoh/overlays/glm53/glm53_megakernel.cu
+srv4
+NVIDIA GB10, GPU-ba5006e3-90f4-6c54-e113-c0c572374037, 580.159.03
+9666915b05368cadc0988000171b62836905af10c34213a320c9e045c689723f  /home/choiceoh/overlays/glm53/glm53_megakernel.py
+4cabebb9919abbddb778d3c6addec09afb16133c6c10bf3cd43acaee2cb936d9  /home/choiceoh/overlays/glm53/glm53_megakernel.cu
+# source_commit=f00a4eb2c1329678cbce2fbcc50fb45fad41ef41
+sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac  /home/choiceoh/models/glm53-redhat-nvfp4/config.json
+c4aeac0101196a6e26705b34c45230bcd0c7c68ee2d2d1efdb242087f3712573  /home/choiceoh/models/GLM-5.3-Flash-DFlash2/config.json

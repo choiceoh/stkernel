@@ -1,0 +1,161 @@
+{
+  "per_boot": [
+    {
+      "name": "M8NEXTB1",
+      "arm": "B",
+      "windows": 36,
+      "step_s": 21.775064453066847,
+      "window_median_step_s": 21.67682807844171,
+      "tok_s": 70.96259281431236,
+      "tpot_ms": 14.091931542252091,
+      "pooled_tok_s": 72.72506650517063,
+      "pooled_tpot_ms": 13.75041712651994,
+      "request_tok_s": [
+        69.39170723662336,
+        70.96259281431236,
+        78.44136420127795
+      ],
+      "acceptance_all_requests": 0.4693548387096774,
+      "tokens_per_step_all_requests": 3.346774193548387
+    },
+    {
+      "name": "M8NEXTA1",
+      "arm": "A",
+      "windows": 36,
+      "step_s": 21.904940730986013,
+      "window_median_step_s": 21.930617317965435,
+      "tok_s": 71.49718561947859,
+      "tpot_ms": 13.986564524681956,
+      "pooled_tok_s": 71.57551649756961,
+      "pooled_tpot_ms": 13.971257895623506,
+      "request_tok_s": [
+        67.83069040258631,
+        71.49718561947859,
+        75.84594767737705
+      ],
+      "acceptance_all_requests": 0.45374173337974244,
+      "tokens_per_step_all_requests": 3.2687086668987124
+    },
+    {
+      "name": "M8NEXTA2",
+      "arm": "A",
+      "windows": 37,
+      "step_s": 21.839618005627425,
+      "window_median_step_s": 21.904991414895445,
+      "tok_s": 72.61459002754883,
+      "tpot_ms": 13.771337132394686,
+      "pooled_tok_s": 71.1021918767629,
+      "pooled_tpot_ms": 14.064264034690227,
+      "request_tok_s": [
+        72.61459002754883,
+        67.34271098554355,
+        73.68090223465069
+      ],
+      "acceptance_all_requests": 0.4470987444859179,
+      "tokens_per_step_all_requests": 3.2354937224295894
+    },
+    {
+      "name": "M8NEXTB2",
+      "arm": "B",
+      "windows": 38,
+      "step_s": 21.825909802483906,
+      "window_median_step_s": 21.92962158601392,
+      "tok_s": 67.5566728154143,
+      "tpot_ms": 14.802386771360231,
+      "pooled_tok_s": 68.31045247636101,
+      "pooled_tpot_ms": 14.63904810681868,
+      "request_tok_s": [
+        70.85930986766299,
+        66.6565085599346,
+        67.5566728154143
+      ],
+      "acceptance_all_requests": 0.4301067615658363,
+      "tokens_per_step_all_requests": 3.1505338078291816
+    }
+  ],
+  "arms": {
+    "B": {
+      "step_s": 21.800487127775376,
+      "tok_s": 69.25963281486332,
+      "tpot_ms": 14.447159156806162,
+      "pooled_tok_s": 70.51775949076583,
+      "pooled_tpot_ms": 14.19473261666931
+    },
+    "A": {
+      "step_s": 21.87227936830672,
+      "tok_s": 72.0558878235137,
+      "tpot_ms": 13.878950828538322,
+      "pooled_tok_s": 71.33885418716625,
+      "pooled_tpot_ms": 14.017760965156867
+    }
+  },
+  "paired": [
+    {
+      "candidate": "M8NEXTA1",
+      "baseline": "M8NEXTB1",
+      "step_s_change_pct": 0.5964449758534496,
+      "tok_s_change_pct": 0.7533445213383061,
+      "pooled_tok_s_change_pct": -1.5806792112308177
+    },
+    {
+      "candidate": "M8NEXTA2",
+      "baseline": "M8NEXTB2",
+      "step_s_change_pct": 0.06280701820713386,
+      "tok_s_change_pct": 7.4869246831535285,
+      "pooled_tok_s_change_pct": 4.086840738418451
+    }
+  ],
+  "change_pct": {
+    "step_s": 0.32931484562963576,
+    "tok_s": 4.037351766107378,
+    "tpot_ms": -3.933010788492297,
+    "pooled_tok_s": 1.1643800119712333,
+    "pooled_tpot_ms": -1.246741705473331
+  },
+  "within_arm_boot_spread_pct": {
+    "B": {
+      "step_s": 0.2332303361803275,
+      "tok_s": 4.917611977531501,
+      "pooled_tok_s": 6.26028685637369
+    },
+    "A": {
+      "step_s": 0.29865531734767975,
+      "tok_s": 1.5507468464021965,
+      "pooled_tok_s": 0.6634878373079584
+    }
+  },
+  "fixed_output_matches": [
+    {
+      "left": "M8NEXTB1",
+      "right": "M8NEXTB2",
+      "same_output": 0,
+      "requests": 3
+    },
+    {
+      "left": "M8NEXTA1",
+      "right": "M8NEXTA2",
+      "same_output": 0,
+      "requests": 3
+    },
+    {
+      "left": "M8NEXTB1",
+      "right": "M8NEXTA1",
+      "same_output": 0,
+      "requests": 3
+    },
+    {
+      "left": "M8NEXTB2",
+      "right": "M8NEXTA2",
+      "same_output": 0,
+      "requests": 3
+    }
+  ],
+  "independent_boots_per_arm": 2,
+  "assessment": {
+    "status": "inconclusive",
+    "candidate": "retained",
+    "default_promotion": "deferred",
+    "reason": "Small positive engine-step signal; output-rate pairs disagree and baseline output variation exceeds the average gain."
+  },
+  "note": "Windows within one boot are correlated; two boots per arm do not support a narrow confidence interval."
+}

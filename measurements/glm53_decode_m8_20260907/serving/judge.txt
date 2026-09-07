@@ -1,0 +1,8 @@
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> M8SERVA1        21.68    3.54   50.8%  9/9   0/5      2925  2/2        09-07 05:31
+judge> M8SERVB2        21.43    3.40   47.9%  9/9   0/5     19985  0/0   cold 09-07 05:24
+judge> verdict: +1.2% WITHIN the floor ±2.3% (n=2, same build): one more sample
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> M8SERVA2        21.44    3.30   46.1%  9/9   0/5     19603  2/2        09-07 05:32
+judge> M8SERVB2        21.43    3.40   47.9%  9/9   0/5     19985  0/0   cold 09-07 05:24
+judge> verdict: +0.1% WITHIN the floor ±2.3% (n=2, same build): one more sample

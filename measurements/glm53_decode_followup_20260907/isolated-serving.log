@@ -1,0 +1,221 @@
+preflight mhcbf16isolated [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/glm53-logs/MHCBF16/isolated-runner.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_FP8_CACHE=0,VLLM_GLM53_MK_FP8_PACK2=1,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2,VLLM_GLM53_MK_M8_FASTPATH=1,VLLM_GLM53_MK_MHC_BF16=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_FP8_PACK2 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8 VLLM_GLM53_MK_M8_FASTPATH VLLM_GLM53_MK_MHC_BF16
+  this arm (VLLM_GLM53_MK_FP8_PACK2,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8,VLLM_GLM53_MK_M8_FASTPATH,VLLM_GLM53_MK_MHC_BF16) has no record on build db0ac71a6966
+  baseline: none for build db0ac71a6966; 1 candidate run(s) on it
+  -> PASS
+GO mhcbf16isolated 2026-09-07_09:12:05
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=17G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=13G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=15G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+== chain MHCBF16LB1 MHCBF16LA1 MHCBF16LA2 MHCBF16LB2 09:12:55 session=mhcbf16isolated rehearse=0
+   baseline: none for build db0ac71a6966; 1 candidate run(s) on it
+== 09:12:55 arm MHCBF16LB1: (defaults)
+== [MHCBF16LB1] onepass 09:19:32 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         855        2536      2.49s      0.84s  o o o
+  32000   32545        2927     (1 req)     11.12s          -  o o o
+ 128000  128559        2962     (1 req)     43.41s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=67.40 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=69.30 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=73.19 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=75.69 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=70.15 tok/s
+  warm 처리량: 2536 -> 2962 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=62 med 21.4 [20.9, 22.4] step/s (inside the answers only; per context: 2K: n=65 med 21.4  32K: n=4 med 21.9  128K: n=3 med 21.9), raw acc 46.2%, tokens/step 3.308 (k=5.0), generated 12976 tokens over 244s
+응답 10개 · 문자 34,585
+  깨진 응답: 1/10 (10%)
+  replacement      1    28.9/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+  [fixed2K rep0] replacement=1
+== onepass MHCBF16LB1: 244s total
+== [MHCBF16LB1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 3925.0
+vllm:spec_decode_num_draft_tokens_total 19625.0
+vllm:spec_decode_num_accepted_tokens_total 9057.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3041.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2184.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1613.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1255.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 964.0
+== [MHCBF16LB1] head log kept: /home/choiceoh/glm53-logs/boot-MHCBF16LB1.log ==
+== [MHCBF16LB1] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [MHCBF16LB1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 00:13:42 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 00:13:59 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=262) WARNING 09-07 00:18:49 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=262) WARNING 09-07 00:18:49 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-07 00:18:55 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [MHCBF16LB1] done 09:23:36 ==
+   nothing to yield to
+== 09:23:36 arm MHCBF16LA1: VLLM_GLM53_MK_FP8_PACK2=1 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2 VLLM_GLM53_MK_M8_FASTPATH=1 VLLM_GLM53_MK_MHC_BF16=1
+fixed2K rep=0 tokens=2048/2048 decode=68.45 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=64.66 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=73.80 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=77.09 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=71.29 tok/s
+  warm 처리량: 2429 -> 2972 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=63 med 21.9 [20.9, 22.9] step/s (inside the answers only; per context: 2K: n=66 med 21.9  32K: n=5 med 21.4  128K: n=4 med 21.7), raw acc 45.9%, tokens/step 3.293 (k=5.0), generated 13674 tokens over 252s
+응답 10개 · 문자 32,013
+  깨진 응답: 0/10 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass MHCBF16LA1: 252s total
+== [MHCBF16LA1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 4154.0
+vllm:spec_decode_num_draft_tokens_total 20770.0
+vllm:spec_decode_num_accepted_tokens_total 9526.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3209.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2280.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1680.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1295.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1062.0
+== [MHCBF16LA1] head log kept: /home/choiceoh/glm53-logs/boot-MHCBF16LA1.log ==
+== [MHCBF16LA1] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_MK_FP8_PACK2
+  PASS      VLLM_GLM53_MK_GEMM_TRANSPOSE_M8
+  PASS      VLLM_GLM53_MK_M8_FASTPATH
+  PASS      VLLM_GLM53_MK_MHC_BF16
+  -> 4/4 lanes proved serving (134490 bytes of /home/choiceoh/glm53-logs/boot-MHCBF16LA1.log)
+== [MHCBF16LA1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 00:24:22 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 00:24:39 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 00:28:20 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=242) WARNING 09-07 00:28:20 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-07 00:28:26 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 00:33:21 [glm53_prep_fused.py:1159] [prep-fused] on timing (n=64): fused host=269 us stock chain host=6096 us per step
+(Worker_TP0 pid=242) WARNING 09-07 00:33:21 [glm53_prep_fused.py:1199] [prep-fused] on: fused_steps=4096 stock_steps=37 checks ok=64 drift=0
+== [MHCBF16LA1] done 09:33:24 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> MHCBF16LA1      21.93    3.29   45.9%  24/24  0/10     2902  4/4   cold 09-07 09:29
+judge> verdict: no baseline on this build
+judge> written to /home/choiceoh/glm53-logs/verdicts.jsonl
+== 09:33:24 after MHCBF16LA1: python3 bench/judge.py MHCBF16LA1 --base MHCBF16LB1 --fail-invalid
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> MHCBF16LA1      21.93    3.29   45.9%  24/24  0/10     2902  4/4   cold 09-07 09:29
+judge> MHCBF16LB1      21.41    3.31   46.2%  24/24  1/10     2927  -          09-07 09:19
+judge> verdict: baseline is incompatible or failed its gates
+   nothing to yield to
+== 09:33:24 arm MHCBF16LA2: VLLM_GLM53_MK_FP8_PACK2=1 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2 VLLM_GLM53_MK_M8_FASTPATH=1 VLLM_GLM53_MK_MHC_BF16=1
+fixed2K rep=0 tokens=2048/2048 decode=67.19 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=73.25 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=74.90 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=74.52 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=68.49 tok/s
+  warm 처리량: 2433 -> 2955 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=60 med 21.9 [20.9, 22.4] step/s (inside the answers only; per context: 2K: n=62 med 21.9  32K: n=5 med 21.9  128K: n=7 med 21.4), raw acc 45.6%, tokens/step 3.281 (k=5.0), generated 13550 tokens over 252s
+응답 10개 · 문자 34,383
+  깨진 응답: 0/10 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass MHCBF16LA2: 253s total
+== [MHCBF16LA2] acceptance counters ==
+vllm:spec_decode_num_drafts_total 4133.0
+vllm:spec_decode_num_draft_tokens_total 20665.0
+vllm:spec_decode_num_accepted_tokens_total 9428.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3168.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2294.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1690.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1271.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1005.0
+== [MHCBF16LA2] head log kept: /home/choiceoh/glm53-logs/boot-MHCBF16LA2.log ==
+== [MHCBF16LA2] serving proof (bench/proof.py) ==
+  PASS      VLLM_GLM53_MK_FP8_PACK2
+  PASS      VLLM_GLM53_MK_GEMM_TRANSPOSE_M8
+  PASS      VLLM_GLM53_MK_M8_FASTPATH
+  PASS      VLLM_GLM53_MK_MHC_BF16
+  -> 4/4 lanes proved serving (130892 bytes of /home/choiceoh/glm53-logs/boot-MHCBF16LA2.log)
+== [MHCBF16LA2] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 00:34:10 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 00:34:28 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=260) WARNING 09-07 00:37:09 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=260) WARNING 09-07 00:37:09 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-07 00:37:15 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=260) WARNING 09-07 00:42:10 [glm53_prep_fused.py:1159] [prep-fused] on timing (n=64): fused host=283 us stock chain host=6038 us per step
+(Worker_TP0 pid=260) WARNING 09-07 00:42:10 [glm53_prep_fused.py:1199] [prep-fused] on: fused_steps=4096 stock_steps=37 checks ok=64 drift=0
+== [MHCBF16LA2] done 09:42:13 ==
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> MHCBF16LA2      21.92    3.28   45.6%  24/24  0/10     2906  4/4        09-07 09:38
+judge> verdict: no baseline on this build
+judge> written to /home/choiceoh/glm53-logs/verdicts.jsonl
+   nothing to yield to
+== 09:42:13 arm MHCBF16LB2: (defaults)
+  32000   32545        2874     (1 req)     11.32s          -  o o o
+ 128000  128559        2971     (1 req)     43.27s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=69.10 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=69.04 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=67.66 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=66.62 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=73.60 tok/s
+  warm 처리량: 2381 -> 2971 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=63 med 21.9 [21.4, 22.9] step/s (inside the answers only; per context: 2K: n=66 med 21.9  128K: n=4 med 21.6), raw acc 44.4%, tokens/step 3.219 (k=5.0), generated 12767 tokens over 246s
+응답 10개 · 문자 32,830
+  깨진 응답: 2/10 (20%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        5   152.3/백만자
+  control          0     0.0/백만자
+  [fixed2K rep0] cjk_mixed=2
+    …'info, Francis Crick biography, Halvorsen博士 tundra report, Jimmy Carter foundation'…
+  [fixed2K rep2] cjk_mixed=3
+    …'asis - 기니 벌레), "간 나오토" (should be 칸 나오토/菅直人)\n- The math proof lost its symbols (b'…
+== onepass MHCBF16LB2: 246s total
+== [MHCBF16LB2] acceptance counters ==
+vllm:spec_decode_num_drafts_total 3967.0
+vllm:spec_decode_num_draft_tokens_total 19835.0
+vllm:spec_decode_num_accepted_tokens_total 8802.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 3020.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 2153.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1587.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1160.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 882.0
+== [MHCBF16LB2] head log kept: /home/choiceoh/glm53-logs/boot-MHCBF16LB2.log ==
+== [MHCBF16LB2] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [MHCBF16LB2] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 00:43:00 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 00:43:21 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=262) WARNING 09-07 00:46:06 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=262) WARNING 09-07 00:46:06 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-07 00:46:12 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [MHCBF16LB2] done 09:50:54 ==
+== 09:50:54 after MHCBF16LB2: python3 bench/judge.py MHCBF16LA1 --base MHCBF16LB2 --fail-invalid; python3 bench/judge.py MHCBF16LA2 --base MHCBF16LB2 --fail-invalid
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> MHCBF16LA1      21.93    3.29   45.9%  24/24  0/10     2902  4/4   cold 09-07 09:29
+judge> MHCBF16LB2      21.90    3.22   44.4%  24/24  2/10     2874  -          09-07 09:46
+judge> verdict: baseline is incompatible or failed its gates
+judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+judge> MHCBF16LA2      21.92    3.28   45.6%  24/24  0/10     2906  4/4        09-07 09:38
+judge> MHCBF16LB2      21.90    3.22   44.4%  24/24  2/10     2874  -          09-07 09:46
+judge> verdict: baseline is incompatible or failed its gates
+   nothing to yield to
+== 09:50:54 production stays on the last arm (MHCBF16LB2 = defaults)
+== 09:50:54 judge
+   judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+   judge> MHCBF16LA1      21.93    3.29   45.9%  24/24  0/10     2902  4/4   cold 09-07 09:29
+   judge> verdict: no baseline on this build
+   judge> written to /home/choiceoh/glm53-logs/verdicts.jsonl
+   judge> arm            step/s  tok/st     acc  qual ko      32Kw  proof      when
+   judge> MHCBF16LA2      21.92    3.28   45.6%  24/24  0/10     2906  4/4        09-07 09:38
+   judge> verdict: no baseline on this build
+   judge> written to /home/choiceoh/glm53-logs/verdicts.jsonl
+== chain done 09:50:54
+== restore public endpoint after isolated bracket (rc=0)
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_SPEC_K=5 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)
