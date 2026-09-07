@@ -274,7 +274,7 @@ def main() -> int:
                 content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
                 t_req = time.monotonic()
                 timing = {"ctx": ctx, "question": "all"}
-                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens * len(facts), timing)
+                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens * len(facts), timing)
                 rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
@@ -293,7 +293,7 @@ def main() -> int:
                 content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
                 t_req = time.monotonic()
                 timing = {"ctx": ctx, "question": qi}
-                text, ttft, ptok, ctok, finish = ask_stream(cq.URL, cq.MODEL, content, args.max_tokens, timing)
+                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens, timing)
                 rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok
@@ -325,7 +325,7 @@ def main() -> int:
                 timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}
                 t_req = time.monotonic()
                 text, ttft, ptok, ctok, finish = ask_stream(
-                    cq.URL, cq.MODEL, content, args.fixed_decode_tokens, timing,
+                    bd.URL, cq.MODEL, content, args.fixed_decode_tokens, timing,
                     min_tokens=args.fixed_decode_tokens, seed=args.seed + rep)
                 phase = (2000, t_req + ttft, time.monotonic())
                 phases.append(phase)
