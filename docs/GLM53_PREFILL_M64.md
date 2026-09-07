@@ -158,3 +158,23 @@ torch and ptxas. Four immutable check4 copies share that exact source. The
 serving collector now points to check4 and will reject it unless the complete
 GPU/recovery evidence passes. `--refresh-gate` can run the GPU gates and then
 the direct fresh-cache TTFT bracket in the same normal fleet hold.
+
+
+## Check4 numerical failure and Q0 scale-address correction
+
+Check4 began at 02:41:58 KST and completed exact incoming recovery at 02:46:51.
+The candidate compiled and launched on all four ranks. All six active M64
+cases failed on every valid row, including local MoE before transport.
+Independent stock/changed/local controls and M128 capture passed; four short
+fallback cases also passed. FP8, sanitizers and serving TTFT were blocked.
+Evidence is in `measurements/glm53_moe_m64_20260908/check4/`.
+
+The Q0 producer still used logical M64 to address the global M128 scale atoms.
+For physical row 64 it wrote the first scale at 32768 instead of 8; near the
+end this exceeds the allocation. The Q0 override uses `_m64_q0_scale_row`
+for physical M128 coordinates in all four scale-store paths. Routing and task
+publication remain M64. An AST audit verifies all other executable statements
+match the pinned source after qualifying original helpers. The cache suffix
+is `glm53_prefill_m64_v3`. CPU tests cover canonical offsets across even/odd
+M64 boundaries and the allocation end. A fresh GPU gate is required to prove
+the numerical fix; check4/serving1 are failed, completed jobs.

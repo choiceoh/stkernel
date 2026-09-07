@@ -1448,7 +1448,7 @@ class MoEGatedDynamicKernelM64Tiled(MoEGatedDynamicKernelTiled):
         sf_blocks_per_row = cols // Int32(16)
         output_bytes_per_row = cols // Int32(2)
         cols_u32 = cols // Int32(2)
-        scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass._stock_gated.Uint32)
+        scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens
         flat_tid = Int32(bidz) * Int32(self.threads_per_cta) + Int32(tidx)
