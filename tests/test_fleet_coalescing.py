@@ -322,6 +322,17 @@ class CoalescingTests(unittest.TestCase):
         (self.repo/'unrelated.py').write_text('value=1\n');self.commit()
         self.assertIsNone(cpu_contracts.changed_contracts(self.repo,base))
 
+    def test_new_helper_dependencies_disable_narrow_selection_and_cache(self):
+        self.contract_sources();base=self.sha
+        source=self.repo/cpu_contracts.CONTRACTS['math'][1]
+        source.write_text(source.read_text().replace('max_logits_elems = max_logits_bytes // 4',
+            'max_logits_elems = max_logits_bytes // __import__("unreviewed_dependency").width'))
+        self.commit()
+        self.assertIsNone(cpu_contracts.changed_contracts(self.repo,base))
+        spec=ex.normalize(dict(kind='cpu',revision=self.sha,hypothesis='changed dependency',
+            command=[sys.executable,'bench/cpu_checks.py','--contract','math']),self.repo)
+        self.assertEqual(cpu_evidence.identity(self.repo,spec,{})['scope'],'full-tree')
+
 
 class ContractAndTimingTests(unittest.TestCase):
     def test_faults_are_detected_by_existing_checks_and_survivors_fail(self):

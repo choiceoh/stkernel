@@ -19,6 +19,13 @@ CONTRACTS = {
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
     'dispatch': ('test_skip_topk','overlay/modules/dsv4_attention/attention.py','_resolve_skip_topk'),
 }
+# Reviewed name/attribute/import/call-target graph. Arithmetic edits can reuse
+# the narrow dependency audit; new access paths require a full gate/cache key.
+DEPENDENCY_AUDITS = {
+    'math': '3f8d6c2465c38716edf111c2bae9f5ef3eab5e6ec8b96d3a2bf664e2ad8ad867',
+    'layout': '95d6a18cda0b95cf59dfc9fd0f07b652c7417836fefce95e62fbf43d586c5103',
+    'dispatch': '68b8fe423fb6e884956320fb00c9b7f78f58f293628122cdeb2d8b533d98d47c',
+}
 MUTATIONS = {
     'logits-byte-width': ('math','max_logits_bytes // 4','max_logits_bytes'),
     'request-boundary': ('math','end + request_offset','end + request_offset - 1'),
@@ -35,6 +42,21 @@ def audited(root):
 
 def dependencies(root, names):
     if not audited(root):
+        return None
+    try:
+        for name in names:
+            _,source,symbol = CONTRACTS[name]
+            functions = [n for n in ast.parse((root/source).read_text()).body
+                         if isinstance(n,ast.FunctionDef) and n.name == symbol]
+            if len(functions) != 1:
+                return None
+            accesses = sorted(set(ast.dump(n.func) if isinstance(n,ast.Call) else ast.dump(n)
+                                  for n in ast.walk(functions[0])
+                                  if isinstance(n,(ast.Name,ast.Attribute,ast.Import,ast.ImportFrom,
+                                                   ast.Call,ast.Global,ast.Nonlocal))))
+            if hashlib.sha256(json.dumps(accesses).encode()).hexdigest() != DEPENDENCY_AUDITS[name]:
+                return None
+    except (OSError,SyntaxError):
         return None
     sources = {CONTRACTS[name][1] for name in names}
     for source in sources:

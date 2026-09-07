@@ -239,8 +239,9 @@ and `--contract dispatch` run the actual audited tests from `tests/test_logic.py
 A plan can explicitly set `"cpu_contracts": ["math", "layout", "dispatch"]`.
 Each contract becomes a separate CPU prerequisite with its own cache, alongside
 the sensitivity check. Other requested suites/tests remain additional gates.
-Dependency audits pin the test source and loader path inventory; unknown test
-edits fall back to whole-tree cache identity. No caller-provided path exclusion
+Dependency audits pin the test source, helper access graph and loader path
+inventory. New imports/call targets/name/attribute access or unknown test edits
+fall back to whole-tree cache identity and conservative automatic suite selection. No caller-provided path exclusion
 can narrow this scope. These three small contracts provide incremental feedback;
 the full deployment `logic` gate remains in place.
 
