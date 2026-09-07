@@ -666,7 +666,8 @@ def _calib_hessian_for(name, k=None):
 
 _PACK_STAGING = None
 _PACK_IO_STATS = dict(calib_s=0.0, key_s=0.0, read_s=0.0, copy_s=0.0,
-                      fast_hits=0, legacy_hits=0)
+                      fast_hits=0, legacy_hits=0, sha_hits=0, md5_fallback=0,
+                      aliases=0, alias_errors=0)
 
 
 def _pack_staging():
@@ -682,20 +683,28 @@ def _pack_fast_io():
     return os.environ.get("VLLM_GLM53_MK_PACK_FAST_IO", "0") == "1"
 
 
-def _weight_md5(weight) -> str:
+def _pack_sha256():
+    return os.environ.get("VLLM_GLM53_MK_PACK_SHA256", "0") == "1"
+
+
+def _weight_digest(weight, algorithm) -> str:
     import torch
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
     if _pack_fast_io():
-        digest = hashlib.md5()
+        digest = hashlib.new(algorithm)
         for _, chunk in _pack_staging().chunks_to_cpu(b.reshape(-1)):
             digest.update(memoryview(chunk.numpy()))
         return digest.hexdigest()
     # NumPy exposes this contiguous uint8 storage through the buffer
     # protocol. Hash those same bytes directly: tobytes() otherwise makes
     # another full host copy (50 MiB for a KDA in-projection) on every hit.
-    return hashlib.md5(b.cpu().numpy()).hexdigest()
+    return hashlib.new(algorithm, b.cpu().numpy()).hexdigest()
+
+
+def _weight_md5(weight) -> str:
+    return _weight_digest(weight, "md5")
 
 
 def _load_pack_blob(path, fast):
@@ -734,11 +743,36 @@ def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
     # the bytes AND the shape: two weights of the same seed and element
     # count are byte-identical at different shapes (the bench's [2048 x
     # 4096] and [4096 x 2048] collided on the first run of this cache)
-    key = (f"{_weight_md5(weight)}-{weight.shape[0]}x{weight.shape[1]}-"
-           f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
-           f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
-           f"lr{rank}")
-    return os.path.join(root, f"rank{_mk_rank()}", key + ".pt")
+    suffix = (f"-{weight.shape[0]}x{weight.shape[1]}-"
+              f"{str(weight.dtype).split('.')[-1]}-v{MK_PACK_VERSION}-"
+              f"{'row' if per_row else 'ten'}-{'gptq' if gptq else 'rtn'}-"
+              f"lr{rank}.pt")
+    directory = os.path.join(root, f"rank{_mk_rank()}")
+    if not _pack_sha256():
+        return os.path.join(directory, _weight_md5(weight) + suffix)
+    path = os.path.join(directory, "sha256-" + _weight_digest(weight, "sha256") + suffix)
+    if os.path.isfile(path):
+        _PACK_IO_STATS["sha_hits"] += 1
+        return path
+    # Migrate lazily using the live weight's historical key. Hardlinking keeps
+    # the exact pack bytes, consumes no duplicate tensor storage, and publishes
+    # atomically without overwriting a concurrent writer. A warm hit above
+    # never computes MD5; disabling this policy retains the historical path.
+    _PACK_IO_STATS["md5_fallback"] += 1
+    legacy = os.path.join(directory, _weight_md5(weight) + suffix)
+    if os.path.isfile(legacy):
+        try:
+            os.link(legacy, path)
+            _PACK_IO_STATS["aliases"] += 1
+        except FileExistsError:
+            if not os.path.isfile(path):
+                _PACK_IO_STATS["alias_errors"] += 1
+                return legacy
+        except OSError:
+            # Read-only or non-linkable caches still reuse the existing pack.
+            _PACK_IO_STATS["alias_errors"] += 1
+            return legacy
+    return path
 
 
 def build_mk_weight_w4(weight, name=None, per_row=None):
@@ -949,7 +983,7 @@ def pack_stats_line() -> str:
 
 def pack_io_stats_line() -> str:
     """Cumulative startup host times, including the transfer synchronizations."""
-    return (f"fast={int(_pack_fast_io())} "
+    return (f"fast={int(_pack_fast_io())} sha256={int(_pack_sha256())} "
             + " ".join(f"{key}={value:.3f}" if key.endswith("_s")
                        else f"{key}={value}" for key, value in _PACK_IO_STATS.items()))
 
