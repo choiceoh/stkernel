@@ -2382,6 +2382,15 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 
 - ALIGN1: align 모드에서 CUDA 백엔드가 서빙(전에는 Triton 폴백). 2K cold +94.8 % 는 BASE 기록의 2K 가 1,108 tok/s 로 낮았던 탓(ALIGN1 2,158, 다른 기록들과 같음) — 내 변경은 디코드 쪽이라 무관. 1 s 창: 2K 창 3 → 11개, 32K 6 → 15, 128K 4 → 9(항목 2 닫힘).
 - NVS1: `ab-lever2.sh` 가 `REPO=~/stkernel`(main) 의 런처·프로파일을 쓰므로 브랜치에서만 선언된 키가 걸러졌다(`none of VLLM_GLM53_NVFP4_STATIC_SCALE set in the container!`, 동결 줄 0) → 수치는 같은 기본값 부팅 둘의 재현성(프리필 ±0.6 %, 디코드 128K −4.6 % 는 알려진 128K 변동). PR #437 머지 뒤 main 에서 NVS2 재측정(`nvs-chain.sh`).
+
+**NVS2 (11:48~12:01, main e1a88d7 = PR #437 머지 후, `VLLM_GLM53_NVFP4_STATIC_SCALE=16`)**: 202 쌍 전부 16번째 호출에서 동결(부팅 워밍업 뒤 onepass 2K 단계 초반) → 32K·128K 단계는 완전 동결 상태로 측정.
+| 팔 | cold 2K / 32K / 128K tok/s | 디코드 창 2K/32K/128K | tok/step | 품질 | 판정 |
+|---|---|---|---|---|---|
+| ALIGN1 (기본값) | 2,158 / 2,950 / 2,930 | 21.9 / 21.9 / 21.9 step/s | 3.22 | 9/9 | 기준 |
+| NVS1 (기본값, 노브 무효) | 2,164 / 2,943 / 2,912 | — | 3.56 | 9/9 | 기본값 재현 ±0.6 % |
+| NVS2 (정적 스케일 16) | 2,145 / **3,034** / **3,115** | 21.8 / 21.8 / 21.8 | 3.53 | 9/9 | vs ALIGN1 **−0.6 / +2.8 / +6.3 %**, 디코드 −0.1 %, DRIFT 0 → **GAIN** |
+
+- 이득이 128K 에서 더 큰 이유는 미확인(amax 패스 추정 1.5 % 보다 큼; 128K 변동성일 수도) → 승격 전 규칙대로 두 번째 짝 측정(DEF3 + NVS3, `nvs3-chain.sh`) 뒤 판정. 품질 9/9·수용률(tok/step 3.53 vs 3.22, 노이즈 범위 안에서 위쪽) 손상 없음.
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
