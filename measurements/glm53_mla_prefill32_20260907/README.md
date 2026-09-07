@@ -94,3 +94,21 @@ MoE is the larger remaining compute target (28–32% of this profile). The
 previous Q0/FC2-reuse and paired-N128 versions already regressed in direct
 serving; their retained-register cost must be addressed in a new design.
 Their old switches are not evidence of unused, immediately available gain.
+
+## First GPU result and remaining sanitizer gate (17:36 KST)
+
+The 11 eager/numerical and changed-input graph cases passed on srv2 with
+source 4be95a59ad9dab650a2fef22f065531338d70cef and the pinned image.
+At eligible executed chunks 4143 / 6912 / 8192 and W2048, the paired kernel
+speedups were 1.0181x / 1.0204x / 1.0184x. These are kernel microbenchmarks,
+not direct serving TTFT and not a 40% result. All sample timings and row
+errors are preserved in gpu-numerics.json; raw output is gpu-fleet.log.
+
+The runner then exited 127 because compute-sanitizer is absent from the
+runtime image. Neither memcheck nor racecheck ran. The corrected runner
+mounts the host sanitizer installation read-only and supports --sanitize-only
+so the completed timing matrix need not be repeated. All four hosts have
+version 2025.3.1.0, executable SHA-256
+7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b; its
+--version succeeded inside the pinned image without exposing a GPU.
+The candidate remains off pending sanitizer and direct-serving evidence.
