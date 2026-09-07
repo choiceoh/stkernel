@@ -69,6 +69,7 @@ def main():
     import torch
     from torch.utils.cpp_extension import load
     original=(ROOT/'overlay/modules/glm53_megakernel/glm53_megakernel.cu').read_text()
+    args.production = args.production or 'int g_input_cta_mode = -1;' in original
     source=original if args.production else render(original)
     modes=(0,1,2,3) if args.production else (0,1,2)
     sha=hashlib.sha256(source.encode()).hexdigest()
