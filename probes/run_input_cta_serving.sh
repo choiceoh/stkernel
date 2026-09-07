@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Exact eight-slice CTA probe; same-build controls and unconditional public restore.
 set -euo pipefail
-cd /home/choiceoh/stkernel-input-cta-serving-20260907
+cd "${INPUT_CTA_REPO:-/home/choiceoh/stkernel-input-cta-serving-20260907}"
 export REPO=$PWD
-RESTORE_REPO=/home/choiceoh/stkernel-input-cta-serving-restore-20260907
+RESTORE_REPO=${INPUT_CTA_RESTORE_REPO:-/home/choiceoh/stkernel-input-cta-serving-restore-20260907}
 IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 export INPUT_CTA_SERVING_OUT=${INPUT_CTA_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTCTASERVE0907}
 out=$INPUT_CTA_SERVING_OUT
@@ -100,6 +100,22 @@ print(mode)
 PYSEL
 )
 bash launchers/deploy-overlays.sh glm53 > "$out/deploy.log" 2>&1
+# A peer died during the first baseline's initial MHC call. Exercise that
+# initialization on every node in a fresh process before loading the model.
+sha=$(sha256sum overlay/modules/glm53_megakernel/glm53_megakernel.cu | cut -d ' ' -f 1)
+pids=()
+python3 probes/input_cta_node_check.py --session "$session" --source-sha256 "$sha" \
+  > "$out/node-check-srv2.log" 2>&1 &
+pids+=($!)
+for node in 1 3 4; do
+  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" python3 - \
+    --session "$session" --source-sha256 "$sha" < probes/input_cta_node_check.py \
+    > "$out/node-check-srv$node.log" 2>&1 &
+  pids+=($!)
+done
+node_rc=0
+for pid in "${pids[@]}"; do wait "$pid" || node_rc=1; done
+[[ $node_rc == 0 ]] || { echo 'ABORT: independent node startup check failed'; exit 1; }
 export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1

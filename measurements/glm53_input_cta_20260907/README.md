@@ -1,8 +1,11 @@
 # C=1 input reuse: keep split-K partials within one CTA
 
 This follow-up compares against the default input-reuse kernel from PR449,
-not the older repeated-input-quantization baseline. The new serving knob `VLLM_GLM53_MK_INPUT_CTA` remains 0 pending actual-source
-and serving acceptance; the input-reuse default remains enabled.
+not the older repeated-input-quantization baseline. The actual serving-source
+kernel reduces warm latency 24.51% and read-evicted latency 7.88%, with exact
+output bits and clean sanitizers. `VLLM_GLM53_MK_INPUT_CTA` remains 0 pending
+serving acceptance; the first baseline boot failed before any requests.
+The input-reuse default remains enabled.
 
 For the exact M6/N6416/K4096 route, one CTA owns 16 output columns and its
 eight warps own the original eight K slices. Each warp keeps the same W4
@@ -15,8 +18,9 @@ compares two- and three-stage weight pipelines against the enabled default.
 The probe requires bit-identical BF16 outputs and an independent FP32 oracle,
 changing inputs, two retained layer graphs, startup checks, fallback shapes,
 and racecheck/memcheck. Warm and read-evicted measurements include input
-preparation and use 32 alternating samples per mode. The private-source results below are complete. Actual-source and serving
-step/output acceptance remain pending.
+preparation and use 32 alternating samples per mode. The private-source and
+actual-source GPU results below are complete. Serving step/output acceptance
+remains pending.
 
 The channel recorder's previous zero-window failure is also fixed: its global
 transport wrapper attempted to wrap the concurrent sampler's plain metrics
@@ -25,9 +29,9 @@ discarding every sample. The wrapper now only handles the matching completion
 POST; metrics and unrelated requests keep their original response. A regression
 executes a metrics fetch while the wrapper is installed, as the sampler does.
 
-CPU gate: 6,684 core checks, 30 megakernel regressions and four channel recorder
-regressions pass. The generated private CUDA source renders successfully and
-the runner passes Bash syntax validation. GPU compilation is still pending.
+Final CPU gate: 6,687 core checks, 30 megakernel regressions, 92 fleet checks
+and 12 driver/transport regressions pass. Native CUDA compilation and GPU
+validation are complete. The runners pass Bash syntax validation.
 
 Reproducer: `probes/gemm_input_cta.py`; fleet maintenance runner:
 `probes/run_gemm_input_cta.sh`. The runner checks clean/current-main ancestry
@@ -60,8 +64,8 @@ preparation; they do not measure whole-model step improvement.
 
 The two-buffer layout is integrated behind an independent gate. Mode 1 keeps
 runtime geometry; modes 2/3 specialize M=6, K=4096 and eight slices, unroll the
-four K groups, and request three/four resident blocks per SM. Compilation and
-GPU results for these integrated variants remain pending. A failed CTA boot
+four K groups, and request three/four resident blocks per SM. The integrated
+GPU comparison below selects mode 2. A failed CTA boot
 gate disables CTA alone and preserves the established input-reuse route.
 Dedicated capture receipts distinguish actual CTA launches from startup tests.
 
@@ -91,15 +95,15 @@ C++17 and the serving FP8/M8 definitions. It ran in fleet CPU session
 `inputctacpu0907`, without loading a CUDA context or holding the GPU lane.
 Modes 1/2/3 use 78/75/64 registers, respectively; all have zero spill loads,
 zero spill stores and one barrier. Mode 3 meets its four-block register budget;
-actual runtime occupancy and timing still require the GPU probe. Torch headers
+the actual GPU measurements below confirm occupancy and timing. Torch headers
 emit C++20-extension warnings under C++17; compilation returns 0.
 [Compile log](cpu/compile.log) and [source/environment receipt](cpu/receipt.json).
 
 The first prototype runner returned 0 and restored approved main `944f65c`
-at 22:13:14 KST. The next immutable source `916adc0` is queued as
+at 22:13:14 KST. The next immutable source `916adc0` ran as
 `inputctaserve0907`, after the startup-key and MoE overlap campaigns. Preflight
 passes, including the new knob declared by the candidate profile. Its evidence
-will be under `/home/choiceoh/glm53-logs/INPUTCTASERVE0907`. No runtime source
+is under `/home/choiceoh/glm53-logs/INPUTCTASERVE0907`. No runtime source
 or executing runner is changed while it waits or runs.
 
 `analyze.py --root <evidence>` verifies the selected mode, GPU/sanitizer
@@ -141,5 +145,22 @@ have chosen incorrectly. No outliers are removed from the raw evidence.
 
 [Full GPU results](serving/result.json), [paired summary](serving/paired-kernel-summary.json),
 [selection receipt](serving/selection.json), [racecheck](serving/racecheck.log),
-[memcheck](serving/memcheck.log). These are kernel results; the B/A/A/B serving
-chain began at 22:58:10 KST and is still in progress.
+[memcheck](serving/memcheck.log). These are kernel results.
+
+## First serving attempt: failed baseline initialization
+
+The B/A/A/B chain began at 22:58:10 KST on `916adc0`. `ICTAB1` used CTA=0.
+At 23:02:53, srv1's first MHC BF16 differential check raised CUDA error 800,
+`operation not permitted`, from `run_mhc`. Later CUDA calls failed and the
+worker exited at 23:03:57, exit 1, `OOMKilled=false`. The other three ranks
+passed MHC/GEMM/input-reuse startup checks on the same CUDA source. The head
+waited for its missing peer; no health, decode window or output measurement
+was produced. This is an initialization failure, not a performance result,
+and the cause is not established by the logs.
+
+All four logs were preserved before stopping the blocked head at 23:10:53.
+The canonical lever detected the failure, and the runner entered its approved
+main restore path. [First srv1 error](serving/failed-ICTAB1/srv1-first-error.log)
+and [failed baseline preparation](serving/failed-ICTAB1/prepare.log) are retained.
+The next immutable runner checks fresh-process MHC and both input modes on
+all four nodes before loading the model; it does not edit the running attempt.

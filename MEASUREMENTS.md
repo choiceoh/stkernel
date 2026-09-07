@@ -1,5 +1,35 @@
 # 실측 원장 (measurement ledger)
 
+### GLM53 C=1 CTA-local split-K reduction (2026-09-07, PR454)
+
+Compared against PR449's enabled input-reuse default on the exact
+M6/N6416/K4096 projection. Eight warps retain the original eight K slices;
+shared-memory reduction replaces global partial traffic, arrival atomics and
+device fences. The W4 packs, FP8 input bytes and output rounding are unchanged.
+
+Actual serving source `916adc0` on GB10, 32 alternating samples per mode,
+including input preparation:
+
+| Kernel | Warm us | Read-evicted us |
+|---|---:|---:|
+| Enabled input reuse | 32.512 | 75.360 |
+| Fixed geometry CTA, mode 2 | 24.544 (-24.51%) | 69.424 (-7.88%) |
+
+Mode 2 wins 31/32 pairs in each regime. All 160 numerical rows match baseline
+bits and the independent FP32 oracle; 120 changing-input retained-graph checks,
+startup checks, racecheck and memcheck pass. The 64-register/four-block variant
+is slower than the selected 75-register/three-block variant. CPU validation:
+6,687 logic checks, 30 megakernel regressions, 92 fleet checks and 12 focused
+driver/transport tests pass; native nvcc compilation has no register spills.
+
+The first B/A/A/B serving attempt failed in its CTA=0 baseline: srv1's initial
+MHC check raised CUDA error 800 and its worker exited before health. Other
+ranks passed startup checks. No step/output measurement exists for this
+attempt. Failure logs are preserved, and approved-main recovery was started.
+`VLLM_GLM53_MK_INPUT_CTA=0` remains the default pending serving acceptance.
+
+[Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
 이 스택에서 내린 모든 성능 판정과 그 수치. **여기 없는 주장은 미실측이다.**
 방법론·함정은 [README의 bench 표](README.md#bench--측정-도구와-함정) 참조.
 기준 환경: 4× GB10(SM121) · TP=4 · CRS812.
