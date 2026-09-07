@@ -109,11 +109,13 @@ from .multimodal import (
 logger = init_logger(__name__)
 
 _PREFILL_SP_ENABLED = os.environ.get("VLLM_GLM53_PREFILL_SP") == "1"
+_PREFILL_MOE_OVERLAP_ENABLED = os.environ.get("VLLM_GLM53_PREFILL_MOE_OVERLAP") == "1"
 if _PREFILL_SP_ENABLED:
     from vllm.distributed.device_communicators.glm53_prefill_collectives import (
         partial_tp_output,
         prefill_all_gather,
         prefill_reduce_scatter,
+        prefill_moe_overlap,
         prefill_shard,
     )
 
@@ -705,10 +707,18 @@ class Glm5NextDecoderLayer(nn.Module):
         if prefill_sequence_parallel:
             # Keep the existing TP expert/dense weights and full-token MoE
             # routing. Suppress only their terminal sum, then scatter it.
-            x = prefill_all_gather(x, num_tokens=positions.shape[0])
-            with partial_tp_output(num_tokens=positions.shape[0]):
-                x = self.mlp(x)
-            x = prefill_reduce_scatter(x)
+            overlapped = None
+            if (_PREFILL_MOE_OVERLAP_ENABLED and self._mlp_is_moe
+                    and _prefill_sp_layer_reduction_ok(self)
+                    and not self.mlp.enable_eplb):
+                overlapped = prefill_moe_overlap(self.mlp, x, num_tokens=positions.shape[0])
+            if overlapped is None:
+                x = prefill_all_gather(x, num_tokens=positions.shape[0])
+                with partial_tp_output(num_tokens=positions.shape[0]):
+                    x = self.mlp(x)
+                x = prefill_reduce_scatter(x)
+            else:
+                x = overlapped
         elif self._mlp_is_moe:
             x = self.mlp(x, already_sequence_parallel=self.is_sequence_parallel)
         else:

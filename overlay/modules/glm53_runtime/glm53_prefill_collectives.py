@@ -9,7 +9,7 @@ large chunks and native BF16 for short chunks; mode 0 uses BF16 throughout.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 
 import torch
@@ -54,6 +54,8 @@ _BLOCK = 2048
 _TP = 4
 _HIDDEN = 4096
 _PARTIAL = ContextVar("glm53_prefill_partial", default=None)
+_MLP_OVERLAP = os.environ.get("VLLM_GLM53_PREFILL_MOE_OVERLAP") == "1"
+_MLP_COMM_STREAMS = {}
 
 
 @dataclass
@@ -332,7 +334,7 @@ def prefill_shard(tensor):
     return out
 
 
-def prefill_all_gather(tensor, *, num_tokens=None):
+def prefill_all_gather(tensor, *, num_tokens=None, _transport_tokens=None):
     """Gather normalized shards and optionally trim their trailing padding."""
     comm = _check(tensor)
     padded_rows = tensor.shape[0] * _TP
@@ -343,7 +345,7 @@ def prefill_all_gather(tensor, *, num_tokens=None):
     out = torch.empty((padded_rows, _HIDDEN),
                       device=tensor.device, dtype=tensor.dtype)
     real_rows = padded_rows if num_tokens is None else num_tokens
-    if not _use_fp8(real_rows):
+    if not _use_fp8(real_rows if _transport_tokens is None else _transport_tokens):
         if _FP8_V3:
             logger.info_once("[prefill-sp] short chunk BF16 all-gather engaged")
         comm.all_gather(out, tensor)
@@ -377,7 +379,7 @@ def prefill_all_gather(tensor, *, num_tokens=None):
     return out if num_tokens is None else out[:num_tokens]
 
 
-def prefill_reduce_scatter(tensor):
+def prefill_reduce_scatter(tensor, *, _transport_tokens=None):
     """Reduce full-token rank partials directly to the local MHC shard.
 
     FP8 v1 agrees on block maxima before native FP8 SUM. v2/v3 instead send
@@ -390,7 +392,7 @@ def prefill_reduce_scatter(tensor):
     padded_rows = rows * _TP
     out = torch.empty((rows, _HIDDEN),
                       device=tensor.device, dtype=tensor.dtype)
-    if not _use_fp8(tensor.shape[0]):
+    if not _use_fp8(tensor.shape[0] if _transport_tokens is None else _transport_tokens):
         if _FP8_V3:
             logger.info_once("[prefill-sp] short chunk BF16 reduce-scatter engaged")
         if padded_rows != tensor.shape[0]:
@@ -482,4 +484,110 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
         LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, TP=_TP, BLOCK=_BLOCK,
     )
     logger.info_once("[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)")
+    return out
+
+
+def _mlp_overlap_slices(num_tokens):
+    """Two rank-local stripes; only the last rank's second stripe is padded.
+
+    Gather order changes from rank-major to stripe/rank-major. MoE is
+    token-independent; reduce-scatter returns each stripe to its original
+    rank and concatenation restores the local residual's exact row order.
+    """
+    if type(num_tokens) is not int or not 4096 <= num_tokens <= 8192:
+        raise ValueError("MoE overlap requires 4096..8192 actual prefill tokens")
+    rows = (num_tokens + _TP - 1) // _TP
+    split = rows // 2
+    return ((0, split, split * _TP),
+            (split, rows, num_tokens - split * _TP))
+
+
+def _moe_overlap_context(mlp):
+    """Two calls resolve the same explicit layer; advance the parent once.
+
+    Older Torch builds can use a forward-context layer counter. Naively
+    invoking the runner twice would execute the next layer's weights on the
+    second stripe. A shallow child context disables only that indirection.
+    """
+    from vllm.forward_context import get_forward_context
+    from vllm.utils.torch_utils import _USE_LAYERNAME
+
+    parent = get_forward_context()
+    if parent.dp_metadata is not None or parent.ubatch_slices is not None:
+        return None
+    runner = mlp.experts
+    if parent.no_compile_layers.get(runner.layer_name) is not runner:
+        raise RuntimeError("MoE overlap layer identity differs from forward context")
+    indexed = not _USE_LAYERNAME and parent.all_moe_layers is not None
+    if indexed:
+        index = parent.moe_layer_index
+        if not 0 <= index < len(parent.all_moe_layers) or parent.all_moe_layers[index] != runner.layer_name:
+            raise RuntimeError("MoE overlap layer counter is out of order")
+    return parent, replace(parent, all_moe_layers=None), indexed
+
+
+def prefill_moe_overlap(mlp, tensor, *, num_tokens):
+    """Pipeline AG1 with MoE0, then RS0 with MoE1 on a separate stream.
+
+    At 6K..8K the two stripes usually retain the original number of M128
+    expert tiles; splitting 4K can double padded expert work.
+    The caller must have admitted pure eager TP4/EP1/DP1 prefill and the
+    token-independent b12x MoE contract. Calls to MoE remain sequential on
+    the original stream, so its persistent scratch and shared-expert stream
+    are never used concurrently. All ranks enqueue AG0, AG1, RS0, RS1 on
+    one communicator stream. No rank-local fallback is allowed after AG0.
+    """
+    if (not _MLP_OVERLAP or not 6144 <= num_tokens <= 8192
+            or _FP8_MODE not in ("0", "3")
+            or torch.cuda.is_current_stream_capturing()):
+        return None
+    context = _moe_overlap_context(mlp)
+    if context is None:
+        return None
+    parent, child, indexed = context
+    from vllm.forward_context import override_forward_context
+
+    _check(tensor)
+    slices = _mlp_overlap_slices(num_tokens)
+    if tensor.shape[0] != slices[-1][1]:
+        raise ValueError("MoE overlap expects the original TP4 residual shard")
+    compute = torch.cuda.current_stream()
+    key = tensor.device
+    comm_stream = _MLP_COMM_STREAMS.get(key)
+    if comm_stream is None:
+        comm_stream = torch.cuda.Stream(device=key)
+        _MLP_COMM_STREAMS[key] = comm_stream
+    # These dependencies are device-side waits, not host synchronizations.
+    comm_stream.wait_stream(compute)
+    tensor.record_stream(comm_stream)
+    gathered, ready, partials, reduced = [], [], [], []
+    for start, stop, actual in slices:
+        with torch.cuda.stream(comm_stream):
+            value = prefill_all_gather(tensor[start:stop], num_tokens=actual,
+                                       _transport_tokens=num_tokens)
+            event = torch.cuda.Event()
+            event.record(comm_stream)
+        value.record_stream(compute)
+        gathered.append(value)
+        ready.append(event)
+    for index, (_, _, actual) in enumerate(slices):
+        compute.wait_event(ready[index])
+        with override_forward_context(child), partial_tp_output(num_tokens=actual):
+            value = mlp(gathered[index])
+        # Persistent MoE scratch is consumed in this same compute stream;
+        # the returned output must be invocation-owned (b12x contract).
+        partials.append(value)
+        value.record_stream(comm_stream)
+        done = torch.cuda.Event()
+        done.record(compute)
+        with torch.cuda.stream(comm_stream):
+            comm_stream.wait_event(done)
+            result = prefill_reduce_scatter(value, _transport_tokens=num_tokens)
+        result.record_stream(compute)
+        reduced.append(result)
+    compute.wait_stream(comm_stream)
+    out = torch.cat(reduced, dim=0)
+    if indexed:
+        parent.moe_layer_index += 1
+    logger.info_once("[prefill-sp] MoE overlap LAUNCHED (AG0 AG1 RS0 RS1, two stripes)")
     return out
