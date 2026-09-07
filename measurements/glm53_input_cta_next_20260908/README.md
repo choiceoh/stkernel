@@ -1,8 +1,9 @@
 # GLM-5.3 Flash further decode probes, 2026-09-08
 
 The baseline is the enabled CTA=2 default merged in PR #454, with input
-reuse enabled. These private generated kernels do not change the profile
-or production source. Kernel timings include invocation-owned input
+reuse enabled. The initial experiments use private generated kernels;
+the selected route is then integrated behind opt-in CTA=4. The profile
+default remains CTA=2. Kernel timings include invocation-owned input
 preparation. They are not serving step/s or output tok/s measurements.
 
 ## First attempt: prefetch and vector reduction
@@ -77,7 +78,7 @@ illustrate the measurement noise. There is no measured warm improvement
 for N4096. The N6144 improvement is 8.16 microseconds per invocation,
 not a 25% improvement in whole-model decoding.
 
-## Production integration and pending serving bracket
+## Production integration
 
 `b7b7029` integrates the selected kernel behind `VLLM_GLM53_MK_INPUT_CTA=4`.
 The default remains `2`. Mode 4 keeps the existing N6416 CTA2 kernel;
@@ -93,8 +94,36 @@ regressions, plus 37 focused tests and 16 subtests. Only the two reviewed
 kernel/occupancy counts changed in the logic gate; its CPU dependency
 audit was refreshed after confirming the extracted contracts were unchanged.
 
-Fleet `inputcta3prod0908` is queued to verify the integrated source,
-forced-split fallbacks, sanitizers, all-rank startup, and a CTA2 → CTA4 →
-CTA2 serving bracket. It requests three fixed 2K/2,048-token decode
-samples per arm, step windows, and the existing 2K/32K/128K quality gates.
-Do not treat the prototype's timings as integrated-source or serving proof.
+Fleet `inputcta3prod0908` verified this integrated source with 80 numerical
+rows, 40 changing-input graph checks, eight forced-split fallback checks,
+and both startup modes. Racecheck reported zero hazards and memcheck zero
+errors. Both sanitizer runs also passed the numerical and graph gates.
+The integrated kernel retains 72 registers, zero spill bytes, four
+blocks/SM, and 17,152 shared bytes. The info array in `production/result.json`
+lists the existing input kernel, CTA modes 1/2/3, then the new three-slice
+kernel; it is not indexed by the two benchmark arm numbers.
+
+| M6 shape (N,K) | Cache | CTA2 baseline us | Integrated CTA4 us | Reduction |
+| --- | --- | ---: | ---: | ---: |
+| 4096,4096 | warm | 24.320 | 24.320 | 0.00% |
+| 4096,4096 | read-evicted | 49.792 | 45.872 | 7.87% |
+| 6144,4096 | warm | 32.544 | 26.208 | 19.47% |
+| 6144,4096 | read-evicted | 70.320 | 66.288 | 5.73% |
+| 6416,4096 control | warm | 26.160 | 26.176 | -0.06% |
+| 6416,4096 control | read-evicted | 69.312 | 69.456 | -0.21% |
+
+The same-build production pair supports a 19.5% warm reduction for
+N6144; do not substitute the prototype's larger 25.1% figure. Production
+raw artifacts are under `production/`.
+
+All four nodes passed fresh-process MHC BF16, GEMM oracle, and input
+modes 0/2/4 checks with the same integrated source SHA256. The kernel
+probe's minimum available memory was 93.71 GiB, with no guard issues.
+For the N6144 warm comparison, the integrated candidate won 32/32 pairs;
+both changed shapes won 31/32 read-evicted pairs.
+
+The CTA2 → CTA4 → CTA2 serving bracket is running. It requests three
+fixed 2K/2,048-token decode samples per arm, step windows, and the existing
+2K/32K/128K quality gates. The first CTA2 baseline reached health at
+04:31:43 KST and started actual requests. Serving results and final
+recovery are still pending.
