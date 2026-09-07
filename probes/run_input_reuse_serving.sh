@@ -2,7 +2,7 @@
 # Actual-source GPU gates, then matched B/A/A/B with a guaranteed public restore.
 set -euo pipefail
 # The literal checkout lets fleet preflight inspect the profile being deployed.
-cd /home/choiceoh/stkernel-input-reuse-retry-20260907
+cd /home/choiceoh/stkernel-input-reuse-serve-20260907
 export REPO=$PWD
 CANONICAL=/home/choiceoh/stkernel
 RESTORE_REPO=/home/choiceoh/stkernel-input-reuse-restore-20260907
@@ -14,6 +14,8 @@ session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
 [[ $held == "$session" && $kind == boot ]] || exit 2
 [[ -z $(git status --porcelain) && -z $(git -C "$RESTORE_REPO" status --porcelain) ]] || exit 2
+git fetch origin
+git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT before stopping service: candidate needs current main'; exit 2; }
 [[ ! -s $out/source.commit ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out/build"
 git rev-parse HEAD > "$out/source.commit"
@@ -27,6 +29,8 @@ cleanup() {
   if [[ $touched == 1 ]]; then
     if (
       cd "$RESTORE_REPO"
+      git fetch origin || exit 1
+      git merge --ff-only origin/main || exit 1
       bash launchers/deploy-overlays.sh glm53 || exit 1
       env -u ONEPASS_JSONL -u ONEPASS_VERDICTS REPO="$RESTORE_REPO" \
         GLM53_API_HOST=0.0.0.0 GLM53_API_PORT=8000 HEAD=10.10.10.2 \
@@ -43,8 +47,11 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-touched=1
 cp /home/choiceoh/glm53-logs/glm53.log "$out/before-head.log"
+if [[ -n ${INPUT_REUSE_GPU_EVIDENCE:-} ]]; then
+  python3 probes/reuse_input_gpu_evidence.py "$INPUT_REUSE_GPU_EVIDENCE" "$out"
+else
+touched=1
 docker stop -t 30 glm53 >/dev/null
 pids=()
 for node in 1 3 4; do
@@ -72,6 +79,8 @@ for tool in racecheck memcheck; do
     python3 /repo/probes/gemm_input_serving_gate.py --check-only \
     --out "/evidence/$tool.json" > "$out/$tool.log" 2>&1
 done
+fi
+touched=1
 bash launchers/deploy-overlays.sh glm53 > "$out/deploy.log" 2>&1
 export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2

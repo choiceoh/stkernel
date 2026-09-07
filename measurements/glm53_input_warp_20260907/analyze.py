@@ -32,7 +32,9 @@ def summarize(rows, *, incomplete=False):
     assert production['status']=='PASS'
     for tool in ('racecheck','memcheck'):
         assert json.loads((ROOT/f'{tool}.json').read_text())['status']=='PASS'
-        assert 'ERROR SUMMARY: 0 errors' in (ROOT/f'{tool}.log').read_text()
+        marker=('RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)'
+                if tool=='racecheck' else 'ERROR SUMMARY: 0 errors')
+        assert marker in (ROOT/f'{tool}.log').read_text()
     for record in rows:
         name=record['name']; arm='A' if name in NAMES[1:3] else 'B'
         assert not record.get('rehearsal') and not record.get('evidence_issues')
