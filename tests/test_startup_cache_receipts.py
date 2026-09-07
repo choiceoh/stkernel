@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 
 class BootReceiptTests(unittest.TestCase):
-    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io"):
+    def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix=""):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
@@ -19,7 +19,7 @@ class BootReceiptTests(unittest.TestCase):
                         "[fp8-cache] enabled=True hit=1 miss=0 errors=0\n"
                         f"[mk-pack-io] model fast={fast} fast_hits={fast_hits} legacy_hits={legacy_hits}\n"
                     ) + suffix)
-            with patch.object(sys, "argv", ["gate", root, "TEST", stage, mode]), \
+            with patch.object(sys, "argv", ["gate", root, "TEST", stage, "pack-io"]), \
                     contextlib.redirect_stdout(io.StringIO()):
                 exec(compile(gate, "startup_cache_boots receipt gate", "exec"), {})
 
@@ -37,14 +37,6 @@ class BootReceiptTests(unittest.TestCase):
                                   (0, 0, "MK W4 pack build FAILED\n")):
             with self.subTest(fast=fast, hits=hits, suffix=suffix), self.assertRaises(AssertionError):
                 self.check_receipts("PRIME", fast, hits, 0, suffix)
-
-    def test_rank_default_requires_an_enabled_nonempty_restore_receipt(self):
-        self.check_receipts("DEFAULT", 0, 0, 0,
-                            "[rank-cache-io] prefetch=1 chunks=3 bytes=129\n", "rank-default")
-        for suffix in ("", "[rank-cache-io] prefetch=0 chunks=3 bytes=129\n",
-                       "[rank-cache-io] prefetch=1 chunks=0 bytes=0\n"):
-            with self.subTest(suffix=suffix), self.assertRaisesRegex(AssertionError, "wrong rank prefetch path"):
-                self.check_receipts("DEFAULT", 0, 0, 0, suffix, "rank-default")
 
 
 if __name__ == "__main__":

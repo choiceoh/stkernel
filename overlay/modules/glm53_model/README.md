@@ -649,7 +649,10 @@ Pinned allocation failure retains synchronous copies. The final trial restored
 were introduced together, so their individual contributions are not isolated.
 
 `VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps sequential mapped reads and SHA-256
-checks with restoration. It is **off by default pending fleet timing**.
+checks with restoration. It is **off by default: the matched full-boot bracket
+did not improve startup** (2026-09-07, PR #447). A real-payload transport screen
+improved 52.859 → 40.464 s, but actual warm boot means regressed
+222.5 → 231.0 s. See `MEASUREMENTS.md` for the rejected variants and raw proof.
 One CPU reader checks at most one 64 MiB chunk ahead of the caller, preserving
 kernel readahead. Copies retain the existing 64 MiB pinned staging allocation
 and synchronization; no additional pinned slot is allocated. Every chunk must

@@ -7445,11 +7445,75 @@ The gate stopped **before deployment or any service restart**, exiting 1
 and releasing the holder at 20:30 KST. The default remains 0. The next
 candidate (`rankmmap30907`) keeps mmap and its kernel readahead, checks only
 one chunk ahead using one worker with the same CPU affinity policy, and
-retains the baseline's 64 MiB pinned staging. It is separately queued and
-has no new GPU or startup speed claim yet.
+retains the baseline's 64 MiB pinned staging. Its separate result follows.
 
 [Source-attested screening receipt](measurements/glm53_rank_stream_20260907/report.json)
 and [phase log](measurements/glm53_rank_stream_20260907/screen.log) retain the
 rejection. Full raw evidence is on srv2 under
 `/home/choiceoh/glm53-logs/rank-stream-20260907-r2` and locally in the matching
 `runs/` directory, with its hashes beside the committed receipt.
+
+### GLM single mapped reader: transport win did not survive full boots (2026-09-07)
+
+Fleet job `rankmmap30907` tested the single-reader/affinity revision
+`50223132e14a9a59fe07b03f2db7fc53de4579cf`, rebased on main `69ea76f`.
+All **56 overlay files** were verified on all four nodes, deployment
+`aaf81aa57e94`. The imported rank module SHA-256 was
+`dc38ff52105b6e1a627567f3d9c99f1ab3db4e37e2156c3cd71b809dfbe8a5c4`.
+
+The isolated real-payload screen passed **46 exact checks**. Its 48 GB
+transport medians improved **52.859 → 40.464 s**, which admitted the full
+boot trial. A second exact probe inside the serving image after PRIME passed
+**42 checks**, including another CUDA stream, unique chunks, an offset alias,
+BF16 and checksum rejection. Both probes attested the same imported module
+bytes and unchanged caller affinity. The 512 MiB probe timings varied by
+execution context; they are not a boot-performance verdict.
+
+PRIME (**473 s**) populated new rank/FP8 artifacts and compile caches. The
+warm bracket used the same build and artifacts, `PREFILL_WARMUP=0`, Korean
+onepass at 2K/32K, and changed only the rank-prefetch flag:
+
+| Warm arm | Health ready (s) | Head rank restore (s) | Head model load (s) |
+|---|---:|---:|---:|
+| BASE1 | 225 | 44.984 | 80.7 |
+| FAST1 | 234 | 46.275 | 85.5 |
+| FAST2 | 228 | 45.640 | 82.0 |
+| BASE2 | 220 | 43.892 | 80.9 |
+
+Mean whole-boot time **222.5 → 231.0 s** was **8.5 s slower (3.8%)**, so
+the option remains **default 0**. Head restoration was **44.438 → 45.958 s**
+and model loading **80.8 → 83.75 s**. srv1/3/4 restoration means improved,
+but the head did not. Head checksum work increased **40.701 → 45.034 s**,
+consuming the copy overlap. The warm memory-profile phases stayed within
+**36.4–36.8 s**; comparing against the cold PRIME would be misleading.
+The exact whole-boot difference is this small bracket's observed result,
+not a guaranteed regression on other hardware or workloads. The isolated
+transport gain is insufficient evidence for default promotion.
+
+Every timed boot had **4/4 rank hits**, **976/976 FP8 hits**, zero FP8
+misses/errors, zero cache warnings and zero FP8 source-copy disarms. All five
+boots passed **6/6 quality checks** and **0/4 corrupt Korean responses**.
+These checks and the exact tensor probe do not establish broad generated-text
+or acceptance equivalence; per-arm acceptance and transcript hashes remain
+in the receipt. Across 171 host samples/node, minimum available RAM was
+**13.41 / 7.60 / 9.47 / 11.94 GiB**, with no net swap-use growth. These
+include PRIME and are OS samples, not CUDA peak allocations.
+
+The last BASE2 boot restored the tested control setting (`prefetch=0`);
+the holder released with exit **0** at **21:14:01 KST**. Health 200 and the
+control environment were checked at handoff. No default-on follow-up was
+run because the full startup result failed to establish a benefit. The
+unused default-promotion harness mode was removed; the experimental reader
+and diagnostic receipts remain in draft PR #447 for further investigation.
+
+Validation: **30 startup-artifact tests**, **70,983 Torch-backed logic checks**,
+**30 megakernel** and **85 fleet regressions** pass on the rebased runtime;
+the remote deployment passed **6,687** lightweight logic checks plus the same
+megakernel/fleet regressions. Generated overlay parity and shell syntax pass.
+
+[Final scoped receipt](measurements/glm53_rank_mmap_20260907/report.json) and
+[all-node timing table](measurements/glm53_rank_mmap_20260907/report.md) include
+both probes, provenance, warm receipts, phase/health timings and quality.
+Full logs, responses, resource samples and parser scripts are retained on
+srv2 under `/home/choiceoh/glm53-logs/rank-mmap-20260907-r3` and locally in the
+matching `runs/` directory; their SHA-256 inventory is beside the receipt.
