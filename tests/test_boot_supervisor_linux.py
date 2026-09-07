@@ -14,7 +14,7 @@ class LinuxSupervisorTests(unittest.TestCase):
     """Run this suite on Linux; fixture commands replace all system/GPU I/O."""
     def setUp(self):
         if not Path('/proc/self/stat').exists() or not shutil.which('flock'):
-            self.fail('Linux supervisor integration requires Linux and flock; run on the CPU validation host')
+            self.skipTest('Linux supervisor integration requires Linux and flock; run on the CPU validation host')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
