@@ -127,3 +127,9 @@ refusal separately from the earlier 11 passing GPU cases. A shared normal
 boot turn in PR #444 is being prepared to stop serving, run both candidates'
 remaining gates with the same source pins, then recover serving. Direct
 2K/32K/128K TTFT remains pending.
+
+The shared offline request is now registered: `prefilloff10907`, 18:45 KST,
+runner source `4e0f226d17d78648aea48028279cb4b347c3e994`, supervisor 2792656,
+`srv2:/tmp/glm53-prefill-offline-0907`. Preflight passed and it was queue
+position 2 with an estimated 20:10 KST admission. This is a queue estimate,
+not a measured result or a guaranteed start. The MLA source pin is unchanged.
