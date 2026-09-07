@@ -101,3 +101,35 @@ The interrupted run's timings below are preliminary only, not acceptance:
 | 6,4096,512 / 1 | Read eviction | 14.224 | 11.968 | 15.86% |
 
 [Raw result](failed-lifetime/production-gate.json). No default was changed.
+
+## Corrected actual-source gate
+
+Fleet `inputserve20907`, source `36b71f6`, started at 17:31:44 KST.
+The CUDA source is unchanged from the first attempt. Retaining the external
+packed weights fixes the graph test: all 90 numerical rows, exact baseline
+bits, 40 alternating candidate graph replays and the startup gate pass.
+Compute Sanitizer racecheck reports **0 hazards, 0 errors, 0 warnings**;
+memcheck reports **0 errors**. See the [GPU result](serving/production-gate.json),
+[racecheck log](serving/racecheck.log) and [memcheck log](serving/memcheck.log).
+
+N6528/K4096 again improves: warm 42.560 -> 30.464 us (-28.42%), read-eviction
+77.360 -> 75.472 us (-2.44%). N4096/K512 read-eviction improves
+15.920 -> 11.952 us (-24.92%), but its short warm samples are noisy and
+regress 11.072 -> 12.000 us (+8.38%). Retain these contrary samples; do not
+claim a stable warm improvement for K512 from the corrected run.
+
+No serving arm ran in this attempt. Main advanced to `619cfec` (benchmark
+orchestration PR #443) during the queue wait. The deployment ancestry guard
+rejected both the old candidate base and its pinned `8476c15` restoration
+checkout after the GPU test had stopped the service. A first current-main
+recovery verified all 56 overlays on four nodes, but its shell runner was
+modified during execution and failed before boot. A separate immutable
+recovery runner then started the verified current-main service at 17:42:27.
+These failures are orchestration failures, not GPU numerical failures.
+
+The serving runner now checks current-main ancestry **before stopping the
+service**, and refreshes its approved-main recovery checkout at cleanup.
+Main's update leaves the tested CUDA, Python driver, GPU fixture and profile
+byte-identical. `reuse_input_gpu_evidence.py` checks all five files against
+the measured commit and verifies every PASS/sanitizer receipt before copying
+the evidence. The next campaign reuses those gates and starts with B/A/A/B.
