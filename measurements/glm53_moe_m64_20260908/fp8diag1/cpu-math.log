@@ -1,0 +1,10 @@
+test_actual_cpu_tensor_math_keeps_floors_and_repeat_noise (test_glm53_moe_m64_fp8_diagnostic.DiagnosticTests.test_actual_cpu_tensor_math_keeps_floors_and_repeat_noise) ... ok
+test_complete_diagnostic_preserves_failures_and_never_approves_serving (test_glm53_moe_m64_fp8_diagnostic.DiagnosticTests.test_complete_diagnostic_preserves_failures_and_never_approves_serving) ... ok
+test_nonfinite_and_peak_only_errors_cannot_disappear (test_glm53_moe_m64_fp8_diagnostic.DiagnosticTests.test_nonfinite_and_peak_only_errors_cannot_disappear) ... ok
+test_original_repeat_multiplier_and_strict_boundary_are_preserved (test_glm53_moe_m64_fp8_diagnostic.DiagnosticTests.test_original_repeat_multiplier_and_strict_boundary_are_preserved) ... ok
+test_rows_retain_candidate_excess_control_failures_and_intersections (test_glm53_moe_m64_fp8_diagnostic.DiagnosticTests.test_rows_retain_candidate_excess_control_failures_and_intersections) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.485s
+
+OK

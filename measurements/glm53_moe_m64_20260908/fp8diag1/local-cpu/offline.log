@@ -1,0 +1,7 @@
+{"started": 1788805720.3227751, "exit_code": 1, "probes": {}, "error": "RuntimeError('compile failed')", "ended": 1788805720.323025}
+.{"started": 1788805720.323894, "exit_code": 1, "probes": {}, "error": "RuntimeError('stop before serving')", "ended": 1788805720.324098}
+.........
+----------------------------------------------------------------------
+Ran 10 tests in 1.110s
+
+OK

@@ -223,3 +223,21 @@ The M64 kernel and thresholds are unchanged from check5. A completed diagnostic
 may still contain numerical failures; it reports them rather than approving
 the candidate. Its statistics group rows by case/seed/phase and describe row-
 trial counts without treating rows or reused trials as independent experiments.
+
+The fixed diagnostic completed all 72 trials at 03:36:29 KST; exact incoming
+four-node recovery completed at 03:39:07. At 8192/balanced, candidate/control
+failed row-trial counts were 24/2, 15/4 and 9/0 across the three seeds. Stock
+4096/concentrated totaled 14/14; 6144/balanced totaled 1/0. All local MoE phases
+passed, all outputs were finite and every failure was peak-only. Candidate
+excess is reproducible within this fixed diagnostic and cannot be dismissed
+as stock noise. Numerical/serving acceptance remains false.
+
+Thirteen of 48 candidate failures at 8192 (and the one at 6144) are one float32
+step above the normalized limit. They remain failures, and 35 larger candidate
+exceedances at 8192 still need explanation. The next bounded diagnostic will
+capture the actual pre-transport partial from the same invocation, replay its
+FP8 transport, compare native BF16 reduction and retain failed rows' packed
+values/scales and raw comparison numerators. No gate or threshold has changed.
+All raw logs, per-seed counts, CPU validation and exact recovery are archived
+in `measurements/glm53_moe_m64_20260908/fp8diag1/`. This result does not provide
+new full-model TTFT evidence or a cumulative 40% improvement.
