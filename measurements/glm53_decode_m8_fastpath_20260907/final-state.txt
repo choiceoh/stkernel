@@ -1,0 +1,19 @@
+fleet: FREE
+legacy: 0 bench/boot procs, 0 requests in flight
+queue (0):
+  marker 07:44 FLEET-free-for-glmfix.done
+  marker 07:44 FLEET-free-for-b12x.done
+  marker 07:44 FLEET-free-for-mkg3.done
+  marker 07:44 FLEET-free-for-fusion.done
+log:
+  2026-09-07_07:44:30   kept /home/choiceoh/glm53-logs/boot-M8NEXTB2.log
+  2026-09-07_07:44:30   kept /home/choiceoh/glm53-logs/boot-M8NEXTA2.log
+  2026-09-07_07:44:30   kept /home/choiceoh/glm53-logs/boot-M8NEXTA1.log
+  2026-09-07_07:44:30 release m8nextresume
+production: NOT defaults: VLLM_GLM53_FP8_CACHE=/cache/glm53-fp8,VLLM_GLM53_RANK_CACHE=/cache/glm53-ranks,VLLM_GLM53_SPEC_K=5 (health 200)
+deployed: 83bc6639a0a2
+baseline: M8NEXTB2 on build 83bc6639a0a2 -- 21.93 step/s, 3.15 tok/step, 43.0% acc, 2026-09-07 07:41:20 -- skip a defaults arm and compare against it
+VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=0
+VLLM_GLM53_MK_M8_FASTPATH=0
+VLLM_GLM53_MK_FP8_PACK2=0
+health 200

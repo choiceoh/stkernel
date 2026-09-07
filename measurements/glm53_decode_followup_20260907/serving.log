@@ -1,0 +1,76 @@
+preflight mhcbf16serving [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/glm53-logs/MHCBF16/runner.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_FP8_CACHE=0,VLLM_GLM53_MK_FP8_PACK2=1,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8=2,VLLM_GLM53_MK_M8_FASTPATH=1,VLLM_GLM53_MK_MHC_BF16=1
+  NOTE declared only by a tree the chain cd's into (a PR checkout): VLLM_GLM53_MK_FP8_PACK2 VLLM_GLM53_MK_GEMM_TRANSPOSE_M8 VLLM_GLM53_MK_M8_FASTPATH VLLM_GLM53_MK_MHC_BF16
+  this arm (VLLM_GLM53_MK_FP8_PACK2,VLLM_GLM53_MK_GEMM_TRANSPOSE_M8,VLLM_GLM53_MK_M8_FASTPATH,VLLM_GLM53_MK_MHC_BF16) has no record on build 7cb8c033a0b2
+  baseline: SPGATE0907ABASE on build 7cb8c033a0b2 -- 21.42 step/s, 3.48 tok/step, 49.7% acc, 2026-09-07 08:27:37 -- skip a defaults arm and compare against it
+  -> PASS
+GO mhcbf16serving 2026-09-07_08:53:21
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=12G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=9G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+{"verified_files": 878, "verified_bytes": 8610071526}
+{"removed_files": 878, "archived_bytes": 8610071526}
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  916G  862G  7.7G 100% /
+== chain MHCBF16B1 MHCBF16A1 MHCBF16A2 MHCBF16B2 08:54:46 session=mhcbf16serving rehearse=0
+   baseline: SPGATE0907ABASE on build 7cb8c033a0b2 -- 21.42 step/s, 3.48 tok/step, 49.7% acc, 2026-09-07 08:27:37 -- skip a defaults arm and compare against it
+== 08:54:46 arm MHCBF16B1: (defaults)
+(Worker_TP0 pid=241) WARNING 09-07 00:00:39 [flashinfer_mla_sparse_sm90.py:520] [megakernel] mla shadow vs wrapper rel=1.31e-03 (T=1, rows<=17, real KV) -> ARMED
+(EngineCore pid=149) WARNING 09-07 00:00:43 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 66.9 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 7.6 s
+== [MHCBF16B1] onepass 09:01:23 ctx=2000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         890        2529      2.39s      0.84s  o o o
+  32000   32545        2909     (1 req)     11.19s          -  o o o
+ 128000  128559        2961     (1 req)     43.41s          -  o o o
+fixed2K rep=0 tokens=2048/2048 decode=65.36 tok/s
+fixed2K rep=1 tokens=2048/2048 decode=67.36 tok/s
+fixed2K rep=2 tokens=2048/2048 decode=73.50 tok/s
+fixed2K rep=3 tokens=2048/2048 decode=71.03 tok/s
+fixed2K rep=4 tokens=2048/2048 decode=70.68 tok/s
+  warm 처리량: 2529 -> 2961 tok/s (over 2128 -> 128559 tokens)
+=> 24/24 correct
+decode: windows n=63 med 21.9 [20.9, 22.9] step/s (inside the answers only; per context: 2K: n=65 med 21.9  32K: n=6 med 21.9  128K: n=5 med 21.9), raw acc 44.6%, tokens/step 3.230 (k=5.0), generated 13427 tokens over 255s
+응답 10개 · 문자 33,605
+  깨진 응답: 1/10 (10%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        2    59.5/백만자
+  control          0     0.0/백만자
+  [fixed2K rep0] cjk_mixed=2
+    …'tats, Francis Crick biography, Halvorsen博士 tundra report signature, Jimmy Carter '…
+INVALID measurement: requests remain after the workload; concurrent or queued external request observed
+== onepass MHCBF16B1: 255s total
+(Worker_TP0 pid=241) WARNING 09-07 00:00:12 [glm53_fp8_dense.py:858] [fp8-dense] VLLM_GLM53_FP8_DENSE_FREE_BF16=1: released 4.04 GB of bf16 sources (0 linears kept theirs for a bias); the bias and err
+(Worker_TP0 pid=241) Profiling CUDA graph memory (FULL):   0%|          | 0/4 [00:00<?, ?it/s][b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, s
+(Worker_TP0 pid=241) Profiling CUDA graph memory (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.45it/s][b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18,
+(Worker_TP0 pid=241) Profiling CUDA graph memory (FULL):  50%|█████     | 2/4 [00:00<00:00,  2.80it/s](Worker_TP0 pid=241) WARNING 09-07 00:00:29 [glm53_megakernel.py:1824] [megakernel] mhc
+(Worker_TP0 pid=241) Profiling CUDA graph memory (FULL):  75%|███████▌  | 3/4 [00:01<00:00,  3.07it/s][b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wut (mac=
+(Worker_TP0 pid=241) Profiling CUDA graph memory (FULL): 100%|██████████| 4/4 [00:01<00:00,  3.30it/s]Profiling CUDA graph memory (FULL): 100%|██████████| 4/4
+(Worker_TP0 pid=241) INFO 09-07 00:00:30 [model_runner.py:952] Estimated CUDA graph memory: 0.00 GiB total
+(Worker_TP0 pid=241) Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):  25%|██▌       | 1/4 [00:00<00:01,  2.94it/s]Capturing CUDA graphs (FULL)
+(Worker_TP0 pid=241) Capturing dflash2 CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s](Worker_TP0 pid=241) WARNING 09-07 00:00:37 [glm53_fp8_dense.py:530] [fp8-dense] drafter lane serving: 
+Capturing dflash2 CUDA graphs (FULL):  25%|██▌       | 1/4 [00:00<00:00,  8.95it/s](Worker_TP0 pid=241) WARNING 09-07 00:00:37 [glm53_megakernel.py:1160] [megakernel] m8 shape CAPTURED M=6 N=15
+Capturing dflash2 CUDA graphs (FULL): 100%|██████████| 4/4 [00:00<00:00, 23.62it/s]
+(Worker_TP0 pid=241) INFO 09-07 00:00:37 [gpu_worker.py:790] Free memory on device (94.16/119.69 GiB) on startup. Desired GPU memory utilization is (0.6229, 74.56 GiB). Actual usage is 62.57 GiB for c
+ABORT: [MHCBF16B1] onepass exited 2 09:05:39 -- logs in /home/choiceoh/glm53-logs/fail-MHCBF16B1-090538
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 36.1 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 7.3 s
+== [MHCBF16B1RECOVER] head log kept: /home/choiceoh/glm53-logs/boot-MHCBF16B1RECOVER.log ==
+== [MHCBF16B1RECOVER] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [MHCBF16B1RECOVER] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 00:06:25 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 00:06:47 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=262) WARNING 09-07 00:09:32 [glm53_prep_fused.py:854] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=262) WARNING 09-07 00:09:32 [glm53_prep_fused.py:1013] [prep-fused] plan built: mode=on kernel=triton (mamba align mode: run_prep gathers state column 0) groups=7 gdn=[2, 3, 4, 5] attn
+(EngineCore pid=150) WARNING 09-07 00:09:38 [glm53_prep_fused.py:1327] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [MHCBF16B1RECOVER] done 09:10:15 ==
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_SPEC_K=5 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

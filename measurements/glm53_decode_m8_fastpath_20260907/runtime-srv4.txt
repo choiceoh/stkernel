@@ -1,0 +1,8 @@
+srv4
+NVIDIA GB10, GPU-ba5006e3-90f4-6c54-e113-c0c572374037, 580.159.03
+d30fdabb8f8e6f20b3e925a4b40ca79e68ea429ddaa0c8b9c633f40e7da11c09  /home/choiceoh/overlays/glm53/glm53_megakernel.py
+b3b8c7f891b09792200c477b38b247ed9c720c0469b1b34957ac30f9dcde2cdd  /home/choiceoh/overlays/glm53/glm53_megakernel.cu
+29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac  /home/choiceoh/models/glm53-redhat-nvfp4/config.json
+c4aeac0101196a6e26705b34c45230bcd0c7c68ee2d2d1efdb242087f3712573  /home/choiceoh/models/GLM-5.3-Flash-DFlash2/config.json
+# source_commit=b13dc8ba3f56752e6391a8b45b96eed864656705
+glm53-worker a3dd4c0f6cbb

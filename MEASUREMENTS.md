@@ -6805,6 +6805,53 @@ main 14ffb9e(PR #374) 배포 후 같은 빌드에서 연달아 두 팔(`bench/pa
   검사(`--specs z`) 재실행으로 확인해야 한다** — 폐쇄형이 레이아웃과 어긋나면 z 컴파일이 실패한다(fail-loud 가 목적).
 
 
+## C=1 MK-GEMM: FP8 묶음 변환과 8행 전용 타일 (2026-09-07)
+
+사용자 우선순위는 출력 품질을 유지한 단일 요청 디코딩이다. `de2a0b3` 기반 격리
+체크아웃에서 커널을 수정했고, srv2 GB10에서 fleet `glm53pack2`로 동일 소스의
+기준선 / FP8 pack2 / pack2+전치 타일을 비교했다. 이미지 `glm53:v13-b12x-it`,
+Torch 2.13.0+cu130, CUDA 13.0, PDL=1. 운영 서비스 재시작은 하지 않았다.
+
+**변경**: FP32→e4m3 변환 4개를 packed 변환 2개로 줄였다. M<=8 일반 GEMM은
+`W[16,32] @ X[8,32]^T`로 방향을 바꿔 MMA 2개를 1개로 줄인다. W4 팩, FP8
+활성화 정밀도, K 순서와 BF16 출력은 유지한다. 노브는 `MK_FP8_PACK2`와
+`MK_GEMM_TRANSPOSE_M8`이며 접두사는 `VLLM_GLM53_`이다. 두 빌드 진입점 모두
+플래그를 캐시 키에 포함한다.
+
+**1차 GPU 게이트 PASS**: FP32 입력 1,114,880개의 변환 바이트 차이 0, GEMM 정답
+및 SMLP2 게이트 통과, M=1/2/6/7/8/12/24/32의 12개 형상에서 CUDA 그래프 출력
+비트 동일. 실행 순서 6가지 순열을 12회 균형 배치했다. warm은 그래프당 50회,
+cold는 기존 L2 flush/drain 뒤 1회이며 이벤트는 flush와 호스트 갭을 제외한다.
+
+M=6에서 전치 타일+pack2의 warm 지연은 **2.7~3.5% 감소**, cold-weight 변화는
+**-1.8~+0.4%**였다. `[N,K]=[6416,4096]`은 warm 41.361→39.905 µs,
+cold 74.432→73.088 µs. cold에는 이상치가 있어 작은 변화는 잡음과 구분하지
+않는다. **전체 C=1 디코딩 성능 판정은 아니다.**
+
+**2차 GPU 검증 PASS / 범용 적용 기각**: 전치 모드 2는 A 공유 메모리를 8행,
+30,976 B로 줄이고 3블록 launch bound를 적용했다. 컴파일 레지스터 78개, spill
+load/store 0; GPU에서도 실제 3블록/SM을 확인했다. GEMM 정답·SMLP2·재생 검사를
+모두 통과했지만, 모든 작은 요청에 적용하면 warm 지연이 공유 전문가 gate_up에서
++16%, down에서 +27%로 악화됐다. 51타일 투영의 K 분할 8→2도 warm +2.1%,
+cold -1.4%에 그쳤다. occupancy나 분할 수만으로 성능을 판정할 수 없었다.
+
+이긴 두 M=6 형상은 `[4096,2048]`(warm 14.056→13.134 µs, -6.6%; cold
+31.664→29.696 µs, -6.2%)과 `[6144,4096]`(warm 32.516→29.895 µs, -8.1%;
+cold 76.512→71.888 µs, -6.0%)이다. 최종 모드 2는 **이 두 형상만** 별도 compact
+인스턴스로 보내며 나머지는 1차의 2블록 전치 커널을 쓴다. 저랭크 보정은 기존
+배치·분할을 유지한다. K 분할 변경으로 일부 BF16 비트는 달라졌지만 기존 FP32
+정답 허용오차를 넘는 원소는 없었다. 최종 선택 경로와 compact MLP의 생산자/
+소비자 그래프 게이트도 fleet `glm53m8sel`에서 PASS했다(12회씩). 최종 원소별
+정답 게이트 초과 0, 최대 상대오차 6.214e-5; 선택되지 않은 형상은 기준선과 비트
+동일하다. 최종 warm 개선은 두 형상에서 -6.3%/-8.3%로 반복됐지만 **cold의 -6%
+주장은 반복되지 않았다**(-1.1%/-0.5%). 큰 cold 이득은 미확정으로 남긴다.
+두 프로필 기본값은 0이며 전체 C=1 서빙 브래킷은 아직 수행하지 않았다.
+
+원본 샘플·소스 SHA·컴파일 자원 기록:
+[measurements/glm53_decode_m8_20260907](measurements/glm53_decode_m8_20260907/README.md).
+로컬 계약 검사 6,587개 통과(메가커널 회귀 30개 포함); 로컬 torch 검사는 패키지
+부재로 건너뛰었고 수치 판정은 위 GPU 프로브에서 수행했다.
+
 ### Startup artifact follow-up — FP8 and rank caches (2026-09-06)
 
 After #366, added explicit opt-in `VLLM_GLM53_FP8_CACHE` and
@@ -6975,3 +7022,113 @@ trial. All **27** focused tests, **6,650** logic checks, **30** megakernel and
 **20** fleet regressions pass; the final documentation update does not change
 the tested runtime. End-to-end repeated/balanced speedup and full-context
 acceptance remain unclaimed.
+
+### C=1 MK-GEMM serving follow-up — inconclusive, candidate retained (2026-09-07)
+
+Fleet `glm53m8serve`, 05:14:55–05:40:47 KST, deployed source `f00a4eb`, stamp
+`1af1a93f83b5`: same four GB10 nodes, TP4, K5, C1, same model/image and request
+workload. Baseline flags 0/0 versus pack2=1 / transpose mode=2. Actual M6 graph
+capture proves both options and both selected compact shapes; compile cache
+flags and four-node source parity are recorded.
+
+The uncontaminated baseline B1/B2 and candidate A1/A2 comparison shows **2K
+output 75.074 → 73.153 tok/s (-2.56%), TPOT 13.321 → 13.680 ms**. The 32K
+and 128K deltas (+1.35%/+0.43%) are within baseline spreads of 11.03%/9.01%.
+All four runs pass quality 9/9 and Korean 0/5; both candidates prove 2/2 paths.
+The engine-step verdict is inconclusive within a 2.3% same-build noise floor.
+The two repeats per arm share a boot. In 2K alone, window speed is actually
+21.432 → 21.689 step/s (+1.20%), with only five baseline and six candidate
+windows; the all-context aggregate is 21.680 → 21.562 (-0.55%). The observed
+baseline spread is not a confidence interval. Acceptance variation, few
+windows and the missing clean reverse arm prevent attribution of the output
+rate decline to the kernel. **The verdict is inconclusive: retain the candidate,
+defer promotion, and keep both defaults at 0. Rejection is not supported.**
+The initial emphasis on lower output tok/s was too strong as a reason to stop
+pursuing it. Further adjudication needs a clean counterbalanced sequence,
+fixed context/decoding length and more steady-state step samples. This
+interpretation correction does not add a GPU measurement.
+
+The intended final reversal B3 received unrelated external requests during
+128K: 11 external POSTs and two running requests. Its aggregate engine rate
+14.456 step/s would misleadingly imply a +50% candidate gain. Exclude the
+whole arm from the primary C1 comparison. Its raw values remain in the evidence;
+the shared ledger's usable window median was invalidated with the original
+value and reason retained. B1/B2 also needed a metadata-only correction:
+`VLLM_GLM53_SPEC_K=5` is the launcher's alias of the profile default `SPEC_K=5`,
+not an experimental knob. Commit `47f9e3c` fixes future fingerprints; exact
+original/corrected rows and corrected inconclusive verdicts are preserved.
+No other runs or metrics were changed. Final health 200, knobs 0/0, fleet free.
+
+[Full serving result, raw records, correction audit and reproduction script](measurements/glm53_decode_m8_20260907/serving/README.md).
+
+### C=1 M8 fastpath and independent fixed-window follow-up (2026-09-07)
+
+Added opt-in `VLLM_GLM53_MK_M8_FASTPATH=1`: a full-warp unsigned maximum
+over nonnegative FP32 activation maxima and aligned two-byte FP4 scale reads.
+It preserves the previous M8 candidate's output bits and leaves the RQ=2/4
+and low-rank paths unchanged. All three experiment defaults remain 0.
+
+Same-source GB10 GPU probe passed 1,114,880 FP8 converter inputs and the same
+number of warp-amax inputs with zero bit mismatches; all 12 GEMM shapes and
+SMLP2 graphs passed oracle/replay gates. Relative to previous M8, five M=6
+shapes improved warm latency 3.8–6.6%. Cold changes ranged from 2.68% lower
+to 0.60% higher latency. Register counts, occupancy and split plans match.
+
+Serving source `b13dc8b`, overlay `83bc6639a0a2`, measurement harness
+`b319173`, TP4/GB10, K5, C1: B1/A1/A2/B2 are **four independent boots**.
+Each runs the Korean 2K/32K/128K ladder and three fixed responses with 2,257
+input tokens and 2,048 output tokens, matched request hashes and seeds.
+The primary rate pools complete interior-window steps/time within each boot;
+the arm result is the median of its two boot estimates.
+
+| Metric | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| Fixed interior-window step/s | 21.800487 | 21.872279 | +0.33% |
+| Pooled fixed-response output tok/s | 70.517759 | 71.338854 | +1.16% |
+| TPOT, ms | 14.194733 | 14.017761 | -1.25% |
+| Fixed windows | 74 | 73 | 147 total |
+
+The two ordered pairs give step changes **+0.60% / +0.06%**, but output
+changes **-1.58% / +4.09%**. Baseline output spread is **6.26%**; pooled
+step spread is 0.23% baseline and 0.30% candidate. These two-boot ranges are
+not confidence intervals. Same-setting repeated boots produce different
+output hashes for all three fixed requests in both arms. Thus output-rate
+and acceptance differences cannot be cleanly attributed to the candidate.
+**Small positive step signal; serving verdict remains inconclusive. Retain
+the candidate, defer default promotion. A stable large speedup is unproven.**
+
+All four records pass quality **18/18** and Korean **0/8** (total **72/72**
+and **0/32**). Each has exactly eight completed requests and no traffic
+issues; candidate proof is **3/3** on both boots, with actual M6 capture.
+The first A1 launch failed before teardown because srv1 had no user-available
+disk space. Its stale generated FP8 caches (857 files, 8.0 GiB) were backed
+up to srv2, verified by SHA-256 and then removed from srv1; current B1 cache
+entries were retained. The valid B1 was preserved and the same build resumed
+without redeploying. No failed or contaminated measurement was substituted.
+
+Final live state at 07:44 KST: health **200**, all three candidate flags **0**,
+fleet released. Local gates: 6,663 logic checks and nine measurement fixtures.
+[Full evidence, raw records, archive audit and reproducer](measurements/glm53_decode_m8_fastpath_20260907/README.md).
+
+### C=1 lossless MHC follow-up and operator default promotion (2026-09-07)
+
+The lossless BF16-origin MHC weight path halves projection reads and preserves
+all four output tensors bit for bit. Same-extension T=6 cold latency improved
+23.344 → 20.256 us (**13.23%**). Exact checkpoint-weight, independent FP64,
+CUDA graph, cache-version and fallback gates passed.
+
+Four independent B/A/A/B boots of the combined pack2=1 / transpose_m8=2 /
+m8_fastpath=1 / mhc_bf16=1 bundle collected 248 interior decode windows:
+**21.68 → 21.94 step/s (+1.21%)**, **70.08 → 71.16 pooled output tok/s
+(+1.55%)**. Baseline output variation was 2.71% and paired output deltas
+disagreed; a stable output gain remains unproven. Candidate retrieval was
+48/48 with Korean corruption 0/20; baseline retrieval was 48/48 with
+corruption 3/20. The automated judge's baseline limitations remain recorded.
+
+After reviewing these results, the operator explicitly requested the bundle
+as the default and PR merge. The GLM profile now selects **1/2/1/1**;
+existing boot gates and FP32 fallback remain active. Setting all four flags
+to 0 restores the measured baseline. This is a profile promotion, not a new
+performance or quality verdict, and does not restart the running service.
+
+[Matched serving and kernel evidence, raw records and reproduction](measurements/glm53_decode_followup_20260907/README.md).

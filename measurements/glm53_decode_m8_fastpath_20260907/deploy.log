@@ -1,0 +1,239 @@
+/home/choiceoh/stkernel-glm53-m8-next/build/glm53  (56 overlays from 9 modules)
+self-test: PASS
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+....................
+----------------------------------------------------------------------
+Ran 20 tests in 9.628s
+
+OK
+..............................
+----------------------------------------------------------------------
+Ran 30 tests in 0.467s
+
+OK
+  skip_topk rule ................ OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (79 files across dsv4, glm53) .... OK
+  composed snapshot sync (79 files) . OK
+  overlay symbol contracts (109, per composition incl. orphans) ... OK
+  profile env carried (87 knobs) ... OK
+  profile keys have readers (129) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+all OK (6663 checks; 30 megakernel regressions; 20 fleet regressions)
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 1.639s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+OK
+INFO 09-06 22:01:12 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-06 22:01:12 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W0906 22:01:13.218000 110 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+INFO 09-06 22:01:15 [parser_manager.py:37] "auto" tool choice has been enabled.
+PASS prefilled_think
+PASS explicit_think
+PASS empty_reason
+PASS unfinished
+PASS compat_off
+INFO 09-06 22:01:15 [hf.py:551] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+PASS two_tools
+PASS tool_ends_reasoning
+PASS off_tools
+PASS none_literal_True
+PASS none_fenced_True
+PASS none_partial_True
+PASS surrounding_True
+PASS between_True
+PASS literal_think_True
+PASS whitespace_True
+PASS none_literal_False
+PASS none_fenced_False
+PASS none_partial_False
+PASS surrounding_False
+PASS between_False
+PASS literal_think_False
+PASS whitespace_False
+PASS required
+PASS named
+PASS none_implicit_end
+PASS none_no_tools
+PASS request_reuse
+{"vllm": "0.1.dev20051+g487ecf187", "tokenizer": "/models/glm", "cases": 26, "replays": 3765, "reuse_requests": 3, "sha256": {"/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d", "/checks/launchers/chat_template_mm_v2.jinja": "0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42"}}
+=== head (/home/choiceoh/overlays/glm53) ===
+  83bc6639a0a2c8af2f636b5be8d66ab319d44123e3874be974593baea824e988  manifest.tsv
+  b4ed538b5b5c26dc9e513cc0f67e3eb77f2e319c2d558e3538a5e19cd420493b  moe_gate_sm121.py
+  ef6fffb1474965f16702217f72b6e9e07a941f8528e617039561a8ac4cc1ca34  dsv4_oneshot_shim.py
+  7c75403c14142b70da2d87ff3d8906051539740f1b3ecea2107b040a323cd6cf  dsv4_oneshot_ar.cu
+  d30fdabb8f8e6f20b3e925a4b40ca79e68ea429ddaa0c8b9c633f40e7da11c09  glm53_megakernel.py
+  b3b8c7f891b09792200c477b38b247ed9c720c0469b1b34957ac30f9dcde2cdd  glm53_megakernel.cu
+  200128ca159cb60dd5b4f22fcd69c28c0e9788b296dffa2b24d66d587414ad5d  sparse_attn_indexer_kpool.py
+  c79f77d4f6326abb6718030f38d796b25bfff15471f1e61a1b1ea03e49720319  glm53_kpool_indexer.py
+  d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e  kda.py
+  fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739  chunk_delta_h.py
+  bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1  tilelang.py
+  432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12  tilelang_kernels.py
+  a3270c79dd91376401d5967f89921c98328e575100e82500e858967630ae745e  flashinfer_b12x_moe.py
+  70b9f9f75c67d854da25ba36e1943af1182ea0155e1d393994eb1e4aa4178655  moe_micro_kernel.py
+  478a9cea370a057ecd9097e6351dfe27b4e7d86825fdf22d30306491955e6212  moe_dispatch.py
+  352a666384506d1ac1c3b69a899ad60326d616ab1c9d19df68ef34f287b22f68  b12x_moe.py
+  bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9  moe_static_common.py
+  f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a  moe_sf_pack.py
+  50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395  moe_static_kernel_v4.py
+  0f1c699427eb9748936ea8cf4aff815a6dc23e01c7e3b844b0697574adbd51c4  moe_static_kernel_v5.py
+  a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d  moe_dynamic_gated_tiled.py
+  6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5  moe_dynamic_prefill.py
+  da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4  moe_dynamic_prefill_n128.py
+  bfeb721f04a1ecd79f779265eee05cb48e51c8fad93751bcb22b36beeb9c3940  glm5next_model.py
+  1a566b15da360a490f9057efefeb0317822de6afa749f3306388f2c5024818be  glm53_prefill_fastpath.py
+  4bed9915da4c2f45e17cec2995f61963528dccc3f5832a9ae50db19e0faeada9  glm5next_attention.py
+  e1ce1a154e8c9a8aef4029fb328b090181f149e2306dc8da0872ce63ea139d28  glm53_indexer_gate.py
+  672b4b198c4d9a07af376c496221a39768158289ef61d54ed351865cba4e714a  glm5next_kda.py
+  1ec4d0a34debad1482ac76b630f4335bfc74aba320bfb6cf6852e08eceb81973  flashinfer_mla_sparse_sm90.py
+  cf9e894469b019b05f5a0b7f00429a08aeab23c702ff8291174f29419685fbee  glm53_kda_onepass.py
+  43f0c173e93b23fd9d11c9783e1af8df30438d3c2aa13ab7872efb3141a93d56  glm53_fp8_dense.py
+  8dcf317a386e4c24959160277930fc957d6cf22eaacc73a84e5d4a7d5753cb59  glm53_startup_cache.py
+  5c3b24626581af7bee675e8741f8d8125efe6b80acb5a53dbd76d84b94d1946b  glm53_rank_cache.py
+  14e84b07f2e6b751255e2d9508ec9c8bb8755b6185a7736e49a6f21f372fca5d  glm53_nvfp4_scale.py
+  43c958ae7b69f3e0049094dfbd965096e6bef43cb9b054e4addb53e8a0cf6c20  glm53_nvfp4_bproj.py
+  78c0962ec81edd656ad928fef45dcd4663262e159187835be4d0ae7d7a9b3ade  mtp.py
+  8df13ddf31a7610b6a5cbda15338af07dae815eec015ef767c5984ff4ed14568  glm5next_multimodal.py
+  4accc52f8579426896f0fefb1b264392c0c94de6b7262d8208c33016796c2dee  qwen3_dflash2.py
+  6baa67d08d185ccac49c6604f69bbec34cd14e05223fe443f5fbefe6d7ac7c98  dflash_utils.py
+  fde30fc302f0b296abce52fc09c00d807fe6d7adacd7b2a86597f10743fce47d  spec_decode_rejection_warmup.py
+  99ff6cdc539dba9105600dc9bf66919c78e70aa2f31077366b3f6c00ddbff7fd  glm53_dflash_early_fc.py
+  70488ed5fccbe5b14e8d0919bb441bbbd884ec664e368741e4f023f3285409ce  glm53_drafter_prep.py
+  ce80ceac6ce6a15a2ac03048a42029970a3c61e621f964ce0aaf4a88f5b844ac  fp8_lm_head.py
+  568c8619a0e40369e8dfa812deed4a1445d9f069ea18eeb7dd5d9885b0616d88  glm53_prep_fused.py
+  c1de53855431bd35c8cc50c4125326660e56cdee76f9e7e3a041961a3b4c3dbb  sampler.py
+  efbb0390756d0e4e3b53e2b6f0304869f19bc1c276532b2c4da889205dc0799d  deneb_boot_stamps.py
+  b06d894880ff0b0a2076a4161f139bed762474a8c51f3fb844084159565c2aca  zz_deneb_boot_stamps.pth
+  356cd41ecfd876bdee199b4d3ae0468f36e0e93fe8cdb2961be230f1f2dba335  glm53_dev_lab.py
+  a9e02880327c9480fc5b37c770f993a2e74a5b4c9399d96523c4a5dc979a04fd  glm53_lab_middleware.py
+  d9b0ae00a012c5bdb0dacd1a05cbee278f40bbdfbf606d90a3f4990179aea4a0  glm53_chat.py
+  d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d  glm47_moe.py
+  ae29bd196d247a18aa514699e3afdb94c6ffed0789f2028a0f4042966af1fffe  cuda_communicator.py
+  cfd6309f3328376fae097f3edfdb75d1b4e0b716a4caa1ea3710c784bda6c360  glm53_prefill_collectives.py
+  2ecca1cafb391c0c66a0dd8eae2d189b5e8c4b7fa28b12fe46d93de801de64c8  parallel_state.py
+  6e8785ee25635457045f2a3c670de67421fc270ac90fa162d722b4ffac41a360  glm53_draft_dump.py
+  a3ffbcf4ff66c38a27f3c667e601148d2cb42ec74df3fc1641e202315c2ca325  glm53_decode_first.py
+  1f4f11011bff2a4aab1f0deaaa1c77878c354e939e19441064bd56933c50919d  kv_cache_coordinator.py
+=== 10.10.10.3 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.1 (/home/choiceoh/overlays/glm53) ===
+  verified
+=== 10.10.10.4 (/home/choiceoh/overlays/glm53) ===
+  verified
+56 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
