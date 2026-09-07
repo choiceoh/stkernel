@@ -1,5 +1,14 @@
 # C=1 decoding follow-up: MHC projection work
 
+**Subsequent promotion (2026-09-07):** after reviewing this result, the operator
+requested default enablement and PR merge. The GLM profile now uses pack2=1,
+transpose_m8=2, m8_fastpath=1 and mhc_bf16=1, with existing runtime gates and
+FP32 fallback retained. This changes the default policy, not the measurement
+verdict below. The recorded final live state belongs to the measurement closure;
+changing the profile does not reconfigure the already-running service.
+
+## Measurement closure
+
 The new lossless BF16 MHC path reduces T=6 cold kernel latency by **13.23%**.
 Combined with the previous M8 fastpath, four matched serving boots show
 **+1.21% engine steps/s** and **+1.55% pooled output tokens/s**. Output-rate

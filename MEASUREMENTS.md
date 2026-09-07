@@ -7027,3 +7027,26 @@ without redeploying. No failed or contaminated measurement was substituted.
 Final live state at 07:44 KST: health **200**, all three candidate flags **0**,
 fleet released. Local gates: 6,663 logic checks and nine measurement fixtures.
 [Full evidence, raw records, archive audit and reproducer](measurements/glm53_decode_m8_fastpath_20260907/README.md).
+
+### C=1 lossless MHC follow-up and operator default promotion (2026-09-07)
+
+The lossless BF16-origin MHC weight path halves projection reads and preserves
+all four output tensors bit for bit. Same-extension T=6 cold latency improved
+23.344 → 20.256 us (**13.23%**). Exact checkpoint-weight, independent FP64,
+CUDA graph, cache-version and fallback gates passed.
+
+Four independent B/A/A/B boots of the combined pack2=1 / transpose_m8=2 /
+m8_fastpath=1 / mhc_bf16=1 bundle collected 248 interior decode windows:
+**21.68 → 21.94 step/s (+1.21%)**, **70.08 → 71.16 pooled output tok/s
+(+1.55%)**. Baseline output variation was 2.71% and paired output deltas
+disagreed; a stable output gain remains unproven. Candidate retrieval was
+48/48 with Korean corruption 0/20; baseline retrieval was 48/48 with
+corruption 3/20. The automated judge's baseline limitations remain recorded.
+
+After reviewing these results, the operator explicitly requested the bundle
+as the default and PR merge. The GLM profile now selects **1/2/1/1**;
+existing boot gates and FP32 fallback remain active. Setting all four flags
+to 0 restores the measured baseline. This is a profile promotion, not a new
+performance or quality verdict, and does not restart the running service.
+
+[Matched serving and kernel evidence, raw records and reproduction](measurements/glm53_decode_followup_20260907/README.md).
