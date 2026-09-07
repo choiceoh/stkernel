@@ -23,6 +23,8 @@ VLLM_GLM53_MK_GEMM_TRANSPOSE_M8	[megakernel] transpose-m8 CAPTURED	[megakernel] 
 VLLM_GLM53_MK_M8_FASTPATH	[megakernel] m8-fastpath CAPTURED	[megakernel] m8-fastpath CAPTURED
 VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
 VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
+# FP8=3 only: this marker is emitted after the packed exchange serves.
+VLLM_GLM53_PREFILL_SP_FP8	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
 VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed
 VLLM_GLM53_B12X_STATIC_V2	[b12x static v2] lane serving	[b12x static
 VLLM_GLM53_PREFILL_NVFP4_BPROJ	[nvfp4-bproj] serving	[nvfp4-bproj] serving

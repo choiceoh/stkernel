@@ -65,6 +65,8 @@ output-throughput gain remains unproven. Candidate retrieval passed 48/48
 with Korean corruption 0/20; baseline retrieval passed 48/48 with corruption
 3/20. Promotion is the operator's decision, not a clean automated quality or
 throughput verdict. See the [complete evidence](../../../measurements/glm53_decode_followup_20260907/README.md).
+These measurements predate integration with main's chunk-gated FP8 prefill
+default; the combined default profile has not been rebracketed.
 
 ## Packed FP8 activation conversion (2026-09-07)
 
