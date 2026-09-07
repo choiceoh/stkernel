@@ -188,3 +188,20 @@ their uncached total-memory query mocked along with worker Popen; that fixture
 correction and its dependency audit are included. Evidence is in
 `preparation-q0/`. The collector now pins check5 and still requires full GPU
 correctness/recovery before direct TTFT.
+
+
+## Check5: BF16 passes, FP8 control instability blocks TTFT
+
+Check5 ran at 03:02:54–03:04:50 KST; exact incoming recovery completed at
+03:07:27. All ten BF16 cases passed. Every local MoE/capture case also passed
+under FP8-v3. The check4 Q0 corruption no longer reproduces. FP8 4096/skew
+failed on one independent stock-control row; FP8 8192/balanced failed on ten
+candidate rows and two stock-control rows. Both are inconclusive comparisons,
+not accepted candidate results. Sanitizers and direct TTFT remain blocked.
+
+Synthetic balanced BF16 component latency fell 12.68–20.40%, while concentrated
+routing regressed 8.95–15.41%. FP8 balanced 6144/6912 fell 7.55/6.66%, but these
+are component observations from one run, not full-model prefill evidence.
+The full table, raw eight-rank-process logs, recovery and fixed next diagnostic
+plan are in `measurements/glm53_moe_m64_20260908/check5/`. No numerical tolerance
+was changed, and check5/serving2 must not be rerun unchanged.

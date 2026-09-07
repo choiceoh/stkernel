@@ -1,0 +1,32 @@
+preflight moem64serve20908 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: EARLYMMBASE2 on build 74ef4d98ce20 -- 21.85 step/s, 3.17 tok/step, 43.3% acc, 2026-09-08 02:41:08 -- skip a defaults arm and compare against it
+  -> PASS
+GO moem64serve20908 2026-09-08_03:01:43
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+START moe-m64 2026-09-08 03:02:54
+DONE moe-m64 rc=1
+{"started": 1788804104.9508255, "exit_code": 1, "probes": {"moe-m64": {"revision": "f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb", "started": 1788804174.8286552, "command": ["bash", "probes/run_glm53_moe_m64_tp4_check.sh"], "exit_code": 1, "ended": 1788804290.0069573}}, "restored_original": true, "ended": 1788804447.6199675}
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-moe-m64-serving2-0908/bench/prefill_serving.py", line 438, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/choiceoh/stkernel-moe-m64-serving2-0908/bench/prefill_serving.py", line 434, in main
+    return run_bracket(args)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-moe-m64-serving2-0908/bench/prefill_serving.py", line 344, in run_bracket
+    refresh_gpu_gate(args.candidate, source, args.revision, args.gate_dir)
+  File "/home/choiceoh/stkernel-moe-m64-serving2-0908/bench/prefill_serving.py", line 330, in refresh_gpu_gate
+    run_owned(['python3', str(source/'probes/glm53_offline_checks.py'),
+  File "/home/choiceoh/stkernel-moe-m64-serving2-0908/bench/prefill_serving.py", line 241, in run_owned
+    if rc:raise subprocess.CalledProcessError(rc,command)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+subprocess.CalledProcessError: Command '['python3', '/home/choiceoh/stkernel-moe-m64-serving2-0908/probes/glm53_offline_checks.py', '--probe-source', '/home/choiceoh/stkernel-moe-m64-check5-0908', '--probe-revision', 'f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb', '--out', '/tmp/glm53-moe-m64-check5-0908/evidence']' returned non-zero exit status 1.
+{"started": "2026-09-08T03:01:39.512089", "exit_code": 1, "ended": "2026-09-08T03:07:27.825248"}
