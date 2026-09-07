@@ -285,6 +285,13 @@ stock kernel's time (-10 % prefill even at group 2), the NVFP4 dense route's
 GEMM saving (-520 ms) is eaten by its per-call quantization kernels and
 launch glue (+850 ms), and historical FP8 v1 transport for SP was slower than
 BF16 on this fabric. Note that
+Two more defaults changed the prefill's surroundings on 2026-09-06: `PREFIX_CACHE=1`
+(mamba cache mode 'align' chunks the prefill at 6912 tokens; cold 32K prefill
+-3..-10 % over four boots, 128K +-1 %, warm re-asks reuse 92-99.6 %) and
+`DECODE_FIRST=1` with `SCHED_MODE=sequential` (a pending prefill waits behind
+running decoders up to 20 s; pure prefill keeps every lane). The MoE reuse
+kernel compiles since 39차 §4j (per-region MMA atoms), is correct but neutral
+(-2 %), and its N128 variant runs at a quarter speed (rejected).
 `VLLM_GLM53_PREFILL_NVFP4_BPROJ=1` is a no-op while
 `VLLM_GLM53_FP8_DENSE_BPROJ=1` (this profile's default): the fp8 pattern
 already owns every b_proj linear, and the candidate only adopts layers
@@ -301,6 +308,7 @@ still unquantized.
 | `VLLM_GLM53_B12X_PREFILL_FC1_N128` | Paired FC1 N128; includes Q0/FC2 reuse | Requested TMA bytes/task 5.875 -> 4.5 MiB; no extra weight or shared allocation; pipeline/cache/register effects remain |
 | `VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4` | Existing opt-in A4/W4 dense GEMMs | Prior large-shape kernel result roughly 2.3x; apply only to eligible GEMMs and charge quantization overhead |
 | `VLLM_GLM53_NVFP4_SCALE_FUSED` | Two-launch activation maximum, global scale and alpha; no full abs temporary | Part of dense setup cost, not an independent full-bucket saving |
+| `VLLM_GLM53_NVFP4_STATIC_SCALE=N` | Calibrate each prefill pair's activation global scale over N calls, freeze it with `_HEADROOM` (2.0) and skip the amax passes; a dynamic pass every `_CHECK` (16) calls can only widen it | Saves the two amax launches and one activation read per dense call (~1.5 % of a 32K prefill); the quantize pass itself stays until a producer fuses it | 39차: opt-in arm, measured on the unified onepass |
 | `VLLM_GLM53_PREFILL_NVFP4_BPROJ` | Pure-prefill q_b/indexer.wq_b/eligible kv_b; BF16 decode and absorbed weights | Sparse MK MLA does not call kv_b GEMM; installed packs alone earn no forecast credit |
 | `VLLM_GLM53_KDA_PREFILL_DIRECT_OUT` | Chunk kernel writes its final destination directly | Removes a copy, not chunk computation |
 | `VLLM_GLM53_KDA_PREFILL_QK_NORM` | Stock reduction body reads strided Q/K directly | At T8192 removes 128 MiB copy traffic/layer if both inputs are noncontiguous; strided efficiency unmeasured; arming gate is bit-equality probe `probes/qk_norm_strided_check.py` |

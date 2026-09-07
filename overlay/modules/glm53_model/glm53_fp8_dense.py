@@ -309,6 +309,62 @@ _NVFP4_BACKEND = os.environ.get("VLLM_GLM53_NVFP4_BACKEND", "cutlass")
 # inside a build pass that already died once for want of host memory.
 _NVFP4_ALPHA: list = [None]
 _NVFP4_SCALE_FUSED = os.environ.get("VLLM_GLM53_NVFP4_SCALE_FUSED") == "1"
+# 39차: VLLM_GLM53_NVFP4_STATIC_SCALE=N calibrates each prefill pair's
+# activation global scale over its first N calls (dynamic, exact), then
+# freezes it with HEADROOM so the amax passes (two launches and one read of
+# the activation per call, ~1.5 % of a 32K prefill) are skipped; every CHECK
+# calls one dynamic pass runs again and can only raise the frozen range. 0 =
+# off (dynamic every call, the promoted default).
+_NVFP4_STATIC_CAL = int(os.environ.get("VLLM_GLM53_NVFP4_STATIC_SCALE", "0") or 0)
+_NVFP4_STATIC_HEADROOM = float(os.environ.get("VLLM_GLM53_NVFP4_STATIC_HEADROOM", "2.0") or 2.0)
+_NVFP4_STATIC_CHECK = int(os.environ.get("VLLM_GLM53_NVFP4_STATIC_CHECK", "16") or 16)
+
+
+class _NvFp4ScaleCal:
+    """Per-pair calibrated activation scale. Device-side only: no host sync
+    (the running amax, the frozen scale and its alpha are 1-element tensors
+    updated with tensor ops). The frozen range never shrinks."""
+
+    def __init__(self, name: str, w_gs: torch.Tensor, alpha_scale: float):
+        self.name = name
+        self.w_gs = w_gs
+        self.alpha_scale = float(alpha_scale)
+        self.n = 0
+        self.frozen = False
+        self.amax_max = torch.zeros(1, dtype=torch.float32, device=w_gs.device)
+        self.x_gs = None
+        self.alpha = None
+
+    def _dynamic(self, flat: torch.Tensor):
+        if (_NVFP4_SCALE_FUSED and flat.is_cuda and flat.dtype == torch.bfloat16
+                and flat.is_contiguous() and flat.numel() > 0
+                and self.w_gs.dtype == torch.float32 and self.w_gs.numel() == 1):
+            from .glm53_nvfp4_scale import activation_scale_alpha
+
+            return activation_scale_alpha(flat, self.w_gs, self.alpha_scale)
+        x_gs = _nvfp4_global_scale(flat)
+        return x_gs, (self.alpha_scale / (x_gs * self.w_gs)).to(torch.float32)
+
+    def scales(self, flat: torch.Tensor):
+        """(x_gs, alpha) for this call: exact while calibrating and on every
+        CHECK-th call afterwards (those also widen the frozen range), the
+        frozen pair otherwise."""
+        self.n += 1
+        if self.frozen and self.n % _NVFP4_STATIC_CHECK != 0:
+            return self.x_gs, self.alpha
+        x_gs, alpha = self._dynamic(flat)
+        # 448 * 6 / amax = x_gs  ->  amax = 2688 / x_gs (fp32, 1 element)
+        self.amax_max = torch.maximum(self.amax_max, 2688.0 / x_gs.view(1))
+        if self.frozen or self.n >= _NVFP4_STATIC_CAL:
+            self.x_gs = (2688.0 / (self.amax_max * _NVFP4_STATIC_HEADROOM)).view(1)
+            self.alpha = (self.alpha_scale / (self.x_gs * self.w_gs)).to(torch.float32)
+            if not self.frozen:
+                self.frozen = True
+                logger.warning(
+                    "[fp8-dense] nvfp4 static scale frozen on %s after %d calls "
+                    "(headroom %.2f, check every %d)", self.name, self.n,
+                    _NVFP4_STATIC_HEADROOM, _NVFP4_STATIC_CHECK)
+        return x_gs, alpha
 
 
 def _nvfp4_global_scale(t: torch.Tensor) -> torch.Tensor:
@@ -363,6 +419,23 @@ def _nvfp4_dense_gemm(
     else:
         x_gs = _nvfp4_global_scale(flat)
         alpha = (alpha_scale / (x_gs * w_gs)).to(torch.float32)
+    return _nvfp4_dense_gemm_scaled(x, wq, wsf, x_gs, alpha, out_rows)
+
+
+def _nvfp4_dense_gemm_scaled(
+    x: torch.Tensor,
+    wq: torch.Tensor,
+    wsf: torch.Tensor,
+    x_gs: torch.Tensor,
+    alpha: torch.Tensor,
+    out_rows: int,
+) -> torch.Tensor:
+    """The GEMM with the activation's global scale (and alpha) given: the
+    dynamic route computes them per call, the static route (39차) hands the
+    frozen pair in and skips the amax passes."""
+    from flashinfer import mm_fp4, nvfp4_quantize
+
+    flat = x.reshape(-1, x.shape[-1])
     xq, xsf = nvfp4_quantize(flat.to(torch.bfloat16), x_gs)
     # Both operands carry their global scale into the values, so the product
     # has to be divided back out once, in the epilogue.
@@ -583,6 +656,23 @@ except Exception:
     _nvfp4_dense_gemm_op = _nvfp4_dense_gemm
 
 
+try:
+    _nvfp4_dense_gemm_scaled_op = torch.library.custom_op(
+        "glm53_fp8_dense::gemm_nvfp4_scaled", mutates_args=()
+    )(_nvfp4_dense_gemm_scaled)
+
+    @_nvfp4_dense_gemm_scaled_op.register_fake
+    def _nvfp4_dense_gemm_scaled_fake(
+        x, wq, wsf, x_gs, alpha, out_rows: int
+    ) -> torch.Tensor:
+        return torch.empty(
+            x.shape[:-1] + (out_rows,), dtype=torch.bfloat16,
+            device=x.device,
+        )
+except Exception:
+    _nvfp4_dense_gemm_scaled_op = _nvfp4_dense_gemm_scaled
+
+
 class NvFp4DenseMethod:
     """Both operands in nvfp4: 2.3x the fp8 GEMM, 3.7x its error.
 
@@ -705,7 +795,12 @@ class Fp8DenseMethod:
                 if _lg is not None:
                     _lg.warning("[fp8-dense] nvfp4 prefill route engaged (M=%d)", x.numel() // x.shape[-1])
             try:
-                return _nvfp4_dense_gemm_op(x, *nv)
+                cal = nv[5] if len(nv) > 5 else None
+                if cal is None:
+                    return _nvfp4_dense_gemm_op(x, *nv[:5])
+                x_gs, alpha = cal.scales(x.reshape(-1, x.shape[-1]))
+                return _nvfp4_dense_gemm_scaled_op(
+                    x, nv[0], nv[1], x_gs, alpha, nv[3])
             except Exception as e:
                 self._nvfp4 = None
                 logger.warning(
@@ -919,7 +1014,8 @@ def _nvfp4_pair_for(mod, method, weight, rows, name, seen):
         if not ok:
             logger.warning("[fp8-dense] nvfp4 prefill pair refused on %s (value check)", name)
             return None
-    return (wq, wsf, w_gs, rows, alpha)
+    cal = _NvFp4ScaleCal(name, w_gs, alpha) if _NVFP4_STATIC_CAL > 0 else None
+    return (wq, wsf, w_gs, rows, alpha, cal)
 
 
 def _attach_mk_pack(method, weight, cols, name=None) -> bool:
