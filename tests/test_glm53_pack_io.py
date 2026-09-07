@@ -8,7 +8,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,6 +23,7 @@ def load_file(name, path):
     return module
 
 
+@unittest.skipIf(torch is None, "CPU torch required")
 class PackIOTests(unittest.TestCase):
     def setUp(self):
         self.common = load_file("pack_common", ROOT / "overlay/modules/glm53_model/glm53_startup_cache.py")
