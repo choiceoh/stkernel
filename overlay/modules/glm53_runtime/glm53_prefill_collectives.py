@@ -41,6 +41,12 @@ _FP8_V3 = _FP8_MODE == "3"
 _FP8_V3_MIN_TOKENS = int(os.environ.get("VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS", "4096"))
 if _FP8_V3_MIN_TOKENS < 0:
     raise ValueError("prefill FP8 minimum tokens must be nonnegative")
+_FP8_AG_MIN_TOKENS = int(os.environ.get("VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS", "-1"))
+_FP8_RS_MIN_TOKENS = int(os.environ.get("VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS", "-1"))
+if min(_FP8_AG_MIN_TOKENS, _FP8_RS_MIN_TOKENS) < -1:
+    raise ValueError("per-collective FP8 minimum must be -1 (inherit) or nonnegative")
+_FUSE_MHC = os.environ.get("VLLM_GLM53_PREFILL_SP_FUSE_MHC") == "1"
+_DIRECT_NCCL = os.environ.get("VLLM_GLM53_PREFILL_SP_DIRECT_NCCL") == "1"
 # v2 actually launches TWO all-to-alls: values and scales. v3 packs each
 # destination's scales after its values, so both travel in one byte exchange.
 # Quantization and FP32 accumulation stay the same; this targets call cost.
@@ -61,6 +67,23 @@ class _PartialOutput:
     communicator: object
     num_tokens: int
     reductions: int = 0
+
+
+@dataclass(frozen=True)
+class PackedPrefillRows:
+    """Invocation-owned receive storage, consumed only by eager MHC wrappers.
+
+    Keep the receive tensor alive through both auxiliary reconstruction and
+    the following layer. Neither consumer mutates it or a shared workspace.
+    This object never enters a torch custom op or a captured decode graph.
+    """
+    payload: object
+    rows: int
+    payload_bytes: int
+
+
+def is_packed_prefill(value):
+    return isinstance(value, PackedPrefillRows)
 
 
 def _tp_comm():
@@ -133,10 +156,19 @@ def _payload_bytes(local_n):
     return ((used + 127) // 128) * 128
 
 
-def _use_fp8(num_tokens):
+def _use_fp8(num_tokens, *, reduce_scatter=False):
     # Shape metadata is host-side and identical across TP ranks. Never use a
     # local shard length, request's total context, or tensor values here.
-    return _FP8 and (not _FP8_V3 or num_tokens >= _FP8_V3_MIN_TOKENS)
+    if not _FP8 or not _FP8_V3:
+        return _FP8
+    threshold = _FP8_RS_MIN_TOKENS if reduce_scatter else _FP8_AG_MIN_TOKENS
+    if threshold < 0:
+        threshold = _FP8_V3_MIN_TOKENS
+    elif reduce_scatter:
+        logger.info_once("[prefill-sp] reduce-scatter FP8 length gate engaged")
+    else:
+        logger.info_once("[prefill-sp] all-gather FP8 length gate engaged")
+    return num_tokens >= threshold
 
 
 # 39차 P2A2: the element counts were tl.constexpr, so every distinct prefill
@@ -289,6 +321,72 @@ def _unpack_sum_payload(Packed, Scales, Out, LOCAL_N, PAYLOAD_BYTES,
     tl.store(Out + offsets, acc)
 
 
+@triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
+def _unpack_sum_mhc_post(Packed, Scales, Residual, Post, Comb, Out,
+                         LOCAL_N, PAYLOAD_BYTES, BLOCK: tl.constexpr):
+    row = tl.program_id(0).to(tl.int64)
+    h = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    offsets = row * 4096 + h
+    acc = tl.zeros([BLOCK], dtype=tl.float32)
+    for rank in tl.static_range(4):
+        q = tl.load(Packed + rank * PAYLOAD_BYTES + offsets).to(tl.float32)
+        scale = tl.load(Scales + rank * (PAYLOAD_BYTES // 4)
+                        + LOCAL_N // 4 + offsets // 2048)
+        acc += q * scale
+    # Preserve the old unpack store/load's BF16 rounding BEFORE hc_post.
+    x = acc.to(tl.bfloat16).to(tl.float32)
+    base = row * (4 * 4096) + h
+    r0 = tl.load(Residual + base).to(tl.float32)
+    r1 = tl.load(Residual + base + 4096).to(tl.float32)
+    r2 = tl.load(Residual + base + 8192).to(tl.float32)
+    r3 = tl.load(Residual + base + 12288).to(tl.float32)
+    for hc in tl.static_range(4):
+        p = tl.load(Post + row * 4 + hc)
+        # Match the mounted TileLang kernel's compiled PTX: it rounds the
+        # first residual product, then contracts post*x into that product.
+        # Rounding post*x first changes BF16 outputs near a tie, even though
+        # both expressions have the same source-level sum and rank order.
+        updated = tl.load(Comb + row * 16 + hc) * r0
+        updated = tl.fma(p, x, updated)
+        updated = tl.fma(tl.load(Comb + row * 16 + 4 + hc), r1, updated)
+        updated = tl.fma(tl.load(Comb + row * 16 + 8 + hc), r2, updated)
+        updated = tl.fma(tl.load(Comb + row * 16 + 12 + hc), r3, updated)
+        tl.store(Out + base + hc * 4096, updated)
+
+
+def prefill_mhc_post(packed, residual, post, comb):
+    """Decode the ordered FP8 sum directly inside the stock MHC post map."""
+    if not isinstance(packed, PackedPrefillRows):
+        raise ValueError("MHC fused input must be packed prefill rows")
+    rows = packed.rows
+    payload = packed.payload
+    if (rows < 32
+            or packed.payload_bytes != _payload_bytes(rows * _HIDDEN)
+            or tuple(payload.shape) != (packed.payload_bytes * _TP,)
+            or payload.dtype != torch.uint8 or not payload.is_cuda
+            or not payload.is_contiguous()
+            or torch.cuda.is_current_stream_capturing()):
+        raise ValueError("invalid eager packed prefill MHC input")
+    if tuple(post.shape) == (rows, 4, 1):
+        post = post.view(rows, 4)
+    for tensor, shape, dtype in (
+        (residual, (rows, 4, _HIDDEN), torch.bfloat16),
+        (post, (rows, 4), torch.float32),
+        (comb, (rows, 4, 4), torch.float32),
+    ):
+        if (tuple(tensor.shape) != shape or tensor.dtype != dtype
+                or tensor.device != payload.device or not tensor.is_contiguous()):
+            raise ValueError("packed prefill MHC requires contiguous BF16 residual and FP32 mixes")
+    out = torch.empty_like(residual)
+    _unpack_sum_mhc_post[(rows, 4)](
+        payload.view(torch.float8_e4m3fn), payload.view(torch.float32),
+        residual, post, comb, out, LOCAL_N=rows * _HIDDEN,
+        PAYLOAD_BYTES=packed.payload_bytes, BLOCK=1024, num_warps=4,
+    )
+    logger.info_once("[prefill-sp] FP8 unpack and MHC post fused")
+    return out
+
+
 def _quantize(tensor, maxima, limit, *, num_rows=None):
     shape = tensor.shape if num_rows is None else (num_rows, _HIDDEN)
     packed = torch.empty(shape, device=tensor.device, dtype=torch.float8_e4m3fn)
@@ -377,7 +475,7 @@ def prefill_all_gather(tensor, *, num_tokens=None):
     return out if num_tokens is None else out[:num_tokens]
 
 
-def prefill_reduce_scatter(tensor):
+def prefill_reduce_scatter(tensor, *, defer_mhc_post=False):
     """Reduce full-token rank partials directly to the local MHC shard.
 
     FP8 v1 agrees on block maxima before native FP8 SUM. v2/v3 instead send
@@ -388,9 +486,11 @@ def prefill_reduce_scatter(tensor):
     comm = _check(tensor)
     rows = triton.cdiv(tensor.shape[0], _TP)
     padded_rows = rows * _TP
-    out = torch.empty((rows, _HIDDEN),
-                      device=tensor.device, dtype=tensor.dtype)
-    if not _use_fp8(tensor.shape[0]):
+    use_fp8 = _use_fp8(tensor.shape[0], reduce_scatter=True)
+    defer = _FUSE_MHC and defer_mhc_post and _FP8_V3 and use_fp8
+    out = None if defer else torch.empty((rows, _HIDDEN),
+                                        device=tensor.device, dtype=tensor.dtype)
+    if not use_fp8:
         if _FP8_V3:
             logger.info_once("[prefill-sp] short chunk BF16 reduce-scatter engaged")
         if padded_rows != tensor.shape[0]:
@@ -462,8 +562,6 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
     needed. Both temporary allocations belong to this invocation so calls
     on different streams cannot share or overwrite a scratch buffer.
     """
-    from vllm.distributed import get_tp_group
-
     local_n = padded_rows * _HIDDEN // _TP
     local_blocks = local_n // _BLOCK
     payload_bytes = _payload_bytes(local_n)
@@ -474,12 +572,39 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
         tensor, packed.view(torch.float8_e4m3fn), packed.view(torch.float32),
         N=tensor.numel(), LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, BLOCK=_BLOCK,
     )
-    torch.distributed.all_to_all_single(
-        recv, packed, group=get_tp_group().device_group,
-    )
+    _exchange_packets(recv, packed, payload_bytes)
+    if out is None:
+        logger.info_once("[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)")
+        return PackedPrefillRows(recv, padded_rows // _TP, payload_bytes)
     _unpack_sum_payload[(local_blocks,)](
         recv.view(torch.float8_e4m3fn), recv.view(torch.float32), out,
         LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, TP=_TP, BLOCK=_BLOCK,
     )
     logger.info_once("[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)")
     return out
+
+
+def _exchange_packets(recv, packed, payload_bytes):
+    if not _DIRECT_NCCL:
+        from vllm.distributed import get_tp_group
+        torch.distributed.all_to_all_single(recv, packed, group=get_tp_group().device_group)
+        return
+    _, comm = _tp_comm()
+    if (comm.world_size != _TP or payload_bytes <= 0
+            or any(tuple(t.shape) != (payload_bytes * _TP,) or t.dtype != torch.uint8
+                   or t.device != comm.device or not t.is_contiguous() for t in (recv, packed))
+            or recv.data_ptr() == packed.data_ptr()):
+        raise ValueError("direct NCCL exchange requires distinct contiguous TP4 byte packets")
+    # Construct views before opening the group. All ranks issue the same
+    # peer order, including self, on the producer/consumer CUDA stream.
+    sends = tuple(packed[r * payload_bytes:(r + 1) * payload_bytes] for r in range(_TP))
+    recvs = tuple(recv[r * payload_bytes:(r + 1) * payload_bytes] for r in range(_TP))
+    stream = torch.cuda.current_stream()
+    comm.group_start()
+    try:
+        for peer in range(_TP):
+            comm.send(sends[peer], peer, stream)
+            comm.recv(recvs[peer], peer, stream)
+    finally:
+        comm.group_end()
+    logger.info_once("[prefill-sp] direct PyNCCL packet exchange engaged")

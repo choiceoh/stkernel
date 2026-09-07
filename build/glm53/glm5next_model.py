@@ -115,6 +115,8 @@ if _PREFILL_SP_ENABLED:
         prefill_all_gather,
         prefill_reduce_scatter,
         prefill_shard,
+        is_packed_prefill,
+        prefill_mhc_post,
     )
 
 
@@ -680,7 +682,7 @@ class Glm5NextDecoderLayer(nn.Module):
             x = prefill_all_gather(x, num_tokens=positions.shape[0])
             with partial_tp_output(num_tokens=positions.shape[0]):
                 x = self.self_attn(hidden_states=x, positions=positions)
-            x = prefill_reduce_scatter(x)
+            x = prefill_reduce_scatter(x, defer_mhc_post=True)
         elif self.is_sequence_parallel:
             x = sp_all_gather(x)[: positions.shape[0]]
             x = self.self_attn(hidden_states=x, positions=positions)
@@ -708,7 +710,7 @@ class Glm5NextDecoderLayer(nn.Module):
             x = prefill_all_gather(x, num_tokens=positions.shape[0])
             with partial_tp_output(num_tokens=positions.shape[0]):
                 x = self.mlp(x)
-            x = prefill_reduce_scatter(x)
+            x = prefill_reduce_scatter(x, defer_mhc_post=True)
         elif self._mlp_is_moe:
             x = self.mlp(x, already_sequence_parallel=self.is_sequence_parallel)
         else:
@@ -755,6 +757,8 @@ class Glm5NextDecoderLayer(nn.Module):
         post: torch.Tensor,
         comb: torch.Tensor,
     ):
+        if _PREFILL_SP_ENABLED and is_packed_prefill(x):
+            return prefill_mhc_post(x, residual, post, comb)
         return self.mhc_post_op(x, residual, post, comb)
 
     def hc_fused_post_pre(
@@ -769,6 +773,16 @@ class Glm5NextDecoderLayer(nn.Module):
         norm_weight: torch.Tensor | None = None,
         norm_eps: float = 0.0,
     ):
+        if _PREFILL_SP_ENABLED and is_packed_prefill(x):
+            # Pure eager prefill only. The packet retains its invocation's
+            # storage across auxiliary reconstruction and the next layer.
+            # No packet object crosses the custom-op boundary below.
+            mapped = prefill_mhc_post(x, residual, post, comb)
+            next_post, next_comb, layer_input = self.hc_pre(
+                mapped, hc_fn, hc_scale, hc_base,
+                norm_weight=norm_weight, norm_eps=norm_eps,
+            )
+            return mapped, next_post, next_comb, layer_input
         return self.mhc_fused_post_pre_op(
             x=x,
             residual=residual,

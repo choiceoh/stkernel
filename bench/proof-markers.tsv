@@ -25,6 +25,10 @@ VLLM_GLM53_MK_MLA	'mla': True	[megakernel] armed=
 VLLM_GLM53_PREFILL_SP	[prefill-sp] sequence-parallel prefill armed	[prefill-sp] sequence-parallel prefill armed
 # FP8=3 only: this marker is emitted after the packed exchange serves.
 VLLM_GLM53_PREFILL_SP_FP8	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)	[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
+VLLM_GLM53_PREFILL_SP_FUSE_MHC	[prefill-sp] FP8 unpack and MHC post fused	[prefill-sp] FP8 unpack and MHC post fused
+VLLM_GLM53_PREFILL_SP_DIRECT_NCCL	[prefill-sp] direct PyNCCL packet exchange engaged	[prefill-sp] direct PyNCCL packet exchange engaged
+VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS	[prefill-sp] all-gather FP8 length gate engaged	[prefill-sp] all-gather FP8 length gate engaged
+VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS	[prefill-sp] reduce-scatter FP8 length gate engaged	[prefill-sp] reduce-scatter FP8 length gate engaged
 VLLM_GLM53_KDA_PREFILL_DIRECT_OUT	[kda-prefill] direct output armed	[kda-prefill] direct output armed
 VLLM_GLM53_B12X_STATIC_V2	[b12x static v2] lane serving	[b12x static
 VLLM_GLM53_PREFILL_NVFP4_BPROJ	[nvfp4-bproj] serving	[nvfp4-bproj] serving

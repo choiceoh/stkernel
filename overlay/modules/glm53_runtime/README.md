@@ -403,3 +403,52 @@ all four transports. `probes/run_glm53_prefill_transport_check.sh` checks
 v3 packets and sums against v2 on one GPU with a simulated exchange;
 `--compile-only` compiles the new kernels on the CPU for SM121. Neither
 the compile nor the simulated exchange proves real NCCL speed or quality.
+
+Three independent follow-up controls are available for matched experiments:
+
+* `VLLM_GLM53_PREFILL_SP_FUSE_MHC=1` keeps the v3 receive packet until MHC
+  post, where one kernel performs source-ordered FP32 decode/sum, the same
+  intermediate BF16 rounding, and the residual mix. The next MHC pre uses
+  its existing implementation. Packet and output storage belong to each
+  invocation, including repeated auxiliary and next-layer consumers.
+* `VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS` and
+  `VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS` independently select the gather
+  and reduction crossover. Both default to `-1`, inheriting the shared
+  4096 threshold; `0` means ungated. They do not affect v1/v2. Use identical
+  settings on all ranks; these are real global chunk rows, not request size.
+* `VLLM_GLM53_PREFILL_SP_DIRECT_NCCL=1` exchanges the same v3 byte packets
+  with grouped native PyNCCL sends/receives on the current CUDA stream.
+  Peer order, including self, remains 0..3. Validation precedes the group;
+  a communication error propagates without attempting another collective.
+
+Fusion and direct exchange default to `0` until numerical and serving
+evidence supports promotion. Their improvements must not be added to the
+earlier percentages or treated as reaching the original 40% target.
+
+Validation in a current fleet turn (same checkout path on all four nodes):
+
+```bash
+# GPU-free compilation; the combined probe turn also runs this first.
+bash probes/run_glm53_prefill_transport_check.sh --compile-only
+# GPU probes require fleet.sh run --gpu --probe.
+bash probes/run_glm53_prefill_transport_check.sh --skip-scale --fuse-mhc
+bash probes/run_glm53_prefill_tp4_check.sh fp8-v3 \
+  --rows 128 129 2128 4095 4096 6143 6144 6912 8185 \
+  --ag-min-tokens 6144 --rs-min-tokens 4096 --direct-nccl --fuse-mhc --timing
+```
+
+The deliberately different probe thresholds exercise both dispatch choices;
+they are not tuned production values. The single-GPU fusion probe compares
+bit patterns against the mounted production TileLang MHC post and post/pre
+continuation, and checks repeated consumers and nondefault streams. TP4
+adds actual exchange plus MHC equality, threshold-edge padding cases, and
+mirrored BF16/v2/v3/direct timings using the slowest rank in each sample.
+Neither gate substitutes for a clean, matched serving throughput/quality pair.
+
+After a probe triggered host `earlyoom` beside idle serving on 2026-09-07,
+the GPU launchers require spare UMA memory on every participating node:
+8 GiB probe budget plus 10% of total RAM (minimum 8 GiB) left for existing
+work. Missing counters or insufficient headroom refuse the next container;
+there is no override. Large probes may need an offline fleet boot turn.
+See [follow-up evidence](../../../docs/GLM53_PREFILL_FOLLOWUP_20260907.md)
+for the fixed numerical failure, memory incident, and unpromoted direct path.
