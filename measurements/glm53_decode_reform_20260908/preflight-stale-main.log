@@ -32,10 +32,10 @@ waiting: pos 1/2, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07
 waiting: pos 1/1, held by moem64reuse30908 [boot] (pid 2398493@srv2, since 08:07, est 40m, PR455 completed-fixture release and driver/host memory observations; unchanged reuse criteria and exact recovery), legacy busy (0 procs, 0 reqs, booting) 2026-09-08_08:14:40
 GO moereform0908 2026-09-08_08:14:55
 nodes:
-  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok
   node 10.10.10.2: ssh=FAIL
-  node 10.10.10.3: gpu=ok stray=2 ram=11G path=ok 
-  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  node 10.10.10.3: gpu=ok stray=2 ram=11G path=ok
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok
   (warnings only; FLEET_NODES=strict refuses)
 From https://github.com/choiceoh/stkernel
  * [new branch]      codex/fleet-handoff-campaign -> origin/codex/fleet-handoff-campaign
