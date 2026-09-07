@@ -27,7 +27,10 @@ def inputs(helper, rows, case):
         q = torch.randn(n, device="cuda", generator=gen) * 32
         scales = torch.pow(2.0, torch.randint(-8, 4, (n // 2048,),
                                             device="cuda", generator=gen).float())
-        if case == "zeros":
+        if case == "rounding_boundary":
+            q.fill_(1.0)
+            scales.fill_(0.25)  # four source terms sum to BF16 x=1
+        elif case == "zeros":
             q.zero_()
         elif case == "cancellation":
             q = common * (32, -32, 1, -1)[rank]
@@ -43,6 +46,14 @@ def inputs(helper, rows, case):
     # Signed, asymmetric coefficients expose transpose and accumulation-order bugs.
     post = torch.randn((rows, 4, 1), device="cuda", generator=gen)
     comb = torch.randn((rows, 4, 4), device="cuda", generator=gen)
+    if case == "rounding_boundary":
+        residual.zero_()
+        residual[:, 0].fill_(1.5)
+        comb.zero_()
+        comb[:, 0, :].fill_(1 + 2 ** -23)
+        post.fill_(-(1.5 + 2 ** -22))
+        # Stock PTX: round32(comb0*r0) then fma(post,x,product) -> +0.
+        # Reversing which product is rounded first instead yields -2**-24.
     return helper.PackedPrefillRows(payload, rows, stride), residual, post, comb
 
 
@@ -89,6 +100,8 @@ def check(helper, mhc, rows, case, repeats):
     expected = mhc.mhc_post_tilelang(x, residual, post, comb)
     actual = fused()
     exact(actual, expected, f"{rows}/{case}: fused post differs from production MHC")
+    if case == "rounding_boundary":
+        exact(expected, torch.zeros_like(expected), "production MHC first-product rounding changed")
     exact(helper.prefill_mhc_post(packet, residual, post.squeeze(-1), comb), expected,
           "flat post coefficients differ")
     # The auxiliary-output path may consume the same packet a second time.
@@ -153,7 +166,7 @@ def main():
     mhc = importlib.import_module("vllm.model_executor.kernels.mhc.tilelang")
     print(json.dumps({"sources": sources}), flush=True)
     for rows in args.rows:
-        for case in ("zeros", "random", "cancellation"):
+        for case in ("rounding_boundary", "zeros", "random", "cancellation"):
             print(json.dumps(check(helper, mhc, rows, case, args.repeats)), flush=True)
     print("PASS: bit-exact MHC post, continuation, repeated consumers and CUDA streams; no serving claim")
 
