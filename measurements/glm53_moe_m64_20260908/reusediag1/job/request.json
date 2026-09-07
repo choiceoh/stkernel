@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+  "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+  "probe_revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+  "session": "moem64reuse10908",
+  "created": "2026-09-08T06:19:10.810056",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64reuse10908",
+    "40",
+    "PR455 fixed local M64 reuse/control diagnostic, plain and both sanitizers; preserve every failure and exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-reusediag1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+    "--probe-revision",
+    "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+    "--out",
+    "/tmp/glm53-moe-m64-reusediag1-0908/evidence",
+    "--reuse-diagnostic"
+  ]
+}

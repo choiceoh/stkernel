@@ -1,0 +1,329 @@
+{
+  "source_revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+  "serving_gate": false,
+  "numerical_acceptance": false,
+  "modes": [
+    {
+      "mode": "plain",
+      "trials": 48,
+      "complete": true,
+      "row_trials_per_arm": 339968,
+      "groups": [
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        }
+      ],
+      "candidate_bad": 0,
+      "control_bad": 0,
+      "failure_payloads_verified": true,
+      "reported_sanitizer_errors": null
+    },
+    {
+      "mode": "memcheck",
+      "trials": 40,
+      "complete": false,
+      "row_trials_per_arm": 274432,
+      "groups": [
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 2,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 4,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "original",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "phase": "changed",
+          "trials": 4,
+          "control_bad": 0,
+          "candidate_bad": 0
+        }
+      ],
+      "candidate_bad": 0,
+      "control_bad": 6,
+      "failure_payloads_verified": true,
+      "reported_sanitizer_errors": 0
+    }
+  ],
+  "detectors": {
+    "verdict": "SANITIZER_DETECTOR_CONTROLS_PASS",
+    "controls": [
+      {
+        "mode": "driver-torch-invalid",
+        "exit_code": 99,
+        "error_count": 1,
+        "api_reports": {
+          "========= Program hit CUDA_ERROR_INVALID_DEVICE (error 101) due to \"invalid device ordinal\" on CUDA API call to cuDeviceGet.": 1
+        },
+        "program": {
+          "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+          "mode": "driver-torch-invalid",
+          "calls": [
+            {
+              "round": 0,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 0,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 0,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 1,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            }
+          ],
+          "versions": {
+            "cuda-bindings": "13.3.1",
+            "cuda-python": "13.3.1",
+            "nvidia-cutlass-dsl": "4.6.2",
+            "torch": "2.13.0+cu130"
+          },
+          "positive_control": {
+            "call": "cuDeviceGet",
+            "code": 101,
+            "intentional": true
+          },
+          "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+          "serving_gate": false,
+          "numerical_acceptance": false
+        },
+        "log_sha256": "96e0b6260d832ee8e55aaa48855929b4d8ffe3e923cbff8eb76fbccb52baa4d9",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "memcheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "2861b9ac7af44a094c0f4977f8db9d6a9ad03df8637380aaafddd281e68d6c71",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "racecheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "714d8fcbd9b73f5c6abc14bcf8a9dafb2b2a322996b8484a5fd4dd339c75939a",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      }
+    ]
+  },
+  "exact_incoming_recovery": true,
+  "outer": {
+    "started": "2026-09-08T06:19:10.839428",
+    "exit_code": 1,
+    "ended": "2026-09-08T06:26:54.100032"
+  },
+  "process_exits": [
+    {
+      "time": 1788816075,
+      "action": "die",
+      "name": "moe-m64-moem64reuse10908-reuse-2001604",
+      "exit_code": "0",
+      "id": "53654c6053b71b232a8762d94a02247b31a1e9c68dd664807970617309968b91"
+    },
+    {
+      "time": 1788816244,
+      "action": "die",
+      "name": "moe-m64-moem64reuse10908-reuse-2001604",
+      "exit_code": "15",
+      "id": "63e5c9a85cb117613bec191bbfa8aca6c9990b4ce190e94f13eb6d91da3c550d"
+    }
+  ],
+  "memcheck_termination_cause": "unknown; no Python traceback or retained final container resource state",
+  "racecheck": "not reached"
+}

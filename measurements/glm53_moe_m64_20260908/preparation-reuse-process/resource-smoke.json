@@ -1,0 +1,74 @@
+{
+  "started": 1788817308.163238,
+  "name": "glm53-reuse-resource-cpu-0908",
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "15s",
+    "docker",
+    "run",
+    "--runtime",
+    "runc",
+    "--name",
+    "glm53-reuse-resource-cpu-0908",
+    "--network",
+    "none",
+    "--memory",
+    "256m",
+    "--cpus",
+    "1",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-c",
+    "import sys,time; buffer=bytearray(16*1024*1024); time.sleep(1.5); sys.exit(15)"
+  ],
+  "exit_code": 15,
+  "samples": 7,
+  "observed_memory_peak_bytes": 21278720,
+  "last_resource": {
+    "container_id": "5697d93f560564ff2b3b263c1447676878a4186c64c7d140ee7ae4eb2201ebe5",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 2093391,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-07T21:41:48.239684081Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "memory_limit_bytes": 268435456,
+    "memory": {
+      "memory.current": "20766720",
+      "memory.peak": "21278720",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+      "memory.max": "268435456"
+    }
+  },
+  "final_container": {
+    "container_id": "5697d93f560564ff2b3b263c1447676878a4186c64c7d140ee7ae4eb2201ebe5",
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 15,
+      "Error": "",
+      "StartedAt": "2026-09-07T21:41:48.239684081Z",
+      "FinishedAt": "2026-09-07T21:41:49.835984469Z"
+    },
+    "memory_limit_bytes": 268435456
+  },
+  "sampler_errors": [],
+  "serving_gate": false,
+  "numerical_acceptance": false,
+  "ended": 1788817310.011029
+}

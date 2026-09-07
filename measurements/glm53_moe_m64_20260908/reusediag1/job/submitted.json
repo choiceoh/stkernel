@@ -1,0 +1,46 @@
+{
+  "submitted": "2026-09-08T06:19:11.939975",
+  "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+  "api_preflight": {
+    "local": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.1": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.3": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.4": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    }
+  }
+}

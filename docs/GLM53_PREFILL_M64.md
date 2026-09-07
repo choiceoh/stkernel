@@ -5,7 +5,24 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
-Latest status (2026-09-08 06:09 KST): `int8gate2` passed the API, out-of-bounds
+Latest status (2026-09-08 06:26 KST): the bounded local reuse diagnostic completed
+all 48 plain trials with zero candidate/control failures. Memcheck recorded 40
+of 48 trials, with zero candidate and six independent stock-control failing
+row-trials, before its container exited 15 without a Python traceback. No final
+memory-resource/container state was retained, so the termination cause remains
+unknown. This partial result neither attributes the earlier M64 failure nor
+admits serving. Racecheck was not reached. Exact recovery completed at 06:26:54.
+Raw failed-row BF16 payloads independently reconstruct the logged error norms.
+See `measurements/glm53_moe_m64_20260908/reusediag1/`.
+
+The follow-up retains the same runtime, local fixture, thresholds and 48-trial
+plan. It runs only the unfinished memcheck/racecheck processes, capturing their
+exact exit, Docker OOM state, cgroup peak/current memory and memory events before
+removing the owned container. Unavailable resource readings remain unknown.
+The completed plain collection is not repeated; the distinct outer completion
+marker is `MOE_M64_REUSE_SANITIZER_COLLECTION_COMPLETE`, still never acceptance.
+
+Earlier (2026-09-08 06:09 KST): `int8gate2` passed the API, out-of-bounds
 CuTe write and shared-memory race detector controls, then all twenty TP4 cases.
 Memcheck reported zero API/device errors in the executed portion, but the normal
 M64 program failed its unchanged numerical criterion on eight rows during changed-

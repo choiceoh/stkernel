@@ -28,27 +28,25 @@ DETECTORS
 tool_dir=/usr/local/cuda/compute-sanitizer
 "$tool_dir/compute-sanitizer" --version
 sha256sum "$tool_dir/compute-sanitizer"
-# Plain collection on b4c67dc completed all 48 trials. This follow-up runs the
-# two unfinished sanitizer processes with exit/resource evidence retained.
-for mode in memcheck racecheck; do
-  args=(docker run --name "$name" --gpus all --network none
+for mode in plain memcheck racecheck; do
+  args=(docker run --rm --name "$name" --gpus all --network none
     --cpus 4 --memory 16g --shm-size 1g -v "$REPO:/repo:ro"
     -e CUTE_DSL_ARCH=sm_121a -e OMP_NUM_THREADS=1 -e PYTHONPATH=/repo/probes)
   while IFS=$'\t' read -r source target _; do
     [[ -z $source || $source == \#* ]] && continue
     args+=(-v "$REPO/build/glm53/$source:$target:ro")
   done < "$REPO/build/glm53/manifest.tsv"
-  args+=(-v "$tool_dir:/opt/glm-probe-sanitizer:ro"
-    --entrypoint /opt/glm-probe-sanitizer/compute-sanitizer "$IMAGE"
-    --error-exitcode 99 --tool "$mode" python3)
+  if [[ $mode == plain ]]; then
+    args+=(--entrypoint python3 "$IMAGE")
+  else
+    args+=(-v "$tool_dir:/opt/glm-probe-sanitizer:ro"
+      --entrypoint /opt/glm-probe-sanitizer/compute-sanitizer "$IMAGE"
+      --error-exitcode 99 --tool "$mode" python3)
+  fi
   args+=(/repo/probes/glm53_moe_m64_sanitize.py --reuse-diagnostic)
-  rc=0
-  python3 "$REPO/probes/glm53_probe_process.py" --name "$name" \
-    --out "$log_dir/$mode-process.json" -- \
-    timeout --signal=TERM --kill-after=30s 15m "${args[@]}" >"$log_dir/$mode.log" 2>&1 || rc=$?
-  docker rm -f "$name" >/dev/null
-  if [[ $rc != 0 ]]; then
-    cat "$log_dir/$mode-process.json"
+  limit=15m
+  if [[ $mode == plain ]]; then limit=3m; fi
+  if ! timeout --signal=TERM --kill-after=30s "$limit" "${args[@]}" >"$log_dir/$mode.log" 2>&1; then
     tail -c 2200 "$log_dir/$mode.log"; exit 1
   fi
   docker run --rm -i --runtime runc --network none --memory 4g --cpus 2 \
@@ -64,4 +62,4 @@ if mode=='racecheck':assert 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0
 print(json.dumps(dict(mode=mode,**report)),flush=True)
 VERIFY
 done
-echo MOE_M64_REUSE_SANITIZER_COLLECTION_COMPLETE
+echo MOE_M64_REUSE_COLLECTION_COMPLETE
