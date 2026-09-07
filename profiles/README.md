@@ -51,7 +51,8 @@ fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
 is blocked, says so and names the one flip that would isolate the cause.
 
 GLM53's C=1 M6/N6416/K4096 projection defaults to
-`VLLM_GLM53_MK_INPUT_CTA=2` (operator promotion, 2026-09-08). It retains the
+`VLLM_GLM53_MK_INPUT_CTA=4` (operator promotion, 2026-09-08), which builds on
+the value `2` route described here. That route retains the
 eight original K slices and sums their partials within one CTA. The independent
 startup gate falls back to the existing input-reuse kernel; setting the knob
 to `0` selects that previous route explicitly. Repeated kernel measurements
@@ -59,11 +60,19 @@ show 24.5% lower warm latency and 7.9% lower read-evicted latency. Serving
 step/output and quality acceptance are still unmeasured after baseline boot
 failures. [Measurements and failure receipts](../measurements/glm53_input_cta_20260907/README.md).
 
-The opt-in value `4` retains the CTA2 N6416 kernel and adds a three-slice
+The value `4` retains the CTA2 N6416 kernel and adds a three-slice
 CTA for foreground M6/N4096 or N6144/K4096. A failed three-slice startup
 check falls back to separately validated CTA2. Other shapes, background
 work, low-rank correction, and non-three-slice overrides retain their
-existing route. The profile default remains `2`.
+existing route. The profile default is now `4` (operator promotion,
+2026-09-08); set the knob to `2` to roll back to the previous default.
+Its N6144 warm kernel latency is 32.544 -> 26.208 us (-19.5%) with -5.7%
+read-evicted, and N4096 is -7.9% read-evicted with no warm gain. Racecheck
+reported zero hazards and memcheck zero errors, and all four nodes proved
+actual CTA4 serving capture. Serving throughput is **not** established: the
+same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
+the candidate's +0.627% lies inside the baselines' own 0.641% spread.
+[Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
 ## 프로필별 구성
 
