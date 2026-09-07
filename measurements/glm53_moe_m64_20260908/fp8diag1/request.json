@@ -1,0 +1,30 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-fp8diag1-0908",
+  "revision": "c50a6e78b174f3e89700e3d5595e4654c89b0e11",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-fp8diag1-0908",
+  "probe_revision": "c50a6e78b174f3e89700e3d5595e4654c89b0e11",
+  "session": "moem64diag10908",
+  "created": "2026-09-08T03:34:05.661929",
+  "cpu_compile_log": "/tmp/glm53-moe-m64-fp8diag1-0908/cpu-compile.log",
+  "cpu_math_log": "/tmp/glm53-moe-m64-fp8diag1-0908/cpu-math.log",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64diag10908",
+    "20",
+    "PR455 fixed FP8 stock/candidate row diagnostic; unchanged thresholds; exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-fp8diag1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-fp8diag1-0908",
+    "--probe-revision",
+    "c50a6e78b174f3e89700e3d5595e4654c89b0e11",
+    "--out",
+    "/tmp/glm53-moe-m64-fp8diag1-0908/evidence",
+    "--fp8-diagnostic"
+  ]
+}

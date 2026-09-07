@@ -1,0 +1,19 @@
+{
+  "result": "FAILED_AT_M64_TMA_COMPILATION",
+  "revision": "a1622f17fc4be5d0d5325130f533270427e16886",
+  "main": "d489639",
+  "short_fallback_cases": "BF16 4096/6143 balanced and concentrated passed on all ranks",
+  "error": "M64 SFA TMA shared-memory shape has physical M128 atom while CTA V-map is M64",
+  "fp8": "not reached",
+  "m64_numerics": "not reached",
+  "m64_timing": "not reached",
+  "sanitizers": "not reached",
+  "serving_ttft": "not run",
+  "restored_original": true,
+  "completed_kst": "2026-09-08 01:38:05",
+  "cpu_compile": {
+    "baseline_m128": "PASS 3.96s",
+    "candidate_m64": "same MLIRError, FAIL 0.013s",
+    "gpu_access": false
+  }
+}

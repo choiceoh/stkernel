@@ -1,0 +1,12 @@
+{
+  "source_sha256": "e0feead709a5ee6549580cb8751c1a9106d9e2bdb62e0b0c681626ce293c3739",
+  "verdict": "SANITIZER_CANARY_CPU_COMPILE_PASS",
+  "gpu_execution": false,
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "container": {
+    "runtime": "runc",
+    "network": "none",
+    "cpus": 2,
+    "memory": "4g"
+  }
+}

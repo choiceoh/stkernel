@@ -3731,6 +3731,11 @@ def test_b12x_static_v2_controls() -> None:
           "drops stale tile-major markers first")
     gated = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py"),
                  encoding="utf-8").read()
+    # The default M128 adapter must stay stock even when an opt-in subclass
+    # in the same module implements a different kernel body.
+    gated = ast.get_source_segment(gated, next(
+        node for node in ast.parse(gated).body
+        if isinstance(node, ast.ClassDef) and node.name == "MoEGatedDynamicKernelTiled"))
     check("class MoEGatedDynamicKernelTiled(MoEGatedDynamicKernel):" in gated
           and "if cutlass.const_expr(len(b_w13.shape) == 4):" in gated
           and "b_w13 = cute.group_modes(b_w13, 1, 3)" in gated

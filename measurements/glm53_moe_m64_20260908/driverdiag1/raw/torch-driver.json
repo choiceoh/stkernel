@@ -1,0 +1,70 @@
+{
+  "mode": "torch-driver",
+  "exit_code": 99,
+  "error_count": 34,
+  "api_reports": {
+    "========= Program hit CUDA_ERROR_INVALID_VALUE (error 1) due to \"invalid argument\" on CUDA API call to cuGetProcAddress_v2.": 34
+  },
+  "program": {
+    "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+    "mode": "torch-driver",
+    "calls": [
+      {
+        "round": 0,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 0,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 0,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 1,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      }
+    ],
+    "versions": {
+      "cuda-bindings": "13.3.1",
+      "cuda-python": "13.3.1",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "torch": "2.13.0+cu130"
+    },
+    "source_sha256": "a460fc985795e2b08c3b6c074cb6857033f6e0c1403cdbeb19be0df7332783d6",
+    "serving_gate": false,
+    "numerical_acceptance": false
+  },
+  "log_sha256": "c5fbe4c07392558714c42d2346f880a68bcc02688f0bb6fb70a0ef69b5393dae",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

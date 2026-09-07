@@ -1,0 +1,42 @@
+{
+  "source": "383894cf46df9185f3be6e9be5098c095bbcc337",
+  "provenance": "Observed local tool invocations on this source; this JSON is a validation record, not captured test stdout.",
+  "checks": [
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_glm53_moe_m64_fp8_trace.py' -v",
+      "passed": 2,
+      "skipped": 4,
+      "reason": "Host lacks numpy and torch; pinned image runs all six"
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_glm53_moe_m64_fp8_diagnostic.py' -v",
+      "passed": 4,
+      "skipped": 1
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_glm53_offline_checks.py' -v",
+      "passed": 11
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_prefill_serving.py' -v",
+      "passed": 10
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_glm53_moe_m64_probe.py' -v",
+      "passed": 3
+    },
+    {
+      "command": "python3 -m py_compile probes/glm53_moe_m64_fp8_trace.py probes/glm53_moe_m64_check.py probes/glm53_offline_checks.py",
+      "exit_code": 0
+    },
+    {
+      "command": "bash -n probes/run_glm53_moe_m64_tp4_check.sh",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "runtime_diff_from_check5": "No changes in build/glm53"
+}

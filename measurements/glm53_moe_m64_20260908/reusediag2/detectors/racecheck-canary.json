@@ -1,0 +1,9 @@
+{
+  "tool": "racecheck",
+  "exit_code": 99,
+  "deliberate_error_detected": true,
+  "log_sha256": "714d8fcbd9b73f5c6abc14bcf8a9dafb2b2a322996b8484a5fd4dd339c75939a",
+  "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

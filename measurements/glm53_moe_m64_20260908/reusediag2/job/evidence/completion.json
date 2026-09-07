@@ -1,0 +1,18 @@
+{
+  "started": 1788819803.7644727,
+  "exit_code": 1,
+  "probes": {
+    "moe-m64-reuse-diagnostic": {
+      "revision": "5952925c9832ea99d8244d7ea4a464ef752bc495",
+      "started": 1788819874.9310591,
+      "command": [
+        "bash",
+        "probes/run_glm53_moe_m64_reuse_diagnostic.sh"
+      ],
+      "exit_code": 1,
+      "ended": 1788820060.6490097
+    }
+  },
+  "restored_original": true,
+  "ended": 1788820228.6354487
+}

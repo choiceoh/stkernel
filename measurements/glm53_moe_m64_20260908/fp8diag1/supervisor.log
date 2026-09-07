@@ -1,0 +1,17 @@
+preflight moem64diag10908 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: EARLYMMBASE2 on build 74ef4d98ce20 -- 21.85 step/s, 3.17 tok/step, 43.3% acc, 2026-09-08 02:41:08 -- skip a defaults arm and compare against it
+  -> PASS
+GO moem64diag10908 2026-09-08_03:34:09
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=10G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+START moe-m64-fp8-diagnostic 2026-09-08 03:35:19
+DONE moe-m64-fp8-diagnostic rc=0
+{"started": 1788806050.3788364, "exit_code": 0, "probes": {"moe-m64-fp8-diagnostic": {"revision": "c50a6e78b174f3e89700e3d5595e4654c89b0e11", "started": 1788806119.4661467, "command": ["bash", "probes/run_glm53_moe_m64_tp4_check.sh", "--fp8-diagnostic"], "exit_code": 0, "ended": 1788806189.4307444}}, "restored_original": true, "ended": 1788806347.3205888}
+{"started": "2026-09-08T03:34:05.721787", "exit_code": 0, "ended": "2026-09-08T03:39:07.492899"}

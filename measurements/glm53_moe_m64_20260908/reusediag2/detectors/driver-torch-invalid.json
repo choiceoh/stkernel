@@ -1,0 +1,75 @@
+{
+  "mode": "driver-torch-invalid",
+  "exit_code": 99,
+  "error_count": 1,
+  "api_reports": {
+    "========= Program hit CUDA_ERROR_INVALID_DEVICE (error 101) due to \"invalid device ordinal\" on CUDA API call to cuDeviceGet.": 1
+  },
+  "program": {
+    "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+    "mode": "driver-torch-invalid",
+    "calls": [
+      {
+        "round": 0,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 0,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 0,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuDriverGetVersion",
+        "code": 0,
+        "values": [
+          13000
+        ]
+      },
+      {
+        "round": 1,
+        "call": "cuInit",
+        "code": 0,
+        "values": []
+      },
+      {
+        "round": 1,
+        "call": "cuDeviceGetCount",
+        "code": 0,
+        "values": [
+          1
+        ]
+      }
+    ],
+    "versions": {
+      "cuda-bindings": "13.3.1",
+      "cuda-python": "13.3.1",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "torch": "2.13.0+cu130"
+    },
+    "positive_control": {
+      "call": "cuDeviceGet",
+      "code": 101,
+      "intentional": true
+    },
+    "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+    "serving_gate": false,
+    "numerical_acceptance": false
+  },
+  "log_sha256": "96e0b6260d832ee8e55aaa48855929b4d8ffe3e923cbff8eb76fbccb52baa4d9",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

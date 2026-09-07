@@ -1,0 +1,22 @@
+{
+  "local": {
+    "source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+    "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+    "clean": true
+  },
+  "10.10.10.1": {
+    "source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+    "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+    "clean": true
+  },
+  "10.10.10.3": {
+    "source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+    "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+    "clean": true
+  },
+  "10.10.10.4": {
+    "source": "/home/choiceoh/stkernel-moe-m64-reusediag1-0908",
+    "revision": "b4c67dc6eabeae67d14e407dc5ff86fa68851101",
+    "clean": true
+  }
+}

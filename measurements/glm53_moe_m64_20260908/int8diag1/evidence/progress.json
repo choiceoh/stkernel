@@ -1,0 +1,17 @@
+{
+  "started": 1788811177.9698162,
+  "exit_code": 1,
+  "probes": {
+    "moe-m64-int8-diagnostic": {
+      "revision": "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+      "started": 1788811255.3491209,
+      "command": [
+        "bash",
+        "probes/run_glm53_moe_m64_tp4_check.sh",
+        "--int8-diagnostic"
+      ],
+      "exit_code": 0,
+      "ended": 1788811352.3794208
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "stock_sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+  "q0_coordinate_sites": 4,
+  "other_executable_statements_identical": true,
+  "verdict": "Q0_AST_AUDIT_PASS",
+  "gpu_fix_verified": false
+}

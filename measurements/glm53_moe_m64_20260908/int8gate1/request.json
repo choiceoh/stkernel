@@ -1,0 +1,29 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-int8gate1-0908",
+  "revision": "183df3a2065c5c7bab1729c66282e633cbbe3fa0",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-int8gate1-0908",
+  "probe_revision": "183df3a2065c5c7bab1729c66282e633cbbe3fa0",
+  "session": "moem64int8gate10908",
+  "created": "2026-09-08T05:14:07.670255",
+  "cpu_compile_log": "/tmp/glm53-moe-m64-int8gate1-0908/cpu-compile.log",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64int8gate10908",
+    "40",
+    "PR455 full INT8 M64 gate: all-rank numerics, changed inputs, capture, memory and race checks; exact restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-int8gate1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-int8gate1-0908",
+    "--probe-revision",
+    "183df3a2065c5c7bab1729c66282e633cbbe3fa0",
+    "--out",
+    "/tmp/glm53-moe-m64-int8gate1-0908/evidence",
+    "--int8-gate"
+  ]
+}

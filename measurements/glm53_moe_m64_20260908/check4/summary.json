@@ -1,0 +1,823 @@
+{
+  "verdict": "M64_NUMERICAL_FAIL",
+  "transport": "bf16",
+  "gpu_revision": "ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73",
+  "runner_revision": "1b6cf60dfaecf718d72d24c8a56d2af35071be9b",
+  "raw_remote": "/tmp/glm53-moe-m64.w50kEo",
+  "fp8_executed": false,
+  "sanitizers_executed": false,
+  "ttft_executed": false,
+  "restored_original": true,
+  "rows": [
+    {
+      "rows": 4096,
+      "skew": false,
+      "m64_admitted": false,
+      "pass": true,
+      "median_speedup_pct": 0.534663006600522,
+      "eager": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006228331476449966,
+        "all_pass": true
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006249323952943087,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006249595433473587,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005413346458226442,
+        "all_pass": true
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.00542820617556572,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "rows": 4096,
+      "skew": true,
+      "m64_admitted": false,
+      "pass": true,
+      "median_speedup_pct": 0.05821717226135448,
+      "eager": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.004536563064903021,
+        "all_pass": true
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.00470406049862504,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.00445663882419467,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.004577557556331158,
+        "all_pass": true
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.004560409113764763,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "rows": 6143,
+      "skew": false,
+      "m64_admitted": false,
+      "pass": true,
+      "median_speedup_pct": 1.2693755353171854,
+      "eager": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006105050910264254,
+        "all_pass": true
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006137502379715443,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0062271710485219955,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005297218449413776,
+        "all_pass": true
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005396200343966484,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "rows": 6143,
+      "skew": true,
+      "m64_admitted": false,
+      "pass": true,
+      "median_speedup_pct": 1.0540592805785565,
+      "eager": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "rows": 6144,
+      "skew": false,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": 21.42320354022369,
+      "eager": {
+        "bad_rows": [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        "max_l2": 12.297468185424805,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006142836529761553,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006163683254271746,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          6144,
+          6144,
+          6144,
+          6144
+        ],
+        "max_l2": 23.236814498901367,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005324619822204113,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ]
+      ]
+    },
+    {
+      "rows": 6144,
+      "skew": true,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": -13.291236944004424,
+      "eager": {
+        "bad_rows": [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        "max_l2": 12.465367317199707,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          6144,
+          6144,
+          6144,
+          6144
+        ],
+        "max_l2": 23.5904483795166,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        [
+          1536,
+          1536,
+          1536,
+          1536
+        ]
+      ]
+    },
+    {
+      "rows": 6912,
+      "skew": false,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": 19.833351144441046,
+      "eager": {
+        "bad_rows": [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        "max_l2": 12.11181354522705,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006013218313455582,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0060604712925851345,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          6912,
+          6912,
+          6912,
+          6912
+        ],
+        "max_l2": 23.46883773803711,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0053597972728312016,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ]
+      ]
+    },
+    {
+      "rows": 6912,
+      "skew": true,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": -11.736868870290362,
+      "eager": {
+        "bad_rows": [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        "max_l2": 12.308293342590332,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          6912,
+          6912,
+          6912,
+          6912
+        ],
+        "max_l2": 23.828439712524414,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ],
+        [
+          1728,
+          1728,
+          1728,
+          1728
+        ]
+      ]
+    },
+    {
+      "rows": 8192,
+      "skew": false,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": 16.687367536455543,
+      "eager": {
+        "bad_rows": [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        "max_l2": 12.195059776306152,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0061156474985182285,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.006129233166575432,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          8192,
+          8192,
+          8192,
+          8192
+        ],
+        "max_l2": 23.374744415283203,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005332088563591242,
+        "all_pass": true
+      },
+      "graph": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005461346823722124,
+        "all_pass": true
+      },
+      "graph_changed": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.005309275817126036,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ]
+      ]
+    },
+    {
+      "rows": 8192,
+      "skew": true,
+      "m64_admitted": true,
+      "pass": false,
+      "median_speedup_pct": -9.91994494683146,
+      "eager": {
+        "bad_rows": [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        "max_l2": 12.686226844787598,
+        "all_pass": false
+      },
+      "stock_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "local_moe": {
+        "bad_rows": [
+          8192,
+          8192,
+          8192,
+          8192
+        ],
+        "max_l2": 23.914796829223633,
+        "all_pass": false
+      },
+      "local_control": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "graph": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "graph_changed": {
+        "bad_rows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_l2": 0.0,
+        "all_pass": true
+      },
+      "changed_bad_rows": [
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048,
+          2048,
+          2048
+        ]
+      ]
+    }
+  ]
+}

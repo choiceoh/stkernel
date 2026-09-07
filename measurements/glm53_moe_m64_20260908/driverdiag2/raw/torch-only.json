@@ -1,0 +1,24 @@
+{
+  "mode": "torch-only",
+  "exit_code": 0,
+  "error_count": 0,
+  "api_reports": {},
+  "program": {
+    "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+    "mode": "torch-only",
+    "calls": [],
+    "versions": {
+      "cuda-bindings": "13.3.1",
+      "cuda-python": "13.3.1",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "torch": "2.13.0+cu130"
+    },
+    "positive_control": null,
+    "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+    "serving_gate": false,
+    "numerical_acceptance": false
+  },
+  "log_sha256": "dd59c43f1fab394c2196e31021ef704abbaee6aa9aa652cbc942703d0e772fff",
+  "serving_gate": false,
+  "numerical_acceptance": false
+}

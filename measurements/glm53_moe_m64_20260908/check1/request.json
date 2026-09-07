@@ -1,0 +1,67 @@
+{
+  "status": "SUBMITTED",
+  "source": "/home/choiceoh/stkernel-moe-m64-check1-0908",
+  "revision": "2e2ede9719c319f039cd95ec63ca0268b0d620d8",
+  "session": "moem64check10908",
+  "created": "2026-09-08T01:14:54.748347",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64check10908",
+    "25",
+    "PR455 full-chunk M64: TP4 BF16/FP8 numerical, changed inputs and capture; exact original recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-check1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-check1-0908",
+    "--probe-revision",
+    "2e2ede9719c319f039cd95ec63ca0268b0d620d8",
+    "--out",
+    "/tmp/glm53-moe-m64-check1-0908/evidence"
+  ],
+  "api_preflight": {
+    "local": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.1": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.3": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    },
+    "10.10.10.4": {
+      "distributed_api": "PASS",
+      "calls": [
+        "set_custom_all_reduce",
+        "init_distributed_environment",
+        "initialize_model_parallel",
+        "destroy_model_parallel",
+        "destroy_distributed_environment"
+      ]
+    }
+  }
+}

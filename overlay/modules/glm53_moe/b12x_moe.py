@@ -37,6 +37,8 @@ Example (Wrapper API with CUDA Graph):
     >>> output = moe.run(x=hidden_states_bf16, ...)
 """
 
+import logging
+import os
 from typing import Any, Optional, Tuple
 
 import torch
@@ -44,6 +46,23 @@ import torch
 from ...api_logging import flashinfer_api
 from ...trace.templates.moe import b12x_fused_moe_trace, b12x_moe_wrapper_run_trace
 from ...utils import supported_compute_capability
+
+
+_GLM53_PREFILL_M64 = os.environ.get("VLLM_GLM53_B12X_PREFILL_M64") == "1"
+
+
+def _glm53_prefill_m64_geometry(
+    *, enabled, num_experts, num_local_experts, hidden_size,
+    intermediate_size, top_k, quant_mode, activation, swiglu_alpha,
+    swiglu_beta, swiglu_limit, capability, output_dtype,
+) -> bool:
+    return bool(
+        enabled and num_experts == num_local_experts == 288
+        and hidden_size == 4096 and intermediate_size == 512 and top_k == 8
+        and quant_mode == "nvfp4" and activation == "swigluoai_uninterleave"
+        and swiglu_alpha == 1.0 and swiglu_beta == 0.0 and swiglu_limit == 10.0
+        and capability == (12, 1) and output_dtype == torch.bfloat16
+    )
 
 
 def _is_cuda_graph_capturing() -> bool:
@@ -380,6 +399,8 @@ class B12xMoEWrapper:
         # to whichever workspace was allocated at init time.
         self._static_workspace: object = None
         self._dynamic_workspace: object = None
+        self._prefill_m64_workspace: object = None
+        self._prefill_m64_logged = False
         self._weight_views: object = None
         self._weight_key: Optional[Tuple] = None
         self._padded_weights: Any = None
@@ -493,6 +514,40 @@ class B12xMoEWrapper:
                 swiglu_limit=self.swiglu_limit,
             )
 
+            # One additional graph-stable workspace, shared with the wrapper
+            # across all matching layers. Never replace the stock workspace:
+            # its maximum-capacity geometry also serves short calls/capture.
+            if _GLM53_PREFILL_M64 and self.max_num_tokens >= 6144:
+                from .blackwell_sm12x.moe_dynamic_gated_tiled import m64_stock_contract_matches
+                from .blackwell_sm12x.moe_dispatch import static_v2_weights_layout
+                eligible = _glm53_prefill_m64_geometry(
+                    enabled=_GLM53_PREFILL_M64, num_experts=self.num_experts,
+                    num_local_experts=self.num_local_experts,
+                    hidden_size=self.hidden_size, intermediate_size=self.intermediate_size,
+                    top_k=self.top_k, quant_mode=self.quant_mode,
+                    activation=self.activation, swiglu_alpha=self.swiglu_alpha,
+                    swiglu_beta=self.swiglu_beta, swiglu_limit=self.swiglu_limit,
+                    capability=torch.cuda.get_device_capability(self.device),
+                    output_dtype=self.output_dtype,
+                )
+                if eligible and m64_stock_contract_matches() and static_v2_weights_layout(
+                    num_experts=self.num_experts, num_local_experts=self.num_local_experts,
+                    hidden_size=self.hidden_size, intermediate_size=self.intermediate_size,
+                    num_topk=self.top_k, quant_mode=self.quant_mode,
+                    activation=self.activation, swiglu_limit=self.swiglu_limit,
+                    activation_precision=self.activation_precision,
+                ):
+                    from .blackwell_sm12x.moe_dispatch import allocate_sm120_dynamic_workspace
+                    self._prefill_m64_workspace = allocate_sm120_dynamic_workspace(
+                        state_E=self.num_local_experts, weight_E=self.num_experts,
+                        routed_rows=min(self.max_num_tokens, 8192) * self.top_k,
+                        k=self.hidden_size, n=self.intermediate_size,
+                        num_topk=self.top_k, device=torch.device(self.device),
+                        activation_precision=self.activation_precision,
+                        activation=self.activation, quant_mode=self.quant_mode,
+                        tile_m=64,
+                    )
+
         # Allocated after arch-specific buffers to preserve memory layout
         # that the autotuner's CUDA graph profiling is sensitive to.
         self._moe_output = torch.empty(
@@ -500,6 +555,20 @@ class B12xMoEWrapper:
             dtype=self.output_dtype,
             device=self.device,
         )
+
+    def _workspace_for_prefill(self, workspace, num_tokens):
+        if (workspace is self._dynamic_workspace
+                and self._prefill_m64_workspace is not None
+                and 6144 <= num_tokens <= 8192):
+            # Fail closed if capture state cannot be queried. The functional
+            # cache and all captured/short calls retain their original tiles.
+            try:
+                capturing = torch.cuda.is_current_stream_capturing()
+            except Exception:
+                return workspace
+            if not capturing:
+                return self._prefill_m64_workspace
+        return workspace
 
     @flashinfer_api(trace=b12x_moe_wrapper_run_trace)
     def run(
@@ -634,6 +703,8 @@ class B12xMoEWrapper:
             else:
                 workspace = self._static_workspace
 
+        workspace = self._workspace_for_prefill(workspace, num_tokens)
+
         if self.quant_mode == "nvfp4" and input_global_scale is not None:
             # Fold once and reuse; launch_sm120_moe skips its fold when
             # weight views are given.
@@ -743,7 +814,7 @@ class B12xMoEWrapper:
             self._weight_views = None
             self._weight_key = None
 
-        return launch_sm120_moe(
+        result = launch_sm120_moe(
             a=x,
             topk_ids=token_selected_experts,
             topk_weights=token_final_scales,
@@ -769,3 +840,10 @@ class B12xMoEWrapper:
             _workspace=workspace,
             _weight_views=self._weight_views,
         )
+        if workspace is not None and workspace is self._prefill_m64_workspace and not self._prefill_m64_logged:
+            logging.getLogger(__name__).warning(
+                "GLM53_MOE_PREFILL_M64_LAUNCHED tokens=%d tile_m=%d",
+                num_tokens, workspace.tile_m,
+            )
+            self._prefill_m64_logged = True
+        return result

@@ -1,0 +1,11 @@
+{
+  "gpu_source": "f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb",
+  "cpu_compile": "PASS",
+  "logic": 6689,
+  "megakernel": 30,
+  "fleet": 107,
+  "m64_contracts": 7,
+  "gpu_fix_verified": false,
+  "local_initial_failure": "Two macOS fleet fixture cases mocked Popen without mocking uncached total_memory/sysctl; corrected fixtures and refreshed their dependency audit; full rerun passed",
+  "torch_host_checks": "some skipped because local torch is unavailable; real image compiler uses torch"
+}

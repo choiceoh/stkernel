@@ -1,0 +1,7 @@
+test_symmetric_round_to_even_and_power_of_two_scale (test_analyze.Int8ReplayTests.test_symmetric_round_to_even_and_power_of_two_scale) ... ok
+test_zero_and_empty_rows_are_finite_and_shape_preserved (test_analyze.Int8ReplayTests.test_zero_and_empty_rows_are_finite_and_shape_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.003s
+
+OK

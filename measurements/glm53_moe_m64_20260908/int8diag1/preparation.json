@@ -1,0 +1,22 @@
+{
+  "source": "5c80aef92b7b562c0e2577ae17d9a34936f43605",
+  "default": "VLLM_GLM53_PREFILL_SP_RS_INT8=0",
+  "normal_gate_unchanged": true,
+  "gpu_status": "GO 2026-09-08 04:59:36 KST; results and recovery pending",
+  "full_cpu": {
+    "logic": 6691,
+    "megakernel": 30,
+    "fleet": 107
+  },
+  "focused_cpu": {
+    "codec_pinned_image": 4,
+    "codec_local_pass": 3,
+    "codec_local_torch_skip": 1,
+    "diagnostic": 3,
+    "collectives": 10,
+    "api": 3,
+    "lifecycle": 12,
+    "collector": 10
+  },
+  "helper_sha256": "1388f352716743c771f1f70a019a848e87acdac6608eeca378708398203b8272"
+}

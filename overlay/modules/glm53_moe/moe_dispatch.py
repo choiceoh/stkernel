@@ -53,7 +53,10 @@ from .moe_static_kernel_v5 import (
     TILED_W2_K_IN,
 )
 from ._moe_dynamic.gated import MoEGatedDynamicKernel
-from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
+from .moe_dynamic_gated_tiled import (
+    MoEGatedDynamicKernelTiled, MoEGatedDynamicKernelM64Tiled,
+    m64_stock_contract_matches,
+)
 from .moe_w4a16_fp4_helpers import swizzle_block_scale
 from .moe_w4a16_host import (
     _W4A16_ALLOWED_ROUTED_SIZES,
@@ -77,6 +80,7 @@ _NVFP4_BLOCK_SIZE = 16
 _MXFP4_BLOCK_SIZE = 32
 _LEVEL_TILE_M = 128
 _LEVEL_TILE_N = 128
+_GLM53_B12X_PREFILL_M64 = os.environ.get("VLLM_GLM53_B12X_PREFILL_M64") == "1"
 # Must equal the kernel's task materialization granularity or the task
 # queue is mis-sized.
 _DYNAMIC_SLICE_CHUNK = _TASK_SLICE_CHUNK
@@ -3118,6 +3122,7 @@ def allocate_sm120_dynamic_workspace(
     activation_precision: str = "fp4",
     activation: str = "silu",
     quant_mode: str = "nvfp4",
+    tile_m: int | None = None,
 ) -> Sm120DynamicMoEWorkspace:
     """Allocate workspace buffers for the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -3128,7 +3133,12 @@ def allocate_sm120_dynamic_workspace(
         )
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
-    tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation)
+    if tile_m is None:
+        tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation)
+    elif type(tile_m) is not int or tile_m not in (16, 32, 64, 128):
+        raise ValueError("dynamic tile_m must be 16, 32, 64 or 128")
+    elif not is_gated_activation(activation):
+        raise ValueError("explicit dynamic tile_m requires a gated activation")
     physical_tiles, _, max_tasks = _dynamic_task_geometry(
         state_E,
         n,
@@ -3404,6 +3414,15 @@ def _get_dynamic_kernel(
     # tile_m comes from the workspace's shared selection so the kernel's task
     # and scale indexing matches the allocated scratch geometry.
     mma_tiler_mn = (tile_m, _level_tile_n(activation_precision))
+    prefill_m64 = bool(
+        _GLM53_B12X_PREFILL_M64 and tiled and 6144 <= m <= 8192
+        and (E, k, n, num_topk) == (288, 4096, 512, 8)
+        and quant_mode == "nvfp4" and mma_tiler_mn == (64, 128)
+        and activation == "swigluoai_uninterleave"
+        and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1.0, 0.0, 10.0)
+        and torch.cuda.get_device_capability() == (12, 1)
+        and m64_stock_contract_matches()
+    )
     prefill_reuse = (
         (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
         and m >= 3456
@@ -3459,6 +3478,9 @@ def _get_dynamic_kernel(
         prefill_reuse=prefill_reuse,
         prefill_fc1_n128=prefill_fc1_n128,
     )
+    # Separate the M64 gated port from the factory's generic M64 kernel.
+    if prefill_m64:
+        cache_key = (*cache_key, "glm53_prefill_m64_v3")
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -3471,7 +3493,8 @@ def _get_dynamic_kernel(
     a_dtype = cutlass.BFloat16
     alpha_dtype = cutlass.Float32
 
-    kernel: Any = MoEDynamicKernel(
+    kernel_cls = MoEGatedDynamicKernelM64Tiled if prefill_m64 else MoEDynamicKernel
+    kernel: Any = kernel_cls(
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -3485,7 +3508,7 @@ def _get_dynamic_kernel(
         intermediate_size=n,
         num_topk=num_topk,
     )
-    if tiled:
+    if tiled and not prefill_m64:
         # the tiled layout is read by the gated kernel's subclass only; the
         # #368 prefill-reuse lane subclasses the stock kernel and would read
         # the 4-D tensors as row-major -- the two cannot combine yet

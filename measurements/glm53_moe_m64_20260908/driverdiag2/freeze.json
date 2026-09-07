@@ -1,0 +1,18 @@
+{
+  "local": {
+    "exit_code": 0,
+    "output": "usage: glm53_cuda_driver_lookup_check.py [-h] --mode\n                                         {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n\nMinimal CUDA binding initialization diagnostic; no MoE or INT8 kernels.\n\noptions:\n  -h, --help            show this help message and exit\n  --mode {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.1": {
+    "exit_code": 0,
+    "output": "usage: glm53_cuda_driver_lookup_check.py [-h] --mode\n                                         {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n\nMinimal CUDA binding initialization diagnostic; no MoE or INT8 kernels.\n\noptions:\n  -h, --help            show this help message and exit\n  --mode {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.3": {
+    "exit_code": 0,
+    "output": "usage: glm53_cuda_driver_lookup_check.py [-h] --mode\n                                         {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n\nMinimal CUDA binding initialization diagnostic; no MoE or INT8 kernels.\n\noptions:\n  -h, --help            show this help message and exit\n  --mode {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.4": {
+    "exit_code": 0,
+    "output": "usage: glm53_cuda_driver_lookup_check.py [-h] --mode\n                                         {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n\nMinimal CUDA binding initialization diagnostic; no MoE or INT8 kernels.\n\noptions:\n  -h, --help            show this help message and exit\n  --mode {torch-only,driver-only,torch-driver,driver-torch,torch-driver-invalid,driver-torch-invalid}\n{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  }
+}

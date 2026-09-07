@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-driverdiag2-0908",
+  "revision": "dad37e5251c8a8d4aacf0d67d34ea619cfa14474",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-driverdiag2-0908",
+  "probe_revision": "dad37e5251c8a8d4aacf0d67d34ea619cfa14474",
+  "session": "moem64driver20908",
+  "created": "2026-09-08T05:38:52.813635",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64driver20908",
+    "10",
+    "PR455 driver-first diagnosis with invalid API and deliberate CuTe memory/race detector controls",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-driverdiag2-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-driverdiag2-0908",
+    "--probe-revision",
+    "dad37e5251c8a8d4aacf0d67d34ea619cfa14474",
+    "--out",
+    "/tmp/glm53-moe-m64-driverdiag2-0908/evidence",
+    "--driver-diagnostic"
+  ]
+}

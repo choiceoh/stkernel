@@ -1,0 +1,17 @@
+{
+  "started": 1788808366.046505,
+  "exit_code": 1,
+  "probes": {
+    "moe-m64-fp8-trace": {
+      "revision": "383894cf46df9185f3be6e9be5098c095bbcc337",
+      "started": 1788808436.7578316,
+      "command": [
+        "bash",
+        "probes/run_glm53_moe_m64_tp4_check.sh",
+        "--fp8-trace"
+      ],
+      "exit_code": 0,
+      "ended": 1788808520.2421658
+    }
+  }
+}
