@@ -237,6 +237,7 @@ def main() -> int:
     if os.environ.get("FLEET_EXPERIMENT_ID"):
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
+    rec["endpoint"] = {"completion": bd.URL, "metrics": bd.METRICS}
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)

@@ -50,7 +50,14 @@ LOG_HOST_DIR=/home/choiceoh/glm53-logs
 HEAD_IP=10.10.10.2
 WORKER_IPS=(10.10.10.1 10.10.10.3 10.10.10.4)
 MPORT=29521
-PORT=8000
+# An isolated benchmark can bind loopback without accepting production traffic.
+# Ordinary boots retain the public endpoint; TP rendezvous is independent.
+PORT=${GLM53_API_PORT:-8000}
+API_HOST=${GLM53_API_HOST:-0.0.0.0}
+case "$PORT" in ''|*[!0-9]*) echo "ABORT: invalid GLM53_API_PORT" >&2; exit 2;; esac
+[ "${#PORT}" -le 5 ] && [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] \
+  || { echo "ABORT: GLM53_API_PORT must be 1024..65535" >&2; exit 2; }
+case "$API_HOST" in 0.0.0.0|127.0.0.1) ;; *) echo "ABORT: GLM53_API_HOST must be public or loopback" >&2; exit 2;; esac
 
 # This launcher only does the right thing on the head node. Head file checks
 # and Docker commands run locally, so from any other node it quietly
@@ -825,7 +832,7 @@ fi
 PROF_CFG="{\"profiler\":\"torch\",\"torch_profiler_dir\":\"/prof\",\"torch_profiler_with_stack\":false}"
 SERVE_ARGS="$MODEL_PATH \
 --served-model-name $SERVED_NAME \
---host 0.0.0.0 --port $PORT \
+--host $API_HOST --port $PORT \
 --trust-remote-code \
 --tensor-parallel-size 4 \
 --gpu-memory-utilization $GMU \

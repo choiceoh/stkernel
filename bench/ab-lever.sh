@@ -21,6 +21,7 @@ has() { case ",$LEGS," in *",$1,"*) return 0;; esac; return 1; }
 REPO=${REPO:-/home/choiceoh/stkernel}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 HEAD=${HEAD:-10.10.10.2}
+PORT=${GLM53_API_PORT:-8000}
 ARM=$NAME
 cd "$REPO" || exit 1
 # 39차 idea 2 -- rehearsal: no boot, no leg; the LAST real record is copied under
@@ -63,7 +64,7 @@ snap() {  # snapshot head + worker logs on a failure, then abort
 }
 chk() {  # $1 = leg name, $2 = leg output file
   grep -q "HTTP Error 5\|Traceback\|Connection refused\|ConnectionReset" "$2" && snap "$1 leg errored"
-  [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:8000/health")" = 200 ] || snap "server died during $1"
+  [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:$PORT/health")" = 200 ] || snap "server died during $1"
 }
 if [ "${SKIP_BOOT:-0}" = 1 ]; then
   echo "== [$ARM] reusing the live boot (SKIP_BOOT=1) $(date +%T) =="
@@ -85,7 +86,7 @@ up=0
 # so a second boot resumes where the first stopped. Default 50 min.
 HEALTH_BUDGET_S=${HEALTH_BUDGET_S:-3000}
 for i in $(seq 1 $((HEALTH_BUDGET_S / 15))); do
-  if [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:8000/health")" = 200 ]; then
+  if [ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$HEAD:$PORT/health")" = 200 ]; then
     echo "up after $((i*15))s"; up=1; break
   fi
   # a boot that died shows up as the head container gone (the launcher's
@@ -129,7 +130,7 @@ if has onepass; then
   [ "$leg_rc" = 0 ] || snap "onepass exited $leg_rc"
   chk onepass /tmp/leg.$$
   echo "== [$ARM] acceptance counters =="
-  curl -s -m 5 "http://$HEAD:8000/metrics" | grep -E "^vllm:spec_decode_num_accepted_tokens_per_pos_total|^vllm:spec_decode_num_(drafts|draft_tokens|accepted_tokens)_total" | sed "s/{[^}]*}//"
+  curl -s -m 5 "http://$HEAD:$PORT/metrics" | grep -E "^vllm:spec_decode_num_accepted_tokens_per_pos_total|^vllm:spec_decode_num_(drafts|draft_tokens|accepted_tokens)_total" | sed "s/{[^}]*}//"
 fi
 rm -f /tmp/leg.$$
 # 39차: the head log is the server's stdout, rewritten by every boot -- keep this
