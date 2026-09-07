@@ -1301,7 +1301,8 @@ def _note_input_capture(m, n, k, bg, lr):
 
 def _note_input_cta_capture(m, n, k, bg, lr):
     if (not _ARMED["gemm"] or m != 6 or bg or lr
-            or (n, k) != (6416, 4096) or (m, n, k) in _INPUT_CTA_CAPTURED):
+            or k != 4096 or n not in (4096, 6144, 6416)
+            or (m, n, k) in _INPUT_CTA_CAPTURED):
         return
     plan = _EXT.gemm_input_cta_plan(m, n, k, bool(bg), bool(lr))
     if not plan[0]:
@@ -2285,7 +2286,8 @@ def _selftest_input_reuse():
     _ARMED["gemm"] = False  # self-test captures are not serving receipts
     try:
         with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
-            for n, k in ((6416, 4096),):
+            shapes = ((6416, 4096), (4096, 4096), (6144, 4096)) if _EXT.gemm_input_cta_mode() == 4 else ((6416, 4096),)
+            for n, k in shapes:
                 x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
                 w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
                 pack = build_mk_weight_w4(w)
@@ -2332,9 +2334,18 @@ def _arm_gemm(gate):
     finally:
         _EXT.set_input_cta(cta)
     if cta and _ARMED["gemm"] and _EXT.gemm_input_mode():
+        if cta == 4:
+            # Validate the enabled default first. A three-slice-only failure
+            # must preserve the separately validated eight-slice CTA route.
+            _EXT.set_input_cta(2)
         if not gate("input_cta", _selftest_input_reuse):
             _EXT.set_input_cta(0)
             logger.warning("[megakernel] input-cta DISARM; input-reuse GEMM retained")
+        elif cta == 4:
+            _EXT.set_input_cta(4)
+            if not gate("input_cta3", _selftest_input_reuse):
+                _EXT.set_input_cta(2)
+                logger.warning("[megakernel] input-cta3 DISARM; validated CTA=2 retained")
 
 
 def hc_scale_ones():

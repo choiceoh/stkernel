@@ -2,11 +2,11 @@
 # Preserve the canonical onepass gates while retaining its separate SSE channels.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${INPUT_CTA_SERVING_OUT:?}
-mode=0
+mode=2
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_MK_INPUT_CTA=* ]] || mode=${pair#*=}
 done
-[[ $mode =~ ^[0-3]$ ]] || exit 2
+[[ $mode =~ ^[0-4]$ ]] || exit 2
 collect() {
   local prefix=$1 status=0
   curl -fsS --max-time 5 http://127.0.0.1:18000/health >/dev/null || return 1

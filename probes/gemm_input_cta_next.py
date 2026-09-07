@@ -15,11 +15,13 @@ SHAPES=((6,6416,4096,False),(6,6416,4096,False),(6,6416,4096,True),
         (1,6416,4096,False),(8,6416,4096,False),(6,6528,4096,False),
         (6,6144,4096,False),(6,4096,512,True))
 TIMED_INDICES=(0,)
+SET_MODE=lambda ext,mode:ext.set_input_next(mode)
+GET_INFO=lambda ext:ext.input_next_info()
 
 
 def render(source):
     start=source.index('template <int MODE>\n__global__ void __launch_bounds__(MK_THREADS,MODE==2?4:3)')
-    end=source.index('// ===========================================================================\n// MK_SEG_MHC',start)
+    end=source.index('\n}\n',start)+3
     kernel=source[start:end]
     kernel=replace_once(kernel,'template <int MODE>', 'template <int NEXT>')
     kernel=replace_once(kernel,'MODE==2?4:3', 'NEXT==5?2:3')
@@ -82,7 +84,13 @@ bool g_attrs_set = false;''')
     attrs='\n'.join(f'  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_next_kernel<{m}>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_NEXT_SMEM{3 if m==4 else 4 if m==5 else 2}));' for m in range(1,6))
     source=replace_once(source,'  if (g_attrs_set) return;', '  if (g_attrs_set) return;\n'+attrs)
     launches='\n'.join(f'      {"if" if m==1 else "else if"} (g_input_next=={m}) mk_launch(mk_gemm_input_next_kernel<{m}>,c2.n_orig/16,INPUT_NEXT_SMEM{3 if m==4 else 4 if m==5 else 2},stream,c2);' for m in range(1,6))
-    source=replace_once(source,'    if (cta && c2.ksr==8) {', '''    if (g_input_next && c2.ksr==8) {
+    needle='    if (cta && c2.ksr==8) {'
+    prefix=''
+    if needle not in source:
+        needle='    } else if (cta && c2.ksr==8) {'
+        prefix='    } else '
+    else:prefix='    '
+    source=replace_once(source,needle,prefix+'''if (g_input_next && c2.ksr==8) {
 '''+launches+'''
     } else if (cta && c2.ksr==8) {''')
     info='\n'.join(f'    note(mk_gemm_input_next_kernel<{m}>,INPUT_NEXT_SMEM{3 if m==4 else 4 if m==5 else 2});' for m in range(1,6))
@@ -132,7 +140,7 @@ def main():
     modes=tuple(range(len(MODES)))
     result={'source_sha256':sha,'baseline_source_sha256':hashlib.sha256(original.encode()).hexdigest(),
             'flags':FLAGS,'torch':torch.__version__,'device':torch.cuda.get_device_name(),
-            'mode_names':MODES,'kernel_info_regs_local_bps_smem':ext.input_next_info(),
+            'mode_names':MODES,'kernel_info_regs_local_bps_smem':GET_INFO(ext),
             'gates':[],'timings':[],'status':'RUNNING'}
     args.out.parent.mkdir(parents=True,exist_ok=True)
     def save():args.out.write_text(json.dumps(result,indent=2)+'\n')
@@ -147,7 +155,7 @@ def main():
         wr=mk.mk_w4_dequant(pack[0],pack[1],n,pack[2],pack[3] if len(pack)>3 else None).float()
         graphs={};outputs={}
         for mode in modes:
-            ext.set_input_next(mode)
+            SET_MODE(ext,mode)
             for _ in range(2):mk._gemm_call(x,pack,n,bg=bg)
             torch.cuda.synchronize()
             graph=torch.cuda.CUDAGraph()
@@ -195,8 +203,22 @@ def main():
                 rel,over=mk._exact_gate(outputs[mode],ref)
                 assert rel<=1e-3 and over==0 and torch.equal(outputs[0],outputs[mode]),(rep,mode,rel,over)
     for mode in modes:
-        ext.set_input_next(mode)
+        SET_MODE(ext,mode)
         assert mk._selftest_input_reuse()
+    # Explicit overrides must keep the original split order and fallback.
+    result['forced_split_checks']=[]
+    state=ext.probe_state()
+    try:
+        for split in (1,2,4,8):
+            ext.set_gemm2(split)
+            for x,pack,wr,graphs,outputs in retained:
+                SET_MODE(ext,0);base=mk._gemm_call(x,pack,wr.shape[0])
+                for mode in modes[1:]:
+                    SET_MODE(ext,mode);y=mk._gemm_call(x,pack,wr.shape[0])
+                    torch.cuda.synchronize()
+                    assert torch.equal(base,y),(split,mode,wr.shape)
+                    result['forced_split_checks'].append([split,int(wr.shape[0]),mode])
+    finally:ext.restore_probe_state(state)
     result.update(status='PASS',alternating_graph_replays=20*len(retained)*(len(modes)-1),boot_gate=True);save()
     print('PASS exact outputs, independent oracle, retained graphs and startup gate',flush=True)
 

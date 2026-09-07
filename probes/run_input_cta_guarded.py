@@ -17,6 +17,7 @@ def main():
     ap.add_argument('--out',type=Path,required=True)
     ap.add_argument('--three-slice',action='store_true')
     ap.add_argument('--maintenance',action='store_true')
+    ap.add_argument('--production',action='store_true')
     args=ap.parse_args()
     session=os.environ['FLEET_SESSION']
     assert re.fullmatch('[a-zA-Z0-9_-]+',session)
@@ -75,6 +76,7 @@ def main():
                          '--target-processes','application-only','--error-exitcode','77',
                          '--kernel-name','kns='+kernel,'python3',f'/repo/probes/{script}',
                          '--check-only','--out',f'/evidence/{tool}.json'])
+            if args.production:command.append('--production')
             with (out/(tool+'.log')).open('w') as log:
                 rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,
                                   timeout=420 if tool=='probe' else 240).returncode

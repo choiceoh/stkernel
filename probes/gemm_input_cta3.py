@@ -70,9 +70,16 @@ bool g_attrs_set = false;''')
 
 
 if __name__=='__main__':
+    import sys
     import gemm_input_cta_next as harness
     harness.render=render
     harness.MODES=MODES
+    if '--production' in sys.argv or 'mk_gemm_input_cta3_kernel' in (Path(__file__).resolve().parents[1]/'overlay/modules/glm53_megakernel/glm53_megakernel.cu').read_text():
+        if '--production' in sys.argv:sys.argv.remove('--production')
+        harness.render=lambda source:source
+        harness.MODES=('default_cta2','cta4_three_slice')
+        harness.SET_MODE=lambda ext,mode:ext.set_input_cta(4 if mode else 2)
+        harness.GET_INFO=lambda ext:ext.input_cta_info()
     harness.SHAPES=((6,4096,4096,False),(6,6144,4096,False),
                     (6,6416,4096,False),(6,4096,4096,True),
                     (1,4096,4096,False),(8,6144,4096,False),

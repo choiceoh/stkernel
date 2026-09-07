@@ -15,7 +15,7 @@ import __future__
 
 # Re-audited: only megakernel launch/helper/occupancy counts changed; the
 # extracted math/layout/dispatch contracts and their loader are unchanged.
-LOGIC_AUDIT = '285b9b62df19d25760ef9800c62bddc895f8f9e9bcca6ce3033f67b9eeb5d976'
+LOGIC_AUDIT = '05454755352c6de0fab206df1e65c019d127d2cbc6a01309c6434d42d455ba0c'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
