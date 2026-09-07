@@ -268,3 +268,24 @@ gates and restore evidence in `evidence/`. The probe source pins are unchanged.
 Prepared serving requests now reference this retry evidence path; original
 requests were archived, no serving worker was started, and actual GPU gate
 plus recovery/current-main/source-parity checks remain mandatory.
+
+## Actual GPU result, 20:38 KST
+
+The retry received GO 20:30:33 and restored the exact incoming container
+identities/configuration/source and healthy endpoint at 20:38:54. Recovery
+passed, but the overall gate failed because MoE failed numerics. The 4096
+balanced case passed eager and changed-input graphs, then measured median
+stock 9.851942 ms versus stream 12.081869 ms: latency +22.63%,
+reciprocal rate -18.46%. The next 6912 skew case exceeded the
+existing per-row limits on 40 rows (maximum relative L2 0.031223, peak-relative
+error 0.128848, stock repeated-run L2 0). This stopped the probe before its
+sanitizers. Do not lower the limits, submit this candidate to serving, or
+claim its compiled-stack reduction as a performance gain. The exact numerical
+root cause remains unresolved; full-tile occupancy is only a diagnostic lead.
+
+MLA's separate memcheck and racecheck each passed seven cases, with zero
+errors/hazards/warnings. These are not TTFT results. Raw candidate logs,
+completion and compressed before/stopped/restarted/restored inventories are
+retained here, with machine-readable conclusions in offline2-result.json.
+The local MoE branch was rebased on main 69ea76f; its five validated source
+files are byte-identical to this failed GPU source. Both flags remain off.

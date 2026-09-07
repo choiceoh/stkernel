@@ -1,0 +1,25 @@
+{"host": "srv2", "probe_memory": {"passed": true, "available_kib": 100270148, "required_kib": 20939398, "total_kib": 125507892}}
+probe_node=srv2 revision=924b1be06e146381019fb1ee1144bd6d64b2914d image=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211 evidence=/tmp/glm53-moe-stream-evidence.fWtyaCxf
+7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b  /usr/local/cuda/compute-sanitizer/compute-sanitizer
+NVIDIA (R) Compute Sanitizer
+Copyright (c) 2020-2025 NVIDIA Corporation
+Version 2025.3.1.0 (build 36400806) (public-release)
+2026-09-07 11:31:39,915 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+2026-09-07 11:31:43,800 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f.o
+[b12x prefill stream] ENGAGED m=4096 E=288 k=4096 n=512 topk=8 tiled=True
+2026-09-07 11:31:43,841 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c58e235969a87716
+2026-09-07 11:31:47,252 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c58e235969a87716.o
+[b12x prefill stream] COMPILED: N128 FC1, one live FC2 slice; m=4096 k=4096 n=512 experts=288 mac=48 tiled=True
+[b12x prefill stream] LAUNCHED m=4096 tiled=True
+[b12x prefill stream] COMPILED: N128 FC1, one live FC2 slice; m=4096 k=4096 n=512 experts=288 mac=48 tiled=True
+{"m": 4096, "routing": "balanced", "eager": {"bad_rows": 0, "max_row_relative_l2": 0.005458712112158537, "max_row_relative_abs": 0.016233766451478004, "stock_max_row_relative_l2": 0.0052509312517941}, "stock_graph": {"bad_rows": 0, "max_row_relative_l2": 0.0052553932182490826, "max_row_relative_abs": 0.01515151560306549, "stock_max_row_relative_l2": 0.005292659159749746}, "candidate_graph": {"bad_rows": 0, "max_row_relative_l2": 0.005336858332157135, "max_row_relative_abs": 0.020134227350354195, "stock_max_row_relative_l2": 0.005292659159749746}, "timing_ms": {"stock": [9.867411041259766, 9.836473846435547, 9.953017425537109, 9.795935821533202, 9.794713592529297, 9.942176055908202, 9.946463775634765, 9.817241668701172], "stream": [12.101324462890625, 12.198649597167968, 12.187801361083984, 12.165062713623048, 12.04874267578125, 12.062413024902344, 12.049120330810547, 12.051808166503907]}, "median_speedup_pct": -18.45679958388343}
+Traceback (most recent call last):
+  File "/repo/probes/b12x_prefill_stream_check.py", line 158, in <module>
+    main()
+  File "/repo/probes/b12x_prefill_stream_check.py", line 103, in main
+    row = dict(m=m, routing=routing, eager=compare(a, b, b2))
+                                           ^^^^^^^^^^^^^^^^^
+  File "/repo/probes/b12x_prefill_stream_check.py", line 42, in compare
+    assert not result["bad_rows"], result
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'bad_rows': 40, 'max_row_relative_l2': 0.031222660094499588, 'max_row_relative_abs': 0.12884794175624847, 'stock_max_row_relative_l2': 0.0}
