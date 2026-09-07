@@ -11562,6 +11562,15 @@ def test_megakernel_regression_suite():
     return result.testsRun
 
 
+def test_glm53_graph_profile_regressions():
+    import unittest
+    suite = unittest.defaultTestLoader.discover(
+        os.path.dirname(os.path.abspath(__file__)), pattern="test_glm53_graph_profile.py")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    check(result.testsRun >= 6 and result.wasSuccessful(),
+          "GLM graph-profile memory sizing and required warmup regressions")
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -11648,6 +11657,7 @@ if __name__ == "__main__":
     test_cuda_builds_keep_the_arch_specific_target()
     test_self_built_kernels_persist_their_caches()
     test_boot_stamps_measure_without_changing_the_boot()
+    test_glm53_graph_profile_regressions()
     test_cudagraph_mem_profiling_off_keeps_the_kv_size()
     test_kv_cache_is_pinned_in_tokens()
     test_earlyoom_is_fireable_on_unified_memory()

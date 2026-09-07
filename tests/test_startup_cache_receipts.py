@@ -64,6 +64,19 @@ class BootReceiptTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.check_receipts("FAST1", 1, 254, 0, mode="renderer-warmup", packs=packs, suffix=bad)
 
+    def test_graph_profile_requires_real_warmup_on_every_arm(self):
+        packs = "packs: rtn=0 gptq=0 gptq_failed=0 cached=255\n"
+        warmup = "".join(f"[boot-stamp] {p} took 1.0s\n" for p in
+                         ("encoder-profile", "profile-run", "cudagraph-capture", "compile+warmup"))
+        for stage, marker in (("BASE1", "[boot-stamp] cudagraph-memory-profile took 3.0s\n"),
+                              ("FAST1", "[glm53-graph-profile] skipped unused estimate rank=0\n")):
+            args = dict(mode="graph-profile", packs=packs)
+            self.check_receipts(stage, 1, 255, 0, suffix=warmup + marker, **args)
+            for bad in (warmup, marker, warmup.replace("encoder-profile", "skipped-encoder") + marker,
+                        warmup + marker + "Traceback (most recent call last)"):
+                with self.assertRaises(AssertionError):
+                    self.check_receipts(stage, 1, 255, 0, suffix=bad, **args)
+
     def test_prime_still_rejects_wrong_path_and_restore_errors(self):
         for fast, hits, suffix in ((1, 0, ""), (0, 1, ""),
                                   (0, 0, "pack cache example unreadable\n"),

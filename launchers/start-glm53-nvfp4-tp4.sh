@@ -801,15 +801,16 @@ RECLAIMEOF
   fi
 fi
 
-# CUDA graph memory profiling: 12 s of every boot to estimate what the graph
-# pool will take (0.85 GiB estimated, 0.42 GiB actually used on 2026-09-02),
+# CUDA graph memory profiling took 12 s on 2026-09-02 to estimate what the graph
+# pool would take (0.85 GiB estimated, 0.42 GiB actually used),
 # which vLLM then subtracts from the KV budget:
 #   available_kv = requested - non_kv - cudagraph_estimate   (gpu_worker.py)
-# Turning it off skips the 12 s AND stops the subtraction, so KV would grow
+# Disabling application of the estimate stops the subtraction, so KV would grow
 # by that 0.85 GiB unless the same share comes off GMU -- which is what the
-# delta below does. Net effect: identical KV cache, 12 s faster, and the
-# graph pool allocates from the memory outside the request as it does when
-# the estimator is on but wrong.
+# delta below does. The pinned MRv2 image still performs the dry captures even
+# with application disabled. VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE gates their
+# removal; real graph capture/warmup remains. The graph pool allocates from
+# memory outside the request.
 #
 # NOT vLLM's suggested 0.7671: that number is for keeping the estimator ON
 # and restoring the pre-v0.21 KV size. Applying it here as well would hand
@@ -826,7 +827,7 @@ if [ "$CG_MEM_PROFILE" = 0 ]; then
   _gmu_before="$GMU"
   GMU=$(awk "BEGIN{printf \"%.4f\", $GMU - $CG_UTIL_DELTA}")
   ENVV="$ENVV -e VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0"
-  echo "  cudagraph mem profiling off: GMU $_gmu_before -> $GMU (KV unchanged, -12 s boot)"
+  echo "  cudagraph estimate not applied: GMU $_gmu_before -> $GMU (graph headroom retained; skip unused dry capture=${VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE:-0})"
 fi
 
 PROF_CFG="{\"profiler\":\"torch\",\"torch_profiler_dir\":\"/prof\",\"torch_profiler_with_stack\":false}"
