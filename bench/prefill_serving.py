@@ -32,7 +32,7 @@ IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 NODES = ('10.10.10.2', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 CANDIDATES = {
     'moe-overlap': ('VLLM_GLM53_PREFILL_MOE_OVERLAP', '[prefill-sp] MoE overlap LAUNCHED',
-        '44d76c0264c335db69745f61c9ef5a0fe0cd4103', '/home/choiceoh/stkernel-moe-overlap-check1-0907'),
+        'ce71af658a7c95ab2b23e04612fb7de39f05a64c', '/home/choiceoh/stkernel-moe-overlap-check2-0907'),
 }
 
 SNAPSHOT = r'''

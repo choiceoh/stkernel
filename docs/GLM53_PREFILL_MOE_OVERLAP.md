@@ -88,3 +88,21 @@ its MLA or failed MoE kernel candidates. The 61 relevant GPU/launch/probe
 files remain byte-identical to frozen GPU revision `44d76c0`; current-main
 rebase `944f65c` changes only fleet CPU handoff code. GPU and TTFT are still
 pending; preparing this runner is not a measurement result.
+
+
+## API correction and connected retry
+
+The first four-rank attempt stopped before numerics because the probe used
+`pipeline_parallel_size` where the pinned distributed API requires
+`pipeline_model_parallel_size`. See `failed-init-api/` for every rank's log
+and exact original-container/health recovery at 22:50:21 KST. No speed or
+numerical verdict was obtained. The candidate's overlays, profile and
+launcher are unchanged.
+
+Corrected GPU source `ce71af6` adds source-signature binding before any CUDA
+import and before the offline helper stops serving. The lifecycle context
+cleans up partial initialization failures as well as the probe body. The
+new serving runner's `--refresh-gate` connects this corrected full four-rank
+GPU gate, original recovery, and then B1/A/B2 within one normal fleet hold.
+A failed GPU gate cannot reach serving deployment. The old prepared
+serving1 request is retired without submission; use the new retry receipt.
