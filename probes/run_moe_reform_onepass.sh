@@ -35,7 +35,9 @@ cleanup() {
       bash launchers/deploy-overlays.sh glm53 || exit 1
       env -u ONEPASS_JSONL -u ONEPASS_VERDICTS REPO="$RESTORE_REPO" \
         GLM53_API_HOST=0.0.0.0 GLM53_API_PORT=8000 HEAD=10.10.10.2 \
-        PREFILL_WARMUP=1 LEGS=none bash bench/ab-lever.sh "${session}RESTORE" ''
+        PREFILL_WARMUP=1 LEGS=none bash bench/ab-lever.sh "${session}RESTORE" '' || exit 1
+      python3 "$REPO/probes/verify_moe_reform_restore.py" \
+        --restore-repo "$RESTORE_REPO" --out "$out/restore-proof.json" || exit 1
     ) > "$out/restore.log" 2>&1; then
       curl -fsS --max-time 5 http://127.0.0.1:8000/health > "$out/restore.health"
       docker inspect glm53 --format '{{.Id}} {{.Image}} {{.State.StartedAt}}' > "$out/restore.boot"

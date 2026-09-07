@@ -1,32 +1,15 @@
-"""
-MoEStaticKernelV4 -- v2 with FC1 streamed as two 64-wide N halves over
-256-wide K stages, so every w13 TMA box row is 128 B (a full L2 line)
-instead of the 64 B half line the stock kernel and v2 read.
+"""Persistent GLM-5.3 NVFP4 MoE with streamed FC1 and FC2 pipelines.
 
-Why (35차 §7 stamps): in v2 the FC1 phase streams w13 at 4.5 GB/s per CTA
-(216 GB/s aggregate) while the FC2 phase streams w2 at 5.05 GB/s per CTA
-(242 GB/s) with the same pipeline structure. w13 rows are 2,048 B apart and
-each k-tile box takes 64 B of every row; w2's 256 B rows are read whole by
-the four slice CTAs. Doubling the FC1 K tile to 256 fp4 elements makes the
-w13 segment 128 B; halving the FC1 N tile to 64 keeps a stage at 26 KB
-(A 4 + gate 8 + up 8 + scales 6) so two stages plus FC2's three fit smem.
+Default t geometry: FC1 M32/N64/K512 over two 64-column halves; FC2
+M32/N128/K128. Each work item owns one expert's 128-column intermediate
+slice, retaining BF16 activation and per-slice output rounding.
 
-Item structure (unchanged: one (m_tile, 128-wide intermediate slice, expert)
-per item, 160 items at the served decode shape):
-
-    FC1 half 0: k loop over 16 stages of (A 32x256, gate 64x256, up 64x256)
-                -> activation -> fp4 quant into sA2 columns [0, 64)
-    FC1 half 1: the same for columns [64, 128)
-    FC2:        as v2 (32 down tiles of 128x128 from sA2/sSFA2, scatter)
-
-Two tiled MMAs live in the kernel: (32, 64, 256) for FC1 and (32, 128, 128)
-for FC2; the quantized intermediate keeps v2's K-major SW64 layout, so the
-quant store formula and the FC2 side are v2's verbatim. Numerics: the FC1
-accumulation is the same mma atom over the same k order (k-blocks of 64),
-so results are bit-identical to v2 up to the bf16 atomic scatter order.
-
-Selected by ``VLLM_GLM53_B12X_STATIC_V2`` spec cell ``w`` (tile_m 32, static
-schedule; ``f``/``g`` set the FC1/FC2 stage counts; ``s`` stamps as in v2).
+The optional t,r decode reform uses M16/N128/K256 for FC1 and M16/N256/K128
+for FC2, with four warps distributed along N. It removes duplicated FC1
+scale-block reads, halves padded MMA work and halves FC2 output-tile count.
+Weight storage and the 128-column intermediate boundary are unchanged.
+Runtime dispatch specializes this bundle only for 1<=M<=8; larger batches
+keep the default tile geometry. See MEASUREMENTS.md for measured evidence.
 """
 
 from __future__ import annotations
