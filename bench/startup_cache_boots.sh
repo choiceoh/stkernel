@@ -56,6 +56,10 @@ failed() {
   exit "$rc"
 }
 trap failed EXIT
+# A handled signal exits after the foreground boot returns, so failed() can
+# restore control without leaving an orphan boot or recording exit code zero.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for stage in "${stages[@]}"; do
   current_arm=${PREFIX}${stage}
