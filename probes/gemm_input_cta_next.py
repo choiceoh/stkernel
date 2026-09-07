@@ -11,6 +11,10 @@ from gemm_input_reuse import FLAGS, ROOT, replace_once
 
 MODES = ('default_cta2', 'early_input', 'vector_reduce', 'early_vector',
          'early_vector_nb3', 'early_vector_nb4')
+SHAPES=((6,6416,4096,False),(6,6416,4096,False),(6,6416,4096,True),
+        (1,6416,4096,False),(8,6416,4096,False),(6,6528,4096,False),
+        (6,6144,4096,False),(6,4096,512,True))
+TIMED_INDICES=(0,)
 
 
 def render(source):
@@ -135,10 +139,7 @@ def main():
     save();print(json.dumps({k:v for k,v in result.items() if k not in ('gates','timings')}),flush=True)
     flush=torch.zeros(64*1024*1024,dtype=torch.uint8,device='cuda')
     retained=[]
-    shapes=((6,6416,4096,False),(6,6416,4096,False),(6,6416,4096,True),
-            (1,6416,4096,False),(8,6416,4096,False),(6,6528,4096,False),
-            (6,6144,4096,False),(6,4096,512,True))
-    for index,(m,n,k,bg) in enumerate(shapes):
+    for index,(m,n,k,bg) in enumerate(SHAPES):
         torch.manual_seed(20260908+index)
         x=torch.randn(m,k,device='cuda',dtype=torch.bfloat16)*.3
         w=torch.randn(n,k,device='cuda',dtype=torch.bfloat16)*.05
@@ -166,7 +167,7 @@ def main():
                 result['gates'].append(row);save()
                 assert finite and exact and rel<=1e-3 and over==0,row
         if index<2:retained.append((x,pack,wr,graphs,outputs))
-        if index==0 and not args.check_only:
+        if index in TIMED_INDICES and not args.check_only:
             x.normal_().mul_(.3)
             for cache in ('warm','read_evicted'):
                 times={mode:[] for mode in modes}
@@ -180,7 +181,7 @@ def main():
                         a.record();graphs[mode].replay();b.record();b.synchronize()
                         times[mode].append(a.elapsed_time(b)*1000)
                 med={mode:median(values) for mode,values in times.items()}
-                row={'cache':cache,'median_us':med,'raw_us':times,
+                row={'shape':[m,n,k],'plan':ext.gemm2_plan(m,n,k),'cache':cache,'median_us':med,'raw_us':times,
                      'reduction_pct':{mode:100*(med[0]-med[mode])/med[0] for mode in modes[1:]}}
                 result['timings'].append(row);save();print(json.dumps(row),flush=True)
     for rep in range(20):
