@@ -1,6 +1,9 @@
 import importlib.util
+import json
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -60,6 +63,57 @@ class OfflineTests(unittest.TestCase):
             run.return_value = subprocess.CompletedProcess([], 2, b'')
             with self.assertRaises(RuntimeError):
                 m.restore_public(Path('/unused'), lambda *a: None, {})
+
+    def test_generated_transition_executes_stop_and_start_with_unordered_mounts(self):
+        self.generated_transition(change_source=False)
+
+    def test_generated_transition_refuses_real_source_change_before_docker_mutation(self):
+        self.generated_transition(change_source=True)
+
+    def generated_transition(self, change_source):
+        # Run the COMPLETE emitted Python in real child processes. Only the
+        # Docker executable is substituted with a stateful temporary fake.
+        # This catches quoting/name resolution and inspect serialization bugs
+        # that mocking transition_all/remote cannot exercise.
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);state=root/'state.json';docker=root/'docker'
+            state.write_text(json.dumps(dict(running=True,inspects=0,mutations=[],source='/tmp/first')))
+            docker.write_text('''#!/usr/bin/env python3
+import json,os,pathlib,sys
+path=pathlib.Path(os.environ['PREFILL_FAKE_DOCKER_STATE'])
+s=json.loads(path.read_text());args=sys.argv[1:];identifier='d'*64
+if args==['ps','-a','--format','{{.Names}}']:
+    print('glm53')
+elif args==['inspect','glm53']:
+    s['inspects']+=1
+    mounts=[dict(Destination='/a',Source=s['source'],RW=False),dict(Destination='/b',Source='/tmp/second',RW=False)]
+    if s['inspects']%2:mounts.reverse()
+    print(json.dumps([dict(Id=identifier,Image='sha256:'+'a'*64,
+        State=dict(Running=s['running'],StartedAt='running-at-'+str(len(s['mutations']))),
+        Config=dict(Cmd=['serve --port 8000'],Env=['SETTING=value']),
+        HostConfig=dict(AutoRemove=False),Mounts=mounts)]))
+elif args in (['stop','--time','45',identifier],['start',identifier]):
+    s['mutations'].append(args);s['running']=args[0]=='start';print(identifier)
+else:
+    raise SystemExit('unexpected fake Docker invocation: '+repr(args))
+path.write_text(json.dumps(s))
+''')
+            docker.chmod(0o755)
+            with patch.dict(os.environ,PATH=str(root)+os.pathsep+os.environ['PATH'],PREFILL_FAKE_DOCKER_STATE=str(state)),patch.object(m,'check_holder'):
+                before=m.remote('local',m.INSPECT+"\nprint(json.dumps(inspect('glm53')))")
+                if change_source:
+                    data=json.loads(state.read_text());data['source']='/tmp/different';state.write_text(json.dumps(data))
+                    with self.assertRaisesRegex(RuntimeError,'identity/config/source changed'):
+                        m.transition('local',before,'stop')
+                    self.assertEqual(json.loads(state.read_text())['mutations'],[])
+                else:
+                    stopped=m.transition('local',before,'stop')
+                    self.assertFalse(stopped['running'])
+                    started=m.transition('local',before,'start')
+                    self.assertTrue(started['running'])
+                    self.assertEqual(m.identity(before),m.identity(started))
+                    self.assertEqual(json.loads(state.read_text())['mutations'],
+                                     [['stop','--time','45','d'*64],['start','d'*64]])
 
 
 if __name__ == '__main__':

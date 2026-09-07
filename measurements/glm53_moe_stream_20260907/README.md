@@ -233,3 +233,26 @@ source cleanliness, gate parity and current-main ancestry before recording
 submission and entering the normal fleet queue as `moeprefill10907`. A changed
 main or failed gate is refused before reservation. Do not mistake this
 preparation receipt for executed or queued serving evidence.
+
+## Offline orchestration failure and fix (20:14 KST)
+
+`prefilloff10907` received GO at 20:00:24 and failed at 20:00:28 before
+entering either GPU probe. All stop attempts refused an unchanged container
+because Docker returned the Mounts list in a different order. Recovery then
+hit the same check or a second bug: the generated `start` action was emitted
+as an unquoted Python identifier. No Docker stop/start command executed;
+this run supplies neither GPU results nor a service-recovery success claim.
+Original request and compressed logs, completion, inventory and resource
+evidence are retained alongside `offline1-failure.json`.
+
+The fix hashes complete mount records sorted by their unique destination,
+quotes the emitted action, and bounds remote stderr. Eight CPU tests pass,
+including real subprocess execution of the complete generated Python against
+a stateful fake Docker; alternating mount order succeeds, while an actual
+mount source change is refused before mutation. A separate read-only check
+repeated the corrected inventory three times on all four live nodes; its
+result is in `offline2-readonly-identity.json`. These checks used no GPU and
+did not stop or restart the active owner's containers. A fresh normal fleet
+turn is still required for GPU numerics/sanitizers, then direct-serving TTFT.
+The previously prepared serving jobs remain unsubmitted and must be pointed
+at the successful retry gate before use. Both candidates remain default-off.
