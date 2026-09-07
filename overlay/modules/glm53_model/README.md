@@ -648,6 +648,16 @@ Pinned allocation failure retains synchronous copies. The final trial restored
 44.8 GiB per rank in 38.4–48.0 seconds; pinned staging and alias deduplication
 were introduced together, so their individual contributions are not isolated.
 
+`VLLM_GLM53_RANK_CACHE_PREFETCH=1` overlaps the next chunks' mapped reads and
+SHA-256 checks with restoration. It is **off by default pending fleet timing**.
+Two CPU workers keep at most two chunks (128 MiB) ahead; GPU copies remain on
+the caller's CUDA stream with the same 64 MiB pinned buffer and synchronization.
+Every chunk must pass its checksum before copying, and worker jobs are joined
+before closing the mapping even on failure. This transport-only flag does not
+change artifact identity. `[rank-cache-io]` reports checksum worker time, time
+waiting for checksums, copies, page discard and total restoration. Worker times
+overlap and must not be added to the total as independent phases.
+
 Rank identity includes the local checkpoint index/config and every source
 file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model
 config, TP/rank, environment and runtime code. This is an immutable-source,
