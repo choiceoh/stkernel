@@ -21,9 +21,16 @@ hashes/shapes and independently reconstructs the raw error/noise/reference norms
 It also verifies the exact complete/prefix plan, source hashes, failure counts,
 positive detector controls and incoming recovery. It preserves all failures.
 
+Subsequent evidence: a broader kernel-journal query found an NVIDIA driver
+`NV_ERR_NO_MEMORY` allocation failure at 06:23:58, immediately before this run's
+exit. The same message precedes reusediag2's exit, where retained cgroup/Docker
+state rules out the container memory limit. See `../reusediag2/` for that evidence.
+The original narrow journal query did not match the driver's `Out of memory`
+wording; absence of that earlier match did not rule out allocation failure.
+
 Memcheck prints `process didn't terminate successfully`, with no Python traceback
 and an error summary of zero. The Docker events retain exit 15 and no OOM event;
-the queried kernel journal had no matching OOM/Xid report. This does not establish
+the original narrow kernel-journal query had no matching OOM/Xid report. This did not establish
 a termination cause: the automatically removed container's final OOM/resource
 state was not captured. It must not be called an OOM, disk failure, clean sanitizer
 pass or M64 numerical failure on this evidence alone.

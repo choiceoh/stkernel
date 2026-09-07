@@ -54,12 +54,6 @@ def verify_log(log,source):
     trials=[r for r in records if r.get('kind')=='MOE_M64_REUSE_DIAGNOSTIC_TRIAL']
     finals=[r for r in records if r.get('verdict')==MARKER]
     if len(finals)!=1:raise ValueError('one diagnostic completion required')
-    memory=[r for r in records if r.get('kind')=='MOE_M64_REUSE_MEMORY']
-    expected=[(rows,skew,stage) for rows,skew in CASES for stage in ('before_case','case_complete','case_released')]
-    if [(r['rows'],r['skew'],r['stage']) for r in memory]!=expected:
-        raise ValueError('complete case memory/release evidence required')
-    if any(not 0<=r['allocated_bytes']<=r['reserved_bytes'] for r in memory):
-        raise ValueError('invalid allocator memory evidence')
     provenance={}
     for line in (Path(source)/'build/glm53/manifest.tsv').read_text().splitlines():
         if not line or line.startswith('#'):continue
@@ -79,17 +73,7 @@ def verify_log(log,source):
 
 def run(*,torch,case_factory,provenance):
     records=[]
-    def memory(stage,rows,skew):
-        report=dict(kind='MOE_M64_REUSE_MEMORY',stage=stage,rows=rows,skew=skew,
-            allocated_bytes=torch.cuda.memory_allocated(),reserved_bytes=torch.cuda.memory_reserved())
-        try:
-            free,total=torch.cuda.mem_get_info()
-            report.update(cuda_free_bytes=free,cuda_total_bytes=total)
-        except RuntimeError as exc:
-            report['cuda_memory_unavailable']=type(exc).__name__
-        print(json.dumps(report),flush=True)
     for rows,skew in CASES:
-        memory('before_case',rows,skew)
         x,call=case_factory(rows,skew)
         expected=x.clone()
         retained=[]
@@ -122,13 +106,6 @@ def run(*,torch,case_factory,provenance):
                 print(json.dumps(record,allow_nan=False),flush=True)
                 if trial==0:retained.append((values['candidate'],values['candidate'].clone()))
         torch.cuda.synchronize()
-        memory('case_complete',rows,skew)
-        # Every retained output has already been checked through the last
-        # changed-input trial. Release this completed fixture before allocating
-        # the next one; keep the wrapper/weights and all recorded evidence.
-        del retained,values,baseline,repeat,expected,x,call,index,arrays
-        torch.cuda.empty_cache()
-        memory('case_released',rows,skew)
     result=completion(records,provenance)
     print(json.dumps(result,allow_nan=False),flush=True)
     return result

@@ -14,11 +14,6 @@ def snapshot(name):
     container=json.loads(result.stdout)[0]
     record=dict(container_id=container['Id'],state=container['State'],
         memory_limit_bytes=container['HostConfig']['Memory'])
-    try:
-        fields=dict(line.split(':',1) for line in Path('/proc/meminfo').read_text().splitlines())
-        record['host_mem_available_bytes']=int(fields['MemAvailable'].split()[0])*1024
-    except (OSError,KeyError,ValueError) as exc:
-        record['host_memory_unavailable']=type(exc).__name__
     pid=container['State']['Pid']
     if pid:
         try:
@@ -35,7 +30,6 @@ def snapshot(name):
 def run(command,name,out):
     report=dict(started=time.time(),name=name,command=command,exit_code=None,samples=0,
                 observed_memory_peak_bytes=None,last_resource=None,final_container=None,
-                min_host_mem_available_bytes=None,
                 sampler_errors=[],serving_gate=False,numerical_acceptance=False)
     process=None
     def sample():
@@ -44,10 +38,6 @@ def run(command,name,out):
             if record is None:return
             report['samples']+=1
             report['final_container']=record
-            available=record.get('host_mem_available_bytes')
-            if available is not None:
-                prior=report['min_host_mem_available_bytes']
-                report['min_host_mem_available_bytes']=available if prior is None else min(prior,available)
             memory=record.get('memory')
             if memory:
                 report['last_resource']=record

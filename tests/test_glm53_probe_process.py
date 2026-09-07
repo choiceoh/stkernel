@@ -13,8 +13,9 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class ProcessTests(unittest.TestCase):
     def test_nonzero_exit_retains_peak_and_final_oom_state(self):
         active=dict(state=dict(Pid=11,Running=True,OOMKilled=False),
+            host_mem_available_bytes=2400,
             memory={'memory.peak':'1500','memory.events':'oom 0\noom_kill 0'})
-        final=dict(state=dict(Pid=0,Running=False,OOMKilled=True,ExitCode=15))
+        final=dict(state=dict(Pid=0,Running=False,OOMKilled=True,ExitCode=15),host_mem_available_bytes=2500)
         process=Mock(returncode=15);process.poll.side_effect=[None,15]
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)/'report.json'
@@ -23,6 +24,7 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(m.run(['timeout','test'],'owned',out),15)
             report=json.loads(out.read_text())
             self.assertEqual(report['observed_memory_peak_bytes'],1500)
+            self.assertEqual(report['min_host_mem_available_bytes'],2400)
             self.assertEqual(report['last_resource'],active)
             self.assertEqual(report['final_container'],final)
             self.assertEqual(report['exit_code'],15)
@@ -37,6 +39,7 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(m.run(['timeout','test'],'owned',out),1)
             report=json.loads(out.read_text())
             self.assertIsNone(report['observed_memory_peak_bytes'])
+            self.assertIsNone(report['min_host_mem_available_bytes'])
             self.assertIsNone(report['final_container'])
             self.assertEqual(report['sampler_errors'],['OSError'])
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import weakref
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'probes'))
@@ -18,20 +19,35 @@ class ReuseTests(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec('torch'),'CPU tensor validation also runs in the pinned image')
     def test_actual_tensor_collection_keeps_failures_and_validates_payloads(self):
         import torch
+        tensors=[]
         def factory(rows,skew):
             x=torch.ones(rows,4096,dtype=torch.bfloat16)
-            return x,lambda candidate:x.clone()+(.25 if candidate else 0.)
+            tensors.append(weakref.ref(x))
+            def call(candidate):
+                result=x.clone()+(.25 if candidate else 0.)
+                tensors.append(weakref.ref(result))
+                return result
+            return x,call
+        def released():
+            self.assertTrue(all(ref() is None for ref in tensors),'finished case still owns tensors')
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);build=root/'build/glm53';build.mkdir(parents=True)
             (build/'fixture').write_bytes(b'fixture')
             (build/'manifest.tsv').write_text('fixture\t/unused\n')
             provenance={'fixture':hashlib.sha256(b'fixture').hexdigest()}
             captured=io.StringIO()
-            with patch.object(m,'CASES',((4,True),)),patch.object(torch.cuda,'synchronize'),redirect_stdout(captured):
+            with patch.object(m,'CASES',((4,True),)),patch.object(torch.cuda,'synchronize'), \
+                 patch.object(torch.cuda,'memory_allocated',return_value=0), \
+                 patch.object(torch.cuda,'memory_reserved',return_value=0), \
+                 patch.object(torch.cuda,'mem_get_info',return_value=(1024,2048)), \
+                 patch.object(torch.cuda,'empty_cache',side_effect=released) as release,redirect_stdout(captured):
                 result=m.run(torch=torch,case_factory=factory,provenance=provenance)
+                release.assert_called_once()
                 self.assertEqual(m.verify_log(captured.getvalue(),root),result)
                 self.assertEqual(sum(g['candidate_bad'] for g in result['groups']),32)
                 self.assertFalse(result['numerical_acceptance'])
+                missing_memory='\n'.join(l for l in captured.getvalue().splitlines() if '"stage": "case_released"' not in l)
+                with self.assertRaises(ValueError):m.verify_log(missing_memory,root)
                 damaged=captured.getvalue().replace('"data_b64": "','"data_b64": "broken',1)
                 with self.assertRaises(Exception):m.verify_log(damaged,root)
                 (build/'fixture').write_bytes(b'changed')

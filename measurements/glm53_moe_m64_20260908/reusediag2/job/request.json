@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-reusediag2-0908",
+  "revision": "5952925c9832ea99d8244d7ea4a464ef752bc495",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-reusediag2-0908",
+  "probe_revision": "5952925c9832ea99d8244d7ea4a464ef752bc495",
+  "session": "moem64reuse20908",
+  "created": "2026-09-08T06:57:13.541799",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64reuse20908",
+    "40",
+    "PR455 remaining reuse sanitizers with preserved process exit and cgroup evidence; fixed numerical limits and exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-reusediag2-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-reusediag2-0908",
+    "--probe-revision",
+    "5952925c9832ea99d8244d7ea4a464ef752bc495",
+    "--out",
+    "/tmp/glm53-moe-m64-reusediag2-0908/evidence",
+    "--reuse-diagnostic"
+  ]
+}

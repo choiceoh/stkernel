@@ -1,0 +1,8 @@
+{
+  "reusediag1": [
+    "Sep 08 06:23:58 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359"
+  ],
+  "reusediag2": [
+    "Sep 08 07:27:37 srv2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: Out of memory [NV_ERR_NO_MEMORY] (0x00000051) returned from _memdescAllocInternal(pMemDesc) @ mem_desc.c:1359"
+  ]
+}

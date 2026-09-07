@@ -5,7 +5,26 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
-Latest status (2026-09-08 06:26 KST): the bounded local reuse diagnostic completed
+Latest status (2026-09-08 07:30 KST): `reusediag2` again stopped after 40/48
+memcheck trials with exit 15; this time all recorded candidate/control rows
+passed. Docker/cgroup evidence shows no OOM or limit event and a peak of
+2,909,007,872 bytes against the 16 GiB limit. However, the kernel journal records
+an NVIDIA driver `NV_ERR_NO_MEMORY` allocation failure immediately before both
+this exit and the earlier reusediag1 exit. Container OOM is ruled out; the exact
+driver allocation limit remains unresolved. Racecheck was not reached. Exact
+incoming recovery completed at 07:30:28. See `reusediag2/` for raw resource,
+driver-journal, numerical and recovery evidence.
+
+The next diagnostic releases completed case input/output references and the
+unused CUDA allocator cache only after every original/changed-input lifetime
+check and the existing case-end synchronization. Wrapper/weights and all trial
+evidence remain live. No within-case ordering, numerical threshold, launch filter
+or sanitizer reporting option changes. Case-boundary allocator/CUDA memory and
+host MemAvailable observations distinguish cached probe allocations from other
+driver/host limits. CPU BF16 tests verify all finished case tensors are released
+before cache clearing and reject missing release evidence.
+
+Earlier (2026-09-08 06:26 KST): the bounded local reuse diagnostic completed
 all 48 plain trials with zero candidate/control failures. Memcheck recorded 40
 of 48 trials, with zero candidate and six independent stock-control failing
 row-trials, before its container exited 15 without a Python traceback. No final
