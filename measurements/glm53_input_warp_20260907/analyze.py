@@ -23,6 +23,7 @@ def summarize(rows, *, incomplete=False):
         assert verdicts, 'partial report requires the recorded verdict'
     assert len({r['overlay'] for r in rows})==1
     first_requests=None
+    first_outputs=None
     receipts=[]
     missing_receipts=[]
     out=[]
@@ -73,6 +74,8 @@ def summarize(rows, *, incomplete=False):
         identity=[(q['request_sha256'],q['prompt_tokens'],q['seed']) for q in requests]
         if first_requests is None: first_requests=identity
         assert identity==first_requests
+        outputs=[q['output_sha256'] for q in requests]
+        if first_outputs is None:first_outputs=outputs
         tokens=sum(q['completion_tokens']-1 for q in requests)
         seconds=sum(q['decode_s'] for q in requests)
         assert seconds>0
@@ -82,6 +85,7 @@ def summarize(rows, *, incomplete=False):
                     'ms_per_step':1000/rate,'window_median_step_s':decode['windows_med'],
                     'pooled_output_tok_s':tokens/seconds,'pooled_tpot_ms':1000*seconds/tokens,
                     'median_request_tok_s':median(q['decode_tok_s'] for q in requests),
+                    'fixed_outputs_matching_first_baseline':sum(a==b for a,b in zip(outputs,first_outputs)),
                     'acceptance_all_requests':decode['acc_raw'],
                     'tokens_per_step_all_requests':decode['tokens_per_step'],
                     'quality':q,'korean':k,'quality_pass':q['ok']==q['total'] and k['dirty']==0})
