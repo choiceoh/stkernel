@@ -79,8 +79,22 @@ def main():
     queue = directory / "queue"
     db = Path(os.environ.get('FLEET_EXPERIMENT_ROOT',directory/'experiments'))/'experiments.sqlite3'
     from experiment_metrics import estimates
-    rows = rank(queue.read_text().splitlines(), downstream(db),
+    from fleet_handoff import identity
+    lines = queue.read_text().splitlines()
+    if Path('/proc').exists():
+        lines = [line for line in lines if len(line.split('|')) < 7 or not line.split('|')[6]
+                 or identity(int(line.split('|')[6]))]
+    rows = rank(lines, downstream(db),
                 time.time(), marker("priority-front"), marker("priority-yield"), not args.boot_only, estimates(db))
+    # A finishing holder selected this live supervisor using this same policy.
+    # Honor its acceptance window before recomputing normal queue priorities.
+    from fleet_handoff import read, live, receipt
+    debt = read(directory / 'restore-debt.json')
+    target = debt.get('target') if debt else None
+    if debt:
+        rows.sort(key=lambda r: not (r['line'].split('|')[5] == 'boot' and live(read(receipt(directory, r['session'])))))
+    if live(target):
+        rows.sort(key=lambda r: r['session'] != target['session'])
     if args.apply:
         temporary = queue.with_suffix(".priority.tmp")
         temporary.write_text("".join(r["line"] + "\n" for r in rows))

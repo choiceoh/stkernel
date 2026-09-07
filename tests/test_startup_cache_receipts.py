@@ -1,6 +1,7 @@
 """Exercise the real boot receipt gate without restarting a fleet."""
 import contextlib
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -13,6 +14,9 @@ class BootReceiptTests(unittest.TestCase):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         gate = script.split('"$stage" "$MODE" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
         with tempfile.TemporaryDirectory() as root:
+            if mode == 'campaign':
+                Path(root, 'TEST-cache-env.json').write_text(json.dumps([
+                    'VLLM_GLM53_MK_PACK_FAST_IO='+str(fast), 'VLLM_GLM53_MK_PACK_SHA256=0']))
             for node in (1, 2, 3, 4):
                 Path(root, f"TEST-srv{node}.log").write_text(
                     "[rank-cache] hit rank=0\n" + 2 * (
@@ -70,6 +74,12 @@ class BootReceiptTests(unittest.TestCase):
                                   (0, 0, "MK W4 pack build FAILED\n")):
             with self.subTest(fast=fast, hits=hits, suffix=suffix), self.assertRaises(AssertionError):
                 self.check_receipts("PRIME", fast, hits, 0, suffix)
+
+    def test_shared_campaign_retains_per_node_warm_pack_receipts(self):
+        self.check_receipts('FASTIOR1', 1, 253, 0, mode='campaign')
+        self.check_receipts('BASE1', 0, 0, 253, mode='campaign')
+        with self.assertRaisesRegex(AssertionError, 'campaign pack IO mismatch'):
+            self.check_receipts('FASTIOR1', 1, 0, 0, mode='campaign')
 
 
 if __name__ == "__main__":
