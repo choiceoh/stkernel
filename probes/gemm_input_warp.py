@@ -21,7 +21,7 @@ def render(original):
     if constexpr (WARP_LAYOUT) {
       const int q = lane >> 3, word = lane & 7;
       const int ks = ((word >> 1) - q) & 3;
-      offset = (size_t)kb * 32 * KSTEP + ks * 256 + (row * 4 + q) * 8 + (word & 1) * 4;
+      offset = (size_t)kb * 8 * KSTEP + ks * 256 + (row * 4 + q) * 8 + (word & 1) * 4;
     } else {
       offset = ((size_t)kb * 32 + row) * KSTEP + lane * 4;
     }
@@ -32,6 +32,8 @@ def render(original):
       mk_launch(mk_probe_pack_input<true>, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});
     else
       mk_launch(mk_probe_pack_input<false>, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});""")
+    source=replace_once(source, '    if (lane == 0) g_mk2_axs[row*KBLK_MAX + kb] = sc;',
+                        '    if (lane == 0) g_mk2_axs[WARP_LAYOUT ? kb*8+row : row*KBLK_MAX+kb] = sc;')
     start=original.index('template <int RQ, bool LR, bool COMPACT = false>')
     end=original.index('// ===========================================================================\n// MK_SEG_MHC',start)
     kernel=original[start:end]
@@ -58,12 +60,12 @@ mk_probe_warp_kernel(const MKGemm2Ctx c) {
                         'auto mma_fold = [&](int rbuf, int kb) {\n    constexpr int abuf = 0;')
     kernel=replace_once(kernel, '''          x0 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff));
           x1 = *(const uint32_t*)(sa + g * SMEM_A_PITCH + mk_swz(g, koff + 4));''', '''          const size_t xoff = WARP_LAYOUT ? ks * 256 + lane * 8 : g * KSTEP + koff;
-          const uint2 xv = *(const uint2*)(g_mk2_aq + (size_t)kb * 32 * KSTEP + xoff);
+          const uint2 xv = *(const uint2*)(g_mk2_aq + (size_t)kb * (WARP_LAYOUT ? 8 : 32) * KSTEP + xoff);
           x0 = xv.x; x1 = xv.y;''')
     kernel=replace_once(kernel, 'const float s0 = (2 * q < c.m) ? sxs[abuf * 32 + 2 * q] : 0.0f;',
-                        'const float s0 = (2 * q < c.m) ? g_mk2_axs[(2*q)*KBLK_MAX+kb] * c.wgs : 0.0f;')
+                        'const float s0 = (2 * q < c.m) ? g_mk2_axs[WARP_LAYOUT ? kb*8+2*q : (2*q)*KBLK_MAX+kb] * c.wgs : 0.0f;')
     kernel=replace_once(kernel, 'const float s1 = (2 * q + 1 < c.m) ? sxs[abuf * 32 + 2 * q + 1] : 0.0f;',
-                        'const float s1 = (2 * q + 1 < c.m) ? g_mk2_axs[(2*q+1)*KBLK_MAX+kb] * c.wgs : 0.0f;')
+                        'const float s1 = (2 * q + 1 < c.m) ? g_mk2_axs[WARP_LAYOUT ? kb*8+2*q+1 : (2*q+1)*KBLK_MAX+kb] * c.wgs : 0.0f;')
     a=kernel.index('  // ---- prologue:')
     b=kernel.index('  // pair_act:',a)
     loop=kernel[a:b]
