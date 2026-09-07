@@ -96,22 +96,49 @@ def run(args, store, repo):
     directory.mkdir(parents=True)
     plan['path'] = str(directory / 'plan.json')
     plan['mode'] = 'submit' if args.submit else 'prepare-only' if args.prepare_only else 'preview'
+    manifests = {stage['name']:stage['manifest'] for stage in plan['stages']}
+    submissions = {}
+    launched = set()
     def save():
+        ids = {name:item['id'] for name,item in submissions.items()}
+        for stage in plan['stages']:
+            original = manifests[stage['name']]
+            manifest = dict(original,depends_on=sorted(set(original['depends_on'] +
+                [ids.get(d,'pending-stage:'+d) for d in stage['requires']])))
+            path = directory / (stage['name'] + '.json')
+            temporary = path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(manifest,indent=2) + '\n')
+            temporary.replace(path)
+            stage.update(manifest=manifest,path=str(path),
+                         dependencies_resolved=all(d in ids for d in stage['requires']))
+            if stage['name'] in submissions:
+                stage['submission'] = submissions[stage['name']]
         temporary = directory / 'plan.tmp'
         temporary.write_text(json.dumps(plan, indent=2) + '\n')
         temporary.replace(plan['path'])
+    def launch_registered():
+        from experiments import ensure_worker
+        for submission in submissions.values():
+            if submission['id'] not in launched:
+                launched.add(submission['id'])
+                ensure_worker(store,submission['id'])
     # Persist a preview before registration. The batch validates all included
     # stages first, shares source/runtime reads and registers the DAG atomically.
     selected = [s for s in plan['stages'] if s['name']!='gpu']
-    submissions = {}
     save()
     if args.submit or args.prepare_only:
         from experiment_submission import submit_many
         try:
-            answer = submit_many(store,args.session,[{k:s[k] for k in ('name','manifest','requires')} for s in selected],repo,launch=False)
+            answer = submit_many(store,args.session,[dict(name=s['name'],manifest=manifests[s['name']],requires=s['requires'])
+                for s in selected],repo,launch=False)
             submissions = {s['name']:s for s in answer['requests']}
+            # Make CPU IDs recoverable and start their normal workers before
+            # potentially slow or unavailable deployment attestation. GPU jobs
+            # still depend on every CPU stage; explicit preparation edges stay.
+            save()
+            launch_registered()
             if not args.prepare_only:
-                gpu = dict(plan['stages'][-1]['manifest'])
+                gpu = dict(manifests['gpu'])
                 gpu['depends_on'] = sorted(set(gpu['depends_on']+[s['id'] for s in submissions.values()]))
                 submissions['gpu'] = submit_many(store,args.session,[dict(name='gpu',manifest=gpu)],repo,launch=False)['requests'][0]
             if 'gpu' in submissions and getattr(args,'supersedes',[]):
@@ -121,19 +148,6 @@ def run(args, store, repo):
         except (OSError,ValueError) as exc:
             plan['error'] = str(exc)
         finally:
-            from experiments import ensure_worker
-            for submission in submissions.values():
-                ensure_worker(store,submission['id'])
-    ids = {name:item['id'] for name,item in submissions.items()}
-    for stage in plan['stages']:
-        manifest = stage['manifest']
-        manifest['depends_on'] = sorted(set(manifest['depends_on'] + [ids.get(d, 'pending-stage:' + d) for d in stage['requires']]))
-        path = directory / (stage['name'] + '.json')
-        path.write_text(json.dumps(manifest, indent=2) + '\n')
-        stage['path'] = str(path)
-        stage['dependencies_resolved'] = all(d in ids for d in stage['requires'])
-        save()
-        if stage['name'] in submissions:
-            stage['submission'] = submissions[stage['name']]
-    save()
+            save()
+            launch_registered()
     return plan
