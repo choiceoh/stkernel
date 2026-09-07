@@ -63,11 +63,14 @@ def main():
     ap.add_argument('--samples',type=int,default=32)
     ap.add_argument('--compile-only',action='store_true')
     ap.add_argument('--check-only',action='store_true')
+    ap.add_argument('--production',action='store_true',help='compile the actual serving source and its three CTA modes')
     args=ap.parse_args()
     os.environ.update(MAX_JOBS='1',VLLM_GLM53_MK_PDL='1')
     import torch
     from torch.utils.cpp_extension import load
-    source=render((ROOT/'overlay/modules/glm53_megakernel/glm53_megakernel.cu').read_text())
+    original=(ROOT/'overlay/modules/glm53_megakernel/glm53_megakernel.cu').read_text()
+    source=original if args.production else render(original)
+    modes=(0,1,2,3) if args.production else (0,1,2)
     sha=hashlib.sha256(source.encode()).hexdigest()
     build=args.build_dir/sha[:16];build.mkdir(parents=True,exist_ok=True)
     cu=build/'candidate.cu';cu.write_text(source)
@@ -81,7 +84,8 @@ def main():
     torch.backends.cuda.matmul.allow_tf32=False
     ext.set_gemm_input(1);ext.set_gemm2(0)
     result={'source_sha256':sha,'flags':FLAGS,'torch':torch.__version__,
-            'device':torch.cuda.get_device_name(),'info_base_nb2_nb3':ext.input_cta_info(),
+            'device':torch.cuda.get_device_name(),'mode_names':(['default','generic_nb2','fixed_nb2_bps3','fixed_nb2_bps4'] if args.production else ['default','generic_nb2','generic_nb3']),
+            'kernel_info_regs_local_bps_smem':ext.input_cta_info(),
             'gates':[],'timings':[],'status':'RUNNING'}
     def save():args.out.write_text(json.dumps(result,indent=2)+'\n')
     args.out.parent.mkdir(parents=True,exist_ok=True);save()
@@ -99,8 +103,13 @@ def main():
         pack=mk.build_mk_weight_w4(w);del w
         wr=mk.mk_w4_dequant(pack[0],pack[1],n,pack[2],pack[3] if len(pack)>3 else None).float()
         graphs={};outputs={}
-        for mode in (0,1,2):
+        for mode in modes:
             ext.set_input_cta(mode)
+            if args.production:
+                plan=ext.gemm_input_cta_plan(m,n,k,bg,False)
+                active=(m,n,k,bg)==(6,6416,4096,False)
+                assert plan[0]==(mode if active else 0),(m,n,k,bg,mode,plan)
+                assert ext.gemm_input_cta_plan(m,n,k,bg,True)[0]==0
             for _ in range(2):mk._gemm_call(x,pack,n,bg=bg)
             torch.cuda.synchronize()
             graph=torch.cuda.CUDAGraph()
@@ -110,7 +119,7 @@ def main():
             if case=='zero':x.zero_()
             else:x.normal_().mul_({'tiny':1e-20,'wide':1e3}.get(case,.3))
             ref=mk._mk_quant_x_ref(x)@wr.T
-            for mode in (0,1,2):
+            for mode in modes:
                 graphs[mode].replay();torch.cuda.synchronize()
                 rel,over=mk._exact_gate(outputs[mode],ref)
                 finite=bool(torch.isfinite(outputs[mode]).all())
@@ -123,11 +132,11 @@ def main():
         if index==0 and not args.check_only:
             x.normal_().mul_(.3)
             for cache in ('warm','read_evicted'):
-                times={mode:[] for mode in (0,1,2)}
+                times={mode:[] for mode in modes}
                 a=torch.cuda.Event(enable_timing=True);b=torch.cuda.Event(enable_timing=True)
                 a.record();b.record();b.synchronize()
                 for rep in range(args.samples):
-                    order=(0,1,2) if rep%2==0 else (2,1,0)
+                    order=modes if rep%2==0 else tuple(reversed(modes))
                     for mode in order:
                         for _ in range(16):graphs[mode].replay()
                         if cache=='read_evicted':flush.sum()
@@ -135,22 +144,22 @@ def main():
                         times[mode].append(a.elapsed_time(b)*1000)
                 med={mode:median(values) for mode,values in times.items()}
                 row={'cache':cache,'median_us':med,'raw_us':times,
-                     'reduction_pct':{mode:100*(med[0]-med[mode])/med[0] for mode in (1,2)}}
+                     'reduction_pct':{mode:100*(med[0]-med[mode])/med[0] for mode in modes[1:]}}
                 result['timings'].append(row);save();print(json.dumps(row),flush=True)
     for rep in range(20):
         poison=torch.full((512*1024,),0xA5,dtype=torch.uint8,device='cuda');del poison
         for x,pack,wr,graphs,outputs in retained:
             x.normal_().mul_(.3)
-            for mode in (2,0,1):graphs[mode].replay()
+            for mode in reversed(modes):graphs[mode].replay()
         for x,pack,wr,graphs,outputs in reversed(retained):
             ref=mk._mk_quant_x_ref(x)@wr.T
-            for mode in (1,2):
+            for mode in modes[1:]:
                 rel,over=mk._exact_gate(outputs[mode],ref)
                 assert rel<=1e-3 and over==0 and torch.equal(outputs[0],outputs[mode]),(rep,mode,rel,over)
-    for mode in (1,2):
+    for mode in modes[1:]:
         ext.set_input_cta(mode)
         assert mk._selftest_input_reuse()
-    result.update(status='PASS',alternating_graph_replays=80,boot_gate=True);save()
+    result.update(status='PASS',alternating_graph_replays=20*len(retained)*(len(modes)-1),boot_gate=True);save()
     print('PASS exact outputs, independent oracle, retained graphs and startup gate',flush=True)
 
 
