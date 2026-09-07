@@ -1,0 +1,174 @@
+{
+  "checked_utc": "2026-09-07T06:26:11.534727+00:00",
+  "source_commit": "195fb9703c0e4791c658bb14a193da900f118471",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "before": {
+    "num_requests_running": 0.0,
+    "num_requests_waiting": 0.0,
+    "request_success_total": 10.0
+  },
+  "after": {
+    "num_requests_running": 0.0,
+    "num_requests_waiting": 0.0,
+    "request_success_total": 10.0
+  },
+  "traffic_samples": [
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    },
+    {
+      "num_requests_running": 0.0,
+      "num_requests_waiting": 0.0,
+      "request_success_total": 10.0
+    }
+  ],
+  "issues": [],
+  "server_before": {
+    "boot_id": "1e0905c93dffb15e2787a4cb35c06247281359969a4dd9a8ef2969a7d7821afb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": true
+  },
+  "server_after": {
+    "boot_id": "1e0905c93dffb15e2787a4cb35c06247281359969a4dd9a8ef2969a7d7821afb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": true
+  },
+  "returncode": 1
+}

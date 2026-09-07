@@ -1,0 +1,309 @@
+{
+  "checked_utc": "2026-09-07T06:35:08.243317+00:00",
+  "source_commit": "c475b65c46aef1df06f178156a523ce09529f86d",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "before": null,
+  "after": null,
+  "traffic_samples": [
+    {
+      "traffic": null,
+      "available_bytes": 103296114688
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103246192640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103198556160
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103049986048
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102888267776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102765506560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102402260992
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102047854592
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101775085568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101535481856
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101282054144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101015736320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100702183424
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100561436672
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100546867200
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100545269760
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102320422912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102024183808
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101710639104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101429198848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101145419776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100816232448
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100494667776
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100312043520
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100079620096
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99873464320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99750895616
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99641851904
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99635220480
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99619835904
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99627802624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 99627802624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102145617920
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102142390272
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102211366912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102211366912
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102071930880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102046924800
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101896773632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101759049728
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101693456384
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101577519104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101404147712
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101241049088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101149843456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101152083968
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101094326272
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101043998720
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101020106752
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101005484032
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100997017600
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100988932096
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100964605952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102161072128
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101488295936
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101014421504
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101023883264
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101033361408
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101035749376
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101045346304
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101054074880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101062270976
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101047664640
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101024559104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101022527488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101014765568
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101286416384
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101262942208
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101214281728
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101120061440
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101388058624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102912380928
+    }
+  ],
+  "issues": [],
+  "server_before": {
+    "boot_id": "1e0905c93dffb15e2787a4cb35c06247281359969a4dd9a8ef2969a7d7821afb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "server_after": {
+    "boot_id": "1e0905c93dffb15e2787a4cb35c06247281359969a4dd9a8ef2969a7d7821afb",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "returncode": 0
+}

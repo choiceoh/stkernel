@@ -7172,3 +7172,31 @@ to 0 restores the measured baseline. This is a profile promotion, not a new
 performance or quality verdict, and does not restart the running service.
 
 [Matched serving and kernel evidence, raw records and reproduction](measurements/glm53_decode_followup_20260907/README.md).
+
+### C=1 one-time FP8 input preparation, retained wide-projection candidate (2026-09-07)
+
+Private-source GB10 probe `c475b65` quantizes each activation group once and
+uses the existing `a_ready` GEMM consumer. Production kernel sources and
+defaults are unchanged. Thirty changed-input graph cases pass exact output,
+FP8 byte/scale, finite and independent FP32 oracle checks. Each of six
+geometries has 24 alternating samples per arm in cold and warm conditions;
+timing includes the extra preparation kernel.
+
+M6/N6528/K4096 improves **42.720 -> 38.480 us warm (-9.93% latency)** and
+**133.104 -> 131.824 us cold (-0.96%)**. M6/N6144/K4096 improves 6.84% warm
+but regresses 0.82% cold. Small controls regress up to 5.09%. Retain the
+N6528 candidate and exclude regressing shapes from a future selective path.
+Warm-cache gains are useful evidence; mixed results do not justify either
+universal deployment or rejection of the winning shape. The 64 MiB flush
+does not reproduce the full model, and **candidate step/s and output tok/s
+remain unmeasured**.
+
+Two earlier attempts produced no GPU timing: a compile error, then a probe
+aborted when the public head gracefully exited during compilation. Initial
+host memory admission was inadequate (about 9 GiB available, falling to
+6.8 GiB); the corrected runner requires 16 GiB and aborts below 12 GiB.
+The initiating shutdown cause remains unresolved. The user reported no
+intentional shutdown, so restoration was submitted through the canonical
+fleet runner. See the evidence page for the final recovery state.
+
+[Full timings, numerical gates, source hashes, failed attempts and recovery](measurements/glm53_input_reuse_20260907/README.md).
