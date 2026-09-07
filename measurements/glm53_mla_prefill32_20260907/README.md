@@ -274,3 +274,19 @@ on head and three workers, and began B1 at 21:23:35. At 21:26 it was still
 loading/caching weights and compiling the fresh serving source; no TTFT
 request/result existed yet. Priming is excluded from the eventual measured
 B1/A/B2 comparison. Direct serving and final public restoration remain open.
+
+## First direct baseline completed at 21:35 KST
+
+B1 completed excluded priming and then all five fresh measured requests.
+Measured TTFT: 2K mean 0.878029 s across three
+questions, 32K 10.465541 s and
+128K 41.165352 s. Retrieval is9/9 and Korean
+corruption0/5, with no prefix-cache or external-traffic issues. Source,
+rank logs, complete arm record, both client/memory logs and actual frozen
+boot controls are retained in serving3-baseline1/. The original harness's
+“warm” column means later requests with warm compilation here: every
+measured request still has a new cache salt and zero prefix hits.
+
+Candidate A began booting at21:35:20. A/B2 and final public recovery are
+still pending; these B1 numbers do not establish any candidate improvement
+or the original40% campaign target.
