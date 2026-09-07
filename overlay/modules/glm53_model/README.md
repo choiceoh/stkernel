@@ -660,6 +660,10 @@ waiting for checksums, copies, page discard and total restoration. Worker times
 overlap and must not be added to the total as independent phases. An earlier
 two-worker mmap variant increased restore time; the sequential reader avoids
 concurrent mapped faults and the extra mmap-to-pinned copy.
+On heterogeneous Linux CPUs the reader stays within the caller's permitted
+CPU set and selects its higher-capacity tier. Missing topology or denied
+affinity retains normal scheduling. This applies only to the short-lived
+reader thread; the model/serving thread's affinity is unchanged.
 
 Rank identity includes the local checkpoint index/config and every source
 file's resolved path, device/inode, size, nanosecond mtime and ctime, plus model

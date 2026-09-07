@@ -478,6 +478,24 @@ class RankArtifactTests(unittest.TestCase):
                 self.assertRaisesRegex(EOFError, "short rank-cache read"):
             self.rank._restore(self.artifact(), manifest, self.model().state_dict())
 
+    def test_reader_affinity_is_a_subset_and_unknown_topology_keeps_scheduling(self):
+        for capacities, expected in (({"cpu0": "700", "cpu1": "1000"}, {1}),
+                                     ({"cpu0": "1000", "cpu1": "990"}, None),
+                                     ({"cpu0": "0", "cpu1": "1000"}, None)):
+            with patch.object(self.rank.os, "sched_getaffinity", return_value={0, 1}, create=True), \
+                    patch.object(self.rank.os, "sched_setaffinity", create=True) as setter, \
+                    patch.object(Path, "read_text", lambda path: capacities[path.parent.name]):
+                self.rank._init_reader_affinity()
+                if expected:
+                    setter.assert_called_once_with(0, expected)
+                else:
+                    setter.assert_not_called()
+        with patch.object(self.rank.os, "sched_getaffinity", return_value={0, 1}, create=True), \
+                patch.object(self.rank.os, "sched_setaffinity", create=True) as setter, \
+                patch.object(Path, "read_text", side_effect=FileNotFoundError):
+            self.rank._init_reader_affinity()
+            setter.assert_not_called()
+
     def test_disk_failure_and_unpublished_directory_keep_source_path(self):
         with patch.object(self.rank.os, "rename", side_effect=OSError("disk failure")):
             model = self.model()

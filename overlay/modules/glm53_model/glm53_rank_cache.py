@@ -235,6 +235,28 @@ def _copy_streamed_chunk(target, raw):
         torch.cuda.current_stream(target.device).synchronize()
 
 
+def _init_reader_affinity():
+    """Keep this short-lived reader on the allowed performance CPU tier."""
+    if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
+        return
+    try:
+        allowed = os.sched_getaffinity(0)
+        capacities = {cpu: int(Path(f"/sys/devices/system/cpu/cpu{cpu}/cpu_capacity").read_text())
+                      for cpu in allowed}
+        if not capacities or min(capacities.values()) <= 0:
+            return
+        best = max(capacities.values())
+        fast = {cpu for cpu, capacity in capacities.items() if capacity >= best * 0.9}
+        if fast != allowed:
+            # pid=0 changes only this calling worker thread. Never widen the
+            # caller's affinity/cpuset, or change the model/serving thread.
+            os.sched_setaffinity(0, fast)
+            logger.warning("[rank-cache] reader affinity cpus=%s", ",".join(map(str, sorted(fast))))
+    except (OSError, ValueError):
+        # Uniform/unknown hardware and denied affinity retain normal scheduling.
+        return
+
+
 def _restore_streamed(directory, manifest, state):
     """One sequential reader fills/checks two bounded slots before GPU use."""
     started = time.perf_counter()
@@ -270,7 +292,7 @@ def _restore_streamed(directory, manifest, state):
         # overlap the current GPU copy, but a slot is only queued again after
         # the copy's stream synchronization. Join before closing the file even
         # on I/O, checksum, or copy failure; workers never invoke CUDA.
-        with ThreadPoolExecutor(max_workers=1) as pool, torch.no_grad():
+        with ThreadPoolExecutor(max_workers=1, initializer=_init_reader_affinity) as pool, torch.no_grad():
             remaining = iter(manifest["chunks"])
             pending = deque()
             for slot in slots:

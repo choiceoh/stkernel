@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--module", type=Path, help="private candidate module; serving imports stay unchanged")
     parser.add_argument("--full-cache", type=Path, help="read a real payload into a bounded reusable GPU destination")
     args = parser.parse_args()
+    caller_affinity = sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None
     if args.module:
         spec = importlib.util.spec_from_file_location("rank_prefetch_candidate", args.module)
         candidate = importlib.util.module_from_spec(spec)
@@ -37,7 +38,8 @@ def main():
     state = {"weight": target, "alias": target, "bf16": bf16}
     stream = torch.cuda.Stream()
     report = {"checks": 0, "bytes": size + bf16.numel() * 2, "samples": [],
-              "module_sha256": hashlib.sha256(Path(rank.__file__).read_bytes()).hexdigest()}
+              "module_sha256": hashlib.sha256(Path(rank.__file__).read_bytes()).hexdigest(),
+              "caller_affinity": caller_affinity}
     with tempfile.TemporaryDirectory(prefix="rank-prefetch-gpu-") as temp:
         root = Path(temp)
         chunks = []
@@ -130,6 +132,8 @@ def main():
                                   "chunks": len(manifest["chunks"]), "samples": samples,
                                   "median_restore_s": {str(p): statistics.median(
                                       r["restore_s"] for r in samples if r["prefetch"] == p) for p in (0, 1)}}
+    if caller_affinity is not None:
+        assert sorted(os.sched_getaffinity(0)) == caller_affinity
     report["ok"] = True
     encoded = json.dumps(report, sort_keys=True)
     if args.out:
