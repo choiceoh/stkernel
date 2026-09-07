@@ -118,3 +118,12 @@ behind the new MoE probe. Frozen source: e74b15e5a846827e554835ca73eda71e7698e4a
 checkout: srv2:/home/choiceoh/stkernel-prefill32-check4-0907; supervisor PID
 2554596; logs/completion: srv2:/tmp/glm53-mla32-check4-0907. The GPU kernel
 is unchanged from the 11-case numerical/timing run.
+
+The sanitizer retry received GO at 18:30:54 KST and exited 3 at 18:30:55.
+All four nodes failed the unchanged additional-probe UMA memory guard while
+production serving was resident. No sanitizer GPU process started. The
+updated sanitizer-fleet.log and sanitizer-completion.json preserve this
+refusal separately from the earlier 11 passing GPU cases. A shared normal
+boot turn in PR #444 is being prepared to stop serving, run both candidates'
+remaining gates with the same source pins, then recover serving. Direct
+2K/32K/128K TTFT remains pending.
