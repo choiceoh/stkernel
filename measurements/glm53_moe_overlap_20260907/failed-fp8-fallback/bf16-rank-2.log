@@ -1,0 +1,20 @@
+WARNING 09-07 14:58:38 [glm53_prefill_collectives.py:50] [prefill-sp] sequence-parallel prefill armed (fp8 transport=False)
+INFO 09-07 14:58:39 [parallel.py:840] Using external launcher for distributed inference.
+INFO 09-07 14:58:39 [parallel.py:909] Disabling V1 multiprocessing for external launcher.
+INFO 09-07 14:58:40 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 09-07 14:58:40 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 09-07 14:58:40 [parallel_state.py:1655] world_size=4 rank=2 local_rank=0 distributed_init_method=env:// backend=nccl
+[boot-stamp] dist-world took 2.4s (at 18.3s since interpreter start)
+WARNING 09-07 14:58:44 [symm_mem.py:67] SymmMemCommunicator: Device capability 12.1 not supported, communicator is not available.
+[boot-stamp] dist-group tp took 1.6s (at 19.9s since interpreter start)
+[boot-stamp] dist-group dcp took 0.0s (at 19.9s since interpreter start)
+[boot-stamp] dist-group pcp took 0.0s (at 19.9s since interpreter start)
+[boot-stamp] dist-group pp took 0.0s (at 19.9s since interpreter start)
+[boot-stamp] dist-group dp took 0.0s (at 19.9s since interpreter start)
+INFO 09-07 14:58:45 [parallel_state.py:1999] rank 2 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 2, EP rank 2, EPLB rank N/A
+[boot-stamp] dist-group ep took 1.2s (at 21.1s since interpreter start)
+[boot-stamp] dist-model-parallel took 2.7s (at 21.1s since interpreter start)
+2026-09-07 14:58:51,468 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+2026-09-07 14:59:00,507 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f.o
+[rank2]:[W907 14:59:01.068456449 ProcessGroupNCCL.cpp:5276] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+INFO 09-07 14:59:05 [glm53_prefill_collectives.py:592] [prefill-sp] MoE overlap LAUNCHED (AG0 AG1 RS0 RS1, two stripes)

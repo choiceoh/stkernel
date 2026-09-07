@@ -106,3 +106,20 @@ new serving runner's `--refresh-gate` connects this corrected full four-rank
 GPU gate, original recovery, and then B1/A/B2 within one normal fleet hold.
 A failed GPU gate cannot reach serving deployment. The old prepared
 serving1 request is retired without submission; use the new retry receipt.
+
+## Connected retry result: serving blocked by FP8 fallback failure
+
+The corrected API probe ran on all four ranks at 23:58:21 KST. BF16 passed
+all eight numerical/changed-input/lifetime cases. FP8-v3 stopped at 4143
+skew eager, with one bad row on rank 0 and two on rank 3, before any FP8
+overlap case was reached. This size uses the unchanged stock fallback, so
+the result is not assigned to overlap; the full GPU gate remains failed.
+The original public containers were restored at 00:02:58 on 2026-09-08.
+No candidate deployment or full-model MoE TTFT occurred.
+
+BF16 balanced 6912/8192 timings regress by approximately 28% in reciprocal
+rate, while skew cases improve by 11.37% / 5.63%. These are synthetic
+kernel/transport results and not direct prefill speed claims. Keep the
+option off, diagnose stock-repeat/FP8 error without changing thresholds,
+and explain routing-sensitive cost before the next matched serving gate.
+[Raw failure, BF16 results and exact restoration evidence](../measurements/glm53_moe_overlap_20260907/failed-fp8-fallback/README.md).

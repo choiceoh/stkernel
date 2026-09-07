@@ -1,0 +1,66 @@
+WARNING 09-07 14:59:27 [glm53_prefill_collectives.py:50] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+INFO 09-07 14:59:28 [parallel.py:840] Using external launcher for distributed inference.
+INFO 09-07 14:59:28 [parallel.py:909] Disabling V1 multiprocessing for external launcher.
+INFO 09-07 14:59:29 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 09-07 14:59:29 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 09-07 14:59:29 [parallel_state.py:1655] world_size=4 rank=2 local_rank=0 distributed_init_method=env:// backend=nccl
+[boot-stamp] dist-world took 2.8s (at 17.1s since interpreter start)
+WARNING 09-07 14:59:33 [symm_mem.py:67] SymmMemCommunicator: Device capability 12.1 not supported, communicator is not available.
+[boot-stamp] dist-group tp took 1.6s (at 18.7s since interpreter start)
+[boot-stamp] dist-group dcp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group pcp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group pp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group dp took 0.0s (at 18.7s since interpreter start)
+INFO 09-07 14:59:35 [parallel_state.py:1999] rank 2 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 2, EP rank 2, EPLB rank N/A
+[boot-stamp] dist-group ep took 1.2s (at 19.9s since interpreter start)
+[boot-stamp] dist-model-parallel took 2.8s (at 19.9s since interpreter start)
+2026-09-07 14:59:41,593 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+2026-09-07 14:59:50,598 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f.o
+INFO 09-07 14:59:52 [glm53_prefill_collectives.py:486] [prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/repo/probes/glm53_moe_overlap_check.py", line 209, in <module>
+[rank2]:     if __name__=='__main__':main()
+[rank2]:                             ^^^^^^
+[rank2]:   File "/repo/probes/glm53_moe_overlap_check.py", line 183, in main
+[rank2]:     result=dict(rows=rows,skew=skew,overlap_admitted=rows>=6144,eager=compare(a[:valid_rows],b[:valid_rows],b2[:valid_rows]))
+[rank2]:                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/repo/probes/glm53_moe_overlap_check.py", line 165, in compare
+[rank2]:     require(finite and not report['bad_rows'],str(report))
+[rank2]:   File "/repo/probes/glm53_moe_overlap_check.py", line 105, in require
+[rank2]:     if any(r is not None for r in reports):raise AssertionError(reports)
+[rank2]:                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]: AssertionError: ["{'bad_rows': 1, 'max_row_relative_l2': 0.006479364819824696, 'max_row_relative_abs': 0.0683760717511177, 'repeat_l2': 0.008243342861533165}", None, None, "{'bad_rows': 2, 'max_row_relative_l2': 0.00712749594822526, 'max_row_relative_abs': 0.06557376682758331, 'repeat_l2': 0.007206701673567295}"]
+E0907 14:59:57.752000 1 torch/distributed/elastic/multiprocessing/api.py:1002] failed (exitcode: 1) local_rank: 0 (pid: 54) of binary: /usr/bin/python3
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1032, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 367, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1028, in main
+    run(args)
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1019, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 194, in __call__
+    return launch_agent(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 383, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/repo/probes/glm53_moe_overlap_check.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-07_14:59:57
+  host      : srv3.tail7fec17.ts.net
+  rank      : 2 (local_rank: 0)
+  exitcode  : 1 (pid: 54) 
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

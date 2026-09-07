@@ -1,0 +1,75 @@
+WARNING 09-07 14:59:28 [glm53_prefill_collectives.py:50] [prefill-sp] sequence-parallel prefill armed (fp8 transport=True v3: packed values+scales, one all-to-all + fp32 sum)
+INFO 09-07 14:59:30 [parallel.py:840] Using external launcher for distributed inference.
+INFO 09-07 14:59:30 [parallel.py:909] Disabling V1 multiprocessing for external launcher.
+INFO 09-07 14:59:31 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 09-07 14:59:31 [kernel.py:306] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 09-07 14:59:32 [parallel_state.py:1655] world_size=4 rank=0 local_rank=0 distributed_init_method=env:// backend=nccl
+[boot-stamp] dist-world took 0.1s (at 17.1s since interpreter start)
+INFO 09-07 14:59:32 [pynccl.py:113] vLLM is using nccl==2.29.7
+NCCL version 2.29.7+cuda13.2
+WARNING 09-07 14:59:33 [symm_mem.py:67] SymmMemCommunicator: Device capability 12.1 not supported, communicator is not available.
+INFO 09-07 14:59:33 [cuda_communicator.py:266] Using ['PYNCCL'] all-reduce backends (in dispatch order) for group 'tp:0' out of potential backends: ['NCCL_SYMM_MEM', 'QUICK_REDUCE', 'FLASHINFER', 'AITER_CUSTOM', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+[boot-stamp] dist-group tp took 1.6s (at 18.7s since interpreter start)
+[boot-stamp] dist-group dcp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group pcp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group pp took 0.0s (at 18.7s since interpreter start)
+[boot-stamp] dist-group dp took 0.0s (at 18.7s since interpreter start)
+INFO 09-07 14:59:35 [cuda_communicator.py:266] Using ['PYNCCL'] all-reduce backends (in dispatch order) for group 'ep:0' out of potential backends: ['NCCL_SYMM_MEM', 'QUICK_REDUCE', 'FLASHINFER', 'AITER_CUSTOM', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+INFO 09-07 14:59:35 [parallel_state.py:1999] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+[boot-stamp] dist-group ep took 1.2s (at 19.9s since interpreter start)
+[boot-stamp] dist-model-parallel took 2.8s (at 19.9s since interpreter start)
+2026-09-07 14:59:41,408 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f
+2026-09-07 14:59:45,450 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /root/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_c0117430e413583f.o
+INFO 09-07 14:59:52 [glm53_prefill_collectives.py:486] [prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"rows": 4096, "skew": false, "overlap_admitted": false, "eager": {"bad_rows": 0, "max_row_relative_l2": 0.01801024191081524, "max_row_relative_abs": 0.08130080997943878, "repeat_l2": 0.01873733103275299}, "changed": {"bad_rows": 0, "max_row_relative_l2": 0.018072865903377533, "max_row_relative_abs": 0.072727270424366, "repeat_l2": 0.017790116369724274}, "slowest_rank_ms": {"baseline": [11.332511901855469, 11.51200008392334, 11.31385612487793, 11.148991584777832, 11.312031745910645, 11.565343856811523], "overlap": [11.592991828918457, 11.876288414001465, 11.244192123413086, 11.659071922302246, 11.385055541992188, 11.899680137634277]}, "median_speedup_pct": -2.6049116799600536}
+{"rows": 4096, "skew": true, "overlap_admitted": false, "eager": {"bad_rows": 0, "max_row_relative_l2": 0.013842981308698654, "max_row_relative_abs": 0.072727270424366, "repeat_l2": 0.012832863256335258}, "changed": {"bad_rows": 0, "max_row_relative_l2": 0.012989652343094349, "max_row_relative_abs": 0.06779661029577255, "repeat_l2": 0.012884536758065224}, "slowest_rank_ms": {"baseline": [7.592703819274902, 7.707776069641113, 7.6104960441589355, 7.701663970947266, 7.583104133605957, 7.638688087463379], "overlap": [7.396927833557129, 8.054464340209961, 8.089471817016602, 7.989664077758789, 7.627776145935059, 8.12441635131836]}, "median_speedup_pct": -4.954736496973755}
+{"rows": 4143, "skew": false, "overlap_admitted": false, "eager": {"bad_rows": 0, "max_row_relative_l2": 0.018375199288129807, "max_row_relative_abs": 0.09090909361839294, "repeat_l2": 0.017736097797751427}, "changed": {"bad_rows": 0, "max_row_relative_l2": 0.018605902791023254, "max_row_relative_abs": 0.08064515888690948, "repeat_l2": 0.017654405906796455}, "slowest_rank_ms": {"baseline": [11.400192260742188, 11.333696365356445, 11.095168113708496, 12.239775657653809, 12.120384216308594, 11.401727676391602], "overlap": [11.26806354522705, 11.555071830749512, 11.920255661010742, 11.73862361907959, 11.138879776000977, 11.393695831298828]}, "median_speedup_pct": -0.6398937279643135}
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/probes/glm53_moe_overlap_check.py", line 209, in <module>
+[rank0]:     if __name__=='__main__':main()
+[rank0]:                             ^^^^^^
+[rank0]:   File "/repo/probes/glm53_moe_overlap_check.py", line 183, in main
+[rank0]:     result=dict(rows=rows,skew=skew,overlap_admitted=rows>=6144,eager=compare(a[:valid_rows],b[:valid_rows],b2[:valid_rows]))
+[rank0]:                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/probes/glm53_moe_overlap_check.py", line 165, in compare
+[rank0]:     require(finite and not report['bad_rows'],str(report))
+[rank0]:   File "/repo/probes/glm53_moe_overlap_check.py", line 105, in require
+[rank0]:     if any(r is not None for r in reports):raise AssertionError(reports)
+[rank0]:                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]: AssertionError: ["{'bad_rows': 1, 'max_row_relative_l2': 0.006479364819824696, 'max_row_relative_abs': 0.0683760717511177, 'repeat_l2': 0.008243342861533165}", None, None, "{'bad_rows': 2, 'max_row_relative_l2': 0.00712749594822526, 'max_row_relative_abs': 0.06557376682758331, 'repeat_l2': 0.007206701673567295}"]
+E0907 14:59:57.898000 1 torch/distributed/elastic/multiprocessing/api.py:1002] failed (exitcode: 1) local_rank: 0 (pid: 10) of binary: /usr/bin/python3
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1032, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 367, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1028, in main
+    run(args)
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 1019, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 194, in __call__
+    return launch_agent(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 383, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/repo/probes/glm53_moe_overlap_check.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-07_14:59:57
+  host      : srv2.tail7fec17.ts.net
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 10) 
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
