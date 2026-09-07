@@ -1,0 +1,26 @@
+{
+  "candidate_commit": "4e9907a0204afda9ff8ad2cc872993b077ce5223",
+  "cpu_compile_commit": "088c04f",
+  "cpu_full_gate_commit": "088c04f",
+  "cpu_scope": "device-free sm_121a compilation on srv1; full Linux CPU logic gate. Candidate executable code is unchanged after the CPU gate; module docstring and restore harness were updated.",
+  "source_sha256": {
+    "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "f9db08bfea321c21fdf028c132496700b17d7361f23c176171d86b04e4f00329",
+    "overlay/modules/glm53_moe/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "overlay/modules/glm53_moe/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343"
+  },
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "cpu_compile_shapes": {
+    "m": [
+      6,
+      16
+    ],
+    "max_rows": 640,
+    "hidden": 4096,
+    "intermediate_per_rank": 512,
+    "experts": 288,
+    "topk": 8
+  },
+  "fleet_session": "moereform0908",
+  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-0908",
+  "status": "queued; no GPU or performance verdict yet"
+}
