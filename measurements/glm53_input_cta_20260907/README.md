@@ -82,3 +82,22 @@ After integrating current main `944f65c`, the combined CPU suite passes 6,687
 logic checks, 30 megakernel regressions and 92 fleet regressions. The final
 plan receipt reports the CTA variant's actual occupancy. Both generated
 overlays match source bytes and the focused kernel/12 driver-transport tests pass.
+
+## CPU native compilation and queued serving run
+
+The reviewed `bench/cpu_compile.py` entrypoint compiled the actual translation
+unit with host nvcc 13.0.88/GCC 13.3.0, `sm_121a`, fixed-image Torch headers,
+C++17 and the serving FP8/M8 definitions. It ran in fleet CPU session
+`inputctacpu0907`, without loading a CUDA context or holding the GPU lane.
+Modes 1/2/3 use 78/75/64 registers, respectively; all have zero spill loads,
+zero spill stores and one barrier. Mode 3 meets its four-block register budget;
+actual runtime occupancy and timing still require the GPU probe. Torch headers
+emit C++20-extension warnings under C++17; compilation returns 0.
+[Compile log](cpu/compile.log) and [source/environment receipt](cpu/receipt.json).
+
+The first prototype runner returned 0 and restored approved main `944f65c`
+at 22:13:14 KST. The next immutable source `916adc0` is queued as
+`inputctaserve0907`, after the startup-key and MoE overlap campaigns. Preflight
+passes, including the new knob declared by the candidate profile. Its evidence
+will be under `/home/choiceoh/glm53-logs/INPUTCTASERVE0907`. No runtime source
+or executing runner is changed while it waits or runs.
