@@ -2373,6 +2373,15 @@ BASE39-sp(SP+KDA 기본값) 대비, 통일 onepass, 같은 판정 규칙.
 5. **SP 집합통신 횟수 절감 — 판정: 횟수가 아니라 링크 대역·HBM 패스의 문제, 융합 없이는 못 줄인다.** 재계산: 8192 토큰 청크의 AG 1회 = 67 MB bf16; 스텝 ~2.8 s 의 18 % ≈ 0.5 s / 127 호출(AG 67 + RS 60) ≈ 4 ms/호출 → 17 GB/s ≈ RoCE 링크의 유효 대역(200 Gb/s = 25 GB/s 이론). 즉 통신은 바이트(링크)에 묶여 있다. FP8 전송이 안 먹힌 이유: GB10 LPDDR5X(≈273 GB/s)가 링크의 ~10배뿐이라 pack/unpack 이 활성값을 한 번 더 읽고 쓰는 비용(AG 1회당 ≈0.5 GB 트래픽 ≈ 2 ms)이 절약되는 선로 시간(≈2 ms)과 같다. §4j 의 "호출 수에 묶임" 판정은 이 계산으로 정정. 층당 4회(AG·RS·AG·RS)는 SP 구조상 고정(RS+AG 를 AR 하나로 합치면 MHC 를 4배 중복 계산 = +12 %). 남은 길 = **양자화·통신 융합**: (a) AG 입력은 MHC(TileLang, 자체 소유) 출력 → fp8 + 토큰 스케일로 내보내면 AG 바이트 절반에 밀집 GEMM 의 입력 양자화 패스까지 제거(W8A8 경로는 fp8 활성을 직접 받음), (b) MoE 앞 AG 는 라우팅을 샤드에서 먼저 하고 nvfp4 로 양자화한 뒤 AG(바이트 1/4, 디스패치는 AG 된 topk 로), (c) RS 입력은 b12x FC2 에필로그(자체 소유)에서 fp8 로. 상한 ≈ 통신 18 % 의 절반 + 양자화 3 % ≈ 10 %. 밤 라운드 규모(디스패치·MHC 에필로그 개조) → 미착수, 설계만 기록.
 
 **사고(09-07 08:31~11:2x, 프로덕션 다운 ~2.8 h)**: 피어 부팅(prefillgate)의 워커가 08:31 사망 → 08:32 내 체인의 두 팔과 복구 부팅 셋이 모두 5 s 만에 `cat: 장치에 남은 공간이 없음` 으로 실패. 원인 = **srv1(10.10.10.1) 디스크 100 %**(916 GB: 모델 479, docker 95, `/var/lib/apport/coredump` 의 vLLM 파이썬 코어 덤프 29 GB(09-04/05), 비활성 `/swap.img` 17 GB) → 런처의 템플릿 스테이징이 srv1 에서 죽음. 코어 덤프 삭제로 38 GB 확보(운영자 것·모델·캐시는 손대지 않음). 그 사이 브랜치 클론 배포도 두 번 헛돌았다: (1) 추적되는 `build/{glm53,dsv4}` 트리가 stale(커널 소스 변경 시 두 프로파일 compose 후 커밋 필요), (2) main 이 몇 분마다 앞서가 `origin/main` 조상 게이트에 걸림 → 체인이 클론 안에서 main 을 로컬 병합(문서 충돌은 main 쪽) 한 뒤 배포하도록 수정. 세 번째 시도의 ALIGN1 은 main 오버레이로 부팅되어 프로덕션 복구 부팅으로 전용(체인만 중단, `fleet.sh adopt`).
+
+**§4m-결과 (11:21~11:38, 브랜치 = main 2c6fe6b + 변경, 클론 배포 확인 11:22)**
+| 팔 | 코드 | 프리필 cold 2K/32K/128K | 디코드 창 2K/32K/128K | tok/step | 품질 | prep-fused | 판정 |
+|---|---|---|---|---|---|---|---|
+| ALIGN1 (기본값) vs BASE 08:27 | CUDA run_prep align 열 | +94.8 % / −0.7 % / −1.1 % | −0.4 / −0.1 / +0.8 % | −2.6 % | 9/9 | `plan built: mode=on kernel=cuda`, DRIFT 0 | **NEUTRAL** — 항목 3 닫힘 |
+| NVS1 (`STATIC_SCALE=16`) vs ALIGN1 | 같은 코드 | +0.3 / −0.2 / −0.6 % | −0.0 / +0.0 / −4.6 % | +10.5 % | 9/9 | 동일, DRIFT 0 | **무효** — 노브가 컨테이너에 안 들어감 |
+
+- ALIGN1: align 모드에서 CUDA 백엔드가 서빙(전에는 Triton 폴백). 2K cold +94.8 % 는 BASE 기록의 2K 가 1,108 tok/s 로 낮았던 탓(ALIGN1 2,158, 다른 기록들과 같음) — 내 변경은 디코드 쪽이라 무관. 1 s 창: 2K 창 3 → 11개, 32K 6 → 15, 128K 4 → 9(항목 2 닫힘).
+- NVS1: `ab-lever2.sh` 가 `REPO=~/stkernel`(main) 의 런처·프로파일을 쓰므로 브랜치에서만 선언된 키가 걸러졌다(`none of VLLM_GLM53_NVFP4_STATIC_SCALE set in the container!`, 동결 줄 0) → 수치는 같은 기본값 부팅 둘의 재현성(프리필 ±0.6 %, 디코드 128K −4.6 % 는 알려진 128K 변동). PR #437 머지 뒤 main 에서 NVS2 재측정(`nvs-chain.sh`).
 ### §5 하니스·운영 — onepass 단일화, KEEP/RESTORE 규칙, 플릿 인계
 
 - **PR #364**: `bench/ab-lever.sh` 의 개별 레그(decode/prefill/prefill8k/accept/quality/korean, SHORT, REPS) 제거. 기본 `LEGS=onepass`, `LEGS=none` 은 부팅·헬스·지문만.
