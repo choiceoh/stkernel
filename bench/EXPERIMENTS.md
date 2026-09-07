@@ -167,6 +167,13 @@ stops the rest; the normal fleet policy decides one final production restore.
 Different serving configurations still need separate submissions. Independent
 baseline samples still require separate boots.
 
+When a pair finishes definitively or is retired, it releases its internal
+baseline subscription. An unstarted reservation with no remaining subscribers or
+dependents is retired and removed from the queue. Shared demand, explicit
+operator subscriptions, incomplete evidence, started jobs and matching live
+holders are preserved. This does not stop an active boot or discard baseline
+results. Baseline workers also check for old orphan reservations before preflight.
+
 Separate agents' ready pair requests also share one serving boot when their
 committed revision, deployed snapshot, configuration, environment, runtime,
 inputs, prepared artifact hashes, resource requirements and port match exactly.
@@ -212,9 +219,18 @@ reserve. Operators can set `$FLEET_DIR/cpu-policy.json`, for example:
 {"slots": 2, "memory_mb": 8192, "reserve_mb": 2048}
 ```
 
-Jobs wait without a GPU hold until their reservation fits both the pool and
-available RAM. The CPU timeout includes that wait. A 100 ms process-group RSS
-poll enforces the declared RAM budget; an over-budget job and its remaining
+Jobs wait without a GPU hold in persistent FIFO ticket order until their
+reservation fits both the pool and available RAM. New small jobs cannot pass an
+older multi-slot request. This can temporarily leave capacity idle while the head
+waiter drains the pool; it prevents starvation without preempting active work.
+Dead, retired and newly over-capacity waiters are removed. Only an eligible head
+waiter probes available host RAM; waiters recheck admission every 50 ms. All
+workers must use the current runner to enforce this ordering.
+
+The CPU timeout includes that wait. An approximately 100 ms process-group RSS
+poll enforces the declared RAM budget, using a group/session-filtered process
+query instead of collecting every host process. Process-exit waits return early
+when a short command finishes; an over-budget job and its remaining
 children are terminated before the reservation is released. This is sampled
 accounting, not an OS hard memory sandbox: a burst can exceed the budget between
 polls, and intentionally detached processes are outside the group. Direct legacy
@@ -331,6 +347,17 @@ fleet test edits default to serial execution until their isolation audit is
 reviewed. The standalone unittest runner allows explicit `--jobs N` for a caller
 who has reviewed its test isolation. Concurrency/queue tests use state signals
 instead of fixed sleeps; timeout enforcement still has real elapsed-time tests.
+
+Complete fleet runs record per-case durations in
+`$FLEET_EXPERIMENT_ROOT/cpu-test-timings.json` (standalone default: `build/`).
+Profiles separate host, architecture, Python major/minor and worker count; each
+case is keyed by its test file hash and ID. Subsequent runs assign the longest
+cases first to the least-loaded shard. Unknown cases use the median known time;
+without usable history the runner retains round-robin assignment. History is
+size-bounded, locked and atomically replaced; unusable history is ignored. It
+only changes scheduling: every child validates the complete assignment and the
+parent still verifies exact executed-ID coverage. Test edits invalidate their
+timing hints and the existing isolation audit still controls automatic sharding.
 
 Custom CPU commands are also supported as argv arrays. Use explicit interpreter
 and dependency identifiers in `context`, and hash external fixtures/lockfiles

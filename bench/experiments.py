@@ -218,6 +218,9 @@ class Store:
                 key TEXT PRIMARY KEY, job TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS cpu_leases (
                 job TEXT PRIMARY KEY, pid INTEGER NOT NULL, slots INTEGER NOT NULL, memory_mb INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS cpu_waiters (
+                ticket INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT NOT NULL UNIQUE,
+                pid INTEGER NOT NULL, slots INTEGER NOT NULL, memory_mb INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 session TEXT NOT NULL, cursor INTEGER NOT NULL, delivered REAL NOT NULL, acknowledged REAL,
                 PRIMARY KEY(session, cursor));
@@ -263,6 +266,7 @@ class Store:
                 yield
 
     def state(self, job, state, result=None):
+        retired_baselines = []
         with self.transaction():
             previous = self.get(job)
             if previous['state'] == 'retired' and state != 'retired':
@@ -275,6 +279,16 @@ class Store:
                             (state, encoded(result) if result is not None else None, state,
                              time.time(), state in TERMINAL, time.time(), job))
             self.event(job, state, result or {})
+            if previous['payload']['spec'].get('kind') == 'pair':
+                from experiment_retirement import RELEASE_BASELINE, release_baselines
+                if state in RELEASE_BASELINE:
+                    retired_baselines = release_baselines(self, job)
+        # Queue-file writes happen only after the owning transaction commits.
+        # Nested writers retain logical retirement; managed waiters observe it.
+        if retired_baselines and not self.db.in_transaction:
+            from experiment_retirement import dequeue
+            for baseline in retired_baselines:
+                dequeue(self.get(baseline)['payload'], baseline)
 
     def submit(self, session, payload, repeat=None):
         identity = {k: v for k, v in payload.items() if k != "repo"}
@@ -617,6 +631,10 @@ def worker(store, job):
         with store.db:
             store.db.execute("UPDATE jobs SET worker_pid=? WHERE id=?", (os.getpid(), job))
         try:
+            if spec['kind'] == 'baseline':
+                from experiment_retirement import reclaim_baseline
+                if reclaim_baseline(store, job):
+                    return 0
             if not wait_dependencies(store, job, spec['depends_on']):
                 return 0
             verify(payload)

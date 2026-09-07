@@ -8,8 +8,10 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
 
 def normalize(raw=None):
@@ -32,12 +34,20 @@ def normalize(raw=None):
     return value
 
 
+@lru_cache(maxsize=1)
+def total_memory():
+    path = Path('/proc/meminfo')
+    if path.exists():
+        return int(next(line for line in path.read_text().splitlines() if line.startswith('MemTotal:')).split()[1]) // 1024
+    return int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True)) // 1048576
+
+
 def memory():
     path = Path('/proc/meminfo')
     if path.exists():
         rows = {k: int(v.split()[0]) // 1024 for k, v in (l.split(':', 1) for l in path.read_text().splitlines())}
         return rows['MemTotal'], rows['MemAvailable']
-    total = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True)) // 1048576
+    total = total_memory()
     output = subprocess.check_output(['vm_stat'], text=True)
     page = int(re.search(r'page size of (\d+)', output)[1])
     pages = sum(int(re.search(r'^' + name + r':\s+(\d+)', output, re.M)[1])
@@ -67,10 +77,26 @@ def readiness(resources):
         return list(pool.map(check, resources['nodes'] or ['local']))
 
 
+def group_snapshot(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return []
+    except PermissionError:
+        pass  # A denied signal probe does not prevent read-only ps inspection.
+    # Children start in a new session whose SID == PGID. Linux ps selects that
+    # session; BSD/macOS ps selects the process group. Filter PGID in both cases.
+    selector = '-s' if sys.platform.startswith('linux') else '-g'
+    process = subprocess.run(['ps', selector, str(pgid), '-o', 'pgid=,stat=,rss='],
+                             text=True, capture_output=True, timeout=5)
+    if process.returncode and (process.returncode != 1 or process.stderr.strip()):
+        raise subprocess.CalledProcessError(process.returncode, process.args, process.stdout, process.stderr)
+    return [(fields[1],int(fields[2])) for line in process.stdout.splitlines()
+            if len(fields := line.split()) == 3 and int(fields[0]) == pgid]
+
+
 def group_active(pgid):
-    output = subprocess.check_output(['ps', '-eo', 'pgid=,stat='], text=True)
-    return any(int(fields[0]) == pgid and not fields[1].startswith('Z')
-               for line in output.splitlines() if len(fields := line.split()) == 2)
+    return any(not state.startswith('Z') for state,_ in group_snapshot(pgid))
 
 
 def alive(pid):
@@ -84,8 +110,9 @@ def alive(pid):
 
 
 def acquire(store, job, resources):
+    from experiments import TERMINAL
     policy_path = Path(store.get(job)['payload']['paths']['FLEET_DIR']) / 'cpu-policy.json'
-    total, available = memory()
+    total = total_memory()
     policy = dict(slots=2, memory_mb=min(16384, total // 2), reserve_mb=min(2048, total // 8))
     if policy_path.exists():
         custom = json.loads(policy_path.read_text())
@@ -96,17 +123,33 @@ def acquire(store, job, resources):
         raise ValueError('invalid CPU pool policy')
     if resources['cpu_slots'] > policy['slots'] or resources['cpu_memory_mb'] > policy['memory_mb']:
         raise ValueError('CPU request exceeds the configured pool capacity')
-    with store.db:
-        store.db.execute('BEGIN IMMEDIATE')
+    with store.transaction():
         for row in store.db.execute('SELECT job,pid FROM cpu_leases').fetchall():
             if not alive(row['pid']):
                 store.db.execute('DELETE FROM cpu_leases WHERE job=?', (row['job'],))
+        for row in store.db.execute('SELECT w.*,j.state FROM cpu_waiters w JOIN jobs j ON j.id=w.job').fetchall():
+            if (row['state'] in TERMINAL or not alive(row['pid']) or row['slots'] > policy['slots']
+                    or row['memory_mb'] > policy['memory_mb']):
+                store.db.execute('DELETE FROM cpu_waiters WHERE job=?', (row['job'],))
+        if store.get(job)['state'] in TERMINAL:
+            return False
+        lease = store.db.execute('SELECT pid FROM cpu_leases WHERE job=?', (job,)).fetchone()
+        if lease:
+            return lease['pid'] == os.getpid()
+        store.db.execute('INSERT INTO cpu_waiters(job,pid,slots,memory_mb) VALUES(?,?,?,?) '
+                         'ON CONFLICT(job) DO UPDATE SET pid=excluded.pid',
+                         (job, os.getpid(), resources['cpu_slots'], resources['cpu_memory_mb']))
+        if store.db.execute('SELECT job FROM cpu_waiters ORDER BY ticket LIMIT 1').fetchone()['job'] != job:
+            return False
         slots, ram = store.db.execute('SELECT COALESCE(sum(slots),0),COALESCE(sum(memory_mb),0) FROM cpu_leases').fetchone()
-        if (slots + resources['cpu_slots'] > policy['slots'] or ram + resources['cpu_memory_mb'] > policy['memory_mb']
-                or available < resources['cpu_memory_mb'] + policy['reserve_mb']):
+        if slots + resources['cpu_slots'] > policy['slots'] or ram + resources['cpu_memory_mb'] > policy['memory_mb']:
+            return False
+        # Only the head waiter with room in the pool probes current host RAM.
+        if memory()[1] < resources['cpu_memory_mb'] + policy['reserve_mb']:
             return False
         store.db.execute('INSERT OR REPLACE INTO cpu_leases VALUES(?,?,?,?)',
                          (job, os.getpid(), resources['cpu_slots'], resources['cpu_memory_mb']))
+        store.db.execute('DELETE FROM cpu_waiters WHERE job=?', (job,))
         return True
 
 
@@ -137,16 +180,18 @@ def stop(proc):
 def run_cpu(store, job, command, payload):
     resources = payload['spec']['resources']
     deadline = time.monotonic() + payload['spec']['timeout_s']
-    store.state(job, 'waiting_cpu')
-    while not acquire(store, job, resources):
-        if store.get(job)['state'] == 'retired':
-            from experiments import RetiredJob
-            raise RetiredJob(job)
-        if time.monotonic() >= deadline:
-            return 124, 'CPU queue time budget exceeded'
-        time.sleep(.25)
     proc = None
+    acquired = False
     try:
+        store.state(job, 'waiting_cpu')
+        while not acquire(store, job, resources):
+            if store.get(job)['state'] == 'retired':
+                from experiments import RetiredJob
+                raise RetiredJob(job)
+            if time.monotonic() >= deadline:
+                return 124, 'CPU queue time budget exceeded'
+            time.sleep(.05)
+        acquired = True
         store.state(job, 'running')
         proc = subprocess.Popen(command, cwd=payload['repo'], start_new_session=True,
                                 env=dict(os.environ, CUDA_VISIBLE_DEVICES='', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1'))
@@ -156,16 +201,19 @@ def run_cpu(store, job, command, payload):
             if time.monotonic() >= deadline:
                 stop(proc)
                 return 124, 'CPU time budget exceeded (including resource wait)'
-            text = subprocess.check_output(['ps', '-eo', 'pgid=,rss='], text=True)
-            rss = sum(int(fields[1]) for line in text.splitlines()
-                      if len(fields := line.split()) == 2 and int(fields[0]) == proc.pid)
+            rss = sum(rss for _,rss in group_snapshot(proc.pid))
             if rss > resources['cpu_memory_mb'] * 1024:
                 stop(proc)
                 return 137, 'CPU process group exceeded its declared RAM budget'
-            time.sleep(.1)
+            try:
+                proc.wait(timeout=max(.001,min(.1,deadline-time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
         return proc.returncode, None
     finally:
         if proc:
             stop(proc)
         with store.db:
-            store.db.execute('DELETE FROM cpu_leases WHERE job=?', (job,))
+            store.db.execute('DELETE FROM cpu_waiters WHERE job=?', (job,))
+            if acquired:
+                store.db.execute('DELETE FROM cpu_leases WHERE job=?', (job,))
