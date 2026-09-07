@@ -3,9 +3,12 @@
 This follow-up compares against the default input-reuse kernel from PR449,
 not the older repeated-input-quantization baseline. The actual serving-source
 kernel reduces warm latency 24.51% and read-evicted latency 7.88%, with exact
-output bits and clean sanitizers. `VLLM_GLM53_MK_INPUT_CTA` remains 0 pending
-serving acceptance; the first baseline boot failed before any requests.
-The input-reuse default remains enabled.
+output bits and clean sanitizers. The retry reproduces reductions of 24.57%
+warm and 7.85% read-evicted. After these results and both failed serving
+attempts were reported, the operator requested default promotion and PR merge
+on 2026-09-08. `VLLM_GLM53_MK_INPUT_CTA` now defaults to **2**; `0` restores
+the existing enabled input-reuse route. Serving step/output improvement and
+quality acceptance remain unmeasured.
 
 For the exact M6/N6416/K4096 route, one CTA owns 16 output columns and its
 eight warps own the original eight K slices. Each warp keeps the same W4
@@ -29,7 +32,7 @@ discarding every sample. The wrapper now only handles the matching completion
 POST; metrics and unrelated requests keep their original response. A regression
 executes a metrics fetch while the wrapper is installed, as the sampler does.
 
-Final CPU gate: 6,687 core checks, 30 megakernel regressions, 92 fleet checks
+Final CPU gate: 6,689 core checks, 30 megakernel regressions, 92 fleet checks
 and 12 driver/transport regressions pass. Native CUDA compilation and GPU
 validation are complete. The runners pass Bash syntax validation.
 
@@ -167,8 +170,48 @@ and [failed baseline preparation](serving/failed-ICTAB1/prepare.log) are retaine
 The next immutable runner checks fresh-process MHC and both input modes on
 all four nodes before loading the model; it does not edit the running attempt.
 
-Retry `inputctaserve20907` is queued from immutable source `d920bea`, with
-unchanged serving CUDA/Python bytes, in a separate clean checkout. It uses
-`/home/choiceoh/glm53-logs/INPUTCTASERVE20907` and follows the two earlier
-GPU reservations. Preflight passes. No step gain or default promotion is
-claimed while the serving bracket is pending.
+## Retry and operator default promotion (2026-09-08)
+
+Retry `inputctaserve20907` ran from immutable source `d920bea`, with unchanged
+serving CUDA/Python bytes, in a separate clean checkout and evidence directory
+`/home/choiceoh/glm53-logs/INPUTCTASERVE20907`. It acquired the fleet at
+00:03:00 KST. All 160 numerical rows, 120 retained-graph checks and both
+sanitizers passed again. Fresh-process MHC/GEMM and input replay gates passed
+on **all four nodes**, including both input modes 0 and 2.
+
+| Kernel | Warm us | Read-evicted us |
+|---|---:|---:|
+| Enabled input reuse, CTA=0 | 32.368 | 75.648 |
+| Fixed geometry CTA=2 | 24.416 (-24.57%) | 69.712 (-7.85%) |
+
+The same-source B/A/A/B began at 00:12:12. Its CTA=0 baseline failed at
+00:18:35 during serving warmup with `OneShotFatal: one-shot proxy unhealthy
+after real-mode commit; refusing rank-local NCCL fallback`. The lever aborted
+at 00:18:56 before health or any measurement request. This is a different
+failure from the first attempt; neither attempt produced step/output or
+quality records. The proxy's root cause is not established by these receipts.
+Recovery on the candidate source completed at 00:23:02; final approved-main
+restoration completed at **00:33:16**, and the runner retained exit code 1.
+
+[Retry GPU results](serving-retry/result.json),
+[racecheck](serving-retry/racecheck.log), [memcheck](serving-retry/memcheck.log),
+[four-node check example](serving-retry/node-check-srv1.log),
+[failed baseline](serving-retry/boot-ICTAB1.log),
+[public recovery](serving-retry/restore.log).
+
+Default promotion selects mode 2 as explicitly requested by the operator.
+It does not relabel either boot failure or claim a measured serving speedup
+or quality pass. The independent startup numerical/replay gate and fallback
+to input reuse remain active. Rollback is `VLLM_GLM53_MK_INPUT_CTA=0`.
+The promotion also integrates approved main `bb123cf` (W4 cache SHA256 keys);
+the measured CUDA source remains byte-identical. Historical serving runners
+and analyzer receipts use the then-default CTA=0 from source `d920bea`;
+new comparisons after promotion must explicitly select CTA=0 for controls.
+
+Promotion validation on the combined main/CTA tree: 6,689 logic checks,
+30 megakernel regressions, 92 fleet tests and 12 driver/transport tests pass;
+profile resolution selects CTA=2/input-reuse=1/pack-SHA256=1. Both generated
+overlays match source and the measured CUDA SHA-256 still matches exactly.
+The local logic suite's Torch-dependent portions and five separate pack-key
+tests are skipped because this host has no CPU Torch. Completed GPU proofs
+are recorded separately above. [CPU log](cpu/promotion-checks.log).

@@ -50,6 +50,15 @@ A profile also carries the serving knobs that are the model's rather than the
 fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
 is blocked, says so and names the one flip that would isolate the cause.
 
+GLM53's C=1 M6/N6416/K4096 projection defaults to
+`VLLM_GLM53_MK_INPUT_CTA=2` (operator promotion, 2026-09-08). It retains the
+eight original K slices and sums their partials within one CTA. The independent
+startup gate falls back to the existing input-reuse kernel; setting the knob
+to `0` selects that previous route explicitly. Repeated kernel measurements
+show 24.5% lower warm latency and 7.9% lower read-evicted latency. Serving
+step/output and quality acceptance are still unmeasured after baseline boot
+failures. [Measurements and failure receipts](../measurements/glm53_input_cta_20260907/README.md).
+
 ## 프로필별 구성
 
 | | `dsv4` | `glm53` | `qwen38` |

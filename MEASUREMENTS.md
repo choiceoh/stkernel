@@ -7419,7 +7419,19 @@ MHC check raised CUDA error 800 and its worker exited before health. Other
 ranks passed startup checks. No step/output measurement exists for this
 attempt. Failure logs are preserved. Approved main `944f65c` was restored at
 23:20:48 KST, with health 200 observed at 23:20:22. Retry `inputctaserve20907`
-is queued from unchanged runtime source in a fresh worktree/evidence directory.
-`VLLM_GLM53_MK_INPUT_CTA=0` remains the default pending serving acceptance.
+on unchanged runtime source `d920bea` reproduced **32.368 -> 24.416 us warm
+(-24.57%)** and **75.648 -> 69.712 us read-evicted (-7.85%)**. Numerical,
+retained-graph, sanitizer and independent four-node startup checks all pass.
+Its CTA=0 serving baseline failed at 00:18:35 on 2026-09-08 with an unhealthy
+one-shot proxy during warmup. No step/output/quality rows were produced.
+Approved-main restoration completed at 00:33:16; exit code 1 is retained.
+
+After both attempts were reported, the operator explicitly requested default
+promotion and PR merge on 2026-09-08. `VLLM_GLM53_MK_INPUT_CTA=2` is now the
+GLM profile default; `0` restores the existing input-reuse kernel. This is an
+operator promotion based on repeated kernel gains, not a serving acceptance
+verdict. Independent startup fallback remains active, and the failed serving
+evidence is preserved. The promotion integrates main `bb123cf` without
+changing the measured CUDA source bytes.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
