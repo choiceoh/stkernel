@@ -61,3 +61,30 @@ verified incoming idle containers and restores their exact identities/configs
 and healthy endpoint in `finally`; the probe removes only its own unique
 four-rank containers. It requires 128 GiB free disk per node and 16 GiB
 available memory before launching isolated, memory-limited probe containers.
+
+
+## Direct serving comparison
+
+The prepared `bench/prefill_serving.py` runner admits only the completed,
+recovered four-rank gate above. It requires both BF16 and FP8-v3 reports,
+all eight size/routing cases per transport, eager and changed-input
+numerical success, the final four-rank completion marker, and exact hashes
+for all 56 generated overlays, the profile, launcher and probe sources.
+Adding measurement code does not authorize changing GPU-validated code.
+Kernel timing is not an admission speed threshold: direct serving TTFT
+remains the performance decision.
+
+Once that gate passes, a new frozen source runs normal fleet B1/A/B2, each
+with an excluded priming ladder followed by measured 2K/32K/128K requests.
+Each request gets a new cache salt; the comparator rejects prefix-cache
+hits, outside traffic, changed inputs/tokens, mixed sources/configs, failed
+quality or absent candidate launch proof on any rank. The collector reads
+the exact inspected container's redirected file log, rejects stale/empty
+files and preserves incomplete evidence on failure. It freezes B1's actual
+memory/scheduler controls and finally restores the public default arm.
+
+This reuses the reviewed measurement helpers from PR #439 without importing
+its MLA or failed MoE kernel candidates. The 61 relevant GPU/launch/probe
+files remain byte-identical to frozen GPU revision `44d76c0`; current-main
+rebase `944f65c` changes only fleet CPU handoff code. GPU and TTFT are still
+pending; preparing this runner is not a measurement result.

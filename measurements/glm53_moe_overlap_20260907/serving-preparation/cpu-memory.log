@@ -1,0 +1,8 @@
+..REFUSED onepass memory: head: 9 KiB available < 10
+.REFUSED onepass memory: worker: 9 KiB available < 10
+REFUSED onepass memory: worker: memory unavailable: SSH unavailable
+.
+----------------------------------------------------------------------
+Ran 4 tests in 0.047s
+
+OK
