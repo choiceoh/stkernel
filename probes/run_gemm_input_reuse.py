@@ -12,7 +12,7 @@ import urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
 IMAGE='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
-OUT=Path('/home/choiceoh/glm53-logs/INPUTREUSE0907')
+OUT=Path(os.environ.get('GEMM_INPUT_REUSE_OUT','/home/choiceoh/glm53-logs/INPUTREUSE0907'))
 
 
 def traffic():

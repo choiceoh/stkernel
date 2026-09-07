@@ -1,7 +1,10 @@
 // Probe only: produce exactly the existing GEMM's per-row FP8 groups once.
 // The single-stream probe reuses SMLP2's scratch and a_ready consumer. A
 // serving implementation would need an explicit lifetime/stream contract.
-__global__ void mk_probe_pack_input(const __nv_bfloat16* x, int m, int k) {
+struct MKProbeInput { const __nv_bfloat16* x; int m, k; };
+__global__ void mk_probe_pack_input(MKProbeInput args) {
+  const __nv_bfloat16* x = args.x;
+  const int m = args.m, k = args.k;
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
   const int row = threadIdx.x >> 5, lane = threadIdx.x & 31;

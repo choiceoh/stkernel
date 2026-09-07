@@ -26,7 +26,7 @@ def render(original):
                         'int g_probe_input_reuse = 0;\nvoid mk_run_gemm(torch::Tensor x,')
     source=replace_once(source,'  mk_launch_gemm2(c2, stream);\n}', '''
   if (g_probe_input_reuse && c2.m >= 1 && c2.m <= 8 && !bg && !c2.lr_r) {
-    mk_launch(mk_probe_pack_input, c2.k / KSTEP, 0, stream, c2.x, c2.m, c2.k);
+    mk_launch(mk_probe_pack_input, c2.k / KSTEP, 0, stream, MKProbeInput{c2.x, c2.m, c2.k});
     c2.a_ready = 1;
   }
   mk_launch_gemm2(c2, stream);
