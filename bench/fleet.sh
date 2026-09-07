@@ -355,8 +355,8 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   # later, dropping the live request with the same session name)
   [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
   legacy_busy && return 1
-  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" || return 1
-  echo "$s|$pid|$(me)|$(now)|$est|$note|$kind" > "$H"; _dequeue "$s"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" "$est" "$note" || return 1
+  _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
   logit "GO $s (pid $pid)"; _event GO "$s" "$note"; return 0
 }
@@ -434,7 +434,7 @@ case "$cmd" in
       sleep 1
     done
     echo "TIMEOUT $s after ${tmo}m" >&2; exit 1;;
-  version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=1";;
+  version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=2";;
   release) with_lock _release "${1:?session}";;
   run)
     kind=boot; force=""
