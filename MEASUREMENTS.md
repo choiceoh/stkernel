@@ -7374,6 +7374,24 @@ restored at 20:25:15 KST, with health 200 verified after recovery.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
 
+## GLM53 W4 키 SHA256 — warm 부팅 234 → 226.5초 (2026-09-07)
+
+PR #452, 런타임 `7132fd15306166f15ce783fe2580dad661f22801` (main #451 위).
+4× GB10 TP4에서 같은 코드·이미지·준비된 rank/FP8/compile 캐시로 B/A/A/B.
+기존 MD5 부팅 **236/232초**, SHA256 **224/229초**: 평균 **7.5초(3.2%) 단축**.
+헤드 W4 키는 **10.3045 → 2.4990초**, 모델 로딩 **84.85 → 77.40초**;
+profile은 **36.65 → 36.85초**. 기존 팩은 최초 1회 hardlink로 재사용하고
+이후 MD5 계산을 생략한다. 가중치·팩·추론 산술은 그대로다.
+
+준비 부팅 541초는 비교에서 제외. timed 4회 모두 compile reuse, rank 4/4 hit,
+FP8 976/976 hit, 랭크당 W4 254 hit; 후보 MD5 fallback/alias error/repack 0.
+준비 포함 5회 모두 품질 6/6·한국어 손상 0/4. GPU exact 36+36개 통과.
+raw acceptance는 B 51.77/49.19%, A 49.87/45.65%로 변동했고 디코드는
+B 21.9/21.9, A 21.9/21.8 step/s: 처리량·수용률 개선 주장은 하지 않는다.
+`VLLM_GLM53_MK_PACK_SHA256=1`을 프로필 기본값으로 채택; `=0`은 기존 MD5 경로.
+마지막 control SHA256=0·HTTP 200 확인 후 플릿 반납, 새 기본값은 다음 배포부터 적용.
+상세 조건·한계·실행 절차·증거: [측정 묶음](measurements/glm53_pack_key_20260907/README.md).
+
 ### GLM53 C=1 CTA-local split-K reduction (2026-09-07, PR454)
 
 Compared against PR449's enabled input-reuse default on the exact

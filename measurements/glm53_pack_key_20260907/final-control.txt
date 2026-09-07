@@ -1,0 +1,5 @@
+2026-09-07T22:46:46+09:00
+health=200
+VLLM_GLM53_MK_PACK_FAST_IO=1
+VLLM_GLM53_MK_PACK_SHA256=0
+Trial exit-code=0; fleet slot released after BASE2. The next holder was moeoverlap10907.
