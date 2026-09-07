@@ -147,3 +147,14 @@ These are compiler wall times, not kernel performance. A clean, frozen-source
 compile is required again before queue admission, followed by all TP4, capture,
 memcheck and racecheck gates. Loading 128 physical rows per 64-row task may
 offset reduced padded arithmetic; only matched full-model TTFT can decide.
+
+
+The clean frozen source `ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73`, based on
+main `4b0f1d1`, compiled both M128 (4.00 s) and M64 (2.88 s) without GPUs at
+02:13 KST. Evidence is retained in `preparation-layout4/`, alongside 6689 logic
+checks, 30 megakernel regressions, 107 fleet regressions and 28 focused tests.
+Local torch-dependent host checks were skipped; the actual image compiler uses
+torch and ptxas. Four immutable check4 copies share that exact source. The
+serving collector now points to check4 and will reject it unless the complete
+GPU/recovery evidence passes. `--refresh-gate` can run the GPU gates and then
+the direct fresh-cache TTFT bracket in the same normal fleet hold.

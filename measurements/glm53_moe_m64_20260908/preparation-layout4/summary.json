@@ -1,0 +1,13 @@
+{
+  "revision": "ad8cf1b879cc28c968d5c29de1d2cc8ce51d2d73",
+  "source": "/home/choiceoh/stkernel-moe-m64-check4-0908",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "kernel_sha256": "fde5297321d1dec669abc5bfb06d6fd15d186a1bd1b1273ddfbf71f1c5f25ff5",
+  "gpu_execution": false,
+  "compiler": "M64_CPU_COMPILE_PASS",
+  "logic_checks": 6689,
+  "megakernel_tests": 30,
+  "fleet_tests": 107,
+  "focused_tests": 28,
+  "limitation": "CPU-only evidence; torch-dependent host checks skipped because local torch is unavailable; actual pinned-image compiler uses torch without GPU access"
+}
