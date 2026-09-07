@@ -1,0 +1,130 @@
+{
+  "evidence": "cpu-only",
+  "checks": [
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_startup_campaign.py",
+        "build/handoff-review-linux-individual-0.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.083,
+      "log": "build/handoff-review-linux-individual-0.log",
+      "skipped": [],
+      "tests_run": 3,
+      "counts": {
+        "tests_run": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_startup_campaign.CampaignTests.test_changed_build_reused_boot_failed_quality_and_drift_cannot_pass",
+          "test_startup_campaign.CampaignTests.test_missing_knob_duplicate_and_cache_off_are_rejected",
+          "test_startup_campaign.CampaignTests.test_two_candidates_share_one_prime_and_two_controls"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_startup_campaign.CampaignTests.test_changed_build_reused_boot_failed_quality_and_drift_cannot_pass": 0.01340277399867773,
+          "test_startup_campaign.CampaignTests.test_missing_knob_duplicate_and_cache_off_are_rejected": 0.0002906729932874441,
+          "test_startup_campaign.CampaignTests.test_two_candidates_share_one_prime_and_two_controls": 9.107199730351567e-05
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_startup_cache_receipts.py",
+        "build/handoff-review-linux-individual-1.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 0.062,
+      "log": "build/handoff-review-linux-individual-1.log",
+      "skipped": [],
+      "tests_run": 5,
+      "counts": {
+        "tests_run": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_startup_cache_receipts.BootReceiptTests.test_pack_key_warm_arms_require_all_sha_hits_without_repacking",
+          "test_startup_cache_receipts.BootReceiptTests.test_prime_accepts_new_packs_but_timed_arms_require_hits",
+          "test_startup_cache_receipts.BootReceiptTests.test_prime_still_rejects_wrong_path_and_restore_errors",
+          "test_startup_cache_receipts.BootReceiptTests.test_shared_campaign_retains_per_node_warm_pack_receipts",
+          "test_startup_cache_receipts.BootReceiptTests.test_unrelated_campaign_does_not_infer_pack_gate_from_profile_defaults"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_startup_cache_receipts.BootReceiptTests.test_pack_key_warm_arms_require_all_sha_hits_without_repacking": 0.005170306016225368,
+          "test_startup_cache_receipts.BootReceiptTests.test_prime_accepts_new_packs_but_timed_arms_require_hits": 0.0030597929726354778,
+          "test_startup_cache_receipts.BootReceiptTests.test_prime_still_rejects_wrong_path_and_restore_errors": 0.0021878090337850153,
+          "test_startup_cache_receipts.BootReceiptTests.test_shared_campaign_retains_per_node_warm_pack_receipts": 0.0020693130209110677,
+          "test_startup_cache_receipts.BootReceiptTests.test_unrelated_campaign_does_not_infer_pack_gate_from_profile_defaults": 0.0007029599510133266
+        },
+        "failure_details": []
+      }
+    },
+    {
+      "suite": "individual",
+      "command": [
+        "/usr/bin/python3",
+        "bench/cpu_unittest.py",
+        "tests/test_boot_supervisor_linux.py",
+        "build/handoff-review-linux-individual-2.counts.json"
+      ],
+      "returncode": 0,
+      "seconds": 8.505,
+      "log": "build/handoff-review-linux-individual-2.log",
+      "skipped": [],
+      "tests_run": 8,
+      "counts": {
+        "tests_run": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": [],
+        "expected_failures": 0,
+        "unexpected_successes": 0,
+        "coverage_complete": true,
+        "passed": true,
+        "test_ids": [
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_after_offer_reclaims_and_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancelled_waiter_leaves_donor_to_restore",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_restore_leaves_visible_debt_and_nonzero_exit",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_nested_restore_policy_defers_until_supervisor_finishes",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_waits_for_restore_and_active_cancellation_recovers",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_receiver_failure_preserves_payload_code_and_restores",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_restore_debt_does_not_allow_probe_to_block_recovery_boot",
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_two_real_waiters_handoff_with_one_final_restore"
+        ],
+        "workers": 1,
+        "test_durations_s": {
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancel_after_offer_reclaims_and_restores": 0.7144034859957173,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_cancelled_waiter_leaves_donor_to_restore": 0.5294766839942895,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_failed_restore_leaves_visible_debt_and_nonzero_exit": 0.41580634500132874,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_nested_restore_policy_defers_until_supervisor_finishes": 0.41561367199756205,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_probe_waits_for_restore_and_active_cancellation_recovers": 1.4330749210203066,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_receiver_failure_preserves_payload_code_and_restores": 1.5631495169945993,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_restore_debt_does_not_allow_probe_to_block_recovery_boot": 1.687070094048977,
+          "test_boot_supervisor_linux.LinuxSupervisorTests.test_two_real_waiters_handoff_with_one_final_restore": 1.6450479110353626
+        },
+        "failure_details": []
+      }
+    }
+  ],
+  "passed": true,
+  "coverage_complete": true,
+  "tests_run": 16
+}

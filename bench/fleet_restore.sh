@@ -3,7 +3,9 @@
 set -euo pipefail
 session=${FLEET_SESSION:?}
 [[ $(cut -d'|' -f1 "${FLEET_DIR:?}/holder") == "$session" ]] || exit 2
-repo=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel}
+configured=/home/choiceoh/stkernel
+if [[ -s $FLEET_DIR/production-repo ]]; then read -r configured < "$FLEET_DIR/production-repo"; fi
+repo=${FLEET_PRODUCTION_REPO:-$configured}
 cd "$repo"
 [[ -z $(git status --porcelain) ]] || { echo 'production checkout is dirty'; exit 2; }
 git fetch origin
