@@ -1,0 +1,29 @@
+candidate=warp source_sha256=9e82880fc11468fcb7aa60ed6cfb25557cf08163488d535b426e7034fe6bed2a
+2026-09-07 20:43:58,223 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r512_tm32f2g2a32wut_eb0c87b2f65593e9
+Traceback (most recent call last):
+  File "/repo/probes/moe_direct_scatter.py", line 217, in <module>
+    main()
+  File "/repo/probes/moe_direct_scatter.py", line 210, in main
+    md._get_static_kernel_v2(288, 288, 6, 4096, 512, 8, 512,
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2117, in _get_static_kernel_v2
+    compiled = build_and_load_cute_dsl_kernel(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 309, in build_and_load_cute_dsl_kernel
+    return spec.build_and_load()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/core.py", line 320, in build_and_load
+    self.build()
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 178, in build
+    self._compiled_kernel = self.compile_fn()
+                            ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2120, in <lambda>
+    lambda: cute.compile(
+            ^^^^^^^^^^^^^
+  File "/tmp/moe-direct-0pasjnua/moe_direct_warp_9e82880fc114_tiled.py", line 120, in __call__
+    self._setup_attributes(hidden_size=hidden_size)
+  File "/tmp/moe-direct-0pasjnua/moe_direct_warp_9e82880fc114.py", line 400, in _setup_attributes
+    self._check_direct_scatter_layout()
+  File "/tmp/moe-direct-0pasjnua/moe_direct_warp_9e82880fc114.py", line 365, in _check_direct_scatter_layout
+    assert tid // 32 == 2 * ((c // 32) % 2), (tid, r, c, [(t, [self.tiled_mma.get_slice(t).partition_C(ident)[i] for i in range(32)]) for t in (0, 32, 64, 96)])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (0, 0, 32, [(0, [(0, 0), (0, 1), (8, 0), (8, 1), (0, 8), (0, 9), (8, 8), (8, 9), (0, 32), (0, 33), (8, 32), (8, 33), (0, 40), (0, 41), (8, 40), (8, 41), (0, 64), (0, 65), (8, 64), (8, 65), (0, 72), (0, 73), (8, 72), (8, 73), (0, 96), (0, 97), (8, 96), (8, 97), (0, 104), (0, 105), (8, 104), (8, 105)]), (32, [(16, 0), (16, 1), (24, 0), (24, 1), (16, 8), (16, 9), (24, 8), (24, 9), (16, 32), (16, 33), (24, 32), (24, 33), (16, 40), (16, 41), (24, 40), (24, 41), (16, 64), (16, 65), (24, 64), (24, 65), (16, 72), (16, 73), (24, 72), (24, 73), (16, 96), (16, 97), (24, 96), (24, 97), (16, 104), (16, 105), (24, 104), (24, 105)]), (64, [(0, 16), (0, 17), (8, 16), (8, 17), (0, 24), (0, 25), (8, 24), (8, 25), (0, 48), (0, 49), (8, 48), (8, 49), (0, 56), (0, 57), (8, 56), (8, 57), (0, 80), (0, 81), (8, 80), (8, 81), (0, 88), (0, 89), (8, 88), (8, 89), (0, 112), (0, 113), (8, 112), (8, 113), (0, 120), (0, 121), (8, 120), (8, 121)]), (96, [(16, 16), (16, 17), (24, 16), (24, 17), (16, 24), (16, 25), (24, 24), (24, 25), (16, 48), (16, 49), (24, 48), (24, 49), (16, 56), (16, 57), (24, 56), (24, 57), (16, 80), (16, 81), (24, 80), (24, 81), (16, 88), (16, 89), (24, 88), (24, 89), (16, 112), (16, 113), (24, 112), (24, 113), (16, 120), (16, 121), (24, 120), (24, 121)])])

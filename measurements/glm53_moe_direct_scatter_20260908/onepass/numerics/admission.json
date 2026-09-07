@@ -1,0 +1,452 @@
+{
+  "checked_utc": "2026-09-07T21:43:47.668167+00:00",
+  "source_commit": "27c4a1a1033c18a4fa9d8a892c53ee241ea141a2",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "before": null,
+  "after": null,
+  "traffic_samples": [
+    {
+      "traffic": null,
+      "available_bytes": 103843454976
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103753027584
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103716913152
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103708098560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103704494080
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103703339008
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103702904832
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103700586496
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103699259392
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103699136512
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103683031040
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103689457664
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103687036928
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103687036928
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103594717184
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103479238656
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103355674624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 103240192000
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102376456192
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102376456192
+    },
+    {
+      "traffic": null,
+      "available_bytes": 102074335232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101964505088
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101526085632
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101526052864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 101525856256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100611178496
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100619292672
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100619292672
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100615421952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100621103104
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100640591872
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100637306880
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100632240128
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100629192704
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100629143552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100629143552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100629139456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100629143552
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100482736128
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100441411584
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100423446528
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438269952
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100441272320
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438114304
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438106112
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438110208
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438110208
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438073344
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438073344
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100438073344
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100420096000
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100388532224
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100388532224
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100388016128
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100381048832
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100380524544
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100387815424
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100387774464
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100387774464
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100387782656
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100369027072
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100365144064
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100365082624
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100363264000
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100359106560
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100358160384
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100356620288
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100356620288
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100340703232
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100340318208
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100327100416
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326662144
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326354944
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326354944
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326350848
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326309888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326309888
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100318339072
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100318310400
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100318310400
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326518784
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100326526976
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100334526464
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100332691456
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100332384256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100332384256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100332384256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100332384256
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100308287488
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100275097600
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282986496
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282986496
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282916864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282916864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282916864
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282920960
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282920960
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100282146816
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100281843712
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100305973248
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100306198528
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100306198528
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100298649600
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100298649600
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100296065024
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100296097792
+    },
+    {
+      "traffic": null,
+      "available_bytes": 100294483968
+    }
+  ],
+  "issues": [],
+  "server_before": {
+    "boot_id": "febb41338249f13b005bed314ceb43864227c7a19dc18c929327355a47e87bc0",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "server_after": {
+    "boot_id": "febb41338249f13b005bed314ceb43864227c7a19dc18c929327355a47e87bc0",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": false
+  },
+  "returncode": 0,
+  "admission_min_bytes": 17179869184,
+  "continuous_min_bytes": 12884901888,
+  "maintenance": true
+}

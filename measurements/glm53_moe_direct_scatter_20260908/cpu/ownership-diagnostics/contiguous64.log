@@ -1,0 +1,29 @@
+candidate=warp source_sha256=e723853b5abe579525712f7d2b4ee91c5369ee596497a4197ac5912af60fd608
+2026-09-07 20:41:13,883 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r512_tm32f2g2a32wut_eb0c87b2f65593e9
+Traceback (most recent call last):
+  File "/repo/probes/moe_direct_scatter.py", line 201, in <module>
+    main()
+  File "/repo/probes/moe_direct_scatter.py", line 194, in main
+    md._get_static_kernel_v2(288, 288, 6, 4096, 512, 8, 512,
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2117, in _get_static_kernel_v2
+    compiled = build_and_load_cute_dsl_kernel(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 309, in build_and_load_cute_dsl_kernel
+    return spec.build_and_load()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/core.py", line 320, in build_and_load
+    self.build()
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/jit/cute_dsl_core.py", line 178, in build
+    self._compiled_kernel = self.compile_fn()
+                            ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py", line 2120, in <lambda>
+    lambda: cute.compile(
+            ^^^^^^^^^^^^^
+  File "/tmp/moe-direct-1v6oa47a/moe_direct_warp_e723853b5abe_tiled.py", line 120, in __call__
+    self._setup_attributes(hidden_size=hidden_size)
+  File "/tmp/moe-direct-1v6oa47a/moe_direct_warp_e723853b5abe.py", line 400, in _setup_attributes
+    self._check_direct_scatter_layout()
+  File "/tmp/moe-direct-1v6oa47a/moe_direct_warp_e723853b5abe.py", line 365, in _check_direct_scatter_layout
+    assert tid // 32 == c // 64, (tid, r, c)
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: (0, 0, 64)

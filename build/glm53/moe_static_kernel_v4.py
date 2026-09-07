@@ -118,6 +118,7 @@ class MoEStaticKernelV4:
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
+        warp_scatter: bool = False,
         even: bool = False,
         split: bool = False,
         skip_sf: bool = False,
@@ -151,6 +152,7 @@ class MoEStaticKernelV4:
         self.fc1_stages = int(fc1_stages)
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
+        self.warp_scatter = bool(warp_scatter)
         # even waves: only the largest CTA count in {48, 44, 40, 36, 32} that
         # leaves the fewest empty item slots takes items, so the last wave is
         # full (U=40: 40 CTAs x 4 items instead of 48 x 3.33). The item total
@@ -349,6 +351,30 @@ class MoEStaticKernelV4:
             offset = _align_up(offset, self.buffer_align_bytes) + size
         return offset
 
+    def _check_warp_scatter_layout(self):
+        # Compile-time exhaustive proof, independent of any runtime data.
+        # A pair must have the same row and adjacent columns; adjacent lanes
+        # in a quad must cover one aligned 8-column vector. Retiling or MMA
+        # geometry drift therefore fails before this kernel can launch.
+        ident = cute.make_identity_tensor((_TILE_M, _FC2_TILE_N))
+        seen = set()
+        for tid in range(128):
+            coords = self.tiled_mma.get_slice(tid).partition_C(ident)
+            leader = self.tiled_mma.get_slice(tid - tid % 4).partition_C(ident)
+            for i in range(0, cute.size(coords), 2):
+                r, c = coords[i]
+                if r < 8:
+                    assert tid // 32 == 2 * ((c // 16) % 2), (tid, r, c)
+                r1, c1 = coords[i + 1]
+                lr, lc = leader[i]
+                assert r == r1 and c1 == c + 1 and c % 2 == 0
+                assert r == lr and c == lc + 2 * (tid % 4) and lc % 8 == 0
+                for rr, cc in ((r, c), (r1, c1)):
+                    assert (rr, cc) not in seen
+                    seen.add((rr, cc))
+        assert seen == {(r, c) for r in range(_TILE_M) for c in range(_FC2_TILE_N)}
+        print('WARP_SCATTER_LAYOUT_PASS', len(seen), flush=True)
+
     def _make_tiled_mma(self, tile_shape_mnk):
         import cutlass.utils.blackwell_helpers as sm120_utils
 
@@ -373,6 +399,8 @@ class MoEStaticKernelV4:
         self._hidden_size = hidden_size
         mma_op, self.tiled_mma1 = self._make_tiled_mma(self.fc1_tile_shape_mnk)
         _, self.tiled_mma = self._make_tiled_mma(self.tile_shape_mnk)
+        if self.warp_scatter:
+            self._check_warp_scatter_layout()
         self.mma_atom = cute.make_mma_atom(mma_op)
         self.cta_layout_mnk = cute.make_layout(self.cluster_shape_mnk)
         self.num_m_tiles = _TILE_M // 32
@@ -1238,8 +1266,12 @@ class MoEStaticKernelV4:
             scatter_N = Int32(scatter_output.shape[1])
             lane_id = Int32(tidx) & Int32(31)
             warp_in_tile = Int32(tidx) >> Int32(5)
-            warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
-            warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
+            if cutlass.const_expr(self.warp_scatter and a_input.shape[0] <= 8):
+                warp_m_base = (warp_in_tile & Int32(1)) * Int32(64)
+                warp_n_base = (warp_in_tile >> Int32(1)) * Int32(16)
+            else:
+                warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
+                warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
             a2_rows = Int32(_TILE_M)
             sA2_u8 = cute.recast_tensor(sA2[None, None, 0], cutlass.Uint8)
             sf_blocks_per_half = Int32(_FC1_TILE_N // self.sf_vec_size)   # 4
@@ -1636,7 +1668,10 @@ class MoEStaticKernelV4:
                     tRS_rD_out.store(acc_vec)
                     cute.copy(tiled_copy_r2s, tRS_rD_out, tRS_sD[(None, None, None, 0)])
                     cute.arch.fence_proxy("async.shared", space="cta")
-                    self.epilog_sync_barrier.arrive_and_wait()
+                    if cutlass.const_expr(self.warp_scatter and a_input.shape[0] <= 8):
+                        cute.arch.sync_warp()
+                    else:
+                        self.epilog_sync_barrier.arrive_and_wait()
 
                     warp_epi_rows = valid_tile_rows - warp_m_base
                     if warp_epi_rows > Int32(64):
@@ -1648,7 +1683,11 @@ class MoEStaticKernelV4:
                     while vec_idx < warp_epi_rows * tile_vec_cols:
                         local_row = vec_idx // tile_vec_cols
                         local_vec_col = vec_idx - local_row * tile_vec_cols
-                        local_col = warp_n_base + local_vec_col * Int32(8)
+                        if cutlass.const_expr(self.warp_scatter and a_input.shape[0] <= 8):
+                            local_col = (warp_n_base + (local_vec_col % Int32(2)) * Int32(8)
+                                         + (local_vec_col // Int32(2)) * Int32(32))
+                        else:
+                            local_col = warp_n_base + local_vec_col * Int32(8)
                         global_col = tile_n_base_cur + local_col
                         cached_row = warp_m_base + local_row
                         tok = ld_shared_i32_relaxed(
@@ -1687,6 +1726,12 @@ class MoEStaticKernelV4:
                             wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
                         )
                         vec_idx += Int32(self.num_threads_per_warp)
+                    if cutlass.const_expr(self.warp_scatter and a_input.shape[0] <= 8):
+                        cute.arch.sync_warp()
+                    else:
+                        self.epilog_sync_barrier.arrive_and_wait()
+
+                if cutlass.const_expr(self.warp_scatter and a_input.shape[0] <= 8):
                     self.epilog_sync_barrier.arrive_and_wait()
 
                 if cutlass.const_expr(self.stamps):

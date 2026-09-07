@@ -1,0 +1,294 @@
+[
+  {
+    "variant": {
+      "variant": "pair",
+      "source_sha256": "704e3baa87d0b6c6352e6dfe589499931c708b121934267c32acc4192b74028a",
+      "files": [
+        "/tmp/moe-direct-jimvp5po/moe_direct_pair_704e3baa87d0.py",
+        "/tmp/moe-direct-jimvp5po/moe_direct_pair_704e3baa87d0_tiled.py"
+      ]
+    },
+    "gates": 130,
+    "rows": [
+      {
+        "shape": "M6-U8",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 136.9599997997284,
+        "candidate_us": 140.03199338912964,
+        "latency_reduction_pct": -2.242985976849665,
+        "faster_pairs": 5,
+        "baseline_first_pct": -3.581007602397279,
+        "candidate_first_pct": -2.242985976849665
+      },
+      {
+        "shape": "M6-U8",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 104.27199676632881,
+        "candidate_us": 108.31999778747559,
+        "latency_reduction_pct": -3.8821554652091805,
+        "faster_pairs": 4,
+        "baseline_first_pct": -3.4219383311775875,
+        "candidate_first_pct": -3.9435338691070188
+      },
+      {
+        "shape": "M6-U40",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 641.3759887218475,
+        "candidate_us": 655.135989189148,
+        "latency_reduction_pct": -2.1453875276375323,
+        "faster_pairs": 1,
+        "baseline_first_pct": -2.0888387680912945,
+        "candidate_first_pct": -2.0647162014463705
+      },
+      {
+        "shape": "M6-U40",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 638.4640038013458,
+        "candidate_us": 650.0160098075867,
+        "latency_reduction_pct": -1.8093433517726076,
+        "faster_pairs": 2,
+        "baseline_first_pct": -2.085642176847946,
+        "candidate_first_pct": -1.5701180623721944
+      },
+      {
+        "shape": "M6-U48",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 759.552001953125,
+        "candidate_us": 762.2080147266388,
+        "latency_reduction_pct": -0.3496814920748159,
+        "faster_pairs": 7,
+        "baseline_first_pct": -0.2696346779701875,
+        "candidate_first_pct": -0.45947419826584124
+      },
+      {
+        "shape": "M6-U48",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 757.5039863586426,
+        "candidate_us": 761.6160213947296,
+        "latency_reduction_pct": -0.5428400523479482,
+        "faster_pairs": 6,
+        "baseline_first_pct": -0.6061888131682958,
+        "candidate_first_pct": -0.3569650277193581
+      },
+      {
+        "shape": "M8-U8",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 139.21599835157394,
+        "candidate_us": 140.70399850606918,
+        "latency_reduction_pct": -1.0688427853941418,
+        "faster_pairs": 6,
+        "baseline_first_pct": -0.7101948139093706,
+        "candidate_first_pct": -1.1734910795755837
+      },
+      {
+        "shape": "M8-U8",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 108.25599730014801,
+        "candidate_us": 109.29599776864052,
+        "latency_reduction_pct": -0.9606862385730164,
+        "faster_pairs": 8,
+        "baseline_first_pct": -0.8576072397215473,
+        "candidate_first_pct": -0.9453474589887989
+      },
+      {
+        "shape": "M8-U40",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 641.7919993400574,
+        "candidate_us": 654.8160016536713,
+        "latency_reduction_pct": -2.0293182724319125,
+        "faster_pairs": 0,
+        "baseline_first_pct": -1.9495410394425594,
+        "candidate_first_pct": -2.074189483280353
+      },
+      {
+        "shape": "M8-U40",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 637.8719806671143,
+        "candidate_us": 650.1760184764862,
+        "latency_reduction_pct": -1.9289196237313622,
+        "faster_pairs": 2,
+        "baseline_first_pct": -1.9544899015163208,
+        "candidate_first_pct": -1.9355193021193484
+      },
+      {
+        "shape": "M8-U64",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 1009.4239711761475,
+        "candidate_us": 1021.6959714889526,
+        "latency_reduction_pct": -1.215742905184447,
+        "faster_pairs": 0,
+        "baseline_first_pct": -1.6391395951977472,
+        "candidate_first_pct": -1.055015999799358
+      },
+      {
+        "shape": "M8-U64",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 1011.4879608154297,
+        "candidate_us": 1022.7360129356384,
+        "latency_reduction_pct": -1.112030252059637,
+        "faster_pairs": 1,
+        "baseline_first_pct": -1.0134599076443207,
+        "candidate_first_pct": -1.1136271011292775
+      }
+    ],
+    "scope": "Synthetic single-kernel A/B; no measured serving step or output improvement"
+  },
+  {
+    "variant": {
+      "variant": "vector",
+      "source_sha256": "7e5d5f4a44cf0bab6201b891b06d9c477a2ea65184c83ebf95b9a9207835cf57",
+      "files": [
+        "/tmp/moe-direct-63qerdh6/moe_direct_vector_7e5d5f4a44cf.py",
+        "/tmp/moe-direct-63qerdh6/moe_direct_vector_7e5d5f4a44cf_tiled.py"
+      ]
+    },
+    "gates": 130,
+    "rows": [
+      {
+        "shape": "M6-U8",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 137.1999979019165,
+        "candidate_us": 141.31200313568115,
+        "latency_reduction_pct": -2.997088408634152,
+        "faster_pairs": 1,
+        "baseline_first_pct": -3.613327199540728,
+        "candidate_first_pct": -2.9847276451496985
+      },
+      {
+        "shape": "M6-U8",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 105.39199784398079,
+        "candidate_us": 116.48000031709671,
+        "latency_reduction_pct": -10.520725197306046,
+        "faster_pairs": 0,
+        "baseline_first_pct": -10.653499020058966,
+        "candidate_first_pct": -9.870209740494328
+      },
+      {
+        "shape": "M6-U40",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 635.888010263443,
+        "candidate_us": 657.4240028858185,
+        "latency_reduction_pct": -3.3867587176951597,
+        "faster_pairs": 1,
+        "baseline_first_pct": -3.4542666902269925,
+        "candidate_first_pct": -3.3053258745691316
+      },
+      {
+        "shape": "M6-U40",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 635.6640160083771,
+        "candidate_us": 658.4320068359375,
+        "latency_reduction_pct": -3.5817649346475466,
+        "faster_pairs": 0,
+        "baseline_first_pct": -3.4723346387146803,
+        "candidate_first_pct": -3.5000644427820804
+      },
+      {
+        "shape": "M6-U48",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 758.2719922065735,
+        "candidate_us": 763.9679908752441,
+        "latency_reduction_pct": -0.7511814661774974,
+        "faster_pairs": 6,
+        "baseline_first_pct": -0.7765043536265281,
+        "candidate_first_pct": -0.687865625123929
+      },
+      {
+        "shape": "M6-U48",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 762.9120051860809,
+        "candidate_us": 767.1840190887451,
+        "latency_reduction_pct": -0.5599615517417611,
+        "faster_pairs": 5,
+        "baseline_first_pct": -0.6045005618078525,
+        "candidate_first_pct": -0.5028322509464278
+      },
+      {
+        "shape": "M8-U8",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 139.23199474811554,
+        "candidate_us": 142.56000518798828,
+        "latency_reduction_pct": -2.3902627021134437,
+        "faster_pairs": 2,
+        "baseline_first_pct": -2.924853467432298,
+        "candidate_first_pct": -2.6769317586877284
+      },
+      {
+        "shape": "M8-U8",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 109.23199728131294,
+        "candidate_us": 120.57600170373917,
+        "latency_reduction_pct": -10.385239403076362,
+        "faster_pairs": 0,
+        "baseline_first_pct": -9.848267723316063,
+        "candidate_first_pct": -10.446887458571496
+      },
+      {
+        "shape": "M8-U40",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 638.975977897644,
+        "candidate_us": 661.2479984760284,
+        "latency_reduction_pct": -3.485580264169519,
+        "faster_pairs": 1,
+        "baseline_first_pct": -3.623408418079044,
+        "candidate_first_pct": -3.440163857226941
+      },
+      {
+        "shape": "M8-U40",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 640.175998210907,
+        "candidate_us": 660.3679955005646,
+        "latency_reduction_pct": -3.1541321989715154,
+        "faster_pairs": 0,
+        "baseline_first_pct": -2.663340970333117,
+        "candidate_first_pct": -3.2212092515212953
+      },
+      {
+        "shape": "M8-U64",
+        "cache": "cold",
+        "pairs": 32,
+        "baseline_us": 1015.9199833869934,
+        "candidate_us": 1035.2479815483093,
+        "latency_reduction_pct": -1.9025118589436563,
+        "faster_pairs": 0,
+        "baseline_first_pct": -1.6631053025773612,
+        "candidate_first_pct": -1.9442235930205554
+      },
+      {
+        "shape": "M8-U64",
+        "cache": "warm",
+        "pairs": 32,
+        "baseline_us": 1030.4799675941467,
+        "candidate_us": 1048.6080050468445,
+        "latency_reduction_pct": -1.759183877685766,
+        "faster_pairs": 3,
+        "baseline_first_pct": -2.3347562353310147,
+        "candidate_first_pct": -1.669267105228056
+      }
+    ],
+    "scope": "Synthetic single-kernel A/B; no measured serving step or output improvement"
+  }
+]

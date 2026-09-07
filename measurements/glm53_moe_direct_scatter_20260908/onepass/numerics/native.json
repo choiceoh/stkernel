@@ -1,0 +1,1187 @@
+{
+  "status": "PASS",
+  "candidate": {
+    "variant": "native",
+    "source_sha256": "abf5142841a6df1cde31d5ff131c74ce626e56500651994cb1e682e403b9560c",
+    "files": [
+      "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py"
+    ]
+  },
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "gates": [
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.03515625,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.375,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.875,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.875,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 1,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.0390625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.15625,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.375,
+      "limit": 1.5
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.375,
+      "limit": 1.5
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 2,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.0390625,
+      "stock_noise": 0.0390625,
+      "limit": 0.15625
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.0390625,
+      "limit": 0.15625
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.375,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 0.875,
+      "limit": 3.5
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 0.875,
+      "limit": 3.5
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 2,
+      "unique": 16,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.3125,
+      "limit": 1.25
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.3125,
+      "limit": 1.25
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.4375,
+      "limit": 1.75
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.4375,
+      "limit": 1.75
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.21875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.4375,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.125,
+      "limit": 4.5
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.125,
+      "limit": 4.5
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.0390625,
+      "limit": 0.15625
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.0390625,
+      "limit": 0.15625
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.375,
+      "limit": 1.5
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.375,
+      "stock_noise": 0.375,
+      "limit": 1.5
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 6,
+      "unique": 48,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.28125,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.875,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.25,
+      "stock_noise": 0.75,
+      "limit": 3.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.21875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 0.75,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 8,
+      "unique": 64,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.046875,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.28125,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.5,
+      "limit": 2.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.25,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 16,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.078125,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.078125,
+      "stock_noise": 0.046875,
+      "limit": 0.1875
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.1875,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.3125,
+      "stock_noise": 0.1875,
+      "limit": 0.75
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 16,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.3125,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.25,
+      "limit": 1.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.75,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.25,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 32,
+      "unique": 8,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 0,
+      "max_error": 0.078125,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 0,
+      "max_error": 0.0625,
+      "stock_noise": 0.0625,
+      "limit": 0.25
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 1,
+      "max_error": 0.25,
+      "stock_noise": 0.21875,
+      "limit": 0.875
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 1,
+      "max_error": 0.21875,
+      "stock_noise": 0.21875,
+      "limit": 0.875
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 2,
+      "max_error": 0.5,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 2,
+      "max_error": 0.625,
+      "stock_noise": 0.625,
+      "limit": 2.5
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 3,
+      "max_error": 1.25,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 3,
+      "max_error": 1.0,
+      "stock_noise": 1.0,
+      "limit": 4.0
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "baseline",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    },
+    {
+      "tokens": 32,
+      "unique": 40,
+      "arm": "candidate",
+      "replay": 4,
+      "max_error": 0.0,
+      "stock_noise": 0.0,
+      "limit": 0.0
+    }
+  ],
+  "samples_us": {},
+  "median_us": {},
+  "scope": "synthetic C=1 static MoE only; M1/2 correctness uses forced static"
+}

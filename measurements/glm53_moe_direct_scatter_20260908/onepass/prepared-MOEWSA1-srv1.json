@@ -1,0 +1,26 @@
+{
+  "host": "srv1",
+  "mode": "t,ws",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "411cfa7c56288d3b1fa65685cd0da0e7bf19d16f2ea180dc07a4b8abd11cf8db|2026-09-07T21:55:00.832782615Z",
+  "running": true,
+  "source_sha256": {
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "abf5142841a6df1cde31d5ff131c74ce626e56500651994cb1e682e403b9560c",
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "85b037fe202c393b88006b9e2873837ff90ba93423024072a8086cc1460814bc"
+  },
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "2",
+    "VLLM_GLM53_B12X_STATIC_V2": "t,ws"
+  },
+  "markers": [
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m24_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=24, routed=192, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m18_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=18, routed=144, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m12_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=12, routed=96, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r640_tm32f2g2a32wutws (mac=48, m=6, routed=48, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=28, routed=224, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r640_tm32f2g2a32wutws (mac=48, m=7, routed=56, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m2_k4096_n512_t8_r640_tm32f2g2a32wutws (mac=48, m=2, routed=16, smem=101376 B)",
+    "(Worker_TP1 pid=163) [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r640_tm32f2g2a32wutws (mac=48, m=1, routed=8, smem=101376 B)"
+  ]
+}

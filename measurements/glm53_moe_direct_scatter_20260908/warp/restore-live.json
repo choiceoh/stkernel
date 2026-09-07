@@ -1,0 +1,77 @@
+{
+  "checked_utc": "2026-09-07T20:58:30.638644+00:00",
+  "health": 200,
+  "approved_main": "4b0f1d15a1608848faa3c1a957be8f4933ae951d",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_CTA": "2",
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_B12X_STATIC_V2": "t"
+  },
+  "ranks": [
+    {
+      "rank": 0,
+      "host": "srv2",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395"
+      },
+      "id": "febb41338249f13b005bed314ceb43864227c7a19dc18c929327355a47e87bc0",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "2",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 1,
+      "host": "srv1",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395"
+      },
+      "id": "705d83eb9ab337ff8411828e8db36159c73055652af5c9f77d449669f75a6a60",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "2",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 2,
+      "host": "srv3",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395"
+      },
+      "id": "7f6a7650502f3d8097f21236c232dc035a26d9244a999d723f4e9b1701de9c6f",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "2",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 3,
+      "host": "srv4",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "0fddbd841b0bafd51100d1f0c2b5e990e8ce2493b1af31f790ae82636ac351ae",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395"
+      },
+      "id": "8b409caed0a40bdec4ea5edddf608b8ee3b62775693d7bbf887412ee9319c1b1",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "2",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    }
+  ]
+}

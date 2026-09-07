@@ -7435,3 +7435,43 @@ evidence is preserved. The promotion integrates main `bb123cf` without
 changing the measured CUDA source bytes.
 
 [Source, variants, raw GPU evidence and failed baseline](measurements/glm53_input_cta_20260907/README.md).
+
+
+### GLM53 MoE FC2 epilogue follow-up — no candidate selected (2026-09-08)
+
+Tested three private lossless-operator variants against the unchanged `t`
+MoE lane: direct BF16 pair scatter, warp-gathered vector scatter, and shared
+staging with scatter remapped to each MMA warp's own 16-column segments.
+All retain the existing rounding sequence, packed weights and MMA order.
+Each passes 130 bounded numerical differential rows and changed-input/routing
+CUDA-graph tests. The first two increase M6/U40 cold latency by **2.15% and
+3.39%**, and U8 warm latency by **3.88% and 10.52%**. The final warp variant
+changes U40 cold **637.456 -> 637.136 us (+0.05%)**, with order-specific signs
+reversed, and U8 warm **98.368 -> 98.048 us (+0.33%; 17/32 faster pairs)**.
+The microbenchmark did not establish a stable gain. CPU ownership guards caught invalid warp mapping assumptions
+before device execution. All GPU work uses immutable fleet maintenance
+snapshots with continuous 16/12 GiB admission/runtime guards and approved-main
+restoration. The serving profile remains CTA=2 and MoE static `t`.
+
+[Raw results, source hashes, CPU gates and restoration evidence](measurements/glm53_moe_direct_scatter_20260908/README.md).
+
+
+### GLM53 warp scatter actual onepass B-A-B (2026-09-08)
+
+The operator requested actual onepass after the inconclusive microbenchmark.
+Commit `27c4a1a` connects the same warp epilogue as opt-in `t,ws`, with M>8
+fallback and distinct cache/serving identities; the default stays `t`.
+Same-source C=1 / TP4 / SPEC_K=5 / CTA2 B-A-B, with three fixed 2K outputs per
+boot: **21.947 -> 21.836 -> 21.848 pooled step/s**. Candidate versus the equal-boot
+baseline mean is **-0.28%**, within the **0.45%** baseline boot spread. Output is
+**68.62 -> 70.83 -> 74.34 tok/s** (-0.91% versus baseline mean, 8.00% baseline
+spread); acceptance is 43.55% / 46.62% / 48.70%. No stable serving gain established.
+All three arms pass 18/18 facts and 0/8 corrupt responses with identical requests,
+matching all-rank source/capture proof and exclusive traffic. 2K warm prefill:
+2410 / 2410 / 2500 tok/s; 32K: 2972 / 3023 / 2993; 128K: 3083 / 3085 / 3089.
+The latter two have one request per boot, and prefill throughput is input tokens
+per TTFT. Integrated GPU numerics/replay: 130 rows PASS. Full Linux CPU gate:
+6691 checks, 30 megakernel and 107 fleet regressions PASS. Approved-main restore
+completed 07:23:12 KST, exit 0, HTTP 200; CTA=2/MoE=`t` retained.
+
+[Onepass raw records, analysis and restore receipt](measurements/glm53_moe_direct_scatter_20260908/README.md#actual-onepass-follow-up).
