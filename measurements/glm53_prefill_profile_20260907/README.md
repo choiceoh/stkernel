@@ -169,6 +169,11 @@ The complete raw job is durably copied to
 `archive.json`, `completion.json`, `trace-manifest.json` and the final
 four-node snapshots provide the completion and provenance evidence.
 
+After our release at 16:33:33, the next holder `mkpackio0907` acquired at
+16:33:42 and began its own boot work. `handoff-status.json` records that
+subsequent ownership. Our health-200 statement is the verified 16:33:32
+restore acceptance, not a claim about the next job's changing API state.
+
 ## Reproduction
 
 `tools/trace_prefill_attribution.py` streams each gzip trace and writes per-rank
