@@ -1,0 +1,30 @@
+{
+  "name": "PATTR128KB2",
+  "ctx": 128000,
+  "capture": false,
+  "start_epoch": 1788766077.9390182,
+  "events": [],
+  "issues": [],
+  "cache_salt": "prefill-attribution:PATTR128KB2:1788766077966542658",
+  "before": {
+    "traffic": {
+      "finished": 5.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 354753.0
+  },
+  "unsalted_request_sha256": "ee7545109ae85229ab3c88185749ca056baf52f376547da4dd57b2fa18d70228",
+  "wire_request_sha256": "f632b93528eb1a73c6b329632c3a862609d5ac428a47ad431e28a2842eb93822",
+  "end_epoch": 1788766135.9856894,
+  "after": {
+    "traffic": {
+      "finished": 6.0,
+      "running": 0.0,
+      "waiting": 0.0
+    },
+    "prefix_hits": 0.0,
+    "prefix_queries": 483312.0
+  }
+}

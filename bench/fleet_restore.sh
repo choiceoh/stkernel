@@ -4,12 +4,16 @@ set -euo pipefail
 session=${FLEET_SESSION:?}
 [[ $(cut -d'|' -f1 "${FLEET_DIR:?}/holder") == "$session" ]] || exit 2
 configured=/home/choiceoh/stkernel
-if [[ -s $FLEET_DIR/production-repo ]]; then read -r configured < "$FLEET_DIR/production-repo"; fi
+if [[ -s $FLEET_DIR/production-repo ]]; then
+  IFS= read -r configured < "$FLEET_DIR/production-repo" || [[ -n $configured ]]
+fi
 repo=${FLEET_PRODUCTION_REPO:-$configured}
 cd "$repo"
 [[ -z $(git status --porcelain) ]] || { echo 'production checkout is dirty'; exit 2; }
 git fetch origin
-git merge --ff-only origin/main
+# A candidate checkout can be ahead of main. Preserve its branch and select the
+# approved commit explicitly; a fast-forward merge cannot move it backwards.
+git switch --detach origin/main
 [[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'production checkout is not approved main'; exit 2; }
 # A completed public defaults arm of this approved build needs no second boot.
 if python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_entry.py" production-current "$repo"; then

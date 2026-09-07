@@ -164,7 +164,8 @@ def _scope_checks(helper, group, device, rows):
              "outside-scope AR must produce a fresh sum without mutating input", group)
 
 
-def _case(helper, group, rows, case, transport, device):
+def _case(helper, group, rows, case, transport, device,
+          gather_transport, untrimmed_transport, fuse_mhc=False):
     rank = group.rank_in_group
     local_rows = (rows + 3) // 4
     padded_rows = local_rows * 4
@@ -189,22 +190,25 @@ def _case(helper, group, rows, case, transport, device):
     dist.all_gather_into_tensor(native_gather, shard, group=group.device_group)
     gathered = helper.prefill_all_gather(shard, num_tokens=rows)
 
-    if transport == "bf16":
-        gather_expected = native_gather
-    else:
+    def gather_reference(mode):
+        if mode == "bf16":
+            return native_gather
         local_max = shard.float().view(-1, 2048).abs().amax(dim=1)
         _, _, local_decoded = _quant_reference(shard, local_max, 448.0)
-        gather_expected = torch.empty_like(native_gather)
-        dist.all_gather_into_tensor(gather_expected, local_decoded.to(torch.bfloat16),
+        expected = torch.empty_like(native_gather)
+        dist.all_gather_into_tensor(expected, local_decoded.to(torch.bfloat16),
                                    group=group.device_group)
+        return expected
+    gather_expected = gather_reference(gather_transport)
     _require(tuple(gathered.shape) == (rows, 4096) and gathered.is_contiguous()
              and _bits_equal(gathered, gather_expected[:rows]) and _bits_equal(shard, shard_before)
              and gathered.data_ptr() != shard.data_ptr(),
              f"{rows}/{case}: gather value/layout/input-preservation mismatch", group)
     if case == "zeros":
         untrimmed = helper.prefill_all_gather(shard)
+        untrimmed_expected = gather_reference(untrimmed_transport)
         _require(tuple(untrimmed.shape) == (padded_rows, 4096)
-                 and _bits_equal(untrimmed, gather_expected),
+                 and _bits_equal(untrimmed, untrimmed_expected),
                  f"{rows}/{case}: optional untrimmed gather contract mismatch", group)
 
     native_sum = _allreduce(padded, group)
@@ -270,6 +274,22 @@ def _case(helper, group, rows, case, transport, device):
     if case in ("zeros", "signed_headroom"):
         _require(_bits_equal(reduced, native_local),
                  f"{rows}/{case}: exact representable sum changed", group)
+    if fuse_mhc:
+        from vllm.model_executor.kernels.mhc.tilelang import mhc_post_tilelang
+        deferred = helper.prefill_reduce_scatter(value, defer_mhc_post=True)
+        _require(helper.is_packed_prefill(deferred) == (transport == "fp8-v3"),
+                 f"{rows}/{case}: deferred MHC gate disagrees with transport", group)
+        if transport == "fp8-v3":
+            gen = torch.Generator(device=device).manual_seed(902 + rank)
+            residual = torch.randn((local_rows, 4, 4096), device=device, generator=gen).bfloat16()
+            post = torch.randn((local_rows, 4, 1), device=device, generator=gen)
+            comb = torch.randn((local_rows, 4, 4), device=device, generator=gen)
+            expected = mhc_post_tilelang(reduced, residual, post, comb)
+            mapped = helper.prefill_mhc_post(deferred, residual, post, comb)
+            _require(_bits_equal(mapped, expected),
+                     f"{rows}/{case}: actual TP4 exchange plus fused MHC differs", group)
+        else:
+            _require(_bits_equal(deferred, reduced), "BF16 deferred fallback differs", group)
     native_error = (reduced.float() - native_local.float()).abs()
     if transport == "fp8":
         total_bound = (bound + quant_error[start:stop]
@@ -279,6 +299,8 @@ def _case(helper, group, rows, case, transport, device):
     magnitude = sum_abs[start:stop].clamp_min(1.0e-30)
     return {
         "rows": rows, "case": case, "rank": rank,
+        "all_gather_transport": gather_transport, "reduce_scatter_transport": transport,
+        "fused_mhc_checked": fuse_mhc and transport == "fp8-v3",
         "max_abs_error_vs_native_bf16": native_error.max().item(),
         "max_error_over_sum_abs_inputs": (native_error / magnitude).max().item(),
         "max_abs_error_vs_transport_reference": error.max().item(),
@@ -289,13 +311,14 @@ def _timing(helper, group, rows, device, repeats):
     """Probe-only mode overrides; every rank follows the same mirrored order."""
     value = _input(rows, group.rank_in_group, "random", device)
     shard = helper.prefill_shard(value)
-    order = ("bf16", "fp8-v2", "fp8-v3", "fp8-v3", "fp8-v2", "bf16")
 
     def lane(mode):
         # The serving helper normally latches these on import. Isolate the
         # timing controls here; restore them before any other probe checks.
         return patch.multiple(helper, _FP8=mode != "bf16", _FP8_V2=mode == "fp8-v2",
-                              _FP8_V3=mode == "fp8-v3", _FP8_V3_MIN_TOKENS=0)
+                              _FP8_V3=mode.startswith("fp8-v3"), _FP8_V3_MIN_TOKENS=0,
+                              _FP8_AG_MIN_TOKENS=-1, _FP8_RS_MIN_TOKENS=-1,
+                              _DIRECT_NCCL=mode == "fp8-v3-direct")
 
     def invoke(operation):
         if operation == "all_gather":
@@ -304,6 +327,10 @@ def _timing(helper, group, rows, device, repeats):
 
     result = []
     for operation in ("all_gather", "reduce_scatter"):
+        arms = ("bf16", "fp8-v2", "fp8-v3")
+        if operation == "reduce_scatter":
+            arms += ("fp8-v3-direct",)
+        order = arms + arms[::-1]
         for mode in order:
             with lane(mode):
                 invoke(operation)
@@ -336,7 +363,11 @@ def _timing(helper, group, rows, device, repeats):
                        "v3_speedup_pct": {
                            baseline: statistics.median(100 * (a / b - 1)
                                                        for a, b in zip(per_arm[baseline], per_arm["fp8-v3"]))
-                           for baseline in ("bf16", "fp8-v2")}})
+                           for baseline in ("bf16", "fp8-v2")},
+                       "direct_latency_reduction_pct":
+                           statistics.median(100 * (1 - b / a)
+                                             for a, b in zip(per_arm["fp8-v3"], per_arm["fp8-v3-direct"]))
+                           if operation == "reduce_scatter" else None})
     return result
 
 
@@ -352,6 +383,10 @@ def main():
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--fp8-min-tokens", type=int, default=0,
                         help="v3 dispatch threshold; default 0 measures the raw codec control")
+    parser.add_argument("--ag-min-tokens", type=int, default=-1)
+    parser.add_argument("--rs-min-tokens", type=int, default=-1)
+    parser.add_argument("--direct-nccl", action="store_true")
+    parser.add_argument("--fuse-mhc", action="store_true")
     args = parser.parse_args()
     world = int(os.environ.get("WORLD_SIZE", "0"))
     if world != 4:
@@ -362,11 +397,22 @@ def main():
         parser.error("repeats must be positive")
     if args.fp8_min_tokens < 0:
         parser.error("fp8 minimum tokens must be nonnegative")
+    if min(args.ag_min_tokens, args.rs_min_tokens) < -1:
+        parser.error("per-operation minimum tokens must be -1 or nonnegative")
+    if (args.direct_nccl or args.fuse_mhc) and args.transport != "fp8-v3":
+        parser.error("direct packets and fused MHC require fp8-v3")
     os.environ["VLLM_GLM53_PREFILL_SP"] = "1"
     os.environ["VLLM_GLM53_PREFILL_SP_FP8"] = {
         "bf16": "0", "fp8": "1", "fp8-v2": "2", "fp8-v3": "3",
     }[args.transport]
     os.environ["VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS"] = str(args.fp8_min_tokens)
+    os.environ["VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS"] = str(args.ag_min_tokens)
+    os.environ["VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS"] = str(args.rs_min_tokens)
+    os.environ["VLLM_GLM53_PREFILL_SP_DIRECT_NCCL"] = str(int(args.direct_nccl))
+    os.environ["VLLM_GLM53_PREFILL_SP_FUSE_MHC"] = str(int(args.fuse_mhc))
+    if args.fuse_mhc:
+        for name in ("tilelang", "tilelang_kernels"):
+            SOURCES[f"vllm.model_executor.kernels.mhc.{name}"] = f"overlay/modules/glm53_kernels/{name}.py"
     # Keep the independent reference out of optional one-shot/custom AR arms.
     os.environ["VLLM_DSV4_ONESHOT_AR"] = "0"
     global torch, dist
@@ -408,7 +454,8 @@ def main():
             dist.all_gather_object(peer_identity,
                                    ({name: item["sha256"] for name, item in fingerprints.items()},
                                     args.transport, args.rows, args.timing, args.repeats,
-                                    args.fp8_min_tokens), group=group.cpu_group)
+                                    args.fp8_min_tokens, args.ag_min_tokens, args.rs_min_tokens,
+                                    args.direct_nccl, args.fuse_mhc), group=group.cpu_group)
             _require(all(item == peer_identity[0] for item in peer_identity),
                      "ranks disagree on source/transport/row cases", group)
             comm = group.device_communicator
@@ -416,13 +463,18 @@ def main():
                      and not comm.pynccl_comm.disabled,
                      "active native PyNCCL communicator required", group)
             results = []
+            def reference_transport(rows, reduce_scatter=False):
+                minimum = args.rs_min_tokens if reduce_scatter else args.ag_min_tokens
+                if minimum < 0:
+                    minimum = args.fp8_min_tokens
+                return ("bf16" if args.transport == "fp8-v3" and rows < minimum
+                        else args.transport)
             for rows in args.rows:
                 _scope_checks(helper, group, device, rows)
-                reference_transport = ("bf16" if args.transport == "fp8-v3"
-                                       and rows < args.fp8_min_tokens else args.transport)
                 for case in ("zeros", "random", "cancellation", "extreme_finite", "signed_headroom"):
-                    result = _case(helper, group, rows, case, reference_transport, device)
-                    result["effective_transport"] = reference_transport
+                    result = _case(helper, group, rows, case, reference_transport(rows, True), device,
+                                   reference_transport(rows), reference_transport(((rows + 3) // 4) * 4),
+                                   args.fuse_mhc)
                     results.append(result)
             torch.cuda.synchronize(device)
             peer_results = [None] * 4
@@ -434,6 +486,8 @@ def main():
             if rank == 0:
                 report = {"status": "passed", "transport": args.transport,
                           "fp8_min_tokens": args.fp8_min_tokens,
+                          "ag_min_tokens": args.ag_min_tokens, "rs_min_tokens": args.rs_min_tokens,
+                          "direct_nccl": args.direct_nccl, "fuse_mhc": args.fuse_mhc,
                           "world_size": 4, "sources": fingerprints,
                           "checks": peer_results,
                           "timings": timings,

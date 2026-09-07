@@ -1,0 +1,17 @@
+{
+  "gpu_probe_revision": "e74b15e5a846827e554835ca73eda71e7698e4ac",
+  "purpose": "Serving launch-proof correction only; no new GPU result",
+  "files": {
+    "overlay/modules/glm53_megakernel/glm53_megakernel.cu": {
+      "old_sha256": "716cf13ae2092fabcb17bcfafd4beee256fecc040abd3dfd40b36b5146a64d04",
+      "current_sha256": "716cf13ae2092fabcb17bcfafd4beee256fecc040abd3dfd40b36b5146a64d04",
+      "identical": true
+    },
+    "probes/mk_mla_prefill32_check.py": {
+      "old_sha256": "1b02a03b839fe19fa77f418ece6717e8eb3ea4c8bb0fbdfb7f54c37bb2a5564f",
+      "current_sha256": "1b02a03b839fe19fa77f418ece6717e8eb3ea4c8bb0fbdfb7f54c37bb2a5564f",
+      "identical": true
+    }
+  },
+  "candidate_call_function_ast_identical": true
+}

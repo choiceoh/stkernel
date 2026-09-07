@@ -1,0 +1,5 @@
+{
+  "observed_at": "2026-09-07T16:39:58.820032+09:00",
+  "status": "fleet: HELD by mkpackio0907 [boot] (pid 2104429@srv2, since 16:33, est 30m, W4 cache IO exact GPU check and warm fast-base-base-fast boot bracket)\nlegacy: 2 bench/boot procs, 0 requests in flight, head booting\nqueue (1):\n  1. inputserve0907 [boot] (since 16:33, est 45m, expect ~45m, ETA ~17:03) Actual-source input-reuse GPU and sanitizer gates, matched C1 B/A/A/B, public restore\n  marker 16:33 FLEET-held-by-mkpackio0907.done\n  marker 11:08 FLEET-held-by-alignprod.done\nlog:\n  2026-09-07_16:33:33   kept /home/choiceoh/glm53-logs/boot-PATTR0907RESTORE.log\n  2026-09-07_16:33:33   kept /home/choiceoh/glm53-logs/boot-PATTR0907.log\n  2026-09-07_16:33:33 release pattr20907\n  2026-09-07_16:33:42 GO mkpackio0907 (pid 2104429)\nproduction: NOT defaults: VLLM_GLM53_RANK_CACHE_KEEP=2 (health 000)\ndeployed: 2781ceeda870\nbaseline: NONE for build 6f797df -- a defaults arm is worth its boot\n",
+  "note": "Our health-200 recovery completed at 16:33:32, release at 16:33:33. A subsequent owner began at 16:33:42; current health is not our restore acceptance."
+}

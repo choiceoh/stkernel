@@ -3170,6 +3170,176 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   mk_launch(mk_mla_kernel, a.grid, MLA_SMEM, stream, a);
 }
 
+// Large-M prefill: 32 slots per online-softmax tile, with Q fragments kept
+// in registers across the whole row. Compared with the decode kernel above,
+// this halves the number of softmax/barrier rounds and removes its repeated
+// shared-memory Q loads. No query grouping, slot sorting or KV approximation.
+// Two K quarters x four N groups cover a 16-head x 32-slot score tile.
+// The 39,296-byte workspace fits two CTAs/SM on the supported GB10; the
+// launch bound also reserves registers for two CTAs (inspect ptxas spills).
+constexpr int MLA_PREFILL_TILE = 32;
+constexpr int MLA_PREFILL_STAGES = 2;
+constexpr int MLA_PREFILL_KQ = 2;
+constexpr int MLA_PREFILL_NG = 4;
+constexpr int MLA_PREFILL_PP = MLA_PREFILL_TILE + 8;
+constexpr int MLA_PREFILL_RING = MLA_PREFILL_STAGES * MLA_PREFILL_TILE * MLA_RP;
+constexpr int MLA_PREFILL_SCORES = MLA_PREFILL_KQ * MLA_H * MLA_PREFILL_TILE * 4;
+constexpr int MLA_PREFILL_PROBS = MLA_H * MLA_PREFILL_PP * 2;
+constexpr int MLA_PREFILL_SMEM = MLA_PREFILL_RING + MLA_PREFILL_SCORES
+                                + MLA_PREFILL_PROBS + MLA_SMEM_C;
+
+__global__ __launch_bounds__(MK_THREADS, 2)
+void mk_mla_prefill32_kernel(const MKMlaArgs a) {
+  extern __shared__ __align__(16) char prefill_smem[];
+  uint8_t* ring = (uint8_t*)prefill_smem;
+  float* ss = (float*)(ring + MLA_PREFILL_RING);
+  __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_PREFILL_SCORES);
+  float* scorr = (float*)((uint8_t*)sp + MLA_PREFILL_PROBS);
+  const int t = blockIdx.x, lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  const int g = lane >> 2, q4 = lane & 3;
+  const int kq = warp / MLA_PREFILL_NG, n0 = (warp % MLA_PREFILL_NG) * 8;
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int len = a.lens[t];
+  const float sscale = a.sm_scale * a.ckv_scale;
+  // Every index is compile-time constant in both unrolled loops: these are
+  // registers, not an addressable local-memory array. Each fragment retains
+  // the input BF16 bits, including subnormals.
+  uint32_t qreg[MLA_D / 16 / MLA_PREFILL_KQ][4];
+  const __nv_bfloat16* q = a.q + ((size_t)t * MLA_H + g) * MLA_D;
+#pragma unroll
+  for (int ks = 0; ks < MLA_D / 16 / MLA_PREFILL_KQ; ++ks) {
+    const int k = kq * (MLA_D / MLA_PREFILL_KQ) + ks * 16 + q4 * 2;
+    qreg[ks][0] = *(const uint32_t*)(q + k);
+    qreg[ks][1] = *(const uint32_t*)(q + 8 * MLA_D + k);
+    qreg[ks][2] = *(const uint32_t*)(q + k + 8);
+    qreg[ks][3] = *(const uint32_t*)(q + 8 * MLA_D + k + 8);
+  }
+  float acc[8][4];
+#pragma unroll
+  for (int nt = 0; nt < 8; ++nt)
+    acc[nt][0] = acc[nt][1] = acc[nt][2] = acc[nt][3] = 0.f;
+  float m0 = -INFINITY, m1 = -INFINITY, l0 = 0.f, l1 = 0.f;
+  const int ntile = (len + MLA_PREFILL_TILE - 1) / MLA_PREFILL_TILE;
+  auto issue = [&](int ti) {
+    uint8_t* dst = ring + (ti % MLA_PREFILL_STAGES) * MLA_PREFILL_TILE * MLA_RP;
+#pragma unroll
+    for (int r = 0; r < MLA_PREFILL_TILE / MLA_WARPS; ++r) {
+      const int row = r * MLA_WARPS + warp;
+      const int j = ti * MLA_PREFILL_TILE + row;
+      // A partial tile rereads the first valid slot; softmax masks the tail.
+      // Empty rows never issue a load, so their slot storage may be poisoned.
+      const int slot = a.slots[(size_t)t * a.W + (j < len ? j : 0)];
+      mk_cp_async16(dst + row * MLA_RP + lane * 16,
+                    a.ckv + (size_t)slot * MLA_D + lane * 16);
+    }
+    mk_cp_commit();
+  };
+  if (ntile) issue(0);
+#pragma unroll 1
+  for (int ti = 0; ti < ntile; ++ti) {
+    mk_cp_wait<0>();
+    __syncthreads();
+    if (ti + 1 < ntile) issue(ti + 1);
+    const uint8_t* tile = ring + (ti % MLA_PREFILL_STAGES) * MLA_PREFILL_TILE * MLA_RP;
+    const int kmax = min(MLA_PREFILL_TILE, len - ti * MLA_PREFILL_TILE);
+    float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
+    const uint8_t* cb = tile + (n0 + g) * MLA_RP;
+#pragma unroll
+    for (int ks = 0; ks < MLA_D / 16 / MLA_PREFILL_KQ; ++ks) {
+      const int k = kq * (MLA_D / MLA_PREFILL_KQ) + ks * 16 + q4 * 2;
+      mla_mma_bf16(c0, c1, c2, c3,
+                   qreg[ks][0], qreg[ks][1], qreg[ks][2], qreg[ks][3],
+                   mla_e4m3x2(cb + k), mla_e4m3x2(cb + k + 8));
+    }
+    float* sh = ss + kq * MLA_H * MLA_PREFILL_TILE;
+    sh[g * MLA_PREFILL_TILE + n0 + q4 * 2] = c0;
+    sh[g * MLA_PREFILL_TILE + n0 + q4 * 2 + 1] = c1;
+    sh[(g + 8) * MLA_PREFILL_TILE + n0 + q4 * 2] = c2;
+    sh[(g + 8) * MLA_PREFILL_TILE + n0 + q4 * 2 + 1] = c3;
+    __syncthreads();
+    const int h0 = warp * 2;
+    float s0 = 0.f, s1 = 0.f;
+#pragma unroll
+    for (int p = 0; p < MLA_PREFILL_KQ; ++p) {
+      const float* psh = ss + p * MLA_H * MLA_PREFILL_TILE;
+      s0 += psh[h0 * MLA_PREFILL_TILE + lane];
+      s1 += psh[(h0 + 1) * MLA_PREFILL_TILE + lane];
+    }
+    const bool valid = lane < kmax;
+    s0 = valid ? s0 * sscale : -INFINITY;
+    s1 = valid ? s1 * sscale : -INFINITY;
+    const float nm0 = fmaxf(m0, mla_warp_max(s0));
+    const float nm1 = fmaxf(m1, mla_warp_max(s1));
+    const float cr0 = __expf(m0 - nm0), cr1 = __expf(m1 - nm1);
+    const float p0 = valid ? __expf(s0 - nm0) : 0.f;
+    const float p1 = valid ? __expf(s1 - nm1) : 0.f;
+    l0 = fmaf(l0, cr0, mla_warp_sum(p0));
+    l1 = fmaf(l1, cr1, mla_warp_sum(p1));
+    m0 = nm0; m1 = nm1;
+    sp[h0 * MLA_PREFILL_PP + lane] = __float2bfloat16(p0 * a.ckv_scale);
+    sp[(h0 + 1) * MLA_PREFILL_PP + lane] = __float2bfloat16(p1 * a.ckv_scale);
+    if (!lane) { scorr[h0] = cr0; scorr[h0 + 1] = cr1; }
+    __syncthreads();
+    const float crg = scorr[g], crg8 = scorr[g + 8];
+#pragma unroll
+    for (int nt = 0; nt < 8; ++nt) {
+      acc[nt][0] *= crg; acc[nt][1] *= crg;
+      acc[nt][2] *= crg8; acc[nt][3] *= crg8;
+    }
+#pragma unroll
+    for (int ks = 0; ks < MLA_PREFILL_TILE / 16; ++ks) {
+      const __nv_bfloat16* pa = sp + g * MLA_PREFILL_PP + ks * 16;
+      const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
+      const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PREFILL_PP + q4 * 2);
+      const uint32_t a2 = *(const uint32_t*)(pa + q4 * 2 + 8);
+      const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PREFILL_PP + q4 * 2 + 8);
+      const uint8_t* cv = tile + (ks * 16 + q4 * 2) * MLA_RP + warp * 64;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int n = nt * 8 + g;
+        mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
+                     mla_e4m3x2_strided(cv + n, MLA_RP),
+                     mla_e4m3x2_strided(cv + 8 * MLA_RP + n, MLA_RP));
+      }
+    }
+    __syncthreads();
+  }
+  float* sl = scorr + MLA_H;
+  if (!lane) { sl[warp * 2] = l0; sl[warp * 2 + 1] = l1; }
+  __syncthreads();
+  const float ig = sl[g] > 0.f ? __frcp_rn(sl[g]) : 0.f;
+  const float ig8 = sl[g + 8] > 0.f ? __frcp_rn(sl[g + 8]) : 0.f;
+  __nv_bfloat16* o0 = a.out + ((size_t)t * MLA_H + g) * MLA_D;
+  __nv_bfloat16* o8 = a.out + ((size_t)t * MLA_H + g + 8) * MLA_D;
+#pragma unroll
+  for (int nt = 0; nt < 8; ++nt) {
+    const int col = warp * 64 + nt * 8 + q4 * 2;
+    *(__nv_bfloat162*)(o0 + col) = __floats2bfloat162_rn(acc[nt][0] * ig, acc[nt][1] * ig);
+    *(__nv_bfloat162*)(o8 + col) = __floats2bfloat162_rn(acc[nt][2] * ig8, acc[nt][3] * ig8);
+  }
+}
+
+void mk_run_mla_prefill32(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                         std::vector<int64_t> ints) {
+  TORCH_CHECK(ptrs.size() == 5 && scalars.size() == 2 && ints.size() == 2,
+              "run_mla_prefill32 arg contract");
+  TORCH_CHECK(ints[0] >= 128 && ints[0] <= 8192 && ints[1] > 0 && ints[1] <= 2176,
+              "mla prefill32 requires bounded prefill T and W");
+  TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0 && (ptrs[4] & 3) == 0,
+              "mla prefill32 requires aligned Q, FP8 cache and BF16 output");
+  MKMlaArgs a{};
+  a.q = (const __nv_bfloat16*)ptrs[0]; a.ckv = (const uint8_t*)ptrs[1];
+  a.slots = (const int*)ptrs[2]; a.lens = (const int*)ptrs[3];
+  a.out = (__nv_bfloat16*)ptrs[4];
+  a.sm_scale = (float)scalars[0]; a.ckv_scale = (float)scalars[1];
+  a.T = (int)ints[0]; a.W = (int)ints[1]; a.splits = 1;
+  // Independent CTAs: ragged rows are dynamically scheduled by CUDA. No
+  // persistent-grid barrier, split scratch, prepare kernel or membership map.
+  mk_launch(mk_mla_prefill32_kernel, a.T, MLA_PREFILL_SMEM,
+            c10::cuda::getCurrentCUDAStream(), a);
+}
+
 void mk_run_mla_prefill_pair(std::vector<int64_t> ptrs, std::vector<double> scalars,
                             std::vector<int64_t> ints) {
   TORCH_CHECK(ptrs.size() == 8 && scalars.size() == 2 && ints.size() == 2,
@@ -3605,6 +3775,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
+  m.def("run_mla_prefill32", &mk_run_mla_prefill32, "MK MLA register-Q prefill over 32-slot tiles");
   m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");
   m.def("run_smlp2", &mk_run_smlp2, "MK_SEG_SMLP2 (two PDL-chained v2 launches, no barrier)");
   m.def("mla_grid", &mk_mla_grid, "MK_SEG_MLA resident grid");

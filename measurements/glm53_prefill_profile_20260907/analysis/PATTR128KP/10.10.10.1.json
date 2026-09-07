@@ -1,0 +1,3078 @@
+{
+  "span_ms": 41962.91587304688,
+  "busy_ms": 41343.8215234375,
+  "idle_ms": 619.094349609375,
+  "cross_category_overlap_ms": 0.295875,
+  "communication_compute_overlap_ms": 0.0,
+  "summed_work_ms": 41409.39697070313,
+  "categories": {
+    "moe_expert": {
+      "count": 798,
+      "work_ms": 11731.986736328125,
+      "occupied_ms": 11731.986736328125,
+      "exclusive_ms": 11731.986736328125,
+      "occupied_pct_span": 27.957987409220234
+    },
+    "mla_and_indexer": {
+      "count": 2321,
+      "work_ms": 8603.5065,
+      "occupied_ms": 8603.5065,
+      "exclusive_ms": 8603.459715820312,
+      "occupied_pct_span": 20.502642204437713
+    },
+    "dense_gemm_and_quant": {
+      "count": 18696,
+      "work_ms": 5535.282668945312,
+      "occupied_ms": 5470.003096679688,
+      "exclusive_ms": 5469.754005859375,
+      "occupied_pct_span": 13.035326508835663
+    },
+    "communication": {
+      "count": 3553,
+      "work_ms": 5289.289728515625,
+      "occupied_ms": 5289.289728515625,
+      "exclusive_ms": 5289.289728515625,
+      "occupied_pct_span": 12.604676339741632
+    },
+    "kda": {
+      "count": 7106,
+      "work_ms": 4500.011953125,
+      "occupied_ms": 4500.011953125,
+      "exclusive_ms": 4500.011953125,
+      "occupied_pct_span": 10.723782796074461
+    },
+    "mhc": {
+      "count": 5225,
+      "work_ms": 2078.663029296875,
+      "occupied_ms": 2078.663029296875,
+      "exclusive_ms": 2078.663029296875,
+      "occupied_pct_span": 4.95357147150019
+    },
+    "transport_codec": {
+      "count": 7068,
+      "work_ms": 1792.4771943359376,
+      "occupied_ms": 1792.4771943359376,
+      "exclusive_ms": 1792.26970703125,
+      "occupied_pct_span": 4.271574453402701
+    },
+    "elementwise_and_copy": {
+      "count": 9617,
+      "work_ms": 1631.033646484375,
+      "occupied_ms": 1631.033646484375,
+      "exclusive_ms": 1630.9452587890626,
+      "occupied_pct_span": 3.8868453551198554
+    },
+    "norm_quant_other": {
+      "count": 1273,
+      "work_ms": 120.1164658203125,
+      "occupied_ms": 120.1164658203125,
+      "exclusive_ms": 120.1164658203125,
+      "occupied_pct_span": 0.28624432626109353
+    },
+    "moe_shared_and_glue": {
+      "count": 798,
+      "work_ms": 61.1240478515625,
+      "occupied_ms": 61.1240478515625,
+      "exclusive_ms": 61.1240478515625,
+      "occupied_pct_span": 0.14566206036893395
+    },
+    "other": {
+      "count": 385,
+      "work_ms": 54.078017578125,
+      "occupied_ms": 54.078017578125,
+      "exclusive_ms": 54.078017578125,
+      "occupied_pct_span": 0.12887097203094924
+    },
+    "memory_copy": {
+      "count": 744,
+      "work_ms": 11.7854189453125,
+      "occupied_ms": 11.7854189453125,
+      "exclusive_ms": 11.7854189453125,
+      "occupied_pct_span": 0.028085319382875323
+    },
+    "sampling_and_drafter": {
+      "count": 19,
+      "work_ms": 0.0415634765625,
+      "occupied_ms": 0.0415634765625,
+      "exclusive_ms": 0.0415634765625,
+      "occupied_pct_span": 9.904811354922207e-05
+    }
+  },
+  "path": "measurements/glm53_prefill_profile_20260907/traces/PATTR128KP/10.10.10.1/dp0_pp0_tp1_dcp0_ep1_rank1.1788765969300667921.pt.trace.json.gz",
+  "prefill_tokens": 128559,
+  "prefill_chunks": 19,
+  "selected_events": 57603,
+  "excluded_events": 7401,
+  "graph_events": 0,
+  "chunks": [
+    {
+      "rows": 6912,
+      "span_ms": 2069.1940927734377,
+      "busy_ms": 2053.13495703125,
+      "idle_ms": 16.0591357421875,
+      "cross_category_overlap_ms": 0.0161611328125,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2056.62449609375,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 628.5916416015625,
+          "occupied_ms": 628.5916416015625,
+          "exclusive_ms": 628.5916416015625,
+          "occupied_pct_span": 30.378573174787665
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 309.1250888671875,
+          "occupied_ms": 309.1250888671875,
+          "exclusive_ms": 309.123681640625,
+          "occupied_pct_span": 14.939395484782807
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 295.852064453125,
+          "occupied_ms": 292.3786865234375,
+          "exclusive_ms": 292.3639326171875,
+          "occupied_pct_span": 14.130075450367668
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 271.497111328125,
+          "occupied_ms": 271.497111328125,
+          "exclusive_ms": 271.497111328125,
+          "occupied_pct_span": 13.1209108065945
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 240.9322001953125,
+          "occupied_ms": 240.9322001953125,
+          "exclusive_ms": 240.9322001953125,
+          "occupied_pct_span": 11.643769960331745
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.4626279296875,
+          "occupied_ms": 112.4626279296875,
+          "exclusive_ms": 112.4626279296875,
+          "occupied_pct_span": 5.435093224094246
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 97.0531298828125,
+          "occupied_ms": 97.0531298828125,
+          "exclusive_ms": 97.0409345703125,
+          "occupied_pct_span": 4.690383092710634
+        },
+        "elementwise_and_copy": {
+          "count": 499,
+          "work_ms": 87.439865234375,
+          "occupied_ms": 87.439865234375,
+          "exclusive_ms": 87.4358994140625,
+          "occupied_pct_span": 4.225793295068577
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4738330078125,
+          "occupied_ms": 6.4738330078125,
+          "exclusive_ms": 6.4738330078125,
+          "occupied_pct_span": 0.312867363695946
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.45053125,
+          "occupied_ms": 3.45053125,
+          "exclusive_ms": 3.45053125,
+          "occupied_pct_span": 0.16675725404643368
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 3.1361298828125,
+          "occupied_ms": 3.1361298828125,
+          "exclusive_ms": 3.1361298828125,
+          "occupied_pct_span": 0.15156286661388052
+        },
+        "memory_copy": {
+          "count": 42,
+          "work_ms": 0.6082568359375,
+          "occupied_ms": 0.6082568359375,
+          "exclusive_ms": 0.6082568359375,
+          "occupied_pct_span": 0.0293958328057193
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.741111319810331e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2120.569361328125,
+      "busy_ms": 2110.6575263671875,
+      "idle_ms": 9.9118349609375,
+      "cross_category_overlap_ms": 0.01975,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2114.1575,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 629.4750859375,
+          "occupied_ms": 629.4750859375,
+          "exclusive_ms": 629.4750859375,
+          "occupied_pct_span": 29.684248835098515
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 369.0604404296875,
+          "occupied_ms": 369.0604404296875,
+          "exclusive_ms": 369.0511923828125,
+          "occupied_pct_span": 17.403837250508175
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 300.57708984375,
+          "occupied_ms": 297.0968662109375,
+          "exclusive_ms": 297.0863642578125,
+          "occupied_pct_span": 14.010240439617782
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 262.6149482421875,
+          "occupied_ms": 262.6149482421875,
+          "exclusive_ms": 262.6149482421875,
+          "occupied_pct_span": 12.384171582942717
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.1326318359375,
+          "occupied_ms": 242.1326318359375,
+          "exclusive_ms": 242.1326318359375,
+          "occupied_pct_span": 11.418283987857318
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.7927900390625,
+          "occupied_ms": 111.7927900390625,
+          "exclusive_ms": 111.7927900390625,
+          "occupied_pct_span": 5.271828975641053
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 97.081875,
+          "occupied_ms": 97.081875,
+          "exclusive_ms": 97.0729736328125,
+          "occupied_pct_span": 4.57810420024163
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.1630068359375,
+          "occupied_ms": 88.1630068359375,
+          "exclusive_ms": 88.152158203125,
+          "occupied_pct_span": 4.157515827764318
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4762001953125,
+          "occupied_ms": 6.4762001953125,
+          "exclusive_ms": 6.4762001953125,
+          "occupied_pct_span": 0.3053991212650747
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.324546875,
+          "occupied_ms": 3.324546875,
+          "exclusive_ms": 3.324546875,
+          "occupied_pct_span": 0.15677614397473974
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.8439736328125,
+          "occupied_ms": 2.8439736328125,
+          "exclusive_ms": 2.8439736328125,
+          "occupied_pct_span": 0.134113681196983
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6131513671875,
+          "occupied_ms": 0.6131513671875,
+          "exclusive_ms": 0.6131513671875,
+          "occupied_pct_span": 0.028914468838853718
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.001759765625,
+          "occupied_ms": 0.001759765625,
+          "exclusive_ms": 0.001759765625,
+          "occupied_pct_span": 8.29855253542779e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2118.84205859375,
+      "busy_ms": 2108.9451181640625,
+      "idle_ms": 9.8969404296875,
+      "cross_category_overlap_ms": 0.014271484375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2112.5470625,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 621.33949609375,
+          "occupied_ms": 621.33949609375,
+          "exclusive_ms": 621.33949609375,
+          "occupied_pct_span": 29.32448379404577
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 381.2964482421875,
+          "occupied_ms": 381.2964482421875,
+          "exclusive_ms": 381.2953271484375,
+          "occupied_pct_span": 17.995510646756244
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 298.5060810546875,
+          "occupied_ms": 294.918408203125,
+          "exclusive_ms": 294.9052578125,
+          "occupied_pct_span": 13.918848127776867
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 261.5041806640625,
+          "occupied_ms": 261.5041806640625,
+          "exclusive_ms": 261.5041806640625,
+          "occupied_pct_span": 12.341843961584361
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.4235537109375,
+          "occupied_ms": 241.4235537109375,
+          "exclusive_ms": 241.4235537109375,
+          "occupied_pct_span": 11.39412693512264
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.26050390625,
+          "occupied_ms": 111.26050390625,
+          "exclusive_ms": 111.26050390625,
+          "occupied_pct_span": 5.251005069254301
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.4963671875,
+          "occupied_ms": 96.4963671875,
+          "exclusive_ms": 96.4854228515625,
+          "occupied_pct_span": 4.554202933442971
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 87.44927734375,
+          "occupied_ms": 87.44927734375,
+          "exclusive_ms": 87.4459501953125,
+          "occupied_pct_span": 4.127220195062063
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.5259306640625,
+          "occupied_ms": 6.5259306640625,
+          "exclusive_ms": 6.5259306640625,
+          "occupied_pct_span": 0.307995144687362
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.208708984375,
+          "occupied_ms": 3.208708984375,
+          "exclusive_ms": 3.208708984375,
+          "occupied_pct_span": 0.1514369120322532
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.875267578125,
+          "occupied_ms": 2.875267578125,
+          "exclusive_ms": 2.875267578125,
+          "occupied_pct_span": 0.1356999483025781
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.659455078125,
+          "occupied_ms": 0.659455078125,
+          "exclusive_ms": 0.659455078125,
+          "occupied_pct_span": 0.031123371156917302
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0017919921875,
+          "occupied_ms": 0.0017919921875,
+          "exclusive_ms": 0.0017919921875,
+          "occupied_pct_span": 8.45741276576945e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2211.0083935546877,
+      "busy_ms": 2201.199505859375,
+      "idle_ms": 9.8088876953125,
+      "cross_category_overlap_ms": 0.0113623046875,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2204.581001953125,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 619.7228564453125,
+          "occupied_ms": 619.7228564453125,
+          "exclusive_ms": 619.7228564453125,
+          "occupied_pct_span": 28.028968965105115
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 394.3807255859375,
+          "occupied_ms": 394.3807255859375,
+          "exclusive_ms": 394.37864453125,
+          "occupied_pct_span": 17.837142850094875
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 341.546279296875,
+          "occupied_ms": 341.546279296875,
+          "exclusive_ms": 341.546279296875,
+          "occupied_pct_span": 15.44753426954492
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.5671552734375,
+          "occupied_ms": 294.197021484375,
+          "exclusive_ms": 294.187740234375,
+          "occupied_pct_span": 13.306011064543625
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.4015458984375,
+          "occupied_ms": 241.4015458984375,
+          "exclusive_ms": 241.4015458984375,
+          "occupied_pct_span": 10.918165059985633
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.55260546875,
+          "occupied_ms": 112.55260546875,
+          "exclusive_ms": 112.55260546875,
+          "occupied_pct_span": 5.090555322940076
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.1766591796875,
+          "occupied_ms": 96.1766591796875,
+          "exclusive_ms": 96.1683056640625,
+          "occupied_pct_span": 4.349900229237129
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.0146669921875,
+          "occupied_ms": 88.0146669921875,
+          "exclusive_ms": 88.011658203125,
+          "occupied_pct_span": 3.9807477551310586
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4032392578125,
+          "occupied_ms": 6.4032392578125,
+          "exclusive_ms": 6.4032392578125,
+          "occupied_pct_span": 0.2896071890309683
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.201087890625,
+          "occupied_ms": 3.201087890625,
+          "exclusive_ms": 3.201087890625,
+          "occupied_pct_span": 0.14477954493327544
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.9164169921875,
+          "occupied_ms": 2.9164169921875,
+          "exclusive_ms": 2.9164169921875,
+          "occupied_pct_span": 0.13190438356946765
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6957158203125,
+          "occupied_ms": 0.6957158203125,
+          "exclusive_ms": 0.6957158203125,
+          "occupied_pct_span": 0.031465996345404285
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0020478515625,
+          "occupied_ms": 0.0020478515625,
+          "exclusive_ms": 0.0020478515625,
+          "occupied_pct_span": 9.262070503529945e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2137.6638369140624,
+      "busy_ms": 2127.632365234375,
+      "idle_ms": 10.0314716796875,
+      "cross_category_overlap_ms": 0.0111708984375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2131.2755048828126,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 623.0458818359375,
+          "occupied_ms": 623.0458818359375,
+          "exclusive_ms": 623.0458818359375,
+          "occupied_pct_span": 29.1461113331724
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 404.886333984375,
+          "occupied_ms": 404.886333984375,
+          "exclusive_ms": 404.884703125,
+          "occupied_pct_span": 18.94059893761734
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 300.6766142578125,
+          "occupied_ms": 297.0446455078125,
+          "exclusive_ms": 297.03510546875,
+          "occupied_pct_span": 13.895760426795029
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 249.116462890625,
+          "occupied_ms": 249.116462890625,
+          "exclusive_ms": 249.116462890625,
+          "occupied_pct_span": 11.653678122293083
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 243.2896494140625,
+          "occupied_ms": 243.2896494140625,
+          "exclusive_ms": 243.2896494140625,
+          "occupied_pct_span": 11.381099554234689
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.577435546875,
+          "occupied_ms": 111.577435546875,
+          "exclusive_ms": 111.577435546875,
+          "occupied_pct_span": 5.219596908555486
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 97.234509765625,
+          "occupied_ms": 97.234509765625,
+          "exclusive_ms": 97.2277216796875,
+          "occupied_pct_span": 4.548634265432165
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.1657900390625,
+          "occupied_ms": 88.1657900390625,
+          "exclusive_ms": 88.1614072265625,
+          "occupied_pct_span": 4.124399193015254
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.5718759765625,
+          "occupied_ms": 6.5718759765625,
+          "exclusive_ms": 6.5718759765625,
+          "occupied_pct_span": 0.30743262168151186
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2586923828125,
+          "occupied_ms": 3.2586923828125,
+          "exclusive_ms": 3.2586923828125,
+          "occupied_pct_span": 0.15244176032452125
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.8470458984375,
+          "occupied_ms": 2.8470458984375,
+          "exclusive_ms": 2.8470458984375,
+          "occupied_pct_span": 0.13318492128058373
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.603197265625,
+          "occupied_ms": 0.603197265625,
+          "exclusive_ms": 0.603197265625,
+          "occupied_pct_span": 0.02821759227099885
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.42910183160399e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2160.303080078125,
+      "busy_ms": 2150.3856904296877,
+      "idle_ms": 9.9173896484375,
+      "cross_category_overlap_ms": 0.01055859375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2153.807517578125,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 624.2277353515625,
+          "occupied_ms": 624.2277353515625,
+          "exclusive_ms": 624.2277353515625,
+          "occupied_pct_span": 28.895377741580038
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 418.4912197265625,
+          "occupied_ms": 418.4912197265625,
+          "exclusive_ms": 418.488916015625,
+          "occupied_pct_span": 19.371875344057198
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 298.4675546875,
+          "occupied_ms": 295.0562861328125,
+          "exclusive_ms": 295.04803125,
+          "occupied_pct_span": 13.658096813070419
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 259.85559375,
+          "occupied_ms": 259.85559375,
+          "exclusive_ms": 259.85559375,
+          "occupied_pct_span": 12.028663762336654
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.2858076171875,
+          "occupied_ms": 242.2858076171875,
+          "exclusive_ms": 242.2858076171875,
+          "occupied_pct_span": 11.2153618560052
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.7185244140625,
+          "occupied_ms": 111.7185244140625,
+          "exclusive_ms": 111.7185244140625,
+          "occupied_pct_span": 5.1714282798699855
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.975458984375,
+          "occupied_ms": 96.975458984375,
+          "exclusive_ms": 96.9687724609375,
+          "occupied_pct_span": 4.488974712792058
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.4915234375,
+          "occupied_ms": 88.4915234375,
+          "exclusive_ms": 88.4876513671875,
+          "occupied_pct_span": 4.096255023359954
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4053525390625,
+          "occupied_ms": 6.4053525390625,
+          "exclusive_ms": 6.4053525390625,
+          "occupied_pct_span": 0.2965024953272231
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.3168037109375,
+          "occupied_ms": 3.3168037109375,
+          "exclusive_ms": 3.3168037109375,
+          "occupied_pct_span": 0.15353418423203616
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.9568369140625,
+          "occupied_ms": 2.9568369140625,
+          "exclusive_ms": 2.9568369140625,
+          "occupied_pct_span": 0.13687139278418142
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6130908203125,
+          "occupied_ms": 0.6130908203125,
+          "exclusive_ms": 0.6130908203125,
+          "occupied_pct_span": 0.02837985215900022
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.330288044245658e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2175.371181640625,
+      "busy_ms": 2165.540294921875,
+      "idle_ms": 9.83088671875,
+      "cross_category_overlap_ms": 0.0111982421875,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2169.026814453125,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 624.4510224609375,
+          "occupied_ms": 624.4510224609375,
+          "exclusive_ms": 624.4510224609375,
+          "occupied_pct_span": 28.705493008783357
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 429.172337890625,
+          "occupied_ms": 429.172337890625,
+          "exclusive_ms": 429.170865234375,
+          "occupied_pct_span": 19.728694648191077
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 298.169255859375,
+          "occupied_ms": 294.6939345703125,
+          "exclusive_ms": 294.684208984375,
+          "occupied_pct_span": 13.546834538281404
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 267.169291015625,
+          "occupied_ms": 267.169291015625,
+          "exclusive_ms": 267.169291015625,
+          "occupied_pct_span": 12.281549616471926
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.5694111328125,
+          "occupied_ms": 241.5694111328125,
+          "exclusive_ms": 241.5694111328125,
+          "occupied_pct_span": 11.104744476325427
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.68354296875,
+          "occupied_ms": 111.68354296875,
+          "exclusive_ms": 111.68354296875,
+          "occupied_pct_span": 5.133999379568885
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 95.845587890625,
+          "occupied_ms": 95.845587890625,
+          "exclusive_ms": 95.837271484375,
+          "occupied_pct_span": 4.40594178591352
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 87.662318359375,
+          "occupied_ms": 87.662318359375,
+          "exclusive_ms": 87.6594365234375,
+          "occupied_pct_span": 4.029763706498203
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.5302490234375,
+          "occupied_ms": 6.5302490234375,
+          "exclusive_ms": 6.5302490234375,
+          "occupied_pct_span": 0.30019010450035044
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2133154296875,
+          "occupied_ms": 3.2133154296875,
+          "exclusive_ms": 3.2133154296875,
+          "occupied_pct_span": 0.147713431933215
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.85104296875,
+          "occupied_ms": 2.85104296875,
+          "exclusive_ms": 2.85104296875,
+          "occupied_pct_span": 0.13106006886603122
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.707423828125,
+          "occupied_ms": 0.707423828125,
+          "exclusive_ms": 0.707423828125,
+          "occupied_pct_span": 0.032519683725490654
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.265660118195795e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2219.069001953125,
+      "busy_ms": 2208.969736328125,
+      "idle_ms": 10.099265625,
+      "cross_category_overlap_ms": 0.0132138671875,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2212.45926953125,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 619.306046875,
+          "occupied_ms": 619.306046875,
+          "exclusive_ms": 619.306046875,
+          "occupied_pct_span": 27.908372670246603
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 442.138302734375,
+          "occupied_ms": 442.138302734375,
+          "exclusive_ms": 442.13587109375,
+          "occupied_pct_span": 19.92449546837997
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 302.9143173828125,
+          "occupied_ms": 302.9143173828125,
+          "exclusive_ms": 302.9143173828125,
+          "occupied_pct_span": 13.650513666596257
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.8045234375,
+          "occupied_ms": 294.3282041015625,
+          "exclusive_ms": 294.317421875,
+          "occupied_pct_span": 13.26358954329532
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 240.922248046875,
+          "occupied_ms": 240.922248046875,
+          "exclusive_ms": 240.922248046875,
+          "occupied_pct_span": 10.85690656013067
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.2642138671875,
+          "occupied_ms": 111.2642138671875,
+          "exclusive_ms": 111.2642138671875,
+          "occupied_pct_span": 5.0140042409342716
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.976076171875,
+          "occupied_ms": 96.976076171875,
+          "exclusive_ms": 96.966380859375,
+          "occupied_pct_span": 4.37012441192775
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 87.9146484375,
+          "occupied_ms": 87.9146484375,
+          "exclusive_ms": 87.9111298828125,
+          "occupied_pct_span": 3.961780744993575
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4107607421875,
+          "occupied_ms": 6.4107607421875,
+          "exclusive_ms": 6.4107607421875,
+          "occupied_pct_span": 0.2888941595121664
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.290849609375,
+          "occupied_ms": 3.290849609375,
+          "exclusive_ms": 3.290849609375,
+          "occupied_pct_span": 0.14829866067610073
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.8952666015625,
+          "occupied_ms": 2.8952666015625,
+          "exclusive_ms": 2.8952666015625,
+          "occupied_pct_span": 0.1304721303850496
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.62,
+          "occupied_ms": 0.62,
+          "exclusive_ms": 0.62,
+          "occupied_pct_span": 0.027939644934623656
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.083201100217871e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2197.4240830078124,
+      "busy_ms": 2187.7540654296877,
+      "idle_ms": 9.670017578125,
+      "cross_category_overlap_ms": 0.0125732421875,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2191.2663701171873,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 619.4082255859375,
+          "occupied_ms": 619.4082255859375,
+          "exclusive_ms": 619.4082255859375,
+          "occupied_pct_span": 28.187923777466644
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 454.0210419921875,
+          "occupied_ms": 454.0210419921875,
+          "exclusive_ms": 454.0196650390625,
+          "occupied_pct_span": 20.661512063284935
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.944814453125,
+          "occupied_ms": 294.4450830078125,
+          "exclusive_ms": 294.43388671875,
+          "occupied_pct_span": 13.399556566467542
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 267.673369140625,
+          "occupied_ms": 267.673369140625,
+          "exclusive_ms": 267.673369140625,
+          "occupied_pct_span": 12.181233982574557
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 243.145216796875,
+          "occupied_ms": 243.145216796875,
+          "exclusive_ms": 243.145216796875,
+          "occupied_pct_span": 11.065011013443533
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.673498046875,
+          "occupied_ms": 111.673498046875,
+          "exclusive_ms": 111.673498046875,
+          "occupied_pct_span": 5.082018482932862
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.65959765625,
+          "occupied_ms": 96.65959765625,
+          "exclusive_ms": 96.65076953125,
+          "occupied_pct_span": 4.398768467302101
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 87.593423828125,
+          "occupied_ms": 87.593423828125,
+          "exclusive_ms": 87.5896787109375,
+          "occupied_pct_span": 3.9861865766132856
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4486455078125,
+          "occupied_ms": 6.4486455078125,
+          "exclusive_ms": 6.4486455078125,
+          "occupied_pct_span": 0.29346385878258224
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2280390625,
+          "occupied_ms": 3.2280390625,
+          "exclusive_ms": 3.2280390625,
+          "occupied_pct_span": 0.14690105052828456
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.86016015625,
+          "occupied_ms": 2.86016015625,
+          "exclusive_ms": 2.86016015625,
+          "occupied_pct_span": 0.13015968007117865
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.608322265625,
+          "occupied_ms": 0.608322265625,
+          "exclusive_ms": 0.608322265625,
+          "occupied_pct_span": 0.02768342580428692
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 9.17267183693114e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2195.574162109375,
+      "busy_ms": 2185.6783544921873,
+      "idle_ms": 9.8958076171875,
+      "cross_category_overlap_ms": 0.012728515625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2189.105767578125,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 621.36991796875,
+          "occupied_ms": 621.36991796875,
+          "exclusive_ms": 621.36991796875,
+          "occupied_pct_span": 28.301021604835036
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 465.4164384765625,
+          "occupied_ms": 465.4164384765625,
+          "exclusive_ms": 465.4146494140625,
+          "occupied_pct_span": 21.197937492096305
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 295.558181640625,
+          "occupied_ms": 292.1434970703125,
+          "exclusive_ms": 292.1325576171875,
+          "occupied_pct_span": 13.306018175657464
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 255.2453955078125,
+          "occupied_ms": 255.2453955078125,
+          "exclusive_ms": 255.2453955078125,
+          "occupied_pct_span": 11.625450868969425
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.212869140625,
+          "occupied_ms": 242.212869140625,
+          "exclusive_ms": 242.212869140625,
+          "occupied_pct_span": 11.031869172113117
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.3948232421875,
+          "occupied_ms": 111.3948232421875,
+          "exclusive_ms": 111.3948232421875,
+          "occupied_pct_span": 5.073607859147244
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.375455078125,
+          "occupied_ms": 96.375455078125,
+          "exclusive_ms": 96.365986328125,
+          "occupied_pct_span": 4.389533122649489
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.34598046875,
+          "occupied_ms": 88.34598046875,
+          "exclusive_ms": 88.342720703125,
+          "occupied_pct_span": 4.023821285265651
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4545048828125,
+          "occupied_ms": 6.4545048828125,
+          "exclusive_ms": 6.4545048828125,
+          "occupied_pct_span": 0.29397799419407455
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2047685546875,
+          "occupied_ms": 3.2047685546875,
+          "exclusive_ms": 3.2047685546875,
+          "occupied_pct_span": 0.1459649421091999
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 2.8702431640625,
+          "occupied_ms": 2.8702431640625,
+          "exclusive_ms": 2.8702431640625,
+          "occupied_pct_span": 0.13072859088963518
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.655205078125,
+          "occupied_ms": 0.655205078125,
+          "exclusive_ms": 0.655205078125,
+          "occupied_pct_span": 0.02984208365321254
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.001984375,
+          "occupied_ms": 0.001984375,
+          "exclusive_ms": 0.001984375,
+          "occupied_pct_span": 9.038068648492076e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2225.4481953125,
+      "busy_ms": 2215.293568359375,
+      "idle_ms": 10.154626953125,
+      "cross_category_overlap_ms": 0.0162822265625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2218.7710634765626,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 628.8037109375,
+          "occupied_ms": 628.8037109375,
+          "exclusive_ms": 628.8037109375,
+          "occupied_pct_span": 28.255149334051456
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 477.551896484375,
+          "occupied_ms": 477.551896484375,
+          "exclusive_ms": 477.5473515625,
+          "occupied_pct_span": 21.458684030041717
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 299.1658203125,
+          "occupied_ms": 295.704607421875,
+          "exclusive_ms": 295.6928701171875,
+          "occupied_pct_span": 13.287418149958409
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 258.55046875,
+          "occupied_ms": 258.55046875,
+          "exclusive_ms": 258.55046875,
+          "occupied_pct_span": 11.617905520990753
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 243.8776865234375,
+          "occupied_ms": 243.8776865234375,
+          "exclusive_ms": 243.8776865234375,
+          "occupied_pct_span": 10.958587444862625
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.340458984375,
+          "occupied_ms": 112.340458984375,
+          "exclusive_ms": 112.340458984375,
+          "occupied_pct_span": 5.047992544647845
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.6501796875,
+          "occupied_ms": 96.6501796875,
+          "exclusive_ms": 96.64062109375,
+          "occupied_pct_span": 4.34295347297124
+        },
+        "elementwise_and_copy": {
+          "count": 496,
+          "work_ms": 88.40327734375,
+          "occupied_ms": 88.40327734375,
+          "exclusive_ms": 88.3965537109375,
+          "occupied_pct_span": 3.97238082333057
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4217041015625,
+          "occupied_ms": 6.4217041015625,
+          "exclusive_ms": 6.4217041015625,
+          "occupied_pct_span": 0.2885577887226783
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.266208984375,
+          "occupied_ms": 3.266208984375,
+          "exclusive_ms": 3.266208984375,
+          "occupied_pct_span": 0.14676634537054928
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 3.0836201171875,
+          "occupied_ms": 3.0836201171875,
+          "exclusive_ms": 3.0836201171875,
+          "occupied_pct_span": 0.1385617568489162
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6502392578125,
+          "occupied_ms": 0.6502392578125,
+          "exclusive_ms": 0.6502392578125,
+          "occupied_pct_span": 0.029218350675702547
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0057919921875,
+          "occupied_ms": 0.0057919921875,
+          "exclusive_ms": 0.0057919921875,
+          "occupied_pct_span": 0.00026026182949123565
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2316.2798828125,
+      "busy_ms": 2306.339109375,
+      "idle_ms": 9.9407734375,
+      "cross_category_overlap_ms": 0.0148115234375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2309.8498359375,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 624.214265625,
+          "occupied_ms": 624.214265625,
+          "exclusive_ms": 624.214265625,
+          "occupied_pct_span": 26.949000000252965
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 492.624384765625,
+          "occupied_ms": 492.624384765625,
+          "exclusive_ms": 492.619298828125,
+          "occupied_pct_span": 21.267912760502195
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 345.789857421875,
+          "occupied_ms": 345.789857421875,
+          "exclusive_ms": 345.789857421875,
+          "occupied_pct_span": 14.928673343309706
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 296.867966796875,
+          "occupied_ms": 293.3720517578125,
+          "exclusive_ms": 293.362326171875,
+          "occupied_pct_span": 12.665656423246698
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.004578125,
+          "occupied_ms": 241.004578125,
+          "exclusive_ms": 241.004578125,
+          "occupied_pct_span": 10.40481247164158
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.46330078125,
+          "occupied_ms": 111.46330078125,
+          "exclusive_ms": 111.46330078125,
+          "occupied_pct_span": 4.812168926922068
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.6693583984375,
+          "occupied_ms": 96.6693583984375,
+          "exclusive_ms": 96.66139453125,
+          "occupied_pct_span": 4.1734748514526885
+        },
+        "elementwise_and_copy": {
+          "count": 531,
+          "work_ms": 87.9580615234375,
+          "occupied_ms": 87.9580615234375,
+          "exclusive_ms": 87.9512138671875,
+          "occupied_pct_span": 3.797384857335809
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4926162109375,
+          "occupied_ms": 6.4926162109375,
+          "exclusive_ms": 6.4926162109375,
+          "occupied_pct_span": 0.280303613527652
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2436162109375,
+          "occupied_ms": 3.2436162109375,
+          "exclusive_ms": 3.2436162109375,
+          "occupied_pct_span": 0.14003559047445505
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.8971884765625,
+          "occupied_ms": 2.8971884765625,
+          "exclusive_ms": 2.8971884765625,
+          "occupied_pct_span": 0.12507937827636972
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.62259375,
+          "occupied_ms": 0.62259375,
+          "exclusive_ms": 0.62259375,
+          "occupied_pct_span": 0.026879038004855745
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0020478515625,
+          "occupied_ms": 0.0020478515625,
+          "exclusive_ms": 0.0020478515625,
+          "occupied_pct_span": 8.841123120291638e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2271.763322265625,
+      "busy_ms": 2261.4790283203124,
+      "idle_ms": 10.2842939453125,
+      "cross_category_overlap_ms": 0.0108515625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2264.955544921875,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 620.7345,
+          "occupied_ms": 620.7345,
+          "exclusive_ms": 620.7345,
+          "occupied_pct_span": 27.323907112865204
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 504.0161669921875,
+          "occupied_ms": 504.0161669921875,
+          "exclusive_ms": 504.0145,
+          "occupied_pct_span": 22.18612132929117
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 296.4891982421875,
+          "occupied_ms": 293.023533203125,
+          "exclusive_ms": 293.0143486328125,
+          "occupied_pct_span": 12.898506210184484
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 292.2920654296875,
+          "occupied_ms": 292.2920654296875,
+          "exclusive_ms": 292.2920654296875,
+          "occupied_pct_span": 12.8663079716502
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.62615625,
+          "occupied_ms": 242.62615625,
+          "exclusive_ms": 242.62615625,
+          "occupied_pct_span": 10.68008070523955
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.1336904296875,
+          "occupied_ms": 112.1336904296875,
+          "exclusive_ms": 112.1336904296875,
+          "occupied_pct_span": 4.935975914861448
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.2928720703125,
+          "occupied_ms": 96.2928720703125,
+          "exclusive_ms": 96.284806640625,
+          "occupied_pct_span": 4.238684158976553
+        },
+        "elementwise_and_copy": {
+          "count": 531,
+          "work_ms": 87.178693359375,
+          "occupied_ms": 87.178693359375,
+          "exclusive_ms": 87.1759072265625,
+          "occupied_pct_span": 3.8374901339824374
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.438244140625,
+          "occupied_ms": 6.438244140625,
+          "exclusive_ms": 6.438244140625,
+          "occupied_pct_span": 0.2834029442030146
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.23350390625,
+          "occupied_ms": 3.23350390625,
+          "exclusive_ms": 3.23350390625,
+          "occupied_pct_span": 0.14233454139162846
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.9089638671875,
+          "occupied_ms": 2.9089638671875,
+          "exclusive_ms": 2.9089638671875,
+          "occupied_pct_span": 0.12804872051047977
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.609474609375,
+          "occupied_ms": 0.609474609375,
+          "exclusive_ms": 0.609474609375,
+          "occupied_pct_span": 0.02682826170321177
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 8.872513171793887e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2265.3108681640624,
+      "busy_ms": 2255.1644375,
+      "idle_ms": 10.1464306640625,
+      "cross_category_overlap_ms": 0.0158681640625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2258.62677734375,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 623.928146484375,
+          "occupied_ms": 623.928146484375,
+          "exclusive_ms": 623.928146484375,
+          "occupied_pct_span": 27.542716333235184
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 518.2388515625,
+          "occupied_ms": 518.2388515625,
+          "exclusive_ms": 518.2373486328125,
+          "occupied_pct_span": 22.877162637837447
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.6249482421875,
+          "occupied_ms": 294.1784765625,
+          "exclusive_ms": 294.164111328125,
+          "occupied_pct_span": 12.986229867908552
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 268.031107421875,
+          "occupied_ms": 268.031107421875,
+          "exclusive_ms": 268.031107421875,
+          "occupied_pct_span": 11.831979053678523
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.706337890625,
+          "occupied_ms": 241.706337890625,
+          "exclusive_ms": 241.706337890625,
+          "occupied_pct_span": 10.669897067439475
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.647583984375,
+          "occupied_ms": 111.647583984375,
+          "exclusive_ms": 111.647583984375,
+          "occupied_pct_span": 4.928576715603744
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.588642578125,
+          "occupied_ms": 96.588642578125,
+          "exclusive_ms": 96.57629296875,
+          "occupied_pct_span": 4.263814028156142
+        },
+        "elementwise_and_copy": {
+          "count": 531,
+          "work_ms": 87.533625,
+          "occupied_ms": 87.533625,
+          "exclusive_ms": 87.5301064453125,
+          "occupied_pct_span": 3.864088864365987
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.51085546875,
+          "occupied_ms": 6.51085546875,
+          "exclusive_ms": 6.51085546875,
+          "occupied_pct_span": 0.28741554019147797
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.3020859375,
+          "occupied_ms": 3.3020859375,
+          "exclusive_ms": 3.3020859375,
+          "occupied_pct_span": 0.14576745222505375
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.8873310546875,
+          "occupied_ms": 2.8873310546875,
+          "exclusive_ms": 2.8873310546875,
+          "occupied_pct_span": 0.12745849125014608
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.62524609375,
+          "occupied_ms": 0.62524609375,
+          "exclusive_ms": 0.62524609375,
+          "occupied_pct_span": 0.027600895865419795
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 8.897785413591282e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2279.2944853515623,
+      "busy_ms": 2269.1873359375,
+      "idle_ms": 10.1071494140625,
+      "cross_category_overlap_ms": 0.0110458984375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2272.7886513671874,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 622.741677734375,
+          "occupied_ms": 622.741677734375,
+          "exclusive_ms": 622.741677734375,
+          "occupied_pct_span": 27.32168579955662
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 530.0449091796875,
+          "occupied_ms": 530.0449091796875,
+          "exclusive_ms": 530.04340234375,
+          "occupied_pct_span": 23.254779607731663
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 299.294984375,
+          "occupied_ms": 295.70471484375,
+          "exclusive_ms": 295.69517578125,
+          "occupied_pct_span": 12.973519514225472
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 269.225455078125,
+          "occupied_ms": 269.225455078125,
+          "exclusive_ms": 269.225455078125,
+          "occupied_pct_span": 11.811788990337472
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.8022705078125,
+          "occupied_ms": 242.8022705078125,
+          "exclusive_ms": 242.8022705078125,
+          "occupied_pct_span": 10.652518666115329
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.1031240234375,
+          "occupied_ms": 112.1031240234375,
+          "exclusive_ms": 112.1031240234375,
+          "occupied_pct_span": 4.918325593463036
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.3126533203125,
+          "occupied_ms": 96.3126533203125,
+          "exclusive_ms": 96.30474609375,
+          "occupied_pct_span": 4.225546718043196
+        },
+        "elementwise_and_copy": {
+          "count": 520,
+          "work_ms": 86.8894482421875,
+          "occupied_ms": 86.8894482421875,
+          "exclusive_ms": 86.8863095703125,
+          "occupied_pct_span": 3.8121203205905845
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.5996943359375,
+          "occupied_ms": 6.5996943359375,
+          "exclusive_ms": 6.5996943359375,
+          "occupied_pct_span": 0.2895498751193421
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2829765625,
+          "occupied_ms": 3.2829765625,
+          "exclusive_ms": 3.2829765625,
+          "occupied_pct_span": 0.14403476968855244
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.8647724609375,
+          "occupied_ms": 2.8647724609375,
+          "exclusive_ms": 2.8647724609375,
+          "occupied_pct_span": 0.1256868070075479
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.624669921875,
+          "occupied_ms": 0.624669921875,
+          "exclusive_ms": 0.624669921875,
+          "occupied_pct_span": 0.027406284088764853
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.002015625,
+          "occupied_ms": 0.002015625,
+          "exclusive_ms": 0.002015625,
+          "occupied_pct_span": 8.843196932006381e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2287.2844150390624,
+      "busy_ms": 2277.1196845703125,
+      "idle_ms": 10.16473046875,
+      "cross_category_overlap_ms": 0.01222265625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2280.553857421875,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 624.3110224609375,
+          "occupied_ms": 624.3110224609375,
+          "exclusive_ms": 624.3110224609375,
+          "occupied_pct_span": 27.294857533066146
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 542.3851123046875,
+          "occupied_ms": 542.3851123046875,
+          "exclusive_ms": 542.38290625,
+          "occupied_pct_span": 23.713059413969933
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.22179296875,
+          "occupied_ms": 293.7998427734375,
+          "exclusive_ms": 293.789826171875,
+          "occupied_pct_span": 12.844919540468252
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 264.9713818359375,
+          "occupied_ms": 264.9713818359375,
+          "exclusive_ms": 264.9713818359375,
+          "occupied_pct_span": 11.584540168845258
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 242.2775517578125,
+          "occupied_ms": 242.2775517578125,
+          "exclusive_ms": 242.2775517578125,
+          "occupied_pct_span": 10.592366658244154
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.725759765625,
+          "occupied_ms": 111.725759765625,
+          "exclusive_ms": 111.725759765625,
+          "occupied_pct_span": 4.884646571760816
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 97.0987861328125,
+          "occupied_ms": 97.0987861328125,
+          "exclusive_ms": 97.0900830078125,
+          "occupied_pct_span": 4.245155761757518
+        },
+        "elementwise_and_copy": {
+          "count": 520,
+          "work_ms": 87.3436884765625,
+          "occupied_ms": 87.3436884765625,
+          "exclusive_ms": 87.3401689453125,
+          "occupied_pct_span": 3.8186632104985
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4320380859375,
+          "occupied_ms": 6.4320380859375,
+          "exclusive_ms": 6.4320380859375,
+          "occupied_pct_span": 0.2812084952639199
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.247779296875,
+          "occupied_ms": 3.247779296875,
+          "exclusive_ms": 3.247779296875,
+          "occupied_pct_span": 0.1419928048965233
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.890818359375,
+          "occupied_ms": 2.890818359375,
+          "exclusive_ms": 2.890818359375,
+          "occupied_pct_span": 0.12638648435531924
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6463662109375,
+          "occupied_ms": 0.6463662109375,
+          "exclusive_ms": 0.6463662109375,
+          "occupied_pct_span": 0.028259109653683417
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.001759765625,
+          "occupied_ms": 0.001759765625,
+          "exclusive_ms": 0.001759765625,
+          "occupied_pct_span": 7.693689571045087e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2359.0419423828125,
+      "busy_ms": 2349.0644873046876,
+      "idle_ms": 9.977455078125,
+      "cross_category_overlap_ms": 0.0203212890625,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2352.6051728515627,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 624.366609375,
+          "occupied_ms": 624.366609375,
+          "exclusive_ms": 624.366609375,
+          "occupied_pct_span": 26.466956697867865
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 555.976474609375,
+          "occupied_ms": 555.976474609375,
+          "exclusive_ms": 555.9750322265625,
+          "occupied_pct_span": 23.567892737328624
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 323.423873046875,
+          "occupied_ms": 323.423873046875,
+          "exclusive_ms": 323.423873046875,
+          "occupied_pct_span": 13.709967052141184
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 296.5238359375,
+          "occupied_ms": 293.0034716796875,
+          "exclusive_ms": 292.9845927734375,
+          "occupied_pct_span": 12.420443503591615
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.87544140625,
+          "occupied_ms": 241.87544140625,
+          "exclusive_ms": 241.87544140625,
+          "occupied_pct_span": 10.253121704226137
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 112.5636162109375,
+          "occupied_ms": 112.5636162109375,
+          "exclusive_ms": 112.5636162109375,
+          "occupied_pct_span": 4.771581809912191
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.7842685546875,
+          "occupied_ms": 96.7842685546875,
+          "exclusive_ms": 96.7752451171875,
+          "occupied_pct_span": 4.102693844303929
+        },
+        "elementwise_and_copy": {
+          "count": 520,
+          "work_ms": 87.7631982421875,
+          "occupied_ms": 87.7631982421875,
+          "exclusive_ms": 87.751900390625,
+          "occupied_pct_span": 3.720289862822022
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.499908203125,
+          "occupied_ms": 6.499908203125,
+          "exclusive_ms": 6.499908203125,
+          "occupied_pct_span": 0.2755316930295693
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.235142578125,
+          "occupied_ms": 3.235142578125,
+          "exclusive_ms": 3.235142578125,
+          "occupied_pct_span": 0.13713798470481026
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.970181640625,
+          "occupied_ms": 2.970181640625,
+          "exclusive_ms": 2.970181640625,
+          "occupied_pct_span": 0.1259062667459354
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6205751953125,
+          "occupied_ms": 0.6205751953125,
+          "exclusive_ms": 0.6205751953125,
+          "occupied_pct_span": 0.026306238314935244
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0020478515625,
+          "occupied_ms": 0.0020478515625,
+          "exclusive_ms": 0.0020478515625,
+          "occupied_pct_span": 8.68086118227942e-05
+        }
+      }
+    },
+    {
+      "rows": 6912,
+      "span_ms": 2394.6148173828124,
+      "busy_ms": 2384.5731142578124,
+      "idle_ms": 10.041703125,
+      "cross_category_overlap_ms": 0.0167724609375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 2388.2560361328124,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 621.56094140625,
+          "occupied_ms": 621.56094140625,
+          "exclusive_ms": 621.56094140625,
+          "occupied_pct_span": 25.95661468785127
+        },
+        "mla_and_indexer": {
+          "count": 143,
+          "work_ms": 567.6380556640624,
+          "occupied_ms": 567.6380556640624,
+          "exclusive_ms": 567.63549609375,
+          "occupied_pct_span": 23.704775045385418
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 350.3865546875,
+          "occupied_ms": 350.3865546875,
+          "exclusive_ms": 350.3865546875,
+          "occupied_pct_span": 14.632272052440317
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 297.8456103515625,
+          "occupied_ms": 294.1794609375,
+          "exclusive_ms": 294.165248046875,
+          "occupied_pct_span": 12.28504303915661
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 241.855869140625,
+          "occupied_ms": 241.855869140625,
+          "exclusive_ms": 241.855869140625,
+          "occupied_pct_span": 10.0999905030639
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 111.8131123046875,
+          "occupied_ms": 111.8131123046875,
+          "exclusive_ms": 111.8131123046875,
+          "occupied_pct_span": 4.669356904209477
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 96.3351474609375,
+          "occupied_ms": 96.3351474609375,
+          "exclusive_ms": 96.3236259765625,
+          "occupied_pct_span": 4.0229913705381115
+        },
+        "elementwise_and_copy": {
+          "count": 520,
+          "work_ms": 87.6549775390625,
+          "occupied_ms": 87.6549775390625,
+          "exclusive_ms": 87.6497265625,
+          "occupied_pct_span": 3.6605042657701734
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 6.4422763671875,
+          "occupied_ms": 6.4422763671875,
+          "exclusive_ms": 6.4422763671875,
+          "occupied_pct_span": 0.2690318426338215
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 3.2303369140625,
+          "occupied_ms": 3.2303369140625,
+          "exclusive_ms": 3.2303369140625,
+          "occupied_pct_span": 0.13490006370181437
+        },
+        "other": {
+          "count": 22,
+          "work_ms": 2.87136328125,
+          "occupied_ms": 2.87136328125,
+          "exclusive_ms": 2.87136328125,
+          "occupied_pct_span": 0.1199091920924572
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.6197431640625,
+          "occupied_ms": 0.6197431640625,
+          "exclusive_ms": 0.6197431640625,
+          "occupied_pct_span": 0.025880703633991815
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0020478515625,
+          "occupied_ms": 0.0020478515625,
+          "exclusive_ms": 0.0020478515625,
+          "occupied_pct_span": 8.551903828684205e-05
+        }
+      }
+    },
+    {
+      "rows": 4143,
+      "span_ms": 1535.3629326171874,
+      "busy_ms": 1525.7031435546876,
+      "idle_ms": 9.6597890625,
+      "cross_category_overlap_ms": 0.0447109375,
+      "communication_compute_overlap_ms": 0.0,
+      "summed_work_ms": 1528.1387265625,
+      "categories": {
+        "moe_expert": {
+          "count": 42,
+          "work_ms": 510.3879521484375,
+          "occupied_ms": 510.3879521484375,
+          "exclusive_ms": 510.3879521484375,
+          "occupied_pct_span": 33.24216973757648
+        },
+        "mla_and_indexer": {
+          "count": 110,
+          "work_ms": 347.0422705078125,
+          "occupied_ms": 347.0422705078125,
+          "exclusive_ms": 347.0408642578125,
+          "occupied_pct_span": 22.603272694374773
+        },
+        "communication": {
+          "count": 187,
+          "work_ms": 177.482015625,
+          "occupied_ms": 177.482015625,
+          "exclusive_ms": 177.482015625,
+          "occupied_pct_span": 11.559613160809038
+        },
+        "dense_gemm_and_quant": {
+          "count": 984,
+          "work_ms": 173.1251767578125,
+          "occupied_ms": 170.7343046875,
+          "exclusive_ms": 170.691,
+          "occupied_pct_span": 11.12012678308349
+        },
+        "kda": {
+          "count": 374,
+          "work_ms": 142.670927734375,
+          "occupied_ms": 142.670927734375,
+          "exclusive_ms": 142.670927734375,
+          "occupied_pct_span": 9.292325918744007
+        },
+        "mhc": {
+          "count": 275,
+          "work_ms": 65.4918173828125,
+          "occupied_ms": 65.4918173828125,
+          "exclusive_ms": 65.4918173828125,
+          "occupied_pct_span": 4.265559366551517
+        },
+        "transport_codec": {
+          "count": 372,
+          "work_ms": 52.8705693359375,
+          "occupied_ms": 52.8705693359375,
+          "exclusive_ms": 52.8283525390625,
+          "occupied_pct_span": 3.4435225843191395
+        },
+        "elementwise_and_copy": {
+          "count": 485,
+          "work_ms": 51.06817578125,
+          "occupied_ms": 51.06817578125,
+          "exclusive_ms": 51.065681640625,
+          "occupied_pct_span": 3.326130564725757
+        },
+        "norm_quant_other": {
+          "count": 67,
+          "work_ms": 3.578537109375,
+          "occupied_ms": 3.578537109375,
+          "exclusive_ms": 3.578537109375,
+          "occupied_pct_span": 0.2330743457037228
+        },
+        "moe_shared_and_glue": {
+          "count": 42,
+          "work_ms": 2.3850537109375,
+          "occupied_ms": 2.3850537109375,
+          "exclusive_ms": 2.3850537109375,
+          "occupied_pct_span": 0.15534136328743622
+        },
+        "other": {
+          "count": 19,
+          "work_ms": 1.65139453125,
+          "occupied_ms": 1.65139453125,
+          "exclusive_ms": 1.65139453125,
+          "occupied_pct_span": 0.10755727497178953
+        },
+        "memory_copy": {
+          "count": 39,
+          "work_ms": 0.3826923828125,
+          "occupied_ms": 0.3826923828125,
+          "exclusive_ms": 0.3826923828125,
+          "occupied_pct_span": 0.024925206586833552
+        },
+        "sampling_and_drafter": {
+          "count": 1,
+          "work_ms": 0.0021435546875,
+          "occupied_ms": 0.0021435546875,
+          "exclusive_ms": 0.0021435546875,
+          "occupied_pct_span": 0.00013961224684811725
+        }
+      }
+    }
+  ],
+  "rs_unpack_and_post_fp8_chunks": {
+    "occupied_ms": 1279.30128515625,
+    "pct_span": 3.0486472604206125,
+    "note": "Scope of the standalone microbenchmark; not an observed removable latency or speedup"
+  },
+  "kernels": [
+    {
+      "category": "moe_expert",
+      "name": "kernel_cutlass_kernel_flashinferfused_moecute_dslblackwell_sm12xmoe_dynamic_gated_tiledMoEGatedDynamicKernelTiled_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorpt_0",
+      "count": 798,
+      "work_us": 11731986.735999996,
+      "parents": {
+        "vllm::moe_forward_shared": 798
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "mk_mla_kernel(MKMlaArgs)",
+      "count": 209,
+      "work_us": 6168122.189,
+      "parents": {
+        "vllm::unified_mla_attention_with_output": 209
+      }
+    },
+    {
+      "category": "communication",
+      "name": "ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<4096ul>)",
+      "count": 1710,
+      "work_us": 3050902.494999999,
+      "parents": {
+        "record_param_comms": 1710
+      }
+    },
+    {
+      "category": "communication",
+      "name": "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)",
+      "count": 1824,
+      "work_us": 1984347.9620000024,
+      "parents": {
+        "": 1824
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u, 2u, 3u, 48u, 128u, 256u, float>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, unsigned int*, float*, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+      "count": 286,
+      "work_us": 1727951.2319999998,
+      "parents": {
+        "vllm::sparse_attn_indexer_kpool": 286
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalIN4cute5tupleIJiiiiEEENS1_10collective13CollectiveMmaINS1_42MainloopSm120TmaWarpSpecializedBlockScaledILi3ELi3ENS5_IJNS4_1CILi1EEESB_SB_EEENS1_51KernelTmaWarpSpecializedCooperativeBlockScaledSm120ILi3EEEEENS5_IJNSA_ILi256EEENSA_ILi128EEESH_EEENS5_IJNS_12float_e2m1_tENS_13float_ue4m3_tEEEENS5_IJNS5_IJlSB_lEEENS4_6LayoutINS5_IJNS5_IJNS5_IJNSA_ILi32EEENSA_ILi4EEEEEEiEEENS5_IJNS5_IJNSA_ILi16EEESP_EEEiEEENS5_IJSB_iEEEEEENS5_IJSU_NS5_IJNS5_IJNSA_ILi0EEESB_EEENSA_ILi512EEEEEENS5_IJSX_iEEEEEEEEEEESL_S14_NS4_8TiledMMAINS4_8MMA_AtomIJNS4_5SM12011BLOCKSCALED19SM120_16x8x64_TN_VSISJ_SJ_fSK_Li16EEEEEENSN_INS5_IJSP_NSA_ILi2EEESB_EEENS5_IJSB_SP_SX_EEEEENS5_IJSH_NSN_INS5_IJNSA_ILi8EEES1C_S1C_EEENS5_IJSB_SS_S1G_EEEEENSA_ILi64EEEEEEEENS5_IJNS4_13SM90_TMA_LOADES1N_EEENS5_IJNS4_14ComposedLayoutINS4_7SwizzleILi2ELi4ELi3EEENS4_18smem_ptr_flag_bitsILi4EEENSN_INS5_IJS1G_SH_EEENS5_IJSH_SB_EEEEEEENSN_INS5_IJNS5_IJSQ_S1C_EEENS5_IJST_SB_S1C_EEEEEENS5_IJNS5_IJST_SZ_EEENS5_IJSY_SP_NSA_ILi1024EEEEEEEEEEEEEENS5_IJNS4_9Copy_AtomIJNS4_17SM75_U32x4_LDSM_NENS_15integer_subbyteILi4ELb0EEEEEENS27_IJNS4_13UniversalCopyISK_SK_EESK_EEEEEENS4_8identityES1O_NS5_IJS1X_NSN_INS5_IJNS5_IJSQ_SB_EEES1Z_EEENS5_IJS21_NS5_IJSY_SP_SZ_EEEEEEEEEEES2F_S2G_EENS_8epilogue10collective18CollectiveEpilogueINS2O_22Sm90TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEEJSI_NS5_IJS1K_SO_EEEvNS5_IJSB_llEEENS_10bfloat16_tES2U_NS2O_6fusion15FusionCallbacksINS2O_23Sm120TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEENS2W_17LinearCombinationIS2V_fvfLNS_15FloatRoundStyleE2EEESI_S2T_JEEES1N_NS1P_INS1Q_ILi3ELi4ELi3EEENS1S_ILi16EEENSN_INS5_IJS1K_S1G_EEENS5_IJSB_S1K_EEEEEEENS4_17SM75_U16x4_LDSM_TENS4_14SM90_TMA_STOREES39_NS4_17SM90_U16x4_STSM_TENS27_IJNS4_17SM90_U32x2_STSM_NENS_6half_tEEEEvEEENS1_25StaticPersistentSchedulerEvEEEEvNT_6ParamsE",
+      "count": 703,
+      "work_us": 1087972.6459999993,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 703
+      }
+    },
+    {
+      "category": "mhc",
+      "name": "mhc_post_tilelang_kernel",
+      "count": 1805,
+      "work_us": 1006503.8560000014,
+      "parents": {
+        "vllm::mhc_fused_post_pre_tilelang": 1691,
+        "vllm::mhc_post_tilelang": 114
+      }
+    },
+    {
+      "category": "transport_codec",
+      "name": "_unpack_gather",
+      "count": 1824,
+      "work_us": 781850.9649999988,
+      "parents": {
+        "": 1824
+      }
+    },
+    {
+      "category": "transport_codec",
+      "name": "_pack_rs_payload",
+      "count": 3534,
+      "work_us": 737828.7609999997,
+      "parents": {
+        "": 3534
+      }
+    },
+    {
+      "category": "kda",
+      "name": "chunk_gla_fwd_kernel_o",
+      "count": 646,
+      "work_us": 700742.9559999998,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void tensorrt_llm::kernels::quantize_with_block_size_tma<(tensorrt_llm::BlockScaleQuantizationType)0, __nv_bfloat16, 16, false, false, false, false, std::integral_constant<bool, false> >(int, int, int, int, __nv_bfloat16 const*, float const*, unsigned int*, unsigned int*, flashinfer::QuantizationSFLayout, CUtensorMap_st)",
+      "count": 3838,
+      "work_us": 687414.6919999999,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 3838
+      }
+    },
+    {
+      "category": "kda",
+      "name": "recompute_w_u_fwd_kernel",
+      "count": 646,
+      "work_us": 674020.4680000002,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_partials",
+      "count": 3838,
+      "work_us": 650679.9019999999,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 3838
+      }
+    },
+    {
+      "category": "kda",
+      "name": "_causal_conv1d_fwd_kernel",
+      "count": 646,
+      "work_us": 580696.13,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "mhc",
+      "name": "mhc_pre_big_fuse_with_norm_tilelang_kernel",
+      "count": 1710,
+      "work_us": 552313.1989999998,
+      "parents": {
+        "vllm::mhc_pre_tilelang": 19,
+        "vllm::mhc_fused_post_pre_tilelang": 1691
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalIN4cute5tupleIJiiiiEEENS1_10collective13CollectiveMmaINS1_42MainloopSm120TmaWarpSpecializedBlockScaledILi2ELi3ENS5_IJNS4_1CILi1EEESB_SB_EEENS1_51KernelTmaWarpSpecializedCooperativeBlockScaledSm120ILi3EEEEENS5_IJNSA_ILi128EEESG_NSA_ILi256EEEEEENS5_IJNS_12float_e2m1_tENS_13float_ue4m3_tEEEENS5_IJNS5_IJlSB_lEEENS4_6LayoutINS5_IJNS5_IJNS5_IJNSA_ILi32EEENSA_ILi4EEEEEEiEEENS5_IJNS5_IJNSA_ILi16EEESP_EEEiEEENS5_IJSB_iEEEEEENS5_IJSU_NS5_IJNS5_IJNSA_ILi0EEESB_EEENSA_ILi512EEEEEENS5_IJSX_iEEEEEEEEEEESL_S14_NS4_8TiledMMAINS4_8MMA_AtomIJNS4_5SM12011BLOCKSCALED19SM120_16x8x64_TN_VSISJ_SJ_fSK_Li16EEEEEENSN_INS5_IJSP_NSA_ILi2EEESB_EEENS5_IJSB_SP_SX_EEEEENS5_IJSG_NSN_INS5_IJNSA_ILi8EEES1C_S1C_EEENS5_IJSB_SS_S1G_EEEEENSA_ILi64EEEEEEEENS5_IJNS4_13SM90_TMA_LOADES1N_EEENS5_IJNS4_14ComposedLayoutINS4_7SwizzleILi3ELi4ELi3EEENS4_18smem_ptr_flag_bitsILi4EEENSN_INS5_IJS1G_SH_EEENS5_IJSH_SB_EEEEEEENSN_INS5_IJNS5_IJSQ_SB_EEENS5_IJST_SB_SP_EEEEEENS5_IJNS5_IJST_SZ_EEENS5_IJSY_SP_SZ_EEEEEEEEEEENS5_IJNS4_9Copy_AtomIJNS4_17SM75_U32x4_LDSM_NENS_15integer_subbyteILi4ELb0EEEEEENS26_IJNS4_13UniversalCopyISK_SK_EESK_EEEEEENS4_8identityES1O_S25_S2E_S2F_EENS_8epilogue10collective18CollectiveEpilogueINS2H_22Sm90TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEEJSI_NS5_IJS1K_SO_EEEvNS5_IJSB_llEEENS_10bfloat16_tES2N_NS2H_6fusion15FusionCallbacksINS2H_23Sm120TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEENS2P_17LinearCombinationIS2O_fvfLNS_15FloatRoundStyleE2EEESI_S2M_JEEES1N_NS1P_IS1R_NS1S_ILi16EEENSN_INS5_IJS1K_S1G_EEENS5_IJSB_S1K_EEEEEEENS4_17SM75_U16x4_LDSM_TENS4_14SM90_TMA_STOREES31_NS4_17SM90_U16x4_STSM_TENS26_IJNS4_17SM90_U32x2_STSM_NENS_6half_tEEEEvEEENS1_16StreamKSchedulerEvEEEEvNT_6ParamsE",
+      "count": 1064,
+      "work_us": 541029.2169999998,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 1064
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul>)",
+      "count": 798,
+      "work_us": 539336.3480000001,
+      "parents": {
+        "aten::add": 798
+      }
+    },
+    {
+      "category": "kda",
+      "name": "chunk_gated_delta_rule_fwd_kernel_h_blockdim64",
+      "count": 646,
+      "work_us": 520998.7330000002,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalIN4cute5tupleIJiiiiEEENS1_10collective13CollectiveMmaINS1_42MainloopSm120TmaWarpSpecializedBlockScaledILi4ELi3ENS5_IJNS4_1CILi1EEESB_SB_EEENS1_51KernelTmaWarpSpecializedCooperativeBlockScaledSm120ILi3EEEEENS5_IJNSA_ILi128EEESG_SG_EEENS5_IJNS_12float_e2m1_tENS_13float_ue4m3_tEEEENS5_IJNS5_IJlSB_lEEENS4_6LayoutINS5_IJNS5_IJNS5_IJNSA_ILi32EEENSA_ILi4EEEEEEiEEENS5_IJNS5_IJNSA_ILi16EEESO_EEEiEEENS5_IJSB_iEEEEEENS5_IJST_NS5_IJNS5_IJNSA_ILi0EEESB_EEENSA_ILi512EEEEEENS5_IJSW_iEEEEEEEEEEESK_S13_NS4_8TiledMMAINS4_8MMA_AtomIJNS4_5SM12011BLOCKSCALED19SM120_16x8x64_TN_VSISI_SI_fSJ_Li16EEEEEENSM_INS5_IJSO_NSA_ILi2EEESB_EEENS5_IJSB_SO_SW_EEEEENS5_IJSG_NSM_INS5_IJNSA_ILi8EEES1B_S1B_EEENS5_IJSB_SR_S1F_EEEEENSA_ILi64EEEEEEEENS5_IJNS4_13SM90_TMA_LOADES1M_EEENS5_IJNS4_14ComposedLayoutINS4_7SwizzleILi2ELi4ELi3EEENS4_18smem_ptr_flag_bitsILi4EEENSM_INS5_IJS1F_SG_EEENS5_IJSG_SB_EEEEEEENSM_INS5_IJNS5_IJSP_SB_EEENS5_IJSS_SB_S1B_EEEEEENS5_IJNS5_IJSS_SY_EEENS5_IJSX_SO_SY_EEEEEEEEEEENS5_IJNS4_9Copy_AtomIJNS4_17SM75_U32x4_LDSM_NENS_15integer_subbyteILi4ELb0EEEEEENS25_IJNS4_13UniversalCopyISJ_SJ_EESJ_EEEEEENS4_8identityES1N_S24_S2D_S2E_EENS_8epilogue10collective18CollectiveEpilogueINS2G_22Sm90TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEEJSH_NS5_IJS1J_SN_EEEvNS5_IJSB_llEEENS_10bfloat16_tES2M_NS2G_6fusion15FusionCallbacksINS2G_23Sm120TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEENS2O_17LinearCombinationIS2N_fvfLNS_15FloatRoundStyleE2EEESH_S2L_JEEES1M_NS1O_INS1P_ILi3ELi4ELi3EEENS1R_ILi16EEENSM_INS5_IJS1J_S1F_EEENS5_IJSB_S1J_EEEEEEENS4_17SM75_U16x4_LDSM_TENS4_14SM90_TMA_STOREES31_NS4_17SM90_U16x4_STSM_TENS25_IJNS4_17SM90_U32x2_STSM_NENS_6half_tEEEEvEEENS1_16StreamKSchedulerEvEEEEvNT_6ParamsE",
+      "count": 1216,
+      "work_us": 507199.1720000003,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 1216
+      }
+    },
+    {
+      "category": "mhc",
+      "name": "void deep_gemm::sm120_tf32_hc_prenorm_gemm_impl<24u, 16384u, 128u, 32u, 64u, 1u, 4u, 256u, 128u>(unsigned int, CUtensorMap_st, CUtensorMap_st, float*, float*)",
+      "count": 1620,
+      "work_us": 503472.9129999991,
+      "parents": {
+        "vllm::mhc_pre_tilelang": 18,
+        "vllm::mhc_fused_post_pre_tilelang": 1602
+      }
+    },
+    {
+      "category": "kda",
+      "name": "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter",
+      "count": 646,
+      "work_us": 491995.4079999997,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "kda",
+      "name": "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra",
+      "count": 646,
+      "work_us": 472701.2749999998,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "void vllm::topKPerRowPrefill<512, false>(float const*, int const*, int const*, int*, int, int, int, int)",
+      "count": 286,
+      "work_us": 407486.2459999997,
+      "parents": {
+        "_C::top_k_per_row_prefill": 286
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_32x2_nn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_32x2_nn_align8::Params)",
+      "count": 198,
+      "work_us": 404671.33100000006,
+      "parents": {
+        "aten::bmm": 198
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1})",
+      "count": 874,
+      "work_us": 376114.47400000016,
+      "parents": {
+        "aten::copy_": 874
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "nvjet_sm121_tst_mma_128x144x64_2_32x72x64_tmaAB_bz_TNNN",
+      "count": 756,
+      "work_us": 353537.6199999998,
+      "parents": {
+        "aten::mm": 756
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align8::Params)",
+      "count": 209,
+      "work_us": 334010.216,
+      "parents": {
+        "aten::bmm": 209
+      }
+    },
+    {
+      "category": "kda",
+      "name": "_glm53_qk_l2norm_strided_kernel",
+      "count": 646,
+      "work_us": 325733.5939999997,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "kda",
+      "name": "kda_gate_cumsum_fwd_kernel",
+      "count": 646,
+      "work_us": 299373.73400000023,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "transport_codec",
+      "name": "_unpack_sum_payload",
+      "count": 1710,
+      "work_us": 272797.42599999974,
+      "parents": {
+        "": 1710
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_256x128_32x3_tn_align8::Params)",
+      "count": 1292,
+      "work_us": 254261.92199999993,
+      "parents": {
+        "aten::mm": 1292
+      }
+    },
+    {
+      "category": "communication",
+      "name": "ncclDevKernel_AllReduce_Sum_bf16_RING_LL(ncclDevKernelArgsStorage<4096ul>)",
+      "count": 19,
+      "work_us": 254039.25100000002,
+      "parents": {
+        "vllm::all_reduce": 19
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalIN4cute5tupleIJiiiiEEENS1_10collective13CollectiveMmaINS1_42MainloopSm120TmaWarpSpecializedBlockScaledILi3ELi3ENS5_IJNS4_1CILi1EEESB_SB_EEENS1_51KernelTmaWarpSpecializedCooperativeBlockScaledSm120ILi3EEEEENS5_IJNSA_ILi128EEENSA_ILi64EEENSA_ILi256EEEEEENS5_IJNS_12float_e2m1_tENS_13float_ue4m3_tEEEENS5_IJNS5_IJlSB_lEEENS4_6LayoutINS5_IJNS5_IJNS5_IJNSA_ILi32EEENSA_ILi4EEEEEEiEEENS5_IJNS5_IJNSA_ILi16EEESQ_EEEiEEENS5_IJSB_iEEEEEENS5_IJSV_NS5_IJNS5_IJNSA_ILi0EEESB_EEENSA_ILi512EEEEEENS5_IJSY_iEEEEEEEEEEESM_S15_NS4_8TiledMMAINS4_8MMA_AtomIJNS4_5SM12011BLOCKSCALED19SM120_16x8x64_TN_VSISK_SK_fSL_Li16EEEEEENSO_INS5_IJSQ_NSA_ILi2EEESB_EEENS5_IJSB_SQ_SY_EEEEENS5_IJSG_NSO_INS5_IJNSA_ILi8EEES1D_S1D_EEENS5_IJSB_ST_S1H_EEEEESH_EEEEENS5_IJNS4_13SM90_TMA_LOADES1N_EEENS5_IJNS4_14ComposedLayoutINS4_7SwizzleILi3ELi4ELi3EEENS4_18smem_ptr_flag_bitsILi4EEENSO_INS5_IJS1H_SI_EEENS5_IJSI_SB_EEEEEEENSO_INS5_IJNS5_IJSR_SB_EEENS5_IJSU_SB_SQ_EEEEEENS5_IJNS5_IJSU_S10_EEENS5_IJSZ_SQ_S10_EEEEEEEEEEENS5_IJNS4_9Copy_AtomIJNS4_17SM75_U32x4_LDSM_NENS_15integer_subbyteILi4ELb0EEEEEENS26_IJNS4_13UniversalCopyISL_SL_EESL_EEEEEENS4_8identityES1O_S25_S2E_S2F_EENS_8epilogue10collective18CollectiveEpilogueINS2H_22Sm90TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEEJSJ_NS5_IJSH_SP_EEEvNS5_IJSB_llEEENS_10bfloat16_tES2N_NS2H_6fusion15FusionCallbacksINS2H_23Sm120TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEENS2P_17LinearCombinationIS2O_fvfLNS_15FloatRoundStyleE2EEESJ_S2M_JEEES1N_NS1P_IS1R_NS1S_ILi16EEENSO_INS5_IJSH_S1H_EEENS5_IJSB_SH_EEEEEEENS4_17SM75_U16x4_LDSM_TENS4_14SM90_TMA_STOREES31_NS4_17SM90_U16x4_STSM_TENS26_IJNS4_17SM90_U32x2_STSM_NENS_6half_tEEEEvEEENS1_16StreamKSchedulerEvEEEEvNT_6ParamsE",
+      "count": 798,
+      "work_us": 248536.47800000006,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 798
+      }
+    },
+    {
+      "category": "kda",
+      "name": "layer_norm_gated_fwd_kernel",
+      "count": 646,
+      "work_us": 225499.19999999995,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_nn_align1>(cutlass_80_simt_sgemm_64x64_8x5_nn_align1::Params)",
+      "count": 209,
+      "work_us": 222229.5219999999,
+      "parents": {
+        "aten::mm": 209
+      }
+    },
+    {
+      "category": "kda",
+      "name": "merge_16x16_to_64x64_inverse_kernel",
+      "count": 646,
+      "work_us": 200677.96499999988,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)",
+      "count": 1292,
+      "work_us": 187632.3359999999,
+      "parents": {
+        "aten::fill_": 1292
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+      "count": 1026,
+      "work_us": 177254.85099999997,
+      "parents": {
+        "aten::copy_": 1026
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "nvjet_sm121_tst_mma_128x160x64_2_64x40x64_tmaAB_bz_TNNN",
+      "count": 438,
+      "work_us": 173618.54999999996,
+      "parents": {
+        "aten::mm": 438
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)",
+      "count": 1016,
+      "work_us": 129694.51100000013,
+      "parents": {
+        "aten::fill_": 1016
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "_convert_req_index_to_global_index_kernel",
+      "count": 209,
+      "work_us": 123939.24399999996,
+      "parents": {
+        "vllm::unified_mla_attention_with_output": 209
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})",
+      "count": 286,
+      "work_us": 101254.76699999998,
+      "parents": {
+        "aten::copy_": 286
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "_fwht_quant_kernel",
+      "count": 209,
+      "work_us": 69101.80500000004,
+      "parents": {
+        "": 209
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "_expand_pools_and_append_tail_kernel",
+      "count": 286,
+      "work_us": 68566.53799999999,
+      "parents": {
+        "vllm::sparse_attn_indexer_kpool": 286
+      }
+    },
+    {
+      "category": "norm_quant_other",
+      "name": "void vllm::act_and_mul_kernel<c10::BFloat16, __nv_bfloat162, &(c10::BFloat16 vllm::silu_kernel<c10::BFloat16>(c10::BFloat16 const&, float)), &(__nv_bfloat162 vllm::packed_silu_kernel<__nv_bfloat162>(__nv_bfloat162 const&, float)), true, true, true, true>(c10::BFloat16*, c10::BFloat16 const*, int, float, float, float)",
+      "count": 855,
+      "work_us": 67219.534,
+      "parents": {
+        "_C::silu_and_mul_with_clamp": 855
+      }
+    },
+    {
+      "category": "moe_shared_and_glue",
+      "name": "void vllm::moe::single_group_topk::detail::single_group_topk_warp_kernel<float, float, int, (vllm::moe::ScoringFunc)1, 384, 8>(float const*, float*, int*, float const*, long, long, long, bool, float, bool)",
+      "count": 798,
+      "work_us": 61124.0609999999,
+      "parents": {
+        "_moe_C::grouped_topk": 798
+      }
+    },
+    {
+      "category": "norm_quant_other",
+      "name": "_fused_q_kv_rmsnorm_kernel",
+      "count": 209,
+      "work_us": 50554.71299999999,
+      "parents": {
+        "": 209
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalIN4cute5tupleIJiiiiEEENS1_10collective13CollectiveMmaINS1_42MainloopSm120TmaWarpSpecializedBlockScaledILi4ELi3ENS5_IJNS4_1CILi1EEESB_SB_EEENS1_51KernelTmaWarpSpecializedCooperativeBlockScaledSm120ILi3EEEEENS5_IJNSA_ILi128EEESG_SG_EEENS5_IJNS_12float_e2m1_tENS_13float_ue4m3_tEEEENS5_IJNS5_IJlSB_lEEENS4_6LayoutINS5_IJNS5_IJNS5_IJNSA_ILi32EEENSA_ILi4EEEEEEiEEENS5_IJNS5_IJNSA_ILi16EEESO_EEEiEEENS5_IJSB_iEEEEEENS5_IJST_NS5_IJNS5_IJNSA_ILi0EEESB_EEENSA_ILi512EEEEEENS5_IJSW_iEEEEEEEEEEESK_S13_NS4_8TiledMMAINS4_8MMA_AtomIJNS4_5SM12011BLOCKSCALED19SM120_16x8x64_TN_VSISI_SI_fSJ_Li16EEEEEENSM_INS5_IJSO_NSA_ILi2EEESB_EEENS5_IJSB_SO_SW_EEEEENS5_IJSG_NSM_INS5_IJNSA_ILi8EEES1B_S1B_EEENS5_IJSB_SR_S1F_EEEEENSA_ILi64EEEEEEEENS5_IJNS4_13SM90_TMA_LOADES1M_EEENS5_IJNS4_14ComposedLayoutINS4_7SwizzleILi2ELi4ELi3EEENS4_18smem_ptr_flag_bitsILi4EEENSM_INS5_IJS1F_SG_EEENS5_IJSG_SB_EEEEEEENSM_INS5_IJNS5_IJSP_SB_EEENS5_IJSS_SB_S1B_EEEEEENS5_IJNS5_IJSS_SY_EEENS5_IJSX_SO_SY_EEEEEEEEEEENS5_IJNS4_9Copy_AtomIJNS4_17SM75_U32x4_LDSM_NENS_15integer_subbyteILi4ELb0EEEEEENS25_IJNS4_13UniversalCopyISJ_SJ_EESJ_EEEEEENS4_8identityES1N_S24_S2D_S2E_EENS_8epilogue10collective18CollectiveEpilogueINS2G_22Sm90TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEEJSH_NS5_IJS1J_SN_EEEvNS5_IJSB_llEEENS_10bfloat16_tES2M_NS2G_6fusion15FusionCallbacksINS2G_23Sm120TmaWarpSpecializedILi2ELi2ELi4ELb0ELb1EEENS2O_17LinearCombinationIS2N_fvfLNS_15FloatRoundStyleE2EEESH_S2L_JEEES1M_NS1O_INS1P_ILi3ELi4ELi3EEENS1R_ILi16EEENSM_INS5_IJS1J_S1F_EEENS5_IJSB_S1J_EEEEEEENS4_17SM75_U16x4_LDSM_TENS4_14SM90_TMA_STOREES31_NS4_17SM90_U16x4_STSM_TENS25_IJNS4_17SM90_U32x2_STSM_NENS_6half_tEEEEvEEENS1_25StaticPersistentSchedulerEvEEEEvNT_6ParamsE",
+      "count": 57,
+      "work_us": 42311.209,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 57
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at::native::reduce_kernel<128, 4, at::native::ReduceOp<c10::BFloat16, at::native::MeanOps<c10::BFloat16, float, float, c10::BFloat16>, unsigned int, c10::BFloat16, 4, 8> >(at::native::ReduceOp<c10::BFloat16, at::native::MeanOps<c10::BFloat16, float, float, c10::BFloat16>, unsigned int, c10::BFloat16, 4, 8>)",
+      "count": 114,
+      "work_us": 34912.49000000001,
+      "parents": {
+        "aten::mean": 114
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+      "count": 646,
+      "work_us": 24774.964000000025,
+      "parents": {
+        "aten::fill_": 646
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "void vllm::concat_and_cache_mla_kernel<__nv_bfloat16, unsigned char, (vllm::Fp8KVCacheDataType)1>(__nv_bfloat16 const*, __nv_bfloat16 const*, unsigned char*, long const*, int, int, int, int, int, int, int, float const*)",
+      "count": 209,
+      "work_us": 19391.610000000008,
+      "parents": {
+        "_C_cache_ops::concat_and_cache_mla": 209
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul>)",
+      "count": 19,
+      "work_us": 17868.211,
+      "parents": {
+        "aten::pow": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+      "count": 19,
+      "work_us": 17268.754,
+      "parents": {
+        "aten::mul": 19
+      }
+    },
+    {
+      "category": "mhc",
+      "name": "void deep_gemm::sm120_tf32_hc_prenorm_gemm_impl<24u, 16384u, 128u, 32u, 64u, 2u, 4u, 256u, 128u>(unsigned int, CUtensorMap_st, CUtensorMap_st, float*, float*)",
+      "count": 90,
+      "work_us": 16373.073,
+      "parents": {
+        "vllm::mhc_pre_tilelang": 1,
+        "vllm::mhc_fused_post_pre_tilelang": 89
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "_finish",
+      "count": 3838,
+      "work_us": 15674.512000000019,
+      "parents": {
+        "glm53_fp8_dense::gemm_nvfp4": 3838
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+      "count": 19,
+      "work_us": 13740.079999999998,
+      "parents": {
+        "aten::copy_": 19
+      }
+    },
+    {
+      "category": "memory_copy",
+      "name": "Memcpy DtoD (Device -> Device)",
+      "count": 38,
+      "work_us": 10331.884000000002,
+      "parents": {
+        "aten::copy_": 38
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",
+      "count": 19,
+      "work_us": 9784.140000000001,
+      "parents": {
+        "aten::mean": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+      "count": 19,
+      "work_us": 8999.529999999999,
+      "parents": {
+        "aten::mul": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "_zero_kv_blocks_kernel",
+      "count": 19,
+      "work_us": 8146.217,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "void vllm::cp_gather_indexer_k_quant_cache_kernel<32>(char const*, char*, char*, int const*, int const*, int, long, long, long, long, long, int, int, int)",
+      "count": 209,
+      "work_us": 7942.121000000001,
+      "parents": {
+        "_C_cache_ops::cp_gather_indexer_k_quant_cache": 209
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "_kpool_softmax_rotate_write_cache_kernel",
+      "count": 209,
+      "work_us": 7756.840999999999,
+      "parents": {
+        "vllm::sparse_attn_indexer_kpool": 209
+      }
+    },
+    {
+      "category": "kda",
+      "name": "_gather_initial_states_kernel",
+      "count": 646,
+      "work_us": 7572.4529999999995,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "precopy_mamba_align_fused_kernel",
+      "count": 19,
+      "work_us": 7141.159,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_nn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_64x64_32x6_nn_align8::Params)",
+      "count": 11,
+      "work_us": 6692.710000000001,
+      "parents": {
+        "aten::bmm": 11
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::masked_fill_kernel(at::TensorIterator&, c10::Scalar const&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16, bool)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::masked_fill_kernel(at::TensorIterator&, c10::Scalar const&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16, bool)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::masked_fill_kernel(at::TensorIterator&, c10::Scalar const&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16, bool)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::masked_fill_kernel(at::TensorIterator&, c10::Scalar const&)::{lambda()#1}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16, bool)#1} const&)::{lambda(int)#1})",
+      "count": 19,
+      "work_us": 6570.345,
+      "parents": {
+        "aten::masked_fill_": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+      "count": 19,
+      "work_us": 5566.021999999999,
+      "parents": {
+        "aten::gather": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "_scatter_states_kernel",
+      "count": 646,
+      "work_us": 5246.599000000006,
+      "parents": {
+        "": 646
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "triton_poi_fused__to_copy_sigmoid_0",
+      "count": 646,
+      "work_us": 4980.452000000002,
+      "parents": {
+        "triton_poi_fused__to_copy_sigmoid_0": 646
+      }
+    },
+    {
+      "category": "mla_and_indexer",
+      "name": "_kpool_seed_tail_cache_strided_kernel",
+      "count": 209,
+      "work_us": 3248.6739999999972,
+      "parents": {
+        "vllm::sparse_attn_indexer_kpool": 209
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "nvjet_sm121_tst_mma_160x128x64_2_80x32x64_tmaAB_bz_TNNN",
+      "count": 11,
+      "work_us": 3052.323,
+      "parents": {
+        "aten::mm": 11
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "triton_poi_fused_mul_unsqueeze_0",
+      "count": 209,
+      "work_us": 2616.609999999998,
+      "parents": {
+        "triton_poi_fused_mul_unsqueeze_0": 209
+      }
+    },
+    {
+      "category": "norm_quant_other",
+      "name": "triton_per_fused__to_copy_native_layer_norm_0",
+      "count": 209,
+      "work_us": 2342.215,
+      "parents": {
+        "triton_per_fused__to_copy_native_layer_norm_0": 209
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "nvjet_sm121_tst_mma_128x96x64_3_64x24x64_tmaAB_bz_TNNN",
+      "count": 11,
+      "work_us": 2259.045,
+      "parents": {
+        "aten::mm": 11
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+      "count": 362,
+      "work_us": 1105.540999999999,
+      "parents": {
+        "aten::copy_": 362
+      }
+    },
+    {
+      "category": "memory_copy",
+      "name": "Memcpy HtoD (Pinned -> Device)",
+      "count": 440,
+      "work_us": 1062.5289999999989,
+      "parents": {
+        "aten::copy_": 402,
+        "": 38
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_add<int>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<int>, std::array<char*, 2ul>)",
+      "count": 438,
+      "work_us": 816.9299999999994,
+      "parents": {
+        "aten::sub": 114,
+        "aten::add": 324
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast>(int, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast)",
+      "count": 209,
+      "work_us": 625.3450000000003,
+      "parents": {
+        "aten::ge": 209
+      }
+    },
+    {
+      "category": "other",
+      "name": "_compute_slot_mappings_kernel",
+      "count": 19,
+      "work_us": 329.152,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}>, std::array<char*, 2ul>)",
+      "count": 133,
+      "work_us": 324.7040000000001,
+      "parents": {
+        "aten::floor_divide": 133
+      }
+    },
+    {
+      "category": "memory_copy",
+      "name": "Memcpy HtoD (Pageable -> Device)",
+      "count": 209,
+      "work_us": 235.61600000000027,
+      "parents": {
+        "aten::copy_": 209
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::_scatter_gather_elementwise_kernel<128, 8, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<4>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1}>(int, at::native::_cuda_scatter_gather_internal_kernel<false, at::native::OpaqueType<4>, long>::operator()<at::native::TensorAssign>(at::TensorIterator&, long, long, long, at::native::TensorAssign const&)::{lambda(int)#1})",
+      "count": 76,
+      "work_us": 234.33599999999996,
+      "parents": {
+        "aten::gather": 76
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+      "count": 95,
+      "work_us": 229.43999999999997,
+      "parents": {
+        "aten::copy_": 95
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<int> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<int> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<int> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<int> const&)::{lambda(int)#1})",
+      "count": 121,
+      "work_us": 224.00000000000009,
+      "parents": {
+        "aten::sub": 45,
+        "aten::add": 76
+      }
+    },
+    {
+      "category": "other",
+      "name": "_prepare_prefill_inputs_kernel",
+      "count": 19,
+      "work_us": 216.67199999999997,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::compare_scalar_kernel<int>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, int)::{lambda(int)#1}, std::array<char*, 2ul> >(int, at::native::compare_scalar_kernel<int>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, int)::{lambda(int)#1}, std::array<char*, 2ul>)",
+      "count": 76,
+      "work_us": 184.79999999999995,
+      "parents": {
+        "aten::gt": 76
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::unrolled_elementwise_kernel<at::native::CUDAFunctor_add<int>, std::array<char*, 3ul>, 4, TrivialOffsetCalculator<2, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast>(int, at::native::CUDAFunctor_add<int>, std::array<char*, 3ul>, TrivialOffsetCalculator<2, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast)",
+      "count": 95,
+      "work_us": 170.016,
+      "parents": {
+        "aten::sub": 95
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>)",
+      "count": 76,
+      "work_us": 167.6159999999999,
+      "parents": {
+        "aten::clamp_": 76
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<int>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<int>, std::array<char*, 3ul>)",
+      "count": 76,
+      "work_us": 158.04799999999986,
+      "parents": {
+        "aten::sub": 76
+      }
+    },
+    {
+      "category": "memory_copy",
+      "name": "Memcpy DtoH (Device -> Pageable)",
+      "count": 57,
+      "work_us": 155.392,
+      "parents": {
+        "aten::copy_": 57
+      }
+    },
+    {
+      "category": "other",
+      "name": "Kernel",
+      "count": 26,
+      "work_us": 144.54399999999998,
+      "parents": {
+        "": 26
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(long)#1}>(int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(long)#1}, function_traits<at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(long)#1}>::result_type*)",
+      "count": 95,
+      "work_us": 136.60899999999998,
+      "parents": {
+        "aten::arange": 95
+      }
+    },
+    {
+      "category": "other",
+      "name": "_apply_write_kernel",
+      "count": 22,
+      "work_us": 134.112,
+      "parents": {
+        "": 22
+      }
+    },
+    {
+      "category": "dense_gemm_and_quant",
+      "name": "Memset (Device)",
+      "count": 209,
+      "work_us": 131.616,
+      "parents": {
+        "aten::mm": 209
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "_gather_block_tables_kernel",
+      "count": 19,
+      "work_us": 122.049,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "_compressed_slot_mapping_kernel",
+      "count": 19,
+      "work_us": 113.15199999999999,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at_cuda_detail::cub::detail::scan::DeviceScanKernel<at_cuda_detail::cub::detail::scan::policy_hub<int, int, int, unsigned int, std::plus<int> >::Policy1000, int const*, int*, at_cuda_detail::cub::ScanTileState<int, true>, std::plus<int>, at_cuda_detail::cub::NullType, unsigned int, int, false, at_cuda_detail::cub::NullType>(int const*, int*, at_cuda_detail::cub::ScanTileState<int, true>, int, std::plus<int>, at_cuda_detail::cub::NullType, unsigned int)",
+      "count": 26,
+      "work_us": 73.696,
+      "parents": {
+        "aten::cumsum": 26
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<4> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+      "count": 19,
+      "work_us": 67.52000000000001,
+      "parents": {
+        "aten::index": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<2, at::native::FillFunctor<long>, std::array<char*, 1ul> >(int, at::native::FillFunctor<long>, std::array<char*, 1ul>)",
+      "count": 20,
+      "work_us": 65.28,
+      "parents": {
+        "aten::fill_": 20
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}> >(at::TensorIteratorBase&, at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}> >(at::TensorIteratorBase&, at::native::BUnaryFunctor<int, int, int, at::native::binary_internal::div_floor_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#3}::operator()() const::{lambda(int, int)#1}> const&)::{lambda(int)#1})",
+      "count": 19,
+      "work_us": 63.55200000000001,
+      "parents": {
+        "aten::floor_divide": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "_prepare_pos_seq_lens_kernel",
+      "count": 19,
+      "work_us": 56.544000000000004,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "triton_poi_fused_add_bitwise_and_bitwise_not_bitwise_or_ge_lt_mul_sub_0",
+      "count": 19,
+      "work_us": 55.552,
+      "parents": {
+        "triton_poi_fused_add_bitwise_and_bitwise_not_bitwise_or_ge_lt_mul_sub_0": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "_copy_page_indices_kernel",
+      "count": 19,
+      "work_us": 53.536,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "preprocess_mamba_align_fused_kernel",
+      "count": 19,
+      "work_us": 51.52,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul>)",
+      "count": 19,
+      "work_us": 50.976,
+      "parents": {
+        "aten::add": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+      "count": 19,
+      "work_us": 43.20100000000001,
+      "parents": {
+        "aten::rsqrt": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 1, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+      "count": 19,
+      "work_us": 42.751999999999995,
+      "parents": {
+        "aten::cat": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at_cuda_detail::cub::detail::scan::DeviceScanInitKernel<at_cuda_detail::cub::ScanTileState<int, true> >(at_cuda_detail::cub::ScanTileState<int, true>, int)",
+      "count": 26,
+      "work_us": 42.656000000000006,
+      "parents": {
+        "aten::cumsum": 26
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at_cuda_detail::cub::detail::scan::DeviceScanKernel<at_cuda_detail::cub::detail::scan::policy_hub<long, long, long, unsigned int, std::plus<long> >::Policy1000, long const*, long*, at_cuda_detail::cub::ScanTileState<long, true>, std::plus<long>, at_cuda_detail::cub::NullType, unsigned int, long, false, at_cuda_detail::cub::NullType>(long const*, long*, at_cuda_detail::cub::ScanTileState<long, true>, int, std::plus<long>, at_cuda_detail::cub::NullType, unsigned int)",
+      "count": 19,
+      "work_us": 41.6,
+      "parents": {
+        "aten::cumsum": 19
+      }
+    },
+    {
+      "category": "sampling_and_drafter",
+      "name": "_combine_sampled_and_draft_tokens_kernel",
+      "count": 19,
+      "work_us": 41.568,
+      "parents": {
+        "": 19
+      }
+    },
+    {
+      "category": "other",
+      "name": "void at_cuda_detail::cub::detail::scan::DeviceScanInitKernel<at_cuda_detail::cub::ScanTileState<long, true> >(at_cuda_detail::cub::ScanTileState<long, true>, int)",
+      "count": 19,
+      "work_us": 31.52000000000001,
+      "parents": {
+        "aten::cumsum": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<bool>, std::array<char*, 1ul> >(int, at::native::FillFunctor<bool>, std::array<char*, 1ul>)",
+      "count": 19,
+      "work_us": 26.720000000000006,
+      "parents": {
+        "aten::fill_": 19
+      }
+    },
+    {
+      "category": "elementwise_and_copy",
+      "name": "void at::native::vectorized_elementwise_kernel<2, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)",
+      "count": 2,
+      "work_us": 5.152,
+      "parents": {
+        "aten::fill_": 2
+      }
+    }
+  ]
+}

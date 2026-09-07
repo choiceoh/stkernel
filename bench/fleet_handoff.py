@@ -15,6 +15,8 @@ from pathlib import Path
 import socket
 import time
 
+PROTOCOL = 2
+
 
 def read(path, default=None):
     try:
@@ -50,13 +52,13 @@ def ready(directory, session, pid):
     token = identity(pid)
     if not token:
         raise ValueError('boot supervisor is not alive')
-    value = dict(session=session, pid=pid, start=token, host=socket.gethostname(), protocol=1)
+    value = dict(session=session, pid=pid, start=token, host=socket.gethostname(), protocol=PROTOCOL)
     write(receipt(directory, session), value)
     return value
 
 
 def live(value):
-    return bool(value and value.get('protocol') == 1 and value.get('host') == socket.gethostname()
+    return bool(value and value.get('protocol') == PROTOCOL and value.get('host') == socket.gethostname()
                 and value.get('start') and identity(value['pid']) == value['start'])
 
 
@@ -82,8 +84,19 @@ def successor(directory, session):
     return value if row[5] == 'boot' and live(value) and str(value['pid']) == row[6] else None
 
 
-def admit(directory, session, pid, kind):
-    """Called before creating holder; pending debt blocks probes/old runners."""
+def claim_held(directory, session, pid):
+    """Reconcile a cancelled admission after holder creation, under fleet lock."""
+    holder = (directory / 'holder').read_text().split('|')
+    value = read(receipt(directory, session))
+    if holder[:2] != [session, str(pid)] or not live(value) or value['pid'] != pid:
+        raise ValueError('restore responsibility requires this live supervisor hold')
+    debt = read(directory / 'restore-debt.json')
+    if not debt or debt['owner'] != value:
+        write(directory / 'restore-debt.json', dict(owner=value, acquired=time.time()))
+
+
+def admit(directory, session, pid, kind, estimate='30', note=''):
+    """Commit holder BEFORE debt transfer so the receiver can always recover."""
     debt = read(directory / 'restore-debt.json')
     value = read(receipt(directory, session))
     managed = kind == 'boot' and live(value) and value['pid'] == pid
@@ -94,8 +107,14 @@ def admit(directory, session, pid, kind):
                 return False
         if not managed:
             return False
+    temporary = directory / 'holder.tmp'
+    with temporary.open('w') as stream:
+        stream.write(f'{session}|{pid}|{socket.gethostname().split(".")[0]}|{int(time.time())}|{estimate}|{note}|{kind}\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(directory / 'holder')
     if managed:
-        write(directory / 'restore-debt.json', dict(owner=value, acquired=time.time()))
+        claim_held(directory, session, pid)
     return True
 
 
@@ -125,9 +144,11 @@ def main():
     ap.add_argument('session')
     ap.add_argument('pid', nargs='?', type=int)
     ap.add_argument('kind', nargs='?', default='boot')
+    ap.add_argument('estimate', nargs='?', default='30')
+    ap.add_argument('note', nargs='?', default='')
     args = ap.parse_args()
     if args.action == 'admit':
-        return 0 if admit(args.directory, args.session, args.pid, args.kind) else 1
+        return 0 if admit(args.directory, args.session, args.pid, args.kind, args.estimate, args.note) else 1
     if args.action == 'ready':
         ready(args.directory, args.session, args.pid)
     elif args.action == 'clear':

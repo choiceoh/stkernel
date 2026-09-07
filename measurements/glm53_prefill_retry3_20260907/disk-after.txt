@@ -1,0 +1,5 @@
+Filesystem     1024-blocks      Used Available Capacity Mounted on
+/dev/nvme0n1p2   959785008 532723796 378233052      59% /
+45G	/home/choiceoh/glm53-cache/glm53-ranks/957bbd7631199245df8c07b9379cf1008a02505e103d46ff8f61866698e26c23
+45G	/home/choiceoh/glm53-cache/glm53-ranks/cbebe7ba1238cdfcd4572cf135cc9cdf9b2231842701a4ac5edb6200635e28b7
+90G	/home/choiceoh/glm53-cache/glm53-ranks

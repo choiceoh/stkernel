@@ -92,6 +92,7 @@ class Supervisor:
 
     def finish(self):
         with self.lock():
+            handoff.claim_held(self.directory, self.session, os.getpid())
             target = handoff.offer(self.directory, self.session)
         if not target:
             return self.restore()
@@ -130,7 +131,7 @@ class Supervisor:
             signal.signal(sig, self.signal)
         with self.lock():
             handoff.ready(self.directory, self.session, os.getpid())
-        self.event('ready', protocol=1, source_sha256={name:hashlib.sha256((self.repo/'bench'/name).read_bytes()).hexdigest()
+        self.event('ready', protocol=handoff.PROTOCOL, source_sha256={name:hashlib.sha256((self.repo/'bench'/name).read_bytes()).hexdigest()
                    for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py')})
         rc = 1
         try:

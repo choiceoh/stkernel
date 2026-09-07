@@ -1,0 +1,36 @@
+preflight mla32san40907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax probes/run_mk_mla_prefill32_check.sh
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_17:56:00
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_17:58:31
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:03:02
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs) 2026-09-07_18:04:03
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:05:03
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_18:10:34
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:15:05
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs) 2026-09-07_18:16:06
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:17:06
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:19:06
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_18:19:21
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:20:52
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:21:07
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs) 2026-09-07_18:22:07
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:23:07
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:24:53
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:25:08
+waiting: pos 2/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs) 2026-09-07_18:30:09
+waiting: pos 2/2 2026-09-07_18:30:39
+GO mla32san40907 2026-09-07_18:30:54
+{"host": "srv2", "probe_memory": {"passed": false, "available_kib": 10428804, "required_kib": 20939398, "total_kib": 125507892}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv1", "probe_memory": {"passed": false, "available_kib": 15294748, "required_kib": 21142754, "total_kib": 127541452}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv3", "probe_memory": {"passed": false, "available_kib": 10750856, "required_kib": 20932751, "total_kib": 125441424}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv4", "probe_memory": {"passed": false, "available_kib": 13789600, "required_kib": 21142140, "total_kib": 127535320}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+No node has probe memory headroom; GPU gate not run
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_MK_PACK_FAST_IO=1,VLLM_GLM53_NVFP4_STATIC_SCALE=16,VLLM_GLM53_RANK_CACHE_KEEP=2 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

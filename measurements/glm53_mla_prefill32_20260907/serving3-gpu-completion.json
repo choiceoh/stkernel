@@ -1,0 +1,18 @@
+{
+  "started": 1788783248.999148,
+  "exit_code": 0,
+  "probes": {
+    "mla": {
+      "revision": "3eb219dd2d938479326a5a6704f3789d854367dd",
+      "started": 1788783299.8237305,
+      "command": [
+        "bash",
+        "probes/run_mk_mla_prefill32_check.sh"
+      ],
+      "exit_code": 0,
+      "ended": 1788783574.5857306
+    }
+  },
+  "restored_original": true,
+  "ended": 1788783742.909101
+}

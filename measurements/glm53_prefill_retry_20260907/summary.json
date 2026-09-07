@@ -1,0 +1,69 @@
+{
+  "tested_source": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "included_main": "0b6dc75",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "status": "blocked_before_candidate_by_srv1_disk",
+  "first_retry": {
+    "fleet": "spfrt0907",
+    "baseline": "SPFRT0907B1",
+    "workload_completed": true,
+    "post_leg_attestation_completed": false,
+    "failure": "Worker cache stamp path does not exist; original helper assumed head-only file was present on all nodes",
+    "quality": {
+      "ok": 15,
+      "total": 15
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 11,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "cold_compile": true,
+    "memory_samples": 106,
+    "minimum_available_gib": {
+      "local": 20.699813842773438,
+      "choiceoh@10.10.10.1": 26.239360809326172,
+      "choiceoh@10.10.10.3": 21.784847259521484,
+      "choiceoh@10.10.10.4": 24.249656677246094
+    },
+    "memory_issues": []
+  },
+  "second_retry": {
+    "fleet": "spfrt20907",
+    "go_kst": "2026-09-07 14:17:16",
+    "deploy_started": false,
+    "workload_started": false,
+    "failure": "srv1 available disk less than the 32 GiB pre-deploy floor",
+    "observed_available_kib": 19798864,
+    "rank_cache_inventory": "srv1-rank-cache-inventory.json"
+  },
+  "capacity": {
+    "KV_TOKENS": 524288,
+    "MAX_LEN": 262144,
+    "num_gpu_blocks_override": 415,
+    "production_capacity_acceptance": false
+  },
+  "decision": "No candidate/baseline comparison or speedup verdict. Keep all new defaults unchanged; no 40 percent claim. Stop retry until sufficient disk space is available.",
+  "public_restore": {
+    "status": "verified",
+    "fleet": "spfrpublic0907",
+    "arm": "SPFR20907PUBLIC",
+    "finished_kst": "2026-09-07 14:25:02",
+    "attestation": "public-restore-attestation.json",
+    "health": {
+      "choiceoh@srv2": "200",
+      "srv1": "200"
+    },
+    "node_issues": [],
+    "max_model_len": 1048576,
+    "num_gpu_blocks_override": 1056,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}

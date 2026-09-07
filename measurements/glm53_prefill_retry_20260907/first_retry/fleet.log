@@ -1,0 +1,105 @@
+preflight spfrt0907 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /tmp/glm53-prefill-retry.3rfahoko/run.sh
+  PASS knobs declared in origin/main: VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=2048,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=4096,VLLM_GLM53_PREFILL_SP_FUSE_MHC=1
+  NOTE declared only in the checkout (not in origin/main yet): VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS VLLM_GLM53_PREFILL_SP_FUSE_MHC
+  this arm (VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS,VLLM_GLM53_PREFILL_SP_FUSE_MHC) has no record on build 6f797df
+  baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_13:42:23
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_13:44:23
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (2 procs, 0 reqs) 2026-09-07_13:45:24
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_13:45:39
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_13:46:39
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_13:47:39
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (1 procs, 0 reqs) 2026-09-07_13:55:41
+waiting: pos 1/1, held by dec3step0907 [boot] (pid 1157352@srv2, since 13:12, est 70m, Four independent fixed-window C=1 boots: baseline, AR2+MoE N128, candidate, baseline; approved main/public restore), legacy busy (1 procs, 1 reqs) 2026-09-07_13:55:56
+GO spfrt0907 2026-09-07_13:56:11
+nodes:
+  node 10.10.10.1: gpu=ok stray=4 ram=14G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=9G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+  (warnings only; FLEET_NODES=strict refuses)
+6f797df test(glm53): guard onepass client memory for scoped serving retry
+56 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+deployed build 5458c6c83eab = 6f797df (registry: /home/choiceoh/glm53-logs/fleet/builds.tsv)
+== chain SPFRT0907B1 SPFRT0907A SPFRT0907B2 13:57:10 session=spfrt0907 rehearse=0
+   baseline: NONE for build 6f797df -- a defaults arm is worth its boot
+== 13:57:10 arm SPFRT0907B1: (defaults)
+(Worker_TP0 pid=317) WARNING 09-07 05:07:34 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfcheck_every=64
+(EngineCore pid=245) WARNING 09-07 05:07:40 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 73.9 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 8.1 s
+== [SPFRT0907B1] onepass 14:08:17 ctx=2000,4000,8000,32000,128000 k=5 ==
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128         894        2506      2.38s      0.85s  o o o
+   4000    4209        2729        4713      1.54s      0.89s  o o o
+   8000    8243        2757       10946      2.99s      0.75s  o o o
+  32000   32545        3044     (1 req)     10.69s          -  o o o
+ 128000  128559        3105     (1 req)     41.40s          -  o o o
+  warm 처리량: 2506 -> 3105 tok/s (over 2128 -> 128559 tokens)
+=> 15/15 correct
+decode: windows n=57 med 21.9 [20.9, 22.9] step/s (inside the answers only; per context: 2K: n=12 med 21.9  4K: n=9 med 21.9  8K: n=10 med 21.9  32K: n=13 med 21.9  128K: n=13 med 21.8), raw acc 46.7%, tokens/step 3.333 (k=5.0), generated 5763 tokens over 145s
+응답 11개 · 문자 15,809
+  깨진 응답: 0/11 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass SPFRT0907B1: 145s total
+== [SPFRT0907B1] acceptance counters ==
+vllm:spec_decode_num_drafts_total 1731.0
+vllm:spec_decode_num_draft_tokens_total 8655.0
+vllm:spec_decode_num_accepted_tokens_total 4039.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 1363.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 971.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 735.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 553.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total 417.0
+== [SPFRT0907B1] head log kept: /home/choiceoh/glm53-logs/boot-SPFRT0907B1.log ==
+== [SPFRT0907B1] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [SPFRT0907B1] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 04:58:08 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 04:58:26 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=317) WARNING 09-07 05:07:34 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=317) WARNING 09-07 05:07:34 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=245) WARNING 09-07 05:07:40 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFRT0907B1] done 14:10:44 ==
+== 14:10:44 after SPFRT0907B1: python3 '/tmp/glm53-prefill-retry.3rfahoko/attest.py' SPFRT0907B1
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/glm53-prefill-retry.3rfahoko/attest.py", line 20, in one
+    raw=subprocess.check_output(cmd,text=True,timeout=15)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 466, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=3', 'choiceoh@10.10.10.1', 'python3 -c \'\nimport base64,datetime,hashlib,json,pathlib,re,subprocess\nname=next(n for n in subprocess.check_output([\'"\'"\'docker\'"\'"\',\'"\'"\'ps\'"\'"\',\'"\'"\'--format\'"\'"\',\'"\'"\'{{.Names}}\'"\'"\'],text=True).splitlines() if n.startswith(\'"\'"\'glm53\'"\'"\'))\nc=json.loads(subprocess.check_output([\'"\'"\'docker\'"\'"\',\'"\'"\'inspect\'"\'"\',name],text=True))[0]\nenv=dict(e.split(\'"\'"\'=\'"\'"\',1) for e in c[\'"\'"\'Config\'"\'"\'][\'"\'"\'Env\'"\'"\'] if \'"\'"\'=\'"\'"\' in e)\ncmd=\'"\'"\' \'"\'"\'.join(c[\'"\'"\'Config\'"\'"\'].get(\'"\'"\'Cmd\'"\'"\') or [])\npayload=re.search(r\'"\'"\'echo ([A-Za-z0-9+/=]+) \\| base64 -d\'"\'"\',cmd)\nif payload:cmd=base64.b64decode(payload.group(1),validate=True).decode()\nargs={}\nfor k in [\'"\'"\'max-model-len\'"\'"\',\'"\'"\'num-gpu-blocks-override\'"\'"\',\'"\'"\'gpu-memory-utilization\'"\'"\',\'"\'"\'max-num-batched-tokens\'"\'"\',\'"\'"\'max-num-seqs\'"\'"\',\'"\'"\'host\'"\'"\',\'"\'"\'port\'"\'"\']:\n m=re.search(r\'"\'"\'--\'"\'"\'+k+r\'"\'"\'(?:=|\\s+)([^\\s]+)\'"\'"\',cmd);args[k]=m.group(1) if m else None\nmounts={m[\'"\'"\'Destination\'"\'"\']: {\'"\'"\'source\'"\'"\':m[\'"\'"\'Source\'"\'"\'],\'"\'"\'sha256\'"\'"\':hashlib.sha256(pathlib.Path(m[\'"\'"\'Source\'"\'"\']).read_bytes()).hexdigest()} for m in c[\'"\'"\'Mounts\'"\'"\'] if m[\'"\'"\'Source\'"\'"\'].startswith(\'"\'"\'/home/choiceoh/overlays/glm53/\'"\'"\')}\nmem={l.split(\'"\'"\':\'"\'"\')[0]:int(l.split()[1]) for l in pathlib.Path(\'"\'"\'/proc/meminfo\'"\'"\').read_text().splitlines() if l.split(\'"\'"\':\'"\'"\')[0] in [\'"\'"\'MemTotal\'"\'"\',\'"\'"\'MemAvailable\'"\'"\']}\nprint(json.dumps({\'"\'"\'t\'"\'"\':datetime.datetime.now().isoformat(),\'"\'"\'container\'"\'"\':name,\'"\'"\'id\'"\'"\':c[\'"\'"\'Id\'"\'"\'],\'"\'"\'image\'"\'"\':c[\'"\'"\'Image\'"\'"\'],\'"\'"\'started_at\'"\'"\':c[\'"\'"\'State\'"\'"\'][\'"\'"\'StartedAt\'"\'"\'],\'"\'"\'args\'"\'"\':args,\'"\'"\'memory_kib\'"\'"\':mem,\'"\'"\'env\'"\'"\':{k:v for k,v in env.items() if k.startswith(\'"\'"\'VLLM_GLM53_PREFILL_SP\'"\'"\') or k==\'"\'"\'VLLM_GLM53_NVFP4_STATIC_SCALE\'"\'"\'},\'"\'"\'mounts\'"\'"\':mounts,\'"\'"\'stamp\'"\'"\':pathlib.Path(\'"\'"\'/home/choiceoh/glm53-cache/.overlay-sha\'"\'"\').read_text().strip()}))\n\'']' returned non-zero exit status 1.
+Glm5NextForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=218 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 36.2 s
+DFlash2Qwen3ForCausalLM megakernel packs: rtn=0 gptq=0 gptq_failed=0 cached=253 lorc=0 (mean captured error energy 0.00) build 0s; levers rowshift=1 gptq=1 lorc=0 in 4.9 s
+== [SPFRT0907B1RECOVER] head log kept: /home/choiceoh/glm53-logs/boot-SPFRT0907B1RECOVER.log ==
+== [SPFRT0907B1RECOVER] serving proof (bench/proof.py) ==
+proof: no non-default knob to prove (defaults arm)
+== [SPFRT0907B1RECOVER] gate lines after traffic ==
+(APIServer pid=29) WARNING 09-07 05:11:32 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+WARNING 09-07 05:11:49 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+(Worker_TP0 pid=242) WARNING 09-07 05:14:35 [glm53_prep_fused.py:855] [prep-fused] mamba align mode (prefix caching): num_accepted is re-gathered after the stock pre-copy on every fused step
+(Worker_TP0 pid=242) WARNING 09-07 05:14:35 [glm53_prep_fused.py:1014] [prep-fused] plan built: mode=on kernel=cuda groups=7 gdn=[2, 3, 4, 5] attn_g=0 factor=4 ratio=4 sbs=64 q=6 shadow_every=1 selfch
+(EngineCore pid=150) WARNING 09-07 05:14:40 [glm53_prep_fused.py:1328] [prep-fused] installed mode=on (preimages 17 ok); the plan is built after cudagraph capture
+== [SPFRT0907B1RECOVER] done 14:15:20 ==
