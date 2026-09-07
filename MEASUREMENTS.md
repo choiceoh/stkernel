@@ -7373,3 +7373,53 @@ its first baseline and stopped before the candidate; approved main was
 restored at 20:25:15 KST, with health 200 verified after recovery.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
+### GLM rank-cache lookahead: first design rejected (2026-09-07)
+
+After #446 merged as `0d82b7c`, fleet job `rankprefetch0907` tested two mapped
+checksum workers at runtime `e224b9155f30e2a9e496fb22f3ace00bce6f0659`, overlay
+`698947d83da4`. A PRIME boot populated fresh artifacts; the timed warm order
+was BASE1, FAST1, FAST2, BASE2 with `PREFILL_WARMUP=0`. Only
+`VLLM_GLM53_RANK_CACHE_PREFETCH` changed. All four nodes attested the same 56
+overlay files. Each timed arm restored the same 48,092,653,608-byte rank
+payload per node, with four rank hits and 976 FP8 hits, zero FP8 misses/errors.
+
+| Warm arm | Health ready (s) | Head rank restore (s) | Head model load (s) |
+|---|---:|---:|---:|
+| BASE1 | 229 | 43.871 | 85.4 |
+| FAST1 | 232 | 55.738 | 93.7 |
+| FAST2 | 234 | 55.838 | 93.9 |
+| BASE2 | 238 | 43.819 | 86.3 |
+
+Mean health time **233.5 → 233.0 s does not establish an improvement**.
+The head's restoration regressed **43.845 → 55.788 s**, although srv1 improved
+**49.316 → 32.270 s**. srv3/4 improved more modestly. Head checksum worker
+time rose from about 40 to 101 s; worker times overlap, so they must not be
+added to wall time. The 512 MiB GPU fixture also regressed (median
+**0.568 → 0.814 s**). This design was not promoted to the default.
+
+All five boots passed the six quality checks and had zero corrupt outputs in
+four Korean requests (2K/32K). The separate GPU fixture passed **42** checks
+covering unique chunks, a short tail, BF16, offset storage/aliases, another
+CUDA stream and rejection before copying a corrupt chunk. Two warm samples
+per path do not establish general quality or throughput equivalence. Across
+181 host samples/node, minimum available RAM was **14.23 / 6.62 / 9.64 / 12.05
+GiB** on srv1/2/3/4 with no net swap-use growth; these include PRIME and are
+not CUDA peak measurements. The fleet holder released with exit 0 at 20:00 KST.
+
+The current follow-up replaces mapped parallel reads with one sequential
+`readinto` worker and two reusable 64 MiB slots, checking before copy and
+synchronizing before slot reuse. The reader alone selects the highest
+available CPU capacity tier inside its inherited affinity mask when Linux
+provides complete topology data. The head has heterogeneous CPU capacities;
+thread placement was not recorded in the first trial, so it is not a proven
+cause of that regression. This revised design remains default-off pending
+separate full-payload screening and matched fleet boots (`rankstream20907`).
+
+[Scoped first-trial report](measurements/glm53_rank_prefetch_20260907/report.json),
+[per-node timing table](measurements/glm53_rank_prefetch_20260907/report.md), and
+[GPU receipt](measurements/glm53_rank_prefetch_20260907/gpu.json) are retained
+with hashes of the full raw evidence. Original logs, responses, resource
+samples and report scripts are on srv2 under
+`/home/choiceoh/glm53-logs/rank-prefetch-20260907` and locally in the matching
+`runs/` directory. The original GPU stdout contains logging before JSON;
+`gpu.json` is its parsed JSON record, with original bytes retained and hashed.
