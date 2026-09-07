@@ -274,6 +274,45 @@ def _all_ranks_ready(ready):
     return bool(vote.item())
 
 
+def _evict_stale(root, current, keep):
+    """Keep the newest `keep` artifacts under `root` (the one just written
+    counts), remove the rest and any abandoned `.rank-*` staging directory.
+
+    Every boot on a new overlay/profile build writes a fresh 45 GB artifact per
+    node and nothing removed the old ones (39차 §4m: five per node in one day,
+    srv1 full twice). Errors are logged, never raised: the served weights are
+    already active when this runs."""
+    if keep <= 0:
+        return
+    try:
+        entries = []
+        for child in Path(root).iterdir():
+            if child.name.startswith(".rank-"):
+                try:
+                    if time.time() - child.stat().st_mtime > 24 * 3600:
+                        shutil.rmtree(child, ignore_errors=True)
+                        logger.warning("[rank-cache] removed abandoned staging %s", child)
+                except OSError:
+                    pass
+                continue
+            if not child.is_dir() or child == current:
+                continue
+            if not (child / "manifest.json").exists() and not (child / "weights.bin").exists():
+                continue
+            entries.append((child.stat().st_mtime, child))
+        entries.sort(reverse=True)
+        for _, stale in entries[max(keep - 1, 0):]:
+            try:
+                size = sum(f.stat().st_size for f in stale.rglob("*") if f.is_file())
+            except OSError:
+                size = -1
+            shutil.rmtree(stale, ignore_errors=True)
+            logger.warning("[rank-cache] evicted stale artifact %s (%.1f GB; keep=%d)",
+                           stale, size / 1e9, keep)
+    except Exception as exc:  # noqa: BLE001 -- hygiene must never fail a boot
+        logger.warning("[rank-cache] eviction skipped: %r", exc)
+
+
 def load_rank_cached(model, weights, load):
     """Use once, on the model that owns the complete checkpoint walk."""
     root = cache_directory(os.environ.get("VLLM_GLM53_RANK_CACHE", ""))
@@ -337,6 +376,8 @@ def load_rank_cached(model, weights, load):
         if _write(directory, identity, state, loaded):
             logger.warning("[rank-cache] saved rank=%d bytes=%d in %.3fs; post-load hooks follow",
                            identity["rank"], size, time.perf_counter() - save_start)
+            _evict_stale(root, directory,
+                         int(os.environ.get("VLLM_GLM53_RANK_CACHE_KEEP", "2") or 0))
         else:
             logger.warning("[rank-cache] keeping existing artifact %s", directory)
     except Exception as exc:
