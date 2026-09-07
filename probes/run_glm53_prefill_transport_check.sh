@@ -6,12 +6,14 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 compile_only=0
 with_tp4=0
 skip_scale=0
+fuse_mhc=0
 while [[ $# != 0 ]]; do
   case $1 in
     --compile-only) compile_only=1;;
     --tp4) with_tp4=1;;
     --skip-scale) skip_scale=1;;
-    *) echo 'usage: run_glm53_prefill_transport_check.sh [--compile-only|--tp4] [--skip-scale]' >&2; exit 2;;
+    --fuse-mhc) fuse_mhc=1;;
+    *) echo 'usage: run_glm53_prefill_transport_check.sh [--compile-only|--tp4] [--skip-scale] [--fuse-mhc]' >&2; exit 2;;
   esac
   shift
 done
@@ -29,7 +31,9 @@ mounts=(-v "$REPO:/repo:ro")
 for pair in \
   'glm53_runtime/glm53_prefill_collectives.py:vllm/distributed/device_communicators/glm53_prefill_collectives.py' \
   'glm53_model/glm53_nvfp4_scale.py:vllm/model_executor/layers/glm53_nvfp4_scale.py' \
-  'glm53_model/glm53_fp8_dense.py:vllm/model_executor/layers/glm53_fp8_dense.py'; do
+  'glm53_model/glm53_fp8_dense.py:vllm/model_executor/layers/glm53_fp8_dense.py' \
+  'glm53_kernels/tilelang.py:vllm/model_executor/kernels/mhc/tilelang.py' \
+  'glm53_kernels/tilelang_kernels.py:vllm/model_executor/kernels/mhc/tilelang_kernels.py'; do
   source_path="$REPO/overlay/modules/${pair%%:*}"
   [[ -f "$source_path" ]] || { echo "missing $source_path" >&2; exit 1; }
   mounts+=(-v "$source_path:${TARGET_PREFIX%/}/${pair#*:}:ro")
@@ -49,4 +53,9 @@ if [[ $skip_scale == 0 ]]; then
 fi
 if [[ $with_tp4 == 1 ]]; then
   PREFILL_PROBE_IMAGE_ID="$IMAGE" bash "$REPO/probes/run_glm53_prefill_tp4_check.sh" fp8-v3
+fi
+if [[ $fuse_mhc == 1 ]]; then
+  docker run --rm --network none --gpus all --cpus 4 --memory 6g --entrypoint python3 \
+    -e VLLM_GLM53_PREFILL_SP=0 "${mounts[@]}" "$IMAGE" \
+    /repo/probes/glm53_prefill_fused_check.py
 fi
