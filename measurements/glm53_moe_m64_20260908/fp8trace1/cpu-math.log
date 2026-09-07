@@ -1,0 +1,11 @@
+test_all_four_logs_and_each_payload_hash_are_required (test_glm53_moe_m64_fp8_trace.TraceTests.test_all_four_logs_and_each_payload_hash_are_required) ... ok
+test_complete_numerical_or_replay_failure_never_approves_serving (test_glm53_moe_m64_fp8_trace.TraceTests.test_complete_numerical_or_replay_failure_never_approves_serving) ... ok
+test_compressed_arrays_round_trip_bits_and_reject_corruption (test_glm53_moe_m64_fp8_trace.TraceTests.test_compressed_arrays_round_trip_bits_and_reject_corruption) ... ok
+test_packet_row_selection_covers_destination_boundaries_and_preserves_bytes (test_glm53_moe_m64_fp8_trace.TraceTests.test_packet_row_selection_covers_destination_boundaries_and_preserves_bytes) ... ok
+test_raw_numerators_expose_boundary_without_changing_normalized_failure (test_glm53_moe_m64_fp8_trace.TraceTests.test_raw_numerators_expose_boundary_without_changing_normalized_failure) ... ok
+test_trace_arrays_keep_each_arm_and_global_to_owned_row_mapping (test_glm53_moe_m64_fp8_trace.TraceTests.test_trace_arrays_keep_each_arm_and_global_to_owned_row_mapping) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.725s
+
+OK

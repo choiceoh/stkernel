@@ -1,0 +1,30 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-fp8trace1-0908",
+  "revision": "383894cf46df9185f3be6e9be5098c095bbcc337",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-fp8trace1-0908",
+  "probe_revision": "383894cf46df9185f3be6e9be5098c095bbcc337",
+  "session": "moem64trace10908",
+  "created": "2026-09-08T04:05:40.097833",
+  "cpu_compile_log": "/tmp/glm53-moe-m64-fp8trace1-0908/cpu-compile.log",
+  "cpu_math_log": "/tmp/glm53-moe-m64-fp8trace1-0908/cpu-math.log",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64trace10908",
+    "20",
+    "PR455 fixed actual partial/FP8 packet replay and BF16 trace; unchanged limits; exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-fp8trace1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-fp8trace1-0908",
+    "--probe-revision",
+    "383894cf46df9185f3be6e9be5098c095bbcc337",
+    "--out",
+    "/tmp/glm53-moe-m64-fp8trace1-0908/evidence",
+    "--fp8-trace"
+  ]
+}

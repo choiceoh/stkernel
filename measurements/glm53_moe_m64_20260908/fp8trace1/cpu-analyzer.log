@@ -1,0 +1,7 @@
+test_changed_packet_byte_fails_even_with_a_recomputed_payload_hash (test_analyze.AnalyzerTests.test_changed_packet_byte_fails_even_with_a_recomputed_payload_hash) ... ok
+test_known_packet_and_sum_reconstruction_and_failure_are_preserved (test_analyze.AnalyzerTests.test_known_packet_and_sum_reconstruction_and_failure_are_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.053s
+
+OK
