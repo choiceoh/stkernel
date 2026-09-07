@@ -50,6 +50,11 @@ fi
 # 39차 idea 4 -- the first boot after a deploy compiles cold (~12 min) and inflates
 # the cold prefill column; tell onepass so the record carries cold_compile=true.
 STAMP_FILE=${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}
+phase() {
+  [ -n "${FLEET_EXPERIMENT_ID:-}" ] && [ -n "${FLEET_EXPERIMENT_ROOT:-}" ] || return 0
+  python3 bench/experiment_metrics.py "$@" || echo "phase timing unavailable: $*" >&2
+}
+phase boot start
 SEEN=$LOGD/.boot-stamps
 _stamp=$(cut -c1-12 "$STAMP_FILE" 2>/dev/null)
 if [ -n "$_stamp" ] && ! grep -qx "$_stamp" "$SEEN" 2>/dev/null; then
@@ -97,6 +102,7 @@ for i in $(seq 1 $((HEALTH_BUDGET_S / 15))); do
 done
 [ "$up" = 1 ] || snap "never became healthy"
 sleep 20
+phase boot end
 # 35차: the lever's PROOF is the container's environment, not the caller's
 # line (a lever once read as not applied and the cause was never found)
 if [ -n "${LEVER_ENV:-}" ]; then
@@ -124,8 +130,10 @@ if has onepass; then
   # only its fallback, so hand it the profile's value when the caller has none.
   _k=$(sed -nE 's/^SPEC_K=([0-9]+).*/\1/p' profiles/glm53.env | tail -1)
   echo "== [$ARM] onepass $(date +%T) ctx=${QUALITY_CTX:-2000,32000,128000} k=${SPEC_K:-${_k:-7}} =="
+  phase measure start
   env SPEC_K="${SPEC_K:-${_k:-7}}" BENCH_MODEL=glm-5.3-flash python3 bench/onepass.py --name "$NAME" > /tmp/leg.$$ 2>&1
   leg_rc=$?
+  if [ "$leg_rc" = 0 ]; then phase measure end; else phase measure end --failed; fi
   grep -vE "^\s*$" /tmp/leg.$$ | tail -40
   [ "$leg_rc" = 0 ] || snap "onepass exited $leg_rc"
   chk onepass /tmp/leg.$$

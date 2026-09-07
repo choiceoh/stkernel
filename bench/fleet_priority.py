@@ -8,11 +8,12 @@ Failures to read the experiment DB simply give every job zero dependents.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import sqlite3
 import time
 
-TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted"}
+TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted", "retired"}
 
 
 def downstream(db):
@@ -43,13 +44,15 @@ def downstream(db):
     return counts
 
 
-def rank(lines, counts, now, front="", yielded="", probes_ready=True):
+def rank(lines, counts, now, front="", yielded="", probes_ready=True, estimates=None):
     rows = []
     for index, line in enumerate(lines):
         cells = line.rstrip("\n").split("|")
         if len(cells) < 6:
             raise ValueError("malformed queue row")
         session, created, estimate = cells[1], float(cells[2]), max(1, float(cells[3]))
+        prediction = (estimates or {}).get(session,{})
+        estimate = max(1,prediction.get('minutes',estimate))
         age = max(0, now - created)
         dependents = counts.get(session, 0)
         score = (1 + dependents) / estimate + age / 1800
@@ -58,6 +61,7 @@ def rank(lines, counts, now, front="", yielded="", probes_ready=True):
         if not probes_ready and cells[5] == "probe":
             key = (4, index)  # preserve safety and admit an eligible boot
         rows.append(dict(session=session, age_s=round(age), dependents=dependents,
+                         estimate_min=estimate,estimate_source=prediction.get('source','declared'),
                          score=round(score, 4), line=line.rstrip("\n"), key=(*key, index)))
     return sorted(rows, key=lambda r: r["key"])
 
@@ -73,8 +77,10 @@ def main():
         path = directory / name
         return path.read_text().strip() if path.exists() else ""
     queue = directory / "queue"
-    rows = rank(queue.read_text().splitlines(), downstream(directory / "experiments/experiments.sqlite3"),
-                time.time(), marker("priority-front"), marker("priority-yield"), not args.boot_only)
+    db = Path(os.environ.get('FLEET_EXPERIMENT_ROOT',directory/'experiments'))/'experiments.sqlite3'
+    from experiment_metrics import estimates
+    rows = rank(queue.read_text().splitlines(), downstream(db),
+                time.time(), marker("priority-front"), marker("priority-yield"), not args.boot_only, estimates(db))
     if args.apply:
         temporary = queue.with_suffix(".priority.tmp")
         temporary.write_text("".join(r["line"] + "\n" for r in rows))
