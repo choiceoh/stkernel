@@ -101,3 +101,16 @@ at 22:13:14 KST. The next immutable source `916adc0` is queued as
 passes, including the new knob declared by the candidate profile. Its evidence
 will be under `/home/choiceoh/glm53-logs/INPUTCTASERVE0907`. No runtime source
 or executing runner is changed while it waits or runs.
+
+`analyze.py --root <evidence>` verifies the selected mode, GPU/sanitizer
+receipts, pre/post rank identity, common source/image/workload, every request
+hash, exclusive traffic and at least 20 fixed decode windows per boot before
+computing step/output changes. Independent boots have equal weight. It also
+attributes the unchanged Korean scanner's findings to SSE channels without
+changing the original combined quality verdict. `--incomplete` preserves an
+interrupted bracket separately and does not write a completed summary.
+
+The other common M6/N6144/K4096 and M6/N4096/K4096 plans use three K slices
+under their established occupancy rules. They cannot reuse this eight-slice
+kernel while preserving the original summation order, so their existing paths
+remain selected. Extending coverage would require a separate three-slice layout.
