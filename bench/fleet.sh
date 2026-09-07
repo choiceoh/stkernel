@@ -101,7 +101,7 @@ REPO=${REPO:-/home/choiceoh/stkernel}
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
 case "${1:-}" in
-  submit|result|inbox|jobs|stats|plan|ack|collect) exec python3 "$REPO/bench/experiments.py" "$@";;
+  submit|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
@@ -415,6 +415,9 @@ case "$cmd" in
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
     t_end=$(( $(now) + tmo * 60 )); last=""
     while [ "$(now)" -lt "$t_end" ]; do
+      if [ -n "${FLEET_EXPERIMENT_ID:-}" ] && [ "$s" = "exp-$FLEET_EXPERIMENT_ID" ]; then
+        python3 "$REPO/bench/experiments.py" pending "$FLEET_EXPERIMENT_ID" || { with_lock _dequeue "$s"; exit 1; }
+      fi
       # an orphaned waiter (its run process gone) must not keep polling for a
       # dead pid; a request that vanished (a stale sibling took it, or a
       # cancel) is re-queued at the back instead of waiting forever at "pos /0"

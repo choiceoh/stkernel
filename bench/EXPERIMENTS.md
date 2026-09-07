@@ -94,7 +94,10 @@ bash bench/fleet.sh submit prefill /absolute/returned/plan/directory/gpu.json
 bash bench/fleet.sh plan prefill /tmp/prefill-plan.json --submit
 ```
 
-`--base` uses the committed diff to suggest suites: changes restricted to bench
+`--base` uses the committed diff to suggest checks. Edits confined to the three
+audited helpers below select their separate contracts plus sensitivity; any
+changed non-helper AST node, unknown path or modified test audit falls back to
+the conservative suite selection. Changes restricted to bench
 and fleet tests select `fleet`; other changes select `logic`, with `startup`
 added for launchers/profiles. This is a conservative convenience, not a
 dependency coverage proof. Override with `cpu_suites` and/or `cpu_tests` when
@@ -109,6 +112,20 @@ the source/artifact snapshot and serving boot are checked. A failed workload
 stops the rest; the normal fleet policy decides one final production restore.
 Different serving configurations still need separate submissions. Independent
 baseline samples still require separate boots.
+
+Separate agents' ready pair requests also share one serving boot when their
+committed revision, deployed snapshot, configuration, environment, runtime,
+inputs, prepared artifact hashes, resource requirements and port match exactly.
+Each request must first pass its own prerequisites, preflight and baseline gate.
+The first ready request collects peers for at most 0.5 seconds outside the GPU
+hold; the group stays open while queued and seals atomically at GO. A group has
+at most eight requests and six distinct workloads. Late/incompatible requests
+and explicit repeats run separately. The union of workloads runs once, with each
+request judged against its own original objectives. `execution_job` and the
+runner-owned measurement binding point to the actual producer record; records
+are never relabeled as new independent samples. Admission rechecks every member,
+and result publication rechecks each consumer's source and artifacts. Execution
+or restore failure reaches all consumers. This does not interrupt a live boot.
 
 | Objective | Direct measurement and interpretation |
 | --- | --- |
@@ -150,6 +167,9 @@ polls, and intentionally detached processes are outside the group. Direct legacy
 `fleet.sh run --cpu` jobs do not use this managed pool. Use one shared experiment
 root per host. GPU readiness thresholds are optional and checked outside the
 queue and again at GO; they are observations, not reserved node memory or disk.
+Waiting for an identical in-flight CPU owner has its own timeout of
+`timeout_s`; if it cannot reuse that owner's result, a new resource/run budget
+starts. Superseded resource waiters exit before launching their CPU command.
 
 Add `prepare` stages to a plan when a kernel needs a compile check before a GPU
 slot. This reviewed entrypoint only invokes `nvcc --compile` with an explicit
@@ -205,6 +225,32 @@ and return exit code 3, so a partial CPU run cannot unlock dependent GPU work.
 | `logic` | Reference math, layouts, gates and extracted dispatch logic; includes the megakernel and fleet behavioral regressions in `tests/test_logic.py` |
 | `fleet` | Concurrent submissions, duplicate consumers, private source snapshots, CPU prerequisites, failures, timeouts, evidence compatibility and shell failure propagation |
 | `startup` | Launcher/worker startup, file attestation, memory preflight and reclamation using local fakes |
+| `sensitivity` | Three passing helper controls and four in-memory faults detected by the existing math/layout/dispatch assertions |
+
+For incremental feedback, `cpu_checks.py --contract math`, `--contract layout`
+and `--contract dispatch` run the actual audited tests from `tests/test_logic.py`:
+
+| Contract | Audited helper |
+| --- | --- |
+| `math` | Indexer prefill chunk size, byte budget and request boundaries |
+| `layout` | Sequence-parallel shard ownership ranges |
+| `dispatch` | Indexer top-k reuse gate |
+
+A plan can explicitly set `"cpu_contracts": ["math", "layout", "dispatch"]`.
+Each contract becomes a separate CPU prerequisite with its own cache, alongside
+the sensitivity check. Other requested suites/tests remain additional gates.
+Dependency audits pin the test source, helper access graph and loader path
+inventory. New imports/call targets/name/attribute access or unknown test edits
+fall back to whole-tree cache identity and conservative automatic suite selection. No caller-provided path exclusion
+can narrow this scope. These three small contracts provide incremental feedback;
+the full deployment `logic` gate remains in place.
+
+Sensitivity changes only in-memory ASTs: logits byte width, request end boundary,
+shard stride and reuse-mask polarity. All original controls must pass and every
+mutant must trigger the existing checker's failure. A surviving fault, skipped
+test, changed/unsupported mutation target or unexpected error fails the report.
+The catalog measures sensitivity to these four faults, not arbitrary mutation
+coverage or GPU correctness; production source files are never modified.
 
 Select by the changed contract. A scheduling change normally needs `fleet`;
 a kernel math/layout change needs `logic`; a launcher change needs `startup`.
@@ -251,7 +297,7 @@ Once a pair's prerequisites and preflight pass, the worker reserves a shared
 defaults job if the context has fewer than three independent baseline samples per performance workload (one for a
 quality-only workload, which makes no speed claim).
 Compatible candidates join that reservation and wait outside the GPU queue.
-The defaults job measures only the missing samples, each on a separate boot,
+The defaults job measures only workloads still missing samples on each separate boot,
 then releases all waiting candidates. There is no candidate/default flip for
 every member of a new campaign just to build its noise floor. A single new
 candidate still pays for that three-sample floor; sharing primarily benefits
@@ -340,8 +386,14 @@ precedence, so a stream of tiny jobs cannot indefinitely starve a long one.
 Explicit `front` and a chosen yielded probe retain their order; a yielded holder
 resumes before other work. Ineligible probes wait for idle serving. Legacy jobs
 participate with zero known dependents. Ranking never interrupts a live holder;
-CPU jobs and prerequisite waits never enter this GPU queue. Estimates remain
-caller-supplied, so use realistic durations. The DB read failing falls back to
+CPU jobs and prerequisite waits never enter this GPU queue. Estimates use the
+declared duration until at least three successful matching execution samples
+exist, then the p90 of the latest 20 (rounded up to minutes). Matching includes
+kind, host, runtime, command/configuration, resource budget, external inputs and
+the physical workload union; source revision is excluded only from this timing
+estimate, never from GPU evidence. Cache hits and shared consumers supply no
+execution-duration samples. `fleet.sh estimate ID` explains the estimate used
+by queue ranking. The DB read failing falls back to
 zero known dependents, and a scheduler failure retains the existing file order.
 
 Named `cpu_checks.py --suite ...` and `--test tests/test_*.py` submissions also
@@ -353,7 +405,8 @@ An identical-tree merge can reuse the full-tree cache. The reviewed startup
 tests use a narrower tests/launchers/bench/profiles scope, allowing unrelated
 documentation/kernel edits to reuse their startup evidence. Test source hashes
 pin this dependency audit: a changed test automatically falls back to the whole
-tracked tree. Logic and fleet suites conservatively include the whole tree,
+tracked tree. Audited helper contracts use their pinned source/test/runner
+dependencies and overlay path inventory. Logic and fleet suites conservatively include the whole tree,
 including docs that tests may inspect. There are no caller-supplied exclusions.
 
 Keys also include interpreter and shell tool binaries, installed package
@@ -366,6 +419,33 @@ a local experiment cache, not a cryptographic attestation of the whole machine.
 Custom CPU commands, skipped/failed reports and deliberate `--repeat` requests
 do not use the content cache. GPU results remain bound to their original build
 and runtime.
+
+The same identity also coalesces in-flight named CPU checks across different
+commit SHAs. A filesystem claim is inherited by the fleet child, so a supervisor
+crash cannot launch a second identical check while its child is running. The
+follower waits without CPU-pool or GPU reservations, then revalidates its own
+snapshot/environment and the completed report/artifact hashes. A failed shared
+owner blocks its waiting consumers instead of repeating the same failing check.
+Explicit repeats run independently, serialized behind the current claim.
+
+## Replace obsolete requests
+
+```bash
+bash bench/fleet.sh submit fusion /tmp/new-request.json --supersedes OLD_ID
+bash bench/fleet.sh retire fusion OLD_ID --replacement NEW_ID --reason 'New revision replaces this request'
+# Also accepted when plan actually submits the GPU stage:
+bash bench/fleet.sh plan fusion /tmp/new-plan.json --submit --supersedes OLD_GPU_ID
+```
+
+Only a subscribed session can replace its own request with another viable
+subscribed request of the same kind. This withdraws that session's demand.
+The old job becomes `retired` only before execution and when no active subscriber
+or unfinished dependent needs it, including internal CPU/baseline/shared-boot
+consumers. Running work finishes normally. Retirement removes only that job's
+queue entry; managed wait/admission observes it without requeueing or launching.
+It never signals processes or edits the live holder. Resubmitting a retired
+request creates new work. `--prepare-only` does not supersede a GPU job; pass
+`--supersedes` when submitting its returned `gpu.json` later.
 
 ## Identity, failure and recovery
 
@@ -399,3 +479,11 @@ on a result. Queue time includes prerequisite waiting.
 An incomplete/failed result is never counted as a successful fast result. The
 initial implementation measures these timings; it makes no speedup claim until
 matched live runs establish one.
+
+`stats.phases` also reports dependency/shared-evidence/resource waits, GPU queue,
+preflight, preparation, CPU execution, boot, measurement and restore durations.
+`gpu_run` includes its nested boot/measurement/restore phases, and restore may
+include another boot; do not sum overlapping phases. Legacy runners without the
+managed experiment environment do not emit these markers. These observations
+explain turnaround and guide estimates; fixture boot counts or CPU-cache timings
+alone do not establish a live GPU wait-time or serving speedup.

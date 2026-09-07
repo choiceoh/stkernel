@@ -19,10 +19,11 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = {
     "logic": [[sys.executable, "tests/test_logic.py"]],
-    "fleet": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_fleet_experiments.py", "-v"]],
+    "fleet": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_fleet*.py", "-v"]],
     "startup": [[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", name, "-v"]
                 for name in ("test_glm53_startup.py", "test_glm53_attestation.py",
                              "test_glm53_reclaim.py", "test_memfree_preflight.py")],
+    'sensitivity': [[sys.executable,'bench/cpu_contracts.py','--mutation-audit']],
 }
 
 
@@ -51,15 +52,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--suite", choices=sorted(SUITES), action="append", default=[])
     ap.add_argument("--test", action="append", default=[], help="individual tests/test_*.py unittest file")
+    from cpu_contracts import CONTRACTS
+    ap.add_argument('--contract',choices=sorted(CONTRACTS),action='append',default=[])
     ap.add_argument("--out", type=Path, default=os.environ.get("FLEET_CPU_REPORT", "/tmp/stkernel-cpu-report.json"))
     args = ap.parse_args()
-    if not args.suite and not args.test:
-        ap.error('choose --suite or --test')
+    if not args.suite and not args.test and not args.contract:
+        ap.error('choose --suite, --test or --contract')
     args.out.parent.mkdir(parents=True, exist_ok=True)
     report = {"evidence": "cpu-only", "checks": [], "passed": True, "coverage_complete": True, "tests_run": 0}
     selected = [(suite, command) for suite in dict.fromkeys(args.suite) for command in SUITES[suite]]
     selected += [('individual', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', Path(t).name, '-v'])
                  for t in dict.fromkeys(args.test)]
+    selected += [('contract-'+c,[sys.executable,'bench/cpu_contracts.py','--contract',c]) for c in dict.fromkeys(args.contract)]
     for target in args.test:
         if not re.fullmatch(r'tests/test_[A-Za-z0-9_]+\.py', target):
             ap.error('individual test must be tests/test_*.py')
@@ -70,6 +74,8 @@ def main():
         if '-p' in command:
             target = command[command.index('-p') + 1]
             command = [sys.executable, 'bench/cpu_unittest.py', 'tests/' + target, str(counts_path)]
+        elif command[1] == 'bench/cpu_contracts.py':
+            command = [*command,'--report',str(counts_path)]
         started = time.monotonic()
         print(f"CPU {suite}: {' '.join(command)}", flush=True)
         with log.open("w") as output:

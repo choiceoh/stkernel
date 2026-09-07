@@ -9,6 +9,7 @@ See bench/EXPERIMENTS.md for the manifest and agent workflow.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack, contextmanager
 import fcntl
 import hashlib
 import json
@@ -26,10 +27,14 @@ import time
 import uuid
 
 HERE = Path(__file__).resolve().parent
-TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted"}
+TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted", "retired"}
 RESERVED = {"HOME", "PATH", "PYTHONPATH", "BASH_ENV", "ENV", "REPO", "LOGD",
             "LEVER", "SKIP_BOOT", "LEGS", "MK_OVERLAY_STAMP", "MK_COLD_COMPILE"}
 BASE_ENV = ("HOME", "PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "SSH_AUTH_SOCK", "TMPDIR")
+
+
+class RetiredJob(ValueError):
+    """A request was withdrawn before execution; never revive it implicitly."""
 
 
 def encoded(value):
@@ -216,6 +221,19 @@ class Store:
             CREATE TABLE IF NOT EXISTS deliveries (
                 session TEXT NOT NULL, cursor INTEGER NOT NULL, delivered REAL NOT NULL, acknowledged REAL,
                 PRIMARY KEY(session, cursor));
+            CREATE TABLE IF NOT EXISTS execution_groups (
+                leader TEXT PRIMARY KEY, signature TEXT NOT NULL, sealed INTEGER NOT NULL,
+                workloads TEXT NOT NULL, created REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS group_members (job TEXT PRIMARY KEY, leader TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS open_groups ON execution_groups(signature,sealed);
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                job TEXT NOT NULL, session TEXT NOT NULL, replacement TEXT NOT NULL, reason TEXT NOT NULL,
+                PRIMARY KEY(job,session));
+            CREATE TABLE IF NOT EXISTS phase_open (
+                job TEXT NOT NULL, phase TEXT NOT NULL, started REAL NOT NULL, PRIMARY KEY(job,phase));
+            CREATE TABLE IF NOT EXISTS timings (
+                job TEXT NOT NULL, phase TEXT NOT NULL, seconds REAL NOT NULL, at REAL NOT NULL, ok INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS timing_phases ON timings(phase,at);
         """)
 
     def event(self, job, kind, data):
@@ -232,8 +250,24 @@ class Store:
         result["log"] = str(self.root / job / "run.log")
         return result
 
+    @contextmanager
+    def transaction(self):
+        # A state transition inside retirement/group admission belongs to that
+        # caller's transaction; it must not commit its partially updated state.
+        if self.db.in_transaction:
+            yield
+        else:
+            with self.db:
+                self.db.execute('BEGIN IMMEDIATE')
+                yield
+
     def state(self, job, state, result=None):
-        with self.db:
+        with self.transaction():
+            previous = self.get(job)
+            if previous['state'] == 'retired' and state != 'retired':
+                raise RetiredJob(job)
+            from experiment_metrics import transition
+            transition(self,previous,state)
             self.db.execute("UPDATE jobs SET state=?, result=COALESCE(?,result), "
                             "started=CASE WHEN ?='running' THEN COALESCE(started,?) ELSE started END, "
                             "finished=CASE WHEN ? THEN ? ELSE finished END WHERE id=?",
@@ -260,7 +294,7 @@ class Store:
                         raise ValueError("prerequisite external inputs changed or are not pinned by this request: " + path)
             old = self.db.execute("SELECT id,state FROM jobs WHERE fingerprint=? ORDER BY created DESC LIMIT 1",
                                   (fingerprint,)).fetchone()
-            if old and not repeat:
+            if old and old['state'] != 'retired' and not repeat:
                 job = old["id"]
                 disposition = "reused" if old["state"] in TERMINAL else "joined"
             else:
@@ -269,13 +303,16 @@ class Store:
                                 "VALUES(?,?,?,'queued',?,?)",
                                 (job, fingerprint, encoded(payload), time.time(), repeat))
             self.db.execute("INSERT OR IGNORE INTO subscribers VALUES(?,?,?)", (job, session, time.time()))
+            self.db.execute('DELETE FROM withdrawals WHERE job=? AND session=?',(job,session))
             self.event(job, disposition, {"session": session, "repeat_reason": repeat,
                                            "hypothesis": payload["spec"]["hypothesis"]})
         return dict(id=job, disposition=disposition, state=self.get(job)["state"])
 
     def inbox(self, session, after=0):
         rows = self.db.execute("SELECT e.* FROM events e JOIN subscribers s ON s.job=e.job "
-                               "WHERE s.session=? AND e.cursor>? ORDER BY e.cursor LIMIT 200",
+                               "WHERE s.session=? AND e.cursor>? AND NOT EXISTS "
+                               "(SELECT 1 FROM withdrawals w WHERE w.job=s.job AND w.session=s.session) "
+                               "ORDER BY e.cursor LIMIT 200",
                                (session, after)).fetchall()
         with self.db:
             self.db.executemany('INSERT OR IGNORE INTO deliveries(session,cursor,delivered) VALUES(?,?,?)',
@@ -314,7 +351,8 @@ def ensure_worker(store, job):
             return
         probe.close()
         state = store.get(job)["state"]
-        if state not in {"queued", "waiting_dependencies", "waiting_baseline", "waiting_cpu"}:
+        if state not in {"queued", "waiting_dependencies", "waiting_baseline", "waiting_cpu",
+                         "waiting_cpu_evidence", "waiting_group", "ready_pair"}:
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
@@ -386,7 +424,13 @@ def pair_result_one(payload, job, index=0):
     from judge import compatible
     evaluation = evaluations(payload["spec"])[index]
     name = name_for("EXP-" + job, payload["spec"], index)
-    candidates = [r for r in rows if r.get("name") == name and r.get("experiment_id") == job
+    producer = job
+    binding = payload.get('measurement_binding')
+    if binding:
+        producer = binding['producer']
+        position = binding['workloads'].index(evaluation['workload'])
+        name = 'EXP-' + producer + (f'-E{position+1}' if position else '')
+    candidates = [r for r in rows if r.get("name") == name and r.get("experiment_id") == producer
                   and not r.get("rehearsal")]
     if not candidates:
         return "incomplete", {"evidence": "none", "reason": "no fresh onepass record for this experiment"}
@@ -403,7 +447,7 @@ def pair_result_one(payload, job, index=0):
     bases = [b for b in bases if metric_compatible(b, cand, obj)
              and (obj['metric'] == 'quality' or metric_value(b, obj) is not None)]
     verdict = judge(cand, bases[-1] if bases else None, rows, evaluation["objective"])
-    result = dict(evidence="gpu-pair", verdict=verdict, candidate=cand,
+    result = dict(evidence="gpu-pair", verdict=verdict, candidate=cand, execution_job=producer,
                   baseline=bases[-1] if bases else None)
     return ("succeeded" if verdict["status"] == "valid" else "incomplete"), result
 
@@ -420,6 +464,8 @@ def pair_result(payload, job):
 def execute(store, job):
     """Called by fleet.sh only AFTER GO; revalidate before spending a boot."""
     row = store.get(job)
+    if row['state'] == 'retired':
+        return 0
     payload, spec = row["payload"], row["payload"]["spec"]
     if spec["kind"] != "cpu":
         holder = Path(payload["paths"]["FLEET_DIR"]) / "holder"
@@ -434,7 +480,9 @@ def execute(store, job):
         store.state(job, "running")
     if spec["kind"] == "baseline":
         from experiment_baselines import run
-        state, result = run(store, job, payload)
+        from experiment_metrics import timed
+        with timed(store,job,'gpu_run'):
+            state, result = run(store, job, payload)
         store.state(job, state, result)
         # Publish completions for earlier candidates even without result polls.
         for item in store.db.execute("SELECT id FROM jobs WHERE state='incomplete'").fetchall():
@@ -442,7 +490,16 @@ def execute(store, job):
         return 0 if state == "succeeded" else 4
     if spec["kind"] == "pair":
         from serving_group import run_pair
-        state, result = run_pair(store, job, payload)
+        from experiment_groups import seal, validate_members, publish
+        effective = seal(store, job, payload)
+        try:
+            validate_members(store, job)
+            from experiment_metrics import timed
+            with timed(store,job,'gpu_run'):
+                state, result = run_pair(store, job, effective)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            state, result = 'failed', dict(evidence='gpu-pair', reason=str(exc))
+        publish(store, job, state, result)
         store.state(job, state, result)
         return 0 if state in {'succeeded', 'incomplete'} else 4
     command = spec['command']
@@ -458,7 +515,9 @@ def execute(store, job):
         from experiment_resources import run_cpu
         rc, failure_reason = run_cpu(store, job, command, payload)
     else:
-        rc = subprocess.call(command, cwd=payload["repo"])
+        from experiment_metrics import timed
+        with timed(store,job,'gpu_run'):
+            rc = subprocess.call(command, cwd=payload["repo"])
     if rc:
         result = {"returncode": rc, "evidence": "cpu-only" if spec["kind"] == "cpu" else "process-exit",
                   "reason": failure_reason or "experiment failed; dependent jobs will not execute"}
@@ -498,17 +557,20 @@ def worker(store, job):
     lock = worker_lock(store, job)
     if lock is None:
         return 0
-    with lock:
+    with lock, ExitStack() as resources:
         if store.get(job)["state"] in TERMINAL:
             return 0
         payload = store.get(job)["payload"]
         spec = payload["spec"]
+        shared_fd = None
         with store.db:
             store.db.execute("UPDATE jobs SET worker_pid=? WHERE id=?", (os.getpid(), job))
         try:
             if spec["depends_on"]:
                 store.state(job, "waiting_dependencies")
             while spec["depends_on"]:
+                if store.get(job)['state'] == 'retired':
+                    return 0
                 deps = [refresh_result(store, d) for d in spec["depends_on"]]
                 bad = [d["id"] for d in deps if d["state"] in TERMINAL and d["state"] != "succeeded"]
                 if bad:
@@ -533,7 +595,9 @@ def worker(store, job):
                 pf = [payload["bash"], fleet, "preflight"]
                 if spec["kind"] == "probe":
                     pf.append("--probe")
-                rc = subprocess.call([*pf, "exp-" + job, "--", *actual], env=env, cwd=payload["repo"])
+                from experiment_metrics import timed
+                with timed(store,job,'preflight'):
+                    rc = subprocess.call([*pf, "exp-" + job, "--", *actual], env=env, cwd=payload["repo"])
                 if rc:
                     raise ValueError("fleet preflight refused the experiment (see run.log)")
             else:
@@ -545,6 +609,17 @@ def worker(store, job):
                     from cpu_evidence import identity
                     if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
                         raise ValueError("CPU environment changed while queued")
+                    from experiment_sharing import cpu_claim, joined_failure
+                    claim, joined = cpu_claim(store, job, payload)
+                    resources.enter_context(claim)
+                    shared_fd = claim.fileno()
+                    verify(payload)
+                    if identity(Path(payload['repo']), spec, payload['environment']) != payload['cpu_identity']:
+                        raise ValueError('CPU environment changed while waiting for shared evidence')
+                    failure = joined_failure(store, joined, payload)
+                    if failure and not store.get(job)['repeat_reason']:
+                        store.state(job, 'blocked', failure)
+                        return 0
                     hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
                     if hit and not store.get(job)["repeat_reason"]:
                         source = store.get(hit["job"])
@@ -559,11 +634,14 @@ def worker(store, job):
             if spec["kind"] != "cpu":
                 from experiment_resources import readiness
                 from prepared_artifacts import materialize
-                payload['prepared_artifacts'] = materialize(store, payload)
+                from experiment_metrics import timed
+                with timed(store,job,'preparation'):
+                    payload['prepared_artifacts'] = materialize(store, payload)
+                    nodes = readiness(spec['resources'])
                 with store.db:
                     store.db.execute('UPDATE jobs SET payload=? WHERE id=?', (encoded(payload), job))
                     store.event(job, 'prepared', {'artifacts': payload['prepared_artifacts'],
-                                                'nodes': readiness(spec['resources'])})
+                                                'nodes': nodes})
             if spec["kind"] == "pair":
                 from experiment_baselines import reserve, samples, ready
                 if not ready(payload):
@@ -581,6 +659,27 @@ def worker(store, job):
                     verify(payload)
                     if not ready(payload):
                         raise ValueError("shared baseline evidence changed; resubmit after checking its ledger")
+                from experiment_groups import register
+                store.state(job,'ready_pair')
+                leader = register(store, job)
+                if leader != job:
+                    with store.db:
+                        store.db.execute('BEGIN IMMEDIATE')
+                        current = store.get(job)
+                        if current['state'] not in TERMINAL and current['started'] is None:
+                            store.state(job,'waiting_group',dict(execution_job=leader))
+                    while store.get(job)['state'] not in TERMINAL:
+                        ensure_worker(store,leader)
+                        source = store.get(leader)
+                        if source['state'] in TERMINAL:
+                            if store.get(job)['state'] not in TERMINAL:
+                                store.state(job,'blocked',dict(reason='shared execution ended without this result',execution_job=leader))
+                            break
+                        time.sleep(.1)
+                    return 0
+                # A bounded burst window; the plan remains open while queued and
+                # is sealed atomically at GO. It never waits while holding GPUs.
+                time.sleep(.5)
             elif spec["kind"] == "baseline":
                 from experiment_baselines import samples, ready
                 bases = samples(payload)
@@ -588,18 +687,27 @@ def worker(store, job):
                     store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
                     return 0
             store.state(job, "queued_fleet")
+            from experiment_metrics import predict
+            estimate = predict(store.db,store.get(job)['payload'])
+            with store.db:
+                store.event(job,'duration_estimate',estimate)
             lane = ["--cpu"] if spec["kind"] == "cpu" else ["--gpu"]
             if spec["kind"] == "probe":
                 lane.append("--probe")
             command = [payload["bash"], fleet, "run", *lane, "exp-" + job,
-                       str(spec["estimate_min"]), "experiment " + job, "--", sys.executable,
+                       str(estimate['minutes']), "experiment " + job, "--", sys.executable,
                        str(HERE / "experiments.py"), "--root", str(store.root), "execute", job]
             # The child retains the lock if the supervisor crashes. Recovery
             # cannot launch a second copy while the first is still in flight.
-            rc = subprocess.call(command, cwd=payload["repo"], env=env, pass_fds=(lock.fileno(),))
+            rc = subprocess.call(command, cwd=payload["repo"], env=env,
+                                 pass_fds=(lock.fileno(),) + ((shared_fd,) if shared_fd is not None else ()))
             if store.get(job)["state"] not in TERMINAL:
                 store.state(job, "failed", {"returncode": rc, "reason": "runner exited without an experiment result"})
+        except RetiredJob:
+            return 0
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            if store.get(job)['state'] == 'retired':
+                return 0
             store.state(job, "failed", {"reason": str(exc)})
     return 0
 
@@ -642,7 +750,9 @@ def stats(store):
                 f"WHERE e.kind IN ({placeholders}) AND d.{column} IS NOT NULL", kinds))
             latencies[prefix + field] = dict(n=len(values), p50=statistics.median(values) if values else None,
                                     p95=values[max(0, math.ceil(.95*len(values))-1)] if values else None)
-    return dict(by_kind=groups, requests=dispositions, result_consumption=latencies)
+    from experiment_metrics import summary
+    return dict(by_kind=groups, requests=dispositions, result_consumption=latencies,phases=summary(store),
+                shared_boot_members=store.db.execute('SELECT count(*) FROM group_members WHERE job!=leader').fetchone()[0])
 
 
 def collect(store, session, path, repo):
@@ -681,6 +791,7 @@ def main():
     submit.add_argument("session")
     submit.add_argument("manifest", type=Path)
     submit.add_argument("--repeat", metavar="REASON", help="request an additional sample, with a recorded reason")
+    submit.add_argument('--supersedes',action='append',default=[],metavar='ID',help='withdraw your demand for an older request')
     plan = sub.add_parser('plan')
     plan.add_argument('session')
     plan.add_argument('manifest', type=Path)
@@ -688,6 +799,16 @@ def main():
     mode = plan.add_mutually_exclusive_group()
     mode.add_argument('--submit', action='store_true')
     mode.add_argument('--prepare-only', action='store_true', help='submit CPU stages before deployment; retain the resolved GPU manifest')
+    plan.add_argument('--supersedes',action='append',default=[],metavar='ID',help='replace these old GPU requests when submitting the GPU stage')
+    retire = sub.add_parser('retire')
+    retire.add_argument('session')
+    retire.add_argument('id')
+    retire.add_argument('--replacement',required=True)
+    retire.add_argument('--reason',required=True)
+    pending = sub.add_parser('pending')
+    pending.add_argument('id')
+    estimate = sub.add_parser('estimate')
+    estimate.add_argument('id')
     for cmd in ("worker", "execute", "result", "wait"):
         p = sub.add_parser(cmd)
         p.add_argument("id")
@@ -718,6 +839,10 @@ def main():
             raise ValueError("repeat needs a reason")
         repo = Path(os.environ.get("REPO", HERE.parent)).resolve()
         spec = normalize(json.loads(args.manifest.read_text()), repo)
+        from experiment_retirement import subscribed
+        if any(not subscribed(store,args.session,old) or store.get(old)['payload']['spec']['kind'] != spec['kind']
+               for old in args.supersedes):
+            raise ValueError('supersedes must name your subscribed requests of the same kind')
         logd = Path(os.environ.get("LOGD", "/home/choiceoh/glm53-logs"))
         paths = {"LOGD": str(logd), "FLEET_DIR": os.environ.get("FLEET_DIR", str(logd / "fleet")),
                  "ONEPASS_JSONL": os.environ.get("ONEPASS_JSONL", str(logd / "bracket-onepass.jsonl")),
@@ -730,12 +855,24 @@ def main():
             from cpu_evidence import identity
             payload["cpu_identity"] = identity(repo, spec, payload["environment"])
         answer = store.submit(args.session, payload, args.repeat)
+        if args.supersedes:
+            from experiment_retirement import retire
+            answer['superseded'] = [retire(store,args.session,old,answer['id'],'Replaced by newer submission')
+                                     for old in args.supersedes if old != answer['id']]
         ensure_worker(store, answer["id"])
     elif args.action == 'plan':
         from experiment_plan import run
         answer = run(args, store, Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == 'ack':
         answer = store.acknowledge(args.session, args.cursor)
+    elif args.action == 'pending':
+        return 3 if store.get(args.id)['state'] == 'retired' else 0
+    elif args.action == 'estimate':
+        from experiment_metrics import predict
+        answer = predict(store.db,store.get(args.id)['payload'])
+    elif args.action == 'retire':
+        from experiment_retirement import retire
+        answer = retire(store,args.session,args.id,args.replacement,args.reason)
     elif args.action == 'collect':
         answer = collect(store, args.session, args.path, Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == "worker":

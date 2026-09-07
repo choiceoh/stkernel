@@ -139,6 +139,9 @@ def run_cpu(store, job, command, payload):
     deadline = time.monotonic() + payload['spec']['timeout_s']
     store.state(job, 'waiting_cpu')
     while not acquire(store, job, resources):
+        if store.get(job)['state'] == 'retired':
+            from experiments import RetiredJob
+            raise RetiredJob(job)
         if time.monotonic() >= deadline:
             return 124, 'CPU queue time budget exceeded'
         time.sleep(.25)

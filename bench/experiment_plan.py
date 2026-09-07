@@ -12,6 +12,7 @@ def build(raw, repo, base=None):
     from measurement_contract import objective, workload
     gpu = dict(raw)
     suites = gpu.pop('cpu_suites', None)
+    contracts = gpu.pop('cpu_contracts', None)
     tests = gpu.pop('cpu_tests', [])
     preparation = gpu.pop('prepare', [])
     obj = objective(gpu.pop('objective', None))
@@ -26,12 +27,21 @@ def build(raw, repo, base=None):
     if gpu['kind'] != 'pair':
         raise ValueError('plan expects a serving pair configuration')
     changed = git(repo, 'diff', '--name-only', base, 'HEAD').splitlines() if base else []
-    if suites is None:
+    if suites is None and contracts is None and not tests:
+        from cpu_contracts import changed_contracts
+        contracts = changed_contracts(repo,base)
+    contracts = contracts or []
+    if suites is None and contracts:
+        suites = []
+    elif suites is None:
         suites = ['fleet'] if changed and all(p.startswith('bench/') or p.startswith('tests/test_fleet') for p in changed) else ['logic']
         if any(p.startswith('launchers/') or p.startswith('profiles/') for p in changed):
             suites.append('startup')
-    if not isinstance(suites, list) or not isinstance(tests, list) or not suites and not tests:
+    if not isinstance(suites, list) or not isinstance(tests, list) or not isinstance(contracts,list) or not (suites or tests or contracts):
         raise ValueError('plan needs at least one CPU suite/test')
+    from cpu_contracts import CONTRACTS
+    if any(not isinstance(c,str) or c not in CONTRACTS for c in contracts):
+        raise ValueError('unknown CPU contract')
     from cpu_checks import SUITES
     if any(s not in SUITES for s in suites):
         raise ValueError('unknown CPU suite')
@@ -44,15 +54,26 @@ def build(raw, repo, base=None):
     for test in dict.fromkeys(tests):
         command.extend(['--test', test])
     common = dict(kind='cpu', revision=gpu['revision'], context=gpu['context'], inputs=gpu['inputs'])
-    check = normalize(dict(common, hypothesis='CPU gates: ' + gpu['hypothesis'], command=command), repo)
-    stages = [dict(name='checks', manifest=check, requires=[])]
+    stages = []
+    if suites or tests:
+        check = normalize(dict(common, hypothesis='CPU gates: ' + gpu['hypothesis'], command=command), repo)
+        stages.append(dict(name='checks',manifest=check,requires=[]))
+    for contract in dict.fromkeys(contracts):
+        manifest = normalize(dict(common,hypothesis='CPU '+contract+': '+gpu['hypothesis'],
+                             command=['python3','bench/cpu_checks.py','--contract',contract]),repo)
+        stages.append(dict(name='checks-'+contract,manifest=manifest,requires=[]))
+    if contracts:
+        manifest = normalize(dict(common,hypothesis='CPU fault sensitivity: '+gpu['hypothesis'],
+                             command=['python3','bench/cpu_checks.py','--suite','sensitivity']),repo)
+        stages.append(dict(name='sensitivity',manifest=manifest,requires=[]))
+    check_names = [s['name'] for s in stages]
     if not isinstance(preparation, list) or len(preparation) > 8:
         raise ValueError('prepare must list at most eight CPU build stages')
     for index, step in enumerate(preparation):
         if not isinstance(step, dict) or set(step) - {'command', 'outputs', 'resources', 'env', 'timeout_s'}:
             raise ValueError('prepare supports CPU command, outputs, env, resources and timeout_s')
         manifest = normalize(dict(common, hypothesis='CPU preparation: ' + gpu['hypothesis'], **step), repo)
-        stages.append(dict(name=f'prepare-{index+1}', manifest=manifest, requires=['checks']))
+        stages.append(dict(name=f'prepare-{index+1}', manifest=manifest, requires=check_names))
     stages.append(dict(name='gpu', manifest=gpu, requires=[s['name'] for s in stages]))
     return dict(revision=gpu['revision'], changed=changed, stages=stages,
                 scope='CPU gates and preparation precede shared baselines and grouped onepass workloads')
@@ -78,8 +99,9 @@ def run(args, store, repo):
         stage['dependencies_resolved'] = all(d in ids for d in stage['requires'])
         save()
         if (args.submit or args.prepare_only) and (stage['name'] != 'gpu' or not args.prepare_only):
+            supersedes = [part for old in getattr(args,'supersedes',[]) for part in ('--supersedes',old)] if stage['name']=='gpu' else []
             process = subprocess.run([sys.executable, str(Path(__file__).with_name('experiments.py')),
-                '--root', str(store.root), 'submit', args.session, str(path)], text=True, capture_output=True)
+                '--root', str(store.root), 'submit', args.session, str(path), *supersedes], text=True, capture_output=True)
             if process.returncode:
                 stage['error'] = process.stderr.strip() or process.stdout.strip()
                 plan['error'] = 'Submission stopped at ' + stage['name'] + '; earlier submitted jobs remain available'
