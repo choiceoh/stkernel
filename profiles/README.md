@@ -59,6 +59,12 @@ show 24.5% lower warm latency and 7.9% lower read-evicted latency. Serving
 step/output and quality acceptance are still unmeasured after baseline boot
 failures. [Measurements and failure receipts](../measurements/glm53_input_cta_20260907/README.md).
 
+The opt-in value `4` retains the CTA2 N6416 kernel and adds a three-slice
+CTA for foreground M6/N4096 or N6144/K4096. A failed three-slice startup
+check falls back to separately validated CTA2. Other shapes, background
+work, low-rank correction, and non-three-slice overrides retain their
+existing route. The profile default remains `2`.
+
 ## 프로필별 구성
 
 | | `dsv4` | `glm53` | `qwen38` |

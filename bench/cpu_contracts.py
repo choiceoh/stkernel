@@ -13,9 +13,9 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited: graph-profile regressions are added only to the full runner.
+# Re-audited: full-runner graph tests plus main launch/occupancy count updates.
 # Extracted math/layout/dispatch functions, globals and loader are unchanged.
-LOGIC_AUDIT = 'c44a3d2779b7121644d914ad3c91b4dd081f3a96694982de947366c87a0c24c1'
+LOGIC_AUDIT = '605bd1ffe67dc6000a51009158bbfb0ab26ea8e8585c57de52928828eea90872'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

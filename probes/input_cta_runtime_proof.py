@@ -7,7 +7,7 @@ from pathlib import Path
 import socket
 import subprocess
 
-ap=argparse.ArgumentParser();ap.add_argument('mode',type=int,choices=range(4));a=ap.parse_args()
+ap=argparse.ArgumentParser();ap.add_argument('mode',type=int,choices=range(5));a=ap.parse_args()
 names=subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True).splitlines()
 name=next(n for n in names if n in ('glm53','glm53-worker'))
 o=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
@@ -29,5 +29,8 @@ assert p['image']=='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1ca
 assert '[megakernel] input-reuse CAPTURED M=6 N=6416 K=4096 split=8' in log
 if a.mode:
     assert any(f'M=6 N=6416 K=4096 mode={a.mode} split=8' in line for line in lines),lines
+    if a.mode==4:
+        for n in (4096,6144):
+            assert any(f'M=6 N={n} K=4096 mode=4 split=3' in line for line in lines),lines
 else:
     assert not lines,lines
