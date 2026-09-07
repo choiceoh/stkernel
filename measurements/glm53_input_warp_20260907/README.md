@@ -80,7 +80,8 @@ CUDA SHA-256 `0cbbe7c96d3815de307cf1d5d56fe7fab1fac25a41c5b430b5230aca31603baf`.
 All 90 individual numerical rows and the baseline bit comparisons passed.
 The subsequent retained-graph test failed at its first iteration
 (`relative=1.0`, 24,570 values over the ULP limit). The runner aborted before
-sanitizers or any serving arm, and began restoring approved defaults.
+sanitizers or any serving arm. Approved defaults were restored at 17:02:24 KST,
+with health 200 checked at 17:03. The next fleet boot job then took ownership.
 The JSON still says RUNNING because the assertion interrupted it; the
 [failure log](failed-lifetime/production-gate.log) is the terminal result.
 
