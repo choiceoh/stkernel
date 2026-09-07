@@ -6,10 +6,14 @@ still owns GPU admission, preflight, short-probe yielding and production restore
 Submissions never deploy or interrupt another holder. Waiting GPU jobs are
 ranked at the next free fleet boundary by downstream benefit, duration and age.
 
+Plans now batch their independent CPU stages, publish reusable evidence before
+creating another checkout on a cache hit, and keep core/fleet/startup results
+separate. A consumer's declared dependencies still decide when it can execute.
+
 ## Agent workflow
 
 Run the commands on the fleet head, from a **committed, clean checkout**. Each
-new experiment gets a detached private checkout of that commit, so the agent
+experiment needing execution gets a detached private checkout of that commit, so the agent
 can immediately continue editing its original checkout. Build outputs from CPU
 checks are isolated too. Put submission manifests and reports outside the repo.
 
@@ -57,6 +61,36 @@ send a message to a Codex/Claude session or automatically resume that session.
 `result` returns evidence and artifact paths; add `--details` only when the full
 pinned environment and input hashes are needed.
 
+Results and terminal inbox events include `explanation`: the failed checks and
+test tracebacks, blocking dependency IDs, relevant logs and suggested argv/cwd
+for inspecting or reproducing the failure. These suggestions never run commands,
+retry a failed experiment or send messages to an agent. CPU reproduction hides
+CUDA devices and retains CPU-only evidence scope. Fix the input/revision before
+submitting a corrected experiment; a successful process exit is still insufficient
+to promote incomplete CPU/probe evidence.
+
+## Submit a batch
+
+```json
+[
+  {"name": "math", "manifest": {"kind": "cpu", "revision": "FULL_COMMITTED_SHA", "hypothesis": "Check chunk boundaries", "command": ["python3", "bench/cpu_checks.py", "--contract", "math"]}},
+  {"name": "layout", "manifest": {"kind": "cpu", "revision": "FULL_COMMITTED_SHA", "hypothesis": "Check shard coverage", "command": ["python3", "bench/cpu_checks.py", "--contract", "layout"]}}
+]
+```
+
+```bash
+bash bench/fleet.sh batch fusion /tmp/cpu-batch.json
+```
+
+A batch contains 1..32 named requests. Optional `requires` lists earlier request
+names; `manifest.depends_on` can still name existing experiment IDs. The runner
+attests all requests before atomically registering the DAG. Invalid requests,
+cycles, changed inputs or mismatched prerequisite revisions register no jobs.
+Identical source/environment reads share a memo only within that call, with a
+fresh second pass before registration. There is no persistent fingerprint TTL.
+Different commands, inputs, runtime context and resource budgets keep distinct
+evidence identities. `--repeat REASON` requests independent executions.
+
 ## Plan from a decision
 
 `plan` connects the CPU checks, optional CPU compilation, and the eventual GPU
@@ -103,6 +137,15 @@ added for launchers/profiles. This is a conservative convenience, not a
 dependency coverage proof. Override with `cpu_suites` and/or `cpu_tests` when
 the changed contract needs additional checks. A failed submission preserves
 the plan path and all previously submitted IDs; it does not lose running work.
+
+In a plan, `cpu_suites: ["logic", "startup"]` expands to independent required
+`checks-core`, `checks-fleet` and `checks-startup` jobs. With one suite/test group,
+its stage remains `checks`; contracts retain `checks-math`, `checks-layout` and
+`checks-dispatch`. The GPU stage requires every check and preparation stage.
+Fleet stages reserve up to two CPU slots by default (respecting a one-slot pool
+policy); set `cpu_jobs` to 1..8 to choose explicitly. The CPU stages are submitted
+as one batch. If GPU deployment attestation then fails, the CPU IDs and resolved
+GPU manifest remain available, including in the saved plan.
 
 For multiple goals on the **same knobs/image/configuration**, replace
 `objective`/`workload` with `evaluations`, an array of up to six objects of that
@@ -185,6 +228,14 @@ architecture, without loading a CUDA context:
 }]
 ```
 
+Preparation stages now run independently of checks by default, within the CPU
+pool. Set `"requires": ["checks"]` for a real check dependency, or name earlier
+preparation stages such as `"requires": ["prepare-1"]` when a build consumes
+another build's outputs. Only explicit dependencies transfer verified artifacts
+into that stage's private checkout. A failed check still blocks the GPU stage
+even if an independent compile has already completed. Named CPU checks with
+generated-artifact prerequisites do not reuse the tracked-source content cache.
+
 Other CPU preparation argv commands can declare outputs too. Only ignored files
 under `build/` can be exported; source paths and symlinks are rejected. Each
 successful preparation result records output hashes. The consumer copies them
@@ -223,6 +274,7 @@ and return exit code 3, so a partial CPU run cannot unlock dependent GPU work.
 | Suite | Evidence supplied |
 | --- | --- |
 | `logic` | Reference math, layouts, gates and extracted dispatch logic; includes the megakernel and fleet behavioral regressions in `tests/test_logic.py` |
+| `core` | The same core math/source checks and megakernel regressions, without executing the fleet behavioral suite |
 | `fleet` | Concurrent submissions, duplicate consumers, private source snapshots, CPU prerequisites, failures, timeouts, evidence compatibility and shell failure propagation |
 | `startup` | Launcher/worker startup, file attestation, memory preflight and reclamation using local fakes |
 | `sensitivity` | Three passing helper controls and four in-memory faults detected by the existing math/layout/dispatch assertions |
@@ -258,6 +310,16 @@ The repository's deployment gate still runs `logic`. Avoid running both `fleet`
 and `logic` for the same revision unless investigating a new failure: `logic`
 already includes `fleet`. Source checks and mocked dispatch tests cannot prove
 device numerics, graph replay, race freedom, serving quality or throughput.
+
+The default `python3 tests/test_logic.py` deployment gate still executes both
+core and fleet components. `--component core` selects only the core component.
+Reviewed fleet cases can run in separate processes, capped by the CPU slots
+reserved for the job (and at most eight). Every case ID must appear exactly once;
+failed/missing shards, skipped tests and zero-test reports cannot pass. Unknown
+fleet test edits default to serial execution until their isolation audit is
+reviewed. The standalone unittest runner allows explicit `--jobs N` for a caller
+who has reviewed its test isolation. Concurrency/queue tests use state signals
+instead of fixed sleeps; timeout enforcement still has real elapsed-time tests.
 
 Custom CPU commands are also supported as argv arrays. Use explicit interpreter
 and dependency identifiers in `context`, and hash external fixtures/lockfiles
@@ -309,6 +371,16 @@ defaults block their consumers. Repeat the candidate with an explicit reason
 to retry a failed shared reservation. Container ID plus StartedAt supplies
 `boot_id`: repeated onepass runs on the same boot count once. Historical rows
 without boot identity cannot fill the new shared reservation's three samples.
+
+Open baseline reservations now combine different objectives and workload
+subsets for the same attested serving configuration. Quality demands need one
+usable boot; performance demands still need three, with the warm-compile rule
+retained for TTFT. A reservation accumulates at most six evaluation requirements
+and eight candidate dependencies. It collects for 0.5 seconds outside the GPU
+hold and seals when execution starts. Running reservations accept only demands
+already covered by their measurement plan, never additional workloads. Explicit
+repeats remain separate. Each candidate checks its own baseline requirements
+again before running; sharing does not turn repeated measurements into new boots.
 
 Each managed pair measures its declared workloads on one attested serving boot
 and makes one restore decision after the group. The legacy `pair.sh` remains
@@ -406,8 +478,12 @@ tests use a narrower tests/launchers/bench/profiles scope, allowing unrelated
 documentation/kernel edits to reuse their startup evidence. Test source hashes
 pin this dependency audit: a changed test automatically falls back to the whole
 tracked tree. Audited helper contracts use their pinned source/test/runner
-dependencies and overlay path inventory. Logic and fleet suites conservatively include the whole tree,
-including docs that tests may inspect. There are no caller-supplied exclusions.
+dependencies and overlay path inventory. The reviewed fleet suite uses tests,
+bench, launcher/profile sources, its actual helper dependencies and overlay path
+inventory, so unrelated kernel-body changes can reuse its result. New/changed
+fleet tests or helper dependencies fall back to the whole tracked tree. Core and
+aggregate logic conservatively include the whole tree, including docs that tests
+may inspect. There are no caller-supplied exclusions.
 
 Keys also include interpreter and shell tool binaries, installed package
 metadata and file size/mtime inventory, controlled environment, runtime context,
@@ -427,6 +503,14 @@ follower waits without CPU-pool or GPU reservations, then revalidates its own
 snapshot/environment and the completed report/artifact hashes. A failed shared
 owner blocks its waiting consumers instead of repeating the same failing check.
 Explicit repeats run independently, serialized behind the current claim.
+
+A fresh completed cache hit is published during submission without creating a
+private checkout or starting a worker. It still checks the new source/runtime
+identity, all prerequisites and the saved report/artifact integrity. A concurrent
+worker's lock prevents the fast path from completing work that is still running.
+Cache misses and in-flight followers retain the isolated worker path. Results
+carry `cache_source`, `tested_revision` and `cache_path: "before-checkout"` for
+this path; they do not claim the new revision was re-executed.
 
 ## Replace obsolete requests
 

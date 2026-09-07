@@ -234,6 +234,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS timings (
                 job TEXT NOT NULL, phase TEXT NOT NULL, seconds REAL NOT NULL, at REAL NOT NULL, ok INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS timing_phases ON timings(phase,at);
+            CREATE TABLE IF NOT EXISTS baseline_demands (job TEXT PRIMARY KEY, evaluations TEXT NOT NULL);
         """)
 
     def event(self, job, kind, data):
@@ -283,8 +284,7 @@ class Store:
         if 'prepared_artifacts' in identity:
             identity['prepared_artifacts'] = [{k:v for k,v in r.items() if k != 'path'} for r in identity['prepared_artifacts']]
         fingerprint = hashlib.sha256(encoded(identity).encode()).hexdigest()
-        with self.db:
-            self.db.execute("BEGIN IMMEDIATE")
+        with self.transaction():
             for dep in payload["spec"]["depends_on"]:
                 prerequisite = self.get(dep)  # existing IDs only: no dependency cycles
                 if prerequisite["payload"]["spec"]["revision"] != payload["spec"]["revision"]:
@@ -317,8 +317,14 @@ class Store:
         with self.db:
             self.db.executemany('INSERT OR IGNORE INTO deliveries(session,cursor,delivered) VALUES(?,?,?)',
                                 [(session, r['cursor'], time.time()) for r in rows])
-        return [dict(cursor=r["cursor"], id=r["job"], at=r["at"], event=r["kind"],
-                     data=json.loads(r["data"])) for r in rows]
+        events = [dict(cursor=r["cursor"], id=r["job"], at=r["at"], event=r["kind"],data=json.loads(r["data"])) for r in rows]
+        from experiment_explain import explain
+        for event in events:
+            if event['event'] in TERMINAL:
+                row = self.get(event['id'])
+                row.update(state=event['event'],result=event['data'])
+                event['explanation'] = explain(self,row)
+        return events
 
     def acknowledge(self, session, cursor):
         if not self.db.execute('SELECT 1 FROM deliveries WHERE session=? AND cursor=?', (session, cursor)).fetchone():
@@ -381,6 +387,7 @@ def child_env(payload, store, job):
                FLEET_EXPERIMENT_ROOT=str(store.root), PYTHONUNBUFFERED="1",
                FLEET_CPU_REPORT=str(store.root / job / "cpu-report.json"),
                FLEET_CONTEXT=encoded(payload["spec"]["context"]))
+    env['FLEET_CPU_SLOTS'] = str(payload['spec']['resources']['cpu_slots'])
     if payload["spec"]["kind"] != "cpu":
         env["IMAGE"] = payload["spec"]["context"]["image"]
         env['GLM53_API_PORT'] = str(payload['spec'].get('api_port', 8000))
@@ -479,8 +486,11 @@ def execute(store, job):
     if spec['kind'] != 'cpu':
         store.state(job, "running")
     if spec["kind"] == "baseline":
-        from experiment_baselines import run
+        from experiment_baselines import run, planned
         from experiment_metrics import timed
+        payload = planned(store,job,payload)
+        with store.db:
+            store.db.execute('UPDATE jobs SET payload=? WHERE id=?',(encoded(payload),job))
         with timed(store,job,'gpu_run'):
             state, result = run(store, job, payload)
         store.state(job, state, result)
@@ -541,7 +551,9 @@ def execute(store, job):
     else:
         from probe_report import adjudicate
         state, result = adjudicate(report_path, spec.get("probe_contract"), job, nonce, binding)
+    from experiment_submission import cacheable_dependencies
     if (spec["kind"] == "cpu" and state == "succeeded" and payload.get("cpu_identity")
+            and cacheable_dependencies(store,payload)
             and result.get("checks", {}).get("coverage_complete") is True):
         from cpu_evidence import identity
         if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
@@ -605,7 +617,8 @@ def worker(store, job):
                                                          env=env, cwd=payload["repo"], text=True).strip()
                 if classification == "gpu":
                     raise ValueError("CPU experiment shows GPU use; correct the manifest")
-                if payload.get("cpu_identity"):
+                from experiment_submission import cacheable_dependencies
+                if payload.get("cpu_identity") and cacheable_dependencies(store,payload):
                     from cpu_evidence import identity
                     if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
                         raise ValueError("CPU environment changed while queued")
@@ -631,7 +644,7 @@ def worker(store, job):
                             verify(payload)
                             store.state(job, "succeeded", result)
                             return 0
-            if spec["kind"] != "cpu":
+            if spec["kind"] != "cpu" or any((store.get(d)['result'] or {}).get('artifacts') for d in spec['depends_on']):
                 from experiment_resources import readiness
                 from prepared_artifacts import materialize
                 from experiment_metrics import timed
@@ -681,11 +694,14 @@ def worker(store, job):
                 # is sealed atomically at GO. It never waits while holding GPUs.
                 time.sleep(.5)
             elif spec["kind"] == "baseline":
-                from experiment_baselines import samples, ready
-                bases = samples(payload)
-                if ready(payload):
-                    store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
-                    return 0
+                from experiment_baselines import samples, ready, planned
+                time.sleep(.5)  # bounded collection outside the GPU hold
+                with store.transaction():
+                    effective = planned(store,job,payload)
+                    bases = samples(effective)
+                    if ready(effective):
+                        store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
+                        return 0
             store.state(job, "queued_fleet")
             from experiment_metrics import predict
             estimate = predict(store.db,store.get(job)['payload'])
@@ -792,6 +808,10 @@ def main():
     submit.add_argument("manifest", type=Path)
     submit.add_argument("--repeat", metavar="REASON", help="request an additional sample, with a recorded reason")
     submit.add_argument('--supersedes',action='append',default=[],metavar='ID',help='withdraw your demand for an older request')
+    batch = sub.add_parser('batch')
+    batch.add_argument('session')
+    batch.add_argument('manifest',type=Path)
+    batch.add_argument('--repeat',metavar='REASON')
     plan = sub.add_parser('plan')
     plan.add_argument('session')
     plan.add_argument('manifest', type=Path)
@@ -843,23 +863,19 @@ def main():
         if any(not subscribed(store,args.session,old) or store.get(old)['payload']['spec']['kind'] != spec['kind']
                for old in args.supersedes):
             raise ValueError('supersedes must name your subscribed requests of the same kind')
-        logd = Path(os.environ.get("LOGD", "/home/choiceoh/glm53-logs"))
-        paths = {"LOGD": str(logd), "FLEET_DIR": os.environ.get("FLEET_DIR", str(logd / "fleet")),
-                 "ONEPASS_JSONL": os.environ.get("ONEPASS_JSONL", str(logd / "bracket-onepass.jsonl")),
-                 "ONEPASS_VERDICTS": os.environ.get("ONEPASS_VERDICTS", str(logd / "verdicts.jsonl")),
-                 "MK_OVERLAY_STAMP": os.environ.get("MK_OVERLAY_STAMP", str(Path.home() / "glm53-cache/.overlay-sha"))}
-        payload = dict(spec=spec, repo=str(repo), paths=paths,
-                       bash=shutil.which("bash"), environment={k: os.environ[k] for k in BASE_ENV if k in os.environ},
-                       snapshot=snapshot(repo, spec, paths["MK_OVERLAY_STAMP"]))
-        if spec["kind"] == "cpu":
-            from cpu_evidence import identity
-            payload["cpu_identity"] = identity(repo, spec, payload["environment"])
-        answer = store.submit(args.session, payload, args.repeat)
+        from experiment_submission import submit_many
+        answer = submit_many(store,args.session,[dict(name='request',manifest=spec)],repo,
+                             repeat=args.repeat,launch=False)['requests'][0]
+        answer.pop('name')
         if args.supersedes:
             from experiment_retirement import retire
             answer['superseded'] = [retire(store,args.session,old,answer['id'],'Replaced by newer submission')
                                      for old in args.supersedes if old != answer['id']]
         ensure_worker(store, answer["id"])
+    elif args.action == 'batch':
+        from experiment_submission import submit_many
+        answer = submit_many(store,args.session,json.loads(args.manifest.read_text()),
+                             Path(os.environ.get('REPO',HERE.parent)).resolve(),repeat=args.repeat)
     elif args.action == 'plan':
         from experiment_plan import run
         answer = run(args, store, Path(os.environ.get('REPO', HERE.parent)).resolve())
@@ -887,6 +903,8 @@ def main():
             if answer["state"] in TERMINAL or time.monotonic() >= deadline:
                 break
             time.sleep(.2)
+        from experiment_explain import explain
+        answer['explanation'] = explain(store,answer)
         if not args.details:
             payload = answer.pop("payload")
             answer.update(revision=payload["spec"]["revision"], checkout=payload["repo"],

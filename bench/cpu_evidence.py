@@ -16,13 +16,22 @@ import subprocess
 # fakes. The digest pins that dependency audit; changing a test automatically
 # expands the scope to the full tree until this registry is reviewed again.
 STARTUP_AUDIT = {'tests/test_glm53_startup.py': '62cc4553b2661fc39d178100d29ce0540a38cecf924c66b09e4c8762a23a4503', 'tests/test_glm53_attestation.py': '24d0a73afea17bd5b91366d03d0bacc2008a4d371261589ee0d2e569c6ce3b9c', 'tests/test_glm53_reclaim.py': '5b38bfe90dc96e6a9144b9f4a35a6c69480f25511142a8b00232c52b36c9f57b', 'tests/test_memfree_preflight.py': 'af09f6e117c48865021038db64484fc89e685bdb76004fd4f914d86c9dc93869'}
+FLEET_AUDIT = {'tests/test_fleet_coalescing.py': 'f93a92e2f60c265c0b9861824ecec4a2b4ea2aa325e4339088698cbf6d9ca98a', 'tests/test_fleet_experiments.py': 'dc0ae7aafe53e0d0ca7b9075c41f0aa64531e24cc3d4fd9db8f2b2c4b1cfcc32', 'tests/test_fleet_feedback.py': '4124c1545f97fdfd335448d41ffd9235be279fa773ecae57f8437da80bfbdc25'}
 
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def identity(repo, spec, environment):
+def memoized(memo, key, compute):
+    if memo is None:
+        return compute()
+    if key not in memo:
+        memo[key] = compute()
+    return memo[key]
+
+
+def identity(repo, spec, environment, memo=None):
     cmd = spec["command"]
     if len(cmd) < 4 or cmd[1] != "bench/cpu_checks.py":
         return None
@@ -30,7 +39,7 @@ def identity(repo, spec, environment):
     if len(args) % 2 or any(args[i] not in {"--suite", "--test", "--contract"} for i in range(0, len(args), 2)):
         return None
     suites = sorted({args[i+1] for i in range(0, len(args), 2) if args[i] == '--suite'})
-    if any(s not in {"startup", "fleet", "logic", "sensitivity"} for s in suites):
+    if any(s not in {"startup", "fleet", "logic", "core", "sensitivity"} for s in suites):
         return None
     from cpu_contracts import CONTRACTS, dependencies
     contracts = sorted({args[i+1] for i in range(0,len(args),2) if args[i] == '--contract'})
@@ -38,7 +47,7 @@ def identity(repo, spec, environment):
         return None
     # Git object IDs cover transitive source dependencies without re-reading
     # all source bytes. No caller supplied include/exclude paths are accepted.
-    tree = subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-rz", "HEAD"])
+    tree = memoized(memo, ('tree',str(repo)), lambda: subprocess.check_output(["git", "-C", str(repo), "ls-tree", "-rz", "HEAD"]))
     entries = [v.decode() for v in tree.split(b"\0") if v]
     scope = "full-tree"
     audit_names = list(CONTRACTS) if suites == ['sensitivity'] else contracts
@@ -54,6 +63,15 @@ def identity(repo, spec, environment):
         scope = "audited-startup"
         entries = [v for v in entries if v.split("\t", 1)[1].startswith(
             ("tests/", "launchers/", "bench/", "profiles/")) or v.split("\t", 1)[1] == ".gitignore"]
+    if (not contracts and '--test' not in args and suites == ['fleet'] and FLEET_AUDIT
+            and {str(p.relative_to(repo)):sha(p) for p in (repo/'tests').glob('test_fleet*.py')} == FLEET_AUDIT):
+        fleet_closure = dependencies(repo,list(CONTRACTS))
+        if fleet_closure:
+            scope = 'audited-fleet'
+            prefixes = ('tests/','bench/','profiles/','launchers/')
+            entries = [v if v.split('\t',1)[1] in fleet_closure or v.split('\t',1)[1].startswith(prefixes)
+                       else 'path\t'+v.split('\t',1)[1] for v in entries
+                       if v.split('\t',1)[1] in fleet_closure or v.split('\t',1)[1].startswith((*prefixes,'overlay/'))]
     env = dict(environment, **spec["env"])
     # Query the exact interpreter selected by this request, not this process's
     # Python. Installed wheel metadata, paths, interpreter and shell tools are
@@ -76,7 +94,8 @@ for d in m.distributions():
  rows.append((d.metadata['Name'],d.version,str(d.locate_file('')),hashlib.sha256((d.read_text('RECORD') or '').encode()).hexdigest(),hashlib.sha256(json.dumps(sorted(files)).encode()).hexdigest()))
 print(json.dumps([sys.version,sys.executable,platform.platform(),sorted(rows)]))'''
     try:
-        result = subprocess.run([python, "-c", code], env=env, text=True, capture_output=True, timeout=20)
+        result = memoized(memo, ('runtime',python,json.dumps(env,sort_keys=True)),
+                          lambda: subprocess.run([python, "-c", code], env=env, text=True, capture_output=True, timeout=20))
     except (OSError, subprocess.TimeoutExpired):
         return None
     if result.returncode:
@@ -85,7 +104,7 @@ print(json.dumps([sys.version,sys.executable,platform.platform(),sorted(rows)]))
     tools = {}
     for name in (cmd[0], "bash", "/bin/bash", "git", "python3", "sh", "awk", "sed", "head", "tail", "timeout"):
         path = shutil.which(name, path=env.get("PATH"))
-        tools[name] = [path, sha(path)] if path else None
+        tools[name] = [path, memoized(memo,('binary',path),lambda: sha(path))] if path else None
     data = dict(scope=scope, tree=entries, suites=suites, command=cmd, runtime=runtime,
                 tools=tools, environment={k: v for k, v in env.items() if k != "SSH_AUTH_SOCK"},
                 context=spec["context"], inputs={p: sha(p) for p in spec["inputs"]},

@@ -37,10 +37,11 @@ class CoalescingTests(unittest.TestCase):
     def slow_test(self, fail=False):
         (self.repo/'tests').mkdir()
         output = self.root/'executions'
+        self.release = self.root/'release'
         (self.repo/'tests/test_shared.py').write_text(
             'import time,unittest\nfrom pathlib import Path\nclass Contract(unittest.TestCase):\n'
             f' def test_result(self):\n  with open({str(output)!r},"a") as stream: stream.write("run\\n")\n'
-            '  time.sleep(1.5)\n'+('  self.fail("contract failure")\n' if fail else '  self.assertEqual(6*7,42)\n'))
+            f'  deadline=time.monotonic()+10\n  while not Path({str(self.release)!r}).exists():\n   assert time.monotonic()<deadline, \"owner release was never signaled\"\n   time.sleep(.01)\n'+('  self.fail("contract failure")\n' if fail else '  self.assertEqual(6*7,42)\n'))
         self.commit()
         return output,[sys.executable,'tests/test_shared.py']
 
@@ -66,6 +67,8 @@ class CoalescingTests(unittest.TestCase):
         original = self.sha
         self.empty_commit()
         second = self.submit('second',command=command)
+        self.wait_state(second['id'],'waiting_cpu_evidence')
+        self.release.touch()
         result = self.wait(second['id'])
         self.assertNotEqual(first['id'],second['id'])
         self.assertEqual(result['state'],'succeeded',result)
@@ -82,6 +85,8 @@ class CoalescingTests(unittest.TestCase):
         self.wait_state(first['id'],'running')
         self.empty_commit()
         second = self.submit('second',command=command)
+        self.wait_state(second['id'],'waiting_cpu_evidence')
+        self.release.touch()
         result = self.wait(second['id'])
         self.assertEqual(result['state'],'blocked',result)
         self.assertEqual(result['result']['source_state'],'failed')
@@ -95,6 +100,8 @@ class CoalescingTests(unittest.TestCase):
         os.kill(row['worker_pid'],signal.SIGKILL)
         self.empty_commit()
         second = self.submit('second',command=command)
+        self.wait_state(second['id'],'waiting_cpu_evidence')
+        self.release.touch()
         result = self.wait(second['id'])
         self.assertEqual(result['state'],'succeeded',result)
         self.assertEqual(result['result']['cache_source'],first['id'])

@@ -7,7 +7,9 @@ The reservation goes through normal fleet preflight/admission and never holds
 the GPU while waiting for a CPU/probe prerequisite.
 """
 import copy
+import json
 import subprocess
+import time
 
 
 def reference(payload, index=0):
@@ -36,6 +38,9 @@ def samples(payload, index=0):
 
 
 def reserve(store, job):
+    from experiments import encoded
+    from experiment_groups import key
+    from measurement_contract import evaluations
     existing = store.db.execute("SELECT dependency FROM dependencies WHERE job=? AND kind='baseline'", (job,)).fetchone()
     if existing:
         return existing[0]
@@ -47,11 +52,42 @@ def reserve(store, job):
     # created AFTER those gates pass, and is otherwise candidate-independent.
     payload["spec"].pop("probe_contract", None)
     payload["baseline_samples"] = 3
-    request = store.submit("baseline-" + job, payload, repeat=row["repeat_reason"])
-    with store.db:
+    wanted = evaluations(payload['spec'])
+    with store.transaction():
+        # Independent evidence is keyed by the serving workload/requirements,
+        # not the candidate's objective label. An open reservation can grow;
+        # a running reservation can only accept already-covered requirements.
+        request = None
+        if not row['repeat_reason']:
+            for owner in store.db.execute("SELECT id FROM jobs WHERE state NOT IN ('succeeded','failed','blocked','incomplete','interrupted','retired') ORDER BY created").fetchall():
+                source = store.get(owner['id'])
+                if source['payload']['spec']['kind'] != 'baseline' or source['repeat_reason'] or key(source['payload']) != key(payload):
+                    continue
+                demand = evaluations(planned(store,source['id'],source['payload'])['spec'])
+                missing = [e for e in wanted if not any(e == old or e['objective']['metric']=='quality' and e['workload']==old['workload'] for old in demand)]
+                union = demand+missing
+                if len(union)>6 or source['started'] is not None and missing:
+                    continue
+                if store.db.execute("SELECT count(*) FROM dependencies WHERE dependency=? AND kind='baseline'",(source['id'],)).fetchone()[0] >= 8:
+                    continue
+                store.db.execute('INSERT OR REPLACE INTO baseline_demands VALUES(?,?)',(source['id'],encoded(union)))
+                store.db.execute('INSERT OR IGNORE INTO subscribers VALUES(?,?,?)',(source['id'],'baseline-'+job,time.time()))
+                request = dict(id=source['id'],disposition='joined',state=source['state'])
+                break
+        if request is None:
+            request = store.submit("baseline-" + job, payload, repeat=row["repeat_reason"])
+            store.db.execute('INSERT OR IGNORE INTO baseline_demands VALUES(?,?)',(request['id'],encoded(wanted)))
         store.db.execute("INSERT OR IGNORE INTO dependencies VALUES(?,?,?)", (job, request["id"], "baseline"))
         store.event(job, "baseline_reserved", request)
     return request["id"]
+
+
+def planned(store, job, payload):
+    row = store.db.execute('SELECT evaluations FROM baseline_demands WHERE job=?',(job,)).fetchone()
+    if row:
+        payload = copy.deepcopy(payload)
+        payload['spec']['evaluations'] = json.loads(row[0])
+    return payload
 
 
 def ready(payload):
