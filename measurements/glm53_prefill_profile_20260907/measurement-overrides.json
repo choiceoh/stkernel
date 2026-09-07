@@ -1,0 +1,12 @@
+{
+  "KV_TOKENS": "524288",
+  "MAX_LEN": "262144",
+  "MAX_BATCHED": "8192",
+  "MAX_SEQS": "4",
+  "GRAPH_CAP": "32",
+  "GMU": "0.6229",
+  "SPEC_K": "5",
+  "VLLM_GLM53_NVFP4_STATIC_SCALE": "0",
+  "GLM53_API_PORT": "18000",
+  "IMAGE": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211"
+}

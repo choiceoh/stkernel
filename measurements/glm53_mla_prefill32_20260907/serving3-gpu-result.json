@@ -1,0 +1,37 @@
+{
+  "source_revision": "3eb219dd2d938479326a5a6704f3789d854367dd",
+  "source_sha256": "db6040c2de8ba8d96deae8d27435a167014e4163f89e70322bdb00428b66bf72",
+  "numerical_and_changed_graph_cases": 11,
+  "memcheck_cases": 7,
+  "racecheck_cases": 7,
+  "memcheck_errors": 0,
+  "racecheck_errors": 0,
+  "racecheck_hazards": 0,
+  "racecheck_warnings": 0,
+  "restored_original": true,
+  "large_shape_timings": [
+    {
+      "T": 4143,
+      "W": 2048,
+      "baseline_median_ms": 20.739946365356445,
+      "candidate_median_ms": 20.3111572265625,
+      "kernel_rate_ratio": 1.021111014700491
+    },
+    {
+      "T": 6912,
+      "W": 2048,
+      "baseline_median_ms": 34.72724278767904,
+      "candidate_median_ms": 33.888730367024735,
+      "kernel_rate_ratio": 1.0247431052026137
+    },
+    {
+      "T": 8192,
+      "W": 2048,
+      "baseline_median_ms": 40.80562082926432,
+      "candidate_median_ms": 40.09571711222331,
+      "kernel_rate_ratio": 1.0177052255993844
+    }
+  ],
+  "serving_ttft_status": "PENDING",
+  "campaign_40_percent_proven": false
+}

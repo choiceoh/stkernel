@@ -1,0 +1,12 @@
+{
+  "REPO": "/home/choiceoh/stkernel-prefill-fused-serving",
+  "RETRY_JOB": "/tmp/glm53-prefill-retry2.7gy5_ruh",
+  "RETRY_REV": "6f797df28c29e7e4cb606724e2416dbc1c5dcfcc",
+  "IMAGE": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "requested_at_kst": "2026-09-07T14:14:25.376773",
+  "reason": "Continue matched prefill B/A/B after correcting read-only attestation: verify per-node manifest and all overlay hashes; first baseline workload passed but worker-only cache stamp assumption stopped chain. Same source, limited capacity, 10 GiB client guard and production restore.",
+  "original_pid": 1457724,
+  "HEAD_URL": "http://127.0.0.1:18000",
+  "resubmitted_at_kst": "2026-09-07T14:17:15.953489",
+  "resubmission_reason": "The previous waiter checked public port 8000 although the current owned baseline recovery is healthy on loopback 18000. Cancelled that waiter and supplied the actual HEAD_URL through the supported fleet interface; unchanged queue/preflight checks."
+}

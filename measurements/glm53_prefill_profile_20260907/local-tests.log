@@ -1,0 +1,11 @@
+test_capture_trigger_waits_for_actual_token (test_trace_prefill_attribution.PrefillAttributionTests.test_capture_trigger_waits_for_actual_token) ... ok
+test_codec_and_prenorm_are_not_generic_gemm (test_trace_prefill_attribution.PrefillAttributionTests.test_codec_and_prenorm_are_not_generic_gemm) ... ok
+test_narrow_target_excludes_bf16_chunks (test_trace_prefill_attribution.PrefillAttributionTests.test_narrow_target_excludes_bf16_chunks) ... ok
+test_overlap_is_not_double_counted (test_trace_prefill_attribution.PrefillAttributionTests.test_overlap_is_not_double_counted) ... ok
+test_prefill_ranges_exclude_decode_and_deduplicate_stream_annotations (test_trace_prefill_attribution.PrefillAttributionTests.test_prefill_ranges_exclude_decode_and_deduplicate_stream_annotations) ... ok
+test_refuses_unlabeled_trace (test_trace_prefill_attribution.PrefillAttributionTests.test_refuses_unlabeled_trace) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+OK

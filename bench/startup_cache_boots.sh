@@ -106,7 +106,12 @@ for stage in "${stages[@]}"; do
     deploy_start=$(date +%s)
     preserve=1
     [[ "$stage" != BASE* ]] || preserve=0
-    DEPLOY_PRESERVE_IDENTICAL=$preserve bash launchers/deploy-overlays.sh glm53 > "$EVIDENCE/$current_arm-deploy.log" 2>&1
+    if [ "$stage" = PRIME ]; then
+      DEPLOY_PRESERVE_IDENTICAL=$preserve bash launchers/deploy-overlays.sh glm53 > "$EVIDENCE/$current_arm-deploy.log" 2>&1
+    else
+      python3 bench/startup_same_source_deploy.py --preserve "$preserve" \
+        --source-commit "$(cat "$EVIDENCE/source-commit.txt")" > "$EVIDENCE/$current_arm-deploy.log" 2>&1
+    fi
     printf '%s\t%s\n' "$current_arm" "$(( $(date +%s) - deploy_start ))" >> "$EVIDENCE/deployment-seconds.tsv"
     python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-deploy.json"
     python3 - "$EVIDENCE" "$current_arm" "$stage" <<'DEPLOY_GATE'

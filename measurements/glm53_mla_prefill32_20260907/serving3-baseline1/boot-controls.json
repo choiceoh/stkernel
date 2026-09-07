@@ -1,0 +1,7 @@
+{
+  "GMU": "0.6229",
+  "MAX_BATCHED": "8192",
+  "MAX_SEQS": "4",
+  "GRAPH_CAP": "32",
+  "CG_UTIL_DELTA": "0"
+}

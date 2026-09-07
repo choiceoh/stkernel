@@ -1,0 +1,30 @@
+{"host": "srv2", "probe_memory": {"passed": true, "available_kib": 100515760, "required_kib": 20939398, "total_kib": 125507892}}
+probe_node=srv2 revision=e74b15e5a846827e554835ca73eda71e7698e4ac image=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b  /usr/local/cuda/compute-sanitizer/compute-sanitizer
+NVIDIA (R) Compute Sanitizer
+Copyright (c) 2020-2025 NVIDIA Corporation
+Version 2025.3.1.0 (build 36400806) (public-release)
+========= COMPUTE-SANITIZER
+source_sha256 716cf13ae2092fabcb17bcfafd4beee256fecc040abd3dfd40b36b5146a64d04
+[megakernel] source md5=9324cc63 kernels=10 (/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu)
+{"T": 128, "W": 1, "rel": 0.0, "base_rel": 0.0, "full_delta": 0.0, "max_row_ref": 0.0, "max_row_delta": 0.0, "replay": true, "graph_changed_inputs": true}
+{"T": 129, "W": 17, "rel": 0.002752979671928384, "base_rel": 0.0027531353985991605, "full_delta": 9.016860950437604e-05, "max_row_ref": 0.0033784760162234306, "max_row_delta": 0.0009064891492016613, "replay": true, "graph_changed_inputs": true}
+{"T": 131, "W": 31, "rel": 0.0012696388075530743, "base_rel": 0.0012380122333317263, "full_delta": 0.0004496795246012126, "max_row_ref": 0.0017802284564822912, "max_row_delta": 0.0013651509070768952, "replay": true, "graph_changed_inputs": true}
+{"T": 128, "W": 32, "rel": 0.0015808316329124729, "base_rel": 0.001578678365199975, "full_delta": 0.0005021874757060898, "max_row_ref": 0.0022268483880907297, "max_row_delta": 0.001753513002768159, "replay": true, "graph_changed_inputs": true}
+{"T": 129, "W": 33, "rel": 0.002637867671576005, "base_rel": 0.0026366402514435804, "full_delta": 0.0007582359094193153, "max_row_ref": 0.003271538531407714, "max_row_delta": 0.002356229117140174, "replay": true, "graph_changed_inputs": true}
+{"T": 128, "W": 2048, "rel": 0.0014159421048726161, "base_rel": 0.0013937181816156136, "full_delta": 0.0005370412687970912, "max_row_ref": 0.001977566396817565, "max_row_delta": 0.001128683565184474, "replay": true, "graph_changed_inputs": true}
+{"T": 131, "W": 2176, "rel": 0.001124751253103933, "base_rel": 0.0011247950898285806, "full_delta": 0.0006032916171520075, "max_row_ref": 0.002191866748034954, "max_row_delta": 0.0015995089197531343, "replay": true, "graph_changed_inputs": true}
+{"verdict": "PASS", "cases": 7, "serving_speedup": null}
+========= ERROR SUMMARY: 0 errors
+========= COMPUTE-SANITIZER
+source_sha256 716cf13ae2092fabcb17bcfafd4beee256fecc040abd3dfd40b36b5146a64d04
+[megakernel] source md5=9324cc63 kernels=10 (/repo/overlay/modules/glm53_megakernel/glm53_megakernel.cu)
+{"T": 128, "W": 1, "rel": 0.0, "base_rel": 0.0, "full_delta": 0.0, "max_row_ref": 0.0, "max_row_delta": 0.0, "replay": true, "graph_changed_inputs": true}
+{"T": 129, "W": 17, "rel": 0.002752979671928384, "base_rel": 0.0027531353985991605, "full_delta": 9.016860950437604e-05, "max_row_ref": 0.0033784760162234306, "max_row_delta": 0.0009064891492016613, "replay": true, "graph_changed_inputs": true}
+{"T": 131, "W": 31, "rel": 0.0012696388075530743, "base_rel": 0.0012380122333317263, "full_delta": 0.0004496795246012126, "max_row_ref": 0.0017802284564822912, "max_row_delta": 0.0013651509070768952, "replay": true, "graph_changed_inputs": true}
+{"T": 128, "W": 32, "rel": 0.0015808316329124729, "base_rel": 0.001578678365199975, "full_delta": 0.0005021874757060898, "max_row_ref": 0.0022268483880907297, "max_row_delta": 0.001753513002768159, "replay": true, "graph_changed_inputs": true}
+{"T": 129, "W": 33, "rel": 0.002637867671576005, "base_rel": 0.0026366402514435804, "full_delta": 0.0007582359094193153, "max_row_ref": 0.003271538531407714, "max_row_delta": 0.002356229117140174, "replay": true, "graph_changed_inputs": true}
+{"T": 128, "W": 2048, "rel": 0.0014159421048726161, "base_rel": 0.0013937181816156136, "full_delta": 0.0005370412687970912, "max_row_ref": 0.001977566396817565, "max_row_delta": 0.001128683565184474, "replay": true, "graph_changed_inputs": true}
+{"T": 131, "W": 2176, "rel": 0.001124751253103933, "base_rel": 0.0011247950898285806, "full_delta": 0.0006032916171520075, "max_row_ref": 0.002191866748034954, "max_row_delta": 0.0015995089197531343, "replay": true, "graph_changed_inputs": true}
+{"verdict": "PASS", "cases": 7, "serving_speedup": null}
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)

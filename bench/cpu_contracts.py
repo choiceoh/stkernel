@@ -15,7 +15,7 @@ import __future__
 
 # Re-audited: full-runner graph tests plus main launch/occupancy count updates.
 # Extracted math/layout/dispatch functions, globals and loader are unchanged.
-LOGIC_AUDIT = '605bd1ffe67dc6000a51009158bbfb0ab26ea8e8585c57de52928828eea90872'
+LOGIC_AUDIT = '4b2c3aa389110e6c742317854bc052b0295aa4222a2782b242bf3d654f6d5b4d'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

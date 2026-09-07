@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "name": "MLAPREF50907B2",
+  "requests": [
+    {
+      "cache_salt": "prefill-fresh:c16ae4d458674916b2347d2b5643ea90",
+      "before": {
+        "traffic": {
+          "finished": 5.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 167481.0
+      },
+      "issues": [],
+      "unsalted_sha256": "6892d85470c14a0fab53e11b46d18f9587587c82f0aa1ca3cde696ca75b47104",
+      "wire_sha256": "a59246042b1af3727278205e97a06c7bb4acf1bfd3bb95a55db417b12bfb192a",
+      "ttft_s": 0.8749024860444479,
+      "prompt_tokens": 2121,
+      "completion_tokens": 400,
+      "after": {
+        "traffic": {
+          "finished": 6.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 169602.0
+      }
+    },
+    {
+      "cache_salt": "prefill-fresh:12cab89060e94bedac1075b443b04d53",
+      "before": {
+        "traffic": {
+          "finished": 6.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 169602.0
+      },
+      "issues": [],
+      "unsalted_sha256": "e19da4e8cef976a067e90bf7bce933afa65a88a85c17be2218182fac2a4e2a8b",
+      "wire_sha256": "3e5e06adb1d728242c952efb39393df8f1204faa639b581c1c6a6e8a629c433a",
+      "ttft_s": 0.896715888986364,
+      "prompt_tokens": 2128,
+      "completion_tokens": 400,
+      "after": {
+        "traffic": {
+          "finished": 7.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 171730.0
+      }
+    },
+    {
+      "cache_salt": "prefill-fresh:cdd8cabad082438ab03da4655f438fe8",
+      "before": {
+        "traffic": {
+          "finished": 7.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 171730.0
+      },
+      "issues": [],
+      "unsalted_sha256": "c36bfff63cfa297dd209f0c6b97e0fd430fe215696bed1cb080e89640aa06265",
+      "wire_sha256": "abd6b750baf6563277a16b075c5f156978029d99048099ba1c2b6e2d0b0e516d",
+      "ttft_s": 0.8734459080151282,
+      "prompt_tokens": 2128,
+      "completion_tokens": 400,
+      "after": {
+        "traffic": {
+          "finished": 8.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 173858.0
+      }
+    },
+    {
+      "cache_salt": "prefill-fresh:806a16f946464ff999e6b46ce96fbebb",
+      "before": {
+        "traffic": {
+          "finished": 8.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 173858.0
+      },
+      "issues": [],
+      "unsalted_sha256": "c3463c6e8116db5558e3b809b6b59a1f438fe68b0ad0be391ef96480da7de9ed",
+      "wire_sha256": "98b6dc6a9c012aeff4a330d23d828cedf9b16a09946118d9378f9fc736814aab",
+      "ttft_s": 10.477625082945451,
+      "prompt_tokens": 32545,
+      "completion_tokens": 1200,
+      "after": {
+        "traffic": {
+          "finished": 9.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 206403.0
+      }
+    },
+    {
+      "cache_salt": "prefill-fresh:3ec4dea07e8541929c20de772d14861b",
+      "before": {
+        "traffic": {
+          "finished": 9.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 206403.0
+      },
+      "issues": [],
+      "unsalted_sha256": "ee7545109ae85229ab3c88185749ca056baf52f376547da4dd57b2fa18d70228",
+      "wire_sha256": "3cf5e2e08b8f6f75fd5073ea73aabee3710cc123956c353e39135a22013250bb",
+      "ttft_s": 41.39442877197871,
+      "prompt_tokens": 128559,
+      "completion_tokens": 1052,
+      "after": {
+        "traffic": {
+          "finished": 10.0,
+          "running": 0.0,
+          "waiting": 0.0
+        },
+        "prefix_hits": 0.0,
+        "prefix_queries": 334962.0
+      }
+    }
+  ],
+  "note": "Every TTFT sample is fresh prefill; later samples may have warm compilation."
+}

@@ -12,6 +12,7 @@ export STARTUP_CACHE_MODE=overlay-deploy
 mkdir -p "$STARTUP_CACHE_EVIDENCE"
 python3 -m unittest discover -s tests -p test_glm53_overlay_sync.py > "$STARTUP_CACHE_EVIDENCE/sync-tests.log" 2>&1
 python3 -m unittest discover -s tests -p test_startup_cache_receipts.py > "$STARTUP_CACHE_EVIDENCE/receipt-tests.log" 2>&1
+python3 -m unittest discover -s tests -p test_startup_same_source_deploy.py > "$STARTUP_CACHE_EVIDENCE/same-source-tests.log" 2>&1
 python3 bench/startup_host_memory.py "$STARTUP_CACHE_EVIDENCE" > "$STARTUP_CACHE_EVIDENCE/memwatch.out" 2>&1 &
 sampler_pid=$!
 trap 'kill "$sampler_pid" 2>/dev/null || true; wait "$sampler_pid" 2>/dev/null || true' EXIT

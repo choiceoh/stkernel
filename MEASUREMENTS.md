@@ -7374,6 +7374,84 @@ restored at 20:25:15 KST, with health 200 verified after recovery.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
 
+### GLM prefill fusion / split thresholds / direct packets (2026-09-07)
+
+PR #439, tested source `52b23e2`: the first GPU run exposed a production-MHC
+first-product rounding mismatch. Corrected order passes 28 fused-post cases
+and 260 real TP4 transport/threshold cases, including bit-exact next-pre
+continuation and nondefault streams. Direct PyNCCL exchange is numerically
+correct but has severe 4K latency cliffs; leave it off.
+
+The subsequent exclusive serving arm `SPFUSED0907` (overlay `284770d1a222`)
+proved 3/3 selected paths and completed 2K/4K/8K/32K requests. At 128K,
+earlyoom terminated the head worker with 6,114 MiB available; the request
+returned no content. The arm is invalid and its baseline never ran. No
+serving gain or original 40% target claim is supported. Keep all new options
+at their existing defaults. The earlier probe-induced headroom incident
+received a verified defaults recovery; probe launchers now refuse inadequate
+host memory, which does not resolve the separate long-context serving issue.
+
+[Failure analysis, recovery details and device evidence](docs/GLM53_PREFILL_FOLLOWUP_20260907.md).
+
+
+The scheduled retry on `6f797df` (main `0b6dc75` included) used a dedicated
+ledger and common reduced capacity (KV_TOKENS 524288, MAX_LEN 262144).
+Its defaults workload completed 128K: retrieval 15/15, Korean corruption
+0/11, no traffic issues, minimum observed head MemAvailable 20.7 GiB.
+128K TTFT was 41.401 s; this is a single baseline, not an improvement result.
+A head-only stamp assumption in the post-leg helper stopped the first chain.
+After correction, the next admission refused before deploy because srv1
+had only 18.9 GiB free disk (32 GiB test floor); five rank-cache artifacts
+occupied 224 GiB. No candidate/baseline comparison completed and no default
+promotion is warranted. [Retry, memory and disk evidence](measurements/glm53_prefill_retry_20260907/README.md).
+
+
+After disk recovery, the fresh `spfrt30907` bracket on the same `6f797df`
+source completed B1/A/B2 by 14:58:36 KST. All 33 requests completed with
+retrieval 45/45, Korean corruption 0/33, no traffic or memory-guard issues,
+and matching four-node attestations. Request bodies and token counts match.
+Relative to the two baseline means, prefill/first-content throughput changed
+**2K +1.74%, 4K +2.09%, 8K -1.75%, 32K +0.74%, 128K +0.27%**. Long-context
+deltas are inside baseline variation; the 40% target remains unmet and new
+options remain unpromoted. Capacity is still the common reduced test setting.
+[Matched results and full raw evidence](measurements/glm53_prefill_retry3_20260907/README.md).
+
+
+### Current GLM prefill attribution (2026-09-07, pattr20907)
+
+Profiled the actually deployed settings on source `6f797df`, manifest
+`0aca81454720`, pinned `a3dd4c0f...` image. Actual NVFP4 static scale was **0**,
+unlike the earlier #439 bracket's 16. Preserve this scope difference.
+Matched Korean onepass inputs with distinct cache salts: 32,545 / 128,559
+actual tokens, clean control → profile → clean control, all four rank traces.
+All six requests: retrieval **18/18**, Korean corruption **0/6**, cache hits 0,
+no traffic or 12 GiB memory-guard errors (minimum head headroom 17.40 GiB).
+
+Mean per-rank occupied prefill time: MoE **32.08 / 28.15%**, MLA/indexer
+**16.40 / 20.42%**, dense GEMM/quant **12.94 / 13.12%**, NCCL **12.67 / 12.11%**,
+KDA **10.77 / 10.73%**, MHC **4.95 / 5.06%** (32K / 128K). Communication and
+compute overlap is effectively zero. Explicit pure-prefill ranges, not a
+decode-step estimate, identify six / nineteen chunks; token totals match all
+requests and ranks. Occupancy unions avoid double-counting streams.
+
+The FP8 RS-unpack + MHC-post scope of #439's standalone microbenchmark is
+only **2.64 / 3.08%** of prefill. A hypothetical 12.7% reduction of that work
+would save roughly 0.34–0.39% of total time, not 12.7% end-to-end. This is a
+budget illustration, not a new performance verdict. Larger remaining
+candidates are communication/MLP overlap and MoE/MLA kernel design; previous
+MoE reuse and MLA pair/group regressions do not justify re-enabling them.
+
+Clean TTFT before/profile/after: 32K **11.880 / 10.647 / 10.553 s**;
+128K **42.055 / 42.177 / 41.855 s**. The first 32K control has a first-process
+cost that is not isolated; profile-vs-later-control differs by <1% at both
+sizes. This diagnostic proves no new speedup or cumulative 40% gain.
+Reduced KV capacity (415 blocks, maximum length 262144) is retained as a
+limitation. Initial reset-API 404 occurred before any model request and was
+corrected with supported request cache salts; both recovery receipts remain.
+Final full-capacity public recovery **16:33:32**, health 200, four-node
+command/image/mount/env verification passed, fleet exit 0. Six attribution
+CPU tests pass. [Report, per-rank analysis and raw trace manifest](measurements/glm53_prefill_profile_20260907/README.md).
+
 ## GLM53 W4 키 SHA256 — warm 부팅 234 → 226.5초 (2026-09-07)
 
 PR #452, 런타임 `7132fd15306166f15ce783fe2580dad661f22801` (main #451 위).
