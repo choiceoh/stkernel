@@ -1,0 +1,22 @@
+{
+  "revision": "30c32840a5d4159a2ff82539f2dac09a2e109a08",
+  "source": "/home/choiceoh/stkernel-prefill-offline2-0907",
+  "session": "prefilloff20907",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "prefilloff20907",
+    "45",
+    "PR444 MoE GPU gates + PR439 MLA sanitizer; fixed and subprocess-tested offline lifecycle, exact-ID restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-prefill-offline2-0907/probes/glm53_offline_checks.py",
+    "--out",
+    "/tmp/glm53-prefill-offline2-0907/evidence"
+  ],
+  "scope": "Normal boot turn for offline GPU gates; subsequent matched serving TTFT remains required",
+  "supersedes": "/tmp/glm53-prefill-offline-0907",
+  "created": "2026-09-07T20:17:14.201736"
+}

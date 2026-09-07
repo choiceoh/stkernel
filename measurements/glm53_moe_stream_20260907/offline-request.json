@@ -1,0 +1,20 @@
+{
+  "revision": "4e0f226d17d78648aea48028279cb4b347c3e994",
+  "session": "prefilloff10907",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "prefilloff10907",
+    "45",
+    "PR444 MoE full GPU gates + PR439 remaining MLA sanitizers; pause exact serving IDs for UMA headroom and verify recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-prefill-offline-0907/probes/glm53_offline_checks.py",
+    "--out",
+    "/tmp/glm53-prefill-offline-0907/evidence"
+  ],
+  "scope": "Normal boot turn for offline GPU gates; direct serving TTFT remains a subsequent measurement",
+  "created": "2026-09-07T18:45:19.620418"
+}

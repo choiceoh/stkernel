@@ -1,0 +1,8 @@
+preflight prefilloff10907 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 18 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: DEF3 on build 59246407cebe -- 21.82 step/s, 3.27 tok/step, 45.3% acc, 2026-09-07 12:36:55 -- skip a defaults arm and compare against it
+  -> PASS
+waiting: pos 2/2, held by inputserve40907 [boot] (pid 2737782@srv2, since 18:34, est 55m, Real 6416 routing, tail-warp GPU gates and pre-traffic four-rank C1 B/A/A/B), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:45:20

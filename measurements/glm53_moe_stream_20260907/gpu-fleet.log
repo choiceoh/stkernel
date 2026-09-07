@@ -1,0 +1,36 @@
+preflight moestreamprobe20907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax probes/run_b12x_prefill_stream_check.sh
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+waiting: pos 1/1, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_17:55:39
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_17:56:09
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_17:58:40
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (4 procs, 0 reqs, booting) 2026-09-07_18:02:41
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:02:56
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs) 2026-09-07_18:03:56
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:04:56
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_18:10:43
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs) 2026-09-07_18:14:59
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:15:14
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs) 2026-09-07_18:15:59
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (2 procs, 0 reqs, booting) 2026-09-07_18:16:59
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_18:19:15
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:19:30
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (0 procs, 0 reqs, booting) 2026-09-07_18:19:45
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (3 procs, 0 reqs, booting) 2026-09-07_18:20:45
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:21:00
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs) 2026-09-07_18:22:01
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_18:23:01
+waiting: pos 1/2, held by inputserve30907 [boot] (pid 2491674@srv2, since 17:49, est 45m, Reuse identical-code passing GPU gates; current-main C1 B/A/A/B with pre-stop ancestry check), legacy busy (1 procs, 0 reqs) 2026-09-07_18:30:18
+GO moestreamprobe20907 2026-09-07_18:30:48
+{"host": "srv2", "probe_memory": {"passed": false, "available_kib": 10352724, "required_kib": 20939398, "total_kib": 125507892}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv1", "probe_memory": {"passed": false, "available_kib": 15262028, "required_kib": 21142754, "total_kib": 127541452}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv3", "probe_memory": {"passed": false, "available_kib": 10753776, "required_kib": 20932751, "total_kib": 125441424}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+{"host": "srv4", "probe_memory": {"passed": false, "available_kib": 13463640, "required_kib": 21142140, "total_kib": 127535320}}
+REFUSED: insufficient UMA memory for an additional GPU probe; use an offline fleet turn before starting serving. Refusing the next GPU container.
+No node has MoE probe memory headroom

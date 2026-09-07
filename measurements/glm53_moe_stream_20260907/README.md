@@ -1,0 +1,291 @@
+# GLM large-prefill MoE streamed FC2 candidate — 2026-09-07
+
+Default-off candidate `VLLM_GLM53_B12X_PREFILL_STREAM_FC2=1`, separate from
+MLA PR #439. No serving speedup or cumulative 40% improvement is claimed.
+
+The previous attribution capture on source `6f797df28c29e7e4cb606724e2416dbc1c5dcfcc`
+put MoE at 32.08% / 28.15% of per-rank prefill spans at 32K / 128K.
+That is the whole MoE category, not all removable time and not the exact
+eligible-chunk budget. Source evidence is preserved in PR #439 under
+`measurements/glm53_prefill_profile_20260907`; the new candidate uses a
+separate checkout based on `619cfec`.
+
+## Change
+
+The earlier FC1 N128 candidate retained four Q1 A/SFA register-fragment pairs
+through all 32 FC2 output tiles. The new subclass retains N128 FC1 and its
+Q0/route preparation, but loads one Q1 slice at a time in a dynamic FC2 loop.
+The increasing-slice MMA order, quantization, BF16 conversions, barriers and
+atomic scatter are unchanged. Shared Q1 slots remain A=[3,4,2,1] and
+SFA=[3,1,2,0]; none uses A0, which aliases FC2's third B stage.
+
+The existing tile-major adapter supplies production `STATIC_V2=t` weights
+without a per-request conversion or a second resident weight layout. The
+new lane is exact-gated to SM121, E288/K4096/I512/top8, NVFP4, SwiGLU-OAI
+(1,0,10), M128/N128 tiles and **executed chunks 4096–8192**. Short chunks
+and other contracts fall back. Old reuse flags cannot be combined with it.
+A distinct cache suffix prevents reuse of a stock or old candidate artifact.
+Private helper/source drift declines the candidate. `COMPILED` and
+post-call `LAUNCHED` log markers are separate; serving proof uses only the latter.
+
+N128 FC1's requested TMA payload per unsplit M128/I512 task remains
+5.875 → 4.5 MiB (23.4% fewer bytes than stock). This is source accounting,
+not measured DRAM traffic or a predicted prefill gain. Streaming repeats
+shared loads; GPU timing must establish whether the tradeoff wins.
+
+## Completed CPU evidence
+
+Pinned image: `sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211`.
+Real CuTe compilation at M6912 / sm_121a on srv4, through fleet's explicit
+CPU lane. Containers used runc, no GPU devices, network disabled, 2 CPUs,
+4 GiB RAM cap; the check verified CUDA was never initialized. File/dump
+hashes and the compiled binary's resource records are in `cpu-resources.json`.
+
+| Arm | Layout | Reported registers | Stack bytes | Reported local bytes |
+| --- | --- | ---: | ---: | ---: |
+| Stock | tiled | 168 | 1680 | 0 |
+| Prior N128 + four cached FC2 slices | row-major | 40 | 3504 | 0 |
+| New N128 + streamed FC2 | row-major | 168 | 1744 | 0 |
+| New N128 + streamed FC2 | tiled | 168 | 1744 | 0 |
+
+These are `cuobjdump --dump-resource-usage` records of the DSL's own cubins.
+**Stack footprint fell 50.2% versus the earlier N128 candidate, but remains
+3.8% above stock.** This does not measure spill loads/stores, occupancy,
+register use per warp role, or latency. In particular `LOCAL:0` does not
+establish spill-free execution. A CPU-only unroll=1 experiment reported
+1776 stack bytes and provides no established advantage; the candidate keeps
+the existing unroll=4 scheduling for the GPU comparison. That experiment
+is preserved in the JSON, and is not a runtime rejection.
+
+The first auxiliary reassembly attempt failed because image CUDA 13.0 ptxas
+accepts PTX 9.0 while the DSL emits PTX 9.3. The CuTe compile itself had
+succeeded. Resource inspection was corrected to read the actual compiled
+cubin; no altered PTX or downgraded target was used.
+
+Local validation: 6680 logic checks, including 30 megakernel and 51 fleet
+regressions, passed. Torch-dependent checks were explicitly skipped on the
+Mac. Five new unittest cases execute actual dispatch/cache/proof logic.
+Composed snapshot parity, Python syntax, shell syntax and diff whitespace
+checks passed. GPU arithmetic and serving quality are separate pending gates.
+
+## GPU and serving gates
+
+`probes/run_b12x_prefill_stream_check.sh` runs through fleet's GPU probe
+queue and selects a worker with the unchanged UMA guard if the head has
+insufficient room. It pins the image, mounts composed source files, verifies
+file hashes and uses isolated caches. It does not deploy or restart serving.
+
+The same-process stock and candidate use identical tile-major weights and
+all 288 experts. Cases cover 4096, 6912 and 8192 tokens, balanced routing,
+eight-expert skew (multi-slice tasks), every-row eager comparisons, poisoned
+output buffers and graph replay after changing activations and expert IDs.
+2593 tokens confirms short-chunk decline. Numerical gates compare each row's
+relative L2 and maximum absolute error with both stock and stock-repeat
+atomic-scatter noise (floors 2% / 4%, or 3x measured row noise). Balanced
+AB/BA graph timings retain every sample; memcheck and racecheck run separately.
+
+This does not substitute for direct serving evidence. After numerical and
+sanitizer success, run the planned matched prefill workload at 2K, 32K and
+128K with all quality checks, exclusive traffic, verified candidate launches,
+identical image/build/settings and fresh prefix-cache inputs. The prepared
+`serving-plan.json` records all three TTFT objectives. It must be bound to the
+then-verified deployment, model and hardware before submission; no deployment
+or serving bracket is claimed by the CPU/GPU-probe artifacts.
+
+## Queue preparation correction
+
+The initial `moestreamprobe0907` request passed fleet preflight and queued,
+but was cancelled **before GPU admission** after the separate MLA probe
+revealed that the pinned runtime image has no `compute-sanitizer` executable.
+No MoE GPU result was produced by that request.
+
+The corrected runner mounts `/usr/local/cuda/compute-sanitizer` from the
+selected host read-only, including its injection libraries. All four hosts
+reported version 2025.3.1.0 and executable SHA-256
+`7a7fcdefb67042731daf021478176f4919e1843d0b10cb697af28a7d8a3d108b`.
+The mounted executable's `--version` also succeeded inside the pinned image
+in a CPU-only runc container. The GPU runner repeats that check before
+launching the numerical tests and logs its tool hash.
+
+The corrected request is `moestreamprobe20907`, source
+`924b1be06e146381019fb1ee1144bd6d64b2914d`, with a clean detached checkout
+at `srv2:/home/choiceoh/stkernel-moe-stream-check2-0907`. The supervisor
+PID is 2552739 and logs/completion are under
+`srv2:/tmp/glm53-moe-stream-check2-0907`. At 17:56 KST preflight passed
+and it was queue position 1 behind `inputserve30907`. GPU checks had not
+yet run. The second queued job, `mla32san40907`, belongs to PR #439 and
+completes only that candidate's remaining sanitizer checks.
+
+## Memory admission refusal and offline retry
+
+The corrected probe received GO at 18:30:48 KST and exited 3 at 18:30:49,
+before any GPU container launched. All four nodes were below the unchanged
+UMA guard with production serving resident (about 9.9–14.6 GiB available,
+about 20 GiB required). The raw log and completion are preserved. This is
+an admission failure, not a numerical or speed result.
+
+`probes/glm53_offline_checks.py` moves both candidates into one normal fleet
+boot turn. It pins the same two previously queued checkouts; MoE runs its
+full gate and MLA runs only its missing sanitizers. A strict ownership and
+four-node inventory check precedes any stop. Running persistent containers
+are stopped by exact ID, then restarted even on probe/stop failure, with
+configuration, image, overlay and manifest hashes and endpoint health checked.
+The probe memory guard is unchanged. The runner also requires 128 GiB spare
+disk per node. If the predecessor leaves no serving, the runner follows the
+standard last-holder public restore policy. It refuses a partial fleet.
+
+Direct-serving preparation adds `bench/onepass_fresh.py`: every canonical
+onepass request gets a distinct cache salt, while original request hashes,
+token counts, TTFT and prefix-hit deltas are retained. Metrics reads stay
+outside the measured request interval. The existing four-node memory watcher
+is included for the planned 2K/32K/128K comparison. These CPU-tested helpers
+are preparation; no direct-serving measurement is claimed.
+
+Offline request `prefilloff10907` was submitted at 18:45 KST, runner source
+`4e0f226d17d78648aea48028279cb4b347c3e994`, clean detached checkout
+`srv2:/home/choiceoh/stkernel-prefill-offline-0907`. Supervisor PID 2792656;
+request, fleet log, progress and completion live under
+`srv2:/tmp/glm53-prefill-offline-0907` (probe evidence under `evidence/`).
+The two probe source pins remain unchanged. Six recovery/ownership CPU tests
+and eight fresh-request/memory-watcher tests passed. No new GPU result yet.
+
+## Direct-serving comparison preparation (19:06 KST)
+
+`bench/prefill_compare.py` checks B1/A/B2 evidence before computing any
+improvement: one full source revision and immutable image, four consistent
+overlay snapshots, only the intended knob changed, independent boots, private
+18000 endpoint, 415-block/262144-token measurement capacity, excluded priming,
+identical request bodies and actual token counts, every-request cache salt
+uniqueness and zero prefix hits, idle traffic, 9/9 retrieval and 0/5 Korean
+corruption, and candidate launch proof on all four ranks. Each input arm
+contains before/after node snapshots and canonical priming/measured
+record+fresh reports as specified in the module docstring.
+
+It preserves each matched question's TTFT and reports latency reduction and
+reciprocal prefill rate separately, including both baseline comparisons and
+baseline spread. It does not treat a later short request's minimum as a warm
+prefix-cache result. Invalid evidence yields issues and no performance table.
+Seven CPU tests cover valid arithmetic and cache, build, runtime, priming,
+traffic, quality, token, nonfinite timing and capacity failures. Their inputs
+are synthetic test fixtures, not serving evidence. The GPU queue remains
+unchanged and the direct-serving bracket has not yet been submitted.
+
+## Connected serving runner (prepared, not submitted)
+
+`bench/prefill_serving.py run` now joins the pieces: it requires the selected
+candidate's completed offline GPU gate and recovery, checks the validated
+kernel sources are unchanged, checks current-main ancestry and spare disk,
+then uses fleet deploy and chain for B1/A/B2. Each after hook captures all
+four ranks, runs canonical fresh onepass for excluded priming and measurement
+under the 12 GiB memory watcher, rejects a failed quality/traffic phase,
+archives container logs, and writes the arm inputs for prefill_compare.py.
+Only the candidate knob changes. Runtime environment values other than that
+knob are hashed in evidence so other changes remain detectable without
+printing credentials. Model config/tokenizer/index hashes and weight-file
+size/mtime inventories are retained; these are identity/change checks, not
+a fresh full-weight cryptographic validation.
+
+The finalizer always attempts the standard public default arm on the tested
+source with KV_TOKENS=2000000/MAX_LEN=1048576 and verifies 1056 blocks,
+public port 8000, all four source/image/knob fingerprints, model/hardware
+continuity and health. A failed restore keeps the run failed. Five CPU tests
+cover actual arm ordering, bad priming, wrong-rank source/capacity, failed GPU
+admission and restoration failure. No production/GPU action was run by them.
+
+After the offline gate passes, rebase/freeze a clean current-main candidate
+checkout with the real GitHub origin and register (do not run directly):
+
+```bash
+REPO=/home/choiceoh/stkernel bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu \
+  moe_prefill_serving 60 'Matched fresh 2K/32K/128K B1/A/B2 and public restore' -- \
+  python3 "$SOURCE/bench/prefill_serving.py" run --candidate moe --name MOEPREFILL \
+  --source "$SOURCE" --revision "$REV" \
+  --gate-dir /tmp/glm53-prefill-offline-0907/evidence --out "$JOB/evidence"
+```
+
+`SOURCE` must be the checkout containing that runner; `REV` is its full
+committed SHA. Use a unique session, name and output path for each candidate.
+The analogous MLA run uses `--candidate mla` from its separate source tree.
+This prepared command is not a serving queue receipt or a measured result.
+
+The preparation was rebased onto main `757ea2b`; all five validated MoE
+implementation/dispatch/adapter/wrapper files remain byte-identical to the
+pending 924b1be gate. The queued checkouts were not modified. The serving
+runner uses a chain LEVER adapter to freeze B1's actual GMU and scheduling
+controls for A/B2, with CG_UTIL_DELTA=0 for the already-adjusted value. This
+avoids per-boot automatic memory-budget drift and double graph-budget
+deduction. Six serving-runner tests and seven comparison tests pass, as do
+the MoE dispatch tests and composed snapshot checks.
+
+## Remote preparation at 19:55 KST — not submitted
+
+A clean serving checkout now exists at
+`srv2:/home/choiceoh/stkernel-moe-prefill-serving1-0907`, pinned to
+`72bb40ed3689eb025f9ef364d6f807ce462da6b5`, with the real GitHub origin and
+current-main ancestry verified. `prefill_serving.py --help` succeeded on the
+remote host without starting GPU or serving work. The prepared request and
+worker are under `srv2:/tmp/glm53-moe-prefill-serving1-0907`; the receipt
+explicitly says PREPARED_ONLY_NOT_SUBMITTED. No worker process was launched
+and no serving queue entry was added.
+
+After the selected offline GPU gate and recovery pass, the worker rechecks
+source cleanliness, gate parity and current-main ancestry before recording
+submission and entering the normal fleet queue as `moeprefill10907`. A changed
+main or failed gate is refused before reservation. Do not mistake this
+preparation receipt for executed or queued serving evidence.
+
+## Offline orchestration failure and fix (20:14 KST)
+
+`prefilloff10907` received GO at 20:00:24 and failed at 20:00:28 before
+entering either GPU probe. All stop attempts refused an unchanged container
+because Docker returned the Mounts list in a different order. Recovery then
+hit the same check or a second bug: the generated `start` action was emitted
+as an unquoted Python identifier. No Docker stop/start command executed;
+this run supplies neither GPU results nor a service-recovery success claim.
+Original request and compressed logs, completion, inventory and resource
+evidence are retained alongside `offline1-failure.json`.
+
+The fix hashes complete mount records sorted by their unique destination,
+quotes the emitted action, and bounds remote stderr. Eight CPU tests pass,
+including real subprocess execution of the complete generated Python against
+a stateful fake Docker; alternating mount order succeeds, while an actual
+mount source change is refused before mutation. A separate read-only check
+repeated the corrected inventory three times on all four live nodes; its
+result is in `offline2-readonly-identity.json`. These checks used no GPU and
+did not stop or restart the active owner's containers. A fresh normal fleet
+turn is still required for GPU numerics/sanitizers, then direct-serving TTFT.
+The previously prepared serving jobs remain unsubmitted and must be pointed
+at the successful retry gate before use. Both candidates remain default-off.
+
+The corrected runner was frozen as `30c32840a5d4159a2ff82539f2dac09a2e109a08`
+at `srv2:/home/choiceoh/stkernel-prefill-offline2-0907`; the same eight tests
+also passed on the remote host before submission. Normal fleet request
+`prefilloff20907` was accepted at 20:17:15 with supervisor PID 3272342.
+It is queue position 2 behind inputchan0907 and rankstream20907, estimated
+GO 21:20 at the 20:17 snapshot. This is an estimate, not executed evidence.
+Logs/completion are under `/tmp/glm53-prefill-offline2-0907`, with detailed
+gates and restore evidence in `evidence/`. The probe source pins are unchanged.
+Prepared serving requests now reference this retry evidence path; original
+requests were archived, no serving worker was started, and actual GPU gate
+plus recovery/current-main/source-parity checks remain mandatory.
+
+## Actual GPU result, 20:38 KST
+
+The retry received GO 20:30:33 and restored the exact incoming container
+identities/configuration/source and healthy endpoint at 20:38:54. Recovery
+passed, but the overall gate failed because MoE failed numerics. The 4096
+balanced case passed eager and changed-input graphs, then measured median
+stock 9.851942 ms versus stream 12.081869 ms: latency +22.63%,
+reciprocal rate -18.46%. The next 6912 skew case exceeded the
+existing per-row limits on 40 rows (maximum relative L2 0.031223, peak-relative
+error 0.128848, stock repeated-run L2 0). This stopped the probe before its
+sanitizers. Do not lower the limits, submit this candidate to serving, or
+claim its compiled-stack reduction as a performance gain. The exact numerical
+root cause remains unresolved; full-tile occupancy is only a diagnostic lead.
+
+MLA's separate memcheck and racecheck each passed seven cases, with zero
+errors/hazards/warnings. These are not TTFT results. Raw candidate logs,
+completion and compressed before/stopped/restarted/restored inventories are
+retained here, with machine-readable conclusions in offline2-result.json.
+The local MoE branch was rebased on main 69ea76f; its five validated source
+files are byte-identical to this failed GPU source. Both flags remain off.

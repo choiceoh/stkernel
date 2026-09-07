@@ -1,0 +1,54 @@
+{
+  "hypothesis": "N128 FC1 with one live FC2 slice improves large GLM prefill without a short-request regression",
+  "knobs": {
+    "VLLM_GLM53_B12X_PREFILL_STREAM_FC2": "1"
+  },
+  "evaluations": [
+    {
+      "objective": {
+        "metric": "prefill_ttft",
+        "ctx": 2000
+      },
+      "workload": {
+        "ctx": [
+          2000,
+          32000,
+          128000
+        ],
+        "require_exclusive": true
+      }
+    },
+    {
+      "objective": {
+        "metric": "prefill_ttft",
+        "ctx": 32000
+      },
+      "workload": {
+        "ctx": [
+          2000,
+          32000,
+          128000
+        ],
+        "require_exclusive": true
+      }
+    },
+    {
+      "objective": {
+        "metric": "prefill_ttft",
+        "ctx": 128000
+      },
+      "workload": {
+        "ctx": [
+          2000,
+          32000,
+          128000
+        ],
+        "require_exclusive": true
+      }
+    }
+  ],
+  "cpu_tests": [
+    "tests/test_moe_prefill_stream.py"
+  ],
+  "estimate_min": 45
+}

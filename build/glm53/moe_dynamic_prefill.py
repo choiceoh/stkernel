@@ -1739,36 +1739,37 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
                 )
                 self.epilog_sync_barrier.arrive_and_wait()
 
-                # Q1 is now immutable for this task. Preserve four packed
-                # A/SFA fragments in registers across every FC2 output tile.
-                # Loading all slices before the loop also keeps the original
-                # shared aliases dead before producer stage2 starts to reuse A0.
-                cached_a = (
-                    tCrA,
-                    cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
-                    cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
-                    cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
-                )
-                cached_sfa = (
-                    tCrSFA,
-                    cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
-                    cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
-                    cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
-                )
-                for cache_idx in cutlass.range_constexpr(4):
-                    if task_slice_count_val > Int32(cache_idx):
-                        # These are the same retained-Q1 slots as stock.
-                        q1_a_stage_idx = Int32((3, 4, 2, 1)[cache_idx])
-                        q1_sfa_stage_idx = Int32((3, 1, 2, 0)[cache_idx])
-                        self.load_fc2_a_fragments(
-                            num_k_blocks,
-                            q1_a_stage_idx,
-                            q1_sfa_stage_idx,
-                            (csA, csSFA),
-                            (thr_ld_A.retile(cached_a[cache_idx]),
-                             thr_ld_SFA.retile(cached_sfa[cache_idx])),
-                            (smem_copy_A, smem_copy_SFA),
-                        )
+                if cutlass.const_expr(not getattr(self, "prefill_stream_fc2", False)):
+                    # Q1 is now immutable for this task. Preserve four packed
+                    # A/SFA fragments in registers across every FC2 output tile.
+                    # Loading all slices before the loop also keeps the original
+                    # shared aliases dead before producer stage2 starts to reuse A0.
+                    cached_a = (
+                        tCrA,
+                        cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
+                        cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
+                        cute.make_rmem_tensor(tCrA.layout, self.a_dtype),
+                    )
+                    cached_sfa = (
+                        tCrSFA,
+                        cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
+                        cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
+                        cute.make_rmem_tensor(tCrSFA.layout, self.sf_dtype),
+                    )
+                    for cache_idx in cutlass.range_constexpr(4):
+                        if task_slice_count_val > Int32(cache_idx):
+                            # These are the same retained-Q1 slots as stock.
+                            q1_a_stage_idx = Int32((3, 4, 2, 1)[cache_idx])
+                            q1_sfa_stage_idx = Int32((3, 1, 2, 0)[cache_idx])
+                            self.load_fc2_a_fragments(
+                                num_k_blocks,
+                                q1_a_stage_idx,
+                                q1_sfa_stage_idx,
+                                (csA, csSFA),
+                                (thr_ld_A.retile(cached_a[cache_idx]),
+                                 thr_ld_SFA.retile(cached_sfa[cache_idx])),
+                                (smem_copy_A, smem_copy_SFA),
+                            )
 
                 phase2_cons_state.reset_count()
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
@@ -1777,51 +1778,63 @@ class MoEGatedPrefillReuseKernel(MoEGatedDynamicKernel):
                     ) % Int32(output_tile_cnt)
                     down_acc = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
                     down_acc.fill(0.0)
-                    # Compile-time selection avoids dynamic indexing into
-                    # register arrays; slice arithmetic order stays 0..3.
-                    for slice_idx in cutlass.range_constexpr(4):
-                        if task_slice_count_val > Int32(slice_idx):
-                            # 39차: mma_atom.set(SFA/SFB) rebinds the atom's IR
-                            # value in place. Stock runs the slices in one
-                            # dynamic while-loop region, which the DSL threads;
-                            # this static unroll makes four sibling scf.if
-                            # regions, and the value set in one does not
-                            # dominate the next ("operand #0 does not dominate
-                            # this use" at atom.set_value, P2D/P2D2). A fresh
-                            # atom per region keeps every set/gemm chain local.
-                            slice_mma_op = cute.nvgpu.warp.MmaMXF4NVF4Op(
-                                self.a_dtype, self.acc_dtype, self.sf_dtype,
-                            )
-                            slice_atom = cute.make_mma_atom(slice_mma_op)
-                            # then/else below are sibling regions too: an atom
-                            # mutated in one must not be reused in the other
-                            # (stock passes mma_atom / mma_atom_tail for the
-                            # same reason).
-                            slice_atom_tail = cute.make_mma_atom(slice_mma_op)
-                            if valid_rows == Int32(self.tile_shape_mnk[0]):
-                                phase2_cons_state = self.fc2_accumulate_slice(
-                                    num_k_blocks,
-                                    slice_atom,
-                                    down_acc,
-                                    (phase2_pipeline, phase2_cons_state),
-                                    (csB, csB_phase2_extra, csSFB),
-                                    (cached_a[slice_idx], tCrB,
-                                     cached_sfa[slice_idx], tCrSFB, crB, crSFB),
-                                    (smem_copy_B, smem_copy_SFB),
+                    if cutlass.const_expr(getattr(self, "prefill_stream_fc2", False)):
+                        phase2_cons_state = self.consume_fc2_streamed(
+                            num_k_blocks, task_slice_count_val, valid_rows,
+                            warp_m_coord, down_acc,
+                            (phase2_pipeline, phase2_cons_state),
+                            (csA, csSFA), (crA, crSFA),
+                            (smem_copy_A, smem_copy_SFA),
+                            (csB, csB_phase2_extra, csSFB),
+                            (tCrA, tCrB, tCrSFA, tCrSFB, crB, crSFB),
+                            (smem_copy_B, smem_copy_SFB),
+                        )
+                    else:
+                        # Compile-time selection avoids dynamic indexing into
+                        # register arrays; slice arithmetic order stays 0..3.
+                        for slice_idx in cutlass.range_constexpr(4):
+                            if task_slice_count_val > Int32(slice_idx):
+                                # 39차: mma_atom.set(SFA/SFB) rebinds the atom's IR
+                                # value in place. Stock runs the slices in one
+                                # dynamic while-loop region, which the DSL threads;
+                                # this static unroll makes four sibling scf.if
+                                # regions, and the value set in one does not
+                                # dominate the next ("operand #0 does not dominate
+                                # this use" at atom.set_value, P2D/P2D2). A fresh
+                                # atom per region keeps every set/gemm chain local.
+                                slice_mma_op = cute.nvgpu.warp.MmaMXF4NVF4Op(
+                                    self.a_dtype, self.acc_dtype, self.sf_dtype,
                                 )
-                            else:
-                                phase2_cons_state = self.fc2_accumulate_slice_tail(
-                                    num_k_blocks,
-                                    slice_atom_tail,
-                                    down_acc,
-                                    valid_rows,
-                                    warp_m_coord,
-                                    (phase2_pipeline, phase2_cons_state),
-                                    (csB, csB_phase2_extra, csSFB),
-                                    (cached_a[slice_idx], tCrB,
-                                     cached_sfa[slice_idx], tCrSFB, crB, crSFB),
-                                    (smem_copy_B, smem_copy_SFB),
-                                )
+                                slice_atom = cute.make_mma_atom(slice_mma_op)
+                                # then/else below are sibling regions too: an atom
+                                # mutated in one must not be reused in the other
+                                # (stock passes mma_atom / mma_atom_tail for the
+                                # same reason).
+                                slice_atom_tail = cute.make_mma_atom(slice_mma_op)
+                                if valid_rows == Int32(self.tile_shape_mnk[0]):
+                                    phase2_cons_state = self.fc2_accumulate_slice(
+                                        num_k_blocks,
+                                        slice_atom,
+                                        down_acc,
+                                        (phase2_pipeline, phase2_cons_state),
+                                        (csB, csB_phase2_extra, csSFB),
+                                        (cached_a[slice_idx], tCrB,
+                                         cached_sfa[slice_idx], tCrSFB, crB, crSFB),
+                                        (smem_copy_B, smem_copy_SFB),
+                                    )
+                                else:
+                                    phase2_cons_state = self.fc2_accumulate_slice_tail(
+                                        num_k_blocks,
+                                        slice_atom_tail,
+                                        down_acc,
+                                        valid_rows,
+                                        warp_m_coord,
+                                        (phase2_pipeline, phase2_cons_state),
+                                        (csB, csB_phase2_extra, csSFB),
+                                        (cached_a[slice_idx], tCrB,
+                                         cached_sfa[slice_idx], tCrSFB, crB, crSFB),
+                                        (smem_copy_B, smem_copy_SFB),
+                                    )
 
                     self.fc2_epilogue_to_sC(
                         acc_shape,
