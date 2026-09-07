@@ -17,7 +17,7 @@ import sys
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     import moe_direct_scatter
-    ap.add_argument('--variant', choices=moe_direct_scatter.VARIANTS, required=True)
+    ap.add_argument('--variant', choices=(*moe_direct_scatter.VARIANTS, "native"), required=True)
     ap.add_argument('--check-only', action='store_true')
     ap.add_argument('--rounds', type=int, default=16)
     ap.add_argument('--out', default='/tmp/moe-c1-tiles.json')
@@ -41,7 +41,14 @@ def main():
     w13, sf13, w2, sf2 = fixture.expert_set(torch.Generator().manual_seed(53))
     scales = torch.ones(fixture.E, device='cuda')
     wrapper = fixture.served_wrapper()
-    info = moe_direct_scatter.install(md, args.variant)
+    if args.variant == 'native':
+        import hashlib
+        import inspect
+        source = Path(inspect.getfile(md.MoEStaticKernelV4))
+        info = dict(variant='native', source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                    files=[str(source)])
+    else:
+        info = moe_direct_scatter.install(md, args.variant)
     candidate_classes = md.MoEStaticKernelV4, md.MoEStaticKernelV5
     candidate_sources = md._kernel_source_files
     graphs, gates, samples, kernels = {}, [], {}, []
@@ -58,7 +65,7 @@ def main():
         if arm == 'stock':
             md._STATIC_V2_OVERRIDE = None
         else:
-            cfg = md._parse_glm53_static_v2('t', probe=True)
+            cfg = md._parse_glm53_static_v2('t,ws' if arm == 'candidate' and args.variant == 'native' else 't', probe=True)
             md._STATIC_V2_OVERRIDE = cfg
 
     # M=1/2 force the static path for correctness; timing targets M=6/8.

@@ -3533,7 +3533,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_pack": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False, "warp_scatter": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3555,6 +3555,14 @@ def test_b12x_static_v2_controls() -> None:
           and parse("t,s", probe=True)["stamps"]
           and not parse("u")["tiled"] and not parse("v")["tiled"],
           "t composes with v, g and s; u and v stay row-major")
+    check(parse("t,ws")["warp_scatter"] and not tiled["warp_scatter"],
+          "warp scatter is explicit and off in the plain t baseline")
+    for bad in ("ws", "u,ws", "v,t,ws", "t,s,ws", "t,g3,ws", "t,q,ws", "t,xs,ws"):
+        try:
+            parse(bad, probe=True)
+            check(False, f"ws must reject unsupported combinations: {bad}")
+        except ValueError:
+            pass
     # h (39차 §3b) is retired: an SF box of 64 rows is not expressible -- the
     # 128-row block interleaves its four 32-row groups at 4 B, so half the
     # rows is 8 B of every 16 and TMA's innermost box dim wants 16 B
@@ -3655,6 +3663,12 @@ def test_b12x_static_v2_controls() -> None:
         swiglu_limit=10.0)
     check(key_a[0] == "static_v2" and key_a != key_b,
           "the static cache key carries the config so configs never alias")
+
+    original_key = ns["_static_kernel_cache_key"]
+    ns["_static_kernel_cache_key"] = lambda **kw: ("same-shape",)
+    check(ns["_static_v2_cache_key"](parse("t")) != ns["_static_v2_cache_key"](parse("t,ws")),
+          "warp scatter cannot reuse the baseline memory or disk kernel key")
+    ns["_static_kernel_cache_key"] = original_key
 
     src = open(os.path.join(REPO, dispatch_path), encoding="utf-8").read()
     check("moe_static_kernel_v4.__file__" in src and "moe_static_common.__file__" in src

@@ -25,7 +25,7 @@ def mounts():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', type=Path, required=True)
-    ap.add_argument('--variants', nargs='+', choices=('baseline','pair','vector','warp'),
+    ap.add_argument('--variants', nargs='+', choices=('baseline','pair','vector','warp','native'),
                     default=['baseline','pair','vector'])
     args = ap.parse_args()
     assert not subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True).strip()

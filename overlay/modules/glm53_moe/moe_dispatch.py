@@ -363,7 +363,7 @@ _STATIC_V2_DEFAULT = {
     "tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
-    "tiled": False, "sf_pack": False,
+    "tiled": False, "sf_pack": False, "warp_scatter": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -407,6 +407,9 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # one contiguous run
             cfg["tiled"] = True
             continue
+        if token == "ws":
+            cfg["warp_scatter"] = True
+            continue
         if token == "q":
             # 39차 §4c: the FC1 weight scales arrive 6-bit packed (base + index
             # per 4 KB block) and the MMA warps expand them in the stage buffer.
@@ -429,7 +432,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q][,ws] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -439,6 +442,10 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: stages must be >= 1")
     if cfg["a_ring"] and cfg["skip_a"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v (A ring) and xa are exclusive")
+    if cfg["warp_scatter"] and (not cfg["tiled"] or any(
+        cfg[key] for key in ("a_ring", "sf_pack", "skip_sf", "skip_a", "stamps")
+    ) or cfg["fc1"] != 2 or cfg["fc2"] != 2):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: ws requires the plain t cell")
     return cfg
 
 
@@ -1892,6 +1899,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("skip_a", False)),
         bool(config.get("tiled", False)),
         bool(config.get("sf_pack", False)),
+        bool(config.get("warp_scatter", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
@@ -1973,6 +1981,7 @@ def _get_static_kernel_v2(
     kernel: Any = kernel_cls(
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
+        warp_scatter=bool(config.get("warp_scatter", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2112,6 +2121,7 @@ def _get_static_kernel_v2(
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
         f"{'q' if config.get('sf_pack') else ''}"
+        f"{'ws' if config.get('warp_scatter') and m <= 8 else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

@@ -71,6 +71,11 @@ LAYOUT_CHECK = '''    def _check_direct_scatter_layout(self):
 def render(source, variant):
     if variant not in VARIANTS:
         raise ValueError(variant)
+    if variant == 'warp' and 'def _check_warp_scatter_layout(self):' in source:
+        # Retain the historical private comparison on the integrated source.
+        return source.replace('self.warp_scatter and a_input.shape[0] <= 8',
+                              'a_input.shape[0] <= 8').replace(
+                                  '        if self.warp_scatter:', '        if True:')
     if variant == 'warp':
         # Only M<=8: each valid output row is written and scattered by the
         # same warp. Larger batches retain the original CTA-wide barriers.
@@ -198,15 +203,15 @@ def install(md, variant, directory=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--variant', choices=('baseline', *VARIANTS), required=True)
+    ap.add_argument('--variant', choices=('baseline', 'native', *VARIANTS), required=True)
     args = ap.parse_args()
     import b12x_static_compile_check  # device-free target queries
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
-    if args.variant != 'baseline':
+    if args.variant not in ('baseline', 'native'):
         install(md, args.variant)
     md.get_num_sm = lambda dev=None: 48
     md.get_max_active_clusters = lambda n=1: 48
-    cfg = md._parse_glm53_static_v2('t', probe=True)
+    cfg = md._parse_glm53_static_v2('t,ws' if args.variant == 'native' else 't', probe=True)
     md._get_static_kernel_v2(288, 288, 6, 4096, 512, 8, 512,
         config=cfg, mac_override=48, activation='swigluoai_uninterleave',
         swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=10.0)

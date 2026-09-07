@@ -17,7 +17,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out',type=Path,required=True)
     ap.add_argument('--maintenance',action='store_true')
-    ap.add_argument('--variants',nargs='+',choices=('pair','vector','warp'),default=['pair','vector'])
+    ap.add_argument('--variants',nargs='+',choices=('pair','vector','warp','native'),default=['pair','vector'])
     args=ap.parse_args()
     session=os.environ['FLEET_SESSION']
     assert re.fullmatch('[a-zA-Z0-9_-]+',session)
@@ -74,10 +74,13 @@ def main():
                 target=f'/repo/probes/moe_direct_scatter_ab.py'
                 command=common+['--entrypoint','python3',IMAGE,target,'--variant',variant,
                     '--rounds','32','--out',f'/evidence/{variant}.json']
+                if variant == 'native': command += ['--check-only']
                 with (out/(variant+'.log')).open('w') as log:
                     rc=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=480).returncode
                 assert rc==0,(variant,rc)
                 assert json.loads((out/(variant+'.json')).read_text())['status']=='PASS'
+            if variant == 'native':
+                continue  # explicit onepass follow-up; no micro-speed escalation gate
             result=json.loads((out/(variant+'.json')).read_text())
             def gain(shape,cache):
                 row=result['median_us'][shape][cache]
