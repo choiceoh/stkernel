@@ -118,6 +118,7 @@ class MoEStaticKernelV4:
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
+        decode_reform: bool = False,
         even: bool = False,
         split: bool = False,
         skip_sf: bool = False,
@@ -151,6 +152,16 @@ class MoEStaticKernelV4:
         self.fc1_stages = int(fc1_stages)
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
+        self.decode_reform = bool(decode_reform)
+        # One integrated C=1 tile: halve padded M work, consume both FC1
+        # halves together, and double FC2 output width. Keep weight storage
+        # and the 128-wide intermediate/rounding boundary unchanged.
+        self.tile_m = 16 if self.decode_reform else _TILE_M
+        self.fc1_tile_n = 128 if self.decode_reform else _FC1_TILE_N
+        self.fc1_tile_k = 256 if self.decode_reform else _FC1_TILE_K
+        self.fc2_tile_n = 256 if self.decode_reform else _FC2_TILE_N
+        self.fc2_tile_k = _FC2_TILE_K
+        self.fc1_halves = self.fc2_tile_k // self.fc1_tile_n
         # even waves: only the largest CTA count in {48, 44, 40, 36, 32} that
         # leaves the fewest empty item slots takes items, so the last wave is
         # full (U=40: 40 CTAs x 4 items instead of 48 x 3.33). The item total
@@ -195,22 +206,22 @@ class MoEStaticKernelV4:
                 "roles send the two halves to different warps"
             )
         # FC1: (32, 64, 512), one B (gate or up) per stage; FC2: (32, 128, 128)
-        self.fc1_tile_shape_mnk = (_TILE_M, _FC1_TILE_N, _FC1_TILE_K)
-        self.tile_shape_mnk = (_TILE_M, _FC2_TILE_N, _FC2_TILE_K)
-        self.sa1_tile_shape_mk = (_TILE_M, _FC1_TILE_K)
-        self.sfa1_tile_shape_mk = (128, _FC1_TILE_K)   # SF blocks are 128 rows
-        self.sfa_tiles_per_block = 128 // _TILE_M
+        self.fc1_tile_shape_mnk = (self.tile_m, self.fc1_tile_n, self.fc1_tile_k)
+        self.tile_shape_mnk = (self.tile_m, self.fc2_tile_n, self.fc2_tile_k)
+        self.sa1_tile_shape_mk = (self.tile_m, self.fc1_tile_k)
+        self.sfa1_tile_shape_mk = (128, self.fc1_tile_k)   # SF blocks are 128 rows
+        self.sfa_tiles_per_block = 128 // self.tile_m
         # SFB gmem tiles are 128-row blocks: a 64-row box is not expressible
         # (39차 §3b -- the block interleaves its four 32-row groups at 4 B, so
         # half the rows is 8 B of every 16 and TMA wants 16 B contiguous)
-        self.sfb1_tile_shape_nk = (128, _FC1_TILE_K)
-        self.sfb1_tiles_per_block = 128 // _FC1_TILE_N   # 2 halves share a block
-        self.sfb_tile_shape_nk = (128, _FC2_TILE_K)
+        self.sfb1_tile_shape_nk = (128, self.fc1_tile_k)
+        self.sfb1_tiles_per_block = 128 // self.fc1_tile_n   # 2 halves share a block
+        self.sfb_tile_shape_nk = (self.fc2_tile_n, self.fc2_tile_k)
         self.output_tile_count_n = output_tile_count_n
         self.cluster_shape_mnk = (1, 1, 1)
         self.cluster_shape_mn = (1, 1)
-        self.epi1_tile = (_TILE_M, _FC1_TILE_N)
-        self.epi_tile = (_TILE_M, _FC2_TILE_N)
+        self.epi1_tile = (self.tile_m, self.fc1_tile_n)
+        self.epi_tile = (self.tile_m, self.fc2_tile_n)
         self.occupancy = 1
         self.num_mma_warps = 4
         self.tma_load_warp_id = self.num_mma_warps
@@ -357,7 +368,7 @@ class MoEStaticKernelV4:
             self.acc_dtype,
             self.sf_dtype,
         )
-        atom_layout = cute.make_layout((2, 2, 1))
+        atom_layout = cute.make_layout((1, 4, 1) if self.decode_reform else (2, 2, 1))
         permutation_mnk = sm120_utils.get_permutation_mnk(
             tile_shape_mnk,
             self.sf_vec_size,
@@ -375,14 +386,14 @@ class MoEStaticKernelV4:
         _, self.tiled_mma = self._make_tiled_mma(self.tile_shape_mnk)
         self.mma_atom = cute.make_mma_atom(mma_op)
         self.cta_layout_mnk = cute.make_layout(self.cluster_shape_mnk)
-        self.num_m_tiles = _TILE_M // 32
-        self.num_n_tiles1 = _FC1_TILE_N // 16
-        self.num_k_blocks1 = _FC1_TILE_K // 64
-        self.num_n_tiles = _FC2_TILE_N // 16
-        self.num_k_blocks = _FC2_TILE_K // 64
+        self.num_m_tiles = self.tile_m // (16 if self.decode_reform else 32)
+        self.num_n_tiles1 = self.fc1_tile_n // (32 if self.decode_reform else 16)
+        self.num_k_blocks1 = self.fc1_tile_k // 64
+        self.num_n_tiles = self.fc2_tile_n // (32 if self.decode_reform else 16)
+        self.num_k_blocks = self.fc2_tile_k // 64
 
         self.a1_smem_layout_staged = self._make_a_smem_layout(
-            _TILE_M, _FC1_TILE_K, self.fc1_stages
+            self.tile_m, self.fc1_tile_k, self.fc1_stages
         )
         (
             self.b1_smem_layout_staged,
@@ -400,13 +411,34 @@ class MoEStaticKernelV4:
         ) = self._staged_layouts(
             self.tile_shape_mnk, self.epi_tile, self.tiled_mma, self.fc2_stages
         )
-        self.a2_smem_layout = self._make_a_smem_layout(_TILE_M, _FC2_TILE_K, 1)
+        self.a2_smem_layout = self._make_a_smem_layout(self.tile_m, self.fc2_tile_k, 1)
         self.sfa2_smem_layout = sm120_make_smem_layout_sfa(
             self.tiled_mma,
             self.tile_shape_mnk,
             self.sf_vec_size,
             1,
         )
+        if self.decode_reform:
+            for mma, shape in ((self.tiled_mma1, (self.tile_m, self.fc1_tile_n)),
+                               (self.tiled_mma, (self.tile_m, self.fc2_tile_n))):
+                ident = cute.make_identity_tensor(shape)
+                seen = set()
+                for tid in range(128):
+                    coords = mma.get_slice(tid).partition_C(ident)
+                    for i in range(cute.size(coords)):
+                        point = tuple(coords[i])
+                        assert point not in seen, point
+                        seen.add(point)
+                assert seen == {(m,n) for m in range(shape[0]) for n in range(shape[1])}
+            seen_bytes = set()
+            for row in range(self.tile_m):
+                for col in range(0, self.fc2_tile_k, 2):
+                    lo = int(cute.crd2idx((row,col,0), self.a2_smem_layout))
+                    hi = int(cute.crd2idx((row,col+1,0), self.a2_smem_layout))
+                    assert lo % 2 == 0 and hi == lo + 1, (row,col,lo,hi)
+                    assert lo // 2 not in seen_bytes
+                    seen_bytes.add(lo // 2)
+            print('DECODE_REFORM_LAYOUT_PASS', len(seen_bytes), flush=True)
         self.smem_bytes = self._smem_bytes_estimate()
         if self.smem_bytes > self.smem_capacity:
             raise ValueError(
@@ -500,14 +532,14 @@ class MoEStaticKernelV4:
             internal_type=cutlass.Int16,
         )
         tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
-            b_w13, self.b1_smem_layout_staged, (_FC1_TILE_N, _FC1_TILE_K), 1
+            b_w13, self.b1_smem_layout_staged, (self.fc1_tile_n, self.fc1_tile_k), 1
         )
         tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
             sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
             internal_type=cutlass.Int16,
         )
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
-            b_down, self.b2_smem_layout_staged, (_FC2_TILE_N, _FC2_TILE_K), 1
+            b_down, self.b2_smem_layout_staged, (self.fc2_tile_n, self.fc2_tile_k), 1
         )
         tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
             sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
@@ -784,6 +816,7 @@ class MoEStaticKernelV4:
             epi_smem_staged.outer, swizzle=epi_smem_staged.inner
         )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
+        a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
@@ -875,7 +908,7 @@ class MoEStaticKernelV4:
                     Int32(1),
                 )
                 if cutlass.const_expr(self.even or self.split):
-                    if row % Int32(_TILE_M) == Int32(0):
+                    if row % Int32(self.tile_m) == Int32(0):
                         atomic_add_global_i32(
                             get_ptr_as_int64(next_item, Int32(0)),
                             Int32(self.output_tile_count_n),
@@ -1034,7 +1067,10 @@ class MoEStaticKernelV4:
         # per half; the DMA side always lands the whole 128-row block)
         sfb1_tile = cute.slice_(self.fc1_tile_shape_mnk, (0, None, None))
         sSFB1_0 = cute.local_tile(sSFB1, sfb1_tile, (0, 0, None))
-        sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
+        if cutlass.const_expr(self.decode_reform):
+            sSFB1_1 = sSFB1_0
+        else:
+            sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
         tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
             tma_sfb_w13, b_cta_crd, b_cta_layout,
             cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
@@ -1214,8 +1250,8 @@ class MoEStaticKernelV4:
             tRS_rD1_layout = cute.make_layout(rD1_shape[:3])
             tRS_rD1 = cute.make_rmem_tensor(tRS_rD1_layout.shape, self.acc_dtype)
             tRS_rD1_out = cute.make_rmem_tensor(tRS_rD1_layout.shape, cutlass.BFloat16)
-            mma_tile_m1 = _TILE_M // cute.size(tRS_rGate, mode=[1])
-            mma_tile_n1 = _FC1_TILE_N // cute.size(tRS_rGate, mode=[2])
+            mma_tile_m1 = self.tile_m // cute.size(tRS_rGate, mode=[1])
+            mma_tile_n1 = self.fc1_tile_n // cute.size(tRS_rGate, mode=[2])
             MmaMPerEpiM1 = self.epi1_tile[0] // mma_tile_m1
             MmaNPerEpiN1 = self.epi1_tile[1] // mma_tile_n1
 
@@ -1230,19 +1266,23 @@ class MoEStaticKernelV4:
             tRS_rD_layout = cute.make_layout(rD_shape[:3])
             tRS_rD = cute.make_rmem_tensor(tRS_rD_layout.shape, self.acc_dtype)
             tRS_rD_out = cute.make_rmem_tensor(tRS_rD_layout.shape, cutlass.BFloat16)
-            mma_tile_m = _TILE_M // cute.size(tRS_rDown, mode=[1])
-            mma_tile_n = _FC2_TILE_N // cute.size(tRS_rDown, mode=[2])
+            mma_tile_m = self.tile_m // cute.size(tRS_rDown, mode=[1])
+            mma_tile_n = self.fc2_tile_n // cute.size(tRS_rDown, mode=[2])
             MmaMPerEpiM = self.epi_tile[0] // mma_tile_m
             MmaNPerEpiN = self.epi_tile[1] // mma_tile_n
 
             scatter_N = Int32(scatter_output.shape[1])
             lane_id = Int32(tidx) & Int32(31)
             warp_in_tile = Int32(tidx) >> Int32(5)
-            warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
-            warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
-            a2_rows = Int32(_TILE_M)
+            if cutlass.const_expr(self.decode_reform):
+                warp_m_base = Int32(0)
+                warp_n_base = warp_in_tile * Int32(64)
+            else:
+                warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
+                warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
+            a2_rows = Int32(self.tile_m)
             sA2_u8 = cute.recast_tensor(sA2[None, None, 0], cutlass.Uint8)
-            sf_blocks_per_half = Int32(_FC1_TILE_N // self.sf_vec_size)   # 4
+            sf_blocks_per_half = Int32(self.fc1_tile_n // self.sf_vec_size)   # 4
 
             num_persistent_clusters = n_active
             cluster_shape_mn = (
@@ -1270,7 +1310,7 @@ class MoEStaticKernelV4:
                 _compact_static_get_work_tile(
                     row_counts,
                     active_expert_count,
-                    tile_m=Int32(_TILE_M),
+                    tile_m=Int32(self.tile_m),
                     num_tiles_n=Int32(self.output_tile_count_n),
                     cluster_shape_mn=cluster_shape_mn,
                     current_work_linear_idx=current_work_linear_idx,
@@ -1288,7 +1328,7 @@ class MoEStaticKernelV4:
                 weight_expert_idx = weight_expert_ids[local_expert_idx]
                 alpha_value = alpha[weight_expert_idx].to(cutlass.Float32)
                 valid_rows = row_counts[local_expert_idx]
-                tile_m_base = tile_coord[0] * Int32(_TILE_M)
+                tile_m_base = tile_coord[0] * Int32(self.tile_m)
                 stamp_item = stamp_row + Int32(2) + item_no * Int32(5)
                 if cutlass.const_expr(self.stamps):
                     if Int32(tidx) == Int32(0):
@@ -1310,8 +1350,8 @@ class MoEStaticKernelV4:
                 )
                 fz_crSFA1_tile = cute.filter_zeros(thr_ld_SFA1.retile(tCrSFA1_tile))
                 valid_tile_rows = valid_rows - tile_m_base
-                if valid_tile_rows > Int32(_TILE_M):
-                    valid_tile_rows = Int32(_TILE_M)
+                if valid_tile_rows > Int32(self.tile_m):
+                    valid_tile_rows = Int32(self.tile_m)
                 if valid_tile_rows < Int32(0):
                     valid_tile_rows = Int32(0)
 
@@ -1352,7 +1392,7 @@ class MoEStaticKernelV4:
                 # ============================================================
                 # PHASE A: FC1 as two 64-wide halves (gate + up per stage)
                 # ============================================================
-                for h in cutlass.range_constexpr(2):
+                for h in cutlass.range_constexpr(self.fc1_halves):
                     if (role - Int32(2)) * (role - Int32(h)) == Int32(0):
                         if cutlass.const_expr(h == 0):
                             fz_crSFB1 = fz_crSFB1_0
@@ -1487,8 +1527,8 @@ class MoEStaticKernelV4:
                         self.epilog_sync_barrier.arrive_and_wait()
 
                         epi_rows = epi_m_valid
-                        if epi_rows > Int32(_TILE_M):
-                            epi_rows = Int32(_TILE_M)
+                        if epi_rows > Int32(self.tile_m):
+                            epi_rows = Int32(self.tile_m)
                         if epi_rows < Int32(0):
                             epi_rows = Int32(0)
                         quant_idx = Int32(tidx)
@@ -1527,7 +1567,15 @@ class MoEStaticKernelV4:
                                 byte_val = Uint8(
                                     (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
                                 )
-                                sA2_u8[dst_flat] = byte_val
+                                if cutlass.const_expr(self.decode_reform):
+                                    # Address through the actual swizzled layout;
+                                    # the legacy hand-coded M32 map is not M16.
+                                    fp4_offset = cute.crd2idx(
+                                        (row, src_pcol * Int32(2), 0), a2_smem_layout
+                                    )
+                                    st_shared_u8(a2_base_addr + fp4_offset // Int32(2), byte_val)
+                                else:
+                                    sA2_u8[dst_flat] = byte_val
                             outer_m_idx = row % Int32(32)
                             inner_m_idx = row // Int32(32)
                             inner_k_idx = sf_block % Int32(4)
@@ -1620,7 +1668,7 @@ class MoEStaticKernelV4:
                                     down_acc[None, _mt, _nt],
                                 )
 
-                    tile_n_base_cur = output_tile_idx * Int32(_FC2_TILE_N)
+                    tile_n_base_cur = output_tile_idx * Int32(self.fc2_tile_n)
                     for mma_n_in_epi in cutlass.range_constexpr(MmaNPerEpiN):
                         for mma_m_in_epi in cutlass.range_constexpr(MmaMPerEpiM):
                             tRS_rD_slice = tRS_rD[(None, mma_m_in_epi, mma_n_in_epi)]
@@ -1711,7 +1759,7 @@ class MoEStaticKernelV4:
                     _compact_static_get_work_tile(
                         row_counts,
                         active_expert_count,
-                        tile_m=Int32(_TILE_M),
+                        tile_m=Int32(self.tile_m),
                         num_tiles_n=Int32(self.output_tile_count_n),
                         cluster_shape_mn=cluster_shape_mn,
                         current_work_linear_idx=current_work_linear_idx,
@@ -1771,7 +1819,7 @@ class MoEStaticKernelV4:
                 _compact_static_get_work_tile(
                     row_counts,
                     active_expert_count,
-                    tile_m=Int32(_TILE_M),
+                    tile_m=Int32(self.tile_m),
                     num_tiles_n=Int32(self.output_tile_count_n),
                     cluster_shape_mn=cluster_shape_mn,
                     current_work_linear_idx=current_work_linear_idx,
@@ -1799,9 +1847,9 @@ class MoEStaticKernelV4:
                 tAgSFA_mk = tAgSFA[(None, sfa_tile_coord_m, None, local_expert_idx)]
 
                 # ---- FC1: two 64-wide halves of the 128-wide slice ----
-                for h in cutlass.range_constexpr(2):
+                for h in cutlass.range_constexpr(self.fc1_halves):
                     if (role - Int32(2)) * (role - Int32(h)) == Int32(0):
-                        up_tile = intermediate_slice * Int32(2) + Int32(h)
+                        up_tile = intermediate_slice * Int32(self.fc1_halves) + Int32(h)
                         gate_tile = gate_tile_cnt + up_tile
                         tBgB_up_nk = tBgB_w13[(None, up_tile, None, weight_expert_idx)]
                         tBgB_gate_nk = tBgB_w13[(None, gate_tile, None, weight_expert_idx)]
@@ -1930,7 +1978,7 @@ class MoEStaticKernelV4:
                     _compact_static_get_work_tile(
                         row_counts,
                         active_expert_count,
-                        tile_m=Int32(_TILE_M),
+                        tile_m=Int32(self.tile_m),
                         num_tiles_n=Int32(self.output_tile_count_n),
                         cluster_shape_mn=cluster_shape_mn,
                         current_work_linear_idx=current_work_linear_idx,

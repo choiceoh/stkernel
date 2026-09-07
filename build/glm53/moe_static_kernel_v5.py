@@ -156,14 +156,14 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             internal_type=cutlass.Int16,
         )
         tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
-            b_w13_h, self.b1_smem_layout_staged, (_FC1_TILE_N, _FC1_TILE_K), 1
+            b_w13_h, self.b1_smem_layout_staged, (self.fc1_tile_n, self.fc1_tile_k), 1
         )
         tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
             sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
             internal_type=cutlass.Int16,
         )
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
-            b_down_h, self.b2_smem_layout_staged, (_FC2_TILE_N, _FC2_TILE_K), 1
+            b_down_h, self.b2_smem_layout_staged, (self.fc2_tile_n, self.fc2_tile_k), 1
         )
         tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
             sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
