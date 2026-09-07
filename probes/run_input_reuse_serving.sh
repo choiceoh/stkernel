@@ -7,7 +7,7 @@ CANONICAL=/home/choiceoh/stkernel
 RESTORE_REPO=/home/choiceoh/stkernel-input-reuse-restore-20260907
 export FLEET=$CANONICAL/bench/fleet.sh LEVER=$REPO/probes/input_reuse_lever.sh
 export IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
-export INPUT_REUSE_SERVING_OUT=/home/choiceoh/glm53-logs/INPUTSERVE0907
+export INPUT_REUSE_SERVING_OUT=${INPUT_REUSE_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTSERVE0907}
 out=$INPUT_REUSE_SERVING_OUT
 session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
@@ -29,7 +29,7 @@ cleanup() {
       bash launchers/deploy-overlays.sh glm53 || exit 1
       env -u ONEPASS_JSONL -u ONEPASS_VERDICTS REPO="$RESTORE_REPO" \
         GLM53_API_HOST=0.0.0.0 GLM53_API_PORT=8000 HEAD=10.10.10.2 \
-        PREFILL_WARMUP=1 LEGS=none bash bench/ab-lever.sh INPUTSERVERestore0907 ''
+        PREFILL_WARMUP=1 LEGS=none bash bench/ab-lever.sh "${session}RESTORE" ''
     ) > "$out/restore.log" 2>&1; then
       echo restored > "$out/restore.status"
     else
@@ -45,7 +45,16 @@ trap 'exit 143' TERM
 touched=1
 cp /home/choiceoh/glm53-logs/glm53.log "$out/before-head.log"
 docker stop -t 30 glm53 >/dev/null
-for node in 1 3 4; do ssh -o BatchMode=yes "choiceoh@10.10.10.$node" docker stop -t 30 glm53-worker >/dev/null; done
+pids=()
+for node in 1 3 4; do
+  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" docker stop -t 30 glm53-worker >/dev/null &
+  pids+=($!)
+done
+stop_failed=0
+for pid in "${pids[@]}"; do wait "$pid" || stop_failed=1; done
+[[ $stop_failed == 0 ]] || exit 1
+available_kib=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+(( available_kib >= 16 * 1024 * 1024 )) || { echo 'ABORT: less than 16 GiB available'; exit 1; }
 args=(run --rm --name "inputserve-$session" --gpus device=0 --network=none
       --cpuset-cpus=14-17 --memory=10g --shm-size=1g
       --mount "type=bind,src=$REPO,dst=/repo,readonly"

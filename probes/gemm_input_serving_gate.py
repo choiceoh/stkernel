@@ -85,16 +85,20 @@ def main():
                 row={'shape':[m,n,k],'cache':cache,'plans':plans,'baseline_us':base,'candidate_us':cand,
                      'reduction_pct':100*(base-cand)/base,'raw_us':times}
                 result['timings'].append(row);save();print(json.dumps({k:v for k,v in row.items() if k!='raw_us'}),flush=True)
-        if active:retained.append((x,wr,ys,graphs))
+        # Graphs retain captured allocations, not external weight arguments.
+        # Keep the packed weights alive with the graphs, as a serving layer does.
+        if active:retained.append((x,pack,wr,ys,graphs))
     # Switch between the two live captured candidates repeatedly. Each must
     # retain its own scratch/output despite intervening shapes and allocations.
     for rep in range(20):
-        for x,wr,ys,graphs in retained:
-            x.normal_().mul_(.3);graphs[1].replay()
-        for x,wr,ys,graphs in reversed(retained):
+        for x,pack,wr,ys,graphs in retained:
+            x.normal_().mul_(.3)
+            graphs[0].replay();graphs[1].replay()
+        for x,pack,wr,ys,graphs in reversed(retained):
             ref=mk._mk_quant_x_ref(x)@wr.T
             rel,over=mk._exact_gate(ys[1],ref)
             assert rel<=1e-3 and over==0,(rep,rel,over)
+            assert torch.equal(ys[0],ys[1]), ('alternating graphs changed output bits',rep)
     ext.set_gemm_input(1)
     assert mk._selftest_input_reuse()
     result['alternating_graph_replays']=40
