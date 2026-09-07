@@ -2121,9 +2121,12 @@ def test_fp8_dense_nvfp4_scheme_contract() -> None:
     # existing w4a8 arm and runs at the fp8 issue rate.
     gemm = src[src.index("def _nvfp4_dense_gemm("):]
     gemm = gemm[:gemm.index("\n\n\n")]
-    check("nvfp4_quantize(flat" in gemm,
-          "the activation is quantized too, per call")
-    check("mm_fp4(" in gemm, "and the pair goes through mm_fp4")
+    scaled = src[src.index("def _nvfp4_dense_gemm_scaled("):]
+    scaled = scaled[:scaled.index("\n\n\n")]
+    check("return _nvfp4_dense_gemm_scaled(x, wq, wsf, x_gs, alpha, out_rows)" in gemm
+          and "nvfp4_quantize(flat" in scaled,
+          "the activation is quantized too, per call (39차: in the shared scaled body)")
+    check("mm_fp4(" in scaled, "and the pair goes through mm_fp4")
 
     # Arms only on a check that ran (is True), like w4a8 -- not on "did not
     # raise", which is how the w4a8 default once poisoned a CUDA context.
