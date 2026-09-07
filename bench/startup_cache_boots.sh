@@ -14,7 +14,10 @@ case "$MODE" in
   artifacts) stages=(BASE COLD WARM); restore_knobs='VLLM_GLM53_FP8_CACHE=0 VLLM_GLM53_RANK_CACHE=0' ;;
   pack-io) stages=(PRIME FAST1 BASE1 BASE2 FAST2); restore_knobs='VLLM_GLM53_MK_PACK_FAST_IO=0' ;;
   rank-prefetch) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_RANK_CACHE_PREFETCH=0' ;;
-  rank-default) stages=(DEFAULT); restore_knobs='VLLM_GLM53_RANK_CACHE_PREFETCH=0' ;;
+  rank-default)
+    # Exercise the profile value itself, even if a caller exported a lever.
+    unset VLLM_GLM53_RANK_CACHE_PREFETCH
+    stages=(DEFAULT); restore_knobs='VLLM_GLM53_RANK_CACHE_PREFETCH=0' ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
 monitor_pid=
