@@ -625,6 +625,20 @@ and the inner loop are unchanged.
    tensor storage. A miss consumes the same Hessian values for GPTQ. Legacy
    serialization and torch versions without mmap keep the eager loader;
    malformed or mismatched calibration still falls back to RTN.
+   `VLLM_GLM53_MK_PACK_FAST_IO=1` also maps W4 pack files and reuses one
+   64 MiB pinned host buffer for weight MD5 and pack restoration. The MD5,
+   filenames, pack format and served values are unchanged. D2H hashing and
+   H2D buffer reuse wait for the current CUDA stream; pin-allocation failure,
+   legacy serialization and noncontiguous cached tensors retain synchronous
+   paths. The flag defaults to 0 until the fleet bracket closes. It is excluded
+   from rank/FP8 identity because it changes byte transport only. No additional
+   on-disk cache is introduced. `[mk-pack-io]` logs cumulative calibration,
+   key, file-read and device-copy seconds and fast/legacy hit counts.
+   `tests/test_glm53_pack_io.py` covers CPU byte/layout/key equivalence and
+   fallbacks; `probes/glm53_pack_io_check.py` exercises real GPU copies under
+   fleet ownership. `STARTUP_CACHE_MODE=pack-io` in `bench/startup_cache_boots.sh`
+   primes compilation/artifacts once, then measures fast/base/base/fast boots
+   with the same code, warm rank/FP8 caches and Korean 2K/32K onepass.
 4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
    8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
    from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`
