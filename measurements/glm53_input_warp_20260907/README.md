@@ -72,3 +72,31 @@ snapshot of approved main supplies the unconditional public recovery path.
 
 Actual production-source GPU results, racecheck/memcheck, paired C=1 rates,
 quality and default promotion remain pending. No serving gain is claimed yet.
+
+## First actual-source run: incomplete graph-lifetime gate
+
+Fleet `inputserve0907` started at 16:49:10 KST on source `5e63ad7`.
+CUDA SHA-256 `0cbbe7c96d3815de307cf1d5d56fe7fab1fac25a41c5b430b5230aca31603baf`.
+All 90 individual numerical rows and the baseline bit comparisons passed.
+The subsequent retained-graph test failed at its first iteration
+(`relative=1.0`, 24,570 values over the ULP limit). The runner aborted before
+sanitizers or any serving arm, and began restoring approved defaults.
+The JSON still says RUNNING because the assertion interrupted it; the
+[failure log](failed-lifetime/production-gate.log) is the terminal result.
+
+Inspection found that the test retained X, reference weights and graphs,
+but released the original packed-weight tensors between shapes. Those
+external CUDA graph arguments must stay alive. The retry retains each pack
+with its graphs and replays the baseline alongside the candidate. This
+diagnosis still requires the corrected GPU test to pass.
+
+The interrupted run's timings below are preliminary only, not acceptance:
+
+| M,N,K / split | Cache fixture | Baseline us | Candidate us | Reduction |
+|---|---|---:|---:|---:|
+| 6,6528,4096 / 8 | Warm | 42.752 | 30.528 | 28.59% |
+| 6,6528,4096 / 8 | Read eviction | 77.568 | 76.544 | 1.32% |
+| 6,4096,512 / 1 | Warm | 9.504 | 7.936 | 16.50% |
+| 6,4096,512 / 1 | Read eviction | 14.224 | 11.968 | 15.86% |
+
+[Raw result](failed-lifetime/production-gate.json). No default was changed.
