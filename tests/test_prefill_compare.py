@@ -48,6 +48,25 @@ def fixture():
 
 
 class CompareTests(unittest.TestCase):
+    def test_explicit_group_requires_every_member_and_rejects_unrelated_changes(self):
+        arms=fixture();extra='VLLM_GLM53_PREFILL_SP_RS_INT8'
+        for arm in arms:
+            arm['knob']=[arm['knob'],extra]
+            for phase in ('before','after'):
+                for node in arm[phase].values():node['env'][extra]=str(int(arm['enabled']))
+        self.assertFalse(m.compare(arms)['issues'])
+        for case in ('missing','wrong_value','undeclared','group_changed'):
+            changed=copy.deepcopy(arms)
+            for phase in ('before','after'):
+                env=changed[1][phase]['10.10.10.3']['env']
+                if case=='missing':env.pop(extra)
+                elif case=='wrong_value':env[extra]='0'
+                elif case=='undeclared':env['VLLM_OTHER']='1'
+            if case=='group_changed':changed[1]['knob']=changed[1]['knob'][:1]
+            with self.subTest(case=case):self.reject(changed)
+        for value in ([],['VLLM_GLM53_X','VLLM_GLM53_X'],['VLLM_OTHER'],[{}]):
+            with self.assertRaises(ValueError):m.knob_names(value)
+
     def reject(self, arms):
         result=m.compare(arms)
         self.assertTrue(result['issues'])

@@ -25,6 +25,25 @@ from test_prefill_compare import fixture
 
 
 class ServingTests(unittest.TestCase):
+    def test_group_boot_requires_exact_settings_and_attests_every_member(self):
+        knobs=m.CANDIDATES['moe-m64-int8'][0]
+        settings=' '.join(k+'=1' for k in knobs)
+        with tempfile.TemporaryDirectory() as directory:
+            env=dict(REPO=str(ROOT),PREFILL_SERVING_OUT=directory,
+                PREFILL_SERVING_CANDIDATE='moe-m64-int8',PREFILL_SERVING_FIRST_ARM='TESTB1')
+            with patch.dict(os.environ,env),patch.object(m,'check_holder'),patch.object(m,'run_owned') as run:
+                m.boot_arm(SimpleNamespace(name='TESTB1',knobs=settings))
+                self.assertEqual(run.call_args.args[0][-1],settings)
+                for value in (knobs[0]+'=1',settings+' VLLM_OTHER=1'):
+                    with self.assertRaisesRegex(RuntimeError,'unexpected arm'):m.boot_arm(SimpleNamespace(name='TESTB1',knobs=value))
+        states=fixture()[1]['before']
+        for state in states.values():
+            state['env'][knobs[1]]='1';state['image']=m.IMAGE
+        contract={k:states['10.10.10.2'][k] for k in ('mounts','manifest_sha')}
+        m.attest(states,contract,knobs,True)
+        states['10.10.10.3']['env'][knobs[1]]='0'
+        with self.assertRaisesRegex(RuntimeError,'knob mismatch'):m.attest(states,contract,knobs,True)
+
     def test_serving_knob_is_declared_default_off_and_consumed_by_runtime(self):
         knob=m.CANDIDATES['moe-m64'][0]
         self.assertIn(knob+'=0', (ROOT/'profiles/glm53.env').read_text().splitlines())
@@ -39,8 +58,8 @@ class ServingTests(unittest.TestCase):
             started = datetime.datetime.fromtimestamp(path.stat().st_mtime-1, datetime.timezone.utc).isoformat()
             container = dict(Id='container-A', Mounts=[dict(Destination='/glmlogs',Source=directory)],
                              State=dict(StartedAt=started, Running=True))
-            def execute(c=container, command='vllm serve model > /glmlogs/glm53.log 2>&1', check=None):
-                ns=dict(c=c, cmd=command, archive=True, state={}, marker='mla prefill32 LAUNCHED',
+            def execute(c=container, command='vllm serve model > /glmlogs/glm53.log 2>&1', check=None, marker='mla prefill32 LAUNCHED'):
+                ns=dict(c=c, cmd=command, archive=True, state={}, marker=marker,
                         pathlib=__import__('pathlib'),datetime=datetime,re=re,json=json,gzip=gzip,base64=base64,
                         sha=lambda b:hashlib.sha256(b).hexdigest(),
                         subprocess=SimpleNamespace(check_output=check or (lambda *a,**k:json.dumps([c]))))
@@ -50,6 +69,13 @@ class ServingTests(unittest.TestCase):
             self.assertTrue(state['launch_proof'])
             self.assertEqual(gzip.decompress(base64.b64decode(state['log_gzip_base64'])),raw)
             self.assertEqual(state['log_source']['container_id'],'container-A')
+            markers=('mla prefill32 LAUNCHED','[prefill-sp] packed INT8 reduce-scatter engaged')
+            self.assertFalse(execute(marker=markers)['launch_proof'])
+            path.write_bytes(raw+(markers[1]+'\n').encode())
+            grouped=execute(marker=markers)
+            self.assertTrue(grouped['launch_proof'])
+            self.assertEqual(grouped['launch_markers'],dict.fromkeys(markers,True))
+            path.write_bytes(raw)
             with self.assertRaisesRegex(RuntimeError,'redirection'):
                 execute(command='vllm serve model >> /glmlogs/glm53.log 2>&1')
             path.write_bytes(b'')
@@ -62,34 +88,50 @@ class ServingTests(unittest.TestCase):
                 execute(check=lambda *a,**k:json.dumps([stopped]))
 
     def test_gpu_gate_requires_both_transports_all_cases_source_and_recovery(self):
+        self.gpu_gate_contract(False)
+
+    def test_int8_gate_requires_new_transport_packet_sanitizers_and_exact_source(self):
+        self.gpu_gate_contract(True)
+
+    def gpu_gate_contract(self,int8):
+        key='moe-m64-int8' if int8 else 'moe-m64'
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);frozen=root/'frozen';repo=root/'serving';gate=root/'gate';gate.mkdir()
             relative=('build/glm53/manifest.tsv','build/glm53/module.py','profiles/glm53.env',
                       'launchers/start-glm53-nvfp4-tp4.sh','probes/glm53_moe_m64_check.py',
                       'probes/run_glm53_moe_m64_tp4_check.sh','probes/glm53_moe_m64_sanitize.py')
+            if int8:relative+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py')
             for tree in (frozen,repo):
                 for path in relative:
                     p=tree/path;p.parent.mkdir(parents=True,exist_ok=True)
                     p.write_text('module.py\t/target/module.py\tfixture\n' if path.endswith('manifest.tsv') else 'same bytes\n')
-            complete=dict(ended=2,exit_code=0,restored_original=True,probes={'moe-m64':dict(
-                revision='a'*40,exit_code=0,ended=1,command=['bash','probes/run_glm53_moe_m64_tp4_check.sh'])})
+            complete=dict(ended=2,exit_code=0,restored_original=True,probes={key:dict(
+                revision='a'*40,exit_code=0,ended=1,command=['bash','probes/run_glm53_moe_m64_tp4_check.sh']+(['--int8-gate'] if int8 else []))})
             provenance={'module.py':hashlib.sha256((repo/'build/glm53/module.py').read_bytes()).hexdigest()}
             reports=[dict(verdict='MOE_M64_GPU_PASS',transport=transport,provenance=provenance,
                 results=[dict(rows=rows,skew=skew,m64_admitted=rows>=6144,
                               **{'pass':True}, **{p:[dict(bad_rows=0,finite=True,**{'pass':True}) for _ in range(4)] for p in ('eager','stock_control','changed_control','local_moe','local_control','graph','graph_changed')},
                               changed=[[dict(bad_rows=0,finite=True,**{'pass':True}) for _ in range(4)] for _ in range(3)])
                          for rows in (4096,6143,6144,6912,8192) for skew in (False,True)])
-                     for transport in ('bf16','fp8-v3')]
+                     for transport in ('bf16','fp8-v3-rs-int8' if int8 else 'fp8-v3')]
             sanitizers=[dict(verdict='MOE_M64_SANITIZER_CASES_PASS',sanitizer=tool,provenance=provenance,
                 summary='ERROR SUMMARY: 0 errors' if tool=='memcheck' else 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)',
                 results=[dict(rows=n,skew=s,bad_rows=0) for n in (6144,6912,8192) for s in (False,True)]) for tool in ('memcheck','racecheck')]
+            if int8:
+                from glm53_prefill_int8_sanitize import ROWS
+                for record in sanitizers:
+                    record['int8']=dict(source_sha256=hashlib.sha256((repo/'probes/glm53_prefill_int8_sanitize.py').read_bytes()).hexdigest(),
+                        cases=[dict(rows=n,changed=c,destination=d,packet_equal=True,output_equal=True,
+                            source_unchanged=True,finite=True,retained_unchanged=True)
+                            for n in ROWS for c in (False,True) for d in range(4)])
+            full_marker='MOE_M64_INT8_ALL_GATES_PASS' if int8 else 'MOE_M64_ALL_GATES_PASS'
             def write(c=complete,r=reports,marker=True,sanitizers=sanitizers):
                 m.save(gate/'completion.json',c)
-                (gate/'moe-m64.log').write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in r+sanitizers)+'\nMOE_M64_MEMCHECK_PASS\nMOE_M64_RACECHECK_PASS'+
-                    ('\nMOE_M64_ALL_GATES_PASS\n' if marker else '\n'))
+                (gate/(key+'.log')).write_text('{compiler diagnostic}\n'+'\n'.join(json.dumps(v) for v in r+sanitizers)+'\nMOE_M64_MEMCHECK_PASS\nMOE_M64_RACECHECK_PASS'+
+                    ('\n'+full_marker+'\n' if marker else '\n'))
             candidate=('VLLM_GLM53_B12X_PREFILL_M64','marker','a'*40,str(frozen))
-            with patch.dict(m.CANDIDATES,{'moe-m64':candidate}),patch.object(m,'pinned'):
-                write();result=m.verify_gate('moe-m64',gate,repo)
+            with patch.dict(m.CANDIDATES,{key:candidate}),patch.object(m,'pinned'):
+                write();result=m.verify_gate(key,gate,repo)
                 self.assertEqual(result['revision'],'a'*40)
                 for case in ('transport','coverage','numerics','source','routing','marker','recovery','outer_failure','diagnostic_report','diagnostic_command','trace_report','trace_command','int8_report','int8_command','missing_rank','control','graph','reuse','nonfinite'):
                     c,r=copy.deepcopy(complete),copy.deepcopy(reports)
@@ -107,22 +149,32 @@ class ServingTests(unittest.TestCase):
                     elif case=='outer_failure':c['exit_code']=1
                     elif case=='diagnostic_report':
                         for report in r:report.update(verdict='MOE_M64_DIAGNOSTIC_COMPLETE',serving_gate=False)
-                    elif case=='diagnostic_command':c['probes']['moe-m64']['command'].append('--diagnose')
+                    elif case=='diagnostic_command':c['probes'][key]['command'].append('--diagnose')
                     elif case=='trace_report':
                         for report in r:report.update(verdict='MOE_M64_FP8_TRACE_COMPLETE',serving_gate=False,numerical_acceptance=False)
-                    elif case=='trace_command':c['probes']['moe-m64']['command'].append('--fp8-trace')
+                    elif case=='trace_command':c['probes'][key]['command'].append('--fp8-trace')
                     elif case=='int8_report':
                         for report in r:report.update(verdict='MOE_M64_INT8_DIAGNOSTIC_COMPLETE',serving_gate=False,numerical_acceptance=False)
-                    elif case=='int8_command':c['probes']['moe-m64']['command'].append('--int8-diagnostic')
+                    elif case=='int8_command':c['probes'][key]['command'].append('--int8-diagnostic')
                     write(c,r,case!='marker')
-                    with self.subTest(case=case),self.assertRaises(RuntimeError):m.verify_gate('moe-m64',gate,repo)
+                    with self.subTest(case=case),self.assertRaises(RuntimeError):m.verify_gate(key,gate,repo)
                 write(sanitizers=[])
-                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate('moe-m64',gate,repo)
+                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate(key,gate,repo)
                 changed=copy.deepcopy(sanitizers);changed[1]['summary']='RACECHECK SUMMARY: 1 hazard'
                 write(sanitizers=changed)
-                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate('moe-m64',gate,repo)
+                with self.assertRaisesRegex(RuntimeError,'sanitizer'):m.verify_gate(key,gate,repo)
+                if int8:
+                    for field in ('packet_equal','output_equal','retained_unchanged'):
+                        changed=copy.deepcopy(sanitizers);changed[1]['int8']['cases'][-1][field]=False
+                        write(sanitizers=changed)
+                        with self.subTest(field=field),self.assertRaisesRegex(RuntimeError,'INT8 sanitizer'):m.verify_gate(key,gate,repo)
+                    changed=copy.deepcopy(sanitizers);changed[1]['int8']['source_sha256']='0'*64
+                    write(sanitizers=changed)
+                    with self.assertRaisesRegex(RuntimeError,'INT8 sanitizer'):m.verify_gate(key,gate,repo)
+                    old=copy.deepcopy(reports);old[1]['transport']='fp8-v3';write(r=old)
+                    with self.assertRaisesRegex(RuntimeError,'transport'):m.verify_gate(key,gate,repo)
                 write();(repo/'build/glm53/module.py').write_text('untested edit')
-                with self.assertRaisesRegex(RuntimeError,'source changed'):m.verify_gate('moe-m64',gate,repo)
+                with self.assertRaisesRegex(RuntimeError,'source changed'):m.verify_gate(key,gate,repo)
 
     def test_fresh_gpu_failure_prevents_gate_admission_or_serving_deploy(self):
         with tempfile.TemporaryDirectory() as directory:

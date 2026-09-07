@@ -33,6 +33,9 @@ NODES = ('10.10.10.2', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 CANDIDATES = {
     'moe-m64': ('VLLM_GLM53_B12X_PREFILL_M64', 'GLM53_MOE_PREFILL_M64_LAUNCHED',
         'f7d3b4b4efbe231ddc4b1282f2fe13a37e4155fb', '/home/choiceoh/stkernel-moe-m64-check5-0908'),
+    'moe-m64-int8': (('VLLM_GLM53_B12X_PREFILL_M64','VLLM_GLM53_PREFILL_SP_RS_INT8'),
+        ('GLM53_MOE_PREFILL_M64_LAUNCHED','[prefill-sp] packed INT8 reduce-scatter engaged'),
+        '183df3a2065c5c7bab1729c66282e633cbbe3fa0','/home/choiceoh/stkernel-moe-m64-int8gate1-0908'),
 }
 
 SNAPSHOT = r'''
@@ -53,7 +56,8 @@ args['command_sha256']=sha(cmd.encode())
 env=dict(e.split('=',1) for e in c['Config']['Env'] if '=' in e)
 # Hash other environment values, including any credentials, while still
 # checking that every non-candidate value remains identical across boots.
-env={k:(v if k==knob else 'sha256:'+sha(v.encode())) for k,v in env.items()}
+knobs=(knob,) if isinstance(knob,str) else tuple(knob)
+env={k:(v if k in knobs else 'sha256:'+sha(v.encode())) for k,v in env.items()}
 mounts={m['Destination']:sha(pathlib.Path(m['Source']).read_bytes()) for m in c['Mounts']
         if m['Source'].startswith('/home/choiceoh/overlays/glm53/')}
 model={}
@@ -93,8 +97,10 @@ if archive:
             or not current['State']['Running'] or current['State']['StartedAt']!=c['State']['StartedAt']):
         raise RuntimeError('serving container or log changed during capture')
     text=raw.decode(errors='replace')
-    state['launch_proof']=marker in text
-    state['launch_lines']=[line for line in text.splitlines() if marker in line]
+    markers=(marker,) if isinstance(marker,str) else tuple(marker)
+    state['launch_markers']={m:m in text for m in markers}
+    state['launch_proof']=all(state['launch_markers'].values())
+    state['launch_lines']=[line for line in text.splitlines() if any(m in line for m in markers)]
     state['log_sha256']=sha(raw)
     state['log_gzip_base64']=base64.b64encode(gzip.compress(raw,mtime=0)).decode()
 print(json.dumps(state))
@@ -131,6 +137,7 @@ def source_contract(repo, revision):
 
 def attest(nodes, contract, knob, enabled, public=False):
     issues=[]
+    knobs=prefill_compare.knob_names(knob)
     expected_args = dict(host='0.0.0.0' if public else '127.0.0.1', port='8000' if public else '18000',
                          **{'max-model-len':'1048576' if public else '262144',
                             'num-gpu-blocks-override':'1056' if public else '415'})
@@ -139,7 +146,7 @@ def attest(nodes, contract, knob, enabled, public=False):
         if state['image'] != IMAGE:issues.append(node+': image mismatch')
         for key,value in contract.items():
             if state[key] != value:issues.append(node+': source '+key+' mismatch')
-        if state['env'].get(knob) != str(int(enabled)):issues.append(node+': knob mismatch')
+        if any(state['env'].get(k) != str(int(enabled)) for k in knobs):issues.append(node+': knob mismatch')
         if any(state['args'].get(k)!=v for k,v in expected_args.items()):issues.append(node+': endpoint/capacity mismatch')
     if issues:raise RuntimeError('; '.join(issues))
 
@@ -147,16 +154,19 @@ def attest(nodes, contract, knob, enabled, public=False):
 def verify_gate(candidate, directory, repo):
     """Only a completed, recovered four-rank GPU gate can admit serving."""
     _, _, revision, frozen = CANDIDATES[candidate]
+    int8=candidate=='moe-m64-int8'
+    command=['bash','probes/run_glm53_moe_m64_tp4_check.sh']+(['--int8-gate'] if int8 else [])
     complete = json.loads((directory/'completion.json').read_text())
     gate = complete['probes'][candidate]
     if (not complete.get('ended') or complete.get('exit_code') != 0 or complete.get('error')
             or gate.get('exit_code') != 0 or gate.get('revision') != revision
-            or not gate.get('ended') or gate.get('command') != ['bash', 'probes/run_glm53_moe_m64_tp4_check.sh']):
+            or not gate.get('ended') or gate.get('command') != command):
         raise RuntimeError('candidate GPU gate or recovery is incomplete/failed')
     if not complete.get('restored_original') and not complete.get('public_restore'):
         raise RuntimeError('offline serving recovery evidence missing')
     log = (directory/(candidate+'.log')).read_bytes()
-    if b'MOE_M64_ALL_GATES_PASS' not in log.splitlines():
+    marker=b'MOE_M64_INT8_ALL_GATES_PASS' if int8 else b'MOE_M64_ALL_GATES_PASS'
+    if marker not in log.splitlines():
         raise RuntimeError('four-rank GPU gate log incomplete')
     pinned(frozen, revision)
     frozen = Path(frozen)
@@ -174,9 +184,11 @@ def verify_gate(candidate, directory, repo):
         old, new = (frozen/path).read_bytes(), (repo/path).read_bytes()
         if old != new:raise RuntimeError('GPU-validated source changed: '+path)
         hashes[path] = provenance[name] = hashlib.sha256(new).hexdigest()
-    for path in ('profiles/glm53.env', 'launchers/start-glm53-nvfp4-tp4.sh',
+    contracts=('profiles/glm53.env', 'launchers/start-glm53-nvfp4-tp4.sh',
                  'probes/glm53_moe_m64_check.py', 'probes/run_glm53_moe_m64_tp4_check.sh',
-                 'probes/glm53_moe_m64_sanitize.py'):
+                 'probes/glm53_moe_m64_sanitize.py')
+    if int8:contracts+=('probes/glm53_prefill_int8_sanitize.py','probes/glm53_prefill_int8_check.py')
+    for path in contracts:
         old, new = (frozen/path).read_bytes(), (repo/path).read_bytes()
         if old != new:raise RuntimeError('GPU-validated launch/probe contract changed: '+path)
         hashes[path] = hashlib.sha256(new).hexdigest()
@@ -188,7 +200,7 @@ def verify_gate(candidate, directory, repo):
         except json.JSONDecodeError:
             continue  # compiler diagnostics are not probe result records
         if isinstance(record, dict) and record.get('verdict') == 'MOE_M64_GPU_PASS':reports.append(record)
-    if len(reports) != 2 or [r.get('transport') for r in reports] != ['bf16', 'fp8-v3']:
+    if len(reports) != 2 or [r.get('transport') for r in reports] != ['bf16', 'fp8-v3-rs-int8' if int8 else 'fp8-v3']:
         raise RuntimeError('both independent transport GPU reports are required')
     cases = [(n, skew) for n in (4096, 6143, 6144, 6912, 8192) for skew in (False, True)]
     for report in reports:
@@ -229,6 +241,14 @@ def verify_gate(candidate, directory, repo):
                 or ('MOE_M64_'+tool.upper()+'_PASS').encode() not in log.splitlines()
                 or record.get('results')!=[dict(rows=n,skew=s,bad_rows=0) for n in (6144,6912,8192) for s in (False,True)]):
             raise RuntimeError('sanitizer coverage, source or result is invalid')
+        if int8:
+            from glm53_prefill_int8_sanitize import validate
+            try:
+                validate(record['int8'])
+                if record['int8']['source_sha256']!=hashes['probes/glm53_prefill_int8_sanitize.py']:
+                    raise ValueError('INT8 sanitizer source mismatch')
+            except (KeyError,ValueError,TypeError) as exc:
+                raise RuntimeError('INT8 sanitizer coverage, source or result is invalid') from exc
     return dict(revision=revision, files=hashes, log_sha256=hashlib.sha256(log).hexdigest(),
                 completion_sha256=hashlib.sha256((directory/'completion.json').read_bytes()).hexdigest())
 
@@ -263,7 +283,8 @@ def boot_arm(args):
     check_holder()
     out=Path(os.environ['PREFILL_SERVING_OUT']);repo=Path(os.environ['REPO'])
     knob=CANDIDATES[os.environ['PREFILL_SERVING_CANDIDATE']][0]
-    if args.knobs not in ('',knob+'=1'):raise RuntimeError('unexpected arm settings')
+    settings=' '.join(k+'=1' for k in prefill_compare.knob_names(knob))
+    if args.knobs not in ('',settings):raise RuntimeError('unexpected arm settings')
     env=dict(os.environ)
     control_file=out/'boot-controls.json'
     if control_file.exists():
@@ -329,7 +350,7 @@ def refresh_gpu_gate(candidate, source, revision, directory):
     _, _, probe_revision, probe_source = CANDIDATES[candidate]
     run_owned(['python3', str(source/'probes/glm53_offline_checks.py'),
                '--probe-source', probe_source, '--probe-revision', probe_revision,
-               '--out', str(directory)], cwd=source,
+               '--out', str(directory)]+(['--int8-gate'] if candidate=='moe-m64-int8' else []), cwd=source,
               env=dict(os.environ, OFFLINE_SOURCE_REV=revision))
 
 
@@ -371,7 +392,8 @@ def run_bracket(args):
         contract=source_contract(repo,args.revision)
         save(out/'source-contract.json',contract)
         names=[args.name+s for s in ('B1','A','B2')]
-        command=['bash',str(repo/'bench/chain.sh'),names[0]+'=',names[1]+'='+knob+'=1',names[2]+'=']
+        settings=' '.join(k+'=1' for k in prefill_compare.knob_names(knob))
+        command=['bash',str(repo/'bench/chain.sh'),names[0]+'=',names[1]+'='+settings,names[2]+'=']
         for name,enabled in zip(names,(False,True,False)):
             hook=['python3',str(ROOT/'bench/prefill_serving.py'),'arm','--name',name]
             if enabled:hook.append('--enabled')

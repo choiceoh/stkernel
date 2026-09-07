@@ -76,6 +76,14 @@ def validate_phase(phase, arm, salts, issues, label):
                 issues.append(where + ': non-idle boundary')
 
 
+def knob_names(value):
+    """One knob or an explicit, nonempty group whose members change together."""
+    values=(value,) if isinstance(value,str) else tuple(value) if isinstance(value,(tuple,list)) else ()
+    if not values or any(not isinstance(k,str) or not re.fullmatch(r'VLLM_GLM53_[A-Z0-9_]+',k) for k in values) or len(values)!=len(set(values)):
+        raise ValueError('candidate knob is missing or invalid')
+    return values
+
+
 def compare(arms):
     issues, salts = [], set()
     out = dict(schema=1, issues=issues, comparison=[],
@@ -90,8 +98,7 @@ def compare(arms):
             raise ValueError('require exactly B1, candidate, B2 in order')
         baseline = arms[0]
         knob = baseline['knob']
-        if not re.fullmatch(r'VLLM_GLM53_[A-Z0-9_]+', knob):
-            raise ValueError('candidate knob is missing')
+        knobs=knob_names(knob)
         if not re.fullmatch('[a-f0-9]{40}', baseline['revision']):
             raise ValueError('full source revision required')
         boot_ids = []
@@ -118,9 +125,9 @@ def compare(arms):
                     if before.get(key) != reference.get(key):
                         issues.append(label + ': mismatched ' + key + ' on ' + node)
                 expected = '1' if arm['enabled'] else '0'
-                if before['env'].get(knob) != expected:
+                if any(before['env'].get(k) != expected for k in knobs):
                     issues.append(label + ': candidate setting mismatch ' + node)
-                other = lambda env: {k:v for k,v in env.items() if k != knob}
+                other = lambda env: {k:v for k,v in env.items() if k not in knobs}
                 if other(before['env']) != other(reference['env']):
                     issues.append(label + ': another setting changed ' + node)
                 if before['args'].get('host') != '127.0.0.1' or before['args'].get('port') != '18000':
