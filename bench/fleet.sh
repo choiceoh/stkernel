@@ -97,6 +97,7 @@
 set -uo pipefail
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
+export FLEET_DIR LOGD
 REPO=${REPO:-/home/choiceoh/stkernel}
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
@@ -155,6 +156,9 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   if [ "${1:-}" = bash ] && [ -f "${2:-}" ]; then chain=$2; fi
   if [ -n "$chain" ]; then
     if bash -n "$chain" 2>/dev/null; then echo "  PASS syntax $chain"; else echo "  FAIL syntax $chain"; ok=0; fi
+    if grep -qF 'if [[ $touched == 1 ]]; then' "$chain" && grep -q 'RESTORE' "$chain"; then
+      echo "  FAIL legacy unconditional restore: guard cleanup with FLEET_RESTORE_MANAGED and use bench/fleet_entry.py idle (see probes/run_gemm_input_cta.sh)"; ok=0
+    fi
     knobs=$(grep -oE "VLLM_[A-Z0-9_]+=[^ \"'\\]*" "$chain" | sort -u)
   fi
   [ $# -gt 0 ] && knobs="$knobs $(printf '%s ' "$@" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"']*" | sort -u)"
@@ -274,11 +278,11 @@ nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   return $ok
 }
 restore_needed() {  # session -> yes|no
-  local next; next=$(grep -v "^[0-9]*|$1|" "$Q" | head -1)
-  if [ -z "$next" ]; then echo "yes (nobody queued: the last holder restores production)"; return 0; fi
-  local ns nk; ns=$(echo "$next" | cut -d'|' -f2); nk=$(kind_of "$(echo "$next" | cut -d'|' -f6)")
-  if [ "$nk" = boot ]; then echo "no ($ns boots next and replaces whatever is up)"; return 1; fi
-  echo "yes ($ns runs a probe next, not a boot)"; return 0
+  if [ "${FLEET_RESTORE_MANAGED:-0}" = 1 ]; then
+    echo "no (the boot supervisor owns the final restore/handoff decision)"; return 1
+  fi
+  echo "yes (a standalone caller cannot transfer restore responsibility; use fleet.sh run --gpu)"
+  return 0
 }
 
 # ---- legacy awareness: a peer that did not adopt this tool is still busy when
@@ -351,6 +355,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   # later, dropping the live request with the same session name)
   [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
   legacy_busy && return 1
+  python3 "$REPO/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" || return 1
   echo "$s|$pid|$(me)|$(now)|$est|$note|$kind" > "$H"; _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
   logit "GO $s (pid $pid)"; _event GO "$s" "$note"; return 0
@@ -426,9 +431,10 @@ case "$cmd" in
       if with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; then echo "GO $s $(ts)"; exit 0; fi
       why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
-      sleep 15
+      sleep 1
     done
     echo "TIMEOUT $s after ${tmo}m" >&2; exit 1;;
+  version) sha256sum "$REPO/bench/fleet.sh" "$REPO/bench/fleet_boot.py" "$REPO/bench/fleet_handoff.py"; echo "handoff_protocol=1";;
   release) with_lock _release "${1:?session}";;
   run)
     kind=boot; force=""
@@ -458,6 +464,9 @@ case "$cmd" in
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
+    if [ "$kind" = boot ]; then
+      exec python3 "$REPO/bench/fleet_boot.py" "$(realpath "$0")" "$s" "$est" "$note" "$@"
+    fi
     FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
     if [ "$kind" = boot ]; then
       echo "nodes:"; if ! nodes_check; then
@@ -490,11 +499,12 @@ case "$cmd" in
     with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
     logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
+  withdraw) with_lock _dequeue "${1:?session}";;
   cancel)
     s=${1:?session}; qpid=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f7)
     # a live waiter re-queues a vanished entry within 15 s (its wait loop), so
     # the waiter goes first -- it is this tool's own process, recorded at request
-    if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -q "fleet.sh" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
+    if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -qE "fleet.sh|fleet_boot.py" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
     with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
   kick)
     if [ ! -s "$H" ]; then echo "nothing held"; exit 0; fi
@@ -504,6 +514,10 @@ case "$cmd" in
   preflight)
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
+  startup)
+    s=${1:?session}; spec=$(realpath "${2:?campaign JSON}"); est=${3:-45}
+    python3 "$REPO/bench/startup_campaign.py" validate --repo "$REPO" --spec "$spec" || exit 2
+    exec env STARTUP_CACHE_MODE=campaign STARTUP_CAMPAIGN_SPEC="$spec" bash "$0" run --gpu "$s" "$est" "shared startup campaign" -- bash "$REPO/bench/startup_cache_boots.sh";;
   chain)
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
@@ -524,6 +538,9 @@ case "$cmd" in
     printf '%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$stamp" "$sha" "$s" "$rev" >> "$FLEET_DIR/builds.tsv"
     logit "deploy $s $rev -> build $stamp = $sha"; echo "deployed build $stamp = $sha (registry: $FLEET_DIR/builds.tsv)";;
   yield)
+    # The supervisor holds restore responsibility across its payload. Do not
+    # drop that ownership for a nested legacy yield; queued work runs at finish.
+    [ "${FLEET_RESTORE_MANAGED:-0}" != 1 ] || { echo "yield deferred to supervised finish"; exit 0; }
     s=${1:?session}; max=${2:-15}
     [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "not the holder"; exit 0; }
     cand=$(awk -F'|' -v m="$max" '$6=="probe" && $4+0<=m {print $2; exit}' "$Q")

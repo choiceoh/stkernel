@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Exact eight-slice CTA probe; same-build controls and unconditional public restore.
+# Exact eight-slice CTA probe; same-build controls and supervised production handoff.
 set -euo pipefail
-cd /home/choiceoh/stkernel-input-cta-serving-retry-20260907
+cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 export REPO=$PWD
-RESTORE_REPO=/home/choiceoh/stkernel-input-cta-serving-retry-restore-20260907
+RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel}
 IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 export INPUT_CTA_SERVING_OUT=${INPUT_CTA_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTCTASERVE20907}
 out=$INPUT_CTA_SERVING_OUT
@@ -17,21 +17,14 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT before stopping s
 [[ ! -e $out/source.commit ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
 mkdir -p "$out/build"
 git rev-parse HEAD > "$out/source.commit"
-curl -fsS --max-time 5 http://127.0.0.1:8000/metrics > "$out/before-metrics.txt"
-python3 - "$out/before-metrics.txt" <<'PY'
-from pathlib import Path
-import sys
-lines=Path(sys.argv[1]).read_text().splitlines()
-for key in ('num_requests_running','num_requests_waiting'):
-    values=[float(line.rsplit(' ',1)[1]) for line in lines if line.startswith('vllm:'+key+'{')]
-    assert values and sum(values)==0,(key,values)
-PY
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
+
 touched=0
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   docker stop -t 2 "inputcta-$session" >/dev/null 2>&1 || true
-  if [[ $touched == 1 ]]; then
+  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} != 1 ]]; then
     if (
       cd "$RESTORE_REPO"
       git fetch origin || exit 1
@@ -52,12 +45,15 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-[[ $(docker inspect glm53 --format '{{.Image}}') == "$IMAGE" ]] || exit 2
+docker image inspect "$IMAGE" >/dev/null
+if docker inspect glm53 >/dev/null 2>&1; then
+  [[ $(docker inspect glm53 --format '{{.Image}}') == "$IMAGE" ]] || exit 2
+fi
 touched=1
-docker stop -t 30 glm53 >/dev/null
+if docker inspect glm53 >/dev/null 2>&1; then docker stop -t 30 glm53 >/dev/null; fi
 pids=()
 for node in 1 3 4; do
-  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" docker stop -t 30 glm53-worker >/dev/null &
+  ssh -o BatchMode=yes "choiceoh@10.10.10.$node" 'if docker inspect glm53-worker >/dev/null 2>&1; then docker stop -t 30 glm53-worker; else docker info >/dev/null; fi' >/dev/null &
   pids+=($!)
 done
 for pid in "${pids[@]}"; do wait "$pid"; done
