@@ -208,10 +208,13 @@ print(json.dumps(json.loads(result)))
 
 
 
-def compile_preflight(path, revision, log):
+def compile_preflight(path, revision, log, *, int8=False):
     """Trace both real dispatcher paths without CUDA before stopping serving."""
     pinned(str(path), revision)
-    result = subprocess.run(['bash', str(Path(path)/'probes/run_glm53_moe_m64_compile.sh')],
+    command = ['bash', str(Path(path)/'probes/run_glm53_moe_m64_compile.sh')]
+    if int8:
+        command.append('--int8')
+    result = subprocess.run(command,
                             cwd=path, stdout=log, stderr=subprocess.STDOUT, timeout=150)
     if result.returncode != 0:
         raise RuntimeError('M64 CPU compile failed; serving was not stopped')
@@ -276,16 +279,19 @@ def main():
     diagnostic = ap.add_mutually_exclusive_group()
     diagnostic.add_argument('--fp8-diagnostic', action='store_true', help='Separate FP8 comparison diagnostic; cannot approve serving')
     diagnostic.add_argument('--fp8-trace', action='store_true', help='Separate actual partial/packet replay; cannot approve serving')
+    diagnostic.add_argument('--int8-diagnostic', action='store_true', help='All-row INT8 comparison; cannot approve serving')
     args = ap.parse_args()
     if not re.fullmatch('[0-9a-f]{40}', args.probe_revision):
         ap.error('exact frozen probe commit required')
     global PINS
-    label = 'moe-m64-fp8-trace' if args.fp8_trace else 'moe-m64-fp8-diagnostic' if args.fp8_diagnostic else 'moe-m64'
+    label = 'moe-m64-int8-diagnostic' if args.int8_diagnostic else 'moe-m64-fp8-trace' if args.fp8_trace else 'moe-m64-fp8-diagnostic' if args.fp8_diagnostic else 'moe-m64'
     command = ['bash', 'probes/run_glm53_moe_m64_tp4_check.sh']
     if args.fp8_diagnostic:
         command.append('--fp8-diagnostic')
     if args.fp8_trace:
         command.append('--fp8-trace')
+    if args.int8_diagnostic:
+        command.append('--int8-diagnostic')
     PINS = ((label, str(args.probe_source.resolve()), args.probe_revision, command),)
     args.out.mkdir(parents=True, exist_ok=False)
     def save(file, value):
@@ -301,7 +307,7 @@ def main():
             pinned(path, rev)
             save('api-preflight.json', probe_api_preflight(path, rev))
             with (args.out/'cpu-compile.log').open('x') as log:
-                compile_preflight(path, rev, log)
+                compile_preflight(path, rev, log, int8=args.int8_diagnostic)
         resources = {}
         for node in NODES:
             resources[node] = remote(node, "import json,shutil; print(json.dumps(dict(disk_free_gib=shutil.disk_usage('/home/choiceoh').free/2**30)))")

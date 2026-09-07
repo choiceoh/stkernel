@@ -92,6 +92,10 @@ class CollectiveContractTests(unittest.TestCase):
         self.assertEqual(len(pad_calls), 1)
         self.assertEqual(pad_calls[0]["N"], 4095 * 4096)
 
+    def test_int8_option_preserves_short_native_collectives(self):
+        self.ns['_RS_INT8']=True
+        self.test_short_chunks_take_native_collectives_without_codec_allocations()
+
     def test_v3_large_chunks_and_zero_threshold_keep_packed_transport(self):
         self.ns["torch"].empty = lambda shape, **kw: Tensor(rows=shape[0], width=shape[1])
         packed = self.ns["_reduce_scatter_v3"] = Mock(return_value="packed")

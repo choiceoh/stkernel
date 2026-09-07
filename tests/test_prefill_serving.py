@@ -91,7 +91,7 @@ class ServingTests(unittest.TestCase):
             with patch.dict(m.CANDIDATES,{'moe-m64':candidate}),patch.object(m,'pinned'):
                 write();result=m.verify_gate('moe-m64',gate,repo)
                 self.assertEqual(result['revision'],'a'*40)
-                for case in ('transport','coverage','numerics','source','routing','marker','recovery','outer_failure','diagnostic_report','diagnostic_command','trace_report','trace_command','missing_rank','control','graph','reuse','nonfinite'):
+                for case in ('transport','coverage','numerics','source','routing','marker','recovery','outer_failure','diagnostic_report','diagnostic_command','trace_report','trace_command','int8_report','int8_command','missing_rank','control','graph','reuse','nonfinite'):
                     c,r=copy.deepcopy(complete),copy.deepcopy(reports)
                     if case=='transport':r=r[:1]
                     elif case=='coverage':r[1]['results'].pop()
@@ -111,6 +111,9 @@ class ServingTests(unittest.TestCase):
                     elif case=='trace_report':
                         for report in r:report.update(verdict='MOE_M64_FP8_TRACE_COMPLETE',serving_gate=False,numerical_acceptance=False)
                     elif case=='trace_command':c['probes']['moe-m64']['command'].append('--fp8-trace')
+                    elif case=='int8_report':
+                        for report in r:report.update(verdict='MOE_M64_INT8_DIAGNOSTIC_COMPLETE',serving_gate=False,numerical_acceptance=False)
+                    elif case=='int8_command':c['probes']['moe-m64']['command'].append('--int8-diagnostic')
                     write(c,r,case!='marker')
                     with self.subTest(case=case),self.assertRaises(RuntimeError):m.verify_gate('moe-m64',gate,repo)
                 write(sanitizers=[])

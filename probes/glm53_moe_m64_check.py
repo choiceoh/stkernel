@@ -72,17 +72,18 @@ def main():
     diagnostic=ap.add_mutually_exclusive_group()
     diagnostic.add_argument('--fp8-diagnostic',action='store_true',help='Fixed repeated FP8 controls; never a serving gate')
     diagnostic.add_argument('--fp8-trace',action='store_true',help='Actual partial/packet replay diagnostic; never a serving gate')
+    diagnostic.add_argument('--int8-diagnostic',action='store_true',help='All-row INT8/FP8 comparison; never a serving gate')
     args=ap.parse_args()
     checked=validate_distributed_api()
     if args.check_api:
         print(json.dumps(dict(distributed_api='PASS',calls=checked)));return
-    if (args.fp8_diagnostic or args.fp8_trace) and args.transport != 'fp8-v3':
+    if (args.fp8_diagnostic or args.fp8_trace or args.int8_diagnostic) and args.transport != 'fp8-v3':
         ap.error('diagnostic requires FP8-v3')
     if int(os.environ.get('WORLD_SIZE','0'))!=4 or any(not 4096<=n<=8192 for n in args.rows):
         ap.error('four real ranks and 4096..8192 rows required')
     os.environ.update(VLLM_GLM53_PREFILL_SP='1',VLLM_GLM53_B12X_PREFILL_M64='1',
         VLLM_GLM53_PREFILL_SP_FP8='0' if args.transport=='bf16' else '3',
-        VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS='4096',VLLM_DSV4_ONESHOT_AR='0',
+        VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS='4096',VLLM_GLM53_PREFILL_SP_RS_INT8='0',VLLM_DSV4_ONESHOT_AR='0',
         VLLM_GLM53_B12X_STATIC_V2='t',VLLM_GLM53_B12X_PREFILL_REUSE='0',
         VLLM_GLM53_B12X_PREFILL_FC1_N128='0')
     import torch
@@ -180,7 +181,7 @@ def main():
             report['finite']=finite
             report['pass']=finite and not report['bad_rows']
             return reports(report)
-        if args.fp8_diagnostic or args.fp8_trace:
+        if args.fp8_diagnostic or args.fp8_trace or args.int8_diagnostic:
             from glm53_moe_m64_fp8_diagnostic import run as run_diagnostic
             def case_factory(rows, skew, seed):
                 mlp.skew=skew
@@ -198,10 +199,10 @@ def main():
                     select(candidate)
                     with override_forward_context(context):
                         x=h.prefill_all_gather(shard,num_tokens=rows)
-                        if args.fp8_trace:
+                        if args.fp8_trace or args.int8_diagnostic:
                             gather_unchanged=torch.equal(x.view(torch.int16),gathered.view(torch.int16))
                         with h.partial_tp_output(num_tokens=rows):x=mlp(x)
-                        if args.fp8_trace:
+                        if args.fp8_trace or args.int8_diagnostic:
                             partial=x.clone()
                             output=h.prefill_reduce_scatter(x)
                             return dict(partial=partial,output=output,gather_unchanged=gather_unchanged,
@@ -212,7 +213,11 @@ def main():
                     return wrapper.run(gathered,w13,sf13,w2,sf2,ids,scales,
                         w1_alpha=ones,w2_alpha=ones,fc2_input_scale=ones,out=torch.empty_like(gathered))
                 return call,local_call,lambda:torch.equal(shard,original)
-            if args.fp8_trace:
+            if args.int8_diagnostic:
+                from glm53_moe_m64_int8_diagnostic import run as run_int8
+                run_int8(torch=torch,h=h,rank=rank,provenance=provenance,reports=reports,
+                         require=require,case_factory=case_factory)
+            elif args.fp8_trace:
                 from glm53_moe_m64_fp8_trace import run as run_trace
                 run_trace(torch=torch,h=h,rank=rank,provenance=provenance,reports=reports,
                           require=require,case_factory=case_factory)

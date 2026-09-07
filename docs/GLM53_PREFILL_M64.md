@@ -276,3 +276,30 @@ explicit default-off, RS-only INT8 encoding at the same payload width, with
 unchanged FP8 all-gather and short BF16 routing. GPU pack fidelity and full-row
 comparisons must precede any full gate/TTFT. Full trace, CPU reconstruction,
 INT8 recipe, tests and recovery are in `measurements/glm53_moe_m64_20260908/fp8trace1/`.
+
+## Default-off INT8 reduce-scatter candidate
+
+`VLLM_GLM53_PREFILL_SP_RS_INT8=0` now declares the explicit RS-only experiment.
+When enabled with sequence-parallel FP8 v3, its pack kernel uses per-2048-block
+power-of-two scales, round-to-nearest-even and symmetric signed INT8. The same
+packet layout, alignment and single all-to-all are retained. The existing
+unpacker reads signed bytes and accumulates in FP32 before BF16 storage. FP8
+all-gather and the executed-chunk short BF16 gate are unchanged. Invalid/incompatible
+settings fail during import rather than selecting a per-rank fallback.
+
+The codec has a distinct serving marker. The FP8-v3 family proof uses an actual
+packed-exchange marker shared by both encodings; that generic marker cannot
+satisfy the separate INT8 proof. The normal gate and its tolerances are unchanged.
+
+`--int8-diagnostic` compares all rows in the fixed 72-trial plan, preserving the
+original FP8 failures alongside INT8 results on the same actual pre-transport
+partials. Each rank first checks 32 codec cases against CPU bytes, including
+padding/alignment, zero, random, signed ties and large finite values, and checks
+real 2128/4095-token BF16 identity with the INT8 option toggled. Every trial/arm
+checks all packet bytes against an independent tensor recipe; the first trial
+of each seed uses the CPU recipe, subsequent trials use the tensor recipe on GPU.
+An independent FP32 reduction of the decoded recipe must match the actual INT8
+output bitwise. All-row quantization error is recorded against the same arm's
+unquantized FP32 reduction. Diagnostic completion always denies numerical/serving
+acceptance. Actual INT8 pack/unpack compilation is added before any service stop.
+Full-row GPU evidence and speed/quality results are still pending.

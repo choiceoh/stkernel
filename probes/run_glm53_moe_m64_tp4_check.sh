@@ -3,6 +3,7 @@
 set -euo pipefail
 diagnostic=0
 trace=0
+int8=0
 probe_args=()
 transports=(bf16 fp8-v3)
 if [[ $# == 1 && $1 == --fp8-diagnostic ]]; then
@@ -13,8 +14,12 @@ elif [[ $# == 1 && $1 == --fp8-trace ]]; then
   trace=1
   probe_args+=(--fp8-trace)
   transports=(fp8-v3)
+elif [[ $# == 1 && $1 == --int8-diagnostic ]]; then
+  int8=1
+  probe_args+=(--int8-diagnostic)
+  transports=(fp8-v3)
 elif [[ $# != 0 ]]; then
-  echo 'only --fp8-diagnostic or --fp8-trace is accepted' >&2; exit 2
+  echo 'only --fp8-diagnostic, --fp8-trace or --int8-diagnostic is accepted' >&2; exit 2
 fi
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 python3 -c 'import sys;sys.path.insert(0,sys.argv[1]+"/probes");from glm53_offline_checks import check_holder;check_holder()' "$REPO"
@@ -83,6 +88,22 @@ for transport in "${transports[@]}"; do
   done
   cat "$log_dir/$transport-rank-0.log"
 done
+if [[ $int8 == 1 ]]; then
+  python3 - "$log_dir/fp8-v3-rank-0.log" "$REPO/probes" <<'INT8'
+import json,pathlib,sys
+sys.path.insert(0,sys.argv[2])
+from glm53_moe_m64_int8_diagnostic import MARKER,completion
+records=[json.loads(l) for l in pathlib.Path(sys.argv[1]).read_text().splitlines() if l.startswith('{')]
+trials=[r for r in records if r.get('kind')=='MOE_M64_INT8_DIAGNOSTIC_TRIAL']
+finals=[r for r in records if r.get('verdict')==MARKER]
+assert len(finals)==1
+report=finals[0]
+assert completion(trials,report['preflight'],report['provenance'])==report
+assert report['serving_gate'] is False and report['numerical_acceptance'] is False
+print(MARKER)
+INT8
+  exit 0
+fi
 if [[ $trace == 1 ]]; then
   python3 - "$log_dir" "$REPO/probes" <<'TRACE'
 import pathlib,sys

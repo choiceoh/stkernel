@@ -16,6 +16,7 @@ import torch
 from torch.distributed import ReduceOp
 import triton
 import triton.language as tl
+from triton.language.extra.cuda import libdevice
 
 from vllm.logger import init_logger
 
@@ -33,6 +34,20 @@ _FP8 = _FP8_MODE in ("1", "2", "3")
 # all-to-alls (values and scales), one unpack-sum kernel.
 _FP8_V2 = _FP8_MODE == "2"
 _FP8_V3 = _FP8_MODE == "3"
+
+
+def _parse_rs_int8(value, *, enabled, fp8_v3):
+    if value not in ("0", "1"):
+        raise ValueError("prefill RS INT8 must be 0 or 1")
+    if value == "1" and not (enabled and fp8_v3):
+        raise ValueError("prefill RS INT8 requires sequence parallel FP8 v3")
+    return value == "1"
+
+
+# Profile-wide startup setting, never a per-rank runtime fallback. All-gather
+# retains FP8. The existing executed-chunk gate still selects short BF16.
+_RS_INT8 = _parse_rs_int8(os.environ.get("VLLM_GLM53_PREFILL_SP_RS_INT8", "0").strip(),
+                        enabled=_ENABLED, fp8_v3=_FP8_V3)
 # A serving 2K request lost 52--86 ms to unconditional v3, while 6912-row
 # chunks dominate the long requests that improved. Start between those
 # measured shapes; this is a candidate boundary, not a measured crossover.
@@ -289,6 +304,29 @@ def _unpack_sum_payload(Packed, Scales, Out, LOCAL_N, PAYLOAD_BYTES,
     tl.store(Out + offsets, acc)
 
 
+@triton.jit(do_not_specialize=["N", "LOCAL_N", "PAYLOAD_BYTES"])
+def _pack_rs_payload_int8(X, Packed, Scales, N, LOCAL_N, PAYLOAD_BYTES,
+                          BLOCK: tl.constexpr):
+    block = tl.program_id(0)
+    local_blocks = LOCAL_N // BLOCK
+    rank = block // local_blocks
+    local_block = block % local_blocks
+    offsets = block * BLOCK + tl.arange(0, BLOCK)
+    x = tl.load(X + offsets, mask=offsets < N, other=0.0).to(tl.float32)
+    amax = tl.max(tl.abs(x), axis=0)
+    scale = tl.exp2(tl.ceil(tl.log2(tl.div_rn(tl.maximum(amax, 1.0e-30), 127.0))))
+    # nearbyintf is round-to-nearest-even. Integer casts alone truncate.
+    q = tl.minimum(tl.maximum(libdevice.nearbyint(x / scale), -127.0), 127.0).to(tl.int8)
+    local_offsets = local_block * BLOCK + tl.arange(0, BLOCK)
+    tl.store(Packed + rank * PAYLOAD_BYTES + local_offsets, q)
+    tl.store(Scales + rank * (PAYLOAD_BYTES // 4) + LOCAL_N // 4 + local_block, scale)
+    if local_block == local_blocks - 1:
+        tail = tl.arange(0, 32)
+        scale_end = LOCAL_N // 4 + local_blocks
+        tl.store(Scales + rank * (PAYLOAD_BYTES // 4) + scale_end + tail, 0.0,
+                 mask=scale_end + tail < PAYLOAD_BYTES // 4)
+
+
 def _quantize(tensor, maxima, limit, *, num_rows=None):
     shape = tensor.shape if num_rows is None else (num_rows, _HIDDEN)
     packed = torch.empty(shape, device=tensor.device, dtype=torch.float8_e4m3fn)
@@ -462,6 +500,8 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
     needed. Both temporary allocations belong to this invocation so calls
     on different streams cannot share or overwrite a scratch buffer.
     """
+    if _RS_INT8:
+        return _reduce_scatter_int8(tensor, out, padded_rows)
     from vllm.distributed import get_tp_group
 
     local_n = padded_rows * _HIDDEN // _TP
@@ -482,4 +522,28 @@ def _reduce_scatter_v3(tensor, out, padded_rows):
         LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, TP=_TP, BLOCK=_BLOCK,
     )
     logger.info_once("[prefill-sp] packed FP8 reduce-scatter engaged (one values+scales all-to-all)")
+    logger.info_once("[prefill-sp] packed reduce-scatter engaged (one values+scales all-to-all)")
+    return out
+
+
+def _reduce_scatter_int8(tensor, out, padded_rows):
+    """Experimental RS-only INT8 with the unchanged one-byte packet layout."""
+    from vllm.distributed import get_tp_group
+
+    local_n = padded_rows * _HIDDEN // _TP
+    local_blocks = local_n // _BLOCK
+    payload_bytes = _payload_bytes(local_n)
+    packed = torch.empty(payload_bytes * _TP, device=tensor.device, dtype=torch.uint8)
+    recv = torch.empty_like(packed)
+    _pack_rs_payload_int8[(local_blocks * _TP,)](
+        tensor, packed.view(torch.int8), packed.view(torch.float32),
+        N=tensor.numel(), LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, BLOCK=_BLOCK,
+    )
+    torch.distributed.all_to_all_single(recv, packed, group=get_tp_group().device_group)
+    _unpack_sum_payload[(local_blocks,)](
+        recv.view(torch.int8), recv.view(torch.float32), out,
+        LOCAL_N=local_n, PAYLOAD_BYTES=payload_bytes, TP=_TP, BLOCK=_BLOCK,
+    )
+    logger.info_once("[prefill-sp] packed INT8 reduce-scatter engaged (one values+scales all-to-all)")
+    logger.info_once("[prefill-sp] packed reduce-scatter engaged (one values+scales all-to-all)")
     return out
