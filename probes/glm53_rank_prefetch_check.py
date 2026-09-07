@@ -17,7 +17,7 @@ def main():
     torch.set_num_threads(1)
     chunk_bytes = rank.CHUNK_BYTES
     size = 8 * chunk_bytes + 17
-    block = os.urandom(chunk_bytes)
+    block = bytearray(os.urandom(chunk_bytes))
     owner = torch.empty(size + 31, dtype=torch.uint8, device="cuda")
     target = owner[31:]
     bf16 = torch.empty(32, 64, dtype=torch.bfloat16, device="cuda")
@@ -29,6 +29,9 @@ def main():
         chunks = []
         with (root / "weights.bin").open("wb") as out:
             for start in range(0, size, chunk_bytes):
+                # Distinct chunks catch lookahead/result association errors,
+                # rather than accepting a shifted copy of repeated data.
+                block[:8] = start.to_bytes(8, "little")
                 data = memoryview(block)[:min(chunk_bytes, size - start)]
                 chunks.append({"name": "weight", "start": start, "offset": out.tell(),
                                "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
