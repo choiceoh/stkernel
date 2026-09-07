@@ -664,15 +664,67 @@ def _calib_hessian_for(name, k=None):
         return None
 
 
+_PACK_STAGING = None
+_PACK_IO_STATS = dict(calib_s=0.0, key_s=0.0, read_s=0.0, copy_s=0.0,
+                      fast_hits=0, legacy_hits=0)
+
+
+def _pack_staging():
+    global _PACK_STAGING
+    if _PACK_STAGING is None:
+        from vllm.model_executor.layers.glm53_startup_cache import HostStaging
+        _PACK_STAGING = HostStaging()
+    return _PACK_STAGING
+
+
+def _pack_fast_io():
+    # Transfer policy only; the existing cache keys and pack bytes are identical.
+    return os.environ.get("VLLM_GLM53_MK_PACK_FAST_IO", "0") == "1"
+
+
 def _weight_md5(weight) -> str:
     import torch
 
     w = weight.detach().contiguous()
     b = w.view(torch.uint8) if w.dtype != torch.uint8 else w
+    if _pack_fast_io():
+        digest = hashlib.md5()
+        for _, chunk in _pack_staging().chunks_to_cpu(b.reshape(-1)):
+            digest.update(memoryview(chunk.numpy()))
+        return digest.hexdigest()
     # NumPy exposes this contiguous uint8 storage through the buffer
     # protocol. Hash those same bytes directly: tobytes() otherwise makes
     # another full host copy (50 MiB for a KDA in-projection) on every hit.
     return hashlib.md5(b.cpu().numpy()).hexdigest()
+
+
+def _load_pack_blob(path, fast):
+    import torch
+    if fast:
+        try:
+            return torch.load(path, map_location="cpu", mmap=True, weights_only=True)
+        except (TypeError, RuntimeError) as exc:
+            # Legacy non-ZIP packs and older torch retain the ordinary loader.
+            if "mmap" not in str(exc):
+                raise
+    return torch.load(path, map_location="cpu", weights_only=True)
+
+
+def _pack_tensor_to_device(tensor, device, fast):
+    import torch
+    if tensor is None:
+        return None
+    if (not fast or torch.device(device).type != "cuda"
+            or tensor.device.type != "cpu" or not tensor.is_contiguous()):
+        return tensor.to(device)
+    # Pack files contain dense contiguous tensors. Copy logical bytes into an
+    # independent allocation, including offset views; mapped input stays alive
+    # until HostStaging has synchronized the final H2D chunk. Unusual strides
+    # retain Tensor.to's established layout behavior above.
+    target = torch.empty_like(tensor, device=device)
+    _pack_staging().copy_from_cpu(target.view(torch.uint8).reshape(-1),
+                                  tensor.view(torch.uint8).reshape(-1))
+    return target
 
 
 def _pack_cache_path(weight, per_row: bool, gptq: bool, rank: int):
@@ -748,7 +800,9 @@ def build_mk_weight_w4(weight, name=None, per_row=None):
     kg = k // 16
     per_row = (_w4_lever("VLLM_GLM53_MK_PACK_ROWSHIFT", "1") == "1"
                if per_row is None else bool(per_row))
+    started = time.perf_counter()
     calib = _calib_hessian_for(name, k)
+    _PACK_IO_STATS["calib_s"] += time.perf_counter() - started
     try:
         lr_rank = int(_w4_lever("VLLM_GLM53_MK_PACK_LORC", "0"))
     except ValueError:
@@ -757,21 +811,34 @@ def build_mk_weight_w4(weight, name=None, per_row=None):
     if lr_rank % 8:
         lr_rank = (lr_rank // 8) * 8   # the kernel walks r in eights
     cache = None
+    started = time.perf_counter()
     try:
         cache = _pack_cache_path(weight, per_row, calib is not None, lr_rank)
     except Exception as e:
         logger.warning("[megakernel] pack cache key failed (%r) -> no cache", e)
+    finally:
+        _PACK_IO_STATS["key_s"] += time.perf_counter() - started
     if cache and os.path.exists(cache):
         try:
-            blob = torch.load(cache, map_location="cpu")
+            fast = _pack_fast_io()
+            started = time.perf_counter()
+            try:
+                blob = _load_pack_blob(cache, fast)
+            finally:
+                _PACK_IO_STATS["read_s"] += time.perf_counter() - started
             if blob.get("version") == MK_PACK_VERSION:
                 dev = weight.device
-                pk = MKPack(blob["wq4"].to(dev), blob["ws4"].to(dev),
-                            float(blob["wgs"]),
-                            None if blob["rgs"] is None else blob["rgs"].to(dev),
-                            None if blob["lr_a"] is None else blob["lr_a"].to(dev),
-                            None if blob["lr_b"] is None else blob["lr_b"].to(dev))
+                started = time.perf_counter()
+                try:
+                    pk = MKPack(_pack_tensor_to_device(blob["wq4"], dev, fast),
+                                _pack_tensor_to_device(blob["ws4"], dev, fast),
+                                float(blob["wgs"]),
+                                *(_pack_tensor_to_device(blob[key], dev, fast)
+                                  for key in ("rgs", "lr_a", "lr_b")))
+                finally:
+                    _PACK_IO_STATS["copy_s"] += time.perf_counter() - started
                 _PACK_STATS["cached"] += 1
+                _PACK_IO_STATS["fast_hits" if fast else "legacy_hits"] += 1
                 return pk
         except Exception as e:
             logger.warning("[megakernel] pack cache %s unreadable (%r) -> rebuild",
@@ -878,6 +945,13 @@ def pack_stats_line() -> str:
             f"{_w4_lever('VLLM_GLM53_MK_PACK_ROWSHIFT', '1')} gptq="
             f"{_w4_lever('VLLM_GLM53_MK_PACK_GPTQ', '1')} lorc="
             f"{_w4_lever('VLLM_GLM53_MK_PACK_LORC', '0')}")
+
+
+def pack_io_stats_line() -> str:
+    """Cumulative startup host times, including the transfer synchronizations."""
+    return (f"fast={int(_pack_fast_io())} "
+            + " ".join(f"{key}={value:.3f}" if key.endswith("_s")
+                       else f"{key}={value}" for key, value in _PACK_IO_STATS.items()))
 
 
 def mk_w4_dequant_rowmajor(wq4_rm, ws4_rm, wgs=1.0, rgs=None):

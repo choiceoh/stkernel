@@ -625,6 +625,29 @@ and the inner loop are unchanged.
    tensor storage. A miss consumes the same Hessian values for GPTQ. Legacy
    serialization and torch versions without mmap keep the eager loader;
    malformed or mismatched calibration still falls back to RTN.
+   `VLLM_GLM53_MK_PACK_FAST_IO=1` also maps W4 pack files and reuses one
+   64 MiB pinned host buffer for weight MD5 and pack restoration. The MD5,
+   filenames, pack format and served values are unchanged. D2H hashing and
+   H2D buffer reuse wait for the current CUDA stream; pin-allocation failure,
+   legacy serialization and noncontiguous cached tensors retain synchronous
+   paths. The GLM profile defaults to 1 after the 2026-09-07 fleet bracket;
+   `=0` restores the legacy path. It is excluded from rank/FP8 identity because
+   it changes byte transport only. No additional
+   on-disk cache is introduced. `[mk-pack-io]` logs cumulative calibration,
+   key, file-read and device-copy seconds and fast/legacy hit counts.
+   `tests/test_glm53_pack_io.py` covers CPU byte/layout/key equivalence and
+   fallbacks; `probes/glm53_pack_io_check.py` exercises real GPU copies under
+   fleet ownership. `STARTUP_CACHE_MODE=pack-io` in `bench/startup_cache_boots.sh`
+   primes compilation/artifacts once, then measures fast/base/base/fast boots
+   with the same code, warm rank/FP8 caches and Korean 2K/32K onepass.
+   On runtime `3a2a223`, two measured boots per path gave mean health-ready
+   time **253.5 → 225.5 s** and head W4 attachment **28.632 → 11.860 s**.
+   All four timed boots passed 6/6 quality with corruption 0/4; all nodes hit
+   their rank, FP8 and W4 artifacts. The GPU probe passed 74 byte/hash/layout
+   checks, including another CUDA stream, the staging boundary and fallback.
+   These are warm 2K/32K startup results; full-context quality and decode
+   throughput are separate claims. See `MEASUREMENTS.md` for exact samples,
+   resource bounds and the initial benchmark-wrapper failure.
 4. **Low-rank error correction** (`VLLM_GLM53_MK_PACK_LORC=r`, default 0;
    8..32 in eights). `E = W - deq(Q)`; with `S` = rms of each input channel
    from the Hessian, the SVD of `E S` gives `A = U_r S_r`, `B = V_r^T S^-1`
