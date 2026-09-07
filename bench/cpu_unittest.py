@@ -26,7 +26,9 @@ def execute(target, root, jobs=None, shard=None):
         raise ValueError('test must be a tests/test_*.py file')
     if not path.is_file() and path.name != 'test_fleet*.py':
         raise ValueError('test does not exist: '+target)
-    all_cases = sorted(cases(unittest.defaultTestLoader.discover(str(path.parent),pattern=path.name)),key=lambda t:t.id())
+    # A loader retains its top-level import directory on Python 3.12. Nested
+    # fixture discovery must not inherit the outer repository's directory.
+    all_cases = sorted(cases(unittest.TestLoader().discover(str(path.parent),pattern=path.name)),key=lambda t:t.id())
     explicit_jobs = jobs is not None
     budget = int(os.environ.get('FLEET_CPU_SLOTS',min(2,os.cpu_count() or 1)))
     jobs = budget if jobs is None else jobs
