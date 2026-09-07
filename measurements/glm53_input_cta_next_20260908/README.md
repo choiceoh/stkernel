@@ -50,6 +50,51 @@ summation order. Four variants compare one/two output tiles per CTA and
 two/three weight buffers. Unsupported shapes, background work, and the
 existing N6416 path retain their current route.
 
-The runner uses a fleet maintenance hold, checks memory continuously,
-and unconditionally restores approved main. Results and restore proof
-will be recorded after completion.
+Fleet `inputcta30908` completed all numerical and sanitizer gates:
+200 numerical rows, 160 changing-input retained-graph checks, racecheck
+zero hazards, memcheck zero errors. The minimum observed available memory
+was 90.34 GiB and the continuous guard reported no issues. Approved main
+was restored at 04:12:32 KST; runner exit was zero. Raw artifacts and the
+restore receipt are under `three_slice/`.
+
+Generated CUDA SHA256:
+`e2464cd5ec85a51f2304f5764b9fd8d5ba2d62036bb28e924a9a21543b73ef9e`.
+The selected prototype is mode 2 (six warps, two tiles, two buffers),
+with 72 registers, zero local spill bytes, four blocks/SM, and 17,152
+bytes of shared memory per CTA.
+
+| M6 shape (N,K) | Cache | CTA2 baseline us | Selected us | Reduction | Faster pairs |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 4096,4096 | warm | 24.320 | 24.320 | 0.00% | 9/32 |
+| 4096,4096 | read-evicted | 49.840 | 45.808 | 8.09% | 31/32 |
+| 6144,4096 | warm | 32.512 | 24.352 | 25.10% | 31/32 |
+| 6144,4096 | read-evicted | 69.632 | 66.096 | 5.08% | 32/32 |
+| 6416,4096 control | warm | 24.640 | 24.592 | 0.19% | 14/32 |
+| 6416,4096 control | read-evicted | 70.112 | 70.240 | -0.18% | 14/32 |
+
+The N6416 path does not change in this experiment; its small differences
+illustrate the measurement noise. There is no measured warm improvement
+for N4096. The N6144 improvement is 8.16 microseconds per invocation,
+not a 25% improvement in whole-model decoding.
+
+## Production integration and pending serving bracket
+
+`b7b7029` integrates the selected kernel behind `VLLM_GLM53_MK_INPUT_CTA=4`.
+The default remains `2`. Mode 4 keeps the existing N6416 CTA2 kernel;
+its extra three-slice routes require foreground M6, K4096, N4096 or
+N6144, no low-rank correction, enabled input reuse, and the original
+three-slice plan. A failed new startup check retains independently
+validated CTA2. Unsupported shapes and split overrides fall back.
+
+Integrated source SHA256:
+`24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62`.
+CPU validation: 6,689 logic checks, 30 megakernel regressions, 107 fleet
+regressions, plus 37 focused tests and 16 subtests. Only the two reviewed
+kernel/occupancy counts changed in the logic gate; its CPU dependency
+audit was refreshed after confirming the extracted contracts were unchanged.
+
+Fleet `inputcta3prod0908` is queued to verify the integrated source,
+forced-split fallbacks, sanitizers, all-rank startup, and a CTA2 → CTA4 →
+CTA2 serving bracket. It requests three fixed 2K/2,048-token decode
+samples per arm, step windows, and the existing 2K/32K/128K quality gates.
+Do not treat the prototype's timings as integrated-source or serving proof.
