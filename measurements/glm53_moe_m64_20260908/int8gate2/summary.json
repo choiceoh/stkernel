@@ -1,0 +1,270 @@
+{
+  "source_revision": "6ee06be889a19adec6dffc21b38ee4b19e58b2c3",
+  "serving_gate": false,
+  "numerical_acceptance": false,
+  "exact_incoming_recovery": true,
+  "outer": {
+    "started": "2026-09-08T06:01:25.613890",
+    "exit_code": 1,
+    "ended": "2026-09-08T06:09:02.660258"
+  },
+  "detector_controls": {
+    "verdict": "SANITIZER_DETECTOR_CONTROLS_PASS",
+    "controls": [
+      {
+        "mode": "driver-torch-invalid",
+        "exit_code": 99,
+        "error_count": 1,
+        "api_reports": {
+          "========= Program hit CUDA_ERROR_INVALID_DEVICE (error 101) due to \"invalid device ordinal\" on CUDA API call to cuDeviceGet.": 1
+        },
+        "program": {
+          "kind": "DRIVER_LOOKUP_PROGRAM_COMPLETE",
+          "mode": "driver-torch-invalid",
+          "calls": [
+            {
+              "round": 0,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 0,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 0,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuDriverGetVersion",
+              "code": 0,
+              "values": [
+                13000
+              ]
+            },
+            {
+              "round": 1,
+              "call": "cuInit",
+              "code": 0,
+              "values": []
+            },
+            {
+              "round": 1,
+              "call": "cuDeviceGetCount",
+              "code": 0,
+              "values": [
+                1
+              ]
+            }
+          ],
+          "versions": {
+            "cuda-bindings": "13.3.1",
+            "cuda-python": "13.3.1",
+            "nvidia-cutlass-dsl": "4.6.2",
+            "torch": "2.13.0+cu130"
+          },
+          "positive_control": {
+            "call": "cuDeviceGet",
+            "code": 101,
+            "intentional": true
+          },
+          "source_sha256": "0f5e25446ae519922488f5e2cf4895915f768a664a8c6963c1dd1ac6b59527e8",
+          "serving_gate": false,
+          "numerical_acceptance": false
+        },
+        "log_sha256": "96e0b6260d832ee8e55aaa48855929b4d8ffe3e923cbff8eb76fbccb52baa4d9",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "memcheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "aa5af77dbd0118184efccb016102cb98142391d05353ff144036fd37985998fe",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      },
+      {
+        "tool": "racecheck",
+        "exit_code": 99,
+        "deliberate_error_detected": true,
+        "log_sha256": "714d8fcbd9b73f5c6abc14bcf8a9dafb2b2a322996b8484a5fd4dd339c75939a",
+        "source_sha256": "2e7cb3dd5ec85021885e41f3089bfd16a3ae4b80d5cb476aaee24be81ab268a1",
+        "serving_gate": false,
+        "numerical_acceptance": false
+      }
+    ]
+  },
+  "tp4": [
+    {
+      "transport": "bf16",
+      "cases": [
+        {
+          "rows": 4096,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 3.90589058057893
+        },
+        {
+          "rows": 4096,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": 2.035712004051504
+        },
+        {
+          "rows": 6143,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": -1.9381299847797684
+        },
+        {
+          "rows": 6143,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": 0.791932969102005
+        },
+        {
+          "rows": 6144,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 23.858077027362267
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -10.079877347700783
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 16.55664261172729
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -11.378917245350717
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 17.914685707240352
+        },
+        {
+          "rows": 8192,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -10.303741225432395
+        }
+      ]
+    },
+    {
+      "transport": "fp8-v3-rs-int8",
+      "cases": [
+        {
+          "rows": 4096,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": -0.8862838278417828
+        },
+        {
+          "rows": 4096,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -2.6622616904876883
+        },
+        {
+          "rows": 6143,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": -1.3398439465844403
+        },
+        {
+          "rows": 6143,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": 0.17816803978776274
+        },
+        {
+          "rows": 6144,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 7.419348721865271
+        },
+        {
+          "rows": 6144,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -13.968813118011614
+        },
+        {
+          "rows": 6912,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 5.35677699983208
+        },
+        {
+          "rows": 6912,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -11.609886277010128
+        },
+        {
+          "rows": 8192,
+          "skew": false,
+          "pass": true,
+          "median_speedup_pct": 4.523729568802071
+        },
+        {
+          "rows": 8192,
+          "skew": true,
+          "pass": true,
+          "median_speedup_pct": -11.571407291774594
+        }
+      ]
+    }
+  ],
+  "memcheck": {
+    "application_exit": 1,
+    "reported_errors": 0,
+    "completed_cases": [
+      {
+        "rows": 6144,
+        "skew": false
+      },
+      {
+        "rows": 6144,
+        "skew": true
+      },
+      {
+        "rows": 6912,
+        "skew": false
+      }
+    ],
+    "failure": {
+      "rows": 6912,
+      "skew": true,
+      "phase": "changed-input repeated candidate",
+      "bad_rows": 8,
+      "max_l2": 0.013218882493674755,
+      "max_peak": 0.13671875
+    },
+    "full_program_completed": false
+  },
+  "racecheck": "not reached",
+  "direct_ttft": "not reached"
+}

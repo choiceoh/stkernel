@@ -282,6 +282,7 @@ def main():
     diagnostic.add_argument('--int8-diagnostic', action='store_true', help='All-row INT8 comparison; cannot approve serving')
     diagnostic.add_argument('--int8-gate', action='store_true', help='Full BF16 and FP8-gather/INT8-reduction numerical and sanitizer gate')
     diagnostic.add_argument('--driver-diagnostic', action='store_true', help='Minimal CUDA binding sanitizer diagnostic; never serving acceptance')
+    diagnostic.add_argument('--reuse-diagnostic', action='store_true', help='Bounded local M64 stock/reuse diagnostic; never serving acceptance')
     args = ap.parse_args()
     if not re.fullmatch('[0-9a-f]{40}', args.probe_revision):
         ap.error('exact frozen probe commit required')
@@ -299,6 +300,9 @@ def main():
     if args.driver_diagnostic:
         label='driver-lookup-diagnostic'
         command=['bash','probes/run_glm53_cuda_driver_lookup_check.sh']
+    if args.reuse_diagnostic:
+        label='moe-m64-reuse-diagnostic'
+        command=['bash','probes/run_glm53_moe_m64_reuse_diagnostic.sh']
     PINS = ((label, str(args.probe_source.resolve()), args.probe_revision, command),)
     args.out.mkdir(parents=True, exist_ok=False)
     def save(file, value):

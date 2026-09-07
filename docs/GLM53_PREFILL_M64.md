@@ -5,7 +5,29 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
-Latest status (2026-09-08 05:21 KST): the full INT8 combination gate passed all
+Latest status (2026-09-08 06:09 KST): `int8gate2` passed the API, out-of-bounds
+CuTe write and shared-memory race detector controls, then all twenty TP4 cases.
+Memcheck reported zero API/device errors in the executed portion, but the normal
+M64 program failed its unchanged numerical criterion on eight rows during changed-
+input reuse at 6912/concentrated routing. Maximum row relative L2/peak were
+0.0132188825/0.13671875. The program stopped before completing all M64/INT8 cases;
+racecheck and direct TTFT were not reached. This is a failed gate. Exact incoming
+four-node recovery finished at 06:09:02. Evidence is in
+`measurements/glm53_moe_m64_20260908/int8gate2/`.
+
+The bounded `--reuse-diagnostic` follow-up holds the runtime and limits unchanged.
+It runs the same local M64 fixture in plain, memcheck and racecheck processes,
+with driver-first initialization and mandatory detector controls. Each process
+compares 6144/6912/8192 balanced/concentrated cases, original and changed inputs,
+and four alternating independent stock-control/candidate trials. The baseline
+and repeat are fixed within each phase, as in the original sanitizer gate.
+All failing row metrics and raw BF16 input/baseline/repeat/control/candidate rows
+are retained; a 128-row payload limit aborts rather than truncates evidence.
+Completion requires input/lifetime/source/hash/coverage proof and always sets
+numerical and serving acceptance false. Its purpose is to distinguish candidate
+excess from stock repeat variation before choosing a runtime fix.
+
+Earlier (2026-09-08 05:21 KST): the full INT8 combination gate passed all
 20 BF16/compressed TP4 numerical cases but failed memcheck with 34
 `cuGetProcAddress_v2` invalid-value API reports. Six M64 and forty INT8 sanitizer
 program checks completed; the sanitizer itself failed. Racecheck and direct

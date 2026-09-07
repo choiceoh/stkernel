@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-int8gate2-0908",
+  "revision": "6ee06be889a19adec6dffc21b38ee4b19e58b2c3",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-int8gate2-0908",
+  "probe_revision": "6ee06be889a19adec6dffc21b38ee4b19e58b2c3",
+  "session": "moem64int8gate20908",
+  "created": "2026-09-08T06:01:25.573714",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64int8gate20908",
+    "40",
+    "PR455 detector API/memory/race controls then full INT8 M64 gate; unchanged thresholds and exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-int8gate2-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-int8gate2-0908",
+    "--probe-revision",
+    "6ee06be889a19adec6dffc21b38ee4b19e58b2c3",
+    "--out",
+    "/tmp/glm53-moe-m64-int8gate2-0908/evidence",
+    "--int8-gate"
+  ]
+}

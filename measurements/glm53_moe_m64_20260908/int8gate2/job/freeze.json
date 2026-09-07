@@ -1,0 +1,18 @@
+{
+  "local": {
+    "exit_code": 0,
+    "output": "{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.1": {
+    "exit_code": 0,
+    "output": "{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.3": {
+    "exit_code": 0,
+    "output": "{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  },
+  "10.10.10.4": {
+    "exit_code": 0,
+    "output": "{\"distributed_api\": \"PASS\", \"calls\": [\"set_custom_all_reduce\", \"init_distributed_environment\", \"initialize_model_parallel\", \"destroy_model_parallel\", \"destroy_distributed_environment\"]}\n"
+  }
+}

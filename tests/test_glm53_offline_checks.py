@@ -13,6 +13,20 @@ SPEC.loader.exec_module(m)
 
 
 class OfflineTests(unittest.TestCase):
+    def test_reuse_diagnostic_is_separate_and_compiles_before_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            argv=['offline','--out',str(Path(directory)/'evidence'),'--probe-source','/frozen',
+                  '--probe-revision','a'*40,'--reuse-diagnostic']
+            with patch('sys.argv',argv),patch.dict(os.environ,OFFLINE_SOURCE_REV='a'*40), \
+                 patch.object(m,'check_holder'),patch.object(m,'pinned'), \
+                 patch.object(m,'probe_api_preflight',return_value={}), \
+                 patch.object(m,'compile_preflight',side_effect=RuntimeError('stop before serving')) as compile, \
+                 patch.object(m,'snapshot') as snapshot,patch.object(m.signal,'signal'):
+                self.assertEqual(m.main(),1);snapshot.assert_not_called()
+                self.assertFalse(compile.call_args.kwargs['int8'])
+                self.assertEqual(m.PINS,(('moe-m64-reuse-diagnostic','/frozen','a'*40,
+                    ['bash','probes/run_glm53_moe_m64_reuse_diagnostic.sh']),))
+
     def test_int8_full_gate_is_distinct_and_compiles_before_serving_is_touched(self):
         with tempfile.TemporaryDirectory() as directory:
             argv=['offline','--out',str(Path(directory)/'evidence'),'--probe-source','/frozen',

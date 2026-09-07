@@ -16,7 +16,9 @@ os.environ.update(VLLM_GLM53_B12X_PREFILL_M64='1',VLLM_GLM53_B12X_STATIC_V2='t',
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--int8',action='store_true')
+    mode=ap.add_mutually_exclusive_group()
+    mode.add_argument('--int8',action='store_true')
+    mode.add_argument('--reuse-diagnostic',action='store_true',help='Collect repeated local controls; never numerical or serving acceptance')
     args=ap.parse_args()
     # Initialize the CUDA driver before PyTorch creates a runtime context.
     # Keep sanitizer API reporting enabled and check every requested status.
@@ -47,6 +49,20 @@ def main():
     candidate=wrapper._prefill_m64_workspace
     assert candidate.tile_m==64 and wrapper._dynamic_workspace.tile_m==128
     ones=torch.ones(288,device='cuda');results=[]
+    def case_factory(rows,skew):
+        gen=torch.Generator(device='cuda').manual_seed(9211+rows)
+        x=torch.randn(rows,4096,generator=gen,device='cuda',dtype=torch.bfloat16)*.5
+        def call(enabled):
+            wrapper._prefill_m64_workspace=candidate if enabled else None
+            ids=((x[:,0].float().abs()*1024).int()[:,None]+torch.arange(8,device='cuda'))%(8 if skew else 288)
+            scales=torch.softmax(x[:,:8].float(),dim=1);out=torch.empty_like(x)
+            return wrapper.run(x,w13,sf13,w2,sf2,ids.to(torch.int32),scales,
+                w1_alpha=ones,w2_alpha=ones,fc2_input_scale=ones,out=out)
+        return x,call
+    if args.reuse_diagnostic:
+        from glm53_moe_m64_reuse_diagnostic import run
+        run(torch=torch,case_factory=case_factory,provenance=provenance)
+        return
     def compare(a,b,repeat):
         a,b,r=(v.float() for v in (a,b,repeat))
         assert all(bool(torch.isfinite(v).all()) for v in (a,b,r))
@@ -57,14 +73,7 @@ def main():
         assert not bool(bad.any()),dict(bad_rows=int(bad.sum()),l2=float(err.max()),peak=float(worst.max()))
     for rows in (6144,6912,8192):
         for skew in (False,True):
-            gen=torch.Generator(device='cuda').manual_seed(9211+rows)
-            x=torch.randn(rows,4096,generator=gen,device='cuda',dtype=torch.bfloat16)*.5
-            def call(enabled):
-                wrapper._prefill_m64_workspace=candidate if enabled else None
-                ids=((x[:,0].float().abs()*1024).int()[:,None]+torch.arange(8,device='cuda'))%(8 if skew else 288)
-                scales=torch.softmax(x[:,:8].float(),dim=1);out=torch.empty_like(x)
-                return wrapper.run(x,w13,sf13,w2,sf2,ids.to(torch.int32),scales,
-                    w1_alpha=ones,w2_alpha=ones,fc2_input_scale=ones,out=out)
+            x,call=case_factory(rows,skew)
             b=call(False);repeat=call(False);control=call(False);a=call(True)
             compare(control,b,repeat);compare(a,b,repeat)
             retained=a.clone();x.mul_(-.75)
