@@ -33,6 +33,11 @@ def inspect_server():
     return {'boot_id':obj['Id'],'image':obj['Image'],'running':obj['State']['Running']}
 
 
+def memory_available():
+    return int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
+                    if line.startswith('MemAvailable:')))*1024
+
+
 def main():
     session=os.environ['FLEET_SESSION']
     assert re.fullmatch('[a-zA-Z0-9_-]+',session)
@@ -42,9 +47,11 @@ def main():
     OUT.mkdir(parents=True,exist_ok=True)
     assert not (OUT/'result.json').exists(), 'fresh evidence required'
     (OUT/'build').mkdir(exist_ok=True)
-    before=traffic();server=inspect_server()
-    assert before['num_requests_running']==before['num_requests_waiting']==0
-    assert server['running'] and server['image']==IMAGE
+    server=inspect_server()
+    before=traffic() if server['running'] else None
+    assert before is None or before['num_requests_running']==before['num_requests_waiting']==0
+    assert server['image']==IMAGE
+    assert memory_available()>=16*1024**3, 'need 16 GiB host headroom before this 10 GiB probe'
     name='inputreuse-'+session
     command=['docker','run','--rm','--name',name,'--gpus','device=0','--network=none',
              '--cpuset-cpus=14-17','--memory=10g','--shm-size=1g',
@@ -57,8 +64,14 @@ def main():
     def watch():
         while not done.wait(.5):
             try:
-                row=traffic();samples.append(row)
-                if (row['num_requests_running'] or row['num_requests_waiting']
+                row=traffic() if before is not None else None
+                available=memory_available()
+                samples.append({'traffic':row,'available_bytes':available})
+                if inspect_server()!=server:
+                    issues.append('server identity or running state changed during probe')
+                if available<12*1024**3:
+                    issues.append('host headroom fell below 12 GiB')
+                if row is not None and (row['num_requests_running'] or row['num_requests_waiting']
                     or row['request_success_total']!=before['request_success_total']):
                     issues.append('serving traffic arrived during probe')
             except Exception as exc: issues.append(type(exc).__name__)
@@ -73,7 +86,11 @@ def main():
     finally:
         done.set();thread.join(timeout=5)
         subprocess.run(['docker','stop','-t','1',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        after=traffic();server_after=inspect_server()
+        after=server_after=None
+        try:
+            server_after=inspect_server()
+            after=traffic() if server_after['running'] else None
+        except Exception as exc: issues.append('final collection: '+type(exc).__name__)
         receipt={'checked_utc':datetime.now(timezone.utc).isoformat(),
                  'source_commit':subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip(),
                  'image':IMAGE,'before':before,'after':after,'traffic_samples':samples,
