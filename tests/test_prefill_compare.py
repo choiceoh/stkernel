@@ -15,7 +15,9 @@ def fixture():
     knob = 'VLLM_GLM53_B12X_PREFILL_STREAM_FC2'
     for a, enabled in enumerate((False, True, False)):
         nodes = {n: dict(id=f'id-{a}-{n}', started_at=f'time-{a}', image='sha256:'+'a'*64,
-            args={'host':'127.0.0.1','port':'18000','max-model-len':'262144','num-gpu-blocks-override':'415'},
+            args={'host':'127.0.0.1','port':'18000','max-model-len':'262144','num-gpu-blocks-override':'415',
+                  'gpu-memory-utilization':'0.6229','max-num-batched-tokens':'8192',
+                  'max-num-seqs':'4','max-cudagraph-capture-size':'32'},
             env={knob:str(int(enabled)),'VLLM_OTHER':'0'}, mounts={'source':'hash'},
             manifest_sha='b'*64, model={'revision':'model'}, hardware={'uuid':n}) for n in m.NODES}
         arm = dict(revision='c'*40, knob=knob, enabled=enabled, before=nodes,

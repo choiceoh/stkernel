@@ -207,3 +207,12 @@ REPO=/home/choiceoh/stkernel bash /home/choiceoh/stkernel/bench/fleet.sh run --g
 committed SHA. Use a unique session, name and output path for each candidate.
 The analogous MLA run uses `--candidate mla` from its separate source tree.
 This prepared command is not a serving queue receipt or a measured result.
+
+The preparation was rebased onto main `757ea2b`; all five validated MoE
+implementation/dispatch/adapter/wrapper files remain byte-identical to the
+pending 924b1be gate. The queued checkouts were not modified. The serving
+runner uses a chain LEVER adapter to freeze B1's actual GMU and scheduling
+controls for A/B2, with CG_UTIL_DELTA=0 for the already-adjusted value. This
+avoids per-boot automatic memory-budget drift and double graph-budget
+deduction. Six serving-runner tests and seven comparison tests pass, as do
+the MoE dispatch tests and composed snapshot checks.

@@ -33,7 +33,7 @@ class ServingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)
             env=dict(REPO=str(ROOT),PREFILL_SERVING_REV='c'*40,
-                     PREFILL_SERVING_OUT=str(out),PREFILL_SERVING_CANDIDATE='moe')
+                     PREFILL_SERVING_OUT=str(out),PREFILL_SERVING_CANDIDATE='moe',PREFILL_SERVING_FIRST_ARM='TESTB1')
             def run(command,**kw):
                 name=command[command.index('--name')+1]
                 calls.append(name)
@@ -101,6 +101,23 @@ class ServingTests(unittest.TestCase):
             self.assertIn('deploy failed',result['error'])
             self.assertIn('restore failed too',result['restore_error'])
             self.assertFalse(result.get('restored'))
+
+    def test_later_boot_uses_first_baseline_budget_without_second_deduction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)
+            env=dict(REPO=str(ROOT),PREFILL_SERVING_OUT=str(out),PREFILL_SERVING_CANDIDATE='moe',
+                     PREFILL_SERVING_FIRST_ARM='TESTB1')
+            controls=m.boot_controls(fixture()[0]['before']['10.10.10.2'])
+            self.assertEqual(controls['GMU'],'0.6229')
+            self.assertEqual(controls['CG_UTIL_DELTA'],'0')
+            with patch.dict(m.os.environ,env),patch.object(m,'check_holder'),patch.object(m,'run_owned') as run:
+                args=SimpleNamespace(name='TESTA',knobs=m.CANDIDATES['moe'][0]+'=1')
+                with self.assertRaisesRegex(RuntimeError,'baseline boot controls missing'):m.boot_arm(args)
+                run.assert_not_called()
+                m.save(out/'boot-controls.json',controls)
+                m.boot_arm(args)
+                self.assertEqual(run.call_args.kwargs['env']['GMU'],'0.6229')
+                self.assertEqual(run.call_args.kwargs['env']['CG_UTIL_DELTA'],'0')
 
 
 if __name__=='__main__':unittest.main()
