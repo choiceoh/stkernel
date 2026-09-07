@@ -160,3 +160,12 @@ ranks, and restores the public default arm and full capacity even on failure.
 The helper command and evidence schema are documented in PR #444 under
 measurements/glm53_moe_stream_20260907. Neither serving bracket is submitted
 yet; the pending shared GPU gate remains the only registered request.
+
+The preparation was rebased onto main `757ea2b` with both the new phase
+markers and existing memory watcher retained in ab-lever.sh. No queued
+checkout changed. Rebased CUDA bytes still match the e74b15e GPU gate.
+The serving runner now freezes B1's effective GMU/scheduling controls for
+A/B2; it sets CG_UTIL_DELTA=0 when reusing the already-adjusted GMU, so the
+graph-memory deduction is not applied twice. Six serving-runner CPU tests,
+seven evidence-comparison tests, eight MLA dispatch/proof tests, the memory
+watcher tests and composed snapshot checks passed after preparation.

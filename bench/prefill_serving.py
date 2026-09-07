@@ -175,6 +175,35 @@ def run_owned(command, **kwargs):
                 os.killpg(child.pid,signal.SIGKILL);child.wait()
 
 
+def boot_controls(node):
+    mapping={'gpu-memory-utilization':'GMU','max-num-batched-tokens':'MAX_BATCHED',
+             'max-num-seqs':'MAX_SEQS','max-cudagraph-capture-size':'GRAPH_CAP'}
+    controls={v:node['args'][k] for k,v in mapping.items()}
+    if not 0<float(controls['GMU'])<1 or any(not str(controls[k]).isdigit() for k in ('MAX_BATCHED','MAX_SEQS','GRAPH_CAP')):
+        raise RuntimeError('invalid measured boot controls')
+    # B1 is read after the launcher's graph-budget correction. Applying the
+    # deduction a second time would silently change A/B2's memory budget.
+    controls['CG_UTIL_DELTA']='0'
+    return controls
+
+
+def boot_arm(args):
+    check_holder()
+    out=Path(os.environ['PREFILL_SERVING_OUT']);repo=Path(os.environ['REPO'])
+    knob=CANDIDATES[os.environ['PREFILL_SERVING_CANDIDATE']][0]
+    if args.knobs not in ('',knob+'=1'):raise RuntimeError('unexpected arm settings')
+    env=dict(os.environ)
+    control_file=out/'boot-controls.json'
+    if control_file.exists():
+        controls=json.loads(control_file.read_text())
+        if set(controls)!={'GMU','MAX_BATCHED','MAX_SEQS','GRAPH_CAP','CG_UTIL_DELTA'} or controls['CG_UTIL_DELTA']!='0':
+            raise RuntimeError('invalid frozen boot controls')
+        env.update(controls)
+    elif args.name!=os.environ['PREFILL_SERVING_FIRST_ARM']:
+        raise RuntimeError('baseline boot controls missing; refusing the next arm')
+    run_owned(['bash',str(repo/'bench/ab-lever.sh'),args.name,args.knobs],cwd=repo,env=env)
+
+
 def collect_arm(args):
     check_holder()
     repo=Path(os.environ['REPO']);revision=os.environ['PREFILL_SERVING_REV']
@@ -184,6 +213,13 @@ def collect_arm(args):
     before=capture(candidate)
     contract=source_contract(repo,revision)
     attest(before,contract,knob,args.enabled)
+    controls=boot_controls(before['10.10.10.2'])
+    control_file=out/'boot-controls.json'
+    if args.name==os.environ['PREFILL_SERVING_FIRST_ARM']:
+        if control_file.exists():raise RuntimeError('duplicate first arm')
+        save(control_file,controls)
+    elif json.loads(control_file.read_text())!=controls:
+        raise RuntimeError('effective boot controls differ from B1')
     arm=dict(revision=revision,knob=knob,enabled=args.enabled,before=before)
     save(out/(args.name+'.incomplete.json'),arm)
     salts=set()
@@ -239,7 +275,8 @@ def run_bracket(args):
     env.update(REPO=str(repo),IMAGE=IMAGE,LEGS='none',PREFILL_WARMUP='0',
         HEALTH_BUDGET_S='1800',BENCH_MODEL='glm-5.3-flash',KV_TOKENS='524288',MAX_LEN='262144',
         GLM53_API_PORT='18000',GLM53_API_HOST='127.0.0.1',HEAD='127.0.0.1',HEAD_URL='http://127.0.0.1:18000',
-        FLEET=str(fleet),LEVER=str(repo/'bench/ab-lever.sh'),ONEPASS_JSONL=str(out/'onepass.jsonl'),
+        FLEET=str(fleet),LEVER=str(ROOT/'bench/prefill_boot.sh'),ONEPASS_JSONL=str(out/'onepass.jsonl'),
+        PREFILL_SERVING_RUNNER=str(ROOT/'bench/prefill_serving.py'),PREFILL_SERVING_FIRST_ARM=args.name+'B1',
         PREFILL_SERVING_OUT=str(out),PREFILL_SERVING_CANDIDATE=args.candidate,PREFILL_SERVING_REV=args.revision)
     result=dict(started=time.time(),exit_code=1)
     changed=False
@@ -297,6 +334,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     sub=ap.add_subparsers(dest='mode',required=True)
     arm=sub.add_parser('arm');arm.add_argument('--name',required=True);arm.add_argument('--enabled',action='store_true')
+    boot=sub.add_parser('boot');boot.add_argument('name');boot.add_argument('knobs',nargs='?',default='')
     run=sub.add_parser('run')
     run.add_argument('--name',required=True);run.add_argument('--candidate',choices=CANDIDATES,required=True)
     run.add_argument('--source',type=Path,required=True);run.add_argument('--revision',required=True)
@@ -305,7 +343,9 @@ def main():
     if not re.fullmatch('[A-Za-z0-9_-]+',args.name):ap.error('invalid arm name')
     def interrupted(signum, frame):raise InterruptedError('termination requested')
     signal.signal(signal.SIGTERM,interrupted)
-    return collect_arm(args) if args.mode=='arm' else run_bracket(args)
+    if args.mode=='arm':return collect_arm(args)
+    if args.mode=='boot':return boot_arm(args)
+    return run_bracket(args)
 
 
 if __name__=='__main__':
