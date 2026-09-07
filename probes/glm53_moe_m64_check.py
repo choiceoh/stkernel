@@ -66,7 +66,7 @@ def validate_distributed_api():
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--transport',choices=('bf16','fp8-v3'),required=True)
+    ap.add_argument('--transport',choices=('bf16','fp8-v3','fp8-v3-rs-int8'),required=True)
     ap.add_argument('--rows',nargs='+',type=int,default=[4096,6143,6144,6912,8192])
     ap.add_argument('--check-api',action='store_true',help='CPU-only binding against the frozen distributed API')
     diagnostic=ap.add_mutually_exclusive_group()
@@ -83,7 +83,8 @@ def main():
         ap.error('four real ranks and 4096..8192 rows required')
     os.environ.update(VLLM_GLM53_PREFILL_SP='1',VLLM_GLM53_B12X_PREFILL_M64='1',
         VLLM_GLM53_PREFILL_SP_FP8='0' if args.transport=='bf16' else '3',
-        VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS='4096',VLLM_GLM53_PREFILL_SP_RS_INT8='0',VLLM_DSV4_ONESHOT_AR='0',
+        VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS='4096',
+        VLLM_GLM53_PREFILL_SP_RS_INT8='1' if args.transport=='fp8-v3-rs-int8' else '0',VLLM_DSV4_ONESHOT_AR='0',
         VLLM_GLM53_B12X_STATIC_V2='t',VLLM_GLM53_B12X_PREFILL_REUSE='0',
         VLLM_GLM53_B12X_PREFILL_FC1_N128='0')
     import torch
@@ -109,6 +110,7 @@ def main():
             reports=[None]*4
             dist.all_gather_object(reports,None if bool(ok) else message,group=group.cpu_group)
             if any(r is not None for r in reports):raise AssertionError(reports)
+        require(h._RS_INT8==(args.transport=='fp8-v3-rs-int8'),'rank has the wrong reduce-scatter codec')
         # Every imported overlay and the probe must match the frozen checkout.
         manifest=Path('/repo/build/glm53/manifest.tsv')
         provenance={}

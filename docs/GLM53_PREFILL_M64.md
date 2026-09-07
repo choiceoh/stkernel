@@ -5,12 +5,30 @@ that tile for smaller calls. This experiment retains the original workspace and
 adds an independent M64 workspace only when `VLLM_GLM53_B12X_PREFILL_M64=1`.
 The default is 0. No measured speed or cumulative 40% improvement is claimed yet.
 
+Latest status (2026-09-08 05:05 KST): the separate RS-only INT8 diagnostic has
+completed 72 TP4 trials and exact incoming fleet recovery. All 442,368 row-trials
+per arm have zero INT8 candidate/control failures under the original thresholds;
+the same actual partials through FP8 have 94/17 failures. All 1,152 packet and
+decoded-output checks pass, as do all four ranks' CPU-reference codec and short
+BF16 identity cases. See `measurements/glm53_moe_m64_20260908/int8diag1/`.
+This is not full numerical/sanitizer or serving acceptance. Both flags remain 0.
+
+The next full gate is explicitly `glm53_offline_checks.py --int8-gate` inside a
+normal fleet GPU hold. It repeats all existing BF16 and compressed-transport
+MoE checks, now labeling the latter `fp8-v3-rs-int8`; the original FP8 gate is
+still available unchanged. The new combination additionally requires INT8 pack
+and unpack checks for all four packet destinations, odd-row padding, changed
+inputs and retained outputs under both sanitizers. Its completion marker is
+`MOE_M64_INT8_ALL_GATES_PASS`, distinct from both diagnostics and the original
+FP8 acceptance. Direct full-model TTFT and quality remain required afterwards.
+
 The candidate admits actual 6,144–8,192-token eager wrapper calls with E288,
 H4096, I512, top-8, NVFP4, BF16 output, SwiGLU-OAI alpha=1/beta=0/limit=10,
 and SM121. Short calls, capture, other geometry, forced static backend and the
 functional API retain their original workspace. Failure to query capture state
 also uses the original workspace. MoE is called once on the complete chunk;
-transport and per-expert quantization scales remain stock. The candidate now
+per-expert quantization scales remain stock. The optional RS-only INT8 experiment
+changes only the reduce-scatter codec, retaining FP8 all-gather. The candidate now
 ports the pinned gated kernel to M64 as described below. Existing M128-only prefill reuse kernels are not eligible for M64.
 
 The separately allocated workspace is bounded at 8,192 tokens even if the wrapper
@@ -55,7 +73,7 @@ memory guards, and restores the exact incoming containers in `finally`.
 Only a passing GPU gate can proceed to a matched same-build fresh-cache
 2K/32K/128K B1/A/B2 TTFT bracket and public recovery.
 
-Status: PR #455 remains draft and default-off. Both check1 and check3 failed
+Historical check1/check3 status (superseded by the later results below): PR #455 remains draft and default-off. Both check1 and check3 failed
 before candidate execution and completed exact incoming fleet recovery. No M64
 speedup, numerical pass, sanitizer pass or serving TTFT result exists. Check3's
 TMA failure was reproduced without GPU access. The physical-block port below

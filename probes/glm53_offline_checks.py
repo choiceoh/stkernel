@@ -280,11 +280,12 @@ def main():
     diagnostic.add_argument('--fp8-diagnostic', action='store_true', help='Separate FP8 comparison diagnostic; cannot approve serving')
     diagnostic.add_argument('--fp8-trace', action='store_true', help='Separate actual partial/packet replay; cannot approve serving')
     diagnostic.add_argument('--int8-diagnostic', action='store_true', help='All-row INT8 comparison; cannot approve serving')
+    diagnostic.add_argument('--int8-gate', action='store_true', help='Full BF16 and FP8-gather/INT8-reduction numerical and sanitizer gate')
     args = ap.parse_args()
     if not re.fullmatch('[0-9a-f]{40}', args.probe_revision):
         ap.error('exact frozen probe commit required')
     global PINS
-    label = 'moe-m64-int8-diagnostic' if args.int8_diagnostic else 'moe-m64-fp8-trace' if args.fp8_trace else 'moe-m64-fp8-diagnostic' if args.fp8_diagnostic else 'moe-m64'
+    label = 'moe-m64-int8' if args.int8_gate else 'moe-m64-int8-diagnostic' if args.int8_diagnostic else 'moe-m64-fp8-trace' if args.fp8_trace else 'moe-m64-fp8-diagnostic' if args.fp8_diagnostic else 'moe-m64'
     command = ['bash', 'probes/run_glm53_moe_m64_tp4_check.sh']
     if args.fp8_diagnostic:
         command.append('--fp8-diagnostic')
@@ -292,6 +293,8 @@ def main():
         command.append('--fp8-trace')
     if args.int8_diagnostic:
         command.append('--int8-diagnostic')
+    if args.int8_gate:
+        command.append('--int8-gate')
     PINS = ((label, str(args.probe_source.resolve()), args.probe_revision, command),)
     args.out.mkdir(parents=True, exist_ok=False)
     def save(file, value):
@@ -307,7 +310,7 @@ def main():
             pinned(path, rev)
             save('api-preflight.json', probe_api_preflight(path, rev))
             with (args.out/'cpu-compile.log').open('x') as log:
-                compile_preflight(path, rev, log, int8=args.int8_diagnostic)
+                compile_preflight(path, rev, log, int8=args.int8_diagnostic or args.int8_gate)
         resources = {}
         for node in NODES:
             resources[node] = remote(node, "import json,shutil; print(json.dumps(dict(disk_free_gib=shutil.disk_usage('/home/choiceoh').free/2**30)))")

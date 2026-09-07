@@ -4,6 +4,7 @@ set -euo pipefail
 diagnostic=0
 trace=0
 int8=0
+int8_gate=0
 probe_args=()
 transports=(bf16 fp8-v3)
 if [[ $# == 1 && $1 == --fp8-diagnostic ]]; then
@@ -18,8 +19,11 @@ elif [[ $# == 1 && $1 == --int8-diagnostic ]]; then
   int8=1
   probe_args+=(--int8-diagnostic)
   transports=(fp8-v3)
+elif [[ $# == 1 && $1 == --int8-gate ]]; then
+  int8_gate=1
+  transports=(bf16 fp8-v3-rs-int8)
 elif [[ $# != 0 ]]; then
-  echo 'only --fp8-diagnostic, --fp8-trace or --int8-diagnostic is accepted' >&2; exit 2
+  echo 'only --fp8-diagnostic, --fp8-trace, --int8-diagnostic or --int8-gate is accepted' >&2; exit 2
 fi
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 python3 -c 'import sys;sys.path.insert(0,sys.argv[1]+"/probes");from glm53_offline_checks import check_holder;check_holder()' "$REPO"
@@ -85,6 +89,12 @@ for transport in "${transports[@]}"; do
     if ! wait "${pids[$rank]}"; then
       tail -60 "$log_dir/$transport-rank-$rank.log";exit 1
     fi
+    if [[ $transport == fp8-v3-rs-int8 ]]; then
+      python3 - "$log_dir/$transport-rank-$rank.log" <<'ENGAGED'
+import pathlib,sys
+assert '[prefill-sp] packed INT8 reduce-scatter engaged' in pathlib.Path(sys.argv[1]).read_text()
+ENGAGED
+    fi
   done
   cat "$log_dir/$transport-rank-0.log"
 done
@@ -148,10 +158,11 @@ for sanitizer in memcheck racecheck; do
   done < "$REPO/build/glm53/manifest.tsv"
   args+=("$IMAGE" --error-exitcode 99 --tool "$sanitizer"
     python3 /repo/probes/glm53_moe_m64_sanitize.py)
+  if [[ $int8_gate == 1 ]]; then args+=(--int8); fi
   if ! timeout --signal=TERM --kill-after=30s 15m "${args[@]}" >"$log_dir/$sanitizer.log" 2>&1; then
     tail -60 "$log_dir/$sanitizer.log";exit 1
   fi
-  python3 - "$log_dir/$sanitizer.log" "$sanitizer" <<'CHECK'
+  python3 - "$log_dir/$sanitizer.log" "$sanitizer" "$int8_gate" "$REPO/probes" <<'CHECK'
 import json,pathlib,sys
 log=pathlib.Path(sys.argv[1]).read_text();tool=sys.argv[2]
 summary='ERROR SUMMARY: 0 errors' if tool=='memcheck' else 'RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)'
@@ -159,8 +170,18 @@ assert summary in log, 'missing clean sanitizer summary'
 reports=[json.loads(l) for l in log.splitlines() if l.startswith('{')]
 record=next(r for r in reports if r.get('verdict')=='MOE_M64_SANITIZER_CASES_PASS')
 assert [(r['rows'],r['skew'],r['bad_rows']) for r in record['results']]==[(n,s,0) for n in (6144,6912,8192) for s in (False,True)]
+if sys.argv[3]=='1':
+    sys.path.insert(0,sys.argv[4])
+    from glm53_prefill_int8_sanitize import validate
+    validate(record['int8'])
+    import hashlib
+    assert record['int8']['source_sha256']==hashlib.sha256((pathlib.Path(sys.argv[4])/'glm53_prefill_int8_sanitize.py').read_bytes()).hexdigest()
 print(json.dumps(dict(sanitizer=tool,summary=summary,**record)))
 CHECK
   echo "MOE_M64_${sanitizer^^}_PASS"
 done
-echo MOE_M64_ALL_GATES_PASS
+if [[ $int8_gate == 1 ]]; then
+  echo MOE_M64_INT8_ALL_GATES_PASS
+else
+  echo MOE_M64_ALL_GATES_PASS
+fi

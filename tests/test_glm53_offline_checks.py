@@ -13,6 +13,20 @@ SPEC.loader.exec_module(m)
 
 
 class OfflineTests(unittest.TestCase):
+    def test_int8_full_gate_is_distinct_and_compiles_before_serving_is_touched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            argv=['offline','--out',str(Path(directory)/'evidence'),'--probe-source','/frozen',
+                  '--probe-revision','a'*40,'--int8-gate']
+            with patch('sys.argv',argv),patch.dict(os.environ,OFFLINE_SOURCE_REV='a'*40), \
+                 patch.object(m,'check_holder'),patch.object(m,'pinned'), \
+                 patch.object(m,'probe_api_preflight',return_value={}), \
+                 patch.object(m,'compile_preflight',side_effect=RuntimeError('stop before serving')) as compile, \
+                 patch.object(m,'snapshot') as snapshot,patch.object(m.signal,'signal'):
+                self.assertEqual(m.main(),1);snapshot.assert_not_called()
+                self.assertTrue(compile.call_args.kwargs['int8'])
+                self.assertEqual(m.PINS,(('moe-m64-int8','/frozen','a'*40,
+                    ['bash','probes/run_glm53_moe_m64_tp4_check.sh','--int8-gate']),))
+
     def test_int8_diagnostic_compiles_new_codec_before_any_serving_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             argv=['offline','--out',str(Path(directory)/'evidence'),'--probe-source','/frozen',

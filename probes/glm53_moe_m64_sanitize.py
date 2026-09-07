@@ -4,6 +4,7 @@
 Run only through the owned offline TP4 runner after both transport gates pass.
 This supplements TP4 numerics; it does not measure serving latency.
 """
+import argparse
 import hashlib
 import json
 import os
@@ -18,6 +19,9 @@ from b12x_static_probe import expert_set
 
 
 def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--int8',action='store_true')
+    args=ap.parse_args()
     assert torch.cuda.get_device_capability()==(12,1)
     manifest=Path('/repo/build/glm53/manifest.tsv');provenance={}
     for line in manifest.read_text().splitlines():
@@ -64,6 +68,11 @@ def main():
             assert any('glm53_prefill_m64_v3' in key for key in md._DYNAMIC_KERNEL_CACHE)
             results.append(dict(rows=rows,skew=skew,bad_rows=0))
             print(json.dumps(results[-1]),flush=True)
-    print(json.dumps(dict(verdict='MOE_M64_SANITIZER_CASES_PASS',provenance=provenance,results=results)),flush=True)
+    extra={}
+    if args.int8:
+        from vllm.distributed.device_communicators import glm53_prefill_collectives as h
+        from glm53_prefill_int8_sanitize import run
+        extra['int8']=run(torch,h)
+    print(json.dumps(dict(verdict='MOE_M64_SANITIZER_CASES_PASS',provenance=provenance,results=results,**extra)),flush=True)
 
 if __name__=='__main__':main()
