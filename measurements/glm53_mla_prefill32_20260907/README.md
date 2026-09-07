@@ -255,3 +255,22 @@ the remote frozen runner also passed eight serving and eight offline tests.
 Old unsubmitted serving1 workers were archived as worker.retired.py. MoE is
 marked REJECTED_GPU_NOT_SUBMITTED; MLA is SUPERSEDED_NOT_SUBMITTED. They must
 not be launched. Their requests and the new queue receipt are retained.
+
+## Current-source GPU gate passed; first serving baseline started
+
+`mlaprefill30907` received GO at 21:14:06. Full MLA GPU validation ran from
+21:14:59 to 21:19:34 on source 3eb219d, CUDA SHA256
+`db6040c2de8ba8d96deae8d27435a167014e4163f89e70322bdb00428b66bf72`.
+All eleven numerical/changed-input graph cases passed, followed by seven
+memcheck and seven racecheck cases: zero errors, hazards or warnings.
+Exact incoming-container/source restoration and health passed at 21:22:22;
+the gate completion has exit_code=0 and restored_original=true. The full
+log, completion, lifecycle snapshots and summary are preserved as
+`serving3-gpu-*`. Large T4143/6912/8192 kernel rate ratios are
+1.02111/1.02474/1.01771; these are not serving or campaign improvement claims.
+
+The runner then deployed all 56 overlays plus manifest, verifying SHA256
+on head and three workers, and began B1 at 21:23:35. At 21:26 it was still
+loading/caching weights and compiling the fresh serving source; no TTFT
+request/result existed yet. Priming is excluded from the eventual measured
+B1/A/B2 comparison. Direct serving and final public restoration remain open.
