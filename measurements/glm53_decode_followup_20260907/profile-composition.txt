@@ -1,0 +1,21 @@
+kernels 441170, steps 284 (anchor _get_num_sampled_and_rejected)
+steps analysed 284: step len median 47.81 ms, idle (span - union busy) median 2.30 ms, cross-stream overlap median 2.49 ms
+  22.87 ms      42/step  MoE expert kernel
+   9.23 ms     237/step  MK GEMM (ours)
+   4.54 ms     102/step  AR k_oneshot
+   2.30 ms      90/step  MK MHC (ours)
+   1.66 ms       2/step  deep_gemm fp8/fp4 GEMM
+   1.52 ms     160/step  bf16/cublas GEMM + head gate
+   1.40 ms     136/step  MoE glue
+   1.19 ms     102/step  KDA
+   0.93 ms     443/step  elementwise glue
+   0.47 ms       3/step  nccl
+   0.47 ms      11/step  MK MLA (ours)
+   0.43 ms      55/step  indexer
+   0.32 ms      85/step  other
+   0.20 ms      11/step  drafter/sampler
+   0.05 ms      12/step  deep_gemm other
+   0.05 ms       1/step  prep fused (ours)
+   0.05 ms      11/step  MLA decode
+   0.03 ms       6/step  MHC
+k_oneshot dur percentiles (us): p10 29.4 p50 41.2 p90 57.5 max 2559.7, n=28968

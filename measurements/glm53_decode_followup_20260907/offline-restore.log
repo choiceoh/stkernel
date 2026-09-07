@@ -1,0 +1,11 @@
+preflight mhcrestore [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax bench/ab-lever.sh
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 3 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: M8NEXTB2 on build 7cb8c033a0b2 -- 21.93 step/s, 3.15 tok/step, 43.0% acc, 2026-09-07 07:41:20 -- skip a defaults arm and compare against it
+  -> PASS
+waiting: pos 2/2, held by prefillgate [boot] (pid 3866812@srv2, since 08:12, est 20m, Short-chunk BF16 gate versus BF16 on identical source/image and five onepass lengths), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_08:15:10
+Terminated
+parent 3887086 is gone; giving up 2026-09-07_08:15:25

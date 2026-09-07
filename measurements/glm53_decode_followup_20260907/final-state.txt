@@ -1,0 +1,21 @@
+2026-09-07T09:56:56+09:00
+fleet: FREE
+legacy: 0 bench/boot procs, 0 requests in flight
+queue (0):
+  marker 09:55 FLEET-free-for-b12x.done
+  marker 09:55 FLEET-free-for-glmfix.done
+  marker 09:55 FLEET-free-for-mkg3.done
+  marker 09:55 FLEET-free-for-fusion.done
+log:
+  2026-09-07_09:55:31   kept /home/choiceoh/glm53-logs/boot-MHCBF16LB2.log
+  2026-09-07_09:55:31   kept /home/choiceoh/glm53-logs/boot-MHCBF16LA2.log
+  2026-09-07_09:55:31   kept /home/choiceoh/glm53-logs/boot-MHCBF16LA1.log
+  2026-09-07_09:55:31 release mhcbf16isolated
+production: NOT defaults: VLLM_GLM53_SPEC_K=5 (health 200)
+deployed: 990fe078c790
+baseline: none for build 990fe078c790; 4 candidate run(s) on it
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+LISTEN 0      2048         0.0.0.0:8000      0.0.0.0:*          
+lan_health=200
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  916G  862G  7.7G 100% /

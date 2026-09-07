@@ -1,0 +1,20 @@
+{
+  "host": "srv2",
+  "container": "glm53",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "8f28e9bacfb9f38a628c4006b60445ea2e789e5d17b46ecd5c7a0b3e8870d5a3|2026-09-07T00:51:10.079040352Z",
+  "knobs": {
+    "VLLM_GLM53_MK_MHC_BF16": "0",
+    "VLLM_GLM53_MK_M8_FASTPATH": "0",
+    "VLLM_GLM53_SPEC_K": "5",
+    "VLLM_GLM53_MK_FP8_PACK2": "0",
+    "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8": "0",
+    "VLLM_GLM53_FP8_CACHE": "0"
+  },
+  "source_sha256": {
+    "glm53_megakernel.py": "1d08013168299751e7eab819de663a5fcdca87542255ca2799395b922e8bec0d",
+    "glm53_megakernel.cu": "490570583b2af29382fb80f03be4a488edfc8dbb7e6a4d6cc04dcca64f59e0c2"
+  },
+  "manifest": "# source_commit=b535405d98bab86f710eadb7582865f65010915a",
+  "markers": []
+}

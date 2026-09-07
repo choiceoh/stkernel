@@ -1,0 +1,23 @@
+{
+  "host": "srv3",
+  "container": "glm53-worker",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "835b36dc055b3d89e19cb95b753c74f22c1aa00facc467a6d364a7bd94961594|2026-09-07T00:23:50.828161701Z",
+  "knobs": {
+    "VLLM_GLM53_MK_MHC_BF16": "1",
+    "VLLM_GLM53_MK_FP8_PACK2": "1",
+    "VLLM_GLM53_MK_M8_FASTPATH": "1",
+    "VLLM_GLM53_FP8_CACHE": "0",
+    "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8": "2",
+    "VLLM_GLM53_SPEC_K": "5"
+  },
+  "source_sha256": {
+    "glm53_megakernel.py": "1d08013168299751e7eab819de663a5fcdca87542255ca2799395b922e8bec0d",
+    "glm53_megakernel.cu": "490570583b2af29382fb80f03be4a488edfc8dbb7e6a4d6cc04dcca64f59e0c2"
+  },
+  "manifest": "# source_commit=b535405d98bab86f710eadb7582865f65010915a",
+  "markers": [
+    "(Worker_TP2 pid=205) WARNING 09-07 00:26:30 [glm53_megakernel.py:1903] [megakernel] selftest mhc-bf16 all outputs bit equal -> ARM",
+    "(Worker_TP2 pid=205) WARNING 09-07 00:28:13 [glm53_megakernel.py:1658] [megakernel] mhc-bf16 CAPTURED T=6 cached=92"
+  ]
+}
