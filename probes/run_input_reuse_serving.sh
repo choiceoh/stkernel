@@ -2,7 +2,7 @@
 # Actual-source GPU gates, then matched B/A/A/B with a guaranteed public restore.
 set -euo pipefail
 # The literal checkout lets fleet preflight inspect the profile being deployed.
-cd /home/choiceoh/stkernel-input-reuse-serve-20260907
+cd /home/choiceoh/stkernel-input-reuse-real-20260907
 export REPO=$PWD
 CANONICAL=/home/choiceoh/stkernel
 RESTORE_REPO=/home/choiceoh/stkernel-input-reuse-restore-20260907
@@ -87,7 +87,7 @@ export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=5 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$out/records.raw.jsonl ONEPASS_VERDICTS=$out/verdicts.jsonl
 bash bench/chain.sh \
-  'IREUSEB1=' \
-  'IREUSEA1=VLLM_GLM53_MK_INPUT_REUSE=1' \
-  'IREUSEA2=VLLM_GLM53_MK_INPUT_REUSE=1' \
-  'IREUSEB2='
+  'IR6416B1=' \
+  'IR6416A1=VLLM_GLM53_MK_INPUT_REUSE=1' \
+  'IR6416A2=VLLM_GLM53_MK_INPUT_REUSE=1' \
+  'IR6416B2='

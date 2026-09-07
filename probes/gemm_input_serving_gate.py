@@ -33,12 +33,13 @@ def main():
     def save():args.out.write_text(json.dumps(result,indent=2)+'\n')
     args.out.parent.mkdir(parents=True,exist_ok=True);save()
     flush=torch.zeros(64*1024*1024,dtype=torch.uint8,device='cuda')
-    shapes=((6,6528,4096,False),(6,4096,512,False),(6,6528,4096,True),
-            (6,4096,512,True),(1,6528,4096,False),(8,6528,4096,False),
-            (6,6144,4096,False),(6,4096,4096,False),(16,1024,4096,False))
-    retained=[]
-    for m,n,k,bg in shapes:
-        torch.manual_seed(847+m+n+k)
+    shapes=((6,6416,4096,False),(6,6528,4096,False),(6,6416,4096,True),
+            (6,4096,512,True),(1,6416,4096,False),(8,6416,4096,False),
+            (6,6144,4096,False),(6,4096,4096,False),(16,1024,4096,False),
+            (6,6416,4096,False))
+    retained=[];timed=set()
+    for index,(m,n,k,bg) in enumerate(shapes):
+        torch.manual_seed(847+m+n+k+17*index)
         x=torch.randn(m,k,device='cuda',dtype=torch.bfloat16)*.3
         w=torch.randn(n,k,device='cuda',dtype=torch.bfloat16)*.05
         pack=mk.build_mk_weight_w4(w);del w
@@ -52,7 +53,7 @@ def main():
             graph=torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):ys[mode]=mk._gemm_call(x,pack,n,bg=bg)
             graphs[mode]=graph
-        active=m==6 and not bg and (n,k) in ((6528,4096),(4096,512))
+        active=m==6 and not bg and (n,k)==(6416,4096)
         assert bool(plans[1][0])==active
         assert not ext.gemm_input_plan(m,n,k,bg,True)[0], 'low-rank path must fall back'
         for case in ('random','zero','tiny','wide','random2'):
@@ -71,14 +72,16 @@ def main():
                 assert finite and rel<=1e-3 and over==0,row
             assert torch.equal(ys[0],ys[1]), ('output bits changed',m,n,k,bg,case)
         x.normal_().mul_(.3)
-        if active and not args.check_only:
+        if active and (m,n,k) not in timed and not args.check_only:
+            timed.add((m,n,k))
             for cache in ('cold','warm'):
                 times={0:[],1:[]}
+                a=torch.cuda.Event(enable_timing=True);b=torch.cuda.Event(enable_timing=True)
+                a.record();b.record();b.synchronize()
                 for rep in range(args.samples):
                     for mode in ((0,1) if rep%2==0 else (1,0)):
-                        for _ in range(2):graphs[mode].replay()
+                        for _ in range(16):graphs[mode].replay()
                         if cache=='cold':flush.sum()  # read eviction; no dirty 64 MiB writeback
-                        a=torch.cuda.Event(enable_timing=True);b=torch.cuda.Event(enable_timing=True)
                         a.record();graphs[mode].replay();b.record();b.synchronize()
                         times[mode].append(a.elapsed_time(b)*1000)
                 base,cand=median(times[0]),median(times[1])

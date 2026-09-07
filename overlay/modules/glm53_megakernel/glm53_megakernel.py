@@ -1177,7 +1177,7 @@ _INPUT_CAPTURED = set()
 
 def _note_input_capture(m, n, k, bg, lr):
     if (not _ARMED["gemm"] or m != 6 or bg or lr
-            or (n, k) not in ((6528, 4096), (4096, 512))
+            or (n, k) != (6416, 4096)
             or (m, n, k, bg, lr) in _INPUT_CAPTURED):
         return
     plan = _EXT.gemm_input_plan(m, n, k, bool(bg), bool(lr))
@@ -2161,7 +2161,7 @@ def _selftest_input_reuse():
     _ARMED["gemm"] = False  # self-test captures are not serving receipts
     try:
         with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
-            for n, k in ((6528, 4096), (4096, 512)):
+            for n, k in ((6416, 4096),):
                 x = torch.randn(6, k, device="cuda", dtype=torch.bfloat16) * .3
                 w = torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * .05
                 pack = build_mk_weight_w4(w)

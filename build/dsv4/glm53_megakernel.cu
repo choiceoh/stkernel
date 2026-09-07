@@ -1133,8 +1133,11 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
   const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
   const int kblk=c.k/KSTEP, nt=blockIdx.x/c.ksr, slice=blockIdx.x%c.ksr;
   const int kb0=kblk*slice/c.ksr, kbn=kblk*(slice+1)/c.ksr;
+  const bool live_warp=nt*128+warp*16<c.n_orig;
   constexpr int NB=W4_RAW_NBUF2,DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
+    // The final 6416-wide tile has only one real 16-row warp.
+    if(!live_warp) {mk_cp_commit();return;}
     const uint8_t* w=c.wq4+((size_t)nt*kblk+kb)*8192;
     const uint8_t* s=(const uint8_t*)c.ws4+((size_t)nt*kblk+kb)*1024;
     uint8_t* d=sraw+buf*W4_RAW_BYTES;
@@ -1151,6 +1154,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
   };
   float acc[4]={};
   auto mma_fold=[&](int kb) {
+    if(!live_warp)return;
     const uint8_t* raw=sraw+(kb%NB)*W4_RAW_BYTES;
     uint32_t l0a[2],l1a[2],l0b[2],l1b[2];int slot[2];
 #pragma unroll
@@ -1203,7 +1207,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
 #pragma unroll
     for(int i=0;i<4;++i) {
       const int row=2*q+(i&1),col=nt*128+warp*16+g+(i>=2?8:0);
-      if(row<c.m)store(row,col,acc[i]);
+      if(row<c.m && col<c.n_orig)store(row,col,acc[i]);
     }
   };
   if(c.ksr==1) {
@@ -1224,6 +1228,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
     __threadfence();
     for(int t=threadIdx.x;t<c.m*32;t+=MK_THREADS) {
       const int r=t>>5,col=nt*128+(t&31)*4;
+      if(col>=c.n_orig)continue;  // padded partials and row scales are unused
       const float* src=g_mk2_partial+(size_t)r*c.n+col;
       float4 v=make_float4(0,0,0,0);
       for(int s=0;s<c.ksr;++s) {
@@ -2592,8 +2597,8 @@ int mk_gemm_input_mode() {
   return g_input_reuse_mode;
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
-  return !bg && !lr && m == 6 &&
-         ((n == 6528 && k == 4096) || (n == 4096 && k == 512));
+  // n is the logical output width; the real KDA projection pads 6416 to 6528.
+  return !bg && !lr && m == 6 && n == 6416 && k == 4096;
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
@@ -2768,8 +2773,8 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.lr_slot = bg != 0 ? 1 : 0;
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
-  const bool input_reuse = mk_gemm_input_mode() && c2.n_orig == c2.n &&
-      mk_input_shape(c2.m, c2.n, c2.k, bg != 0, c2.lr_r != 0);
+  const bool input_reuse = mk_gemm_input_mode() &&
+      mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0);
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole

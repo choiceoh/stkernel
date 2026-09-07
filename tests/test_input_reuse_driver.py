@@ -27,25 +27,26 @@ class ReuseDriver(unittest.TestCase):
         self.note=load_function('_note_input_capture',self.ns)
 
     def test_ineligible_calls_do_not_plan_or_emit(self):
-        for dims in ((6,0,1,False,False),(8,6528,4096,False,False),
-                     (6,6528,4096,True,False),(6,6528,4096,False,True),
-                     (6,6144,4096,False,False)):
+        for dims in ((6,0,1,False,False),(8,6416,4096,False,False),
+                     (6,6416,4096,True,False),(6,6416,4096,False,True),
+                     (6,6144,4096,False,False),(6,6528,4096,False,False),
+                     (6,4096,512,False,False)):
             self.note(*dims)
         self.assertEqual(self.calls,[]);self.assertEqual(self.logs,[])
 
     def test_startup_gate_does_not_emit(self):
         self.ns['_ARMED']['gemm']=False
-        self.note(6,6528,4096,False,False)
+        self.note(6,6416,4096,False,False)
         self.assertEqual(self.calls,[])
 
     def test_only_a_real_capture_emits_once(self):
         torch=types.SimpleNamespace(cuda=types.SimpleNamespace(is_current_stream_capturing=lambda:False))
-        with patch.dict(sys.modules,torch=torch):self.note(6,6528,4096,False,False)
+        with patch.dict(sys.modules,torch=torch):self.note(6,6416,4096,False,False)
         self.assertEqual(self.logs,[])
         torch.cuda.is_current_stream_capturing=lambda:True
         with patch.dict(sys.modules,torch=torch):
-            self.note(6,6528,4096,False,False)
-            self.note(6,6528,4096,False,False)
+            self.note(6,6416,4096,False,False)
+            self.note(6,6416,4096,False,False)
         self.assertEqual(len(self.logs),1)
         self.assertEqual(len(self.calls),2)
 

@@ -19,5 +19,7 @@ p={'host':socket.gethostname(),'arm':a.arm,'container':name,'image':o['Image'],
 print(json.dumps(p,indent=2),flush=True)
 assert p['running'] and p['knobs']==expected,p
 assert p['image']=='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
-if a.arm=='candidate':assert any('M=6 N=6528 K=4096 split=8' in l for l in lines),lines
-else:assert not lines,lines
+if a.arm=='candidate':assert any('M=6 N=6416 K=4096 split=8' in l for l in lines),lines
+else:
+    assert not lines,lines
+    assert '[megakernel] m8 shape CAPTURED M=6 N=6416 K=4096' in log, 'baseline GEMM capture missing'

@@ -8,7 +8,7 @@ from pathlib import Path
 from statistics import median
 
 ROOT=Path(__file__).resolve().parent/'serving'
-NAMES=('IREUSEB1','IREUSEA1','IREUSEA2','IREUSEB2')
+NAMES=('IR6416B1','IR6416A1','IR6416A2','IR6416B2')
 KNOBS={'VLLM_GLM53_MK_INPUT_REUSE':'1'}
 IMAGE='sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211'
 
@@ -57,12 +57,12 @@ def summarize(rows, *, incomplete=False):
             assert proof['source_sha256']['glm53_megakernel.cu']==production['source_sha256']
             assert proof['arm']==('candidate' if arm=='A' else 'baseline')
             assert bool(proof['markers'])==(arm=='A')
-            if arm=='A': assert any('M=6 N=6528 K=4096 split=8' in s for s in proof['markers'])
+            if arm=='A': assert any('M=6 N=6416 K=4096 split=8' in s for s in proof['markers'])
             if node==2:
                 assert proof['boot_id']==record['boot_id']
             receipts.append(proof)
         boot_log=(ROOT/f'boot-{name}.log').read_text(errors='replace')
-        for marker in ('[megakernel] input-reuse CAPTURED M=6 N=6528 K=4096 split=8',):
+        for marker in ('[megakernel] input-reuse CAPTURED M=6 N=6416 K=4096 split=8',):
             assert (marker in boot_log)==(arm=='A')
         decode=record['decode']
         assert decode['primary']=='fixed-2K' and decode['num_spec']==5
