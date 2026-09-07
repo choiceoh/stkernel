@@ -1,0 +1,28 @@
+{
+  "status": "PREPARED",
+  "source": "/home/choiceoh/stkernel-moe-m64-driverdiag1-0908",
+  "revision": "ac2c4b99db0735b6a6859172d0d4901d219e2f10",
+  "probe_source": "/home/choiceoh/stkernel-moe-m64-driverdiag1-0908",
+  "probe_revision": "ac2c4b99db0735b6a6859172d0d4901d219e2f10",
+  "session": "moem64driver10908",
+  "created": "2026-09-08T05:29:15.957265",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "moem64driver10908",
+    "10",
+    "PR455 isolate sanitizer CUDA binding lookup errors without MoE/INT8; exact recovery",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-moe-m64-driverdiag1-0908/probes/glm53_offline_checks.py",
+    "--probe-source",
+    "/home/choiceoh/stkernel-moe-m64-driverdiag1-0908",
+    "--probe-revision",
+    "ac2c4b99db0735b6a6859172d0d4901d219e2f10",
+    "--out",
+    "/tmp/glm53-moe-m64-driverdiag1-0908/evidence",
+    "--driver-diagnostic"
+  ]
+}

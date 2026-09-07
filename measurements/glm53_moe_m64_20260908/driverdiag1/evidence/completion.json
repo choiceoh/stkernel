@@ -1,0 +1,18 @@
+{
+  "started": 1788812976.635808,
+  "exit_code": 0,
+  "probes": {
+    "driver-lookup-diagnostic": {
+      "revision": "ac2c4b99db0735b6a6859172d0d4901d219e2f10",
+      "started": 1788813047.003443,
+      "command": [
+        "bash",
+        "probes/run_glm53_cuda_driver_lookup_check.sh"
+      ],
+      "exit_code": 0,
+      "ended": 1788813054.882393
+    }
+  },
+  "restored_original": true,
+  "ended": 1788813223.3623972
+}
