@@ -568,6 +568,42 @@ def execute(store, job):
     return 0
 
 
+def wait_dependencies(store, job, dependencies):
+    """Observe completion promptly; recover workers at a separate, slower rate."""
+    if not dependencies:
+        return True
+    store.state(job, 'waiting_dependencies')
+    ids = list(dict.fromkeys([job, *dependencies]))
+    recover_after = 0.0
+    while True:
+        # Read only indexed IDs/states, not every dependency's full pinned
+        # payload. Chunk parameters for SQLite builds with lower bind limits.
+        states = {}
+        for offset in range(0, len(ids), 256):
+            chunk = ids[offset:offset+256]
+            states.update(store.db.execute('SELECT id,state FROM jobs WHERE id IN (' +
+                ','.join('?' for _ in chunk) + ')', chunk))
+        if len(states) != len(ids):
+            raise ValueError('experiment dependency disappeared while waiting')
+        if states[job] in TERMINAL:
+            return False
+        for dependency in dependencies:
+            if states[dependency] == 'incomplete':
+                states[dependency] = refresh_result(store, dependency)['state']
+        bad = [d for d in dependencies if states[d] in TERMINAL and states[d] != 'succeeded']
+        if bad:
+            store.state(job, 'blocked', dict(reason='prerequisite did not pass', dependencies=bad))
+            return False
+        pending = [d for d in dependencies if states[d] != 'succeeded']
+        if not pending:
+            return True
+        if time.monotonic() >= recover_after:
+            for dependency in pending:
+                ensure_worker(store, dependency)
+            recover_after = time.monotonic() + 1
+        time.sleep(.05)
+
+
 def worker(store, job):
     lock = worker_lock(store, job)
     if lock is None:
@@ -581,21 +617,8 @@ def worker(store, job):
         with store.db:
             store.db.execute("UPDATE jobs SET worker_pid=? WHERE id=?", (os.getpid(), job))
         try:
-            if spec["depends_on"]:
-                store.state(job, "waiting_dependencies")
-            while spec["depends_on"]:
-                if store.get(job)['state'] == 'retired':
-                    return 0
-                deps = [refresh_result(store, d) for d in spec["depends_on"]]
-                bad = [d["id"] for d in deps if d["state"] in TERMINAL and d["state"] != "succeeded"]
-                if bad:
-                    store.state(job, "blocked", {"reason": "prerequisite did not pass", "dependencies": bad})
-                    return 0
-                if all(d["state"] == "succeeded" for d in deps):
-                    break
-                for dep in deps:
-                    ensure_worker(store, dep["id"])
-                time.sleep(1)
+            if not wait_dependencies(store, job, spec['depends_on']):
+                return 0
             verify(payload)
             env = child_env(payload, store, job)
             fleet = env["FLEET"]
