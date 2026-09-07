@@ -149,7 +149,10 @@ logical N6528. The other selected K512 calls were background calls. Thus A1
 did not execute the new kernel and cannot establish a serving gain. The
 wrapper rejected it and the remaining arms were not run. Preserve its raw
 [records](inactive-shapes/records.raw.jsonl) and four-rank receipts as a no-op
-control, not candidate acceptance.
+control, not candidate acceptance. A1 measured 21.744 step/s and 70.541 output
+tok/s: even without executing the new kernel, output tok/s moved +1.65% while
+step/s moved only +0.05%. This is a concrete reason to keep the two metrics
+separate and use balanced independent boots.
 
 Approved main `e00df24` was restored at 18:30:34 KST with health 200. The next
 candidate routes logical N6416 and skips the padded tail warps. It requires
@@ -158,3 +161,28 @@ prove the real capture on all four ranks **before** running onepass traffic.
 Short-kernel timings now initialize events first and replay 16 warm-ups before
 the measured window; this addresses a possible CPU enqueue gap without
 discarding the older noisy K512 samples.
+
+## Real-width production GPU gate
+
+Fleet `inputserve40907` started at 18:34:51 KST on source `e997de1`, containing
+approved main `0d82b7c`. CUDA SHA-256:
+`8bb94129d5cf910b0e2cbe94a3f082e4da478d7490d6f215c6bc439f100a35c7`.
+The 100 numerical rows, exact baseline bits, 40 alternating graph replays
+and startup gate pass. Racecheck reports 0 hazards/errors/warnings and
+memcheck reports 0 errors.
+
+| Actual shape M6/N6416/K4096, split 8 | Baseline us | Candidate us | Latency reduction | Faster pairs |
+|---|---:|---:|---:|---:|
+| Warm | 42.624 | 32.352 | 24.10% | 32/32 |
+| Read eviction | 78.000 | 75.488 | 3.22% | 30/32 |
+
+The warm paired reductions range from 22.85% to 34.39%, with a median of
+23.97%. The timing includes input preparation. These are kernel results;
+matched real-kernel serving step/s and output tok/s remain pending.
+See [actual-source GPU evidence](serving/production-gate.json).
+
+CPU validation on the candidate passes 6,685 logic checks, 30 megakernel
+regressions, 73 fleet regressions, four driver behavior tests and nine
+compile-cache lifecycle tests. The CPU contract audit hash was refreshed
+after reviewing the three changed megakernel source-count assertions; the
+audited math/layout/dispatch functions and loader are unchanged.

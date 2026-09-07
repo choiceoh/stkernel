@@ -7333,3 +7333,29 @@ The full output is also retained on srv2 under
 `/home/choiceoh/glm53-logs/compile-cache-20260907` and locally in
 `runs/compile-cache-20260907`. Reproduce in the CPU lane with
 `python3 probes/glm53_compile_cache_check.py`; it only mutates disposable copies.
+
+### GLM53 C=1 input reuse with warp-local weight staging (2026-09-07)
+
+The actual M6/N6416/K4096 projection now quantizes X once per K group, stages
+only each warp's W rows, and skips the seven padded tail warps. It keeps the
+original split 8, fixed-order reduction and BF16 output bits. Invocation-owned
+scratch is retained by CUDA graph pools; other shapes, background calls and
+low-rank correction use the original path. A failing startup gate disables
+only input reuse.
+
+Fleet `inputserve40907`, source `e997de1`, passes 100 numerical rows, baseline
+bit equality, 40 alternating graph replays, startup self-test, racecheck
+(0 hazards/errors/warnings) and memcheck (0 errors). On the actual serving
+source, 32 alternating pairs give **42.624 -> 32.352 us warm (-24.10%)** and
+**78.000 -> 75.488 us read-evicted (-3.22%)**, including preparation. The
+candidate wins all 32 warm pairs and 30/32 read-evicted pairs. The earlier
+simple prototype's warm reduction was 9.93% on padded-width weights.
+
+An earlier serving A1 was correctly rejected as inactive: its selector used
+logical N6528, while the model uses logical N6416 padded to N6528. Its output
+tok/s increased 1.65% without executing the candidate, so it is not a gain
+claim. The corrected B/A/A/B requires all-rank real-shape capture before
+traffic. Actual step/output acceptance is pending; the profile flag remains
+0 until that comparison closes.
+
+[Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).

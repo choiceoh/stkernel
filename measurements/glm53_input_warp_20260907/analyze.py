@@ -52,6 +52,8 @@ def summarize(rows, *, incomplete=False):
                 missing_receipts.append(path.name)
                 continue
             proof=json.loads(path.read_text())
+            prepared=json.loads((ROOT/f'prepared-{name}-srv{node}.json').read_text())
+            assert prepared==proof, 'rank identity, source and capture must survive traffic unchanged'
             assert proof['image']==IMAGE and proof['running']
             assert proof['knobs']['VLLM_GLM53_MK_INPUT_REUSE']==('1' if arm=='A' else '0')
             assert proof['source_sha256']['glm53_megakernel.cu']==production['source_sha256']
