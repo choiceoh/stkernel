@@ -1,15 +1,18 @@
 # Warp-independent input reuse: development and acceptance
 
-The user requested a substantially larger gain than the earlier input-reuse
-prototype, followed by default promotion. This remains conditional on the
-actual serving-source and C=1 step/output gates; the new profile flag is 0.
+The GLM53 profile now defaults `VLLM_GLM53_MK_INPUT_REUSE` to **1**, following
+the operator's explicit promotion request on 2026-09-07 after the results
+below were reported. Set it to **0** to restore the original GEMM. The startup
+numerical/replay gate still disables only input reuse if its checks fail.
 
 The real-width kernel now measures **24.10% lower warm latency** and **3.22%
 lower read-evicted latency**, with numerical, graph and sanitizer gates passed.
 Three real serving boots completed. Window medians were essentially unchanged;
 A2 triggered the existing Korean gate on two `Halvorsen博士` expressions.
-The gate failure and incomplete B/A/A/B remain recorded, and default promotion
-is pending channel-resolved quality evidence.
+The gate failure and incomplete B/A/A/B remain recorded. Default promotion
+is an operator decision; it does not establish a stable whole-model speedup
+or resolve the mixed-script quality finding. Historical raw summaries retain
+their original default-off and acceptance status.
 
 ## Completed private-source sweep
 
@@ -56,7 +59,7 @@ These cold rows are retained, not replaced. The serving-source gate uses
 read-only eviction instead. Do not compare the two fixtures' absolute times
 or convert these microseconds to model step/output gains.
 
-## Serving implementation and pending gates
+## Serving implementation and validation scope
 
 The production candidate uses invocation-owned packed storage, retained by
 the CUDA graph pool, instead of the prototype's global shared-expert scratch.
@@ -67,7 +70,7 @@ and the reducer skips padded columns. K512 calls are background calls and
 remain on the existing path. The original split preserves reduction order.
 The marginally faster split 4 (24.10% warm) is not selected. A startup numerical/replay gate disables only input reuse on failure,
 keeping the existing GEMM available. Startup captures cannot emit a serving
-receipt. The profile flag `VLLM_GLM53_MK_INPUT_REUSE` is currently **0**.
+receipt. The profile flag `VLLM_GLM53_MK_INPUT_REUSE` is now **1**.
 
 `probes/gemm_input_serving_gate.py` checks the actual production source,
 fallback shapes/background calls, changing captured inputs, allocation
@@ -81,7 +84,8 @@ and all-rank receipts collected **before** the chain's failure judge. A
 snapshot of approved main supplies the unconditional public recovery path.
 
 The sections below retain each stage's result. Actual-source GPU gates are
-complete; the final serving acceptance and default promotion remain open.
+complete. Balanced serving acceptance remains unresolved after the operator
+promoted the default.
 
 ## First actual-source run: incomplete graph-lifetime gate
 
@@ -185,7 +189,7 @@ memcheck reports 0 errors.
 
 The warm paired reductions range from 22.85% to 34.39%, with a median of
 23.97%. The timing includes input preparation. These are kernel results;
-matched real-kernel serving step/s and output tok/s remain pending.
+the incomplete serving measurements below do not establish a stable model gain.
 See [actual-source GPU evidence](serving/production-gate.json).
 
 CPU validation on the candidate passes 6,685 logic checks, 30 megakernel
@@ -237,6 +241,14 @@ the exact CUDA/driver/fixture/profile GPU evidence only after byte comparisons,
 checks current-main ancestry before stopping service, and restores approved
 main on exit. It does not automatically change the default or erase the
 preceding failed gate.
+
+The follow-up started at 20:00 on that immutable source. Its first baseline
+passed facts 24/24 and the Korean check 0/10, but recorded **zero decode
+windows**, failing the minimum-20-window measurement contract. The chain
+stopped before its candidate, so it supplies no additional candidate quality
+or performance verdict. Approved main was restored at 20:25:15 KST;
+`restore.status` was `restored` and health 200 was verified after recovery.
+This diagnostic failure does not change the earlier raw gate results.
 
 After merging main's fleet update, a worker-completion race was reproduced:
 `ensure_worker` could overwrite a terminal result as `interrupted` after

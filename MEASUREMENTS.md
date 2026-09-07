@@ -7361,8 +7361,15 @@ window medians **21.865/21.853/21.855**, and output tok/s
 Korean gate on two `Halvorsen博士` expressions (four Han characters, no
 replacement/jamo/control errors), and the chain stops before B2. Because
 the harness combines reasoning and final content, the affected channel is
-unknown. Preserve the gate failure and incomplete bracket; the profile
-remains **0** pending channel-resolved quality evidence. Approved main was
+unknown. Preserve the gate failure and incomplete bracket. Approved main was
 restored at 19:26:50 KST with health 200 verified at 19:28.
+
+After these results were reported, the operator explicitly requested default
+promotion. `VLLM_GLM53_MK_INPUT_REUSE` now defaults to **1**; **0** restores
+the original GEMM. Startup numerical/replay fallback remains active. This
+promotion does not relabel the Korean gate or establish a stable serving
+speedup. The channel-recording follow-up failed on zero decode windows in
+its first baseline and stopped before the candidate; approved main was
+restored at 20:25:15 KST, with health 200 verified after recovery.
 
 [Kernel evidence, routing correction, serving records and recovery](measurements/glm53_input_warp_20260907/README.md).
