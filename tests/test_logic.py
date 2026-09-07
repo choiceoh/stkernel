@@ -11537,11 +11537,12 @@ def test_fleet_reservation_tooling_contracts() -> None:
 
 
 def test_fleet_experiment_behaviors():
-    import unittest
-    suite = unittest.defaultTestLoader.discover(os.path.join(REPO, "tests"), pattern="test_fleet*.py")
-    result = unittest.TextTestRunner(verbosity=1).run(suite)
-    check(result.wasSuccessful(), "fleet asynchronous submissions, prerequisites and evidence contracts")
-    return result.testsRun
+    sys.path.insert(0,os.path.join(REPO,'bench'))
+    from cpu_unittest import execute
+    from pathlib import Path
+    report = execute('tests/test_fleet*.py',Path(REPO))
+    check(report['passed'], "fleet asynchronous submissions, prerequisites and evidence contracts")
+    return report['tests_run']
 
 
 def test_megakernel_regression_suite():
@@ -11562,6 +11563,10 @@ def test_megakernel_regression_suite():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--component',choices=['all','core'],default='all')
+    component = parser.parse_args().component
     test_skip_topk()
     test_rank_cache_eviction_contracts()
     test_nvfp4_static_scale_contracts()
@@ -11682,6 +11687,6 @@ if __name__ == "__main__":
     test_worker_launch_does_not_let_the_remote_reparse_envv()
     test_supervisor_paces_and_stops_relaunching()
     test_fleet_reservation_tooling_contracts()
-    fleet_regressions = test_fleet_experiment_behaviors()
+    fleet_regressions = test_fleet_experiment_behaviors() if component == 'all' else 0
     regressions = test_megakernel_regression_suite()
-    print(f"all OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")
+    print(f"{component} OK ({PASS} checks; {regressions} megakernel regressions; {fleet_regressions} fleet regressions)")

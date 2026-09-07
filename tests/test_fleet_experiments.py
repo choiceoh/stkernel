@@ -300,7 +300,7 @@ class SubmissionTests(unittest.TestCase):
         for name in ("pair.sh", "chain.sh", "baseline.py", "judge.py", "experiments.py", "cpu_checks.py",
                      "cpu_evidence.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "measurement_contract.py",
                      "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
-                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py"):
+                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)
         for script in (self.repo / "bench").glob("*.sh"):
             script.chmod(0o755)
@@ -345,10 +345,16 @@ class SubmissionTests(unittest.TestCase):
 
     def test_detached_cpu_work_and_shared_result(self):
         output = self.root / "count"
-        command = [sys.executable, "-c", f"import time; time.sleep(.4); open({str(output)!r},'a').write('run\\n')"]
+        release = self.root/'release'
+        command = [sys.executable, "-c", "import time;from pathlib import Path\n"
+            f"with open({str(output)!r},'a') as stream:stream.write('run\\n')\n"
+            "deadline=time.monotonic()+10\n"
+            f"while not Path({str(release)!r}).exists():\n assert time.monotonic()<deadline\n time.sleep(.01)\n"]
         a = self.submit(command=command)
         b = self.submit("agent-b", command=command, hypothesis="another consumer of the same contract")
         self.assertEqual(a["id"], b["id"])
+        self.assertEqual(b['disposition'],'joined')
+        release.touch()
         result = self.wait(a["id"])
         self.assertEqual(result["state"], "succeeded", result)
         self.assertEqual(result["result"]["evidence"], "cpu-only")
@@ -736,7 +742,9 @@ class SubmissionTests(unittest.TestCase):
 
     def test_cpu_resource_wait_is_counted_before_start(self):
         (self.fleet/'cpu-policy.json').write_text(json.dumps(dict(slots=1,memory_mb=256,reserve_mb=0)))
-        first = self.submit('first',command=[sys.executable,'-c','import time; time.sleep(1.2)'],
+        release = self.root/'release'
+        first = self.submit('first',command=[sys.executable,'-c','import time;from pathlib import Path\ndeadline=time.monotonic()+10\n'
+                            f'while not Path({str(release)!r}).exists():\n assert time.monotonic()<deadline\n time.sleep(.01)\n'],
                             resources={'cpu_memory_mb':128})
         store = ex.Store(self.jobs)
         deadline = time.monotonic()+5
@@ -745,10 +753,16 @@ class SubmissionTests(unittest.TestCase):
         first_start = store.get(first['id'])['started']
         self.assertIsNotNone(first_start)
         second = self.submit('second',resources={'cpu_memory_mb':128})
+        deadline=time.monotonic()+5
+        while store.get(second['id'])['state']!='waiting_cpu' and time.monotonic()<deadline:
+            time.sleep(.01)
+        self.assertEqual(store.get(second['id'])['state'],'waiting_cpu')
+        self.assertIsNone(store.get(second['id'])['started'])
+        released_at=time.time();release.touch()
         result = self.wait(second['id'])
         self.assertEqual(result['state'],'succeeded',result)
-        self.assertGreater(result['started']-first_start,1)
-        self.assertGreater(result['started']-result['created'],.5)
+        self.assertGreaterEqual(result['started'],released_at)
+        self.assertGreater(result['started'],result['created'])
         self.wait(first['id'])
 
     def test_cpu_cleanup_covers_child_after_leader_exits(self):
