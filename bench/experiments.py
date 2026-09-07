@@ -430,7 +430,8 @@ def execute(store, job):
         from experiment_resources import readiness
         with store.db:
             store.event(job, "admission_ready", {"nodes": readiness(spec["resources"])})
-    store.state(job, "running")
+    if spec['kind'] != 'cpu':
+        store.state(job, "running")
     if spec["kind"] == "baseline":
         from experiment_baselines import run
         state, result = run(store, job, payload)

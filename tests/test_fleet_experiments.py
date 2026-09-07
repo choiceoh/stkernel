@@ -734,6 +734,23 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse((self.fleet/'holder').exists())
         self.assertEqual(ex.Store(self.jobs).db.execute('SELECT count(*) FROM cpu_leases').fetchone()[0], 0)
 
+    def test_cpu_resource_wait_is_counted_before_start(self):
+        (self.fleet/'cpu-policy.json').write_text(json.dumps(dict(slots=1,memory_mb=256,reserve_mb=0)))
+        first = self.submit('first',command=[sys.executable,'-c','import time; time.sleep(1.2)'],
+                            resources={'cpu_memory_mb':128})
+        store = ex.Store(self.jobs)
+        deadline = time.monotonic()+5
+        while store.get(first['id'])['state'] != 'running' and time.monotonic()<deadline:
+            time.sleep(.01)
+        first_start = store.get(first['id'])['started']
+        self.assertIsNotNone(first_start)
+        second = self.submit('second',resources={'cpu_memory_mb':128})
+        result = self.wait(second['id'])
+        self.assertEqual(result['state'],'succeeded',result)
+        self.assertGreater(result['started']-first_start,1)
+        self.assertGreater(result['started']-result['created'],.5)
+        self.wait(first['id'])
+
     def test_cpu_cleanup_covers_child_after_leader_exits(self):
         import experiment_resources as resources
         marker = self.root/'child.pid'
