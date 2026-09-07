@@ -44,10 +44,20 @@ class CampaignTests(unittest.TestCase):
                 record = dict(name=stage, git=identity['revision'][:7], overlay=identity['overlay'][:12], boot_id=stage,
                               quality=dict(ok=2,total=2), korean=dict(dirty=0,n=2))
                 (root/(stage+'-cache-env.json')).write_text(json.dumps([k+'='+v for k,v in arm['knobs'].items()]))
+                modules = ''.join('e'*64+'  /usr/module'+str(n)+'\n' for n in range(3))
+                for node in (1,2,3,4):
+                    (root/f'{stage}-srv{node}.state').write_text('running 0 false sha256:'+'d'*64+'\n'+modules)
+                (root/f'{stage}-srv2.sha256').write_text(modules)
                 with self.assertRaisesRegex(ValueError, 'changed'):
                     campaign.check(root,stage,record,dict(identity,revision='d'*40))
                 with self.assertRaisesRegex(ValueError, 'quality'):
                     campaign.check(root,stage,dict(record,quality=dict(ok=1,total=2)),identity)
+                if stage != 'PRIME':
+                    state = root/f'{stage}-srv3.state'
+                    good = state.read_text(); state.write_text(good.replace('d'*64, 'f'*64))
+                    with self.assertRaisesRegex(ValueError, 'image or node module changed'):
+                        campaign.check(root,stage,record,identity)
+                    state.write_text(good)
                 campaign.check(root,stage,record,identity)
                 with self.assertRaisesRegex(ValueError, 'distinct boot'):
                     campaign.check(root,stage,record,identity)

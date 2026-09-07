@@ -141,7 +141,7 @@ class Supervisor:
                 self.event('accepted')
                 if self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
-                else:
+                elif not self.stopping:
                     rc = self.execute(self.command, self.env)
                 self.event('payload-finished', rc=rc)
         finally:

@@ -464,7 +464,7 @@ case "$cmd" in
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     if [ "$kind" = boot ]; then
-      runner=$(python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
+      runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     fi
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
     if [ "$kind" = boot ]; then

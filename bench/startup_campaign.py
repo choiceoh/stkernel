@@ -100,12 +100,23 @@ def check(root, stage, record, current):
         raise ValueError('serving knobs differ from campaign plan')
     path = root/'campaign-receipts.jsonl'
     previous = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    runtime = []
+    for node in (1, 2, 3, 4):
+        state = (root/f'{record["name"]}-srv{node}.state').read_text()
+        image = re.search(r'\bsha256:[a-f0-9]{64}\b', state.splitlines()[0])
+        hashes = (root/f'{record["name"]}-srv2.sha256').read_text() if node == 2 else state
+        modules = re.findall(r'^([a-f0-9]{64})\s+(/usr/\S+)', hashes, re.M)
+        if not image or len(modules) != 3:
+            raise ValueError(f'srv{node}: missing image/module runtime receipt')
+        runtime.append(dict(image=image[0], modules=modules))
+    if previous and json.dumps(runtime, sort_keys=True) != json.dumps(previous[0]['runtime'], sort_keys=True):
+        raise ValueError('campaign container image or node module changed')
     if any(row['boot_id'] == record['boot_id'] or row['stage'] == stage for row in previous):
         raise ValueError('campaign requires a distinct boot per arm')
     if stage != saved['arms'][len(previous)]['stage']:
         raise ValueError('campaign arm order changed')
     with path.open('a') as stream:
-        stream.write(json.dumps(dict(stage=stage, boot_id=record['boot_id'], name=record['name']))+'\n')
+        stream.write(json.dumps(dict(stage=stage, boot_id=record['boot_id'], name=record['name'], runtime=runtime))+'\n')
 
 
 def summarize(root):
