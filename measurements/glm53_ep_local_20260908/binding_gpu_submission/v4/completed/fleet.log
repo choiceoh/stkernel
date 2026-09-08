@@ -1,0 +1,328 @@
+preflight epbindinggpu0908v4 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 1 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: ATTRBASE on build 3c67b447eb27 -- 21.85 step/s, 3.43 tok/step, 48.5% acc, 2026-09-08 17:34:09 -- skip a defaults arm and compare against it
+  -> PASS
+GO epbindinggpu0908v4 2026-09-08_17:55:30
+  node 10.10.10.1: gpu=ok stray=4 ram=13G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=7G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=13G path=ok 
+{"started": 1788857732.835291, "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00", "exit_code": 1, "performance_acceptance": false, "diagnostic_only": true, "error": "RuntimeError('incoming traffic is not idle: num_requests_running')", "ended": 1788857734.7365396, "restored_original": false}
+HEAD is now at 0ac504b Merge pull request #485 from choiceoh/codex/fleet-request-workflow
+/home/choiceoh/stkernel-fleet-production-boundary-20260908/build/glm53  (59 overlays from 9 modules)
+self-test: PASS
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.062s
+
+OK
+[osar] VLLM_GLM53_AR_PREFETCH=40 MB is outside 1..20; off
+[osar] VLLM_GLM53_AR_PREFETCH='x' is not 0, 1 or an MB count; off
+[osar] prefetch hints learned (target): 2 collectives, 12.6 MB in total
+[osar] prefetch hints learned (drafter): 1 collectives, 0.0 MB in total
+nifest_and_old_prerequisite_are_rejected (test_fleet_experiments.SubmissionTests.test_invalid_manifest_and_old_prerequisite_are_rejected) ... ok
+test_minimal_result_reuses_valid_baseline_when_latest_defaults_failed (test_fleet_experiments.SubmissionTests.test_minimal_result_reuses_valid_baseline_when_latest_defaults_failed) ... ok
+test_named_cpu_cache_reuses_identical_merge_but_not_source_or_env_changes (test_fleet_experiments.SubmissionTests.test_named_cpu_cache_reuses_identical_merge_but_not_source_or_env_changes) ... ok
+test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence (test_fleet_experiments.SubmissionTests.test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence) ... ok
+test_plan_preserves_cpu_submission_when_deployment_is_missing (test_fleet_experiments.SubmissionTests.test_plan_preserves_cpu_submission_when_deployment_is_missing) ... ok
+test_prepared_artifacts_move_to_gpu_snapshot_and_detect_corruption (test_fleet_experiments.SubmissionTests.test_prepared_artifacts_move_to_gpu_snapshot_and_detect_corruption) ... ok
+test_probe_exit_zero_without_report_cannot_unlock_candidate (test_fleet_experiments.SubmissionTests.test_probe_exit_zero_without_report_cannot_unlock_candidate) ... ok
+test_startup_cache_ignores_unread_docs_and_invalidates_transitive_code (test_fleet_experiments.SubmissionTests.test_startup_cache_ignores_unread_docs_and_invalidates_transitive_code) ... ok
+test_worker_finishing_during_lock_check_keeps_terminal_result (test_fleet_experiments.SubmissionTests.test_worker_finishing_during_lock_check_keeps_terminal_result) ... ok
+test_baseline_cannot_expand_after_start_but_accepts_covered_quality (test_fleet_feedback.FeedbackTests.test_baseline_cannot_expand_after_start_but_accepts_covered_quality) ... ok
+test_cache_hit_needs_no_new_checkout_and_keeps_own_gates (test_fleet_feedback.FeedbackTests.test_cache_hit_needs_no_new_checkout_and_keeps_own_gates) ... ok
+test_cpu_results_and_ids_are_available_before_gpu_attestation (test_fleet_feedback.FeedbackTests.test_cpu_results_and_ids_are_available_before_gpu_attestation) ... ok
+test_dependency_completion_is_observed_without_a_second_of_idle_time (test_fleet_feedback.FeedbackTests.test_dependency_completion_is_observed_without_a_second_of_idle_time) ... ok
+test_jobs_filter_includes_joined_requests_beyond_global_limit (test_fleet_feedback.FeedbackTests.test_jobs_filter_includes_joined_requests_beyond_global_limit) ... ok
+test_split_plan_keeps_all_deployment_components_and_cpu_budget (test_fleet_feedback.FeedbackTests.test_split_plan_keeps_all_deployment_components_and_cpu_budget) ... ok
+test_public_restore_skip_requires_approved_immutable_image (test_fleet_handoff.EntryTests.test_public_restore_skip_requires_approved_immutable_image) ... ok
+test_entry_requires_metrics_for_live_serving_but_accepts_stopped (test_fleet_handoff.OwnershipTests.test_entry_requires_metrics_for_live_serving_but_accepts_stopped) ... ok
+test_only_actual_next_live_boot_supervisor_accepts_debt (test_fleet_handoff.OwnershipTests.test_only_actual_next_live_boot_supervisor_accepts_debt) ... ok
+test_probe_empty_dead_and_unmanaged_successors_require_restore (test_fleet_handoff.OwnershipTests.test_probe_empty_dead_and_unmanaged_successors_require_restore) ... ok
+test_cli_history_summary_and_ticket_logs_are_bounded_and_read_only (test_fleet_history.HistoryTests.test_cli_history_summary_and_ticket_logs_are_bounded_and_read_only) ... ok
+test_finished_record_cannot_become_a_new_holder_even_with_the_same_pid (test_fleet_history.HistoryTests.test_finished_record_cannot_become_a_new_holder_even_with_the_same_pid) ... ok
+test_first_reuse_archives_a_pre_feature_record (test_fleet_history.HistoryTests.test_first_reuse_archives_a_pre_feature_record) ... ok
+test_old_active_record_and_reused_pid_are_not_successful_or_editable (test_fleet_history.HistoryTests.test_old_active_record_and_reused_pid_are_not_successful_or_editable) ... ok
+test_partial_projection_write_does_not_commit_an_edit (test_fleet_history.HistoryTests.test_partial_projection_write_does_not_commit_an_edit) ... ok
+test_completed_failure_distinguishes_successful_payload_from_failed_restore (test_fleet_inspect.InspectTests.test_completed_failure_distinguishes_successful_payload_from_failed_restore) ... ok
+test_corrupt_saved_record_leaves_legacy_queue_readable (test_fleet_inspect.InspectTests.test_corrupt_saved_record_leaves_legacy_queue_readable) ... ok
+test_dead_finishing_holder_is_interrupted (test_fleet_inspect.InspectTests.test_dead_finishing_holder_is_interrupted) ... ok
+test_show_retains_argv_after_go_and_never_mutates_fleet (test_fleet_inspect.InspectTests.test_show_retains_argv_after_go_and_never_mutates_fleet) ... ok
+test_preflight_failure_is_bounded_and_retained_on_retry (test_fleet_launch.LaunchTests.test_preflight_failure_is_bounded_and_retained_on_retry) ... ok
+test_receipt_nonce_pid_start_and_ticket_must_match (test_fleet_launch.LaunchTests.test_receipt_nonce_pid_start_and_ticket_must_match) ... ok
+test_registration_returns_before_completion_and_discovers_private_log (test_fleet_launch.LaunchTests.test_registration_returns_before_completion_and_discovers_private_log) ... ok
+test_concurrent_editor_wins_without_lost_update (test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update) ... FAIL
+test_experiment_payload_cannot_bypass_snapshot_but_note_can_change (test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change) ... ok
+test_failed_preflight_invalid_metadata_and_empty_command_keep_original (test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original) ... ok
+test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write) ... ERROR
+test_bad_syntax_and_gpu_cpu_command_refused (test_fleet_prepare.PrepareTests.test_bad_syntax_and_gpu_cpu_command_refused) ... ok
+test_changed_script_and_head_rejected (test_fleet_prepare.PrepareTests.test_changed_script_and_head_rejected) ... ok
+test_empty_argument_and_large_binary_are_valid (test_fleet_prepare.PrepareTests.test_empty_argument_and_large_binary_are_valid) ... ok
+test_external_campaign_guard_uses_execution_checkout (test_fleet_prepare.PrepareTests.test_external_campaign_guard_uses_execution_checkout) ... ok
+test_manifest_matches_edited_command_and_is_private (test_fleet_prepare.PrepareTests.test_manifest_matches_edited_command_and_is_private) ... ok
+test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename (test_fleet_prepare.PrepareTests.test_missing_entrypoint_is_refused_but_inline_code_is_not_a_filename) ... ok
+test_quoted_clean_guard_is_recognized (test_fleet_prepare.PrepareTests.test_quoted_clean_guard_is_recognized) ... ok
+test_unchanged_inputs_validate_without_reexecuting_cpu (test_fleet_prepare.PrepareTests.test_unchanged_inputs_validate_without_reexecuting_cpu) ... ok
+test_explicit_retry_does_not_inherit_its_failed_source_cpu_claim (test_fleet_retry.RetryTests.test_explicit_retry_does_not_inherit_its_failed_source_cpu_claim) ... ok
+test_failed_prerequisite_stays_failed_and_is_not_silently_retried (test_fleet_retry.RetryTests.test_failed_prerequisite_stays_failed_and_is_not_silently_retried) ... ok
+test_historical_controller_retry_runs_pinned_current_code_with_saved_source (test_fleet_retry.RetryTests.test_historical_controller_retry_runs_pinned_current_code_with_saved_source) ... ok
+test_invalid_source_state_subscription_and_reason_create_nothing (test_fleet_retry.RetryTests.test_invalid_source_state_subscription_and_reason_create_nothing) ... ok
+test_legacy_pair_retry_keeps_its_three_sample_confirmation_policy (test_fleet_retry.RetryTests.test_legacy_pair_retry_keeps_its_three_sample_confirmation_policy) ... ok
+test_missing_failed_baseline_retries_once_only_for_explicit_attempt (test_fleet_retry.RetryTests.test_missing_failed_baseline_retries_once_only_for_explicit_attempt) ... ok
+test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success (test_fleet_retry.RetryTests.test_valid_cpu_cache_is_reused_and_failed_cache_is_never_success) ... ok
+test_baseline_worker_reclaims_legacy_orphan_before_verification (test_fleet_runtime.RuntimeTests.test_baseline_worker_reclaims_legacy_orphan_before_verification) ... ok
+test_dead_retired_or_oversized_head_does_not_strand_followers (test_fleet_runtime.RuntimeTests.test_dead_retired_or_oversized_head_does_not_strand_followers) ... ok
+test_failed_transaction_restores_baseline_demand_and_queue (test_fleet_runtime.RuntimeTests.test_failed_transaction_restores_baseline_demand_and_queue) ... ok
+test_finished_child_uses_wait_instead_of_a_fixed_sleep (test_fleet_runtime.RuntimeTests.test_finished_child_uses_wait_instead_of_a_fixed_sleep) ... ok
+test_large_waiter_cannot_be_overtaken_by_repeated_small_arrivals (test_fleet_runtime.RuntimeTests.test_large_waiter_cannot_be_overtaken_by_repeated_small_arrivals) ... ok
+test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries (test_fleet_runtime.RuntimeTests.test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries) ... ok
+test_resource_timeout_cleans_only_its_waiter (test_fleet_runtime.RuntimeTests.test_resource_timeout_cleans_only_its_waiter) ... ok
+test_running_held_manual_and_incomplete_baseline_demand_is_preserved (test_fleet_runtime.RuntimeTests.test_running_held_manual_and_incomplete_baseline_demand_is_preserved) ... ok
+test_shared_baseline_survives_until_its_last_consumer_fails (test_fleet_runtime.RuntimeTests.test_shared_baseline_survives_until_its_last_consumer_fails) ... ok
+test_duration_assignment_balances_cost_and_keeps_exact_coverage (test_fleet_runtime.TimingTests.test_duration_assignment_balances_cost_and_keeps_exact_coverage) ... ok
+test_recorded_timings_are_reused_but_changed_test_files_are_not (test_fleet_runtime.TimingTests.test_recorded_timings_are_reused_but_changed_test_files_are_not) ... ok
+
+======================================================================
+ERROR: test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/tests/test_fleet_pending.py", line 108, in test_holder_metadata_reads_committed_record_after_interrupted_queue_write
+    pending.edit(self.root, 'mine', command=['new'], estimate=9, note='new note')
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/bench/fleet_pending.py", line 218, in edit
+    updated['prepare_manifest'] = str(fleet_prepare.prepare(directory, session,
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/bench/fleet_prepare.py", line 199, in prepare
+    raise ValueError('executable missing: ' + exe)
+ValueError: executable missing: new
+
+======================================================================
+FAIL: test_concurrent_editor_wins_without_lost_update (test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update)
+----------------------------------------------------------------------
+ValueError: executable missing: stale
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/tests/test_fleet_pending.py", line 74, in test_concurrent_editor_wins_without_lost_update
+    with self.assertRaisesRegex(ValueError, 'changed during preflight'):
+AssertionError: "changed during preflight" does not match "executable missing: stale"
+
+----------------------------------------------------------------------
+Ran 95 tests in 57.267s
+
+FAILED (failures=1, errors=1)
+
+efore_admission) ... ok
+test_generic_cpu_command_is_never_content_cached (test_fleet_experiments.SubmissionTests.test_generic_cpu_command_is_never_content_cached) ... ok
+test_grouped_objectives_use_two_boots_and_one_final_restore (test_fleet_experiments.SubmissionTests.test_grouped_objectives_use_two_boots_and_one_final_restore) ... ok
+test_legacy_saved_requests_keep_the_three_sample_contract (test_fleet_experiments.SubmissionTests.test_legacy_saved_requests_keep_the_three_sample_contract) ... ok
+test_plan_prepares_before_deployment_then_resolves_gpu_dependencies (test_fleet_experiments.SubmissionTests.test_plan_prepares_before_deployment_then_resolves_gpu_dependencies) ... ok
+test_readiness_failure_never_enters_gpu_queue (test_fleet_experiments.SubmissionTests.test_readiness_failure_never_enters_gpu_queue) ... ok
+test_revision_changed_during_queue_never_executes_command (test_fleet_experiments.SubmissionTests.test_revision_changed_during_queue_never_executes_command) ... ok
+test_shared_baseline_automatically_completes_first_pair (test_fleet_experiments.SubmissionTests.test_shared_baseline_automatically_completes_first_pair) ... ok
+test_shell_pair_reuses_one_baseline_and_counts_each_boot_once (test_fleet_experiments.SubmissionTests.test_shell_pair_reuses_one_baseline_and_counts_each_boot_once) ... ok
+test_skipped_cpu_math_is_partial_and_does_not_unlock_gpu (test_fleet_experiments.SubmissionTests.test_skipped_cpu_math_is_partial_and_does_not_unlock_gpu) ... ok
+test_stale_worker_does_not_blindly_repeat_gpu_work (test_fleet_experiments.SubmissionTests.test_stale_worker_does_not_blindly_repeat_gpu_work) ... ok
+test_baseline_objectives_share_required_samples_without_extra_boots (test_fleet_feedback.FeedbackTests.test_baseline_objectives_share_required_samples_without_extra_boots) ... ok
+test_batch_dependency_failure_returns_actionable_explanation (test_fleet_feedback.FeedbackTests.test_batch_dependency_failure_returns_actionable_explanation) ... ok
+test_batch_fingerprints_runtime_twice_total_and_preserves_distinct_contracts (test_fleet_feedback.FeedbackTests.test_batch_fingerprints_runtime_twice_total_and_preserves_distinct_contracts) ... ok
+test_completed_dependencies_use_one_state_query_without_payload_reads (test_fleet_feedback.FeedbackTests.test_completed_dependencies_use_one_state_query_without_payload_reads) ... ok
+test_dependency_recovery_is_throttled_and_skips_completed_workers (test_fleet_feedback.FeedbackTests.test_dependency_recovery_is_throttled_and_skips_completed_workers) ... ok
+test_explicit_preparation_edge_transfers_verified_outputs (test_fleet_feedback.FeedbackTests.test_explicit_preparation_edge_transfers_verified_outputs) ... ok
+test_failed_worker_start_remains_recoverable_in_final_launch (test_fleet_feedback.FeedbackTests.test_failed_worker_start_remains_recoverable_in_final_launch) ... ok
+test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits (test_fleet_feedback.FeedbackTests.test_fleet_cache_ignores_unrelated_kernel_and_fails_closed_on_test_edits) ... ok
+test_incomplete_dependency_is_refreshed_before_blocking (test_fleet_feedback.FeedbackTests.test_incomplete_dependency_is_refreshed_before_blocking) ... ok
+test_invalid_batch_or_changed_attestation_creates_no_jobs (test_fleet_feedback.FeedbackTests.test_invalid_batch_or_changed_attestation_creates_no_jobs) ... ok
+test_jobs_limit_is_bounded_and_keeps_newest_requests (test_fleet_feedback.FeedbackTests.test_jobs_limit_is_bounded_and_keeps_newest_requests) ... ok
+test_preparation_runs_while_checks_wait_but_gpu_remains_blocked (test_fleet_feedback.FeedbackTests.test_preparation_runs_while_checks_wait_but_gpu_remains_blocked) ... ok
+test_retired_dependent_exits_before_verification (test_fleet_feedback.FeedbackTests.test_retired_dependent_exits_before_verification) ... ok
+test_shards_count_all_tests_and_keep_failures_and_skips (test_fleet_feedback.ParallelRunnerTests.test_shards_count_all_tests_and_keep_failures_and_skips) ... ok
+test_real_launcher_wrapper_probes_isolated_port (test_fleet_handoff.EntryTests.test_real_launcher_wrapper_probes_isolated_port) ... ok
+test_cancelled_target_and_pid_reuse_do_not_strand_a_new_boot (test_fleet_handoff.OwnershipTests.test_cancelled_target_and_pid_reuse_do_not_strand_a_new_boot) ... ok
+test_interrupted_admission_always_has_recoverable_holder (test_fleet_handoff.OwnershipTests.test_interrupted_admission_always_has_recoverable_holder) ... ok
+test_previous_protocol_is_not_offered_a_handoff (test_fleet_handoff.OwnershipTests.test_previous_protocol_is_not_offered_a_handoff) ... ok
+test_discovery_is_bounded_and_old_tickets_remain_directly_addressable (test_fleet_history.HistoryTests.test_discovery_is_bounded_and_old_tickets_remain_directly_addressable) ... ok
+test_edits_and_terminal_transitions_update_the_same_ticket (test_fleet_history.HistoryTests.test_edits_and_terminal_transitions_update_the_same_ticket) ... ok
+test_launch_and_preparation_receipts_are_preserved_on_registration (test_fleet_history.HistoryTests.test_launch_and_preparation_receipts_are_preserved_on_registration) ... ok
+test_oversized_index_is_rejected_without_scanning (test_fleet_history.HistoryTests.test_oversized_index_is_rejected_without_scanning) ... ok
+test_reuse_retains_exact_old_result_and_log_without_current_ownership (test_fleet_history.HistoryTests.test_reuse_retains_exact_old_result_and_log_without_current_ownership) ... ok
+test_ticket_identity_is_checked_and_cannot_select_another_session (test_fleet_history.HistoryTests.test_ticket_identity_is_checked_and_cannot_select_another_session) ... ok
+test_empty_snapshot_does_not_create_a_fleet (test_fleet_inspect.InspectTests.test_empty_snapshot_does_not_create_a_fleet) ... ok
+test_old_finished_or_dead_records_are_never_called_successful (test_fleet_inspect.InspectTests.test_old_finished_or_dead_records_are_never_called_successful) ... ok
+test_reused_pid_holder_does_not_inherit_old_success_command_or_log (test_fleet_inspect.InspectTests.test_reused_pid_holder_does_not_inherit_old_success_command_or_log) ... ok
+test_reused_session_never_exposes_previous_command_or_log (test_fleet_inspect.InspectTests.test_reused_session_never_exposes_previous_command_or_log) ... ok
+test_saved_edit_metadata_wins_over_interrupted_queue_projection (test_fleet_inspect.InspectTests.test_saved_edit_metadata_wins_over_interrupted_queue_projection) ... ok
+test_tail_reads_only_bounded_suffix_and_rejects_fifo (test_fleet_inspect.InspectTests.test_tail_reads_only_bounded_suffix_and_rejects_fifo) ... ok
+test_cpu_starts_without_waiting_and_preserves_terminal_exit (test_fleet_launch.LaunchTests.test_cpu_starts_without_waiting_and_preserves_terminal_exit) ... ok
+test_existing_queue_and_different_command_do_not_launch_duplicates (test_fleet_launch.LaunchTests.test_existing_queue_and_different_command_do_not_launch_duplicates) ... ok
+test_successful_process_without_ack_is_not_successful_launch (test_fleet_launch.LaunchTests.test_successful_process_without_ack_is_not_successful_launch) ... ok
+test_timeout_retry_joins_original_startup (test_fleet_launch.LaunchTests.test_timeout_retry_joins_original_startup) ... ok
+test_admission_wins_during_preflight_and_edit_cannot_change_payload (test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload) ... FAIL
+test_closed_dead_reused_and_legacy_waiters_are_rejected (test_fleet_pending.PendingTests.test_closed_dead_reused_and_legacy_waiters_are_rejected) ... ok
+test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers (test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers) ... ERROR
+test_actual_campaign_ancestry_guard_before_queue_and_after_wait (test_fleet_prepare.PrepareTests.test_actual_campaign_ancestry_guard_before_queue_and_after_wait) ... ok
+test_clean_guard_is_literal_and_comments_not_executed (test_fleet_prepare.PrepareTests.test_clean_guard_is_literal_and_comments_not_executed) ... ok
+test_failed_old_preparation_cannot_withdraw_a_new_edit (test_fleet_prepare.PrepareTests.test_failed_old_preparation_cannot_withdraw_a_new_edit) ... ok
+test_missing_input_fresh_output_and_image_fail_early (test_fleet_prepare.PrepareTests.test_missing_input_fresh_output_and_image_fail_early) ... ok
+test_recovery_reclaim_does_not_reapply_payload_preparation (test_fleet_prepare.PrepareTests.test_recovery_reclaim_does_not_reapply_payload_preparation) ... ok
+test_cli_retries_saved_revision_after_agent_checkout_moves (test_fleet_retry.RetryTests.test_cli_retries_saved_revision_after_agent_checkout_moves) ... ok
+test_fresh_attestation_and_concurrent_withdrawal_abort_before_publication (test_fleet_retry.RetryTests.test_fresh_attestation_and_concurrent_withdrawal_abort_before_publication) ... ok
+test_retry_keeps_successful_dependencies_and_compatible_baseline_samples (test_fleet_retry.RetryTests.test_retry_keeps_successful_dependencies_and_compatible_baseline_samples) ... ok
+test_retry_still_blocks_on_a_different_failed_shared_cpu_owner (test_fleet_retry.RetryTests.test_retry_still_blocks_on_a_different_failed_shared_cpu_owner) ... ok
+test_shared_failure_creates_one_attempt_and_keeps_each_subscription (test_fleet_retry.RetryTests.test_shared_failure_creates_one_attempt_and_keeps_each_subscription) ... ok
+test_group_probe_filters_other_groups_and_fails_closed (test_fleet_runtime.RuntimeTests.test_group_probe_filters_other_groups_and_fails_closed) ... ok
+test_live_workers_admit_wide_request_before_later_small_request (test_fleet_runtime.RuntimeTests.test_live_workers_admit_wide_request_before_later_small_request) ... ok
+test_retirement_after_admission_releases_capacity_without_spawning (test_fleet_runtime.RuntimeTests.test_retirement_after_admission_releases_capacity_without_spawning) ... ok
+test_malformed_assignment_cannot_skip_or_duplicate_tests (test_fleet_runtime.TimingTests.test_malformed_assignment_cannot_skip_or_duplicate_tests) ... ok
+
+======================================================================
+ERROR: test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers (test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/tests/test_fleet_pending.py", line 37, in test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers
+    result = pending.edit(self.root, 'mine', command=['new', '$literal', 'a b'],
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/bench/fleet_pending.py", line 218, in edit
+    updated['prepare_manifest'] = str(fleet_prepare.prepare(directory, session,
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/bench/fleet_prepare.py", line 199, in prepare
+    raise ValueError('executable missing: ' + exe)
+ValueError: executable missing: new
+
+======================================================================
+FAIL: test_admission_wins_during_preflight_and_edit_cannot_change_payload (test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload)
+----------------------------------------------------------------------
+ValueError: executable missing: too-late
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-fleet-production-boundary-20260908/tests/test_fleet_pending.py", line 66, in test_admission_wins_during_preflight_and_edit_cannot_change_payload
+    with self.assertRaisesRegex(ValueError, 'already admitted'):
+AssertionError: "already admitted" does not match "executable missing: too-late"
+
+----------------------------------------------------------------------
+Ran 97 tests in 57.488s
+
+FAILED (failures=1, errors=1)
+
+  skip_topk rule ................ OK
+  rank cache eviction contracts .. OK
+  nvfp4 static scale contracts .. OK
+  prefill chunker budgets ....... OK
+  indexer-SP shard coverage ..... OK
+  helper functions .............. OK
+  profile-step buckets/union .... OK
+  bench-dec acceptance parser ... OK
+  overlay manifests (82 files across dsv4, glm53) .... OK
+  composed snapshot sync (82 files) . OK
+  overlay symbol contracts (120, per composition incl. orphans) ... OK
+  profile env carried (106 knobs) ... OK
+  profile keys have readers (149) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. SKIP (no torch on this host)
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  b12x SF 6-bit pack ............ OK (skipped: no torch)
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  SKIP (no torch on this host)
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK (tensor remap skipped)
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... SKIP values (no torch)
+  glm53 kpool packed scratch contract ... SKIP (no torch on this host)
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout (torch-free half) . OK (torch absent: packer roundtrip half skipped)
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 192 tests in 2 isolated shards: FAILED
+FAIL: fleet asynchronous submissions, prerequisites and evidence contracts
+ABORT: tests/test_logic.py failed

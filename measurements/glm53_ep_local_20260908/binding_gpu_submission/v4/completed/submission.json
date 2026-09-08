@@ -1,0 +1,23 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-4",
+  "scheduler": "/home/choiceoh/stkernel",
+  "revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "epbindinggpu0908v4",
+    "6",
+    "Post-context CUDA binding only: CPU48 gates, same image and sanitizer, exact original restore",
+    "--",
+    "python3",
+    "/home/choiceoh/stkernel-ep-binding-gpu0908-4/probes/run_glm53_ep_binding_offline.py",
+    "--revision",
+    "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+    "--out",
+    "/tmp/glm53-ep-binding-gpu0908-4/capture"
+  ],
+  "created": 1788857599.7233458,
+  "supersedes": "epbindinggpu0908v3 rejected mixed incoming containers before GPU; current all-four healthy state and latest main scheduler are verified; strict incoming guard unchanged"
+}

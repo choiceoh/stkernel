@@ -1,8 +1,8 @@
 # CUDA binding diagnostic submission evidence
 
-The binding GPU diagnostic did **not run in v1 or v2**. At the latest
-read-only snapshot, **2026-09-08 16:55:07 KST**, v3 remained queued behind
-`attr0908`, first of two waiting jobs. This archive contains submission and
+The binding GPU diagnostic did **not run in v1, v2, v3 or v4**. V3 received GO at
+2026-09-08 17:35:38 KST but its mixed incoming state failed the strict lifecycle
+guard before the GPU payload. This archive contains submission and
 recovery evidence; it provides no new GPU sanitizer, numerical, performance,
 or serving acceptance result.
 
@@ -10,7 +10,39 @@ or serving acceptance result.
 | --- | --- | --- |
 | v1 | `ee14d3090f5906f3ab1bc3ab0b5ecd4f7fab4e39` | The declared CPU gate was rejected by the fleet classifier at 16:34:46, exit 5. The driver stopped after that phase; its subsequent GPU command was never submitted. |
 | v2 | `7254422f044ab3c5d042f32ee7f33add7baf5e00` | Normal GPU reservation received GO at 16:44:07. The no-device sanitizer version preflight passed, then the incoming-state guard rejected four present but stopped containers before the diagnostic GPU cell. Final exit 1. The outer supervisor completed public-default restoration and normal release at 16:49:14. |
-| v3 | `7254422f044ab3c5d042f32ee7f33add7baf5e00` | Requeued normally at 16:50:14. Preflight passed. At 16:55:07 the submission driver PID 1808590 existed, `attr0908` still held the lane, queue position was 1/2, and neither `capture/` nor `exit.json` existed. No diagnostic result was available. |
+| v3 | `7254422f044ab3c5d042f32ee7f33add7baf5e00` | Normal preflight passed at 16:50:14 and GO arrived at 17:35:38. The incoming head was stopped while three workers were running. The no-device sanitizer preflight passed, then the strict lifecycle guard refused the GPU payload. Final exit 1; restoration responsibility was handed to the next boot. |
+| v4 | `7254422f044ab3c5d042f32ee7f33add7baf5e00` | Four healthy, idle public containers were verified before submission with the latest main scheduler. GO at 17:55:30. All four incoming containers were running, but a request was active at the mandatory idle check. GPU payload refused, exit 1. Supervisor restoration separately failed its CPU regression gate, then released at 17:56:37. |
+
+V3's [completed originals](v3/completed/source-manifest.json) preserve all
+11 job files, rechecked byte-for-byte against the remote source. Its
+[completion](v3/completed/capture/completion.json) has no GPU cell or sanitizer
+result and retains `restored_original: false`. The normal supervisor accepted
+restore responsibility from `attr0908` after that payload failed, then passed
+it to `vllmprs0908b` after the diagnostic's refusal. A separately captured
+[later public state](v3/completed/later-public-state.json) found four running
+containers and HTTP 200. These were different container identities; that
+later health observation does not establish exact restoration by v3.
+
+V4's [completed originals](v4/completed/source-manifest.json) preserve and
+recheck all 14 job files. The preparation's empty driver was corrected before
+any fleet submission: a read-only SSH subprocess consumed the preparation's
+stdin; the driver was subsequently transferred through an encoded argument.
+The original PID, empty-file checks and correction are recorded. No duplicate
+GPU job was queued. Source 7254422 and the CPU8 receipt remained unchanged.
+
+The v4 [scheduler receipt](v4/completed/scheduler.json) records main revision
+`0d8ce2cef9a0991075329f4d8957091ddc43fb58` and the pre-existing `prodrec0908`
+restore-debt record. Actual frozen runner hashes are in its
+[lifecycle excerpt](v4/completed/lifecycle.relevant.jsonl). The strict
+all-running/idle checks were not relaxed. The [fleet log](v4/completed/fleet.log)
+records the supervisor's failed restoration: the approved-main gate reported
+192 tests in two shards failed, including fleet asynchronous submission
+contracts. This is not a candidate kernel failure or successful restoration.
+An immediate read-only status showed health 200; the durable
+[later snapshot](v4/completed/later-public-state.json) was taken after
+`arconsumer0908v11b` acquired the lane and began its own boot, and must not be
+used to infer our restoration outcome. Further retries need a stable idle
+boundary and a passing normal restoration path.
 
 The v2 runner's [completion receipt](v2/capture/completion.json) truthfully
 retains `restored_original: false`: its incoming-state validation failed
@@ -38,7 +70,7 @@ Their `cpu-evidence.json` files are byte-identical to
 The freeze receipts bind the diagnostic source to these CPU checks; they do
 not establish a GPU diagnostic result.
 
-The latest v3 [status snapshot](v3/status.snapshot.20260908T075507Z.json),
+The historical v3 [status snapshot](v3/status.snapshot.20260908T075507Z.json),
 [complete fleet-log snapshot](v3/fleet.snapshot.20260908T075507Z.log),
 [holder snapshot](v3/fleet-state/holder.snapshot.20260908T075507Z.txt), and
 [queue snapshot](v3/fleet-state/queue.snapshot.20260908T075507Z.txt) are fixed

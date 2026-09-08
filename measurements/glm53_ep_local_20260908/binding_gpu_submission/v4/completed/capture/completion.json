@@ -1,0 +1,10 @@
+{
+  "started": 1788857732.835291,
+  "source_revision": "7254422f044ab3c5d042f32ee7f33add7baf5e00",
+  "exit_code": 1,
+  "performance_acceptance": false,
+  "diagnostic_only": true,
+  "error": "RuntimeError('incoming traffic is not idle: num_requests_running')",
+  "ended": 1788857734.7365396,
+  "restored_original": false
+}

@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-09-08T08:42:46.708072+00:00",
+  "scope": "read-only configured launch metadata of the existing fleet holder; no client or GPU probe",
+  "nodes": {
+    "local": {
+      "container_id": "fb6645abb81d989980acc943ea7c8717c25d5a43147433d017c134ae1f7fcc93",
+      "running": true,
+      "started": "2026-09-08T08:38:20.481968224Z",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "parallelism": {
+        "schema": 1,
+        "source": "container-launch-script",
+        "enabled": false,
+        "tensor_parallel_size": 4,
+        "nnodes": 4,
+        "node_rank": 0,
+        "command_sha256": "6d5d0e5327fa000041fb2f171f6c932eabbf30277643975fb2606a97042e816e",
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "serve_argv_sha256": "bf39b36b11fe846872ac7ab923a5826ff3b64184ed6756e926ba6eab1fc79871",
+        "serve_argv_without_ep_sha256": "bf39b36b11fe846872ac7ab923a5826ff3b64184ed6756e926ba6eab1fc79871"
+      }
+    },
+    "10.10.10.1": {
+      "container_id": "55514a6482d1713a2d0cfa6b475e877560d8f2a56aa04e9a54699bdd18ae5e90",
+      "running": true,
+      "started": "2026-09-08T08:38:19.908271719Z",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "parallelism": {
+        "schema": 1,
+        "source": "container-launch-script",
+        "enabled": false,
+        "tensor_parallel_size": 4,
+        "nnodes": 4,
+        "node_rank": 1,
+        "command_sha256": "895face0ecd01b6b199c5e13a5f5e9e16edfae9dff763712a1167d555d870cba",
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "serve_argv_sha256": "002be37a9ee5681543b9e88cae0e6f8a1348d859f706c4d6da4ea6cceb0118d6",
+        "serve_argv_without_ep_sha256": "002be37a9ee5681543b9e88cae0e6f8a1348d859f706c4d6da4ea6cceb0118d6"
+      }
+    },
+    "10.10.10.3": {
+      "container_id": "b4aa9e203d4a75f71f9af14f87e1387c68d4b4d7ca206e40ec7cd05761eab991",
+      "running": true,
+      "started": "2026-09-08T08:38:19.855344248Z",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "parallelism": {
+        "schema": 1,
+        "source": "container-launch-script",
+        "enabled": false,
+        "tensor_parallel_size": 4,
+        "nnodes": 4,
+        "node_rank": 2,
+        "command_sha256": "1e3799001d014119d1e8896b8e4304d93bd05bfb36a22cfcb19bb82ac6313529",
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "serve_argv_sha256": "4cba88f1d7d859a5045e0d94c50746d8cda800c10a08980d361d1b72fcfebdc1",
+        "serve_argv_without_ep_sha256": "4cba88f1d7d859a5045e0d94c50746d8cda800c10a08980d361d1b72fcfebdc1"
+      }
+    },
+    "10.10.10.4": {
+      "container_id": "d4b732aef04628e2c72d570785a7173bcb27796dcda957a1bdfab208fb3a0799",
+      "running": true,
+      "started": "2026-09-08T08:38:19.859192088Z",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "parallelism": {
+        "schema": 1,
+        "source": "container-launch-script",
+        "enabled": false,
+        "tensor_parallel_size": 4,
+        "nnodes": 4,
+        "node_rank": 3,
+        "command_sha256": "bacbe7a44118e4dcac38bde04ddd0d24062778141719f1b58cd76b4851b39f29",
+        "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+        "serve_argv_sha256": "dbf82a153fa03a86c8093c17792bb3031f1b74a5aed1e5c4d45df767e2dda408",
+        "serve_argv_without_ep_sha256": "dbf82a153fa03a86c8093c17792bb3031f1b74a5aed1e5c4d45df767e2dda408"
+      }
+    }
+  }
+}

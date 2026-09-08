@@ -1,0 +1,57 @@
+{
+  "started_at": "2026-09-08T08:52:21.233972+00:00",
+  "finished_at": "2026-09-08T08:52:21.298467+00:00",
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_onepass_parallelism.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "tests_run": 3,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "parser_tests": {
+    "tests_run": 8,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "observation": "earlier same-turn unittest output; parser source unchanged; no standalone original log"
+  },
+  "source_sha256": {
+    "bench/glm53_launch_metadata.py": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393",
+    "bench/onepass.py": "9eeb41e9c8f383803c93d29a067340db45769de1a5a63e8294b968a250b6a5ae",
+    "bench/proof-markers.tsv": "7233b554aea40a32f3bbd89f1a893198c14a62e962c2cf5b2e2ae29c4f69c794",
+    "tests/test_glm53_launch_metadata.py": "80c494cc1857dcefc7967d598b6eedb1cda547a67ed527ab92efe65323abba61",
+    "tests/test_onepass_parallelism.py": "d44dc47bbc36af312ea4d1568a350fb29181e7d6636530ffa8bcdf29ea8e82b0",
+    "launchers/lib/common-tp4.sh": "9ab4ee998f16c3c07ab170bb4c4893d9967c471e74c48771810c0acc5ed1f142"
+  },
+  "scope": "pure CPU launch metadata and proof marker checks; no CUDA or serving requests",
+  "core": {
+    "command": [
+      "python3",
+      "tests/test_logic.py",
+      "--component",
+      "core"
+    ],
+    "exit_code": 0,
+    "checks": 6795,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 0,
+    "completed_at": "2026-09-08T08:56:06.087268+00:00",
+    "source_sha256": {
+      "bench/glm53_launch_metadata.py": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393",
+      "bench/onepass.py": "9eeb41e9c8f383803c93d29a067340db45769de1a5a63e8294b968a250b6a5ae",
+      "bench/proof-markers.tsv": "7233b554aea40a32f3bbd89f1a893198c14a62e962c2cf5b2e2ae29c4f69c794",
+      "tests/test_glm53_launch_metadata.py": "80c494cc1857dcefc7967d598b6eedb1cda547a67ed527ab92efe65323abba61",
+      "tests/test_onepass_parallelism.py": "d44dc47bbc36af312ea4d1568a350fb29181e7d6636530ffa8bcdf29ea8e82b0",
+      "launchers/lib/common-tp4.sh": "9ab4ee998f16c3c07ab170bb4c4893d9967c471e74c48771810c0acc5ed1f142"
+    }
+  }
+}

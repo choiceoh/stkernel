@@ -169,8 +169,21 @@ The reserved binding-reproducer v2 attempt was refused before its GPU
 payload because all four incoming service containers were already stopped.
 The normal supervisor restored the four public containers and health 200,
 then released the reservation at 16:49:14 KST. No binding diagnosis follows
-from that refused attempt. The CPU8-pinned retry `epbindinggpu0908v3` is
-waiting normally behind `attr0908`; it has no diagnostic result yet.
+from that refused attempt. The CPU8-pinned retry `epbindinggpu0908v3` received
+GO at 17:35:38 KST after a normal restore-responsibility handoff. Its incoming
+snapshot had the head stopped and all three workers running; the same strict
+guard rejected it before the GPU payload. The supervisor passed restoration
+responsibility to the next queued boot. Its exit 1 is not an exact-original
+restore or binding result. A later read-only snapshot found all four public
+containers running with health 200; this is separate from the failed attempt.
+V4 used the same diagnostic/CPU8 source with the latest normal scheduler after
+observing all four public containers healthy and idle. It received GO at
+17:55:30, but a request was active at its mandatory idle check, so again no GPU
+payload ran. The supervisor's separate public restoration failed an
+approved-main CPU regression gate and released at 17:56:37. This does not
+establish exact restoration or GPU evidence; later observations belong to
+the next holder's boot. Repeated submissions are paused until the idle
+boundary and normal restoration path are ready.
 [Submission evidence](../measurements/glm53_ep_local_20260908/binding_gpu_submission/README.md)
 keeps the pre-GPU failures and retry separate.
 
@@ -220,16 +233,45 @@ weights, balanced/concentrated/empty-local routes, odd tails and changed
 inputs. TP4 wire numerics and current-capacity fresh 2K/32K/128K TTFT, output
 quality, decode and memory checks follow before any default recommendation.
 
-The existing `bench/prefill_serving.py` bracket needs an EP-specific contract
-before serving validation: it currently admits only single-knob MoE/MLA
-candidates and forces max-length 262144 / KV blocks 415. The next bracket
-must snapshot and retain current capacity across B1/A/B2, record ENABLE_EP
-and the actual expert-parallel command flag, and require all-rank E72/I2048,
-EP-local launch and MHC token-shard proof. The current comparison rejects
-those intentional EP changes, and generic onepass metadata only captures
-VLLM variables. Existing normal chain hooks and fresh 2K/32K/128K collection
-can be reused after those evidence gaps are addressed. Short requests and
-decode use other EP paths and still need direct checks.
+The existing `bench/prefill_serving.py` bracket still needs an EP-specific
+contract before serving validation: it admits single-knob MoE/MLA candidates
+and forces max-length 262144 / KV blocks 415. The next bracket must snapshot
+and retain current capacity across B1/A/B2 and restoration. The launcher
+recomputes KV blocks from KV_TOKENS plus its hybrid-block reservation, so
+setting a captured KV_BLOCKS environment value alone does not preserve the
+effective capacity. The frozen input must reproduce the observed block count,
+which must then be checked against every arm's actual launch arguments.
+
+`ENABLE_EP` is a launcher input converted to `--enable-expert-parallel`; it
+is not itself passed into the container environment. Onepass now records a
+separate `parallelism` field from the known encoded container launch command,
+bound to its observed container ID. The pure parser reports EP, TP size,
+node count/rank and command hashes without executing the payload or storing
+raw arguments. Unsupported commands produce unknown topology with an issue,
+not a claimed EP-disabled launch. This is configured-launch metadata, not
+proof that an EP kernel executed. The EP-local serving marker is also in the
+generic head-log proof table; the old SP marker still proves only arming.
+Environment and command lookups both use the observed container ID to avoid
+mixing settings if a container is replaced under the same name. The eight
+parser and three collector/proof tests passed, as did 6795 core checks and 38
+megakernel regressions. Real configured-launch inputs from all four current
+public containers also parsed successfully; this is compatibility evidence,
+not EP execution proof. See the
+[metadata evidence](../measurements/glm53_ep_local_20260908/serving_metadata/README.md).
+
+A future EP arm must separately record requested ENABLE_EP and compare it
+with configured topology, require all four ranks' E72/I2048 EP-local launch
+and actual MHC token-shard selection, and attest source/image/model/log
+identity. Raw command hashes differ when the EP flag changes: only that
+exact flag may be excluded in the normalized argv comparison, while the
+prelude hash and every other argument remain checked. The candidate's
+launcher-added VLLM_B12X_EP_COMPACT setting also needs an explicit contract.
+The current generic comparator does not yet implement these EP rules; its
+baseline classification still reads environment knobs without rejecting
+EP-only launch changes through the new metadata.
+Existing normal chain hooks and fresh 2K/32K/128K collection can be reused
+after those gaps and the complete source-bound GPU/sanitizer gate are closed.
+Short requests and decode use other EP paths and still need direct checks.
 
 A preceding two-stripe prototype was withdrawn before GPU submission after
 finding preserved failures on branch `codex/glm53-prefill-moe-overlap`

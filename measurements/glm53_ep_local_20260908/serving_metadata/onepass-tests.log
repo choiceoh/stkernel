@@ -1,0 +1,8 @@
+test_bad_or_missing_launch_metadata_is_unknown_and_retains_existing_fields (test_onepass_parallelism.OnepassParallelismTests.test_bad_or_missing_launch_metadata_is_unknown_and_retains_existing_fields) ... ok
+test_ep_marker_requires_the_actual_full_token_launch_line (test_onepass_parallelism.OnepassParallelismTests.test_ep_marker_requires_the_actual_full_token_launch_line) ... ok
+test_metadata_is_attached_to_observed_container_without_runtime_env (test_onepass_parallelism.OnepassParallelismTests.test_metadata_is_attached_to_observed_container_without_runtime_env) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.004s
+
+OK
