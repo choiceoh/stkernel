@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # N arms in ONE hold, no hand-written glue (39차, operator "chain 헬퍼 만들어"):
 # the peers' chains (p1/p4/apc2/df3) were two or three ab-lever arms plus a
-# custom check and their own restore -- this is that shape with the fleet's
-# rules built in: proof per arm, yield to a short probe between arms, a
-# defaults sample only when the build's floor is thin, the restore boot only
-# when nobody boots behind us, judge with the noise floor, verdicts written.
+# custom check. This helper records proof per arm, yields to a short probe
+# between arms, samples defaults only when the build's floor is thin, and
+# writes verdicts before releasing to the next job.
 #
 #   bash bench/chain.sh NAME=KNOBS [NAME=KNOBS ...] [--after NAME 'cmd'] [--legs NAME none]
 #   (normally: fleet.sh chain <session> [est] [note] -- NAME=KNOBS ...)
@@ -13,7 +12,7 @@
 #   NAME="VLLM_X=1 VLLM_Y=1"      a candidate arm
 #   --after NAME 'cmd'            run cmd while NAME's boot is up, after its leg
 #                                 (the "mixed-batch SP admission check" kind of step)
-#   --legs NAME none              boot NAME but run no leg (a config check, a restore)
+#   --legs NAME none              boot NAME but run no leg (a config check or separately measured arm)
 # FLEET_REHEARSE=1 runs everything without a GPU (ab-lever fabricates records).
 set -uo pipefail
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
@@ -23,14 +22,6 @@ LEVER=${LEVER:-$LOGD/ab-lever2.sh}
 S=${FLEET_SESSION:-chain}
 CHAIN_FLOOR_N=${CHAIN_FLOOR_N:-3}
 cd "$REPO" || exit 1
-cleanup_failure() {
-  local rc=$?
-  if [ "$rc" != 0 ] && [ -n "${n:-}" ] && bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
-    LEGS=none bash "$LEVER" "${n}RECOVER" "" 2>&1 | tail -12
-  fi
-  return "$rc"
-}
-trap cleanup_failure EXIT
 
 declare -a NAMES=() KNOBS=()
 declare -A AFTER=() ARMLEGS=()
@@ -66,21 +57,17 @@ for i in "${!NAMES[@]}"; do
 done
 
 # the build's baseline: a defaults arm above counts; else take one only while
-# the floor is thin AND nobody boots behind us; else a bare restore if needed
+# the floor is thin. Recovery belongs to the central idle owner.
 last=${NAMES[$((${#NAMES[@]} - 1))]}
 nb=$(python3 bench/baseline.py --count-for "$last") || exit $?
 if [ "$had_defaults" = 1 ] && [ -z "${KNOBS[$((${#NAMES[@]} - 1))]}" ]; then
-  echo "== $(date +%T) production stays on the last arm ($last = defaults)"
+  echo "== $(date +%T) last measured arm remains available ($last = defaults)"
 elif [ "${nb:-0}" -lt "$CHAIN_FLOOR_N" ]; then
-  # the baseline SAMPLE is a measurement, not a restore: only a bare restore is
-  # skippable when a boot job follows (FUS7 #3 lost its verdict to that confusion)
+  # The missing baseline is necessary measurement evidence even with a successor.
   echo "== $(date +%T) defaults arm ${last}BASE (baseline sample ${nb:-0}/$CHAIN_FLOOR_N on this build; the verdict needs it)"
   bash "$LEVER" "${last}BASE" "" 2>&1 | tail -30 || exit $?
-elif bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
-  echo "== $(date +%T) restore boot (defaults, no leg; the build has ${nb:-0} baseline samples)"
-  LEGS=none bash "$LEVER" "${last}RESTORE" "" 2>&1 | tail -12 || exit $?
 else
-  echo "== $(date +%T) restore skipped: a boot job follows and replaces this serving"
+  echo "== $(date +%T) baseline reused; release immediately for the next job"
 fi
 
 echo "== $(date +%T) judge"

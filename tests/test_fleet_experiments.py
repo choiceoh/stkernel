@@ -578,7 +578,7 @@ class SubmissionTests(unittest.TestCase):
                 self.assertEqual(store.get(job)["state"], terminal)
                 self.assertEqual(store.get(job)["result"], {"completed": True})
 
-    def test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence(self):
+    def test_pair_publishes_candidate_and_has_valid_shared_evidence(self):
         context = dict(image=self.image, model="immutable-model-fixture", hardware="fake-nodes")
         bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime=context) for n in (99,100,101)]
         (self.logs / "onepass.jsonl").write_text("".join(json.dumps(r) + "\n" for r in bases))
@@ -651,6 +651,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
 
     def test_shell_pair_reuses_one_baseline_and_counts_each_boot_once(self):
+        # A stale fleet helper asking for recovery must not add a session boot.
+        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
+                                                                    'restore-needed) exit 0;;'))
+        self.refresh_deployed_fixture()
         env = dict(self.env, LEVER=str(self.repo/'bench/ab-lever.sh'), FLEET=str(self.repo/'bench/fleet.sh'))
         env.pop('PAIR_FLOOR_N',None)
         for name in ('FIRST','SECOND','THIRD'):
@@ -659,6 +663,7 @@ class SubmissionTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         arms = (self.logs/'arms').read_text()
         self.assertEqual(arms.count('BASE onepass'),1,arms)
+        self.assertNotIn('RESTORE',arms)
         ledger = self.logs/'onepass.jsonl'
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
         with ledger.open('a') as stream:
@@ -699,12 +704,16 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("no torch", report["checks"][0]["skipped"][0])
 
     def test_chain_stops_after_failed_arm_and_preserves_failure_status(self):
+        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
+                                                                    'restore-needed) exit 0;;'))
+        self.refresh_deployed_fixture()
         env = dict(self.env, LEVER=str(self.repo / "bench/ab-lever.sh"), FLEET=str(self.repo / "bench/fleet.sh"),
                    FAIL_ARM="BROKEN", FLEET_SESSION="test")
         p = subprocess.run([BASH, str(self.repo / "bench/chain.sh"), "BROKEN=VLLM_TEST=1", "NEXT=VLLM_TEST=2"],
                            env=env, cwd=self.repo, capture_output=True, text=True, timeout=5)
         self.assertEqual(p.returncode, 7, p.stdout + p.stderr)
         self.assertNotIn("NEXT", (self.logs / "arms").read_text())
+        self.assertNotIn("RECOVER", (self.logs / "arms").read_text())
 
     def refresh_deployed_fixture(self):
         self.commit()
@@ -714,7 +723,7 @@ class SubmissionTests(unittest.TestCase):
     def pair_context(self):
         return dict(image=self.image, model='fixture', hardware='fixture')
 
-    def test_grouped_objectives_use_two_boots_and_one_final_restore(self):
+    def test_grouped_objectives_use_only_two_measured_boots(self):
         fleet = self.repo / 'bench/fleet.sh'
         fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
                                           'restore-needed) echo restore-check >> "$LOGD/restore-checks"; exit 0;;'))
@@ -734,10 +743,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual((self.logs/'arms').read_text().count('onepass'), 2)
         self.assertTrue(result['result']['comparison_complete'])
         self.assertFalse(result['result']['promotion_ready'])
-        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
-        self.assertEqual((self.logs/'restore-checks').read_text().count('restore-check'), 1)
+        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
+        self.assertFalse((self.logs/'restore-checks').exists())
 
-    def test_group_failure_stops_remaining_workloads_and_restores_once(self):
+    def test_group_failure_stops_remaining_workloads_without_recovery(self):
         fleet = self.repo / 'bench/fleet.sh'
         fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;', 'restore-needed) exit 0;;'))
         onepass = self.repo / 'bench/onepass.py'
@@ -751,7 +760,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(result['state'], 'failed', result)
         rows = [json.loads(l) for l in (self.logs/'onepass.jsonl').read_text().splitlines()]
         self.assertEqual(len([r for r in rows if r['experiment_id'] == job['id']]), 1)
-        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
+        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
 
     def test_defaults_with_unexpected_knobs_cannot_unlock_candidate(self):
         lever = self.repo / 'bench/ab-lever.sh'

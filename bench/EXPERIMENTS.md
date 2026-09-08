@@ -955,8 +955,38 @@ an absolute interpreter path. Full release evidence binds its installed packages
 Python startup inputs, image and tokenizer/config files. Admission uses isolated
 stdlib Python and does not scan installed ML packages or tokenizer data.
 
-A receipt miss during a GPU hold refuses without starting CPU validation. The
-last holder owns restoration, while an eligible queued successor receives that
-responsibility directly. Existing pinned runners retain their original behavior
-and are never rewritten during rollout. New controllers also support source-side
-deployers from before the admission/release split.
+A receipt miss during a GPU hold refuses without starting CPU validation.
+Sessions prepare only their candidate; they no longer acquire a recovery receipt
+or own a restoration obligation. Successful, failed and cancelled sessions clean
+up their temporary resources and release immediately. `restore-needed` always
+returns no. Pair/chain baseline measurements remain, but cleanup RESTORE/RECOVER
+arms and automatic restarts of paused original containers are forbidden.
+
+## Automatic recovery after five idle minutes
+
+`fleet-idle-recovery.timer` checks every 15 seconds. Only its controller may run
+`fleet_restore.sh`, under a process-bound fleet lease, after at least 300 seconds
+of proven idle time. Enqueue, acquisition, release, cancellation and detected
+serving traffic reset the monotonic clock. A host reboot or unknown Docker/GPU
+state restarts observation. The controller rechecks requests, GPU processes and
+runnable reservations immediately before claiming the hold. Dead/paused tickets
+are excluded; probes waiting for absent serving can resume after recovery.
+
+Already healthy approved defaults need no reboot. Recovery consumes the stable
+release receipt and never starts a full CPU suite. Missing evidence defers recovery;
+prime or refresh it explicitly using the command above. Failures retry only after
+another quiet window. `fleet.sh status` shows the controller state and reason.
+
+Install the user service on srv2 (the repository stays at an approved clean commit):
+
+```bash
+install -m 0644 launchers/fleet-idle-recovery.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now fleet-idle-recovery.timer
+```
+
+During migration, already running older controllers must also defer their final
+restore. Their restore entrypoint can be replaced with a recorded no-boot bridge
+after checking the current holder/queue and preserving the original script.
+Payloads and measured baseline arms are not interrupted or rewritten. New runner
+snapshots use the central policy directly.
