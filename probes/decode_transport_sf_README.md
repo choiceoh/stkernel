@@ -50,7 +50,9 @@ percentage is inferred from the old `t` experiments.
 For E=288, hidden=4096, intermediate=512, the two packed planes add 81.844 MiB
 per layer, or about 3.44 GiB per rank if all 43 layers are eligible. This is
 additional to the retained original scales. Packing uses bounded chunks;
-KV sizing, GMU and memory guards are unchanged.
+the v4 boot prepared 42 layers, adding 3.35687 GiB per rank. GMU and memory
+guards are unchanged. The operator subsequently requested a smaller KV target
+for both arms, as described below.
 
 ## CPU reproduction
 
@@ -91,9 +93,11 @@ No wrapper whitelist, custom lever, boot-only leg or additional GPU hook is adde
 
 Both boots use the same frozen overlay and immutable serving image, SPEC_K=5,
 the standard 2K/32K/128K quality/prefill workload and fixed 3 x 2048 decode.
-`ONEPASS_MEMORY_DIR` selects the canonical four-host 10 GiB guard. The original
-KV/GMU remain unchanged, and the standard default baseline remains available
-for normal serving. Production recovery belongs to the central idle controller.
+`ONEPASS_MEMORY_DIR` selects the canonical four-host 10 GiB guard. Both v5 arms
+use `KV_TOKENS=1100000`, `KV_HYBRID_BLOCKS=187`, `KV_BYTES=auto` and
+`MAX_LEN=1048576`; the three candidate switches are their only difference.
+GMU and the guard remain unchanged. Production recovery belongs to the central
+idle controller.
 
 `observe_decode_next_onepass.py` is a separate passive observer. It sends no
 completion requests and never launches/stops GPU work. It captures the existing
@@ -115,9 +119,46 @@ Use `probes/decode_next_prepare.json` with the official `fleet.sh run --gpu`
 command. Pass the fixed workload, output directory and immutable image as literal
 `env NAME=value` arguments to the canonical chain; its two arm arguments are
 `NAMEA=VLLM_GLM53_AR_COMPACT_CTA=1 VLLM_GLM53_AR_PROXY_INLINE=1 VLLM_GLM53_B12X_STATIC_V2=t,r,sf6`
-and `NAMEB=`. Start the passive observer before allowing the reservation to run.
+and `NAMEB=`. The exact v5 argument vector is
+[`decode_next_onepass_v5.json`](decode_next_onepass_v5.json). Start the passive
+observer only after the exact session/ticket owns the official boot hold:
+the legacy process detector otherwise treats an idle `python3 probes/...`
+observer as GPU work and blocks admission. A file-reading waiter may launch
+the unchanged observer at GO; it must never start inference or alter the queue.
 The earlier `run_decode_next_campaign.sh`/`decode_next_lever.sh` are historical
 harnesses and are not an alternate admission path under onepass-only policy.
+
+### v4 failure and reduced KV retry
+
+Reservation `17888872211317648` ran from 02:22:23 to 02:33:09 KST on
+2026-09-09 and exited 1. The candidate became healthy, but the memory wrapper
+refused the first onepass request: available host memory was 10.07/6.37/8.27/9.81
+GiB on srv1/2/3/4, below the unchanged 10 GiB requirement on three ranks.
+There is no onepass record and B never booted. This is a guard rejection;
+no speed comparison or CUDA OOM was measured.
+
+The former 2,000,000-token target forced 1,056 KV blocks despite autosizing
+291/384/293/461 blocks. The v5 common target forces 665 blocks, 391 fewer
+(37.0%). Rounded boot values imply about 13.2 MiB per block, or approximately
+5 GiB less allocation per rank; this is an estimate, not a measured saving.
+The launcher's conservative reserve leaves 1,101,312 tokens, enough for the
+unchanged 1,048,576 maximum context. Both the actual block count and usable
+capacity must be checked on the new boot.
+
+Separately, all four v4 ranks logged `AR consumer MHC mismatch T=16 fp32=False`
+and disabled the MHC consumer path. T16 exercises its ordinary BF16 fallback.
+Generic compact transport passed 21 graph cases with maxerr=0; that does not
+clear the MHC failure. The exact equality and T16 checks remain required.
+The retry confines BF16 weight storage to the verified 1..8-token range and
+uses the existing FP32-weight implementation for larger shapes on both arms.
+Large eager visits still prepare both immutable layouts for later small graph
+capture. This avoids the observed failing implementation; it does not identify
+the underlying large-shape BF16 defect. Startup retains the T16 graph gate and
+adds output/error/storage diagnostics on failure. The larger-shape fallback
+can cost performance and needs the same onepass validation as the new options.
+Original failure logs and receipts are retained under
+`/home/choiceoh/glm53-logs/DECODE-NEXT-decode-next-0909v4` and
+`/home/choiceoh/glm53-logs/fail-decode-next-0909v4A-023307`.
 
 ## Recorded CPU validation: 2026-09-09
 

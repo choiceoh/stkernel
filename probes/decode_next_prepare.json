@@ -3,6 +3,7 @@
     "probes/decode_next_runtime_proof.py",
     "probes/analyze_decode_next_onepass.py",
     "probes/observe_decode_next_onepass.py",
+    "probes/decode_next_onepass_v5.json",
     "build/glm53/manifest.tsv"
   ],
   "git": {
