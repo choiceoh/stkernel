@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# fleet.sh run --gpu SESSION 40 "rank restore B/A/A/B" -- bash bench/run_startup_rank_pipeline.sh
+# HEAD_URL=http://127.0.0.1:8000 fleet.sh run --gpu SESSION 40 "rank restore B/A/A/B" -- bash bench/run_startup_rank_pipeline.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export REPO=$PWD
 : "${FLEET_SESSION:?run through fleet.sh run --gpu}"
 [[ ${FLEET_RESTORE_MANAGED:-0} == 1 ]] || { echo 'managed production recovery required'; exit 2; }
+[[ ${HEAD_URL:-} == http://127.0.0.1:8000 ]] || {
+  echo 'export HEAD_URL=http://127.0.0.1:8000 before fleet.sh run so its supervisor can observe loopback health'
+  exit 2
+}
 [[ $(cut -d'|' -f1 /home/choiceoh/glm53-logs/fleet/holder) == "$FLEET_SESSION" ]] || exit 2
 [[ -z $(git status --porcelain --untracked-files=normal) ]] || exit 2
 export STARTUP_CACHE_EVIDENCE=${STARTUP_CACHE_EVIDENCE:-/home/choiceoh/glm53-logs/rank-pipeline-$(date +%Y%m%d-%H%M%S)}

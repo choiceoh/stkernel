@@ -55,6 +55,8 @@ for arm, row in data["arms"].items():
         text = ansi.sub("", (root/f"{arm}-{node}.log").read_text())
         d["io"] = [json.loads(v) for v in re.findall(r"\[rank-cache-io\] (\{[^\n]+\})",text)]
         d["stages"] = [json.loads(v) for v in re.findall(r"\[rank-cache-stage\] (\{[^\n]+\})",text)]
+        d["w4"] = [dict(re.findall(r"(\w+)=([\d.]+)", v))
+                   for v in re.findall(r"\[mk-pack-io\] ([^\n]+)", text)]
         state = (root/f"{arm}-{node}.state").read_text()
         images.add(state.splitlines()[0].split()[-1])
         if node == "srv2":
@@ -77,6 +79,11 @@ for arm, row in data["arms"].items():
                 assert before[node]["ninja"] == after[node]["ninja"]
                 assert len(d["rank"]) == 1 and d["rank"][0]["kind"] == "hit"
                 assert sum(r["hit"] for r in d["fp8"]) == 244 and not sum(r["miss"] for r in d["fp8"])
+                assert len(d["w4"]) == 2
+                assert [int(v["sha_hits"]) for v in d["w4"]] == [223,258]
+                assert all(v["fast"] == v["sha256"] == "1" and
+                           v["legacy_hits"] == v["md5_fallback"] == v["alias_errors"] == "0"
+                           for v in d["w4"])
                 assert len(d["io"]) == len(d["stages"]) == 1
                 io = d["io"][0]
                 assert io["ok"] and io["mode"] == ("pipeline" if fast else "serial")
@@ -86,6 +93,17 @@ for arm, row in data["arms"].items():
 if verify:
     assert len(images) == len(environments) == 1
     data["verification"] = dict(ok=True,images=sorted(images),canonical_sources=expected)
+samples = [json.loads(v) for v in (root/"host-resources.jsonl").read_text().splitlines()]
+if verify:
+    assert samples and all("error" not in v and v["returncode"] == 0 for v in samples)
+for node, resource in data["host_resource_samples"].items():
+    rows = [v for v in samples if v["node"] == int(node[-1]) and "error" not in v]
+    resource["peak_swap_used_increase_mib"] = max(0, rows[0]["memory_kib"]["SwapFree"] -
+        min(v["memory_kib"]["SwapFree"] for v in rows))/1024
+    resource["max_sample_gap_s"] = max(b["epoch"]-a["epoch"] for a,b in zip(rows,rows[1:]))
+    if verify:
+        assert resource["n"] > 100 and resource["min_available_gib"] > 0
+        assert resource["max_sample_gap_s"] <= 35
 summary = {}
 for kind in ("BASE", "FAST"):
     rows = [r for a,r in data["arms"].items() if kind in a]
