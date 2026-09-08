@@ -54,3 +54,14 @@ serving recovery after the reservation.
 Remote checkout: `/home/choiceoh/stkernel-sf6-direct-0909`.
 Remote v3 inputs: `/home/choiceoh/glm53-logs/sf6-base-0909v3-inputs`.
 Remote v3 results: `/home/choiceoh/glm53-logs/SF6-BASE-sf6-base-0909v3`.
+
+## Accepted execution
+
+Session `sf6-base-0909v3`, ticket `17889056112929421`, launch
+`368b2fcbeabe41208ce22c53b07b7a61` received GO at 07:13:32 KST on 2026-09-09.
+Supervisor PID 2929421 / start 40799859 is running the single baseline arm.
+Exact serving commit is `b7b06b70a534fdfae756f7410ac40305763f6c3a`. All 92 CPU
+preparation tests passed. Observer PID 2930391 entered COLLECTING with no errors;
+its exact revision, command and SHA are retained in `v3/observer-launch.json`.
+The existing follow-up monitor is active for this reservation's completion.
+No completed speed result is claimed by this initial running snapshot.
