@@ -20,16 +20,16 @@ def source():
 
 
 def report():
-    gates = [dict(block=block, exact_expand_replays=32) for block in (2048, 4096)]
+    gates = [dict(block=block, exact_expand_replays=32) for block in (1024, 2048, 4096)]
     for m, unique, fallback in sorted(runner.CASES):
         gates.append(dict(m=m, unique=unique, raw_fallback=fallback, moe_replays=8,
             lanes={arm: dict(kind='stock' if arm == 'stock' else 'static_v2', rows=m,
-                        reform=arm != 'stock' and m <= 8,
-                        sf6=arm == 'sf6' and m <= 8 and not fallback)
+                        reform=arm != 'stock' and 1 <= m <= 8,
+                        sf6=arm == 'sf6' and not fallback)
                    for arm in ('stock', 'baseline', 'sf6')},
             numeric=[dict(replay=replay, arm=arm, max_error=0.001, stock_noise=0., limit=.01)
                      for replay in range(8) for arm in ('baseline', 'sf6')]))
-    return dict(mode='gpu', status='PASS', expand_blocks=[2048, 4096], gates=gates,
+    return dict(mode='gpu', status='PASS', expand_blocks=[1024, 2048, 4096], gates=gates,
                 source_sha256=source()['kernels_sha256'])
 
 
@@ -46,13 +46,20 @@ class ReportContract(unittest.TestCase):
     def test_complete_graph_activation_and_fallback(self):
         runner.validate_report(report(), source())
 
+    def test_stale_direct_dynamic_kernel_hash_is_rejected(self):
+        value = report()
+        value['source_sha256']['moe_dynamic_gated_sf6.py'] = 'c'*64
+        with self.assertRaisesRegex(ValueError, 'executed kernel mismatch: moe_dynamic_gated_sf6.py'):
+            runner.validate_report(value, source())
+
     def test_missing_duplicate_cpu_and_stale_cases_fail(self):
         for mutate in (lambda r: r.update(mode='cpu'), lambda r: r['gates'].pop(),
-                       lambda r: r['gates'].__setitem__(2, r['gates'][3]),
+                       lambda r: r['gates'].__setitem__(3, r['gates'][4]),
                        lambda r: r['source_sha256'].update({'moe_reform_sf_pack.py': 'c'*64}),
                        lambda r: r['gates'][0].update(exact_expand_replays=31),
-                       lambda r: r['gates'][2]['numeric'].pop(),
-                       lambda r: r['gates'][2]['numeric'].__setitem__(0, r['gates'][2]['numeric'][1])):
+                       lambda r: r['gates'][3]['numeric'].pop(),
+                       lambda r: r['gates'][3]['numeric'].__setitem__(0, r['gates'][3]['numeric'][1]),
+                       lambda r: r.update(expand_blocks=[2048, 4096])):
             value = copy.deepcopy(report())
             mutate(value)
             with self.assertRaises(ValueError):
@@ -71,7 +78,7 @@ class ReportContract(unittest.TestCase):
         for key, bad in [('max_error', float('nan')), ('limit', float('inf')),
                          ('stock_noise', -1), ('max_error', .5), ('max_error', True)]:
             value = report()
-            value['gates'][2]['numeric'][0][key] = bad
+            value['gates'][3]['numeric'][0][key] = bad
             with self.assertRaises(ValueError):
                 runner.validate_report(value, source())
 

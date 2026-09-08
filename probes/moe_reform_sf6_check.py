@@ -19,8 +19,8 @@ def check_launch_observations(events, arm, rows, *, raw_fallback=False):
     if len(events) < 3:
         raise AssertionError((arm, rows, "missing two warmups and capture", events))
     expected = dict(kind="stock" if arm == "stock" else "static_v2", rows=rows,
-                    reform=arm != "stock" and rows <= 8,
-                    sf6=arm == "sf6" and rows <= 8 and not raw_fallback)
+                    reform=arm != "stock" and 1 <= rows <= 8,
+                    sf6=arm == "sf6" and not raw_fallback)
     if any(event != expected for event in events):
         raise AssertionError((arm, rows, "wrong executed lane", expected, events))
     return expected
@@ -114,8 +114,8 @@ def main() -> int:
                             cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True),
                             options="--opt-level 2 --enable-tvm-ffi")
 
-    expanders = {block: compile_expand(block) for block in (2048, 4096)}
-    report = {"mode": "cpu" if args.cpu else "gpu", "expand_blocks": [2048, 4096],
+    expanders = {block: compile_expand(block) for block in (1024, 2048, 4096)}
+    report = {"mode": "cpu" if args.cpu else "gpu", "expand_blocks": [1024, 2048, 4096],
               "source_sha256": {Path(p).name: hashlib.sha256(Path(p).read_bytes()).hexdigest()
                                 for p in md._kernel_source_files()}, "gates": []}
     if args.cpu:
@@ -125,8 +125,11 @@ def main() -> int:
                                      md._align_up(m*8, 128), config=cfg, mac_override=48,
                                      activation="swigluoai_uninterleave", swiglu_alpha=1.,
                                      swiglu_beta=0., swiglu_limit=10.)
+            effective = md._static_v2_decode_config(cfg, m)
+            assert effective["reform_sf_pack"], (m, "direct SF6 disabled")
+            assert effective["decode_reform"] == (m <= 8), (m, "wrong tile geometry")
             report["gates"].append({"m": m, "compiled": True,
-                                    "sf6": m <= 8, "raw_prefill": m > 8})
+                                    "sf6": True, "reform": m <= 8, "direct_prefill": m > 8})
         assert not torch.cuda.is_initialized(), "CPU compile initialized CUDA"
     else:
         # Exact stage expansion, canaries and reused CUDA graphs. Alternate

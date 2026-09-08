@@ -21,7 +21,7 @@ from run_gemm_input_reuse import memory_available
 from run_moe_reform_cpu import IMAGE, ROOT, mounts
 
 GIB = 1024 ** 3
-SCHEMA = 'decode-sf6-gpu-v1'
+SCHEMA = 'decode-sf6-gpu-v2'
 HOLDER = Path('/home/choiceoh/glm53-logs/fleet/holder')
 CASES = {(1, 8, False), (2, 16, False), (6, 8, False), (6, 40, False),
          (6, 48, False), (8, 8, False), (8, 40, False), (8, 64, False),
@@ -33,6 +33,7 @@ HARNESS = ('probes/moe_reform_sf6_check.py', 'probes/run_decode_sf6_gpu.py',
 KERNEL_FILES = ('moe_dispatch.py', 'moe_activation.py', 'moe_static_kernel.py',
                 'moe_static_common.py', 'moe_static_kernel_v4.py', 'moe_static_kernel_v5.py',
                 'moe_reform_sf_pack.py', 'moe_sf_pack.py', 'moe_dynamic_gated_tiled.py',
+                'moe_dynamic_gated_sf6.py',
                 'moe_dynamic_prefill.py', 'moe_dynamic_prefill_n128.py',
                 'moe_micro_kernel.py', 'moe_dynamic_kernel.py')
 
@@ -102,19 +103,19 @@ def check_environment(hold, minimum):
 
 def validate_report(report, source):
     require(report.get('status') == 'PASS' and report.get('mode') == 'gpu', 'GPU PASS report required')
-    require(report.get('expand_blocks') == [2048, 4096], 'both device expansion layouts required')
+    require(report.get('expand_blocks') == [1024, 2048, 4096], 'all three device expansion layouts required')
     observed = report.get('source_sha256', {})
     require(isinstance(observed, dict) and all(isinstance(v, str) and re.fullmatch('[0-9a-f]{64}', v)
             for v in observed.values()), 'invalid probe source hashes')
     for name in KERNEL_FILES:
         require(observed.get(name) == source['kernels_sha256'][name], 'executed kernel mismatch: ' + name)
     gates = report.get('gates', [])
-    require(isinstance(gates, list) and len(gates) == 12, 'complete 2 expansion + 10 MoE cases required')
+    require(isinstance(gates, list) and len(gates) == 13, 'complete 3 expansion + 10 MoE cases required')
     expansion, cases = set(), set()
     for gate in gates:
         if 'block' in gate:
             block = gate['block']
-            require(block in (2048, 4096) and block not in expansion
+            require(block in (1024, 2048, 4096) and block not in expansion
                     and gate.get('exact_expand_replays') == 32, 'invalid device expansion evidence')
             expansion.add(block)
             continue
@@ -124,8 +125,8 @@ def validate_report(report, source):
         m, _, fallback = key
         require(gate.get('moe_replays') == 8, 'all eight changing graph replays required')
         expected_lanes = {arm: dict(kind='stock' if arm == 'stock' else 'static_v2', rows=m,
-                            reform=arm != 'stock' and m <= 8,
-                            sf6=arm == 'sf6' and m <= 8 and not fallback)
+                            reform=arm != 'stock' and 1 <= m <= 8,
+                            sf6=arm == 'sf6' and not fallback)
                           for arm in ('stock', 'baseline', 'sf6')}
         require(gate.get('lanes') == expected_lanes, 'actual stock/baseline/SF6 lanes not proven')
         numeric = gate.get('numeric', [])
@@ -140,7 +141,7 @@ def validate_report(report, source):
             require(all(type(v) in (int, float) and math.isfinite(v) and v >= 0 for v in values),
                     'nonfinite or negative numerical evidence')
             require(values[0] <= values[2], 'GPU numerical bound exceeded')
-    require(expansion == {2048, 4096} and cases == CASES, 'missing correctness cases')
+    require(expansion == {1024, 2048, 4096} and cases == CASES, 'missing correctness cases')
 
 
 def container_command(out, name, token):
@@ -318,7 +319,7 @@ def main():
         receipt['status'] = 'FAIL'
         atomic_json(out/'admission.json', receipt)
         raise
-    print('PASS fresh SF6 GPU correctness: 2 expansion + 10 MoE cases; no speed verdict', flush=True)
+    print('PASS fresh SF6 GPU correctness: 3 expansion + 10 MoE cases; no speed verdict', flush=True)
 
 
 if __name__ == '__main__':

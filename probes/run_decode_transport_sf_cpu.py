@@ -37,6 +37,10 @@ def stages():
         '--test', 'tests/test_megakernel_ar_consumer_regressions.py',
         '--test', 'tests/test_moe_reform_sf_pack.py',
         '--test', 'tests/test_decode_next_cpu_runner.py',
+        '--test', 'tests/test_moe_sf6_owner.py',
+        '--test', 'tests/test_moe_sf6_dispatch.py',
+        '--test', 'tests/test_moe_static_sf6_direct.py',
+        '--test', 'tests/test_moe_dynamic_sf6.py',
         '--out', '/evidence/result.json'], '6g', False
     for compact, inline in (('0','0'), ('1','0'), ('0','1'), ('1','1')):
         yield 'transport-'+compact+inline, ['probes/decode_transport_compile.py',
@@ -50,6 +54,10 @@ def stages():
         '--specs', 'u|v|t|t,q', '--m', '8', '--max-rows', '640'], '3g', True
     yield 'sf-expand', ['probes/moe_reform_sf6_check.py', '--cpu',
         '--out', '/evidence/result.json'], '3g', True
+    for tile_m in (128,):
+        yield 'sf-direct-tm'+str(tile_m), ['probes/b12x_static_compile_check.py',
+            '--specs', 't,r,sf6', '--m', '80', '--max-rows', '640',
+            '--dynamic', 'sf6', '--tile-m', str(tile_m)], '3g', True
 
 
 def option(payload, name, default=''):
@@ -64,7 +72,8 @@ def validate_compile_log(payload, text):
     dynamic = option(payload, '--dynamic')
     expected += {'': [], 'rowmajor': ['dynamic tiled=False'],
                  'tiled': ['dynamic tiled=True'],
-                 'both': ['dynamic tiled=False', 'dynamic tiled=True']}[dynamic]
+                 'both': ['dynamic tiled=False', 'dynamic tiled=True'],
+                 'sf6': ['dynamic tiled=True sf6=True tm='+option(payload,'--tile-m','128')]}[dynamic]
     assert sorted(actual) == sorted(expected), ('requested kernels did not all compile', expected, actual)
     assert re.search(r'^VERDICT: PASS\s*$', text, re.M), 'missing compiler verdict'
 

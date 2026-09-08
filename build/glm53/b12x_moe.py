@@ -506,9 +506,9 @@ class B12xMoEWrapper:
         self,
         x: torch.Tensor,
         w1_weight: torch.Tensor,
-        w1_weight_sf: torch.Tensor,
+        w1_weight_sf: Optional[torch.Tensor],
         w2_weight: torch.Tensor,
-        w2_weight_sf: torch.Tensor,
+        w2_weight_sf: Optional[torch.Tensor],
         token_selected_experts: torch.Tensor,
         token_final_scales: torch.Tensor,
         *,
@@ -517,6 +517,7 @@ class B12xMoEWrapper:
         fc2_input_scale: Optional[torch.Tensor] = None,
         input_global_scale: Optional[torch.Tensor] = None,
         out: Optional[torch.Tensor] = None,
+        _weight_views: Any = None,
     ) -> torch.Tensor:
         r"""Run the b12x fused-MoE forward pass.
 
@@ -636,7 +637,17 @@ class B12xMoEWrapper:
             else:
                 workspace = self._static_workspace
 
-        if self.quant_mode == "nvfp4" and input_global_scale is not None:
+        if _weight_views is not None:
+            if (self.quant_mode != "nvfp4"
+                    or not getattr(_weight_views, "packed_only", False)
+                    or not getattr(getattr(_weight_views, "reform_scales", None), "enabled", False)):
+                raise ValueError("explicit weight views require an immutable packed-only SF6 owner")
+            if w1_weight_sf is not None or w2_weight_sf is not None:
+                raise ValueError("packed-only SF6 calls must not retain raw weight scales")
+            if input_global_scale is not None:
+                raise ValueError("packed-only SF6 alphas must already be finalised before capture")
+            selected_weight_views = _weight_views
+        elif self.quant_mode == "nvfp4" and input_global_scale is not None:
             # Fold once and reuse; launch_sm120_moe skips its fold when
             # weight views are given.
             fold_key = (
@@ -652,7 +663,9 @@ class B12xMoEWrapper:
                 self._folded_w1_alpha_key = fold_key
             w1_alpha = self._folded_w1_alpha
 
-        if self.quant_mode != "w4a16":
+        if _weight_views is None and self.quant_mode != "w4a16":
+            if w1_weight_sf is None or w2_weight_sf is None:
+                raise ValueError("raw weight scales or an explicit packed-only SF6 owner are required")
             # Cache weight views; invalidate if weight pointers change -- or
             # if the static lane switches between row-major and tile-major
             # weights (spec cell t, moe_static_kernel_v5): a tiled view must
@@ -756,9 +769,11 @@ class B12xMoEWrapper:
                     reform_sf_pack=weights_reform_sf_pack,
                 )
                 self._weight_key = weight_key
-        else:
+            selected_weight_views = self._weight_views
+        elif _weight_views is None:
             self._weight_views = None
             self._weight_key = None
+            selected_weight_views = None
 
         return launch_sm120_moe(
             a=x,
@@ -784,5 +799,5 @@ class B12xMoEWrapper:
             quant_mode=self.quant_mode,
             source_format=self.source_format,
             _workspace=workspace,
-            _weight_views=self._weight_views,
+            _weight_views=selected_weight_views,
         )

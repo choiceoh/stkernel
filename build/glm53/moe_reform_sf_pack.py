@@ -1,10 +1,11 @@
-"""Lossless scale storage for the optional ``t,r,sf6`` decode lane.
+"""Lossless scale storage for the optional ``t,r,sf6`` decode/prefill lane.
 
 FC1 consumes 128 rows x K256, FC2 consumes 256 rows x K128: both scale
 stages contain 2048 bytes. FC2 joins two separated 128-row storage blocks
 and interleaves their 512-byte K64 groups: [K64][row128][512 bytes].
 Flattening its original tensor into 2048-byte rows is NOT the stage order.
-Original scale storage is never modified and continues to serve prefill.
+Original scale storage is never modified. Once both planes are representable
+and every consumer uses SF6 directly, the final model owner can release it.
 
 A plane whose stage contains a byte span above 64 is returned as unsupported.
 The dispatcher then retains the ordinary kernel for the whole layer. This

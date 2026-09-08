@@ -1047,8 +1047,8 @@ class _WeightViews:
     # cell q: the FC1 scales 6-bit packed, (E, blocks, stage bytes) u8
     sfb1_packed: torch.Tensor | None = None
     sfb2_packed: torch.Tensor | None = None
-    # Own both immutable packed planes and the raw prefill scales for the
-    # lifetime of these weight views; capture never replaces their storage.
+    # Packed-only owners never retain a raw scale tensor, including aliases.
+    packed_only: bool = False
     reform_scales: object | None = None
     w13_tiled_storage: torch.Tensor | None = None
     w2_tiled_storage: torch.Tensor | None = None
@@ -1100,7 +1100,7 @@ def _prepared_reform_scales(source1, source2, raw1, raw2, *, experts, n, k):
     _REFORM_SF_CACHE[key] = owner
     _register_cache_eviction(_REFORM_SF_CACHE, key, source1, source2)
     logging.getLogger("flashinfer.b12x").warning(
-        "[b12x sf6] %s; raw prefill scales retained; packed bytes=%d",
+        "[b12x sf6] %s; packed bytes=%d",
         "prepared FC1+FC2" if owner.enabled else f"raw fallback: {owner.reason}",
         (owner.fc1.numel() + owner.fc2.numel()) if owner.enabled else 0,
     )
@@ -1307,6 +1307,7 @@ def _get_weight_views(
     tiled: bool = False,
     sf_pack: bool = False,
     reform_sf_pack: bool = False,
+    packed_only: bool = False,
 ) -> _WeightViews:
     """Create permuted weight views for the static kernel.
 
@@ -1348,7 +1349,11 @@ def _get_weight_views(
         # entries remain owned while the prior captured graph can use them.
         key += ("sf6-v1", tuple((id(t), _sf6_tensor_version(t)) for t in (
             w1_fp4, w1_blockscale, w1_alphas, w2_fp4, w2_blockscale, w2_alphas)))
-    cached = _WEIGHT_CACHE.get(key)
+    if packed_only and not (tiled and reform_sf_pack and not sf_pack):
+        raise ValueError("packed-only scales require the tiled SF6 lane")
+    # The final model owner keeps these views. Avoid a cache owning either
+    # raw aliases or a second generation of the same packed-only layer.
+    cached = None if packed_only else _WEIGHT_CACHE.get(key)
     if cached is None:
         if reform_sf_pack and _is_cuda_graph_capturing():
             raise RuntimeError("sf6 weight views must be prepared before CUDA graph capture")
@@ -1413,19 +1418,22 @@ def _get_weight_views(
                 experts=w1_fp4.shape[0], n=n, k=k,
             )
             cached += (owner,)
-        _WEIGHT_CACHE[key] = cached
-        _register_cache_eviction(
-            _WEIGHT_CACHE,
-            key,
-            w1_fp4,
-            w1_blockscale,
-            w1_alphas,
-            w2_fp4,
-            w2_blockscale,
-            w2_alphas,
-        )
+        if not packed_only:
+            _WEIGHT_CACHE[key] = cached
+            _register_cache_eviction(
+                _WEIGHT_CACHE, key, w1_fp4, w1_blockscale, w1_alphas,
+                w2_fp4, w2_blockscale, w2_alphas,
+            )
     w13_sf_contiguous, down_sf_contiguous, w1_alpha, w2_alpha, tiled_storage = cached[:5]
     reform_scales = cached[5] if reform_sf_pack else None
+    packed_only = bool(packed_only and reform_scales is not None and reform_scales.enabled)
+    if packed_only:
+        # Retire this layer's older raw views only. Other live owners keep
+        # their storage; unrelated layers' caches are never cleared.
+        for old_key in tuple(_WEIGHT_CACHE):
+            if old_key[4] == w1_fp4.data_ptr() and old_key[7] == w2_fp4.data_ptr():
+                _WEIGHT_CACHE.pop(old_key, None)
+        w13_sf_contiguous = down_sf_contiguous = None
     w13_tiled, w2_tiled = tiled_storage
     if tiled:
         # (rows, K_in x2, K_tiles, E) over the tile-major bytes: the x2 dtype's
@@ -1440,6 +1448,7 @@ def _get_weight_views(
         w13_fp4=w13,
         down_fp4=down,
         tiled=bool(tiled),
+        packed_only=packed_only,
         sfb1_packed=(
             reform_scales.fc1 if reform_scales is not None and reform_scales.enabled
             else _packed_fc1_scales(w13_sf_contiguous, w1_fp4.shape[0]) if sf_pack else None
@@ -1448,13 +1457,13 @@ def _get_weight_views(
         reform_scales=reform_scales,
         w13_tiled_storage=w13_tiled,
         w2_tiled_storage=w2_tiled,
-        sfb_w13_ptr=make_ptr(
+        sfb_w13_ptr=None if packed_only else make_ptr(
             sf_dtype,
             w13_sf_contiguous.data_ptr(),
             cute.AddressSpace.gmem,
             assumed_align=16,
         ),
-        sfb_down_ptr=make_ptr(
+        sfb_down_ptr=None if packed_only else make_ptr(
             sf_dtype,
             down_sf_contiguous.data_ptr(),
             cute.AddressSpace.gmem,
@@ -1469,6 +1478,62 @@ def _get_weight_views(
         _w13_sf_storage=w13_sf_contiguous,
         _down_sf_storage=down_sf_contiguous,
     )
+
+
+def prepare_packed_only_weight_views(
+    *, w1_fp4, w1_blockscale, w2_fp4, w2_blockscale, w1_alphas, w2_alphas,
+    n, k, num_experts, num_local_experts, num_topk, activation,
+    swiglu_alpha=1.702, swiglu_beta=1.0, swiglu_limit=None,
+    activation_precision="fp4", quant_mode="nvfp4",
+) -> _WeightViews | None:
+    """Prepare a final, immutable owner before releasing model raw scales.
+
+    Decline incompatible dispatchers before touching weights. A failed
+    lossless pack keeps both original planes. No partial raw release.
+    """
+    if (activation_precision != "fp4" or quant_mode != "nvfp4"
+            or num_experts != num_local_experts
+            or _FORCED_BACKEND in ("micro", "direct_micro")
+            or _GLM53_B12X_FORCE_BACKEND in ("micro", "direct_micro")
+            or _GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128):
+        return None
+    cfg = _static_v2_config_for(
+        num_experts=num_experts, num_local_experts=num_local_experts,
+        hidden_size=k, intermediate_size=n, num_topk=num_topk,
+        activation=activation, swiglu_limit=swiglu_limit,
+        activation_precision=activation_precision, quant_mode=quant_mode,
+    )
+    if not (cfg and cfg.get("tiled") and cfg.get("reform_sf_pack")):
+        return None
+    from .moe_dynamic_gated_sf6 import stock_contract_matches
+    if not stock_contract_matches():
+        logging.getLogger("flashinfer.b12x").warning(
+            "[b12x sf6] keeping raw scales: dynamic helper source pin drifted")
+        return None
+    views = _get_weight_views(
+        w1_fp4=w1_fp4, w1_blockscale=w1_blockscale,
+        w2_fp4=w2_fp4, w2_blockscale=w2_blockscale,
+        w1_alphas=w1_alphas, w2_alphas=w2_alphas, n=n, k=k,
+        activation_precision=activation_precision, quant_mode=quant_mode,
+        tiled=True, reform_sf_pack=True, packed_only=True,
+    )
+    return views if views.packed_only else None
+
+
+def _scale_runtime_addresses(weights, *, direct_sf6: bool) -> tuple[int, int]:
+    """Dead legacy pointer slots are backed by packed storage only in SF6.
+
+    Direct kernels never construct raw descriptors from these arguments.
+    A dispatcher regression therefore raises before reading freed scales.
+    """
+    if direct_sf6:
+        owner = weights.reform_scales
+        if owner is None or not owner.enabled:
+            raise RuntimeError("direct SF6 kernel requires both prepared planes")
+        return owner.fc1.data_ptr(), owner.fc2.data_ptr()
+    if weights.packed_only:
+        raise RuntimeError("packed-only SF6 owner cannot launch a raw-scale kernel")
+    return weights._w13_sf_storage.data_ptr(), weights._down_sf_storage.data_ptr()
 
 
 # ---------------------------------------------------------------------------
@@ -1516,6 +1581,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         os.path.join(os.path.dirname(__file__), "moe_reform_sf_pack.py"),
         os.path.join(os.path.dirname(__file__), "moe_sf_pack.py"),
         moe_dynamic_gated_tiled.__file__,
+        os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6.py"),
         # Hash the candidate without importing its pinned private helpers.
         os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill.py"),
         os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill_n128.py"),
@@ -1668,6 +1734,7 @@ def _dynamic_kernel_cache_key(
     prefill_reuse: bool = False,
     prefill_fc1_n128: bool = False,
     tiled: bool = False,
+    reform_sf_pack: bool = False,
 ) -> Tuple:
     """The dynamic kernel's cache key (see :func:`_static_kernel_cache_key`).
 
@@ -1701,6 +1768,8 @@ def _dynamic_kernel_cache_key(
     # keep the reuse lanes separately keyed on top of it.
     if prefill_fc1_n128:
         return key + ("glm53_prefill_fc1_n128_v1",)
+    if reform_sf_pack:
+        return key + ("sf6_direct_prefill_v1",)
     return key + ("glm53_prefill_reuse_v1",) if prefill_reuse else key
 
 
@@ -1984,8 +2053,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
     reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
-    return dict(config, decode_reform=reform,
-                reform_sf_pack=reform and bool(config.get("reform_sf_pack", False)))
+    return dict(config, decode_reform=reform)
 
 
 def _get_static_kernel_v2(
@@ -2028,8 +2096,8 @@ def _get_static_kernel_v2(
         if mac_override is not None
         else min(get_max_active_clusters(1), sm_count)
     )
-    # Only the integrated C=1 kernel changes. Larger batches compile the
-    # original t lane; the 128-wide intermediate slicing remains unchanged.
+    # Only C=1 changes tile geometry. All SF6 launches read packed scales,
+    # including larger batches using the original t tile geometry.
     config = _static_v2_decode_config(config, m)
     reform = config["decode_reform"]
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
@@ -3043,6 +3111,9 @@ def launch_sm120_static_moe(
     # ``make_fake_stream(use_tvm_ffi_env_stream=True)``, so TVM-FFI supplies
     # the caller's current stream and the parameter is absent from the
     # compiled signature.
+    sf1_address, sf2_address = _scale_runtime_addresses(
+        weights, direct_sf6=bool(static_v2_stamps is not None
+                                and static_v2_config.get("reform_sf_pack")))
     runtime_args: Tuple[Any, ...] = (
         a,
         launch_ids,
@@ -3054,9 +3125,9 @@ def launch_sm120_static_moe(
         workspace.barrier_count,
         workspace.barrier_epoch,
         weights.w13_fp4,
-        weights._w13_sf_storage.data_ptr(),
+        sf1_address,
         weights.down_fp4,
-        weights._down_sf_storage.data_ptr(),
+        sf2_address,
         workspace.row_counts,
         workspace.active_expert_count,
         workspace.weight_expert_ids,
@@ -3239,6 +3310,7 @@ def allocate_sm120_dynamic_workspace(
     activation_precision: str = "fp4",
     activation: str = "silu",
     quant_mode: str = "nvfp4",
+    tile_m: int | None = None,
 ) -> Sm120DynamicMoEWorkspace:
     """Allocate workspace buffers for the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -3249,7 +3321,9 @@ def allocate_sm120_dynamic_workspace(
         )
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
-    tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation)
+    tile_m = _select_dynamic_tile_m(routed_rows, state_E, activation) if tile_m is None else tile_m
+    if tile_m not in (16, 32, 64, 128):
+        raise ValueError("unsupported dynamic workspace tile M")
     physical_tiles, _, max_tasks = _dynamic_task_geometry(
         state_E,
         n,
@@ -3328,6 +3402,7 @@ class _DynamicMoELaunch:
         num_topk,
         activation_precision: str = "fp4",
         sf_vec_size: int = _NVFP4_BLOCK_SIZE,
+        reform_sf_pack: bool = False,
     ):
         activation_precision = _normalize_activation_precision(activation_precision)
         if activation_precision == "bf16":
@@ -3339,6 +3414,7 @@ class _DynamicMoELaunch:
         self._packed_storage_cols = k // 2
         self._num_topk = num_topk
         self._cols_pad_k = _align_up(k // sf_vec_size, 4)
+        self._reform_sf_pack = bool(reform_sf_pack)
 
     @cute.jit
     def __call__(
@@ -3371,6 +3447,8 @@ class _DynamicMoELaunch:
         scatter_ptr: cute.Pointer,
         token_map_ptr: cute.Pointer,
         token_weights_ptr: cute.Pointer,
+        sfb1_packed: cute.Tensor,
+        sfb2_packed: cute.Tensor,
         num_tokens: cutlass.Int32,
         max_rows: cutlass.Int32,
         rows_padded: cutlass.Int32,
@@ -3424,6 +3502,9 @@ class _DynamicMoELaunch:
         task_valid_rows = cute.make_tensor(
             task_valid_rows_ptr, layout=cute.make_layout((max_tasks,), stride=(1,))
         )
+        packed_args = ()
+        if cute.const_expr(self._reform_sf_pack):
+            packed_args = (sfb1_packed, sfb2_packed)
         self._kernel(
             a_input,
             topk_ids,
@@ -3453,6 +3534,7 @@ class _DynamicMoELaunch:
             scatter_output,
             token_map,
             token_weights_t,
+            *packed_args,
             max_active_clusters=max_active_clusters,
             stream=stream,
         )
@@ -3481,6 +3563,7 @@ def _get_dynamic_kernel(
     tile_m: int = _LEVEL_TILE_M,
     quant_mode: str = "nvfp4",
     tiled: bool = False,
+    reform_sf_pack: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -3503,6 +3586,9 @@ def _get_dynamic_kernel(
         and num_topk <= _MAX_SHARED_INPUT_TOPK
     )
     quant_mode = _normalize_quant_mode(quant_mode, activation_precision)
+    if reform_sf_pack and not (tiled and quant_mode == "nvfp4"
+                              and is_gated_activation(activation)):
+        raise ValueError("dynamic SF6 requires gated tiled NVFP4 weights")
     sf_vec_size, sf_dtype = _sf_params_for_quant_mode(quant_mode)
     sm_count = get_num_sm(torch.device("cuda"))
     base_mac = min(get_max_active_clusters(1), sm_count)
@@ -3579,6 +3665,7 @@ def _get_dynamic_kernel(
         tiled=tiled,
         prefill_reuse=prefill_reuse,
         prefill_fc1_n128=prefill_fc1_n128,
+        reform_sf_pack=reform_sf_pack,
     )
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -3620,7 +3707,13 @@ def _get_dynamic_kernel(
                 "tiled expert weights (static v2 cell t) need the gated dynamic "
                 f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
             )
-        kernel = MoEGatedDynamicKernelTiled(
+        tiled_cls = MoEGatedDynamicKernelTiled
+        tiled_kwargs = {}
+        if reform_sf_pack:
+            from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
+            tiled_cls = MoEGatedDynamicKernelSF6
+            tiled_kwargs = dict(reform_sf_pack=True)
+        kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -3630,6 +3723,7 @@ def _get_dynamic_kernel(
             swiglu_beta=swiglu_beta,
             swiglu_limit=swiglu_limit,
             share_input_across_experts=share_input_across_experts,
+            **tiled_kwargs,
         )
     if prefill_reuse:
         candidate_cls = (
@@ -3654,6 +3748,7 @@ def _get_dynamic_kernel(
         num_topk=num_topk,
         activation_precision=activation_precision,
         sf_vec_size=sf_vec_size,
+        reform_sf_pack=reform_sf_pack,
     )
 
     topk_ids_cutlass_dtype = (
@@ -3769,6 +3864,12 @@ def _get_dynamic_kernel(
     )
 
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
+    packed1_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Uint8, (E, (2*n // 128) * (k // 256), REFORM_SF_STAGE)
+        if reform_sf_pack else (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16)
+    packed2_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Uint8, (E, (k // 256) * (n // 128), REFORM_SF_STAGE)
+        if reform_sf_pack else (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16)
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
         _disk_kernel_name(f"dynamic_e{E}_k{k}_n{n}_t{num_topk}{'_tiled' if tiled else ''}", cache_key),
@@ -3802,6 +3903,8 @@ def _get_dynamic_kernel(
             scatter_fake,
             token_map_fake,
             token_weights_fake,
+            packed1_fake,
+            packed2_fake,
             1,
             1,
             1,
@@ -3868,6 +3971,11 @@ def launch_sm120_dynamic_moe(
     input_gs = _expand_to_experts(input_gs, num_experts)
     down_input_scale = _expand_to_experts(down_input_scale, num_experts)
 
+    direct_sf6 = bool(weights.reform_scales is not None and weights.reform_scales.enabled)
+    if direct_sf6:
+        from .moe_dynamic_gated_sf6 import stock_contract_matches
+        direct_sf6 = bool(stock_contract_matches())
+    sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
     compiled, mac = _get_dynamic_kernel(
         num_experts,
         num_tokens,
@@ -3887,6 +3995,7 @@ def launch_sm120_dynamic_moe(
         tile_m=workspace.tile_m,
         quant_mode=quant_mode,
         tiled=bool(getattr(weights, "tiled", False)),
+        reform_sf_pack=direct_sf6,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
@@ -3908,9 +4017,9 @@ def launch_sm120_dynamic_moe(
         workspace.task_expert.data_ptr(),
         workspace.task_valid_rows.data_ptr(),
         weights.w13_fp4,
-        weights._w13_sf_storage.data_ptr(),
+        sf1_address,
         weights.down_fp4,
-        weights._down_sf_storage.data_ptr(),
+        sf2_address,
         workspace.row_counts,
         workspace.expert_write_rows,
         workspace.expert_tile_base,
@@ -3921,6 +4030,8 @@ def launch_sm120_dynamic_moe(
         scatter_output.data_ptr(),
         workspace.token_map.data_ptr(),
         workspace.token_weights.data_ptr(),
+        weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(a.device),
+        weights.sfb2_packed if direct_sf6 else _sf_pack_dummy(a.device),
         num_tokens,
         workspace.max_rows,
         workspace.physical_tiles_capacity * workspace.tile_m,
@@ -4359,6 +4470,19 @@ def clear_sm120_moe_caches() -> None:
     _DYNAMIC_KERNEL_CACHE.clear()
 
 
+def _dynamic_workspace_tile_m(*, routed_rows, state_E, weight_E, k, n,
+                              num_topk, quant_mode, activation, swiglu_limit):
+    cfg = _static_v2_config_for(
+        num_experts=weight_E, num_local_experts=state_E, hidden_size=k,
+        intermediate_size=n, num_topk=num_topk, quant_mode=quant_mode,
+        activation=activation, swiglu_limit=swiglu_limit, activation_precision="fp4")
+    if cfg and cfg.get("tiled") and cfg.get("reform_sf_pack"):
+        # The inherited gated pipeline is M128 only. Smaller requests use
+        # its valid-row tail handling over the same direct packed storage.
+        return 128
+    return _select_dynamic_tile_m(routed_rows, state_E, activation)
+
+
 def allocate_sm120_moe_workspace(
     *,
     state_E: int,
@@ -4425,6 +4549,10 @@ def allocate_sm120_moe_workspace(
             activation_precision=activation_precision,
             activation=activation,
             quant_mode=mode,
+            tile_m=_dynamic_workspace_tile_m(
+                routed_rows=capacity_rows, state_E=state_E, weight_E=weight_E,
+                k=k, n=n, num_topk=num_topk, quant_mode=mode,
+                activation=activation, swiglu_limit=swiglu_limit),
         )
     if backend == "static":
         return allocate_sm120_static_workspace(
@@ -4469,7 +4597,10 @@ def _get_cached_workspace(
     # Key dynamic workspaces on the tile band of this call's routed_rows; a
     # larger cached workspace must not pin small calls to its 128 tile.
     tile_m = (
-        _select_dynamic_tile_m(max(1, routed_rows), state_E, activation)
+        _dynamic_workspace_tile_m(
+            routed_rows=max(1, routed_rows), state_E=state_E, weight_E=weight_E,
+            k=k, n=n, num_topk=num_topk, quant_mode=quant_mode,
+            activation=activation, swiglu_limit=swiglu_limit)
         if backend == "dynamic" and quant_mode != "w4a16"
         else None
     )

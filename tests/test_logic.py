@@ -3709,9 +3709,10 @@ def test_b12x_static_v2_controls() -> None:
           and "        not weights_tiled\n        and quant_mode == \"nvfp4\"" in src
           and "    ) and not weights_tiled   # the micro kernels read row-major weights" in src
           and 'if weights_tiled and forced_backend in ("micro", "direct_micro"):' in src
-          and "        tiled=bool(getattr(weights, \"tiled\", False)),\n    )" in src
+          and 'tiled=bool(getattr(weights, "tiled", False)),' in src
           and "if not isinstance(kernel, MoEGatedDynamicKernel):" in src
-          and "kernel = MoEGatedDynamicKernelTiled(" in src
+          and "tiled_cls = MoEGatedDynamicKernelTiled" in src
+          and "kernel = tiled_cls(" in src
           and "{'_tiled' if tiled else ''}" in src
           and 'backend not in ("static", "dynamic")' in src,
           "phase 2: in-place re-layout, no micro lane on tiled weights, the tiled "

@@ -10,6 +10,9 @@ scale-block reads, halves padded MMA work and halves FC2 output-tile count.
 Weight storage and the 128-column intermediate boundary are unchanged.
 Runtime dispatch specializes this bundle only for 1<=M<=8; larger batches
 keep the default tile geometry. See MEASUREMENTS.md for measured evidence.
+The optional SF6-v1 storage is read directly by both geometries: ordinary
+FC1 gathers two packed K256 blocks, while FC2 gathers one N128 row half.
+Expansion occurs only in the existing shared scale stages.
 """
 
 from __future__ import annotations
@@ -184,12 +187,20 @@ class MoEStaticKernelV4:
         # shadow, where the MMA warps are already waiting.
         self.sf_pack = bool(sf_pack)
         self.reform_sf_pack = bool(reform_sf_pack)
-        if self.reform_sf_pack and (not self.decode_reform or any(
+        if self.reform_sf_pack and any(
             (self.sf_pack, self.skip_sf, self.skip_a, self.split, self.a_ring)
-        )):
-            raise ValueError("sf6 requires the unmodified t,r decode geometry")
-        self.sf1_block_bytes = 2048 if self.reform_sf_pack else _SF_BLOCK_BYTES
+        ):
+            raise ValueError("sf6 requires the unmodified t or t,r geometry")
+        # SF6-v1 stays 2048 raw bytes -> 1552 packed bytes for both tile
+        # geometries. Ordinary FC1 K512 needs two adjacent K256 blocks.
+        # Ordinary FC2 N128 uses one row half of a packed N256 block.
+        self.sf1_block_bytes = 2048 if self.reform_sf_pack and self.decode_reform else _SF_BLOCK_BYTES
+        self.sf1_packed_blocks = self.fc1_tile_k // 256
         self.sf1_stage_bytes = 1552 if self.reform_sf_pack else _SF_STAGE_BYTES
+        self.sf2_block_bytes = 2048 if self.decode_reform else 1024
+        # Gather just one N128 row half in its existing 1024-byte stage:
+        # low512 + high256 + base/alignment16. No extra shared/global buffer.
+        self.sf2_stage_bytes = 1552 if self.decode_reform else 784
         if self.sf_pack and self.skip_sf:
             raise ValueError("xs (skip the FC1 SFB boxes) and sf_pack are exclusive")
         if self.sf_pack and self.split:
@@ -310,11 +321,14 @@ class MoEStaticKernelV4:
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
         """Exact MMA-stage expansion shared by q, sf6 and the device gate.
 
+        The 1024-byte form expands the selected FC2 row half gathered as
+        low512 + high256 + base/tail16, with the original full-stage base.
+
         Volatile reads cannot sink across the read-before-write barrier.
         The post-write barrier publishes every owner's bytes before peers
         load MMA fragments (39-sf-pack-kernel correctness fixes).
         """
-        if block_bytes not in (2048, 4096):
+        if block_bytes not in (1024, 2048, 4096):
             raise ValueError("unsupported scale expansion stage")
         per_thread = block_bytes // 128
         plane_a = block_bytes // 2
@@ -324,10 +338,17 @@ class MoEStaticKernelV4:
             a.append(_ld_shared_i32_volatile(
                 stage_addr + Int32(per_thread // 2) * tidx + Int32(4 * w)))
         b = []
-        for w in range(per_thread // 16):
+        if per_thread == 8:
+            # Two adjacent threads share an aligned high-plane word, but
+            # each keeps only its own two bytes before in-place expansion.
             b.append(_ld_shared_i32_volatile(
-                stage_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
-                + Int32(4 * w)))
+                stage_addr + Int32(plane_a) + (tidx // Int32(2)) * Int32(4))
+                >> ((tidx & Int32(1)) * Int32(16)))
+        else:
+            for w in range(per_thread // 16):
+                b.append(_ld_shared_i32_volatile(
+                    stage_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
+                    + Int32(4 * w)))
         base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset)) & Int32(0xFF)
         self.sf_expand_barrier.arrive_and_wait()
         for j in range(per_thread // 4):
@@ -340,6 +361,23 @@ class MoEStaticKernelV4:
                 word = word | (val << Int32(8 * m))
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
+
+    def _sf6_copy_fc2_half(self, dest_addr, source_addr, bar_addr, row_half):
+        """Gather the selected SF6-v1 row half into a 784-byte shared stage.
+
+        The original [K64][row128][512] byte order is retained. Five aligned
+        bulk loads copy low2x256, high2x128 and the unchanged base/tail16.
+        Their total must match the FC2 pipeline's 784 expected transaction
+        bytes. The MMA consumer expands only after that barrier completes.
+        """
+        for k64 in range(2):
+            _bulk_g2s(dest_addr + Int32(k64 * 256),
+                      source_addr + Int64(k64 * 512) + Int64(row_half) * Int64(256),
+                      Int32(256), bar_addr)
+            _bulk_g2s(dest_addr + Int32(512 + k64 * 128),
+                      source_addr + Int64(1024 + k64 * 256) + Int64(row_half) * Int64(128),
+                      Int32(128), bar_addr)
+        _bulk_g2s(dest_addr + Int32(768), source_addr + Int64(1536), Int32(16), bar_addr)
 
     def _smem_bytes_estimate(self) -> int:
         def _align_up(value: int, align: int) -> int:
@@ -474,24 +512,33 @@ class MoEStaticKernelV4:
         from .moe_reform_sf_pack import stage_shape, stage_source_offset
         intermediate = self.output_tile_count_n * 128
         for kind, rows, k, rn, kn, smem_layout in (
-            ("fc1", intermediate*2, hidden_size, 128, 256, self.sfb1_smem_layout_staged),
-            ("fc2", hidden_size, intermediate, 256, 128, self.sfb2_smem_layout_staged),
+            ("fc1", intermediate*2, hidden_size, 128, self.fc1_tile_k, self.sfb1_smem_layout_staged),
+            ("fc2", hidden_size, intermediate, self.fc2_tile_n, 128, self.sfb2_smem_layout_staged),
         ):
-            nr, nk = stage_shape(rows, k, kind)
+            stage_shape(rows, k, kind)
+            nr, nk = rows // rn, k // kn
+            block_bytes = rn * kn // 16
             source = blockscaled_utils.tile_atom_to_shape_SF((rows, k, 2), 16)
-            assert int(cute.crd2idx((0, 0, 1), smem_layout)) == 2048, kind
+            assert int(cute.crd2idx((0, 0, 1), smem_layout)) == block_bytes, kind
             covered = set()
             for row in range(rn):
                 for col in range(kn // 16):
                     dest = int(cute.crd2idx((row, col*16, 0), smem_layout))
                     assert dest not in covered, (kind, row, col, dest)
                     covered.add(dest)
-                    for e, rt, kt in ((0, 0, 0), (1, nr-1, nk-1)):
+                    for e, rt, kt in ((0, 0, 0), (0, min(1, nr-1), 0), (1, nr-1, nk-1)):
                         actual = int(cute.crd2idx((rt*rn+row, kt*kn+col*16, e), source))
-                        expected = stage_source_offset(rows, k, kind, e, rt, kt, dest)
+                        if not self.decode_reform and kind == "fc1":
+                            expected = stage_source_offset(rows, k, kind, e, rt,
+                                                           kt*2 + dest//2048, dest%2048)
+                        elif not self.decode_reform:
+                            packed_byte = (dest//512)*1024 + (rt%2)*512 + dest%512
+                            expected = stage_source_offset(rows, k, kind, e, rt//2, kt, packed_byte)
+                        else:
+                            expected = stage_source_offset(rows, k, kind, e, rt, kt, dest)
                         assert actual == expected, (kind, e, rt, kt, row, col, actual, expected)
-            assert covered == set(range(2048)), kind
-        print("REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048", flush=True)
+            assert covered == set(range(block_bytes)), kind
+        print(f"REFORM_SF6_LAYOUT_PASS FC1={self.sf1_block_bytes} FC2={self.sf2_block_bytes}", flush=True)
 
     @cute.jit
     def _resident_grid_barrier(
@@ -563,14 +610,15 @@ class MoEStaticKernelV4:
             packed_a.shape, self.sf_vec_size
         )
         sfa_tensor = cute.make_tensor(sfa_ptr, sfa_layout)
-        sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_w13.shape, self.sf_vec_size
-        )
-        sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
-        sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
-            b_down.shape, self.sf_vec_size
-        )
-        sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
+        if cutlass.const_expr(not self.reform_sf_pack):
+            sfb_w13_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                b_w13.shape, self.sf_vec_size
+            )
+            sfb_w13_tensor = cute.make_tensor(sfb_w13_ptr, sfb_w13_layout)
+            sfb_down_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                b_down.shape, self.sf_vec_size
+            )
+            sfb_down_tensor = cute.make_tensor(sfb_down_ptr, sfb_down_layout)
 
         tma_a, gA = self._dense_cls._make_tma_atoms_and_tensors(
             packed_a, self.a1_smem_layout_staged, self.sa1_tile_shape_mk, 1
@@ -582,17 +630,25 @@ class MoEStaticKernelV4:
         tma_b_w13, gB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
             b_w13, self.b1_smem_layout_staged, (self.fc1_tile_n, self.fc1_tile_k), 1
         )
-        tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
-            sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
-            internal_type=cutlass.Int16,
-        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            # Typed placeholders only: all SFB descriptor use is compile-time
+            # eliminated. No descriptor can retain freed original scales.
+            tma_sfb_w13, gSFB_w13 = tma_sfa, gSFA
+        else:
+            tma_sfb_w13, gSFB_w13 = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_w13_tensor, self.sfb1_smem_layout_staged, self.sfb1_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
         tma_b_down, gB_down = self._dense_cls._make_tma_atoms_and_tensors(
             b_down, self.b2_smem_layout_staged, (self.fc2_tile_n, self.fc2_tile_k), 1
         )
-        tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
-            sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
-            internal_type=cutlass.Int16,
-        )
+        if cutlass.const_expr(self.reform_sf_pack):
+            tma_sfb_down, gSFB_down = tma_sfa, gSFA
+        else:
+            tma_sfb_down, gSFB_down = self._dense_cls._make_tma_atoms_and_tensors(
+                sfb_down_tensor, self.sfb2_smem_layout_staged, self.sfb_tile_shape_nk, 1,
+                internal_type=cutlass.Int16,
+            )
 
         grid = (*self.cluster_shape_mn, max_active_clusters)
         self.kernel(
@@ -725,9 +781,10 @@ class MoEStaticKernelV4:
             cpasync.prefetch_descriptor(tma_a)
             cpasync.prefetch_descriptor(tma_sfa)
             cpasync.prefetch_descriptor(tma_b_w13)
-            cpasync.prefetch_descriptor(tma_sfb_w13)
             cpasync.prefetch_descriptor(tma_b_down)
-            cpasync.prefetch_descriptor(tma_sfb_down)
+            if cutlass.const_expr(not self.reform_sf_pack):
+                cpasync.prefetch_descriptor(tma_sfb_w13)
+                cpasync.prefetch_descriptor(tma_sfb_down)
 
         cta_rank = cute.arch.make_warp_uniform(cute.arch.block_idx_in_cluster())
         cluster_coord = cta_layout_mnk.get_flat_coord(cta_rank)
@@ -744,7 +801,7 @@ class MoEStaticKernelV4:
             fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
             if cutlass.const_expr(self.reform_sf_pack):
-                fc1_tma_bytes += 1552
+                fc1_tma_bytes += 1552 * self.sf1_packed_blocks
             elif cutlass.const_expr(self.sf_pack):
                 fc1_tma_bytes += _SF_STAGE_BYTES
             else:
@@ -753,7 +810,7 @@ class MoEStaticKernelV4:
         sfb2_smem_one = cute.slice_(sfb2_smem_staged, (None, None, 0))
         fc2_tma_bytes = cute.size_in_bytes(self.b_dtype, b2_smem_one)
         if cutlass.const_expr(self.reform_sf_pack):
-            fc2_tma_bytes += 1552
+            fc2_tma_bytes += self.sf2_stage_bytes
         else:
             fc2_tma_bytes += cute.size_in_bytes(self.sf_dtype, sfb2_smem_one)
 
@@ -1085,17 +1142,19 @@ class MoEStaticKernelV4:
             (None, None, None),
         )
         gSFA = cute.local_tile(mSFA, self.sfa1_tile_shape_mk, (None, None, None))
-        gSFB_w13_tiled = cute.local_tile(
-            mSFB_w13, self.sfb1_tile_shape_nk, (None, None, None)
-        )
+        if cutlass.const_expr(not self.reform_sf_pack):
+            gSFB_w13_tiled = cute.local_tile(
+                mSFB_w13, self.sfb1_tile_shape_nk, (None, None, None)
+            )
         gB_down = cute.local_tile(
             mB_down,
             cute.slice_(self.tile_shape_mnk, (0, None, None)),
             (None, None, None),
         )
-        gSFB_down = cute.local_tile(
-            mSFB_down, self.sfb_tile_shape_nk, (None, None, None)
-        )
+        if cutlass.const_expr(not self.reform_sf_pack):
+            gSFB_down = cute.local_tile(
+                mSFB_down, self.sfb_tile_shape_nk, (None, None, None)
+            )
         thr_mma1 = tiled_mma1.get_slice(tidx)
         thr_mma = tiled_mma.get_slice(tidx)
 
@@ -1126,22 +1185,24 @@ class MoEStaticKernelV4:
             sSFB1_1 = sSFB1_0
         else:
             sSFB1_1 = cute.local_tile(sSFB1, sfb1_tile, (1, 0, None))
-        tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
-            tma_sfb_w13, b_cta_crd, b_cta_layout,
-            cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
-        )
-        tBsSFB1 = cute.filter_zeros(tBsSFB1)
-        tBgSFB_w13 = cute.filter_zeros(tBgSFB_w13)
+        if cutlass.const_expr(not self.reform_sf_pack):
+            tBsSFB1, tBgSFB_w13 = cpasync.tma_partition(
+                tma_sfb_w13, b_cta_crd, b_cta_layout,
+                cute.group_modes(sSFB1, 0, 2), cute.group_modes(gSFB_w13_tiled, 0, 2),
+            )
+            tBsSFB1 = cute.filter_zeros(tBsSFB1)
+            tBgSFB_w13 = cute.filter_zeros(tBgSFB_w13)
         tBsB2, tBgB_down = cpasync.tma_partition(
             tma_b_down, b_cta_crd, b_cta_layout,
             cute.group_modes(sB2, 0, 2), cute.group_modes(gB_down, 0, 2),
         )
-        tBsSFB2, tBgSFB_down = cpasync.tma_partition(
-            tma_sfb_down, b_cta_crd, b_cta_layout,
-            cute.group_modes(sSFB2, 0, 2), cute.group_modes(gSFB_down, 0, 2),
-        )
-        tBsSFB2 = cute.filter_zeros(tBsSFB2)
-        tBgSFB_down = cute.filter_zeros(tBgSFB_down)
+        if cutlass.const_expr(not self.reform_sf_pack):
+            tBsSFB2, tBgSFB_down = cpasync.tma_partition(
+                tma_sfb_down, b_cta_crd, b_cta_layout,
+                cute.group_modes(sSFB2, 0, 2), cute.group_modes(gSFB_down, 0, 2),
+            )
+            tBsSFB2 = cute.filter_zeros(tBsSFB2)
+            tBgSFB_down = cute.filter_zeros(tBgSFB_down)
 
         # FC1 MMA fragments (tiled_mma1). The B scale block holds both 64-row
         # halves: sub-tile per half (static), as the stock kernel does through
@@ -1468,7 +1529,14 @@ class MoEStaticKernelV4:
                             for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
-                                if cutlass.const_expr(self.sf_pack or self.reform_sf_pack):
+                                if cutlass.const_expr(self.reform_sf_pack):
+                                    for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
+                                        self._sf_expand_stage(
+                                            sfb1_base_addr
+                                            + fc1_cons_state.index * Int32(self.sf1_block_bytes)
+                                            + Int32(sf_block * 2048), Int32(tidx), 2048,
+                                        )
+                                elif cutlass.const_expr(self.sf_pack):
                                     self._sf_expand_stage(
                                         sfb1_base_addr
                                         + fc1_cons_state.index * Int32(self.sf1_block_bytes),
@@ -1683,10 +1751,16 @@ class MoEStaticKernelV4:
                     fc2_peek = fc2_pipeline.consumer_try_wait(fc2_cons_state)
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     if cutlass.const_expr(self.reform_sf_pack):
-                        self._sf_expand_stage(
-                            sfb2_base_addr + fc2_cons_state.index * Int32(2048),
-                            Int32(tidx), 2048,
-                        )
+                        if cutlass.const_expr(self.decode_reform):
+                            self._sf_expand_stage(
+                                sfb2_base_addr + fc2_cons_state.index * Int32(2048),
+                                Int32(tidx), 2048,
+                            )
+                        else:
+                            self._sf_expand_stage(
+                                sfb2_base_addr + fc2_cons_state.index * Int32(1024),
+                                Int32(tidx), 1024,
+                            )
                     csB2_p = csB2[None, None, None, fc2_cons_state.index]
                     fz_csSFB2_p = cute.filter_zeros(
                         csSFB2_full[None, None, None, fc2_cons_state.index]
@@ -1922,8 +1996,9 @@ class MoEStaticKernelV4:
                         # share (39차 §3b: a 64-row box is not expressible)
                         sfb_up_idx = up_tile // Int32(self.sfb1_tiles_per_block)
                         sfb_gate_idx = gate_tile // Int32(self.sfb1_tiles_per_block)
-                        tBgSFB_up_nk = tBgSFB_w13[(None, sfb_up_idx, None, weight_expert_idx)]
-                        tBgSFB_gate_nk = tBgSFB_w13[(None, sfb_gate_idx, None, weight_expert_idx)]
+                        if cutlass.const_expr(not self.reform_sf_pack):
+                            tBgSFB_up_nk = tBgSFB_w13[(None, sfb_up_idx, None, weight_expert_idx)]
+                            tBgSFB_gate_nk = tBgSFB_w13[(None, sfb_gate_idx, None, weight_expert_idx)]
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)
@@ -1962,7 +2037,29 @@ class MoEStaticKernelV4:
                                         tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_sf):
-                                    if cutlass.const_expr(self.sf_pack or self.reform_sf_pack):
+                                    if cutlass.const_expr(self.reform_sf_pack):
+                                        if is_dma_lane0:
+                                            if cutlass.const_expr(gu == 0):
+                                                sfb_blk = sfb_gate_idx
+                                            else:
+                                                sfb_blk = sfb_up_idx
+                                            # K512 uses consecutive SF6 K256
+                                            # blocks with independent bases.
+                                            # Their shared destinations are
+                                            # disjoint even after expansion.
+                                            for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
+                                                _bulk_g2s(
+                                                    sfb1_base_addr
+                                                    + fc1_prod_state.index * Int32(self.sf1_block_bytes)
+                                                    + Int32(sf_block * 2048),
+                                                    sfb1_packed_base
+                                                    + (Int64(weight_expert_idx) * sf_blocks_per_expert
+                                                       + (Int64(sfb_blk) * Int64(k_tile_cnt1)
+                                                          + Int64(k_tile)) * Int64(self.sf1_packed_blocks)
+                                                       + Int64(sf_block)) * Int64(1552),
+                                                    Int32(1552), shared_ptr_to_u32(bar),
+                                                )
+                                    elif cutlass.const_expr(self.sf_pack):
                                         # Packed scales, one request,
                                         # into the stage's own 4 KB buffer; the
                                         # MMA warps expand it there (39차 §4c)
@@ -2014,14 +2111,21 @@ class MoEStaticKernelV4:
                     )
                     if cutlass.const_expr(self.reform_sf_pack):
                         if is_dma_lane0:
-                            _bulk_g2s(
-                                sfb2_base_addr + fc2_prod_state.index * Int32(2048),
-                                sfb2_packed_base
+                            if cutlass.const_expr(self.decode_reform):
+                                sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
+                                sf2_tile = output_tile_idx
+                            else:
+                                sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(1024)
+                                sf2_tile = output_tile_idx // Int32(2)
+                            sf2_source = (sfb2_packed_base
                                 + (Int64(weight_expert_idx) * sf2_blocks_per_expert
-                                   + Int64(output_tile_idx) * Int64(n_slices)
-                                   + Int64(intermediate_slice)) * Int64(1552),
-                                Int32(1552), shared_ptr_to_u32(bar2),
-                            )
+                                   + Int64(sf2_tile) * Int64(n_slices)
+                                   + Int64(intermediate_slice)) * Int64(1552))
+                            if cutlass.const_expr(self.decode_reform):
+                                _bulk_g2s(sf2_dest, sf2_source, Int32(1552), shared_ptr_to_u32(bar2))
+                            else:
+                                self._sf6_copy_fc2_half(sf2_dest, sf2_source,
+                                    shared_ptr_to_u32(bar2), output_tile_idx % Int32(2))
                     else:
                         cute.copy(
                             tma_sfb_down,

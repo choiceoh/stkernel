@@ -203,10 +203,11 @@ class DispatchContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse(bad)
         self.assertTrue(parse("t,q", probe=True)["sf_pack"])
-        for m in (0, 9, 16, 8192):
+        for m in (9, 16, 8192):
             config = ns["_static_v2_decode_config"](parse("t,r,sf6"), m)
-            self.assertFalse(config["reform_sf_pack"])
+            self.assertTrue(config["reform_sf_pack"])
             self.assertFalse(config["decode_reform"])
+        self.assertFalse(ns["_static_v2_decode_config"](parse("t,r,sf6"), 0)["decode_reform"])
         for m in (1, 2, 6, 8):
             self.assertTrue(ns["_static_v2_decode_config"](
                 parse("t,r,sf6"), m)["reform_sf_pack"])
@@ -230,10 +231,15 @@ class ProbeEvidenceContract(unittest.TestCase):
             check([fallback]*3, "sf6", 6)
         with self.assertRaises(AssertionError):
             check([active]*3, "sf6", 6, raw_fallback=True)
-        prefill = dict(kind="static_v2", rows=16, reform=False, sf6=False)
+        prefill = dict(kind="static_v2", rows=16, reform=False, sf6=True)
         check([prefill]*3, "sf6", 16)
+        check([dict(prefill, sf6=False)]*3, "sf6", 16, raw_fallback=True)
         with self.assertRaises(AssertionError):
-            check([dict(prefill, sf6=True)]*3, "sf6", 16)
+            check([dict(prefill, sf6=False)]*3, "sf6", 16)
+        with self.assertRaises(AssertionError):
+            check([dict(prefill, reform=True)]*3, "sf6", 16)
+        with self.assertRaises(AssertionError):
+            check([prefill]*3, "sf6", 16, raw_fallback=True)
 
     def test_stock_and_capture_evidence_fail_closed(self):
         check = self.probe.check_launch_observations
