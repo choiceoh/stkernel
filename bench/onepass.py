@@ -203,6 +203,12 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     return out
 
 
+def build_record(args, revision):
+    from measurement_contract import from_args, metadata
+    return dict(name=args.name, t=time.strftime("%F %T"), git=revision,
+                prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
@@ -219,6 +225,13 @@ def main() -> int:
     ap.add_argument("--fixed-decode-reps", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_REPS", "3")))
     ap.add_argument("--require-exclusive", action="store_true", default=os.environ.get("ONEPASS_REQUIRE_EXCLUSIVE") == "1")
     args = ap.parse_args()
+    if os.environ.get("FLEET_WORKLOAD"):
+        from measurement_contract import workload
+        work = workload(json.loads(os.environ["FLEET_WORKLOAD"]))
+        for key, value in work.items():
+            setattr(args, key, ','.join(map(str, value)) if key == 'ctx' else value)
+        if not args.fixed_decode_tokens:
+            args.fixed_decode_reps = 3  # CLI validity; normalized identity records zero when disabled
     if args.fixed_decode_tokens < 0 or args.fixed_decode_reps < 1:
         ap.error("fixed decode needs nonnegative tokens and positive repetitions")
 
@@ -226,14 +239,7 @@ def main() -> int:
     cq = _load("check-quality.py", "onepass_quality")
     bd = _load("bench-dec.py", "onepass_bench_dec")
     br = _load("bracket.py", "onepass_bracket")
-    rec = {"name": args.name, "t": time.strftime("%F %T"), "git": br._git_sha(),
-           "harness": 40, "doc_lang": "ko", "thinking": True, "window_s": 1.0,
-           "prefill": [], "quality": {}, "decode": {}, "korean": {}}
-    rec["workload"] = {"ctx": [int(c) for c in args.ctx.split(",")], "seed": args.seed,
-                       "max_tokens": args.max_tokens, "combine_min_ctx": args.combine_min_ctx,
-                       "fixed_decode_tokens": args.fixed_decode_tokens,
-                       "fixed_decode_reps": args.fixed_decode_reps if args.fixed_decode_tokens else 0,
-                       "require_exclusive": args.require_exclusive}
+    rec = build_record(args, br._git_sha())
     if os.environ.get("FLEET_EXPERIMENT_ID"):
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))

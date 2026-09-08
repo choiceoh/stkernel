@@ -1,0 +1,22 @@
+{
+  "host": "srv2",
+  "arm": "candidate",
+  "container": "glm53",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "boot_id": "2acd150eecbb7e83771e2def8c8906e71c78f0f52ae8f31dde5050f0e281684f|2026-09-07T10:08:14.015752519Z",
+  "running": true,
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_FP8_PACK2": "1",
+    "VLLM_GLM53_MK_GEMM_TRANSPOSE_M8": "2",
+    "VLLM_GLM53_MK_M8_FASTPATH": "1",
+    "VLLM_GLM53_MK_MHC_BF16": "1"
+  },
+  "markers": [
+    "(Worker_TP0 pid=242) WARNING 09-07 10:11:17 [glm53_megakernel.py:1263] [megakernel] input-reuse CAPTURED M=6 N=6416 K=4096 split=8 bps=3 scratch=33792"
+  ],
+  "source_sha256": {
+    "glm53_megakernel.cu": "8bb94129d5cf910b0e2cbe94a3f082e4da478d7490d6f215c6bc439f100a35c7",
+    "glm53_megakernel.py": "9859631f312eb2f07e559bd99de95a3ba108dbb56b6e59a67e2f3f9d0eaac2db"
+  }
+}

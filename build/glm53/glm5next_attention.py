@@ -426,6 +426,47 @@ class Indexer(nn.Module):
         )
 
 
+def _indexer_layer_ids(config) -> list[int]:
+    """Model layer ids that run an indexer, in order.
+
+    GLM-5.3 is interleaved: 11 of its 45 layers are ``deepseek_sparse_attention``
+    (3, 7, ... 43) and the other 34 are KDA linear attention with no indexer at
+    all. ``index_topk_freq`` counts INDEXER layers, exactly as the dsv4 port
+    documents ("index_topk_freq is indexed over those layers, not over all
+    layers"), so the ordinal has to come from this list and not from the model
+    layer id. Empty when the config says nothing, which disables reuse.
+    """
+    types = getattr(config, "layer_types", None)
+    if types:
+        return [i for i, kind in enumerate(types) if "linear" not in str(kind)]
+    linear = getattr(config, "linear_attn_config", None)
+    full = linear.get("full_attn_layers") if isinstance(linear, dict) else None
+    return sorted(int(i) for i in full) if full else []
+
+
+def _resolve_skip_topk(config, layer_id: int) -> bool:
+    """Whether ``layer_id`` reuses the previous indexer layer's top-k (IndexCache,
+    arXiv 2603.12201): the layer does not call its indexer at all and reads the
+    shared ``topk_indices_buffer`` the last computing layer wrote.
+
+    The frequency counts INDEXER layers. The inherited `(layer_id - 1) % freq`
+    rule was written for a model whose every layer runs an indexer; on GLM-5.3's
+    interleaved stack (11 indexer layers out of 45) it made layer 3 -- the FIRST
+    indexer layer -- reuse a buffer nothing had written this step, and turned
+    freq=6 into "compute 4 of 11" by accident of the arithmetic. Ordinal 0
+    always computes, so what every later layer reads is this step's selection.
+    """
+    if not getattr(config, "use_index_cache", False):
+        return False
+    pattern = getattr(config, "index_topk_pattern", None)
+    if pattern is not None:
+        return 0 <= layer_id < len(pattern) and pattern[layer_id] == "S"
+    layers = _indexer_layer_ids(config)
+    if layer_id not in layers:
+        return False
+    return layers.index(layer_id) % getattr(config, "index_topk_freq", 1) != 0
+
+
 class Glm5NextMLAAttention(nn.Module):
     def __init__(
         self,
@@ -571,19 +612,22 @@ class Glm5NextMLAAttention(nn.Module):
                 f"{prefix}.indexer",
             )
 
-            # Enable IndexCache for DeepSeek models to reduce redundant top-k
-            # token selection computations in sparse attention.
-            use_index_cache = getattr(config, "use_index_cache", False)
-            if use_index_cache:
-                # IndexCache config
-                # Refer: https://arxiv.org/abs/2603.12201 for more details.
-                _index_topk_freq = getattr(config, "index_topk_freq", 1)
-                _index_topk_pattern = getattr(config, "index_topk_pattern", None)
-                layer_id = extract_layer_index(prefix)
-                if _index_topk_pattern is None:
-                    _skip_topk = max(layer_id - 1, 0) % _index_topk_freq != 0
-                elif 0 <= layer_id < len(_index_topk_pattern):
-                    _skip_topk = _index_topk_pattern[layer_id] == "S"
+            # IndexCache: reuse the previous indexer layer's top-k selection
+            # on the layers in between (off unless the config says otherwise;
+            # the launcher's INDEX_CACHE_FREQ sets it through --hf-overrides).
+            _skip_topk = _resolve_skip_topk(config, extract_layer_index(prefix))
+            if getattr(config, "use_index_cache", False):
+                # The serving proof (armed != serving): a forwarded knob can
+                # still take the stock path, so the lane says what it decided.
+                _layers = _indexer_layer_ids(config)
+                _computing = [i for i in _layers if not _resolve_skip_topk(config, i)]
+                logger.info_once(
+                    "[index-cache] top-k reuse serving: %d of %d indexer layers compute "
+                    "(freq=%s, first=%s)",
+                    len(_computing), len(_layers),
+                    getattr(config, "index_topk_freq", 1),
+                    _computing[0] if _computing else None,
+                )
 
         else:
             self.indexer_rope_emb = None

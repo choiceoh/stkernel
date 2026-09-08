@@ -1,0 +1,7 @@
+{
+  "started": 1788783744.0124419,
+  "exit_code": 1,
+  "error": "CalledProcessError(1, ['bash', '/home/choiceoh/stkernel/bench/chain.sh', 'MLAPREF30907B1=', 'MLAPREF30907A=VLLM_GLM53_MK_MLA_PREFILL32=1', 'MLAPREF30907B2=', '--legs', 'MLAPREF30907B1', 'none', '--after', 'MLAPREF30907B1', 'python3 /home/choiceoh/stkernel-mla-prefill-serving3-0907/bench/prefill_serving.py arm --name MLAPREF30907B1', '--legs', 'MLAPREF30907A', 'none', '--after', 'MLAPREF30907A', 'python3 /home/choiceoh/stkernel-mla-prefill-serving3-0907/bench/prefill_serving.py arm --name MLAPREF30907A --enabled', '--legs', 'MLAPREF30907B2', 'none', '--after', 'MLAPREF30907B2', 'python3 /home/choiceoh/stkernel-mla-prefill-serving3-0907/bench/prefill_serving.py arm --name MLAPREF30907B2'])",
+  "restored": true,
+  "ended": 1788785662.5019915
+}

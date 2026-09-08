@@ -1,0 +1,24 @@
+Filesystem     1024-blocks      Used Available Capacity Mounted on
+/dev/nvme0n1p2   959785008 891155984  19800864      98% /
+6.6M	/home/choiceoh/glm53-cache/tilelang
+6.6M	/home/choiceoh/glm53-cache/tilelang/0.1.12
+8.9M	/home/choiceoh/glm53-cache/vllm/deep_gemm
+15M	/home/choiceoh/glm53-cache/osar_build
+37M	/home/choiceoh/glm53-cache/mk_build
+64M	/home/choiceoh/glm53-cache/.cache
+64M	/home/choiceoh/glm53-cache/.cache/flashinfer
+444M	/home/choiceoh/glm53-cache/triton
+647M	/home/choiceoh/glm53-cache/vllm/torch_compile_cache
+656M	/home/choiceoh/glm53-cache/vllm
+4.3G	/home/choiceoh/glm53-cache/mkpacks
+4.3G	/home/choiceoh/glm53-cache/mkpacks/rank1
+8.8G	/home/choiceoh/glm53-cache/mkcalib
+8.8G	/home/choiceoh/glm53-cache/mkcalib/rank1
+25G	/home/choiceoh/glm53-cache/glm53-fp8
+45G	/home/choiceoh/glm53-cache/glm53-ranks/957bbd7631199245df8c07b9379cf1008a02505e103d46ff8f61866698e26c23
+45G	/home/choiceoh/glm53-cache/glm53-ranks/d0ed5ee6e677cdfa60e76449bb6879c4bffd005d26f109e97c57a1e86b668872
+45G	/home/choiceoh/glm53-cache/glm53-ranks/f3b2124ee949948ac004d51e8c0436eb6559fa509fcd5143d203353a707c37cd
+45G	/home/choiceoh/glm53-cache/glm53-ranks/f9a1acfc474e8cb2834476f43dd206f1b4bbca7e5629ee067d2cfbdc962c0cd6
+45G	/home/choiceoh/glm53-cache/glm53-ranks/fce9d22403183a4506ee18f6de358676eca0eb8406ff7c526308512198c8efc5
+224G	/home/choiceoh/glm53-cache/glm53-ranks
+264G	/home/choiceoh/glm53-cache

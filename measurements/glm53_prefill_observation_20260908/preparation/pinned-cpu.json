@@ -1,0 +1,39 @@
+{
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--runtime",
+    "runc",
+    "--network",
+    "none",
+    "--memory",
+    "4g",
+    "--cpus",
+    "2",
+    "-v",
+    "/tmp/glm53-prefill-observer-cpu-0908-1:/checks:ro",
+    "-w",
+    "/checks",
+    "--entrypoint",
+    "python3",
+    "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_glm53_prefill_observation.py",
+    "-v"
+  ],
+  "returncode": 0,
+  "files": {
+    "probes/glm53_prefill_observer.py": "2a2301d1616796edca8ade2d6129f469ad3488cc5bf8bcdb568b79717025b38e",
+    "probes/glm53_prefill_trace.py": "219636d66da55310a3af7cdf55cc20117050af1c2f47e1ff015e9ef16c169b5e",
+    "probes/glm53_offline_checks.py": "bd26ae47d18fc1df9e5714e4c8181dee341642c2cac2d5e448c9bf156ea36d8e",
+    "bench/prefill_observation.py": "b73a822c08c33beb0e2403ccee604c86afc51c20029fce35011be6a0af04f887",
+    "tests/test_glm53_prefill_observation.py": "1d6263126e977d25f818e168183f27aa2eda312a2cd9a6745c0dfc32a52fad04"
+  },
+  "log_sha256": "4ab804c7697400361ef8a2687334a56e06a685ecd88aad4420ada36872e6c995"
+}

@@ -1,0 +1,11 @@
+test_actual_prefill_chunks_and_bounds (test_mla_prefill32_dispatch.DispatchTest.test_actual_prefill_chunks_and_bounds) ... ok
+test_captured_decode_keeps_existing_path (test_mla_prefill32_dispatch.DispatchTest.test_captured_decode_keeps_existing_path) ... ok
+test_default_off (test_mla_prefill32_dispatch.DispatchTest.test_default_off) ... ok
+test_pair_experiment_takes_precedence_without_combining (test_mla_prefill32_dispatch.DispatchTest.test_pair_experiment_takes_precedence_without_combining) ... ok
+test_short_requests_and_outside_contract_stay_baseline (test_mla_prefill32_dispatch.DispatchTest.test_short_requests_and_outside_contract_stay_baseline) ... ok
+test_storage_guards (test_mla_prefill32_dispatch.DispatchTest.test_storage_guards) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.049s
+
+OK

@@ -137,7 +137,8 @@ def main() -> int:
         rows = load(args.jsonl)
         cand = next((r for r in reversed(rows) if r.get("name") == args.count_for and not r.get("rehearsal")), None)
         bases = baselines_on(rows, cand)[0] if cand else []
-        print(sum(not record_errors(r) for r in bases))
+        # Repeated measurements of one boot cannot pad confirmation samples.
+        print(len({r['boot_id'] for r in bases if r.get('boot_id') and not record_errors(r)}))
         return 0
 
     build = args.build or deployed_build()

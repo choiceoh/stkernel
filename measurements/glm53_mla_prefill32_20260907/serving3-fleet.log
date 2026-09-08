@@ -1,0 +1,7 @@
+preflight mlaprefill30907 [boot]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  baseline: NONE for build 1f24cf3 -- a defaults arm is worth its boot
+  -> PASS
+waiting: pos 1/1, held by rankmmap30907 [boot] (pid 3342964@srv2, since 20:39, est 40m, Single mapped reader: exact GPU and real-payload screening, then same-build startup B/A/A/B with four-node quality gates), legacy busy (1 procs, 0 reqs, booting) 2026-09-07_20:48:00

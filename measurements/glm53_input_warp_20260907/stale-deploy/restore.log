@@ -1,0 +1,3 @@
+ABORT: HEAD is not based on current origin/main; refusing a stale overlay rollback
+  HEAD        8476c15
+  origin/main 619cfec

@@ -1,0 +1,24 @@
+{
+  "code_revision": "f2c9d3620a4c9d56ad3aab3c12e1eb2b452c4186",
+  "full_suite_revision": "24a0ad4247e4f404ba6b051841881de76af14323",
+  "full_mac_tests": 118,
+  "full_linux_tests": 126,
+  "final_review_linux_tests": 16,
+  "passed": true,
+  "coverage_complete": true,
+  "gpu_work_performed": false,
+  "source_sha256": {
+    "bench/fleet.sh": "b3354480d16024fa631c04d178ce4d652e3ab716ee46959f12e954984424706b",
+    "bench/fleet_boot.py": "092dd62ff39d176d4540304063a19574975ed690f97c480f5ed41d5006756e53",
+    "bench/fleet_handoff.py": "2a9d8654deb765b5932ef9641c714514865271d7007253fd7edd3e2837f7da7e",
+    "bench/fleet_pin.py": "fad5513b408427e7191685f4e3fb1165a39b688a48e0152122be3eacc554b14d",
+    "bench/fleet_entry.py": "a8f2c9817e2de0cb643812f15d6e0e071df3964c616ff2a3e33c85956c0cc858",
+    "bench/fleet_restore.sh": "18d2065920d4f564a4978d2a268a0456f6ba7a21df0b14981afa2c56de272d1e",
+    "bench/fleet_priority.py": "e363334011ae8369271fe0a9fd46581ee5a29fa5b4162afe49f7361ec5e7efde",
+    "bench/startup_campaign.py": "304dab6310558758c16f104139fdcdf316dc5fc35713280901cc68c6b4bf737a",
+    "bench/startup_cache_boots.sh": "2264ad2a432bc773f40f2d7a86ecd1c975e79aee1e7362ade16421c4b1acf14f",
+    "tests/test_boot_supervisor_linux.py": "e63daeb497e0aeafbdc001cdfc1ec6598c4f6ece93985787411aae32300f6f7c",
+    "tests/test_startup_campaign.py": "dfb4c1eb5f25d15a7a205a9150f3847f50feea5cd601d9b91481718c7c2a86da",
+    "tests/test_startup_cache_receipts.py": "f6292bb7ff7c5395b9104e5aa4a791f20fb345596a698a28fcb92b40836b42ad"
+  }
+}

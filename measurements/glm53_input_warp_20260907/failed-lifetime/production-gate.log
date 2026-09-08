@@ -1,0 +1,12 @@
+{"shape": [6, 6528, 4096], "cache": "cold", "plans": {"0": [0, 8, 3, 0], "1": [1, 8, 3, 33792]}, "baseline_us": 77.56800204515457, "candidate_us": 76.54400169849396, "reduction_pct": 1.320132425306654}
+{"shape": [6, 6528, 4096], "cache": "warm", "plans": {"0": [0, 8, 3, 0], "1": [1, 8, 3, 33792]}, "baseline_us": 42.75200143456459, "candidate_us": 30.527999624609947, "reduction_pct": 28.592817645425257}
+{"shape": [6, 4096, 512], "cache": "cold", "plans": {"0": [0, 1, 3, 0], "1": [1, 1, 3, 4224]}, "baseline_us": 14.22400027513504, "candidate_us": 11.96799986064434, "reduction_pct": 15.860520042553793}
+{"shape": [6, 4096, 512], "cache": "warm", "plans": {"0": [0, 1, 3, 0], "1": [1, 1, 3, 4224]}, "baseline_us": 9.503999724984169, "candidate_us": 7.935999892652035, "reduction_pct": 16.498315211543698}
+Traceback (most recent call last):
+  File "/repo/probes/gemm_input_serving_gate.py", line 105, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/repo/probes/gemm_input_serving_gate.py", line 97, in main
+    assert rel<=1e-3 and over==0,(rep,rel,over)
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (0, 1.0, 24570)

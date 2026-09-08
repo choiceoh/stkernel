@@ -1,0 +1,85 @@
+{
+  "checked_utc": "2026-09-08T00:50:18.733390+00:00",
+  "health": 200,
+  "approved_main": "d7c15287c8ef36e80deac813cf492a7262bbd429",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "knobs": {
+    "VLLM_GLM53_MK_INPUT_REUSE": "1",
+    "VLLM_GLM53_MK_INPUT_CTA": "4",
+    "VLLM_GLM53_B12X_STATIC_V2": "t"
+  },
+  "ranks": [
+    {
+      "rank": 0,
+      "host": "srv2",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "478a9cea370a057ecd9097e6351dfe27b4e7d86825fdf22d30306491955e6212",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "0f1c699427eb9748936ea8cf4aff815a6dc23e01c7e3b844b0697574adbd51c4"
+      },
+      "id": "ba6239b4fe2e680fc218ca81c0c753f59f21ca323b9971df7fc3fd00cd8a38a9",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "4",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 1,
+      "host": "srv1",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "478a9cea370a057ecd9097e6351dfe27b4e7d86825fdf22d30306491955e6212",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "0f1c699427eb9748936ea8cf4aff815a6dc23e01c7e3b844b0697574adbd51c4"
+      },
+      "id": "4fd338ee4157f2b07747376cde645c31eaf5c8560afd7f453a482ca14beb0e46",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "4",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 2,
+      "host": "srv3",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "478a9cea370a057ecd9097e6351dfe27b4e7d86825fdf22d30306491955e6212",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "0f1c699427eb9748936ea8cf4aff815a6dc23e01c7e3b844b0697574adbd51c4"
+      },
+      "id": "ee1bf42be6bece18a0ea7c2f86e50e5c02ef464dae2b0ede3ae1c8f8a372c7ef",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "4",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    },
+    {
+      "rank": 3,
+      "host": "srv4",
+      "source_sha256": {
+        "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu": "f27b44e6ea1882490ce462c36d19ef8bb6257dbfd3e88a91cf23cee244f1758c",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py": "50ef4aad379b24d301de573dbbd71ea9d32863bbcbfe122635f7427d5c03d395",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py": "478a9cea370a057ecd9097e6351dfe27b4e7d86825fdf22d30306491955e6212",
+        "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py": "0f1c699427eb9748936ea8cf4aff815a6dc23e01c7e3b844b0697574adbd51c4"
+      },
+      "id": "347481a85be663a61f98191eccbcc9603b4d2d5147796347e884ccefd5f83726",
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "running": true,
+      "knobs": {
+        "VLLM_GLM53_MK_INPUT_CTA": "4",
+        "VLLM_GLM53_MK_INPUT_REUSE": "1",
+        "VLLM_GLM53_B12X_STATIC_V2": "t"
+      }
+    }
+  ]
+}

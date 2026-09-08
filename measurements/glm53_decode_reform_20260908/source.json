@@ -1,0 +1,119 @@
+{
+  "candidate_commit": "1f265b1",
+  "cpu_compile_commit": "088c04f",
+  "cpu_full_gate_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
+  "cpu_scope": "Historical compile logs predate the FP4 byte-address fix. Corrected candidate requires a fresh device-free compile and GPU campaign.",
+  "source_sha256": {
+    "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+    "overlay/modules/glm53_moe/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+    "overlay/modules/glm53_moe/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343"
+  },
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "cpu_compile_shapes": {
+    "m": [
+      6,
+      16
+    ],
+    "max_rows": 640,
+    "hidden": 4096,
+    "intermediate_per_rank": 512,
+    "experts": 288,
+    "topk": 8
+  },
+  "fleet_session": "moereformfix20908",
+  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-v3-0908",
+  "status": "Corrected measured bundle promoted to profile default by operator request; pooled step/s +1.603%, output +3.080%; no additional GPU measurements",
+  "numerics_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
+  "numerics": {
+    "status": "FAIL",
+    "passed": "M1/U8 five graph replays including exact-zero",
+    "failed": {
+      "M": 2,
+      "unique_experts": 8,
+      "replay": 0,
+      "candidate_max_abs_error": 3.5,
+      "limit": 0.1875
+    },
+    "speed_continuation": "Cancelled before measurement: user requested correction in the speed candidate."
+  },
+  "corrected_cpu": {
+    "source_commit": "4fae87c2a96adf54fa4d7ef72ea706d93d8c9422",
+    "compile_shapes": [
+      2,
+      6
+    ],
+    "source_sha256": {
+      "overlay/modules/glm53_moe/moe_static_kernel_v4.py": "1fedcb377f39aaf59b90e288904c447eccdcfeba52a2bc6dfe8d960da43a3480",
+      "overlay/modules/glm53_moe/moe_static_kernel_v5.py": "f4f6298d26b00096544b6d10026576bf3002dfa80f87ea4d0bfe4ebb73d50b11",
+      "overlay/modules/glm53_moe/moe_dispatch.py": "d9b62d352233f32269e24f5e3012536044685873912bc19cbca5c7d47f91b343"
+    },
+    "checks": 6742,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 115,
+    "status": "PASS"
+  },
+  "serving_controls": {
+    "CTA": 4,
+    "TP": 4,
+    "SPEC_K": 5,
+    "C": 1
+  },
+  "corrected_gpu": {
+    "numerics_source_commit": "52079ceb3391cd7f77acfcfd73963796a7b4b415",
+    "status": "PASS",
+    "cases": 13,
+    "comparisons": 130,
+    "previously_failing_M2_U8_replay0": {
+      "max_error": 0.046875,
+      "limit": 0.125
+    },
+    "memcheck": {
+      "pre_kernel_cuGetProcAddress_v2_errors": 34,
+      "other_diagnostics": 0,
+      "raw_returncode": 77
+    },
+    "racecheck": {
+      "hazards": 0,
+      "errors": 0,
+      "warnings": 0,
+      "raw_returncode": 0
+    },
+    "evidence": "gpu-corrected/",
+    "reused_scope": "Kernel and fixture sources unchanged; numerical and memcheck evidence reused while racecheck completed."
+  },
+  "serving_summary": "serving/summary.json",
+  "default": "t,r",
+  "public_restore": {
+    "approved_main": "d7c15287c8ef36e80deac813cf492a7262bbd429",
+    "knobs": {
+      "VLLM_GLM53_MK_INPUT_REUSE": "1",
+      "VLLM_GLM53_MK_INPUT_CTA": "4",
+      "VLLM_GLM53_B12X_STATIC_V2": "t"
+    },
+    "health": 200,
+    "all_ranks": 4,
+    "owned_after": true,
+    "checked_utc": "2026-09-08T00:50:18.733390+00:00"
+  },
+  "lifecycle_complete": {
+    "initial_payload_returncode": 1,
+    "initial_failure": "API-only sanitizer diagnostics; raw failure retained",
+    "continuation_returncode": 0,
+    "supervised_restore_returncode": 0,
+    "lease_released": true
+  },
+  "promotion": {
+    "date": "2026-09-08",
+    "previous": "t",
+    "default": "t,r",
+    "rollback": "VLLM_GLM53_B12X_STATIC_V2=t",
+    "basis": "Operator request following completed corrected A-B; measurement limitations retained.",
+    "validation": {
+      "logic_checks": 6742,
+      "megakernel_regressions": 38,
+      "fleet_regressions": 115,
+      "gpu_rerun": false,
+      "kernel_source_unchanged": true
+    }
+  }
+}

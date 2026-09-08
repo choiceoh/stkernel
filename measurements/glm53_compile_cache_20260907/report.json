@@ -1,0 +1,43 @@
+{
+  "artifact_preserved": true,
+  "changed_runtime_removed_artifact": true,
+  "fixture_uid": 0,
+  "helper_sha256": "b9e398c31981249dd946956b1b671ed26ab1f6815cb9995a40ed38c8590e1540",
+  "image_id": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "legacy_would_invalidate": true,
+  "live_content_sha256": "3897be36bef8ec42c248c702c93676e5fd67202cd7dd32f982ff756cc2afa0dc",
+  "live_deployment_sha256": "53b9a17f2b88773f68b817539a00baee791f4ada56c4645d68f8017bd2fdec5d",
+  "ok": true,
+  "overlay_files": 56,
+  "source_commit": "3c3a30e0ce7b567c82c52734e48d8e2cd78ceaa7",
+  "steps": [
+    {
+      "action": "invalidate",
+      "content_sha256": "3897be36bef8ec42c248c702c93676e5fd67202cd7dd32f982ff756cc2afa0dc",
+      "deployment_sha256": "53b9a17f2b88773f68b817539a00baee791f4ada56c4645d68f8017bd2fdec5d",
+      "elapsed_s": 0.4450099890236743,
+      "version": 1
+    },
+    {
+      "action": "reuse",
+      "content_sha256": "3897be36bef8ec42c248c702c93676e5fd67202cd7dd32f982ff756cc2afa0dc",
+      "deployment_sha256": "54aeb2182caf681de574096cb2280f3509902f546d5754ea127124f361ed7e9e",
+      "elapsed_s": 0.003934677981305867,
+      "version": 1
+    },
+    {
+      "action": "reuse",
+      "content_sha256": "3897be36bef8ec42c248c702c93676e5fd67202cd7dd32f982ff756cc2afa0dc",
+      "deployment_sha256": "54aeb2182caf681de574096cb2280f3509902f546d5754ea127124f361ed7e9e",
+      "elapsed_s": 0.003666341013740748,
+      "version": 1
+    },
+    {
+      "action": "invalidate",
+      "content_sha256": "06cab5c0688e4a5303e8ba6a9c823f737d5358191e6d6e8b81b2e08bbe0d3aa3",
+      "deployment_sha256": "54aeb2182caf681de574096cb2280f3509902f546d5754ea127124f361ed7e9e",
+      "elapsed_s": 0.37985121295787394,
+      "version": 1
+    }
+  ]
+}

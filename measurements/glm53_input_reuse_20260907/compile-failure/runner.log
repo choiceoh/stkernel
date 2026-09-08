@@ -1,0 +1,15 @@
+preflight inputreuse0907 [probe]:
+  SYNC /home/choiceoh/glm53-logs/ab-lever2.sh <- repo (was stale)
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+GO inputreuse0907 2026-09-07_15:25:56
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-input-reuse-20260907/probes/run_gemm_input_reuse.py", line 87, in <module>
+    if __name__=='__main__': main()
+                             ^^^^^^
+  File "/home/choiceoh/stkernel-input-reuse-20260907/probes/run_gemm_input_reuse.py", line 83, in main
+    assert rc==0, f'probe failed: {rc}; see {OUT}/probe.log'
+           ^^^^^
+AssertionError: probe failed: 1; see /home/choiceoh/glm53-logs/INPUTREUSE0907/probe.log
+NOTE: queue empty and production: NOT defaults: VLLM_GLM53_NVFP4_STATIC_SCALE=16,VLLM_GLM53_PREFILL_SP_FP8_AG_MIN_TOKENS=-1,VLLM_GLM53_PREFILL_SP_FP8_RS_MIN_TOKENS=-1 (health 200) -- restore with: LEGS=none bash /home/choiceoh/glm53-logs/ab-lever2.sh PRODRESTORE "" (FLEET_AUTO_RESTORE=1 does it)

@@ -1,0 +1,20 @@
+{
+  "session": "prefilloff10907",
+  "runner_revision": "4e0f226d17d78648aea48028279cb4b347c3e994",
+  "go_kst": "2026-09-07T20:00:24+09:00",
+  "ended_kst": "2026-09-07T20:00:28+09:00",
+  "exit_code": 1,
+  "probes_started": [],
+  "docker_stop_start_executed": false,
+  "causes": [
+    "Docker inspect Mounts order varied; raw-list digest falsely rejected unchanged containers",
+    "Generated command interpolated unquoted start/stop as a Python variable"
+  ],
+  "verification": "All four stop attempts failed before Docker mutation; finally start attempts failed before Docker mutation on identity checks or NameError. No stopped/restarted evidence exists. No GPU probe was entered.",
+  "fix": [
+    "Sort full Mounts records by unique Destination before hashing",
+    "Quote action with repr in generated command",
+    "Bound remote stderr instead of recursively logging source/config payload"
+  ],
+  "cpu_validation": "8 tests pass, including real child execution of generated stop/start Python against a stateful fake Docker with alternating mount order and a real mount-source change refusal. No GPU evidence."
+}

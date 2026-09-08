@@ -7,6 +7,47 @@ The target is at least **1.40x input tokens/second** on matched requests,
 equivalent to reducing prefill wall time by at least **28.5714%**. It is not
 a 40% reduction in wall time. Cold and warmed measurements are separate.
 
+## Next target selection (2026-09-08)
+
+Current M64 is deprioritized: its latest same-transport component comparison
+improves balanced routing by 4.33–6.91% but regresses concentrated routing by
+13.09–16.24%. The full correctness gate and direct serving acceptance remain
+incomplete. See [the preserved M64 experiment, PR #455](https://github.com/choiceoh/stkernel/pull/455); no further automatic M64 diagnostic,
+full-gate or serving-bracket submissions are planned.
+
+Before implementing the next large candidate, collect a current-default serving
+baseline with both experimental M64/INT8 flags disabled:
+
+1. Use normal fleet ownership, frozen clean source/runtime and an isolated
+   endpoint with exact incoming restoration. Record all four ranks' configuration,
+   model/overlay identity, incoming capacity and request/prefix counters.
+2. Collect profiler-off fresh 2K/32K/128K requests for actual TTFT and output
+   quality. Keep this timing separate from instrumented requests and retain raw
+   request/output/token evidence. No component timings count as direct speedup.
+3. Collect separately attributed profiler traces on all four ranks for fresh
+   requests, with explicit start/stop in finally, new-file identity and request
+   boundaries. Preserve actual executed chunk lengths and target-forward counts;
+   do not infer them from total prompt tokens divided by a configured maximum.
+4. Collect bounded per-layer, per-chunk, per-rank expert-count histograms from
+   actual model routing in a separate instrumented pass. Preserve count totals,
+   M64/M128 padded-row budgets and exact sampling coverage. CPU transfer and
+   histogram instrumentation must not contaminate the profiler-off latency arm.
+5. Rank MoE, transport, attention, dense projections, MHC and host gaps using
+   kernel sums **and interval unions**, retaining overlap and unknown buckets.
+   Kernel percentages are attribution evidence, not directly additive TTFT
+   fractions or proof that removing a kernel removes the same wall time.
+
+`bench/profile-step.py` already stops profiling in finally and computes interval
+unions, but lacks fleet ownership, all-rank/request/source attestation and actual
+chunk counts. Its newest-file heuristic cannot select the next capture's evidence.
+`probes/glm53_prefill_profile.sh` also lacks protected profiler cleanup and uses
+the public endpoint. Reuse suitable parsing/client helpers while adding the
+missing collection contracts; do not launch either script unchanged for this
+campaign. The temporary worker observer, one-request cleanup helper and CPU trace
+validator are implemented; the isolated boot runner and all-rank file collection
+are still pending, and no GPU run is submitted. See `GLM53_PREFILL_OBSERVATION.md`.
+Historical traces below are context for hypotheses and cannot replace the current baseline.
+
 ## Current evidence after rebase (2026-09-07)
 
 **Current default (operator request, PR #425):** gated FP8 v3 is enabled

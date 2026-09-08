@@ -1,0 +1,1 @@
+{"checks": 36, "device": "cuda", "ok": true, "source_sha256": {"glm53_megakernel.py": "1b7fdd9454ce2e209b9da88b9c4cbc43e803676a28fdabe0f104db583ca81d8a", "glm53_startup_cache.py": "32cba811dbd3c19273118f4ff013b37cd45cca88ddc084ecd0d40e4cb13945ef"}}

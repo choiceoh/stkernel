@@ -1,0 +1,18 @@
+no --gpu/--cpu given: classified as gpu
+preflight inputverify0907 [probe]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  SKIP declared-knob check (probe: no launcher in the path)
+  -> PASS
+GO inputverify0907 2026-09-07_15:51:05
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        2142        2473      0.99s      0.86s  o o o
+=> 3/3 correct
+decode: windows n=10 med 21.8 [20.8, 22.8] step/s (inside the answers only; per context: 2K: n=10 med 21.8), raw acc 48.9%, tokens/step 3.447 (k=5.0), generated 1200 tokens over 19s
+응답 3개 · 문자 3,834
+  깨진 응답: 0/3 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass INPUTRESTORECHECK0907: 19s total

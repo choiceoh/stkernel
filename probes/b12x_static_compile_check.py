@@ -39,6 +39,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--specs", default="u|t", help="'|'-separated static v2 specs")
     ap.add_argument("--m", type=int, default=8, help="decode rows (the m of the kernel name)")
+    ap.add_argument("--max-rows", type=int, default=0, help="exact serving packed-row capacity")
     ap.add_argument("--dynamic", default="",
                     help="also compile the gated dynamic (prefill) kernel: 'rowmajor', "
                          "'tiled' or 'both' (the tiled form reads cell t's 4-D weights)")
@@ -47,7 +48,7 @@ def main() -> int:
 
     md.get_num_sm = lambda dev=None: 48  # type: ignore[assignment]
     md.get_max_active_clusters = lambda n=1: 48  # type: ignore[assignment]
-    max_rows = md._align_up(args.m * TOPK, 128)
+    max_rows = args.max_rows or md._align_up(args.m * TOPK, 128)
     ok = True
     compiled_count = 0
     for spec in [p.strip() for p in args.specs.split("|") if p.strip()]:
@@ -66,6 +67,8 @@ def main() -> int:
             )
         except Exception as exc:  # noqa: BLE001 -- report every spec
             ok = False
+            import traceback
+            traceback.print_exc()
             print(f"[{spec}] COMPILE FAIL after {time.time() - t0:.1f} s: "
                   f"{type(exc).__name__}: {str(exc)[:1200]}")
             continue

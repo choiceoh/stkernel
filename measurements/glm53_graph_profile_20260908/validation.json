@@ -1,0 +1,12 @@
+{
+  "runtime_source_commit": "b945723bcedde7621773ac78f81e2e6b638323f7",
+  "logic_checks": 71035,
+  "megakernel_regressions": 30,
+  "fleet_regressions": 107,
+  "worker_memory_tests": 6,
+  "receipt_tests": 5,
+  "cpu_mutations_detected": 4,
+  "original_gpu_worker_sha256": "b2e580d74e7259ff2cbc82dabf38a43409ea5584d143880436583d9fc1ceedf1",
+  "source_scope": "Only Worker.determine_available_memory differs from the pinned original; other worker AST nodes are unchanged.",
+  "narrow_cpu_audit": "Only an independently invoked full-runner regression wrapper was added. Existing imports, globals, loaders and extracted contracts are AST-identical."
+}

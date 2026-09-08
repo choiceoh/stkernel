@@ -1,0 +1,310 @@
+{
+  "python": "3.14.4 (main, Apr  7 2026, 13:13:20) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "rounds": 5,
+  "runner_sha256": "d61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade",
+  "fixture_sha256": "cfb86ebb91ca3ef5b556d2da4e49926181f1605a7a3c7a715d09a8c4bc93f7b1",
+  "fixture_service_times_s": [
+    0.6,
+    0.05,
+    0.55,
+    0.05
+  ],
+  "workers": 2,
+  "samples": [
+    {
+      "wall_s": 1.2925604591146111,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_2",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_3"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6103990003466606,
+        "test_fleet_timing_comparison.C.test_2": 0.5591775421053171,
+        "test_fleet_timing_comparison.C.test_1": 0.060075500048696995,
+        "test_fleet_timing_comparison.C.test_3": 0.06006037537008524
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "round-robin",
+      "timing_hints": 0,
+      "round": 1,
+      "variant": "round-robin"
+    },
+    {
+      "wall_s": 0.7894299170002341,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_3",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_2"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.610252084210515,
+        "test_fleet_timing_comparison.C.test_3": 0.059229958802461624,
+        "test_fleet_timing_comparison.C.test_1": 0.06007637549191713,
+        "test_fleet_timing_comparison.C.test_2": 0.5601742081344128
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "duration-balanced",
+      "timing_hints": 4,
+      "round": 1,
+      "variant": "duration-balanced"
+    },
+    {
+      "wall_s": 0.7822084166109562,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_3",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_2"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6103236656636,
+        "test_fleet_timing_comparison.C.test_3": 0.05067587457597256,
+        "test_fleet_timing_comparison.C.test_1": 0.059559834189713,
+        "test_fleet_timing_comparison.C.test_2": 0.550828124396503
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "duration-balanced",
+      "timing_hints": 4,
+      "round": 2,
+      "variant": "duration-balanced"
+    },
+    {
+      "wall_s": 1.2847742084413767,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_2",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_3"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6103568747639656,
+        "test_fleet_timing_comparison.C.test_2": 0.5525110410526395,
+        "test_fleet_timing_comparison.C.test_1": 0.06007808353751898,
+        "test_fleet_timing_comparison.C.test_3": 0.06006308272480965
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "round-robin",
+      "timing_hints": 0,
+      "round": 2,
+      "variant": "round-robin"
+    },
+    {
+      "wall_s": 1.2768724588677287,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_2",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_3"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6103044170886278,
+        "test_fleet_timing_comparison.C.test_2": 0.5502400426194072,
+        "test_fleet_timing_comparison.C.test_1": 0.06008374970406294,
+        "test_fleet_timing_comparison.C.test_3": 0.06005499977618456
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "round-robin",
+      "timing_hints": 0,
+      "round": 3,
+      "variant": "round-robin"
+    },
+    {
+      "wall_s": 0.7938258750364184,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_3",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_2"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6102119591087103,
+        "test_fleet_timing_comparison.C.test_3": 0.05941745825111866,
+        "test_fleet_timing_comparison.C.test_1": 0.059651666320860386,
+        "test_fleet_timing_comparison.C.test_2": 0.5601624576374888
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "duration-balanced",
+      "timing_hints": 4,
+      "round": 3,
+      "variant": "duration-balanced"
+    },
+    {
+      "wall_s": 0.788721832446754,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_3",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_2"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6104321256279945,
+        "test_fleet_timing_comparison.C.test_3": 0.05828808341175318,
+        "test_fleet_timing_comparison.C.test_1": 0.06007679272443056,
+        "test_fleet_timing_comparison.C.test_2": 0.5603720834478736
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "duration-balanced",
+      "timing_hints": 4,
+      "round": 4,
+      "variant": "duration-balanced"
+    },
+    {
+      "wall_s": 1.2958900835365057,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_2",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_3"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.610376208089292,
+        "test_fleet_timing_comparison.C.test_2": 0.5585014997050166,
+        "test_fleet_timing_comparison.C.test_1": 0.05892712529748678,
+        "test_fleet_timing_comparison.C.test_3": 0.060074541717767715
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "round-robin",
+      "timing_hints": 0,
+      "round": 4,
+      "variant": "round-robin"
+    },
+    {
+      "wall_s": 1.2861689580604434,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_2",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_3"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6102240001782775,
+        "test_fleet_timing_comparison.C.test_2": 0.5588457500562072,
+        "test_fleet_timing_comparison.C.test_1": 0.060074999928474426,
+        "test_fleet_timing_comparison.C.test_3": 0.06005899980664253
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "round-robin",
+      "timing_hints": 0,
+      "round": 5,
+      "variant": "round-robin"
+    },
+    {
+      "wall_s": 0.7756903758272529,
+      "tests_run": 4,
+      "failures": 0,
+      "errors": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "skipped": [],
+      "test_ids": [
+        "test_fleet_timing_comparison.C.test_0",
+        "test_fleet_timing_comparison.C.test_3",
+        "test_fleet_timing_comparison.C.test_1",
+        "test_fleet_timing_comparison.C.test_2"
+      ],
+      "failure_details": [],
+      "test_durations_s": {
+        "test_fleet_timing_comparison.C.test_0": 0.6103440830484033,
+        "test_fleet_timing_comparison.C.test_3": 0.051091207191348076,
+        "test_fleet_timing_comparison.C.test_1": 0.06007487513124943,
+        "test_fleet_timing_comparison.C.test_2": 0.5602935003116727
+      },
+      "coverage_complete": true,
+      "passed": true,
+      "workers": 2,
+      "scheduling": "duration-balanced",
+      "timing_hints": 4,
+      "round": 5,
+      "variant": "duration-balanced"
+    }
+  ],
+  "summary": {
+    "round-robin": 1.2861689580604434,
+    "duration-balanced": 0.788721832446754
+  }
+}

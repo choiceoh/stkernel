@@ -1,0 +1,8 @@
+========= COMPUTE-SANITIZER
+{"source_sha256": "24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62", "baseline_source_sha256": "24b4e23d27dc49a742ef4531e4032f99f8a25400d93187d76d949e97817d8b62", "flags": ["-O2", "-gencode", "arch=compute_121a,code=sm_121a", "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1", "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"], "torch": "2.13.0+cu130", "device": "NVIDIA GB10", "mode_names": ["default_cta2", "cta4_three_slice"], "kernel_info_regs_local_bps_smem": [80, 0, 3, 28672, 78, 0, 3, 22528, 75, 0, 3, 22528, 64, 0, 4, 22528, 72, 0, 4, 17152], "status": "RUNNING"}
+WARNING 09-07 19:23:37 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 19:23:38 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6416 K=4096 PASS
+WARNING 09-07 19:23:44 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=4096 K=4096 PASS
+WARNING 09-07 19:23:54 [glm53_megakernel.py:2317] [megakernel] input-reuse exact graph M=6 N=6144 K=4096 PASS
+PASS exact outputs, independent oracle, retained graphs and startup gate
+========= ERROR SUMMARY: 0 errors

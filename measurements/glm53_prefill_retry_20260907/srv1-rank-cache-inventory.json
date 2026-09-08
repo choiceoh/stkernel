@@ -1,0 +1,47 @@
+[
+  {
+    "key": "957bbd7631199245df8c07b9379cf1008a02505e103d46ff8f61866698e26c23",
+    "size_bytes": 48094192078,
+    "latest_mtime": "2026-09-07T14:03:14.907520",
+    "files": [
+      "weights.bin",
+      "manifest.json"
+    ]
+  },
+  {
+    "key": "d0ed5ee6e677cdfa60e76449bb6879c4bffd005d26f109e97c57a1e86b668872",
+    "size_bytes": 48094192078,
+    "latest_mtime": "2026-09-07T13:51:17.016665",
+    "files": [
+      "weights.bin",
+      "manifest.json"
+    ]
+  },
+  {
+    "key": "f3b2124ee949948ac004d51e8c0436eb6559fa509fcd5143d203353a707c37cd",
+    "size_bytes": 48094192078,
+    "latest_mtime": "2026-09-07T13:18:36.015325",
+    "files": [
+      "weights.bin",
+      "manifest.json"
+    ]
+  },
+  {
+    "key": "f9a1acfc474e8cb2834476f43dd206f1b4bbca7e5629ee067d2cfbdc962c0cd6",
+    "size_bytes": 48094192078,
+    "latest_mtime": "2026-09-07T13:33:12.179998",
+    "files": [
+      "weights.bin",
+      "manifest.json"
+    ]
+  },
+  {
+    "key": "fce9d22403183a4506ee18f6de358676eca0eb8406ff7c526308512198c8efc5",
+    "size_bytes": 48094192078,
+    "latest_mtime": "2026-09-07T01:42:03.288786",
+    "files": [
+      "weights.bin",
+      "manifest.json"
+    ]
+  }
+]
