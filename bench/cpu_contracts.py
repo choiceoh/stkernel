@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited after 28e5e57b: only EP warmup/proof assertions differ from
-# approved main bb22740a; the three helper tests and load_defs AST are identical.
+# Re-audited for short EP decode: only unrelated EP assertions changed;
+# the three helper tests and load_defs AST match the prior reviewed version.
 # Their reviewed dependency access graphs remain unchanged.
-LOGIC_AUDIT = '195882797c4ba33e8f2c056497195911029e178cb305fb643875cbb61bd73f11'
+LOGIC_AUDIT = 'cc3bead52f151f5f19f93cc05e60a72987d24581e7395fea7b48748f783c141c'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
