@@ -1,0 +1,15 @@
+{
+  "session": "eplocalonepass0909v2b",
+  "ticket": "17888866281269839",
+  "pid": 1269839,
+  "launch_id": "1f8dc7c04ec348e8b49a1e6873581e36",
+  "revision": "ac2f188392bc76f1194f8eee7be9b0dfbec346f5",
+  "go_kst": "2026-09-09 01:57:09",
+  "state": "running",
+  "arms": [
+    "EPONEPASS2B1",
+    "EPONEPASS2A",
+    "EPONEPASS2B2"
+  ],
+  "metric_result_available": false
+}
