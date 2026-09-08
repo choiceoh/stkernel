@@ -58,4 +58,5 @@ glm53_decode_first.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched
 async_llm.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py	bceed0b3f5f0c834fef79525f2462a092f082390f0070526280abc95945837dd
 glm53_renderer_warmup.py	/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py	absent
 gpu_worker.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py	b2e580d74e7259ff2cbc82dabf38a43409ea5584d143880436583d9fc1ceedf1
+kv_zero_worker_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/utils.py	3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1
 kv_cache_coordinator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py	f640b5c42f6bc718926329a8f8b48a0fd0c8c8f24368af4e4b9ec8d13f68432f

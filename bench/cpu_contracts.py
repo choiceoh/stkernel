@@ -16,7 +16,7 @@ import __future__
 # Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
 # and the standalone MHC normalized-weight call contract differ from upstream.
 # The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d'
+LOGIC_AUDIT = '97ce48a8e238b1d645715a8022ea252edc3f72e40bc3c2b214aa2418cd3bdfab'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
