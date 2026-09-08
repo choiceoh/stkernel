@@ -44,14 +44,23 @@ chain)
     echo "== [pstep] DEPLOY FAILED -- nothing booted"; exit 1
   fi
   cd "$REPO" || exit 1
+  # Two arms in the one hold. PSTEP is the diagnosis (no leg: the sweep IS the
+  # measurement). IDXC6 is the first candidate for the term the diagnosis is
+  # expected to find -- IndexCache reuse, whose saving is per prefill chunk and
+  # scales with the prefix -- and it carries onepass, because reuse is an
+  # approximation and a prefill number alone cannot promote it.
   FLEET_SESSION=$S bash bench/chain.sh \
     PSTEP="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk" \
+    IDXC6="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk INDEX_CACHE_FREQ=6" \
     --legs PSTEP none \
-    --after PSTEP "bash $0 measure $OUT"
+    --after PSTEP "bash $0 measure $OUT" \
+    --after IDXC6 "bash $0 measure $OUT/idxc6"
   ;;
 measure)
   OUT=${2:?usage: $0 measure <outdir>}
   mkdir -p "$OUT"
+  # the IndexCache arm writes under the diagnosis directory and takes no trace
+  case "$OUT" in */idxc6) TRACE_CHUNKS="" ;; esac
   cd "$REPO" || exit 1
   echo "== [pstep] instrument armed? $(date +%T)"
   # Two independent receipts: the container's env and the scheduler's own line.
@@ -62,8 +71,10 @@ measure)
   grep -q "^/prof/sched_chunk$" "$OUT/knob.txt" || echo "!! the knob is NOT in the container: the sweep would measure the boot's own chunking"
 
   echo "== [pstep] sweep $(date +%T)"
+  # TRACE_CHUNKS="" on the second arm: the attribution only has to be taken once,
+  # and a repeat costs the hold ~4 minutes for a picture we already have.
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
-    --json "$OUT/sweep.json" --trace-chunks "$TRACE_CHUNKS" --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
+    --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
 
   for C in ${TRACE_CHUNKS//,/ }; do
     t=$(python3 -c "import json,sys;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('$C',{}).get('trace',''))" 2>/dev/null)
