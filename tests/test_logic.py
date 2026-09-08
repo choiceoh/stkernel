@@ -10157,6 +10157,54 @@ def test_profile_keys_not_passed_via_extra_env() -> None:
 
 
 
+def test_kv_block_zero_guard() -> None:
+    """40차: the KV-zeroing Triton kernel writes to RAW ADDRESSES and nothing
+    bounded the block index -- only the column inside a page was masked. The
+    overlay adds the bound and counts what it skips. This pins the two arities
+    that a hand-patched kernel breaks silently: the launch site against the
+    kernel signature, and the _meta tuple against its unpack."""
+    import ast as _ast
+    rel = "overlay/modules/glm53_runtime/kv_zero_worker_utils.py"
+    src = open(os.path.join(REPO, rel), encoding="utf-8").read()
+    tree = _ast.parse(src)
+    fn = next((n for n in _ast.walk(tree)
+               if isinstance(n, _ast.FunctionDef) and n.name == "_zero_kv_blocks_kernel"), None)
+    check(fn is not None, "the zeroing kernel is in the overlay")
+    params = [a.arg for a in fn.args.args]
+    check("seg_num_blocks_ptr" in params and "oob_ptr" in params,
+          f"the kernel takes the bound and the counter: {params}")
+    body = _ast.dump(fn)
+    check("seg_num_blocks" in body and "atomic_add" in body,
+          "the kernel compares the block id against the bound and counts the skip")
+    # the launch site must pass exactly the non-constexpr parameters
+    call = next((n for n in _ast.walk(tree)
+                 if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Subscript)
+                 and getattr(n.func.value, "id", "") == "_zero_kv_blocks_kernel"), None)
+    check(call is not None, "the kernel is launched through a grid subscript")
+    runtime_params = [a for a in params if a != "BLOCK_SIZE"]
+    check(len(call.args) == len(runtime_params),
+          f"launch passes {len(call.args)} positional args for {len(runtime_params)} kernel params")
+    # _meta is built in __init__ and unpacked in zero_block_ids: same arity
+    built = next((n for n in _ast.walk(tree)
+                  if isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Tuple)
+                  and any(getattr(t, "attr", "") == "_meta" for t in n.targets)), None)
+    unpacked = next((n for n in _ast.walk(tree)
+                     if isinstance(n, _ast.Assign) and isinstance(n.targets[0], _ast.Tuple)
+                     and getattr(n.value, "attr", "") == "_meta"), None)
+    check(built is not None and unpacked is not None, "_meta is both built and unpacked")
+    check(len(built.value.elts) == len(unpacked.targets[0].elts),
+          f"_meta built with {len(built.value.elts)} fields, unpacked into "
+          f"{len(unpacked.targets[0].elts)}")
+    rows = [l.split("\t") for l in open(os.path.join(REPO, "overlay/modules/glm53_runtime/manifest.tsv"),
+                                        encoding="utf-8").read().splitlines()
+            if l.strip() and not l.startswith("#")]
+    row = [r for r in rows if r[0] == "kv_zero_worker_utils.py"]
+    check(len(row) == 1 and row[0][1] == "vllm/v1/worker/utils.py"
+          and re.fullmatch(r"[0-9a-f]{64}", row[0][2]) is not None,
+          f"manifest overlays the worker utils against a pinned base image file: {row}")
+    print("  kv-zero guard ................ OK")
+
+
 def test_glm53_index_cache_layer_rule() -> None:
     """IndexCache (40차): the reuse frequency counts INDEXER layers, so on
     GLM-5.3's interleaved stack (11 of 45) the FIRST one always computes its own
@@ -11837,6 +11885,7 @@ if __name__ == "__main__":
     test_launcher_restores_prefill_warmup_from_caller_env()
     test_decode_first_scheduler_contracts()
     test_profile_keys_not_passed_via_extra_env()
+    test_kv_block_zero_guard()
     test_glm53_index_cache_layer_rule()
     test_glm53_indexer_gate_splitk_contracts()
     test_bracket_runner_contracts()

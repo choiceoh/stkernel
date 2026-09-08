@@ -26,7 +26,7 @@ FLEET_AUDIT = {'tests/test_fleet_admission.py': 'd452bec3a6ae34be36547174f956d27
 # Complete logic/deployment gates read profile/module READMEs and the campaign
 # runbook, all retained by fleet_source. SF6 and CUDA/header marker assertions
 # plus the canonical onepass contracts stay in that closure. Changed test or runner disables pruning.
-LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': 'f757b64733de4a08e720a387e06802d6b984a4919c709af44c2d4a9b34846589', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
+LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '7e56aa86d6f8f1c9ac9cba2a132e806e54d67e1124984c1b197fd927a5cfcc2c', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
 
 
 def sha(path):

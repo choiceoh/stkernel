@@ -16,7 +16,7 @@ import __future__
 # Re-audited for sf6: existing MoE control assertions changed, and proof-marker
 # discovery includes CUDA/header sources within the existing overlay closure.
 # The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'f757b64733de4a08e720a387e06802d6b984a4919c709af44c2d4a9b34846589'
+LOGIC_AUDIT = '7e56aa86d6f8f1c9ac9cba2a132e806e54d67e1124984c1b197fd927a5cfcc2c'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
