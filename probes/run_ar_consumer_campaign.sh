@@ -22,8 +22,9 @@ export FLEET_DIR=${FLEET_DIR:-$LOGD/fleet}
 [[ ${FLEET_RESTORE_MANAGED:-0} == 1 ]] || { echo 'supervised boot hold required'; exit 2; }
 IFS='|' read -r held _pid _host _start _est _note kind < "$FLEET_DIR/holder"
 [[ $held == "$session" && $kind == boot && -z $(git status --porcelain) ]] || exit 2
-git fetch origin main
-git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs current main'; exit 2; }
+# Use the reservation's fixed prequeue approval, including when main advanced
+# while this campaign waited. This also authenticates the owning supervisor.
+python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_approval.py" verify --repo "$REPO" --profile glm53
 # The profile may already include this optimization. Measure its opposite as
 # the candidate so the standard profile-default baseline remains meaningful.
 profile_mode=$(sed -nE 's/^VLLM_GLM53_AR_CONSUMER_PDL=([01])$/\1/p' profiles/glm53.env | tail -1)
@@ -82,7 +83,7 @@ done
 # The central idle controller owns recovery after this turn is released.
 touched=1
 stop_serving > "$AR_CONSUMER_OUT/stop-before-onepass.log" 2>&1
-bash launchers/deploy-overlays.sh glm53 > "$AR_CONSUMER_OUT/deploy.log" 2>&1
+# ab-lever's onepass_deploy ensures this exact candidate once before its boot.
 export FLEET=$REPO/bench/fleet.sh LEVER=$REPO/bench/ab-lever.sh
 export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
 export PREFILL_WARMUP=0 ONEPASS_REQUIRE_EXCLUSIVE=1

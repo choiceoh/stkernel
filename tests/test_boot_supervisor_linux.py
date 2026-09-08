@@ -27,6 +27,15 @@ class LinuxSupervisorTests(unittest.TestCase):
         # validation suite covers receipts. Session admission must never prepare
         # a recovery checkout or run its release CPU gate.
         (self.repo/'bench/fleet_validation.py').write_text("import sys\nassert sys.argv[1] == 'validate', 'session attempted recovery preparation'\nprint('{}')\n")
+        # These lifecycle payloads have no Git source and never deploy. Keep
+        # approval bookkeeping present so real queue edits and admitted payload
+        # environments are exercised; test_fleet_approval owns real Git/auth.
+        (self.repo/'bench/fleet_approval.py').write_text('''def freeze(value):
+    value['deployment_approvals'] = [dict(target, base='0' * 40, candidate='1' * 40)
+                                   for target in value['deployment_targets']]
+def validate(value):
+    assert value.get('deployment_approvals'), 'lifecycle approval missing'
+''')
         # These inert Python commands exercise process ownership, editing and
         # cancellation. Real onepass admission is covered separately by the
         # CLI integration tests; no production policy override is introduced.
@@ -193,7 +202,7 @@ test ! -e "$LOGD/fail-restore"
         third = self.launch('third', 'pass')
         self.until(lambda:self.ready('third'))
         original = (self.logs/'fleet/queue').read_text().splitlines()
-        command = [sys.executable, '-c', "import os,json; from pathlib import Path; Path('accepted.json').write_text(json.dumps(dict(cwd=os.getcwd(),holder=Path(os.environ['FLEET_DIR'],'holder').read_text(),literal=__import__('sys').argv[1:])))", 'a b', '$literal', '한글']
+        command = [sys.executable, '-c', "import os,json; from pathlib import Path; Path('accepted.json').write_text(json.dumps(dict(cwd=os.getcwd(),holder=Path(os.environ['FLEET_DIR'],'holder').read_text(),manifest=os.environ['FLEET_PREPARE_MANIFEST'],literal=__import__('sys').argv[1:])))", 'a b', '$literal', '한글']
         result = self.edit('second', '--est', '7', '--note', 'updated queued command', '--cwd', str(self.logs), '--', *command)
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
@@ -208,6 +217,7 @@ test ! -e "$LOGD/fail-restore"
         accepted = json.loads((self.logs/'accepted.json').read_text())
         self.assertEqual(accepted['cwd'], str(self.logs))
         self.assertEqual(accepted['literal'], ['a b', '$literal', '한글'])
+        self.assertEqual(accepted['manifest'], value['prepare_manifest'])
         self.assertEqual(accepted['holder'].split('|')[4:6], ['7', 'updated queued command'])
         self.assertFalse((self.logs/'restores').exists())
 
@@ -492,7 +502,7 @@ test ! -e "$LOGD/fail-restore"
 
     def test_env_prefix_preserves_supervisor_recovery_context(self):
         output=(self.logs/'env-prefix.log').open('w');self.addCleanup(output.close)
-        code='import os; assert os.environ["FLEET_SESSION"]=="env-prefix"; assert os.environ["FLEET_RESTORE_MANAGED"]=="1"; assert os.environ["FLEET_VALIDATION_REQUIRED"]=="1"; assert os.environ["IMAGE"]=="selected-image"; print("OWNED_CONTEXT")'
+        code='import os,json; from pathlib import Path; assert os.environ["FLEET_SESSION"]=="env-prefix"; assert os.environ["FLEET_RESTORE_MANAGED"]=="1"; assert os.environ["FLEET_VALIDATION_REQUIRED"]=="1"; assert os.environ["IMAGE"]=="selected-image"; assert json.loads(Path(os.environ["FLEET_PREPARE_MANIFEST"]).read_text())["session"]=="env-prefix"; print("OWNED_CONTEXT")'
         proc=subprocess.Popen(['bash',str(self.repo/'bench/fleet.sh'),'run','--gpu','env-prefix','--',
                                '/usr/bin/env','-i','FLEET_SESSION=foreign','IMAGE=selected-image',sys.executable,'-c',code],
                               env=self.env,cwd=self.repo,stdout=output,stderr=subprocess.STDOUT)

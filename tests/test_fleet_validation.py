@@ -4,6 +4,7 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -506,6 +507,103 @@ print(pathlib.Path(IMAGE_FILE).read_text())
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, str(old / 'bench/fleet_validation.py'))
+
+    def deployment_gate(self, *, managed=True, modern=True, approval_status=0, advanced=True):
+        """Run the real pre-publication shell gate against local Git history.
+
+        Only Python policy routing is stubbed: signed approval and source/base
+        policy have dedicated fixtures. A successful gate reaches an inert
+        publication marker so refusal cannot silently continue to deployment.
+        """
+        source = self.git('rev-parse', 'HEAD')
+        remote = self.root / 'deploy-origin.git'
+        subprocess.check_call(['git', 'clone', '--quiet', '--bare', str(self.repo), str(remote)])
+        self.git('remote', 'add', 'origin', str(remote))
+        self.git('fetch', '--quiet', 'origin', 'main')
+        if advanced:
+            self.change('profiles/glm53.env')
+            self.git('push', '--quiet', 'origin', 'main')
+            self.git('reset', '--quiet', '--hard', source)
+        runner = self.root / 'deploy-runner'
+        (runner / 'bench').mkdir(parents=True)
+        for name in ('fleet_validation.py', 'fleet_source.py', 'fleet_idle.py'):
+            (runner / 'bench' / name).write_text('# routing fixture\n')
+        if modern:
+            (runner / 'bench/fleet_approval.py').write_text('# routing fixture\n')
+        observed = self.root / 'deploy-actions'
+        bindir = self.root / 'deploy-bin'
+        bindir.mkdir()
+        real_git = shutil.which('git', path=os.defpath)
+        self.assertIsNotNone(real_git)
+        git = bindir / 'git'
+        git.write_text('#!' + sys.executable + '\n' + '''import json, os, sys
+if sys.argv[3:4] == ['fetch']:
+ with open(OBSERVED, 'a') as output: output.write(json.dumps(['fetch', *sys.argv[4:]]) + '\\n')
+os.execv(REAL_GIT, [REAL_GIT, *sys.argv[1:]])
+'''.replace('OBSERVED', repr(str(observed))).replace('REAL_GIT', repr(real_git)))
+        git.chmod(0o755)
+        python = bindir / 'python3'
+        python.write_text('#!' + sys.executable + '\n' + '''import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[1]).name
+with open(OBSERVED, 'a') as output: output.write(json.dumps([name, *sys.argv[2:]]) + '\\n')
+if name == 'fleet_approval.py':
+ assert sys.argv[2:] == ['verify', '--repo', os.environ['REPO'], '--profile', 'glm53']
+ raise SystemExit(int(os.environ['FIXTURE_APPROVAL_STATUS']))
+if name == 'fleet_source.py':
+ assert sys.argv[2:] == ['require-base', 'origin/main', '--repo', os.environ['REPO']]
+ raise SystemExit(1)
+if name == 'fleet_validation.py':
+ assert sys.argv[2:] == ['validate', '--repo', os.environ['REPO'], '--profile', 'glm53']
+ raise SystemExit(0)
+raise SystemExit('unexpected deploy policy process')
+'''.replace('OBSERVED', repr(str(observed))))
+        python.chmod(0o755)
+        deploy = Path(validation.__file__).resolve().parents[1] / 'launchers/deploy-overlays.sh'
+        text = deploy.read_text()
+        gate = text[text.index('require_deployable_checkout() {'):
+                    text.index('bash "$REPO/launchers/compose-overlays.sh"')]
+        script = 'set -euo pipefail\n' + gate + '\nprintf "publish:%s\\n" "$SOURCE_COMMIT"\n'
+        env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.defpath,
+                   REPO=str(self.repo), VALIDATOR_REPO=str(runner),
+                   VALIDATOR=str(runner / 'bench/fleet_validation.py'), PROFILE='glm53',
+                   FLEET_VALIDATION_REQUIRED='1' if managed else '0',
+                   FIXTURE_APPROVAL_STATUS=str(approval_status))
+        result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
+        actions = [json.loads(line) for line in observed.read_text().splitlines()] if observed.exists() else []
+        return result, actions, source
+
+    def test_managed_deploy_uses_fixed_approval_without_fetch_when_main_advances(self):
+        result, actions, source = self.deployment_gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([row[0] for row in actions], ['fleet_approval.py', 'fleet_validation.py'])
+        self.assertEqual(result.stdout.strip(), 'publish:' + source)
+
+    def test_managed_deploy_approval_refusal_stops_before_validation_or_publication(self):
+        result, actions, _ = self.deployment_gate(approval_status=23)
+        self.assertEqual(result.returncode, 23, result.stdout + result.stderr)
+        self.assertEqual([row[0] for row in actions], ['fleet_approval.py'])
+        self.assertNotIn('publish:', result.stdout)
+
+    def test_unmanaged_deploy_still_fetches_and_rejects_stale_candidate(self):
+        result, actions, _ = self.deployment_gate(managed=False)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual([row[0] for row in actions], ['fetch', 'fleet_source.py'])
+        self.assertEqual(actions[0], ['fetch', '--quiet', 'origin', 'main'])
+        self.assertIn('not based on current origin/main', result.stdout)
+        self.assertNotIn('publish:', result.stdout)
+
+    def test_legacy_managed_deploy_still_fetches_and_rejects_stale_candidate(self):
+        result, actions, _ = self.deployment_gate(modern=False)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual([row[0] for row in actions], ['fetch', 'fleet_source.py'])
+        self.assertIn('not based on current origin/main', result.stdout)
+        self.assertNotIn('publish:', result.stdout)
+
+    def test_unmanaged_deploy_accepts_candidate_containing_current_main(self):
+        result, actions, source = self.deployment_gate(managed=False, advanced=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([row[0] for row in actions], ['fetch', 'fleet_validation.py'])
+        self.assertEqual(result.stdout.strip(), 'publish:' + source)
 
     def configured_cli(self, *args):
         entry = self.root / 'validation-cli.py'
