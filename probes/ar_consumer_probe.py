@@ -10,6 +10,7 @@ from datetime import timedelta
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import statistics
@@ -160,13 +161,22 @@ def main():
                                          'exact_outputs': 6, 'pass': True})
         print('PASS graph input updates and independent oracle T=' + str(t), flush=True)
 
+    # Preserve completed numerical evidence if a later timing/profiler stage
+    # fails. RUNNING is deliberately not accepted as a completed probe.
+    receipt['numerics_passed'] = True
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(receipt, indent=2) + '\n')
     if not args.check_only:
         vals = inputs(6)
         for n in (4096, 6144, 6416):
             for cold in (False, True):
                 timed = {}
                 for early in (False, True):
-                    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                    # Captured internal events only encode graph dependencies.
+                    # External event-record nodes retain replay timestamps for
+                    # elapsed_time, matching the established MHC probe helper.
+                    start, end = (torch.cuda.Event(enable_timing=True, external=True)
+                                  for _ in range(2))
                     g = torch.cuda.CUDAGraph()
                     with torch.cuda.graph(g):
                         if cold: _l2_flush(hot=vals)
@@ -179,8 +189,10 @@ def main():
                         if args.distributed: dist.barrier()
                         g, start, end = timed[early]
                         g.replay(); torch.cuda.synchronize()
+                        elapsed_us = start.elapsed_time(end) * 1000
+                        assert math.isfinite(elapsed_us) and elapsed_us > 0, elapsed_us
                         receipt['samples'].append({'n': n, 'cold': cold, 'early': early,
-                                                   'rep': rep, 'us': start.elapsed_time(end) * 1000})
+                                                   'rep': rep, 'us': elapsed_us})
                 stats = {str(e): statistics.median(s['us'] for s in receipt['samples']
                     if s['n'] == n and s['cold'] == cold and s['early'] == e) for e in (False, True)}
                 print(json.dumps({'n': n, 'cold': cold, 'median_us': stats}), flush=True)
