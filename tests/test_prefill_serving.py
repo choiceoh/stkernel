@@ -143,7 +143,7 @@ class ServingTests(unittest.TestCase):
                 run.assert_not_called()
                 self.assertFalse(out.exists())
 
-    def test_deploy_failure_still_attempts_public_restore_and_reports_failure(self):
+    def test_deploy_failure_reports_failure_without_public_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)/'run'
             args=SimpleNamespace(source=ROOT,out=out,revision='c'*40,candidate='moe',
@@ -152,17 +152,17 @@ class ServingTests(unittest.TestCase):
             def run(command,**kw):
                 calls.append(command)
                 if 'deploy' in command:raise RuntimeError('deploy failed')
-                raise RuntimeError('restore failed too')
+                self.fail('unexpected recovery boot')
             with patch.dict(m.os.environ,FLEET_SESSION='test'),patch.object(m,'check_holder'),patch.object(m,'pinned'),\
                  patch.object(m.subprocess,'run'),patch.object(m,'verify_gate',return_value={}),\
                  patch.object(m,'remote',return_value={'disk_free_gib':200}),patch.object(m,'run_owned',side_effect=run):
                 self.assertEqual(m.run_bracket(args),1)
-            self.assertEqual(len(calls),2)
+            self.assertEqual(len(calls),1)
             self.assertIn('deploy',calls[0])
-            self.assertIn('TESTRESTORE',calls[1])
             result=json.loads((out/'completion.json').read_text())
             self.assertIn('deploy failed',result['error'])
-            self.assertIn('restore failed too',result['restore_error'])
+            self.assertNotIn('restore_error',result)
+            self.assertEqual(result['public_recovery'],'central idle controller')
             self.assertFalse(result.get('restored'))
 
     def test_later_boot_uses_first_baseline_budget_without_second_deduction(self):

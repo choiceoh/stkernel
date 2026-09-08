@@ -53,7 +53,7 @@ cleanup() {
   trap - EXIT
   # A live loopback-only server looks "booting" to public-port admission.
   # Release our serving processes before the supervisor transfers the hold;
-  # its restore/handoff policy retains responsibility for the public service.
+  # the central idle controller retains responsibility for public recovery.
   if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} == 1 ]]; then
     stop_serving > "$AR_CONSUMER_OUT/stop-experiment.log" 2>&1 || rc=1
   fi
@@ -75,7 +75,7 @@ for attempt in {1..60}; do
   sleep 5
 done
 [[ $idle_ready == 1 ]] || { echo 'ABORT: serving did not become idle'; exit 2; }
-# The fleet supervisor owns recovery, including early exits and queue handoff.
+# The central idle controller owns recovery after this turn is released.
 touched=1
 stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1
 if [[ -z $gpu_evidence ]]; then
@@ -91,8 +91,8 @@ export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
 export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
 export ONEPASS_JSONL=$AR_CONSUMER_OUT/records.raw.jsonl ONEPASS_VERDICTS=$AR_CONSUMER_OUT/verdicts.jsonl
 # Publish the requested candidate step first; explicitly disable the consumer
-# for both baselines, independent of the profile default. The supervisor owns
-# the final defaults restore or handoff after campaign cleanup stops serving.
+# for both baselines, independent of the profile default. The central idle
+# controller owns public recovery after campaign cleanup stops serving.
 if [[ $baseline_only == 1 ]]; then
   # A failed second baseline must not repeat already completed A1/B1 arms.
   # Keep the complete workload, boot proof and correctness/deployment gates.

@@ -21,11 +21,12 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py', 'fleet_pause.py', 'fleet_prepared.py', 'fleet_source.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py', 'fleet_pause.py', 'fleet_prepared.py', 'fleet_source.py', 'fleet_idle.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
         # This suite exercises real admission/controller processes. The separate
-        # validation suite covers receipts and approved recovery checkouts.
-        (self.repo/'bench/fleet_validation.py').write_text("import sys\nprint('{}' if sys.argv[1] == 'validate' else '/fixture/recovery.json')\n")
+        # validation suite covers receipts. Session admission must never prepare
+        # a recovery checkout or run its release CPU gate.
+        (self.repo/'bench/fleet_validation.py').write_text("import sys\nassert sys.argv[1] == 'validate', 'session attempted recovery preparation'\nprint('{}')\n")
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
 echo "$FLEET_SESSION" >> "$LOGD/restores"
@@ -76,7 +77,7 @@ test ! -e "$LOGD/fail-restore"
     def wait(self, proc):
         return proc.wait(timeout=20)
 
-    def test_two_real_waiters_handoff_with_one_final_restore(self):
+    def test_two_real_waiters_release_without_any_restore(self):
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
@@ -88,21 +89,22 @@ test ! -e "$LOGD/fail-restore"
         gate.touch()
         self.assertEqual(self.wait(first), 0)
         self.assertEqual(self.wait(second), 0)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['second'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
         events = [json.loads(line) for line in (self.logs/'fleet/lifecycle.jsonl').read_text().splitlines()]
-        self.assertEqual(sum(r['event']=='handoff-accepted' for r in events), 1)
+        self.assertEqual(sum(r['event']=='restore-deferred' for r in events), 2)
+        self.assertFalse(any(r['event'].startswith('handoff-') for r in events))
 
-    def test_receiver_failure_preserves_payload_code_and_restores(self):
+    def test_receiver_failure_preserves_payload_code_without_restore(self):
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
         second = self.launch('second', 'raise SystemExit(7)')
         self.until(lambda:self.ready('second')); gate.touch()
         self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(second), 7)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['second'])
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_cancelled_waiter_leaves_donor_to_restore(self):
+    def test_cancelled_waiter_does_not_make_donor_restore(self):
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
@@ -110,54 +112,54 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:self.ready('second')); second.terminate()
         self.assertEqual(self.wait(second), 143)
         gate.touch(); self.assertEqual(self.wait(first), 0)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_failed_restore_leaves_visible_debt_and_nonzero_exit(self):
+    def test_recovery_failure_cannot_change_completed_payload_result(self):
         (self.logs/'fail-restore').touch()
-        self.assertEqual(self.wait(self.launch('first', 'pass')), 1)
-        self.assertEqual(handoff.read(self.logs/'fleet/restore-debt.json')['owner']['session'], 'first')
+        self.assertEqual(self.wait(self.launch('first', 'pass')), 0)
+        self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_cancel_after_offer_reclaims_and_restores(self):
+    def test_paused_successor_does_not_delay_release_or_trigger_restore(self):
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
         second = self.launch('second', 'pass')
-        self.until(lambda: 'waiting:' in (self.logs/'second.log').read_text())
+        self.until(lambda:self.ready('second'))
+        paused = subprocess.run(['bash', str(self.repo/'bench/fleet.sh'), 'pause', 'second'],
+                                env=self.env, capture_output=True, text=True, timeout=8)
+        self.assertEqual(paused.returncode, 0, paused.stdout+paused.stderr)
         gate.touch()
-        events = self.logs/'fleet/lifecycle.jsonl'
-        self.until(lambda: 'handoff-offered' in events.read_text())
+        self.assertEqual(self.wait(first), 0)
+        self.assertFalse(self.held('first'))
+        self.assertIsNone(second.poll())
         second.terminate()
         self.assertEqual(self.wait(second), 143)
-        self.assertEqual(self.wait(first), 0)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
-        self.assertIn('handoff-reclaim', events.read_text())
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_probe_waits_for_restore_and_active_cancellation_recovers(self):
+    def test_probe_runs_after_cancelled_holder_without_restore(self):
         first = self.launch('first', 'import time; time.sleep(60)')
         self.until(lambda:self.held('first'))
-        # A probe has no boot supervisor; it must observe the restored boundary.
-        probe = self.launch('probe', "import os; from pathlib import Path; assert Path(os.environ['LOGD'],'restores').read_text().strip()=='first'", '--probe')
+        # A probe may use the stopped/idle boundary immediately after release.
+        probe = self.launch('probe', "import os; from pathlib import Path; assert not Path(os.environ['LOGD'],'restores').exists()", '--probe')
         self.until(lambda:'queued' in (self.logs/'probe.log').read_text() or 'waiting:' in (self.logs/'probe.log').read_text())
         first.terminate()
         self.assertEqual(self.wait(first), 143)
         self.assertEqual(self.wait(probe), 0)
 
-    def test_restore_debt_does_not_allow_probe_to_block_recovery_boot(self):
-        (self.logs/'fail-restore').touch()
-        self.assertEqual(self.wait(self.launch('failed', 'pass')), 1)
+    def test_legacy_restore_debt_cannot_block_next_probe(self):
+        handoff.write(self.logs/'fleet/restore-debt.json', dict(owner=dict(session='old')))
         probe = self.launch('probe', 'pass', '--probe')
-        self.until(lambda:'waiting:' in (self.logs/'probe.log').read_text())
-        (self.logs/'fail-restore').unlink()
-        recovery = self.launch('recovery', 'pass')
-        self.assertEqual(self.wait(recovery), 0)
         self.assertEqual(self.wait(probe), 0)
+        self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_nested_restore_policy_defers_until_supervisor_finishes(self):
+    def test_nested_restore_policy_defers_to_idle_controller(self):
         code = "import os,subprocess; assert subprocess.call(['bash',os.environ['FLEET'],'restore-needed',os.environ['FLEET_SESSION']])==1"
         self.assertEqual(self.wait(self.launch('nested', code)), 0)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['nested'])
+        self.assertFalse((self.logs/'restores').exists())
 
-    def test_cancel_between_holder_and_debt_transfer_restores(self):
+    def test_cancel_between_holder_and_admission_reset_releases_without_restore(self):
         source = self.repo/'bench/fleet_handoff.py'
         source.write_text(source.read_text().replace(
             "    if managed:\n        claim_held(directory, session, pid)",
@@ -166,7 +168,7 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:(self.logs/'fleet/admission-gap').exists())
         receiver.terminate()
         self.assertEqual(self.wait(receiver), 143)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['receiver'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertFalse((self.logs/'fleet/restore-debt.json').exists())
         self.assertFalse(self.held('receiver'))
 
@@ -199,7 +201,7 @@ test ! -e "$LOGD/fail-restore"
         self.assertEqual(accepted['cwd'], str(self.logs))
         self.assertEqual(accepted['literal'], ['a b', '$literal', '한글'])
         self.assertEqual(accepted['holder'].split('|')[4:6], ['7', 'updated queued command'])
-        self.assertEqual(len((self.logs/'restores').read_text().splitlines()), 1)
+        self.assertFalse((self.logs/'restores').exists())
 
     def test_failed_edit_keeps_original_then_active_edit_is_refused(self):
         gate = self.logs/'continue'
@@ -225,7 +227,7 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:path(self.logs/'fleet', 'probe').exists())
         self.assertEqual(self.edit('probe', '--', sys.executable, '-c', 'pass').returncode, 0)
         gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(probe), 0)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
+        self.assertFalse((self.logs/'restores').exists())
 
     def test_go_during_edit_preflight_runs_original_and_rejects_late_commit(self):
         gate = self.logs/'continue'
@@ -247,14 +249,14 @@ test ! -e "$LOGD/fail-restore"
         self.assertTrue((self.logs/'original-ran').exists())
         self.assertIn('no longer queued', (self.logs/'edit.log').read_text())
 
-    def test_damaged_pending_record_cannot_skip_restore_or_leave_hold(self):
+    def test_damaged_pending_record_does_not_restore_or_leave_hold(self):
         gate = self.logs/'continue'
         first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
         self.until(lambda:self.held('first'))
         from fleet_pending import path
         path(self.logs/'fleet', 'first').unlink()
         gate.touch(); self.assertEqual(self.wait(first), 1)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertFalse(self.held('first'))
 
     def show(self, name):
@@ -271,31 +273,34 @@ test ! -e "$LOGD/fail-restore"
         self.assertEqual(result['state'], 'failed')
         self.assertEqual(result['payload_returncode'], 7)
         self.assertEqual(result['returncode'], 7)
-        self.assertEqual(result['recovery_returncode'], 0)
+        self.assertTrue(result['recovery_deferred'])
+        self.assertNotIn('recovery_returncode', result)
         self.assertGreaterEqual(result['finished_at'], result['payload_finished_at'])
         self.assertFalse(result['editable'])
         logs = subprocess.run(['bash', str(self.repo/'bench/fleet.sh'), 'logs', 'inspect-failure', '--tail', '80'],
                               env=self.env, capture_output=True, text=True, timeout=3)
         self.assertEqual(logs.returncode, 0, logs.stderr)
-        for marker in ('GO inspect-failure', 'STDOUT_PAYLOAD', 'STDERR_PAYLOAD', 'RESTORE_OUTPUT'):
+        for marker in ('GO inspect-failure', 'STDOUT_PAYLOAD', 'STDERR_PAYLOAD'):
             self.assertIn(marker, logs.stdout)
             self.assertIn(marker, (self.logs/'inspect-failure.log').read_text())
+        self.assertNotIn('RESTORE_OUTPUT', logs.stdout)
         self.assertEqual(Path(result['log_path']).stat().st_mode & 0o777, 0o600)
 
-    def test_payload_success_does_not_hide_failed_restore_in_show(self):
+    def test_payload_success_reports_deferred_recovery(self):
         (self.logs/'fail-restore').touch()
-        self.assertEqual(self.wait(self.launch('restore-failed', 'pass')), 1)
-        result = self.show('restore-failed')
-        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(self.wait(self.launch('restore-deferred', 'pass')), 0)
+        result = self.show('restore-deferred')
+        self.assertEqual(result['state'], 'succeeded')
         self.assertEqual(result['payload_returncode'], 0)
-        self.assertEqual(result['recovery_returncode'], 1)
-        self.assertEqual(result['returncode'], 1)
+        self.assertTrue(result['recovery_deferred'])
+        self.assertNotIn('recovery_returncode', result)
+        self.assertEqual(result['returncode'], 0)
 
     def test_log_open_failure_preserves_live_output_and_recovery(self):
         (self.logs/'fleet/run-logs').write_text('fixture collision')
         self.assertEqual(self.wait(self.launch('no-log', 'print("LIVE_FALLBACK")')), 0)
         self.assertIn('LIVE_FALLBACK', (self.logs/'no-log.log').read_text())
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['no-log'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertFalse(self.held('no-log'))
 
     def test_cancelled_waiter_and_reused_session_keep_separate_logs(self):
@@ -324,6 +329,9 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:self.held('first'))
         second = self.launch('legacy-view', 'pass')
         self.until(lambda:self.ready('legacy-view'))
+        # Readiness precedes the supervisor's log-path write; wait until that
+        # write finishes before removing the record to emulate a legacy owner.
+        self.until(lambda:bool(self.show('legacy-view').get('log_path')))
         from fleet_pending import path
         saved = path(self.logs/'fleet', 'legacy-view'); data = saved.read_bytes(); saved.unlink()
         try:
@@ -350,7 +358,7 @@ test ! -e "$LOGD/fail-restore"
         retained = Path(result['log_path']).read_text()
         self.assertGreater(len(retained), 2*1024*1024)
         self.assertIn('RETAINED_END', retained)
-        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['slow-reader'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertFalse(self.held('slow-reader'))
 
 
@@ -432,7 +440,7 @@ test ! -e "$LOGD/fail-restore"
         self.until(lambda:self.show('source-change')['state']=='paused')
         value=self.show('source-change')
         self.assertIsNone(value.get('payload_returncode'))
-        self.assertEqual((self.logs/'restores').read_text().splitlines(),['first'])
+        self.assertFalse((self.logs/'restores').exists())
         self.assertIn('queued input changed',value['pause_reason'])
         self.assertNotIn('source-change',(self.logs/'fleet/queue').read_text())
         cancelled=subprocess.run(['bash',str(self.repo/'bench/fleet.sh'),'cancel','source-change'],
@@ -483,7 +491,7 @@ test ! -e "$LOGD/fail-restore"
         self.children.append(proc)
         self.assertEqual(self.wait(proc),0,(self.logs/'env-prefix.log').read_text())
         self.assertIn('OWNED_CONTEXT',(self.logs/'env-prefix.log').read_text())
-        self.assertEqual((self.logs/'restores').read_text().splitlines(),['env-prefix'])
+        self.assertFalse((self.logs/'restores').exists())
 
     def test_prepare_then_run_uses_same_manifest(self):
         command=[sys.executable,'-c','import os; assert not any(k in os.environ for k in ("SSH_CLIENT","SSH_CONNECTION","SSH_TTY","TERM_PROGRAM")); print("PREPARED_PAYLOAD")']
