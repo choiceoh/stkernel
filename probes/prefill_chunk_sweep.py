@@ -131,7 +131,12 @@ def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: 
         urllib.request.urlopen(req, timeout=timeout).read()
 
     before = set(glob.glob(os.path.join(trace_dir, "*.json*")))
-    post("/start_profile", 60)
+    # 600 s, not 60: the second capture of a run arms the profiler while the
+    # first one's asynchronous flush is still going, and 60 s timed out there
+    # (attr0908, 2026-09-08 -- it cost the chunk-1152 and chunk-2304 traces and
+    # so the whole attribution, since one chunk size cannot separate fixed from
+    # per-token).
+    post("/start_profile", 600)
     ptok, wall = prefill(model, ctx_tokens, rng)
     post("/stop_profile")
     newest, size = "", -1
@@ -314,7 +319,15 @@ def main() -> int:
     try:
         for chunk in trace_chunks:
             set_chunk(args.chunk_file, chunk)
-            path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
+            try:
+                path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
+            except Exception as exc:
+                # One bad capture must not cost the others: attr0908 lost the
+                # 1,152 and 2,304 traces to the 2,304 one raising, and with a
+                # single chunk size left the attribution could not be done at
+                # all. Report and carry on.
+                print(f"!! trace chunk {chunk} FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+                continue
             traces[chunk] = {"trace": path, "prompt_tokens": ptok, "wall": wall}
             print(f"trace chunk {chunk}: {path or '(none found)'}  tok {ptok}  wall {wall:.1f}s")
             print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr-{chunk}.json")
