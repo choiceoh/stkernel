@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""One shared defaults reservation per immutable pair context.
+"""Acquire only missing shared defaults for each immutable pair context.
 
-Build the independent noise sample set once, before admitting candidate pairs.
+One sample supports a minimal comparison; confirmation requests a noise set.
 The reservation goes through normal fleet preflight/admission and never holds
 the GPU while waiting for a CPU/probe prerequisite.
 """
@@ -10,6 +10,12 @@ import copy
 import json
 import subprocess
 import time
+
+
+def required_samples(spec, index=0):
+    from measurement_contract import evaluations
+    # Old saved jobs without a policy retain their original confirmation gate.
+    return 1 if spec.get('baseline_policy') == 'minimal' or evaluations(spec)[index]['objective']['metric'] == 'quality' else 3
 
 
 def reference(payload, index=0):
@@ -51,8 +57,8 @@ def reserve(store, job):
     # CPU/probe contracts gate their own candidate. This reservation is only
     # created AFTER those gates pass, and is otherwise candidate-independent.
     payload["spec"].pop("probe_contract", None)
-    payload["baseline_samples"] = 3
     wanted = evaluations(payload['spec'])
+    payload["baseline_samples"] = max(required_samples(payload['spec'], i) for i in range(len(wanted)))
     with store.transaction():
         # Independent evidence is keyed by the serving workload/requirements,
         # not the candidate's objective label. An open reservation can grow;
@@ -99,15 +105,15 @@ def missing_workloads(payload):
     from serving_group import workloads
     values = workloads(payload['spec'])
     return sorted({values.index(e['workload']) for i, e in enumerate(evaluations(payload['spec']))
-                   if len(samples(payload, i)) < (1 if e['objective']['metric'] == 'quality' else 3)})
+                   if len(samples(payload, i)) < required_samples(payload['spec'], i)})
 
 
 def run(store, job, payload):
     from serving_group import measure
-    target = payload['baseline_samples']
+    from measurement_contract import evaluations
+    target = max(required_samples(payload['spec'], i) for i in range(len(evaluations(payload['spec']))))
     try:
         # A first compile-cold record cannot supply a steady-compile TTFT sample.
-        from measurement_contract import evaluations
         extra = int(any(e['objective']['metric'] == 'prefill_ttft' for e in evaluations(payload['spec'])))
         for index in range(target + extra):
             if ready(payload):
