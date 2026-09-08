@@ -9,7 +9,10 @@
 #   (normally: fleet.sh chain <session> [est] [note] -- NAME=KNOBS ...)
 #
 #   NAME=""                       a defaults arm (counts as the build's baseline sample)
-#   NAME="VLLM_X=1 VLLM_Y=1"      a candidate arm
+#   NAME="KNOB_A=1 KNOB_B=1"      a candidate arm  (deliberately NOT spelled
+#                                 VLLM_*: fleet.sh preflight greps this file
+#                                 for knob names and would read the example
+#                                 as an undeclared knob, failing every chain)
 # Each arm runs exactly one canonical onepass. Extra GPU hooks are rejected
 # before any arm boots; passive onepass metrics stay in the same workload.
 # FLEET_REHEARSE=1 runs everything without a GPU (ab-lever fabricates records).
