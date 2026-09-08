@@ -31,11 +31,12 @@ import json
 import sys
 
 
-def points(reports: list[dict]) -> list[dict]:
+def points(reports: list[dict], keep_first: bool = False) -> list[dict]:
     """One row per prefill chunk across every report."""
     out = []
     for rep in reports:
-        for ch in rep.get("chunks", []):
+        chunks = rep.get("chunks", [])
+        for ch in (chunks if keep_first else chunks[1:]):
             rows = ch.get("rows")
             if not rows:
                 continue
@@ -73,10 +74,17 @@ def main() -> int:
     # 30-token chunk need not run the same kernels as a 1,152-token one. Raise
     # this to see whether the answer depends on those tails.
     ap.add_argument("--min-rows", type=int, default=0)
+    # The FIRST chunk of a request is a warm-up: on the 2026-09-08 capture its
+    # communication read 352 ms against 240-246 for the four after it (42%
+    # spread), which alone invented a ~92 ms "fixed" communication cost. Every
+    # other category is within 1-9% across the later chunks. Dropping it is the
+    # default; --keep-first puts it back.
+    ap.add_argument("--keep-first", action="store_true",
+                    help="keep each request's first chunk (a warm-up outlier)")
     args = ap.parse_args()
 
     reports = [json.load(open(p)) for p in args.reports]
-    pts = [p for p in points(reports) if p["rows"] >= args.min_rows]
+    pts = [p for p in points(reports, args.keep_first) if p["rows"] >= args.min_rows]
     sizes = sorted({p["rows"] for p in pts})
     print(f"{len(pts)} prefill chunks from {len(reports)} capture(s); "
           f"chunk sizes {sizes[:8]}{'...' if len(sizes) > 8 else ''}")
@@ -93,8 +101,14 @@ def main() -> int:
         if len(xs) < 3:
             continue
         fixed, slope, se = regress([float(x) for x in xs], ys)
+        groups: dict[int, list[float]] = {}
+        for x, y in zip(xs, ys):
+            groups.setdefault(int(x), []).append(y)
+        spreads = [100 * (max(v) - min(v)) / (sum(v) / len(v))
+                   for v in groups.values() if len(v) > 1 and sum(v)]
         rows.append({"category": name, "fixed_ms": fixed, "us_per_token": slope * 1000,
                      "se_fixed_ms": se, "n": len(xs),
+                     "spread_pct": max(spreads) if spreads else float("nan"),
                      "at_1152_ms": fixed + slope * 1152, "at_8192_ms": fixed + slope * 8192})
 
     span = next((r for r in rows if r["category"] == "(span)"), None)
@@ -103,11 +117,14 @@ def main() -> int:
     idle = next((r for r in rows if r["category"] == "(idle)"), None)
 
     print(f"\n{'category':<26} {'fixed ms':>9} {'+-95%':>7} {'us/token':>9} "
-          f"{'@1152 ms':>9} {'@8192 ms':>9}")
+          f"{'@1152 ms':>9} {'spread':>7}")
+    print("  (spread = worst disagreement between chunks of the SAME size; a wide one "
+          "means that\n   category's intercept is scatter, not a fixed cost)")
     for r in body + ([idle] if idle else []):
         pm = "" if r["se_fixed_ms"] != r["se_fixed_ms"] else f"{1.96 * r['se_fixed_ms']:7.1f}"
+        sp = "" if r["spread_pct"] != r["spread_pct"] else f"{r['spread_pct']:6.1f}%"
         print(f"{r['category']:<26} {r['fixed_ms']:>9.1f} {pm:>7} {r['us_per_token']:>9.2f} "
-              f"{r['at_1152_ms']:>9.1f} {r['at_8192_ms']:>9.1f}")
+              f"{r['at_1152_ms']:>9.1f} {sp:>7}")
     total_fixed = sum(r["fixed_ms"] for r in body if r["fixed_ms"] > 0)
     print(f"\n  sum of positive category intercepts: {total_fixed:.1f} ms")
     if idle:
