@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Supervised maintenance: correctness first, then candidate and two baselines.
+# One canonical onepass candidate, with a matched default baseline only if missing.
 set -euo pipefail
 export REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
@@ -17,27 +17,31 @@ while (( $# )); do
   esac
 done
 session=${FLEET_SESSION:?}
+export LOGD=${LOGD:-/home/choiceoh/glm53-logs}
+export FLEET_DIR=${FLEET_DIR:-$LOGD/fleet}
 [[ ${FLEET_RESTORE_MANAGED:-0} == 1 ]] || { echo 'supervised boot hold required'; exit 2; }
-IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
+IFS='|' read -r held _pid _host _start _est _note kind < "$FLEET_DIR/holder"
 [[ $held == "$session" && $kind == boot && -z $(git status --porcelain) ]] || exit 2
 git fetch origin main
 git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs current main'; exit 2; }
-export AR_CONSUMER_OUT=${AR_CONSUMER_OUT:-/home/choiceoh/glm53-logs/ARCONSUMER-$session}
+# The profile may already include this optimization. Measure its opposite as
+# the candidate so the standard profile-default baseline remains meaningful.
+profile_mode=$(sed -nE 's/^VLLM_GLM53_AR_CONSUMER_PDL=([01])$/\1/p' profiles/glm53.env | tail -1)
+[[ $profile_mode == 0 || $profile_mode == 1 ]] || { echo 'explicit profile AR consumer mode required'; exit 2; }
+candidate_mode=$((1 - profile_mode))
+export AR_CONSUMER_OUT=${AR_CONSUMER_OUT:-$LOGD/ARCONSUMER-$session}
 [[ ! -e $AR_CONSUMER_OUT ]] || { echo 'fresh evidence required'; exit 2; }
 mkdir -p "$AR_CONSUMER_OUT"
 git rev-parse HEAD > "$AR_CONSUMER_OUT/source.commit"
 if [[ -n $gpu_evidence ]]; then
-  # Reuse requires every stage, exact source/profile identity, numerical
-  # cases, and clean sanitizer/container receipts before touching serving.
-  python3 probes/reuse_ar_consumer_gpu_evidence.py "$gpu_evidence" "$AR_CONSUMER_OUT/gpu" \
-    > "$AR_CONSUMER_OUT/gpu-reuse.json"
+  echo '--gpu-evidence is obsolete: the canonical onepass is the only GPU workload'
 fi
 stop_serving() {
   python3 - <<'PY'
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import os,shlex,subprocess
-held=Path('/home/choiceoh/glm53-logs/fleet/holder').read_text().split('|')
+held=(Path(os.environ['FLEET_DIR'])/'holder').read_text().split('|')
 assert held[0]==os.environ['FLEET_SESSION'] and held[-1].strip()=='boot'
 code='import subprocess,sys; name=sys.argv[1]; names=subprocess.check_output(["docker","ps","--format","{{.Names}}"],text=True).splitlines(); subprocess.run(["docker","stop","-t","30",name],check=True,timeout=40) if name in names else None'
 def stop(node):
@@ -53,7 +57,7 @@ cleanup() {
   trap - EXIT
   # A live loopback-only server looks "booting" to public-port admission.
   # Release our serving processes before the supervisor transfers the hold;
-  # its restore/handoff policy retains responsibility for the public service.
+  # the central idle controller retains responsibility for public recovery.
   if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} == 1 ]]; then
     stop_serving > "$AR_CONSUMER_OUT/stop-experiment.log" 2>&1 || rc=1
   fi
@@ -75,30 +79,22 @@ for attempt in {1..60}; do
   sleep 5
 done
 [[ $idle_ready == 1 ]] || { echo 'ABORT: serving did not become idle'; exit 2; }
-# The fleet supervisor owns recovery, including early exits and queue handoff.
+# The central idle controller owns recovery after this turn is released.
 touched=1
-stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1
-if [[ -z $gpu_evidence ]]; then
-  # The runner automatically reuses complete matching groups, including the
-  # successful portion of a previous run that failed in a later group.
-  echo 'GPU validation: reuse matching completed groups; run only missing groups'
-  python3 probes/run_ar_consumer_gpu.py --out "$AR_CONSUMER_OUT/gpu"
-fi
+stop_serving > "$AR_CONSUMER_OUT/stop-before-onepass.log" 2>&1
 bash launchers/deploy-overlays.sh glm53 > "$AR_CONSUMER_OUT/deploy.log" 2>&1
-export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/ar_consumer_lever.sh
+export FLEET=$REPO/bench/fleet.sh LEVER=$REPO/bench/ab-lever.sh
 export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1
-export PREFILL_WARMUP=0 QUALITY_CTX=2000,32000,128000 MAX_JOBS=2
-export ONEPASS_FIXED_DECODE_TOKENS=2048 ONEPASS_FIXED_DECODE_REPS=3 ONEPASS_REQUIRE_EXCLUSIVE=1
-export ONEPASS_JSONL=$AR_CONSUMER_OUT/records.raw.jsonl ONEPASS_VERDICTS=$AR_CONSUMER_OUT/verdicts.jsonl
-# Publish the requested candidate step first; explicitly disable the consumer
-# for both baselines, independent of the profile default. The supervisor owns
-# the final defaults restore or handoff after campaign cleanup stops serving.
+export PREFILL_WARMUP=0 ONEPASS_REQUIRE_EXCLUSIVE=1
+# A fresh private ledger would force another baseline for every reservation.
+# Keep using the shared standard ledger; onepass retains the session identity.
+export ONEPASS_JSONL=${ONEPASS_JSONL:-$LOGD/bracket-onepass.jsonl}
+export ONEPASS_VERDICTS=${ONEPASS_VERDICTS:-$AR_CONSUMER_OUT/verdicts.jsonl}
+printf '%s\n' "$ONEPASS_JSONL" > "$AR_CONSUMER_OUT/onepass-ledger.path"
 if [[ $baseline_only == 1 ]]; then
-  # A failed second baseline must not repeat already completed A1/B1 arms.
-  # Keep the complete workload, boot proof and correctness/deployment gates.
-  bash bench/chain.sh "${session}B2=VLLM_GLM53_AR_CONSUMER_PDL=0"
+  # Compatibility for a pending request explicitly asking for one default arm.
+  bash bench/ab-lever.sh "${session}BASE" ""
 else
-  bash bench/chain.sh "${session}A1=VLLM_GLM53_AR_CONSUMER_PDL=1" \
-    "${session}B1=VLLM_GLM53_AR_CONSUMER_PDL=0" \
-    "${session}B2=VLLM_GLM53_AR_CONSUMER_PDL=0"
+  echo "onepass candidate AR_CONSUMER_PDL=$candidate_mode; baseline is profile mode $profile_mode"
+  bash bench/pair.sh "${session}AR${candidate_mode}" "VLLM_GLM53_AR_CONSUMER_PDL=$candidate_mode"
 fi

@@ -1,108 +1,54 @@
 #!/usr/bin/env bash
-# fleet.sh -- turn-taking for the TP4 fleet among sessions (39차, operator:
-# "멀티세션간 플릿 테스트 대기 및 순번 같은거 프로그램 만들어").
+# fleet.sh -- one queue for canonical onepass GPU experiments.
 #
-# QUICKSTART (six lines; the rest of this header is the reference)
-#   fleet.sh submit agent spec.json                       async CPU / single pair / probe, deduplicated
-#   fleet.sh result ID | inbox agent --after CURSOR        shared evidence; no GPU wait in the agent
-#   See bench/EXPERIMENTS.md for CPU prerequisites and repeat samples.
-#   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
-#   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
-#   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
-#   fleet.sh run --gpu --detach s 20 "what" -- <cmd>       return after durable queue receipt
-#   fleet.sh retry agent ID --reason "fixed"                 retry saved experiment; reuse valid evidence
-#   fleet.sh prepare s --spec prep.json -- <cmd>               validate inputs without queueing
-#   fleet.sh run --gpu --prepared MANIFEST s 20 "what" -- <cmd> reuse matching preparation
-#   fleet.sh pause s --reason "revise inputs" | resume s         retain ticket and age
-#   fleet.sh history s | show s --ticket T | logs s --ticket T
-#   fleet.sh classify --explain <cmd>                          source lines behind CPU/GPU decision
-#   fleet.sh show [session] | logs session                 fast state, exact command, retained output
-#   fleet.sh status | board | events                           where things stand
-#   fleet.sh edit fusion --est 20 --note "updated" -- <cmd>  revise before GO; keep ticket
-#   fleet.sh cancel fusion                                     leave (stops your waiter too)
-#   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
+# QUICKSTART
+#   fleet.sh onepass s NAME [est] [note]                 reuse idle serving, onepass only
+#   fleet.sh pair s NAME "VLLM_X=1" [est] [note]          candidate + missing matched baseline
+#   fleet.sh chain s [est] [note] -- A="VLLM_X=1" B=""    onepass once per requested arm
+#   fleet.sh submit agent spec.json                      async CPU / canonical GPU pair, deduplicated
+#   fleet.sh result ID | inbox agent --after CURSOR       shared evidence without holding GPUs
+#   fleet.sh run --cpu s [est] [note] -- <cmd>             CPU work runs now in parallel
+#   fleet.sh run --gpu [--detach] s [est] [note] -- <canonical argv>
+#   fleet.sh run --gpu --prepared MANIFEST s [est] [note] -- <canonical argv>
+#   fleet.sh prepare s --spec prep.json -- <cmd>          prepare inputs without queueing
+#   fleet.sh retry agent ID --reason "fixed"              reuse valid evidence
+#   fleet.sh edit s --expect-revision N -- <canonical argv> revise before GO, retain ticket
+#   fleet.sh pause s --reason "revise inputs" | resume s  retain ticket and age
+#   fleet.sh show [s] | logs s | history s               exact command, retained output
+#   fleet.sh status | board | events | ledger [days]      queue, timings and results
+#   fleet.sh classify --explain <cmd>                    CPU/GPU classification evidence
+#   fleet.sh cancel s                                   stop the waiter and withdraw
 #
-# One queue with aging and downstream priority, and one hold, under $FLEET_DIR on srv2 (every
-# session's chains run there). A session REQUESTS a turn, WAITS until it is
-# at the head of the queue AND nobody holds the fleet AND no legacy bench /
-# boot process is running (peers that never adopted this tool are still
-# respected), then HOLDS it, runs, RELEASES. Nothing here ever kills a live
-# holder: "바로 해" from the operator is `front` (jump the queue) and, for a
-# holder whose process is gone, `kick`.
+# GPU admission accepts current canonical pair, chain, ab-lever, onepass and
+# recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
+# sanitizers, custom probe manifests, chain --after and LEGS=none are refused
+# before preparation/queueing. Pending edits and execution recheck this policy.
+# --probe is the internal idle-serving scheduling lane; only onepass.py may
+# enter it. A rehearsal skips GPUs only for canonical pair/chain/ab-lever.
+# No bypass: a FAILed preflight is not queued. Fix the printed cause.
 #
-#   fleet.sh request [--probe] <session> [est] [note] enqueue (idempotent), print position
-#   fleet.sh wait    <session> [timeout_min]         block until GO, then hold (pid = caller)
-#   fleet.sh release <session>                       drop the hold (+ legacy FLEET-free-for-*.done)
-#   fleet.sh run     <session> [est_min] [note] -- <cmd...>
-#                                                    request + wait + run + release (trap)
-#   fleet.sh status                                  holder, queue, liveness, legacy busy
-#   fleet.sh adopt   <session> <pid> [est_min] [note] a job already running becomes the holder
-#   fleet.sh front   <session>                       move to the head of the queue
-#   fleet.sh cancel  <session>                       leave the queue
-#   fleet.sh kick    [--force]                       drop a DEAD holder (--force: any holder;
-#                                                    the operator's call, logged as such)
-#   fleet.sh busy                                    "<bench procs> <running+waiting requests>"
-#   fleet.sh preflight [--probe] <session> [-- <cmd...>]
-#                                                    checks BEFORE a boot is spent: srv2 copies
-#                                                    (ab-lever2.sh, fleet.sh) == repo, chain syntax,
-#                                                    every VLLM_* knob the chain sets is declared in
-#                                                    the profile (the launcher forwards only those),
-#                                                    baseline / duplicate-arm notice. `run` refuses
-#                                                    a FAILed preflight -- no override (operator).
-#                                                    A stale srv2 copy is SYNCED from the repo, not
-#                                                    failed; knobs may be declared by the repo profile
-#                                                    or by a tree the chain `cd`s into (a PR checkout)
-#   fleet.sh restore-needed <session>                "yes" when nobody with a BOOT is queued behind you
-#                                                    (the last holder restores production; a holder
-#                                                    with a boot job behind it may skip the restore)
-#   fleet.sh run --probe <session> [est] [note] -- <cmd...>
-#                                                    a GPU probe (no boot): needs an IDLE serving
-#                                                    (health 200, 0 requests) or no serving at all,
-#                                                    never a boot in progress; est <= 15 may slip
-#                                                    ahead of queued boot jobs (logged)
-#   fleet.sh board [n]                               every session's last n verdicts + today's boots
-#   fleet.sh ledger [days]                           per-session holds, minutes, boots, records and
-#                                                    boots that produced no measurement
-#   fleet.sh chain <session> [est] [note] -- NAME=KNOBS [NAME=KNOBS ...] [--after NAME 'cmd'] [--legs NAME none]
-#                                                    N arms in one hold (bench/chain.sh): proof per
-#                                                    arm, yield between arms, a defaults sample only
-#                                                    while the build's floor is thin, restore only when
-#                                                    nobody boots behind you, judge + verdicts. NAME=""
-#                                                    is a defaults arm; --after runs a check on that boot
-#   fleet.sh pair <session> <NAME> "<knobs>" [est] [note]
-#                                                    the standard bracket (bench/pair.sh): candidate
-#                                                    boot + onepass + proof, yield to a short probe,
-#                                                    defaults boot only when the build lacks a
-#                                                    baseline / a 3-sample floor and nobody boots
-#                                                    behind you, judge with the noise floor, verdict
-#   fleet.sh deploy <session> <rev>                  the holder deploys <rev> (git + overlays) and the
-#                                                    build registry gets stamp <-> sha <- session
-#   fleet.sh yield <session> [max_est]               holder lets a short queued probe run beside its
-#                                                    idle serving, keeps its place, resumes after
-#   fleet.sh nodes                                   the four nodes: ssh, GPU, stray containers, RAM,
-#                                                    model path -- run at GO (warn; FLEET_NODES=strict refuses)
-#   fleet.sh notify <session> "<cmd>"                hook run on GO / release / preflight-fail / yield
-#                                                    with args <event> <session> <note>; every event
-#                                                    also lands in $FLEET_DIR/events.log
-#   fleet.sh run --gpu|--cpu <session> ...           SAY which it is (operator): --gpu takes a turn in
-#                                                    the queue; --cpu runs NOW in parallel under nice,
-#                                                    never holding. A --cpu job whose script or command
-#                                                    shows GPU use (ab-lever, a boot, a probe container,
-#                                                    torch.cuda...) is REFUSED, no override: fix the
-#                                                    label or the classifier. Without a flag it decides:
-#                                                    GPU evidence -> queue; CPU evidence (rehearsal,
-#                                                    CPU probes, tests, compile checks) -> parallel;
-#                                                    no evidence -> queue, and it says so
-# `status` also prints what production is serving (defaults, or which knobs)
-# and the deployed build; a release with an empty queue and production not on
-# the defaults prints the restore command (FLEET_AUTO_RESTORE=1 runs it).
-# Records: every release appends to $FLEET_DIR/ledger.tsv; `status` derives ETAs
-# from a session's last actual holds and flags a holder that is SILENT (no
-# heartbeat for 10 min) or OVERDUE (2x its estimate) -- flags only, never a kill.
+# Sessions release immediately after measurements. Recovery belongs exclusively
+# to the central controller after 300 seconds without fleet activity; its
+# authenticated boot-only maintenance action is separate from experiments.
+# A matching baseline is reused; pair and chain target one sample by default.
+# The queue retains aging, downstream priority, pending edits and pause/resume.
 #
-# Files: queue (ticket|session|epoch|est_min|note), holder (session|pid|host|
-# epoch|est_min|note), log. All edits under flock on $FLEET_DIR/.lock.
-# Lives in the repo as bench/fleet.sh; srv2 runs ~/glm53-logs/fleet.sh.
+# Operator/control commands retained for owner lifecycle and compatibility:
+#   wait s [timeout_min] (registered supervisor only); release s
+#   front s; kick [--force]; busy; nodes
+#   preflight [--probe] s -- <canonical argv>; deploy s rev; yield s [max_est]
+#   restore-needed s (always no); notify s "<cmd>" (event hook)
+# Bare request and unvalidated adopt are disabled.
+# None of these makes an arbitrary GPU payload an approved experiment.
+# Live owners are never killed by ordinary scheduling; dead owners can be kicked.
+#
+# Source copies ab-lever2.sh and fleet.sh are refreshed during preflight.
+# Control scripts and accepted source are pinned before waiting; the holder
+# executes the latest accepted command revision. CPU admission uses the fast
+# source gate; GPU quality, prefill, decode and acceptance use the same onepass.
+# See bench/EXPERIMENTS.md for manifests, repeat samples and evidence semantics.
+# Files live under $FLEET_DIR on srv2; mutations hold its .lock.
+# srv2's public entry is ~/glm53-logs/fleet.sh.
 set -uo pipefail
 # Transport metadata must not become a preparation or payload dependency.
 unset SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION LC_TERMINAL LC_TERMINAL_VERSION
@@ -156,6 +102,12 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
   local ok=1 knobs="" chain="" kind=boot
   [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
   echo "preflight $1 [$kind]:"
+  shift
+  [ "${1:-}" = "--" ] && shift
+  if [ $# -gt 0 ]; then
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" \
+      --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --kind "$kind" -- "$@" || return 1
+  fi
   for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"; do
     local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:}
     [ -f "$copy" ] || continue
@@ -167,8 +119,6 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
       echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
     else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
-  shift
-  [ "${1:-}" = "--" ] && shift
   if [ "${1:-}" = bash ] && [ -f "${2:-}" ]; then chain=$2; fi
   if [ -n "$chain" ]; then
     if bash -n "$chain" 2>/dev/null; then echo "  PASS syntax $chain"; else echo "  FAIL syntax $chain"; ok=0; fi
@@ -236,7 +186,10 @@ _event() {  # event session note
 # Evidence for GPU wins over evidence for CPU; no evidence at all is treated as
 # GPU (queued) and says so. A rehearsal never needs the GPU.
 classify_cmd() {  # cmd... -> gpu|nogpu|unknown
-  [ "${FLEET_REHEARSE:-0}" = 1 ] && { echo nogpu; return; }
+  if [ "${FLEET_REHEARSE:-0}" = 1 ] && python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" \
+      --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --rehearsal-only -- "$@" >/dev/null 2>&1; then
+    echo nogpu; return
+  fi
   # This reviewed entrypoint invokes nvcc --compile only. A .cu input is not
   # device execution; its argument parser rejects runtime/launcher commands.
   case "${1##*/}" in python|python3|python3.*)
@@ -293,12 +246,9 @@ nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   done
   return $ok
 }
-restore_needed() {  # session -> yes|no
-  if [ "${FLEET_RESTORE_MANAGED:-0}" = 1 ]; then
-    echo "no (the boot supervisor owns the final restore/handoff decision)"; return 1
-  fi
-  echo "yes (a standalone caller cannot transfer restore responsibility; use fleet.sh run --gpu)"
-  return 0
+restore_needed() {  # session -> always no
+  echo "no (only the central controller restores after 300 seconds of idle fleet)"
+  return 1
 }
 
 # ---- legacy awareness: a peer that did not adopt this tool is still busy when
@@ -346,16 +296,21 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
       logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
     fi
     awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue || return 1
     return 0
   fi
   echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue
 }
 _dequeue() {
+  local existed=0
+  grep -q "^[0-9]*|$1|" "$Q" && existed=1
   grep -v "^[0-9]*|$1|" "$Q" > "$Q.tmp"; mv "$Q.tmp" "$Q"
   local marker
   for marker in priority-front priority-yield; do
     [ "$(cat "$FLEET_DIR/$marker" 2>/dev/null)" != "$1" ] || rm -f "$FLEET_DIR/$marker"
   done
+  [ "$existed" = 0 ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dequeue
 }
 _withdraw_owned() {  # session pid; an older supervisor cannot erase a reused name
   local rowpid
@@ -371,6 +326,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   if [ -s "$H" ]; then
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dead-holder || return 1
   fi
   # We hold .lock and have no live holder. Every waiter sees the same order;
   # priority cannot interrupt a pair/chain or steal a yielded holder's place.
@@ -426,16 +382,7 @@ _release() {  # session
   if [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$1" ]; then
     _ledger_row "$1"
     rm -f "$H" "$LOGD/FLEET-held-by-$1.done" "$(hb_file "$1")"; logit "release $1"; _event release "$1" ""
-    if [ ! -s "$Q" ] && [ "${FLEET_NO_RESTORE_CHECK:-0}" != 1 ]; then
-      local pl; pl=$(production_line)
-      case "$pl" in *"NOT defaults"*|*"no serving"*|*"health 000"*|*"health 5"*)
-        if [ "${FLEET_AUTO_RESTORE:-0}" = 1 ]; then
-          logit "auto-restore after $1: $pl"; ( LEGS=none PREFILL_WARMUP=1 nohup bash "$LOGD/ab-lever2.sh" PRODRESTORE "" > "$LOGD/auto-restore.log" 2>&1 & )
-        else
-          echo "NOTE: queue empty and $pl -- restore with: LEGS=none bash $LOGD/ab-lever2.sh PRODRESTORE \"\" (FLEET_AUTO_RESTORE=1 does it)"
-        fi;;
-      esac
-    fi
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
     return 0
@@ -443,13 +390,31 @@ _release() {  # session
   echo "not the holder: $(holder_line 2>/dev/null || echo none)" >&2; return 1
 }
 
+_adopt() {  # caller holds .lock throughout the ownership transition
+  local s=$1 pid=$2 est=${3:-30} note=${4:-}
+  if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; return 1; fi
+  kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; return 1; }
+  printf '%s|%s|%s|%s|%s|%s|boot\n' "$s" "$pid" "$(me)" "$(now)" "$est" "$note" > "$H"
+  rm -f "$LOGD"/FLEET-free-for-*.done; touch "$LOGD/FLEET-held-by-$s.done"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" adopt || return 1
+  logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)"
+}
+_kick() {  # preserve the same lock used by idle recovery and admission
+  if [ ! -s "$H" ]; then echo "nothing held"; return 0; fi
+  if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; return 1; fi
+  logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" kick || return 1
+  touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked"
+}
+
 cmd=${1:-status}; shift || true
 case "$cmd" in
   request)
-    kind=boot; [ "${1:-}" = "--probe" ] && { kind=probe; shift; }
-    s=${1:?session}; with_lock _enqueue "$s" "${2:-30}" "${3:-}" "$kind" "$PPID" || exit 6; echo "queued: $s [$kind] at position $(_position "$s") of $(grep -c . "$Q")"; baseline_line;;
+    echo 'bare GPU reservations are disabled; use fleet.sh onepass, pair or chain' >&2; exit 2;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" --repo "${FLEET_RUNNER_REPO:-$REPO}" \
+      --directory "$FLEET_DIR" --wait-owner "$s" "$pid" >/dev/null || exit 2
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
@@ -511,6 +476,9 @@ case "$cmd" in
       logit "refused --cpu $s: classifier saw GPU use"; exit 5
     fi
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
+    if [ "$cls" != nogpu ]; then
+      python3 "$REPO/bench/fleet_onepass.py" --repo "$REPO" --cwd "$PWD" --kind "$kind" -- "$@" || exit 2
+    fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
     FLEET_PREPARE_MANIFEST=$(python3 "$REPO/bench/fleet_prepare.py" create "$s" --fleet "$REPO/bench/fleet.sh" ${prep_args[@]+"${prep_args[@]}"} -- "$@") || exit 3
@@ -530,15 +498,12 @@ case "$cmd" in
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
     if [ "$kind" = boot ]; then
-      # Quick candidate admission and an existing release-validated recovery
-      # are sufficient for experiments; full release is an explicit action.
+      # Sessions validate only their candidate. The central idle controller
+      # selects a release-validated recovery when the fleet has been idle.
       export FLEET_VALIDATION_STORE=${FLEET_VALIDATION_STORE:-$FLEET_DIR/validation}
       python3 "$REPO/bench/fleet_prepare.py" validate-targets "$s" --prepared "$FLEET_PREPARE_MANIFEST" >&2 || exit 3
-      production_repo=/home/choiceoh/stkernel
-      if [ -s "$FLEET_DIR/production-repo" ]; then IFS= read -r production_repo < "$FLEET_DIR/production-repo" || true; fi
-      production_repo=${FLEET_PRODUCTION_REPO:-$production_repo}
-      FLEET_RECOVERY_RECEIPT=$(python3 "$REPO/bench/fleet_validation.py" prepare-recovery --repo "$production_repo" --store "$FLEET_VALIDATION_STORE" --format receipt) || exit 3
-      export FLEET_RECOVERY_RECEIPT FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
+      unset FLEET_RECOVERY_RECEIPT
+      export FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
     fi
     runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
@@ -558,13 +523,9 @@ case "$cmd" in
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" list --format text
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" status "$FLEET_DIR"
     production_line; deployed_line; baseline_line;;
-  adopt)  # a job that is ALREADY running (started before this tool, or by hand) becomes the holder
-    s=${1:?session}; pid=${2:?pid}; est=${3:-30}; note=${4:-}
-    if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; exit 1; fi
-    kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; exit 1; }
-    with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
-    logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
+  adopt) echo 'unvalidated GPU adoption is disabled; submit canonical onepass work' >&2; exit 2;;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
   withdraw)
     if [ "${2:-}" = --pid ]; then with_lock _withdraw_owned "${1:?session}" "${3:?pid}"
@@ -578,24 +539,22 @@ case "$cmd" in
     # the waiter goes first -- it is this tool's own process, recorded at request
     if [ -n "$qpid" ] && kill -0 "$qpid" 2>/dev/null && grep -qE "fleet.sh|fleet_boot.py" "/proc/$qpid/cmdline" 2>/dev/null; then kill "$qpid" 2>/dev/null; sleep 1; echo "stopped waiter pid $qpid"; fi
     with_lock _dequeue "$s"; logit "cancel $s"; echo "cancelled $s";;
-  kick)
-    if [ ! -s "$H" ]; then echo "nothing held"; exit 0; fi
-    if holder_alive && [ "${1:-}" != "--force" ]; then echo "holder is ALIVE: $(holder_line) -- use --force only on the operator's word" >&2; exit 1; fi
-    logit "kick${1:+ $1} of $(holder_line)"; rm -f "$H"; touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done; echo "kicked";;
+  kick) with_lock _kick "${1:-}";;
   busy) echo "$(busy_procs) $(busy_reqs)";;
   preflight)
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
   startup)
-    s=${1:?session}; spec=$(realpath "${2:?campaign JSON}"); est=${3:-45}
-    python3 "$REPO/bench/startup_campaign.py" validate --repo "$REPO" --spec "$spec" || exit 2
-    exec env STARTUP_CACHE_MODE=campaign STARTUP_CAMPAIGN_SPEC="$spec" bash "$0" run --gpu "$s" "$est" "shared startup campaign" -- bash "$REPO/bench/startup_cache_boots.sh";;
+    echo 'GPU work requires onepass: use fleet.sh pair/chain for startup knobs; separate startup request campaigns are disabled' >&2; exit 2;;
+  onepass)
+    s=${1:?session}; name=${2:?NAME}; est=${3:-5}; note=${4:-live onepass $name}
+    exec bash "$0" run --gpu --probe "$s" "$est" "$note" -- python3 "$REPO/bench/onepass.py" --name "$name";;
   chain)
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
-    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...] [--after NAME cmd] [--legs NAME none]" >&2; exit 2; }
+    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...]" >&2; exit 2; }
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
     exec bash "$0" run $lane "$s" "$est" "${note:-chain $*}" -- bash "$REPO/bench/chain.sh" "$@";;
   pair)
@@ -610,8 +569,8 @@ case "$cmd" in
     printf '%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$stamp" "$sha" "$s" "$rev" >> "$FLEET_DIR/builds.tsv"
     logit "deploy $s $rev -> build $stamp = $sha"; echo "deployed build $stamp = $sha (registry: $FLEET_DIR/builds.tsv)";;
   yield)
-    # The supervisor holds restore responsibility across its payload. Do not
-    # drop that ownership for a nested legacy yield; queued work runs at finish.
+    # The supervisor owns its payload and teardown. Do not drop that ownership
+    # for a nested legacy yield; queued work runs immediately at finish.
     [ "${FLEET_RESTORE_MANAGED:-0}" != 1 ] || { echo "yield deferred to supervised finish"; exit 0; }
     s=${1:?session}; max=${2:-15}
     [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "not the holder"; exit 0; }

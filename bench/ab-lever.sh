@@ -9,8 +9,7 @@
 # Korean prompt set are gone.
 # Usage: ab-lever.sh <NAME> "<caller env>"
 #   SKIP_BOOT=1 reuses the live boot. Records --name NAME --tag cand.
-#   LEGS=none boots, waits for health and fingerprints only (for a chain
-#   that runs onepass itself, e.g. on several arms of one boot).
+#   LEGS=none is reserved for the authenticated central idle recovery.
 #   QUALITY_CTX=2000,32000 shortens the ladder for an exploration arm.
 # Lives in the repo as bench/ab-lever.sh; srv2 runs ~/glm53-logs/ab-lever2.sh.
 set -uo pipefail
@@ -24,6 +23,29 @@ HEAD=${HEAD:-10.10.10.2}
 PORT=${GLM53_API_PORT:-8000}
 ARM=$NAME
 cd "$REPO" || exit 1
+# Recovery labels are reserved for the central idle controller. Bare restoration
+# calls from old cleanup wrappers cannot bypass fleet_restore.sh's authority.
+case "${NAME^^}" in
+  *RESTORE|*RECOVER|*RESTORE[0-9]*|*RECOVER[0-9]*|PRODRESTORE) export FLEET_BOOT_INTENT=recovery ;;
+esac
+if [ "${FLEET_BOOT_INTENT:-}" = recovery ] || [ -n "${FLEET_DEPLOY_RECOVERY_RECEIPT:-}" ]; then
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" authorize \
+    "${FLEET_DIR:-$LOGD/fleet}" "${FLEET_SESSION:-}" >/dev/null || exit 2
+fi
+if [ "$LEGS" != onepass ]; then
+  if [ "$LEGS" != none ] || [ "${FLEET_BOOT_INTENT:-}" != recovery ]; then
+    echo 'GPU work requires onepass; LEGS=none and separate GPU checks are disabled' >&2
+    exit 2
+  fi
+fi
+if [ "${FLEET_BOOT_INTENT:-}" != recovery ]; then
+  for knob in $LEVER_ENV; do
+    case "$knob" in PREFILL_WARMUP=*)
+      [ "$knob" = PREFILL_WARMUP=0 ] || { echo 'separate prefill warmup requests are disabled; use onepass' >&2; exit 2; } ;;
+    esac
+  done
+  export PREFILL_WARMUP=0
+fi
 # 39차 idea 2 -- rehearsal: no boot, no leg; the LAST real record is copied under
 # this arm's name with rehearsal=true (judge/baseline ignore such rows unless
 # asked), so a chain's flow, judge parsing and log handling can be checked
@@ -47,6 +69,12 @@ print(f"   rehearsal record {name} appended (copied from {real[-1]['name'] if re
 PY
   echo "== [$ARM] done (rehearsal) $(date +%T) =="; exit 0
 fi
+# Resolve the submitted source before deriving the boot/measurement identity.
+if [ "${SKIP_BOOT:-0}" = 1 ]; then
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/onepass_deploy.py" --repo "$REPO" --live || exit 2
+elif [ "${FLEET_BOOT_INTENT:-}" != recovery ]; then
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/onepass_deploy.py" --repo "$REPO" || exit 2
+fi
 # 39차 idea 4 -- the first boot after a deploy compiles cold (~12 min) and inflates
 # the cold prefill column; tell onepass so the record carries cold_compile=true.
 STAMP_FILE=${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}
@@ -55,12 +83,6 @@ phase() {
   python3 bench/experiment_metrics.py "$@" || echo "phase timing unavailable: $*" >&2
 }
 phase boot start
-SEEN=$LOGD/.boot-stamps
-_stamp=$(cut -c1-12 "$STAMP_FILE" 2>/dev/null)
-if [ -n "$_stamp" ] && ! grep -qx "$_stamp" "$SEEN" 2>/dev/null; then
-  export MK_COLD_COMPILE=1; echo "== [$ARM] first boot on build $_stamp: cold compile (cold prefill column not comparable) =="
-  echo "$_stamp" >> "$SEEN"
-fi
 snap() {  # snapshot head + worker logs on a failure, then abort
   D=$LOGD/fail-$NAME-$(date +%H%M%S); mkdir -p "$D"; cp "$LOGD/glm53.log" "$D/glm53.log.srv2" 2>/dev/null
   for ip in 10.10.10.1 10.10.10.3 10.10.10.4; do scp -q -o BatchMode=yes choiceoh@$ip:glm53-logs/glm53.log "$D/glm53.log.$ip" 2>/dev/null; done
@@ -76,10 +98,9 @@ if [ "${SKIP_BOOT:-0}" = 1 ]; then
 else
   echo "== [$ARM] boot $(date +%T) caller env: $LEVER_ENV (profile defaults otherwise) =="
   # Production boots pay the prefill JIT tax at boot (PREFILL_WARMUP=1 since
-  # 33차); a bracket boot must not. The warmup's six requests land right after
+  # 33차); an experiment boot must not. The warmup's requests land right after
   # health, inside the first decode leg's 2 s windows, and the prefill ladder's
-  # cold row IS this harness's cold-tax channel. Export 0 unless the caller
-  # explicitly wants to test the warmup itself.
+  # cold row IS this harness's cold-tax channel. Only idle recovery may warm up.
   export PREFILL_WARMUP="${PREFILL_WARMUP:-0}"
   env $LEVER_ENV bash launchers/start-glm53-nvfp4-tp4.sh 2>&1 | tail -40 || snap "launcher failed"
 fi
@@ -103,6 +124,13 @@ done
 [ "$up" = 1 ] || snap "never became healthy"
 sleep 20
 phase boot end
+# The launcher stamps the selected deployment; read it only after that boot.
+SEEN=$LOGD/.boot-stamps
+_stamp=$(cut -c1-12 "$STAMP_FILE" 2>/dev/null)
+if [ -n "$_stamp" ] && ! grep -qx "$_stamp" "$SEEN" 2>/dev/null; then
+  export MK_COLD_COMPILE=1; echo "== [$ARM] first boot on build $_stamp: cold compile (cold prefill column not comparable) =="
+  echo "$_stamp" >> "$SEEN"
+fi
 # 35차: the lever's PROOF is the container's environment, not the caller's
 # line (a lever once read as not applied and the cause was never found)
 if [ -n "${LEVER_ENV:-}" ]; then

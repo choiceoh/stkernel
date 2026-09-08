@@ -9,6 +9,14 @@
 # WORKER-FIRST, head last.
 set -euo pipefail
 
+# Experiments boot under their hold; restoration requires the controller's
+# process-bound lease. DRY_RUN only prints commands and does not start GPUs.
+if [ "${DRY_RUN:-0}" != 1 ]; then
+  _fleet_repo=${FLEET_RUNNER_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+  python3 "$_fleet_repo/bench/fleet_idle.py" boot-authorize \
+    "${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}" "${FLEET_SESSION:-}" >/dev/null || exit 2
+fi
+
 # Shared machinery for both TP=4 lanes. Everything it holds was implemented
 # twice, once here and once in start-hy4-tp4.sh, and the copies drifted --
 # see the file header for what that drift cost.

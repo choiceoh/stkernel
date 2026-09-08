@@ -3,7 +3,6 @@
 set -euo pipefail
 cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 export REPO=$PWD
-RESTORE_REPO=${FLEET_PRODUCTION_REPO:-/home/choiceoh/stkernel}
 IMAGE=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 export INPUT_CTA_SERVING_OUT=${INPUT_CTA_SERVING_OUT:-/home/choiceoh/glm53-logs/INPUTCTASERVE20907}
 out=$INPUT_CTA_SERVING_OUT
@@ -11,7 +10,7 @@ export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/input_cta
 session=${FLEET_SESSION:?}
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
 [[ $held == "$session" && $kind == boot ]] || exit 2
-[[ -z $(git status --porcelain) && -z $(git -C "$RESTORE_REPO" status --porcelain) ]] || exit 2
+[[ -z $(git status --porcelain) ]] || exit 2
 git fetch origin
 python3 bench/fleet_source.py require-base origin/main || { echo 'ABORT before stopping service: candidate needs current main'; exit 2; }
 [[ ! -e $out/source.commit ]] || { echo 'ABORT: fresh evidence required'; exit 2; }
@@ -19,26 +18,10 @@ mkdir -p "$out/build"
 git rev-parse HEAD > "$out/source.commit"
 python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
 
-touched=0
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   docker stop -t 2 "inputcta-$session" >/dev/null 2>&1 || true
-  if [[ $touched == 1 && ${FLEET_RESTORE_MANAGED:-0} != 1 ]]; then
-    if (
-      cd "$RESTORE_REPO"
-      git fetch origin || exit 1
-      git merge --ff-only origin/main || exit 1
-      bash launchers/deploy-overlays.sh glm53 || exit 1
-      env -u ONEPASS_JSONL -u ONEPASS_VERDICTS REPO="$RESTORE_REPO" \
-        GLM53_API_HOST=0.0.0.0 GLM53_API_PORT=8000 HEAD=10.10.10.2 \
-        PREFILL_WARMUP=1 LEGS=none bash bench/ab-lever.sh "${session}RESTORE" ''
-    ) > "$out/restore.log" 2>&1; then
-      echo restored > "$out/restore.status"
-    else
-      echo FAILED > "$out/restore.status"; rc=1
-    fi
-  fi
   echo "$rc" > "$out/runner.exit"
   exit "$rc"
 }
@@ -49,7 +32,6 @@ docker image inspect "$IMAGE" >/dev/null
 if docker inspect glm53 >/dev/null 2>&1; then
   [[ $(docker inspect glm53 --format '{{.Image}}') == "$IMAGE" ]] || exit 2
 fi
-touched=1
 if docker inspect glm53 >/dev/null 2>&1; then docker stop -t 30 glm53 >/dev/null; fi
 pids=()
 for node in 1 3 4; do

@@ -82,7 +82,7 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):runner.settled(range(4),action)
         self.assertEqual(sorted(calls),list(range(4)))
 
-    def exercise(self,*,prepare_failure=False,restore_failure=False):
+    def exercise(self,*,prepare_failure=False):
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{
             'FLEET_SESSION':'cpu','FLEET_RUNNER_REPO':str(ROOT),'FLEET_OBSERVATION_CLONES':'1'}):
             out=Path(tmp)/'capture';run=runner.Run(ROOT,'frozen',out);events=[]
@@ -96,36 +96,28 @@ class LifecycleTests(unittest.TestCase):
             def failed_collection(*_):
                 try:raise RuntimeError('request failed')
                 finally:run.cleanup()
-            restores=iter([RuntimeError('restore interrupted'),before] if restore_failure else [before])
-            def restore(expected):
-                self.assertEqual(expected,before);value=next(restores)
-                if isinstance(value,Exception):raise value
-                events.append('healthy-originals');return value
             with (patch.object(runner.lifecycle,'check_holder'),patch.object(runner.lifecycle,'pinned'),
-                  patch.object(runner.prefill_serving,'run_owned'),patch.object(runner.lifecycle,'snapshot',return_value=before),
+                  patch.object(runner.prefill_serving,'run_owned') as command,patch.object(runner.lifecycle,'snapshot',return_value=before),
                   patch.object(runner.lifecycle,'validate_before',return_value='present'),patch.object(runner.lifecycle,'idle'),
                   patch.object(runner.lifecycle,'remote',return_value={'disk_free_gib':200}),
                   patch.object(run,'snapshot',return_value=before),patch.object(run,'all',side_effect=all_nodes),
                   patch.object(run,'collect',side_effect=failed_collection),
                   patch.object(run,'cleanup',side_effect=lambda:events.append('remove-clones')),
-                  patch.object(runner.lifecycle,'transition_all',side_effect=transition),
-                  patch.object(runner.lifecycle,'wait_restore',side_effect=restore)):
+                  patch.object(runner.lifecycle,'transition_all',side_effect=transition)):
                 self.assertEqual(run.run(),1)
             result=json.loads((out/'completion.json').read_text())
             self.assertFalse(result['complete']);self.assertFalse(result['performance_acceptance'])
-            self.assertEqual(result['restored_original'],not prepare_failure)
+            self.assertTrue(result['cleanup_complete'])
+            self.assertEqual(result['original_stop_attempted'], not prepare_failure)
             if prepare_failure:self.assertNotIn('stop',events)
-            else:
-                self.assertLess(events.index('remove-clones'),events.index('start'))
-                self.assertIn('healthy-originals',events)
+            else:self.assertIn('stop',events)
+            self.assertNotIn('start',events)
             self.assertIn('remove-clones',events)
+            command.assert_not_called()
             return events
 
-    def test_request_failure_still_records_exact_original_restoration(self):self.exercise()
+    def test_request_failure_cleans_clones_without_recovery_boot(self):self.exercise()
     def test_partial_prepare_failure_cleans_clones_without_stopping_originals(self):self.exercise(prepare_failure=True)
-    def test_failed_restoration_is_retried_after_owned_clone_cleanup(self):
-        events=self.exercise(restore_failure=True);self.assertEqual(events.count('start'),2)
-
     def test_boot_failure_always_runs_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'FLEET_SESSION':'cpu'}):
             run=runner.Run(ROOT,'frozen',Path(tmp))

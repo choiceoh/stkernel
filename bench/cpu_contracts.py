@@ -18,7 +18,7 @@ import __future__
 # branch's REJECT_METHOD/SPEC_K_SEQLEN/FLy gates, the per-profile duplicate
 # check and the preimage-tuple contract). None of the three audited helpers,
 # their tests, or the access graphs in DEPENDENCY_AUDITS are touched by either.
-LOGIC_AUDIT = 'e58bad274312f9b55e7a2d91f71d63933be7846cf903a1d33b44161c55a64d4e'
+LOGIC_AUDIT = 'ca479a374e55524b99abc2f435ec8c7d71210660cbc3411795f4eb3224ef9a44'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

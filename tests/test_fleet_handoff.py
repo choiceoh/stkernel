@@ -1,4 +1,4 @@
-"""Restore ownership and real Linux shell admission, using no GPUs or network."""
+"""Fleet admission and deferred recovery, using no GPUs or network."""
 import base64
 import hashlib
 import json
@@ -33,38 +33,43 @@ class OwnershipTests(unittest.TestCase):
             stream.write(f'{pid}|{name}|{time.time()}|{minutes}|fixture|{kind}|{pid}\n')
         return handoff.ready(self.root, name, pid)
 
-    def test_only_actual_next_live_boot_supervisor_accepts_debt(self):
+    def test_managed_admission_never_creates_restore_debt(self):
         self.ready('donor', 1)
         self.assertTrue(handoff.admit(self.root, 'donor', 1, 'boot'))
-        self.ready('slow', 2, minutes=30)
-        self.ready('next', 3, minutes=1)
-        self.assertEqual(handoff.offer(self.root, 'donor')['session'], 'next')
-        self.assertFalse(handoff.admit(self.root, 'slow', 2, 'boot'))
-        self.assertFalse(handoff.admit(self.root, 'next', 3, 'probe'))
-        self.assertTrue(handoff.admit(self.root, 'next', 3, 'boot'))
-        with self.assertRaises(ValueError):
-            handoff.clear(self.root, 'donor')
-        handoff.clear(self.root, 'next')
         self.assertFalse((self.root/'restore-debt.json').exists())
+        self.assertTrue((self.root/'holder').read_text().startswith('donor|1|'))
 
-    def test_probe_empty_dead_and_unmanaged_successors_require_restore(self):
-        self.ready('donor', 1); handoff.admit(self.root, 'donor', 1, 'boot')
-        self.assertIsNone(handoff.offer(self.root, 'donor'))
-        self.ready('probe', 2, kind='probe', minutes=1)
-        self.ready('boot', 3, minutes=30)
-        self.assertIsNone(handoff.offer(self.root, 'donor'))
-        (self.root/'queue').write_text(f'2|old|{time.time()}|1|fixture|boot|2\n')
-        self.assertIsNone(handoff.offer(self.root, 'donor'))
-        self.assertFalse(handoff.admit(self.root, 'old', 2, 'boot'))
-        (self.root/'queue').write_text(f'9|dead|{time.time()}|1|fixture|boot|1001\n')
-        self.assertIsNone(handoff.offer(self.root, 'donor'))
+    def test_legacy_debt_and_target_do_not_block_queued_probe(self):
+        owner = self.ready('old', 1)
+        target = self.ready('target', 2)
+        handoff.write(self.root/'restore-debt.json', dict(owner=owner, target=target))
+        self.ready('probe', 3, kind='probe')
+        self.assertTrue(handoff.admit(self.root, 'probe', 3, 'probe'))
+        self.assertFalse((self.root/'restore-debt.json').exists())
+        self.assertTrue((self.root/'holder').read_text().startswith('probe|3|'))
+
+    def test_legacy_debt_does_not_reorder_priority_or_bypass_probe_readiness(self):
+        import fleet_priority
+        owner = self.ready('old', 1)
+        target = self.ready('target', 2, minutes=30)
+        self.ready('probe', 3, kind='probe', minutes=1)
+        (self.root/'queue').write_text('\n'.join(line for line in (self.root/'queue').read_text().splitlines()
+                                              if line.split('|')[1] != 'old')+'\n')
+        handoff.write(self.root/'restore-debt.json', dict(owner=owner, target=target))
+        for boot_only, expected in ((False, 'probe'), (True, 'target')):
+            with self.subTest(boot_only=boot_only), patch.object(sys, 'argv',
+                    ['fleet_priority.py', str(self.root), '--apply'] + (['--boot-only'] if boot_only else [])):
+                fleet_priority.main()
+                self.assertEqual((self.root/'queue').read_text().splitlines()[0].split('|')[1], expected)
 
     def test_cancelled_target_and_pid_reuse_do_not_strand_a_new_boot(self):
-        self.ready('donor', 1); handoff.admit(self.root, 'donor', 1, 'boot')
-        self.ready('cancelled', 2); handoff.offer(self.root, 'donor')
+        owner = self.ready('donor', 1)
+        target = self.ready('cancelled', 2)
+        handoff.write(self.root/'restore-debt.json', dict(owner=owner, target=target))
         (self.root/'queue').write_text('')
         self.ready('replacement', 3)
         self.assertTrue(handoff.admit(self.root, 'replacement', 3, 'boot'))
+        self.assertFalse((self.root/'restore-debt.json').exists())
         value = handoff.read(handoff.receipt(self.root, 'replacement'))
         value['start'] = 'different-process'
         self.assertFalse(handoff.live(value))
@@ -80,24 +85,29 @@ class OwnershipTests(unittest.TestCase):
             with self.assertRaises((ValueError, OSError)):
                 fleet_entry.idle(container, 'unused')
 
-    def test_interrupted_admission_always_has_recoverable_holder(self):
-        self.ready('donor', 1); handoff.admit(self.root, 'donor', 1, 'boot')
-        self.ready('next', 2); handoff.offer(self.root, 'donor')
+    def test_interrupted_admission_leaves_holder_without_restore_debt(self):
+        self.ready('next', 2)
         with patch.object(handoff, 'claim_held', side_effect=InterruptedError):
             with self.assertRaises(InterruptedError):
                 handoff.admit(self.root, 'next', 2, 'boot')
         self.assertTrue((self.root/'holder').read_text().startswith('next|2|'))
-        self.assertEqual(handoff.read(self.root/'restore-debt.json')['owner']['session'], 'donor')
+        self.assertFalse((self.root/'restore-debt.json').exists())
         handoff.claim_held(self.root, 'next', 2)
-        self.assertEqual(handoff.read(self.root/'restore-debt.json')['owner']['session'], 'next')
+        self.assertFalse((self.root/'restore-debt.json').exists())
         with self.assertRaises(ValueError):
             handoff.claim_held(self.root, 'donor', 1)
 
-    def test_previous_protocol_is_not_offered_a_handoff(self):
-        self.ready('donor', 1); handoff.admit(self.root, 'donor', 1, 'boot')
+    def test_previous_protocol_is_not_a_current_ready_supervisor(self):
         old = self.ready('old', 2); old['protocol'] = 1
         handoff.write(handoff.receipt(self.root, 'old'), old)
-        self.assertIsNone(handoff.offer(self.root, 'donor'))
+        self.assertFalse(handoff.live(old))
+
+    def test_admission_resets_central_idle_clock(self):
+        self.ready('next', 2)
+        with patch('fleet_idle.activity') as activity:
+            self.assertTrue(handoff.admit(self.root, 'next', 2, 'boot'))
+        activity.assert_called_once_with(self.root, 'acquire')
+
 
 
 class EntryTests(unittest.TestCase):

@@ -21,6 +21,8 @@ class ClassifierExplanationTests(unittest.TestCase):
         self.shell_function = source[source.index('classify_cmd() {'):source.index('production_line() {')]
         self.env = dict(os.environ, REPO=str(ROOT))
         self.env.pop('FLEET_REHEARSE', None)
+        # Test-runner imports are not workload injection settings.
+        self.env.pop('PYTHONPATH', None)
 
     def explain(self, command, **environment):
         env = dict(self.env, **environment)
@@ -67,10 +69,31 @@ class ClassifierExplanationTests(unittest.TestCase):
         self.assertEqual(value['classification'], 'gpu')
         self.assertEqual(value['evidence'][0]['line'], 1)
 
-    def test_rehearsal_and_reviewed_compile_entrypoint_explain_early_exceptions(self):
-        value = self.explain(['nvidia-smi'], FLEET_REHEARSE='1')
-        self.assertEqual(value['classification'], 'nogpu')
-        self.assertEqual(value['evidence'][0]['name'], 'FLEET_REHEARSE')
+    def test_rehearsal_is_cpu_only_for_verified_canonical_helpers(self):
+        for command in (['nvidia-smi'], ['python3', 'bench/onepass.py', '--name', 'real'],
+                        ['bash', '-c', 'nvidia-smi'],
+                        ['env', 'FLEET_REHEARSE=0', 'bash', str(ROOT / 'bench/pair.sh'), 'real']):
+            with self.subTest(command=command):
+                value = self.explain(command, FLEET_REHEARSE='1')
+                self.assertEqual(value['classification'], 'gpu')
+                self.assertTrue(value['evidence'])
+                self.assertNotEqual(value['evidence'][0].get('name'), 'FLEET_REHEARSE')
+        for command in (['bash', str(ROOT / 'bench/pair.sh'), 'rehearsal', 'VLLM_TEST=1'],
+                        ['bash', str(ROOT / 'bench/chain.sh'), 'rehearsal=VLLM_TEST=1'],
+                        ['bash', str(ROOT / 'bench/ab-lever.sh'), 'rehearsal']):
+            with self.subTest(command=command):
+                value = self.explain(command, FLEET_REHEARSE='1')
+                self.assertEqual(value['classification'], 'nogpu')
+                self.assertEqual(value['evidence'][0]['name'], 'FLEET_REHEARSE')
+                self.assertIn('verified canonical helper', value['reason'])
+        copied = self.root / 'bench' / 'ab-lever.sh'
+        copied.parent.mkdir()
+        copied.write_text('#!/bin/bash\nnvidia-smi\n')
+        value = self.explain(['bash', str(copied), 'modified'], FLEET_REHEARSE='1')
+        self.assertEqual(value['classification'], 'gpu')
+        self.assertNotEqual(value['evidence'][0].get('name'), 'FLEET_REHEARSE')
+
+    def test_reviewed_compile_entrypoint_explains_early_exception(self):
         value = self.explain(['python3', 'bench/cpu_compile.py', '/tmp/kernel.cu'])
         self.assertEqual(value['classification'], 'nogpu')
         self.assertIn('reviewed', value['reason'])

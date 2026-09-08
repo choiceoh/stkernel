@@ -93,15 +93,8 @@ def main():
     lines = [line for line in lines if line not in paused_lines]
     rows = rank(lines, downstream(db),
                 time.time(), marker("priority-front"), marker("priority-yield"), not args.boot_only, estimates(db))
-    # A finishing holder selected this live supervisor using this same policy.
-    # Honor its acceptance window before recomputing normal queue priorities.
-    from fleet_handoff import read, live, receipt
-    debt = read(directory / 'restore-debt.json')
-    target = debt.get('target') if debt else None
-    if debt:
-        rows.sort(key=lambda r: not (r['line'].split('|')[5] == 'boot' and live(read(receipt(directory, r['session'])))))
-    if live(target):
-        rows.sort(key=lambda r: r['session'] != target['session'])
+    # Recovery is central and begins only after five idle minutes. Legacy
+    # restore debt must not change readiness or reorder runnable experiments.
     if args.apply:
         temporary = queue.with_suffix(".priority.tmp")
         temporary.write_text("".join(r["line"] + "\n" for r in rows))

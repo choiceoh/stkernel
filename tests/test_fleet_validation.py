@@ -300,10 +300,13 @@ pathlib.Path(sys.argv[sys.argv.index('--out')+1]).write_text(json.dumps(dict(pas
         observed = self.root / 'restore-actions'
         shim = bindir / 'python3'
         shim.write_text('#!' + sys.executable + '\n' + '''import os, pathlib, shlex, subprocess, sys
-assert not any(k.startswith(('VLLM_', 'ONEPASS_', 'MK_', 'STARTUP_CACHE_', 'PROFILE')) for k in os.environ)
-assert 'IMAGE' not in os.environ and 'MODEL_HOST_PATH' not in os.environ
+if not sys.argv[1].endswith('fleet_idle.py'):
+ assert not any(k.startswith(('VLLM_', 'ONEPASS_', 'MK_', 'STARTUP_CACHE_', 'PROFILE')) for k in os.environ)
+ assert 'IMAGE' not in os.environ and 'MODEL_HOST_PATH' not in os.environ
 with open(OBSERVED, 'a') as output: output.write(sys.argv[1] + '\\n')
-if sys.argv[1].endswith('fleet_validation.py'):
+if sys.argv[1].endswith('fleet_idle.py'):
+ raise SystemExit(0)  # Authority is covered by test_fleet_idle; fixture tests source/env selection.
+elif sys.argv[1].endswith('fleet_validation.py'):
  assert sys.argv[2:] == ['verify-recovery', '--receipt', '/fixture/receipt', '--format', 'shell']
  print('export FLEET_RECOVERY_REPO=' + shlex.quote(RECOVERY_PATH))
  print('export FLEET_RECOVERY_RECEIPT=/fixture/receipt')
@@ -325,11 +328,16 @@ else:
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('no restore boot', result.stdout)
-        self.assertEqual(len(observed.read_text().splitlines()), 2)
+        self.assertEqual(len(observed.read_text().splitlines()), 3)
 
     def test_new_restore_requires_prepared_receipt(self):
         self.hold()
-        env = dict(os.environ, FLEET_VALIDATION_REQUIRED='1')
+        bindir = self.root / 'authority-bin'
+        bindir.mkdir()
+        shim = bindir / 'python3'
+        shim.write_text('#!/bin/sh\nexit 0\n')
+        shim.chmod(0o755)
+        env = dict(os.environ, FLEET_VALIDATION_REQUIRED='1', PATH=str(bindir)+os.pathsep+os.defpath)
         result = subprocess.run(['bash', str(Path(validation.__file__).with_name('fleet_restore.sh'))],
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
@@ -376,7 +384,9 @@ with open(OBSERVED, 'a') as output: output.write(sys.argv[1] + '\\n')
         bindir.mkdir()
         shim = bindir / 'python3'
         shim.write_text('#!' + sys.executable + '\n' + '''import shlex, subprocess, sys
-if sys.argv[1].endswith('fleet_validation.py'):
+if sys.argv[1].endswith('fleet_idle.py'):
+ raise SystemExit(0)  # Authority is covered by test_fleet_idle; fixture tests source/env selection.
+elif sys.argv[1].endswith('fleet_validation.py'):
  print('export FLEET_RECOVERY_REPO=' + shlex.quote(RECOVERY_PATH))
 elif sys.argv[1].endswith('fleet_entry.py'):
  subprocess.run([sys.executable, CHECKER, 'health'], check=True)

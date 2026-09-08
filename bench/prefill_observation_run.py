@@ -215,13 +215,10 @@ class Run:
         save(self.out/'incomplete.json',result)
         before=None;pause_attempted=False
         try:
-            # Use the current fleet recovery owner to normalize any predecessor
-            # handoff to approved public defaults before taking our snapshot.
-            runner=Path(os.environ['FLEET_RUNNER_REPO'])
-            with (self.out/'ensure-defaults.log').open('x') as log:
-                prefill_serving.run_owned(['bash',str(runner/'bench/fleet_restore.sh')],stdout=log,stderr=subprocess.STDOUT)
+            # An existing runtime is the observation source. Normalizing it
+            # would spend an unmeasured recovery boot before the experiment.
             before=lifecycle.snapshot()
-            if lifecycle.validate_before(before)!='present':raise RuntimeError('approved original serving required')
+            if lifecycle.validate_before(before)!='present':raise RuntimeError('existing compatible serving required; run after an observed baseline or idle recovery')
             lifecycle.idle(8000);save(self.out/'before.json',before)
             resources=settled(lifecycle.NODES,lambda n:lifecycle.remote(n,
                 'import json,shutil,subprocess\np='+repr(str(self.source))+'\nr='+repr(self.revision)+'\n'
@@ -239,14 +236,13 @@ class Run:
                 previous=signal.signal(signal.SIGTERM,signal.SIG_IGN)
                 try:
                     self.cleanup()
-                    if pause_attempted and not (self.out/'restored.json').exists():
-                        save(self.out/'recovery-restarted.json',lifecycle.transition_all(before,'start'))
-                        save(self.out/'restored.json',lifecycle.wait_restore(before))
+                    result['cleanup_complete']=True
                 finally:signal.signal(signal.SIGTERM,previous)
             result['complete']=True
         except BaseException as exc:result['error']=repr(exc)
         finally:
-            result['restored_original']=pause_attempted and (self.out/'restored.json').is_file()
+            result['original_stop_attempted']=pause_attempted
+            result['public_recovery']='central idle controller'
             result['ended']=time.time();save(self.out/'completion.json',result)
         if result['complete']:print('GLM53_PREFILL_OBSERVATION_CAPTURE_COMPLETE',flush=True)
         return 0 if result['complete'] else 1
@@ -256,7 +252,8 @@ def analyze(directory):
     sys.path.insert(0,str(ROOT/'tools'))
     import trace_prefill_attribution as attributed
     complete=json.loads((directory/'completion.json').read_text())
-    if not complete.get('complete') or not complete.get('restored_original'):raise ValueError('complete collection and restoration required')
+    if not complete.get('complete') or not (complete.get('cleanup_complete') or complete.get('restored_original')):
+        raise ValueError('complete collection and owned clone cleanup required')
     baseline=[];salts=set();identities=None;results={};routing={}
     def phase(name):
         path=directory/name

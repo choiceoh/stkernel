@@ -11619,7 +11619,7 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "preflight checks declarations against origin/main, notes checkout lag, syncs its own copy")
     check('md5sum < "$copy"' in fleet and "ab-lever2.sh:bench/ab-lever.sh" in fleet,
           "preflight compares the srv2 runner copies against the repo (the 16:09 trap)")
-    check("OVERDUE" in fleet and "SILENT" in fleet and "never a kill" in fleet,
+    check("OVERDUE" in fleet and "SILENT" in fleet and "Live owners are never killed" in fleet,
           "status flags an overdue or silent holder and the tool still never kills a live one")
     from fleet_priority import rank as rank_fleet
     queued = ["1|boot|100|30|boot|boot|", "2|probe|100|5|probe|probe|"]
@@ -11673,8 +11673,8 @@ def test_fleet_reservation_tooling_contracts() -> None:
           "the classifier reads python files for device use only, not their docstrings (baseline.py said 'ab-lever')")
     check("nice -n 19" in fleet and "nogpu-start" in fleet,
           "a CPU job runs now, in parallel, under nice, and is logged")
-    check("FLEET_AUTO_RESTORE" in fleet and "NOT defaults" in fleet,
-          "an empty queue with production off the defaults prints the restore command (opt-in runs it)")
+    check("FLEET_AUTO_RESTORE" not in fleet and "central controller restores after 300 seconds" in fleet,
+          "sessions never restore at release; the central controller waits for five idle minutes")
     lever = open(os.path.join(REPO, "bench", "ab-lever.sh"), encoding="utf-8").read()
     check('if [ "${FLEET_REHEARSE:-0}" = 1 ]; then' in lever and '"rehearsal": True' in lever,
           "ab-lever rehearses without a boot and marks the fabricated record")
@@ -11688,8 +11688,8 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check("def floor_of(" in judge and "WITHIN the floor" in judge and "UNPROVED" in judge,
           "judge prints the delta beside the noise floor and refuses a verdict on an unproved arm")
     pair = open(os.path.join(REPO, "bench", "pair.sh"), encoding="utf-8").read()
-    check('yield "$S" 15' in pair and "restore-needed" in pair and "PAIR_FLOOR_N" in pair,
-          "pair.sh yields to a short probe, asks restore-needed, and takes a defaults sample only while the floor is thin")
+    check('yield "$S" 15' in pair and "restore-needed" not in pair and "PAIR_FLOOR_N" in pair,
+          "pair.sh yields to a short probe and measures a thin defaults floor without cleanup restore")
     onepass = open(os.path.join(REPO, "bench", "onepass.py"), encoding="utf-8").read()
     check('rec["session"]' in onepass and 'rec["cold_compile"]' in onepass,
           "onepass records the holder session and the cold-compile flag")
@@ -11725,10 +11725,18 @@ def test_fleet_reservation_tooling_contracts() -> None:
     check(os.path.exists(chain) and subprocess.run(["bash", "-n", chain], capture_output=True).returncode == 0,
           "bench/chain.sh parses")
     chsrc = open(chain, encoding="utf-8").read()
-    check("--after)" in chsrc and "--legs)" in chsrc and 'yield "$S" 15' in chsrc
-          and "restore-needed" in chsrc and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
-          "chain.sh: N arms, --after checks, --legs, yield between arms, restore only when needed, a "
-          "defaults sample only while the floor is thin, judge per arm")
+    check("--after|--legs)" in chsrc and "--after and --legs are disabled" in chsrc
+          and 'LEGS=onepass bash "$LEVER"' in chsrc and 'eval ' not in chsrc
+          and 'yield "$S" 15' in chsrc and "restore-needed" not in chsrc
+          and "CHAIN_FLOOR_N" in chsrc and "judge.py" in chsrc,
+          "chain.sh: onepass per arm, reject extra GPU hooks before boot, no cleanup restore, "
+          "defaults only while the floor is thin, judge per arm")
+    guard = open(os.path.join(REPO, "bench", "fleet_onepass.py"), encoding="utf-8").read()
+    check("fleet_onepass.py" in fleet and "--rehearsal-only" in fleet
+          and 'LEGS=none and separate GPU checks are disabled' in lever
+          and '"${FLEET_BOOT_INTENT:-}" != recovery' in lever
+          and "onepass" in guard,
+          "GPU admission and rehearsal use the canonical workload guard; boot-only is idle recovery")
 
 
 def test_fleet_experiment_behaviors():

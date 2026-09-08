@@ -376,31 +376,58 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(stats["by_kind"]["cpu"]["valid_results"], 1)
         self.assertEqual(stats["requests"]["submitted"], 1)
 
-    def test_cpu_probe_pair_dependencies_complete_without_manual_promotion(self):
+    def test_cpu_pair_dependencies_complete_without_extra_gpu_probe(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
         cpu = self.submit("cpu")
-        command = [sys.executable, "-c", "import sys; sys.path.insert(0,'bench'); "
-                   "from probe_report import write_report; "
-                   "write_report({'mismatches':0},{'lane':True},12,'fake-gpu')"]
-        probe = self.submit("probe", kind="probe", depends_on=[cpu["id"]], command=command, context=context,
-                            probe_contract={"checks":{"mismatches":{"op":"eq","value":0}},
-                                            "proof":["lane"],"min_samples":12})
         pair = self.submit("pair", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                           context=context, depends_on=[probe["id"]])
+                           context=context, depends_on=[cpu["id"]])
         self.assertEqual(self.wait(pair["id"])["state"], "succeeded")
-        report = self.wait(probe["id"])["result"]
-        self.assertEqual(report["evidence"], "gpu-probe")
-        self.assertEqual(report["scope"], "declared numerical contract only")
+        self.assertEqual(self.wait(cpu["id"])["result"]["evidence"], "cpu-only")
+        self.assertEqual((self.logs / "arms").read_text().count("onepass"), 2)
+        store = ex.Store(self.jobs)
+        try:
+            kinds = {store.get(row['id'])['payload']['spec']['kind'] for row in store.list_jobs()}
+            self.assertEqual(kinds, {"cpu", "pair", "baseline"})
+        finally:
+            store.db.close()
 
-    def test_probe_exit_zero_without_report_cannot_unlock_candidate(self):
+    def test_custom_gpu_probe_rejected_before_source_or_gpu_inspection(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
-        probe = self.submit("probe", kind="probe", command=[sys.executable, "-c", "pass"], context=context,
-                            probe_contract={"checks":{"mismatches":{"op":"eq","value":0}},
-                                            "proof":["lane"],"min_samples":1})
-        pair = self.submit("pair", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                           context=context, depends_on=[probe["id"]])
-        self.assertEqual(self.wait(pair["id"])["state"], "blocked")
-        self.assertFalse((self.logs / "arms").exists())
+        raw = dict(kind="probe", revision=self.sha, hypothesis="custom GPU workload",
+                   command=[sys.executable, "-c", "pass"], context=context)
+        with patch.object(ex, 'snapshot', side_effect=AssertionError('no source inspection')):
+            with self.assertRaisesRegex(ValueError, "onepass-only"):
+                ex.normalize(raw, self.repo)
+            raw['probe_contract'] = {"checks":{"mismatches":{"op":"eq","value":0}},
+                                     "proof":["lane"],"min_samples":1}
+            with self.assertRaisesRegex(ValueError, "onepass-only"):
+                ex.normalize(raw, self.repo)
+        self.assertFalse((self.logs / "admissions").exists())
+
+    def test_legacy_gpu_probe_blocked_before_worker_checkout_or_execution(self):
+        store = ex.Store(self.jobs)
+        try:
+            for entry in (ex.ensure_worker, ex.worker, ex.execute):
+                with self.subTest(entry=entry.__name__):
+                    spec = dict(kind="probe", revision=self.sha, hypothesis="legacy queued probe",
+                                command=["GPU_MARKER"], depends_on=[])
+                    payload = dict(spec=spec, repo=str(self.repo), environment={}, paths={}, snapshot={})
+                    job = store.submit("legacy", payload, repeat=entry.__name__)["id"]
+                    with patch.object(ex, 'verify', side_effect=AssertionError('no source inspection')), \
+                         patch.object(ex.subprocess, 'Popen', side_effect=AssertionError('no child process')), \
+                         patch.object(ex.subprocess, 'run', side_effect=AssertionError('no worktree')):
+                        entry(store, job)
+                    row = store.get(job)
+                    self.assertEqual(row['state'], 'blocked')
+                    self.assertEqual(row['result']['evidence'], 'onepass-policy')
+                    self.assertIn('onepass-only', row['result']['reason'])
+                    self.assertFalse((self.jobs / job / 'checkout').exists())
+                    from experiment_retry import source
+                    with self.assertRaisesRegex(ValueError, 'onepass-only'):
+                        source(store, 'legacy', job)
+        finally:
+            store.db.close()
+        self.assertFalse((self.logs / "admissions").exists())
 
     def test_default_candidates_share_one_baseline_without_promotion_claim(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
@@ -503,7 +530,8 @@ class SubmissionTests(unittest.TestCase):
     def test_failed_prerequisite_blocks_gpu_before_admission(self):
         bad = self.submit(command=[sys.executable, "-c", "raise SystemExit(7)"])
         self.assertEqual(self.wait(bad["id"])["state"], "failed")
-        gpu = self.submit("gpu-agent", kind="probe", command=["GPU_MARKER"], depends_on=[bad["id"]],
+        gpu = self.submit("gpu-agent", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
+                          depends_on=[bad["id"]],
                           context={"image": self.image, "model": "fixture", "hardware": "fixture"})
         result = self.wait(gpu["id"])
         self.assertEqual(result["state"], "blocked", result)
@@ -578,7 +606,7 @@ class SubmissionTests(unittest.TestCase):
                 self.assertEqual(store.get(job)["state"], terminal)
                 self.assertEqual(store.get(job)["result"], {"completed": True})
 
-    def test_pair_publishes_candidate_before_restore_and_has_valid_shared_evidence(self):
+    def test_pair_publishes_candidate_and_has_valid_shared_evidence(self):
         context = dict(image=self.image, model="immutable-model-fixture", hardware="fake-nodes")
         bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime=context) for n in (99,100,101)]
         (self.logs / "onepass.jsonl").write_text("".join(json.dumps(r) + "\n" for r in bases))
@@ -651,6 +679,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
 
     def test_shell_pair_reuses_one_baseline_and_counts_each_boot_once(self):
+        # A stale fleet helper asking for recovery must not add a session boot.
+        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
+                                                                    'restore-needed) exit 0;;'))
+        self.refresh_deployed_fixture()
         env = dict(self.env, LEVER=str(self.repo/'bench/ab-lever.sh'), FLEET=str(self.repo/'bench/fleet.sh'))
         env.pop('PAIR_FLOOR_N',None)
         for name in ('FIRST','SECOND','THIRD'):
@@ -659,6 +691,7 @@ class SubmissionTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         arms = (self.logs/'arms').read_text()
         self.assertEqual(arms.count('BASE onepass'),1,arms)
+        self.assertNotIn('RESTORE',arms)
         ledger = self.logs/'onepass.jsonl'
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
         with ledger.open('a') as stream:
@@ -699,12 +732,16 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("no torch", report["checks"][0]["skipped"][0])
 
     def test_chain_stops_after_failed_arm_and_preserves_failure_status(self):
+        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
+                                                                    'restore-needed) exit 0;;'))
+        self.refresh_deployed_fixture()
         env = dict(self.env, LEVER=str(self.repo / "bench/ab-lever.sh"), FLEET=str(self.repo / "bench/fleet.sh"),
                    FAIL_ARM="BROKEN", FLEET_SESSION="test")
         p = subprocess.run([BASH, str(self.repo / "bench/chain.sh"), "BROKEN=VLLM_TEST=1", "NEXT=VLLM_TEST=2"],
                            env=env, cwd=self.repo, capture_output=True, text=True, timeout=5)
         self.assertEqual(p.returncode, 7, p.stdout + p.stderr)
         self.assertNotIn("NEXT", (self.logs / "arms").read_text())
+        self.assertNotIn("RECOVER", (self.logs / "arms").read_text())
 
     def refresh_deployed_fixture(self):
         self.commit()
@@ -714,7 +751,7 @@ class SubmissionTests(unittest.TestCase):
     def pair_context(self):
         return dict(image=self.image, model='fixture', hardware='fixture')
 
-    def test_grouped_objectives_use_two_boots_and_one_final_restore(self):
+    def test_grouped_objectives_use_only_two_measured_boots(self):
         fleet = self.repo / 'bench/fleet.sh'
         fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
                                           'restore-needed) echo restore-check >> "$LOGD/restore-checks"; exit 0;;'))
@@ -734,10 +771,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual((self.logs/'arms').read_text().count('onepass'), 2)
         self.assertTrue(result['result']['comparison_complete'])
         self.assertFalse(result['result']['promotion_ready'])
-        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
-        self.assertEqual((self.logs/'restore-checks').read_text().count('restore-check'), 1)
+        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
+        self.assertFalse((self.logs/'restore-checks').exists())
 
-    def test_group_failure_stops_remaining_workloads_and_restores_once(self):
+    def test_group_failure_stops_remaining_workloads_without_recovery(self):
         fleet = self.repo / 'bench/fleet.sh'
         fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;', 'restore-needed) exit 0;;'))
         onepass = self.repo / 'bench/onepass.py'
@@ -751,7 +788,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(result['state'], 'failed', result)
         rows = [json.loads(l) for l in (self.logs/'onepass.jsonl').read_text().splitlines()]
         self.assertEqual(len([r for r in rows if r['experiment_id'] == job['id']]), 1)
-        self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
+        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
 
     def test_defaults_with_unexpected_knobs_cannot_unlock_candidate(self):
         lever = self.repo / 'bench/ab-lever.sh'

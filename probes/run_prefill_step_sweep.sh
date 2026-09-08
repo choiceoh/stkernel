@@ -11,7 +11,7 @@
 #       <S> 90 "40차 프리필 스텝 비용 분해" -- bash ~/glm53-logs/pstep-<S>.sh chain'
 #
 # chain    holder side: deploy the rev, then one arm with the chunk instrument
-#          armed and no leg, with `measure` after it (chain.sh restores).
+#          armed and no leg, with `measure` after it (chain.sh releases after measurement).
 # measure  after-arm side: the wall-clock surface T(C, ctx) over four chunk
 #          sizes and two contexts, then one torch trace at each end of the
 #          chunk range for tools/trace_prefill_attribution.py.

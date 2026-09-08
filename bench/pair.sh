@@ -18,21 +18,12 @@ KNOBS=${2:-}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 REPO=${REPO:-/home/choiceoh/stkernel}
 FLEET=${FLEET:-$LOGD/fleet.sh}
-LEVER=${LEVER:-$LOGD/ab-lever2.sh}
+LEVER=$REPO/bench/ab-lever.sh
+export LEGS=onepass
 S=${FLEET_SESSION:-pair}
 PAIR_FLOOR_N=${PAIR_FLOOR_N:-1}
 [[ "$PAIR_FLOOR_N" =~ ^[1-9][0-9]*$ ]] || { echo 'PAIR_FLOOR_N must be positive'; exit 2; }
 cd "$REPO" || exit 1
-# A failed candidate must not spend another measurement boot. Restore only
-# when this holder has no boot successor, preserving the original failure.
-cleanup_failure() {
-  local rc=$?
-  if [ "$rc" != 0 ] && bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
-    LEGS=none bash "$LEVER" "${NAME}RECOVER" "" 2>&1 | tail -12
-  fi
-  return "$rc"
-}
-trap cleanup_failure EXIT
 echo "== pair $NAME $(date +%T) knobs: ${KNOBS:-(none)} session=$S rehearse=${FLEET_REHEARSE:-0}"
 python3 bench/baseline.py --brief ${KNOBS:+--knobs "$(echo $KNOBS | tr ' ' ',')"} 2>/dev/null | sed 's/^/   /'
 
@@ -54,12 +45,7 @@ if [ "$need_base" = 1 ]; then
   bash "$LEVER" "${NAME}BASE" "" 2>&1 | tail -30 || exit $?
   python3 bench/judge.py "$NAME" --write --fail-invalid ${FLEET_REHEARSE:+--allow-rehearsal} || exit $?
 else
-  if bash "$FLEET" restore-needed "$S" >/dev/null 2>&1; then
-    echo "== $(date +%T) restore boot (defaults, no leg: the build already has ${nb} baseline samples)"
-    LEGS=none bash "$LEVER" "${NAME}RESTORE" "" 2>&1 | tail -12 || exit $?
-  else
-    echo "== $(date +%T) restore skipped: a boot job follows and replaces this serving"
-  fi
+  echo "== $(date +%T) baseline reused; release immediately for the next job"
 fi
 
 echo "== $(date +%T) judge"

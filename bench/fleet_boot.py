@@ -216,26 +216,11 @@ class Supervisor:
         return rc if rc >= 0 else 128 - rc
 
     def restore(self):
-        start = time.monotonic()
-        self.mark_pending('finishing', phase='restore', recovery_started_at=time.time())
-        self.event('restore-start')
-        # Cancellation stops the experiment, never the final recovery command.
-        old = self.stopping
-        self.stopping = 0
-        handlers = [signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM)]
-        try:
-            rc = self.execute(['bash', str(self.repo / 'bench/fleet_restore.sh')], self.env)
-        finally:
-            self.stopping = old
-            for sig, handler in zip((signal.SIGINT, signal.SIGTERM), handlers):
-                signal.signal(sig, handler)
-        self.event('restore-finished', rc=rc, seconds=time.monotonic() - start)
-        self.mark_pending('finishing', phase='restore', recovery_returncode=rc,
-                          recovery_finished_at=time.time())
-        if rc == 0:
-            with self.lock():
-                handoff.clear(self.directory, self.session)
-        return rc
+        """Compatibility entrypoint: sessions can only defer recovery."""
+        self.event('restore-deferred', reason='central controller waits for 300 seconds of idle fleet')
+        self.mark_pending('finishing', phase='release', recovery_policy='idle-controller',
+                          recovery_deferred=True)
+        return 0
 
     def cleanup_observation(self):
         if self.env.get('FLEET_OBSERVATION_CLONES')!='1':
@@ -259,45 +244,15 @@ class Supervisor:
             for sig,handler in zip((signal.SIGINT,signal.SIGTERM),handlers):signal.signal(sig,handler)
 
     def finish(self):
-        with self.lock():
-            handoff.claim_held(self.directory, self.session, os.getpid())
-            target = handoff.offer(self.directory, self.session)
-        if not target:
-            return self.restore()
-        self.mark_pending('finishing', phase='handoff', successor=target['session'])
-        self.event('handoff-offered', successor=target['session'])
-        if self.call('release', self.session):
-            return self.restore()
-        # Keep the donor alive until acceptance, including cancel-before-GO.
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            with self.lock():
-                debt = handoff.read(self.directory / 'restore-debt.json')
-            if not debt or debt['owner']['session'] != self.session:
-                self.event('handoff-accepted', successor=debt['owner']['session'] if debt else target['session'])
-                return 0
-            from fleet_pause import paused
-            if paused(self.directory, target['session']) or not handoff.live(target) or not any(r[1] == target['session'] for r in handoff.rows(self.directory)):
-                break
-            time.sleep(.2)
-        # No receiver: reclaim responsibility through the same queue/legacy
-        # checks. The debt blocks probes until a boot supervisor accepts it.
-        self.event('handoff-reclaim', successor=target['session'])
-        with self.lock():
-            debt = handoff.read(self.directory / 'restore-debt.json')
-            if not debt or debt['owner']['session'] != self.session:
-                return 0
-            debt.pop('target', None)
-            handoff.write(self.directory / 'restore-debt.json', debt)
-        if self.call('request', self.session, '15', 'recover unaccepted handoff'):
-            return 1
-        self.call('front', self.session)
-        if self.call('wait', self.session, '5'):
-            return 1
-        return self.restore()
+        # Recovery belongs to the central idle controller. Releasing immediately
+        # lets any queued workload continue, including probes and cancelled peers.
+        self.event('restore-deferred', reason='central controller waits for 300 seconds of idle fleet')
+        self.mark_pending('finishing', phase='release', recovery_policy='idle-controller',
+                          recovery_deferred=True)
+        return self.call('release', self.session)
 
     def mark_pending(self, state, **details):
-        # A damaged edit record must not bypass the final GPU recovery path.
+        # A damaged edit record must not strand GPU ownership at teardown.
         try:
             with self.lock():
                 pending.transition(self.directory, self.session, state, **details)
@@ -344,6 +299,9 @@ class Supervisor:
                 if self.kind == 'boot' and self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
                 elif not self.stopping:
+                    from fleet_onepass import validate as validate_onepass
+                    contract = validate_onepass(accepted['command'], accepted['cwd'], self.repo,
+                                                environment=self.env, kind=self.kind)
                     from fleet_prepare import command_environment
                     payload, payload_env = command_environment(accepted['command'], self.env)
                     # A literal env -i/-u may select payload settings, but the
@@ -353,6 +311,10 @@ class Supervisor:
                                 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
                         if key in self.env:
                             payload_env[key] = self.env[key]
+                    if contract['entry'] == 'bench/onepass.py':
+                        from onepass_deploy import ensure
+                        ensure(Path(payload_env.get('REPO', accepted['cwd'])), live=True,
+                               environment=payload_env)
                     rc = self.execute(payload, payload_environment(payload_env), accepted['cwd'])
                     self.mark_pending('running', phase='payload', payload_returncode=rc,
                                       payload_finished_at=time.time())
@@ -364,17 +326,19 @@ class Supervisor:
         finally:
             if self.mark_pending('finishing', phase='finishing'):
                 rc = rc or 1
+            cleanup_complete = True
             if self.held() and self.kind == 'boot':
                 try:
+                    cleanup_complete = False
                     if self.cleanup_observation():
                         raise RuntimeError('observation cleanup lost fleet ownership')
+                    cleanup_complete = True
                     if self.finish():
                         rc = rc or 1
                 except Exception as exc:
                     self.event('finish-error', reason=str(exc))
                     rc = rc or 1
-                    self.restore()
-            if self.held():
+            if self.held() and cleanup_complete:
                 self.call('release', self.session)
             self.cleanup_reservation()
             result = self.stopping or rc

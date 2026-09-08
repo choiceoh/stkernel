@@ -31,6 +31,8 @@ require_deployable_checkout() {
     exit 1
   fi
   if [ -n "${FLEET_DEPLOY_RECOVERY_RECEIPT:-}" ]; then
+    python3 "$VALIDATOR_REPO/bench/fleet_idle.py" authorize \
+      "${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}" "${FLEET_SESSION:-}" >/dev/null || exit 2
     # Recovery was approved and validated before the GPU reservation. Verify
     # that exact receipt; do not change its source when main advances.
     [ "$PROFILE" = glm53 ] && [ -z "${IMAGE+x}${MODEL_HOST_PATH+x}" ] \

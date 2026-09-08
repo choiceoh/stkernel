@@ -9,28 +9,43 @@ import sys
 import tempfile
 
 
-def pin(repo, directory):
+def source_files(repo):
     source = repo/'bench'
-    files = {p.name:p.read_bytes() for p in sorted(source.iterdir()) if p.suffix in ('.py', '.sh') and p.is_file()}
-    key = hashlib.sha256(json.dumps({name:hashlib.sha256(data).hexdigest() for name,data in files.items()}, sort_keys=True).encode()).hexdigest()
-    if any((source/name).read_bytes() != data for name,data in files.items()):
+    files = {str(p.relative_to(repo)):p.read_bytes() for p in sorted(source.iterdir())
+             if p.suffix in ('.py', '.sh') and p.is_file()}
+    # Canonical campaign entrypoints participate in the same policy identity.
+    for relative in ('probes/run_ar_consumer_campaign.sh',):
+        if (repo / relative).is_file():
+            files[relative] = (repo / relative).read_bytes()
+    return files
+
+
+def file_identity(files):
+    return hashlib.sha256(json.dumps({name:hashlib.sha256(data).hexdigest()
+        for name,data in files.items()}, sort_keys=True).encode()).hexdigest()
+
+
+def pin(repo, directory):
+    files = source_files(repo)
+    key = file_identity(files)
+    if any((repo/name).read_bytes() != data for name,data in files.items()):
         raise ValueError('runner changed while pinning; resubmit the committed version')
     runners = directory/'runners'
     runners.mkdir(parents=True, exist_ok=True)
     target = runners/key
     if target.exists():
-        if any((target/'bench'/name).read_bytes() != data for name,data in files.items()):
+        if any((target/name).read_bytes() != data for name,data in files.items()):
             raise ValueError('pinned runner integrity check failed')
         return target
     temporary = Path(tempfile.mkdtemp(prefix='.pin-', dir=runners))
     try:
-        (temporary/'bench').mkdir()
         for name,data in files.items():
-            (temporary/'bench'/name).write_bytes(data)
+            (temporary/name).parent.mkdir(parents=True, exist_ok=True)
+            (temporary/name).write_bytes(data)
         try:
             temporary.rename(target)
         except OSError:
-            if not target.exists() or any((target/'bench'/name).read_bytes() != data for name,data in files.items()):
+            if not target.exists() or any((target/name).read_bytes() != data for name,data in files.items()):
                 raise
         return target
     finally:
