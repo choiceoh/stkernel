@@ -132,6 +132,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
 | `glm53_spec_state` | 폐기된 async 스텝이 `num_accepted_tokens=0` 을 써서 상태 슬롯이 `-1` 로 인덱싱되는 것 차단(vLLM #51508). 빌더가 stale 행 슬롯을 `NULL_BLOCK_ID` 로 null + count clamp, 커널 3곳은 인덱스 clamp. 노브 없음 — 실패 형태가 조용한 출력 오염이라 기본 on | 3 | 일부 | · | ● | · |
 | `glm53_router_gemm` | family-120 이 배제된 cuBLAS out_dtype 라우터 티어 복원(vLLM #54048). `VLLM_GLM53_ROUTER_CUBLAS_F120=1` 로만 무장 — 켜면 `moe_gate_sm121` 의 M≤32 융합 게이트가 스스로 무장을 거부한다. 이미지별 `gate_linear.py` 가 달라 `moe_gate_sm121` 과 한 모듈이 될 수 없다 | 1 | — | · | ● | · |
+| `glm53_draft_noise` | 드래프트의 Gumbel 노이즈 스트림을 타깃의 Philox 오프셋에서 분리(vLLM #54282). 기각된 제안을 재샘플하는 노이즈가 그 제안을 만든 것과 바이트 동일이라 잔여 분포가 draft 상위 토큰을 과소가중 → 출력이 타깃 분포가 아님. `draft_sample_method=probabilistic` 전용이고 이 프로필이 그것 = 해당됨. 노브 없음 | 7 | 일부 | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |
 | `deepseek_tool_parser` | 모델 전용 | 1 | — | ● | · | · |
 | `dspark_drafter` | 모델 전용 | 3 | — | ● | · | · |

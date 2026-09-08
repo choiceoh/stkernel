@@ -62,3 +62,10 @@ gdn_attn.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/g
 causal_conv1d.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/ops/causal_conv1d.py	044d005cfe59fd0818ed421274e04f3e8dd679b8cdb64fca9f4422f2643484b2
 mamba_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/mamba_utils.py	fb15e26fcfe4f7ab72a61a64fee8b8ea0c49b7f28a23b6a9dede099e41489231
 gate_linear.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/gate_linear.py	6fca8c7fba361ac79418dd56d6d3c281ef04f34ebfdd2044cb1d12e1fa9e70d7
+autoregressive_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py	575f39930f7b3a89402c385885d598416137b72e51fea83f2320a3212b5b99e1
+dflash2_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py	66aa43b74abfdaa9aa09e00e6511fab273e7c8a1c5da6c0d06e1daa07216ffd5
+dspark_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dspark/speculator.py	a72c6d0dbf37ed41b901c0a2178de51aca2c74e6dffdffb89ce223bae2f64598
+gumbel.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/gumbel.py	8d04f3068a8dc22de69ec7ec6ab4f4192b8d45b5c3e253dcb7817eaf6c1314cd
+mtp_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/multi_module_mtp/speculator.py	f2f99e4c6a27646737fd74733e54a328bfaff27ac34a8e3ba45e89bd5482ea05
+spec_rejection_sampler_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py	659e82c2ce1249a6e614f7adf62e3824329a7b79e7a4caa55cfadf254068a98a
+spec_speculator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/speculator.py	325dca3bb1aee7f3ce237f913e301f3008d765525ebf650ea4b88f195692471e
