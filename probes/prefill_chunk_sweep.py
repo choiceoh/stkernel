@@ -1,35 +1,34 @@
 #!/usr/bin/env python3
-"""What a prefill step actually costs, as a function of chunk and context
-(40차; 39차 DF4's leftover: "프리필 스텝 고정 비용(~0.25 s@32K) 자체 절감").
+"""What a prefill step actually costs, as a function of chunk size.
 
-The ledger has two points -- a 1,152-token chunk step is 0.64 s at 32K and
-1.3 s at 100K -- and a residual named "fixed cost 0.25 s" that was DERIVED by
-subtracting the solo 8,192-chunk rate (2,950 tok/s), not measured. Substituting
-both points into ``T = a + b*C + c*ctx`` makes ``a`` come out NEGATIVE, so the
-name is probably wrong and the term that actually hurts is the one proportional
-to the prefix each chunk re-reads (the indexer's top-k over the whole context
-plus MLA over the KV). This separates them:
+39차 DF4 left "프리필 스텝 고정 비용(~0.25 s@32K) 자체 절감" open, and the ledger's
+0.25 s was a residual (small-chunk step time minus the solo 8,192-chunk rate),
+not a measurement. This measures it directly:
 
-    T_step(C, ctx) = a + b*C + c*ctx
-    wall(C, ctx)   = n*(a + b*C) + c*ctx^2/(2C),   n = steps for the request
+    wall = a*steps + b*tokens          steps = ceil(prompt_tokens / chunk)
 
-a  host + launch glue + collectives that every step pays regardless of shape
-b  per-token work (what a big chunk amortises well)
-c  per-step work proportional to the PREFIX -- the structural cost of chunking
+a  what every step pays regardless of shape -- host, launch glue, collectives
+b  the token work, which does not care how the prompt is split
 
-Sweeping C needs no boot per size: ``VLLM_GLM53_SCHED_CHUNK_FILE`` (the
-decode-first scheduler's dev instrument) pins the chunk from a file, and that
-file lives on the container's /prof mount, so this script writes it directly.
-Requests are solo (no decoder): the small-chunk penalty is a pure-prefill
-property, and a solo request keeps the cadence, the floor and the decoders out
-of the number.
+Sweeping the chunk needs no boot per size: VLLM_GLM53_SCHED_CHUNK_FILE (the
+decode-first scheduler's dev instrument) pins it from a file on the container's
+/prof mount, so this script writes it directly. Requests are solo -- the
+small-chunk penalty is a pure-prefill property, and a solo request keeps the
+cadence, the floor and the decoders out of the number.
 
-Run ON the head (srv2), against an idle boot that has DECODE_FIRST=1 and
-VLLM_GLM53_SCHED_CHUNK_FILE set. PREFIX_CACHE=0 is expected; every request
-carries a fresh nonce anyway.
+2026-09-08 (pstep0908v1, 15 points, chunks 1152/2304/4608/8192 x 32K/128K):
+a = 211 ms/step, b = 281 us/token (ceiling 3,554 tok/s). The 32K and 128K
+curves lie on top of each other, so the third term this probe originally
+carried -- c*ctx, the prefix each chunk re-scores -- is not resolvable and was
+removed. At chunk 1,152 the fixed cost is 39% of the step; at 8,192 it is 8%.
 
-  python3 probes/prefill_chunk_sweep.py [--ctx 32000,128000]
-      [--chunks 1152,2304,4608,8192] [--reps 2] [--chunk-file PATH] [--json OUT]
+Run ON the head (srv2), against an idle boot with DECODE_FIRST=1 and
+VLLM_GLM53_SCHED_CHUNK_FILE set. Every request carries a fresh nonce FIRST, so
+prefix caching cannot hit whatever PREFIX_CACHE is.
+
+  python3 probes/prefill_chunk_sweep.py [--ctx 32000,128000] [--reps 2]
+      [--long-reps 1] [--chunks 1152,2304,4608,8192] [--chunk-file PATH]
+      [--trace-chunks 8192,1152] [--json OUT]
 """
 from __future__ import annotations
 
@@ -41,6 +40,7 @@ import random
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bench"))
@@ -62,14 +62,19 @@ def metrics() -> str:
 
 
 def histogram(text: str, name: str) -> tuple[float, float]:
-    """(count, sum) of a vLLM histogram. vllm:iteration_tokens_total counts one
-    observation per ENGINE STEP, so its count is the step count -- the honest
-    denominator, instead of assuming ceil(ctx / chunk) (chunk ends also align
-    to the 2304-token block)."""
+    """(count, sum) of a vLLM histogram, summed over every label set.
+
+    Only a cross-check. The 2026-09-08 sweep trusted this as the step count and
+    got 1 step for a 33-chunk request on one arm and 101 on another -- whatever
+    vllm:iteration_tokens_total counts on this build, it is not one observation
+    per engine step, and a single re.search also read only the first label set.
+    The denominator is now ceil(prompt_tokens / chunk), which is exactly what
+    the pinned chunk produces, and this number only prints when it disagrees."""
     out = []
     for suffix in ("_count", "_sum"):
-        m = re.search(r"^vllm:%s%s\{[^}]*\}\s+([0-9.e+]+)" % (re.escape(name), suffix), text, re.M)
-        out.append(float(m.group(1)) if m else 0.0)
+        vals = re.findall(r"^vllm:%s%s(?:\{[^}]*\})?\s+([0-9.eE+-]+)" % (re.escape(name), suffix),
+                          text, re.M)
+        out.append(sum(float(v) for v in vals))
     return out[0], out[1]
 
 
@@ -97,7 +102,19 @@ def prefill(model: str, ctx_tokens: int, rng: random.Random) -> tuple[int, float
     req = urllib.request.Request(BASE + "/v1/chat/completions", body,
                                  {"Content-Type": "application/json"})
     t0 = time.time()
-    out = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    try:
+        out = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    except urllib.error.HTTPError as exc:
+        # The 2026-09-08 sweep died on a bare "HTTP Error 500" and the arm's head
+        # log had already been snapshotted, so the cause was unrecoverable. The
+        # body carries vLLM's own message; print it before re-raising.
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:2000]
+        except Exception:
+            detail = "(no body)"
+        print(f"  !! HTTP {exc.code} on a {ctx_tokens}-token prefill after "
+              f"{time.time() - t0:.1f}s: {detail}", file=sys.stderr)
+        raise
     return int(out["usage"]["prompt_tokens"]), time.time() - t0
 
 
@@ -131,35 +148,35 @@ def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: 
 
 
 def fit(rows: list[dict]) -> dict:
-    """Least squares for a, b, c over wall = n*a + n*C*b + (ctx^2/2C)*c.
+    """Least squares for ``wall = a*steps + b*tokens`` on one context.
 
-    Solved with the normal equations (3x3, Gaussian elimination) so the probe
-    needs no numpy on the head."""
-    cols = []
-    rhs = []
-    for r in rows:
-        n = r["steps"]
-        cols.append([n, n * r["chunk"], r["prompt_tokens"] ** 2 / (2.0 * r["chunk"])])
-        rhs.append(r["wall"])
-    if len(cols) < 3:
+    Every step pays ``a`` once; the token work ``b*tokens`` is the same however
+    the prompt is split. That is the whole model, and it is exact for the last,
+    PARTIAL chunk -- the earlier form (``wall/tokens = a/C + b``) silently
+    assumed ``steps = tokens/C`` and so charged a full chunk for the remainder,
+    which biased `a` low and `b` high by ~15% on a real 33-step request.
+
+    The three-parameter version (a + b*C + c*ctx) is gone: the 2026-09-08 sweep
+    put the 32K and 128K curves on top of each other, the pooled `c` came out
+    NEGATIVE, and `c` is nearly collinear with `a` once C is swept. One (a, b)
+    per context, and the spread between contexts, is what the data supports.
+    Normal equations on a 2x2, so the head needs no numpy."""
+    if len(rows) < 2:
         return {}
-    ata = [[sum(cols[k][i] * cols[k][j] for k in range(len(cols))) for j in range(3)] for i in range(3)]
-    atb = [sum(cols[k][i] * rhs[k] for k in range(len(cols))) for i in range(3)]
-    for i in range(3):
-        p = max(range(i, 3), key=lambda r: abs(ata[r][i]))
-        if abs(ata[p][i]) < 1e-12:
-            return {}
-        ata[i], ata[p] = ata[p], ata[i]
-        atb[i], atb[p] = atb[p], atb[i]
-        for r in range(i + 1, 3):
-            f = ata[r][i] / ata[i][i]
-            for c in range(i, 3):
-                ata[r][c] -= f * ata[i][c]
-            atb[r] -= f * atb[i]
-    x = [0.0, 0.0, 0.0]
-    for i in (2, 1, 0):
-        x[i] = (atb[i] - sum(ata[i][j] * x[j] for j in range(i + 1, 3))) / ata[i][i]
-    return {"a_s": x[0], "b_s_per_tok": x[1], "c_s_per_ctx_tok": x[2]}
+    snn = sum(r["steps"] ** 2 for r in rows)
+    stt = sum(r["prompt_tokens"] ** 2 for r in rows)
+    snt = sum(r["steps"] * r["prompt_tokens"] for r in rows)
+    swn = sum(r["wall"] * r["steps"] for r in rows)
+    swt = sum(r["wall"] * r["prompt_tokens"] for r in rows)
+    det = snn * stt - snt * snt
+    if det == 0:
+        return {}
+    a = (swn * stt - swt * snt) / det
+    b = (snn * swt - snt * swn) / det
+    worst = max(abs(r["wall"] - (a * r["steps"] + b * r["prompt_tokens"])) / r["wall"] for r in rows)
+    return {"a_s": a, "b_s_per_tok": b, "n": len(rows),
+            "ceiling_tok_s": (1.0 / b) if b > 0 else float("inf"),
+            "worst_residual_pct": 100 * worst}
 
 
 def main() -> int:
@@ -167,6 +184,11 @@ def main() -> int:
     ap.add_argument("--ctx", default="32000,128000")
     ap.add_argument("--chunks", default="1152,2304,4608,8192")
     ap.add_argument("--reps", type=int, default=2)
+    # A 128K row costs ~4x a 32K row and buys only the ctx sensitivity, which
+    # the 2026-09-08 sweep found to be within noise: one rep confirms it.
+    ap.add_argument("--long-reps", type=int, default=1,
+                    help="reps for contexts above --long-ctx (default 1)")
+    ap.add_argument("--long-ctx", type=int, default=64000)
     ap.add_argument("--chunk-file", default="/home/choiceoh/vllm-prof/sched_chunk")
     ap.add_argument("--json", default="")
     ap.add_argument("--trace-chunks", default="",
@@ -189,66 +211,82 @@ def main() -> int:
 
     rows: list[dict] = []
     try:
-        for chunk in chunks:
-            set_chunk(args.chunk_file, chunk)
-            for ctx in ctxs:
-                for rep in range(args.reps):
+        # Reps outermost, so every rep is a full pass over the chunk sizes. With
+        # the chunk loop outermost a drift over the run (clocks, cache state, a
+        # neighbour on the node) aliases straight into the chunk coefficient,
+        # which is the one number this probe exists to produce.
+        for rep in range(max(args.reps, args.long_reps)):
+            for chunk in chunks:
+                set_chunk(args.chunk_file, chunk)
+                for ctx in ctxs:
+                    if rep >= (args.long_reps if ctx > args.long_ctx else args.reps):
+                        continue
                     before = histogram(metrics(), "iteration_tokens_total")
                     ptok, wall = prefill(model, ctx, rng)
                     after = histogram(metrics(), "iteration_tokens_total")
-                    steps = int(round(after[0] - before[0])) if after[0] else 0
-                    measured = steps > 0
-                    if not measured:
-                        steps = math.ceil(ptok / chunk)
+                    # The pinned chunk IS the denominator; the metric only gets
+                    # to disagree out loud.
+                    steps = math.ceil(ptok / chunk)
+                    seen = int(round(after[0] - before[0]))
+                    note = "" if not seen or abs(seen - steps) <= max(2, steps // 10) else f" (metric says {seen})"
                     rows.append({"chunk": chunk, "ctx": ctx, "rep": rep, "prompt_tokens": ptok,
-                                 "wall": wall, "steps": steps, "steps_measured": measured,
+                                 "wall": wall, "steps": steps, "metric_steps": seen,
                                  "sched_tokens": after[1] - before[1]})
                     print(f"  chunk {chunk:>5}  ctx {ctx:>7}  rep{rep}  "
-                          f"tok {ptok:>7}  wall {wall:6.2f}s  steps {steps:>4}"
-                          f"{'' if measured else '(est)'}  "
-                          f"{ptok / wall:7.0f} tok/s  step {wall / steps * 1000:7.1f} ms")
+                          f"tok {ptok:>7}  wall {wall:6.2f}s  steps {steps:>4}  "
+                          f"{ptok / wall:7.0f} tok/s  step {wall / steps * 1000:7.1f} ms{note}")
     finally:
         set_chunk(args.chunk_file, 0)
         print("chunk override cleared (0 = the boot's own chunking)")
 
+    def med(values):
+        values = sorted(values)
+        return values[len(values) // 2] if values else 0.0
+
     print("\n== per (chunk, ctx): median of reps ==")
-    print(f"{'chunk':>6} {'ctx':>8} {'tok/s':>8} {'step ms':>9} {'ms/1k tok':>10}")
+    print(f"{'chunk':>6} {'ctx':>8} {'tok/s':>8} {'step ms':>9} {'us/token':>9}")
     best: dict[int, float] = {}
-    for chunk in chunks:
-        for ctx in ctxs:
-            sel = sorted(r["wall"] / r["steps"] for r in rows if r["chunk"] == chunk and r["ctx"] == ctx)
+    for ctx in ctxs:
+        for chunk in chunks:
+            sel = [r for r in rows if r["chunk"] == chunk and r["ctx"] == ctx]
             if not sel:
                 continue
-            step_s = sel[len(sel) // 2]
-            rate = [r["prompt_tokens"] / r["wall"] for r in rows if r["chunk"] == chunk and r["ctx"] == ctx]
-            rate = sorted(rate)[len(rate) // 2]
-            print(f"{chunk:>6} {ctx:>8} {rate:>8.0f} {step_s * 1000:>9.1f} {step_s / chunk * 1e6:>10.1f}")
+            rate = med(r["prompt_tokens"] / r["wall"] for r in sel)
+            step_s = med(r["wall"] / r["steps"] for r in sel)
+            print(f"{chunk:>6} {ctx:>8} {rate:>8.0f} {step_s * 1000:>9.1f} {1e6 / rate:>9.1f}")
             best[ctx] = max(best.get(ctx, 0.0), rate)
 
     print("\n== small-chunk penalty (vs the best chunk at the same ctx) ==")
     for ctx in ctxs:
         for chunk in chunks:
-            rate = [r["prompt_tokens"] / r["wall"] for r in rows if r["chunk"] == chunk and r["ctx"] == ctx]
-            if not rate or not best.get(ctx):
+            sel = [r for r in rows if r["chunk"] == chunk and r["ctx"] == ctx]
+            if not sel or not best.get(ctx):
                 continue
-            rate = sorted(rate)[len(rate) // 2]
+            rate = med(r["prompt_tokens"] / r["wall"] for r in sel)
             print(f"  ctx {ctx:>7} chunk {chunk:>5}: {rate:7.0f} tok/s = {100 * rate / best[ctx]:5.1f}% of best")
 
-    f = fit(rows)
-    if f:
-        print("\n== fit T_step = a + b*C + c*ctx ==")
-        print(f"  a = {f['a_s'] * 1000:8.1f} ms   (shape-independent: host, launch glue, collectives)")
-        print(f"  b = {f['b_s_per_tok'] * 1e6:8.2f} us/token   (=> {1 / f['b_s_per_tok']:,.0f} tok/s ceiling)"
-              if f["b_s_per_tok"] > 0 else f"  b = {f['b_s_per_tok'] * 1e6:8.2f} us/token (NEGATIVE: model does not hold)")
-        print(f"  c = {f['c_s_per_ctx_tok'] * 1e6:8.3f} us per 1 token of PREFIX per step"
-              f"  (= {f['c_s_per_ctx_tok'] * 32000 * 1000:.0f} ms/step at 32K, "
-              f"{f['c_s_per_ctx_tok'] * 128000 * 1000:.0f} ms at 128K)")
-        for ctx in ctxs:
-            for chunk in chunks:
-                pred = f["a_s"] + f["b_s_per_tok"] * chunk + f["c_s_per_ctx_tok"] * ctx / 2
-                print(f"    predicted step at ctx {ctx:>7} chunk {chunk:>5}: {pred * 1000:7.1f} ms "
-                      f"= a {f['a_s'] * 1000:.0f} + b*C {f['b_s_per_tok'] * chunk * 1000:.0f} "
-                      f"+ c*ctx/2 {f['c_s_per_ctx_tok'] * ctx / 2 * 1000:.0f}")
+    # One (a, b) per context. Their spread IS the context sensitivity: a real
+    # prefix-proportional term would push `a` up with ctx.
+    fits = {ctx: fit([r for r in rows if r["ctx"] == ctx]) for ctx in ctxs}
+    fits = {ctx: f for ctx, f in fits.items() if f}
+    if fits:
+        print("\n== fit T_step = a + b*C, one per context ==")
+        for ctx, f in fits.items():
+            print(f"  ctx {ctx:>7}: a = {f['a_s'] * 1000:7.1f} ms/step   "
+                  f"b = {f['b_s_per_tok'] * 1e6:6.2f} us/token (ceiling {f['ceiling_tok_s']:,.0f} tok/s)   "
+                  f"n={f['n']} worst residual {f['worst_residual_pct']:.1f}%")
+        avals = [f["a_s"] for f in fits.values()]
+        if len(avals) > 1:
+            spread = 100 * (max(avals) - min(avals)) / (sum(avals) / len(avals))
+            print(f"  a across contexts: {min(avals) * 1000:.0f}-{max(avals) * 1000:.0f} ms "
+                  f"(spread {spread:.0f}%) -- a prefix-proportional term would show up here")
+        a_med = med(avals)
+        print("\n  what the fixed cost costs, per chunk size:")
+        for chunk in chunks:
+            b = med(f["b_s_per_tok"] for f in fits.values())
+            print(f"    chunk {chunk:>5}: {100 * a_med / (a_med + b * chunk):4.0f}% of the step "
+                  f"(step {(a_med + b * chunk) * 1000:6.0f} ms, {chunk / (a_med + b * chunk):,.0f} tok/s)")
+        fits = {str(k): v for k, v in fits.items()}
 
     traces = {}
     for chunk in [int(v) for v in args.trace_chunks.split(",") if v.strip()]:
@@ -262,7 +300,7 @@ def main() -> int:
 
     if args.json:
         with open(args.json, "w") as fh:
-            json.dump({"rows": rows, "fit": f, "model": model, "traces": traces,
+            json.dump({"rows": rows, "fit": fits, "model": model, "traces": traces,
                        "when": time.strftime("%Y-%m-%dT%H:%M:%S")}, fh, indent=1)
         print(f"\nwrote {args.json}")
     return 0
