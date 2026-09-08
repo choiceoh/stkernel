@@ -8022,6 +8022,16 @@ def test_boot_stamps_measure_without_changing_the_boot() -> None:
           "image's sitecustomize.py would silently drop whatever it does")
     check(pth.strip() == "import deneb_boot_stamps; deneb_boot_stamps.install()",
           "the .pth is the additive entry point and does nothing else")
+    # 40차: each phase also stamps free DEVICE memory, because on this
+    # unified-memory box the engine's allocation IS the host RAM that earlyoom
+    # counts, and `weights + non-torch` hides 13.1 GiB nobody had attributed.
+    # The is_initialized() guard is the load-bearing part: sampling earlier
+    # would create the CUDA context and move the boundary being measured.
+    check("mem_get_info" in src and "is_initialized" in src
+          and src.index("is_initialized") < src.index("mem_get_info"),
+          "the memory stamp asks whether CUDA is up BEFORE touching mem_get_info")
+    check("GiB used this phase" in src and "dev free" in src,
+          "each phase reports free device memory and its own delta")
     check("class _PostImport:" in src
           and all(m in src for m in ('"vllm.v1.worker.gpu_worker"',
                                      '"vllm.v1.worker.gpu.model_runner"',

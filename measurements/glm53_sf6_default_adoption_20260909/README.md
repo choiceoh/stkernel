@@ -60,9 +60,11 @@ and [compiler/owner evidence](../glm53_sf6_direct_prefill_20260909/README.md).
 ## Change and validation
 
 Only the GLM53 profile default, its existing assertion/audit hashes and current
-documentation change for adoption. All 63 composed serving sources match both
-prior measured commits; see `source-equivalence.json`. GLM53 and DSV4 compose
-successfully with no generated source difference. Compact AR and inline RDMA
+documentation change for adoption. Before the merge-time main update, all 63 sources matched the measured
+commits. Main PR#504 then added boot-phase device-memory stamps; 62/63 remain
+byte-identical, with only `deneb_boot_stamps.py` inherited from main changed.
+SF6 kernels and owners remain identical. See `source-equivalence.json`.
+GLM53 and DSV4 compose successfully; generated files match their module sources. Compact AR and inline RDMA
 remain default0. The full source stack includes their dormant implementation,
 existing MHC FP32 fallback and SF6 dependencies from PR#498; PR#501 is retargeted
 to main for one atomic merge of the already measured source tree.
@@ -85,5 +87,11 @@ Final CPU gate: **71,159 core assertions, 50 megakernel regressions, 7
 sensitivity cases and 54 targeted tests PASS**, no skips. Raw per-suite
 logs and counted reports are retained in `cpu-complete/`. Python3.12 with
 torch2.14.0 was used for these CPU-only checks. No serving/GPU process was
-created. The refreshed logic audit SHA matches the reviewed default-assertion
-change; audited helper access graphs and dependency closure are unchanged.
+created. The logic audit also incorporates main PR#504's two boot-memory assertions;
+audited helper access graphs and dependency closure are unchanged.
+
+Merge-time main synchronization: PR#504's boot-memory instrumentation and its
+two assertions are retained. Final core **71,161 assertions / 50 regressions**
+and sensitivity7 pass without skips (`cpu-main-sync/`). The 54 earlier targeted
+tests cover unchanged transport/MHC/SF6 kernel and owner sources. This merge
+adds no new SF6 timing or net-memory claim.

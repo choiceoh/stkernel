@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited for SF6 default adoption: only the profile-default assertion and
-# its explanation changed in test_logic.py. The three audited helper tests,
-# access graphs and source closure are unchanged.
-LOGIC_AUDIT = '8591e9bd8a88cee01d4a1dd901f12ec9df5a1a079c8583e082000e3dc8999019'
+# Re-audited for SF6 default adoption plus main PR #504 boot-memory checks.
+# Only the existing default and boot-stamp assertions changed; the three
+# audited helper tests, access graphs and source closure are unchanged.
+LOGIC_AUDIT = 'b9f63b1e3004e6c8650f4c877436d6a8e92f0c9c50162a15fad82d965066c98e'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

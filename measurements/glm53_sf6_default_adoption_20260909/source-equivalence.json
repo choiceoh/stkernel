@@ -241,7 +241,8 @@
     {
       "source": "overlay/modules/glm53_runtime/deneb_boot_stamps.py",
       "target": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
-      "sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67"
+      "sha256": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109",
+      "reference_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67"
     },
     {
       "source": "overlay/modules/glm53_runtime/zz_deneb_boot_stamps.pth",
@@ -325,5 +326,15 @@
       "after": "t,r,sf6"
     }
   },
-  "kernel_or_owner_code_changes": false
+  "kernel_or_owner_code_changes": false,
+  "unchanged_overlay_count": 62,
+  "inherited_main_commit": "aeba24bd",
+  "inherited_main_changes": [
+    {
+      "source": "overlay/modules/glm53_runtime/deneb_boot_stamps.py",
+      "reference_sha256": "cb99cf16bc1eda1e0ab17f6beea04d881b8bd9bc85d287edcf00bf0d701dcb67",
+      "sha256": "12c89a0406b9f7ea7607c15e56a37d30e2a2e8b14ff025ed9cd169dfa09f0109"
+    }
+  ],
+  "inherited_change_scope": "PR#504 boot-phase device-memory stamps; no SF6 kernel or owner edits"
 }

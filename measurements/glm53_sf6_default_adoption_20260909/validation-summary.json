@@ -1,7 +1,7 @@
 {
   "status": "PASS",
   "cpu_only": true,
-  "core_assertions": 71159,
+  "core_assertions": 71161,
   "megakernel_regressions": 50,
   "sensitivity_cases": 7,
   "targeted_tests": 54,
@@ -12,6 +12,9 @@
     "glm53": 63,
     "dsv4": 24
   },
-  "composed_source_changed": false,
-  "logic_audit_sha256": "8591e9bd8a88cee01d4a1dd901f12ec9df5a1a079c8583e082000e3dc8999019"
+  "composed_source_changed": "inherited main PR#504 boot stamps only",
+  "logic_audit_sha256": "b9f63b1e3004e6c8650f4c877436d6a8e92f0c9c50162a15fad82d965066c98e",
+  "inherited_main_commit": "aeba24bd",
+  "core_report": "cpu-main-sync/cpu.json",
+  "targeted_report": "cpu-complete/cpu.json"
 }
