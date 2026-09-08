@@ -1338,6 +1338,15 @@ def sparse_attn_indexer_kpool(
             if use_fp4_cache
             else padded_q_quant_decode_tokens
         )
+        # deneb fork (vLLM #55270): launch in the same varlen mode the schedule
+        # was planned in. The builder calls get_paged_mqa_logits_metadata with
+        # `indices=decode_indices` (indexer.py), so DeepGEMM planned a varlen
+        # schedule; omitting `indices` here selects the non-varlen next_n=1
+        # kernel and runs it on that schedule. Under MTP a request's verify rows
+        # share one request index, so the two decompositions diverge whenever a
+        # request's rows straddle a 256-state split boundary (1024 tokens at
+        # index_kpool=4). The generic indexer already passes it
+        # (sparse_attn_indexer.py); only this kpool copy did not.
         logits = fp8_fp4_paged_mqa_logits(
             (padded_q_quant_cast, padded_q_scale),
             kv_cache,
@@ -1347,6 +1356,7 @@ def sparse_attn_indexer_kpool(
             decode_metadata.schedule_metadata,
             max_model_len=max_model_len,
             clean_logits=False,
+            indices=decode_metadata.indices,
         )
         num_rows = logits.shape[0]
         # kpool: logits are pool-granular -> select topk_tokens//kpool pools,

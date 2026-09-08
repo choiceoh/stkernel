@@ -9,3 +9,5 @@ chunk_delta_h.py	vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py	1b
 # -- glm53_mhc_tilelang
 tilelang.py	vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
 tilelang_kernels.py	vllm/model_executor/kernels/mhc/tilelang_kernels.py	03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24
+# -- glm53_kda_strided_inputs / spec-state clamp (vLLM #55736, #51508): the FLA recurrent kernel kda.py launches
+fused_recurrent.py	vllm/third_party/flash_linear_attention/ops/fused_recurrent.py	371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b

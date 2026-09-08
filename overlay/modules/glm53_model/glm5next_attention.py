@@ -300,7 +300,19 @@ class Indexer(nn.Module):
         self.prefix = prefix
         from vllm.v1.attention.backends.mla.indexer import get_max_prefill_buffer_size
 
-        self.max_total_seq_len = get_max_prefill_buffer_size(vllm_config)
+        # deneb fork (vLLM #55222): get_max_prefill_buffer_size returns a TOKEN
+        # count (max_model_len * 40 entries of 132 B), but this indexer's KV is
+        # pool-granular -- the spec carries compress_ratio == index_kpool and
+        # split_indexer_prefill_chunks is fed compressed sequence lengths, so
+        # the same number is consumed in pool units. Sized in tokens it locks
+        # max_model_len * 40 * 132 B per GPU during the memory profile (5.16 GiB
+        # at --max-model-len 1048576), straight out of the KV budget. Divide at
+        # the call site, as deepseek_v4/attention.py already does. The result is
+        # still ~40x the largest chunk this can be asked for
+        # (max_model_len // index_kpool pools), so the bound stays slack.
+        self.max_total_seq_len = (
+            get_max_prefill_buffer_size(vllm_config) // self.index_kpool
+        )
         self.indexer_op = SparseAttnIndexerKpool(
             self.k_cache,
             self.quant_block_size,

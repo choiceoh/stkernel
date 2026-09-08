@@ -53,6 +53,7 @@ from vllm.third_party.flash_linear_attention.ops.kda import (
     FusedRMSNormGated,
     chunk_kda_with_fused_gate,
     fused_recurrent_kda,
+    kda_strided_inputs_enabled,
 )
 from vllm.transformers_utils.configs.kimi_linear import KimiLinearConfig
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
@@ -668,7 +669,23 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
             )
             q_ns, k_ns, v_ns = qkv_ns.split(self.local_projection_size, dim=-1)
 
+        # deneb fork (vLLM #55736, opt-in): q/k/v here are column slices of the
+        # merged q|k|v conv output, so reshape() materialises a contiguous copy
+        # -- one copy kernel per tensor per KDA layer per step (34 KDA layers on
+        # GLM-5.3-Flash).  view() only splits the last, unit-stride dim, so it
+        # keeps the token stride and never copies; the recurrent kernel now
+        # takes that stride explicitly.  Fail-closed: any layout view() rejects
+        # falls back to the copy.  Off unless VLLM_GLM53_KDA_STRIDED=1.
+        _kda_strided = kda_strided_inputs_enabled()
+
         def _rearr(x):
+            if _kda_strided and x.dim() == 2:
+                try:
+                    return x.view(
+                        x.shape[0], self.local_num_heads, self.head_dim
+                    ).unsqueeze(0)
+                except RuntimeError:
+                    pass
             return x.reshape(1, -1, self.local_num_heads, self.head_dim)
 
         # --- core attention: spec (draft-verify) path ---

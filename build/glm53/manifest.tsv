@@ -9,6 +9,7 @@ kda.py	/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_att
 chunk_delta_h.py	/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py	1b3ad391f939d9443c6b7adb19e57fe381bd5dccea064e8417a4f85b0e713b26
 tilelang.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py	c8ce81539c779436eb2b9fbba84738f3114bf3ac0a149f2b606f7d38bd1067ce
 tilelang_kernels.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py	03aeb3f7c0eabfe8391006ff80f8d4cfedba7cf3d0a168e0dee2d678d3e3bd24
+fused_recurrent.py	/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/fused_recurrent.py	371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b
 flashinfer_b12x_moe.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py	86dfe87e1bc69651b3c969477946b348eeebdb8386aab3e51cf5d5253405047b
 moe_micro_kernel.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py	ccb6f65a22314961693493242f78f62ca58f79a319ecd0cb51bf6d7d8e7125c6
 moe_dispatch.py	/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py	f6923850c710eb21cf7c3566b6ddcc39ddda0d7a3664c19dec0205895af31362
@@ -54,3 +55,7 @@ parallel_state.py	/usr/local/lib/python3.12/dist-packages/vllm/distributed/paral
 glm53_draft_dump.py	/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py	absent
 glm53_decode_first.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py	absent
 kv_cache_coordinator.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py	f640b5c42f6bc718926329a8f8b48a0fd0c8c8f24368af4e4b9ec8d13f68432f
+gdn_attn.py	/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/gdn_attn.py	f27f887e71a7d092b79f7de55044a303456cfbd1e5eaf3461b394da9b3f21eba
+causal_conv1d.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/ops/causal_conv1d.py	044d005cfe59fd0818ed421274e04f3e8dd679b8cdb64fca9f4422f2643484b2
+mamba_utils.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/mamba/mamba_utils.py	fb15e26fcfe4f7ab72a61a64fee8b8ea0c49b7f28a23b6a9dede099e41489231
+gate_linear.py	/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/gate_linear.py	6fca8c7fba361ac79418dd56d6d3c281ef04f34ebfdd2044cb1d12e1fa9e70d7

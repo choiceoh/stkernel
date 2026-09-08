@@ -1,0 +1,5 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_spec_state (vLLM #51508): a discarded async-scheduling step writes 0 into num_accepted_tokens; every consumer indexes state slots with count-1
+gdn_attn.py	vllm/v1/attention/backends/gdn_attn.py	f27f887e71a7d092b79f7de55044a303456cfbd1e5eaf3461b394da9b3f21eba
+causal_conv1d.py	vllm/model_executor/layers/mamba/ops/causal_conv1d.py	044d005cfe59fd0818ed421274e04f3e8dd679b8cdb64fca9f4422f2643484b2
+mamba_utils.py	vllm/model_executor/layers/mamba/mamba_utils.py	fb15e26fcfe4f7ab72a61a64fee8b8ea0c49b7f28a23b6a9dede099e41489231
