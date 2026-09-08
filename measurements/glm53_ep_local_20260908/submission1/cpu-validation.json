@@ -1,0 +1,12 @@
+{
+  "compile_source": "083d937f676ce4efa200e253995f3505241ad283",
+  "execution_source": "98ce2cf07794e9361c2fdbc9b11b6bc7ffaffb07",
+  "rebased_onto": "926239e",
+  "compile_overlay_hashes_unchanged": true,
+  "local_logic_checks": 6783,
+  "megakernel_regressions": 38,
+  "fleet_regressions": 120,
+  "focused_ep_tests": 6,
+  "lifecycle_tests": 8,
+  "local_logic_sha256": "e82fb9c556644897a7a6e603afba4c39f923078021ddad6839ffeabedd8fb1d5"
+}
