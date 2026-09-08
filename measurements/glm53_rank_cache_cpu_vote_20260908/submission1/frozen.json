@@ -1,0 +1,26 @@
+[
+  {
+    "node": "local",
+    "returncode": 0,
+    "output": "{\"revision\": \"6e693f53a118bce9fc0a8b457943c3880a9fb59b\", \"source\": \"/home/choiceoh/stkernel-cpu-vote-memory-0908-1\", \"cpu_input_hashes_verified\": 166, \"clean\": true}\n",
+    "error": ""
+  },
+  {
+    "node": "10.10.10.1",
+    "returncode": 0,
+    "output": "{\"revision\": \"6e693f53a118bce9fc0a8b457943c3880a9fb59b\", \"source\": \"/home/choiceoh/stkernel-cpu-vote-memory-0908-1\", \"cpu_input_hashes_verified\": 166, \"clean\": true}\n",
+    "error": ""
+  },
+  {
+    "node": "10.10.10.3",
+    "returncode": 0,
+    "output": "{\"revision\": \"6e693f53a118bce9fc0a8b457943c3880a9fb59b\", \"source\": \"/home/choiceoh/stkernel-cpu-vote-memory-0908-1\", \"cpu_input_hashes_verified\": 166, \"clean\": true}\n",
+    "error": ""
+  },
+  {
+    "node": "10.10.10.4",
+    "returncode": 0,
+    "output": "{\"revision\": \"6e693f53a118bce9fc0a8b457943c3880a9fb59b\", \"source\": \"/home/choiceoh/stkernel-cpu-vote-memory-0908-1\", \"cpu_input_hashes_verified\": 166, \"clean\": true}\n",
+    "error": ""
+  }
+]

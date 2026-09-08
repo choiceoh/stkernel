@@ -180,7 +180,7 @@ def wait_restore(before, timeout=1800):
     raise RuntimeError('original endpoint did not recover health')
 
 
-def with_paused(before, run, save):
+def with_paused(before, run, save, before_restore=None):
     """Always recover the original set, including a partially failed stop."""
     try:
         save('stopped.json', transition_all(before, 'stop'))
@@ -188,6 +188,8 @@ def with_paused(before, run, save):
     finally:
         previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
         try:
+            if before_restore is not None:
+                before_restore()
             save('restarted.json', transition_all(before, 'start'))
             save('restored.json', wait_restore(before))
         finally:

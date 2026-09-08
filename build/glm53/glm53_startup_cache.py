@@ -115,6 +115,7 @@ def environment_identity():
               # Cache transport/key and frontend warmup policies preserve model bytes.
               # Keep rank/FP8 artifacts usable across their matched boot brackets.
               and k not in ("VLLM_GLM53_RANK_CACHE", "VLLM_GLM53_FP8_CACHE",
+                            "VLLM_GLM53_RANK_CACHE_CPU_VOTE",
                             "VLLM_GLM53_MK_PACK_FAST_IO", "VLLM_GLM53_MK_PACK_SHA256",
                             "VLLM_GLM53_EARLY_MM_WARMUP")
               and not any(word in k for word in ("API_KEY", "SECRET", "PASSWORD", "ACCESS_TOKEN"))}
