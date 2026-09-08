@@ -48,4 +48,18 @@ Before the fleet run, local validation passed 37 cache/pipeline tests, 71,059 co
 
 The first queued attempt was canceled before admission when main advanced. The second attempt stopped at the idle-entry guard before any candidate deployment or GPU gate because the predecessor's metrics lacked the running-request field. Its supervisor restored approved production at 13:43:20 KST before the recorded v3 trial began. Neither attempt is in the performance comparison.
 
-The five-boot v3 payload and its wrapper completed with exit 0 at **14:14:59 KST**. Its subsequent supervisor handoff was not accepted: the default public health URL could not observe the loopback-only experiment server. A separate normal fleet recovery session, `rankpiperecover0908`, was admitted at **14:18:04 KST** with `HEAD_URL=http://127.0.0.1:8000` and runs the approved production restore. No reservation or idle guard was bypassed. The final harness now requires that URL to be exported on the outer fleet invocation, before any service changes, so the supervisor can see the experimental server during recovery. This admission-only fix was added after measurement and does not alter measured runtime bytes.
+The five-boot v3 payload and `run_startup_rank_pipeline.sh` completed with exit 0 at **14:14:59 KST**. Its subsequent supervisor handoff was not accepted: the default public health URL could not observe the loopback-only experiment server. A separate normal fleet recovery session, `rankpiperecover0908`, was admitted at **14:18:04 KST** with `HEAD_URL=http://127.0.0.1:8000` and restored the approved production revision `926239e915dda5906d21b447f08245a71ca6945c`. No reservation or idle guard was bypassed. The final harness now requires that URL to be exported on the outer fleet invocation, before any service changes, so the supervisor can see the experimental server during recovery. This admission-only fix was added after measurement and does not alter measured runtime bytes.
+
+The initial fleet supervisor ultimately exited **1** after its five-minute reclaim timeout; this is distinct from the successful timed payload. The recovery supervisor exited **0**, public health responses are preserved in `recovery-head.log`, and its handoff was accepted at **14:23:30 KST**. The recovery boot is not in the performance comparison. No GPU requests were made after that handoff.
+
+## Integration and evidence bundle
+
+Main `306511a` was integrated after measurement. The rank-cache and startup-cache implementation bytes remain identical to measured `82a97db`; upstream scheduling/attention changes are not part of this comparison. The integrated CPU gate passed **71,087 core checks, 38 megakernel regressions and 120 fleet regressions**. The outer health-URL admission was checked to reject a missing URL before holder inspection or any service action. Composition, syntax and whitespace checks passed. The candidate remains opt-in and the PR remains a draft experiment because it failed the performance gate.
+
+`raw-evidence.tar.gz` preserves the captured boot logs, before/after source and Ninja receipts, source/runtime identities, all response transcripts, host samples, exact-image CPU/CUDA gates, driver logs, execution exits and the filtered fleet lifecycle. `raw-file-sha256.json` identifies each archived file. Readable [timings](report.md), [verification](validation.json), [full report](report.json), first requests and onepass records are retained beside it. To reconstruct and verify without contacting a GPU or service:
+
+```sh
+mkdir -p /tmp/glm53-rank-pipeline-evidence
+tar -xzf measurements/glm53_rank_pipeline_20260908/raw-evidence.tar.gz -C /tmp/glm53-rank-pipeline-evidence
+python3 measurements/glm53_rank_pipeline_20260908/report.py /tmp/glm53-rank-pipeline-evidence . --verify
+```

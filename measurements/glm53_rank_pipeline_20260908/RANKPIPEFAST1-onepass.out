@@ -1,0 +1,13 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        2104        2517      1.01s      0.85s  o o o
+  32000   32545        3021     (1 req)     10.77s          -  o o o
+  warm 처리량: 2517 -> 3021 tok/s (over 2128 -> 32545 tokens)
+=> 6/6 correct
+decode: windows n=17 med 21.8 [20.8, 22.8] step/s (inside the answers only; per context: 2K: n=10 med 22.3  32K: n=7 med 21.8), raw acc 45.4%, tokens/step 3.271 (k=5.0), generated 1862 tokens over 39s
+응답 4개 · 문자 5,100
+  깨진 응답: 0/4 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass RANKPIPEFAST1: 39s total

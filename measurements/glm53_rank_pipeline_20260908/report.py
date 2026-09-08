@@ -104,6 +104,17 @@ for node, resource in data["host_resource_samples"].items():
     if verify:
         assert resource["n"] > 100 and resource["min_available_gib"] > 0
         assert resource["max_sample_gap_s"] <= 35
+events = [json.loads(v) for v in (root/"fleet-lifecycle.jsonl").read_text().splitlines()]
+data["execution_exits"] = json.loads((root/"execution-exits.json").read_text())
+recovered = [v for v in events if v["session"] == "rankpiperecover0908" and v["event"] == "handoff-accepted"]
+data["recovery_handoff"] = recovered
+if verify:
+    for session in ("rankpipe0908v3", "rankpiperecover0908"):
+        completed = [v for v in events if v["session"] == session and v["event"] == "payload-finished"]
+        assert len(completed) == 1 and completed[0]["rc"] == 0
+    assert len(recovered) == 1 and data["execution_exits"]["recovery_supervisor"] == 0
+    assert '10.10.10.2:' in (root/"recovery-head.log").read_text()
+    assert re.search(r'10\.10\.10\.2:\d+ - "GET /health HTTP/1.1" 200', (root/"recovery-head.log").read_text())
 summary = {}
 for kind in ("BASE", "FAST"):
     rows = [r for a,r in data["arms"].items() if kind in a]

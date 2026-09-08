@@ -1,0 +1,40 @@
+{
+  "cuda": "13.0",
+  "torch": "2.13.0+cu130",
+  "device": "NVIDIA GB10",
+  "source_sha256": {
+    "glm53_rank_cache.py": "e2277b0e05e4fc2925c7b5fd13cb06e51ed189fa3b6cf6f0a2162bbe0532ddf0",
+    "glm53_startup_cache.py": "51011f7d4823efb2428444677bd0d7000289fc2805f982cd996e62cbdd4439c2"
+  },
+  "runs": [
+    {
+      "policy": 0,
+      "exact": true,
+      "drained": true,
+      "seconds": 0.9367012199945748
+    },
+    {
+      "policy": 1,
+      "exact": true,
+      "drained": true,
+      "seconds": 0.8110134699963965
+    },
+    {
+      "policy": 0,
+      "exact": true,
+      "drained": true,
+      "seconds": 1.0000649609719403
+    },
+    {
+      "policy": 1,
+      "exact": true,
+      "drained": true,
+      "seconds": 0.7572205750038847
+    }
+  ],
+  "bytes": 268435517,
+  "chunks": 7,
+  "corrupt_chunk_rejected": true,
+  "failure_drained": true,
+  "ok": true
+}
