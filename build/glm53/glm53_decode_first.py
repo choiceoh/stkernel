@@ -71,8 +71,11 @@ VLLM_GLM53_* keys):
   VLLM_GLM53_SCHED_FLOOR_GRACE_S  seconds after admission before the floor
                                   is enforced (2.0)
   VLLM_GLM53_SCHED_CHUNK_FILE     dev only (40차): a file holding the prefill
-                                  chunk to use, re-read 5x/s, absolute (it
-                                  overrides the plan AND caps solo prefill).
+                                  chunk to use, re-read 5x/s; it replaces the
+                                  planned chunk and also caps SOLO prefill.
+                                  Like the planned chunk it only ever tightens,
+                                  so a boot-level long_prefill_token_threshold
+                                  below it still wins (this lane sets none).
                                   Empty = off = production. Lets one boot
                                   sweep chunk sizes; see probes/prefill_chunk_sweep.py
 
