@@ -70,9 +70,15 @@ class BindingOrderTests(unittest.TestCase):
 
 class DiagnosticLifecycleTests(unittest.TestCase):
     def test_nonzero_sanitizer_keeps_failure_and_restores_original(self):
+        self.failed_diagnostic(initially_running=True)
+
+    def test_stopped_handoff_runs_diagnostic_and_keeps_originals_stopped(self):
+        self.failed_diagnostic(initially_running=False)
+
+    def failed_diagnostic(self, initially_running):
         sys.path.insert(0, str(ROOT/'probes'))
         import run_glm53_ep_binding_offline as runner
-        before = {node: dict(id=node, running=True, auto_remove=False,
+        before = {node: dict(id=node, running=initially_running, auto_remove=False,
                             image=runner.lifecycle.IMAGE, overlays={'source':'sha'},
                             manifest='sha', port=8000) for node in runner.lifecycle.NODES}
         stopped = {node: dict(state, running=False) for node, state in before.items()}
@@ -94,7 +100,8 @@ class DiagnosticLifecycleTests(unittest.TestCase):
                   patch.object(runner.signal, 'signal'),
                   patch.object(runner.lifecycle, 'check_holder'),
                   patch.object(runner.lifecycle, 'pinned'),
-                  patch.object(runner.lifecycle, 'idle'),
+                  patch.object(runner.lifecycle, 'idle') as idle,
+                  patch.object(runner.lifecycle, 'restore_public') as public_restore,
                   patch.object(runner.lifecycle, 'snapshot', side_effect=[before, stopped]),
                   patch.object(runner.lifecycle, 'transition_all', side_effect=transition),
                   patch.object(runner.lifecycle, 'wait_restore', return_value=before),
@@ -106,11 +113,15 @@ class DiagnosticLifecycleTests(unittest.TestCase):
                   redirect_stdout(io.StringIO())):
                 self.assertEqual(runner.main(), 1)
             result = json.loads((output/'completion.json').read_text())
-            self.assertEqual(transitions, ['stop', 'start'])
+            self.assertEqual(transitions, ['stop', 'start'] if initially_running else ['stop'])
             self.assertEqual(result['sanitizer_exit_code'], 86)
             self.assertTrue(result['restored_original'])
             self.assertFalse(result['performance_acceptance'])
             self.assertNotIn('sanitizer_summary', result)
+            self.assertEqual(result['incoming_mode'], 'present' if initially_running else 'stopped')
+            self.assertEqual(json.loads((output/'restored.json').read_text()), before)
+            if not initially_running: idle.assert_not_called()
+            public_restore.assert_not_called()
 
 
 if __name__ == '__main__':

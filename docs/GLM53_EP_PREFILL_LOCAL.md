@@ -202,6 +202,18 @@ receipt and runs a bounded no-device check of the pinned sanitizer executable.
 Missing or stale proof fails closed. The GPU container checks the
 installed source hashes again. A tested normal-fleet
 lifecycle stops and restores exact incoming containers around these checks.
+The EP and binding runners also accept four existing containers that a fleet
+donor has stopped. They preserve the original container identities, source and
+configuration, and restore each original running flag. A stopped incoming set
+never takes the start or health-wait path; idempotent stop operations inspect
+already-stopped containers without a Docker mutation. The fleet supervisor
+retains the final public restore or queue handoff decision. Mixed running/stopped
+sets, partial inventories, changed images and missing source evidence remain
+refused. CPU tests cover stopped success, probe failure, cancellation, identity
+changes, and both actual runner entry paths with fake system commands. These
+control-flow tests do not establish GPU numerics or performance. The changed
+runner/test hashes require fresh source-bound CPU evidence before an EP GPU run;
+the earlier CPU8 receipt is not relabeled as validation of this change.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed

@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,65 @@ class OfflineTests(unittest.TestCase):
             state['local'] = None if delta is None else dict(state['local'], **delta)
             with self.subTest(delta=delta), self.assertRaises(RuntimeError):
                 m.validate_before(state)
+
+    def test_uniform_stopped_donor_retains_image_manifest_and_boolean_state_gates(self):
+        stopped = {n:dict(state, running=False) for n,state in self.states().items()}
+        self.assertEqual(m.validate_before(stopped), 'stopped')
+        for delta in [None, {'auto_remove':True}, {'running':True}, {'running':0},
+                      {'image':'other'}, {'overlays':{}}, {'manifest':None}, {'port':1234}]:
+            state = copy.deepcopy(stopped)
+            state['local'] = None if delta is None else dict(state['local'], **delta)
+            with self.subTest(delta=delta), self.assertRaises(RuntimeError):
+                m.validate_before(state)
+
+    def test_stopped_success_failure_and_cancellation_restore_without_start_or_health(self):
+        for error in (None, ValueError('probe failed'), InterruptedError('cancelled')):
+            with self.subTest(error=error):
+                before = {n:dict(state, running=False) for n,state in self.states().items()}
+                current = copy.deepcopy(before)
+                actions, saved, events = [], {}, []
+                def move(expected, action):
+                    self.assertEqual(expected, before)
+                    actions.append(action)
+                    for state in current.values(): state['running'] = action == 'start'
+                    return copy.deepcopy(current)
+                def run():
+                    events.append('probe')
+                    # Recovery must stop an unexpectedly started original, but
+                    # must never restart the rest of a stopped incoming set.
+                    current['local']['running'] = True
+                    if error: raise error
+                    return 7
+                with (patch.object(m, 'check_holder'), patch.object(m, 'snapshot', side_effect=lambda:copy.deepcopy(current)),
+                      patch.object(m, 'transition_all', side_effect=move), patch.object(m, 'healthy') as health):
+                    invoke = lambda:m.with_paused(before, run, lambda name,value:saved.update({name:value}),
+                                                  before_restore=lambda:events.append('cleanup'))
+                    if error:
+                        with self.assertRaises(type(error)): invoke()
+                    else:
+                        self.assertEqual(invoke(), 7)
+                self.assertEqual(actions, ['stop'])
+                self.assertEqual(events, ['probe', 'cleanup'])
+                self.assertEqual(saved['restored.json'], before)
+                self.assertNotIn('restarted.json', saved)
+                health.assert_not_called()
+
+    def test_stopped_restore_checks_state_and_source_without_waiting_for_health(self):
+        before = {n:dict(state, running=False) for n,state in self.states().items()}
+        for delta in ({'running':True}, {'image':'other'}, {'id':'replacement'}, {'overlays':{'new':'hash'}}):
+            after = copy.deepcopy(before); after['local'].update(delta)
+            with (self.subTest(delta=delta), patch.object(m, 'snapshot', return_value=after),
+                  patch.object(m, 'healthy') as health, self.assertRaises(RuntimeError)):
+                m.wait_restore(before)
+            health.assert_not_called()
+
+    def test_stopped_admission_refuses_lost_holder_before_probe_or_remote_action(self):
+        before = {n:dict(state, running=False) for n,state in self.states().items()}
+        with (patch.object(m, 'check_holder', side_effect=RuntimeError('lost holder')),
+              patch.object(m, 'snapshot') as snapshot, patch.object(m, 'transition_all') as transition,
+              self.assertRaisesRegex(RuntimeError, 'lost holder')):
+            m.with_paused(before, lambda:self.fail('probe must not run'), lambda *a:None)
+        snapshot.assert_not_called(); transition.assert_not_called()
 
     def test_probe_error_restores_before_propagating(self):
         events = []
@@ -109,8 +169,10 @@ path.write_text(json.dumps(s))
                 else:
                     stopped=m.transition('local',before,'stop')
                     self.assertFalse(stopped['running'])
+                    self.assertFalse(m.transition('local',before,'stop')['running'])
                     started=m.transition('local',before,'start')
                     self.assertTrue(started['running'])
+                    self.assertTrue(m.transition('local',before,'start')['running'])
                     self.assertEqual(m.identity(before),m.identity(started))
                     self.assertEqual(json.loads(state.read_text())['mutations'],
                                      [['stop','--time','45','d'*64],['start','d'*64]])

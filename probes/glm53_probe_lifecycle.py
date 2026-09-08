@@ -1,7 +1,7 @@
 """Pinned offline probe lifecycle: normal fleet ownership and exact recovery.
 
-Extracted without behavior changes from the validated GLM observation lifecycle.
-No command line, model changes, cache deletion, or arbitrary deployment inputs.
+Incoming serving may be running, absent, or uniformly stopped by a fleet donor.
+Existing containers retain their original identity and running state on exit.
 """
 from concurrent.futures import ThreadPoolExecutor
 
@@ -94,12 +94,15 @@ def validate_before(states):
         raise RuntimeError('four-node inventory required')
     if all(v is None for v in states.values()):
         return 'absent'
-    if not all(v is not None and v['running'] and not v['auto_remove'] and
+    if not all(v is not None and type(v['running']) is bool and not v['auto_remove'] and
                v['image'] == IMAGE and v['overlays'] and v['manifest'] for v in states.values()):
-        raise RuntimeError('require four running, persistent, pinned-image containers or four absent containers')
+        raise RuntimeError('require four persistent, pinned-image containers or four absent containers')
+    running = {v['running'] for v in states.values()}
+    if len(running) != 1:
+        raise RuntimeError('incoming containers must be uniformly running or stopped')
     if states['local']['port'] not in (8000, 18000):
         raise RuntimeError('unknown incoming endpoint')
-    return 'present'
+    return 'present' if True in running else 'stopped'
 
 def identity(state):
     return {k: v for k, v in state.items() if k not in ('running', 'started')}
@@ -115,7 +118,8 @@ immutable=lambda s:{{k:v for k,v in s.items() if k not in ('running','started')}
 if current is None or immutable(current)!=immutable(expected):
     raise RuntimeError('container identity/config/source changed before {action}')
 cmd=['docker',{action!r}] + (['--time','45'] if {action!r}=='stop' else []) + [expected['id']]
-subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,timeout=75)
+if current['running']!={action == 'start'!r}:
+    subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,timeout=75)
 after=inspect({name(node)!r})
 if after is None or immutable(after)!=immutable(expected) or after['running']!={action == 'start'!r}:
     raise RuntimeError('transition did not preserve expected container state')
@@ -156,29 +160,44 @@ def idle(port):
             raise RuntimeError('incoming traffic is not idle: ' + metric)
 
 def wait_restore(before, timeout=1800):
+    mode = validate_before(before)
+    if mode == 'absent':
+        raise RuntimeError('exact restore requires an existing incoming container set')
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         states = snapshot()
         if any(states[n] is None or identity(states[n]) != identity(before[n]) for n in NODES):
             raise RuntimeError('restore identity/config/source mismatch')
-        if not all(states[n]['running'] for n in NODES):
-            raise RuntimeError('a restored container exited')
-        if healthy(before['local']['port']):
+        if any(states[n]['running'] != before[n]['running'] for n in NODES):
+            raise RuntimeError('restored running state differs from the incoming snapshot')
+        # A stopped donor's endpoint is intentionally unavailable. Starting it
+        # or waiting for health would undo the handoff and consume another boot.
+        if mode == 'stopped' or healthy(before['local']['port']):
             return states
         time.sleep(10)
     raise RuntimeError('original endpoint did not recover health')
 
 def with_paused(before, run, save, before_restore=None):
-    """Always recover the original set, including a partially failed stop."""
+    """Recover original identity and running state, including partial failures."""
+    mode = validate_before(before)
+    if mode == 'absent':
+        raise RuntimeError('pause requires an existing incoming container set')
+    if mode == 'stopped':
+        check_holder()
     try:
-        save('stopped.json', transition_all(before, 'stop'))
+        # A stopped handoff requires only inspection before the probe.
+        save('stopped.json', transition_all(before, 'stop') if mode == 'present' else wait_restore(before))
         return run()
     finally:
         previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
         try:
             if before_restore is not None:
                 before_restore()
-            save('restarted.json', transition_all(before, 'start'))
+            action = 'start' if mode == 'present' else 'stop'
+            # transition is idempotent and verifies the original source before
+            # any mutation. It never starts an originally stopped container.
+            save('restarted.json' if mode == 'present' else 'stopped-restored.json',
+                 transition_all(before, action))
             save('restored.json', wait_restore(before))
         finally:
             signal.signal(signal.SIGTERM, previous)

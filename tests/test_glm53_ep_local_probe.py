@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -142,6 +143,50 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual((got["verdict"], got["phase"]), ("FAIL", "changed-control"))
             self.assertEqual(got["controls"], [{"bad_rows":1}])
             self.assertFalse(got["performance_acceptance"])
+
+    def test_stopped_handoff_reaches_failed_cell_and_restores_original_running_flags(self):
+        before = {node:dict(id=node, running=False, auto_remove=False, image=runner.lifecycle.IMAGE,
+                           overlays={'source':'sha'}, manifest='sha', port=8000)
+                  for node in runner.lifecycle.NODES}
+        actions = []
+        def transition(states, action):
+            self.assertEqual(states, before)
+            actions.append(action)
+            self.assertEqual(action, 'stop')
+            return before
+        def process(command, **kwargs):
+            if command[:2] == ['docker', 'run']:
+                return subprocess.CompletedProcess(command, 42)
+            self.assertEqual(command[:2], ['docker', 'inspect'])
+            return subprocess.CompletedProcess(command, 1, '', '')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'repo'
+            (root/'build/glm53').mkdir(parents=True)
+            (root/'build/glm53/manifest.tsv').write_text('')
+            output = Path(directory)/'capture'
+            with (patch.object(sys, 'argv', ['runner', '--revision', 'a'*40, '--out', str(output)]),
+                  patch.object(runner, '__file__', str(root/'probes/run_glm53_ep_local_offline.py')),
+                  patch.dict(runner.os.environ, FLEET_SESSION='unit-stopped'),
+                  patch.object(runner.signal, 'signal'), patch.object(runner.lifecycle, 'check_holder'),
+                  patch.object(runner.lifecycle, 'pinned'), patch.object(runner, 'validate_compile_evidence'),
+                  patch.object(runner.sanitizer_support, 'preflight', return_value={'verdict':'PASS'}),
+                  patch.object(runner, 'resources', return_value={}),
+                  patch.object(runner.lifecycle, 'snapshot', return_value=before),
+                  patch.object(runner.lifecycle, 'transition_all', side_effect=transition),
+                  patch.object(runner.lifecycle, 'healthy') as health,
+                  patch.object(runner.lifecycle, 'idle') as idle,
+                  patch.object(runner.lifecycle, 'restore_public') as public_restore,
+                  patch.object(runner.subprocess, 'run', side_effect=process),
+                  patch.object(runner.subprocess, 'check_output', return_value=''),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(runner.main(), 1)
+            result = json.loads((output/'completion.json').read_text())
+            self.assertEqual(result['incoming_mode'], 'stopped')
+            self.assertEqual(result['cells'][0]['exit_code'], 42)
+            self.assertEqual(actions, ['stop'])
+            self.assertTrue(result['restored_original'])
+            self.assertEqual(json.loads((output/'restored.json').read_text()), before)
+            health.assert_not_called(); idle.assert_not_called(); public_restore.assert_not_called()
 
 
 if __name__ == "__main__":
