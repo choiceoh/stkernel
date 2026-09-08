@@ -7,9 +7,10 @@ import ast
 import importlib.util
 import math
 from pathlib import Path
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 REMAP = ROOT / "overlay/modules/glm53_moe/glm53_ep_route_remap.py"
@@ -131,6 +132,86 @@ class AdmissionTests(unittest.TestCase):
         launch.side_effect = RuntimeError("launch failed")
         with self.assertRaisesRegex(RuntimeError, "launch failed"):
             ns["try_remap_ep_local"](**self.inputs())
+
+
+class WrapperScratchTests(unittest.TestCase):
+    class Buffer:
+        def __init__(self, rows):
+            self.rows = rows
+            self.slices = []
+
+        def size(self, axis):
+            return self.rows if axis == 0 else 8
+
+        def __getitem__(self, key):
+            view = SimpleNamespace(parent=self, key=key)
+            self.slices.append(view)
+            return view
+
+    def fixture(self):
+        tree = ast.parse(WRAPPER.read_text())
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                   and node.name == "FlashInferB12xExperts")
+        method = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                      and node.name == "_remap_ep_tensors")
+        legacy = Mock(return_value=("legacy ids", "legacy weights"))
+        namespace = {"remap_b12x_ep_tensors": legacy}
+        future = ast.parse("from __future__ import annotations").body[0]
+        exec(compile(ast.Module(body=[future, method], type_ignores=[]),
+                     str(WRAPPER), "exec"), namespace)
+        buffers = {name: self.Buffer(8192) for name in (
+            "_ep_ids", "_ep_scales", "_ep_long", "_ep_mapped",
+            "_ep_remote", "_ep_tmp_a", "_ep_tmp_b")}
+        wrapper = SimpleNamespace(num_local_experts=72, local_expert_offset=72, **buffers)
+        module = ModuleType("test_remap")
+        module.try_remap_ep_local = Mock(return_value=True)
+        return namespace["_remap_ep_tensors"], wrapper, module, legacy
+
+    def test_full_candidate_reuses_tensor_objects_without_any_scratch_views(self):
+        method, wrapper, module, legacy = self.fixture()
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            result = method(wrapper, self.Buffer(8192), object(), object(),
+                            fuse_local_prefill=True)
+        self.assertIs(result[0], wrapper._ep_ids)
+        self.assertIs(result[1], wrapper._ep_scales)
+        for value in vars(wrapper).values():
+            if isinstance(value, self.Buffer):
+                self.assertEqual(value.slices, [])
+        legacy.assert_not_called()
+
+    def test_partial_candidate_uses_current_storage_and_exact_row_views(self):
+        method, wrapper, module, _ = self.fixture()
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            for rows in (4096, 6912):
+                # Replacement models a dtype/device scratch rebuild. No view
+                # from the earlier storage may be reused by the wrapper.
+                wrapper._ep_ids = self.Buffer(8192)
+                wrapper._ep_scales = self.Buffer(8192)
+                result = method(wrapper, self.Buffer(rows), object(), object(),
+                                fuse_local_prefill=True)
+                for actual, parent in zip(result, (wrapper._ep_ids, wrapper._ep_scales)):
+                    self.assertIs(actual.parent, parent)
+                    self.assertEqual(actual.key, slice(None, rows))
+
+    def test_declined_candidate_and_disabled_path_keep_legacy_scratch(self):
+        method, wrapper, module, legacy = self.fixture()
+        module.try_remap_ep_local.return_value = False
+        name = "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap"
+        with patch.dict(sys.modules, {name: module}):
+            result = method(wrapper, self.Buffer(8192), object(), object(),
+                            fuse_local_prefill=True)
+            self.assertEqual(result, legacy.return_value)
+            self.assertIs(legacy.call_args.kwargs["out_ids"], wrapper._ep_ids)
+            self.assertIs(legacy.call_args.kwargs["out_scales"], wrapper._ep_scales)
+            for name in ("long_idx", "mapped", "remote", "tmp_a", "tmp_b"):
+                self.assertEqual(legacy.call_args.kwargs[name].key, slice(None, 8192))
+            module.try_remap_ep_local.reset_mock()
+            method(wrapper, self.Buffer(8192), object(), object())
+            module.try_remap_ep_local.assert_not_called()
+            self.assertIs(legacy.call_args.kwargs["out_ids"].parent, wrapper._ep_ids)
+            self.assertIs(legacy.call_args.kwargs["out_scales"].parent, wrapper._ep_scales)
 
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "pinned CPU image supplies Torch")

@@ -17,7 +17,6 @@ def _remap_ep_local_kernel(
 ):
     slot = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     live = slot < N_PAIRS
-    expert = tl.load(IDS + slot, mask=live, other=-1).to(tl.int64)
     # Treat weights as bits: even local NaN payloads and signed zero must
     # survive the copy exactly, including fp16/bf16 storage.
     if WEIGHTS.dtype.element_ty == tl.float32:
@@ -26,20 +25,27 @@ def _remap_ep_local_kernel(
     else:
         weight_bits = WEIGHTS.to(tl.pointer_type(tl.uint16))
         output_bits = OUT_WEIGHTS.to(tl.pointer_type(tl.uint16))
-    weight = tl.load(weight_bits + slot, mask=live, other=0)
-    if HAS_MAP:
-        in_range = (expert >= 0) & (expert < MAP_LEN)
-        local = tl.load(EXPERT_MAP + expert, mask=live & in_range, other=-1)
-        remote = ~in_range | (local < 0)
+    if HAS_MAP and MAP_LEN == 0:
+        # The empty-map contract is independent of both input tensors. An
+        # explicit specialization avoids dead-but-retained masked loads.
+        tl.store(OUT_IDS + slot, 72, mask=live)
+        tl.store(output_bits + slot, 0, mask=live)
     else:
-        # Match the existing out_ids.copy_(ids); out_ids.sub_(offset) order,
-        # including its int32 conversion before offset subtraction.
-        local = (expert.to(tl.int32) - LOCAL_OFFSET).to(tl.int32)
-        remote = (expert < 0) | (local < 0) | (local >= 72)
-    tl.store(OUT_IDS + slot, tl.where(remote, 72, local).to(tl.int32), mask=live)
-    # Selection rather than multiplication preserves local NaNs and signed
-    # zero while replacing remote NaN/Inf weights with an exact positive zero.
-    tl.store(output_bits + slot, tl.where(remote, 0, weight), mask=live)
+        expert = tl.load(IDS + slot, mask=live, other=-1).to(tl.int64)
+        if HAS_MAP:
+            in_range = (expert >= 0) & (expert < MAP_LEN)
+            local = tl.load(EXPERT_MAP + expert, mask=live & in_range, other=-1)
+            remote = ~in_range | (local < 0)
+        else:
+            # Match the existing out_ids.copy_(ids); out_ids.sub_(offset)
+            # order, including int32 conversion before offset subtraction.
+            local = (expert.to(tl.int32) - LOCAL_OFFSET).to(tl.int32)
+            remote = (expert < 0) | (local < 0) | (local >= 72)
+        # Remote weights become positive zero without reading their storage.
+        # Load local weights as bits so NaN payloads and signed zero survive.
+        weight = tl.load(weight_bits + slot, mask=live & ~remote, other=0)
+        tl.store(OUT_IDS + slot, tl.where(remote, 72, local).to(tl.int32), mask=live)
+        tl.store(output_bits + slot, weight, mask=live)
 
 
 def ep_route_remap_supported(

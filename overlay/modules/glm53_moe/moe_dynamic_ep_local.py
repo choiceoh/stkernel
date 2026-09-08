@@ -51,6 +51,49 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         super()._setup_attributes(hidden_size)
 
     @cute.jit
+    def publish_ep_local_uniform_tasks(
+        self,
+        task_expert,
+        task_valid_rows,
+        gate_tile_cnt: Int32,
+        slice_chunk: Int32,
+        expert_idx: Int32,
+        m_tile_idx: Int32,
+        valid_rows: Int32,
+    ):
+        # E72/I2048 publishes exactly four four-slice tasks per M128 tile.
+        # Their expert words are identical and their valid-row words differ
+        # only in slice_begin.  Keep the same single publisher and slot order,
+        # but write each four-word descriptor array with one vector store.
+        # The normal workspace allocations are aligned; retain scalar stores
+        # for a direct caller that only satisfies the pointer ABI's 4B align.
+        first_slot = m_tile_idx * Int32(4)
+        expert_addr = get_ptr_as_int64(task_expert, first_slot)
+        rows_addr = get_ptr_as_int64(task_valid_rows, first_slot)
+        if (
+            gate_tile_cnt == Int32(16)
+            and slice_chunk == Int32(4)
+            and ((expert_addr | rows_addr) & Int64(15)) == Int64(0)
+        ):
+            expert_word = Uint32(expert_idx | (m_tile_idx << Int32(16)))
+            rows_word = Uint32(valid_rows | (Int32(4) << Int32(20)))
+            st_global_v4_u32(
+                expert_addr, expert_word, expert_word, expert_word, expert_word
+            )
+            st_global_v4_u32(
+                rows_addr,
+                rows_word,
+                rows_word | Uint32(4 << 8),
+                rows_word | Uint32(8 << 8),
+                rows_word | Uint32(12 << 8),
+            )
+        else:
+            self.publish_uniform_deferred_tasks(
+                task_expert, task_valid_rows, gate_tile_cnt, slice_chunk,
+                expert_idx, m_tile_idx, valid_rows,
+            )
+
+    @cute.jit
     def initialize_route_q0_and_publish(
         self,
         thread_info,
@@ -517,7 +560,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                     valid_rows = rows_remaining
                     if valid_rows > Int32(self.tile_shape_mnk[0]):
                         valid_rows = Int32(self.tile_shape_mnk[0])
-                    self.publish_uniform_deferred_tasks(
+                    self.publish_ep_local_uniform_tasks(
                         task_expert, task_valid_rows, route_gate_tile_cnt,
                         task_slice_chunk, expert_flush,
                         expert_tile_base[expert_flush] + m_tile_offset, valid_rows)

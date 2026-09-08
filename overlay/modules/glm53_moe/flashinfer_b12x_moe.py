@@ -1546,8 +1546,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 f"b12x EP remap: {tokens} tokens exceeds "
                 f"max_num_tokens={self._ep_ids.size(0)}"
             )
-        out_ids = self._ep_ids[:tokens]
-        out_scales = self._ep_scales[:tokens]
+        # A full prefill chunk already matches these buffers. Reuse their
+        # Tensor objects as well as their storage; smaller chunks still need
+        # views, and all fallback/decode calls retain their existing path.
+        full_prefill = (fuse_local_prefill and tokens == self._ep_ids.size(0)
+                        and tokens == self._ep_scales.size(0))
+        out_ids = self._ep_ids if full_prefill else self._ep_ids[:tokens]
+        out_scales = self._ep_scales if full_prefill else self._ep_scales[:tokens]
         if fuse_local_prefill:
             from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap import (
                 try_remap_ep_local,
