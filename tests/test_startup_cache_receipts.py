@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 
 class BootReceiptTests(unittest.TestCase):
-    def test_failed_snapshot_does_not_prevent_restore_or_nonzero_exit_receipt(self):
+    def test_failed_snapshot_preserves_failure_without_restoration(self):
         source = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
         handler = 'failed() {' + source.split('failed() {', 1)[1].split('\ntrap failed EXIT', 1)[0]
         with tempfile.TemporaryDirectory() as root:
@@ -24,7 +24,7 @@ class BootReceiptTests(unittest.TestCase):
             result = subprocess.run(['bash', '-c', script, 'test', root], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(Path(root, 'exit-code').read_text().strip(), '1')
-            self.assertEqual(Path(root, 'restored').read_text().strip(), 'restored')
+            self.assertFalse(Path(root, 'restored').exists())
 
     def check_receipts(self, stage, fast, fast_hits, legacy_hits, suffix="", mode="pack-io", key_fields="", packs="", campaign_knobs=None, observed_knobs=None):
         script = (Path(__file__).resolve().parents[1] / "bench/startup_cache_boots.sh").read_text()
