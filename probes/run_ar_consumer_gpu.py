@@ -2,6 +2,7 @@
 """Fleet-held four-node AR/MHC/GEMM probe; stop only its own containers."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,87 @@ NODES = ('local', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 IPS = '10.10.10.2,10.10.10.1,10.10.10.3,10.10.10.4'
 GIB = 1024**3
 RACECHECK_KERNELS = '(mk_|k_oneshot|ar_consumer_delay)'
+
+
+def atomic_json(path, value):
+    temporary = path.with_suffix(path.suffix + '.tmp')
+    temporary.write_text(json.dumps(value, indent=2) + '\n')
+    temporary.replace(path)
+
+
+def prior_runs(out, logdir=None):
+    """Bound discovery to the newest 50 campaign receipts; never scan logs."""
+    logdir = Path(logdir or os.environ.get('LOGD', '/home/choiceoh/glm53-logs'))
+    paths = []
+    for receipt in logdir.glob('ARCONSUMER-*/gpu/admission.json'):
+        try:
+            if receipt.parent.resolve() != out.resolve():
+                paths.append((receipt.stat().st_mtime, receipt.parent))
+        except FileNotFoundError:
+            continue  # A concurrent evidence cleanup is a cache miss.
+    return [path for _, path in sorted(paths, reverse=True)[:50]]
+
+
+def execute_groups(out, runtime, candidates, run_group, attest):
+    """Reuse whole cohorts and checkpoint each success before the next test."""
+    import reuse_ar_consumer_gpu_evidence as evidence
+
+    initial_source = evidence.source()
+    out.mkdir(parents=True, exist_ok=False)
+    (out / 'source.commit').write_text(initial_source['revision'] + '\n')
+    atomic_json(out / 'source.json', initial_source)
+    atomic_json(out / 'runtime.json', runtime)
+    receipts, origins = [], {}
+    artifacts = {name: hashlib.sha256((out / name).read_bytes()).hexdigest()
+                 for name in ('source.commit', 'source.json', 'runtime.json')}
+    executed, reused = [], []
+
+    def checkpoint():
+        atomic_json(out / 'admission.json', dict(
+            revision=initial_source['revision'], image=IMAGE, completed=receipts,
+            artifacts_sha256=artifacts, groups=origins,
+            executed_groups=executed, reused_groups=reused))
+
+    checkpoint()
+    for group in evidence.GROUPS:
+        selected = None
+        misses = []
+        for candidate in candidates:
+            try:
+                selected = evidence.verify_group(candidate, group, runtime)
+            except (AssertionError, ValueError, KeyError, TypeError, OSError,
+                    subprocess.SubprocessError) as exc:
+                misses.append(dict(source=str(candidate), reason=str(exc) or type(exc).__name__))
+                continue
+            break
+        if selected is not None:
+            entries, files, origin = selected
+            for name, data in files.items():
+                # Metadata always describes this invocation. Only the validated
+                # group's reports/diagnostics/logs cross the reuse boundary.
+                if name.startswith(group + '-rank'):
+                    (out / name).write_bytes(data)
+                    artifacts[name] = hashlib.sha256(data).hexdigest()
+            reused.append(group)
+            print(f'REUSE {group}: {origin.get("source_directory", candidate)}', flush=True)
+        else:
+            print(f'RUN {group}: no matching complete evidence', flush=True)
+            entries = run_group(group)
+            if attest() != runtime:
+                raise RuntimeError('GPU runtime changed during the group; no reusable receipt published')
+            if evidence.source() != initial_source:
+                raise RuntimeError('GPU source changed during the group; no reusable receipt published')
+            entries, files, origin = evidence.validate_group(out, group, entries, runtime)
+            artifacts.update({name: hashlib.sha256(data).hexdigest() for name, data in files.items()})
+            origin = dict(origin, cache_misses=misses)
+            executed.append(group)
+        receipts.extend(entries)
+        origins[group] = origin
+        checkpoint()
+    if attest() != runtime or evidence.source() != initial_source:
+        raise RuntimeError('GPU source/runtime changed before admission; repeat from current evidence')
+    print(f'GPU checks complete: {len(reused)} reused groups, {len(executed)} executed groups', flush=True)
+    return receipts
 
 
 def memory_budget(stage):
@@ -62,10 +144,12 @@ def remote(node, argv, **kwargs):
 
 
 def main():
-    from ar_consumer_probe import AR_OWNERSHIP_SIZES
+    import reuse_ar_consumer_gpu_evidence as evidence
 
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--reuse-from', type=Path, action='append', default=[],
+                    help='Prefer a previous result directory; incomplete groups are rerun')
     args = ap.parse_args()
     session = os.environ['FLEET_SESSION']
     assert re.fullmatch('[A-Za-z0-9_-]+', session)
@@ -74,15 +158,12 @@ def main():
     assert os.environ.get('FLEET_RESTORE_MANAGED') == '1', 'supervised boot hold required'
     assert not subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain'], text=True).strip()
     revision = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
-    args.out.mkdir(parents=True, exist_ok=False)
-    (args.out / 'source.commit').write_text(revision + '\n')
     name = 'arconsumer-' + session
     peer_root = Path('/home/choiceoh/ar-consumer-probe-' + session)
     peer_out = Path('/home/choiceoh/ar-consumer-evidence-' + session)
-    receipts = []
     # Workers need only this committed source, not a pre-existing Git clone
     # or GitHub credentials. Every rank later attests the actual CUDA bytes.
-    archive = subprocess.check_output(['git', '-C', str(ROOT), 'archive', '--format=tar', revision])
+    archive = None
 
     def prepare(node):
         root = ROOT if node == 'local' else peer_root
@@ -96,8 +177,14 @@ def main():
         remote(node, ['mkdir', '-p', str(out / 'build')])
         return root, out
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        paths = list(pool.map(prepare, NODES))
+    paths = None
+
+    def prepare_missing():
+        nonlocal archive, paths
+        if paths is None:
+            archive = subprocess.check_output(['git', '-C', str(ROOT), 'archive', '--format=tar', revision])
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                paths = list(pool.map(prepare, NODES))
 
     def stop_owned():
         for node in NODES:
@@ -163,40 +250,32 @@ def main():
             data = remote(node, ['cat', str(out / (filename + '.json'))], capture_output=True, text=True).stdout
             (args.out / (filename + '.json')).write_text(data)
         report = json.loads((args.out / (filename + '.json')).read_text())
-        assert report['status'] == 'PASS' and len(report['cases']) == 36, (node, stage)
-        assert report['mhc_warmup_capture'] == 'PASS', (node, stage, 'MHC warmup/capture lifecycle')
-        pre_cases = report['mhc_pre_view_cases']
-        assert len(pre_cases) == 6 and all(c['passed'] for c in pre_cases)
-        assert {(c['consumer'], c['input_value']) for c in pre_cases} == {
-            (early, value) for early in (False, True) for value in (.03125, 0., -.0625)}
-        ownership = report['ar_ownership_cases']
-        expected = {(n, seed) for n in AR_OWNERSHIP_SIZES for seed in (17, 0, 29)} if distributed else set()
-        assert len(ownership) == len(expected), (node, stage, 'AR ownership coverage')
-        assert {(c['elements'], c['seed']) for c in ownership if c['pass']} == expected, (node, stage)
         return {'node': node, 'stage': filename, 'source_sha256': report['source_sha256'],
                 'kernel_filter': RACECHECK_KERNELS if stage == 'racecheck' else None}
 
+    def run_group(group):
+        prepare_missing()
+        if group.startswith('local-'):
+            return [run_rank(0, group.removeprefix('local-'), distributed=False)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(run_rank, rank, group) for rank in range(4)]
+            results = []
+            try:
+                for future in as_completed(futures):
+                    results.append(future.result())
+            except BaseException:
+                stop_owned()
+                raise
+        return results
+
+    runtime = evidence.collect_runtime(remote)
+    candidates = list(dict.fromkeys([*args.reuse_from, *prior_runs(args.out)]))
     try:
-        for stage in ('probe', 'memcheck', 'racecheck'):
-            receipts.append(run_rank(0, stage, distributed=False))
-            print('PASS delayed producer: ' + stage, flush=True)
-        for stage in ('probe', 'memcheck', 'racecheck'):
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                futures = [pool.submit(run_rank, rank, stage) for rank in range(4)]
-                results = []
-                try:
-                    for future in as_completed(futures):
-                        results.append(future.result())
-                except BaseException:
-                    stop_owned()
-                    raise
-            assert len({json.dumps(r['source_sha256'], sort_keys=True) for r in results}) == 1
-            receipts.extend(results)
-            print('PASS all ranks: ' + stage, flush=True)
+        execute_groups(args.out, runtime, candidates, run_group,
+                       lambda: evidence.collect_runtime(remote))
     finally:
-        stop_owned()
-        (args.out / 'admission.json').write_text(json.dumps(
-            {'revision': revision, 'image': IMAGE, 'completed': receipts}, indent=2) + '\n')
+        if paths is not None:
+            stop_owned()
 
 
 if __name__ == '__main__':
