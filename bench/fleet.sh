@@ -9,7 +9,14 @@
 #   fleet.sh chain fusion 30 "what" -- A="VLLM_X=1" B=""     N arms, one hold, verdicts   (bracket)
 #   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
 #   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
+#   fleet.sh run --gpu --detach s 20 "what" -- <cmd>       return after durable queue receipt
+#   fleet.sh retry agent ID --reason "fixed"                 retry saved experiment; reuse valid evidence
+#   fleet.sh prepare s --spec prep.json -- <cmd>               validate inputs without queueing
+#   fleet.sh history s | show s --ticket T | logs s --ticket T
+#   fleet.sh classify --explain <cmd>                          source lines behind CPU/GPU decision
+#   fleet.sh show [session] | logs session                 fast state, exact command, retained output
 #   fleet.sh status | board | events                           where things stand
+#   fleet.sh edit fusion --est 20 --note "updated" -- <cmd>  revise before GO; keep ticket
 #   fleet.sh cancel fusion                                     leave (stops your waiter too)
 #   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
 #
@@ -99,11 +106,15 @@ FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 export FLEET_DIR LOGD
 REPO=${REPO:-/home/choiceoh/stkernel}
+export REPO
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
 case "${1:-}" in
-  submit|batch|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
+  submit|batch|result|inbox|jobs|stats|plan|ack|collect|retire|estimate|retry) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
+  show|logs|history) exec python3 "$REPO/bench/fleet_inspect.py" "$@";;
+  prepare) shift; exec python3 "$REPO/bench/fleet_prepare.py" create --fleet "$REPO/bench/fleet.sh" "$@";;
+  edit) shift; exec python3 "$REPO/bench/fleet_pending.py" "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
 # "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
@@ -319,7 +330,7 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
     # and take one turn between them (09-06: `run fusion` twice); refuse
     local qpid; qpid=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f7)
     if [ -n "$qpid" ] && [ -n "$pid" ] && [ "$qpid" != "$pid" ] && kill -0 "$qpid" 2>/dev/null && [ "${FLEET_SAME_SESSION:-0}" != 1 ]; then
-      echo "session '$1' is already queued by a live process (pid $qpid): use another name (e.g. $1-2), or FLEET_SAME_SESSION=1 to share the ticket" >&2
+      echo "session '$1' is already queued by a live process (pid $qpid): inspect it with fleet.sh show $1; use fleet.sh edit $1 before GO, or another name for different work" >&2
       logit "refused duplicate session $1 (pid $pid vs queued $qpid)"; return 2
     fi
     awk -F'|' -v OFS='|' -v s="$1" -v est="${2:-30}" -v note="${3:-}" -v kind="$kind" -v pid="$pid" '$2==s {$4=est; $5=note; $6=kind; if (pid!="") $7=pid} {print}' "$Q" > "$Q.tmp" && mv "$Q.tmp" "$Q"
@@ -333,6 +344,12 @@ _dequeue() {
   for marker in priority-front priority-yield; do
     [ "$(cat "$FLEET_DIR/$marker" 2>/dev/null)" != "$1" ] || rm -f "$FLEET_DIR/$marker"
   done
+}
+_withdraw_owned() {  # session pid; an older supervisor cannot erase a reused name
+  local rowpid
+  rowpid=$(grep "^[0-9]*|$1|" "$Q" | head -1 | cut -d'|' -f7)
+  [ "$rowpid" = "$2" ] || return 0
+  _dequeue "$1"
 }
 _position() { grep -n "^[0-9]*|$1|" "$Q" | head -1 | cut -d: -f1; }
 _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; mv "$Q.tmp" "$Q"; echo "$1" > "$FLEET_DIR/priority-front"; logit "front $1"; }
@@ -349,12 +366,16 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   serving_idle || eligibility=--boot-only
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
   [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
+  # wait may have captured these before an edit. Read the queue under the
+  # admission lock so holder/ledger metadata match the accepted reservation.
+  IFS='|' read -r _ _ _ est note kind _ <<< "$(grep "^[0-9]*|$s|" "$Q" | head -1)"
   [ "$kind" = probe ] && ! serving_idle && return 1
   # never hand the fleet to a dead job (an orphaned waiter whose run process
   # was killed took a turn for pid 3710362 on 09-06 and was auto-kicked 2 s
   # later, dropping the live request with the same session name)
   [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
   legacy_busy && return 1
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_prepare.py" check "$s" --local || { _dequeue "$s"; return 3; }
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" "$est" "$note" || return 1
   _dequeue "$s"
   rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
@@ -418,7 +439,7 @@ case "$cmd" in
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
-    t_end=$(( $(now) + tmo * 60 )); last=""
+    t_end=$(( $(now) + tmo * 60 )); last=""; prep_at=$(( $(now) + 30 ))
     while [ "$(now)" -lt "$t_end" ]; do
       if [ -n "${FLEET_EXPERIMENT_ID:-}" ] && [ "$s" = "exp-$FLEET_EXPERIMENT_ID" ]; then
         python3 "$REPO/bench/experiments.py" pending "$FLEET_EXPERIMENT_ID" || { with_lock _dequeue "$s"; exit 1; }
@@ -428,7 +449,15 @@ case "$cmd" in
       # cancel) is re-queued at the back instead of waiting forever at "pos /0"
       kill -0 "$pid" 2>/dev/null || { echo "parent $pid is gone; giving up $(ts)" >&2; with_lock _dequeue "$s"; exit 1; }
       [ -n "$(_position "$s")" ] || { with_lock _enqueue "$s" "$est" "$note" "$kind" "$pid" || exit 6; echo "re-queued: $s (entry was gone) $(ts)"; }
-      if with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; then echo "GO $s $(ts)"; exit 0; fi
+      # Fetch/declared environment checks stay outside the reservation lock.
+      # Fast local source checks run again under admission's lock below.
+      if [ "$(now)" -ge "$prep_at" ]; then
+        python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_prepare.py" check "$s" --refresh --withdraw-failed || exit 3
+        prep_at=$(( $(now) + 30 ))
+      fi
+      with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; admission_rc=$?
+      if [ "$admission_rc" = 0 ]; then echo "GO $s $(ts)"; exit 0; fi
+      if [ "$admission_rc" = 3 ]; then exit 3; fi
       why="pos $(_position "$s")/$(grep -c . "$Q")"; [ -s "$H" ] && why="$why, held by $(holder_line)"; legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
       sleep 1
@@ -437,24 +466,38 @@ case "$cmd" in
   version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=2";;
   release) with_lock _release "${1:?session}";;
   run)
-    kind=boot; force=""
-    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; *) break;; esac; done
+    kind=boot; force=""; detach=0; prepare_spec=""
+    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; *) break;; esac; done
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
     [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
+    if [ "$detach" = 1 ]; then
+      detached_args=(run)
+      [ "$kind" = probe ] && detached_args+=(--probe)
+      case "$force" in gpu) detached_args+=(--gpu);; nogpu) detached_args+=(--cpu);; esac
+      [ -n "$prepare_spec" ] && detached_args+=(--prepare "$prepare_spec")
+      detached_args+=("$s" "$est" "$note" -- "$@")
+      exec python3 "$REPO/bench/fleet_launch.py" start "$REPO/bench/fleet.sh" "$s" -- "${detached_args[@]}"
+    fi
     export FLEET_SESSION=$s
     auto=$(classify_cmd "$@"); cls=${force:-$auto}
     if [ "$force" = nogpu ] && [ "$auto" = gpu ]; then
       echo "REFUSED: you said --cpu but the job shows GPU use (a boot, ab-lever, a probe container, torch.cuda); run it --gpu, or fix the classifier if it is wrong" >&2
+      python3 "$REPO/bench/fleet_classify.py" --classification "$auto" -- "$@" >&2
       logit "refused --cpu $s: classifier saw GPU use"; exit 5
     fi
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
+    prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
+    FLEET_PREPARE_MANIFEST=$(python3 "$REPO/bench/fleet_prepare.py" create "$s" --fleet "$REPO/bench/fleet.sh" ${prep_args[@]+"${prep_args[@]}"} -- "$@") || exit 3
+    export FLEET_PREPARE_MANIFEST
     if [ "$cls" = nogpu ]; then
       # no GPU needed: run now, in parallel, under nice; no hold, no queue
       logit "nogpu-start $s $note"; _event nogpu-start "$s" "$note"; t0=$(now)
+      python3 "$REPO/bench/fleet_launch.py" cpu-started "$s" || exit 3
       nice -n 19 "$@"; rc=$?
+      python3 "$REPO/bench/fleet_launch.py" complete "$s" "$rc" || rc=3
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$s" nogpu "$note" $(( ($(now) - t0 + 30) / 60 )) 0 0 0 >> "$LEDGER"
       logit "nogpu-done $s rc=$rc"; _event nogpu-done "$s" "$note"; exit $rc
     fi
@@ -463,24 +506,10 @@ case "$cmd" in
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
-    if [ "$kind" = boot ]; then
-      runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
-    fi
+    runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
-    if [ "$kind" = boot ]; then
-      exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@"
-    fi
-    FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
-    if [ "$kind" = boot ]; then
-      echo "nodes:"; if ! nodes_check; then
-        if [ "${FLEET_NODES:-warn}" = strict ]; then logit "nodes FAIL $s -> released"; with_lock _release "$s"; exit 4; fi
-        echo "  (warnings only; FLEET_NODES=strict refuses)"
-      fi
-    fi
-    # heartbeat: a holder that goes SILENT (hung chain, wedged node) shows in status
-    ( while kill -0 $$ 2>/dev/null; do touch "$(hb_file "$s")"; sleep 30; done ) & hb=$!
-    trap 'kill $hb 2>/dev/null; with_lock _release "$s"' EXIT
-    "$@"; rc=$?; exit $rc;;
+    export FLEET_RUN_KIND=$kind
+    exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@";;
   status)
     echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } || echo FREE )"
     remaining=0
@@ -502,7 +531,9 @@ case "$cmd" in
     with_lock sh -c "echo '$s|$pid|$(me)|$(now)|$est|$note|boot' > '$H'; rm -f '$LOGD'/FLEET-free-for-*.done; touch '$LOGD/FLEET-held-by-$s.done'"
     logit "adopt $s (pid $pid) est=${est}m $note"; echo "held by $s (pid $pid)";;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
-  withdraw) with_lock _dequeue "${1:?session}";;
+  withdraw)
+    if [ "${2:-}" = --pid ]; then with_lock _withdraw_owned "${1:?session}" "${3:?pid}"
+    else with_lock _dequeue "${1:?session}"; fi;;
   cancel)
     s=${1:?session}; qpid=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f7)
     # a live waiter re-queues a vanished entry within 15 s (its wait loop), so
@@ -561,7 +592,11 @@ case "$cmd" in
   notify) s=${1:?session}; shift; [ $# -gt 0 ] && { echo "$*" > "$FLEET_DIR/notify.$s"; echo "hook for $s: $*"; } || { rm -f "$FLEET_DIR/notify.$s"; echo "hook for $s removed"; };;
   events) tail -"${1:-20}" "$FLEET_DIR/events.log" 2>/dev/null;;
   board) (cd "$REPO" && FLEET_DIR="$FLEET_DIR" LOGD="$LOGD" python3 bench/board.py --n "${1:-12}");;
-  classify) shift 0; classify_cmd "$@";;
+  classify)
+    if [ "${1:-}" = --explain ]; then
+      shift; cls=$(classify_cmd "$@")
+      python3 "$REPO/bench/fleet_classify.py" --classification "$cls" -- "$@"
+    else classify_cmd "$@"; fi;;
   restore-needed) restore_needed "${1:?session}";;
   ledger)
     days=${1:-1}; since=$(date -d "-${days} days" +%F)

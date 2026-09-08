@@ -26,6 +26,9 @@ SWEEP_CTX=${SWEEP_CTX:-32000,128000}
 # 128K/1,152 request would write.
 TRACE_CTX=${TRACE_CTX:-32000}
 TRACE_CHUNKS=${TRACE_CHUNKS:-8192,1152}
+# One home for the override file: the probe writes it and `measure` clears it,
+# and the scheduler reads it under the container's /prof mount.
+CHUNK_FILE=${CHUNK_FILE:-/home/choiceoh/vllm-prof/sched_chunk}
 
 case "$MODE" in
 chain)
@@ -44,17 +47,19 @@ chain)
     echo "== [pstep] DEPLOY FAILED -- nothing booted"; exit 1
   fi
   cd "$REPO" || exit 1
-  # Two arms in the one hold. PSTEP is the diagnosis (no leg: the sweep IS the
-  # measurement). IDXC6 is the first candidate for the term the diagnosis is
-  # expected to find -- IndexCache reuse, whose saving is per prefill chunk and
-  # scales with the prefix -- and it carries onepass, because reuse is an
-  # approximation and a prefill number alone cannot promote it.
-  FLEET_SESSION=$S bash bench/chain.sh \
+  # Everything after `chain` is handed to chain.sh verbatim, so a follow-up hold
+  # needs no new script -- only its arms and its own --after clauses. The
+  # default is the 2026-09-08 pair: PSTEP is the diagnosis (no leg, the sweep IS
+  # the measurement) and IDXC6 the first candidate, with onepass because reuse
+  # is an approximation and a prefill number alone cannot promote it.
+  shift
+  [ $# -gt 0 ] || set -- \
     PSTEP="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk" \
     IDXC6="VLLM_GLM53_SCHED_CHUNK_FILE=/prof/sched_chunk INDEX_CACHE_FREQ=6" \
     --legs PSTEP none \
     --after PSTEP "bash $0 measure $OUT" \
     --after IDXC6 "bash $0 measure $OUT/idxc6"
+  FLEET_SESSION=$S bash bench/chain.sh "$@"
   ;;
 measure)
   OUT=${2:?usage: $0 measure <outdir>}
@@ -62,6 +67,9 @@ measure)
   # the IndexCache arm writes under the diagnosis directory and takes no trace
   case "$OUT" in */idxc6) TRACE_CHUNKS="" ;; esac
   cd "$REPO" || exit 1
+  # A stale override file would silently pin the chunk for whatever boots next
+  # (the scheduler reads it every step). Start from a clean slate.
+  : > "$CHUNK_FILE"
   echo "== [pstep] instrument armed? $(date +%T)"
   # Two independent receipts: the container's env and the scheduler's own line.
   # grep -F because the anchor has brackets (BRE reads them as a class).
@@ -74,16 +82,32 @@ measure)
   # TRACE_CHUNKS="" on the second arm: the attribution only has to be taken once,
   # and a repeat costs the hold ~4 minutes for a picture we already have.
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
-    --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
+    --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
 
   for C in ${TRACE_CHUNKS//,/ }; do
     t=$(python3 -c "import json,sys;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('$C',{}).get('trace',''))" 2>/dev/null)
     if [ -n "$t" ] && [ -f "$t" ]; then
+      # Out of the shared profiler directory: the next capture on this fleet
+      # must not be able to confuse or clobber the evidence for this one.
+      mv "$t" "$OUT/trace-$C.${t##*.}" && t="$OUT/trace-$C.${t##*.}"
       python3 tools/trace_prefill_attribution.py "$t" --out "$OUT/attr-$C.json" 2>&1 | tee "$OUT/attr-$C.log"
     else
       echo "no trace captured for chunk $C"
     fi
   done
+  # The point of the traces: turn the wall-clock `a` into kernel categories.
+  # Needs two chunk sizes at least -- one cannot separate fixed from per-token.
+  set -- "$OUT"/attr-*.json
+  if [ $# -ge 2 ] && [ -f "$1" ]; then
+    python3 probes/prefill_fixed_cost_attribution.py "$@" --json "$OUT/fixed-cost.json" 2>&1 \
+      | tee "$OUT/fixed-cost.log"
+  else
+    echo "fewer than two attributions: skipping the fixed-cost split"
+  fi
+  # The arm's own head-log copy is taken BEFORE this step runs, so a serving
+  # error during the sweep lands in a log the next boot overwrites -- that is how
+  # the 2026-09-08 HTTP 500 became unrecoverable. Keep our own copy here.
+  docker logs glm53 > "$OUT/head.log" 2>&1 || echo "docker logs glm53 failed"
   echo "== [pstep] measure done $(date +%T); evidence in $OUT"
   ;;
 *) echo "usage: $0 chain|measure <outdir>" >&2; exit 2;;

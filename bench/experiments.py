@@ -212,6 +212,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS subscribers (
                 job TEXT NOT NULL, session TEXT NOT NULL, attached REAL NOT NULL,
                 PRIMARY KEY(job, session));
+            CREATE INDEX IF NOT EXISTS subscriber_sessions ON subscribers(session, job);
             CREATE TABLE IF NOT EXISTS events (
                 cursor INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT NOT NULL,
                 at REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
@@ -242,6 +243,10 @@ class Store:
                 job TEXT NOT NULL, phase TEXT NOT NULL, seconds REAL NOT NULL, at REAL NOT NULL, ok INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS timing_phases ON timings(phase,at);
             CREATE TABLE IF NOT EXISTS baseline_demands (job TEXT PRIMARY KEY, evaluations TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS retry_attempts (
+                source TEXT NOT NULL, attempt TEXT NOT NULL, session TEXT NOT NULL,
+                reason TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(source,attempt,session));
+            CREATE INDEX IF NOT EXISTS retry_attempt_ids ON retry_attempts(attempt);
         """)
 
     def event(self, job, kind, data):
@@ -257,6 +262,24 @@ class Store:
         result["result"] = json.loads(result["result"]) if result["result"] else None
         result["log"] = str(self.root / job / "run.log")
         return result
+
+    def list_jobs(self, session=None, active=False, limit=100):
+        if not 1 <= limit <= 1000:
+            raise ValueError('jobs limit must be 1..1000')
+        query = 'SELECT j.id,j.state,j.created,j.started,j.finished FROM jobs j'
+        conditions, parameters = [], []
+        if session is not None:
+            query += ' JOIN subscribers s ON s.job=j.id'
+            conditions += ['s.session=?', 'NOT EXISTS (SELECT 1 FROM withdrawals w '
+                           'WHERE w.job=s.job AND w.session=s.session)']
+            parameters.append(session)
+        if active:
+            conditions.append('j.state NOT IN (' + ','.join('?' for _ in TERMINAL) + ')')
+            parameters.extend(sorted(TERMINAL))
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+        query += ' ORDER BY j.created DESC LIMIT ?'
+        return [dict(row) for row in self.db.execute(query, [*parameters, limit])]
 
     @contextmanager
     def transaction(self):
@@ -294,7 +317,10 @@ class Store:
             for baseline in retired_baselines:
                 dequeue(self.get(baseline)['payload'], baseline)
 
-    def submit(self, session, payload, repeat=None):
+    def is_retry(self, job):
+        return self.db.execute('SELECT 1 FROM retry_attempts WHERE attempt=? LIMIT 1', (job,)).fetchone() is not None
+
+    def submit(self, session, payload, repeat=None, *, retry_failed=False):
         identity = {k: v for k, v in payload.items() if k != "repo"}
         identity["spec"] = {k: v for k, v in payload["spec"].items()
                             if k not in {"hypothesis", "estimate_min"}}
@@ -312,7 +338,9 @@ class Store:
                         raise ValueError("prerequisite external inputs changed or are not pinned by this request: " + path)
             old = self.db.execute("SELECT id,state FROM jobs WHERE fingerprint=? ORDER BY created DESC LIMIT 1",
                                   (fingerprint,)).fetchone()
-            if old and old['state'] != 'retired' and not repeat:
+            retryable = old and (old['state'] in {'failed', 'blocked', 'interrupted'}
+                                or payload['spec']['kind'] == 'baseline' and old['state'] == 'incomplete')
+            if old and old['state'] != 'retired' and not repeat and not (retry_failed and retryable):
                 job = old["id"]
                 disposition = "reused" if old["state"] in TERMINAL else "joined"
             else:
@@ -383,6 +411,10 @@ def ensure_worker(store, job):
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
+        controller = None
+        if payload.get('retry_controller'):
+            from experiment_retry import controller_path
+            controller = controller_path(payload)
         checkout = store.root / job / "checkout"
         if Path(payload["repo"]) != checkout:
             # Freeze the submitted commit so agents may keep editing their own
@@ -395,7 +427,7 @@ def ensure_worker(store, job):
             with store.db:
                 store.db.execute("UPDATE jobs SET payload=? WHERE id=?", (encoded(payload), job))
         with (store.root / job / "run.log").open("ab", buffering=0) as output:
-            subprocess.Popen([sys.executable, str(checkout / "bench/experiments.py"), "--root", str(store.root), "worker", job],
+            subprocess.Popen([sys.executable, str((controller or checkout) / "bench/experiments.py"), "--root", str(store.root), "worker", job],
                              stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
                              start_new_session=True, close_fds=True)
 
@@ -423,6 +455,9 @@ def child_env(payload, store, job):
 
 
 def verify(payload):
+    if payload.get('retry_controller'):
+        from experiment_retry import controller_path
+        controller_path(payload)
     current = snapshot(Path(payload["repo"]), payload["spec"], payload["paths"]["MK_OVERLAY_STAMP"])
     if current != payload["snapshot"]:
         raise ValueError("source, build, runner or external inputs changed while queued; resubmit after checking the new context")
@@ -694,7 +729,9 @@ def worker(store, job):
                     if identity(Path(payload['repo']), spec, payload['environment']) != payload['cpu_identity']:
                         raise ValueError('CPU environment changed while waiting for shared evidence')
                     failure = joined_failure(store, joined, payload)
-                    if failure and not store.get(job)['repeat_reason']:
+                    retried_owner = joined and store.db.execute(
+                        'SELECT 1 FROM retry_attempts WHERE attempt=? AND source=? LIMIT 1', (job, joined)).fetchone()
+                    if failure and not store.get(job)['repeat_reason'] and not retried_owner:
                         store.state(job, 'blocked', failure)
                         return 0
                     hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
@@ -889,6 +926,10 @@ def main():
     retire.add_argument('id')
     retire.add_argument('--replacement',required=True)
     retire.add_argument('--reason',required=True)
+    retry = sub.add_parser('retry', help='retry an unsuccessful request using its saved manifest and valid evidence')
+    retry.add_argument('session')
+    retry.add_argument('id')
+    retry.add_argument('--reason', required=True)
     pending = sub.add_parser('pending')
     pending.add_argument('id')
     estimate = sub.add_parser('estimate')
@@ -910,11 +951,14 @@ def main():
     collector = sub.add_parser('collect')
     collector.add_argument('session')
     collector.add_argument('path', type=Path)
-    sub.add_parser("jobs")
+    jobs = sub.add_parser("jobs")
+    jobs.add_argument('--session', help='show only your subscribed requests, excluding withdrawn demand')
+    jobs.add_argument('--active', action='store_true', help='exclude completed, failed, and retired requests')
+    jobs.add_argument('--limit', type=int, default=100, help='maximum results, 1..1000 (default: 100)')
     sub.add_parser("stats")
     args = ap.parse_args()
     store = Store(args.root)
-    if hasattr(args, 'session') and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
+    if getattr(args, 'session', None) is not None and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
         raise ValueError('session must be a short alphanumeric name')
     if args.action == "submit":
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
@@ -953,6 +997,10 @@ def main():
     elif args.action == 'retire':
         from experiment_retirement import retire
         answer = retire(store,args.session,args.id,args.replacement,args.reason)
+    elif args.action == 'retry':
+        from experiment_retry import retry
+        answer = retry(store, args.session, args.id, args.reason,
+                       Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == 'collect':
         answer = collect(store, args.session, args.path, Path(os.environ.get('REPO', HERE.parent)).resolve())
     elif args.action == "worker":
@@ -984,8 +1032,7 @@ def main():
     elif args.action == "stats":
         answer = stats(store)
     else:
-        answer = [dict(r) for r in store.db.execute(
-            "SELECT id,state,created,started,finished FROM jobs ORDER BY created DESC LIMIT 100")]
+        answer = store.list_jobs(args.session, args.active, args.limit)
     print(encoded(answer))
     return 2 if args.action == "plan" and "error" in answer else 0
 
