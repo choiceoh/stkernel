@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
-# and the standalone MHC normalized-weight call contract differ from upstream.
-# The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = '97ce48a8e238b1d645715a8022ea252edc3f72e40bc3c2b214aa2418cd3bdfab'
+# Re-audited after 28e5e57b: only EP warmup/proof assertions differ from
+# approved main bb22740a; the three helper tests and load_defs AST are identical.
+# Their reviewed dependency access graphs remain unchanged.
+LOGIC_AUDIT = '195882797c4ba33e8f2c056497195911029e178cb305fb643875cbb61bd73f11'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

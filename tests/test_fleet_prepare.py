@@ -21,6 +21,10 @@ class PrepareTests(unittest.TestCase):
         self.repo = self.root / 'repo'
         self.repo.mkdir()
         self.directory = self.root / 'fleet'
+        # Queued controller records always carry their pinned fleet path.
+        self.fleet_script = self.root / 'controller' / 'bench' / 'fleet.sh'
+        self.fleet_script.parent.mkdir(parents=True)
+        self.fleet_script.write_text('#!/bin/sh\nexit 1\n')
         self.git('init', '-q')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'user.name', 'fixture')
@@ -143,7 +147,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         import fleet_pending
         self.prepare()
         path=next((self.directory/'preparations').glob('*.json'))
-        record=dict(state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
+        record=dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
                     ticket='1',pid=123,start='same',revision=1)
         pause = mock.Mock(return_value=False)
         with mock.patch.dict(sys.modules, fleet_pause=types.SimpleNamespace(pause_failed=pause)), \
@@ -166,7 +170,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         import fleet_pending
         self.prepare()
         path=next((self.directory/'preparations').glob('*.json'))
-        record=dict(state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
+        record=dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
                     ticket='1',pid=123,start='same',revision=1)
         original='1|fixture|1|2|test|boot|123\n2|other|2|2|next|boot|456\n'
         (self.directory/'queue').write_text(original)
@@ -185,7 +189,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         import fleet_pending
         self.prepare()
         path=next((self.directory/'preparations').glob('*.json'))
-        record=dict(state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
+        record=dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=[sys.executable,'input.py'],cwd=str(self.repo.resolve()),
                     ticket='1',pid=123,start='same',revision=1,pause_protocol=1)
         row='1|fixture|1|2|test|boot|123\n'
         (self.directory/'queue').write_text(row)
@@ -209,7 +213,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         value=self.prepare()
         path=next((self.directory/'preparations').glob('*.json'))
         self.assertEqual(path.stat().st_mode & 0o777,0o600)
-        record=dict(state='queued',prepare_manifest=str(path),command=[sys.executable,'-c','pass'],cwd=str(self.repo))
+        record=dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=[sys.executable,'-c','pass'],cwd=str(self.repo))
         with mock.patch.object(fleet_pending,'read_record',return_value=record):
             with self.assertRaisesRegex(ValueError,'does not match'): prep.check_pending(self.directory,'fixture')
 
@@ -330,7 +334,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         self.git('add','.');self.git('commit','-qm','dependency')
         command = [sys.executable,'input.py']
         path = prep.prepare(self.directory,'fixture',command,self.repo,spec_path=spec,fleet=classifier)
-        record = dict(state='queued',prepare_manifest=str(path),command=command,cwd=str(self.repo.resolve()),prepare_receipt_required=True)
+        record = dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=command,cwd=str(self.repo.resolve()),prepare_receipt_required=True)
         dependency.write_text('value=2\n')
         with mock.patch.object(fleet_pending,'read_record',return_value=record):
             with self.assertRaisesRegex(ValueError,'CPU source changed'):
@@ -343,7 +347,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         path = prep.prepare(self.directory,'fixture',command,self.repo)
         value = json.loads(path.read_text()); value['version']=1; value.pop('receipt')
         path.write_text(json.dumps(value))
-        record = dict(state='queued',prepare_manifest=str(path),command=command,cwd=str(self.repo.resolve()),prepare_receipt_required=True)
+        record = dict(fleet=str(self.fleet_script),state='queued',prepare_manifest=str(path),command=command,cwd=str(self.repo.resolve()),prepare_receipt_required=True)
         with mock.patch.object(fleet_pending,'read_record',return_value=record):
             with self.assertRaisesRegex(ValueError,'no authenticated receipt'):
                 prep.check_pending(self.directory,'fixture',external=False)
@@ -531,7 +535,7 @@ git merge-base --is-ancestor origin/main HEAD || { echo 'ABORT: candidate needs 
         command=[sys.executable,'input.py']
         manifest=prep.prepare(self.directory,'fixture',command,self.repo)
         pid=os.getpid()
-        record=dict(session='fixture',state='queued',prepare_manifest=str(manifest),
+        record=dict(fleet=str(self.fleet_script),session='fixture',state='queued',prepare_manifest=str(manifest),
                     prepare_receipt_required=True,command=command,cwd=str(self.repo.resolve()),
                     ticket='1',pid=pid,start='fixture-start',host=socket.gethostname(),
                     enqueued_at='1',estimate_min=2,note='test',
