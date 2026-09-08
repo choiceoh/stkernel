@@ -29,6 +29,11 @@ TRACE_CHUNKS=${TRACE_CHUNKS:-8192,1152}
 # One home for the override file: the probe writes it and `measure` clears it,
 # and the scheduler reads it under the container's /prof mount.
 CHUNK_FILE=${CHUNK_FILE:-/home/choiceoh/vllm-prof/sched_chunk}
+# An attribution from an EARLIER boot, folded into the same split. Only one
+# window per boot survives on this build, so the chunk sizes the regression
+# needs have to be accumulated across holds. Cross-boot variation (~2%) lands in
+# the residual; the reported intervals say whether it mattered.
+PRIOR_ATTR=${PRIOR_ATTR:-}
 
 case "$MODE" in
 chain)
@@ -84,22 +89,31 @@ measure)
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
     --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
 
-  # One trace carrying every chunk size (a profiler window per size returns
-  # HTTP 500 after the first on this build).
-  tr=$(python3 -c "import json;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('trace',''))" 2>/dev/null)
-  if [ -n "$tr" ] && [ -f "$tr" ]; then
+  # One trace per window, one window per chunk size (a window holding more than
+  # one request ends with /stop_profile "cancelled" and no rank trace at all).
+  # Attribute each, then split the fixed cost across all of them together --
+  # more chunk sizes is the whole point, and one size cannot separate fixed from
+  # per-token.
+  n=0
+  for tr in $(python3 -c "
+import json
+d=json.load(open('$OUT/sweep.json')).get('traces',{})
+print(' '.join(r['trace'] for r in d.get('runs',[]) if r.get('trace')))" 2>/dev/null); do
+    [ -f "$tr" ] || continue
+    n=$((n+1))
     # Out of the shared profiler directory: the next capture on this fleet must
     # not be able to confuse or clobber the evidence for this one.
-    mv "$tr" "$OUT/trace.${tr##*.}" && tr="$OUT/trace.${tr##*.}"
-    python3 tools/trace_prefill_attribution.py "$tr" --out "$OUT/attr.json" 2>&1 | tee "$OUT/attr.log"
-    if [ -s "$OUT/attr.json" ]; then
-      python3 probes/prefill_fixed_cost_attribution.py "$OUT/attr.json" --json "$OUT/fixed-cost.json" 2>&1 \
-        | tee "$OUT/fixed-cost.log"
-    else
-      echo "attribution produced nothing: skipping the fixed-cost split"
-    fi
+    mv "$tr" "$OUT/trace-$n.${tr##*.}" && tr="$OUT/trace-$n.${tr##*.}"
+    python3 tools/trace_prefill_attribution.py "$tr" --out "$OUT/attr-$n.json" 2>&1 | tail -20 | tee "$OUT/attr-$n.log"
+  done
+  set -- "$OUT"/attr-*.json "$PRIOR_ATTR"
+  ok=""
+  for f in "$@"; do [ -s "$f" ] && ok="$ok $f"; done
+  if [ -n "$ok" ]; then
+    python3 probes/prefill_fixed_cost_attribution.py $ok --json "$OUT/fixed-cost.json" 2>&1 \
+      | tee "$OUT/fixed-cost.log"
   else
-    echo "no trace captured"
+    echo "no attribution produced: skipping the fixed-cost split"
   fi
   # The arm's own head-log copy is taken BEFORE this step runs, so a serving
   # error during the sweep lands in a log the next boot overwrites -- that is how
