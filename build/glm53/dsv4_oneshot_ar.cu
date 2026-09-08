@@ -231,17 +231,31 @@ __device__ __forceinline__ void osar_prefetch(const HintArgs &h,
   }
 }
 
-__global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                          int nbytes, const HintArgs h) {
+// Keep this arithmetic host-testable against an independent enumeration of
+// the vector and scalar-tail accesses. Block zero also guards an empty call.
+template <bool VECTOR_EXACT>
+__host__ __device__ constexpr bool osar_block_owns(unsigned block, unsigned threads, int n) {
+  return block == 0 || block * threads < (VECTOR_EXACT ? (n >> 3) : n);
+}
+
+template <bool CONSUMER_PDL>
+__device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
+                                              bf16 *dst, int n, int nbytes,
+                                              const HintArgs h) {
+  // In a PDL chain this collective is also a consumer. Neither the input
+  // nor the protocol's previous sequence may be read before its predecessor
+  // has completed. No forward progress relies on concurrent residency.
+  if constexpr (CONSUMER_PDL)
+    asm volatile("griddepcontrol.wait;" ::: "memory");
   // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
   // the smallest plain call has n = hidden and many blocks fall entirely past
   // the payload. The 16B lanes make this starker: with blockDim 256 and
   // n = 4096 there are only nv = 512 vectors, so threads 0..511 (blocks 0-1)
-  // do all the copying and blocks 2..47 copy nothing. `owns` below is still
-  // ELEMENT-granular (blockIdx.x * blockDim.x < n), so it stays conservative:
-  // blocks 2..15 own per the formula yet carry no lanes, and they still pay
-  // the launch/sync/counter cost (and a vacuous fence). Correctness is
-  // unaffected -- a block with no lanes has nothing to order either way.
+  // do all the copying and blocks 2..47 copy nothing. The ordinary path keeps
+  // its conservative element-granular ownership. The PDL candidate instead
+  // counts actual 16B lanes: at T=6 only 12 blocks, rather than all 48, need
+  // the ring guard, writer fences and peer wait. Empty blocks retire sooner
+  // and leave resources for the dependent MHC weight preparation.
   //
   // The peer wait is the expensive one. Data-owning blocks polling the same
   // three volatile flags for the whole RDMA latency window generate traffic
@@ -252,9 +266,10 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   // atomicAdd stays unconditional -- the invariant is that every launch adds
   // exactly ARGRID, and that is what makes the last-block test sound.
   //
-  // Block 0 owns unconditionally so an n == 0 collective still takes the ring
-  // guard rather than publishing into a slot nobody checked.
-  const bool owns = (blockIdx.x == 0) || (blockIdx.x * blockDim.x < n);
+  // Block 0 owns unconditionally: it covers the n % 8 scalar tail and ensures
+  // an n == 0 collective cannot publish into a slot nobody guarded. Every
+  // block still contributes its ticket and may become the final publisher.
+  const bool owns = osar_block_owns<CONSUMER_PDL>(blockIdx.x, blockDim.x, n);
   // Block 0 always owns, so it always walks every phase and is the sample.
   const bool timer = (blockIdx.x == 0) && (threadIdx.x == 0);
   long long t0 = timer ? clock64() : 0;
@@ -326,6 +341,11 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
     c->tx_seq = nxt;
     __threadfence_system();
   }
+  // Every block has copied, fenced and contributed its publication ticket
+  // before releasing the dependent grid. The consumer may load immutable
+  // weights now; its dependency wait still gates every reduced-input read.
+  if constexpr (CONSUMER_PDL)
+    asm volatile("griddepcontrol.launch_dependents;");
   // Peer wait: rxf is only ever written by the peers' NICs, never by a block
   // of this kernel -- same independence argument as the guard above. Fence
   // stays where it always was: after the wait, before reading peer data.
@@ -432,6 +452,18 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
       c->t_calls_sm += 1;
     }
   }
+}
+
+// Distinct entry points compile away the mode test and retain the original
+// ordinary kernel ABI. Neither path pays a per-block runtime mode branch.
+__global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
+                          int nbytes, const HintArgs h) {
+  k_oneshot_impl<false>(c, src, dst, n, nbytes, h);
+}
+
+__global__ void k_oneshot_consumer(Ctrl *c, const bf16 *src, bf16 *dst, int n,
+                                   int nbytes, const HintArgs h) {
+  k_oneshot_impl<true>(c, src, dst, n, nbytes, h);
 }
 
 // ---------------- proxy ----------------
@@ -745,7 +777,8 @@ static void py_connect(std::vector<std::string> all) {
 }
 static torch::Tensor py_oneshot_impl(torch::Tensor input,
                                      const std::vector<int64_t> &ptrs,
-                                     const std::vector<int64_t> &lens) {
+                                     const std::vector<int64_t> &lens,
+                                     bool consumer_pdl = false) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kBFloat16);
   TORCH_CHECK(input.is_contiguous());
   // The copy/reduce phases use 16B vectors; the ring side is aligned by
@@ -778,17 +811,36 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
   // which is only sound if every launch contributes exactly ARGRID
   // increments. The 48-block grid fills GB10 once and covers MAXEL through
   // the kernel's grid-stride loops; empty decode blocks only sync/increment.
-  k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
+  if (consumer_pdl) {
+    cudaLaunchConfig_t cfg{};
+    cfg.gridDim = dim3(ARGRID);
+    cfg.blockDim = dim3(ARTHREADS);
+    cfg.stream = st;
+    cudaLaunchAttribute attr{};
+    attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+    attr.val.programmaticStreamSerializationAllowed = 1;
+    cfg.attrs = &attr;
+    cfg.numAttrs = 1;
+    const auto err = cudaLaunchKernelEx(&cfg, k_oneshot_consumer, g_ctrl, src,
+                                         dst, (int)n, (int)(n * 2), h);
+    TORCH_CHECK(err == cudaSuccess, "oneshot PDL launch: ",
+                cudaGetErrorString(err));
+  } else {
+    k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
                                           (int)(n * 2), h);
+  }
   return out;
 }
 static torch::Tensor py_oneshot(torch::Tensor input) {
   return py_oneshot_impl(input, {}, {});
 }
 static torch::Tensor py_oneshot_hint(torch::Tensor input,
-                                     std::vector<int64_t> ptrs,
-                                     std::vector<int64_t> lens) {
+                                      std::vector<int64_t> ptrs,
+                                      std::vector<int64_t> lens) {
   return py_oneshot_impl(input, ptrs, lens);
+}
+static torch::Tensor py_oneshot_consumer(torch::Tensor input) {
+  return py_oneshot_impl(input, {}, {}, true);
 }
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
 // per collective with and without hints: [guard, copy, wait, reduce, calls].
@@ -818,6 +870,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("local_infos", &py_local_infos);
   m.def("connect", &py_connect);
   m.def("oneshot_ar", &py_oneshot);
+  m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
   m.def("healthy", &py_healthy);

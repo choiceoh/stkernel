@@ -3,18 +3,56 @@
 set -euo pipefail
 session=${FLEET_SESSION:?}
 [[ $(cut -d'|' -f1 "${FLEET_DIR:?}/holder") == "$session" ]] || exit 2
+# Apply public-default isolation to deployment and the health check too, not
+# only to the final boot. In particular IMAGE/PROFILE must not select an arm.
+# Match every caller-precedence argument to the GLM ct_load_profile call,
+# including set-but-empty CUSTOM_OPS_AXIS, then clear the launcher's additional
+# environment controls. The approved profile supplies all serving defaults.
+public_default_keys=(
+  IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN
+  GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND
+  MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD FLY_WINDOW FLY_ENTROPY
+  SPEC_K_SEQLEN PREFIX_CACHE DECODE_FIRST
+  CHAT_TEMPLATE REASONING_PARSER MM_LIMIT PREFILL_WARMUP PREFILL_WARMUP_LENS
+  MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ OVERLAY_DIR DRAFT_HOST_PATH
+  AUDIT B12X_EP_TOPK CG_MEM_PROFILE CG_UTIL_DELTA DRY_RUN GLOO_IFNAME
+  GRAPH_DEBUG KV_HYBRID_BLOCKS KV_TOKENS MM_ENCODER_ATTN MM_ENCODER_TP_MODE
+  MOE_CUTOVER PIECEWISE PREBUILD SKIP_MM_PROFILING SKIP_PREFLIGHT SPEC_K_FORCE
+  TORCH_CPP_LOG_LEVEL TORCH_DISTRIBUTED_DEBUG TORCH_LOGS NCCL_ASYNC_ERR
+  FLEET_REHEARSE DEPLOY_PRESERVE_IDENTICAL HEAD_URL
+)
+unset "${public_default_keys[@]}"
+while IFS= read -r key; do
+  case "$key" in
+    VLLM_*|ONEPASS_*|MK_*|STARTUP_CACHE_*|PROFILE|PROFILE_*|MODEL_HOST_PATH|IMAGE|SPEC_K|SPEC|LEVER|SKIP_BOOT|HEAD|GLM53_API_HOST|GLM53_API_PORT)
+      unset "$key" ;;
+  esac
+done < <(compgen -e)
 configured=/home/choiceoh/stkernel
 if [[ -s $FLEET_DIR/production-repo ]]; then
   IFS= read -r configured < "$FLEET_DIR/production-repo" || [[ -n $configured ]]
 fi
 repo=${FLEET_PRODUCTION_REPO:-$configured}
-cd "$repo"
-[[ -z $(git status --porcelain) ]] || { echo 'production checkout is dirty'; exit 2; }
-git fetch origin
-# A candidate checkout can be ahead of main. Preserve its branch and select the
-# approved commit explicitly; a fast-forward merge cannot move it backwards.
-git switch --detach origin/main
-[[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'production checkout is not approved main'; exit 2; }
+if [[ -n ${FLEET_RECOVERY_RECEIPT:-} ]]; then
+  recovery=$(python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_validation.py" verify-recovery \
+    --receipt "$FLEET_RECOVERY_RECEIPT" --format shell)
+  eval "$recovery"
+  repo=$FLEET_RECOVERY_REPO
+  export FLEET_DEPLOY_RECOVERY_RECEIPT=$FLEET_RECOVERY_RECEIPT
+  cd "$repo"
+elif [[ ${FLEET_VALIDATION_REQUIRED:-0} == 1 ]]; then
+  echo 'prevalidated approved recovery receipt is missing; refusing moving-main restore'
+  exit 2
+else
+  # Compatibility for reservations made by an older pinned controller. New
+  # boot tickets require a recovery receipt before they may join the queue.
+  cd "$repo"
+  [[ -z $(git status --porcelain) ]] || { echo 'production checkout is dirty'; exit 2; }
+  git fetch origin
+  git switch --detach origin/main
+  [[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'production checkout is not approved main'; exit 2; }
+fi
 # A completed public defaults arm of this approved build needs no second boot.
 if python3 "${FLEET_RUNNER_REPO:?}/bench/fleet_entry.py" production-current "$repo"; then
   echo 'approved public defaults already healthy; no restore boot'

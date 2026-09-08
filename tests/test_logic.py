@@ -7685,7 +7685,7 @@ def test_osar_prefetch_hints_contract() -> None:
                                   "glm53_megakernel.py"), encoding="utf-8").read()
     for site, note, launch in (
             ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
-            ("mhc", "_ar_note(fn)", "_EXT.run_mhc(")):
+            ("mhc", "_ar_note(weight)", "_EXT.run_mhc(")):
         n_at, l_at = drv.find(note), drv.find(launch)
         check(0 < n_at < l_at, f"{site} launch notes its weights first")
 
@@ -8230,11 +8230,13 @@ def test_self_built_kernels_persist_their_caches() -> None:
           "self-test, gated under the fused segment's arm")
     check("cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)" in mkp
           and "x0[:num_tokens], residual.reshape(-1, hc_mult, hidden)," in mkp
-          and "pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base," in mkp
+          and "pm0[:num_tokens], cm_i[:num_tokens]," in mkp
+          and "fn.reshape(hc_mult * (2 + hc_mult), hc_mult * hidden).contiguous()," in mkp.split("def mhc_pre_only(", 1)[1].split("def mhc_pre_hook(", 1)[0]
           and "identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))" in mkp
           and 'spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()' in mkp
           and "ts.append(int(spec_k) + 1)" in mkp,
-          "identity post coefficients from static buffers sliced per call; "
+          "identity post coefficients from static buffers sliced per call "
+          "and standalone pre weights normalized to the fused input layout; "
           "the self-test proves the identity bitwise and adds T=k+1 only on "
           "a non-7 spec boot")
     # 37차 (operator: "200줄 쿠다"): the fused decode-step preparation kernel
@@ -8547,7 +8549,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 13
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 14
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
@@ -8714,7 +8716,7 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 9
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 10
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "

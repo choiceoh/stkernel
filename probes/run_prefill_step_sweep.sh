@@ -24,11 +24,19 @@ SWEEP_CTX=${SWEEP_CTX:-32000,128000}
 # The trace is the attribution half and only has to contrast the two ends at the
 # SAME context; 32K keeps the capture to a few chunks instead of the 111 a
 # 128K/1,152 request would write.
-TRACE_CTX=${TRACE_CTX:-32000}
-TRACE_CHUNKS=${TRACE_CHUNKS:-8192,1152}
+# Contexts to capture, one profiler window each, at the boot's own chunk. The
+# partial last chunk of each gives the size spread the regression needs; forcing
+# a chunk while profiling kills the engine on this build (six attempts, one
+# success, and the success was the one that did not force it).
+TRACE_CTXS=${TRACE_CTXS:-32000,20000,12000,8000}
 # One home for the override file: the probe writes it and `measure` clears it,
 # and the scheduler reads it under the container's /prof mount.
 CHUNK_FILE=${CHUNK_FILE:-/home/choiceoh/vllm-prof/sched_chunk}
+# An attribution from an EARLIER boot, folded into the same split. Only one
+# window per boot survives on this build, so the chunk sizes the regression
+# needs have to be accumulated across holds. Cross-boot variation (~2%) lands in
+# the residual; the reported intervals say whether it mattered.
+PRIOR_ATTR=${PRIOR_ATTR:-}
 
 case "$MODE" in
 chain)
@@ -65,7 +73,7 @@ measure)
   OUT=${2:?usage: $0 measure <outdir>}
   mkdir -p "$OUT"
   # the IndexCache arm writes under the diagnosis directory and takes no trace
-  case "$OUT" in */idxc6) TRACE_CHUNKS="" ;; esac
+  case "$OUT" in */idxc6) TRACE_CTXS="" ;; esac
   cd "$REPO" || exit 1
   # A stale override file would silently pin the chunk for whatever boots next
   # (the scheduler reads it every step). Start from a clean slate.
@@ -79,30 +87,35 @@ measure)
   grep -q "^/prof/sched_chunk$" "$OUT/knob.txt" || echo "!! the knob is NOT in the container: the sweep would measure the boot's own chunking"
 
   echo "== [pstep] sweep $(date +%T)"
-  # TRACE_CHUNKS="" on the second arm: the attribution only has to be taken once,
-  # and a repeat costs the hold ~4 minutes for a picture we already have.
+  # TRACE_CTXS="" on the second arm: the attribution only has to be taken once,
+  # and a repeat costs the hold minutes for a picture we already have.
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
-    --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
+    --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CTXS:+--trace-ctxs "$TRACE_CTXS"} 2>&1 | tee "$OUT/sweep.log"
 
-  for C in ${TRACE_CHUNKS//,/ }; do
-    t=$(python3 -c "import json,sys;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('$C',{}).get('trace',''))" 2>/dev/null)
-    if [ -n "$t" ] && [ -f "$t" ]; then
-      # Out of the shared profiler directory: the next capture on this fleet
-      # must not be able to confuse or clobber the evidence for this one.
-      mv "$t" "$OUT/trace-$C.${t##*.}" && t="$OUT/trace-$C.${t##*.}"
-      python3 tools/trace_prefill_attribution.py "$t" --out "$OUT/attr-$C.json" 2>&1 | tee "$OUT/attr-$C.log"
-    else
-      echo "no trace captured for chunk $C"
-    fi
+  # One trace per window, one window per context, all at the boot's own chunk.
+  # Attribute each, then split the fixed cost across all of them together (plus
+  # PRIOR_ATTR): the sizes come from each request's partial last chunk, and one
+  # size cannot separate fixed from per-token.
+  n=0
+  for tr in $(python3 -c "
+import json
+d=json.load(open('$OUT/sweep.json')).get('traces',{})
+print(' '.join(r['trace'] for r in d.get('runs',[]) if r.get('trace')))" 2>/dev/null); do
+    [ -f "$tr" ] || continue
+    n=$((n+1))
+    # Out of the shared profiler directory: the next capture on this fleet must
+    # not be able to confuse or clobber the evidence for this one.
+    mv "$tr" "$OUT/trace-$n.${tr##*.}" && tr="$OUT/trace-$n.${tr##*.}"
+    python3 tools/trace_prefill_attribution.py "$tr" --out "$OUT/attr-$n.json" 2>&1 | tail -20 | tee "$OUT/attr-$n.log"
   done
-  # The point of the traces: turn the wall-clock `a` into kernel categories.
-  # Needs two chunk sizes at least -- one cannot separate fixed from per-token.
-  set -- "$OUT"/attr-*.json
-  if [ $# -ge 2 ] && [ -f "$1" ]; then
-    python3 probes/prefill_fixed_cost_attribution.py "$@" --json "$OUT/fixed-cost.json" 2>&1 \
+  set -- "$OUT"/attr-*.json "$PRIOR_ATTR"
+  ok=""
+  for f in "$@"; do [ -s "$f" ] && ok="$ok $f"; done
+  if [ -n "$ok" ]; then
+    python3 probes/prefill_fixed_cost_attribution.py $ok --json "$OUT/fixed-cost.json" 2>&1 \
       | tee "$OUT/fixed-cost.log"
   else
-    echo "fewer than two attributions: skipping the fixed-cost split"
+    echo "no attribution produced: skipping the fixed-cost split"
   fi
   # The arm's own head-log copy is taken BEFORE this step runs, so a serving
   # error during the sweep lands in a log the next boot overwrites -- that is how

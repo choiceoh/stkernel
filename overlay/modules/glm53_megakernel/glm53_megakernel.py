@@ -61,6 +61,9 @@ MASTER = _flag("VLLM_GLM53_MEGAKERNEL")
 ENABLE_MHC = MASTER and _flag("VLLM_GLM53_MK_MHC")
 # Exact storage only: non-BF16-representable FP32 weights stay on the old path.
 ENABLE_MHC_BF16 = ENABLE_MHC and os.environ.get("VLLM_GLM53_MK_MHC_BF16") == "1"
+ENABLE_AR_CONSUMER = (ENABLE_MHC
+                     and os.environ.get("VLLM_GLM53_AR_CONSUMER_PDL") == "1"
+                     and os.environ.get("VLLM_GLM53_MK_PDL") == "1")
 # 37차: layer 0's standalone pre-mix through the same kernel (identity post),
 # so a decode step touches deep_gemm nowhere. Rides on the MHC segment.
 ENABLE_MHC_PRE = ENABLE_MHC and _flag("VLLM_GLM53_MK_MHC_PRE", "1")
@@ -259,7 +262,7 @@ def rebuild(src_path: str) -> dict:
     in and re-run the self-tests. The kernels already baked into captured
     graphs stay until a recapture; every eager call sees the new module."""
     import torch
-    global _EXT, _armed_once, _MHC_BF16_OK
+    global _EXT, _armed_once, _MHC_BF16_OK, _AR_CONSUMER_OK
     from torch.utils.cpp_extension import load
 
     with open(src_path, "rb") as f:
@@ -279,6 +282,7 @@ def rebuild(src_path: str) -> dict:
                verbose=False)
     _EXT = ext
     _MHC_BF16_OK = False
+    _AR_CONSUMER_OK = False
     for k in _ARMED:
         _ARMED[k] = False
     _armed_once = False
@@ -1748,15 +1752,23 @@ def _selftest_smlp2() -> bool:
 # MK_SEG_MHC
 # ---------------------------------------------------------------------------
 # Strong references keep both source storage and every captured pack alive.
-# Versioned entries are retained, never replaced under an existing graph.
+# Versioned source and layout storage are retained under existing graphs.
 # Weight updates require graph recapture, as with the other packed weights.
 _MHC_BF16_CACHE = {}
 _MHC_BF16_CACHE_LIMIT = 256
 _MHC_BF16_OK = False
 _MHC_BF16_CAPTURED = set()
+_AR_CONSUMER_OK = False
+_AR_CONSUMER_CAPTURED = set()
 
 
-def _mhc_bf16_weight(fn):
+def _mhc_bf16_vec4(packed):
+    # [output, stream, hidden] -> [output, hidden, stream]: one aligned
+    # uint2 contains the four BF16 coefficients used by one CUDA thread.
+    return packed.view(NOUT, HC, HIDDEN).transpose(1, 2).contiguous()
+
+
+def _mhc_bf16_weight(fn, *, ar_consumer=False):
     import torch
 
     if (fn.dtype != torch.float32 or not fn.is_cuda
@@ -1770,23 +1782,39 @@ def _mhc_bf16_weight(fn):
         return None
     key = (fn.device, fn.data_ptr(), version)
     entry = _MHC_BF16_CACHE.get(key)
-    if entry is not None:
+    if entry is None:
+        if (torch.cuda.is_current_stream_capturing()
+                or len(_MHC_BF16_CACHE) >= _MHC_BF16_CACHE_LIMIT):
+            return None
+        packed = fn.to(torch.bfloat16)
+        restored = packed.float()
+        if (not bool(torch.isfinite(fn).all())
+                or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
+            packed = None
+        # The serving warmup/capture ladder visits T=12 before decode T=6.
+        # Prepare both immutable layouts on the first eager weight visit,
+        # even when that shape uses the scalar kernel. Waiting until the
+        # first small shape would miss the vector pack during capture.
+        vector = (_mhc_bf16_vec4(packed)
+                  if packed is not None and ENABLE_AR_CONSUMER else None)
+        entry = (fn, packed, vector)
+        _MHC_BF16_CACHE[key] = entry
+    if not ar_consumer or entry[1] is None:
         return entry[1]
-    if (torch.cuda.is_current_stream_capturing()
-            or len(_MHC_BF16_CACHE) >= _MHC_BF16_CACHE_LIMIT):
-        return None
-    packed = fn.to(torch.bfloat16)
-    restored = packed.float()
-    if (not bool(torch.isfinite(fn).all())
-            or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
-        packed = None
-    _MHC_BF16_CACHE[key] = (fn, packed)
-    return packed
+    if entry[2] is None:
+        if torch.cuda.is_current_stream_capturing():
+            return None
+        # Keep the old scalar pack alive for larger shapes and captured
+        # graphs. Both layouts share one versioned entry/cache-limit slot.
+        entry = (entry[0], entry[1], _mhc_bf16_vec4(entry[1]))
+        _MHC_BF16_CACHE[key] = entry
+    return entry[2]
 
 
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
               hc_base, norm_weight, num_tokens, rms_eps, pre_eps,
-              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat, *, _fp32_fn=False):
+              sinkhorn_eps, post_mult, norm_eps, sinkhorn_repeat, *, _fp32_fn=False,
+              _ar_consumer=None):
     import torch
 
     hc_mult, hidden = residual_flat.shape[1], residual_flat.shape[2]
@@ -1798,11 +1826,20 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     layer_input_cur = torch.empty(num_tokens, hidden, dtype=torch.bfloat16,
                                   device=x_flat.device)
     ws = _ensure_workspace(x_flat.device)
-    _ar_note(fn)
-    packed = (_mhc_bf16_weight(fn) if ENABLE_MHC_BF16 and _MHC_BF16_OK
+    early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
+             else bool(_ar_consumer)) and 0 < num_tokens <= 8
+    packed = (_mhc_bf16_weight(fn, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
               and not _fp32_fn else None)
     weight = fn if packed is None else packed
-    if (packed is not None and _ARMED["mhc"]
+    _ar_note(weight)
+    # Explicit overrides belong to the self-test/probe, not serving evidence.
+    if (early and _ar_consumer is None and _ARMED["mhc"]
+            and num_tokens not in _AR_CONSUMER_CAPTURED
+            and torch.cuda.is_current_stream_capturing()):
+        _AR_CONSUMER_CAPTURED.add(num_tokens)
+        logger.warning("[megakernel] AR consumer MHC CAPTURED T=%d bf16=%s vec4=%s",
+                       num_tokens, packed is not None, packed is not None)
+    if (packed is not None and _ar_consumer is None and _ARMED["mhc"]
             and num_tokens not in _MHC_BF16_CAPTURED
             and torch.cuda.is_current_stream_capturing()):
         _MHC_BF16_CAPTURED.add(num_tokens)
@@ -1821,6 +1858,7 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
          float(post_mult), float(norm_eps)],
         [num_tokens, int(sinkhorn_repeat)],
         packed is not None,
+        early,
     )
     return residual_cur, post_mix_cur, comb_mix_cur, layer_input_cur
 
@@ -1951,7 +1989,11 @@ def mhc_pre_only(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
     x0, pm0, cm_i = _pre_bufs(residual.device)
     _rc, pm, cm, li = _mhc_call(
         x0[:num_tokens], residual.reshape(-1, hc_mult, hidden),
-        pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base,
+        pm0[:num_tokens], cm_i[:num_tokens],
+        # The stock standalone wrapper passes [output, stream, hidden].
+        # Normalize like the fused wrapper before the lossless pack lookup.
+        fn.reshape(hc_mult * (2 + hc_mult), hc_mult * hidden).contiguous(),
+        hc_scale, hc_base,
         norm_weight, num_tokens, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
         hc_post_mult_value, norm_eps, sinkhorn_repeat)
     return pm, cm, li
@@ -2055,6 +2097,53 @@ def _selftest_bf16_mhc() -> bool:
         return True
     finally:
         _MHC_BF16_OK = ok
+
+
+def _selftest_ar_consumer() -> bool:
+    """Exact outputs and repeated graphs; RDMA overlap is checked separately."""
+    import torch
+    for t in (1, 2, 6, 8, 16):
+        with torch.inference_mode(False):
+            fn = (torch.randn(NOUT, HC * HIDDEN, device="cuda") * .02).bfloat16().float()
+        values = (torch.randn(t, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
+                  torch.randn(t, HC, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
+                  torch.rand(t, HC, device="cuda"), torch.rand(t, HC * HC, device="cuda"),
+                  fn, hc_scale_ones(), hc_base_zeros(),
+                  torch.randn(HIDDEN, device="cuda", dtype=torch.bfloat16),
+                  t, 1e-6, 1e-6, 1e-6, 1., 1e-6, SINKHORN_SERVED)
+        # Match the model's ladder: this weight first visits a large scalar
+        # shape. Do not explicitly prepare the small-shape layout or warm
+        # its BF16 consumer before capture; either would mask a cache miss.
+        warm = (torch.zeros(12, HIDDEN, device="cuda", dtype=torch.bfloat16),
+                torch.zeros(12, HC, HIDDEN, device="cuda", dtype=torch.bfloat16),
+                torch.zeros(12, HC, device="cuda"), torch.zeros(12, HC * HC, device="cuda"),
+                *values[4:8], 12, *values[9:])
+        _mhc_call(*warm, _ar_consumer=False)
+        for fp32 in (True, False):
+            # Resolve output/workspace and native FP32 launch setup.
+            _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=False)
+            if fp32:
+                _mhc_call(*values, _fp32_fn=True, _ar_consumer=True)
+            torch.cuda.synchronize()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                if not fp32 and ENABLE_MHC_BF16:
+                    packed = _mhc_bf16_weight(fn, ar_consumer=t <= 8)
+                    expected = (NOUT, HIDDEN, HC) if t <= 8 else (NOUT, HC * HIDDEN)
+                    assert packed is not None and tuple(packed.shape) == expected
+                got = _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=True)
+            for scale in (1., 0., -.5):
+                values[0].fill_(scale * .03125)
+                values[1].fill_(scale * -.0625)
+                ref = _mhc_call(*values, _fp32_fn=fp32, _ar_consumer=False)
+                graph.replay()
+                torch.cuda.synchronize()
+                if not all(torch.equal(a, b) for a, b in zip(ref, got)):
+                    logger.warning("[megakernel] AR consumer MHC mismatch T=%d fp32=%s", t, fp32)
+                    return False
+    logger.warning("[megakernel] AR consumer MHC self-test PASS "
+                   "(large warmup, small capture, exact outputs and graphs)")
+    return True
 
 
 def _selftest_mhc() -> bool:
@@ -2366,6 +2455,7 @@ def hc_base_zeros():
 def arm() -> None:
     """Boot gate: device check + per-segment self-tests. Idempotent."""
     import torch
+    global _AR_CONSUMER_OK
 
     if not MASTER or any(_ARMED.values()):
         return
@@ -2393,6 +2483,8 @@ def arm() -> None:
         if ENABLE_MHC_BF16:
             _gate("mhc_bf16", _selftest_bf16_mhc)
         _ARMED["mhc"] = _gate("mhc", _selftest_mhc)
+        if ENABLE_AR_CONSUMER and _ARMED["mhc"]:
+            _AR_CONSUMER_OK = _gate("ar_consumer_mhc", _selftest_ar_consumer)
         if ENABLE_MHC_PRE and _ARMED["mhc"]:
             _ARMED["mhc_pre"] = _gate("mhc_pre", _selftest_mhc_pre)
     if ENABLE_GEMM:
