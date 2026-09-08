@@ -1,0 +1,1901 @@
+{
+  "nodes": {
+    "10.10.10.1": {
+      "configured_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "configured_launch": {
+        "capacity": {
+          "block-size": "2304",
+          "compilation_config": "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}",
+          "eager": false,
+          "gpu-memory-utilization": "0.6329",
+          "graph_cap": "32",
+          "max-model-len": "1048576",
+          "max-num-batched-tokens": "8192",
+          "max-num-seqs": "4",
+          "num-gpu-blocks-override": "1056",
+          "prefix_cache": true
+        },
+        "endpoint": {
+          "host": "127.0.0.1",
+          "port": "18000"
+        },
+        "parallelism": {
+          "command_sha256": "0163a5c434833d0e869599aee5823e54104c6bce31268759919f3d8fbeab43a1",
+          "enabled": false,
+          "nnodes": 4,
+          "node_rank": 1,
+          "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+          "schema": 1,
+          "serve_argv_sha256": "c43eacb7f6a5a80f8124a69a12621de7291151a140b462d6014f7c353ab55c65",
+          "serve_argv_without_ep_sha256": "c43eacb7f6a5a80f8124a69a12621de7291151a140b462d6014f7c353ab55c65",
+          "source": "container-launch-script",
+          "tensor_parallel_size": 4
+        }
+      },
+      "container_id": "290655f0885cc89c79cd25e381aaeb4d32ad5631a52b10d729b8e50b11824cc7",
+      "environment_allowlist": {
+        "VLLM_B12X_EP_COMPACT": null,
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_PREFILL_SP": "1",
+        "VLLM_GLM53_PREFILL_SP_FP8": "3",
+        "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "0",
+        "VLLM_GLM53_SPEC_K": "5",
+        "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
+      },
+      "host_config_allowlist": {
+        "DeviceRequests": [
+          {
+            "Capabilities": [
+              [
+                "gpu"
+              ]
+            ],
+            "Count": -1,
+            "DeviceIDs": null,
+            "Driver": "",
+            "Options": {}
+          }
+        ],
+        "IpcMode": "host",
+        "Memory": 120259084288,
+        "MemorySwap": 120259084288,
+        "NanoCpus": 0,
+        "NetworkMode": "host",
+        "Privileged": false,
+        "Runtime": "runc",
+        "ShmSize": 34359738368
+      },
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "inspect_original_sha256": "4487cb8d0ef00ffe820070d1a0b07113bc088a57457fcb04c46dc74b0d912222",
+      "inspect_source_path": "/tmp/glm53-ep-onepass-0909-2/live-B1/10.10.10.1.inspect.json",
+      "mounts": [
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_decode_first.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_collectives.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/cuda_communicator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dispatch.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/deneb_boot_stamps.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang_kernels.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_ar.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kda_onepass.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/parallel_state.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_startup_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/chunk_delta_h.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/mtp.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_sf_pack.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_common.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/glmlogs",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-logs",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/dflash2-draft",
+          "RW": false,
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_scale.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v4.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/async_llm.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/zz_deneb_boot_stamps.pth",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_fastpath.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_draft_dump.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill_n128.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_drafter_prep.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/spec_decode_rejection_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_gated_tiled.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dev_lab.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_lab_middleware.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_ep_route_remap.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/gpu_worker.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kv_cache_coordinator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_micro_kernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/fp8_lm_head.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sparse_attn_indexer_kpool.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_indexer_gate.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm47_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_shim.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_model.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_renderer_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_fp8_dense.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dflash_utils.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prep_fused.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_ep_local.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_multimodal.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_attention.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v5.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sampler.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/glm-5.3-flash-nvfp4",
+          "RW": false,
+          "Source": "/home/choiceoh/models/glm53-redhat-nvfp4",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dflash_early_fc.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_bproj.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_chat.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_mla_sparse_sm90.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kpool_indexer.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/qwen3_dflash2.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_rank_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/prof",
+          "RW": true,
+          "Source": "/home/choiceoh/vllm-prof",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/cache",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-cache",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_gate_sm121.py",
+          "Type": "bind"
+        }
+      ],
+      "raw_cmd_sha256": "874a6f1fb05125417e168a36904aa403bb1234aa6681a333c1ab1deb0cefe609",
+      "raw_environment_sha256": "ff111ec535011b7c12f9996ad2bfafa83a71627f9ac6ca976a8f873fbbe5669c",
+      "raw_host_config_sha256": "39fba0ded2985df5b2e7b3e04dec070577842a4b03bbc2ce1074b02aaea81bc0",
+      "raw_mounts_sha256": "9156576cfead96cf9438d2b9fa5523da4d0be4f2664bbd726fe51d0e29e91d65",
+      "running_at_snapshot": true,
+      "started_at": "2026-09-08T16:57:30.939399261Z"
+    },
+    "10.10.10.3": {
+      "configured_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "configured_launch": {
+        "capacity": {
+          "block-size": "2304",
+          "compilation_config": "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}",
+          "eager": false,
+          "gpu-memory-utilization": "0.6329",
+          "graph_cap": "32",
+          "max-model-len": "1048576",
+          "max-num-batched-tokens": "8192",
+          "max-num-seqs": "4",
+          "num-gpu-blocks-override": "1056",
+          "prefix_cache": true
+        },
+        "endpoint": {
+          "host": "127.0.0.1",
+          "port": "18000"
+        },
+        "parallelism": {
+          "command_sha256": "3c9f16952a0fb086a4135830664001c1ae8610ca11f535c7214bed9b9e669423",
+          "enabled": false,
+          "nnodes": 4,
+          "node_rank": 2,
+          "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+          "schema": 1,
+          "serve_argv_sha256": "7d8678ae55a06bd70e987fc68f623653b82f74ddeeec539fb3a53b276afbd02d",
+          "serve_argv_without_ep_sha256": "7d8678ae55a06bd70e987fc68f623653b82f74ddeeec539fb3a53b276afbd02d",
+          "source": "container-launch-script",
+          "tensor_parallel_size": 4
+        }
+      },
+      "container_id": "c626dd9ae0a8ae1806153062e7f996d9ab0a68678414e7ceda96dfd95a16e22c",
+      "environment_allowlist": {
+        "VLLM_B12X_EP_COMPACT": null,
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_PREFILL_SP": "1",
+        "VLLM_GLM53_PREFILL_SP_FP8": "3",
+        "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "0",
+        "VLLM_GLM53_SPEC_K": "5",
+        "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
+      },
+      "host_config_allowlist": {
+        "DeviceRequests": [
+          {
+            "Capabilities": [
+              [
+                "gpu"
+              ]
+            ],
+            "Count": -1,
+            "DeviceIDs": null,
+            "Driver": "",
+            "Options": {}
+          }
+        ],
+        "IpcMode": "host",
+        "Memory": 120259084288,
+        "MemorySwap": 120259084288,
+        "NanoCpus": 0,
+        "NetworkMode": "host",
+        "Privileged": false,
+        "Runtime": "runc",
+        "ShmSize": 34359738368
+      },
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "inspect_original_sha256": "ae9b07a18c9625464756464e7a86b5b866efdfbaa64f534c3af43bc22ef26be5",
+      "inspect_source_path": "/tmp/glm53-ep-onepass-0909-2/live-B1/10.10.10.3.inspect.json",
+      "mounts": [
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/fp8_lm_head.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/parallel_state.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_ar.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_rank_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prep_fused.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_multimodal.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_model.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/zz_deneb_boot_stamps.pth",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm47_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_scale.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kpool_indexer.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/glmlogs",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-logs",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/mtp.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/cuda_communicator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/deneb_boot_stamps.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_lab_middleware.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kv_cache_coordinator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dflash_early_fc.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dev_lab.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_mla_sparse_sm90.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dflash_utils.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/cache",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-cache",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_shim.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v4.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/gpu_worker.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_fp8_dense.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/dflash2-draft",
+          "RW": false,
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_decode_first.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_gated_tiled.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/prof",
+          "RW": true,
+          "Source": "/home/choiceoh/vllm-prof",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_drafter_prep.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill_n128.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/spec_decode_rejection_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v5.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_indexer_gate.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_startup_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sampler.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dispatch.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sparse_attn_indexer_kpool.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_bproj.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/qwen3_dflash2.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_renderer_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_chat.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_draft_dump.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_ep_local.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/glm-5.3-flash-nvfp4",
+          "RW": false,
+          "Source": "/home/choiceoh/models/glm53-redhat-nvfp4",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang_kernels.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_micro_kernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_common.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_attention.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_fastpath.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_gate_sm121.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_ep_route_remap.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/chunk_delta_h.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_collectives.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/async_llm.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_sf_pack.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kda_onepass.py",
+          "Type": "bind"
+        }
+      ],
+      "raw_cmd_sha256": "4b0d682cecf6138cb2388f1cc4b83b5cb96820a954294d93b6c8abef4782499f",
+      "raw_environment_sha256": "b7e6e5bd4b9f1aca3af2166728e546b9397ddb6b7372cec0b3a10abacb01c652",
+      "raw_host_config_sha256": "21dd70ce279ca12e5d8ec1174f861e84376e931f5277345ca4de6dda83bacd8a",
+      "raw_mounts_sha256": "c18f756380ea62dea97f28614f4353ad5ad765de2e00015abc37ca241a71d71b",
+      "running_at_snapshot": true,
+      "started_at": "2026-09-08T16:57:30.844392061Z"
+    },
+    "10.10.10.4": {
+      "configured_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "configured_launch": {
+        "capacity": {
+          "block-size": "2304",
+          "compilation_config": "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}",
+          "eager": false,
+          "gpu-memory-utilization": "0.6329",
+          "graph_cap": "32",
+          "max-model-len": "1048576",
+          "max-num-batched-tokens": "8192",
+          "max-num-seqs": "4",
+          "num-gpu-blocks-override": "1056",
+          "prefix_cache": true
+        },
+        "endpoint": {
+          "host": "127.0.0.1",
+          "port": "18000"
+        },
+        "parallelism": {
+          "command_sha256": "bdfa0aca33851764e2f1cf87be95f6b135053cc117a240922f5ee087d8212844",
+          "enabled": false,
+          "nnodes": 4,
+          "node_rank": 3,
+          "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+          "schema": 1,
+          "serve_argv_sha256": "bc81b3a2236cf9720b546100b3d5770154a3b3ccd3620d690a9f303a3c16284f",
+          "serve_argv_without_ep_sha256": "bc81b3a2236cf9720b546100b3d5770154a3b3ccd3620d690a9f303a3c16284f",
+          "source": "container-launch-script",
+          "tensor_parallel_size": 4
+        }
+      },
+      "container_id": "b5a4ab80beffe7b382389cf8ba20c555da3b45128443ccc44ff6e170f31b09e6",
+      "environment_allowlist": {
+        "VLLM_B12X_EP_COMPACT": null,
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_PREFILL_SP": "1",
+        "VLLM_GLM53_PREFILL_SP_FP8": "3",
+        "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "0",
+        "VLLM_GLM53_SPEC_K": "5",
+        "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
+      },
+      "host_config_allowlist": {
+        "DeviceRequests": [
+          {
+            "Capabilities": [
+              [
+                "gpu"
+              ]
+            ],
+            "Count": -1,
+            "DeviceIDs": null,
+            "Driver": "",
+            "Options": {}
+          }
+        ],
+        "IpcMode": "host",
+        "Memory": 120259084288,
+        "MemorySwap": 120259084288,
+        "NanoCpus": 0,
+        "NetworkMode": "host",
+        "Privileged": false,
+        "Runtime": "runc",
+        "ShmSize": 34359738368
+      },
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "inspect_original_sha256": "d2eb5b8822ca3402642ecdfa33a0b3fa2c472e79052b92037411c4fb9a33ccd7",
+      "inspect_source_path": "/tmp/glm53-ep-onepass-0909-2/live-B1/10.10.10.4.inspect.json",
+      "mounts": [
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/gpu_worker.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_bproj.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_ar.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill_n128.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/fp8_lm_head.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_fastpath.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_sf_pack.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_gated_tiled.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/chunk_delta_h.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/async_llm.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kda_onepass.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_decode_first.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/cache",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-cache",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm47_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dispatch.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v5.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/deneb_boot_stamps.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_micro_kernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_indexer_gate.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_model.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/mtp.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_ep_local.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_mla_sparse_sm90.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_attention.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dflash_early_fc.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_startup_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/cuda_communicator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_multimodal.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/parallel_state.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sampler.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_renderer_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_shim.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/qwen3_dflash2.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/prof",
+          "RW": true,
+          "Source": "/home/choiceoh/vllm-prof",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_scale.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_lab_middleware.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/glmlogs",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-logs",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_rank_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_drafter_prep.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prep_fused.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_fp8_dense.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/dflash2-draft",
+          "RW": false,
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dflash_utils.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/zz_deneb_boot_stamps.pth",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/spec_decode_rejection_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_common.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_chat.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v4.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang_kernels.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_draft_dump.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_ep_route_remap.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dev_lab.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kpool_indexer.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_collectives.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_gate_sm121.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/glm-5.3-flash-nvfp4",
+          "RW": false,
+          "Source": "/home/choiceoh/models/glm53-redhat-nvfp4",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sparse_attn_indexer_kpool.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kv_cache_coordinator.py",
+          "Type": "bind"
+        }
+      ],
+      "raw_cmd_sha256": "cbfd363daa9a0a04f10951d7d47887d3d8f287090b75f01557746974398899a7",
+      "raw_environment_sha256": "4b2906ff982a48c7c55ea7a3fba2894608cf1e70c836b6b438d70e4ba2f3331d",
+      "raw_host_config_sha256": "b5cff045ae5e029d1286046c012967f084c95d590d82626ede0997455b7b913d",
+      "raw_mounts_sha256": "247d1434e6e007c9c8a78497f9ef6b8d5c9e842f128fab24b28990a77b0fbdd6",
+      "running_at_snapshot": true,
+      "started_at": "2026-09-08T16:57:30.91863434Z"
+    },
+    "local": {
+      "configured_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "configured_launch": {
+        "capacity": {
+          "block-size": "2304",
+          "compilation_config": "{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"custom_ops\":[\"all\"],\"pass_config\":{\"fuse_gemm_comms\":true,\"fuse_allreduce_rms\":true,\"fuse_attn_quant\":true}}",
+          "eager": false,
+          "gpu-memory-utilization": "0.6329",
+          "graph_cap": "32",
+          "max-model-len": "1048576",
+          "max-num-batched-tokens": "8192",
+          "max-num-seqs": "4",
+          "num-gpu-blocks-override": "1056",
+          "prefix_cache": true
+        },
+        "endpoint": {
+          "host": "127.0.0.1",
+          "port": "18000"
+        },
+        "parallelism": {
+          "command_sha256": "137d7012cd91814f73f3f5ed5b3490fe1718bad7745e8fa8d79ced4b7a89a31f",
+          "enabled": false,
+          "nnodes": 4,
+          "node_rank": 0,
+          "prelude_sha256": "b2215fa9047c25f25acf816d9f030fb6b00d63ead76bb70f7ab2965253879bc3",
+          "schema": 1,
+          "serve_argv_sha256": "a16da54d7e8510e767c11ad80b3638d113b9d90d766b92b9265ebad2c923e244",
+          "serve_argv_without_ep_sha256": "a16da54d7e8510e767c11ad80b3638d113b9d90d766b92b9265ebad2c923e244",
+          "source": "container-launch-script",
+          "tensor_parallel_size": 4
+        }
+      },
+      "container_id": "91415da35412e460a687083f44df0a5535a96f25d41857a47a5a72ebf3287a76",
+      "environment_allowlist": {
+        "VLLM_B12X_EP_COMPACT": null,
+        "VLLM_GLM53_EP_PREFILL_LOCAL": "0",
+        "VLLM_GLM53_PREFILL_SP": "1",
+        "VLLM_GLM53_PREFILL_SP_FP8": "3",
+        "VLLM_GLM53_PREFILL_SP_FP8_MIN_TOKENS": "4096",
+        "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE": "0",
+        "VLLM_GLM53_SPEC_K": "5",
+        "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
+      },
+      "host_config_allowlist": {
+        "DeviceRequests": [
+          {
+            "Capabilities": [
+              [
+                "gpu"
+              ]
+            ],
+            "Count": -1,
+            "DeviceIDs": null,
+            "Driver": "",
+            "Options": {}
+          }
+        ],
+        "IpcMode": "host",
+        "Memory": 120259084288,
+        "MemorySwap": 120259084288,
+        "NanoCpus": 0,
+        "NetworkMode": "host",
+        "Privileged": false,
+        "Runtime": "runc",
+        "ShmSize": 34359738368
+      },
+      "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "inspect_original_sha256": "73ba3428b3b35c149a6f30fc6de117c27797b95feb78cfcbb8f9f73b00fe480a",
+      "inspect_source_path": "/tmp/glm53-ep-onepass-0909-2/live-B1/local.inspect.json",
+      "mounts": [
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fp8_lm_head.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/fp8_lm_head.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/zz_deneb_boot_stamps.pth",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/zz_deneb_boot_stamps.pth",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/deneb_boot_stamps.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/glm53_prefill_collectives.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_collectives.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/moe_gate_sm121.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_gate_sm121.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_sf_pack.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_sf_pack.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/sample/sampler.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sampler.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_mla_sparse_sm90.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/mla/indexer.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kpool_indexer.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_draft_dump.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_draft_dump.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/cuda_communicator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/cuda_communicator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dispatch.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_dflash_early_fc.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dflash_early_fc.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_fp8_dense.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_fp8_dense.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/chunk_delta_h.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/chunk_delta_h.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v5.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v5.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_shim.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_shim.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_kda_onepass.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_kda_onepass.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/kv_cache_coordinator.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kv_cache_coordinator.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/sparse_attn_indexer_kpool.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_micro_kernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_micro_kernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_drafter_prep.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_drafter_prep.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_megakernel.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang_kernels.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang_kernels.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/mtp.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/mtp.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/async_llm.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/dflash2-draft",
+          "RW": false,
+          "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_scale.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_scale.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_prefill_n128.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_prefill_n128.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/multimodal.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_multimodal.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prep_fused.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prep_fused.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/glmlogs",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-logs",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/models/glm-5.3-flash-nvfp4",
+          "RW": false,
+          "Source": "/home/choiceoh/models/glm53-redhat-nvfp4",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash/utils.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dflash_utils.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/sched/glm53_decode_first.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_decode_first.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/third_party/flash_linear_attention/ops/kda.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/kda.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/cache",
+          "RW": true,
+          "Source": "/home/choiceoh/glm53-cache",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/dsv4_oneshot_ar.cu",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/dsv4_oneshot_ar.cu",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/qwen3_dflash2.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel_v4.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_kernel_v4.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_dev_lab.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_dev_lab.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/prof",
+          "RW": true,
+          "Source": "/home/choiceoh/vllm-prof",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_indexer_gate.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_indexer_gate.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_common.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_static_common.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_rank_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_gated_tiled.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_gated_tiled.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/glm53_ep_route_remap.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_ep_route_remap.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/mhc/tilelang.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/tilelang.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/glm53_prefill_fastpath.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_prefill_fastpath.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/moe_dynamic_ep_local.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm47_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_model.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_nvfp4_bproj.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_nvfp4_bproj.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_lab_middleware.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_lab_middleware.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/attention.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm5next_attention.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/flashinfer_b12x_moe.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/flashinfer_b12x_moe.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/spec_decode_rejection_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/spec_decode_rejection_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_renderer_warmup.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_startup_cache.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/glm53_chat.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/glm53_chat.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/gpu_worker.py",
+          "Type": "bind"
+        },
+        {
+          "Destination": "/usr/local/lib/python3.12/dist-packages/vllm/distributed/parallel_state.py",
+          "RW": false,
+          "Source": "/home/choiceoh/overlays/glm53/parallel_state.py",
+          "Type": "bind"
+        }
+      ],
+      "raw_cmd_sha256": "6f25808c8c8e8c74d4f4b0937579ea7f962400ab631c25552e119a621aa32136",
+      "raw_environment_sha256": "acc016cccbc006c673a695b032fa371459ff6b0e8a7e676e009a4b2689ef6d6e",
+      "raw_host_config_sha256": "8e79ff09d00a0bfce99ea9b142ec459f9943443120c6a31dd941eb902635f7b1",
+      "raw_mounts_sha256": "1bce44f301b628b8dfe9c8a7fa8079b539292bc57eba16760e1822350db51a1e",
+      "running_at_snapshot": true,
+      "started_at": "2026-09-08T16:57:31.64011646Z"
+    }
+  },
+  "scope": "B1 configured launch bound to saved live container IDs; not candidate completion or mounted-content attestation"
+}

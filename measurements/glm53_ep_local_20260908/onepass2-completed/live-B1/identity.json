@@ -1,0 +1,30 @@
+{
+  "local": {
+    "container_id": "91415da35412e460a687083f44df0a5535a96f25d41857a47a5a72ebf3287a76",
+    "started_at": "2026-09-08T16:57:31.64011646Z",
+    "running": true,
+    "log_sha256": "935810562baa8266bff10c340963fe98b47139a3dba5f7e13732bf7ede0ef171",
+    "sample_time": 1788886949.781364
+  },
+  "10.10.10.1": {
+    "container_id": "290655f0885cc89c79cd25e381aaeb4d32ad5631a52b10d729b8e50b11824cc7",
+    "started_at": "2026-09-08T16:57:30.939399261Z",
+    "running": true,
+    "log_sha256": "e1bdb1d4afb46035fc8e764c293ff798546ae95416cc579cb8e5372081687169",
+    "sample_time": 1788886950.7449815
+  },
+  "10.10.10.3": {
+    "container_id": "c626dd9ae0a8ae1806153062e7f996d9ab0a68678414e7ceda96dfd95a16e22c",
+    "started_at": "2026-09-08T16:57:30.844392061Z",
+    "running": true,
+    "log_sha256": "1c49108559ab95cf7b1b783de4cf8f0d597dfc02368e3e96a34947fa2061760e",
+    "sample_time": 1788886950.440923
+  },
+  "10.10.10.4": {
+    "container_id": "b5a4ab80beffe7b382389cf8ba20c555da3b45128443ccc44ff6e170f31b09e6",
+    "started_at": "2026-09-08T16:57:30.91863434Z",
+    "running": true,
+    "log_sha256": "1cf5d16fc464c62dac177b94e3cafc39ad3f01cc4188517f335dfd7ec9bcfdc6",
+    "sample_time": 1788886950.4885256
+  }
+}

@@ -1,0 +1,21 @@
+# Onepass2: baseline measured, candidate boot failed
+
+Canonical onepass session `eplocalonepass0909v2b`, ticket `17888866281269839`, ran on 2026-09-09 from 01:57:09 to 02:06:58 KST. Source was `ac2f188392bc76f1194f8eee7be9b0dfbec346f5`, overlay `7c4c8ce88b69`. B1 completed five actual requests; A failed before health and its first request; B2 did not run. **There is no candidate tok/s, matched speedup verdict, or full-model acceptance.** Earlier submission attempts and archives remain unchanged.
+
+| B1 context | Actual prompt tokens | First TTFT | First prompt tok/s | Warm TTFT | Warm prompt tok/s |
+|---|---:|---:|---:|---:|---:|
+| 2K | 2,121 first; 2,128 warm | 2.386 s | 889.0 | 0.880 s | 2,417.2 |
+| 32K | 32,545 | 10.731 s | 3,032.9 | — | — |
+| 128K | 128,559 | 41.602 s | 3,090.2 | — | — |
+
+These are `requests[].prompt_tokens / ttft_s`, including request handling and time to first streamed output. The untouched onepass aggregate prints 892 for 2K cold because it uses the final request's 2,128 tokens instead of that first request's 2,121. Warm 2K is the faster of the two subsequent requests; 32K/128K each have one combined request, so their duplicated aggregate warm fields are not independent samples. Prefix caching was enabled and `cold_compile=true`; these are canonical first-after-boot observations, not cache-cleared or steady-state measurements.
+
+B1 quality was **9/9**, Korean anomalies **0/5**, with no reported traffic issues. Decode median was **22.789 steps/s**, speculative acceptance **49.375%**, and **3.469 tokens/step** at k=5; steps/s is not token throughput. Per-request output rates and original counters remain in `onepass.jsonl` and `summary.json`.
+
+The private B1 snapshots bind four container IDs/start times to their saved logs. `controls-sanitized.json` records TP4/4 nodes, EP off/local off, common SP1/FP8 v3/min4096, maximum length 1,048,576, sequences 4, batched tokens 8,192, 1,056 blocks of 2,304, GMU 0.6329, prefix caching, graph cap 32, and exact `FULL_DECODE_ONLY` compilation JSON. The submitted command retains KV_TOKENS=2,000,000/KV_HYBRID_BLOCKS=187 and CG_UTIL_DELTA=0. B1's actual estimator application and skip-unused-profile variables were both 0. Image, selected HostConfig fields, mount paths, and hashes bind the saved configuration; they do not attest later mutable overlay contents. Raw Docker inspect/Cmd/Env remains private outside the repository.
+
+A began boot at 02:02:41. All four ranks logged EP-local `LAUNCHED full-token E72/I2048/top8 T=8192` during the dummy model profile (02:05:59–02:06:03), not serving traffic. Graph memory profiling then reached 25% after the fixed-decode path reported 192 pairs/24 micro calls. The first fatal in the head log, line 575, is a segfault in `CUDACachingAllocator::synchronize_and_free_events` → `release_cached_blocks` → `emptyCache`. The preceding Python stack is a watchdog sample, not an exception. Peer TCPStore/NCCL resets follow head death. No OOM or explicit CUDA illegal-access line appears in the four saved logs; the underlying cause remains unresolved. The normal runner aborted at 02:06:58.
+
+`fleet-show.json` records payload/outer rc=1, a finished ticket, and a dead supervisor. Exact session release lines are retained. Recovery was deferred to the central idle controller under the current policy; this archive does not claim that the failed experiment itself completed public restoration. `fleet-status.txt` is a later collection-time snapshot and may show other work.
+
+Collection used read-only SSH file reads plus normal `fleet.sh show ... --ticket ... --json` and `fleet.sh status`; exact commands, source paths, capture time, and hashes are in `provenance.json`. All 23 original files were read twice before transfer and rehashed remotely afterward. The four failure logs exactly match the earlier local capture. Logs use deterministic gzip (`mtime=0`): decompression reproduces the original bytes/SHA recorded in provenance. `SHA256SUMS.json` covers every stored file except itself. Session-only fleet excerpts identify their selection and full original-file hash. Existing archives were not edited; no tests, GPU requests, services, or queue mutations were performed for collection.

@@ -1,0 +1,119 @@
+{
+  "algorithm": "SHA-256",
+  "files": {
+    "README.md": {
+      "bytes": 4234,
+      "sha256": "3f8739221fcf8df36712158dbaabaeb5cb60a0377667377bef5c958bf20eea6c"
+    },
+    "boot-B1.log.gz": {
+      "bytes": 17615,
+      "sha256": "30ccea8e29656a05e0190b841c16ca42fe768a116401ec95645e559c7dec1175"
+    },
+    "candidate-failure/glm53.log.10.10.10.1.gz": {
+      "bytes": 10939,
+      "sha256": "77795ce271bd5ca578451a77f4189324a5c36ceb87a3799bd662b583a26c7697"
+    },
+    "candidate-failure/glm53.log.10.10.10.3.gz": {
+      "bytes": 10994,
+      "sha256": "00c9017d25b3037ae49931e19625a19e2e6059910cf09090f76326addd2d0f77"
+    },
+    "candidate-failure/glm53.log.10.10.10.4.gz": {
+      "bytes": 10853,
+      "sha256": "92c4f4b016331a9f3ca3a4b5bf76d2f4fcdfd979a521d9b51e7c79203a244d54"
+    },
+    "candidate-failure/glm53.log.srv2.gz": {
+      "bytes": 15128,
+      "sha256": "f828117ceea502f619a96f6f7ff57c96235ec394c16ca53c1690e79838275815"
+    },
+    "controls-sanitized.json": {
+      "bytes": 79810,
+      "sha256": "87a79f210e6e5dd216b98830b46ec2e025b19400264f657c88bdd392ac455ecf"
+    },
+    "fleet-events.log": {
+      "bytes": 146,
+      "sha256": "0c7fdcf3e53f209f7a7e914e2e8d303675b34539ac522917291231991659720c"
+    },
+    "fleet-lifecycle.jsonl": {
+      "bytes": 1196,
+      "sha256": "27048b369b16ca1c0e440f80908d15e9dff2cbe9ada4418ce449b9a12441a48c"
+    },
+    "fleet-release.txt": {
+      "bytes": 309,
+      "sha256": "ee58165d3308f6eb6647f67aa98f58c974a02ce1cf9f5845ba1409895fae4752"
+    },
+    "fleet-show.json": {
+      "bytes": 2349,
+      "sha256": "3103888a75b70475920264041e9f25d213371485f4eb8e5df341c86bb1ea5bd2"
+    },
+    "fleet-status.txt": {
+      "bytes": 1307,
+      "sha256": "732f0202328dc2b386fdf6ea6d466f8fa9c67d130e9736ce17589a2d46ad6df9"
+    },
+    "launch.json": {
+      "bytes": 1869,
+      "sha256": "3f44ddffc92994054be9f93c29f0f99f2a05f132fee5f90f39c8bc70578c3b92"
+    },
+    "launch.log.gz": {
+      "bytes": 4047,
+      "sha256": "4e3d9e9abc8f74f1beba33c5758e1abb553b81dca4aaef20e1a33b8728987fb1"
+    },
+    "live-B1/10.10.10.1.log.gz": {
+      "bytes": 11618,
+      "sha256": "c5beda377f01a0fdb7977e87ac1a6e452075da7790b3a4f1b360cbff5614c6e1"
+    },
+    "live-B1/10.10.10.3.log.gz": {
+      "bytes": 11635,
+      "sha256": "00b078a0a24109053aab98177cdd9cbea670ed2bc1cedd20b57032f89a4b0a0e"
+    },
+    "live-B1/10.10.10.4.log.gz": {
+      "bytes": 11787,
+      "sha256": "9925a990b2358423f527e0b79bf9e9ea3fe7aa334eb18c749a382f7ee02b1be8"
+    },
+    "live-B1/identity.json": {
+      "bytes": 1226,
+      "sha256": "24ba21b4cae52185b87a567c1a66c6f535667ccf9d59c94f8b8b066b514c2eb0"
+    },
+    "live-B1/local.log.gz": {
+      "bytes": 17446,
+      "sha256": "7f3e4bec9bc1f70200bf5d69c8204fe36f9f797519d50a4f5a576c147d2e703b"
+    },
+    "onepass.jsonl": {
+      "bytes": 26016,
+      "sha256": "9afd09db4a233c9a8f03dc318263d1305dc0b4a3093fa33a17746fb42ce8c2fa"
+    },
+    "pending.json": {
+      "bytes": 2787,
+      "sha256": "f71d832883dba4527a6832075a4cb87fabe153bace8832399ff4c913f0da4994"
+    },
+    "provenance.json": {
+      "bytes": 12458,
+      "sha256": "bb1392739265ba967e021741aa897b5e5fdd2ead0410b9f7f19c52122fb9b0fe"
+    },
+    "run.log.gz": {
+      "bytes": 3249,
+      "sha256": "dfa82ee5ff8f818b8617d6c642c3bb6a57cfac3a6acd57b6e2cff69c52c8c87b"
+    },
+    "submission-retry.json": {
+      "bytes": 1972,
+      "sha256": "62a829dfc16964524bbfe1f47e05800ffa3735051597b00d546e4675a2cb043b"
+    },
+    "submission-v2a.json": {
+      "bytes": 1974,
+      "sha256": "17d11c363766be423b1cb20c8283ef786e63a7143a06bf84df1aee7ff2448fb6"
+    },
+    "submission-v2b.json": {
+      "bytes": 1956,
+      "sha256": "fae48f4fad44a5c37624c931af24b35a57f321966546c353e25742cee16184e1"
+    },
+    "submission.json": {
+      "bytes": 1972,
+      "sha256": "5a7b0bad05316886255e433e1b185537793be4e14f7471ef48a63669186436d3"
+    },
+    "summary.json": {
+      "bytes": 2408,
+      "sha256": "47b9de412c419c37fbee8145c3587b780f4ea629908fd8af6da7bfee85d31ccc"
+    }
+  },
+  "schema": 1,
+  "scope": "all stored files except SHA256SUMS.json"
+}
