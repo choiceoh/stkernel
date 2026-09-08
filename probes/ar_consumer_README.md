@@ -73,7 +73,7 @@ canonical supervisor:
 
 ```bash
 REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu \
-  arconsumer0908v1 70 'AR/MHC consumer preparation: numerics then C1 B/A/B' -- \
+  arconsumer0908v1 70 'AR/MHC consumer preparation: numerics then C1 A/B/B' -- \
   bash probes/run_ar_consumer_campaign.sh
 ```
 
@@ -82,6 +82,15 @@ containers stop on failure. It stops its loopback serving before releasing
 the hold so public-port admission cannot mistake it for an unfinished boot.
 The fleet supervisor owns approved-main recovery
 or a validated transfer to the next boot job.
+
+If all 15 GPU stages finished but deployment or serving did not, pass
+`--gpu-evidence /absolute/prior/run/gpu` to the campaign. The verifier requires
+unchanged overlay, build, profile, GPU probe and oracle sources, the same image,
+all numerical cases, and successful sanitizer/container receipts. It copies
+the verified bytes and records their hashes and both source commits. Missing
+or changed evidence stops before serving is touched. Deployment CPU validation
+still runs during fleet preparation, and every serving arm obtains fresh runtime
+and graph-capture proof.
 
 The probe first uses a deliberately delayed producer, then the real four-node
 RDMA AllReduce. Peers receive a committed source archive in a fresh directory

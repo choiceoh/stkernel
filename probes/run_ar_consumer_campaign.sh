@@ -3,6 +3,11 @@
 set -euo pipefail
 export REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
+gpu_evidence=
+if (( $# )); then
+  [[ $# == 2 && $1 == --gpu-evidence ]] || { echo 'usage: run_ar_consumer_campaign.sh [--gpu-evidence DIR]'; exit 2; }
+  gpu_evidence=$2
+fi
 session=${FLEET_SESSION:?}
 [[ ${FLEET_RESTORE_MANAGED:-0} == 1 ]] || { echo 'supervised boot hold required'; exit 2; }
 IFS='|' read -r held _pid _host _start _est _note kind < /home/choiceoh/glm53-logs/fleet/holder
@@ -13,6 +18,12 @@ export AR_CONSUMER_OUT=${AR_CONSUMER_OUT:-/home/choiceoh/glm53-logs/ARCONSUMER-$
 [[ ! -e $AR_CONSUMER_OUT ]] || { echo 'fresh evidence required'; exit 2; }
 mkdir -p "$AR_CONSUMER_OUT"
 git rev-parse HEAD > "$AR_CONSUMER_OUT/source.commit"
+if [[ -n $gpu_evidence ]]; then
+  # Reuse requires every stage, exact source/profile identity, numerical
+  # cases, and clean sanitizer/container receipts before touching serving.
+  python3 probes/reuse_ar_consumer_gpu_evidence.py "$gpu_evidence" "$AR_CONSUMER_OUT/gpu" \
+    > "$AR_CONSUMER_OUT/gpu-reuse.json"
+fi
 stop_serving() {
   python3 - <<'PY'
 from concurrent.futures import ThreadPoolExecutor
@@ -59,7 +70,9 @@ done
 # The fleet supervisor owns recovery, including early exits and queue handoff.
 touched=1
 stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1
-python3 probes/run_ar_consumer_gpu.py --out "$AR_CONSUMER_OUT/gpu"
+if [[ -z $gpu_evidence ]]; then
+  python3 probes/run_ar_consumer_gpu.py --out "$AR_CONSUMER_OUT/gpu"
+fi
 bash launchers/deploy-overlays.sh glm53 > "$AR_CONSUMER_OUT/deploy.log" 2>&1
 export FLEET=/home/choiceoh/stkernel/bench/fleet.sh LEVER=$REPO/probes/ar_consumer_lever.sh
 export GLM53_API_HOST=127.0.0.1 GLM53_API_PORT=18000 HEAD=127.0.0.1

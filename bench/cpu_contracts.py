@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against 306511a: only the actual consumer weight note,
-# PDL release count and occupancy expectation differ from upstream.
+# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
+# and the standalone MHC normalized-weight call contract differ from upstream.
 # The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'c22d38d06f153f2577809702f2f9213aadd55b8a46b1ee423de12d69819a30d0'
+LOGIC_AUDIT = 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
