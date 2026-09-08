@@ -95,7 +95,7 @@ restore the previous geometry.
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x`(서빙은 `-it` 태그, 4노드 ID 일치 요구) | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
 | 모듈 수 | 18 | **14**(34차 묶음 8 + 39차 프리픽스 캐시 + 40차 spec-state·router-gemm·draft-noise·dynamic-k·fly; 접기 전 25) | 1 |
-| 오버레이 파일 | 23 | **79** | 2 |
+| 오버레이 파일 | 23 | **77** | 2 |
 | 기본 노브 | 노브 전부 off 가 기준선 | **메가커널 세트**(`MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1, `MK_KDA`=0) + 드래프터 W4 (28차 §8) + `MK_PDL`(27차 프로브, PR #290 — 종단 수치는 아직 없다) | — |
 
 `glm53` 의 기본값이 곧 브래킷된 cand 구성이다 — 그래서 A/B 의 base 팔은
@@ -132,7 +132,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `glm53_prefix_cache` | 하이브리드 KV 프리픽스 캐시 조정자 수정(39차; 스톡은 이 레이아웃에서 히트 0). 기본값 `PREFIX_CACHE=1`(같은 접두사 재질문 92~99.6% 재사용, warm 수용률 = cold) | 1 | — | · | ● | · |
 | `glm53_spec_state` | 폐기된 async 스텝이 `num_accepted_tokens=0` 을 써서 상태 슬롯이 `-1` 로 인덱싱되는 것 차단(vLLM #51508). 빌더가 stale 행 슬롯을 `NULL_BLOCK_ID` 로 null + count clamp, 커널 3곳은 인덱스 clamp. 노브 없음 — 실패 형태가 조용한 출력 오염이라 기본 on | 3 | 일부 | · | ● | · |
 | `glm53_router_gemm` | family-120 이 배제된 cuBLAS out_dtype 라우터 티어 복원(vLLM #54048). `VLLM_GLM53_ROUTER_CUBLAS_F120=1` 로만 무장 — 켜면 `moe_gate_sm121` 의 M≤32 융합 게이트가 스스로 무장을 거부한다. 이미지별 `gate_linear.py` 가 달라 `moe_gate_sm121` 과 한 모듈이 될 수 없다 | 1 | — | · | ● | · |
-| `glm53_draft_noise` | 드래프트의 Gumbel 노이즈 스트림을 타깃의 Philox 오프셋에서 분리(vLLM #54282). 기각된 제안을 재샘플하는 노이즈가 그 제안을 만든 것과 바이트 동일이라 잔여 분포가 draft 상위 토큰을 과소가중 → 출력이 타깃 분포가 아님. `draft_sample_method=probabilistic` 전용이고 이 프로필이 그것 = 해당됨. 노브 없음 | 7 | 일부 | · | ● | · |
+| `glm53_draft_noise` | 드래프트의 Gumbel 노이즈 스트림을 타깃의 Philox 오프셋에서 분리(vLLM #54282). 기각된 제안을 재샘플하는 노이즈가 그 제안을 만든 것과 바이트 동일이라 잔여 분포가 draft 상위 토큰을 과소가중 → 출력이 타깃 분포가 아님. `draft_sample_method=probabilistic` 전용이고 이 프로필이 그것 = 해당됨. 노브 없음 | 5 | 일부 | · | ● | · |
 | `glm53_dynamic_k` | 시퀀스 길이별 드래프트 예산 스케줄(vLLM #54801). 배치 최장 시퀀스가 어느 구간이냐로 K 를 고른다 — 검증 비용이 L 에 비례하므로 장문에서 K 를 0 까지 내릴 수 있다. `SPEC_K_SEQLEN` 미설정이면 경로 전체가 무동작 | 5 | ● | · | ● | · |
 | `glm53_fly` | 엔트로피 게이트 지연 검증(vLLM #53987, arXiv 2511.22972). 첫 기각에서 창을 통째로 버리는 대신, 뒤가 다 맞는 모호한 위치에서는 draft 에 양보한다. `block` 의 근사판이라 **품질이 관문** — `REJECT_METHOD=fly` 로만 무장, 기본은 `block` | 3 | ● | · | ● | · |
 | `deepseek_reasoning` | 모델 전용 | 1 | — | ● | · | · |

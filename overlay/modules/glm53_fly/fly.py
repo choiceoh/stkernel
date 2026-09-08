@@ -15,16 +15,15 @@ import torch
 from vllm.triton_utils import tl, triton
 
 
-def _entropy_top_k() -> int:
-    """deneb fork: upstream registers this knob in the process env contract.
-
-    Overlaying that module to add one key would put a 2,321-line copy of every
-    other default under this repo's re-sync burden, and a stale copy after an
-    image bump would silently revert all of them. The knob is read here
-    instead, same name and same default; the launcher forwards it like any
-    other profile-declared VLLM_* key.
-    """
-    return int(os.getenv("VLLM_FLY_ENTROPY_TOP_K", "3"))
+# deneb fork: upstream registers this knob in the process env contract.
+# Overlaying that module to add one key would put a 2,321-line copy of every
+# other default under this repo's re-sync burden, and a stale copy after an
+# image bump would silently revert all of them. The knob is read here instead,
+# same name and same default; the launcher forwards it like any other
+# profile-declared VLLM_* key. Latched at import, not read per call: this
+# repo hoists hot-path env lookups to init time, and compute_fly_entropy runs
+# once per decode step.
+_ENTROPY_TOP_K = int(os.getenv("VLLM_FLY_ENTROPY_TOP_K", "3"))
 
 
 def compute_fly_entropy(
@@ -37,7 +36,7 @@ def compute_fly_entropy(
     if values.shape[-1] == 0:
         raise ValueError("FLy requires a non-empty target vocabulary")
 
-    entropy_top_k = _entropy_top_k()
+    entropy_top_k = _ENTROPY_TOP_K
     if entropy_top_k <= 0:
         raise ValueError("VLLM_FLY_ENTROPY_TOP_K must be greater than zero")
     top_k = min(entropy_top_k, values.shape[-1])

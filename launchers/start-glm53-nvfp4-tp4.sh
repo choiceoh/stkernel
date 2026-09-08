@@ -572,12 +572,36 @@ elif [ "$DFLASH2" = 1 ]; then
   #   SPEC_K_SEQLEN='[[0,131071,5],[131072,1048576,0]]'
   # Unset = static SPEC_K, which is the default. No whitespace: the value rides
   # the same unquoted -e mechanism the profile guard exists for.
-  case "${SPEC_K_SEQLEN:-}" in
-    "" ) ;;
-    *[[:space:]]* ) echo "ABORT: SPEC_K_SEQLEN must not contain whitespace"; exit 1 ;;
-    \[*\] ) _spec_extra="$_spec_extra,\"num_speculative_tokens_per_seq_len\":$SPEC_K_SEQLEN" ;;
-    * ) echo "ABORT: SPEC_K_SEQLEN must be a JSON list of [start,end,k] triples, got '$SPEC_K_SEQLEN'"; exit 1 ;;
-  esac
+  if [ -n "${SPEC_K_SEQLEN:-}" ]; then
+    case "$SPEC_K_SEQLEN" in
+      *[[:space:]]* ) echo "ABORT: SPEC_K_SEQLEN must not contain whitespace"; exit 1 ;;
+    esac
+    # Shape alone is not enough: '[]' is valid JSON and would leave
+    # uses_dynamic_speculative_decoding() true with an empty schedule, which
+    # empties the decode-query-length union and captures NO decode CUDA graphs
+    # at all -- silently, under cudagraph_mode FULL_DECODE_ONLY. Validate the
+    # whole thing here rather than letting a typo reach vLLM after a 4-node
+    # docker run, the same contract the REJECT_METHOD gate above keeps.
+    if ! _seqlen_err=$(python3 -c '
+import json, sys
+try:
+    schedule = json.loads(sys.argv[1])
+except ValueError as exc:
+    raise SystemExit(f"not JSON: {exc}")
+if not isinstance(schedule, list) or not schedule:
+    raise SystemExit("must be a NON-EMPTY list of [start,end,k] triples")
+for entry in schedule:
+    if (not isinstance(entry, list) or len(entry) != 3
+            or any(isinstance(x, bool) or not isinstance(x, int) for x in entry)):
+        raise SystemExit(f"entry {entry!r} is not three integers [start,end,k]")
+    start, end, k = entry
+    if start < 0 or end < start or k < 0:
+        raise SystemExit(f"entry {entry!r} wants 0 <= start <= end and k >= 0")
+' "$SPEC_K_SEQLEN" 2>&1); then
+      echo "ABORT: SPEC_K_SEQLEN is not a valid schedule ($_seqlen_err): $SPEC_K_SEQLEN"; exit 1
+    fi
+    _spec_extra="$_spec_extra,\"num_speculative_tokens_per_seq_len\":$SPEC_K_SEQLEN"
+  fi
   case "${REJECT_METHOD:-}" in
     "" ) ;;
     standard|block|fly )

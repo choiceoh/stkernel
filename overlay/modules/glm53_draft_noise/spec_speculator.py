@@ -344,7 +344,7 @@ class DraftModelSpeculator(BaseSpeculator):
     def sample_draft(
         self,
         hidden_states: torch.Tensor,
-        sample_src_positions: torch.Tensor,
+        positions: torch.Tensor,
         idx_mapping: torch.Tensor,
         temperature: torch.Tensor,
         seeds: torch.Tensor,
@@ -353,13 +353,24 @@ class DraftModelSpeculator(BaseSpeculator):
     ) -> torch.Tensor:
         if draft_logits is not None:
             logits = self.model.compute_logits(hidden_states)
+            # NOTE(woosuk): We must add 1 to the positions to match the Gumbel noise
+            # used for draft and target sampling.
             return gumbel_sample(
                 logits,
                 idx_mapping,
                 temperature,
                 seeds,
-                sample_src_positions,
+                positions + 1,
                 apply_temperature=True,
+                # deneb fork (vLLM #54282): this is a draft's own draw, so it
+                # must not share the target's Philox offsets. The upstream PR
+                # also renamed this parameter and moved the +1 to every caller;
+                # that rename is deliberately NOT taken here -- it would force
+                # this repo to vendor the autoregressive and multi-module-MTP
+                # speculators (2,064 lines it never runs) just to keep their
+                # call sites honest, and it buys nothing: stock dflash already
+                # passes sample_pos-2, which is the corrected key once this
+                # function adds the 1 back.
                 is_drafting=True,
                 logits_cache=draft_logits,
                 logits_cache_col=draft_step,

@@ -23,7 +23,23 @@ from .op import exp, log
         "IS_SPEC_DECODING": lambda args: args["num_accepted_tokens"] is not None,
     }
 )
-@triton.jit(do_not_specialize=["N", "T"])
+@triton.jit(
+    do_not_specialize=[
+        "N",
+        "T",
+        # deneb fork (vLLM #55736): runtime strides, deliberately unspecialized.
+        # As tl.constexpr every distinct stride would compile its own kernel,
+        # and this caller feeds two layouts (token-strided slices of the merged
+        # conv output, and contiguous copies on the index_select path), so the
+        # matrix would widen exactly where this fleet pays for it -- new shapes
+        # JIT serially inside the worker at ~1 min apiece.
+        "stride_q_token",
+        "stride_k_token",
+        "stride_v_token",
+        "stride_g_token",
+        "stride_beta_token",
+    ]
+)
 def fused_recurrent_gated_delta_rule_fwd_kernel(
     q,
     k,
@@ -58,11 +74,11 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     # within a token.  Making them contiguous first costs one copy kernel per
     # tensor per layer per step.  A contiguous caller passes H * K / HV * V /
     # HV (etc.) and gets exactly the previous addresses.
-    stride_q_token: tl.constexpr,
-    stride_k_token: tl.constexpr,
-    stride_v_token: tl.constexpr,
-    stride_g_token: tl.constexpr,
-    stride_beta_token: tl.constexpr,
+    stride_q_token,
+    stride_k_token,
+    stride_v_token,
+    stride_g_token,
+    stride_beta_token,
     USE_INITIAL_STATE: tl.constexpr,  # whether to use initial state
     INPLACE_FINAL_STATE: tl.constexpr,  # whether to store final state inplace
     IS_BETA_HEADWISE: tl.constexpr,  # whether beta is headwise vector or scalar,

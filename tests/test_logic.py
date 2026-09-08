@@ -6165,6 +6165,14 @@ def test_launcher_reject_method_gate() -> None:
     for _m in ("standard", "block", "fly"):
         check(f"{_m}|" in text or f"|{_m} )" in text,
               f"REJECT_METHOD={_m} must be an accepted arm")
+    # SPEC_K_SEQLEN carries the same contract, and shape alone does not keep it:
+    # "[]" is valid JSON that leaves uses_dynamic_speculative_decoding() true
+    # with an empty schedule, which captures no decode CUDA graphs at all.
+    check("SPEC_K_SEQLEN is not a valid schedule" in text,
+          "SPEC_K_SEQLEN must be validated in the launcher, not by vLLM")
+    check("NON-EMPTY list of [start,end,k] triples" in text,
+          "an empty SPEC_K_SEQLEN schedule must abort, not silently disable "
+          "decode graph capture")
     names = _launcher_caller_passthrough(text)
     check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
           "both drafter knobs must be in the caller passthrough list -- a "

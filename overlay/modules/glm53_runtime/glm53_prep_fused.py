@@ -310,6 +310,7 @@ def _glm53_prep_fused_kernel(
     NS: tl.constexpr,
     NS_P2: tl.constexpr,
     G: tl.constexpr,
+    NULL_STALE_SLOTS: tl.constexpr,
     N_GDN: tl.constexpr,
     ATTN_G: tl.constexpr,
     FACTOR: tl.constexpr,
@@ -411,6 +412,13 @@ def _glm53_prep_fused_kernel(
     # row's state slots (NULL_BLOCK_ID == 0) so the kernels skip both the
     # initial-state read and the final-state write, and clamp the count.
     nacc_raw = tl.load(num_accepted_ptr + rs)
+    # In align mode the stock pre-copy runs AFTER this kernel and can raise a
+    # migrated request's count from 0 to 1, so the staleness decision made here
+    # would be wrong and _glm53_regather_nacc_kernel -- which can only null,
+    # never restore -- could not undo it. There, leave the true slots in place
+    # and let the regather decide from the post-copy count. Everywhere else no
+    # regather follows, so this kernel is the only place the rule can be
+    # applied.
     nacc_stale = nacc_raw == 0
     nacc = tl.maximum(nacc_raw, 1)
     start_col = tl.maximum((seq_len - 1) // mamba_block, 0)
@@ -419,7 +427,8 @@ def _glm53_prep_fused_kernel(
         dst = _load_ptr(dst_bt_ptrs + gm, tl.int32)
         stride = tl.load(bt_strides + gm)
         st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)
-        st = tl.where(nacc_stale, 0, st)  # NULL_BLOCK_ID
+        if NULL_STALE_SLOTS:
+            st = tl.where(nacc_stale, 0, st)  # NULL_BLOCK_ID
         sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
         ss = tl.load(gdn_state_strides + k)
         tl.store(sp + r * ss + soffs, st, mask=smask)
@@ -490,9 +499,12 @@ def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs
     pre-copy kernel may have reset a migrated request's count to 1.
 
     deneb fork (vLLM #51508): the re-gathered count can be 0 for a row whose
-    sampled tokens were discarded, and the main kernel decided its state slots
-    from the PRE-align count, so the staleness rule has to be re-applied here
-    against the value the recurrent kernels will actually read."""
+    sampled tokens were discarded. In align mode the main kernel deliberately
+    leaves the true slots in place (NULL_STALE_SLOTS=False) because the pre-copy
+    between the two kernels can still raise a 0 to 1, so this is the only place
+    the rule is applied -- and because the slots it reads are the real ones,
+    nulling here is reversible in the sense that matters: a live row keeps its
+    slots instead of inheriting a null this kernel could not undo."""
     offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < num_reqs
     slots = tl.load(idx_mapping_ptr + offs, mask=mask, other=0)
@@ -667,7 +679,8 @@ class PrepPlan:
     def _consts(self) -> dict[str, int]:
         return dict(
             Q=self.q, Q_P2=self.q_p2, NUM_SPEC=self.num_spec, NS=self.num_spec + 1, NS_P2=self.ns_p2,
-            G=self.G, N_GDN=len(self.gdn_groups), ATTN_G=self.attn_g,
+            G=self.G, NULL_STALE_SLOTS=not self.align_mode,
+            N_GDN=len(self.gdn_groups), ATTN_G=self.attn_g,
             FACTOR=self.factor, RATIO=self.ratio, SBS=self.sbs,
             PAD_ID=PAD_SLOT_ID, BLOCK=_BLOCK,
         )

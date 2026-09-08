@@ -236,7 +236,9 @@ def gumbel_sample(
     seed: torch.Tensor,  # [max_num_reqs]
     pos: torch.Tensor,  # [num_tokens]
     apply_temperature: bool,
-    is_drafting: bool,
+    # Defaults to the target's stream: a caller that has not been taught about
+    # the split is, by construction, not drafting.
+    is_drafting: bool = False,
     logits_cache: torch.Tensor | None = None,  # [max_num_reqs, num_cols, vocab_size]
     logits_cache_col: torch.Tensor | None = None,  # scalar or [num_tokens]
     use_fp64: bool = False,

@@ -420,11 +420,12 @@ def fused_recurrent_kda_fwd(
     # stride.  For a contiguous tensor these are exactly the H * K / HV * V /
     # HV * K / HV values the kernel used to hard-code, so the addresses -- and
     # the output -- are unchanged; a token-strided view is now also legal.
-    for _name, _t in (("q", q), ("k", k), ("v", v), ("g", g), ("beta", beta)):
-        assert _glm53_kda_addressable(_t), (
-            f"fused_recurrent_kda: {_name} is not addressable with a per-token "
-            f"stride (shape={tuple(_t.shape)}, stride={_t.stride()})"
-        )
+    # No re-validation here: fused_recurrent_kda is the entry point and its
+    # _glm53_kda_input has already either accepted an addressable view or made
+    # the tensor contiguous, so checking again would cost five more Python
+    # calls per KDA layer per decode step (~340 a step across 34 layers) in the
+    # module whose sibling change exists to remove kernel launches -- and an
+    # `assert` would vanish under `python -O` anyway.
     stride_q_token = q.stride(1)
     stride_k_token = k.stride(1)
     stride_v_token = v.stride(1)
