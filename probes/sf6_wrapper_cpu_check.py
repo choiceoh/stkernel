@@ -34,6 +34,8 @@ def main():
     with ExitStack() as context:
         context.enter_context(patch.object(torch.cuda, 'is_available', return_value=True))
         context.enter_context(patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)))
+        context.enter_context(patch.object(torch.cuda, 'get_device_properties',
+            return_value=SimpleNamespace(multi_processor_count=48, major=12, minor=1)))
         context.enter_context(patch.object(torch.cuda, '_lazy_init', side_effect=AssertionError('CPU gate initialized CUDA')))
         wrapper_module = importlib.import_module('flashinfer.fused_moe.cute_dsl.b12x_moe')
         dispatch = importlib.import_module('flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_dispatch')
