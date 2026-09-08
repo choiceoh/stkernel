@@ -1,0 +1,15 @@
+{
+  "scope": "separate local composition and core checks before freezing CPU11; host Torch skips remain in original log",
+  "core": {
+    "checks": 6795,
+    "megakernel_regressions": 38,
+    "fleet_regressions": 0,
+    "exit_code": 0,
+    "sha256": "f5a7ace35e2635fdb66ddd0ad3b83b07403787f5c80766fa2d9e068327b9ee86"
+  },
+  "compose": {
+    "exit_code": 0,
+    "sha256": "529c826bebdf0d283148daac0d2ce4c130942a40bd74a4c6e064f4ab426c354d"
+  },
+  "gpu_execution": false
+}

@@ -1,0 +1,72 @@
+test_admission_wins_during_preflight_and_edit_cannot_change_payload (test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload) ... FAIL
+test_closed_dead_reused_and_legacy_waiters_are_rejected (test_fleet_pending.PendingTests.test_closed_dead_reused_and_legacy_waiters_are_rejected) ... ok
+test_concurrent_editor_wins_without_lost_update (test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update) ... FAIL
+test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers (test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers) ... ERROR
+test_experiment_payload_cannot_bypass_snapshot_but_note_can_change (test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change) ... ok
+test_failed_preflight_invalid_metadata_and_empty_command_keep_original (test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original) ... ok
+test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write) ... ERROR
+
+======================================================================
+ERROR: test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers (test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/tests/test_fleet_pending.py", line 37, in test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers
+    result = pending.edit(self.root, 'mine', command=['new', '$literal', 'a b'],
+             ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          note='수정된 실험', estimate=7, expected=1)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/bench/fleet_pending.py", line 218, in edit
+    updated['prepare_manifest'] = str(fleet_prepare.prepare(directory, session,
+                                      ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+        updated['command'], updated['cwd'], spec_path=prepared.get('spec_path'), fleet=updated['fleet']))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/bench/fleet_prepare.py", line 199, in prepare
+    raise ValueError('executable missing: ' + exe)
+ValueError: executable missing: new
+
+======================================================================
+ERROR: test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/tests/test_fleet_pending.py", line 108, in test_holder_metadata_reads_committed_record_after_interrupted_queue_write
+    pending.edit(self.root, 'mine', command=['new'], estimate=9, note='new note')
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/bench/fleet_pending.py", line 218, in edit
+    updated['prepare_manifest'] = str(fleet_prepare.prepare(directory, session,
+                                      ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+        updated['command'], updated['cwd'], spec_path=prepared.get('spec_path'), fleet=updated['fleet']))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/bench/fleet_prepare.py", line 199, in prepare
+    raise ValueError('executable missing: ' + exe)
+ValueError: executable missing: new
+
+======================================================================
+FAIL: test_admission_wins_during_preflight_and_edit_cannot_change_payload (test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload)
+----------------------------------------------------------------------
+ValueError: executable missing: too-late
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/tests/test_fleet_pending.py", line 66, in test_admission_wins_during_preflight_and_edit_cannot_change_payload
+    with self.assertRaisesRegex(ValueError, 'already admitted'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "already admitted" does not match "executable missing: too-late"
+
+======================================================================
+FAIL: test_concurrent_editor_wins_without_lost_update (test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update)
+----------------------------------------------------------------------
+ValueError: executable missing: stale
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/ost/.worktrees/stkernel2/glm53-fleet-restore-test-env-20260908/tests/test_fleet_pending.py", line 74, in test_concurrent_editor_wins_without_lost_update
+    with self.assertRaisesRegex(ValueError, 'changed during preflight'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "changed during preflight" does not match "executable missing: stale"
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.053s
+
+FAILED (failures=2, errors=2)

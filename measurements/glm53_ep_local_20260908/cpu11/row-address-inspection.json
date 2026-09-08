@@ -1,0 +1,1953 @@
+{
+  "schema": 1,
+  "created_at_utc": "2026-09-08T09:33:03.360557+00:00",
+  "verdict": "PASS",
+  "scope": "CPU10 versus CPU11 physical-row allocator PTX; static compiler evidence only",
+  "counting_rule": "Count PTX instruction statements after the expert_tile_base global load and before the first physical-row byte-offset mul.wide; comments, loads, atomics and subsequent addressing excluded.",
+  "before": {
+    "version": 10,
+    "revision": "a9d0d1e3e8161ee44eac02191021ea9512a3e2cc",
+    "ptx_gz_path": "measurements/glm53_ep_local_20260908/cpu10/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+    "decompressed_ptx_sha256": "e9069f2712a21cec7ab6ef08b316794c2abfeff15dfb161296a774fb8c2f079c",
+    "receipt_sha256_match": true,
+    "blocks": [
+      {
+        "ordinal": 1,
+        "atomic": {
+          "line": 628,
+          "text": "atom.global.add.s32 %r902, [%rd64], %r903;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r902",
+        "expert_base_load": {
+          "line": 631,
+          "text": "ld.global.b32 \t%r910, [%rd68];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r910",
+        "physical_row_register": "%r906",
+        "physical_row_arithmetic": [
+          {
+            "line": 632,
+            "text": "shr.s32 \t%r911, %r902, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 633,
+            "text": "shr.u32 \t%r912, %r911, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 634,
+            "text": "add.s32 \t%r913, %r902, %r912;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 635,
+            "text": "and.b32 \t%r914, %r913, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 636,
+            "text": "setp.ne.b32 \t%p83, %r902, %r914;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 637,
+            "text": "setp.lt.s32 \t%p84, %r902, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 638,
+            "text": "and.pred \t%p85, %p84, %p83;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 639,
+            "text": "selp.b32 \t%r915, -1, 0, %p85;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 640,
+            "text": "shr.u32 \t%r916, %r913, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 641,
+            "text": "add.s32 \t%r917, %r910, %r916;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 642,
+            "text": "add.s32 \t%r918, %r917, %r915;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 643,
+            "text": "shl.b32 \t%r919, %r918, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 644,
+            "text": "sub.s32 \t%r920, %r902, %r914;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 645,
+            "text": "add.s32 \t%r906, %r919, %r920;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 646,
+            "text": "mul.wide.s32 \t%rd69, %r906, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 647,
+            "text": "add.s64 \t%rd65, %rd13, %rd69;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 649,
+            "text": "st.global.s32 [%rd65], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 651,
+            "text": "add.s64 \t%rd66, %rd14, %rd69;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 653,
+            "text": "st.global.f32 [%rd66], %r904;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 655,
+            "text": "add.s32 \t%r921, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 656,
+            "text": "shl.b32 \t%r922, %r921, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 657,
+            "text": "add.s32 \t%r905, %r922, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 659,
+            "text": "st.shared.s32 [%r905], %r906;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 2,
+        "atomic": {
+          "line": 682,
+          "text": "atom.global.add.s32 %r924, [%rd70], %r925;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r924",
+        "expert_base_load": {
+          "line": 685,
+          "text": "ld.global.b32 \t%r932, [%rd74];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r932",
+        "physical_row_register": "%r928",
+        "physical_row_arithmetic": [
+          {
+            "line": 686,
+            "text": "shr.s32 \t%r933, %r924, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 687,
+            "text": "shr.u32 \t%r934, %r933, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 688,
+            "text": "add.s32 \t%r935, %r924, %r934;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 689,
+            "text": "and.b32 \t%r936, %r935, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 690,
+            "text": "setp.ne.b32 \t%p89, %r924, %r936;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 691,
+            "text": "setp.lt.s32 \t%p90, %r924, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 692,
+            "text": "and.pred \t%p91, %p90, %p89;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 693,
+            "text": "selp.b32 \t%r937, -1, 0, %p91;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 694,
+            "text": "shr.u32 \t%r938, %r935, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 695,
+            "text": "add.s32 \t%r939, %r932, %r938;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 696,
+            "text": "add.s32 \t%r940, %r939, %r937;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 697,
+            "text": "shl.b32 \t%r941, %r940, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 698,
+            "text": "sub.s32 \t%r942, %r924, %r936;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 699,
+            "text": "add.s32 \t%r928, %r941, %r942;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 700,
+            "text": "mul.wide.s32 \t%rd75, %r928, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 701,
+            "text": "add.s64 \t%rd71, %rd13, %rd75;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 703,
+            "text": "st.global.s32 [%rd71], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 705,
+            "text": "add.s64 \t%rd72, %rd14, %rd75;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 707,
+            "text": "st.global.f32 [%rd72], %r926;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 709,
+            "text": "add.s32 \t%r943, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 710,
+            "text": "shl.b32 \t%r944, %r943, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 711,
+            "text": "add.s32 \t%r927, %r944, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 713,
+            "text": "st.shared.s32 [%r927], %r928;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 3,
+        "atomic": {
+          "line": 736,
+          "text": "atom.global.add.s32 %r946, [%rd76], %r947;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r946",
+        "expert_base_load": {
+          "line": 739,
+          "text": "ld.global.b32 \t%r954, [%rd80];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r954",
+        "physical_row_register": "%r950",
+        "physical_row_arithmetic": [
+          {
+            "line": 740,
+            "text": "shr.s32 \t%r955, %r946, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 741,
+            "text": "shr.u32 \t%r956, %r955, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 742,
+            "text": "add.s32 \t%r957, %r946, %r956;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 743,
+            "text": "and.b32 \t%r958, %r957, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 744,
+            "text": "setp.ne.b32 \t%p95, %r946, %r958;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 745,
+            "text": "setp.lt.s32 \t%p96, %r946, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 746,
+            "text": "and.pred \t%p97, %p96, %p95;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 747,
+            "text": "selp.b32 \t%r959, -1, 0, %p97;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 748,
+            "text": "shr.u32 \t%r960, %r957, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 749,
+            "text": "add.s32 \t%r961, %r954, %r960;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 750,
+            "text": "add.s32 \t%r962, %r961, %r959;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 751,
+            "text": "shl.b32 \t%r963, %r962, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 752,
+            "text": "sub.s32 \t%r964, %r946, %r958;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 753,
+            "text": "add.s32 \t%r950, %r963, %r964;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 754,
+            "text": "mul.wide.s32 \t%rd81, %r950, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 755,
+            "text": "add.s64 \t%rd77, %rd13, %rd81;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 757,
+            "text": "st.global.s32 [%rd77], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 759,
+            "text": "add.s64 \t%rd78, %rd14, %rd81;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 761,
+            "text": "st.global.f32 [%rd78], %r948;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 763,
+            "text": "add.s32 \t%r965, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 764,
+            "text": "shl.b32 \t%r966, %r965, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 765,
+            "text": "add.s32 \t%r949, %r966, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 767,
+            "text": "st.shared.s32 [%r949], %r950;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 4,
+        "atomic": {
+          "line": 790,
+          "text": "atom.global.add.s32 %r968, [%rd82], %r969;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r968",
+        "expert_base_load": {
+          "line": 793,
+          "text": "ld.global.b32 \t%r976, [%rd86];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r976",
+        "physical_row_register": "%r972",
+        "physical_row_arithmetic": [
+          {
+            "line": 794,
+            "text": "shr.s32 \t%r977, %r968, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 795,
+            "text": "shr.u32 \t%r978, %r977, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 796,
+            "text": "add.s32 \t%r979, %r968, %r978;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 797,
+            "text": "and.b32 \t%r980, %r979, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 798,
+            "text": "setp.ne.b32 \t%p101, %r968, %r980;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 799,
+            "text": "setp.lt.s32 \t%p102, %r968, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 800,
+            "text": "and.pred \t%p103, %p102, %p101;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 801,
+            "text": "selp.b32 \t%r981, -1, 0, %p103;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 802,
+            "text": "shr.u32 \t%r982, %r979, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 803,
+            "text": "add.s32 \t%r983, %r976, %r982;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 804,
+            "text": "add.s32 \t%r984, %r983, %r981;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 805,
+            "text": "shl.b32 \t%r985, %r984, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 806,
+            "text": "sub.s32 \t%r986, %r968, %r980;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 807,
+            "text": "add.s32 \t%r972, %r985, %r986;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 808,
+            "text": "mul.wide.s32 \t%rd87, %r972, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 809,
+            "text": "add.s64 \t%rd83, %rd13, %rd87;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 811,
+            "text": "st.global.s32 [%rd83], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 813,
+            "text": "add.s64 \t%rd84, %rd14, %rd87;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 815,
+            "text": "st.global.f32 [%rd84], %r970;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 817,
+            "text": "add.s32 \t%r987, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 818,
+            "text": "shl.b32 \t%r988, %r987, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 819,
+            "text": "add.s32 \t%r971, %r988, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 821,
+            "text": "st.shared.s32 [%r971], %r972;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 5,
+        "atomic": {
+          "line": 857,
+          "text": "atom.global.add.s32 %r991, [%rd89], %r992;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r991",
+        "expert_base_load": {
+          "line": 860,
+          "text": "ld.global.b32 \t%r999, [%rd93];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r999",
+        "physical_row_register": "%r995",
+        "physical_row_arithmetic": [
+          {
+            "line": 861,
+            "text": "shr.s32 \t%r1000, %r991, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 862,
+            "text": "shr.u32 \t%r1001, %r1000, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 863,
+            "text": "add.s32 \t%r1002, %r991, %r1001;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 864,
+            "text": "and.b32 \t%r1003, %r1002, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 865,
+            "text": "setp.ne.b32 \t%p110, %r991, %r1003;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 866,
+            "text": "setp.lt.s32 \t%p111, %r991, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 867,
+            "text": "and.pred \t%p112, %p111, %p110;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 868,
+            "text": "selp.b32 \t%r1004, -1, 0, %p112;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 869,
+            "text": "shr.u32 \t%r1005, %r1002, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 870,
+            "text": "add.s32 \t%r1006, %r999, %r1005;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 871,
+            "text": "add.s32 \t%r1007, %r1006, %r1004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 872,
+            "text": "shl.b32 \t%r1008, %r1007, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 873,
+            "text": "sub.s32 \t%r1009, %r991, %r1003;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 874,
+            "text": "add.s32 \t%r995, %r1008, %r1009;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 875,
+            "text": "mul.wide.s32 \t%rd94, %r995, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 876,
+            "text": "add.s64 \t%rd90, %rd13, %rd94;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 878,
+            "text": "st.global.s32 [%rd90], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 880,
+            "text": "add.s64 \t%rd91, %rd14, %rd94;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 882,
+            "text": "st.global.f32 [%rd91], %r993;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 884,
+            "text": "add.s32 \t%r1010, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 885,
+            "text": "shl.b32 \t%r1011, %r1010, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 886,
+            "text": "add.s32 \t%r994, %r1011, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 888,
+            "text": "st.shared.s32 [%r994], %r995;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 6,
+        "atomic": {
+          "line": 911,
+          "text": "atom.global.add.s32 %r1013, [%rd95], %r1014;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r1013",
+        "expert_base_load": {
+          "line": 914,
+          "text": "ld.global.b32 \t%r1021, [%rd99];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r1021",
+        "physical_row_register": "%r1017",
+        "physical_row_arithmetic": [
+          {
+            "line": 915,
+            "text": "shr.s32 \t%r1022, %r1013, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 916,
+            "text": "shr.u32 \t%r1023, %r1022, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 917,
+            "text": "add.s32 \t%r1024, %r1013, %r1023;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 918,
+            "text": "and.b32 \t%r1025, %r1024, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 919,
+            "text": "setp.ne.b32 \t%p116, %r1013, %r1025;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 920,
+            "text": "setp.lt.s32 \t%p117, %r1013, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 921,
+            "text": "and.pred \t%p118, %p117, %p116;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 922,
+            "text": "selp.b32 \t%r1026, -1, 0, %p118;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 923,
+            "text": "shr.u32 \t%r1027, %r1024, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 924,
+            "text": "add.s32 \t%r1028, %r1021, %r1027;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 925,
+            "text": "add.s32 \t%r1029, %r1028, %r1026;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 926,
+            "text": "shl.b32 \t%r1030, %r1029, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 927,
+            "text": "sub.s32 \t%r1031, %r1013, %r1025;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 928,
+            "text": "add.s32 \t%r1017, %r1030, %r1031;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 929,
+            "text": "mul.wide.s32 \t%rd100, %r1017, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 930,
+            "text": "add.s64 \t%rd96, %rd13, %rd100;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 932,
+            "text": "st.global.s32 [%rd96], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 934,
+            "text": "add.s64 \t%rd97, %rd14, %rd100;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 936,
+            "text": "st.global.f32 [%rd97], %r1015;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 938,
+            "text": "add.s32 \t%r1032, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 939,
+            "text": "shl.b32 \t%r1033, %r1032, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 940,
+            "text": "add.s32 \t%r1016, %r1033, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 942,
+            "text": "st.shared.s32 [%r1016], %r1017;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 7,
+        "atomic": {
+          "line": 973,
+          "text": "atom.global.add.s32 %r1036, [%rd104], %r1037;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r1036",
+        "expert_base_load": {
+          "line": 976,
+          "text": "ld.global.b32 \t%r1045, [%rd108];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r1045",
+        "physical_row_register": "%r1041",
+        "physical_row_arithmetic": [
+          {
+            "line": 977,
+            "text": "shr.s32 \t%r1046, %r1036, 31;",
+            "opcode": "shr.s32"
+          },
+          {
+            "line": 978,
+            "text": "shr.u32 \t%r1047, %r1046, 25;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 979,
+            "text": "add.s32 \t%r1048, %r1036, %r1047;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 980,
+            "text": "and.b32 \t%r1049, %r1048, -128;",
+            "opcode": "and.b32"
+          },
+          {
+            "line": 981,
+            "text": "setp.ne.b32 \t%p123, %r1036, %r1049;",
+            "opcode": "setp.ne.b32"
+          },
+          {
+            "line": 982,
+            "text": "setp.lt.s32 \t%p124, %r1036, 0;",
+            "opcode": "setp.lt.s32"
+          },
+          {
+            "line": 983,
+            "text": "and.pred \t%p125, %p124, %p123;",
+            "opcode": "and.pred"
+          },
+          {
+            "line": 984,
+            "text": "selp.b32 \t%r1050, -1, 0, %p125;",
+            "opcode": "selp.b32"
+          },
+          {
+            "line": 985,
+            "text": "shr.u32 \t%r1051, %r1048, 7;",
+            "opcode": "shr.u32"
+          },
+          {
+            "line": 986,
+            "text": "add.s32 \t%r1052, %r1045, %r1051;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 987,
+            "text": "add.s32 \t%r1053, %r1052, %r1050;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 988,
+            "text": "shl.b32 \t%r1054, %r1053, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 989,
+            "text": "sub.s32 \t%r1055, %r1036, %r1049;",
+            "opcode": "sub.s32"
+          },
+          {
+            "line": 990,
+            "text": "add.s32 \t%r1041, %r1054, %r1055;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 14,
+        "arithmetic_opcode_counts": {
+          "shr.s32": 1,
+          "shr.u32": 2,
+          "add.s32": 4,
+          "and.b32": 1,
+          "setp.ne.b32": 1,
+          "setp.lt.s32": 1,
+          "and.pred": 1,
+          "selp.b32": 1,
+          "shl.b32": 1,
+          "sub.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 991,
+            "text": "mul.wide.s32 \t%rd109, %r1041, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 992,
+            "text": "add.s64 \t%rd105, %rd13, %rd109;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 994,
+            "text": "st.global.s32 [%rd105], %r1038;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 996,
+            "text": "add.s64 \t%rd106, %rd14, %rd109;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 998,
+            "text": "st.global.f32 [%rd106], %r1039;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 1000,
+            "text": "add.s32 \t%r1056, %r13, %r17067;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 1001,
+            "text": "shl.b32 \t%r1057, %r1056, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 1002,
+            "text": "add.s32 \t%r1040, %r1057, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 1004,
+            "text": "st.shared.s32 [%r1040], %r1041;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      }
+    ],
+    "source_sha256": "35f6b8f9d4044eebbea983ae17d3ed25e88a2173959eb1fde48be381433e9fab"
+  },
+  "after": {
+    "version": 11,
+    "revision": "695274d9d4c62041dacaa4fcd0861ce9e357bd4b",
+    "ptx_gz_path": "measurements/glm53_ep_local_20260908/cpu11/local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx.gz",
+    "decompressed_ptx_sha256": "f4670451e10ffd170f243eddf11bb675d5c2f3d8b46877cbafc5014696b9ac90",
+    "receipt_sha256_match": true,
+    "blocks": [
+      {
+        "ordinal": 1,
+        "atomic": {
+          "line": 628,
+          "text": "atom.global.add.s32 %r902, [%rd64], %r903;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r902",
+        "expert_base_load": {
+          "line": 631,
+          "text": "ld.global.b32 \t%r910, [%rd68];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r910",
+        "physical_row_register": "%r906",
+        "physical_row_arithmetic": [
+          {
+            "line": 632,
+            "text": "shl.b32 \t%r911, %r910, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 633,
+            "text": "add.s32 \t%r906, %r911, %r902;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 634,
+            "text": "mul.wide.s32 \t%rd69, %r906, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 635,
+            "text": "add.s64 \t%rd65, %rd13, %rd69;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 637,
+            "text": "st.global.s32 [%rd65], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 639,
+            "text": "add.s64 \t%rd66, %rd14, %rd69;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 641,
+            "text": "st.global.f32 [%rd66], %r904;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 643,
+            "text": "add.s32 \t%r912, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 644,
+            "text": "shl.b32 \t%r913, %r912, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 645,
+            "text": "add.s32 \t%r905, %r913, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 647,
+            "text": "st.shared.s32 [%r905], %r906;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 2,
+        "atomic": {
+          "line": 670,
+          "text": "atom.global.add.s32 %r915, [%rd70], %r916;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r915",
+        "expert_base_load": {
+          "line": 673,
+          "text": "ld.global.b32 \t%r923, [%rd74];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r923",
+        "physical_row_register": "%r919",
+        "physical_row_arithmetic": [
+          {
+            "line": 674,
+            "text": "shl.b32 \t%r924, %r923, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 675,
+            "text": "add.s32 \t%r919, %r924, %r915;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 676,
+            "text": "mul.wide.s32 \t%rd75, %r919, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 677,
+            "text": "add.s64 \t%rd71, %rd13, %rd75;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 679,
+            "text": "st.global.s32 [%rd71], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 681,
+            "text": "add.s64 \t%rd72, %rd14, %rd75;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 683,
+            "text": "st.global.f32 [%rd72], %r917;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 685,
+            "text": "add.s32 \t%r925, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 686,
+            "text": "shl.b32 \t%r926, %r925, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 687,
+            "text": "add.s32 \t%r918, %r926, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 689,
+            "text": "st.shared.s32 [%r918], %r919;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 3,
+        "atomic": {
+          "line": 712,
+          "text": "atom.global.add.s32 %r928, [%rd76], %r929;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r928",
+        "expert_base_load": {
+          "line": 715,
+          "text": "ld.global.b32 \t%r936, [%rd80];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r936",
+        "physical_row_register": "%r932",
+        "physical_row_arithmetic": [
+          {
+            "line": 716,
+            "text": "shl.b32 \t%r937, %r936, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 717,
+            "text": "add.s32 \t%r932, %r937, %r928;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 718,
+            "text": "mul.wide.s32 \t%rd81, %r932, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 719,
+            "text": "add.s64 \t%rd77, %rd13, %rd81;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 721,
+            "text": "st.global.s32 [%rd77], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 723,
+            "text": "add.s64 \t%rd78, %rd14, %rd81;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 725,
+            "text": "st.global.f32 [%rd78], %r930;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 727,
+            "text": "add.s32 \t%r938, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 728,
+            "text": "shl.b32 \t%r939, %r938, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 729,
+            "text": "add.s32 \t%r931, %r939, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 731,
+            "text": "st.shared.s32 [%r931], %r932;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 4,
+        "atomic": {
+          "line": 754,
+          "text": "atom.global.add.s32 %r941, [%rd82], %r942;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r941",
+        "expert_base_load": {
+          "line": 757,
+          "text": "ld.global.b32 \t%r949, [%rd86];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r949",
+        "physical_row_register": "%r945",
+        "physical_row_arithmetic": [
+          {
+            "line": 758,
+            "text": "shl.b32 \t%r950, %r949, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 759,
+            "text": "add.s32 \t%r945, %r950, %r941;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 760,
+            "text": "mul.wide.s32 \t%rd87, %r945, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 761,
+            "text": "add.s64 \t%rd83, %rd13, %rd87;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 763,
+            "text": "st.global.s32 [%rd83], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 765,
+            "text": "add.s64 \t%rd84, %rd14, %rd87;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 767,
+            "text": "st.global.f32 [%rd84], %r943;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 769,
+            "text": "add.s32 \t%r951, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 770,
+            "text": "shl.b32 \t%r952, %r951, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 771,
+            "text": "add.s32 \t%r944, %r952, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 773,
+            "text": "st.shared.s32 [%r944], %r945;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 5,
+        "atomic": {
+          "line": 809,
+          "text": "atom.global.add.s32 %r955, [%rd89], %r956;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r955",
+        "expert_base_load": {
+          "line": 812,
+          "text": "ld.global.b32 \t%r963, [%rd93];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r963",
+        "physical_row_register": "%r959",
+        "physical_row_arithmetic": [
+          {
+            "line": 813,
+            "text": "shl.b32 \t%r964, %r963, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 814,
+            "text": "add.s32 \t%r959, %r964, %r955;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 815,
+            "text": "mul.wide.s32 \t%rd94, %r959, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 816,
+            "text": "add.s64 \t%rd90, %rd13, %rd94;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 818,
+            "text": "st.global.s32 [%rd90], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 820,
+            "text": "add.s64 \t%rd91, %rd14, %rd94;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 822,
+            "text": "st.global.f32 [%rd91], %r957;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 824,
+            "text": "add.s32 \t%r965, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 825,
+            "text": "shl.b32 \t%r966, %r965, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 826,
+            "text": "add.s32 \t%r958, %r966, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 828,
+            "text": "st.shared.s32 [%r958], %r959;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 6,
+        "atomic": {
+          "line": 851,
+          "text": "atom.global.add.s32 %r968, [%rd95], %r969;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r968",
+        "expert_base_load": {
+          "line": 854,
+          "text": "ld.global.b32 \t%r976, [%rd99];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r976",
+        "physical_row_register": "%r972",
+        "physical_row_arithmetic": [
+          {
+            "line": 855,
+            "text": "shl.b32 \t%r977, %r976, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 856,
+            "text": "add.s32 \t%r972, %r977, %r968;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 857,
+            "text": "mul.wide.s32 \t%rd100, %r972, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 858,
+            "text": "add.s64 \t%rd96, %rd13, %rd100;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 860,
+            "text": "st.global.s32 [%rd96], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 862,
+            "text": "add.s64 \t%rd97, %rd14, %rd100;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 864,
+            "text": "st.global.f32 [%rd97], %r970;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 866,
+            "text": "add.s32 \t%r978, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 867,
+            "text": "shl.b32 \t%r979, %r978, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 868,
+            "text": "add.s32 \t%r971, %r979, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 870,
+            "text": "st.shared.s32 [%r971], %r972;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      },
+      {
+        "ordinal": 7,
+        "atomic": {
+          "line": 901,
+          "text": "atom.global.add.s32 %r982, [%rd104], %r983;",
+          "opcode": "atom.global.add.s32"
+        },
+        "row_atomic_register": "%r982",
+        "expert_base_load": {
+          "line": 904,
+          "text": "ld.global.b32 \t%r991, [%rd108];",
+          "opcode": "ld.global.b32"
+        },
+        "expert_base_register": "%r991",
+        "physical_row_register": "%r987",
+        "physical_row_arithmetic": [
+          {
+            "line": 905,
+            "text": "shl.b32 \t%r992, %r991, 7;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 906,
+            "text": "add.s32 \t%r987, %r992, %r982;",
+            "opcode": "add.s32"
+          }
+        ],
+        "arithmetic_instruction_count": 2,
+        "arithmetic_opcode_counts": {
+          "shl.b32": 1,
+          "add.s32": 1
+        },
+        "downstream_address_and_stores": [
+          {
+            "line": 907,
+            "text": "mul.wide.s32 \t%rd109, %r987, 4;",
+            "opcode": "mul.wide.s32"
+          },
+          {
+            "line": 908,
+            "text": "add.s64 \t%rd105, %rd13, %rd109;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 910,
+            "text": "st.global.s32 [%rd105], %r984;",
+            "opcode": "st.global.s32"
+          },
+          {
+            "line": 912,
+            "text": "add.s64 \t%rd106, %rd14, %rd109;",
+            "opcode": "add.s64"
+          },
+          {
+            "line": 914,
+            "text": "st.global.f32 [%rd106], %r985;",
+            "opcode": "st.global.f32"
+          },
+          {
+            "line": 916,
+            "text": "add.s32 \t%r993, %r13, %r17004;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 917,
+            "text": "shl.b32 \t%r994, %r993, 2;",
+            "opcode": "shl.b32"
+          },
+          {
+            "line": 918,
+            "text": "add.s32 \t%r986, %r994, %r5;",
+            "opcode": "add.s32"
+          },
+          {
+            "line": 920,
+            "text": "st.shared.s32 [%r986], %r987;",
+            "opcode": "st.shared.s32"
+          }
+        ],
+        "downstream_instruction_count": 9,
+        "downstream_normal_form": [
+          "mul.wide.s32 R0, R1, 4;",
+          "add.s64 R2, R3, R0;",
+          "st.global.s32 [R2], R4;",
+          "add.s64 R5, R6, R0;",
+          "st.global.f32 [R5], R7;",
+          "add.s32 R8, R9, R10;",
+          "shl.b32 R11, R8, 2;",
+          "add.s32 R12, R11, R13;",
+          "st.shared.s32 [R12], R1;"
+        ]
+      }
+    ],
+    "source_sha256": "0ba6a5a5319a9576ed478ef3749dff7b075c4b5c7f088667ef75dfb08e0bb480"
+  },
+  "comparisons": [
+    {
+      "ordinal": 1,
+      "cpu10_lines": [
+        632,
+        645
+      ],
+      "cpu11_lines": [
+        632,
+        633
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 2,
+      "cpu10_lines": [
+        686,
+        699
+      ],
+      "cpu11_lines": [
+        674,
+        675
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 3,
+      "cpu10_lines": [
+        740,
+        753
+      ],
+      "cpu11_lines": [
+        716,
+        717
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 4,
+      "cpu10_lines": [
+        794,
+        807
+      ],
+      "cpu11_lines": [
+        758,
+        759
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 5,
+      "cpu10_lines": [
+        861,
+        874
+      ],
+      "cpu11_lines": [
+        813,
+        814
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 6,
+      "cpu10_lines": [
+        915,
+        928
+      ],
+      "cpu11_lines": [
+        855,
+        856
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    },
+    {
+      "ordinal": 7,
+      "cpu10_lines": [
+        977,
+        990
+      ],
+      "cpu11_lines": [
+        905,
+        906
+      ],
+      "cpu10_instruction_count": 14,
+      "cpu11_instruction_count": 2,
+      "removed_static_ptx_instructions": 12,
+      "cpu11_shift_is_base_times_128": true,
+      "cpu11_add_uses_original_atomic_row": true,
+      "following_nine_address_store_instructions_equivalent_under_register_renaming": true
+    }
+  ],
+  "summary": {
+    "first_two_before": 28,
+    "first_two_after": 4,
+    "first_two_removed": 24,
+    "all_seven_before": 98,
+    "all_seven_after": 14,
+    "all_seven_removed": 84,
+    "per_static_allocation_before": 14,
+    "per_static_allocation_after": 2,
+    "per_static_allocation_removed": 12
+  },
+  "dataflow": {
+    "expert_write_rows_parameter": 26,
+    "expert_tile_base_parameter": 27,
+    "token_map_parameter": 33,
+    "token_weights_parameter": 34,
+    "parameter_pointer_registers": {
+      "expert_write_rows": "%rd32",
+      "expert_tile_base": "%rd16",
+      "token_map": "%rd13",
+      "token_weights": "%rd14"
+    },
+    "token_index_definition": {
+      "cpu10_line": 596,
+      "cpu10": "add.s32 \t%r1038, %r897, %r3;",
+      "cpu11_line": 596,
+      "cpu11": "add.s32 \t%r984, %r897, %r3;"
+    },
+    "physical_row_expression_before": "(base + row // 128) * 128 + row % 128",
+    "physical_row_expression_after": "(base << 7) + row",
+    "following_byte_offset": "mul.wide.s32 physical_row, 4",
+    "route_shared_offset": "(route_slot_base + local_topk) << 2, then add route_phys_rows shared base"
+  },
+  "changed_compiler_sources": [
+    "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_ep_local.py"
+  ],
+  "limitations": [
+    "PTX counts are not SASS counts, instruction latency, GPU timing or TTFT evidence.",
+    "Seven sites are compiler unroll/tail clones of one source allocation; 84 is their summed static reduction, not an 84-instruction saving for each routed row.",
+    "Hash/REG/STACK/SHARED/total-size comparison is reported independently by the parent compiler inspection."
+  ]
+}

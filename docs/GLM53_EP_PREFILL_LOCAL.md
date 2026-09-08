@@ -107,15 +107,25 @@ no-device head lane. [CPU10](../measurements/glm53_ep_local_20260908/cpu10/READM
 binds the updated lifecycle contracts to the unchanged kernel. Its CuTe PTX
 and cubin match CPU9 exactly; REG168/STACK112/SHARED1024 are unchanged.
 
-The next source simplifies route allocation's physical-row address from
+Source `695274d9d4c62041dacaa4fcd0861ce9e357bd4b` simplifies route allocation's physical-row address from
 `(base + row / M) * M + row % M` to `base * M + row`. Both expressions address
 the same row within the expert's padded tile prefix. The CPU oracle executes
 the actual allocation expression across tile boundaries and balanced,
 concentrated, empty and tail histograms, checking overlap, padding and integer
 bounds. Route ordering, row-allocation atomics and barriers are unchanged.
 CPU9/10 PTX retained signed quotient/remainder correction instructions at
-this site; CPU11 must verify their elimination and resource usage before
-any compiler benefit is recorded. GPU performance remains unmeasured.
+this site. [CPU11](../measurements/glm53_ep_local_20260908/cpu11/README.md)
+passed all 63 pinned CPU contracts without skips plus actual CuTe and 24
+Triton compilations. REG168/STACK112/SHARED1024 are unchanged. CuTe PTX and
+cubin sizes fell from 958390/308384 to 955476/307264 bytes. GPU performance
+remains unmeasured.
+All seven unroll/tail allocator copies shrink from 14 PTX arithmetic
+instructions to two, removing 84 static instructions across the artifact.
+The following nine address/store instructions match at each site under
+register renaming; row atomics and base loads are unchanged. The
+[instruction trace](../measurements/glm53_ep_local_20260908/cpu11/row-address-inspection.md)
+binds every line to the two compilation receipts. These are not SASS or
+per-request execution counts.
 
 The preceding source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
 E72/I2048 CuTe compilation and 48 focused
@@ -204,6 +214,16 @@ boundary and normal restoration path are ready.
 [Submission evidence](../measurements/glm53_ep_local_20260908/binding_gpu_submission/README.md)
 keeps the pre-GPU failures and retry separate.
 
+The v4 restore CPU failure was reproduced as a test-fixture environment leak:
+the supervisor's FLEET_PREPARE_MANIFEST caused synthetic pending-job edits to
+prepare fake executables. The isolated fixture fix is in draft
+[PR #486](https://github.com/choiceoh/stkernel/pull/486). The same injected
+environment changed from two failures plus two errors among seven tests to
+eight passes without skips. This changes no runtime admission or restoration
+rule. [Reproduction evidence](../measurements/glm53_ep_local_20260908/restore_env_diagnostic/README.md)
+does not establish that approved main contains the fix or that live restoration
+has passed.
+
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
 The v4 CPU proof, mounted sources, raw logs, recovery and release records are
@@ -246,9 +266,11 @@ runner/test hashes require fresh source-bound CPU evidence before an EP GPU run;
 the earlier CPU8 receipt is not relabeled as validation of this change.
 After integrating PR #484, a local 35-test lifecycle/binding/local/sanitizer
 run had 31 passes and four existing host-Torch numerics skips, with no errors
-or failures. The 13 mounted MoE sources match CPU9; six runner/test contract
-files changed. This integration check does not replace fresh pinned evidence
-for the new probe contract. Its output and hashes are in serving_metadata.
+or failures. At that revision the 13 mounted MoE sources matched CPU9; six
+runner/test contract files had changed. Its output and hashes remain in
+serving_metadata. CPU10 subsequently supplied fresh pinned evidence for that
+lifecycle, and CPU11 covers the current row-address kernel and all 18 probe
+contract files with no skipped tests.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed

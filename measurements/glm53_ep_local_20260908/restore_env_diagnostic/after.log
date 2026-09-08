@@ -1,0 +1,13 @@
+test_supervisor_prepare_manifest_does_not_leak_into_synthetic_edit (test_fleet_pending.FixtureIsolationTests.test_supervisor_prepare_manifest_does_not_leak_into_synthetic_edit) ... ok
+test_admission_wins_during_preflight_and_edit_cannot_change_payload (test_fleet_pending.PendingTests.test_admission_wins_during_preflight_and_edit_cannot_change_payload) ... ok
+test_closed_dead_reused_and_legacy_waiters_are_rejected (test_fleet_pending.PendingTests.test_closed_dead_reused_and_legacy_waiters_are_rejected) ... ok
+test_concurrent_editor_wins_without_lost_update (test_fleet_pending.PendingTests.test_concurrent_editor_wins_without_lost_update) ... ok
+test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers (test_fleet_pending.PendingTests.test_edit_keeps_ticket_age_owner_neighbors_and_priority_markers) ... ok
+test_experiment_payload_cannot_bypass_snapshot_but_note_can_change (test_fleet_pending.PendingTests.test_experiment_payload_cannot_bypass_snapshot_but_note_can_change) ... ok
+test_failed_preflight_invalid_metadata_and_empty_command_keep_original (test_fleet_pending.PendingTests.test_failed_preflight_invalid_metadata_and_empty_command_keep_original) ... ok
+test_holder_metadata_reads_committed_record_after_interrupted_queue_write (test_fleet_pending.PendingTests.test_holder_metadata_reads_committed_record_after_interrupted_queue_write) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.019s
+
+OK
