@@ -24,9 +24,9 @@ FLEET_AUDIT = {'tests/test_fleet_cache_explain.py': '911f1bf7bc4678384dbb3851425
 
 
 # Complete logic/deployment gates read profile/module READMEs and the campaign
-# runbook, all retained by fleet_source. The eb379b15 MHC contract changes
-# retain the same file dependencies. Changed test or runner disables pruning.
-LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
+# runbook, all retained by fleet_source. The sf6 assertions and CUDA/header
+# marker discovery stay in that closure. Changed test or runner disables pruning.
+LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '444ff217cbc2695ed22288fb8b89b98e037e59d324d0d91617199e977070f265', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
 
 
 def sha(path):

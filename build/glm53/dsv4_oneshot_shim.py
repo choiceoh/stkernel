@@ -22,6 +22,7 @@ Modes (VLLM_DSV4_ONESHOT_SHADOW, default 1):
 """
 import hashlib
 import logging
+import math
 import os
 import shutil
 import time
@@ -60,6 +61,9 @@ _MAXEL = _resolve_maxel()
 _CONSUMER_PDL = (os.environ.get("VLLM_GLM53_AR_CONSUMER_PDL") == "1"
                  and os.environ.get("VLLM_GLM53_MK_PDL") == "1")
 _CONSUMER_CAPTURED = False
+_COMPACT_CTA = os.environ.get("VLLM_GLM53_AR_COMPACT_CTA") == "1"
+_PROXY_INLINE = os.environ.get("VLLM_GLM53_AR_PROXY_INLINE") == "1"
+_COMPACT_CAPTURED = False
 # No rank->IP table here. Which node holds which rank is the launcher's choice,
 # not a property of the fleet: hy4 orders its workers 10.10.10.3, 10.10.10.1,
 # 10.10.10.4 and the glm53 launcher orders them 10.10.10.1, 10.10.10.3,
@@ -76,6 +80,7 @@ _CONSUMER_CAPTURED = False
 # FileNotFoundError and the shim fell back to NCCL exactly as designed -- which
 # is why nothing looked wrong and this had never run on that image at all.
 _SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dsv4_oneshot_ar.cu")
+_TRANSPORT_HEADER = os.path.join(os.path.dirname(_SRC), "dsv4_oneshot_transport.h")
 
 
 def _flag(name, default):
@@ -158,8 +163,13 @@ def _build():
     # pre-#89 chain, 3 is #89, 1 is #90.
     import hashlib
 
-    with open(_SRC, "rb") as f:
-        _src_md5 = hashlib.md5(f.read()).hexdigest()[:8]
+    if _COMPACT_CTA and not _CONSUMER_PDL:
+        raise RuntimeError("AR_COMPACT_CTA requires AR_CONSUMER_PDL=1 and MK_PDL=1")
+    digest = hashlib.md5()
+    for source in (_SRC, _TRANSPORT_HEADER):
+        with open(source, "rb") as f:
+            digest.update(os.path.basename(source).encode() + b"\0" + f.read())
+    _src_md5 = digest.hexdigest()[:8]
     with open(_SRC, encoding="utf-8", errors="replace") as f:
         _n_kernels = sum(1 for line in f if line.lstrip().startswith("__global__"))
     logger.warning(
@@ -171,6 +181,10 @@ def _build():
     )
 
     cuda_flags = ["-O2", "-arch=sm_121a"]
+    if _COMPACT_CTA:
+        cuda_flags.append("-DOSAR_COMPACT_CTA=1")
+    if _PROXY_INLINE:
+        cuda_flags.append("-DOSAR_PROXY_INLINE=1")
     if _MAXEL != _MAXEL_DEFAULT:
         cuda_flags.append(f"-DMAXEL={_MAXEL}")
     # The key covers MAXEL through the flags: never reuse an object whose
@@ -217,6 +231,11 @@ def _bootstrap(comm):
                     "guessing is what broke this before"
                 )
             _ext.init(rank, comm.world_size, local_ip)
+            actual = list(_ext.transport_modes())
+            if actual[:2] != [int(_COMPACT_CTA), int(_PROXY_INLINE)]:
+                raise RuntimeError(f"transport mode build mismatch: {actual}")
+            if _PROXY_INLINE and (len(actual) != 5 or min(actual[2:]) < 8):
+                raise RuntimeError(f"transport inline capability missing: {actual}")
         except Exception as e:
             ok = 0
             logger.warning("[osar] local setup failed on rank %d: %r", rank, e)
@@ -252,6 +271,17 @@ def _bootstrap(comm):
                 "identically on every node, or unset it everywhere.",
                 maxel_lo, maxel_hi, _MAXEL,
             )
+            return
+        # All ranks execute the same bootstrap/self-test sequence and attest
+        # both requested modes before connecting any QPs. A mode mismatch
+        # cannot become one rank's successful compact capture and another
+        # rank's silent baseline. The build flags bind the actual extension.
+        mode = int(_CONSUMER_PDL) | (int(_COMPACT_CTA) << 1) | (int(_PROXY_INLINE) << 2)
+        mode_bounds = torch.tensor([mode, -mode], dtype=torch.int64)
+        dist.all_reduce(mode_bounds, op=dist.ReduceOp.MAX, group=comm.cpu_group)
+        if int(mode_bounds[0].item()) != -int(mode_bounds[1].item()):
+            _disabled = True
+            logger.warning("[osar] transport modes differ across ranks -> NCCL")
             return
         _boot_agreed = True
 
@@ -304,6 +334,12 @@ def _bootstrap(comm):
     _self_test(comm, rank)
 
 
+def _transport_max_error(*values):
+    # Python max(0.0, nan) is 0.0. A later nonfinite result must never be
+    # hidden by an earlier exact baseline when testing alternating paths.
+    return max(values) if all(math.isfinite(value) for value in values) else float("inf")
+
+
 def _self_test(comm, rank):
     """Lockstep numerics gate: a single barrier-synchronized one-shot AR vs
     NCCL on a fixed input. This is the ONLY place shadow mode drives the
@@ -330,8 +366,40 @@ def _self_test(comm, rank):
             dist.barrier(group=g)
             early = _ext.oneshot_ar_consumer(x.clone())
             torch.cuda.synchronize()
-            div = max(div, (ref.float() - early.float()).abs().max().item())
-        local_ok = int(div <= 0.5)
+            div = _transport_max_error(div, (ref.float() - early.float()).abs().max().item())
+        if _COMPACT_CTA:
+            # Alternate both geometries and cross the ring several times.
+            # Include vector tails and the exact T8 compact/fallback edge;
+            # changing values behind a captured pointer is checked below.
+            counts = sorted({min(_MAXEL, n) for n in
+                             (1, 4096, 24576, 32767, 32768, 32769, 65536)})
+            for count in counts:
+                value = torch.full((count,), rank + 1, dtype=torch.bfloat16,
+                                   device="cuda")
+                for call in (_ext.oneshot_ar, _ext.oneshot_ar_consumer,
+                             _ext.oneshot_ar):
+                    dist.barrier(group=g)
+                    result = call(value)
+                    torch.cuda.synchronize()
+                    div = _transport_max_error(div, (result.float() - 10.0).abs().max().item())
+            value = torch.full((min(_MAXEL, 32768),), rank + 1,
+                               dtype=torch.bfloat16, device="cuda")
+            graph = torch.cuda.CUDAGraph()
+            dist.barrier(group=g)
+            with torch.cuda.graph(graph):
+                first = _ext.oneshot_ar_consumer(value)
+                second = _ext.oneshot_ar(first)
+            for factor in (1, 2, 3):
+                value.fill_((rank + 1) * factor)
+                dist.barrier(group=g)
+                graph.replay()
+                torch.cuda.synchronize()
+                div = _transport_max_error(
+                    div, (first.float() - 10.0 * factor).abs().max().item(),
+                    (second.float() - 40.0 * factor).abs().max().item())
+            logger.warning("[osar] compact transport self-test cases=%d graph=3 maxerr=%g",
+                           len(counts) * 3, div)
+        local_ok = int(div == 0 if (_COMPACT_CTA or _PROXY_INLINE) else div <= 0.5)
     except Exception as e:
         error = e
         logger.warning("[osar] self-test error on rank %d: %r", rank, e)
@@ -511,7 +579,7 @@ def maybe_all_reduce(comm, input_, orig):
     One-shot only ever serves in REAL mode (shadow=0), where it replaces NCCL
     at exactly the AR call sites — 4-rank lockstep is automatic. shadow=1 runs
     the boot self-test then stays permanently on NCCL (observe-only)."""
-    global _disabled, _ordinal, _CONSUMER_CAPTURED
+    global _disabled, _ordinal, _CONSUMER_CAPTURED, _COMPACT_CAPTURED
     if _in_forward:
         # every collective of the forward counts, whichever path serves it:
         # the ordinal is the key the learned hints are filed under
@@ -537,6 +605,11 @@ def maybe_all_reduce(comm, input_, orig):
             if not _CONSUMER_CAPTURED and torch.cuda.is_current_stream_capturing():
                 _CONSUMER_CAPTURED = True
                 logger.warning("[osar] consumer PDL CAPTURED numel=%d", input_.numel())
+            if (_COMPACT_CTA and input_.numel() > 0 and not _COMPACT_CAPTURED
+                    and torch.cuda.is_current_stream_capturing()):
+                _COMPACT_CAPTURED = True
+                logger.warning("[oneshot] compact AR CAPTURED numel=%d ctas=12 tickets=48",
+                               input_.numel())
             return _ext.oneshot_ar_consumer(input_)
         hint = _tables.get(_scope, {}).get(_ordinal) if _in_forward else None
         if hint:

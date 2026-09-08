@@ -1,5 +1,14 @@
 # glm53_moe
 
+`t,r,sf6` is an optional lossless FC1/FC2 scale-storage lane for M<=8.
+It gathers each actual MMA scale stage, packs 2048 bytes into 1552 bytes,
+and expands with volatile reads and barriers before MMA consumption.
+The default remains `t,r`. Original scales stay live for prefill; unsupported
+byte spans use the uncompressed layer path. Both packed planes add about
+3.44 GiB/rank across 43 eligible layers in the E288/N512/H4096 geometry.
+Implementation and CPU/device evidence boundaries are in
+[`decode_transport_sf_README.md`](../../../probes/decode_transport_sf_README.md).
+
 GLM-5.3 MoE — b12x 공유 워크스페이스, EP 마이크로커널 레인, 직접 출력.
 
 2026-09-05 (34차, 운영자 "디폴트화된 모듈들을 4~5개씩 하나로 묶어라") 에 아래 모듈들을 이 디렉터리 하나로 합쳤다. **매니페스트 행·베이스 계약·소스 파일·노브·기본값은 그대로**이고 디렉터리와 `manifest.tsv`·`requires`·README 만 합쳐졌다(합성 결과 `build/glm53/` 의 파일은 바이트 동일(메가커널 .cu 주석의 경로 한 줄 제외), 행 순서만 바뀜). 옛 이름은 원장·런북·커밋에 그대로 남아 있고, 아래 절이 옛 모듈 하나씩이다.

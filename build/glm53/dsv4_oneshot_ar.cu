@@ -20,6 +20,14 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "dsv4_oneshot_transport.h"
+
+#ifndef OSAR_COMPACT_CTA
+#define OSAR_COMPACT_CTA 0
+#endif
+#ifndef OSAR_PROXY_INLINE
+#define OSAR_PROXY_INLINE 0
+#endif
 
 #define NPEER 3
 #define RING 4
@@ -36,6 +44,7 @@
 #endif
 #define ARGRID 48     // GB10 / SM121a has exactly 48 SMs
 #define ARTHREADS 256
+static_assert(ARGRID == OSAR_PUBLICATION_TICKETS && ARTHREADS == 256);
 // 16B (8 x bf16) vector lanes for the copy/reduce phases. #99's phase timers
 // put copy+reduce at ~11.8us of the ~100us collective with 2-byte scalar
 // accesses. VECITER bounds the per-thread vector trip count: n <= MAXEL and
@@ -125,6 +134,7 @@ static Info g_local[NPEER], g_remote[NPEER];
 static int g_rank = -1, g_world = 0, g_sgid = -1, g_peers[NPEER];
 static pthread_t g_proxy;
 static bool g_started = false;
+static unsigned g_inline_cap[NPEER] = {};
 static const char *DEVNAME = "rocep1s0f0";
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
@@ -238,7 +248,7 @@ __host__ __device__ constexpr bool osar_block_owns(unsigned block, unsigned thre
   return block == 0 || block * threads < (VECTOR_EXACT ? (n >> 3) : n);
 }
 
-template <bool CONSUMER_PDL>
+template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h) {
@@ -247,7 +257,9 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // has completed. No forward progress relies on concurrent residency.
   if constexpr (CONSUMER_PDL)
     asm volatile("griddepcontrol.wait;" ::: "memory");
-  // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
+  // The ordinary grid is fixed at ARGRID for the counter invariant; the
+  // opt-in compact variant contributes four tickets per CTA, still 48 total.
+  // At decode sizes
   // the smallest plain call has n = hidden and many blocks fall entirely past
   // the payload. The 16B lanes make this starker: with blockDim 256 and
   // n = 4096 there are only nv = 512 vectors, so threads 0..511 (blocks 0-1)
@@ -301,7 +313,7 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   const uint4 *src4 = reinterpret_cast<const uint4 *>(src);
   uint4 *tx4 = reinterpret_cast<uint4 *>(c->tx[slot]);
   const int nv = n >> 3;
-  uint4 mine[VECITER];
+  uint4 mine[COMPACT ? OSAR_COMPACT_VECITER : VECITER];
   for (int v = blockIdx.x * blockDim.x + threadIdx.x, k = 0; v < nv;
        v += gridDim.x * blockDim.x, k++) {
     // Round 2 cache policy: __ldg is the read-only path for the producer's
@@ -321,7 +333,8 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
   // Every WRITING block fences its own copy, and each fence precedes that
   // block's counter increment, so when the counter wraps this launch's ARGRID
-  // all writes are already visible system-wide. A block that copied nothing
+  // all writes are already visible system-wide (a compact CTA contributes
+  // four tickets only after every one of its writers fenced). A block that copied nothing
   // has nothing to order, so its fence is vacuous and is skipped.
   if (owns)
     __threadfence_system();
@@ -331,9 +344,17 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // this block still has RDMA-visible payload writes in flight.
   __syncthreads();
   __shared__ bool last;
-  if (threadIdx.x == 0)
-    last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
+  if (threadIdx.x == 0) {
+    if constexpr (WRAP_SAFE) {
+      constexpr unsigned weight = COMPACT ? ARGRID / OSAR_COMPACT_GRID : 1;
+      const auto old = atomicAdd((unsigned long long *)&c->done_ctr,
+                                 (unsigned long long)weight);
+      last = osar_publication_last(old, weight, nxt);
+    } else {
+      last = atomicAdd((unsigned long long *)&c->done_ctr, 1ULL) %
                ARGRID == ARGRID - 1;
+    }
+  }
   __syncthreads();
   if (last && threadIdx.x == 0) {
     c->nbytes[slot] = (uint64_t)nbytes;
@@ -466,12 +487,40 @@ __global__ void k_oneshot_consumer(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   k_oneshot_impl<true>(c, src, dst, n, nbytes, h);
 }
 
+#if OSAR_COMPACT_CTA
+// Keep the disabled mode's entry points and generated instructions unchanged.
+// The companion contributes one ticket per CTA but uses the same wrap-safe
+// publication predicate as compact launches: all calls share done_ctr.
+template <bool CONSUMER_PDL, bool COMPACT>
+__global__ void k_oneshot_compact_mode(Ctrl *c, const bf16 *src, bf16 *dst,
+                                      int n, int nbytes, const HintArgs h) {
+  k_oneshot_impl<CONSUMER_PDL, COMPACT, true>(c, src, dst, n, nbytes, h);
+}
+#endif
+
 // ---------------- proxy ----------------
 static void *proxy_fn(void *) {
   cpu_set_t set;
   CPU_ZERO(&set);
   CPU_SET(PROXY_CORE, &set);
   sched_setaffinity(0, sizeof(set), &set);
+#if OSAR_PROXY_INLINE
+  // Stable descriptor addresses for the life of the proxy. post_send copies
+  // the inline flag before returning; payloads remain protected by ring ACKs.
+  OsarProxyInlineWrs prepared[RING][NPEER];
+  for (int slot = 0; slot < RING; ++slot) {
+    for (int p = 0; p < NPEER; ++p) {
+      if (!prepared[slot][p].init(
+              (uintptr_t)g_ctrl->tx[slot], g_mr->lkey,
+              g_remote[p].rx_base + (uint64_t)slot * NPEER * MAXEL * 2,
+              g_remote[p].rxf_base + (uint64_t)slot * NPEER * 8,
+              g_remote[p].rkey, g_inline_cap[p])) {
+        fprintf(stderr, "[oneshot] insufficient inline capability; proxy exiting\n");
+        return nullptr;
+      }
+    }
+  }
+#endif
   uint64_t sent = 0, done[64] = {0};
   time_t last_report = 0;
   uint64_t last_guard = 0, last_copy = 0, last_wait = 0, last_reduce = 0,
@@ -484,6 +533,12 @@ static void *proxy_fn(void *) {
       int slot = (int)(sent % RING);
       uint32_t nb = (uint32_t)g_ctrl->nbytes[slot];
       for (int p = 0; p < NPEER; p++) {
+#if OSAR_PROXY_INLINE
+        if (prepared[slot][p].post(g_qp[p], sent, (unsigned)p, nb)) {
+          fprintf(stderr, "[oneshot] inline post_send failed; proxy exiting\n");
+          return nullptr;
+        }
+#else
         g_ctrl->flag_src[p] = sent;
         struct ibv_sge sge[2];
         struct ibv_send_wr wr[2], *bad;
@@ -515,7 +570,14 @@ static void *proxy_fn(void *) {
           fprintf(stderr, "[oneshot] post_send failed; proxy exiting\n");
           return nullptr;
         }
+#endif
       }
+#if OSAR_PROXY_INLINE
+      if (sent == 1) {
+        fprintf(stderr, "[oneshot] inline proxy serving peers=%d inline_bytes=8 "
+                        "wr_reuse=1\n", NPEER);
+      }
+#endif
     }
     struct ibv_wc wc[16];
     int n = ibv_poll_cq(g_cq, 16, wc);
@@ -676,6 +738,13 @@ static void init_ctx(int rank, int world, const std::string &myip) {
     qia.qp_type = IBV_QPT_RC;
     g_qp[s] = ibv_create_qp(g_pd, &qia);
     CHK(g_qp[s]);
+    // ibv_create_qp returns the actual capabilities in qia.cap. An enabled
+    // mode must not silently claim inline service on an incapable QP: local
+    // setup failure participates in the shim's all-rank pre-connect vote.
+    g_inline_cap[s] = qia.cap.max_inline_data;
+#if OSAR_PROXY_INLINE
+    CHK(g_inline_cap[s] >= sizeof(uint64_t));
+#endif
     g_local[s].qpn = g_qp[s]->qp_num;
     g_local[s].psn = (uint32_t)(rand() & 0xffffff);
     g_local[s].rkey = g_mr->rkey;
@@ -806,11 +875,13 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
     h.len[h.n] = (unsigned int)std::min<int64_t>(lens[i], 0x7fffffff);
     ++h.n;
   }
-  // One launch, and the grid is FIXED at ARGRID however small n is: the
+  // Disabled mode: one launch, grid FIXED at ARGRID however small n is. The
   // last-block detection in k_oneshot is (done_ctr % ARGRID == ARGRID-1),
   // which is only sound if every launch contributes exactly ARGRID
-  // increments. The 48-block grid fills GB10 once and covers MAXEL through
-  // the kernel's grid-stride loops; empty decode blocks only sync/increment.
+  // increments. Enabled mode keeps total tickets at 48 with a separate
+  // wrap-safe companion for ordinary launches. Only 1..32768-element PDL
+  // consumers use 12 CTAs, each contributing four tickets. Their fixed
+  // two-vector stash is independent of the optional MAXEL build override.
   if (consumer_pdl) {
     cudaLaunchConfig_t cfg{};
     cfg.gridDim = dim3(ARGRID);
@@ -821,13 +892,28 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
     attr.val.programmaticStreamSerializationAllowed = 1;
     cfg.attrs = &attr;
     cfg.numAttrs = 1;
+#if OSAR_COMPACT_CTA
+    const bool compact = osar_compact_eligible((uint64_t)n);
+    if (compact) cfg.gridDim = dim3(OSAR_COMPACT_GRID);
+    const auto err = compact
+        ? cudaLaunchKernelEx(&cfg, k_oneshot_compact_mode<true, true>, g_ctrl,
+                              src, dst, (int)n, (int)(n * 2), h)
+        : cudaLaunchKernelEx(&cfg, k_oneshot_compact_mode<true, false>, g_ctrl,
+                              src, dst, (int)n, (int)(n * 2), h);
+#else
     const auto err = cudaLaunchKernelEx(&cfg, k_oneshot_consumer, g_ctrl, src,
                                          dst, (int)n, (int)(n * 2), h);
+#endif
     TORCH_CHECK(err == cudaSuccess, "oneshot PDL launch: ",
                 cudaGetErrorString(err));
   } else {
+#if OSAR_COMPACT_CTA
+    k_oneshot_compact_mode<false, false><<<ARGRID, ARTHREADS, 0, st>>>(
+        g_ctrl, src, dst, (int)n, (int)(n * 2), h);
+#else
     k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
                                           (int)(n * 2), h);
+#endif
   }
   return out;
 }
@@ -873,6 +959,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
+  m.def("transport_modes", []() {
+    return std::vector<int64_t>{OSAR_COMPACT_CTA, OSAR_PROXY_INLINE,
+        (int64_t)g_inline_cap[0], (int64_t)g_inline_cap[1],
+        (int64_t)g_inline_cap[2]};
+  });
   m.def("healthy", &py_healthy);
   m.def("shutdown", &py_shutdown);
 }

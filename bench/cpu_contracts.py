@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited at eb379b15: consumer weight notes, PDL/occupancy counts,
-# and the standalone MHC normalized-weight call contract differ from upstream.
+# Re-audited for sf6: existing MoE control assertions changed, and proof-marker
+# discovery includes CUDA/header sources within the existing overlay closure.
 # The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = 'dd7382695cb15635b1d04f844b11872421bd7c9452dea53b96df9a4336f75f5d'
+LOGIC_AUDIT = '444ff217cbc2695ed22288fb8b89b98e037e59d324d0d91617199e977070f265'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

@@ -602,6 +602,8 @@ class B12xMoEWrapper:
             _get_weight_views as _get_sm120_weight_views,
             static_v2_weights_layout as _static_v2_weights_layout,
             static_v2_weights_sf_pack as _static_v2_weights_sf_pack,
+            static_v2_weights_reform_sf_pack as _static_v2_weights_reform_sf_pack,
+            _sf6_tensor_version,
             _pad_intermediate_to_tile,
             _LEVEL_TILE_N,
             is_gated_activation,
@@ -655,6 +657,17 @@ class B12xMoEWrapper:
             # if the static lane switches between row-major and tile-major
             # weights (spec cell t, moe_static_kernel_v5): a tiled view must
             # never reach a kernel compiled for the row-major layout.
+            weights_reform_sf_pack = _static_v2_weights_reform_sf_pack(
+                num_experts=self.num_experts,
+                num_local_experts=self.num_local_experts,
+                hidden_size=self.hidden_size,
+                intermediate_size=self.intermediate_size,
+                num_topk=self.top_k,
+                quant_mode=self.quant_mode,
+                activation=self.activation,
+                swiglu_limit=self.swiglu_limit,
+                activation_precision=self.activation_precision,
+            )
             weights_sf_pack = _static_v2_weights_sf_pack(
                 num_experts=self.num_experts,
                 num_local_experts=self.num_local_experts,
@@ -688,6 +701,9 @@ class B12xMoEWrapper:
                 w2_weight_sf.data_ptr(),
                 w2_alpha.data_ptr(),
             )
+            if weights_reform_sf_pack:
+                weight_key += ("sf6-v1", tuple((id(t), _sf6_tensor_version(t)) for t in (
+                    w1_weight, w1_weight_sf, w1_alpha, w2_weight, w2_weight_sf, w2_alpha)))
             n_eff = self.intermediate_size
             # Pad non-128-aligned intermediate sizes once and cache.
             if self.intermediate_size % _LEVEL_TILE_N != 0:
@@ -737,6 +753,7 @@ class B12xMoEWrapper:
                     quant_mode=self.quant_mode,
                     tiled=weights_tiled,
                     sf_pack=weights_sf_pack,
+                    reform_sf_pack=weights_reform_sf_pack,
                 )
                 self._weight_key = weight_key
         else:

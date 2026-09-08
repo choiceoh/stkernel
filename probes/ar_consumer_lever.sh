@@ -12,13 +12,13 @@ done
 expected=$(python3 - "$REPO" <<'PY'
 import hashlib,json,sys
 from pathlib import Path
-root=Path(sys.argv[1]); wanted={'glm53_megakernel.cu','glm53_megakernel.py','dsv4_oneshot_ar.cu','dsv4_oneshot_shim.py'}
+root=Path(sys.argv[1]); wanted={'glm53_megakernel.cu','glm53_megakernel.py','dsv4_oneshot_ar.cu','dsv4_oneshot_transport.h','dsv4_oneshot_shim.py'}
 files={}
 for line in (root/'build/glm53/manifest.tsv').read_text().splitlines():
     if not line or line.startswith('#'):continue
     source,target,*_=line.split('\t')
     if source in wanted:files[target]=hashlib.sha256((root/'build/glm53'/source).read_bytes()).hexdigest()
-assert len(files)==4,files
+assert len(files)==5,files
 print(json.dumps(files))
 PY
 )

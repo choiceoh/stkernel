@@ -15,6 +15,7 @@ SOURCES = (
     'overlay/modules/glm53_megakernel/glm53_megakernel.cu',
     'overlay/modules/glm53_megakernel/glm53_megakernel.py',
     'overlay/modules/tp_oneshot_ar/dsv4_oneshot_ar.cu',
+    'overlay/modules/tp_oneshot_ar/dsv4_oneshot_transport.h',
     'overlay/modules/tp_oneshot_ar/dsv4_oneshot_shim.py',
     'probes/ar_consumer_delay.cu',
 )

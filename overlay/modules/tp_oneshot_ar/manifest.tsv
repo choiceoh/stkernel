@@ -1,3 +1,4 @@
 # source	container_target(relative to TARGET_PREFIX)	base_preimage_sha256
 dsv4_oneshot_shim.py	vllm/distributed/device_communicators/dsv4_oneshot_shim.py	absent
 dsv4_oneshot_ar.cu	vllm/distributed/device_communicators/dsv4_oneshot_ar.cu	absent
+dsv4_oneshot_transport.h	vllm/distributed/device_communicators/dsv4_oneshot_transport.h	absent

@@ -47,6 +47,9 @@ from .moe_sf_pack import (
     SF_STAGE_BYTES,
     pack_sf_inline,
 )
+from .moe_reform_sf_pack import (
+    REFORM_SF_STAGE, prepare_reform_scales,
+)
 from .moe_static_kernel_v5 import (
     MoEStaticKernelV5,
     TILED_W13_K_IN,
@@ -364,6 +367,7 @@ _STATIC_V2_DEFAULT = {
     "wide": True, "skip_sf": False, "skip_a": False, "v4": True, "a_ring": False,
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
     "tiled": False, "sf_pack": False, "decode_reform": False,
+    "reform_sf_pack": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -410,6 +414,9 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "r":
             cfg["decode_reform"] = True
             continue
+        if token == "sf6":
+            cfg["reform_sf_pack"] = True
+            continue
         if token == "q":
             # 39차 §4c: the FC1 weight scales arrive 6-bit packed (base + index
             # per 4 KB block) and the MMA warps expand them in the stage buffer.
@@ -432,7 +439,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q][,r] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q][,r][,sf6] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -446,6 +453,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         cfg[key] for key in ("a_ring", "sf_pack", "skip_sf", "skip_a")
     ) or cfg["fc1"] != 2 or cfg["fc2"] != 2):
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: r requires t with f2,g2")
+    if cfg.get("reform_sf_pack") and not cfg["decode_reform"]:
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
     return cfg
 
 
@@ -1037,6 +1046,10 @@ class _WeightViews:
     tiled: bool = False
     # cell q: the FC1 scales 6-bit packed, (E, blocks, stage bytes) u8
     sfb1_packed: torch.Tensor | None = None
+    sfb2_packed: torch.Tensor | None = None
+    # Own both immutable packed planes and the raw prefill scales for the
+    # lifetime of these weight views; capture never replaces their storage.
+    reform_scales: object | None = None
     w13_tiled_storage: torch.Tensor | None = None
     w2_tiled_storage: torch.Tensor | None = None
     w1_alpha: torch.Tensor | None = None
@@ -1063,6 +1076,35 @@ _WEIGHT_CACHE: Dict[Tuple, Tuple] = {}
 
 _SF_PACKED: Dict[Tuple[int, int], torch.Tensor] = {}
 _SF_PACK_DUMMY: Dict[str, torch.Tensor] = {}
+_REFORM_SF_CACHE: Dict[Tuple, object] = {}
+
+
+def _prepared_reform_scales(source1, source2, raw1, raw2, *, experts, n, k):
+    """One packed owner per scale generation, independent of folded alphas.
+
+    A shared wrapper may rebuild its per-layer alpha views. That must not
+    repack identical scales, or retain a new packed copy on every warmup.
+    Sources own the generation; cache entries keep packed addresses alive
+    across wrapper changes and disappear when those sources are collected.
+    """
+    key = ("sf6-v1", experts, n, k, tuple(
+        (id(t), t.data_ptr(), _sf6_tensor_version(t), tuple(t.shape), str(t.device))
+        for t in (source1, source2)))
+    cached = _REFORM_SF_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if raw1.device.type == "cuda" and torch.cuda.is_current_stream_capturing():
+        raise RuntimeError("sf6 scales must be prepared before CUDA graph capture")
+    owner = prepare_reform_scales(raw1.view(torch.uint8), raw2.view(torch.uint8),
+                                  experts=experts, n=n, k=k)
+    _REFORM_SF_CACHE[key] = owner
+    _register_cache_eviction(_REFORM_SF_CACHE, key, source1, source2)
+    logging.getLogger("flashinfer.b12x").warning(
+        "[b12x sf6] %s; raw prefill scales retained; packed bytes=%d",
+        "prepared FC1+FC2" if owner.enabled else f"raw fallback: {owner.reason}",
+        (owner.fc1.numel() + owner.fc2.numel()) if owner.enabled else 0,
+    )
+    return owner
 
 
 def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
@@ -1095,6 +1137,20 @@ def _sf_pack_dummy(device: "torch.device") -> torch.Tensor:
         got = torch.zeros((1, 1, 16), dtype=torch.uint8, device=device)
         _SF_PACK_DUMMY[key] = got
     return got
+
+
+def static_v2_weights_reform_sf_pack(**geometry) -> bool:
+    cfg = _static_v2_config_for(**geometry)
+    return bool(cfg is not None and cfg.get("reform_sf_pack", False))
+
+
+def _sf6_tensor_version(tensor) -> int:
+    # Inference tensors have no version counter. Their deployment contract is
+    # immutable; identity and storage pointers still distinguish load cycles.
+    try:
+        return int(tensor._version)
+    except RuntimeError:
+        return -1
 
 
 def static_v2_weights_sf_pack(**geometry) -> bool:
@@ -1250,6 +1306,7 @@ def _get_weight_views(
     quant_mode: str = "nvfp4",
     tiled: bool = False,
     sf_pack: bool = False,
+    reform_sf_pack: bool = False,
 ) -> _WeightViews:
     """Create permuted weight views for the static kernel.
 
@@ -1286,8 +1343,15 @@ def _get_weight_views(
         w2_blockscale.data_ptr(),
         w2_alphas.data_ptr(),
     )
+    if reform_sf_pack:
+        # In-place weight/scale updates must produce new packed storage; old
+        # entries remain owned while the prior captured graph can use them.
+        key += ("sf6-v1", tuple((id(t), _sf6_tensor_version(t)) for t in (
+            w1_fp4, w1_blockscale, w1_alphas, w2_fp4, w2_blockscale, w2_alphas)))
     cached = _WEIGHT_CACHE.get(key)
     if cached is None:
+        if reform_sf_pack and _is_cuda_graph_capturing():
+            raise RuntimeError("sf6 weight views must be prepared before CUDA graph capture")
         # Cache the fresh buffers (scale factors + fp32 alphas) -- and the
         # tile-major weight copies when the lane reads them.
         w1_rows = w1_fp4.shape[1]  # 2*n for gated, n for non-gated
@@ -1343,6 +1407,12 @@ def _get_weight_views(
             w2_alphas.contiguous().to(torch.float32),
             tiled_storage,
         )
+        if reform_sf_pack:
+            owner = _prepared_reform_scales(
+                w1_blockscale, w2_blockscale, cached[0], cached[1],
+                experts=w1_fp4.shape[0], n=n, k=k,
+            )
+            cached += (owner,)
         _WEIGHT_CACHE[key] = cached
         _register_cache_eviction(
             _WEIGHT_CACHE,
@@ -1354,7 +1424,8 @@ def _get_weight_views(
             w2_blockscale,
             w2_alphas,
         )
-    w13_sf_contiguous, down_sf_contiguous, w1_alpha, w2_alpha, tiled_storage = cached
+    w13_sf_contiguous, down_sf_contiguous, w1_alpha, w2_alpha, tiled_storage = cached[:5]
+    reform_scales = cached[5] if reform_sf_pack else None
     w13_tiled, w2_tiled = tiled_storage
     if tiled:
         # (rows, K_in x2, K_tiles, E) over the tile-major bytes: the x2 dtype's
@@ -1370,8 +1441,11 @@ def _get_weight_views(
         down_fp4=down,
         tiled=bool(tiled),
         sfb1_packed=(
-            _packed_fc1_scales(w13_sf_contiguous, w1_fp4.shape[0]) if sf_pack else None
+            reform_scales.fc1 if reform_scales is not None and reform_scales.enabled
+            else _packed_fc1_scales(w13_sf_contiguous, w1_fp4.shape[0]) if sf_pack else None
         ),
+        sfb2_packed=reform_scales.fc2 if reform_scales is not None else None,
+        reform_scales=reform_scales,
         w13_tiled_storage=w13_tiled,
         w2_tiled_storage=w2_tiled,
         sfb_w13_ptr=make_ptr(
@@ -1439,6 +1513,8 @@ def _kernel_source_files() -> Tuple[str, ...]:
         moe_static_common.__file__,
         moe_static_kernel_v4.__file__,
         moe_static_kernel_v5.__file__,
+        os.path.join(os.path.dirname(__file__), "moe_reform_sf_pack.py"),
+        os.path.join(os.path.dirname(__file__), "moe_sf_pack.py"),
         moe_dynamic_gated_tiled.__file__,
         # Hash the candidate without importing its pinned private helpers.
         os.path.join(os.path.dirname(__file__), "moe_dynamic_prefill.py"),
@@ -1900,13 +1976,16 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("tiled", False)),
         bool(config.get("sf_pack", False)),
         bool(config.get("decode_reform", False)),
+        bool(config.get("reform_sf_pack", False)),
     )
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
-    return dict(config, decode_reform=bool(config.get("decode_reform", False)) and 1 <= m <= 8)
+    reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    return dict(config, decode_reform=reform,
+                reform_sf_pack=reform and bool(config.get("reform_sf_pack", False)))
 
 
 def _get_static_kernel_v2(
@@ -1991,6 +2070,7 @@ def _get_static_kernel_v2(
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
+        reform_sf_pack=bool(config.get("reform_sf_pack", False)),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2107,7 +2187,12 @@ def _get_static_kernel_v2(
     )
     # cell q: the packed FC1 scales, (E, blocks per expert, stage bytes) u8; off
     # the lane a 16 B dummy the kernel never reads.
-    if config.get("sf_pack"):
+    if config.get("reform_sf_pack"):
+        sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
+            cutlass.Uint8, (weight_E, (n * 2 // 128) * (k // 256), REFORM_SF_STAGE),
+            stride_order=(2, 1, 0), assumed_align=16,
+        )
+    elif config.get("sf_pack"):
         _sf_blocks = (n * 2 // 128) * (k // TILED_W13_K_IN)
         sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
             cutlass.Uint8, (weight_E, _sf_blocks, SF_STAGE_BYTES),
@@ -2121,6 +2206,12 @@ def _get_static_kernel_v2(
         sfb1_packed_fake = cute.runtime.make_fake_compact_tensor(
             cutlass.Uint8, (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16
         )
+    sfb2_packed_fake = cute.runtime.make_fake_compact_tensor(
+        cutlass.Uint8,
+        (weight_E, (k // 256) * (n // 128), REFORM_SF_STAGE)
+        if config.get("reform_sf_pack") else (1, 1, 16),
+        stride_order=(2, 1, 0), assumed_align=16,
+    )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     name = (
         f"static2_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}_tm{config['tile_m']}"
@@ -2131,6 +2222,7 @@ def _get_static_kernel_v2(
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
         f"{'q' if config.get('sf_pack') else ''}"
         f"{'r16n128k256d256' if reform else ''}"
+        f"{'sf6v1' if config.get('reform_sf_pack') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
@@ -2165,6 +2257,7 @@ def _get_static_kernel_v2(
             stamps_fake,
             next_item_fake,
             sfb1_packed_fake,
+            sfb2_packed_fake,
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
@@ -2895,6 +2988,12 @@ def launch_sm120_static_moe(
                 f"lane tiled={want_tiled}"
             )
         if static_v2_config is not None:
+            static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
+            if static_v2_config.get("reform_sf_pack"):
+                if weights.reform_scales is None:
+                    raise RuntimeError("sf6 layer has no prepared immutable scale owner")
+                if not weights.reform_scales.enabled:
+                    static_v2_config = dict(static_v2_config, reform_sf_pack=False)
             compiled, mac = _get_static_kernel_v2(
                 workspace.state_E,
                 num_experts,
@@ -2974,8 +3073,11 @@ def launch_sm120_static_moe(
         runtime_args = runtime_args + (
             static_v2_stamps,
             static_v2_counter,
-            weights.sfb1_packed if weights.sfb1_packed is not None
-            else _sf_pack_dummy(a.device),
+            weights.sfb1_packed if (static_v2_config.get("sf_pack")
+                                   or static_v2_config.get("reform_sf_pack"))
+            and weights.sfb1_packed is not None else _sf_pack_dummy(a.device),
+            weights.sfb2_packed if static_v2_config.get("reform_sf_pack")
+            and weights.sfb2_packed is not None else _sf_pack_dummy(a.device),
         )
     compiled(*runtime_args)
 
@@ -4247,6 +4349,7 @@ def clear_sm120_moe_caches() -> None:
     _WORKSPACE_CACHE.clear()
     _WEIGHT_CACHE.clear()
     _SF_PACKED.clear()
+    _REFORM_SF_CACHE.clear()
     _W4A16_WEIGHT_CACHE.clear()
     _PADDED_WEIGHT_CACHE.clear()
     _STATIC_KERNEL_CACHE.clear()
@@ -4689,6 +4792,17 @@ def launch_sm120_moe(
         swiglu_limit=swiglu_limit,
         activation_precision=activation_precision,
     )
+    weights_reform_sf_pack = static_v2_weights_reform_sf_pack(
+        num_experts=num_experts,
+        num_local_experts=num_local_experts,
+        hidden_size=k,
+        intermediate_size=n,
+        num_topk=top_k,
+        quant_mode=quant_mode,
+        activation=activation,
+        swiglu_limit=swiglu_limit,
+        activation_precision=activation_precision,
+    )
     weights_sf_pack = static_v2_weights_sf_pack(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
@@ -4716,6 +4830,7 @@ def launch_sm120_moe(
             quant_mode=quant_mode,
             tiled=weights_tiled,
             sf_pack=weights_sf_pack,
+            reform_sf_pack=weights_reform_sf_pack,
         )
     )
 

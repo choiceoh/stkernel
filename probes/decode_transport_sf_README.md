@@ -1,0 +1,78 @@
+# GLM53 decode transport and lossless scale candidates
+
+This follow-up implements three opt-in candidates above the adopted AR/MHC
+consumer path. `VLLM_GLM53_AR_CONSUMER_PDL=1` and `t,r` remain the defaults.
+No additional serving-speed measurement is scheduled. CPU checks and compiler
+results establish host contracts and buildability; device numerics, transport
+ordering under RDMA, sanitizer results and step-speed gains remain separate.
+
+| Candidate | Selection | Removed work |
+| --- | --- | --- |
+| Compact AR | `VLLM_GLM53_AR_COMPACT_CTA=1` | Empty CTAs in small AR consumer launches |
+| Inline RDMA completion | `VLLM_GLM53_AR_PROXY_INLINE=1` | Repeated work-request setup and the NIC's separate read of an 8-byte flag |
+| Lossless MoE scales | `VLLM_GLM53_B12X_STATIC_V2=t,r,sf6` | Eligible FC1/FC2 scale stages shrink from 2048 to 1552 bytes (24.22%) |
+
+## Transport contracts
+
+Compact calls use 12 CTAs for at most 32,768 elements, including T=6 and
+T=8 decode. Larger direct C++ calls retain 48 CTAs. Each compact CTA contributes
+four publication tickets; each ordinary CTA contributes one. The enabled
+process uses one sequence-based completion rule for both geometries, including
+counter wrap. The default-off build preserves the original publication code.
+Every writer still performs its own system fence before the CTA barrier and
+ticket. The last publisher writes the byte count before the transmit sequence.
+PDL release and reduced-input dependency waits retain their ordering.
+
+Inline mode owns a fixed work-request pair for each peer and ring slot. The
+payload stays a non-inline RDMA write, followed on the same RC queue pair by
+the inline, signaled completion flag. Source bytes are copied during
+`ibv_post_send`; request objects are neither copied nor moved after setup.
+The actual queue-pair capacity must support at least eight inline bytes.
+CQ completion and all-peer ACK still determine safe ring reuse. All ranks
+agree on consumer, compact and inline modes before launching collectives.
+
+The transport header is deployed alongside the CUDA source, included in the
+extension cache identity and retained in source evidence. CUDA graph cache
+factors include both new flags. Actual capture and successful inline posting
+have distinct proof markers; configuration alone does not prove execution.
+
+## Scale storage and fallback
+
+`sf6` targets the current reform's FC1 and FC2 layouts, rather than the old
+`q` probe's 4 KiB FC1 stage. The original scales remain available to prefill
+and larger batches. A layer whose scale codes cannot be represented exactly
+uses the uncompressed reform path; no clamping or scale rounding is allowed.
+The packed buffers are owned alongside the weight views and retained for
+captured launches. Legacy `q` remains probe-only and cannot be combined with
+`r`. Packing reduces scale traffic, not all expert-weight traffic; no speedup
+percentage is inferred from the old `t` experiments.
+
+For E=288, hidden=4096, intermediate=512, the two packed planes add 81.844 MiB
+per layer, or about 3.44 GiB per rank if all 43 layers are eligible. This is
+additional to the retained original scales. Packing uses bounded chunks;
+KV sizing, GMU and memory guards are unchanged.
+
+## CPU reproduction
+
+On srv2, from a clean, composed checkout:
+
+```bash
+REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --cpu \
+  decode-next-cpu 15 'Decode transport and SF6 device-free checks' -- \
+  python3 probes/run_decode_transport_sf_cpu.py --out /absolute/fresh/evidence
+```
+
+The runner uses the immutable serving image with `--runtime=runc`, no GPU
+visibility or network, two CPU cores and bounded memory/swap. It runs the
+CPU contracts, compiles all four transport flag combinations, and compiles
+the MoE baseline/candidate at M=2/6/8/16 plus tiled prefill. It also compiles
+the existing u/v/t/q ABI and the actual 2048/4096-byte expansion helper.
+`--stage` selects
+an individual failed stage for a focused retry. Every invocation needs a
+fresh output directory; receipts bind the source commit and log hashes.
+
+GPU validation, when explicitly resumed, must exercise the new transport
+flags in all four ranks and the full `t,r,sf6` kernel, including fallback,
+changed inputs and retained graph lifetimes. The existing baseline-only AR
+GPU runner does not establish correctness of enabled follow-up flags.
+Prior #473 GPU receipts cannot validate changed transport code or its header.

@@ -3534,7 +3534,8 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False,
+                      "reform_sf_pack": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3721,14 +3722,16 @@ def test_b12x_static_v2_controls() -> None:
     v4_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v4.py"),
                      encoding="utf-8").read()
     check("_SF_STAGE_BYTES = 3088" in v4_kernel
-          and "def _sf_expand_stage(self, stage_addr, tidx):" in v4_kernel
-          and "self.sf_expand_barrier.arrive_and_wait()" in v4_kernel
+          and "def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):" in v4_kernel
+          and v4_kernel.count("self.sf_expand_barrier.arrive_and_wait()") == 2
           and "barrier_id=3," in v4_kernel   # 1 is the epilogue, the stock class uses 1 and 2
           and "fc1_tma_bytes += _SF_STAGE_BYTES" in v4_kernel
           and v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
-              > v4_kernel.index("base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF))")
-          and v4_kernel.index("_st_shared_i32(stage_addr + Int32(32) * tidx")
-              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()"),
+              > v4_kernel.index("base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset))")
+          and v4_kernel.index("_st_shared_i32(stage_addr + Int32(per_thread) * tidx")
+              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
+          and v4_kernel.rindex("self.sf_expand_barrier.arrive_and_wait()")
+              > v4_kernel.index("_st_shared_i32(stage_addr + Int32(per_thread) * tidx"),
           "q: 3088 B stages, the in-place expansion reads before the barrier and "
           "writes after it, and the stage's tx bytes count the packed size")
     check("sf_pack needs every MMA warp at every FC1 stage" in v4_kernel
@@ -11570,7 +11573,10 @@ def test_fleet_reservation_tooling_contracts() -> None:
 
     tsv = open(os.path.join(REPO, "bench", "proof-markers.tsv"), encoding="utf-8").read()
     src_all = ""
-    for path in sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "*", "*.py"))):
+    marker_sources = []
+    for suffix in ("py", "cu", "h"):
+        marker_sources.extend(glob.glob(os.path.join(REPO, "overlay", "modules", "*", f"*.{suffix}")))
+    for path in sorted(marker_sources):
         src_all += open(path, encoding="utf-8").read()
     rows = [l.split("\t") for l in tsv.splitlines() if l.strip() and not l.startswith("#")]
     check(len(rows) >= 15 and all(len(r) == 3 for r in rows), "proof-markers.tsv: knob, marker, src")
