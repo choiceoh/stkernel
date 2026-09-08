@@ -28,3 +28,11 @@ not the between-arm comparison. PRIME is excluded and every warm hit is required
 
 These admission files are not a measured memory saving, TTFT result, quality
 result or completed restoration receipt. Do not rerun this session while active.
+
+The actual normalization checkout is now verified from its log and deployed
+manifest: `0d5ca6d9712468ed4382b46791536de36af33b6a` (#460). That fetch preceded
+#469's 13:08:21 KST merge to `db89b2a`. Do not label this incoming runtime as
+`db89b2a`. The private bracket preserves this attested non-candidate runtime;
+the final supervisor may subsequently normalize to the newer approved main.
+Distinguish the payload's exact-original restoration from a later approved
+public-default refresh. `normalization-identity.json` records this boundary.
