@@ -13,9 +13,9 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against b1afa41: only a full-runner graph regression wrapper
-# and its invocation are added. All other upstream AST nodes are identical.
-LOGIC_AUDIT = 'bca5684f02ba4e84eb54420b5a145cbd63a14f21ed3b2d97d6b363e3a1c8812a'
+# Re-audited against db89b2a: update OSAR/MHC signatures, PDL release and
+# occupancy counts; the remaining logic test AST is unchanged.
+LOGIC_AUDIT = '58a4b82dd3a2b38bd2bb632fea236fc9f35b402363eb67dd91174d30b9dd366b'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

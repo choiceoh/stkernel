@@ -1688,7 +1688,7 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
   __syncthreads();  // sqred reuse
 }
 
-template <bool BF16_FN>
+template <bool BF16_FN, bool AR_CONSUMER = false>
 __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
   // streams for this thread's h -- lives in 96 REGISTERS, loaded once, and
@@ -1733,7 +1733,8 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     const int h = c * HCHUNK + threadIdx.x;  // HCHUNK == MK_THREADS
     float xv = 0.0f, res[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
     float pm[HC], cm[HC][HC];
-    if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
+    if constexpr (!AR_CONSUMER)
+      if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
     float fnr[NOUT][HC];
 #pragma unroll
     for (int m = 0; m < NOUT; ++m)
@@ -1744,6 +1745,15 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
               (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
         else
           fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+    if constexpr (AR_CONSUMER) {
+      // Only immutable model weights were read above. Keep the exact same
+      // projection values in registers while the upstream RDMA collective
+      // completes; no activation, workspace or arrival counter is touched
+      // before this dependency wait. The memory clobber prevents sinking
+      // weight loads or hoisting input loads across the boundary.
+      asm volatile("griddepcontrol.wait;" ::: "memory");
+      if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
+    }
     int pend = -1;  // a token whose chunk is done but not yet published
     for (int t = g; t < a.num_tokens; t += groups) {
       float nxv = 0.0f, nres[HC] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1825,6 +1835,12 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
       }
     }
   }
+  if constexpr (AR_CONSUMER) {
+    // An occupancy-clamped grid need not divide NCHUNK. Even blocks with
+    // no projection item must wait before taking shared tail tickets.
+    if (bid >= NCHUNK * groups)
+      asm volatile("griddepcontrol.wait;" ::: "memory");
+  }
   MK_MHC_TS(1);
   // ---- tails: take tokens off the ticket counter until it runs past T;
   // wait for the token's 16 chunks (they are all in flight on resident
@@ -1899,6 +1915,14 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   // p2|p3 and the p3|p4 that a p3 storing sumsq per chunk had already
   // retired.)
   mk_mhc_p1_impl<true>(a, blockIdx.x);
+  MK_MHC_TS(7);
+}
+
+template <bool BF16_FN>
+__global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  MK_MHC_TS(0);
+  mk_mhc_p1_impl<BF16_FN, true>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
@@ -3066,7 +3090,8 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 // ints: num_tokens, sinkhorn_repeat
 // scalars: rms_eps, pre_eps, sinkhorn_eps, post_mult, norm_eps
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false) {
+                std::vector<int64_t> ints, bool bf16_fn = false,
+                bool ar_consumer = false) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -3100,6 +3125,25 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.norm_eps = (float)scalars[4];
 
   auto stream = c10::cuda::getCurrentCUDAStream();
+  // Separate occupancy for both new instantiations. Only immutable fn may
+  // be prepared early, and only when the caller opted into the PDL chain.
+  // A serialized launch remains correct: overlap is opportunistic.
+  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8) {
+    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true> : mk_mhc_ar_kernel<false>;
+    static int ar_grids[2] = {0, 0};
+    int& grid = ar_grids[bf16_fn ? 1 : 0];
+    if (!grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+          &per_sm, kernel, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
+    }
+    a.grid = grid;
+    mk_launch(kernel, grid, 0, stream, a);
+    return;
+  }
   // A persistent grid must be fully resident or the grid barrier deadlocks.
   // Ask the device rather than assume, and clamp to what it answers. Cached
   // because the barrier's ticket arithmetic also needs the grid to be the
@@ -3771,7 +3815,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("bf16_fn") = false);
+        pybind11::arg("bf16_fn") = false,
+        pybind11::arg("ar_consumer") = false);
   m.def("run_prep", &mk_run_prep, "MK_PREP: fused decode-step preparation (CUDA form of glm53_prep_fused)");
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");

@@ -7547,7 +7547,7 @@ def test_osar_prefetch_hints_contract() -> None:
     cu = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
                                  "dsv4_oneshot_ar.cu"), encoding="utf-8").read()
     check("#define OSAR_MAXHINT 8" in cu and "struct HintArgs {" in cu
-          and "int nbytes, const HintArgs h) {" in cu,
+          and "int nbytes, const HintArgs h, bool consumer_pdl) {" in cu,
           "k_oneshot takes up to 8 (ptr, bytes) hints by value")
     check(cu.count('asm volatile("prefetch.global.L2 [%0];"') == 1
           and cu.index('asm volatile("prefetch.global.L2')
@@ -7564,7 +7564,7 @@ def test_osar_prefetch_hints_contract() -> None:
           "owning blocks release their prefetch warps the moment the peers "
           "land")
     check("k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,"
-          in cu and "(int)(n * 2), h);" in cu,
+          in cu and "(int)(n * 2), h, false);" in cu,
           "the fixed-geometry launch carries the hints")
     check('m.def("oneshot_ar_hint", &py_oneshot_hint);' in cu
           and 'm.def("phase_counters", &py_phase_counters);' in cu
@@ -7593,7 +7593,7 @@ def test_osar_prefetch_hints_contract() -> None:
                                   "glm53_megakernel.py"), encoding="utf-8").read()
     for site, note, launch in (
             ("gemm", "_ar_note(mk_pack[0], mk_pack[1])", "_EXT.run_gemm("),
-            ("mhc", "_ar_note(fn)", "_EXT.run_mhc(")):
+            ("mhc", "_ar_note(weight)", "_EXT.run_mhc(")):
         n_at, l_at = drv.find(note), drv.find(launch)
         check(0 < n_at < l_at, f"{site} launch notes its weights first")
 
@@ -8455,7 +8455,7 @@ def test_glm53_megakernel_contracts() -> None:
           "the matmul spacer (whose 8 MB output is dirty too) and before the "
           "hot touch: the old order left ~24 MB of write-back under the timed "
           "kernel (both arms ~35% slow at the first launch)")
-    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 13
+    check(cu_code.count('asm volatile("griddepcontrol.launch_dependents;");') == 14
           and "cudaLaunchAttributeProgrammaticStreamSerialization" in cu
           and 'getenv("VLLM_GLM53_MK_PDL")' in cu
           and "cudaLaunchKernelEx(&cfg, kernel, args)" in cu,
@@ -8622,7 +8622,7 @@ def test_glm53_megakernel_contracts() -> None:
           "mhc launches its own grid, clamped to what the device reports "
           "resident: a hard constant plus an assert would turn future "
           "register drift into a refusal to boot")
-    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 9
+    check(cu.count("cudaOccupancyMaxActiveBlocksPerMultiprocessor") == 10
           and "&g_gemm2_bps, mk_gemm2_kernel<4, false>, MK_THREADS, GEMM2_SMEM" in cu
           and "&g_gemm2_m8_bps, mk_gemm2_kernel<1, false, true>, MK_THREADS, GEMM2_M8_SMEM" in cu,
           "the persistent grids check residency before launching: a grid "

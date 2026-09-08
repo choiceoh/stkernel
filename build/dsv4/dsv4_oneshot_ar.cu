@@ -232,7 +232,12 @@ __device__ __forceinline__ void osar_prefetch(const HintArgs &h,
 }
 
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                          int nbytes, const HintArgs h) {
+                          int nbytes, const HintArgs h, bool consumer_pdl) {
+  // In a PDL chain this collective is also a consumer. Neither the input
+  // nor the protocol's previous sequence may be read before its predecessor
+  // has completed. No forward progress relies on concurrent residency.
+  if (consumer_pdl)
+    asm volatile("griddepcontrol.wait;" ::: "memory");
   // The grid is fixed at ARGRID for the counter invariant, so at decode sizes
   // the smallest plain call has n = hidden and many blocks fall entirely past
   // the payload. The 16B lanes make this starker: with blockDim 256 and
@@ -326,6 +331,11 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
     c->tx_seq = nxt;
     __threadfence_system();
   }
+  // Every block has copied, fenced and contributed its publication ticket
+  // before releasing the dependent grid. The consumer may load immutable
+  // weights now; its dependency wait still gates every reduced-input read.
+  if (consumer_pdl)
+    asm volatile("griddepcontrol.launch_dependents;");
   // Peer wait: rxf is only ever written by the peers' NICs, never by a block
   // of this kernel -- same independence argument as the guard above. Fence
   // stays where it always was: after the wait, before reading peer data.
@@ -745,7 +755,8 @@ static void py_connect(std::vector<std::string> all) {
 }
 static torch::Tensor py_oneshot_impl(torch::Tensor input,
                                      const std::vector<int64_t> &ptrs,
-                                     const std::vector<int64_t> &lens) {
+                                     const std::vector<int64_t> &lens,
+                                     bool consumer_pdl = false) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kBFloat16);
   TORCH_CHECK(input.is_contiguous());
   // The copy/reduce phases use 16B vectors; the ring side is aligned by
@@ -778,8 +789,24 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
   // which is only sound if every launch contributes exactly ARGRID
   // increments. The 48-block grid fills GB10 once and covers MAXEL through
   // the kernel's grid-stride loops; empty decode blocks only sync/increment.
-  k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
-                                          (int)(n * 2), h);
+  if (consumer_pdl) {
+    cudaLaunchConfig_t cfg{};
+    cfg.gridDim = dim3(ARGRID);
+    cfg.blockDim = dim3(ARTHREADS);
+    cfg.stream = st;
+    cudaLaunchAttribute attr{};
+    attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+    attr.val.programmaticStreamSerializationAllowed = 1;
+    cfg.attrs = &attr;
+    cfg.numAttrs = 1;
+    const auto err = cudaLaunchKernelEx(&cfg, k_oneshot, g_ctrl, src, dst,
+                                         (int)n, (int)(n * 2), h, true);
+    TORCH_CHECK(err == cudaSuccess, "oneshot PDL launch: ",
+                cudaGetErrorString(err));
+  } else {
+    k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
+                                          (int)(n * 2), h, false);
+  }
   return out;
 }
 static torch::Tensor py_oneshot(torch::Tensor input) {
@@ -788,7 +815,10 @@ static torch::Tensor py_oneshot(torch::Tensor input) {
 static torch::Tensor py_oneshot_hint(torch::Tensor input,
                                      std::vector<int64_t> ptrs,
                                      std::vector<int64_t> lens) {
-  return py_oneshot_impl(input, ptrs, lens);
+    return py_oneshot_impl(input, ptrs, lens);
+}
+static torch::Tensor py_oneshot_consumer(torch::Tensor input) {
+  return py_oneshot_impl(input, {}, {}, true);
 }
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
 // per collective with and without hints: [guard, copy, wait, reduce, calls].
@@ -818,6 +848,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("local_infos", &py_local_infos);
   m.def("connect", &py_connect);
   m.def("oneshot_ar", &py_oneshot);
+  m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
   m.def("healthy", &py_healthy);
