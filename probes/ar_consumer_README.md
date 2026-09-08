@@ -22,7 +22,12 @@ takes precedence over those optional hints for these small collectives.
 4. MHC reads only immutable `fn` weights before its dependency wait. The BF16
    consumer caches `[output, hidden, stream]` coefficients so four values use
    one aligned 64-bit load (24 vector loads instead of 96 scalar loads).
-   Activation,
+   Coefficients stay packed through the wait and expand at each multiply.
+   The expansion appends sixteen zero bits, preserving the finite BF16 value;
+   volatile scalar PTX prevents the compiler from moving all 96 expanded
+   floats back out of the token loop. This reduced the compiled BF16 consumer
+   from 158 to 128 registers on CUDA 13.0; its 24 loads remain before the wait.
+   Its occupancy is still queried from its own kernel. Activation,
    workspace and counter accesses remain after the wait, including inactive
    CTAs that later obtain a tail ticket.
 5. MHC arithmetic, BF16 bit patterns, projection reduction order and GEMM packs
