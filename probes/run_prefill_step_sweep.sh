@@ -84,25 +84,22 @@ measure)
   python3 probes/prefill_chunk_sweep.py --ctx "$SWEEP_CTX" --chunks "$CHUNKS" --reps "${REPS:-2}" \
     --chunk-file "$CHUNK_FILE" --json "$OUT/sweep.json" ${TRACE_CHUNKS:+--trace-chunks "$TRACE_CHUNKS"} --trace-ctx "$TRACE_CTX" 2>&1 | tee "$OUT/sweep.log"
 
-  for C in ${TRACE_CHUNKS//,/ }; do
-    t=$(python3 -c "import json,sys;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('$C',{}).get('trace',''))" 2>/dev/null)
-    if [ -n "$t" ] && [ -f "$t" ]; then
-      # Out of the shared profiler directory: the next capture on this fleet
-      # must not be able to confuse or clobber the evidence for this one.
-      mv "$t" "$OUT/trace-$C.${t##*.}" && t="$OUT/trace-$C.${t##*.}"
-      python3 tools/trace_prefill_attribution.py "$t" --out "$OUT/attr-$C.json" 2>&1 | tee "$OUT/attr-$C.log"
+  # One trace carrying every chunk size (a profiler window per size returns
+  # HTTP 500 after the first on this build).
+  tr=$(python3 -c "import json;print(json.load(open('$OUT/sweep.json')).get('traces',{}).get('trace',''))" 2>/dev/null)
+  if [ -n "$tr" ] && [ -f "$tr" ]; then
+    # Out of the shared profiler directory: the next capture on this fleet must
+    # not be able to confuse or clobber the evidence for this one.
+    mv "$tr" "$OUT/trace.${tr##*.}" && tr="$OUT/trace.${tr##*.}"
+    python3 tools/trace_prefill_attribution.py "$tr" --out "$OUT/attr.json" 2>&1 | tee "$OUT/attr.log"
+    if [ -s "$OUT/attr.json" ]; then
+      python3 probes/prefill_fixed_cost_attribution.py "$OUT/attr.json" --json "$OUT/fixed-cost.json" 2>&1 \
+        | tee "$OUT/fixed-cost.log"
     else
-      echo "no trace captured for chunk $C"
+      echo "attribution produced nothing: skipping the fixed-cost split"
     fi
-  done
-  # The point of the traces: turn the wall-clock `a` into kernel categories.
-  # Needs two chunk sizes at least -- one cannot separate fixed from per-token.
-  set -- "$OUT"/attr-*.json
-  if [ $# -ge 2 ] && [ -f "$1" ]; then
-    python3 probes/prefill_fixed_cost_attribution.py "$@" --json "$OUT/fixed-cost.json" 2>&1 \
-      | tee "$OUT/fixed-cost.log"
   else
-    echo "fewer than two attributions: skipping the fixed-cost split"
+    echo "no trace captured"
   fi
   # The arm's own head-log copy is taken BEFORE this step runs, so a serving
   # error during the sweep lands in a log the next boot overwrites -- that is how
