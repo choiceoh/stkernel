@@ -6153,6 +6153,27 @@ def test_torch_imports_are_guarded() -> None:
     print("  torch imports guarded ......... OK")
 
 
+def test_profile_declares_each_knob_once() -> None:
+    """A later duplicate wins on `source`, so a promotion can be silently undone.
+
+    32차 lost `VLLM_GLM53_MK_GEMM2` exactly this way: a main merge re-declared it
+    `=0` further down the profile and the promotion above it stopped existing.
+    That was caught by hand, once, for one key. This is the general form.
+    """
+    import glob as _glob
+    for path in sorted(_glob.glob("profiles/*.env")):
+        seen: dict[str, list[int]] = {}
+        for lineno, line in enumerate(open(path, encoding="utf-8"), 1):
+            m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=", line)
+            if m:
+                seen.setdefault(m.group(1), []).append(lineno)
+        dupes = {k: v for k, v in seen.items() if len(v) > 1}
+        check(not dupes,
+              f"{path}: these knobs are declared more than once, so the last "
+              f"line silently wins: {dupes}")
+    print("  profile knobs declared once .... OK")
+
+
 def test_launcher_reject_method_gate() -> None:
     """REJECT_METHOD must reach the drafter config and refuse a typo."""
     text = open("launchers/start-glm53-nvfp4-tp4.sh").read()
@@ -6175,9 +6196,16 @@ def test_launcher_reject_method_gate() -> None:
           "decode graph capture")
     # FLY_WINDOW/FLY_ENTROPY land inside SPECCFG_VAL, which the worker lane
     # splices into an unquoted ssh string the remote shell re-parses.
-    for _k in ("FLY_WINDOW", "FLY_ENTROPY"):
-        check(f"ABORT: {_k} must be" in text,
-              f"{_k} must be validated before it reaches the config JSON")
+    # Both dials go through json.loads, not a glob: a shape check accepts
+    # ".5", "5." and "00.5", every one of which json.loads rejects, so the
+    # value would still die inside the engine after a 4-node run.
+    for _pair in ("FLY_WINDOW:fly_window_size:int",
+                  "FLY_ENTROPY:fly_entropy_threshold:float"):
+        check(_pair in text,
+              f"{_pair.split(':')[0]} must be validated as JSON before it "
+              "reaches the config")
+    check("not a JSON number" in text,
+          "the FLy dials must be rejected by the same parser that will read them")
     names = _launcher_caller_passthrough(text)
     check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
           "both drafter knobs must be in the caller passthrough list -- a "
@@ -11767,6 +11795,7 @@ if __name__ == "__main__":
     test_dflash_aot_guard_stays_removed()
     test_hotpath_env_latches()
     test_launcher_load_format_gate()
+    test_profile_declares_each_knob_once()
     test_launcher_reject_method_gate()
     test_dflash2_prefix_cache_fail_closed()
     test_accept_profile_conditional_arithmetic()

@@ -13,6 +13,16 @@ addressing, not arithmetic, so anything short of bit-equality means the stride
 arithmetic is wrong.  This probe is that gate; the profile keeps the knob at 0
 until it passes.  No timing here -- this is correctness, not a speed claim.
 
+The contiguous arm IS the knob-at-0 arm: with VLLM_GLM53_KDA_STRIDED unset,
+_glm53_kda_input makes every input contiguous and hands the same kernel the
+same H*K / HV*V / HV strides, so comparing the two arms in one process is
+exactly the on/off comparison, without a second boot.
+
+Both kda.py and fused_recurrent.py have to be mounted: the first launches the
+kernel the second defines, and mounting one alone gives a patched caller a
+stock kernel (`Keyword argument stride_q_token was specified but
+unrecognised`).  probes/run_mk_probe.sh carries both.
+
 Run only in an idle fleet window, in a fresh container with composed sources:
   bash probes/run_mk_probe.sh probes/kda_strided_check.py | tee /tmp/kdastrided.log
 """
@@ -104,7 +114,7 @@ def make_case(num_seqs, spec_len, gen, headwise_beta=False):
     return contig, strided, T
 
 
-def run(mod, inputs, *, num_seqs, spec_len, T, state, accepted, indices, spec):
+def run(mod, inputs, *, spec_len, T, state, accepted, indices, spec):
     st = state.clone()
     out, final = mod.fused_recurrent_kda(
         q=inputs["q"],
@@ -164,7 +174,7 @@ def main() -> int:
             (num_seqs,), spec_len, device="cuda", dtype=torch.int32
         )
         kw = dict(
-            num_seqs=num_seqs, spec_len=spec_len, T=T, state=state,
+            spec_len=spec_len, T=T, state=state,
             accepted=accepted, indices=indices, spec=spec,
         )
         o_c, s_c = run(kda, contig, **kw)

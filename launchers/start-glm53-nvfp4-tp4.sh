@@ -619,18 +619,32 @@ for start, end, _ in schedule:
       # SPECCFG_VAL, which the worker lane splices into an unquoted ssh string
       # the remote shell re-parses, so an unchecked value is both an invalid-JSON
       # death after a 4-node run and a way for head and workers to disagree.
-      if [ -n "${FLY_WINDOW:-}" ]; then
-        case "$FLY_WINDOW" in
-          ""|*[!0-9]* ) echo "ABORT: FLY_WINDOW must be a non-negative integer, got '$FLY_WINDOW'"; exit 1 ;;
-        esac
-        _spec_extra="$_spec_extra,\"fly_window_size\":$FLY_WINDOW"
-      fi
-      if [ -n "${FLY_ENTROPY:-}" ]; then
-        case "$FLY_ENTROPY" in
-          *[!0-9.]*|*.*.*|.|"" ) echo "ABORT: FLY_ENTROPY must be a non-negative decimal, got '$FLY_ENTROPY'"; exit 1 ;;
-        esac
-        _spec_extra="$_spec_extra,\"fly_entropy_threshold\":$FLY_ENTROPY"
-      fi
+      # Validated as JSON, not by glob: a shape check accepts '.5', '5.' and
+      # '00.5', all of which json.loads rejects, so the value would still die
+      # inside the engine after a 4-node run -- the failure this guard exists to
+      # move forward. json.loads is the same tool SPEC_K_SEQLEN uses below.
+      for _fly_pair in "FLY_WINDOW:fly_window_size:int" \
+                       "FLY_ENTROPY:fly_entropy_threshold:float"; do
+        _fly_env=${_fly_pair%%:*}; _fly_rest=${_fly_pair#*:}
+        _fly_key=${_fly_rest%%:*}; _fly_kind=${_fly_rest#*:}
+        _fly_val=${!_fly_env:-}
+        [ -n "$_fly_val" ] || continue
+        if ! _fly_err=$(python3 -c '
+import json, sys
+name, kind, raw = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    value = json.loads(raw)
+except ValueError as exc:
+    raise SystemExit(f"{name}: not a JSON number ({exc})")
+if isinstance(value, bool) or not isinstance(value, int if kind == "int" else (int, float)):
+    raise SystemExit(f"{name}: want a JSON {kind}, got {value!r}")
+if value < 0:
+    raise SystemExit(f"{name}: must be >= 0, got {value!r}")
+' "$_fly_env" "$_fly_kind" "$_fly_val" 2>&1); then
+          echo "ABORT: $_fly_err (value: '$_fly_val')"; exit 1
+        fi
+        _spec_extra="$_spec_extra,\"$_fly_key\":$_fly_val"
+      done
       : ;;
     * ) echo "ABORT: REJECT_METHOD must be standard, block or fly, got '$REJECT_METHOD'"; exit 1 ;;
   esac
