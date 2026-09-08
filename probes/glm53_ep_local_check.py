@@ -18,9 +18,11 @@ from types import SimpleNamespace
 if __package__:
     from .glm53_ep_local_evidence import validate_compile_evidence
     from .glm53_ep_capsule_runtime import verify_runtime
+    from .glm53_ep_numerics_diagnostics import capture_failure
 else:
     from glm53_ep_local_evidence import validate_compile_evidence
     from glm53_ep_capsule_runtime import verify_runtime
+    from glm53_ep_numerics_diagnostics import capture_failure
 
 CASES = {
     "balanced4096": (4096, "balanced"),
@@ -58,7 +60,7 @@ def check_control(baseline, repeat):
     return result
 
 
-def compare(candidate, baseline, repeat):
+def compare(candidate, baseline, repeat, *, failure_context=None):
     import torch
     # A noisy reference must never authorize arbitrarily noisy candidates.
     check_control(baseline, repeat)
@@ -70,6 +72,26 @@ def compare(candidate, baseline, repeat):
                   max_row_relative_abs=float(max_error.max()),
                   stock_max_row_relative_l2=float(noise.max()),
                   stock_max_row_relative_abs=float(max_noise.max()))
+    if result["bad_rows"] and failure_context is not None:
+        # The original failure is permanent even if diagnostic copying fails.
+        # No host tensor copies or additional comparisons occur on success.
+        sink = failure_context["result"]
+        sink["verdict"] = "FAIL"
+        if "candidate_first_failure" not in sink:
+            sink["candidate_first_failure"] = dict(
+                verdict="CANDIDATE_NUMERICS_FAIL", phase=sink.get("phase"), **result)
+            try:
+                sink["candidate_failure_diagnostics"] = capture_failure(
+                    candidate, baseline, repeat, failure_context["third"],
+                    bad=bad, error=error, peak=max_error, noise=noise, peak_noise=max_noise,
+                    l2_limits=torch.maximum(3*noise, torch.full_like(noise, ROW_L2_FLOOR)),
+                    peak_limits=torch.maximum(3*max_noise, torch.full_like(max_noise, ROW_PEAK_FLOOR)),
+                    total_bad_rows=result["bad_rows"],
+                    route_ids=failure_context["route_ids"], route_weights=failure_context["route_weights"],
+                    expert_map=failure_context["expert_map"], scales=failure_context["scales"],
+                    inputs=failure_context["inputs"])
+            except BaseException as exc:
+                sink["candidate_failure_diagnostics_error"] = repr(exc)
     assert not result["bad_rows"], dict(verdict="CANDIDATE_NUMERICS_FAIL", **result)
     return result
 
@@ -234,9 +256,14 @@ def _run_case(args, result, provenance):
         b, b2, b3 = eager(False), eager(False), eager(False)
         result["controls"].append([check_control(b, b2), check_control(b, b3), check_control(b2, b3)])
         result["phase"] = "changed-candidate" if changed else "initial-candidate"
-        result["candidate"].append(compare(eager(True), b, b2))
+        failure_context = dict(result=result, third=b3, inputs=x, route_ids=ids, route_weights=weights,
+                               expert_map=expert_map, scales=dict(
+                                   fc1_input=wrapper.g1_alphas, fc1_alpha=wrapper.g1_alphas,
+                                   fc2_input=wrapper._fc2_input_scale, fc2_alpha=wrapper.g2_alphas))
+        result["candidate"].append(compare(eager(True), b, b2, failure_context=failure_context))
         result["phase"] += "-nondefault-stream"
-        result["candidate"].append(compare(eager(True, nondefault=True), b, b2))
+        result["candidate"].append(compare(eager(True, nondefault=True), b, b2,
+                                           failure_context=failure_context))
         if kind == "remote" and not changed:
             assert bool((b == 0).all()), "empty-local control must be exactly zero"
             assert bool((out == 0).all()), "empty-local candidate must be exactly zero"

@@ -59,7 +59,7 @@ def gpu_fixture():
         capsule.mkdir()
         args = ["gpu", "--revision", "a" * 40, "--out", str(output),
                 "--capsule-root", str(capsule), "--manifest-sha256", SHA]
-        h = SimpleNamespace(root=root, capsule=capsule, output=output, args=args, events=[], commands=[],
+        h = SimpleNamespace(root=root, capsule=capsule, output=output, args=args, events=[], commands=[], inspections=[],
                             proof_hook=None, capsule_hook=None, cell_runtime=runtime.expected_runtime_receipt(),
                             docker_exit=0, cell_status={})
 
@@ -94,6 +94,7 @@ def gpu_fixture():
 
         def process(command, **kwargs):
             if command[:2] == ["docker", "inspect"]:
+                h.inspections.append(command[2])
                 return subprocess.CompletedProcess(command, 1, "", "")
             if command[:2] != ["docker", "run"]:
                 raise AssertionError("unexpected mocked process: " + repr(command))
@@ -117,7 +118,7 @@ def gpu_fixture():
         h.inventory = stack.enter_context(patch.object(gpu.lifecycle, "snapshot", side_effect=snapshot))
         stack.enter_context(patch.object(gpu.lifecycle, "validate_before", return_value="stopped"))
         h.pause = stack.enter_context(patch.object(gpu.lifecycle, "with_paused", side_effect=paused))
-        stack.enter_context(patch.object(gpu, "resources", return_value={}))
+        h.resources = stack.enter_context(patch.object(gpu, "resources", return_value={}))
         h.preflight = stack.enter_context(patch.object(gpu.sanitizer_support, "preflight", return_value={"verdict": "PASS"}))
         stack.enter_context(patch.object(gpu.sanitizer_support, "mount_args", return_value=["--mount", "sanitizer,readonly"]))
         stack.enter_context(patch.object(gpu.sanitizer_support, "command", side_effect=lambda tool: ["compute-sanitizer", "--tool", tool]))
@@ -238,11 +239,11 @@ class CpuWrapperTests(unittest.TestCase):
 
 
 class GpuWrapperTests(unittest.TestCase):
-    def test_every_remap_moe_and_sanitizer_cell_uses_cpu16_capsule_identity(self):
+    def test_every_remap_moe_and_sanitizer_cell_uses_selected_cpu_capsule_identity(self):
         with gpu_fixture() as h:
             self.assertEqual(gpu.main(), 0)
             self.assertEqual(len(h.commands), 10)
-            self.assertIn("cpu16/local/result.json", str(gpu.CPU_EVIDENCE))
+            self.assertEqual(gpu.CPU_EVIDENCE, Path("measurements/glm53_ep_local_20260908/cpu17/local/result.json"))
             self.assertLess(h.events.index("proof"), h.events.index("inventory"))
             self.assertGreater(h.proof.call_count, len(h.commands))
             for command in h.commands:
@@ -255,9 +256,84 @@ class GpuWrapperTests(unittest.TestCase):
                 self.assertIn("--cpus=4", command)
             self.assertEqual(sum("compute-sanitizer" in command for command in h.commands), 8)
             completed = json.loads((h.output / "completion.json").read_text())
+            self.assertEqual(completed["mode"], "full")
+            self.assertIsNone(completed["diagnose_case"])
             self.assertEqual(completed["binding_runtime"], runtime.expected_runtime_receipt())
             self.assertTrue(completed["restored_original"])
             self.assertTrue(all(cell["binding_runtime"] == completed["binding_runtime"] for cell in completed["cells"]))
+
+    def test_diagnostic_runs_only_unchanged_case_with_admission_cleanup_and_restore(self):
+        with gpu_fixture() as h:
+            h.args += ["--diagnose-case", "concentrated6912"]
+            self.assertEqual(gpu.main(), 0)
+            self.assertEqual(len(h.commands), 1)
+            command = h.commands[0]
+            self.assertEqual(command[command.index("--case") + 1], "concentrated6912")
+            self.assertIn("/repo/probes/glm53_ep_local_check.py", command)
+            self.assertNotIn("--diagnose-case", command)
+            self.assertNotIn("--sanitize", command)
+            self.assertEqual(command[command.index("--compile-evidence") + 1], "/repo/" + str(gpu.CPU_EVIDENCE))
+            self.assertEqual(command[command.index("--manifest-sha256") + 1], SHA)
+            self.assertIn(f"type=bind,source={h.capsule},target={runtime.CAPSULE_MOUNT},readonly", command)
+            h.preflight.assert_called_once_with(gpu.lifecycle.IMAGE, h.output / "sanitizer-preflight.json")
+            self.assertEqual([call.args for call in h.resources.call_args_list], [(False,), (True,)])
+            self.assertLess(h.events.index("proof"), h.events.index("inventory"))
+            self.assertEqual(h.proof.call_count, 3)  # before pause, before cell, after restoration
+            self.assertIn(command[command.index("--name") + 1], h.inspections)
+            h.pause.assert_called_once()
+            completed = json.loads((h.output / "completion.json").read_text())
+            self.assertEqual(completed["mode"], "diagnostic")
+            self.assertEqual(completed["diagnose_case"], "concentrated6912")
+            self.assertFalse(completed["full_gpu_acceptance"])
+            self.assertFalse(completed["performance_acceptance"])
+            self.assertTrue(completed["restored_original"])
+            self.assertEqual([(cell["case"], cell["sanitizer"]) for cell in completed["cells"]],
+                             [("concentrated6912", None)])
+
+    def test_diagnostic_failure_preserves_failure_cleanup_and_original_restoration(self):
+        for failure in ("process", "runtime"):
+            with self.subTest(failure=failure), gpu_fixture() as h:
+                h.args += ["--diagnose-case", "concentrated6912"]
+                if failure == "process":
+                    h.docker_exit = 42
+                else:
+                    h.cell_runtime = copy.deepcopy(h.cell_runtime)
+                    h.cell_runtime["binding_identity"]["version"] = "13.3.1"
+                self.assertEqual(gpu.main(), 1)
+                self.assertEqual(len(h.commands), 1)
+                self.assertIn(h.commands[0][h.commands[0].index("--name") + 1], h.inspections)
+                self.assertIn("restored", h.events)
+                completed = json.loads((h.output / "completion.json").read_text())
+                self.assertTrue(completed["restored_original"])
+                self.assertEqual(completed["mode"], "diagnostic")
+                self.assertFalse(completed["full_gpu_acceptance"])
+                self.assertIn("exit 42" if failure == "process" else "runtime identity", completed["error"])
+
+    def test_diagnostic_cannot_skip_source_admission_before_inventory_and_pause(self):
+        with gpu_fixture() as h:
+            h.args += ["--diagnose-case", "concentrated6912"]
+            h.proof.side_effect = ValueError("CPU source changed")
+            self.assertEqual(gpu.main(), 1)
+            h.inventory.assert_not_called()
+            h.pause.assert_not_called()
+            h.preflight.assert_not_called()
+            self.assertEqual(h.commands, [])
+            completed = json.loads((h.output / "completion.json").read_text())
+            self.assertEqual(completed["mode"], "diagnostic")
+            self.assertFalse(completed["full_gpu_acceptance"])
+            self.assertIn("CPU source changed", completed["error"])
+
+    def test_diagnostic_rejects_unapproved_case_before_admission(self):
+        with gpu_fixture() as h:
+            h.args += ["--diagnose-case", "balanced4096"]
+            with self.assertRaises(SystemExit):
+                gpu.main()
+            self.assertFalse(h.output.exists())
+            h.capsule_check.assert_not_called()
+            h.proof.assert_not_called()
+            h.inventory.assert_not_called()
+            h.pause.assert_not_called()
+            self.assertEqual(h.commands, [])
 
     def test_stale_cpu_source_or_runtime_fails_before_inventory_and_pause(self):
         for stale in (ValueError("CPU source changed"), None):

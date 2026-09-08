@@ -19,7 +19,7 @@ from glm53_ep_local_evidence import validate_compile_evidence
 
 CASES = ("balanced4096", "balanced6912", "balanced8192", "concentrated6912",
          "remote4096", "duplicate4096", "zeros4097", "balanced16384")
-CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu16/local/result.json")
+CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu17/local/result.json")
 
 
 def resources(require_memory):
@@ -42,6 +42,8 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--capsule-root", type=Path, required=True)
     ap.add_argument("--manifest-sha256", required=True)
+    ap.add_argument("--diagnose-case", choices=("concentrated6912",),
+                    help="Run one unchanged fixture through normal admission/restoration; not a full GPU gate")
     args = ap.parse_args()
     if not re.fullmatch("[0-9a-f]{40}", args.revision):
         ap.error("full frozen revision required")
@@ -52,7 +54,9 @@ def main():
         ap.error("output must be separate from the capsule and frozen source")
     args.out.mkdir(parents=True, exist_ok=False)
     result = dict(started=time.time(), source_revision=args.revision,
-                  exit_code=1, performance_acceptance=False, cells=[])
+                  exit_code=1, performance_acceptance=False, full_gpu_acceptance=False,
+                  mode="diagnostic" if args.diagnose_case else "full",
+                  diagnose_case=args.diagnose_case, cells=[])
     owned = set()
     sanitizer_receipt = None
     capsule = None
@@ -165,6 +169,9 @@ def main():
         print("PASS "+label, flush=True)
 
     def run():
+        if args.diagnose_case is not None:
+            cell(args.diagnose_case)
+            return
         cell("remap")
         for case in CASES:
             cell(case)

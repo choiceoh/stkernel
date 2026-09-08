@@ -1,0 +1,119 @@
+{
+  "scope": "Local CPU only; no pinned compiler/runtime or GPU admission",
+  "focused": {
+    "diagnostics_tests": 8,
+    "wrapper_tests": 17,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "integration": {
+    "tests_run": 146,
+    "failures": 0,
+    "errors": 0,
+    "skips": 11,
+    "skipped": [
+      {
+        "test": "test_corrupt_small_row_cannot_hide_behind_a_large_row (test_glm53_ep_local_probe.NumericalTests.test_corrupt_small_row_cannot_hide_behind_a_large_row)",
+        "reason": "requires torch; pinned CPU image covers this"
+      },
+      {
+        "test": "test_large_stock_noise_cannot_authorize_a_bad_candidate (test_glm53_ep_local_probe.NumericalTests.test_large_stock_noise_cannot_authorize_a_bad_candidate)",
+        "reason": "requires torch; pinned CPU image covers this"
+      },
+      {
+        "test": "test_nonfinite_and_broadcastable_shapes_are_rejected (test_glm53_ep_local_probe.NumericalTests.test_nonfinite_and_broadcastable_shapes_are_rejected)",
+        "reason": "requires torch; pinned CPU image covers this"
+      },
+      {
+        "test": "test_small_stock_noise_preserves_existing_candidate_floor (test_glm53_ep_local_probe.NumericalTests.test_small_stock_noise_preserves_existing_candidate_floor)",
+        "reason": "requires torch; pinned CPU image covers this"
+      },
+      {
+        "test": "test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights (test_glm53_ep_route_remap.ReferenceTests.test_actual_remap_preserves_local_bits_and_zeros_remote_nonfinite_weights)",
+        "reason": "pinned CPU image supplies Torch"
+      },
+      {
+        "test": "test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle (test_glm53_ep_route_remap.ReferenceTests.test_actual_tensor_remap_matches_scalar_conversion_and_range_oracle)",
+        "reason": "pinned CPU image supplies Torch"
+      },
+      {
+        "test": "test_binding_only_override_is_not_accepted_as_the_matched_pair (test_glm53_ep_bindings_capsule.DependencyTests.test_binding_only_override_is_not_accepted_as_the_matched_pair)",
+        "reason": "dependency metadata checks require packaging; staging does not"
+      },
+      {
+        "test": "test_duplicate_distribution_and_direct_url_identity_fail_closed (test_glm53_ep_bindings_capsule.DependencyTests.test_duplicate_distribution_and_direct_url_identity_fail_closed)",
+        "reason": "dependency metadata checks require packaging; staging does not"
+      },
+      {
+        "test": "test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict (test_glm53_ep_bindings_capsule.DependencyTests.test_matching_pair_satisfies_reverse_constraints_and_retains_unrelated_baseline_conflict)",
+        "reason": "dependency metadata checks require packaging; staging does not"
+      },
+      {
+        "test": "test_reverse_dependency_pathfinder_and_missing_target_fail (test_glm53_ep_bindings_capsule.DependencyTests.test_reverse_dependency_pathfinder_and_missing_target_fail)",
+        "reason": "dependency metadata checks require packaging; staging does not"
+      },
+      {
+        "test": "test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints (test_glm53_ep_bindings_capsule.DependencyTests.test_target_markers_are_explicit_and_active_extras_cannot_hide_constraints)",
+        "reason": "dependency metadata checks require packaging; staging does not"
+      }
+    ],
+    "test_modules": 14,
+    "contract_paths": 29,
+    "scope": "Local CPU integration; not pinned server compilation or GPU admission"
+  },
+  "expected_pinned_tests": 146,
+  "expected_test_modules": 14,
+  "expected_contract_files": 29,
+  "contract_sha256": {
+    "tests/test_glm53_ep_prefill_local.py": "3f79ec33eaabff5521b898b6e72555116e8c1797b51f3b5871fb9c46a203130a",
+    "tests/test_glm53_ep_local_probe.py": "5a8fb78fd9dcc233fb02e1253bfd6247b24baaeb0c80387c6e381ccaafc0b325",
+    "tests/test_glm53_ep_numerics_diagnostics.py": "893dc3bb917dc26153e9b074a829a319bb468c5c9391b2a25c70aa538ac7b206",
+    "tests/test_glm53_probe_lifecycle.py": "c35a83f6e3eb34adc6a77b240994a7ce1cdc86d4da3f2e9a81220de4bf3f2706",
+    "tests/test_glm53_ep_route_remap.py": "7f6a9ab88f1eaf219a662f4ffca41cb42aef941fb14bd3c0289f677f16e1da5c",
+    "tests/test_glm53_ep_sanitizer.py": "61c269124cb37cbd02d6930a448a3b2422e625569e1061ca1637093f32b8705d",
+    "tests/test_glm53_ep_binding_check.py": "eedeca9b4bc0f01c4fa2a20518182dba6a5a6854b55c36c7c6af394541f5b26f",
+    "tests/test_glm53_ep_task_publication.py": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+    "tests/test_glm53_ep_route_scale_cache.py": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+    "tests/test_glm53_ep_capsule_runtime.py": "624a496cfa8a37be53c9625962e1119d89a8d87f1d9de5c8f20b9a34f8c6779f",
+    "tests/test_glm53_ep_capsule_wrappers.py": "4da051bb61dee36f61ea9ebb3973ec4462e21a1fc3a62e8fc6b580264ac3e9ca",
+    "tests/test_glm53_ep_capsule_inners.py": "fccae5d3ff7a57d72e3c0d25355193ab4409ae2d2668c26ae362fe313efc599d",
+    "tests/test_glm53_ep_bindings_capsule.py": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+    "tests/test_glm53_ep_bindings_pair.py": "8dfedc98646a0580781cad5e14921d4ce277c8f899e1ec65fb26af496a5bff6a",
+    "probes/glm53_ep_local_check.py": "38478be52b8b645bb6b770709a308a7e0f099335cae5c6db8204255c8bcfcdec",
+    "probes/glm53_ep_numerics_diagnostics.py": "e41b5a39873dd8322f4ba40e5c3202c36bdc905a4a267554e1a2947fb31e0a1e",
+    "probes/glm53_ep_local_evidence.py": "f2377c14fc3343a3df2e26a62ec6f1309d814b65f329aa6a3e09535f52123872",
+    "probes/run_glm53_ep_local_offline.py": "5c5598a9e946419ce09ada141c6620d157c71c40cbd816be7b1d5ad35031f167",
+    "probes/glm53_probe_lifecycle.py": "ac981627094546373ffbee6970a23d9356f23642b628dd228168324c50b7cc16",
+    "probes/glm53_ep_local_compile_check.py": "4187c1150ce16bc12e33dec8d6136b108f36dc3792b2f45421fd44a3c6a082cf",
+    "probes/run_glm53_ep_local_cpu_compile.py": "2353825ca1bd395a122439402b2eac892518d52c99e52de1872d6dad70f18da8",
+    "probes/glm53_ep_route_remap_check.py": "241c11de8db10b550f6a624e91ec729882d4993b1919abe7b187acec4252e568",
+    "probes/glm53_ep_sanitizer.py": "7144f2b4c488e073257845dc65b028c220a06831ac9ce654d6fbaa2f01ca7e1a",
+    "probes/glm53_ep_binding_check.py": "1d8027b4575bed172b4daeb2a19c10b44977afd34d3d483fb038b0cf4404463c",
+    "probes/run_glm53_ep_binding_offline.py": "357ce3de1b087135b4661aeea8fe7a6ea5ce978de024a9f1c9c83b4aba766514",
+    "probes/glm53_ep_capsule_runtime.py": "aad33d433396424955107c8b06ddec3859f801b9fab9fabfc2154ebedc7623a7",
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_pair_check.py": "2afeabdd4e1499d622b7a829cc063728b659cf669c8ce99285ec4e26cdd911f0",
+    "probes/run_glm53_ep_bindings_pair_offline.py": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587"
+  },
+  "logs": [
+    {
+      "source": "/tmp/glm53-cpu17-wrapper-tests.log",
+      "stored_path": "wrapper-tests.log.gz",
+      "original_sha256": "c4f1c652dcb780d6c4c840af6d9e75b26e3fbcf9a6f67986cdb421417d6da588",
+      "stored_sha256": "55c3477087bef582c616568f36bd7a1e9df4d9d9b47e77d0bbd8f43d4fe3c648"
+    },
+    {
+      "source": "/tmp/glm53-cpu17-numerics-diagnostics-tests.log",
+      "stored_path": "numerics-diagnostics-tests.log.gz",
+      "original_sha256": "d7ef2c7e259a6382d3f69c00a5a3025766664a0383da08aa3b03addc7506db8a",
+      "stored_sha256": "5033e2e1f9c16724b6c77d64cbd65f146d662b4b8406329dd2e85080a2b3cc94"
+    },
+    {
+      "source": "/tmp/glm53-cpu17-local-integration-tests.log",
+      "stored_path": "local-integration-tests.log.gz",
+      "original_sha256": "c27c43ce173760b4e456bc8ff8b3ce0d9df1ffdf2aaa4b88e89d686d9358cffa",
+      "stored_sha256": "4c5d870556c661fccc28fcdaa021b0820f47986cc9a7b59c78e7ff946ec3723f"
+    }
+  ]
+}

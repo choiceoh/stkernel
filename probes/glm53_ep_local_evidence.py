@@ -12,6 +12,7 @@ else:
 CPU_TEST_MODULES = (
     "test_glm53_ep_prefill_local.py",
     "test_glm53_ep_local_probe.py",
+    "test_glm53_ep_numerics_diagnostics.py",
     "test_glm53_probe_lifecycle.py",
     "test_glm53_ep_route_remap.py",
     "test_glm53_ep_sanitizer.py",
@@ -26,6 +27,7 @@ CPU_TEST_MODULES = (
 )
 CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_ep_local_check.py",
+    "probes/glm53_ep_numerics_diagnostics.py",
     "probes/glm53_ep_local_evidence.py",
     "probes/run_glm53_ep_local_offline.py",
     "probes/glm53_probe_lifecycle.py",

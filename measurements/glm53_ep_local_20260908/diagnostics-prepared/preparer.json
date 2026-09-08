@@ -1,0 +1,9 @@
+{
+  "preparer_sha256": "562758cf8fd6f96cc085ffcb483b3e51fd4f9e4ab438abd76ea4cae47f61a1d9",
+  "executed": false,
+  "remote_actions": false,
+  "source": "future explicit published revision",
+  "expected_kernel_revision": "111fff02f66f3e07a8332da1117afb75b161f0d6",
+  "host_memory_guard_gib": 12,
+  "normal_cpu_session": "eplocalcpu0908v17head"
+}

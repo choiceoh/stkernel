@@ -586,3 +586,25 @@ frozen source and CPU16 evidence, runtime receipts and fleet lifecycle records.
 No current-container equality after release is inferred from those snapshots.
 The next step is to identify the failing row/element and repeatability before
 changing kernel arithmetic or running another full GPU suite.
+
+## Bounded numerical diagnostics
+
+The candidate comparison now retains its first failure and records up to eight
+bad rows with their actual per-row L2/peak errors, reference noise, limits and
+reference norms. It stores the original top8 routes and expert scales, plus
+BF16 words from B1/B2/B3/C1 at the eight largest absolute output differences.
+Capture runs only after a failed comparison; even a diagnostic error leaves
+the original numerical failure intact. It does not execute another candidate
+or alter the fixture, thresholds, successful comparisons or kernel arithmetic.
+
+The normal offline runner accepts `--diagnose-case concentrated6912` to execute
+that existing cell once through the same source, capsule, resource and lifecycle
+checks. Completion identifies the diagnostic mode and explicitly withholds full
+GPU acceptance. The default full suite is unchanged. These changed probe/helper
+contracts require a fresh CPU17 receipt; CPU16 still describes the measured
+kernel source but cannot admit the new diagnostic source.
+The [local preparation evidence](../measurements/glm53_ep_local_20260908/diagnostics-prepared/README.md)
+records eight diagnostic and17 wrapper tests passing without skips. Full local
+integration has135 passes,11 skips for missing host Torch/packaging and no errors
+or failures. The server gate still requires all146 tests without skips, actual
+CuTe/24-remap compilation and matching runtime/source receipts.
