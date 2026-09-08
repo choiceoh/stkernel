@@ -612,3 +612,10 @@ CPU17 admission was attempted once against published diagnostic source
 `81b8ef91`; host MemAvailable7791744KiB was below the unchanged12GiB guard.
 No remote CPU17 source, bundle transfer or job was created. The numerical
 diagnostic has not been submitted to GPU.
+The23:05 KST follow-up found6867044KiB available and still no CPU17 source/job,
+so the preparer was not rerun. Source-bound CPU17 collection and the subsequent
+single-case GPU submission are now prepared in `diagnostics-prepared`, with
+syntax checks and independent read-only review. Both remain unexecuted. The
+GPU preparer requires the successful CPU17 receipt commit to be the immediate
+single child of the actual CPU17 source revision; no unrelated commit may be
+inserted between that source and its receipt for this prepared depth2 path.
