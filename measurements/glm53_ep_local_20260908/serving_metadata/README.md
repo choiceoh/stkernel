@@ -16,6 +16,16 @@ collector output. The final source also passed 6795 core checks and 38
 megakernel regressions (`core-tests.log`); this run includes zero fleet tests.
 No kernel source changed and CPU9 was not rerun.
 
+The metadata commit was rebased onto the separately merged PR #484 stopped
+handoff lifecycle without conflicts. The additional integration run collected
+35 lifecycle/binding/local/sanitizer tests: 31 passed and four existing Torch
+numerics tests skipped on this host, with no failures or errors. Original
+output and per-source hashes are in `pr484-integration.log` and
+`pr484-integration.json`. The 13 mounted MoE source files still match CPU9,
+but six runner/test contract files changed. CPU9's kernel compiler observations
+remain attributable to the unchanged kernel; a new pinned CPU receipt is
+required for the current runner/probe contract before GPU submission.
+
 `configured-launch-snapshot.json` was derived from read-only Docker inspections
 at 2026-09-08 17:42:46 KST. All four existing public containers parsed as TP4,
 four nodes, ranks 0–3, EP disabled, with the same pinned image. This snapshot

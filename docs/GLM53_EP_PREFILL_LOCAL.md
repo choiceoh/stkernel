@@ -227,6 +227,11 @@ changes, and both actual runner entry paths with fake system commands. These
 control-flow tests do not establish GPU numerics or performance. The changed
 runner/test hashes require fresh source-bound CPU evidence before an EP GPU run;
 the earlier CPU8 receipt is not relabeled as validation of this change.
+After integrating PR #484, a local 35-test lifecycle/binding/local/sanitizer
+run had 31 passes and four existing host-Torch numerics skips, with no errors
+or failures. The 13 mounted MoE sources match CPU9; six runner/test contract
+files changed. This integration check does not replace fresh pinned evidence
+for the new probe contract. Its output and hashes are in serving_metadata.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
 weights, balanced/concentrated/empty-local routes, odd tails and changed
