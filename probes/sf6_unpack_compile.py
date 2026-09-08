@@ -93,15 +93,15 @@ def main():
                 # Keep packed source-word reuse identical to production:
                 # each low word supplies 8 bytes and each high word 16 bytes.
                 a = []
-                for w in range((words + 1) // 2):
+                for w in cutlass.range_constexpr((words + 1) // 2):
                     a.append(low[tid, w])
                 b = []
-                for w in range((words + 3) // 4):
+                for w in cutlass.range_constexpr((words + 3) // 4):
                     b.append(high[tid, w])
                 base = bases[tid] & cutlass.Int32(0xFF)
                 if cutlass.const_expr(vector):
                     base_word = base * cutlass.Int32(0x01010101)
-                for j in range(words):
+                for j in cutlass.range_constexpr(words):
                     if cutlass.const_expr(vector):
                         low4 = a[j >> 1] >> cutlass.Int32(16 * (j & 1))
                         high4 = b[j >> 2] >> cutlass.Int32(8 * (j & 3))
@@ -110,7 +110,7 @@ def main():
                         # Verbatim scalar arithmetic from baseline c24494aa,
                         # with Int32 qualified to avoid an import alias.
                         word = cutlass.Int32(0)
-                        for m in range(4):
+                        for m in cutlass.range_constexpr(4):
                             i = 4 * j + m
                             nib = (a[i >> 3] >> cutlass.Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & cutlass.Int32(0xF)
                             hi = (b[i >> 4] >> cutlass.Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & cutlass.Int32(0x3)
