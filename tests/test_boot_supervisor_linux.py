@@ -21,7 +21,7 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
         for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
-        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'experiment_metrics.py'):
+        for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
         (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
@@ -253,6 +253,102 @@ test ! -e "$LOGD/fail-restore"
         gate.touch(); self.assertEqual(self.wait(first), 1)
         self.assertEqual((self.logs/'restores').read_text().splitlines(), ['first'])
         self.assertFalse(self.held('first'))
+
+    def show(self, name):
+        result = subprocess.run(['bash', str(self.repo/'bench/fleet.sh'), 'show', name, '--json'],
+                                env=self.env, capture_output=True, text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_completed_output_and_payload_failure_remain_inspectable(self):
+        (self.repo/'bench/fleet_restore.sh').write_text('echo RESTORE_OUTPUT\necho "$FLEET_SESSION" >> "$LOGD/restores"\n')
+        worker = self.launch('inspect-failure', 'import sys; print("STDOUT_PAYLOAD"); print("STDERR_PAYLOAD",file=sys.stderr); raise SystemExit(7)')
+        self.assertEqual(self.wait(worker), 7)
+        result = self.show('inspect-failure')
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['payload_returncode'], 7)
+        self.assertEqual(result['returncode'], 7)
+        self.assertEqual(result['recovery_returncode'], 0)
+        self.assertGreaterEqual(result['finished_at'], result['payload_finished_at'])
+        self.assertFalse(result['editable'])
+        logs = subprocess.run(['bash', str(self.repo/'bench/fleet.sh'), 'logs', 'inspect-failure', '--tail', '80'],
+                              env=self.env, capture_output=True, text=True, timeout=3)
+        self.assertEqual(logs.returncode, 0, logs.stderr)
+        for marker in ('GO inspect-failure', 'STDOUT_PAYLOAD', 'STDERR_PAYLOAD', 'RESTORE_OUTPUT'):
+            self.assertIn(marker, logs.stdout)
+            self.assertIn(marker, (self.logs/'inspect-failure.log').read_text())
+        self.assertEqual(Path(result['log_path']).stat().st_mode & 0o777, 0o600)
+
+    def test_payload_success_does_not_hide_failed_restore_in_show(self):
+        (self.logs/'fail-restore').touch()
+        self.assertEqual(self.wait(self.launch('restore-failed', 'pass')), 1)
+        result = self.show('restore-failed')
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['payload_returncode'], 0)
+        self.assertEqual(result['recovery_returncode'], 1)
+        self.assertEqual(result['returncode'], 1)
+
+    def test_log_open_failure_preserves_live_output_and_recovery(self):
+        (self.logs/'fleet/run-logs').write_text('fixture collision')
+        self.assertEqual(self.wait(self.launch('no-log', 'print("LIVE_FALLBACK")')), 0)
+        self.assertIn('LIVE_FALLBACK', (self.logs/'no-log.log').read_text())
+        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['no-log'])
+        self.assertFalse(self.held('no-log'))
+
+    def test_cancelled_waiter_and_reused_session_keep_separate_logs(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second = self.launch('again', 'print("CANCELLED_MUST_NOT_RUN")')
+        self.until(lambda:self.ready('again'))
+        second.terminate(); self.assertEqual(self.wait(second), 143)
+        cancelled = self.show('again')
+        self.assertEqual(cancelled['state'], 'cancelled')
+        self.assertEqual(cancelled['returncode'], 143)
+        self.assertNotIn('payload_returncode', cancelled)
+        replacement = self.launch('again', 'print("NEW_TICKET_OUTPUT")')
+        self.until(lambda:self.ready('again'))
+        gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(replacement), 0)
+        finished = self.show('again')
+        self.assertEqual(finished['state'], 'succeeded')
+        self.assertNotEqual(finished['log_path'], cancelled['log_path'])
+        self.assertTrue(Path(cancelled['log_path']).is_file())
+        self.assertIn('NEW_TICKET_OUTPUT', Path(finished['log_path']).read_text())
+
+    def test_legacy_live_waiter_can_show_existing_stdout_log(self):
+        gate = self.logs/'continue'
+        first = self.launch('first', f'from pathlib import Path; import time\nwhile not Path({str(gate)!r}).exists(): time.sleep(.02)')
+        self.until(lambda:self.held('first'))
+        second = self.launch('legacy-view', 'pass')
+        self.until(lambda:self.ready('legacy-view'))
+        from fleet_pending import path
+        saved = path(self.logs/'fleet', 'legacy-view'); data = saved.read_bytes(); saved.unlink()
+        try:
+            result = self.show('legacy-view')
+            self.assertEqual(result['state'], 'queued')
+            self.assertEqual(result['source'], 'legacy')
+            self.assertEqual(result['log_path'], str(self.logs/'legacy-view.log'))
+            self.assertFalse(result['editable'])
+        finally:
+            saved.write_bytes(data)
+        gate.touch(); self.assertEqual(self.wait(first), 0); self.assertEqual(self.wait(second), 0)
+
+    def test_unread_client_output_cannot_block_payload_or_recovery(self):
+        code='import os; os.write(1,b"x"*(2*1024*1024)); print("RETAINED_END")'
+        worker = subprocess.Popen(['bash', str(self.repo/'bench/fleet.sh'), 'run', '--gpu',
+                                   'slow-reader', '1', 'fixture', '--', sys.executable, '-c', code],
+                                  env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.children.append(worker)
+        self.addCleanup(worker.stdout.close)
+        # Deliberately never consume the live pipe before process completion.
+        self.assertEqual(worker.wait(timeout=12), 0)
+        result = self.show('slow-reader')
+        self.assertEqual(result['state'], 'succeeded')
+        retained = Path(result['log_path']).read_text()
+        self.assertGreater(len(retained), 2*1024*1024)
+        self.assertIn('RETAINED_END', retained)
+        self.assertEqual((self.logs/'restores').read_text().splitlines(), ['slow-reader'])
+        self.assertFalse(self.held('slow-reader'))
 
 
 if __name__ == '__main__':

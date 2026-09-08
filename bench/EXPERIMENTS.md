@@ -69,6 +69,48 @@ CUDA devices and retains CPU-only evidence scope. Fix the input/revision before
 submitting a corrected experiment; a successful process exit is still insufficient
 to promote incomplete CPU/probe evidence.
 
+## Find your work and inspect a reservation
+
+```bash
+# Only your active structured requests; includes requests shared with peers.
+bash bench/fleet.sh jobs --session fusion --active
+bash bench/fleet.sh jobs --session fusion --limit 20
+
+# Fast local snapshot: no Docker, SSH, serving health, or baseline queries.
+bash bench/fleet.sh show
+bash bench/fleet.sh show fusion
+bash bench/fleet.sh show fusion --json
+bash bench/fleet.sh logs fusion --tail 80
+```
+
+`jobs` retains its existing JSON list format. Session filtering happens before
+the result limit, so unrelated recent jobs cannot hide your older request.
+Withdrawn subscriptions are omitted only for that subscriber; `--active` excludes
+all terminal states. The default limit is 100; `--limit` accepts 1..1000.
+
+`show` with no name lists the current holder and queue. With a reservation name,
+it reports the exact argv/cwd/revision, position and current blocker while queued,
+phase and elapsed time while executing, and retained exit status after completion.
+It also tells you whether editing is still possible and prints the matching edit,
+log and structured-result commands. It does not run, retry, promote, cancel or
+acquire anything. Use the existing `status` command when serving-health checks are
+needed.
+
+New `run --gpu` and `run --probe` supervisors retain combined waiting/payload/
+restore output in a private per-ticket log while continuing live output. A
+successful payload followed by failed restore is reported as failed, with both
+exit codes. A cancelled or dead supervisor is not reported as successful. Capture
+errors do not prevent recovery; a saved `log_error` warns that output may be
+incomplete. A blocked or disconnected viewer may miss live chunks; it can retrieve
+the retained output with `logs`.
+
+`logs` reads at most the last 256 KiB and accepts 1..2000 lines (default 80).
+The command never follows a pipe or waits for future output. Older live controllers
+can expose their existing stdout log if it is a regular file. Missing old terminal
+output or completion status is reported as unavailable instead of guessed. A
+reused session name shows the latest reservation; earlier per-ticket log files
+remain separate.
+
 ## Edit a waiting reservation
 
 For a reservation created by the current `fleet.sh run --gpu` (including pair
