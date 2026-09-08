@@ -5,8 +5,6 @@ Explicit --cpu compiles without a CUDA context; --gpu requires the ordinary
 fleet GPU hold. There are no timers, serving requests or reservation helpers.
 Both modes compile the actual production method used by both FC1 and FC2.
 """
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
