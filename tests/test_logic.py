@@ -3700,11 +3700,19 @@ def test_b12x_static_v2_controls() -> None:
           and "def _sf_expand_stage(self, stage_addr, tidx):" in v4_kernel
           and "self.sf_expand_barrier.arrive_and_wait()" in v4_kernel
           and "barrier_id=3," in v4_kernel   # 1 is the epilogue, the stock class uses 1 and 2
-          and "fc1_tma_bytes += _SF_STAGE_BYTES" in v4_kernel
+          and "fc1_tma_bytes += self.sf_stage_bytes" in v4_kernel
+          and "self.sf_stage_bytes = _SF_BLOCK_BYTES if self.sf_pack_raw else _SF_STAGE_BYTES" in v4_kernel
+          and "_ld_shared_i32_volatile(stage_addr + Int32(_SF_BASE_OFF))" in v4_kernel
           and v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
-              > v4_kernel.index("base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF))")
+              > v4_kernel.index("base = _ld_shared_i32_volatile(stage_addr + Int32(_SF_BASE_OFF))")
           and v4_kernel.index("_st_shared_i32(stage_addr + Int32(32) * tidx")
-              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()"),
+              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
+          # TWO barriers: read-before-write inside the expansion, and
+          # write-before-the-fragment-read, since a lane's scales are spread
+          # over bytes other threads wrote
+          and v4_kernel.count("self.sf_expand_barrier.arrive_and_wait()") == 2
+          and v4_kernel.rindex("self.sf_expand_barrier.arrive_and_wait()")
+              > v4_kernel.index("_st_shared_i32(stage_addr + Int32(32) * tidx"),
           "q: 3088 B stages, the in-place expansion reads before the barrier and "
           "writes after it, and the stage's tx bytes count the packed size")
     check("sf_pack needs every MMA warp at every FC1 stage" in v4_kernel
@@ -3744,6 +3752,7 @@ def test_b12x_static_v2_controls() -> None:
                    encoding="utf-8").read()
     check("static_v2_weights_layout as _static_v2_weights_layout" in wrapper
           and "                weights_tiled,\n                weights_sf_pack,\n"
+              "                weights_sf_pack_raw,\n"
               "                w1_weight.data_ptr()," in wrapper
           and "tiled=weights_tiled," in wrapper
           and "sf_pack=weights_sf_pack," in wrapper,

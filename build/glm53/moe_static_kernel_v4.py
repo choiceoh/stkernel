@@ -338,6 +338,14 @@ class MoEStaticKernelV4:
                 val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
                 word = word | (val << Int32(8 * m))
             _st_shared_i32(stage_addr + Int32(32) * tidx + Int32(4 * j), word)
+        # ... and a second one after the writes, because the fragment each lane
+        # reads next is spread over bytes OTHER threads just wrote. The first
+        # barrier only orders read-before-write inside the expansion; without
+        # this one a lane can read a scale byte its owner has not stored yet,
+        # which is what the first three GPU gates saw: wrong everywhere and
+        # different between runs, while the packing, the DMA (cell q0) and the
+        # arithmetic (the CPU model) were all provably right.
+        self.sf_expand_barrier.arrive_and_wait()
 
     def _smem_bytes_estimate(self) -> int:
         def _align_up(value: int, align: int) -> int:
