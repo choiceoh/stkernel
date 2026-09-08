@@ -1,0 +1,15 @@
+fleet: HELD by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass)
+legacy: 2 bench/boot procs, 0 requests in flight, head booting
+queue (2):
+  1. apc6912-0909 [boot] (since 01:02, est 40m, expect ~40m, ETA ~02:11) 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)
+  2. eplocalonepass0909v1 [boot] (since 01:07, est 60m, expect ~60m, ETA ~02:51) EP-local actual onepass B1/A/B2 2K32K128K tok/s and TTFT
+  marker 00:55 FLEET-held-by-validate0909b.done
+  marker 11:08 FLEET-held-by-alignprod.done
+log:
+  2026-09-09_00:58:39 nogpu-start decode-expand-e8e20130 SF6 production expansion helper: CPU compile only
+  2026-09-09_00:58:51 nogpu-done decode-expand-e8e20130 rc=0
+  2026-09-09_01:02:54 request apc6912-0909 est=40m 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음) [boot]
+  2026-09-09_01:07:05 request eplocalonepass0909v1 est=60m EP-local actual onepass B1/A/B2 2K32K128K tok/s and TTFT [boot]
+production: NOT defaults: VLLM_GLM53_KDA_STRIDED=1 (health 000)
+deployed: 1bb94f0d362e
+baseline: PRS42 on build 1bb94f0d362e -- 21.85 step/s, 3.42 tok/step, 48.4% acc, 2026-09-09 01:03:37 -- skip a defaults arm and compare against it

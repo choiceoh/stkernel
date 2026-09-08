@@ -1,0 +1,10 @@
+preflight eplocalonepass0909v1 [boot]:
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS knobs declared in origin/main: 
+  NOTE checkout is 3 commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots
+  baseline: PRS42 on build 1bb94f0d362e -- 21.85 step/s, 3.42 tok/step, 48.4% acc, 2026-09-09 01:03:37 -- skip a defaults arm and compare against it
+  -> PASS
+[{"target": {"profile": "glm53", "repo": "/home/choiceoh/stkernel-ep-onepass-0909-1"}, "validation": {"artifacts": {"aab0fdb393b59a12dc61907a1c73eb2f719c5f99af206ffaa540497ef5d5bf06.log": "99d87f01cb2641c39252e43e0b6032702c189f5e7932d262860c4367d990dc14", "aab0fdb393b59a12dc61907a1c73eb2f719c5f99af206ffaa540497ef5d5bf06.report.json": "36305e91aea6fac71ef2aa604165e7e04e83c01e611ea2c4bb75fbf6fb9765d9"}, "completed_at": 1788883620.4875536, "context": {"checker": "f232834ae5e341fdee5e217efcfd50e64bd050be4947969adc936563866d4bca", "gate": "overlay-admission", "profile": "glm53", "selected": ["shell-syntax", "selected-profile-compose", "overlay-manifest-syntax"], "validator": "1201372f0f6b0e9f10d5f20ee2c1ad8b7bc9f974c7413c09d989c369b2b29c96", "version": 1}, "coverage_complete": true, "key": "aab0fdb393b59a12dc61907a1c73eb2f719c5f99af206ffaa540497ef5d5bf06", "passed": true, "profile": "glm53", "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/aab0fdb393b59a12dc61907a1c73eb2f719c5f99af206ffaa540497ef5d5bf06.json", "reused": false, "scope": "admission-full-tree", "source": "eb743c5a16bb9b8aaada69d7c29c3e9cf5a8928c", "started_at": 1788883620.1053452, "tests_run": 3, "version": 1}}]
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs) 2026-09-09_01:07:05
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:07:24
