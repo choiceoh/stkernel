@@ -27,7 +27,10 @@ class PrivateObserverAPI:
         data = b'' if payload is None else json.dumps(payload).encode()
         request = urllib.request.Request(self.base+path, data=data,
                                          headers={'Content-Type':'application/json'}, method='POST')
-        with urllib.request.urlopen(request, timeout=60) as response:
+        # Trace serialization is a synchronous worker RPC and can outlast the
+        # ordinary control deadline at 128K. A lost reply still triggers cleanup.
+        timeout=600 if path in ('/start_profile','/stop_profile') else 60
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
             return json.loads(raw) if path == '/glm53/prefill-observe' else {'status':response.status}
 

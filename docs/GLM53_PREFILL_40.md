@@ -12,7 +12,7 @@ a 40% reduction in wall time. Cold and warmed measurements are separate.
 Current M64 is deprioritized: its latest same-transport component comparison
 improves balanced routing by 4.33–6.91% but regresses concentrated routing by
 13.09–16.24%. The full correctness gate and direct serving acceptance remain
-incomplete. See `GLM53_PREFILL_M64.md`; no further automatic M64 diagnostic,
+incomplete. See [the preserved M64 experiment, PR #455](https://github.com/choiceoh/stkernel/pull/455); no further automatic M64 diagnostic,
 full-gate or serving-bracket submissions are planned.
 
 Before implementing the next large candidate, collect a current-default serving

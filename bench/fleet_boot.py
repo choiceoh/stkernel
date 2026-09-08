@@ -90,6 +90,27 @@ class Supervisor:
                 handoff.clear(self.directory, self.session)
         return rc
 
+    def cleanup_observation(self):
+        if self.env.get('FLEET_OBSERVATION_CLONES')!='1':
+            return 0
+        old=self.stopping
+        self.stopping=0
+        handlers=[signal.signal(sig,signal.SIG_IGN) for sig in (signal.SIGINT,signal.SIGTERM)]
+        self.event('observation-cleanup-start')
+        try:
+            while self.held():
+                rc=self.execute(['python3',str(self.repo/'bench/fleet_observation_cleanup.py')],self.env)
+                self.event('observation-cleanup-finished',rc=rc)
+                if rc==0:return 0
+                # Cleanup is idempotent. Keep the ticket and retry teardown;
+                # never hand GPUs with remaining clones to the next workload.
+                self.event('observation-cleanup-retry',delay_s=10)
+                time.sleep(10)
+            return 1
+        finally:
+            self.stopping=old
+            for sig,handler in zip((signal.SIGINT,signal.SIGTERM),handlers):signal.signal(sig,handler)
+
     def finish(self):
         with self.lock():
             handoff.claim_held(self.directory, self.session, os.getpid())
@@ -148,6 +169,8 @@ class Supervisor:
         finally:
             if self.held():
                 try:
+                    if self.cleanup_observation():
+                        raise RuntimeError('observation cleanup lost fleet ownership')
                     if self.finish():
                         rc = rc or 1
                 except Exception as exc:
