@@ -96,7 +96,11 @@ def make_case(num_seqs, spec_len, gen, headwise_beta=False):
         assert a.shape == b.shape, (name, a.shape, b.shape)
         assert torch.equal(a, b), f"{name}: the two layouts do not hold the same values"
         assert a.is_contiguous(), f"{name}: contiguous arm is not contiguous"
-    assert not strided["q"].is_contiguous(), "strided arm collapsed to contiguous"
+    # A single-token batch makes the column slice trivially contiguous (one
+    # row), so it cannot exercise the stride path -- it is still worth running
+    # as the degenerate shape, just not as evidence.
+    if T > 1:
+        assert not strided["q"].is_contiguous(), "strided arm collapsed to contiguous"
     return contig, strided, T
 
 
