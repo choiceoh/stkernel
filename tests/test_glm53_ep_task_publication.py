@@ -1,4 +1,4 @@
-"""CPU byte/slot oracle for EP-local's four-task vector publication."""
+"""CPU row-address and byte/slot oracles for EP-local task publication."""
 import ast
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,6 +58,80 @@ def load_publisher(memory):
     fallback = Mock(side_effect=scalar_publish)
     owner = SimpleNamespace(publish_uniform_deferred_tasks=fallback)
     return lambda *args: namespace[method.name](owner, *args), calls, fallback
+
+
+def load_physical_row():
+    tree = ast.parse(KERNEL.read_text())
+    method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                  and node.name == "initialize_route_q0_and_publish")
+    # Execute the actual allocation expression, not a test-side copy of the
+    # new formula. Other phys_row assignments load already allocated rows.
+    assignment = next(node for node in ast.walk(method) if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "phys_row"
+                              for target in node.targets)
+                      and any(isinstance(item, ast.Name) and item.id == "expert_tile_base"
+                              for item in ast.walk(node.value)))
+    expression = compile(ast.Expression(body=assignment.value), str(KERNEL), "eval")
+    namespace = dict(Int32=int, self=SimpleNamespace(tile_shape_mnk=(128, 128, 128)))
+
+    def physical_row(tile_base, expert, row):
+        namespace.update(expert_tile_base=tile_base, expert_id=expert, row=row)
+        return eval(expression, namespace)
+
+    return physical_row
+
+
+class PhysicalRowAddressTests(unittest.TestCase):
+    def test_every_admissible_tile_boundary_matches_original_address(self):
+        physical_row = load_physical_row()
+        max_pairs = 16384 * 8
+        # Expert 0 has one preceding row; expert 71 can then receive every
+        # remaining pair. Its nonzero base exercises the prefix addition.
+        local_count = max_pairs - 1
+        bases = [0] + [1] * 71 + [1 + (local_count + 127) // 128]
+        boundary_rows = {0, local_count - 1}
+        for start in range(0, local_count, 128):
+            boundary_rows.update(row for row in (start - 1, start, start + 1)
+                                 if 0 <= row < local_count)
+        for row in sorted(boundary_rows):
+            expected = (bases[71] + row // 128) * 128 + row % 128
+            self.assertEqual(physical_row(bases, 71, row), expected)
+            self.assertLess(expected * (4096 // 2), 1 << 31)
+
+    def test_histogram_rows_match_original_without_overlap_or_padding_writes(self):
+        physical_row = load_physical_row()
+        for tokens in (4096, 4097, 6912, 8192, 16384):
+            pairs = tokens * 8
+            edges = [0, 1, 127, 128, 129, 255, 256, 257, 511, 512, 513]
+            fixtures = (
+                [pairs] + [0] * 71,
+                [0] * 71 + [pairs],
+                [pairs // 72 + (expert < pairs % 72) for expert in range(72)],
+                [pairs - 71] + [1] * 71,
+                edges + [pairs - sum(edges)] + [0] * (71 - len(edges)),
+                [0] * 72,
+            )
+            for counts in fixtures:
+                bases = [0]
+                for count in counts:
+                    bases.append(bases[-1] + (count + 127) // 128)
+                self.assertEqual(len(bases), 73)
+                self.assertLessEqual(sum(counts), pairs)
+                self.assertLessEqual(bases[-1] * 128, pairs + 72 * 127)
+                self.assertLess(bases[-1] * 128 * (4096 // 2), 1 << 31)
+                addresses = set()
+                for expert, count in enumerate(counts):
+                    lower, upper = bases[expert] * 128, bases[expert + 1] * 128
+                    for row in range(count):
+                        address = physical_row(bases, expert, row)
+                        expected = (bases[expert] + row // 128) * 128 + row % 128
+                        self.assertEqual(address, expected)
+                        self.assertTrue(lower <= address < upper)
+                        self.assertNotIn(address, addresses)
+                        addresses.add(address)
+                    self.assertTrue(all(address not in addresses
+                                        for address in range(lower + count, upper)))
+                self.assertEqual(len(addresses), sum(counts))
 
 
 class TaskPublicationTests(unittest.TestCase):

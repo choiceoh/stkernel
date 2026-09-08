@@ -353,12 +353,12 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     get_ptr_as_int64(expert_write_rows, expert_id),
                                     Int32(1),
                                 )
-                                phys_tile = expert_tile_base[expert_id] + row // Int32(
+                                # The tile quotient and remainder recombine
+                                # into row; avoid signed division in the route
+                                # allocator without changing its physical row.
+                                phys_row = expert_tile_base[expert_id] * Int32(
                                     self.tile_shape_mnk[0]
-                                )
-                                phys_row = phys_tile * Int32(
-                                    self.tile_shape_mnk[0]
-                                ) + row % Int32(self.tile_shape_mnk[0])
+                                ) + row
                                 st_global_i32(
                                     get_ptr_as_int64(token_map, phys_row), token_idx
                                 )

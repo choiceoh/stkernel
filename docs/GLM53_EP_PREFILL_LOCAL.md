@@ -83,7 +83,7 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-The latest source `cf1365b8fab6091833400efd7784071316eb9f6a` passed actual
+The scale-cache source `cf1365b8fab6091833400efd7784071316eb9f6a` passed actual
 E72/I2048 CuTe compilation, all 24 Triton specializations and 55 pinned CPU
 tests without skips or CUDA initialization. [CPU9 evidence](../measurements/glm53_ep_local_20260908/cpu9/README.md)
 records 168 registers, 112 stack bytes and 1024 shared bytes. Against CPU8,
@@ -99,6 +99,23 @@ same addresses. Remap tests revalidate reused Tensor metadata and launch sizes.
 The initial CPU9 attempt on srv4 stopped before compilation because available
 host RAM was below the unchanged 12 GiB guard. The same frozen source then
 passed through the normal CPU wrapper on head with the same 4 GiB/2 CPU limit.
+
+After the PR #484 lifecycle integration, source
+`a9d0d1e3e8161ee44eac02191021ea9512a3e2cc` passed all 61 pinned CPU tests
+without skips and actual CuTe plus 24-variant Triton compilation in the normal
+no-device head lane. [CPU10](../measurements/glm53_ep_local_20260908/cpu10/README.md)
+binds the updated lifecycle contracts to the unchanged kernel. Its CuTe PTX
+and cubin match CPU9 exactly; REG168/STACK112/SHARED1024 are unchanged.
+
+The next source simplifies route allocation's physical-row address from
+`(base + row / M) * M + row % M` to `base * M + row`. Both expressions address
+the same row within the expert's padded tile prefix. The CPU oracle executes
+the actual allocation expression across tile boundaries and balanced,
+concentrated, empty and tail histograms, checking overlap, padding and integer
+bounds. Route ordering, row-allocation atomics and barriers are unchanged.
+CPU9/10 PTX retained signed quotient/remainder correction instructions at
+this site; CPU11 must verify their elimination and resource usage before
+any compiler benefit is recorded. GPU performance remains unmeasured.
 
 The preceding source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
 E72/I2048 CuTe compilation and 48 focused
