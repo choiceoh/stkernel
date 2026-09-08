@@ -65,6 +65,22 @@ class OverlaySyncTests(unittest.TestCase):
         failed = self.copy(self.src/'missing.cu', check=False)
         self.assertNotEqual(failed.returncode, 0)
 
+    def verify(self):
+        return subprocess.run(['bash', '-c', '. "$1"; shift; glm53_verify_overlay_sources "$@"',
+            'test', str(HELPER), str(self.dst), str(self.cu), str(self.manifest)], capture_output=True, text=True)
+
+    def test_canonical_sha256_verification_accepts_identical_sources(self):
+        self.assertEqual(self.verify().returncode, 0)
+
+    def test_canonical_sha256_verification_rejects_stale_or_missing_destination(self):
+        target = self.dst/self.cu.name
+        target.write_text('kernel version B\n')
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('canonical source SHA256', result.stderr)
+        target.unlink()
+        self.assertNotEqual(self.verify().returncode, 0)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,34 @@
+{
+  "video_sha256": "c0529c4d65be8a574fcc13fc1a73bab7f93d22a53c59c35b0a61e2b360cc6080",
+  "image_sha256": "4841f224ef5995560c97783f941f9c2e37d1961a8fe4109ec6ce40e7abb3d877",
+  "requests": [
+    {
+      "kind": "text",
+      "started": 1788829132.6450639,
+      "ttft_s": 4.9900758266448975,
+      "total_s": 5.142148494720459,
+      "content": "1, 2, 3, 4, 5",
+      "reasoning": "",
+      "ok": true
+    },
+    {
+      "kind": "image",
+      "started": 1788829137.8173451,
+      "ttft_s": 0.547527551651001,
+      "total_s": 1.5716121196746826,
+      "content": "그림에는 왼쪽 위에 빨간색 사각형이 있고, 아래쪽에는 파란색 가로 띠가 있습니다.",
+      "reasoning": "",
+      "ok": true
+    },
+    {
+      "kind": "video",
+      "started": 1788829139.391388,
+      "ttft_s": 0.48163914680480957,
+      "total_s": 1.0971109867095947,
+      "content": "화면의 색상이 처음에는 빨간색으로 시작하여 끝에는 파란색으로 바뀝니다.",
+      "reasoning": "",
+      "ok": true
+    }
+  ],
+  "ok": true
+}

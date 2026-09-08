@@ -104,9 +104,11 @@ load_overlay_manifest() {
 }
 load_overlay_manifest
 
-# Keep this GLM-specific and opt-in until the same-source redeploy bracket.
+# GLM same-source redeploy: 334 -> 213 s mean health wall in the four-node
+# B/A/A/B bracket (measurements/glm53_overlay_deploy_20260908).
+# Set DEPLOY_PRESERVE_IDENTICAL=0 to restore legacy publication.
 PRESERVE_IDENTICAL=0
-if [ "$PROFILE" = glm53 ] && [ "${DEPLOY_PRESERVE_IDENTICAL:-0}" = 1 ]; then
+if [ "$PROFILE" = glm53 ] && [ "${DEPLOY_PRESERVE_IDENTICAL:-1}" = 1 ]; then
   . "$REPO/launchers/lib/glm53-overlay-sync.sh"
   command -v rsync >/dev/null || { echo "ABORT: rsync is required for identical-source GLM deployment (DEPLOY_PRESERVE_IDENTICAL=0 uses legacy publication)"; exit 1; }
   for ip in $WORKERS; do
@@ -143,6 +145,7 @@ echo "=== head ($HEAD_OV) ==="
 mkdir -p "$HEAD_OV"
 if [ "$PRESERVE_IDENTICAL" = 1 ]; then
   glm53_sync_overlays "${SOURCE_PATHS[@]}" "$HEAD_OV/"
+  glm53_verify_overlay_sources "$HEAD_OV" "${SOURCE_PATHS[@]}"
 else
   install -m 0644 "$MANIFEST" "$HEAD_OV/$MANIFEST_NAME"
   for f in "${OVFILES[@]}"; do
