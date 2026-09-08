@@ -385,6 +385,11 @@ CPU15's matching runtime/source receipt, explicit PASS/complete and successful
 final recheck; a failed result with full artifacts is rejected. Local focused
 contracts and independent review pass. Actual capsule-bound compiler and GPU
 results are recorded separately when executed, not inferred from v6.
+CPU15 source `30608530` and its bundle are fixed. A bounded no-GPU readiness
+controller is waiting for the unchanged 12 GiB head-memory guard and will
+submit one normal CPU job. Its 21:45 snapshot had 8.60 GiB available; no
+CPU15 compile or full GPU job had run. Actual evidence, not the readiness
+controller or the expected 129-test count, determines admission.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).

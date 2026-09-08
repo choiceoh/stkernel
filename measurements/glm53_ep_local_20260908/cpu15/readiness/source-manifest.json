@@ -1,0 +1,33 @@
+{
+  "captured": 1788871535.4365976,
+  "files": {
+    "controller.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "state.json": {
+      "bytes": 691,
+      "sha256": "e2f64e448398085eac076ba0723a6e442add62190d186a763b02594756b8aec2"
+    },
+    "prepare-remote.py": {
+      "bytes": 7064,
+      "sha256": "238edffa73b5dbba3d94dad8a0aecfabddefb312bdc67c6a2f355926054e8ed2"
+    },
+    "config.json": {
+      "bytes": 1402,
+      "sha256": "5f4f9f94134b432e1ed376c5acd8da73e860410031ceae739ddf25fc96e93b78"
+    },
+    "controller.py": {
+      "bytes": 2033,
+      "sha256": "1de21d6a39efec6a952e08ee7492c617ccc235c991d157853c049586b8dbe482"
+    },
+    "events.jsonl": {
+      "bytes": 3687,
+      "sha256": "5db1c0ae22adb0c5d26ba0031db6a99554f35687e0b7a549ee1b36c3e4973f51"
+    },
+    "controller.pid": {
+      "bytes": 8,
+      "sha256": "b9a9b0565dbcbb522d5a6b5ba47deb4d3b5d2e2558e7e104e6f94dc2891a2fac"
+    }
+  }
+}
