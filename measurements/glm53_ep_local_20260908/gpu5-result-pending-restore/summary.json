@@ -1,0 +1,55 @@
+{
+  "verdict": "FAIL",
+  "offline_complete": true,
+  "full_fleet_restore_complete": false,
+  "source": "d53fd44f2b8a69869cddc9df10fa4cbb21bc56d9",
+  "cells": [
+    {
+      "case": "remap",
+      "sanitizer": null,
+      "exit_code": 0,
+      "started": 1788873450.2019656,
+      "ended": 1788873470.8840666
+    },
+    {
+      "case": "balanced4096",
+      "sanitizer": null,
+      "exit_code": 0,
+      "started": 1788873473.3849163,
+      "ended": 1788873516.4550278
+    },
+    {
+      "case": "balanced6912",
+      "sanitizer": null,
+      "exit_code": 0,
+      "started": 1788873518.2615895,
+      "ended": 1788873554.8462365
+    },
+    {
+      "case": "balanced8192",
+      "sanitizer": null,
+      "exit_code": 0,
+      "started": 1788873556.850101,
+      "ended": 1788873600.0869102
+    },
+    {
+      "case": "concentrated6912",
+      "sanitizer": null,
+      "exit_code": 1,
+      "started": 1788873601.83357,
+      "ended": 1788873631.0280197
+    }
+  ],
+  "passed_cells": 4,
+  "failed_cells": 1,
+  "unrun_cells": 12,
+  "sanitizer_cells_run": 0,
+  "incoming_before_stopped_restored_equal": true,
+  "failure": {
+    "case": "concentrated6912",
+    "phase": "changed-candidate",
+    "error": "AssertionError({'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 1, 'max_row_relative_l2': 0.011814188212156296, 'max_row_relative_abs': 0.040697675198316574, 'stock_max_row_relative_l2': 0.008713780902326107, 'stock_max_row_relative_abs': 0.021276595070958138})",
+    "binding_runtime_rechecked": true
+  },
+  "scope": "Partial full-suite GPU evidence. Not performance acceptance or public-service restoration proof."
+}

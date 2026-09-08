@@ -560,3 +560,24 @@ consumer now uses a cache-address add, shared load and SF-field combine.
 The compiler also fully unrolled the 72-expert prefix and increased varied
 Q0 static copies from three to seven. These explain code-shape changes,
 not executed store counts or a measured improvement.
+
+## Full GPU v5 numerical rejection
+
+The [closed offline capture](../measurements/glm53_ep_local_20260908/gpu5-result-pending-restore/README.md)
+records GO at22:17:24 and wrapper completion at22:20:32 KST. Remap24 and
+balanced4096/6912/8192 passed. Concentrated6912 failed in changed-candidate
+with one bad row: relative L2 max0.0118141882, normalized peak max0.0406976752.
+The stock control passed and runtime identity rechecked successfully. The
+first candidate and its nondefault-stream replay had passed; the failure
+followed in-place input/routes/scales changes. Tolerances remain unchanged.
+Four remaining MoE fixtures and all eight sanitizer cells were not run.
+The current candidate is rejected by this gate; no speed/default acceptance
+follows from the successful balanced cells. This result does not isolate
+CPU16's address cache from earlier kernel changes or accumulation order.
+
+The offline before/stopped/restored records are exactly equal for all four
+incoming stopped containers. The separate normal-fleet public restoration
+was still waiting for service health at the archived snapshot; wrapper
+restored_original=true is not final public restoration or queue release proof.
+The next step is to preserve terminal fleet evidence and identify the failing
+row/element and repeatability before changing code or running another GPU job.
