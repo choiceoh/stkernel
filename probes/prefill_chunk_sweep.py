@@ -101,6 +101,35 @@ def prefill(model: str, ctx_tokens: int, rng: random.Random) -> tuple[int, float
     return int(out["usage"]["prompt_tokens"]), time.time() - t0
 
 
+def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: str) -> tuple[str, int, float]:
+    """One traced prefill: /start_profile, a fresh request, /stop_profile, then
+    the newest rank-0 trace once its size stops growing (the profiler flushes
+    asynchronously). tools/trace_prefill_attribution.py reads what this returns
+    and reports each chunk separately, which is the attribution half of the
+    question this probe answers in wall time."""
+    import glob
+
+    def post(path: str, timeout: int = 600) -> None:
+        req = urllib.request.Request(BASE + path, data=b"", method="POST")
+        urllib.request.urlopen(req, timeout=timeout).read()
+
+    before = set(glob.glob(os.path.join(trace_dir, "*.json*")))
+    post("/start_profile", 60)
+    ptok, wall = prefill(model, ctx_tokens, rng)
+    post("/stop_profile")
+    newest, size = "", -1
+    for _ in range(120):
+        fresh = [f for f in glob.glob(os.path.join(trace_dir, "*.json*")) if f not in before]
+        if fresh:
+            newest = max(fresh, key=os.path.getmtime)
+            now = os.path.getsize(newest)
+            if now == size and now > 0:
+                break
+            size = now
+        time.sleep(2)
+    return newest, ptok, wall
+
+
 def fit(rows: list[dict]) -> dict:
     """Least squares for a, b, c over wall = n*a + n*C*b + (ctx^2/2C)*c.
 
@@ -140,6 +169,10 @@ def main() -> int:
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--chunk-file", default="/home/choiceoh/vllm-prof/sched_chunk")
     ap.add_argument("--json", default="")
+    ap.add_argument("--trace-chunks", default="",
+                    help="after the sweep, capture one torch trace per chunk at --trace-ctx")
+    ap.add_argument("--trace-ctx", type=int, default=128000)
+    ap.add_argument("--trace-dir", default="/home/choiceoh/vllm-prof")
     args = ap.parse_args()
 
     ctxs = [int(v) for v in args.ctx.split(",") if v.strip()]
@@ -217,9 +250,19 @@ def main() -> int:
                       f"= a {f['a_s'] * 1000:.0f} + b*C {f['b_s_per_tok'] * chunk * 1000:.0f} "
                       f"+ c*ctx/2 {f['c_s_per_ctx_tok'] * ctx / 2 * 1000:.0f}")
 
+    traces = {}
+    for chunk in [int(v) for v in args.trace_chunks.split(",") if v.strip()]:
+        set_chunk(args.chunk_file, chunk)
+        path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
+        traces[chunk] = {"trace": path, "prompt_tokens": ptok, "wall": wall}
+        print(f"trace chunk {chunk}: {path or '(none found)'}  tok {ptok}  wall {wall:.1f}s")
+        print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr-{chunk}.json")
+    if traces:
+        set_chunk(args.chunk_file, 0)
+
     if args.json:
         with open(args.json, "w") as fh:
-            json.dump({"rows": rows, "fit": f, "model": model,
+            json.dump({"rows": rows, "fit": f, "model": model, "traces": traces,
                        "when": time.strftime("%Y-%m-%dT%H:%M:%S")}, fh, indent=1)
         print(f"\nwrote {args.json}")
     return 0

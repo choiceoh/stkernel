@@ -13,9 +13,11 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against b1afa41: only a full-runner graph regression wrapper
-# and its invocation are added. All other upstream AST nodes are identical.
-LOGIC_AUDIT = 'bca5684f02ba4e84eb54420b5a145cbd63a14f21ed3b2d97d6b363e3a1c8812a'
+# Re-audited against 16834a4 (40차 dev instrument): the only added AST nodes are
+# inside test_decode_first_scheduler_contracts (the chunk-file cases and one env
+# key) plus two launcher/profile checks after it. None of the three audited
+# helpers, their tests or the access graphs in DEPENDENCY_AUDITS are touched.
+LOGIC_AUDIT = '17d05a4e0ab9fcf3d293c8f2149cb0945bf25f4ae563d25c7a4b4ec91c5ab7c9'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
