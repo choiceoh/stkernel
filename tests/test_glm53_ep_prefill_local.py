@@ -35,6 +35,7 @@ class AdmissionTests(unittest.TestCase):
     def test_dispatch_never_silently_falls_back_with_sentinel_geometry(self):
         ns=extract(MD,{'_ep_local_prefill_kernel'},dict(_GLM53_EP_PREFILL_LOCAL=False,_FORCED_BACKEND=None,_FORCE_MOE_W4A16_ENV="test_force_w4",
                    os=SimpleNamespace(environ={}),
+                   select_sm120_moe_backend=Mock(return_value='dynamic'),
                    torch=SimpleNamespace(cuda=SimpleNamespace(get_device_capability=lambda:(12,1)))))
         good=dict(E=72,m=6912,k=4096,n=2048,num_topk=8,tile_m=128,activation='swigluoai_uninterleave',
                   swiglu_alpha=1.0,swiglu_beta=0.0,swiglu_limit=10.0,quant_mode='nvfp4',tiled=False)
@@ -46,6 +47,9 @@ class AdmissionTests(unittest.TestCase):
         module.stock_contract_matches=lambda:True;ns['__package__']='test_ep'
         with patch.dict(sys.modules,{'test_ep':ModuleType('test_ep'),'test_ep.moe_dynamic_ep_local':module}):
             self.assertIs(fn(**good),module.MoEGatedEPLocalKernel)
+            ns['select_sm120_moe_backend'].return_value='static'
+            with self.assertRaisesRegex(ValueError,'dynamic backend selection'):fn(**good)
+            ns['select_sm120_moe_backend'].return_value='dynamic'
             module.stock_contract_matches=lambda:False
             with self.assertRaisesRegex(RuntimeError,'drifted'):fn(**good)
 

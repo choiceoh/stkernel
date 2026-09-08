@@ -111,6 +111,12 @@ def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
         raise ValueError("expert-local prefill cannot use a forced incompatible backend")
     if tiled or tile_m != 128 or torch.cuda.get_device_capability() != (12, 1):
         raise ValueError("expert-local prefill requires row-major SM121 M128")
+    selected = select_sm120_moe_backend(
+        num_tokens=m, num_topk=num_topk, quant_mode=quant_mode,
+        num_experts=E, num_local_experts=E, hidden_size=k,
+        intermediate_size=n, activation=activation, swiglu_limit=swiglu_limit)
+    if selected != "dynamic":
+        raise ValueError("expert-local prefill requires dynamic backend selection")
     from .moe_dynamic_ep_local import MoEGatedEPLocalKernel, stock_contract_matches
     if not stock_contract_matches():
         raise RuntimeError("expert-local prefill inherited gated source has drifted")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile actual large-prefill dispatcher arms without a CUDA context.
 
-Run through run_b12x_prefill_cpu_compile.py. Fake pointers/streams are compiler
+Run through run_glm53_ep_local_cpu_compile.py. Fake pointers/streams are compiler
 arguments only. PTX and assembler resource diagnostics are CPU evidence;
 neither validates device numerics, barriers, or throughput.
 """
