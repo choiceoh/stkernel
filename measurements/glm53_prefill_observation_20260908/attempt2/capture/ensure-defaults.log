@@ -1,0 +1,5 @@
+From https://github.com/choiceoh/stkernel
+ * [new branch]      codex/glm53-observation-hostconfig -> origin/codex/glm53-observation-hostconfig
+   f1814b2..5da6293  work/glm53-startup-profile-20260908 -> origin/work/glm53-startup-profile-20260908
+HEAD is now at b1afa41 Merge pull request #466 from choiceoh/codex/glm53-prefill-observation
+approved public defaults already healthy; no restore boot

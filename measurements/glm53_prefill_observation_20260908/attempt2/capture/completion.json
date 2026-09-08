@@ -1,0 +1,9 @@
+{
+  "source_revision": "cfd69dd5b7ad89847fabaa3639dbf8c99215c08f",
+  "observer_sha256": "2a2301d1616796edca8ade2d6129f469ad3488cc5bf8bcdb568b79717025b38e",
+  "complete": false,
+  "performance_acceptance": false,
+  "error": "CalledProcessError(3, ['python3', '/home/choiceoh/stkernel-prefill-observation-0908-2/bench/onepass_memory.py', '--minimum-gib', '12', '--report', '/tmp/glm53-prefill-observation-0908-2/capture/PRIME.memory.jsonl', '--', 'python3', '/home/choiceoh/stkernel-prefill-observation-0908-2/bench/prefill_observation_requests.py', '--mode', 'baseline', '--name', 'PRIME', '--out', '/tmp/glm53-prefill-observation-0908-2/capture/PRIME', '--observer-sha', '2a2301d1616796edca8ade2d6129f469ad3488cc5bf8bcdb568b79717025b38e'])",
+  "restored_original": true,
+  "ended": 1788832884.373648
+}

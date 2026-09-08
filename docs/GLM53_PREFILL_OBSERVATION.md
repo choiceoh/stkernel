@@ -16,7 +16,23 @@ M64 and INT8 remain off and deprioritized. PR #466 was merged; this correction i
 on a separate branch based on that merge. The corrected capture
 `glm53observe0908v2` started through the normal queue at 10:54:57 KST with
 all-rank frozen source `cfd69dd5b7ad89847fabaa3639dbf8c99215c08f`. All four
-clone preparations passed; private boot and request collection remain pending.
+clone preparations and private boot passed. The idle observer RPC also worked,
+but the 12 GiB request guard rejected PRIME before starting its client: head
+had 9.10 GiB available and srv3 had 10.57 GiB. No model request, trace or routing
+report ran. Exact original identities and public health were restored, all owned
+clones were removed, and the fleet released the hold at 11:01:25 KST. Complete
+failure and restoration evidence is in `attempt2/`. The comparison fix is now
+validated through a real private boot; hook execution and capture remain untested.
+
+A read-only post-restoration census still found only 8.58 GiB available on head
+and 10.79 GiB on srv3. Head's GLM API process alone had 4.995 GiB PSS; srv3 also
+had an existing PaddleOCR service using 3.964 GiB of cgroup memory. These are
+different memory measures and are not summed into a causal attribution. There
+were no remaining observation clones and no multi-GiB unrelated head process to
+remove. All four nodes had more than 128 GiB disk space. The immediate next step
+is to investigate retained serving memory; neither lowering the guard/capacity
+nor repeating this boot unchanged resolves the blocker. Other services remain
+outside the cleanup scope. This is not evidence of a leak or observer overhead.
 
 ## Implemented pieces
 
