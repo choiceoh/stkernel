@@ -873,15 +873,17 @@ snapshot of remote services and never silently rebases a candidate.
 MANIFEST=$(bash bench/fleet.sh prepare agent --spec prepare.json -- bash probes/candidate.sh)
 bash bench/fleet.sh run --gpu --detach --prepared "$MANIFEST" agent 20 "candidate" -- bash probes/candidate.sh
 bash bench/fleet.sh pause agent --reason "input needs revision"
-bash bench/fleet.sh edit agent --prepared "$MANIFEST" -- bash probes/candidate.sh
+# After revising the candidate, bind and validate its new inputs.
+bash bench/fleet.sh edit agent -- bash probes/candidate.sh
 bash bench/fleet.sh resume agent
 ```
 
 `--prepared` accepts the same session, command, cwd, specification, source,
 explicit input files, runtime, image and effective environment. A mismatch names
 what changed and refuses reuse. Successful audited `cpu_checks.py` suites and
-contracts reuse their passing evidence; arbitrary CPU commands with unknown
-transitive dependencies still run again. Receipts are authenticated in the
+contracts reuse their passing evidence. Arbitrary CPU commands with unknown
+transitive dependencies run again on fresh preparation or an ordinary edit;
+explicit `--prepared` refuses to reuse them. Receipts are authenticated in the
 private fleet preparation store. Changing SSH connection metadata does not force
 revalidation; that metadata is removed from the payload environment too. Literal `env NAME=value`, `env -u` and `env -i`
 prefixes select payload settings; the supervisor supplies its owned fleet and
