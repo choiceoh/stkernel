@@ -8184,11 +8184,13 @@ def test_self_built_kernels_persist_their_caches() -> None:
           "self-test, gated under the fused segment's arm")
     check("cm_i = torch.eye(HC, dtype=torch.float32, device=device).reshape(1, HC * HC)" in mkp
           and "x0[:num_tokens], residual.reshape(-1, hc_mult, hidden)," in mkp
-          and "pm0[:num_tokens], cm_i[:num_tokens], fn, hc_scale, hc_base," in mkp
+          and "pm0[:num_tokens], cm_i[:num_tokens]," in mkp
+          and "fn.reshape(hc_mult * (2 + hc_mult), hc_mult * hidden).contiguous()," in mkp.split("def mhc_pre_only(", 1)[1].split("def mhc_pre_hook(", 1)[0]
           and "identity = identity and bool(torch.equal(rc, res)) and bool(torch.equal(res_ref, res))" in mkp
           and 'spec_k = (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()' in mkp
           and "ts.append(int(spec_k) + 1)" in mkp,
-          "identity post coefficients from static buffers sliced per call; "
+          "identity post coefficients from static buffers sliced per call "
+          "and standalone pre weights normalized to the fused input layout; "
           "the self-test proves the identity bitwise and adds T=k+1 only on "
           "a non-7 spec boot")
     # 37차 (operator: "200줄 쿠다"): the fused decode-step preparation kernel
