@@ -80,6 +80,17 @@ while still rejecting missing upstream runtime code. The retry incorporates
 main #493 instead of weakening the current-main requirement. v15 produced no
 serving record, and its supervisor began approved-main recovery.
 
+`arconsumer0908v16` stopped during CPU preparation, before reserving GPUs.
+The new source-guard regression changed `tests/test_fleet_source.py`, but its
+fleet cache audit digest had not been renewed. The conservative full-tree
+fallback then failed the test expecting the reviewed fleet scope. AST review
+confirmed that existing tests were unchanged; the only additions were the
+CLI regression and its `shlex` import. Its launcher/helper reads are covered
+by the existing `launchers/` and `bench/` dependency prefixes. The digest is
+updated after that review. All fleet/startup/logic registry hashes and fleet
+test inventory match, and 14 focused source/cache tests pass. A fresh complete
+deployment CPU gate is still required before the B2 retry is admitted.
+
 ## Retained evidence
 
 - srv2: `/home/choiceoh/glm53-logs/ARCONSUMER-arconsumer0908v14/`.
