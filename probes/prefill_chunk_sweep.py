@@ -118,29 +118,47 @@ def prefill(model: str, ctx_tokens: int, rng: random.Random) -> tuple[int, float
     return int(out["usage"]["prompt_tokens"]), time.time() - t0
 
 
-def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: str) -> tuple[str, int, float]:
-    """One traced prefill: /start_profile, a fresh request, /stop_profile, then
-    the newest rank-0 trace once its size stops growing (the profiler flushes
-    asynchronously). tools/trace_prefill_attribution.py reads what this returns
-    and reports each chunk separately, which is the attribution half of the
-    question this probe answers in wall time."""
+def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: str,
+                    chunks: list[int], chunk_file: str) -> tuple[str, list[dict]]:
+    """ONE profiler window, several chunk sizes inside it.
+
+    The profiler is armed once, then a fresh prefill runs at each chunk size,
+    then it is stopped and the trace collected. A capture per chunk size does
+    not work on this build: the first /start_profile succeeds and every later
+    one returns HTTP 500 (attr2-0908, 2026-09-08 -- chunk 8,192 captured, 2,304
+    and 1,152 both died there). One window sidesteps that, and it is what the
+    analysis wants anyway: tools/trace_prefill_attribution.py reports every
+    prefill chunk separately with its row count, so a single trace carrying
+    several sizes IS the regression's design matrix -- plus the partial last
+    chunk of each request as a free extra size.
+    """
     import glob
 
     def post(path: str, timeout: int = 600) -> None:
         req = urllib.request.Request(BASE + path, data=b"", method="POST")
-        urllib.request.urlopen(req, timeout=timeout).read()
+        try:
+            urllib.request.urlopen(req, timeout=timeout).read()
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:1000]
+            except Exception:
+                detail = "(no body)"
+            print(f"  !! {path} -> HTTP {exc.code}: {detail}", file=sys.stderr)
+            raise
 
     before = set(glob.glob(os.path.join(trace_dir, "*.json*")))
-    # 600 s, not 60: the second capture of a run arms the profiler while the
-    # first one's asynchronous flush is still going, and 60 s timed out there
-    # (attr0908, 2026-09-08 -- it cost the chunk-1152 and chunk-2304 traces and
-    # so the whole attribution, since one chunk size cannot separate fixed from
-    # per-token).
-    post("/start_profile", 600)
-    ptok, wall = prefill(model, ctx_tokens, rng)
-    post("/stop_profile")
+    post("/start_profile")
+    runs = []
+    try:
+        for chunk in chunks:
+            set_chunk(chunk_file, chunk)
+            ptok, wall = prefill(model, ctx_tokens, rng)
+            runs.append({"chunk": chunk, "prompt_tokens": ptok, "wall": wall})
+            print(f"  traced chunk {chunk:>5}: tok {ptok}  wall {wall:.1f}s")
+    finally:
+        post("/stop_profile")
     newest, size = "", -1
-    for _ in range(120):
+    for _ in range(180):
         fresh = [f for f in glob.glob(os.path.join(trace_dir, "*.json*")) if f not in before]
         if fresh:
             newest = max(fresh, key=os.path.getmtime)
@@ -149,7 +167,7 @@ def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: 
                 break
             size = now
         time.sleep(2)
-    return newest, ptok, wall
+    return newest, runs
 
 
 def fit(rows: list[dict]) -> dict:
@@ -211,7 +229,8 @@ def main() -> int:
     ap.add_argument("--chunk-file", default="/home/choiceoh/vllm-prof/sched_chunk")
     ap.add_argument("--json", default="")
     ap.add_argument("--trace-chunks", default="",
-                    help="after the sweep, capture one torch trace per chunk at --trace-ctx")
+                    help="chunk sizes to run inside ONE profiler window after the sweep "
+                         "(a window per size does not work on this build)")
     ap.add_argument("--trace-ctx", type=int, default=128000)
     ap.add_argument("--trace-dir", default="/home/choiceoh/vllm-prof")
     args = ap.parse_args()
@@ -316,25 +335,17 @@ def main() -> int:
 
     traces = {}
     trace_chunks = [int(v) for v in args.trace_chunks.split(",") if v.strip()]
-    try:
-        for chunk in trace_chunks:
-            set_chunk(args.chunk_file, chunk)
-            try:
-                path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
-            except Exception as exc:
-                # One bad capture must not cost the others: attr0908 lost the
-                # 1,152 and 2,304 traces to the 2,304 one raising, and with a
-                # single chunk size left the attribution could not be done at
-                # all. Report and carry on.
-                print(f"!! trace chunk {chunk} FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
-                continue
-            traces[chunk] = {"trace": path, "prompt_tokens": ptok, "wall": wall}
-            print(f"trace chunk {chunk}: {path or '(none found)'}  tok {ptok}  wall {wall:.1f}s")
-            print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr-{chunk}.json")
-    finally:
-        # The sweep loop above already had this; this one did not, so a capture
-        # that raised left the override pinned for whatever booted next.
-        if trace_chunks:
+    if trace_chunks:
+        try:
+            path, runs = profile_capture(model, args.trace_ctx, rng, args.trace_dir,
+                                         trace_chunks, args.chunk_file)
+            traces = {"trace": path, "chunks": trace_chunks, "runs": runs}
+            print(f"trace ({len(trace_chunks)} chunk sizes in one window): {path or '(none found)'}")
+            print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr.json")
+            print(f"  python3 probes/prefill_fixed_cost_attribution.py attr.json")
+        except Exception as exc:
+            print(f"!! trace capture FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+        finally:
             set_chunk(args.chunk_file, 0)
 
     if args.json:
