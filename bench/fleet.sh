@@ -10,6 +10,7 @@
 #   fleet.sh pair  fusion FUS7 "VLLM_X=1 VLLM_Y=1"            one candidate arm             (bracket)
 #   fleet.sh run --gpu|--cpu fusion 20 "what" -- <cmd>         anything else; --cpu runs now, in parallel
 #   fleet.sh status | board | events                           where things stand
+#   fleet.sh edit fusion --est 20 --note "updated" -- <cmd>  revise before GO; keep ticket
 #   fleet.sh cancel fusion                                     leave (stops your waiter too)
 #   No bypass: a FAILed preflight is not queued. Fix the cause (it is printed) and run again.
 #
@@ -99,11 +100,13 @@ FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 export FLEET_DIR LOGD
 REPO=${REPO:-/home/choiceoh/stkernel}
+export REPO
 # Submissions return immediately. The detached runner comes back through run,
 # preserving preflight, CPU classification and the existing GPU reservation.
 case "${1:-}" in
   submit|batch|result|inbox|jobs|stats|plan|ack|collect|retire|estimate) exec python3 "$REPO/bench/experiments.py" "$@";;
   await) shift; exec python3 "$REPO/bench/experiments.py" wait "$@";;
+  edit) shift; exec python3 "$REPO/bench/fleet_pending.py" "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
 # "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
@@ -349,6 +352,9 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   serving_idle || eligibility=--boot-only
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_priority.py" "$FLEET_DIR" --apply ${eligibility:+"$eligibility"} || logit "priority unavailable: retain FIFO"
   [ "$(head -1 "$Q" | cut -d'|' -f2)" = "$s" ] || return 1
+  # wait may have captured these before an edit. Read the queue under the
+  # admission lock so holder/ledger metadata match the accepted reservation.
+  IFS='|' read -r _ _ _ est note kind _ <<< "$(grep "^[0-9]*|$s|" "$Q" | head -1)"
   [ "$kind" = probe ] && ! serving_idle && return 1
   # never hand the fleet to a dead job (an orphaned waiter whose run process
   # was killed took a turn for pid 3710362 on 09-06 and was auto-kicked 2 s
@@ -463,24 +469,10 @@ case "$cmd" in
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
     fi
-    if [ "$kind" = boot ]; then
-      runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
-    fi
+    runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
-    if [ "$kind" = boot ]; then
-      exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@"
-    fi
-    FLEET_PID=$$ bash "$0" wait "$s" "${FLEET_TIMEOUT_MIN:-720}" || exit 1
-    if [ "$kind" = boot ]; then
-      echo "nodes:"; if ! nodes_check; then
-        if [ "${FLEET_NODES:-warn}" = strict ]; then logit "nodes FAIL $s -> released"; with_lock _release "$s"; exit 4; fi
-        echo "  (warnings only; FLEET_NODES=strict refuses)"
-      fi
-    fi
-    # heartbeat: a holder that goes SILENT (hung chain, wedged node) shows in status
-    ( while kill -0 $$ 2>/dev/null; do touch "$(hb_file "$s")"; sleep 30; done ) & hb=$!
-    trap 'kill $hb 2>/dev/null; with_lock _release "$s"' EXIT
-    "$@"; rc=$?; exit $rc;;
+    export FLEET_RUN_KIND=$kind
+    exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@";;
   status)
     echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } || echo FREE )"
     remaining=0

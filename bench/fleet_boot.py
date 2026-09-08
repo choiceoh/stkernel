@@ -13,15 +13,17 @@ import sys
 import time
 
 import fleet_handoff as handoff
+import fleet_pending as pending
 
 
 class Supervisor:
     def __init__(self, fleet, session, estimate, note, command):
         self.fleet, self.session, self.estimate, self.note, self.command = fleet, session, estimate, note, command
         self.directory = Path(os.environ['FLEET_DIR'])
+        self.kind = os.environ.get('FLEET_RUN_KIND', 'boot')
         self.repo = Path(__file__).resolve().parent.parent
         self.env = dict(os.environ, FLEET_PID=str(os.getpid()), FLEET_SESSION=session,
-                        FLEET_RESTORE_MANAGED='1', FLEET_RUNNER_REPO=str(self.repo),
+                        FLEET_RESTORE_MANAGED='1' if self.kind == 'boot' else '0', FLEET_RUNNER_REPO=str(self.repo),
                         FLEET=fleet, FLEET_NO_RESTORE_CHECK='1')
         self.child = None
         self.stopping = 0
@@ -52,8 +54,8 @@ class Supervisor:
         if self.child and self.child.poll() is None:
             os.killpg(self.child.pid, signum)
 
-    def execute(self, command, env):
-        self.child = subprocess.Popen(command, env=env, start_new_session=True)
+    def execute(self, command, env, cwd=None):
+        self.child = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True)
         deadline = None
         while self.child.poll() is None:
             if self.stopping:
@@ -147,11 +149,23 @@ class Supervisor:
             return 1
         return self.restore()
 
+    def mark_pending(self, state):
+        # A damaged edit record must not bypass the final GPU recovery path.
+        try:
+            with self.lock():
+                pending.transition(self.directory, self.session, state)
+            return 0
+        except (OSError, ValueError) as exc:
+            print(f'pending record {state}: {exc}', file=sys.stderr)
+            return 1
+
     def run(self):
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, self.signal)
         with self.lock():
-            handoff.ready(self.directory, self.session, os.getpid())
+            pending.register(self.directory, self.session, self.command, self.fleet, self.kind)
+            if self.kind == 'boot':
+                handoff.ready(self.directory, self.session, os.getpid())
         self.event('ready', protocol=handoff.PROTOCOL, source_sha256={name:hashlib.sha256((self.repo/'bench'/name).read_bytes()).hexdigest()
                    for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py')})
         rc = 1
@@ -160,14 +174,18 @@ class Supervisor:
             rc = self.execute(['bash', self.fleet, 'wait', self.session,
                                os.environ.get('FLEET_TIMEOUT_MIN', '720')], self.env)
             if not rc and not self.stopping:
-                self.event('accepted')
-                if self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
+                with self.lock():
+                    accepted = pending.transition(self.directory, self.session, 'running')
+                self.event('accepted', revision=accepted['revision'])
+                if self.kind == 'boot' and self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
                 elif not self.stopping:
-                    rc = self.execute(self.command, self.env)
+                    rc = self.execute(accepted['command'], self.env, accepted['cwd'])
                 self.event('payload-finished', rc=rc)
         finally:
-            if self.held():
+            if self.mark_pending('finishing'):
+                rc = rc or 1
+            if self.held() and self.kind == 'boot':
                 try:
                     if self.cleanup_observation():
                         raise RuntimeError('observation cleanup lost fleet ownership')
@@ -177,10 +195,12 @@ class Supervisor:
                     self.event('finish-error', reason=str(exc))
                     rc = rc or 1
                     self.restore()
-                if self.held():
-                    self.call('release', self.session)
+            if self.held():
+                self.call('release', self.session)
             with self.lock():
                 handoff.receipt(self.directory, self.session).unlink(missing_ok=True)
+            if self.mark_pending('cancelled' if self.stopping else 'finished'):
+                rc = rc or 1
             # Remove a cancelled waiter's row without signalling ourselves.
             self.call('withdraw', self.session)
         return self.stopping or rc
