@@ -1,0 +1,7 @@
+{
+  "command": "python3 tests/test_logic.py --component core",
+  "original_bytes": 5195,
+  "original_sha256": "77146c17ca1fcdd7a730a7495e21255fd8799482373e3ce4ee321286530474c8",
+  "result": "core OK (6793 checks; 38 megakernel regressions; 0 fleet regressions)",
+  "host_tensor_skips_are_not_passes": true
+}

@@ -19,9 +19,21 @@ already includes the four slice groups.
 
 The register-memory scale cache has eight slots for the exact top8 contract.
 Scale equality is folded into the existing scale-load loop, avoiding repeated
-checks for each quantization block. Disabled flags and ineligible short calls
+checks for each quantization block. After histogram publication, each CTA
+prepares the 72 expert scales once in the histogram's now-idle 288 shared
+bytes. The existing Q0 initialization barrier publishes those stores. This
+removes token/route-level global scale loads and reciprocal work without
+adding shared storage or a barrier. Disabled flags and ineligible short calls
 return before querying CUDA capture state; the query is lazy and only runs
 after the exact shape/activation gate.
+
+The admitted candidate also remaps global routes into the existing output
+scratch in one Triton launch. It replaces the expert-map path's 14 Torch
+operations; this count describes source operations, not a measured speedup.
+Unsupported dtypes/layouts/devices retain the existing Torch remap. The
+integer map/offset conversion order is preserved, and weights are copied as
+bits so local NaN payloads and signed zero survive while remote weights
+become exact positive zero. Other EP, decode and TP paths keep their remap.
 
 This removes the existing EP prefill path's GPU nonzero/host count boundary,
 expanded pair_x/pair_out, pair-list chunking and external index_add. It does
@@ -44,30 +56,37 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-The final candidate passed actual E72/I2048 CuTe compilation and 23 focused
+The final candidate passed actual E72/I2048 CuTe compilation and 29 focused
 CPU tests without skips in the immutable-image no-device runner. CUDA remained
-uninitialized. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu5/README.md)
+uninitialized. All 24 admitted Triton dtype/branch specializations also
+compiled for explicit SM121 without a device. [Final compilation evidence](../measurements/glm53_ep_local_20260908/cpu6/README.md)
 records 168 registers and 1040 stack bytes, compared with 168/1520 for the
 original candidate. This 480-byte (31.6%) stack reduction is a compiler
 resource result, not a GPU latency result. The unchanged stock generic
 E72/I2048 arm last compiled at 255 registers and 432 stack bytes in
 [cpu4](../measurements/glm53_ep_local_20260908/cpu4/README.md).
 
-The refined source is queued through normal fleet as `eplocal0908v2` at
-revision `36d4f006bdb0850011dccdbe2a5b8de64789e0b3`; the original queued
-source was cancelled before any GPU cell ran. [Admission evidence](../measurements/glm53_ep_local_20260908/submission2/README.md)
-records the replacement and its queue snapshot. GPU correctness and latency
-remain pending.
+The preceding source `36d4f006bdb0850011dccdbe2a5b8de64789e0b3` began normal
+fleet GPU validation as `eplocal0908v2`. Its frozen source is unchanged and
+its result cannot validate the new remap or CTA scale cache. Separate
+same-source GPU proof is required for these refinements.
 
 The isolated GPU runner uses the actual legacy compact wrapper as its control
 with the profile's 8192-token pair-slice capacity. Eight fixtures cover balanced,
 concentrated, empty-local, duplicate, zero-weight and odd-tail routes, plus
-16384 rows. It changes input/routes at fixed addresses, poisons output, checks
+16384 rows. It changes input/routes/scales at fixed addresses, poisons output, checks
 nondefault streams and includes memcheck/racecheck cells. Three stock repeats
 must first agree within fixed per-row relative-L2 0.02 / normalized-peak 0.04
 bounds; unstable stock cannot inflate the candidate tolerance. Candidate
 bounds remain the larger of those floors and three times the bounded stock
 noise. Failed runs retain the phase and partial measurements in JSON.
+Both timed arms include their actual route-remap method before MoE, so new
+timings are not directly interchangeable with earlier MoE-only timings.
+The synthetic 16384-row case gets matching remap scratch while preserving
+the legacy 8192-token pair-slice limit; it is not serving-capacity proof.
+A separate 24-specialization byte oracle tests map, empty-map and offset
+remapping, including bounds, duplicate IDs, changed storage, tail rows,
+NaN payloads, infinities and signed zero. It also runs under each sanitizer.
 
 Before any service inventory or pause, the runner verifies that every mounted
 MoE source and probe/test contract matches the passing no-device compilation

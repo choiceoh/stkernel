@@ -1,0 +1,110 @@
+{
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.ptx": {
+    "sha256": "ff7f3770c1257b6fba977ec2a4f419c92bde860fb4fd743258c14f0b20c9dffe",
+    "bytes": 1203741
+  },
+  "local/cutlass___call___flashinferfused_moecute_dslblackwell_sm12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTe.sm_121a.resources.log": {
+    "sha256": "6a884c79e089e072651c87a831dbb4af4d693d9526f3d60868324cc4566a7eb3",
+    "bytes": 326
+  },
+  "local/remap/empty-i32-bf16-i32/kernel.ptx": {
+    "sha256": "ccbb24584fd7b9ae7e5046a068154d7ffbb5f457a010007e804e9dca27fbda5a",
+    "bytes": 6939
+  },
+  "local/remap/empty-i32-fp16-i32/kernel.ptx": {
+    "sha256": "ccbb24584fd7b9ae7e5046a068154d7ffbb5f457a010007e804e9dca27fbda5a",
+    "bytes": 6939
+  },
+  "local/remap/empty-i32-fp32-i32/kernel.ptx": {
+    "sha256": "9772eabd5333bfe6efba0db01786398d171808af99526d974420bee78c1a2806",
+    "bytes": 6887
+  },
+  "local/remap/empty-i64-bf16-i32/kernel.ptx": {
+    "sha256": "7141aaeed1ebb31dad699bc86a211f4b7d5bfc9356c037f706a241d1a5f92347",
+    "bytes": 6963
+  },
+  "local/remap/empty-i64-fp16-i32/kernel.ptx": {
+    "sha256": "7141aaeed1ebb31dad699bc86a211f4b7d5bfc9356c037f706a241d1a5f92347",
+    "bytes": 6963
+  },
+  "local/remap/empty-i64-fp32-i32/kernel.ptx": {
+    "sha256": "abee863808f6c0a5bf83d51091063d79092406fd7a71c49c28c41b3dfa7d292c",
+    "bytes": 6940
+  },
+  "local/remap/mapped-i32-bf16-i32/kernel.ptx": {
+    "sha256": "173a136fe63ec1a0fb6109cdc091a77d04f3dbfeda97e13c0bf13a079a237ecc",
+    "bytes": 7654
+  },
+  "local/remap/mapped-i32-bf16-i64/kernel.ptx": {
+    "sha256": "0bdbac8119e0e0d5f6c4351d109973e60134362d247b79ca1811fa80f1fbe2ce",
+    "bytes": 7925
+  },
+  "local/remap/mapped-i32-fp16-i32/kernel.ptx": {
+    "sha256": "173a136fe63ec1a0fb6109cdc091a77d04f3dbfeda97e13c0bf13a079a237ecc",
+    "bytes": 7654
+  },
+  "local/remap/mapped-i32-fp16-i64/kernel.ptx": {
+    "sha256": "0bdbac8119e0e0d5f6c4351d109973e60134362d247b79ca1811fa80f1fbe2ce",
+    "bytes": 7925
+  },
+  "local/remap/mapped-i32-fp32-i32/kernel.ptx": {
+    "sha256": "0c0eedfa3574d0e627afb07872c8daa05f4e184b4237b1dc8172fb522505d82b",
+    "bytes": 7601
+  },
+  "local/remap/mapped-i32-fp32-i64/kernel.ptx": {
+    "sha256": "2579a1cb85905e73001a1454825ca38311f604881907d1ad89072e951100160d",
+    "bytes": 7875
+  },
+  "local/remap/mapped-i64-bf16-i32/kernel.ptx": {
+    "sha256": "6bd794a5d1b626d5da22f6cf657f8e083b6ab194495ab528eade529a8d126af9",
+    "bytes": 7681
+  },
+  "local/remap/mapped-i64-bf16-i64/kernel.ptx": {
+    "sha256": "4b19940617fe519b9854f4c2e36811463faef45550b7c50d006e9ba246b08cd2",
+    "bytes": 7954
+  },
+  "local/remap/mapped-i64-fp16-i32/kernel.ptx": {
+    "sha256": "6bd794a5d1b626d5da22f6cf657f8e083b6ab194495ab528eade529a8d126af9",
+    "bytes": 7681
+  },
+  "local/remap/mapped-i64-fp16-i64/kernel.ptx": {
+    "sha256": "4b19940617fe519b9854f4c2e36811463faef45550b7c50d006e9ba246b08cd2",
+    "bytes": 7954
+  },
+  "local/remap/mapped-i64-fp32-i32/kernel.ptx": {
+    "sha256": "1f3d7a7549a80e7737fcb45eab9c05303762637ceeb266d0534446224b00fe62",
+    "bytes": 7656
+  },
+  "local/remap/mapped-i64-fp32-i64/kernel.ptx": {
+    "sha256": "fa987c654777b83df526760d2ad8d62beef2a7e2f14d9469cc6925adfcefdeae",
+    "bytes": 7930
+  },
+  "local/remap/offset-i32-bf16-i32/kernel.ptx": {
+    "sha256": "3007b34fcf241be2367431a010b6f98503c0f94ff59c370ac4e8182c9146759e",
+    "bytes": 7244
+  },
+  "local/remap/offset-i32-fp16-i32/kernel.ptx": {
+    "sha256": "3007b34fcf241be2367431a010b6f98503c0f94ff59c370ac4e8182c9146759e",
+    "bytes": 7244
+  },
+  "local/remap/offset-i32-fp32-i32/kernel.ptx": {
+    "sha256": "b10182b8ca97d3b6319249564b92752fbf5ac0334e0dde0bbc8d2f3fafef8dc7",
+    "bytes": 7194
+  },
+  "local/remap/offset-i64-bf16-i32/kernel.ptx": {
+    "sha256": "865a0fd446c65adf8e693a1955c9255a430cb55ccd798308ffef589ab165662c",
+    "bytes": 7232
+  },
+  "local/remap/offset-i64-fp16-i32/kernel.ptx": {
+    "sha256": "865a0fd446c65adf8e693a1955c9255a430cb55ccd798308ffef589ab165662c",
+    "bytes": 7232
+  },
+  "local/remap/offset-i64-fp32-i32/kernel.ptx": {
+    "sha256": "7db7a8ab3820920479903d53899791976a063b236254f8ecf29d2eb605c6525c",
+    "bytes": 7208
+  },
+  "local/result.json": {
+    "sha256": "3291b8b42ccec6e13a10922eada951aca2ebf645e971a6c80c00cbd08fe153f5",
+    "bytes": 24681
+  }
+}

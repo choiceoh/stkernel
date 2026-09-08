@@ -327,3 +327,9 @@ fallbacks remain for other shapes. The source pin and a separate artifact
 key prevent stock-kernel execution on invalid remote IDs. Both flags stay
 default-off; GPU correctness, routing sensitivity, memory and direct TTFT
 are unmeasured. See `docs/GLM53_EP_PREFILL_LOCAL.md`.
+
+The admitted candidate uses a single Triton remap into existing scratch and
+prepares expert scales once per CTA in dead histogram storage. Its fallback
+retains the original Torch remap. The new source passed no-device CuTe and
+24-specialization Triton compilation plus 29 pinned CPU tests; GPU proof
+must include remap and changed scales before attributing any speed gain.
