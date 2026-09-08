@@ -1,0 +1,22 @@
+[
+  {
+    "run": "produce",
+    "wall_s": 155.637,
+    "reused": false,
+    "tests_run": 71121,
+    "scope": "audited-logic",
+    "source": "3401404c48ae4d06a6d0a6f1a8931cba83dd42e6",
+    "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.json",
+    "key": "4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202"
+  },
+  {
+    "run": "reuse",
+    "wall_s": 1.107,
+    "reused": true,
+    "tests_run": 71121,
+    "scope": "audited-logic",
+    "source": "3401404c48ae4d06a6d0a6f1a8931cba83dd42e6",
+    "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.json",
+    "key": "4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202"
+  }
+]
