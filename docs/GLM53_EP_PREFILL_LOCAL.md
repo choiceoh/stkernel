@@ -23,7 +23,7 @@ eight scalar stores. The publisher, slot order and synchronization are
 unchanged. Pointers without 16-byte alignment and other slice contracts
 retain the inherited scalar publication path.
 
-The register-memory scale cache has eight slots for the exact top8 contract.
+The selected-scale cache uses at most eight slots for the exact top8 contract.
 Scale equality is folded into the existing scale-load loop, avoiding repeated
 checks for each quantization block. After histogram publication, each CTA
 prepares the 72 expert scales once in the histogram's now-idle 288 shared
@@ -32,6 +32,15 @@ removes token/route-level global scale loads and reciprocal work without
 adding shared storage or a barrier. Disabled flags and ineligible short calls
 return before querying CUDA capture state; the query is lazy and only runs
 after the exact shape/activation gate.
+
+After allocating a selected route's row, lane 0 copies its transformed scale
+bits into the existing route slot, where the expert ID is no longer needed.
+The existing warp barrier publishes those words; the next batch's existing
+CTA barrier protects reuse. Equal-scale quantization keeps the first scale in
+a scalar, while varied-scale quantization reads the shared slot. This removes
+the dynamically indexed per-thread `route_gs[8]` array without extra shared
+storage, atomics or barriers. Float32 equality, signed-zero selection and NaN
+bits passed to the quantizer retain their previous behavior.
 
 The admitted candidate also remaps global routes into the existing output
 scratch in one Triton launch. It replaces the expert-map path's 14 Torch
@@ -47,6 +56,11 @@ When an admitted prefill exactly fills both output scratch buffers, the
 wrapper reuses the Tensor objects and avoids two redundant slice views.
 Smaller calls still take exact row views, with no cached view or map-content
 assumption.
+Remap admission returns the validated pair count and map length to the same
+call's launch preparation, avoiding repeated Tensor metadata reads. Shape,
+dtype, device, contiguity and map bounds are still checked on every call;
+there is no cache of Tensor metadata or contents across calls. The wrapper
+also reuses the expert count it already validated against the weight shape.
 
 This removes the existing EP prefill path's GPU nonzero/host count boundary,
 expanded pair_x/pair_out, pair-list chunking and external index_add. It does
@@ -69,7 +83,24 @@ forecast. Global useful FLOPs remain unchanged by TP-to-EP repartitioning;
 75% fewer experts per rank is not a 75% speedup. The 1.40x direct prefill
 throughput objective remains open.
 
-The latest source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
+The latest source `cf1365b8fab6091833400efd7784071316eb9f6a` passed actual
+E72/I2048 CuTe compilation, all 24 Triton specializations and 55 pinned CPU
+tests without skips or CUDA initialization. [CPU9 evidence](../measurements/glm53_ep_local_20260908/cpu9/README.md)
+records 168 registers, 112 stack bytes and 1024 shared bytes. Against CPU8,
+stack use fell from 1040 to 112 bytes while registers and shared storage
+stayed unchanged. This is compiler resource evidence, not a measured prefill
+speedup. Static PTX local loads/stores fell from 29/12 to 4/5; inherited
+local-memory uses remain. All 24 remap PTX files and executable `.text`
+sections match CPU8. Whole remap cubin hashes differ only in the payloads of
+`.debug_line` and `.nv.merc.debug_line`, as recorded by the section comparison.
+The selected-scale raw-bit tests cover signed zero, infinities, NaN
+payloads, duplicate routes, all four active warps and changed scales at the
+same addresses. Remap tests revalidate reused Tensor metadata and launch sizes.
+The initial CPU9 attempt on srv4 stopped before compilation because available
+host RAM was below the unchanged 12 GiB guard. The same frozen source then
+passed through the normal CPU wrapper on head with the same 4 GiB/2 CPU limit.
+
+The preceding source `7254422f044ab3c5d042f32ee7f33add7baf5e00` passed actual
 E72/I2048 CuTe compilation and 48 focused
 CPU tests without skips in the immutable-image no-device runner. CUDA remained
 uninitialized. All 24 admitted Triton dtype/branch specializations also
@@ -79,7 +110,8 @@ route-predicated weight loads in the other 18 variants. CuTe resources remain
 168 registers, 1040 stack bytes and 1024 shared bytes. Its static PTX
 `st.global.v4.u32` count changed from 1 to 33 while scalar fallback code
 remains; this is not an executed-store count or a latency measurement.
-The latest load masking, Tensor reuse and vector publication have no GPU
+Neither the CPU8 load masking, Tensor reuse and vector publication nor the
+CPU9 selected-scale storage and host metadata changes have a new-source GPU
 numerical or performance result yet.
 
 The historical [CPU7 evidence](../measurements/glm53_ep_local_20260908/cpu7/README.md)
@@ -114,7 +146,8 @@ showed 2.053x–3.495x versus the existing EP compact wrapper with each arm's
 remap included. These are single-GB10 component results and do not measure
 incremental improvement against v2, which used a different timing scope.
 Attempt4 predates the CPU8 load masking, full-scratch Tensor reuse and vector
-task publication, so it does not validate their incremental benefit.
+task publication and CPU9 scale-cache changes, so it does not validate their
+incremental benefit.
 
 The mounted sanitizer preflight and remap memcheck passed; the latter reported
 zero errors. MoE memcheck then exited 86 with 34 CUDA_ERROR_INVALID_VALUE

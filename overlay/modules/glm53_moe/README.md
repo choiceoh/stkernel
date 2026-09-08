@@ -335,7 +335,7 @@ production TP4/TTFT improvement. See `docs/GLM53_EP_PREFILL_LOCAL.md` and
 
 The admitted candidate uses a single Triton remap into existing scratch and
 prepares expert scales once per CTA in dead histogram storage. Its fallback
-retains the original Torch remap. Latest source `7254422f` also masks remote
+retains the original Torch remap. Preceding source `7254422f` also masks remote
 weight loads, removes input loads from empty-map variants and avoids two
 slice views when prefill exactly fills both output scratch buffers. Aligned
 four-task publication uses two vector stores instead of eight scalar stores;
@@ -351,13 +351,25 @@ count changed from 1 to 33, which is not an executed count or speed claim.
 These latest optimizations have no GPU numerical or performance result yet.
 The historical CPU7/37-test and CPU6/29-test receipts remain unchanged.
 
+Latest source `cf1365b8` replaces the per-thread `route_gs[8]` array with
+raw scale bits in the existing shared route slots, keeping the single first
+scale for equal-scale quantization. The original barriers protect the same
+slot lifetime. It adds no shared storage or atomics. Remap launch preparation
+also reuses metadata validated within that call, with no cross-call cache.
+[CPU9 evidence](../../../measurements/glm53_ep_local_20260908/cpu9/README.md)
+records 55 passing tests, actual E72/I2048 CuTe and all 24 Triton compilations,
+without CUDA initialization. Stack use fell from 1040 to 112 bytes while
+REG168 and SHARED1024 stayed unchanged. The initial srv4 attempt was refused
+by the unchanged 12 GiB host-memory guard; head completed the same capped
+CPU workflow. These resource results do not establish GPU latency gains.
+
 The earlier attempt4 source passed the 24-variant GPU remap oracle, eight MoE numerical
 fixtures and remap memcheck. Remap-inclusive MoE timing was 2.053x–3.495x
 versus existing EP compact. MoE memcheck failed on 34 CUDA API lookup errors
 in the initial compact hardware-info path; remaining sanitizers did not run.
 The instrumented numerical PASS does not override that failure. Attempt4
 retains the raw results and exact original recovery/release evidence, and
-cannot validate the later CPU8 changes. The reserved binding-reproducer v2
+cannot validate the later CPU8 or CPU9 changes. The reserved binding-reproducer v2
 was refused before its GPU payload because all four incoming containers were
 stopped. The normal supervisor restored all four public containers and
 health 200, then released at 16:49:14 KST. The CPU8-pinned v3 retry is waiting
