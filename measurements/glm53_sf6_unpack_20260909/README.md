@@ -53,8 +53,23 @@ loops explicitly constexpr, matching the production plain Python method's
 trace-time unrolling. No production kernel was changed by that probe fix.
 
 The next attempt was stopped before container creation by the existing 12 GiB
-host-memory gate (9,499,783,168 bytes available). No instruction-count or speed
-claim is made from this unfinished comparison.
+host-memory gate (9,499,783,168 bytes available). Once memory recovered, v3
+completed all six arms without restarting serving or weakening the gate.
+`codegen-v3/` retains the successful receipt and PTX/CUBIN/SASS at source
+`9ed5fe67` (production kernels unchanged from the full compiler gate).
+
+| Output words per thread | Scalar SASS | Four-byte SASS | Reduction |
+| --- | ---: | ---: | ---: |
+| 1 | 42 | 29 | 30.95% |
+| 4 (decode expansion geometry) | 122 | 73 | 40.16% |
+| 8 (dynamic expansion geometry) | 228 | 130 | 42.98% |
+
+`python3 analyze_assembly.py` verifies artifact hashes and reproduces these
+counts. Counts include the isolated wrapper through EXIT; unreachable BRA/NOP
+padding is excluded. The two arms have the same source-level input loads and
+output stores, but the compiler can choose different instructions (including
+narrowing the candidate's base load). These are isolated unpack instruction
+counts, not full MoE-kernel counts, operation latencies or a serving speedup.
 
 GPU numerics, graph replay and serving step speed for this change have not
 been measured. The prior SF6 adoption timings do not measure this optimization.

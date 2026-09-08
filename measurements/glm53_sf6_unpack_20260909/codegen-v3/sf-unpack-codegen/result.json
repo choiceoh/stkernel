@@ -1,0 +1,149 @@
+{
+  "arch": "sm_121a",
+  "base_input": "one nonconstant raw-base load per thread in both arms",
+  "baseline_commit": "c24494aa",
+  "cases": [
+    {
+      "arm": "scalar",
+      "artifacts": {
+        "cubin": {
+          "bytes": 7504,
+          "path": "scalar-words1.cubin",
+          "sha256": "51c025846a6da4503ad21787813e6e760090497b33bcb0782e14c6c0ed347963"
+        },
+        "ptx": {
+          "bytes": 3124,
+          "path": "scalar-words1.ptx",
+          "sha256": "ac2d7948ba4bff3ecae9d916f6f5ac4013e334501e7ec7f9d97802550b128fe6"
+        },
+        "sass": {
+          "bytes": 5151,
+          "path": "scalar-words1.sass",
+          "sha256": "272bab892f4905736169a1dbb84f374a7f488adeadb89b46d657a92d92796aac"
+        }
+      },
+      "words": 1
+    },
+    {
+      "arm": "u8x4",
+      "artifacts": {
+        "cubin": {
+          "bytes": 7232,
+          "path": "u8x4-words1.cubin",
+          "sha256": "e06abc20da407d4d9c513396683d3b9e972d16c46865baf0573c1a529c1de1a0"
+        },
+        "ptx": {
+          "bytes": 2773,
+          "path": "u8x4-words1.ptx",
+          "sha256": "4d33cf1589aaa15695237f36d37e9d35ed67f5d0ab1406cabb57773ff37edccf"
+        },
+        "sass": {
+          "bytes": 4147,
+          "path": "u8x4-words1.sass",
+          "sha256": "f9cdab9d5f34297cfb77293fd12ad5803abb185138e9d652d4d5c610aa045cb8"
+        }
+      },
+      "words": 1
+    },
+    {
+      "arm": "scalar",
+      "artifacts": {
+        "cubin": {
+          "bytes": 8832,
+          "path": "scalar-words4.cubin",
+          "sha256": "bb08410cb4c20dec4338304f1fc8cc65648d88c96ddebfa0b3348a553c3dea15"
+        },
+        "ptx": {
+          "bytes": 5888,
+          "path": "scalar-words4.ptx",
+          "sha256": "39595efeef25bb0ec1127884abd9523af0c7c05e90907510f99c68698cee6121"
+        },
+        "sass": {
+          "bytes": 10758,
+          "path": "scalar-words4.sass",
+          "sha256": "9899c3958f0ab40b9cf454905a1968fc59f2bc6047b542860742aed91bb10847"
+        }
+      },
+      "words": 4
+    },
+    {
+      "arm": "u8x4",
+      "artifacts": {
+        "cubin": {
+          "bytes": 8024,
+          "path": "u8x4-words4.cubin",
+          "sha256": "057b79090490ce95d230ccef18f5fa44d198cb5fdee2b8c7b857d24120ddfbfe"
+        },
+        "ptx": {
+          "bytes": 4337,
+          "path": "u8x4-words4.ptx",
+          "sha256": "5e5ac1725b82da60b7c6d29855353ad6a5417b59cd03ef7917a66b2061446636"
+        },
+        "sass": {
+          "bytes": 7447,
+          "path": "u8x4-words4.sass",
+          "sha256": "723f24b373fc19e2ad1e7329832670c7a89984d92f2a432a9bdebfa93a5d80eb"
+        }
+      },
+      "words": 4
+    },
+    {
+      "arm": "scalar",
+      "artifacts": {
+        "cubin": {
+          "bytes": 10600,
+          "path": "scalar-words8.cubin",
+          "sha256": "d6e0c24f8803e5119a7da2441236ea186e9ad692a4ee49a0648c7418b3d22d2c"
+        },
+        "ptx": {
+          "bytes": 9694,
+          "path": "scalar-words8.ptx",
+          "sha256": "f20302cf2b2b5e50170249e7086e3760c962828bfae30a1c6f26e712cff38e08"
+        },
+        "sass": {
+          "bytes": 18071,
+          "path": "scalar-words8.sass",
+          "sha256": "2a65a5957bbac0c65ff8f1eea3116f11e6565e6b40587809006f26dc54083183"
+        }
+      },
+      "words": 8
+    },
+    {
+      "arm": "u8x4",
+      "artifacts": {
+        "cubin": {
+          "bytes": 8976,
+          "path": "u8x4-words8.cubin",
+          "sha256": "92a43fb89f062b403ff6698dff1117b74592c16876eff937c8aa9fef76df9505"
+        },
+        "ptx": {
+          "bytes": 6452,
+          "path": "u8x4-words8.ptx",
+          "sha256": "8d0a4c308aee1507e0ce086615eaa75f8f875c7003e5b19f2125fb4772dbf3ce"
+        },
+        "sass": {
+          "bytes": 11472,
+          "path": "u8x4-words8.sass",
+          "sha256": "436c95e1152d7699f50aa9f23b0df09b219c4b504ed4f87158c2cc382f8d6352"
+        }
+      },
+      "words": 8
+    }
+  ],
+  "compile_options": "--opt-level 2 --enable-tvm-ffi",
+  "cuda_initialized": false,
+  "evidence": "isolated-unpack-compile-only",
+  "mode": "cpu",
+  "production_helper": "flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_static_common._sf6_unpack_u8x4",
+  "schema": "sf6-unpack-compile-v1",
+  "source_sha256": {
+    "moe_static_common.py": "04ef86a796a0fc69d416685eae86b1924c2cf4ba13c686fc7f6ef68473332e81",
+    "sf6_unpack_compile.py": "edb1e4684f1592285ed41798aed35e6a28f918f67658bb390e891d2bce76200d"
+  },
+  "status": "PASS",
+  "words_per_thread": [
+    1,
+    4,
+    8
+  ]
+}
