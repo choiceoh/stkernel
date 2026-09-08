@@ -11,12 +11,13 @@ ap.add_argument('mode', choices=('t', 't,r'))
 ap.add_argument('v4_sha')
 ap.add_argument('dispatch_sha')
 ap.add_argument('v5_sha')
+ap.add_argument('cta', choices=('2', '4'))
 args = ap.parse_args()
 names = subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True).splitlines()
 name = next(n for n in names if n in ('glm53', 'glm53-worker'))
 obj = json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
 env = dict(s.split('=',1) for s in obj['Config']['Env'])
-expected = {'VLLM_GLM53_MK_INPUT_REUSE':'1', 'VLLM_GLM53_MK_INPUT_CTA':'2',
+expected = {'VLLM_GLM53_MK_INPUT_REUSE':'1', 'VLLM_GLM53_MK_INPUT_CTA':args.cta,
             'VLLM_GLM53_B12X_STATIC_V2':args.mode}
 pkg = '/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell_sm12x/'
 files = {pkg+'moe_static_kernel_v4.py':args.v4_sha, pkg+'moe_dispatch.py':args.dispatch_sha,

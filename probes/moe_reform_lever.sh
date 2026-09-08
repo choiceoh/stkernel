@@ -7,15 +7,17 @@ for pair in $knobs; do
   [[ $pair != VLLM_GLM53_B12X_STATIC_V2=* ]] || mode=${pair#*=}
 done
 [[ $mode == t || $mode == t,r ]] || exit 2
+cta=$(sed -n 's/^VLLM_GLM53_MK_INPUT_CTA=\([0-9]\+\)[[:space:]]*$/\1/p' "$REPO/profiles/glm53.env" | tail -1)
+[[ $cta == 2 || $cta == 4 ]] || exit 2
 v4_sha=$(sha256sum "$REPO/overlay/modules/glm53_moe/moe_static_kernel_v4.py" | cut -d ' ' -f 1)
 dispatch_sha=$(sha256sum "$REPO/overlay/modules/glm53_moe/moe_dispatch.py" | cut -d ' ' -f 1)
 v5_sha=$(sha256sum "$REPO/overlay/modules/glm53_moe/moe_static_kernel_v5.py" | cut -d ' ' -f 1)
 collect() {
   local prefix=$1 status=0
   curl -fsS --max-time 5 http://127.0.0.1:18000/health >/dev/null || return 1
-  python3 "$REPO/probes/moe_reform_runtime_proof.py" "$mode" "$v4_sha" "$dispatch_sha" "$v5_sha" > "$out/$prefix-srv2.json" || status=1
+  python3 "$REPO/probes/moe_reform_runtime_proof.py" "$mode" "$v4_sha" "$dispatch_sha" "$v5_sha" "$cta" > "$out/$prefix-srv2.json" || status=1
   for node in 1 3 4; do
-    ssh -o BatchMode=yes "choiceoh@10.10.10.$node" python3 - "$mode" "$v4_sha" "$dispatch_sha" "$v5_sha" \
+    ssh -o BatchMode=yes "choiceoh@10.10.10.$node" python3 - "$mode" "$v4_sha" "$dispatch_sha" "$v5_sha" "$cta" \
       < "$REPO/probes/moe_reform_runtime_proof.py" > "$out/$prefix-srv$node.json" || status=1
   done
   [[ $(curl -s --max-time 3 -o /dev/null -w '%{http_code}' http://10.10.10.2:18000/health || true) == 000 ]] || status=1

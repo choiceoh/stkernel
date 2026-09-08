@@ -15,6 +15,7 @@ def summarize(root):
     assert len({r['git'] for r in records}) == 1
     reference = None
     source = None
+    controls = None
     rows = []
     for record in records:
         name = record['name']
@@ -29,7 +30,10 @@ def summarize(root):
             suffix = 'tm32f2g2a32wut' + ('r16n128k256d256' if mode == 't,r' else '') + ' ('
             for proof in (before,after):
                 assert any('static2_m6_k4096_n512_t8_r' in line and suffix in line for line in proof['markers'])
-            assert after['mode'] == mode and after['knobs']['VLLM_GLM53_MK_INPUT_CTA'] == '2'
+            assert after['mode'] == mode
+            fixed = {k:v for k,v in after['knobs'].items() if k != 'VLLM_GLM53_B12X_STATIC_V2'}
+            controls = fixed if controls is None else controls
+            assert fixed == controls, (name,node,'non-MoE controls differ')
             if node == 2:
                 assert after['boot_id'] == record['boot_id']
             source = source or after['source_sha256']
@@ -65,7 +69,7 @@ def summarize(root):
                             candidate_change_pct=100*(values[0]/baseline-1)))
     return dict(per_boot=rows,baseline=base,
                 change_pct={key:100*(a[key]/value-1) for key,value in base.items()},
-                matched_requests=True,matched_source_sha256=source,
+                matched_requests=True,matched_source_sha256=source,matched_controls=controls,
                 source_commit=records[0]['git'],prefill_comparison=prefill,
                 note='One integrated A-B campaign; one boot per arm. Boot drift is not independently estimated. Within-boot windows are correlated. Acceptance covers all requests; output tok/s covers fixed 2K decode only.')
 

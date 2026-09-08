@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "4fae87c2a96adf54fa4d7ef72ea706d93d8c9422",
+  "candidate_commit": "Recorded by corrected campaign numerics/source.commit and onepass git",
   "cpu_compile_commit": "088c04f",
   "cpu_full_gate_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
   "cpu_scope": "Historical compile logs predate the FP4 byte-address fix. Corrected candidate requires a fresh device-free compile and GPU campaign.",
@@ -20,9 +20,9 @@
     "experts": 288,
     "topk": 8
   },
-  "fleet_session": "moereformfix0908",
-  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-0908",
-  "status": "Corrected CPU compilation and contracts PASS; integrated corrected GPU numerics and A-B queued",
+  "fleet_session": "moereformfix20908",
+  "remote_candidate": "/home/choiceoh/stkernel-moe-reform-fix-v2-0908",
+  "status": "Corrected MoE source unchanged; refreshed main CTA4 default in both arms; requeued",
   "numerics_commit": "96ea2869f0fb4f150e3fa09c61cb1482f41f5915",
   "numerics": {
     "status": "FAIL",
@@ -51,5 +51,11 @@
     "megakernel_regressions": 38,
     "fleet_regressions": 115,
     "status": "PASS"
+  },
+  "serving_controls": {
+    "CTA": 4,
+    "TP": 4,
+    "SPEC_K": 5,
+    "C": 1
   }
 }

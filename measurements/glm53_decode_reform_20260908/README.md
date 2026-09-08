@@ -38,12 +38,12 @@ consumer-address checks (`cpu/corrected/`). Its full Linux CPU gate passes
 
 ## One integrated GPU campaign
 
-The corrected `moereformfix0908` maintenance campaign runs:
+The corrected `moereformfix20908` maintenance campaign runs:
 
 1. Stock/baseline/candidate numerical differential, five graph replays with
    changed inputs/routes and exact-zero route weights, M=1/2/6/8/16/32.
 2. Focused M6/U40 memcheck and racecheck in the same maintenance campaign.
-3. One A-B serving comparison, same source/image, TP4, SPEC_K=5, C=1,
+3. One A-B serving comparison, same source/image, TP4, SPEC_K=5, C=1, CTA=4 in both arms,
    three fixed 2K decode requests per arm and the 2K/32K/128K prefill ladder.
 4. All-rank source and active M6 lane proof before/after each arm, private
    endpoint isolation, separate reasoning/content channels, exact request hashes.
@@ -60,3 +60,8 @@ passing all M1/U8 replays. Its speed-only queue was cancelled before any
 measurement at the user's direction. See `ADDRESS_DIAGNOSIS.md` for the
 byte-versus-nibble swizzle correction. Corrected GPU results are pending;
 no speedup is claimed.
+
+While queued, main promoted CTA=4 in PR #465. Both serving arms now use
+that approved default. The corrected MoE source is byte-identical to the
+M2/M6 CPU-compiled candidate; the runtime proof checks equal CTA controls
+on every rank and across both arms.
