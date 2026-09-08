@@ -27,7 +27,9 @@ takes precedence over those optional hints for these small collectives.
    volatile scalar PTX prevents the compiler from moving all 96 expanded
    floats back out of the token loop. This reduced the compiled BF16 consumer
    from 158 to 128 registers on CUDA 13.0; its 24 loads remain before the wait.
-   Its occupancy is still queried from its own kernel. Activation,
+   Its occupancy is still queried from its own kernel, with one CTA per SM
+   so additional residency does not duplicate the projection-weight traffic
+   and leaves registers available to overlapping kernels. Activation,
    workspace and counter accesses remain after the wait, including inactive
    CTAs that later obtain a tail ticket.
 5. MHC arithmetic, BF16 bit patterns, projection reduction order and GEMM packs
@@ -75,7 +77,11 @@ MHC equations provide separate oracles. Both modes also run memcheck and
 racecheck. C1 segment samples include warm and cold L2; they cannot establish
 engine-step speed by themselves.
 
-Racecheck retains all kernel instrumentation with four CPU workers and a
+Racecheck instruments every production MK/OSAR kernel and the delayed producer
+using the mangled-name filter `(mk_|k_oneshot|ar_consumer_delay)`. Unchanged
+Torch fixture/oracle kernels are excluded after unfiltered racecheck exceeded
+both 8 and 24 GiB caps; unfiltered memcheck covers the whole application.
+Racecheck uses four CPU workers and a
 24 GiB memory cap (32 GiB available required); other stages retain an 8 GiB
 cap (16 GiB available required). Swap is capped at the memory limit. Check-only
 runs omit unused timing packs and the cold-cache buffer. Container exit/OOM

@@ -3177,7 +3177,11 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
           &per_sm, kernel, MK_THREADS, 0));
       MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-      grid = std::min(per_sm * sms, MK_MHC_GRID_CAP);
+      // Packed coefficients fit two CTAs per SM, but doubling the token
+      // groups also doubles fn traffic and delays release of the next grid.
+      // Keep one CTA per SM so the saved registers remain available to the
+      // overlapping AR/input-pack/GEMM kernels. Still verify residency.
+      grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
       TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
     }
     a.grid = grid;

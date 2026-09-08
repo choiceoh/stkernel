@@ -82,6 +82,7 @@ def main():
         dist.barrier()
     receipt['rank'] = rank
     torch.manual_seed(53)
+    print('Preparing fixed GEMM/MHC fixtures', flush=True)
     packs = {n: mk.build_mk_weight_w4(torch.randn(n, 4096, device='cuda',
                    dtype=torch.bfloat16) * .02)
              for n in ((4096,) if args.check_only else (4096, 6144, 6416))}
@@ -92,6 +93,7 @@ def main():
     if not args.check_only:
         _l2_flush()
     torch.cuda.synchronize()
+    print('GEMM fixtures ready', flush=True)
     fn = (torch.randn(24, 16384, device='cuda') * .02).bfloat16().float()
     assert mk._mhc_bf16_weight(fn) is not None
     vector_fn = mk._mhc_bf16_weight(fn, ar_consumer=True)
@@ -122,6 +124,7 @@ def main():
 
     graphs = {}
     for t in (1, 2, 6, 8, 16, 32):
+        print('Checking graph inputs T=' + str(t), flush=True)
         vals = inputs(t)
         for fp32 in (True, False):
             for early in (False, True):

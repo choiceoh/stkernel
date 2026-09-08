@@ -15,6 +15,7 @@ IMAGE = 'sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
 NODES = ('local', '10.10.10.1', '10.10.10.3', '10.10.10.4')
 IPS = '10.10.10.2,10.10.10.1,10.10.10.3,10.10.10.4'
 GIB = 1024**3
+RACECHECK_KERNELS = '(mk_|k_oneshot|ar_consumer_delay)'
 
 
 def memory_budget(stage):
@@ -133,7 +134,11 @@ def main():
             cmd += ['--entrypoint', '/san/compute-sanitizer', IMAGE, '--tool', stage,
                     '--target-processes', 'application-only', '--error-exitcode', '77']
             if stage == 'racecheck':
-                cmd += ['--racecheck-num-workers', '4']
+                # Instrument every production MK/OSAR kernel and the delayed
+                # producer, excluding unchanged Torch fixture/oracle kernels.
+                # Unfiltered memcheck still covers the complete application.
+                cmd += ['--racecheck-num-workers', '4', '--print-session-details',
+                        '--kernel-name', 'regex=' + RACECHECK_KERNELS]
             cmd += ['python3', target, '--check-only']
         else:
             cmd += ['--entrypoint', 'python3', IMAGE, target, '--trace']
