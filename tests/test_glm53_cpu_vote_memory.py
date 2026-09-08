@@ -139,6 +139,28 @@ class EvidenceTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_real_memory_client_preserves_receipt_and_restricts_paths(self):
+        import prefill_observation as observation
+        response = Mock()
+        response.read.return_value = json.dumps(receipt()).encode()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch.object(observation, 'check_holder') as holder, \
+                patch.object(observation.urllib.request, 'urlopen', return_value=response) as open_url:
+            api = pair.PrivateMemoryAPI('http://127.0.0.1:18000')
+            self.assertEqual(api.post('/glm53/cpu-vote-memory', {}), receipt())
+            request = open_url.call_args.args[0]
+            self.assertEqual(request.full_url, 'http://127.0.0.1:18000/glm53/cpu-vote-memory')
+            self.assertEqual(request.data, b'{}')
+            self.assertEqual(open_url.call_args.kwargs['timeout'], 60)
+            holder.assert_called_once()
+            for path, body in (('/v1/completions', {}), ('/glm53/cpu-vote-memory', {'change': 1})):
+                with self.assertRaises(ValueError):
+                    api.post(path, body)
+            with self.assertRaises(ValueError):
+                pair.PrivateObserverAPI('http://127.0.0.1:18000').post('/glm53/cpu-vote-memory', {})
+            self.assertEqual(open_url.call_count, 1)
+
     def test_failed_second_arm_cleans_before_resetting_root_and_never_requests(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'FLEET_SESSION':'cpu'}):
             run=pair.Run(ROOT, 'sha', Path(tmp)); events=[]
@@ -152,7 +174,7 @@ class LifecycleTests(unittest.TestCase):
                   patch.object(run,'attest_clone'),patch.object(run,'logs',return_value={}),
                   patch.object(run,'cleanup',side_effect=lambda:events.append(('cleanup',run.arm))),
                   patch.object(run,'phase') as phase,patch.object(pair,'validate_logs',return_value={}),patch.object(pair,'idle_observers'),
-                  patch.object(pair.memory,'validate'),patch.object(pair,'PrivateObserverAPI',return_value=api),
+                  patch.object(pair.memory,'validate'),patch.object(pair,'PrivateMemoryAPI',return_value=api),
                   patch.object(pair.base.lifecycle,'idle'),patch.object(pair.time,'sleep')):
                 with self.assertRaisesRegex(RuntimeError, 'failed warm boot'):run.collect(prepared,{})
                 phase.assert_not_called()

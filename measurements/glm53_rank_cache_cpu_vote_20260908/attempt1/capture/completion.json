@@ -1,0 +1,11 @@
+{
+  "experiment": "glm53-cpu-vote-memory",
+  "source_revision": "6e693f53a118bce9fc0a8b457943c3880a9fb59b",
+  "observer_sha256": "912830243e9d55a7b92857c57bd929267c26e8d3c930b8eafea1469b08b872f6",
+  "complete": false,
+  "performance_acceptance": false,
+  "host_memory_reclaim_requested": false,
+  "error": "ValueError('unsupported observation endpoint')",
+  "restored_original": true,
+  "ended": 1788841533.6710763
+}

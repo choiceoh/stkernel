@@ -1,0 +1,18 @@
+{
+  "local": {
+    "exists": true,
+    "sha256": "0d4e34cd86f5d5d59e574c9d473ebc9796421e20013d09c5e66eb3fbd5472d71"
+  },
+  "10.10.10.1": {
+    "exists": true,
+    "sha256": "57a5b6680573813ea0d194549c63aac20a824a6a3dfa0c8f826390caa0abd5fa"
+  },
+  "10.10.10.3": {
+    "exists": true,
+    "sha256": "73550e845bc84201013f4402e5b093d4891fe397bc034727d2905c0f68eff0f2"
+  },
+  "10.10.10.4": {
+    "exists": true,
+    "sha256": "6dfc63a3ee8ba306465a0ed524d935f025ce0033376719f510127435086ed1fa"
+  }
+}
