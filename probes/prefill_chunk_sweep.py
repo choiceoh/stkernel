@@ -120,17 +120,24 @@ def prefill(model: str, ctx_tokens: int, rng: random.Random) -> tuple[int, float
 
 def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: str,
                     chunks: list[int], chunk_file: str) -> tuple[str, list[dict]]:
-    """ONE profiler window, several chunk sizes inside it.
+    """ONE profiler window holding ONE request.
 
-    The profiler is armed once, then a fresh prefill runs at each chunk size,
-    then it is stopped and the trace collected. A capture per chunk size does
-    not work on this build: the first /start_profile succeeds and every later
-    one returns HTTP 500 (attr2-0908, 2026-09-08 -- chunk 8,192 captured, 2,304
-    and 1,152 both died there). One window sidesteps that, and it is what the
-    analysis wants anyway: tools/trace_prefill_attribution.py reports every
-    prefill chunk separately with its row count, so a single trace carrying
-    several sizes IS the regression's design matrix -- plus the partial last
-    chunk of each request as a free extra size.
+    What the fleet actually did, over four holds: a window with one request
+    produced a usable rank trace (attr2, chunk 6,912, 6 chunks, 6.6 MB); a
+    window with two requests (attr3) and a window with three small ones (attr4,
+    7 chunks total, smaller than the one that worked) BOTH ended with
+
+        /stop_profile -> 500 {"message":"Call to profile method failed: cancelled"}
+
+    and no rank trace written at all. So it is not trace size and not window
+    duration -- it is the number of requests in the window. `chunks` is
+    therefore a list of windows, taken in order, each independent: a failure is
+    reported and the next one still runs. Put the size you most want FIRST,
+    because the earliest window in a boot is the one most likely to survive.
+
+    The chunk-size spread the regression needs then comes from combining
+    reports -- prefill_fixed_cost_attribution.py takes several -- plus the
+    partial last chunk of each request as a free extra size.
     """
     import glob
 
@@ -146,28 +153,32 @@ def profile_capture(model: str, ctx_tokens: int, rng: random.Random, trace_dir: 
             print(f"  !! {path} -> HTTP {exc.code}: {detail}", file=sys.stderr)
             raise
 
-    before = set(glob.glob(os.path.join(trace_dir, "*.json*")))
-    post("/start_profile")
     runs = []
-    try:
-        for chunk in chunks:
-            set_chunk(chunk_file, chunk)
-            ptok, wall = prefill(model, ctx_tokens, rng)
-            runs.append({"chunk": chunk, "prompt_tokens": ptok, "wall": wall})
-            print(f"  traced chunk {chunk:>5}: tok {ptok}  wall {wall:.1f}s")
-    finally:
-        post("/stop_profile")
-    newest, size = "", -1
-    for _ in range(180):
-        fresh = [f for f in glob.glob(os.path.join(trace_dir, "*.json*")) if f not in before]
-        if fresh:
-            newest = max(fresh, key=os.path.getmtime)
-            now = os.path.getsize(newest)
-            if now == size and now > 0:
-                break
-            size = now
-        time.sleep(2)
-    return newest, runs
+    for chunk in chunks:
+        before = set(glob.glob(os.path.join(trace_dir, "*.json*")))
+        set_chunk(chunk_file, chunk)
+        try:
+            post("/start_profile")
+            try:
+                ptok, wall = prefill(model, ctx_tokens, rng)
+            finally:
+                post("/stop_profile")
+        except Exception as exc:
+            print(f"  !! window for chunk {chunk} FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+            continue
+        newest, size = "", -1
+        for _ in range(180):
+            fresh = [f for f in glob.glob(os.path.join(trace_dir, "*.json*")) if f not in before]
+            if fresh:
+                newest = max(fresh, key=os.path.getmtime)
+                now = os.path.getsize(newest)
+                if now == size and now > 0:
+                    break
+                size = now
+            time.sleep(2)
+        runs.append({"chunk": chunk, "prompt_tokens": ptok, "wall": wall, "trace": newest})
+        print(f"  traced chunk {chunk:>5}: tok {ptok}  wall {wall:.1f}s  -> {newest or '(no trace found)'}")
+    return (runs[0]["trace"] if runs else ""), runs
 
 
 def fit(rows: list[dict]) -> dict:
@@ -340,9 +351,13 @@ def main() -> int:
             path, runs = profile_capture(model, args.trace_ctx, rng, args.trace_dir,
                                          trace_chunks, args.chunk_file)
             traces = {"trace": path, "chunks": trace_chunks, "runs": runs}
-            print(f"trace ({len(trace_chunks)} chunk sizes in one window): {path or '(none found)'}")
-            print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr.json")
-            print(f"  python3 probes/prefill_fixed_cost_attribution.py attr.json")
+            print(f"{len(runs)} of {len(trace_chunks)} windows produced a trace "
+                  f"(one request each; later windows in a boot usually 500)")
+            for r in runs:
+                print(f"  python3 tools/trace_prefill_attribution.py {r['trace']} --out attr-{r['chunk']}.json")
+            if runs:
+                print("  python3 probes/prefill_fixed_cost_attribution.py attr-*.json  "
+                      "# fold in earlier boots' captures for more chunk sizes")
         except Exception as exc:
             print(f"!! trace capture FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         finally:
