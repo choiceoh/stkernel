@@ -1,0 +1,17 @@
+{
+  "after": {
+    "head": "96cb599d8816ee2585988fc7b750a21e2eb66a0b",
+    "status": ""
+  },
+  "before": {
+    "head": "96cb599d8816ee2585988fc7b750a21e2eb66a0b",
+    "status": ""
+  },
+  "captured_utc": "2026-09-08T21:18:58.862987+00:00",
+  "remote_onepass": {
+    "capture_rows": 3,
+    "first_two_rows_exactly_match": true,
+    "full_sha256": "88f2230daff19da6924587803e39869e9ee07277890d7ed6a5068cb421728250",
+    "later_rows_excluded_from_this_archive": true
+  }
+}

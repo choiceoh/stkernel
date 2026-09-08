@@ -1,0 +1,193 @@
+{
+  "B2-identity/10.10.10.1.docker.log.gz": {
+    "bytes": 20,
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "B2-identity/10.10.10.1.manifest.tsv.gz": {
+    "bytes": 2221,
+    "original_bytes": 8828,
+    "original_sha256": "35199ee6dfc048462bdb2c84b7e23f4d29028fcc0d2445a98e2fc31672a9370e",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "8086d4d87c7b52f6cf033bda6396336db04c53bdd7c147388b92ef4ac724eb33"
+  },
+  "B2-identity/10.10.10.1.serving.log.gz": {
+    "bytes": 10089,
+    "original_bytes": 81742,
+    "original_sha256": "55781aca890c578f904bc0ce38c022713f62a471138570303655136780c8e688",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "ddda6c8e307e88e94a81407e84dc0a42e2ac5b2e246dba7cba0523c25047d045"
+  },
+  "B2-identity/10.10.10.3.docker.log.gz": {
+    "bytes": 20,
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "B2-identity/10.10.10.3.manifest.tsv.gz": {
+    "bytes": 2221,
+    "original_bytes": 8828,
+    "original_sha256": "35199ee6dfc048462bdb2c84b7e23f4d29028fcc0d2445a98e2fc31672a9370e",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "8086d4d87c7b52f6cf033bda6396336db04c53bdd7c147388b92ef4ac724eb33"
+  },
+  "B2-identity/10.10.10.3.serving.log.gz": {
+    "bytes": 10239,
+    "original_bytes": 82136,
+    "original_sha256": "9567496e77c964196cdc8a1c5860ba1aaab1c4bb8c0c04b830de0bc469b9a00b",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f0f96f77de7be59b4b8900c13c0de73b0eeb2da635672eb17bba5faaac02b702"
+  },
+  "B2-identity/10.10.10.4.docker.log.gz": {
+    "bytes": 20,
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "B2-identity/10.10.10.4.manifest.tsv.gz": {
+    "bytes": 2221,
+    "original_bytes": 8828,
+    "original_sha256": "35199ee6dfc048462bdb2c84b7e23f4d29028fcc0d2445a98e2fc31672a9370e",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "8086d4d87c7b52f6cf033bda6396336db04c53bdd7c147388b92ef4ac724eb33"
+  },
+  "B2-identity/10.10.10.4.serving.log.gz": {
+    "bytes": 10176,
+    "original_bytes": 82029,
+    "original_sha256": "921d40b05ec76c30c2af2b83fcdc0b377d3ebf8fd903e645f0574c6ea68f3a3b",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "747692a20c3a4be02bc8fa6f72d4528b00cc963296eba3bd0cf5cdde4d3505ce"
+  },
+  "B2-identity/allowlisted-summary.json": {
+    "bytes": 51487,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "e0b533e679c58bc541c008966de84929c141f5ca450e5da7073f865f3b68361a"
+  },
+  "B2-identity/launch-parser.py": {
+    "bytes": 7359,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "73f6f25a54733d69fb12c72f32795cb566c26c15204cd0f907d6cdf7b8504393"
+  },
+  "B2-identity/local.docker.log.gz": {
+    "bytes": 20,
+    "original_bytes": 0,
+    "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+  },
+  "B2-identity/local.manifest.tsv.gz": {
+    "bytes": 2221,
+    "original_bytes": 8828,
+    "original_sha256": "35199ee6dfc048462bdb2c84b7e23f4d29028fcc0d2445a98e2fc31672a9370e",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "8086d4d87c7b52f6cf033bda6396336db04c53bdd7c147388b92ef4ac724eb33"
+  },
+  "B2-identity/local.serving.log.gz": {
+    "bytes": 13242,
+    "original_bytes": 95058,
+    "original_sha256": "8c109bf0a6a97f2ad4db507cdc49790f4727aebd5d209d22d2edda224c77122e",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "30ea6a3d7206fe15108c8d6cd2db654c2dc37ef4bd00a0138f54940b4e771cc9"
+  },
+  "boot/boot-EPONEPASS4B2.log.gz": {
+    "bytes": 18360,
+    "original_bytes": 161516,
+    "original_sha256": "a057b4af40ec75b4dd0f71d775b9537f6f74d66f3c574f6d40f19ce5360f94f1",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "4f7f97dc24e8ffdb427f829f695001bcdcc622d6b5118244042fa440c730bb6f"
+  },
+  "fleet/terminal-run.log.gz": {
+    "bytes": 3080,
+    "original_bytes": 18420,
+    "original_sha256": "bb810e8bea1a076efc3e3c4819b542480de1abef7ad7c54c29a50792dde75810",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "61039ab025982fc90d93947cadb42bd13155c8aee2cc8e83a41fa81e60fad5ef"
+  },
+  "records/final-three-rows.jsonl": {
+    "bytes": 99472,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "88f2230daff19da6924587803e39869e9ee07277890d7ed6a5068cb421728250"
+  },
+  "records/final-verdicts.jsonl": {
+    "bytes": 1231,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "bdcb3d8cc236fd63d9d7fe69598eba728f6f78a0e7893ff8ae4e71afce0a6136"
+  },
+  "streams/10.10.10.1.stderr.raw.terminal.gz": {
+    "bytes": 76,
+    "original_bytes": 174,
+    "original_sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "a568f1673c46448a59be8dfdfb860896c8ddd94ff1c67784aa80038e9f976fc2"
+  },
+  "streams/10.10.10.1.stdout.raw.terminal.gz": {
+    "bytes": 40101,
+    "original_bytes": 409471,
+    "original_sha256": "7e5fc4a1c6cef0d3050d63af25cf40cd6579a21b217e7b8535102f33731e12c0",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "ce81dcde23396b6030da623f759b7845051a4f3c808d94271f0ffb6d88edce22"
+  },
+  "streams/10.10.10.3.stderr.raw.terminal.gz": {
+    "bytes": 76,
+    "original_bytes": 174,
+    "original_sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "a568f1673c46448a59be8dfdfb860896c8ddd94ff1c67784aa80038e9f976fc2"
+  },
+  "streams/10.10.10.3.stdout.raw.terminal.gz": {
+    "bytes": 39947,
+    "original_bytes": 408350,
+    "original_sha256": "31b6c9b02af23daba6ed5fa7e89e28633cbdb01ddc35fea9f71900de3c278a7b",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "f83d03b47eb740a8cb87a632cacc994aa9e3c15431fd509514f333dd2de05756"
+  },
+  "streams/10.10.10.4.stderr.raw.terminal.gz": {
+    "bytes": 76,
+    "original_bytes": 174,
+    "original_sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "a568f1673c46448a59be8dfdfb860896c8ddd94ff1c67784aa80038e9f976fc2"
+  },
+  "streams/10.10.10.4.stdout.raw.terminal.gz": {
+    "bytes": 39804,
+    "original_bytes": 407735,
+    "original_sha256": "77f326b2bc40b557e2084e6f9d57d43e3561863d88313cd8b1114266cc160f0d",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "31f896c95d03423f2648e06726ffd0d53c5ca659d93c715239e530fcbec87889"
+  },
+  "streams/events-through-stream-end.jsonl.gz": {
+    "bytes": 384077,
+    "original_bytes": 2196440,
+    "original_sha256": "41bca336357b20dc4d8a25a1a05c54c712cf6fc00a9fc26df542582802da91d0",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "e47469fa309352e0dee1d1aa958ef0ea66a1d74d39c891f71d568097180f1eba"
+  },
+  "streams/local.stderr.raw.terminal.gz": {
+    "bytes": 76,
+    "original_bytes": 174,
+    "original_sha256": "71341f6eacc43d38f996305a17ed1f7ee82f22506c7789034b9f1b669e2773d7",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "a568f1673c46448a59be8dfdfb860896c8ddd94ff1c67784aa80038e9f976fc2"
+  },
+  "streams/local.stdout.raw.terminal.gz": {
+    "bytes": 61098,
+    "original_bytes": 526944,
+    "original_sha256": "d6b6b761153190f136718fa3a044549cb870d298ab49f74a2d68ae7a6934a441",
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "b86d29a7da0ecbf79db71eb6a6552e02616fa97912d151ac15536675dc07e4ff"
+  },
+  "streams/terminal-boundary.json": {
+    "bytes": 1948,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "9a8a634fc25df7116052757365b518f8c2b45d9ba5f109e6b486f724bb33fef2"
+  },
+  "terminal-capture.json": {
+    "bytes": 4325,
+    "scope": "terminal extension; see collector source and capture receipt",
+    "sha256": "2b4cb319315b44a976ba7b88024d6cf094385d6fdd73a831e1dfb1726f59814e"
+  }
+}

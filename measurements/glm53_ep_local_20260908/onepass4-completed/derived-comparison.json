@@ -1,0 +1,71 @@
+{
+  "comparison": "A versus B2",
+  "request_hashes_match_all_arms": true,
+  "rows": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "prompt_tokens": 2121,
+      "baseline_tok_s": 1086.44221218978,
+      "candidate_tok_s": 885.6722982166551,
+      "baseline_ttft_s": 1.9522437329869717,
+      "candidate_ttft_s": 2.3947909449925646,
+      "throughput_gain_pct": -18.47957597012573,
+      "ttft_reduction_pct": -22.668645545015377,
+      "baseline_decode_tok_s": 61.845860873255376,
+      "candidate_decode_tok_s": 24.00837350407404
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "prompt_tokens": 2128,
+      "baseline_tok_s": 2501.6397377946655,
+      "candidate_tok_s": 2540.4829145221543,
+      "baseline_ttft_s": 0.8506420680205338,
+      "candidate_ttft_s": 0.8376360210240819,
+      "throughput_gain_pct": 1.5527086550732205,
+      "ttft_reduction_pct": 1.5289682329863274,
+      "baseline_decode_tok_s": 68.93201054172093,
+      "candidate_decode_tok_s": 25.16310018678576
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "prompt_tokens": 2128,
+      "baseline_tok_s": 2395.1340125416527,
+      "candidate_tok_s": 2218.138341360216,
+      "baseline_ttft_s": 0.8884680309565738,
+      "candidate_ttft_s": 0.9593630660092458,
+      "throughput_gain_pct": -7.3898024183462585,
+      "ttft_reduction_pct": -7.979469444313314,
+      "baseline_decode_tok_s": 73.5790457695315,
+      "candidate_decode_tok_s": 21.77279565260985
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "prompt_tokens": 32545,
+      "baseline_tok_s": 3012.8418067599123,
+      "candidate_tok_s": 3311.254893981355,
+      "baseline_ttft_s": 10.802093865990173,
+      "candidate_ttft_s": 9.828600045002531,
+      "throughput_gain_pct": 9.90470480567196,
+      "ttft_reduction_pct": 9.012084444596768,
+      "baseline_decode_tok_s": 72.85249564673275,
+      "candidate_decode_tok_s": 25.41018195539133
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "prompt_tokens": 128559,
+      "baseline_tok_s": 3099.55322906092,
+      "candidate_tok_s": 3521.697443434199,
+      "baseline_ttft_s": 41.47662275796756,
+      "candidate_ttft_s": 36.50483951700153,
+      "throughput_gain_pct": 13.619518142657515,
+      "ttft_reduction_pct": 11.986952915569693,
+      "baseline_decode_tok_s": 58.02896621484835,
+      "candidate_decode_tok_s": 26.861140962804047
+    }
+  ]
+}

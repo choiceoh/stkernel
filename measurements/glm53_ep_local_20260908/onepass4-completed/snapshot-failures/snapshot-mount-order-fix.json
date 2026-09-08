@@ -1,0 +1,10 @@
+{
+  "at": 1788901675.472022,
+  "old_sha256": "b17eaf4813de69d25bc036528d388a77af8516f283c91910a566b39b97a9ecda",
+  "backup": "/tmp/glm53_onepass4_snapshot.before-mount-order-fix.b17eaf4813de69d25bc036528d388a77af8516f283c91910a566b39b97a9ecda.py",
+  "cause": "Docker inspect Mounts array order varied; all mount element hashes, container ID/start/PID unchanged in live read-only diagnostic",
+  "preserved_failed_captures": [
+    "B1-observer",
+    "A-observer"
+  ]
+}

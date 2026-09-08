@@ -1,0 +1,64 @@
+{
+  "cutoff_epoch": 1788901800.0,
+  "cutoff_kst": "2026-09-09T06:10:00+09:00",
+  "files": {
+    "10.10.10.1.stderr.raw": {
+      "chunks": 2,
+      "first_chunk_at": 1788900634.845905,
+      "last_chunk_at": 1788901285.2381318,
+      "prefix_bytes": 116,
+      "prefix_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891"
+    },
+    "10.10.10.1.stdout.raw": {
+      "chunks": 1303,
+      "first_chunk_at": 1788900625.6164434,
+      "last_chunk_at": 1788901793.9953878,
+      "prefix_bytes": 280548,
+      "prefix_sha256": "20d535ed5b22b6463e73b5afebde6140b3eba253183a408f51e5cc57307f2265"
+    },
+    "10.10.10.3.stderr.raw": {
+      "chunks": 2,
+      "first_chunk_at": 1788900634.9952497,
+      "last_chunk_at": 1788901285.3910081,
+      "prefix_bytes": 116,
+      "prefix_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891"
+    },
+    "10.10.10.3.stdout.raw": {
+      "chunks": 1333,
+      "first_chunk_at": 1788900654.1083121,
+      "last_chunk_at": 1788901793.9974358,
+      "prefix_bytes": 278976,
+      "prefix_sha256": "422211b3e85fde24e7824a044a909b232435980d5555568ca02f75b21af208b6"
+    },
+    "10.10.10.4.stderr.raw": {
+      "chunks": 2,
+      "first_chunk_at": 1788900634.845773,
+      "last_chunk_at": 1788901285.2191224,
+      "prefix_bytes": 116,
+      "prefix_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891"
+    },
+    "10.10.10.4.stdout.raw": {
+      "chunks": 1302,
+      "first_chunk_at": 1788900653.6528492,
+      "last_chunk_at": 1788901794.0017262,
+      "prefix_bytes": 278464,
+      "prefix_sha256": "246265112be65970aef61a1a694c48c11da6ccaab2bddc50e743e8045355d500"
+    },
+    "local.stderr.raw": {
+      "chunks": 2,
+      "first_chunk_at": 1788900635.6689658,
+      "last_chunk_at": 1788901286.2983856,
+      "prefix_bytes": 116,
+      "prefix_sha256": "71e6869331b498eaf99220a889ce2b1716ccf48876cc2ec4bf63d8de4ef73891"
+    },
+    "local.stdout.raw": {
+      "chunks": 1853,
+      "first_chunk_at": 1788900619.678924,
+      "last_chunk_at": 1788901799.9521506,
+      "prefix_bytes": 364698,
+      "prefix_sha256": "540cf1a756c9ac73eaa6cab21a32b06ddd47694460a70704f7bca065df8671cb"
+    }
+  },
+  "last_local_at": 1788901799.8624508,
+  "selection": "original contiguous events prefix with local_at <= cutoff; stream data remains UNASSIGNED across B1/A, not per-arm identity proof"
+}
