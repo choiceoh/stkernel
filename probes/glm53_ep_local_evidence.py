@@ -2,11 +2,16 @@
 import hashlib
 import json
 from pathlib import Path
+if __package__:
+    from .glm53_ep_route_remap_check import compile_cases
+else:
+    from glm53_ep_route_remap_check import compile_cases
 
 CPU_TEST_MODULES = (
     "test_glm53_ep_prefill_local.py",
     "test_glm53_ep_local_probe.py",
     "test_glm53_probe_lifecycle.py",
+    "test_glm53_ep_route_remap.py",
 )
 CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_ep_local_check.py",
@@ -15,6 +20,7 @@ CONTRACT_PATHS = tuple("tests/"+name for name in CPU_TEST_MODULES) + (
     "probes/glm53_probe_lifecycle.py",
     "probes/glm53_ep_local_compile_check.py",
     "probes/run_glm53_ep_local_cpu_compile.py",
+    "probes/glm53_ep_route_remap_check.py",
 )
 
 
@@ -33,7 +39,7 @@ def mounted_sources(root):
                 raise ValueError("duplicate or invalid MoE manifest entry")
             rows[target] = Path(root)/"build/glm53"/name
             names.add(name)
-    required = {"moe_dispatch.py", "moe_dynamic_ep_local.py",
+    required = {"moe_dispatch.py", "moe_dynamic_ep_local.py", "glm53_ep_route_remap.py",
                 "flashinfer_b12x_moe.py", "b12x_moe.py"}
     if not required.issubset(names):
         raise ValueError("incomplete MoE compile manifest")
@@ -52,6 +58,11 @@ def validate_compile_evidence(root, path):
     if (contracts.get("tests_run", 0) <= 0 or contracts.get("failures") != 0
             or contracts.get("errors") != 0 or contracts.get("skips") != 0):
         raise ValueError("passing pinned CPU contracts without skips required")
+    remap = evidence.get("remap_compilation", [])
+    if ({row.get("label") for row in remap} != {row["label"] for row in compile_cases()}
+            or len(remap) != len(compile_cases())
+            or not all(row.get("ptx_sha256") and row.get("cubin_sha256") for row in remap)):
+        raise ValueError("complete no-device remap compilation proof required")
     for relative in CONTRACT_PATHS:
         if contracts.get("files", {}).get(relative) != digest(root/relative):
             raise ValueError("CPU-tested contract source changed: "+relative)

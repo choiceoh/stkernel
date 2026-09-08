@@ -23,7 +23,7 @@ from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz,
     quantize_block_fp4, quantize_block_fp4_fast, get_ptr_as_int64,
     ld_shared_i32_relaxed, st_global_f32, st_global_i32,
-    st_shared_i32, st_global_v4_u32,
+    st_shared_i32, st_shared_f32, st_global_v4_u32,
 )
 from ._moe_dynamic import gated as _stock
 from ._moe_dynamic.gated import (
@@ -146,8 +146,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         )
 
         # Phase 1: aggregate routed rows per CTA before publishing the
-        # local expert subtotals globally.  The first 2304 bytes of sC
-        # hold route caches; the following aligned 1 KiB is idle here.
+        # local expert subtotals globally.  The first 2304 bytes of sA
+        # hold route caches; the next 72 * 4 bytes hold this histogram.
         route_hist_addr = route_expert_ids_addr + Int32(
             (self.num_mma_warps + 1) * 32 * 4
         )
@@ -202,6 +202,23 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         # Phase 2: the TMA warp stages only as many contiguous BF16 rows as
         # fit in the aliased sC backing.  The remaining math warps stay idle
         # during Q0 but remain active in FC1/Q1/FC2/scatter.
+        # The histogram is dead after the preceding resident-grid barriers.
+        # Reuse its 72 * 4 bytes in sA for per-expert transformed input scales;
+        # sA is otherwise idle until all Q0 producers finish.  Each expert is
+        # prepared once per CTA instead of once per token/route in every lane.
+        # The existing Q0-init CTA barrier publishes these shared stores.
+        expert_scales_addr = route_hist_addr
+        if tidx < num_experts:
+            gs_value = input_global_scale[tidx].to(cutlass.Float32)
+            if (
+                self.input_scales_are_reciprocal
+                and gs_value != cutlass.Float32(0.0)
+            ):
+                if self.fast_math:
+                    gs_value = rcp_approx_ftz(gs_value)
+                else:
+                    gs_value = cutlass.Float32(1.0) / gs_value
+            st_shared_f32(expert_scales_addr + tidx * Int32(4), gs_value)
         if tidx == Int32(0):
             q0_bulk_barrier_init(q0_bulk_barrier_addr)
         cute.arch.sync_threads()
@@ -324,9 +341,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
 
                     local_topk = _ld_shared_i32(route_expert_ids_addr + (route_slot_base + Int32(31)) * Int32(4))
                     if local_topk > Int32(0):
-                        # Preserve the baseline's per-lane scale load and
-                        # reciprocal work.  Hoist it out of the block loop,
-                        # but do not introduce a 32x broadcast optimization.
+                        # Cache only this token's selected scales.  The CTA's
+                        # shared expert cache already holds the unchanged
+                        # Float32 reciprocal result, including zero scales.
                         route_gs = cute.make_rmem_tensor((8,), cutlass.Float32)
                         first_gs = cutlass.Float32(0.0)
                         route_scales_equal = Int32(1)
@@ -336,15 +353,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             expert_id = _ld_shared_i32(
                                 route_expert_ids_addr + route_slot * Int32(4)
                             )
-                            gs_value = input_global_scale[expert_id].to(cutlass.Float32)
-                            if (
-                                self.input_scales_are_reciprocal
-                                and gs_value != cutlass.Float32(0.0)
-                            ):
-                                if self.fast_math:
-                                    gs_value = rcp_approx_ftz(gs_value)
-                                else:
-                                    gs_value = cutlass.Float32(1.0) / gs_value
+                            gs_value = Uint32(_ld_shared_i32(
+                                expert_scales_addr + expert_id * Int32(4)
+                            )).bitcast(cutlass.Float32)
                             # Compare while the transformed scale is already
                             # in a register; do not reread the route cache.
                             if cache_slot == Int32(0):

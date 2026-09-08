@@ -1537,6 +1537,8 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         topk_ids: torch.Tensor,
         topk_weights: torch.Tensor,
         expert_map: torch.Tensor | None,
+        *,
+        fuse_local_prefill: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         tokens = topk_ids.size(0)
         if tokens > self._ep_ids.size(0):
@@ -1544,14 +1546,27 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 f"b12x EP remap: {tokens} tokens exceeds "
                 f"max_num_tokens={self._ep_ids.size(0)}"
             )
+        out_ids = self._ep_ids[:tokens]
+        out_scales = self._ep_scales[:tokens]
+        if fuse_local_prefill:
+            from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.glm53_ep_route_remap import (
+                try_remap_ep_local,
+            )
+            if try_remap_ep_local(
+                topk_ids, topk_weights, expert_map=expert_map,
+                num_local_experts=self.num_local_experts,
+                local_expert_offset=self.local_expert_offset,
+                out_ids=out_ids, out_scales=out_scales,
+            ):
+                return out_ids, out_scales
         return remap_b12x_ep_tensors(
             topk_ids,
             topk_weights,
             num_local_experts=self.num_local_experts,
             local_expert_offset=self.local_expert_offset,
             expert_map=expert_map,
-            out_ids=self._ep_ids[:tokens],
-            out_scales=self._ep_scales[:tokens],
+            out_ids=out_ids,
+            out_scales=out_scales,
             long_idx=self._ep_long[:tokens],
             mapped=self._ep_mapped[:tokens],
             remote=self._ep_remote[:tokens],
@@ -2305,6 +2320,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                     f"(g1={tuple(self.g1_alphas.shape)} g2={tuple(self.g2_alphas.shape)} "
                     f"want {expect_e})"
                 )
+            local_prefill = ep_local_prefill_eligible(
+                enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
+                experts=self._kernel_num_experts, hidden=self.hidden_dim,
+                intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
+                topk=topk_ids.shape[1], activation=self._activation_str,
+                alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,
+                is_capturing=torch.cuda.is_current_stream_capturing)
             map_dtype = (
                 expert_map.dtype if expert_map is not None else torch.int32
             )
@@ -2312,15 +2334,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_ids.device, topk_weights.dtype, map_dtype
             )
             topk_ids, topk_weights = self._remap_ep_tensors(
-                topk_ids, topk_weights, expert_map
+                topk_ids, topk_weights, expert_map, fuse_local_prefill=local_prefill
             )
-            if ep_local_prefill_eligible(
-                enabled=_EP_LOCAL_PREFILL_ENABLED, use_ep=self._use_ep, no_dummy=self._ep_no_dummy,
-                experts=self._kernel_num_experts, hidden=self.hidden_dim,
-                intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
-                topk=topk_ids.shape[1], activation=self._activation_str,
-                alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,
-                is_capturing=torch.cuda.is_current_stream_capturing):
+            if local_prefill:
                 return self._apply_ep_local_prefill(
                     output, hidden_states, w1, w2, topk_ids, topk_weights)
             zero_micro_chunks = b12x_ep_zero_weight_micro_chunks(

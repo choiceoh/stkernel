@@ -53,7 +53,7 @@ class NumericalTests(unittest.TestCase):
 class EvidenceTests(unittest.TestCase):
     def fixture(self, root):
         rows = []
-        for name in ("moe_dispatch.py", "moe_dynamic_ep_local.py", "b12x_moe.py",
+        for name in ("moe_dispatch.py", "moe_dynamic_ep_local.py", "glm53_ep_route_remap.py", "b12x_moe.py",
                      "flashinfer_b12x_moe.py"):
             target = "/installed/flashinfer/"+name
             source = root/"build/glm53"/name
@@ -69,6 +69,8 @@ class EvidenceTests(unittest.TestCase):
         evidence = dict(arm="local", cuda_initialized=False,
                         cache_key=["glm53_ep_prefill_local_v1"], artifacts=["ptx"], resources=["cubin"],
                         sources=sources, mounted_sources=sources.copy(),
+                        remap_compilation=[dict(case, ptx_sha256="ptx", cubin_sha256="cubin")
+                                           for case in binding.compile_cases()],
                         contracts=dict(tests_run=1, failures=0, errors=0, skips=0,
                                        files={name: binding.digest(root/name) for name in binding.CONTRACT_PATHS}))
         path = root/"compile.json"
@@ -99,6 +101,15 @@ class EvidenceTests(unittest.TestCase):
             path.write_text(json.dumps(evidence))
             (root/binding.CONTRACT_PATHS[0]).write_text("different test")
             with self.assertRaisesRegex(ValueError, "contract source changed"):
+                binding.validate_compile_evidence(root, path)
+
+    def test_incomplete_remap_compile_matrix_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, evidence = self.fixture(root)
+            evidence["remap_compilation"].pop()
+            path.write_text(json.dumps(evidence))
+            with self.assertRaisesRegex(ValueError, "remap compilation proof"):
                 binding.validate_compile_evidence(root, path)
 
     def test_stale_receipt_is_rejected_before_service_inventory_or_pause(self):

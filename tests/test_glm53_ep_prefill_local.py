@@ -102,6 +102,8 @@ class AdmissionTests(unittest.TestCase):
                 expected = enabled and rows >= 4096
                 self.assertEqual(result, 'local' if expected else 'compact')
                 self.assertEqual(capture.call_count, int(expected))
+                self.assertEqual(fake._remap_ep_tensors.call_args.kwargs,
+                                 dict(fuse_local_prefill=expected))
 
     def test_dispatch_never_silently_falls_back_with_sentinel_geometry(self):
         ns=extract(MD,{'_ep_local_prefill_kernel'},dict(_GLM53_EP_PREFILL_LOCAL=False,_FORCED_BACKEND=None,_FORCE_MOE_W4A16_ENV="test_force_w4",

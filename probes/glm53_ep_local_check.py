@@ -99,9 +99,7 @@ def routing(rows, kind, changed=False):
         global_ids = (token*37 + slot*31 + (137 if changed else 0)) % 288
     weights = torch.rand(rows, 8, device="cuda")
     weights /= weights.sum(dim=1, keepdim=True)
-    local = global_ids < 72
-    ids = torch.where(local, global_ids, 72).to(torch.int32).contiguous()
-    weights = torch.where(local, weights, 0).contiguous()
+    ids = global_ids.to(torch.int32).contiguous()
     if kind == "zeros":
         weights[:, ::2] = 0
     return ids, weights
@@ -146,13 +144,26 @@ def run_case(args, result):
     rows, kind = CASES[args.case]
     x = torch.randn(rows, 4096, device="cuda", dtype=torch.bfloat16)*.5
     ids, weights = routing(rows, kind)
+    expert_map = torch.arange(288, dtype=torch.int32, device="cuda")
+    expert_map[72:] = -1
+    # Keep the legacy pair-slice limit at 8192, as before. Remap scratch is
+    # sized to this fixture, including the synthetic 16384-token boundary.
+    for name, dtype in (
+        ("_ep_ids", torch.int32), ("_ep_scales", weights.dtype),
+        ("_ep_long", torch.int64), ("_ep_mapped", expert_map.dtype),
+        ("_ep_remote", torch.bool), ("_ep_tmp_a", torch.bool), ("_ep_tmp_b", torch.bool),
+    ):
+        setattr(wrapper, name, torch.empty((rows, 8), device="cuda", dtype=dtype))
+    wrapper.local_expert_offset = 0
     out = torch.empty_like(x)
     side = torch.cuda.Stream()
 
     def call(candidate):
+        mapped_ids, mapped_weights = FlashInferB12xExperts._remap_ep_tensors(
+            wrapper, ids, weights, expert_map, fuse_local_prefill=bool(candidate))
         method = (FlashInferB12xExperts._apply_ep_local_prefill if candidate
                   else FlashInferB12xExperts._apply_ep_compact)
-        got = method(wrapper, out, x, w13, w2, ids, weights)
+        got = method(wrapper, out, x, w13, w2, mapped_ids, mapped_weights)
         assert got is out
 
     def eager(candidate, nondefault=False):
@@ -168,12 +179,17 @@ def run_case(args, result):
         return out.clone()
 
     result.update(rows=rows, routing=kind, legacy_max_num_tokens=wrapper.max_num_tokens,
+                  remap_capacity_tokens=rows, timing_scope="EP remap plus MoE wrapper",
                   provenance=provenance, controls=[], candidate=[], timing={})
     # Initial, changed input/routes at the same addresses, then poisoned-output
     # nondefault-stream replay. Every arm uses the same original tensors.
     for changed in (False, True):
         if changed:
             x.mul_(-.75)
+            # The per-CTA scale cache must be rebuilt on every launch.
+            old_scale_ptr = scales.data_ptr()
+            scales.mul_(1.125)
+            assert scales.data_ptr() == old_scale_ptr
             new_ids, new_weights = routing(rows, kind, changed=True)
             ids.copy_(new_ids); weights.copy_(new_weights)
         result["phase"] = "changed-control" if changed else "initial-control"

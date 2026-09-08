@@ -16,7 +16,7 @@ from glm53_ep_local_evidence import validate_compile_evidence
 
 CASES = ("balanced4096", "balanced6912", "balanced8192", "concentrated6912",
          "remote4096", "duplicate4096", "zeros4097", "balanced16384")
-CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu5/local/result.json")
+CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu6/local/result.json")
 
 
 def resources(require_memory):
@@ -98,10 +98,13 @@ def main():
         if sanitizer:
             command += ["/usr/local/cuda/bin/compute-sanitizer", "--tool", sanitizer,
                         "--error-exitcode=86"]
-        command += ["python3", "/repo/probes/glm53_ep_local_check.py", "--case", case,
-                    "--compile-evidence", "/repo/"+str(CPU_EVIDENCE),
+        probe = ("glm53_ep_route_remap_check.py" if case == "remap" else "glm53_ep_local_check.py")
+        command += ["python3", "/repo/probes/"+probe]
+        if case != "remap":
+            command += ["--case", case]
+        command += ["--compile-evidence", "/repo/"+str(CPU_EVIDENCE),
                     "--output", "/evidence/"+label+".json"]
-        if sanitizer:
+        if sanitizer and case != "remap":
             command += ["--sanitize"]
         entry = dict(case=case, sanitizer=sanitizer, started=time.time(), command=command)
         result["cells"].append(entry)
@@ -123,10 +126,11 @@ def main():
         print("PASS "+label, flush=True)
 
     def run():
+        cell("remap")
         for case in CASES:
             cell(case)
         for sanitizer in ("memcheck", "racecheck"):
-            for case in ("balanced4096", "remote4096", "zeros4097"):
+            for case in ("remap", "balanced4096", "remote4096", "zeros4097"):
                 cell(case, sanitizer)
 
     try:

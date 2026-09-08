@@ -17,6 +17,7 @@ import unittest
 import time
 
 from glm53_ep_local_evidence import CONTRACT_PATHS, CPU_TEST_MODULES, digest, mounted_sources
+from glm53_ep_route_remap_check import compile_remap
 
 
 def main():
@@ -74,6 +75,7 @@ def main():
                           "resources": text})
     assert resources, "no compiled cubin resource evidence"
     assert artifacts, "no generated PTX: cached builds are not compile proof"
+    remap_compilation = compile_remap(args.output)
     root = Path(__file__).resolve().parents[1]
     suite = unittest.TestSuite(
         unittest.defaultTestLoader.discover(str(root / "tests"), pattern=name)
@@ -91,7 +93,7 @@ def main():
     evidence = dict(arm=args.arm, m=args.m,
                     elapsed_s=time.monotonic() - t0, cache_key=keys[0],
                     cuda_initialized=torch.cuda.is_initialized(), artifacts=artifacts, resources=resources,
-                    contracts=contracts, mounted_sources=mounted,
+                    contracts=contracts, mounted_sources=mounted, remap_compilation=remap_compilation,
                     sources={str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in map(Path, (*md._kernel_source_files(), str(Path(md.__file__).with_name("moe_dynamic_ep_local.py"))))})
     (args.output / "result.json").write_text(json.dumps(evidence, indent=2, default=str) + "\n")
