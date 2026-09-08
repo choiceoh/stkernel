@@ -658,12 +658,20 @@ def check_pending(directory, session, *, refresh=False, external=True, withdraw_
     if not record or record.get('state') != 'queued' or not record.get('prepare_manifest'):
         return  # Compatibility: already queued older controllers retain their contract.
     try:
-        controller = Path(record['fleet']).resolve().parent.parent
-        if (controller / 'bench/fleet_onepass.py').is_file():
-            from fleet_onepass import validate as validate_onepass
-            validate_onepass(record['command'], record['cwd'], controller,
-                             environment=fleet_pending.supervisor_environment(record, Path(directory)),
-                             kind=record['kind'])
+        # `fleet` is written by every fleet_pending.register(), so a record
+        # without it predates the field -- the same older-controller contract
+        # the early return above honours. Reading it unconditionally raised
+        # KeyError, which is not in the except tuple below, so it escaped as an
+        # error instead of a validation failure and took the legacy paths with
+        # it (tests/test_fleet_prepare.py: 8 errors, deterministic).
+        controller_path = record.get('fleet')
+        if controller_path:
+            controller = Path(controller_path).resolve().parent.parent
+            if (controller / 'bench/fleet_onepass.py').is_file():
+                from fleet_onepass import validate as validate_onepass
+                validate_onepass(record['command'], record['cwd'], controller,
+                                 environment=fleet_pending.supervisor_environment(record, Path(directory)),
+                                 kind=record['kind'])
         value = json.loads(Path(record['prepare_manifest']).read_text())
         if not isinstance(value, dict):
             raise ValueError('preparation manifest must be an object')

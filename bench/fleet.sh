@@ -413,6 +413,15 @@ case "$cmd" in
     echo 'bare GPU reservations are disabled; use fleet.sh onepass, pair or chain' >&2; exit 2;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
+    # Retirement is checked BEFORE the owner probe below, not only inside the
+    # poll loop. That probe exits 2 on any failure -- including a controller
+    # repo with no bench/fleet_onepass.py -- and an exit there left a retired
+    # job's row in the queue, where it blocks the line for every other session
+    # until someone notices. Its own dequeue was unreachable.
+    if [ -n "${FLEET_EXPERIMENT_ID:-}" ] && [ "$s" = "exp-$FLEET_EXPERIMENT_ID" ]; then
+      python3 "$REPO/bench/experiments.py" pending "$FLEET_EXPERIMENT_ID" \
+        || { with_lock _dequeue "$s"; exit 1; }
+    fi
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" --repo "${FLEET_RUNNER_REPO:-$REPO}" \
       --directory "$FLEET_DIR" --wait-owner "$s" "$pid" >/dev/null || exit 2
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
