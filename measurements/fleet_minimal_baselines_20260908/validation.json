@@ -1,0 +1,40 @@
+{
+  "code_revision": "5a8ab6cc70680a3f4e9e233f681ab9ecb7b3b212",
+  "linux_tests": 124,
+  "macos_initial_tests": 121,
+  "macos_final_experiment_tests": 57,
+  "passed": true,
+  "coverage_complete": true,
+  "gpu_runs": 0,
+  "fixture_boot_counts": {
+    "new_pair": {
+      "before": 4,
+      "after": 2
+    },
+    "two_candidates": {
+      "before": 5,
+      "after": 3
+    },
+    "baseline_boots_per_new_context": {
+      "before": 3,
+      "after": 1
+    },
+    "confirm_after_minimal": {
+      "additional_baseline_boots": 2
+    },
+    "later_compatible_candidate": {
+      "additional_baseline_boots": 0
+    },
+    "two_candidate_startup_campaign": {
+      "before": 7,
+      "after": 6
+    }
+  },
+  "source_sha256": {
+    "bench/experiments.py": "5946ea2e882c99d8948ecc32d5bb230127a84daa544580183dd9583a9cf6923f",
+    "bench/experiment_baselines.py": "8e3fb3786af4af085e217c549faa72fd102280327b9086924a84da0a2848a5e5",
+    "bench/baseline.py": "4941f9af691454b3d51f1139a5c48d76bd15d46574a22593478e4c56f3fa774b",
+    "bench/pair.sh": "aa5382ab4a09dc822f17ad5f988d8c4035f665a9b68debd21fea0385a9acb2e0",
+    "bench/startup_campaign.py": "cd27bd8e3d212aa1405945ad52dd0a433eec2c8e637bbd617fb14744ebaea98e"
+  }
+}
