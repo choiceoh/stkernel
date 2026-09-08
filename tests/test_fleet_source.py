@@ -142,7 +142,8 @@ class SourceTests(SourceFixture):
 
     def test_wrapper_audit_closes_when_execution_contract_changes(self):
         for name in source.WRAPPER_AUDIT:
-            self.assertTrue(source.audited_wrapper(ROOT / name, ROOT), name)
+            self.write(name, (ROOT / name).read_text())
+            self.assertTrue(source.audited_wrapper(name, self.repo), name)
         name = next(iter(source.WRAPPER_AUDIT))
         self.write(name, (ROOT / name).read_text())
         self.assertTrue(source.audited_wrapper(name, self.repo))
