@@ -62,6 +62,8 @@ REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --cpu \
   python3 probes/run_decode_transport_sf_cpu.py --out /absolute/fresh/evidence
 ```
 
+The six overlay-publication tests run on the host with rsync; the serving
+image has no rsync and does not run those host deployment tests.
 The runner uses the immutable serving image with `--runtime=runc`, no GPU
 visibility or network, two CPU cores and bounded memory/swap. It runs the
 CPU contracts, compiles all four transport flag combinations, and compiles

@@ -36,7 +36,6 @@ def stages():
         '--test', 'tests/test_ar_transport_next.py',
         '--test', 'tests/test_megakernel_ar_consumer_regressions.py',
         '--test', 'tests/test_moe_reform_sf_pack.py',
-        '--test', 'tests/test_glm53_overlay_sync.py',
         '--test', 'tests/test_decode_next_cpu_runner.py',
         '--out', '/evidence/result.json'], '6g', False
     for compact, inline in (('0','0'), ('1','0'), ('0','1'), ('1','1')):
