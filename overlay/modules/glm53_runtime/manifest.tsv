@@ -25,3 +25,4 @@ async_llm.py	vllm/v1/engine/async_llm.py	bceed0b3f5f0c834fef79525f2462a092f08239
 glm53_renderer_warmup.py	vllm/renderers/glm53_renderer_warmup.py	absent
 # -- GLM53 skip unused CUDA graph memory dry capture (real warmup retained)
 gpu_worker.py	vllm/v1/worker/gpu_worker.py	b2e580d74e7259ff2cbc82dabf38a43409ea5584d143880436583d9fc1ceedf1
+kv_zero_worker_utils.py	vllm/v1/worker/utils.py	3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1
