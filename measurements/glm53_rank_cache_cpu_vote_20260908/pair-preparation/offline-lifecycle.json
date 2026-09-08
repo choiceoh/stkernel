@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_glm53_offline_checks.py",
+    "-v"
+  ],
+  "returncode": 0,
+  "files": {
+    "tests/test_glm53_offline_checks.py": "0e664b5d160d7ab4c6054f8a1f918537c49a12fee63350348f7ea0d0b700895b",
+    "probes/glm53_offline_checks.py": "7a41bcfea84f50f5c7f2dd126c169a03c662217f4a3a6b57bd37f82dc13795e1"
+  }
+}

@@ -45,6 +45,8 @@ def settled(nodes,call):
 
 
 class Run:
+    experiment = 'prefill-observation'
+    complete_marker = 'GLM53_PREFILL_OBSERVATION_CAPTURE_COMPLETE'
     def __init__(self,source,revision,out,*,reclaim_host_memory=False):
         self.source,self.revision,self.out=source,revision,out
         self.reclaim_host_memory=reclaim_host_memory
@@ -219,7 +221,7 @@ class Run:
         if not (Path(os.environ['FLEET_RUNNER_REPO'])/'bench/fleet_observation_cleanup.py').is_file():
             raise RuntimeError('frozen fleet runner lacks observation clone cleanup')
         self.out.mkdir(parents=True,exist_ok=False)
-        result=dict(source_revision=self.revision,observer_sha256=self.sha,complete=False,performance_acceptance=False)
+        result=dict(experiment=self.experiment,source_revision=self.revision,observer_sha256=self.sha,complete=False,performance_acceptance=False)
         result['host_memory_reclaim_requested']=self.reclaim_host_memory
         save(self.out/'incomplete.json',result)
         before=None;pause_attempted=False
@@ -243,7 +245,8 @@ class Run:
             try:
                 prepared=self.all('prepare');save(self.out/'prepared.json',prepared)
                 pause_attempted=True
-                lifecycle.with_paused(before,lambda:self.collect(prepared,original),lambda name,value:save(self.out/name,value))
+                lifecycle.with_paused(before,lambda:self.collect(prepared,original),
+                    lambda name,value:save(self.out/name,value),before_restore=self.cleanup)
             finally:
                 previous=signal.signal(signal.SIGTERM,signal.SIG_IGN)
                 try:
@@ -257,7 +260,7 @@ class Run:
         finally:
             result['restored_original']=pause_attempted and (self.out/'restored.json').is_file()
             result['ended']=time.time();save(self.out/'completion.json',result)
-        if result['complete']:print('GLM53_PREFILL_OBSERVATION_CAPTURE_COMPLETE',flush=True)
+        if result['complete']:print(self.complete_marker,flush=True)
         return 0 if result['complete'] else 1
 
 
@@ -265,6 +268,8 @@ def analyze(directory):
     sys.path.insert(0,str(ROOT/'tools'))
     import trace_prefill_attribution as attributed
     complete=json.loads((directory/'completion.json').read_text())
+    if complete.get('experiment','prefill-observation')!='prefill-observation':
+        raise ValueError('not a prefill request capture')
     if not complete.get('complete') or not complete.get('restored_original'):raise ValueError('complete collection and restoration required')
     reclaimed=None
     if complete.get('host_memory_reclaim_requested'):
