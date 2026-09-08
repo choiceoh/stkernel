@@ -1,0 +1,118 @@
+{
+  "evidence": "CPU contracts and compiler only; no GPU or speed verdict",
+  "code_commit": "e8e20130d9d7f01523751645bbb79b6117450ce2",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "passed": true,
+  "coverage_complete": true,
+  "coverage_method": "Successful component stages only; receipts/log hashes and unchanged component source closures verified. Original partial/failed reports remain unmodified.",
+  "stages": [
+    {
+      "stage": "contracts",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "a4fb43d0c92bef897dd5a7b36e2ef6b145495e2d72c480f9ca927b06c227d291"
+    },
+    {
+      "stage": "sf-compat",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "c6a77cac730aa0441816d622e5c4127cee4f7d7dc8010ce1e69b37e19958fb51"
+    },
+    {
+      "stage": "sf-expand",
+      "receipt": "e8e20130-srv2/report.json",
+      "source_commit": "e8e20130d9d7f01523751645bbb79b6117450ce2",
+      "log_sha256": "0c0db23ec9ac9b2f45d07644690a54a0bb1c2291b528d59f01a2f54a3c360a4b"
+    },
+    {
+      "stage": "sf-m16",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "7a7d64ea5ef4e04c983d6b3ea2171419082f0b3e808ed3a595b6535771a37558"
+    },
+    {
+      "stage": "sf-m2",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "3320628fe7be9f49d2448f9f61f484b519f1121d2d6b4b876c1ddfed936f666f"
+    },
+    {
+      "stage": "sf-m6",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "c83c8f29c2bc5e68e4bdd4549b72644a9390ab4481fa6fbeaeccbc0ec55723b1"
+    },
+    {
+      "stage": "sf-m8",
+      "receipt": "09d68b64-srv2/report.json",
+      "source_commit": "09d68b647c5154e6985a64e1f6a1ffa5bfc85bcd",
+      "log_sha256": "1cb93f86c2259740049bb426dbfc7c4110e845fb37681d65dddcfae485ed17d4"
+    },
+    {
+      "stage": "transport-00",
+      "receipt": "59112937-srv1/report.json",
+      "source_commit": "5911293779cd574c16aba8cec81a47315b20edd8",
+      "log_sha256": "290168b22e9220f40b83615b1cf57f9b7c51e27cb8db970d22fd6038cc128123"
+    },
+    {
+      "stage": "transport-01",
+      "receipt": "59112937-srv1/report.json",
+      "source_commit": "5911293779cd574c16aba8cec81a47315b20edd8",
+      "log_sha256": "654f0cf59b6936c2fdd996b2c18e921513073628406063f423fd6865d72abeff"
+    },
+    {
+      "stage": "transport-10",
+      "receipt": "59112937-srv1/report.json",
+      "source_commit": "5911293779cd574c16aba8cec81a47315b20edd8",
+      "log_sha256": "d1ffc57013af2f9ec72a5c942920a9244dc9bd60c15c1c51b706bbfc9422b32c"
+    },
+    {
+      "stage": "transport-11",
+      "receipt": "59112937-srv1/report.json",
+      "source_commit": "5911293779cd574c16aba8cec81a47315b20edd8",
+      "log_sha256": "df6b5f09b36ee22e343fe446bc1c1b28e6042f8144491a05b9c6dd8dd667d38b"
+    }
+  ],
+  "verified_source_closures": {
+    "59112937-srv1": [
+      "overlay/modules/tp_oneshot_ar",
+      "overlay/modules/glm53_model/glm53_fp8_dense.py",
+      "profiles/glm53.env",
+      "probes/decode_transport_compile.py",
+      "probes/run_decode_transport_sf_cpu.py",
+      "tests/test_ar_transport_next.py"
+    ],
+    "09d68b64-srv2": [
+      "overlay",
+      "build",
+      "profiles",
+      "bench",
+      "tests",
+      "probes/b12x_static_compile_check.py",
+      "probes/run_decode_transport_sf_cpu.py"
+    ],
+    "e8e20130-srv2": [
+      "overlay",
+      "build",
+      "probes/moe_reform_sf6_check.py",
+      "probes/run_decode_transport_sf_cpu.py"
+    ]
+  },
+  "production_image_contracts": {
+    "assertions_and_test_cases": 71160,
+    "core_assertions": 71123,
+    "additional_test_cases": 37
+  },
+  "prior_failures": [
+    {
+      "run": "59112937-srv1",
+      "stage": "sf-m2",
+      "reason": "FC2 shared layout guard found wrong K64/row128 ordering; corrected in 09d68b64"
+    },
+    {
+      "run": "09d68b64-srv2",
+      "stage": "sf-expand",
+      "reason": "Standalone CuTe probe annotation scope; corrected in e8e20130"
+    }
+  ]
+}

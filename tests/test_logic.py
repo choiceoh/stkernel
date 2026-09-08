@@ -3534,7 +3534,8 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False,
+                      "reform_sf_pack": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3708,9 +3709,10 @@ def test_b12x_static_v2_controls() -> None:
           and "        not weights_tiled\n        and quant_mode == \"nvfp4\"" in src
           and "    ) and not weights_tiled   # the micro kernels read row-major weights" in src
           and 'if weights_tiled and forced_backend in ("micro", "direct_micro"):' in src
-          and "        tiled=bool(getattr(weights, \"tiled\", False)),\n    )" in src
+          and 'tiled=bool(getattr(weights, "tiled", False)),' in src
           and "if not isinstance(kernel, MoEGatedDynamicKernel):" in src
-          and "kernel = MoEGatedDynamicKernelTiled(" in src
+          and "tiled_cls = MoEGatedDynamicKernelTiled" in src
+          and "kernel = tiled_cls(" in src
           and "{'_tiled' if tiled else ''}" in src
           and 'backend not in ("static", "dynamic")' in src,
           "phase 2: in-place re-layout, no micro lane on tiled weights, the tiled "
@@ -3721,14 +3723,16 @@ def test_b12x_static_v2_controls() -> None:
     v4_kernel = open(os.path.join(REPO, "overlay/modules/glm53_moe/moe_static_kernel_v4.py"),
                      encoding="utf-8").read()
     check("_SF_STAGE_BYTES = 3088" in v4_kernel
-          and "def _sf_expand_stage(self, stage_addr, tidx):" in v4_kernel
-          and "self.sf_expand_barrier.arrive_and_wait()" in v4_kernel
+          and "def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):" in v4_kernel
+          and v4_kernel.count("self.sf_expand_barrier.arrive_and_wait()") == 2
           and "barrier_id=3," in v4_kernel   # 1 is the epilogue, the stock class uses 1 and 2
           and "fc1_tma_bytes += _SF_STAGE_BYTES" in v4_kernel
           and v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
-              > v4_kernel.index("base = _ld_shared_i32(stage_addr + Int32(_SF_BASE_OFF))")
-          and v4_kernel.index("_st_shared_i32(stage_addr + Int32(32) * tidx")
-              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()"),
+              > v4_kernel.index("base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset))")
+          and v4_kernel.index("_st_shared_i32(stage_addr + Int32(per_thread) * tidx")
+              > v4_kernel.index("self.sf_expand_barrier.arrive_and_wait()")
+          and v4_kernel.rindex("self.sf_expand_barrier.arrive_and_wait()")
+              > v4_kernel.index("_st_shared_i32(stage_addr + Int32(per_thread) * tidx"),
           "q: 3088 B stages, the in-place expansion reads before the barrier and "
           "writes after it, and the stage's tx bytes count the packed size")
     check("sf_pack needs every MMA warp at every FC1 stage" in v4_kernel
@@ -3816,9 +3820,9 @@ def test_b12x_static_v2_controls() -> None:
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
     check([line.partition('=')[2] for line in profile.splitlines()
-           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r'],
-          "the profile ships exactly one t,r default after the corrected C=1 "
-          "MoE bundle promotion; explicit t remains the previous geometry")
+           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r,sf6'],
+          "the profile ships exactly one t,r,sf6 default after operator adoption "
+          "of direct scale reads and raw-owner release; explicit t,r retains raw scales")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner
@@ -11628,7 +11632,10 @@ def test_fleet_reservation_tooling_contracts() -> None:
 
     tsv = open(os.path.join(REPO, "bench", "proof-markers.tsv"), encoding="utf-8").read()
     src_all = ""
-    for path in sorted(glob.glob(os.path.join(REPO, "overlay", "modules", "*", "*.py"))):
+    marker_sources = []
+    for suffix in ("py", "cu", "h"):
+        marker_sources.extend(glob.glob(os.path.join(REPO, "overlay", "modules", "*", f"*.{suffix}")))
+    for path in sorted(marker_sources):
         src_all += open(path, encoding="utf-8").read()
     rows = [l.split("\t") for l in tsv.splitlines() if l.strip() and not l.startswith("#")]
     check(len(rows) >= 15 and all(len(r) == 3 for r in rows), "proof-markers.tsv: knob, marker, src")

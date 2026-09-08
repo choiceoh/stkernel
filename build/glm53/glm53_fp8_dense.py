@@ -167,6 +167,14 @@ _register_compile_factor(
     "VLLM_GLM53_AR_CONSUMER_PDL",
     lambda: "1" if os.environ.get("VLLM_GLM53_AR_CONSUMER_PDL") == "1" else "0",
 )
+_register_compile_factor(
+    "VLLM_GLM53_AR_COMPACT_CTA",
+    lambda: "1" if os.environ.get("VLLM_GLM53_AR_COMPACT_CTA") == "1" else "0",
+)
+_register_compile_factor(
+    "VLLM_GLM53_AR_PROXY_INLINE",
+    lambda: "1" if os.environ.get("VLLM_GLM53_AR_PROXY_INLINE") == "1" else "0",
+)
 
 
 def _include_patterns(env: str = "VLLM_GLM53_FP8_DENSE") -> tuple:

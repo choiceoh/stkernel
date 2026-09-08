@@ -43,6 +43,8 @@ def main() -> int:
     ap.add_argument("--dynamic", default="",
                     help="also compile the gated dynamic (prefill) kernel: 'rowmajor', "
                          "'tiled' or 'both' (the tiled form reads cell t's 4-D weights)")
+    ap.add_argument("--tile-m", type=int, default=128, choices=(16,32,64,128),
+                    help="dynamic tile M; --dynamic sf6 compiles direct packed scales")
     args = ap.parse_args()
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
 
@@ -75,8 +77,11 @@ def main() -> int:
         compiled_count += 1
         names = [k[0] + ":" + "/".join(str(x) for x in k[1:6]) for k in md._STATIC_V2_KERNEL_CACHE]
         print(f"[{spec}] compiled in {time.time() - t0:.1f} s: {names} mac={mac}")
-    dyn = {"": (), "rowmajor": (False,), "tiled": (True,), "both": (False, True)}[args.dynamic]
+    dyn = {"": (), "rowmajor": (False,), "tiled": (True,), "both": (False, True),
+           "sf6": (True,)}[args.dynamic]
     for tiled in dyn:
+        direct_sf6 = args.dynamic == "sf6"
+        label = f"dynamic tiled={tiled}" + (f" sf6=True tm={args.tile_m}" if direct_sf6 else "")
         md._DYNAMIC_KERNEL_CACHE.clear()
         t0 = time.time()
         try:
@@ -84,16 +89,17 @@ def main() -> int:
                 E, 1024, HID, INTER, TOPK, 1024,
                 activation="swigluoai_uninterleave", swiglu_alpha=1.0,
                 swiglu_beta=0.0, swiglu_limit=10.0, tiled=tiled,
+                reform_sf_pack=direct_sf6, tile_m=args.tile_m,
             )
         except Exception as exc:  # noqa: BLE001
             ok = False
             import traceback
-            print(f"[dynamic tiled={tiled}] COMPILE FAIL after {time.time() - t0:.1f} s: "
+            print(f"[{label}] COMPILE FAIL after {time.time() - t0:.1f} s: "
                   f"{type(exc).__name__}: {str(exc)[:1200]}\n"
                   + traceback.format_exc()[-1800:])
             continue
         compiled_count += 1
-        print(f"[dynamic tiled={tiled}] compiled in {time.time() - t0:.1f} s mac={mac}")
+        print(f"[{label}] compiled in {time.time() - t0:.1f} s mac={mac}")
     if compiled_count == 0:
         ok = False
         print("no kernel was compiled (every spec parsed to stock and no "

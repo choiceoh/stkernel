@@ -1,0 +1,184 @@
+{
+  "status": "A_ONEPASS_RECORD_VALID_RUNTIME_ADMISSION_FAILED_B_PENDING",
+  "name": "sf6-direct-0909v1A",
+  "fixed_pooled_step_s": 20.281701533352084,
+  "ms_per_step": 49.30552785995582,
+  "windows_med": 19.880270978910758,
+  "output_tok_s": 61.95479353796345,
+  "quality": {
+    "ok": 18,
+    "total": 18
+  },
+  "korean": {
+    "dirty": 0,
+    "n": 8,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "hits": []
+  },
+  "prefill": [
+    {
+      "ctx": 2000,
+      "tok": 2128,
+      "cold_s": 2.440095250029117,
+      "warm_s": 0.8382783400011249,
+      "cold_tok_s": 872.0971035760211,
+      "warm_tok_s": 2538.536305252912,
+      "ttft_samples_s": [
+        2.440095250029117,
+        0.8382783400011249,
+        0.888291287003085
+      ],
+      "combined": false
+    },
+    {
+      "ctx": 32000,
+      "tok": 32545,
+      "cold_s": 10.881572252023034,
+      "warm_s": 10.881572252023034,
+      "cold_tok_s": 2990.836181228263,
+      "warm_tok_s": 2990.836181228263,
+      "ttft_samples_s": [
+        10.881572252023034
+      ],
+      "combined": true
+    },
+    {
+      "ctx": 128000,
+      "tok": 128559,
+      "cold_s": 42.228542328986805,
+      "warm_s": 42.228542328986805,
+      "cold_tok_s": 3044.362720324202,
+      "warm_tok_s": 3044.362720324202,
+      "ttft_samples_s": [
+        42.228542328986805
+      ],
+      "combined": true
+    }
+  ],
+  "memory": {
+    "samples": 147,
+    "minimum_available_gib": {
+      "choiceoh@10.10.10.4": 18.070236206054688,
+      "choiceoh@10.10.10.1": 15.546649932861328,
+      "local": 10.247013092041016,
+      "choiceoh@10.10.10.3": 11.760799407958984
+    }
+  },
+  "comparison": null,
+  "source_commit": "85e25370779c2b8a6c9aaefa275b1dc8f27d60d0",
+  "ticket": "17888991282385029",
+  "full_runtime_admission": "FAIL: all ranks missing MHC selftest PASS and capture",
+  "baseline": "pending",
+  "per_rank_sf6": {
+    "srv1": {
+      "kv_blocks": "665",
+      "markers": {
+        "ar_capture_numel": [
+          24576
+        ],
+        "common": {
+          "[megakernel] AR consumer MHC self-test PASS": false,
+          "[osar] consumer PDL self-test PASS": true
+        },
+        "compact_capture_numel": [],
+        "compact_selftests": [],
+        "inline_posts": 0,
+        "mhc_capture_tokens": [],
+        "new_marker_present": true,
+        "sf6_fallback_count": 0,
+        "sf6_fallback_reasons": [],
+        "sf6_m6_serving": 1,
+        "sf6_packed_bytes": 3604414464,
+        "sf6_packed_only_finalizations": 1,
+        "sf6_packed_only_layers": 42,
+        "sf6_prepared_count": 42,
+        "sf6_raw_bytes_released": 4756340736,
+        "transport_marker_present": false
+      }
+    },
+    "srv2": {
+      "kv_blocks": "665",
+      "markers": {
+        "ar_capture_numel": [
+          24576
+        ],
+        "common": {
+          "[megakernel] AR consumer MHC self-test PASS": false,
+          "[osar] consumer PDL self-test PASS": true
+        },
+        "compact_capture_numel": [],
+        "compact_selftests": [],
+        "inline_posts": 0,
+        "mhc_capture_tokens": [],
+        "new_marker_present": true,
+        "sf6_fallback_count": 0,
+        "sf6_fallback_reasons": [],
+        "sf6_m6_serving": 1,
+        "sf6_packed_bytes": 3604414464,
+        "sf6_packed_only_finalizations": 1,
+        "sf6_packed_only_layers": 42,
+        "sf6_prepared_count": 42,
+        "sf6_raw_bytes_released": 4756340736,
+        "transport_marker_present": false
+      }
+    },
+    "srv3": {
+      "kv_blocks": "665",
+      "markers": {
+        "ar_capture_numel": [
+          24576
+        ],
+        "common": {
+          "[megakernel] AR consumer MHC self-test PASS": false,
+          "[osar] consumer PDL self-test PASS": true
+        },
+        "compact_capture_numel": [],
+        "compact_selftests": [],
+        "inline_posts": 0,
+        "mhc_capture_tokens": [],
+        "new_marker_present": true,
+        "sf6_fallback_count": 0,
+        "sf6_fallback_reasons": [],
+        "sf6_m6_serving": 1,
+        "sf6_packed_bytes": 3604414464,
+        "sf6_packed_only_finalizations": 1,
+        "sf6_packed_only_layers": 42,
+        "sf6_prepared_count": 42,
+        "sf6_raw_bytes_released": 4756340736,
+        "transport_marker_present": false
+      }
+    },
+    "srv4": {
+      "kv_blocks": "665",
+      "markers": {
+        "ar_capture_numel": [
+          24576
+        ],
+        "common": {
+          "[megakernel] AR consumer MHC self-test PASS": false,
+          "[osar] consumer PDL self-test PASS": true
+        },
+        "compact_capture_numel": [],
+        "compact_selftests": [],
+        "inline_posts": 0,
+        "mhc_capture_tokens": [],
+        "new_marker_present": true,
+        "sf6_fallback_count": 0,
+        "sf6_fallback_reasons": [],
+        "sf6_m6_serving": 1,
+        "sf6_packed_bytes": 3604414464,
+        "sf6_packed_only_finalizations": 1,
+        "sf6_packed_only_layers": 42,
+        "sf6_prepared_count": 42,
+        "sf6_raw_bytes_released": 4756340736,
+        "transport_marker_present": false
+      }
+    }
+  },
+  "raw_evidence_local": "/tmp/sf6-direct-onepass-0909v1/interim-0540"
+}

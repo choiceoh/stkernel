@@ -122,7 +122,12 @@ def check(root: str = REPO):
     """(missing rows, stale rows, proposals) against the table."""
     tbl = table()
     src_all = ""
-    for path in sorted(glob.glob(os.path.join(root, "overlay", "modules", "*", "*.py"))):
+    # Native transport emits its serving marker after successful verbs posts.
+    # Explicit table rows may therefore point at CUDA/header literals too.
+    sources = []
+    for suffix in ("py", "cu", "h"):
+        sources.extend(glob.glob(os.path.join(root, "overlay", "modules", "*", f"*.{suffix}")))
+    for path in sorted(sources):
         src_all += open(path, encoding="utf-8").read()
     stale = [(k, m, s) for k, (m, s) in tbl.items() if m != "-" and s not in src_all]
     seen, covered = {}, set()

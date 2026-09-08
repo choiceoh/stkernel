@@ -1,0 +1,17 @@
+2026-09-08 18:30:47,186 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wu_b19090f9a212b846
+2026-09-08 18:30:50,022 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wu_b19090f9a212b846.o
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r640_tm32f2g2a32wu (mac=48, m=8, routed=64, smem=101376 B)
+2026-09-08 18:30:50,025 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wuv_e03430146f76f387
+2026-09-08 18:30:52,640 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wuv_e03430146f76f387.o
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r640_tm32f2g2a32wuv (mac=48, m=8, routed=64, smem=101376 B)
+2026-09-08 18:30:52,643 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wut_7abd6b2a3168f60a
+2026-09-08 18:30:53,961 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wut_7abd6b2a3168f60a.o
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r640_tm32f2g2a32wut (mac=48, m=8, routed=64, smem=101376 B)
+2026-09-08 18:30:53,965 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wutq_9aa96a9983622865
+2026-09-08 18:30:56,869 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /evidence/flashinfer/.cache/flashinfer/0.6.18.dev20260819/cached_ops/b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r640_tm32f2g2a32wutq_9aa96a9983622865.o
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r640_tm32f2g2a32wutq (mac=48, m=8, routed=64, smem=101376 B)
+[u] compiled in 3.0 s: ['static_v2:32/2/2/32/False'] mac=48
+[v] compiled in 2.6 s: ['static_v2:32/2/2/32/False'] mac=48
+[t] compiled in 1.3 s: ['static_v2:32/2/2/32/False'] mac=48
+[t,q] compiled in 2.9 s: ['static_v2:32/2/2/32/False'] mac=48
+VERDICT: PASS

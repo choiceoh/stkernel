@@ -1,0 +1,9 @@
+test_large_fallback_keeps_t12_cache_warm_for_small_capture (test_mhc_ar_selftest.DiagnosticTests.test_large_fallback_keeps_t12_cache_warm_for_small_capture) ... ok
+test_named_output_count_first_value_and_nonfinite_are_visible (test_mhc_ar_selftest.DiagnosticTests.test_named_output_count_first_value_and_nonfinite_are_visible) ... ok
+test_original_selftest_keeps_t16_all_replays_and_disarms_on_exact_failure (test_mhc_ar_selftest.DiagnosticTests.test_original_selftest_keeps_t16_all_replays_and_disarms_on_exact_failure) ... ok
+test_original_selftest_launches_t16_fp32_fallback_and_small_bf16_consumer (test_mhc_ar_selftest.DiagnosticTests.test_original_selftest_launches_t16_fp32_fallback_and_small_bf16_consumer) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.006s
+
+OK
