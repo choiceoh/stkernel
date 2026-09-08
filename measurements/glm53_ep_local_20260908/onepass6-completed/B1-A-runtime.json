@@ -1,0 +1,105 @@
+{
+  "scope": "B1/A runtime identity only, not performance or quality acceptance",
+  "nodes": {
+    "local": {
+      "same_capacity_image_mounts_and_non_ep_launch": true,
+      "environment_differences": {
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": [
+          "1",
+          "0"
+        ],
+        "VLLM_GLM53_EP_PREFILL_LOCAL": [
+          "1",
+          "0"
+        ],
+        "VLLM_B12X_EP_COMPACT": [
+          "1",
+          null
+        ],
+        "VLLM_B12X_EP_WARM_COMPACT": [
+          "1",
+          "0"
+        ]
+      },
+      "containers": {
+        "B1": "4425db18cf5008d5c79b55652a59afa054dd6450bbb8b41499eb9c6af81243e6",
+        "A": "aff1873102e9a07592b4ddf07413e38d3dc951096914ef4340bf63521b1bfef6"
+      }
+    },
+    "10.10.10.1": {
+      "same_capacity_image_mounts_and_non_ep_launch": true,
+      "environment_differences": {
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": [
+          "1",
+          "0"
+        ],
+        "VLLM_GLM53_EP_PREFILL_LOCAL": [
+          "1",
+          "0"
+        ],
+        "VLLM_B12X_EP_COMPACT": [
+          "1",
+          null
+        ],
+        "VLLM_B12X_EP_WARM_COMPACT": [
+          "1",
+          "0"
+        ]
+      },
+      "containers": {
+        "B1": "6bc2d74f3ae51a9513a5586db96feb66384c6f348cef92e9b3b756ae5253ff11",
+        "A": "36694f3c86d53864880a6e75cbc3f9c1fcb084e85bcecf58605054c22c2e2373"
+      }
+    },
+    "10.10.10.3": {
+      "same_capacity_image_mounts_and_non_ep_launch": true,
+      "environment_differences": {
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": [
+          "1",
+          "0"
+        ],
+        "VLLM_GLM53_EP_PREFILL_LOCAL": [
+          "1",
+          "0"
+        ],
+        "VLLM_B12X_EP_COMPACT": [
+          "1",
+          null
+        ],
+        "VLLM_B12X_EP_WARM_COMPACT": [
+          "1",
+          "0"
+        ]
+      },
+      "containers": {
+        "B1": "94a36c9f03610c40f28b6f5852c389fb0d35250afb8f91d22dfe132e8088d982",
+        "A": "7b9c78123c6eb42d43cb35cb67438151dd73399235cb9bb2796f65579ecad3d5"
+      }
+    },
+    "10.10.10.4": {
+      "same_capacity_image_mounts_and_non_ep_launch": true,
+      "environment_differences": {
+        "VLLM_B12X_EP_ZERO_WEIGHT_MICRO": [
+          "1",
+          "0"
+        ],
+        "VLLM_GLM53_EP_PREFILL_LOCAL": [
+          "1",
+          "0"
+        ],
+        "VLLM_B12X_EP_COMPACT": [
+          "1",
+          null
+        ],
+        "VLLM_B12X_EP_WARM_COMPACT": [
+          "1",
+          "0"
+        ]
+      },
+      "containers": {
+        "B1": "8adfb5af5c1854db147287aa03ec41eaa5d74aff0e997642996e538ee0ece988",
+        "A": "8187b00898a1496519e5300af0d3b16486dd60b907ea42cb96a7eb8975ee6c64"
+      }
+    }
+  }
+}

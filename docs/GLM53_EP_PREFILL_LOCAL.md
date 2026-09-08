@@ -733,3 +733,18 @@ improvement. It is consistent with execution variability and does not isolate
 its cause. A bounded repeatability diagnostic with fixed inputs and candidate
 self-comparisons is the next check; a passing repeat must not erase the first
 failure or authorize an unchanged full-suite rerun.
+
+### Short EP decode follow-up: measured regression remains
+
+The repaired short-only micro path completed canonical onepass B1/A on source
+`e2a54cff881465c2bb7dbbd3f5ec39ca240c7f74`. Fixed 1024-token decode (three requests
+per arm) measured **76.899 tok/s B1 versus 62.489 tok/s A, -18.74%**. The actual
+SPEC_K5 graph shapes 6/12/18/24 use 1/2/3/3 top-k8 calls, but this call reduction
+did not remove the regression. The user stopped the remaining B2 while loading;
+no new GPU run was submitted. Defaults remain off and no promotion was merged.
+
+32K/128K prefill measured +12.66%/+13.57% against B1, descriptively. Both arms
+scored 18/18 facts; A had 0/8 dirty responses, while B1 had 1/8 due to two CJK
+characters. The canonical verdict is incomplete because the baseline failed its
+quality gate. The previous GPU numerical failure remains unresolved. See
+[exact records and cancellation evidence](../measurements/glm53_ep_local_20260908/onepass6-completed/README.md).

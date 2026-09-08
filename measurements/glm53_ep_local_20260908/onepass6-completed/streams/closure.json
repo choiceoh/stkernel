@@ -1,0 +1,27 @@
+{
+  "alive": false,
+  "closure_events": [
+    {
+      "at": 1788908375.9594543,
+      "kind": "stream_end",
+      "local_at": 1788908376.0247722,
+      "reason": "release_or_terminal"
+    },
+    {
+      "kind": "observer_stop",
+      "local_at": 1788908381.76796,
+      "reason": "terminal_or_release"
+    },
+    {
+      "attempted_arms": [
+        "A",
+        "B1"
+      ],
+      "kind": "observer_finished",
+      "local_at": 1788908381.7683709,
+      "owned_go_seen": true
+    }
+  ],
+  "observer_pid": 58369,
+  "scope": "Chunk hashes and offsets verified. Raw streams span arms and remain UNASSIGNED until separate container/time/worker-prefix attribution."
+}
