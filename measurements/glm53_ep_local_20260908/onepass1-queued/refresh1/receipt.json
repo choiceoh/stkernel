@@ -1,0 +1,10 @@
+{
+  "source": "540dfb7eea44a7356af897268fa6d6be2edba683",
+  "merged_main": "807d4627",
+  "ticket": "1788883625926754",
+  "revision": 4,
+  "state": "queued",
+  "original_enqueued_at": 1788883625,
+  "payload_sha256": "88c6a1fda5382d6c1a7adcf9d0bd3e8cf1777a0eb2ce4df145bc9125632fea58",
+  "changes": "Normal pause/edit/resume retained the original ticket. Only upstream serving lifecycle was merged; EP kernel and canonical onepass files unchanged. Chain child selects the admitted source boot-authorization helper; outer pinned supervisor and deploy validation unchanged."
+}
