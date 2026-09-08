@@ -207,12 +207,18 @@ class PauseTests(unittest.TestCase):
         with patch.object(pending,'validate'),patch.object(fleet_prepare,'prepare',return_value=target), \
              patch.object(fleet_prepare,'validate_targets') as targets:
             pending.edit(self.directory,'fixture',command=[sys.executable,'-c','print(1)'])
-        targets.assert_called_once_with(self.directory,target)
+        self.assertEqual(targets.call_count,1)
+        self.assertEqual(targets.call_args.args,(self.directory,target))
+        self.assertEqual(targets.call_args.kwargs['controller']['fleet'],value['fleet'])
+        self.assertNotIn('FLEET_VALIDATION_LEVEL',targets.call_args.kwargs['controller']['validation_env'])
         self.assertEqual((self.directory/'queue').read_text(),'')
         with patch.object(pending,'validate'),patch.object(fleet_prepared,'read',return_value={}), \
              patch.object(fleet_prepare,'validate'),patch.object(fleet_prepare,'validate_targets') as targets:
             pause.resume(self.directory,'fixture')
-        targets.assert_called_once_with(self.directory,str(target),verify_only=True)
+        self.assertEqual(targets.call_count,1)
+        self.assertEqual(targets.call_args.args,(self.directory,str(target)))
+        self.assertTrue(targets.call_args.kwargs['verify_only'])
+        self.assertEqual(targets.call_args.kwargs['controller']['fleet'],value['fleet'])
         self.assertEqual((self.directory/'queue').read_text(),self.row)
 
     def test_edit_and_resume_use_original_payload_environment_not_editor(self):

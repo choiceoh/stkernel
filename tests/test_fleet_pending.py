@@ -120,6 +120,44 @@ class PendingTests(unittest.TestCase):
         self.assertTrue(handoff.admit(self.root, 'mine', self.pid, 'boot', '10', 'original'))
         self.assertEqual((self.root / 'holder').read_text().split('|')[4:6], ['9', 'new note'])
 
+    def test_target_validation_keeps_pinned_legacy_release_and_new_admission_contracts(self):
+        import fleet_prepare
+        prepared = dict(command=['old'], cwd=str(self.root), deployment_targets=[
+            dict(repo=str(self.root), profile='glm53', image='candidate:image', model='/candidate/model')])
+        for level in ('release', 'admission'):
+            with self.subTest(level=level):
+                pinned = self.root / ('pinned-' + level)
+                pinned.mkdir()
+                helper = pinned / 'fleet_validation.py'
+                helper.write_text('''import argparse, json, os
+parser = argparse.ArgumentParser()
+parser.add_argument('action', choices=['validate'])
+parser.add_argument('--repo', required=True)
+parser.add_argument('--profile', required=True)
+parser.add_argument('--image')
+parser.add_argument('--model')
+parser.add_argument('--verify-only', action='store_true')
+LEVEL_ARGUMENT
+args = parser.parse_args()
+assert args.profile == 'glm53' and args.image == 'candidate:image'
+assert args.model == '/candidate/model' and args.verify_only
+assert 'FLEET_VALIDATION_LEVEL' not in os.environ
+print(json.dumps(dict(level=getattr(args, 'level', 'release'), helper=__file__,
+                      store=os.environ['FLEET_VALIDATION_STORE'])))
+'''.replace('LEVEL_ARGUMENT', "parser.add_argument('--level', choices=['admission'], required=True)"
+            if level == 'admission' else '# Legacy CLI has no --level option.'))
+                record = self.saved()
+                record['fleet'] = str(pinned / 'fleet.sh')
+                record['validation_env'] = {'FLEET_VALIDATION_REQUIRED': '1',
+                                            'FLEET_VALIDATION_STORE': '/accepted/store'}
+                if level == 'admission':
+                    record['validation_env']['FLEET_VALIDATION_LEVEL'] = level
+                with patch.dict(os.environ, FLEET_VALIDATION_LEVEL='admission',
+                                FLEET_VALIDATION_STORE='/editor/store'):
+                    result = fleet_prepare.validate_targets(self.root, 'unused', verify_only=True,
+                                _validated_value=prepared, controller=record)[0]['validation']
+                self.assertEqual(result, dict(level=level, helper=str(helper), store='/accepted/store'))
+
 
 if __name__ == '__main__':
     unittest.main()

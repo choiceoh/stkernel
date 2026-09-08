@@ -12,13 +12,13 @@ EVIDENCE=${STARTUP_CACHE_EVIDENCE:-$LOGD/startup-cache-$(date +%Y%m%d-%H%M%S)}
 PREFIX=${STARTUP_CACHE_PREFIX:-STARTCACHE}
 MODE=${STARTUP_CACHE_MODE:-artifacts}
 case "$MODE" in
-  artifacts) stages=(BASE COLD WARM); restore_knobs='VLLM_GLM53_FP8_CACHE=0 VLLM_GLM53_RANK_CACHE=0' ;;
-  pack-io) stages=(PRIME FAST1 BASE1 BASE2 FAST2); restore_knobs='VLLM_GLM53_MK_PACK_FAST_IO=0' ;;
-  pack-key) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_MK_PACK_SHA256=0 VLLM_GLM53_MK_PACK_FAST_IO=1' ;;
-  renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_EARLY_MM_WARMUP=0' ;;
-  graph-profile) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
-  overlay-deploy) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
-  campaign) stages=(); restore_knobs='' ;;
+  artifacts) stages=(BASE COLD WARM) ;;
+  pack-io) stages=(PRIME FAST1 BASE1 BASE2 FAST2) ;;
+  pack-key) stages=(PRIME BASE1 FAST1 FAST2 BASE2) ;;
+  renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2) ;;
+  graph-profile) stages=(PRIME BASE1 FAST1 FAST2 BASE2) ;;
+  overlay-deploy) stages=(PRIME BASE1 FAST1 FAST2 BASE2) ;;
+  campaign) stages=() ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
 monitor_pid=
@@ -64,19 +64,15 @@ failed() {
   trap - EXIT
   if [ -n "$monitor_pid" ]; then kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true; fi
   if [ "$rc" != 0 ]; then
-    echo "startup-cache trial failed rc=$rc; restoring control serving"
+    echo "startup-cache trial failed rc=$rc; recording evidence before release"
     snapshot "${current_arm:-failure}" || true
-    if [ "${FLEET_RESTORE_MANAGED:-0}" != 1 ]; then
-      LEGS=none HEALTH_BUDGET_S=1800 bash bench/ab-lever.sh "${PREFIX}RESTORE" "$restore_knobs" > "$EVIDENCE/restore.log" 2>&1 || true
-      snapshot RESTORE || true
-    fi
   fi
   printf '%s\n' "$rc" > "$EVIDENCE/exit-code"
   exit "$rc"
 }
 trap failed EXIT
 # A handled signal exits after the foreground boot returns, so failed() can
-# restore control without leaving an orphan boot or recording exit code zero.
+# record the failure without leaving an orphan boot or recording exit code zero.
 trap 'exit 130' INT
 trap 'exit 143' TERM
 

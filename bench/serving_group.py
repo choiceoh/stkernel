@@ -89,20 +89,4 @@ def run_pair(store, job, payload):
         state, result = pair_result(store.get(job)['payload'], job)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         state, result = 'failed', dict(evidence='gpu-pair', reason=str(exc))
-    # One restore decision after all workloads, including a failed workload.
-    fleet = str(Path(payload['repo']) / 'bench/fleet.sh')
-    session = os.environ.get('FLEET_SESSION', 'exp-' + job)
-    needed = subprocess.call([payload['bash'], fleet, 'restore-needed', session])
-    if needed == 0:
-        from experiment_metrics import timed
-        with timed(store,job,'restore'):
-            rc = subprocess.call([payload['bash'], str(Path(payload['repo']) / 'bench/ab-lever.sh'),
-                                  'EXP-' + job + '-RESTORE', ''], cwd=payload['repo'],
-                                 env=dict(os.environ, LEGS='none', SKIP_BOOT='0', GLM53_API_PORT='8000'))
-        if rc:
-            result['restore_error'] = rc
-            state = 'failed'
-    elif needed != 1:
-        result['restore_error'] = 'restore policy check failed'
-        state = 'failed'
     return state, result
