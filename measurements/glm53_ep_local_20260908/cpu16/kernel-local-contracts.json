@@ -1,0 +1,40 @@
+{
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "scope": "CPU source oracles only; no CUDA/Docker/queue/compile",
+  "tests_run": 23,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "files": {
+    "overlay/modules/glm53_moe/moe_dynamic_ep_local.py": {
+      "sha256": "dd479ca8c55719b3dfc91c6196394f7f28b14ca49760433b6f8286e519d8e2f9",
+      "bytes": 37063
+    },
+    "tests/test_glm53_ep_task_publication.py": {
+      "sha256": "46e8094e17e16a2e3736737827a69f50cc731499f92858cf1fbb9137db4dbfef",
+      "bytes": 22046
+    },
+    "tests/test_glm53_ep_route_scale_cache.py": {
+      "sha256": "b4c85443d81a69c0a1542f537b8947b119457ba7fed28c319240546ca329cc06",
+      "bytes": 26918
+    }
+  },
+  "runs": [
+    {
+      "command": "python3 -B -m unittest discover -s tests -p test_glm53_ep_route_scale_cache.py -v",
+      "log": "/tmp/glm53-cpu16-route-scale-cache-tests.log",
+      "sha256": "753b3e7ad0aaab385bc3d0ab158c774e1e2d4b40536832f1e6d17d0c319d67ae",
+      "bytes": 2226,
+      "tests_run": 11,
+      "elapsed_s": 0.365
+    },
+    {
+      "command": "python3 -B -m unittest discover -s tests -p test_glm53_ep_task_publication.py -v",
+      "log": "/tmp/glm53-cpu16-task-publication-tests.log",
+      "sha256": "89a3de6fff3245ac650c9d01ab6f946c9292e3a47ad7213398ca82fb3c6bff75",
+      "bytes": 2243,
+      "tests_run": 12,
+      "elapsed_s": 1.403
+    }
+  ]
+}

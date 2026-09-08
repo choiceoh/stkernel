@@ -54,3 +54,10 @@ follow-up to avoid duplicates. When submitted, the normal job will be
 `readiness/` preserves the actual controller, guarded preparer, launch,
 initial refusal and a timestamped state snapshot; mutable live files were
 read into byte snapshots before local hash verification.
+
+## Completed state
+
+The readiness controller submitted CPU15 at 21:53:07 KST and exited. The job
+finished at 21:53:21 with one contract-test error after actual CuTe and 24
+remap compiles. See [preserved failure](failed-compile/README.md). CPU15 is
+complete and must not be retried or treated as GPU admission proof.

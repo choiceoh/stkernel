@@ -1,5 +1,6 @@
 """CPU row/scale-address and byte/slot oracles for EP-local publication."""
 import ast
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -152,6 +153,17 @@ def load_scale_offsets():
                            for target in node.targets)]
     if len(assignments) != 2:
         raise AssertionError("must inspect both equal and varied scale store paths")
+    producer_bases = [node.value for node in ast.walk(method) if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == "route_scale_row_base"
+                              for target in node.targets)]
+    if len(producer_bases) != 1:
+        raise AssertionError("one producer row-only scale base required")
+
+    class PublishedBase(ast.NodeTransformer):
+        def visit_Name(self, node):
+            if node.id == "scale_row_base":
+                return copy.deepcopy(producer_bases[0])
+            return node
 
     def uint32(value):
         if not 0 <= value < 1 << 32:
@@ -178,7 +190,10 @@ def load_scale_offsets():
 
     result = []
     for assignment in assignments:
-        expression = assignment.value
+        # Compose the actual producer value with each consumer expression.
+        # The separate shared-cache oracle verifies real store/load addresses,
+        # publication and stale-slot rejection rather than assuming this link.
+        expression = PublishedBase().visit(copy.deepcopy(assignment.value))
         if not (isinstance(expression, ast.Call)
                 and isinstance(expression.func, ast.Name)
                 and expression.func.id == "Int32" and len(expression.args) == 1):
@@ -200,6 +215,68 @@ def load_scale_offsets():
             raise AssertionError("scale layout must retain both axes")
         result.append(compile_expression(expression))
     return result
+
+
+def load_tile_prefix():
+    tree = ast.parse(KERNEL.read_text())
+    method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                  and node.name == "initialize_route_q0_and_publish")
+    loop = next(node for node in ast.walk(method) if isinstance(node, ast.While)
+                and ast.unparse(node.test) == "expert_idx < num_experts")
+    increment = next(node for node in loop.body if isinstance(node, ast.AugAssign)
+                     and isinstance(node.target, ast.Name) and node.target.id == "tile_acc")
+    function = ast.parse("def tiles(rows): return 0").body[0]
+    function.body[0].value = copy.deepcopy(increment.value)
+
+    def uint32(value):
+        if not 0 <= value < 1 << 32:
+            raise AssertionError("prefix leaves nonnegative Uint32 bounds")
+        return value
+
+    namespace = dict(Int32=int, Uint32=uint32)
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
+                 str(KERNEL), "exec"), namespace)
+    publisher = next(node for node in ast.walk(method) if isinstance(node, ast.If)
+                     and loop in node.body)
+    code = compile(ast.Module(body=[publisher], type_ignores=[]), str(KERNEL), "exec")
+
+    def prefix(counts):
+        values = [-777] * (len(counts) + 1)
+        state = dict(namespace, flat_tid=0, tile_acc=-999, expert_idx=-999,
+                     expert_tile_base=values, row_counts=counts, num_experts=len(counts))
+        exec(code, state)
+        return values
+
+    return namespace["tiles"], prefix
+
+
+class TilePrefixTests(unittest.TestCase):
+    def test_every_admitted_row_count_matches_independent_ceiling(self):
+        tiles, _ = load_tile_prefix()
+        for rows in range(16384 * 8 + 1):
+            self.assertEqual(tiles(rows), -(-rows // 128))
+
+    def test_actual_histogram_prefix_preserves_counts_and_padding(self):
+        _, prefix = load_tile_prefix()
+        for tokens in (4096, 4097, 6912, 8192, 16384):
+            pairs = tokens * 8
+            fixtures = (
+                [pairs] + [0] * 71,
+                [0] * 71 + [pairs],
+                [pairs // 72 + (expert < pairs % 72) for expert in range(72)],
+                [pairs - 71] + [1] * 71,
+                [0, 1, 127, 128, 129] + [0] * 67,
+                [0] * 72,
+            )
+            for counts in fixtures:
+                before = list(counts)
+                expected = [0]
+                for count in counts:
+                    expected.append(expected[-1] + (count + 127) // 128)
+                self.assertEqual(prefix(counts), expected)
+                self.assertEqual(counts, before)
+                self.assertLessEqual(sum(counts), pairs)
+                self.assertTrue(sum(counts) <= expected[-1] * 128 <= sum(counts) + 72 * 127)
 
 
 class ScaleOffsetAddressTests(unittest.TestCase):

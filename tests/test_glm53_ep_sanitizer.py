@@ -126,19 +126,39 @@ class SummaryTests(unittest.TestCase):
 class RunnerOrderTests(unittest.TestCase):
     def test_failed_preflight_never_reaches_service_inventory_or_pause(self):
         with tempfile.TemporaryDirectory() as folder:
-            args = ["runner", "--revision", "a" * 40, "--out", str(Path(folder) / "capture")]
+            capsule = Path(folder).resolve() / "capsule"
+            output = Path(folder).resolve() / "capture"
+            args = ["runner", "--revision", "a" * 40, "--out", str(output),
+                    "--capsule-root", str(capsule),
+                    "--manifest-sha256", runner.capsule_runtime.CAPSULE_SHA256]
+            proof = {"binding_runtime": runner.capsule_runtime.expected_runtime_receipt()}
             with patch.object(sys, "argv", args), patch.object(runner.signal, "signal"), \
                     patch.object(runner.lifecycle, "check_holder"), \
                     patch.object(runner.lifecycle, "pinned"), \
-                    patch.object(runner, "validate_compile_evidence"), \
-                    patch.object(runner.sanitizer_support, "preflight", side_effect=RuntimeError("missing tool")), \
+                    patch.object(runner.capsule_runtime, "validate_capsule_input", return_value=capsule) as capsule_check, \
+                    patch.object(runner, "validate_compile_evidence", return_value=proof) as compile_check, \
+                    patch.object(runner.sanitizer_support, "preflight", side_effect=RuntimeError("missing tool")) as preflight, \
                     patch.object(runner, "resources") as resources, \
                     patch.object(runner.lifecycle, "snapshot") as snapshot, \
-                    patch.object(runner.lifecycle, "with_paused") as pause, redirect_stdout(io.StringIO()):
+                    patch.object(runner.lifecycle, "with_paused") as pause, \
+                    patch.object(runner.subprocess, "run") as process, \
+                    patch.object(runner.subprocess, "check_output") as process_output, \
+                    redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.main(), 1)
+            # Reach the intended failure after capsule/CPU admission, rather
+            # than accidentally passing on an earlier argument or proof error.
+            compile_check.assert_called_once_with(ROOT, ROOT / runner.CPU_EVIDENCE)
+            preflight.assert_called_once_with(runner.lifecycle.IMAGE, output / "sanitizer-preflight.json")
+            self.assertEqual(capsule_check.call_count, 2)  # admission and final integrity check
+            completion = json.loads((output / "completion.json").read_text())
+            self.assertEqual(completion["error"], "RuntimeError('missing tool')")
+            self.assertEqual(completion["binding_runtime"], proof["binding_runtime"])
+            self.assertEqual(completion["cells"], [])
             resources.assert_not_called()
             snapshot.assert_not_called()
             pause.assert_not_called()
+            process.assert_not_called()
+            process_output.assert_not_called()
 
 
 if __name__ == "__main__":

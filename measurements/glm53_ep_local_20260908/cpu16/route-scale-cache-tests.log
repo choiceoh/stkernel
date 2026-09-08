@@ -1,0 +1,16 @@
+test_actual_active_token_guard_excludes_odd_tail_and_idle_warps (test_glm53_ep_route_scale_cache.RouteScaleAddressCacheTests.test_actual_active_token_guard_excludes_odd_tail_and_idle_warps) ... ok
+test_actual_published_bases_and_both_consumers_cover_all_warps_counts_and_sf (test_glm53_ep_route_scale_cache.RouteScaleAddressCacheTests.test_actual_published_bases_and_both_consumers_cover_all_warps_counts_and_sf) ... ok
+test_unwritten_and_stale_row_bases_cannot_hide_missing_publication (test_glm53_ep_route_scale_cache.RouteScaleAddressCacheTests.test_unwritten_and_stale_row_bases_cannot_hide_missing_publication) ... ok
+test_actual_filter_compacts_zero_through_eight_routes_before_comparison (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_actual_filter_compacts_zero_through_eight_routes_before_comparison) ... ok
+test_each_warp_publishes_only_selected_words_and_packed_count_slot (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_each_warp_publishes_only_selected_words_and_packed_count_slot) ... ok
+test_equal_routes_need_only_existing_state_and_first_scale_reads (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_equal_routes_need_only_existing_state_and_first_scale_reads) ... ok
+test_no_local_routes_read_no_stale_scale_slots (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_no_local_routes_read_no_stale_scale_slots) ... ok
+test_only_lane_zero_publishes_before_existing_warp_barrier (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_only_lane_zero_publishes_before_existing_warp_barrier) ... ok
+test_scales_changed_at_same_addresses_replace_previous_batch (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_scales_changed_at_same_addresses_replace_previous_batch) ... ok
+test_selected_raw_bits_match_previous_quantizer_inputs (test_glm53_ep_route_scale_cache.RouteScaleCacheTests.test_selected_raw_bits_match_previous_quantizer_inputs) ... ok
+test_actual_histogram_and_producer_skip_poison_and_preserve_valid_weight_bits (test_glm53_ep_route_scale_cache.RouteWeightReadTests.test_actual_histogram_and_producer_skip_poison_and_preserve_valid_weight_bits) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.365s
+
+OK

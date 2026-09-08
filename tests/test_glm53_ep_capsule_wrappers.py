@@ -238,11 +238,11 @@ class CpuWrapperTests(unittest.TestCase):
 
 
 class GpuWrapperTests(unittest.TestCase):
-    def test_every_remap_moe_and_sanitizer_cell_uses_cpu15_capsule_identity(self):
+    def test_every_remap_moe_and_sanitizer_cell_uses_cpu16_capsule_identity(self):
         with gpu_fixture() as h:
             self.assertEqual(gpu.main(), 0)
             self.assertEqual(len(h.commands), 10)
-            self.assertIn("cpu15/local/result.json", str(gpu.CPU_EVIDENCE))
+            self.assertIn("cpu16/local/result.json", str(gpu.CPU_EVIDENCE))
             self.assertLess(h.events.index("proof"), h.events.index("inventory"))
             self.assertGreater(h.proof.call_count, len(h.commands))
             for command in h.commands:

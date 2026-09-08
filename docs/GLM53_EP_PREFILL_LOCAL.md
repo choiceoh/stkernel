@@ -385,11 +385,30 @@ CPU15's matching runtime/source receipt, explicit PASS/complete and successful
 final recheck; a failed result with full artifacts is rejected. Local focused
 contracts and independent review pass. Actual capsule-bound compiler and GPU
 results are recorded separately when executed, not inferred from v6.
-CPU15 source `30608530` and its bundle are fixed. A bounded no-GPU readiness
-controller is waiting for the unchanged 12 GiB head-memory guard and will
-submit one normal CPU job. Its 21:45 snapshot had 8.60 GiB available; no
-CPU15 compile or full GPU job had run. Actual evidence, not the readiness
-controller or the expected 129-test count, determines admission.
+CPU15 source `30608530` and its bundle stayed fixed. The bounded readiness
+controller submitted once at 21:53:07 after the unchanged 12 GiB memory guard
+passed, then exited. Actual CuTe and all 24 remap compiles completed with the
+same PTX as CPU14; CuTe cubin also matches. The 129-test suite had one error
+and no skips: the old sanitizer ordering test omitted the new required CLI
+arguments. Its [original failure](../measurements/glm53_ep_local_20260908/cpu15/failed-compile/README.md)
+and all 58 job files are preserved. Runtime identity rechecked successfully,
+but the incomplete FAIL receipt cannot admit GPU work. The corrected fixture
+must now reach the intended sanitizer preflight and prove no service or GPU
+process action follows its failure.
+
+The subsequent CPU16 candidate caches the row-only M128 SFA offset in the
+unused physical-row slots 8–15 of each warp's existing 32-word shared region.
+Lane 0 computes each base after row allocation. Both equal- and varied-scale
+paths load that base and combine only the SF-column fields. Physical rows
+retain slots 0–7, and raw scales/count state remain in their separate region.
+The existing warp publication and next-batch CTA barrier cover these writes;
+no buffer, launch or barrier is added. This trades repeated integer address
+work for one producer store and an extra broadcast shared load per consumer
+iteration. Compiler and GPU results must determine the actual benefit.
+The nonnegative row-count prefix also uses unsigned M128 ceil division,
+removing unnecessary signed-division correction without changing task order.
+CPU16 is the new source-bound receipt selected by the offline runner; CPU15
+is historical partial evidence and is never overwritten or retried.
 
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).

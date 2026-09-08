@@ -232,9 +232,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
             while expert_idx < num_experts:
                 expert_tile_base[expert_idx] = tile_acc
                 rows = row_counts[expert_idx]
-                tile_acc += (rows + Int32(self.tile_shape_mnk[0]) - Int32(1)) // Int32(
-                    self.tile_shape_mnk[0]
-                )
+                # E72/top8/T<=16384 gives 0<=rows<=131072. M128 is
+                # admitted above, so unsigned ceil has no signed correction.
+                tile_acc += Int32((Uint32(rows) + Uint32(127)) >> Uint32(7))
                 expert_idx += Int32(1)
             expert_tile_base[num_experts] = tile_acc
 
@@ -376,6 +376,24 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         route_phys_rows_addr + route_slot * Int32(4),
                                         phys_row,
                                     )
+                                    # Slots 0..7 retain physical rows. The
+                                    # unused 8..15 slots cache their row-only
+                                    # M128 scale offsets once per route, before
+                                    # every lane visits its eight SF blocks.
+                                    # H4096/top8/T<=16384 keeps these exact
+                                    # nonnegative byte offsets below 2**31.
+                                    route_scale_row_base = Int32(
+                                        (Uint32(phys_row) >> Uint32(7))
+                                        * Uint32(num_k_tiles * Int32(512))
+                                        + (Uint32(phys_row) & Uint32(31)) * Uint32(16)
+                                        + ((Uint32(phys_row) >> Uint32(5)) & Uint32(3))
+                                        * Uint32(4)
+                                    )
+                                    _st_shared_i32(
+                                        route_phys_rows_addr
+                                        + (route_slot + Int32(8)) * Int32(4),
+                                        route_scale_row_base,
+                                    )
                                     selected_scale_bits = _ld_shared_i32(
                                         expert_scales_addr + expert_id * Int32(4)
                                     )
@@ -475,19 +493,16 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         ),
                                         packed64,
                                     )
-                                    # M128 scale layout is a bit permutation
-                                    # of nonnegative physical-row / SF indices.
-                                    # Explicit unsigned fields avoid signed
-                                    # quotient/remainder correction per route.
-                                    # H4096/top8/T<=16384 bounds the final byte
-                                    # offset below 2**31, so Int32 is exact.
+                                    scale_row_base = _ld_shared_i32(
+                                        route_phys_rows_addr
+                                        + (route_slot + Int32(8)) * Int32(4)
+                                    )
+                                    # The existing warp barrier publishes the
+                                    # cached row field. SF fields are disjoint;
+                                    # retain the exact M128 byte permutation.
                                     scale_offset = Int32(
-                                        (Uint32(phys_row) >> Uint32(7))
-                                        * Uint32(num_k_tiles * Int32(512))
+                                        Uint32(scale_row_base)
                                         + (Uint32(sf_idx) >> Uint32(2)) * Uint32(512)
-                                        + (Uint32(phys_row) & Uint32(31)) * Uint32(16)
-                                        + ((Uint32(phys_row) >> Uint32(5)) & Uint32(3))
-                                        * Uint32(4)
                                         + (Uint32(sf_idx) & Uint32(3))
                                     )
                                     scale_storage[scale_offset] = scale_byte
@@ -526,19 +541,13 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         ),
                                         packed64,
                                     )
-                                    # M128 scale layout is a bit permutation
-                                    # of nonnegative physical-row / SF indices.
-                                    # Explicit unsigned fields avoid signed
-                                    # quotient/remainder correction per route.
-                                    # H4096/top8/T<=16384 bounds the final byte
-                                    # offset below 2**31, so Int32 is exact.
+                                    scale_row_base = _ld_shared_i32(
+                                        route_phys_rows_addr
+                                        + (route_slot + Int32(8)) * Int32(4)
+                                    )
                                     scale_offset = Int32(
-                                        (Uint32(phys_row) >> Uint32(7))
-                                        * Uint32(num_k_tiles * Int32(512))
+                                        Uint32(scale_row_base)
                                         + (Uint32(sf_idx) >> Uint32(2)) * Uint32(512)
-                                        + (Uint32(phys_row) & Uint32(31)) * Uint32(16)
-                                        + ((Uint32(phys_row) >> Uint32(5)) & Uint32(3))
-                                        * Uint32(4)
                                         + (Uint32(sf_idx) & Uint32(3))
                                     )
                                     scale_storage[scale_offset] = scale_byte

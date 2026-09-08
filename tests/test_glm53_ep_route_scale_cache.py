@@ -73,6 +73,19 @@ class SourceCache:
                         and ast.unparse(node.test) == "local_topk > Int32(0)")
         token_body = next(node.body for node in ast.walk(method)
                           if isinstance(node, ast.If) and selected in node.body)
+        active_guard = next(node.test for node in ast.walk(method)
+                            if isinstance(node, ast.If) and node.body is token_body)
+        self.active_guard = compile(ast.Expression(active_guard), str(KERNEL), "eval")
+        batch_loop = next(node for node in ast.walk(method) if isinstance(node, ast.While)
+                          and uses_name(node.test, "produce_active"))
+        batch_barriers = [i for i, node in enumerate(batch_loop.body)
+                          if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                          and isinstance(node.value.func, ast.Attribute)
+                          and node.value.func.attr == "sync_threads"]
+        batch_dispatch = next(i for i, node in enumerate(batch_loop.body)
+                              if isinstance(node, ast.If) and any(child is selected
+                                  for child in ast.walk(node)))
+        self.batch_publication_order = (batch_barriers, batch_dispatch)
         producer = next(node for node in token_body if isinstance(node, ast.If)
                         and any(isinstance(child, ast.While)
                                 and uses_name(child.test, "topk_slot")
@@ -109,6 +122,24 @@ class SourceCache:
                         body=[copy.deepcopy(gs_assignment(branch.body))],
                         orelse=[copy.deepcopy(gs_assignment(branch.orelse))])
 
+        def address_loop(body):
+            loop = copy.deepcopy(next(node for node in body if isinstance(node, ast.While)
+                                      and uses_name(node.test, "cache_slot")))
+            names = {"route_slot", "phys_row", "scale_row_base", "scale_offset"}
+            loop.body = [node for node in loop.body if (
+                isinstance(node, ast.Assign) and any(
+                    isinstance(target, ast.Name) and target.id in names
+                    or isinstance(target, ast.Subscript) and uses_name(target, "scale_storage")
+                    for target in node.targets)) or (
+                isinstance(node, ast.AugAssign) and uses_name(node.target, "cache_slot"))]
+            # Keep the source's actual loop condition, addresses, output index
+            # and increment. Only quantizer arithmetic is omitted here.
+            return loop
+
+        addresses = ast.If(test=copy.deepcopy(branch.test),
+                           body=[address_loop(branch.body)],
+                           orelse=[address_loop(branch.orelse)])
+
         def compiled(nodes):
             return compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])),
                            str(KERNEL), "exec")
@@ -116,6 +147,7 @@ class SourceCache:
         self.produce = compiled([copy.deepcopy(producer)])
         self.select = compiled(select)
         self.choose = compiled([choose])
+        self.addresses = compiled([addresses])
         self.memory = {}
         self.reads = []
         self.writes = []
@@ -152,7 +184,7 @@ class SourceCache:
                          expert_write_rows="expert_rows", token_map="tokens", token_weights="weights",
                          expert_tile_base=[expert * 64 for expert in range(72)],
                          self=SimpleNamespace(tile_shape_mnk=(128, 128, 128)),
-                         num_experts=72, num_topk=8)
+                         num_experts=72, num_topk=8, num_k_tiles=64)
 
     def experts(self, bits):
         for expert, word in enumerate(bits):
@@ -188,6 +220,35 @@ class SourceCache:
 
     def state(self, warp):
         return self.memory[self.SCALES + (warp * 32 + 31) * 4]
+
+    def consume_offsets(self, warp, sf_index):
+        writes = []
+
+        class Storage:
+            def __setitem__(self, index, value):
+                if value != 0xA5:
+                    raise AssertionError("scale payload changed")
+                writes.append(index)
+
+        namespace = dict(self.base, lane_id=sf_index % 32, route_slot_base=warp * 32,
+                         sf_idx=sf_index, cache_slot=0, scale_storage=Storage(), scale_byte=0xA5)
+        exec(self.select, namespace)
+        if namespace["local_topk"]:
+            exec(self.addresses, namespace)
+        return writes
+
+    def active(self, warp, batch_base, tokens):
+        return eval(self.active_guard, dict(Int32=int, warp_idx=warp,
+                    producer_batch_tokens=4, token_idx=batch_base + warp, num_tokens=tokens))
+
+
+def scalar_scale_offset(physical_row, sf_index):
+    """Independent original layout: divide into physical tile/row and K fields."""
+    physical_tile, tile_row = divmod(physical_row, 128)
+    k_tile, inner_k = divmod(sf_index, 4)
+    inner_m, outer_m = divmod(tile_row, 32)
+    return (physical_tile * 64 * 512 + k_tile * 512
+            + outer_m * 16 + inner_m * 4 + inner_k)
 
 
 def old_quantizer_inputs(selected):
@@ -314,6 +375,7 @@ class RouteScaleCacheTests(unittest.TestCase):
         expected_writes = {
             base + (warp * 32 + slot) * 4
             for base in (cache.ROWS, cache.SCALES) for warp in range(4) for slot in range(8)
+        } | {cache.ROWS + (warp * 32 + slot) * 4 for warp in range(4) for slot in range(8, 16)
         } | {cache.SCALES + (warp * 32 + 31) * 4 for warp in range(4)}
         self.assertEqual({address for address, _ in cache.writes}, expected_writes)
         self.assertEqual(len(cache.writes), len(expected_writes))
@@ -394,9 +456,9 @@ class RouteScaleCacheTests(unittest.TestCase):
             cache.writes.clear()
             cache.allocate(0, list(range(count)))
             self.assertEqual(cache.reads, [cache.EXPERTS + expert * 4 for expert in range(count)])
-            # Each selected route publishes its row and raw scale; packed
-            # equality shares the existing single state store for the token.
-            self.assertEqual(len(cache.writes), count * 2 + 1)
+            # Each selected route publishes row, row-only SFA base and raw
+            # scale; equality still shares the single count-word store.
+            self.assertEqual(len(cache.writes), count * 3 + 1)
             for lane in range(32):
                 cache.reads.clear()
                 self.assertEqual(cache.consume(0, lane=lane), ([0x3F800000] * count, 1))
@@ -408,6 +470,9 @@ class RouteScaleCacheTests(unittest.TestCase):
         self.assertEqual(len(barriers), 1)
         self.assertLess(producer, barriers[0])
         self.assertLess(barriers[0], consumer)
+        batch_barriers, dispatch = cache.batch_publication_order
+        self.assertEqual(len(batch_barriers), 1)
+        self.assertLess(batch_barriers[0], dispatch)
         cache.experts([0x3F800000] * 72)
         for lane in range(1, 32):
             cache.allocate(0, list(range(8)), lane=lane)
@@ -415,6 +480,61 @@ class RouteScaleCacheTests(unittest.TestCase):
         self.assertEqual(cache.writes, [])
         self.assertEqual(cache.global_writes, [])
         self.assertEqual(cache.row_counts, [0] * 72)
+
+
+class RouteScaleAddressCacheTests(unittest.TestCase):
+    def test_actual_published_bases_and_both_consumers_cover_all_warps_counts_and_sf(self):
+        for bits in ([0x3F800000] * 72, [0x3F800000 + expert for expert in range(72)],
+                     [0x7FA12345] * 72):
+            cache = SourceCache()
+            cache.experts(bits)
+            for warp in range(4):
+                for count in range(9):
+                    routes = ([71, 0, 71, 1, 31, 32, 0, 5])[:count]
+                    # Unused route metadata is deliberately unreadable. The
+                    # actual producer must replace every consumed cache word.
+                    for slot in range(32):
+                        cache.memory[cache.ROWS + (warp * 32 + slot) * 4] = object()
+                    cache.allocate(warp, routes)
+                    rows = [cache.memory[cache.ROWS + (warp * 32 + slot) * 4]
+                            for slot in range(count)]
+                    for slot, row in enumerate(rows):
+                        self.assertEqual(cache.memory[cache.ROWS + (warp * 32 + slot + 8) * 4],
+                                         scalar_scale_offset(row, 0))
+                    for sf_index in range(256):
+                        self.assertEqual(cache.consume_offsets(warp, sf_index),
+                                         [scalar_scale_offset(row, sf_index) for row in rows])
+
+    def test_unwritten_and_stale_row_bases_cannot_hide_missing_publication(self):
+        cache = SourceCache()
+        cache.experts([0x3F800000 + expert for expert in range(72)])
+        for warp in range(4):
+            cache.allocate(warp, list(range(8)))
+            old = cache.consume_offsets(warp, 255)
+            cache.allocate(warp, [0])
+            # The row counter advances at the same shared addresses; a stale
+            # base would now produce the old row's scale address.
+            current = cache.consume_offsets(warp, 255)
+            self.assertNotEqual(current[0], old[0])
+            for slot in range(9, 16):
+                del cache.memory[cache.ROWS + (warp * 32 + slot) * 4]
+            self.assertEqual(cache.consume_offsets(warp, 255), current)
+            active_base = cache.ROWS + (warp * 32 + 8) * 4
+            del cache.memory[active_base]
+            with self.assertRaises(KeyError):
+                cache.consume_offsets(warp, 255)
+            cache.allocate(warp, [])
+            cache.reads.clear()
+            self.assertEqual(cache.consume_offsets(warp, 255), [])
+            self.assertEqual(cache.reads, [cache.SCALES + (warp * 32 + 31) * 4])
+
+    def test_actual_active_token_guard_excludes_odd_tail_and_idle_warps(self):
+        cache = SourceCache()
+        for tokens in (4096, 4097, 6912, 8192, 16384):
+            for batch in (0, tokens - tokens % 4, tokens + 4):
+                for warp in range(9):
+                    self.assertEqual(cache.active(warp, batch, tokens),
+                                     warp < 4 and batch + warp < tokens)
 
 
 if __name__ == "__main__":
