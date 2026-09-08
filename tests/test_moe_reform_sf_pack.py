@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 from pathlib import Path
 import random
 import sys
@@ -209,6 +210,49 @@ class DispatchContract(unittest.TestCase):
         for m in (1, 2, 6, 8):
             self.assertTrue(ns["_static_v2_decode_config"](
                 parse("t,r,sf6"), m)["reform_sf_pack"])
+
+
+class ProbeEvidenceContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "_sf6_correctness_probe", ROOT / "probes/moe_reform_sf6_check.py")
+        cls.probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.probe)
+
+    def test_observed_lane_distinguishes_active_fallback_and_prefill(self):
+        check = self.probe.check_launch_observations
+        active = dict(kind="static_v2", rows=6, reform=True, sf6=True)
+        check([active]*3, "sf6", 6)
+        fallback = dict(active, sf6=False)
+        check([fallback]*3, "sf6", 6, raw_fallback=True)
+        with self.assertRaises(AssertionError):
+            check([fallback]*3, "sf6", 6)
+        with self.assertRaises(AssertionError):
+            check([active]*3, "sf6", 6, raw_fallback=True)
+        prefill = dict(kind="static_v2", rows=16, reform=False, sf6=False)
+        check([prefill]*3, "sf6", 16)
+        with self.assertRaises(AssertionError):
+            check([dict(prefill, sf6=True)]*3, "sf6", 16)
+
+    def test_stock_and_capture_evidence_fail_closed(self):
+        check = self.probe.check_launch_observations
+        stock = dict(kind="stock", rows=6, reform=False, sf6=False)
+        check([stock]*3, "stock", 6)
+        for events in ([], [stock]*2, [stock, stock, dict(stock, kind="static_v2")]):
+            with self.assertRaises(AssertionError):
+                check(events, "stock", 6)
+
+    def test_nonfinite_or_negative_reference_cannot_relax_numeric_gate(self):
+        bound = self.probe.correctness_limit
+        self.assertEqual(bound(100., .1), 1.)
+        self.assertEqual(bound(10., .1), .4)
+        self.assertEqual(bound(0., 0.), 0.)
+        for peak, noise in ((float("nan"), 0.), (0., float("nan")),
+                            (float("inf"), 1.), (1., float("inf")),
+                            (-1., 0.), (1., -1.), (1., 1e308)):
+            with self.assertRaises(AssertionError):
+                bound(peak, noise)
 
 
 if __name__ == "__main__":

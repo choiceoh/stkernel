@@ -8,9 +8,32 @@ Both modes compile the actual production method used by both FC1 and FC2.
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
+
+
+def check_launch_observations(events, arm, rows, *, raw_fallback=False):
+    """Require the kernel actually selected during warmup AND capture."""
+    if len(events) < 3:
+        raise AssertionError((arm, rows, "missing two warmups and capture", events))
+    expected = dict(kind="stock" if arm == "stock" else "static_v2", rows=rows,
+                    reform=arm != "stock" and rows <= 8,
+                    sf6=arm == "sf6" and rows <= 8 and not raw_fallback)
+    if any(event != expected for event in events):
+        raise AssertionError((arm, rows, "wrong executed lane", expected, events))
+    return expected
+
+
+def correctness_limit(peak, noise):
+    """Preserve the existing stock gate, refusing nonfinite/negative bounds."""
+    if not math.isfinite(peak) or not math.isfinite(noise) or peak < 0 or noise < 0:
+        raise AssertionError(("invalid stock bound", peak, noise))
+    limit = max(4*noise, .01*peak)
+    if not math.isfinite(limit):
+        raise AssertionError(("overflowed stock bound", peak, noise))
+    return limit
 
 
 def main() -> int:
@@ -36,6 +59,9 @@ def main() -> int:
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_reform_sf_pack as sf6
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x.moe_static_kernel_v4 import MoEStaticKernelV4
     from flashinfer.cute_dsl.fp4_common import shared_ptr_to_u32
+    assert md._GLM53_B12X_FORCE_BACKEND == "static", "forced static path was not latched"
+    assert md._GLM53_B12X_STATIC_V2 is None, "stock base must explicitly be cell 0"
+    assert md._FORCED_BACKEND is None, "unexpected private backend override"
 
     if args.cpu:
         md.get_num_sm = lambda dev=None: 48
@@ -130,33 +156,92 @@ def main() -> int:
         # M>8 layout. Same source baseline, independent stock oracle, mutated
         # inputs/routes and repeated graph replay; no timing output.
         import moe_decode_stream_probe as fixture
+        torch.manual_seed(906)
         w13, sf13, w2, sf2 = fixture.expert_set(torch.Generator().manual_seed(906))
         scales = torch.ones(fixture.E, device="cuda")
         wrapper = fixture.served_wrapper()
         owners, executables = [], []
-        for m, unique in ((1,8), (2,16), (6,8), (6,40), (6,48),
-                           (8,8), (8,40), (8,64), (16,40)):
+        # Different tensor/storage identity protects captured normal-case
+        # graphs. Both byte codes are finite, positive E4M3; their span is
+        # 66, so sf6 must decline while the ordinary kernel remains valid.
+        fallback_sf2 = torch.empty_like(sf2)
+        fallback_bytes = fallback_sf2.view(torch.uint8).reshape(-1)
+        fallback_bytes[0::2] = 0x01
+        fallback_bytes[1::2] = 0x42
+        assert bool(torch.isfinite(fallback_sf2).all()), "fallback fixture must remain finite"
+        get_v2, get_stock = md._get_static_kernel_v2, md._get_static_kernel
+        observed = []
+
+        def observe_v2(*call_args, **kwargs):
+            result = get_v2(*call_args, **kwargs)
+            rows = int(call_args[2])
+            config = md._static_v2_decode_config(kwargs["config"], rows)
+            observed.append(dict(kind="static_v2", rows=rows,
+                                 reform=bool(config["decode_reform"]),
+                                 sf6=bool(config.get("reform_sf_pack"))))
+            executables.append(result)  # Own every captured function handle.
+            return result
+
+        def observe_stock(*call_args, **kwargs):
+            result = get_stock(*call_args, **kwargs)
+            observed.append(dict(kind="stock", rows=int(call_args[2]), reform=False, sf6=False))
+            executables.append(result)
+            return result
+
+        md._get_static_kernel_v2, md._get_static_kernel = observe_v2, observe_stock
+        cases = [(m, u, False) for m, u in ((1,8), (2,16), (6,8), (6,40), (6,48),
+                                             (8,8), (8,40), (8,64), (16,40))]
+        cases.append((6, 40, True))
+        for m, unique, raw_fallback in cases:
             fixture.T = m
             ids, weights = fixture._routing(unique)
+            original_ids, original_weights = ids.clone(), weights.clone()
             x = torch.randn(m, 4096, device="cuda", dtype=torch.bfloat16)*.5
             outputs = {arm: torch.empty_like(x) for arm in ("stock", "baseline", "sf6")}
             graphs = {}
+            lane_proof = {}
+            current_sf2 = fallback_sf2 if raw_fallback else sf2
             for arm, spec in (("stock", "0"), ("baseline", "t,r"), ("sf6", "t,r,sf6")):
                 md._STATIC_V2_OVERRIDE = md._parse_glm53_static_v2(spec)
+                before = len(observed)
 
                 def run(arm=arm):
-                    wrapper.run(x,w13,sf13,w2,sf2,ids,weights,w1_alpha=scales,
+                    wrapper.run(x,w13,sf13,w2,current_sf2,ids,weights,w1_alpha=scales,
                                 w2_alpha=scales,fc2_input_scale=scales,out=outputs[arm])
 
                 graphs[arm] = fixture._graph(run, torch.cuda.Stream())
-                owners.append(wrapper._weight_views)
-                executables.extend(md._STATIC_V2_KERNEL_CACHE.values())
+                lane_proof[arm] = check_launch_observations(
+                    observed[before:], arm, m, raw_fallback=raw_fallback)
+                views = wrapper._weight_views
+                owners.append(views)
+                # The independent stock kernel must always read the untouched
+                # row-major weights. The two tile consumers receive exact
+                # copies; no arm may relayout the shared source in place.
+                assert not getattr(w13, "_b12x_tile_major", False), "stock W13 source was retiled"
+                assert not getattr(w2, "_b12x_tile_major", False), "stock W2 source was retiled"
+                assert views.tiled == (arm != "stock"), (arm, "wrong weight layout")
+                if arm == "stock":
+                    assert views.w13_fp4.data_ptr() == w13.data_ptr(), "stock W13 pointer changed"
+                    assert views.down_fp4.data_ptr() == w2.data_ptr(), "stock W2 pointer changed"
+                else:
+                    for source, tiled, width in ((w13, views.w13_tiled_storage, 256),
+                                                 (w2, views.w2_tiled_storage, 64)):
+                        e, rows, kb = source.shape
+                        expected = source.view(e, rows, kb//width, width).permute(0,2,1,3)
+                        assert torch.equal(tiled, expected), (arm, "tiled weight bytes differ")
                 if arm == "sf6":
-                    assert wrapper._weight_views.reform_scales.enabled, "synthetic sf6 declined"
+                    scale_owner = views.reform_scales
+                    assert scale_owner is not None, "sf6 owner was never prepared"
+                    assert scale_owner.enabled != raw_fallback, (m, raw_fallback, scale_owner.reason)
+                    if raw_fallback:
+                        assert "fc2" in scale_owner.reason, "wrong fallback reason"
+                        assert views.sfb1_packed is None and views.sfb2_packed is None
+            numeric = []
             for replay in range(8):
                 x.copy_(torch.randn_like(x)*(.125+replay*.1))
-                ids.add_(17).remainder_(fixture.E)
-                if replay == 7:
+                ids.copy_((original_ids + 17*(replay+1)) % fixture.E)
+                weights.copy_(original_weights.roll(replay, dims=1))
+                if replay == 6:
                     weights.zero_()
                 graphs["stock"].replay(); torch.cuda.synchronize()
                 ref = outputs["stock"].clone()
@@ -164,18 +249,29 @@ def main() -> int:
                 graphs["stock"].replay(); torch.cuda.synchronize()
                 assert bool(torch.isfinite(outputs["stock"]).all()), (m, unique, "stock replay finite")
                 noise = float((ref.float()-outputs["stock"].float()).abs().max())
-                limit = max(4*noise, .01*float(ref.float().abs().max()))
-                import math
-                assert math.isfinite(noise) and math.isfinite(limit), (m, unique, noise, limit)
+                peak = float(ref.float().abs().max())
+                limit = correctness_limit(peak, noise)
+                if replay == 6:
+                    assert torch.count_nonzero(ref) == 0, "stock zero-route reference"
+                else:
+                    assert peak > 0, "stock collapsed to zero with nonzero routes"
                 for arm in ("baseline", "sf6"):
                     graphs[arm].replay(); torch.cuda.synchronize()
                     got = outputs[arm]
                     assert bool(torch.isfinite(got).all()), (m, unique, arm, "finite")
                     error = float((got.float()-ref.float()).abs().max())
-                    assert error <= limit, (m, unique, arm, error, limit)
-                    if replay == 7:
+                    assert math.isfinite(error) and error <= limit, (m, unique, arm, error, limit)
+                    if replay == 6:
                         assert torch.count_nonzero(got) == 0, "zero route output"
-            report["gates"].append({"m": m, "unique": unique, "moe_replays": 8})
+                    else:
+                        assert torch.count_nonzero(got) > 0, "zero-state was not repopulated"
+                    numeric.append(dict(replay=replay, arm=arm, max_error=error,
+                                        stock_noise=noise, limit=limit))
+            report["gates"].append({"m": m, "unique": unique, "raw_fallback": raw_fallback,
+                                    "moe_replays": 8, "lanes": lane_proof, "numeric": numeric})
+        md._get_static_kernel_v2, md._get_static_kernel = get_v2, get_stock
+        md._STATIC_V2_OVERRIDE = None
+        report["max_allocated_bytes"] = torch.cuda.max_memory_allocated()
     report["status"] = "PASS"
     report["scope"] = "correctness/compile only; no serving or speed verdict"
     text = json.dumps(report, indent=2)

@@ -2,8 +2,8 @@
 
 This follow-up implements three opt-in candidates above the adopted AR/MHC
 consumer path. `VLLM_GLM53_AR_CONSUMER_PDL=1` and `t,r` remain the defaults.
-No additional serving-speed measurement is scheduled. CPU checks and compiler
-results establish host contracts and buildability; device numerics, transport
+The operator resumed GPU correctness and onepass testing on 2026-09-09.
+CPU checks and compiler results establish host contracts and buildability; device numerics, transport
 ordering under RDMA, sanitizer results and step-speed gains remain separate.
 
 | Candidate | Selection | Removed work |
@@ -73,11 +73,47 @@ the existing u/v/t/q ABI and the actual 2048/4096-byte expansion helper.
 an individual failed stage for a focused retry. Every invocation needs a
 fresh output directory; receipts bind the source commit and log hashes.
 
-GPU validation, when explicitly resumed, must exercise the new transport
+GPU validation must exercise the new transport
 flags in all four ranks and the full `t,r,sf6` kernel, including fallback,
 changed inputs and retained graph lifetimes. The existing baseline-only AR
 GPU runner does not establish correctness of enabled follow-up flags.
 Prior #473 GPU receipts cannot validate changed transport code or its header.
+
+## Authorized GPU and onepass campaign
+
+`run_decode_next_campaign.sh` uses one supervised fleet boot reservation.
+It first stops serving after the normal idle gate, then runs a fresh four-rank
+plain correctness cohort with both transport flags enabled and a local full-MoE
+SF6 correctness gate. These collect no microbenchmark timing. Sanitizer cohorts
+are separately selectable in the transport runner and are not scheduled here.
+Actual mode/capability, mixed launch geometry, changed-input graph replay,
+zero/reactivated experts, exact scale expansion and raw fallback must pass.
+
+The same frozen overlay is then deployed once. `bench/chain.sh` executes exactly
+one all-three candidate boot and one empty-knob baseline boot. Each runs the
+unchanged 2K/32K/128K onepass quality/prefill workload and fixed 3 x 2048 decode.
+Four-rank identity before/after and continuous 10 GiB MemAvailable guards retain
+source, image, configuration, chat-template, actual lane and memory evidence.
+GPU correctness uses bounded owned containers and fresh caches. The baseline
+keeps the adopted consumer PDL path and `t,r`; only the three candidate options
+differ. Candidate-only KV or GMU adjustments are not allowed.
+
+The primary rate is `decode.fixed_pooled_step_s`; its reciprocal is ms/step.
+Window medians and prefill are reported separately, with ordered request hashes,
+SSE channels, quality and exclusivity gates. One boot per arm is a bounded
+comparison, not a repeatability or significance claim. Cold-compile-prefill
+values are not comparable when the arms have different compile states.
+The campaign stops its own loopback server at exit. Production recovery remains
+with the central idle controller. This test does not promote defaults or merge.
+
+From a clean composed checkout on srv2, preserve the existing reservation order:
+
+```bash
+REPO="$PWD" bash /home/choiceoh/stkernel/bench/fleet.sh run --gpu --detach \
+  --prepare probes/decode_next_prepare.json decode-next-0909 100 \
+  'PR498 compact+inline+SF6 GPU correctness then A/B onepass, one boot each' \
+  -- bash probes/run_decode_next_campaign.sh
+```
 
 ## Recorded CPU validation: 2026-09-09
 
