@@ -328,6 +328,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                         # reciprocal work.  Hoist it out of the block loop,
                         # but do not introduce a 32x broadcast optimization.
                         route_gs = cute.make_rmem_tensor((8,), cutlass.Float32)
+                        first_gs = cutlass.Float32(0.0)
+                        route_scales_equal = Int32(1)
                         cache_slot = Int32(0)
                         while cache_slot < local_topk:
                             route_slot = route_slot_base + cache_slot
@@ -343,17 +345,14 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                     gs_value = rcp_approx_ftz(gs_value)
                                 else:
                                     gs_value = cutlass.Float32(1.0) / gs_value
+                            # Compare while the transformed scale is already
+                            # in a register; do not reread the route cache.
+                            if cache_slot == Int32(0):
+                                first_gs = gs_value
+                            elif gs_value != first_gs:
+                                route_scales_equal = Int32(0)
                             route_gs[cache_slot] = gs_value
                             cache_slot += Int32(1)
-
-                        # Expert scales are constant across this token's SF
-                        # blocks. Compare once, not once per 16-column block.
-                        route_scales_equal = Int32(1)
-                        scale_idx = Int32(1)
-                        while scale_idx < local_topk:
-                            if route_gs[scale_idx] != route_gs[0]:
-                                route_scales_equal = Int32(0)
-                            scale_idx += Int32(1)
 
                         sf_idx = lane_id
                         while sf_idx < sf_blocks_per_row:
