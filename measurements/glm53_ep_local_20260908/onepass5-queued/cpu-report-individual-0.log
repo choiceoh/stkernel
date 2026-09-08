@@ -1,0 +1,11 @@
+test_actual_apply_reaches_single_padded_call_for_all_short_batches (test_glm53_ep_short_decode.ShortDecodeTests.test_actual_apply_reaches_single_padded_call_for_all_short_batches) ... ok
+test_all_remote_rows_clear_previous_staging_output (test_glm53_ep_short_decode.ShortDecodeTests.test_all_remote_rows_clear_previous_staging_output) ... ok
+test_disabled_path_and_invalid_tail_geometry_retain_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_disabled_path_and_invalid_tail_geometry_retain_fallback) ... ok
+test_padding_allocation_failure_keeps_disjoint_fixed_fallback (test_glm53_ep_short_decode.ShortDecodeTests.test_padding_allocation_failure_keeps_disjoint_fixed_fallback) ... ok
+test_proof_requires_completed_coherent_call_counts (test_glm53_ep_short_decode.ShortDecodeTests.test_proof_requires_completed_coherent_call_counts) ... ok
+test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row (test_glm53_ep_short_decode.ShortDecodeTests.test_spec5_graph_shapes_reuse_staging_and_preserve_every_real_row) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.202s
+
+OK
