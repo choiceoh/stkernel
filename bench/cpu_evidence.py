@@ -27,7 +27,7 @@ FLEET_AUDIT = {'tests/test_fleet_admission.py': 'd452bec3a6ae34be36547174f956d27
 # Complete logic/deployment gates read profile/module READMEs and the campaign
 # runbook, all retained by fleet_source. The 28e5e57b warmup/proof assertion
 # changes retain the same inputs; changed test or runner disables pruning.
-LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': '195882797c4ba33e8f2c056497195911029e178cb305fb643875cbb61bd73f11', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
+LOGIC_SOURCE_AUDIT = {'tests/test_logic.py': 'cc3bead52f151f5f19f93cc05e60a72987d24581e7395fea7b48748f783c141c', 'tests/test_glm53_overlay_sync.py': 'bafa1e1e9ebcb964d36f08030f5bcd9309403b02dc2684f604c40a62b8c2563a', 'bench/cpu_checks.py': 'd3211e628d73f4219df681ea7fa89347d4e757c0de62e105850e0923262f14b1', 'bench/cpu_unittest.py': 'd61adde7318ade385523c2a3aca9b404e5b4bbc5e363cffb6bf58656d12bfade'}
 
 
 def sha(path):

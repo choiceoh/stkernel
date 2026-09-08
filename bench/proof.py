@@ -32,7 +32,24 @@ HEAD_LOG = os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log")
 
 
 def _startup_proof(knob: str, log: str) -> bool | None:
-    """Composite startup evidence; armed or partial progress is insufficient."""
+    """Composite execution evidence; armed or partial progress is insufficient."""
+    if knob == "VLLM_B12X_EP_ZERO_WEIGHT_MICRO":
+        prefix = "b12x EP zero-weight micro: "
+        lines = [line.split(prefix, 1)[1].strip() for line in log.splitlines()
+                 if prefix in line]
+        if not lines:
+            return False
+        for line in lines:
+            match = re.fullmatch(
+                r"([0-9]+) tokens -> ([0-9]+) top-k=8 calls "
+                r"\(8 tokens / 64 routed pairs each; padded tail=([01])\)", line)
+            if match is None:
+                return False
+            tokens, calls, padded = map(int, match.groups())
+            if not (1 <= tokens <= 80 and calls == (tokens + 7) // 8
+                    and padded == int(tokens % 8 != 0)):
+                return False
+        return True
     if knob == "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE":
         skipped = ("[glm53-graph-profile] skipped unused estimate rank=0; "
                    "model/MM profile and real graph warmup retained")

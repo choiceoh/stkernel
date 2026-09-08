@@ -453,19 +453,23 @@ def b12x_ep_micro_tail(num_tokens, top_k, num_local_experts, *, enabled):
     prefill in the mix this lane saw 9, 36, 49, 52, 60 tokens and only 8/16/32
     were admitted -- everything else fell to the pair path at up to 60 calls
     per layer, which is what collapsed C>=2. Cover the aligned prefix with
-    micro calls and leave only the short tail to that fallback: 49 tokens
-    becomes 6 micro calls plus one tail, not 49 pair calls.
+    micro calls and pad the short tail with the existing staging path: 49
+    tokens becomes 6 micro calls plus one padded tail. A batch shorter than
+    eight tokens is entirely a tail, including SPEC_K=5's six-token verify.
 
     The split is a function of the token count alone, so a captured graph
     replays the same launches.
     """
-    chunks = b12x_ep_zero_weight_micro_chunks(
-        num_tokens, top_k, num_local_experts, enabled=enabled
-    )
-    if not chunks:
-        return None
-    covered = chunks[-1][1]
     tokens = int(num_tokens)
+    if not (
+        enabled
+        and 1 <= tokens <= B12X_EP_ZERO_WEIGHT_MICRO_MAX_TOKENS
+        and int(top_k) == B12X_EP_ZERO_WEIGHT_MICRO_TOPK
+        and int(num_local_experts) == B12X_EP_ZERO_WEIGHT_MICRO_EXPERTS
+    ):
+        return None
+    chunk = B12X_EP_ZERO_WEIGHT_MICRO_CHUNK_TOKENS
+    covered = (tokens // chunk) * chunk
     return (covered, tokens) if covered < tokens else None
 
 
@@ -1682,7 +1686,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             self._kernel_num_experts,
             enabled=self._ep_zero_weight_micro,
         )
-        if not chunks:
+        tail = b12x_ep_micro_tail(
+            topk_ids.size(0),
+            topk_ids.size(1),
+            self._kernel_num_experts,
+            enabled=self._ep_zero_weight_micro,
+        )
+        if not chunks and tail is None:
             raise RuntimeError("zero-weight micro called outside its exact shape gate")
         if self._ep_zero_weight_workspace is None:
             raise RuntimeError(
@@ -1692,11 +1702,6 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
             launch_sm120_moe,
         )
 
-        logger.info_once(
-            "b12x EP zero-weight micro: %d tokens -> %d top-k=8 calls "
-            "(8 tokens / 64 routed pairs each)",
-            topk_ids.size(0), len(chunks),
-        )
         for lo, hi in chunks:
             launch_sm120_moe(
                 a=hidden_states[lo:hi],
@@ -1723,17 +1728,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 source_format="modelopt",
                 _workspace=self._ep_zero_weight_workspace,
             )
-        tail = b12x_ep_micro_tail(
-            topk_ids.size(0),
-            topk_ids.size(1),
-            self._kernel_num_experts,
-            enabled=self._ep_zero_weight_micro,
-        )
-        if tail is not None and self._ep_tail_padded_micro(
+        if tail is not None and not self._ep_tail_padded_micro(
             output, hidden_states, w1, w2, topk_ids, topk_weights, tail
         ):
-            return output
-        if tail is not None:
             lo, hi = tail
             # The micro calls above wrote output[0:lo] and touched no other
             # row, so the fallback runs on a disjoint view: everything it does
@@ -1747,6 +1744,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 topk_ids[lo:hi],
                 topk_weights[lo:hi],
             )
+            return output
+        logger.info_once(
+            "b12x EP zero-weight micro: %d tokens -> %d top-k=8 calls "
+            "(8 tokens / 64 routed pairs each; padded tail=%d)",
+            topk_ids.size(0), len(chunks) + int(tail is not None),
+            int(tail is not None),
+        )
         return output
 
     def _ep_tail_padded_micro(
@@ -1816,6 +1820,9 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
     def _ep_tail_buffers(self, chunk, hidden_states, topk_ids, topk_weights):
         """Lazily pin the one-chunk staging tensors. None if shapes drift."""
+        # Token count is deliberately absent: an 18-token capture's two-row
+        # tail and a later six-token capture keep these same strong references.
+        # Each launch rewrites all eight staging rows before consuming them.
         key = (
             chunk,
             hidden_states.size(1),
@@ -2446,7 +2453,13 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 self._kernel_num_experts,
                 enabled=self._ep_zero_weight_micro,
             )
-            if zero_micro_chunks:
+            zero_micro_tail = b12x_ep_micro_tail(
+                topk_ids.size(0),
+                topk_ids.size(1),
+                self._kernel_num_experts,
+                enabled=self._ep_zero_weight_micro,
+            )
+            if zero_micro_chunks or zero_micro_tail is not None:
                 return self._apply_ep_zero_weight_micro(
                     output, hidden_states, w1, w2, topk_ids, topk_weights
                 )

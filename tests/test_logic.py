@@ -5534,10 +5534,17 @@ def test_b12x_micro_chunk_width() -> None:
     for tokens in (8, 16, 24, 32, 80):
         check(tail(tokens, 8, 72, enabled=True) is None,
               f"{tokens} tokens is aligned -- no tail")
-    for tokens in (0, 1, 7, 81, 8192):
+    for tokens in range(1, stock):
+        check(chunks(tokens, 8, 72, enabled=True) == ()
+              and tail(tokens, 8, 72, enabled=True) == (0, tokens),
+              f"{tokens} tokens must use one padded short-only batch")
+        for enabled, topk, experts in ((False, 8, 72), (True, 4, 72), (True, 8, 71)):
+            check(tail(tokens, topk, experts, enabled=enabled) is None,
+                  "short-only padding retains the exact experiment gate")
+    for tokens in (0, 81, 8192):
         check(chunks(tokens, 8, 72, enabled=True) == ()
               and tail(tokens, 8, 72, enabled=True) is None,
-              f"{tokens} tokens must fail closed (below one chunk, or past the "
+              f"{tokens} tokens must fail closed (empty, or past the "
               "compact cutover where dropping remote slots is cheaper)")
     check(chunks(8, 8, 72, enabled=False) == (), "disabled yields no plan")
     check(chunks(8, 4, 72, enabled=True) == (), "top_k must be 8")

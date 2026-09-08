@@ -1,5 +1,34 @@
 # Full-token expert-local prefill
 
+## Decode regression follow-up
+
+Default adoption is conditional on removing the recorded decode regression.
+The proposed profile promotion was withdrawn before commit, merge or deploy;
+EP/local/compact-warmup defaults remain off.
+
+Onepass4's real SPEC_K=5 graphs contain 6/12/18/24 tokens. The fixed EP
+fallback expands each token into eight routed rows and executes 6/12/18/24
+top-k=1 micro calls per layer. The stock-top-k experiment admits only
+8/16/32-token shapes. The separate zero-weight micro experiment previously
+handled full 8-token prefixes and their tails but missed a whole batch below
+eight tokens, including the normal six-token verify step.
+
+The follow-up connects that existing padded-tail path for 1..7 tokens as
+well. With `VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1`, the real graph shapes become
+1/2/3/3 top-k=8 calls. Complete prefixes retain their original contract; every
+short tail is staged as eight tokens with zero router weights on duplicate
+padding rows. Only real output rows are copied back. The existing exact
+E72/M8/H4096/I2048/top8 dispatcher, arithmetic, 64-row workspace and fixed
+fallback remain unchanged. Staging allocation failure keeps the fallback and
+does not emit the completed zero-weight-micro proof marker.
+
+CPU tests execute the actual wrapper routing and staging methods with a row
+storage model: all short sizes, all-remote rows, changed input reuse, the
+SPEC_K=5 graph sequence, failed padding allocation and explicit opt-out.
+They do not establish GPU numerics or a recovered decode rate. The next
+canonical B1/A/B2 onepass must measure output tok/s and prefill TTFT together;
+the earlier numerical failure and onepass4 performance verdict remain intact.
+
 Experimental `VLLM_GLM53_EP_PREFILL_LOCAL=1` plus `ENABLE_EP=1` changes the
 MoE execution geometry from 288 experts with I512 TP shards per GPU to 72
 complete I2048 experts per GPU. Attention retains TP4. The exact EP4/DP1,
