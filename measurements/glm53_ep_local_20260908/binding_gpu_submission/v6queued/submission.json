@@ -1,0 +1,52 @@
+{
+  "source": "/home/choiceoh/stkernel-ep-binding-gpu0908-6b",
+  "scheduler": "/home/choiceoh/stkernel",
+  "scheduler_revision": "cf405a7e03bd8ac95933d76f590fdfc4b0685e99",
+  "revision": "63f56a54dbb91e994456b519a53b679963a93583",
+  "approved_fixes": [
+    "d95a2cdb46f2446bd4b58f7d5969b42c895f0b3d",
+    "4a2c960ad632596ca3224ead88da43160012d393"
+  ],
+  "cpu_evidence_sha256": "b68bcead10b78d19c3df09f0d765cf485dffd79b0ce3377ca379921d1c4ee7c2",
+  "capsule_root": "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "capsule_cpu_artifacts": {
+    "capsule-cpu-receipt.json": "d85e9203ac41dbb265db57da0ee6793c7fa3372013bf276662b64a65ee6c42f8",
+    "capsule-cpu-result.json": "611cd509d98b9a8075a92c4d01e2a4ef0de9f50856d08430c568b34f788ef9cd",
+    "capsule-cpu-container.log": "35e598bf1215584657daf6dc174f832c92e3c5b5940d260fed8b4c5f3d7961b8",
+    "capsule-cpu-base-distributions.json": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1",
+    "capsule-cpu-distribution-resolution.json": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2"
+  },
+  "pair_sources": {
+    "probes/glm53_ep_bindings_pair_check.py": "6fcbc5efc61e45397f0e2a8ef67f533675d002cb3d5129e225db656f72c88ed0",
+    "probes/run_glm53_ep_bindings_pair_offline.py": "420aadfa5b804783b285488b19a545fda60de305d861fd6dd9634d9cab944587"
+  },
+  "command": [
+    "bash",
+    "/home/choiceoh/stkernel/bench/fleet.sh",
+    "run",
+    "--gpu",
+    "epbindinggpu0908v6",
+    "8",
+    "Fresh binding 13.3.1 vs capsule13.0.3; CPU2 import PASS, exact source/capsule and incoming restore",
+    "--",
+    "python3",
+    "-B",
+    "/home/choiceoh/stkernel-ep-binding-gpu0908-6b/probes/run_glm53_ep_bindings_pair_offline.py",
+    "--revision",
+    "63f56a54dbb91e994456b519a53b679963a93583",
+    "--out",
+    "/tmp/glm53-ep-binding-gpu0908-6/capture",
+    "--capsule-root",
+    "/tmp/glm53-bindings-capsule-cpu0908-2/capsule",
+    "--manifest-sha256",
+    "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab"
+  ],
+  "created": 1788868346.0558858,
+  "diagnostic_only": true,
+  "performance_acceptance": false,
+  "full_gpu_acceptance": false,
+  "enqueue_while_other_holder_allowed": true,
+  "go_time_lifecycle_guards_unchanged": true,
+  "supersedes": "v5 completed with34 API lookup errors and exact restoration; v6 is fresh same-image pinned binding A/B, baseline failure remains failure"
+}

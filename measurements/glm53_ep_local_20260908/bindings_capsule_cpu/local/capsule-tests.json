@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/Users/ost/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_glm53_ep_bindings_capsule.py",
+    "-v"
+  ],
+  "cwd": "/Users/ost/.worktrees/stkernel2/glm53-prefill-moe-pipeline-20260908",
+  "tests": 12,
+  "skipped": 0,
+  "exit_code": 0,
+  "packaging_version": "26.3",
+  "output_capture": "Preserved verbatim test lines from the completed tool response; command/header/exit code added; no rerun",
+  "files": {
+    "probes/glm53_ep_bindings_capsule.py": {
+      "sha256": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+      "size": 15356
+    },
+    "tests/test_glm53_ep_bindings_capsule.py": {
+      "sha256": "e24b1dae1a3bdc67ed41a33b44d25e4bb6274fafaa7781f30ac0cbc8c335b6fb",
+      "size": 13743
+    },
+    "/tmp/glm53-ep-bindings-capsule-tests.log": {
+      "sha256": "661f19df140cfde37c9c12fb4455743dfef2e2a6b8ba1adb696037e332a75720",
+      "size": 2638
+    }
+  }
+}

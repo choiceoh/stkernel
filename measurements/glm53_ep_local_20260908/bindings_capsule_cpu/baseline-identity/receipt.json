@@ -1,0 +1,33 @@
+{
+  "before": {
+    "id": "459218f6a6116ef0a4eaaa1211b0bae03d40f8e367c61014ae36c6d6298c5bbc",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": true
+  },
+  "after": {
+    "id": "459218f6a6116ef0a4eaaa1211b0bae03d40f8e367c61014ae36c6d6298c5bbc",
+    "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+    "running": true
+  },
+  "identity_stable": true,
+  "files": [
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+      "sha256": "23596c158b5ef437517605405aa25978d7a442fa1c222d59a392300bc39a0119",
+      "size": 6910920
+    },
+    {
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda_bindings-13.3.1.dist-info/RECORD",
+      "sha256": "2ef4de802fa152d7ff666aa6e14c1136b4ae4e3d23193be636e88542f979830e",
+      "size": 9340
+    }
+  ],
+  "record_entry": [
+    "cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+    "sha256=I1lsFYte9DdRdgVAWqJZeNekQvocIi1Zo5IwC8OaARk",
+    "6910920"
+  ],
+  "record_matches_binary": true,
+  "applicable_mounts": [],
+  "exact_changed_files": []
+}

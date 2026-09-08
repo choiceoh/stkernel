@@ -1,0 +1,14 @@
+{
+  "tests_run": 13,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "log_sha256": "b3c469d540e47d99ca20e7323176a9d2d2d3fb49b716bef9cf2ad1d6d51836f8",
+  "scope": "focused metadata-resolution/wrapper CPU contracts; no GPU",
+  "source_revision": "63f56a54dbb91e994456b519a53b679963a93583",
+  "sources": {
+    "probes/glm53_ep_bindings_capsule_check.py": "3242aaca56d1b0b22dd8bbfd92ce5382c29a43f8d81bc3de528e47eb594e0973",
+    "tests/test_glm53_ep_bindings_capsule_cpu.py": "9e4c767ec3a19fc7c083f5588bdd11d9e07417e97c0fc5b23d2991a614f8fe68"
+  },
+  "independent_read_only_review": "PASS"
+}

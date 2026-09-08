@@ -1,0 +1,3467 @@
+{
+  "schema": 1,
+  "verdict": "PASS",
+  "scope": "No-device metadata and import identity only; no compilation or GPU compatibility proof",
+  "image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+  "image_binding": "fixed immutable wrapper Docker argv; no engine query in this process",
+  "started": 1788868219.684381,
+  "sources": {
+    "probes/glm53_ep_bindings_capsule.py": "f3c11beb4731bb543a03679bb7056cf1039c6de17b2de705ae0d7580bb8ab5b4",
+    "probes/glm53_ep_bindings_capsule_check.py": "3242aaca56d1b0b22dd8bbfd92ce5382c29a43f8d81bc3de528e47eb594e0973",
+    "probes/run_glm53_ep_bindings_capsule_cpu.py": "897def54d5a280038973512a358275e89049fc97dd20c8e262e3d8541b1fc1a3"
+  },
+  "probe_cuda_api_calls": false,
+  "cuda_context_queried": false,
+  "torch_imported": false,
+  "exposed_device_nodes": [],
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "implementation": "cpython",
+    "machine": "aarch64",
+    "platform": "linux"
+  },
+  "base_distributions": {
+    "path": "/evidence/base-distributions.json",
+    "count": 268,
+    "sha256": "d15e86b4d7615e92a1629ac412491f0193defa8cb94845b672059c1a985671e1"
+  },
+  "distribution_resolution": {
+    "path": "/evidence/distribution-resolution.json",
+    "sha256": "56d81adf4ada66af4fd6ff4fd4a1212a041abca65118c992d20b70fb9d9089b2",
+    "raw_count": 268,
+    "effective_count": 264,
+    "shadowed_count": 4
+  },
+  "capsule_manifest_sha256": "b29ac01b3a45a5c140ba205187c86411412c5b74e7ac31417747e028588debab",
+  "marker_environment": {
+    "implementation_name": "cpython",
+    "implementation_version": "3.12.3",
+    "os_name": "posix",
+    "platform_machine": "aarch64",
+    "platform_release": "6.17.0-1021-nvidia",
+    "platform_system": "Linux",
+    "platform_version": "#21-Ubuntu SMP PREEMPT_DYNAMIC Wed May 27 19:14:05 UTC 2026",
+    "python_full_version": "3.12.3",
+    "platform_python_implementation": "CPython",
+    "python_version": "3.12",
+    "sys_platform": "linux"
+  },
+  "dependencies": {
+    "schema": 1,
+    "scope": "supplied distribution metadata; no import/runtime proof",
+    "extra": "",
+    "compatible": true,
+    "baseline_conflicts": [
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nvidia-cutlass-dsl==4.7.0",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2",
+        "reason": "installed version does not satisfy requirement"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "flashinfer-python==0.6.17",
+        "dependency": "flashinfer-python",
+        "installed": "0.6.18.dev20260819",
+        "reason": "installed version does not satisfy requirement"
+      }
+    ],
+    "candidate_conflicts": [
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nvidia-cutlass-dsl==4.7.0",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2",
+        "reason": "installed version does not satisfy requirement"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "flashinfer-python==0.6.17",
+        "dependency": "flashinfer-python",
+        "installed": "0.6.18.dev20260819",
+        "reason": "installed version does not satisfy requirement"
+      }
+    ],
+    "introduced_conflicts": [],
+    "selected_package_conflicts": [],
+    "checked_requirements": [
+      {
+        "owner": "accelerate",
+        "requirement": "numpy>=1.17",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "packaging>=20.0",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "psutil",
+        "dependency": "psutil",
+        "installed": "7.2.2"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "pyyaml",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "torch>=2.0.0",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "huggingface_hub>=0.21.0",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "accelerate",
+        "requirement": "safetensors>=0.4.3",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "aiofile",
+        "requirement": "caio~=0.12.0",
+        "dependency": "caio",
+        "installed": "0.12.2"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "aiohappyeyeballs>=2.5.0",
+        "dependency": "aiohappyeyeballs",
+        "installed": "2.7.1"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "aiosignal>=1.4.0",
+        "dependency": "aiosignal",
+        "installed": "1.4.0"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "attrs>=17.3.0",
+        "dependency": "attrs",
+        "installed": "26.1.0"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "frozenlist>=1.1.1",
+        "dependency": "frozenlist",
+        "installed": "1.8.0"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "multidict<7.0,>=4.5",
+        "dependency": "multidict",
+        "installed": "6.7.1"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "propcache>=0.2.0",
+        "dependency": "propcache",
+        "installed": "0.5.2"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "typing_extensions>=4.4; python_version < \"3.13\"",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "aiohttp",
+        "requirement": "yarl<2.0,>=1.17.0",
+        "dependency": "yarl",
+        "installed": "1.24.5"
+      },
+      {
+        "owner": "aiosignal",
+        "requirement": "frozenlist>=1.1.0",
+        "dependency": "frozenlist",
+        "installed": "1.8.0"
+      },
+      {
+        "owner": "aiosignal",
+        "requirement": "typing-extensions>=4.2; python_version < \"3.13\"",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "anyio<5,>=3.5.0",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "docstring-parser<1,>=0.15",
+        "dependency": "docstring-parser",
+        "installed": "0.18.0"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "httpx2<3,>=2.0.0",
+        "dependency": "httpx2",
+        "installed": "2.12.0"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "jiter<1,>=0.4.0",
+        "dependency": "jiter",
+        "installed": "0.16.0"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "pydantic<3,>=1.9.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "sniffio<2,>=1",
+        "dependency": "sniffio",
+        "installed": "1.3.1"
+      },
+      {
+        "owner": "anthropic",
+        "requirement": "typing-extensions<5,>=4.14",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "anyio",
+        "requirement": "idna>=2.8",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "anyio",
+        "requirement": "typing_extensions>=4.5; python_version < \"3.13\"",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "apache-tvm-ffi",
+        "requirement": "typing-extensions>=4.5",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "azure-core",
+        "requirement": "requests>=2.21.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "azure-core",
+        "requirement": "typing-extensions>=4.6.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "azure-identity",
+        "requirement": "azure-core>=1.31.0",
+        "dependency": "azure-core",
+        "installed": "1.41.0"
+      },
+      {
+        "owner": "azure-identity",
+        "requirement": "cryptography>=2.5",
+        "dependency": "cryptography",
+        "installed": "50.0.0"
+      },
+      {
+        "owner": "azure-identity",
+        "requirement": "msal>=1.35.1",
+        "dependency": "msal",
+        "installed": "1.38.0"
+      },
+      {
+        "owner": "azure-identity",
+        "requirement": "msal-extensions>=1.2.0",
+        "dependency": "msal-extensions",
+        "installed": "1.3.1"
+      },
+      {
+        "owner": "azure-identity",
+        "requirement": "typing-extensions>=4.0.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "azure-storage-blob",
+        "requirement": "azure-core>=1.37.0",
+        "dependency": "azure-core",
+        "installed": "1.41.0"
+      },
+      {
+        "owner": "azure-storage-blob",
+        "requirement": "cryptography>=2.1.4",
+        "dependency": "cryptography",
+        "installed": "50.0.0"
+      },
+      {
+        "owner": "azure-storage-blob",
+        "requirement": "typing-extensions>=4.6.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "azure-storage-blob",
+        "requirement": "isodate>=0.6.1",
+        "dependency": "isodate",
+        "installed": "0.7.2"
+      },
+      {
+        "owner": "boto3",
+        "requirement": "botocore (<1.44.0,>=1.43.79)",
+        "dependency": "botocore",
+        "installed": "1.43.79"
+      },
+      {
+        "owner": "boto3",
+        "requirement": "jmespath (<2.0.0,>=0.7.1)",
+        "dependency": "jmespath",
+        "installed": "1.1.0"
+      },
+      {
+        "owner": "boto3",
+        "requirement": "s3transfer (<0.20.0,>=0.19.0)",
+        "dependency": "s3transfer",
+        "installed": "0.19.2"
+      },
+      {
+        "owner": "botocore",
+        "requirement": "jmespath (<2.0.0,>=0.7.1)",
+        "dependency": "jmespath",
+        "installed": "1.1.0"
+      },
+      {
+        "owner": "botocore",
+        "requirement": "python-dateutil (<3.0.0,>=2.1)",
+        "dependency": "python-dateutil",
+        "installed": "2.9.0.post0"
+      },
+      {
+        "owner": "botocore",
+        "requirement": "urllib3 (!=2.2.0,<3,>=1.25.4)",
+        "dependency": "urllib3",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "cffi",
+        "requirement": "pycparser; implementation_name != \"PyPy\"",
+        "dependency": "pycparser",
+        "installed": "3.0"
+      },
+      {
+        "owner": "compressed-tensors",
+        "requirement": "torch>=2.10.0",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "compressed-tensors",
+        "requirement": "transformers>=4.45.0",
+        "dependency": "transformers",
+        "installed": "5.15.1"
+      },
+      {
+        "owner": "compressed-tensors",
+        "requirement": "pydantic>=2.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "compressed-tensors",
+        "requirement": "loguru",
+        "dependency": "loguru",
+        "installed": "0.7.3"
+      },
+      {
+        "owner": "cryptography",
+        "requirement": "cffi>=2.0.0 ; platform_python_implementation != 'PyPy'",
+        "dependency": "cffi",
+        "installed": "2.1.1"
+      },
+      {
+        "owner": "cuda-bindings",
+        "requirement": "cuda-pathfinder~=1.1",
+        "dependency": "cuda-pathfinder",
+        "installed": "1.7.0"
+      },
+      {
+        "owner": "cuda-core",
+        "requirement": "cuda-pathfinder>=1.4.2",
+        "dependency": "cuda-pathfinder",
+        "installed": "1.7.0"
+      },
+      {
+        "owner": "cuda-core",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "cuda-python",
+        "requirement": "cuda-bindings~=13.0.3",
+        "dependency": "cuda-bindings",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "cuda-python",
+        "requirement": "cuda-pathfinder~=1.1",
+        "dependency": "cuda-pathfinder",
+        "installed": "1.7.0"
+      },
+      {
+        "owner": "cuda-tile",
+        "requirement": "typing-extensions",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "cupy-cuda13x",
+        "requirement": "numpy<2.6,>=2.0",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "cupy-cuda13x",
+        "requirement": "cuda-pathfinder==1.*,>=1.3.3",
+        "dependency": "cuda-pathfinder",
+        "installed": "1.7.0"
+      },
+      {
+        "owner": "depyf",
+        "requirement": "astor",
+        "dependency": "astor",
+        "installed": "0.8.1"
+      },
+      {
+        "owner": "depyf",
+        "requirement": "dill",
+        "dependency": "dill",
+        "installed": "0.4.1"
+      },
+      {
+        "owner": "email-validator",
+        "requirement": "dnspython>=2.0.0",
+        "dependency": "dnspython",
+        "installed": "2.8.0"
+      },
+      {
+        "owner": "email-validator",
+        "requirement": "idna>=2.0.0",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "fastapi",
+        "requirement": "starlette>=0.46.0",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "fastapi",
+        "requirement": "pydantic>=2.9.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "fastapi",
+        "requirement": "typing-extensions>=4.8.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "fastapi",
+        "requirement": "typing-inspection>=0.4.2",
+        "dependency": "typing-inspection",
+        "installed": "0.4.4"
+      },
+      {
+        "owner": "fastapi",
+        "requirement": "annotated-doc>=0.0.2",
+        "dependency": "annotated-doc",
+        "installed": "0.0.5"
+      },
+      {
+        "owner": "fastapi-cli",
+        "requirement": "typer>=0.16.0",
+        "dependency": "typer",
+        "installed": "0.27.1"
+      },
+      {
+        "owner": "fastapi-cli",
+        "requirement": "uvicorn[standard]>=0.15.0",
+        "dependency": "uvicorn",
+        "installed": "0.52.4"
+      },
+      {
+        "owner": "fastapi-cli",
+        "requirement": "rich-toolkit>=0.14.8",
+        "dependency": "rich-toolkit",
+        "installed": "0.20.3"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "typer>=0.16.0",
+        "dependency": "typer",
+        "installed": "0.27.1"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "uvicorn[standard]>=0.17.6",
+        "dependency": "uvicorn",
+        "installed": "0.52.4"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "rignore>=0.5.1",
+        "dependency": "rignore",
+        "installed": "0.8.1"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "httpx>=0.27.0",
+        "dependency": "httpx",
+        "installed": "0.28.1"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "rich-toolkit>=0.20.3",
+        "dependency": "rich-toolkit",
+        "installed": "0.20.3"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "pydantic[email]>=2.7.4; python_version < \"3.13\"",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "sentry-sdk>=2.20.0",
+        "dependency": "sentry-sdk",
+        "installed": "2.68.1"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "fastar>=0.10.0",
+        "dependency": "fastar",
+        "installed": "0.12.0"
+      },
+      {
+        "owner": "fastapi-cloud-cli",
+        "requirement": "detect-installer>=0.1.0",
+        "dependency": "detect-installer",
+        "installed": "0.1.0"
+      },
+      {
+        "owner": "fastsafetensors",
+        "requirement": "typer>=0.9.0",
+        "dependency": "typer",
+        "installed": "0.27.1"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "apache-tvm-ffi!=0.1.8,!=0.1.8.post0,<0.2,>=0.1.6",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "click",
+        "dependency": "click",
+        "installed": "8.4.2"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "cuda-python>=12.0",
+        "dependency": "cuda-python",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "cuda-tile>=1.4.0",
+        "dependency": "cuda-tile",
+        "installed": "1.5.0"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "einops",
+        "dependency": "einops",
+        "installed": "0.8.2"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nccl4py>=0.3.1",
+        "dependency": "nccl4py",
+        "installed": "0.4.1"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "ninja",
+        "dependency": "ninja",
+        "installed": "1.13.0"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nvidia-cudnn-frontend>=1.25.0",
+        "dependency": "nvidia-cudnn-frontend",
+        "installed": "1.27.0"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nvidia-cutlass-dsl==4.7.0",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "nvidia-ml-py",
+        "dependency": "nvidia-ml-py",
+        "installed": "13.610.43"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "packaging>=24.2",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "requests",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "tabulate",
+        "dependency": "tabulate",
+        "installed": "0.10.0"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "flashinfer-python",
+        "requirement": "tqdm",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "google-api-core",
+        "requirement": "googleapis-common-protos<2.0.0,>=1.69.2",
+        "dependency": "googleapis-common-protos",
+        "installed": "1.75.1"
+      },
+      {
+        "owner": "google-api-core",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "google-api-core",
+        "requirement": "proto-plus<2.0.0,>=1.26.1",
+        "dependency": "proto-plus",
+        "installed": "1.28.3"
+      },
+      {
+        "owner": "google-api-core",
+        "requirement": "google-auth<3.0.0,>=2.14.1",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "google-api-core",
+        "requirement": "requests<3.0.0,>=2.33.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "google-auth",
+        "requirement": "pyasn1-modules>=0.2.1",
+        "dependency": "pyasn1-modules",
+        "installed": "0.4.2"
+      },
+      {
+        "owner": "google-auth",
+        "requirement": "cryptography>=38.0.3; python_version < \"3.14\"",
+        "dependency": "cryptography",
+        "installed": "50.0.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "google-api-core[grpc]<3.0.0,>=2.25.0",
+        "dependency": "google-api-core",
+        "installed": "2.34.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.14.1",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "grpcio<2.0.0,>=1.59.0",
+        "dependency": "grpcio",
+        "installed": "1.83.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "proto-plus<2.0.0,>=1.26.1",
+        "dependency": "proto-plus",
+        "installed": "1.28.3"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "google-cloud-monitoring<3.0.0dev,>=2.0.0",
+        "dependency": "google-cloud-monitoring",
+        "installed": "2.31.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "google-cloud-core<3.0.0,>=2.0.0",
+        "dependency": "google-cloud-core",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "grpc-google-iam-v1<1.0.0,>=0.14.2",
+        "dependency": "grpc-google-iam-v1",
+        "installed": "0.14.5"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "google-crc32c<2.0.0,>=1.6.0",
+        "dependency": "google-crc32c",
+        "installed": "1.8.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "opentelemetry-api<2.0.0dev,>=1.0.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "google-cloud-bigtable",
+        "requirement": "opentelemetry-sdk<2.0.0dev,>=1.0.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "google-cloud-core",
+        "requirement": "google-api-core<3.0.0,>=2.28.0",
+        "dependency": "google-api-core",
+        "installed": "2.34.0"
+      },
+      {
+        "owner": "google-cloud-core",
+        "requirement": "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.14.1",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "google-cloud-monitoring",
+        "requirement": "google-api-core[grpc]<3.0.0,>=2.17.1",
+        "dependency": "google-api-core",
+        "installed": "2.34.0"
+      },
+      {
+        "owner": "google-cloud-monitoring",
+        "requirement": "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.14.1",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "google-cloud-monitoring",
+        "requirement": "grpcio<2.0.0,>=1.59.0",
+        "dependency": "grpcio",
+        "installed": "1.83.0"
+      },
+      {
+        "owner": "google-cloud-monitoring",
+        "requirement": "proto-plus<2.0.0,>=1.22.3",
+        "dependency": "proto-plus",
+        "installed": "1.28.3"
+      },
+      {
+        "owner": "google-cloud-monitoring",
+        "requirement": "protobuf<8.0.0,>=4.25.8",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "google-auth<3.0.0,>=2.26.1",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "google-api-core<3.0.0,>=2.27.0",
+        "dependency": "google-api-core",
+        "installed": "2.34.0"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "google-cloud-core<3.0.0,>=2.4.2",
+        "dependency": "google-cloud-core",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "google-resumable-media<3.0.0,>=2.7.2",
+        "dependency": "google-resumable-media",
+        "installed": "2.10.1"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "requests<3.0.0,>=2.22.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "google-cloud-storage",
+        "requirement": "google-crc32c<2.0.0,>=1.6.0",
+        "dependency": "google-crc32c",
+        "installed": "1.8.0"
+      },
+      {
+        "owner": "google-resumable-media",
+        "requirement": "google-crc32c<2.0.0,>=1.0.0",
+        "dependency": "google-crc32c",
+        "installed": "1.8.0"
+      },
+      {
+        "owner": "googleapis-common-protos",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "grpc-google-iam-v1",
+        "requirement": "grpcio<2.0.0,>=1.59.0",
+        "dependency": "grpcio",
+        "installed": "1.83.0"
+      },
+      {
+        "owner": "grpc-google-iam-v1",
+        "requirement": "googleapis-common-protos[grpc]<2.0.0,>=1.69.2",
+        "dependency": "googleapis-common-protos",
+        "installed": "1.75.1"
+      },
+      {
+        "owner": "grpc-google-iam-v1",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "grpcio",
+        "requirement": "typing-extensions~=4.12",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "grpcio-status",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "grpcio-status",
+        "requirement": "grpcio>=1.83.0",
+        "dependency": "grpcio",
+        "installed": "1.83.0"
+      },
+      {
+        "owner": "grpcio-status",
+        "requirement": "googleapis-common-protos>=1.5.5",
+        "dependency": "googleapis-common-protos",
+        "installed": "1.75.1"
+      },
+      {
+        "owner": "httpcore",
+        "requirement": "certifi",
+        "dependency": "certifi",
+        "installed": "2026.7.22"
+      },
+      {
+        "owner": "httpcore",
+        "requirement": "h11>=0.16",
+        "dependency": "h11",
+        "installed": "0.16.0"
+      },
+      {
+        "owner": "httpcore2",
+        "requirement": "h11>=0.16",
+        "dependency": "h11",
+        "installed": "0.16.0"
+      },
+      {
+        "owner": "httpcore2",
+        "requirement": "truststore>=0.10",
+        "dependency": "truststore",
+        "installed": "0.10.4"
+      },
+      {
+        "owner": "httplib2",
+        "requirement": "pyparsing !=3.0.0,!=3.0.1,!=3.0.2,!=3.0.3,<4,>=2.4.2 ; python_version > \"3.0\"",
+        "dependency": "pyparsing",
+        "installed": "3.1.1"
+      },
+      {
+        "owner": "httpx",
+        "requirement": "anyio",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "httpx",
+        "requirement": "certifi",
+        "dependency": "certifi",
+        "installed": "2026.7.22"
+      },
+      {
+        "owner": "httpx",
+        "requirement": "httpcore==1.*",
+        "dependency": "httpcore",
+        "installed": "1.0.9"
+      },
+      {
+        "owner": "httpx",
+        "requirement": "idna",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "httpx2",
+        "requirement": "anyio>=4.10; sys_platform != 'emscripten'",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "httpx2",
+        "requirement": "httpcore2==2.12.0; sys_platform != 'emscripten'",
+        "dependency": "httpcore2",
+        "installed": "2.12.0"
+      },
+      {
+        "owner": "httpx2",
+        "requirement": "idna>=3.18",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "httpx2",
+        "requirement": "truststore>=0.10; sys_platform != 'emscripten'",
+        "dependency": "truststore",
+        "installed": "0.10.4"
+      },
+      {
+        "owner": "httpx2",
+        "requirement": "typing-extensions>=4.5.0; python_version < '3.13'",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "click<9.0.0,>=8.4.2",
+        "dependency": "click",
+        "installed": "8.4.2"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "filelock>=3.10.0",
+        "dependency": "filelock",
+        "installed": "3.32.4"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "fsspec>=2023.5.0",
+        "dependency": "fsspec",
+        "installed": "2026.7.0"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "hf-xet<2.0.0,>=1.5.2; platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\"",
+        "dependency": "hf-xet",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "httpx<1,>=0.23.0",
+        "dependency": "httpx",
+        "installed": "0.28.1"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "packaging>=20.9",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "pyyaml>=5.1",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "tqdm>=4.42.1",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "huggingface-hub",
+        "requirement": "typing-extensions>=4.1.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "torch>=2.7",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "triton",
+        "dependency": "triton",
+        "installed": "3.7.1"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "safetensors",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "jinja2",
+        "dependency": "jinja2",
+        "installed": "3.1.6"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "nvidia-ml-py",
+        "dependency": "nvidia-ml-py",
+        "installed": "13.610.43"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "cuda-bindings",
+        "dependency": "cuda-bindings",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "tqdm",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "humming-kernels",
+        "requirement": "tabulate",
+        "dependency": "tabulate",
+        "installed": "0.10.0"
+      },
+      {
+        "owner": "importlib-metadata",
+        "requirement": "zipp>=3.20",
+        "dependency": "zipp",
+        "installed": "4.1.0"
+      },
+      {
+        "owner": "instanttensor",
+        "requirement": "torch>=2.8.0",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "jinja2",
+        "requirement": "MarkupSafe>=2.0",
+        "dependency": "markupsafe",
+        "installed": "3.0.3"
+      },
+      {
+        "owner": "jsonschema",
+        "requirement": "attrs>=22.2.0",
+        "dependency": "attrs",
+        "installed": "26.1.0"
+      },
+      {
+        "owner": "jsonschema",
+        "requirement": "jsonschema-specifications>=2023.03.6",
+        "dependency": "jsonschema-specifications",
+        "installed": "2025.9.1"
+      },
+      {
+        "owner": "jsonschema",
+        "requirement": "referencing>=0.28.4",
+        "dependency": "referencing",
+        "installed": "0.37.0"
+      },
+      {
+        "owner": "jsonschema",
+        "requirement": "rpds-py>=0.25.0",
+        "dependency": "rpds-py",
+        "installed": "2026.6.3"
+      },
+      {
+        "owner": "jsonschema-specifications",
+        "requirement": "referencing>=0.31.0",
+        "dependency": "referencing",
+        "installed": "0.37.0"
+      },
+      {
+        "owner": "launchpadlib",
+        "requirement": "httplib2",
+        "dependency": "httplib2",
+        "installed": "0.20.4"
+      },
+      {
+        "owner": "launchpadlib",
+        "requirement": "lazr.restfulclient>=0.14.2",
+        "dependency": "lazr-restfulclient",
+        "installed": "0.14.6"
+      },
+      {
+        "owner": "launchpadlib",
+        "requirement": "lazr.uri",
+        "dependency": "lazr-uri",
+        "installed": "1.0.6"
+      },
+      {
+        "owner": "launchpadlib",
+        "requirement": "six",
+        "dependency": "six",
+        "installed": "1.17.0"
+      },
+      {
+        "owner": "lm-format-enforcer",
+        "requirement": "interegular (>=0.3.2)",
+        "dependency": "interegular",
+        "installed": "0.3.3"
+      },
+      {
+        "owner": "lm-format-enforcer",
+        "requirement": "packaging",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "lm-format-enforcer",
+        "requirement": "pydantic (>=1.10.8)",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "lm-format-enforcer",
+        "requirement": "pyyaml",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "aiofile",
+        "dependency": "aiofile",
+        "installed": "3.12.3"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "aiofiles",
+        "dependency": "aiofiles",
+        "installed": "25.1.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "blake3",
+        "dependency": "blake3",
+        "installed": "1.0.9"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "aiohttp",
+        "dependency": "aiohttp",
+        "installed": "3.14.3"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "awscrt",
+        "dependency": "awscrt",
+        "installed": "0.36.2"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "cryptography",
+        "dependency": "cryptography",
+        "installed": "50.0.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "cufile-python",
+        "dependency": "cufile-python",
+        "installed": "0.2.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "fastapi",
+        "dependency": "fastapi",
+        "installed": "0.136.3"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "httpx",
+        "dependency": "httpx",
+        "installed": "0.28.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "huggingface_hub>=1.5.0",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "msgspec",
+        "dependency": "msgspec",
+        "installed": "0.21.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "numpy<=2.2.6",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "numba",
+        "dependency": "numba",
+        "installed": "0.65.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "nvtx",
+        "dependency": "nvtx",
+        "installed": "0.2.15"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "opentelemetry-api<=1.40.0,>=1.20.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "opentelemetry-sdk>=1.20.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "opentelemetry-exporter-otlp>=1.20.0",
+        "dependency": "opentelemetry-exporter-otlp",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "opentelemetry-exporter-prometheus<=0.61b0,>=0.50b0",
+        "dependency": "opentelemetry-exporter-prometheus",
+        "installed": "0.61b0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "prometheus_client<=0.24.1,>=0.18.0",
+        "dependency": "prometheus-client",
+        "installed": "0.24.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "psutil",
+        "dependency": "psutil",
+        "installed": "7.2.2"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "py-cpuinfo",
+        "dependency": "py-cpuinfo",
+        "installed": "9.0.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "pytest",
+        "dependency": "pytest",
+        "installed": "9.1.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "pyyaml",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "pyzmq>=25.0.0",
+        "dependency": "pyzmq",
+        "installed": "27.2.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "redis",
+        "dependency": "redis",
+        "installed": "8.1.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "safetensors",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "setuptools<81.0.0,>=77.0.3",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "setuptools_scm>=8",
+        "dependency": "setuptools-scm",
+        "installed": "10.2.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "sortedcontainers",
+        "dependency": "sortedcontainers",
+        "installed": "2.4.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "transformers>=5.4",
+        "dependency": "transformers",
+        "installed": "5.15.1"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "uvicorn",
+        "dependency": "uvicorn",
+        "installed": "0.52.4"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "httptools",
+        "dependency": "httptools",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "cachetools",
+        "dependency": "cachetools",
+        "installed": "7.1.7"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "google-api-core",
+        "dependency": "google-api-core",
+        "installed": "2.34.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "google-cloud-bigtable",
+        "dependency": "google-cloud-bigtable",
+        "installed": "2.43.0"
+      },
+      {
+        "owner": "lmcache",
+        "requirement": "cupy-cuda13x",
+        "dependency": "cupy-cuda13x",
+        "installed": "14.0.1"
+      },
+      {
+        "owner": "markdown-it-py",
+        "requirement": "mdurl~=0.1",
+        "dependency": "mdurl",
+        "installed": "0.1.2"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "anyio>=4.9; python_version < '3.14'",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "httpx2>=2.5.0",
+        "dependency": "httpx2",
+        "installed": "2.12.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "jsonschema>=4.20.0",
+        "dependency": "jsonschema",
+        "installed": "4.26.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "mcp-types==2.1.1",
+        "dependency": "mcp-types",
+        "installed": "2.1.1"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "opentelemetry-api>=1.28.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "pydantic>=2.12.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "pyjwt[crypto]>=2.10.1",
+        "dependency": "pyjwt",
+        "installed": "2.13.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "python-multipart>=0.0.9",
+        "dependency": "python-multipart",
+        "installed": "0.0.32"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "sse-starlette>=3.0.0",
+        "dependency": "sse-starlette",
+        "installed": "3.4.8"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "starlette>=0.27; python_version < '3.14'",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "typing-extensions>=4.13.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "typing-inspection>=0.4.1",
+        "dependency": "typing-inspection",
+        "installed": "0.4.4"
+      },
+      {
+        "owner": "mcp",
+        "requirement": "uvicorn>=0.31.1; sys_platform != 'emscripten'",
+        "dependency": "uvicorn",
+        "installed": "0.52.4"
+      },
+      {
+        "owner": "mcp-types",
+        "requirement": "pydantic>=2.12.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "mcp-types",
+        "requirement": "typing-extensions>=4.13.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "pydantic<3.0,>=2.7; python_version <= \"3.13\"",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "jsonschema>=4.21.1",
+        "dependency": "jsonschema",
+        "installed": "4.26.0"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "typing-extensions>=4.11.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "tiktoken>=0.7.0; python_version <= \"3.13\"",
+        "dependency": "tiktoken",
+        "installed": "0.14.0"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "pillow>=10.3.0",
+        "dependency": "pillow",
+        "installed": "12.3.0"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "requests>=2.0.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "numpy<2.4,>=1.25; python_version <= \"3.12\"",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "mistral-common",
+        "requirement": "pydantic-extra-types[pycountry]>=2.10.5",
+        "dependency": "pydantic-extra-types",
+        "installed": "2.11.1"
+      },
+      {
+        "owner": "ml-dtypes",
+        "requirement": "numpy>=2.0.0",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "fastapi",
+        "dependency": "fastapi",
+        "installed": "0.136.3"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "httpx",
+        "dependency": "httpx",
+        "installed": "0.28.1"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "jmespath",
+        "dependency": "jmespath",
+        "installed": "1.1.0"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "pydantic",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "setuptools",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "starlette (>=0.49.1)",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "model-hosting-container-standards",
+        "requirement": "supervisor (>=4.2.0)",
+        "dependency": "supervisor",
+        "installed": "4.3.0"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "filelock",
+        "dependency": "filelock",
+        "installed": "3.32.4"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "packaging",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "requests>=2.25",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "setuptools",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "tqdm>=4.64.0",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "modelscope",
+        "requirement": "urllib3>=1.26",
+        "dependency": "urllib3",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "mooncake-transfer-engine-cuda13",
+        "requirement": "aiohttp",
+        "dependency": "aiohttp",
+        "installed": "3.14.3"
+      },
+      {
+        "owner": "mooncake-transfer-engine-cuda13",
+        "requirement": "requests",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "mooncake-transfer-engine-cuda13",
+        "requirement": "msgpack",
+        "dependency": "msgpack",
+        "installed": "1.2.1"
+      },
+      {
+        "owner": "msal",
+        "requirement": "requests <3,>=2.0.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "msal",
+        "requirement": "PyJWT[crypto] <3,>=1.0.0",
+        "dependency": "pyjwt",
+        "installed": "2.13.0"
+      },
+      {
+        "owner": "msal",
+        "requirement": "cryptography <51,>=2.5",
+        "dependency": "cryptography",
+        "installed": "50.0.0"
+      },
+      {
+        "owner": "msal-extensions",
+        "requirement": "msal<2,>=1.29",
+        "dependency": "msal",
+        "installed": "1.38.0"
+      },
+      {
+        "owner": "nccl4py",
+        "requirement": "packaging",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "nccl4py",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nccl4py",
+        "requirement": "cuda-core~=1.0",
+        "dependency": "cuda-core",
+        "installed": "1.0.1"
+      },
+      {
+        "owner": "nccl4py",
+        "requirement": "cuda-pathfinder<2.0.0,>=1.5.4",
+        "dependency": "cuda-pathfinder",
+        "installed": "1.7.0"
+      },
+      {
+        "owner": "nixl",
+        "requirement": "nixl-cu12==1.3.2",
+        "dependency": "nixl-cu12",
+        "installed": "1.3.2"
+      },
+      {
+        "owner": "nixl",
+        "requirement": "nixl-cu13==1.3.2",
+        "dependency": "nixl-cu13",
+        "installed": "1.3.2"
+      },
+      {
+        "owner": "nixl-cu12",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "nixl-cu12",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nixl-cu13",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "nixl-cu13",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "numba",
+        "requirement": "llvmlite<0.48,>=0.47.0dev0",
+        "dependency": "llvmlite",
+        "installed": "0.47.0"
+      },
+      {
+        "owner": "numba",
+        "requirement": "numpy>=1.22",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "numba",
+        "requirement": "numpy<2.5,>=1.22",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nvidia-cublas",
+        "requirement": "nvidia-cuda-nvrtc",
+        "dependency": "nvidia-cuda-nvrtc",
+        "installed": "13.0.88"
+      },
+      {
+        "owner": "nvidia-cuda-nvcc",
+        "requirement": "nvidia-nvvm",
+        "dependency": "nvidia-nvvm",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cuda-nvcc",
+        "requirement": "nvidia-cuda-runtime",
+        "dependency": "nvidia-cuda-runtime",
+        "installed": "13.0.96"
+      },
+      {
+        "owner": "nvidia-cuda-nvcc",
+        "requirement": "nvidia-cuda-crt",
+        "dependency": "nvidia-cuda-crt",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cudnn-cu13",
+        "requirement": "nvidia-cublas",
+        "dependency": "nvidia-cublas",
+        "installed": "13.1.1.3"
+      },
+      {
+        "owner": "nvidia-cufft",
+        "requirement": "nvidia-nvjitlink",
+        "dependency": "nvidia-nvjitlink",
+        "installed": "13.3.33"
+      },
+      {
+        "owner": "nvidia-cusolver",
+        "requirement": "nvidia-cublas",
+        "dependency": "nvidia-cublas",
+        "installed": "13.1.1.3"
+      },
+      {
+        "owner": "nvidia-cusolver",
+        "requirement": "nvidia-nvjitlink",
+        "dependency": "nvidia-nvjitlink",
+        "installed": "13.3.33"
+      },
+      {
+        "owner": "nvidia-cusolver",
+        "requirement": "nvidia-cusparse",
+        "dependency": "nvidia-cusparse",
+        "installed": "12.6.3.3"
+      },
+      {
+        "owner": "nvidia-cusparse",
+        "requirement": "nvidia-nvjitlink",
+        "dependency": "nvidia-nvjitlink",
+        "installed": "13.3.33"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl",
+        "requirement": "nvidia-cutlass-dsl-libs-base==4.6.2",
+        "dependency": "nvidia-cutlass-dsl-libs-base",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl",
+        "requirement": "nvidia-cutlass-dsl-libs-cu12==4.6.2",
+        "dependency": "nvidia-cutlass-dsl-libs-cu12",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "cuda-python>=12.8",
+        "dependency": "cuda-python",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "protobuf<7,>=6.30.2",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "nvidia-cuda-nvdisasm<14,>=13.3",
+        "dependency": "nvidia-cuda-nvdisasm",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-base",
+        "requirement": "nvidia-cutlass-dsl-libs-core==4.6.2",
+        "dependency": "nvidia-cutlass-dsl-libs-core",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-core",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-core",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-core",
+        "requirement": "cuda-python>=12.8",
+        "dependency": "cuda-python",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-core",
+        "requirement": "protobuf<7,>=6.30.2",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-core",
+        "requirement": "nvidia-cuda-nvdisasm<14,>=13.3",
+        "dependency": "nvidia-cuda-nvdisasm",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "cuda-python>=12.8",
+        "dependency": "cuda-python",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "protobuf<7,>=6.30.2",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "nvidia-cuda-nvdisasm<14,>=13.3",
+        "dependency": "nvidia-cuda-nvdisasm",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu12",
+        "requirement": "nvidia-cutlass-dsl-libs-base==4.6.2",
+        "dependency": "nvidia-cutlass-dsl-libs-base",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "cuda-python>=12.8",
+        "dependency": "cuda-python",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "protobuf<7,>=6.30.2",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "nvidia-cuda-nvdisasm<14,>=13.3",
+        "dependency": "nvidia-cuda-nvdisasm",
+        "installed": "13.3.73"
+      },
+      {
+        "owner": "nvidia-cutlass-dsl-libs-cu13",
+        "requirement": "nvidia-cutlass-dsl-libs-base==4.6.2",
+        "dependency": "nvidia-cutlass-dsl-libs-base",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "openai",
+        "requirement": "anyio<5,>=4.10.0",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "openai",
+        "requirement": "httpx2<3,>=2.7.0",
+        "dependency": "httpx2",
+        "installed": "2.12.0"
+      },
+      {
+        "owner": "openai",
+        "requirement": "jiter<1,>=0.16.0",
+        "dependency": "jiter",
+        "installed": "0.16.0"
+      },
+      {
+        "owner": "openai",
+        "requirement": "pydantic!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3,>=1.10.13",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "openai",
+        "requirement": "sniffio",
+        "dependency": "sniffio",
+        "installed": "1.3.1"
+      },
+      {
+        "owner": "openai",
+        "requirement": "typing-extensions<5,>=4.14",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "openai-harmony",
+        "requirement": "pydantic>=2.11.7",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "opencv-python-headless",
+        "requirement": "numpy>=2; python_version >= \"3.9\"",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "opentelemetry-api",
+        "requirement": "importlib-metadata<8.8.0,>=6.0",
+        "dependency": "importlib-metadata",
+        "installed": "8.7.1"
+      },
+      {
+        "owner": "opentelemetry-api",
+        "requirement": "typing-extensions>=4.5.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp",
+        "requirement": "opentelemetry-exporter-otlp-proto-grpc==1.40.0",
+        "dependency": "opentelemetry-exporter-otlp-proto-grpc",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp",
+        "requirement": "opentelemetry-exporter-otlp-proto-http==1.40.0",
+        "dependency": "opentelemetry-exporter-otlp-proto-http",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-common",
+        "requirement": "opentelemetry-proto==1.40.0",
+        "dependency": "opentelemetry-proto",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "googleapis-common-protos~=1.57",
+        "dependency": "googleapis-common-protos",
+        "installed": "1.75.1"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "grpcio<2.0.0,>=1.63.2; python_version < '3.13'",
+        "dependency": "grpcio",
+        "installed": "1.83.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "opentelemetry-api~=1.15",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "opentelemetry-exporter-otlp-proto-common==1.40.0",
+        "dependency": "opentelemetry-exporter-otlp-proto-common",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "opentelemetry-proto==1.40.0",
+        "dependency": "opentelemetry-proto",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "opentelemetry-sdk~=1.40.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-grpc",
+        "requirement": "typing-extensions>=4.6.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "googleapis-common-protos~=1.52",
+        "dependency": "googleapis-common-protos",
+        "installed": "1.75.1"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "opentelemetry-api~=1.15",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "opentelemetry-exporter-otlp-proto-common==1.40.0",
+        "dependency": "opentelemetry-exporter-otlp-proto-common",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "opentelemetry-proto==1.40.0",
+        "dependency": "opentelemetry-proto",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "opentelemetry-sdk~=1.40.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "requests~=2.7",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "opentelemetry-exporter-otlp-proto-http",
+        "requirement": "typing-extensions>=4.5.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-prometheus",
+        "requirement": "opentelemetry-api~=1.12",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-prometheus",
+        "requirement": "opentelemetry-sdk~=1.40.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-exporter-prometheus",
+        "requirement": "prometheus-client<1.0.0,>=0.5.0",
+        "dependency": "prometheus-client",
+        "installed": "0.24.1"
+      },
+      {
+        "owner": "opentelemetry-proto",
+        "requirement": "protobuf<7.0,>=5.0",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "opentelemetry-sdk",
+        "requirement": "opentelemetry-api==1.40.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-sdk",
+        "requirement": "opentelemetry-semantic-conventions==0.61b0",
+        "dependency": "opentelemetry-semantic-conventions",
+        "installed": "0.61b0"
+      },
+      {
+        "owner": "opentelemetry-sdk",
+        "requirement": "typing-extensions>=4.5.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "opentelemetry-semantic-conventions",
+        "requirement": "opentelemetry-api==1.40.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-semantic-conventions",
+        "requirement": "typing-extensions>=4.5.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "opentelemetry-semantic-conventions-ai",
+        "requirement": "opentelemetry-sdk<2,>=1.38.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "opentelemetry-semantic-conventions-ai",
+        "requirement": "opentelemetry-semantic-conventions>=0.59b0",
+        "dependency": "opentelemetry-semantic-conventions",
+        "installed": "0.61b0"
+      },
+      {
+        "owner": "prometheus-fastapi-instrumentator",
+        "requirement": "prometheus-client (>=0.8.0,<1.0.0)",
+        "dependency": "prometheus-client",
+        "installed": "0.24.1"
+      },
+      {
+        "owner": "prometheus-fastapi-instrumentator",
+        "requirement": "starlette (>=1.0.0,<2.0.0)",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "proto-plus",
+        "requirement": "protobuf<8.0.0,>=6.33.5",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "pyasn1-modules",
+        "requirement": "pyasn1<0.7.0,>=0.6.1",
+        "dependency": "pyasn1",
+        "installed": "0.6.4"
+      },
+      {
+        "owner": "pydantic",
+        "requirement": "annotated-types>=0.6.0",
+        "dependency": "annotated-types",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "pydantic",
+        "requirement": "pydantic-core==2.46.4",
+        "dependency": "pydantic-core",
+        "installed": "2.46.4"
+      },
+      {
+        "owner": "pydantic",
+        "requirement": "typing-extensions>=4.14.1",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "pydantic",
+        "requirement": "typing-inspection>=0.4.2",
+        "dependency": "typing-inspection",
+        "installed": "0.4.4"
+      },
+      {
+        "owner": "pydantic-core",
+        "requirement": "typing-extensions>=4.14.1",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "pydantic-extra-types",
+        "requirement": "pydantic>=2.5.2",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "pydantic-extra-types",
+        "requirement": "typing-extensions",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "pydantic-settings",
+        "requirement": "pydantic>=2.7.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "pydantic-settings",
+        "requirement": "python-dotenv>=0.21.0",
+        "dependency": "python-dotenv",
+        "installed": "1.2.3"
+      },
+      {
+        "owner": "pydantic-settings",
+        "requirement": "typing-inspection>=0.4.0",
+        "dependency": "typing-inspection",
+        "installed": "0.4.4"
+      },
+      {
+        "owner": "pytest",
+        "requirement": "iniconfig>=1.0.1",
+        "dependency": "iniconfig",
+        "installed": "2.3.0"
+      },
+      {
+        "owner": "pytest",
+        "requirement": "packaging>=22",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "pytest",
+        "requirement": "pluggy<2,>=1.5",
+        "dependency": "pluggy",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "pytest",
+        "requirement": "pygments>=2.7.2",
+        "dependency": "pygments",
+        "installed": "2.21.0"
+      },
+      {
+        "owner": "python-dateutil",
+        "requirement": "six >=1.5",
+        "dependency": "six",
+        "installed": "1.17.0"
+      },
+      {
+        "owner": "quack-kernels",
+        "requirement": "nvidia-cutlass-dsl==4.6.2",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "quack-kernels",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "quack-kernels",
+        "requirement": "apache-tvm-ffi<0.2,>=0.1.6",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "quack-kernels",
+        "requirement": "torch-c-dlpack-ext",
+        "dependency": "torch-c-dlpack-ext",
+        "installed": "0.1.5"
+      },
+      {
+        "owner": "quack-kernels",
+        "requirement": "einops",
+        "dependency": "einops",
+        "installed": "0.8.2"
+      },
+      {
+        "owner": "referencing",
+        "requirement": "attrs>=22.2.0",
+        "dependency": "attrs",
+        "installed": "26.1.0"
+      },
+      {
+        "owner": "referencing",
+        "requirement": "rpds-py>=0.7.0",
+        "dependency": "rpds-py",
+        "installed": "2026.6.3"
+      },
+      {
+        "owner": "referencing",
+        "requirement": "typing-extensions>=4.4.0; python_version < '3.13'",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "requests",
+        "requirement": "charset_normalizer<4,>=2",
+        "dependency": "charset-normalizer",
+        "installed": "3.5.1"
+      },
+      {
+        "owner": "requests",
+        "requirement": "idna<4,>=2.5",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "requests",
+        "requirement": "urllib3<3,>=1.26",
+        "dependency": "urllib3",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "requests",
+        "requirement": "certifi>=2023.5.7",
+        "dependency": "certifi",
+        "installed": "2026.7.22"
+      },
+      {
+        "owner": "rich",
+        "requirement": "markdown-it-py (>=2.2.0)",
+        "dependency": "markdown-it-py",
+        "installed": "4.2.0"
+      },
+      {
+        "owner": "rich",
+        "requirement": "pygments (>=2.13.0,<3.0.0)",
+        "dependency": "pygments",
+        "installed": "2.21.0"
+      },
+      {
+        "owner": "rich-toolkit",
+        "requirement": "click>=8.1.7",
+        "dependency": "click",
+        "installed": "8.4.2"
+      },
+      {
+        "owner": "rich-toolkit",
+        "requirement": "rich>=13.7.1",
+        "dependency": "rich",
+        "installed": "15.0.0"
+      },
+      {
+        "owner": "rich-toolkit",
+        "requirement": "typing-extensions>=4.12.2",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "runai-model-streamer",
+        "requirement": "humanize",
+        "dependency": "humanize",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "runai-model-streamer",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "runai-model-streamer",
+        "requirement": "torch (<3.0.0,>=2.0.0)",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "runai-model-streamer-azure",
+        "requirement": "azure-identity",
+        "dependency": "azure-identity",
+        "installed": "1.25.3"
+      },
+      {
+        "owner": "runai-model-streamer-azure",
+        "requirement": "azure-storage-blob",
+        "dependency": "azure-storage-blob",
+        "installed": "12.30.0"
+      },
+      {
+        "owner": "runai-model-streamer-gcs",
+        "requirement": "google-auth",
+        "dependency": "google-auth",
+        "installed": "2.57.0"
+      },
+      {
+        "owner": "runai-model-streamer-gcs",
+        "requirement": "google-cloud-storage",
+        "dependency": "google-cloud-storage",
+        "installed": "3.13.1"
+      },
+      {
+        "owner": "runai-model-streamer-s3",
+        "requirement": "boto3",
+        "dependency": "boto3",
+        "installed": "1.43.79"
+      },
+      {
+        "owner": "s3transfer",
+        "requirement": "botocore (<2.0a.0,>=1.37.4)",
+        "dependency": "botocore",
+        "installed": "1.43.79"
+      },
+      {
+        "owner": "sentry-sdk",
+        "requirement": "urllib3>=1.26.11",
+        "dependency": "urllib3",
+        "installed": "2.7.0"
+      },
+      {
+        "owner": "sentry-sdk",
+        "requirement": "certifi",
+        "dependency": "certifi",
+        "installed": "2026.7.22"
+      },
+      {
+        "owner": "setuptools-scm",
+        "requirement": "vcs-versioning<3,>=2.0.0.dev0",
+        "dependency": "vcs-versioning",
+        "installed": "2.3.1"
+      },
+      {
+        "owner": "setuptools-scm",
+        "requirement": "packaging>=20",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "setuptools-scm",
+        "requirement": "setuptools",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "sse-starlette",
+        "requirement": "starlette>=0.49.1",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "sse-starlette",
+        "requirement": "anyio>=4.7.0",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "starlette",
+        "requirement": "anyio<5,>=3.6.2",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "starlette",
+        "requirement": "typing-extensions>=4.10.0; python_version < '3.13'",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "sympy",
+        "requirement": "mpmath<1.4,>=1.1.0",
+        "dependency": "mpmath",
+        "installed": "1.3.0"
+      },
+      {
+        "owner": "tiktoken",
+        "requirement": "regex",
+        "dependency": "regex",
+        "installed": "2026.7.19"
+      },
+      {
+        "owner": "tiktoken",
+        "requirement": "requests",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "apache-tvm-ffi<=0.1.11,>=0.1.10",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "torch-c-dlpack-ext; python_version < \"3.14\"",
+        "dependency": "torch-c-dlpack-ext",
+        "installed": "0.1.5"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "cloudpickle",
+        "dependency": "cloudpickle",
+        "installed": "3.1.2"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "ml-dtypes",
+        "dependency": "ml-dtypes",
+        "installed": "0.6.0"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "numpy>=1.23.5",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "psutil",
+        "dependency": "psutil",
+        "installed": "7.2.2"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "tqdm>=4.62.3",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "tilelang",
+        "requirement": "z3-solver<4.15.5,>=4.13.0",
+        "dependency": "z3-solver",
+        "installed": "4.15.4.0"
+      },
+      {
+        "owner": "timm",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "timm",
+        "requirement": "torchvision",
+        "dependency": "torchvision",
+        "installed": "0.28.0+cu130"
+      },
+      {
+        "owner": "timm",
+        "requirement": "pyyaml",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "timm",
+        "requirement": "huggingface_hub",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "timm",
+        "requirement": "safetensors",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "tokenizers",
+        "requirement": "huggingface-hub>=0.16.4,<2.0",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "tokenspeed-mla",
+        "requirement": "apache-tvm-ffi<=0.1.11,>=0.1.5",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "tokenspeed-mla",
+        "requirement": "nvidia-cutlass-dsl",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "tokenspeed-mla",
+        "requirement": "tokenspeed-triton>=3.7.10.post20260531",
+        "dependency": "tokenspeed-triton",
+        "installed": "3.8.10.post20260721"
+      },
+      {
+        "owner": "tokenspeed-mla",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "torch",
+        "requirement": "filelock",
+        "dependency": "filelock",
+        "installed": "3.32.4"
+      },
+      {
+        "owner": "torch",
+        "requirement": "typing-extensions>=4.10.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "torch",
+        "requirement": "setuptools>=77.0.3",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "torch",
+        "requirement": "sympy>=1.13.3",
+        "dependency": "sympy",
+        "installed": "1.14.0"
+      },
+      {
+        "owner": "torch",
+        "requirement": "networkx>=2.5.1",
+        "dependency": "networkx",
+        "installed": "3.6.1"
+      },
+      {
+        "owner": "torch",
+        "requirement": "jinja2",
+        "dependency": "jinja2",
+        "installed": "3.1.6"
+      },
+      {
+        "owner": "torch",
+        "requirement": "fsspec>=0.8.5",
+        "dependency": "fsspec",
+        "installed": "2026.7.0"
+      },
+      {
+        "owner": "torch",
+        "requirement": "cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.3; platform_system == \"Linux\"",
+        "dependency": "cuda-toolkit",
+        "installed": "13.0.3.0"
+      },
+      {
+        "owner": "torch",
+        "requirement": "cuda-bindings<14,>=13.0.3; platform_system == \"Linux\" and python_version < \"3.15\"",
+        "dependency": "cuda-bindings",
+        "installed": "13.0.3"
+      },
+      {
+        "owner": "torch",
+        "requirement": "nvidia-cudnn-cu13==9.20.0.48; platform_system == \"Linux\"",
+        "dependency": "nvidia-cudnn-cu13",
+        "installed": "9.20.0.48"
+      },
+      {
+        "owner": "torch",
+        "requirement": "nvidia-cusparselt-cu13==0.8.1; platform_system == \"Linux\"",
+        "dependency": "nvidia-cusparselt-cu13",
+        "installed": "0.8.1"
+      },
+      {
+        "owner": "torch",
+        "requirement": "nvidia-nccl-cu13==2.29.7; platform_system == \"Linux\"",
+        "dependency": "nvidia-nccl-cu13",
+        "installed": "2.29.7"
+      },
+      {
+        "owner": "torch",
+        "requirement": "nvidia-nvshmem-cu13==3.4.5; platform_system == \"Linux\"",
+        "dependency": "nvidia-nvshmem-cu13",
+        "installed": "3.4.5"
+      },
+      {
+        "owner": "torch",
+        "requirement": "triton==3.7.1; platform_system == \"Linux\" and python_version < \"3.15\"",
+        "dependency": "triton",
+        "installed": "3.7.1"
+      },
+      {
+        "owner": "torch-c-dlpack-ext",
+        "requirement": "torch",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "torchvision",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "torchvision",
+        "requirement": "torch (==2.13.0)",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "torchvision",
+        "requirement": "pillow (!=8.3.*,>=5.3.0)",
+        "dependency": "pillow",
+        "installed": "12.3.0"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "huggingface-hub<2.0,>=1.5.0",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "numpy>=1.17",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "packaging>=20.0",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "pyyaml>=5.1",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "regex>=2025.10.22",
+        "dependency": "regex",
+        "installed": "2026.7.19"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "tokenizers<=0.23.0,>=0.22.0",
+        "dependency": "tokenizers",
+        "installed": "0.22.2"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "typer",
+        "dependency": "typer",
+        "installed": "0.27.1"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "safetensors>=0.8.0",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "transformers",
+        "requirement": "tqdm>=4.60",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "typer",
+        "requirement": "shellingham>=1.3.0",
+        "dependency": "shellingham",
+        "installed": "1.5.4"
+      },
+      {
+        "owner": "typer",
+        "requirement": "rich>=13.8.0",
+        "dependency": "rich",
+        "installed": "15.0.0"
+      },
+      {
+        "owner": "typer",
+        "requirement": "annotated-doc>=0.0.2",
+        "dependency": "annotated-doc",
+        "installed": "0.0.5"
+      },
+      {
+        "owner": "typing-inspection",
+        "requirement": "typing-extensions>=4.15.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "uvicorn",
+        "requirement": "click>=7.0",
+        "dependency": "click",
+        "installed": "8.4.2"
+      },
+      {
+        "owner": "uvicorn",
+        "requirement": "h11>=0.8",
+        "dependency": "h11",
+        "installed": "0.16.0"
+      },
+      {
+        "owner": "vcs-versioning",
+        "requirement": "packaging>=26.2",
+        "dependency": "packaging",
+        "installed": "26.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "regex",
+        "dependency": "regex",
+        "installed": "2026.7.19"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "cachetools",
+        "dependency": "cachetools",
+        "installed": "7.1.7"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "psutil",
+        "dependency": "psutil",
+        "installed": "7.2.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "sentencepiece",
+        "dependency": "sentencepiece",
+        "installed": "0.2.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "requests>=2.26.0",
+        "dependency": "requests",
+        "installed": "2.34.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "tqdm",
+        "dependency": "tqdm",
+        "installed": "4.70.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "blake3",
+        "dependency": "blake3",
+        "installed": "1.0.9"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "py-cpuinfo",
+        "dependency": "py-cpuinfo",
+        "installed": "9.0.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "transformers>=5.5.3",
+        "dependency": "transformers",
+        "installed": "5.15.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "huggingface_hub>=1.27.0",
+        "dependency": "huggingface-hub",
+        "installed": "1.28.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "tokenizers>=0.21.1",
+        "dependency": "tokenizers",
+        "installed": "0.22.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "safetensors>=0.6.2",
+        "dependency": "safetensors",
+        "installed": "0.8.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "protobuf!=6.30.*,!=6.31.*,!=6.32.*,!=6.33.0.*,!=6.33.1.*,!=6.33.2.*,!=6.33.3.*,!=6.33.4.*,>=5.29.6",
+        "dependency": "protobuf",
+        "installed": "6.33.6"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "fastapi[standard]<0.137.0,>=0.133.0",
+        "dependency": "fastapi",
+        "installed": "0.136.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "starlette>=1.0.1",
+        "dependency": "starlette",
+        "installed": "1.6.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "aiohttp>=3.13.3",
+        "dependency": "aiohttp",
+        "installed": "3.14.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "openai>=2.0.0",
+        "dependency": "openai",
+        "installed": "3.3.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "pydantic>=2.12.0",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "prometheus_client>=0.18.0",
+        "dependency": "prometheus-client",
+        "installed": "0.24.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "pillow",
+        "dependency": "pillow",
+        "installed": "12.3.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "prometheus-fastapi-instrumentator>=8.0.0",
+        "dependency": "prometheus-fastapi-instrumentator",
+        "installed": "8.1.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "tiktoken>=0.6.0",
+        "dependency": "tiktoken",
+        "installed": "0.14.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "lm-format-enforcer==0.11.3",
+        "dependency": "lm-format-enforcer",
+        "installed": "0.11.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "llguidance<1.8.0,>=1.7.0; platform_machine == \"x86_64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"s390x\"",
+        "dependency": "llguidance",
+        "installed": "1.7.6"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "outlines_core==0.2.14",
+        "dependency": "outlines-core",
+        "installed": "0.2.14"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "lark==1.2.2",
+        "dependency": "lark",
+        "installed": "1.2.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "xgrammar<1.0.0,>=0.2.1; platform_machine == \"x86_64\" or platform_machine == \"aarch64\" or platform_machine == \"arm64\" or platform_machine == \"s390x\" or platform_machine == \"ppc64le\"",
+        "dependency": "xgrammar",
+        "installed": "0.2.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "typing_extensions>=4.10",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "filelock>=3.16.1",
+        "dependency": "filelock",
+        "installed": "3.32.4"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "partial-json-parser",
+        "dependency": "partial-json-parser",
+        "installed": "0.2.1.1.post7"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "jsonschema>=4.23.0",
+        "dependency": "jsonschema",
+        "installed": "4.26.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "pyzmq>=25.0.0",
+        "dependency": "pyzmq",
+        "installed": "27.2.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "msgspec",
+        "dependency": "msgspec",
+        "installed": "0.21.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "mistral_common[image]>=1.11.6",
+        "dependency": "mistral-common",
+        "installed": "1.11.7"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "opencv-python-headless>=4.13.0",
+        "dependency": "opencv-python-headless",
+        "installed": "5.0.0.93"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "pyyaml",
+        "dependency": "pyyaml",
+        "installed": "6.0.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "six>=1.16.0; python_version > \"3.11\"",
+        "dependency": "six",
+        "installed": "1.17.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "setuptools<81.0.0,>=77.0.3; python_version > \"3.11\"",
+        "dependency": "setuptools",
+        "installed": "80.10.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "einops",
+        "dependency": "einops",
+        "installed": "0.8.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "compressed-tensors==0.17.0",
+        "dependency": "compressed-tensors",
+        "installed": "0.17.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "depyf==0.20.0",
+        "dependency": "depyf",
+        "installed": "0.20.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "cloudpickle",
+        "dependency": "cloudpickle",
+        "installed": "3.1.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "watchfiles",
+        "dependency": "watchfiles",
+        "installed": "1.2.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "python-json-logger",
+        "dependency": "python-json-logger",
+        "installed": "4.2.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "ninja",
+        "dependency": "ninja",
+        "installed": "1.13.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "pybase64",
+        "dependency": "pybase64",
+        "installed": "1.5.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "cbor2",
+        "dependency": "cbor2",
+        "installed": "6.1.4"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "ijson",
+        "dependency": "ijson",
+        "installed": "3.5.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "setproctitle",
+        "dependency": "setproctitle",
+        "installed": "1.3.7"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "openai-harmony>=0.0.3",
+        "dependency": "openai-harmony",
+        "installed": "0.0.8"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "anthropic>=0.71.0",
+        "dependency": "anthropic",
+        "installed": "1.0.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "model-hosting-container-standards<1.0.0,>=0.1.14",
+        "dependency": "model-hosting-container-standards",
+        "installed": "0.1.16"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "mcp",
+        "dependency": "mcp",
+        "installed": "2.1.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "opentelemetry-sdk>=1.27.0",
+        "dependency": "opentelemetry-sdk",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "opentelemetry-api>=1.27.0",
+        "dependency": "opentelemetry-api",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "opentelemetry-exporter-otlp>=1.27.0",
+        "dependency": "opentelemetry-exporter-otlp",
+        "installed": "1.40.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "opentelemetry-semantic-conventions-ai>=0.4.1",
+        "dependency": "opentelemetry-semantic-conventions-ai",
+        "installed": "0.5.1"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "numba==0.65.0",
+        "dependency": "numba",
+        "installed": "0.65.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "torch==2.13.0",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "torchaudio==2.11.0",
+        "dependency": "torchaudio",
+        "installed": "2.11.0+cu130"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "torchvision==0.28.0",
+        "dependency": "torchvision",
+        "installed": "0.28.0+cu130"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "torchcodec>=0.14",
+        "dependency": "torchcodec",
+        "installed": "0.16.0+cu130"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "PyNvVideoCodec==2.0.4",
+        "dependency": "pynvvideocodec",
+        "installed": "2.0.4"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "flashinfer-python==0.6.17",
+        "dependency": "flashinfer-python",
+        "installed": "0.6.18.dev20260819"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "apache-tvm-ffi==0.1.11",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "tilelang==0.1.12",
+        "dependency": "tilelang",
+        "installed": "0.1.12"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "nvidia-cudnn-frontend>=1.19.1",
+        "dependency": "nvidia-cudnn-frontend",
+        "installed": "1.27.0"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "nvtx==0.2.15",
+        "dependency": "nvtx",
+        "installed": "0.2.15"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "fastsafetensors>=0.3.3",
+        "dependency": "fastsafetensors",
+        "installed": "0.3.3"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "nvidia-cutlass-dsl[cu13]==4.6.2",
+        "dependency": "nvidia-cutlass-dsl",
+        "installed": "4.6.2"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "quack-kernels==0.6.4",
+        "dependency": "quack-kernels",
+        "installed": "0.6.4"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "tokenspeed-mla==0.1.8; platform_system == \"Linux\"",
+        "dependency": "tokenspeed-mla",
+        "installed": "0.1.8"
+      },
+      {
+        "owner": "vllm",
+        "requirement": "humming-kernels[cu13]==0.1.12",
+        "dependency": "humming-kernels",
+        "installed": "0.1.12"
+      },
+      {
+        "owner": "watchfiles",
+        "requirement": "anyio>=3.0.0",
+        "dependency": "anyio",
+        "installed": "4.14.2"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "apache-tvm-ffi>=0.1.9",
+        "dependency": "apache-tvm-ffi",
+        "installed": "0.1.11"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "pydantic",
+        "dependency": "pydantic",
+        "installed": "2.13.4"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "torch>=1.10.0",
+        "dependency": "torch",
+        "installed": "2.13.0+cu130"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "transformers>=4.38.0",
+        "dependency": "transformers",
+        "installed": "5.15.1"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "numpy",
+        "dependency": "numpy",
+        "installed": "2.2.6"
+      },
+      {
+        "owner": "xgrammar",
+        "requirement": "typing-extensions>=4.9.0",
+        "dependency": "typing-extensions",
+        "installed": "4.16.0"
+      },
+      {
+        "owner": "yarl",
+        "requirement": "idna>=2.0",
+        "dependency": "idna",
+        "installed": "3.19"
+      },
+      {
+        "owner": "yarl",
+        "requirement": "multidict>=4.0",
+        "dependency": "multidict",
+        "installed": "6.7.1"
+      },
+      {
+        "owner": "yarl",
+        "requirement": "propcache>=0.2.1",
+        "dependency": "propcache",
+        "installed": "0.5.2"
+      }
+    ]
+  },
+  "imports": {
+    "distributions": {
+      "cuda-bindings": {
+        "version": "13.0.3",
+        "metadata_path": "/evidence/capsule/cuda_bindings-13.0.3.dist-info/METADATA",
+        "metadata_sha256": "5659a955aa1bc509a7c06b939502271fe49acaf4f79adb58c0f73b3f0791a235"
+      },
+      "cuda-python": {
+        "version": "13.0.3",
+        "metadata_path": "/evidence/capsule/cuda_python-13.0.3.dist-info/METADATA",
+        "metadata_sha256": "c4b239363756205466e7d427234a9b17df68034823a0e5758794ca6a3e6fea99"
+      }
+    },
+    "modules": [
+      {
+        "module": "cuda.bindings",
+        "path": "/evidence/capsule/cuda/bindings/__init__.py",
+        "relative_path": "cuda/bindings/__init__.py",
+        "sha256": "3306a21b3b278d04708edc053064b7e929ee6849589850e1fd5393e6f02fce12",
+        "size": 246
+      },
+      {
+        "module": "cuda.bindings.driver",
+        "path": "/evidence/capsule/cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+        "relative_path": "cuda/bindings/driver.cpython-312-aarch64-linux-gnu.so",
+        "sha256": "dd32428c39930c2ceffe855ab06ac645e158eba1af9b6f665fa676fa0c71e89e",
+        "size": 7400864
+      },
+      {
+        "module": "cuda.bindings._bindings.cydriver",
+        "path": "/evidence/capsule/cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+        "relative_path": "cuda/bindings/_bindings/cydriver.cpython-312-aarch64-linux-gnu.so",
+        "sha256": "28a0267e633d526f47acf4920f7b7942e696d5eb6879d22e4f969ba55a6d292d",
+        "size": 660048
+      }
+    ],
+    "base_pathfinder": {
+      "version": "1.7.0",
+      "path": "/usr/local/lib/python3.12/dist-packages/cuda/pathfinder/__init__.py",
+      "sha256": "4ea26c3f6f3bb3c7d2dc725beabfd9cb375e11142ff9a477290eb9b226fd9543",
+      "metadata_path": "/usr/local/lib/python3.12/dist-packages/cuda_pathfinder-1.7.0.dist-info/METADATA",
+      "metadata_sha256": "b2d9b84b42ce29eff98b781efdccfd9cb75862d61cb6cab57fc37c6f52cc2548"
+    },
+    "imported_accelerator_modules": [
+      "cuda",
+      "cuda.bindings",
+      "cuda.bindings._bindings",
+      "cuda.bindings._bindings.cydriver",
+      "cuda.bindings._version",
+      "cuda.bindings.cydriver",
+      "cuda.bindings.driver",
+      "cuda.bindings.utils",
+      "cuda.bindings.utils._ptx_utils",
+      "cuda.pathfinder",
+      "cuda.pathfinder._binaries",
+      "cuda.pathfinder._binaries.find_nvidia_binary_utility",
+      "cuda.pathfinder._binaries.supported_nvidia_binaries",
+      "cuda.pathfinder._binaries.windows_nsight",
+      "cuda.pathfinder._dynamic_libs",
+      "cuda.pathfinder._dynamic_libs.descriptor_catalog",
+      "cuda.pathfinder._dynamic_libs.lib_descriptor",
+      "cuda.pathfinder._dynamic_libs.load_dl_common",
+      "cuda.pathfinder._dynamic_libs.load_dl_linux",
+      "cuda.pathfinder._dynamic_libs.load_nvidia_dynamic_lib",
+      "cuda.pathfinder._dynamic_libs.platform_loader",
+      "cuda.pathfinder._dynamic_libs.search_platform",
+      "cuda.pathfinder._dynamic_libs.search_steps",
+      "cuda.pathfinder._dynamic_libs.subprocess_protocol",
+      "cuda.pathfinder._dynamic_libs.supported_nvidia_libs",
+      "cuda.pathfinder._headers",
+      "cuda.pathfinder._headers.find_nvidia_headers",
+      "cuda.pathfinder._headers.header_descriptor",
+      "cuda.pathfinder._headers.header_descriptor_catalog",
+      "cuda.pathfinder._headers.supported_nvidia_headers",
+      "cuda.pathfinder._static_libs",
+      "cuda.pathfinder._static_libs.find_bitcode_lib",
+      "cuda.pathfinder._static_libs.find_static_lib",
+      "cuda.pathfinder._utils",
+      "cuda.pathfinder._utils.ctk_root_canary",
+      "cuda.pathfinder._utils.env_vars",
+      "cuda.pathfinder._utils.find_sub_dirs",
+      "cuda.pathfinder._utils.path_sort",
+      "cuda.pathfinder._utils.platform_aware",
+      "cuda.pathfinder._utils.windows_arch",
+      "cuda.pathfinder._version"
+    ]
+  },
+  "ended": 1788868220.7084403
+}

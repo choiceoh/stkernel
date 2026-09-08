@@ -334,6 +334,18 @@ exactly matched reproduction plus a clean candidate can yield the separate
 after, and original serving identity/state recovery stays mandatory. This
 runner does not run MoE/CuTe or establish the current kernel's GPU acceptance.
 
+The [capsule CPU2 check](../measurements/glm53_ep_local_20260908/bindings_capsule_cpu/README.md)
+passed at 20:50:20 KST with both actual 13.0.3 binary imports verified and
+base pathfinder unchanged. The image contains 268 raw distribution records;
+Python's actual metadata lookup selects 264 and shadows four. CPU1 correctly
+refused ambiguous raw duplicates before imports; the corrected checker binds
+each runtime-selected record to the preserved original path and hash. No new
+or selected-package dependency conflict was introduced; two existing unrelated
+conflicts remain recorded. No Torch/context/device or CUDA API was used.
+The [v6 pair](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v6queued/README.md)
+then entered the normal queue at 20:52:34 using frozen `63f56a54` and the exact
+CPU2 capsule. That receipt is queue admission, not a clean GPU result.
+
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
 The v4 CPU proof, mounted sources, raw logs, recovery and release records are
