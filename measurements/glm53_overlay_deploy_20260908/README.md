@@ -58,4 +58,10 @@ tar -xzf measurements/glm53_overlay_deploy_20260908/raw-evidence.tar.gz -C /tmp/
 python3 measurements/glm53_overlay_deploy_20260908/overlay-report.py /tmp/glm53-deploy-evidence . --verify
 ```
 
-The final canonical-head SHA256 check and default promotion were added after the fleet run. The SHA check passed six real-file tests on macOS and Linux, including stale and missing destinations. The final runtime overlay/build/profile bytes and synchronization function body were verified identical to the measured revision. Shell syntax and whitespace checks pass. No additional GPU trial was needed for this read-only integrity check or for selecting the already measured path by default.
+The final canonical-head SHA256 check and default promotion were added after the fleet run. The SHA check passed six real-file tests on macOS and Linux, including stale and missing destinations. Before integrating later main changes, the promotion commit runtime overlay/build/profile bytes and synchronization function body were verified identical to the measured revision. Shell syntax and whitespace checks pass. No additional GPU trial was needed for this read-only integrity check or for selecting the already measured path by default.
+
+## Integration after measurement
+
+Main `b1afa41` was integrated after the completed trial, including #461 MoE defaults and #466 observation tooling. Those upstream changes are not part of the measured 334 → 213 second comparison. The recorded runtime remains `f1814b2`; the verifier reads canonical files from that Git revision rather than silently substituting the latest checkout. Our measured synchronization helper is unchanged. Merge conflicts were limited to appending both measurement records and re-auditing the CPU contract digest: all current-main `test_logic.py` AST nodes are identical after excluding this PR's added full-runner graph regression wrapper and its invocation. No service restart or GPU trial followed the completed fleet handoff.
+
+Integrated CPU gate: **all OK (71059 checks; 38 megakernel regressions; 115 fleet regressions)**. All three audited CPU contracts passed and all four injected faults were detected again.

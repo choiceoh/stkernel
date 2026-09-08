@@ -200,5 +200,14 @@
   },
   "raw_source_directory": "srv2:/home/choiceoh/glm53-logs/overlay-deploy-20260908-v6",
   "raw_archive_sha256": "8a24e531d3014b02bf62fe779c95672477fc9152de377dc73392a594f4d86c82",
-  "excluded_evidence": "All v2-v5 interrupted/aborted trials and the post-handoff Ninja snapshot are excluded from this result."
+  "excluded_evidence": "All v2-v5 interrupted/aborted trials and the post-handoff Ninja snapshot are excluded from this result.",
+  "post_measurement_main_integration": {
+    "upstream": "b1afa4102fdb781caf15345709eac1d4c67b86a6",
+    "scope": "Retain #461 MoE defaults and #466 observation tooling; these later upstream changes are not included in the recorded startup comparison.",
+    "cpu_ast_audit": "All upstream AST nodes identical except added full-runner graph regression wrapper and its invocation.",
+    "logic_audit_sha256": "bca5684f02ba4e84eb54420b5a145cbd63a14f21ed3b2d97d6b363e3a1c8812a",
+    "cpu_validation_log": "logic-after-main-integration.log",
+    "cpu_validation_summary": "all OK (71059 checks; 38 megakernel regressions; 115 fleet regressions)",
+    "cpu_sensitivity": "All three contracts passed; all four injected faults detected."
+  }
 }

@@ -3506,7 +3506,7 @@ def test_b12x_sf_pack_is_lossless() -> None:
 
 
 def test_b12x_static_v2_controls() -> None:
-    """The decode-streaming static kernel is opt-in, exact-geometry, spec-parsed.
+    """The decode-streaming static kernel is exact-geometry and spec-parsed.
 
     `VLLM_GLM53_B12X_STATIC_V2` selects `MoEStaticKernelV4` for the served
     GLM-5.3 TP geometry only (34차 §8: the v2 and v3 kernels are gone, and
@@ -3523,6 +3523,7 @@ def test_b12x_static_v2_controls() -> None:
         "_is_glm53_b12x_tp_geometry",
         "_static_v2_config_for",
         "_static_v2_cache_key",
+        "_static_v2_decode_config",
         "_static_kernel_cache_key",
     }
     ns = load_defs(dispatch_path, names, {"Tuple": tuple, "Dict": dict, "torch": None})
@@ -3533,7 +3534,7 @@ def test_b12x_static_v2_controls() -> None:
         check(parse(raw) is None, f"static v2 {raw!r} must keep the stock kernel")
     check(default == {"tile_m": 32, "fc1": 2, "fc2": 2, "a_rows": 32, "stamps": False,
                       "wide": True, "skip_sf": False, "skip_a": False, "v4": True,
-                      "a_ring": False, "tiled": False, "sf_pack": False},
+                      "a_ring": False, "tiled": False, "sf_pack": False, "decode_reform": False},
           "the default config is the v4 kernel: m32,f2,g2,a32, no stamps, no A ring, "
           "row-major weights")
     v4 = parse("u")
@@ -3555,6 +3556,27 @@ def test_b12x_static_v2_controls() -> None:
           and parse("t,s", probe=True)["stamps"]
           and not parse("u")["tiled"] and not parse("v")["tiled"],
           "t composes with v, g and s; u and v stay row-major")
+    reform = parse("t,r")
+    check(reform["decode_reform"] and not tiled["decode_reform"],
+          "the integrated decode tile reform is selected explicitly by the r token")
+    for bad in ("r", "u,r", "t,r,v", "t,r,q", "t,r,xs", "t,r,xa", "t,r,f3", "t,r,g3"):
+        try:
+            parse(bad, probe=True)
+            check(False, f"incompatible integrated geometry must be refused: {bad}")
+        except ValueError:
+            pass
+    specialize = ns["_static_v2_decode_config"]
+    for m in (1, 2, 6, 8):
+        check(specialize(reform, m) == reform, "M<=8 keeps the complete reform bundle")
+    for m in (0, 9, 16, 32, 64):
+        check(specialize(reform, m) == tiled,
+              "larger batches share the unchanged tiled baseline cache and geometry")
+    check(reform["decode_reform"], "specialization must not mutate the caller config")
+    saved_key = ns["_static_kernel_cache_key"]
+    ns["_static_kernel_cache_key"] = lambda **fields: ()
+    check(ns["_static_v2_cache_key"](tiled) != ns["_static_v2_cache_key"](reform),
+          "integrated and baseline kernel cache identities must differ")
+    ns["_static_kernel_cache_key"] = saved_key
     # h (39차 §3b) is retired: an SF box of 64 rows is not expressible -- the
     # 128-row block interleaves its four 32-row groups at 4 B, so half the
     # rows is 8 B of every 16 and TMA's innermost box dim wants 16 B
@@ -3793,10 +3815,10 @@ def test_b12x_static_v2_controls() -> None:
           "the v4/v5 kernels, their helpers and the tiled gated subclass are new files "
           "(absent preimage) in the module manifest; v2/v3 rows are gone")
     profile = open(os.path.join(REPO, "profiles", "glm53.env"), encoding="utf-8").read()
-    check('VLLM_GLM53_B12X_STATIC_V2=t' in profile,
-          "the profile ships the v5 tile-major lane (spec t) as the default "
-          "(39차 §3i/§4f: probe -2.0~2.7% vs u by interleaved repeats, boot "
-          "bracket 21.9 vs 21.4 step/s, lane proved serving 1/1)")
+    check([line.partition('=')[2] for line in profile.splitlines()
+           if line.startswith('VLLM_GLM53_B12X_STATIC_V2=')] == ['t,r'],
+          "the profile ships exactly one t,r default after the corrected C=1 "
+          "MoE bundle promotion; explicit t remains the previous geometry")
     runner = open(os.path.join(REPO, "probes", "run_mk_probe.sh"), encoding="utf-8").read()
     check("moe_static_kernel_v4.py" in runner and "moe_static_common.py" in runner
           and "moe_static_kernel_v5.py" in runner and "moe_dynamic_gated_tiled.py" in runner

@@ -76,6 +76,17 @@ same-build CTA2/CTA4/CTA2 bracket had pooled step/s 21.752/21.962/21.892, so
 the candidate's +0.627% lies inside the baselines' own 0.641% spread.
 [Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
+GLM53 MoE defaults to `VLLM_GLM53_B12X_STATIC_V2=t,r` (operator promotion,
+2026-09-08, PR #461). For M<=8 this combines M16 padding, FC1 N128/K256 and
+FC2 N256; larger M retains the existing `t` geometry and weight storage.
+The corrected bundle passed 13 GPU shapes and 130 numerical/graph comparisons.
+The same-build C=1 A-B measured pooled step/s 21.727898 -> 22.076208 (+1.603%)
+and output tok/s 70.612170 -> 72.787236 (+3.080%), with quality 18/18 and
+Korean corruption 0/8 in both arms. Window median rose 0.116%; one boot per
+arm does not independently establish repeatability. Set the knob to `t` to
+restore the previous geometry.
+[Full evidence](../measurements/glm53_decode_reform_20260908/README.md).
+
 ## 프로필별 구성
 
 | | `dsv4` | `glm53` | `qwen38` |

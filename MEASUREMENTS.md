@@ -7558,3 +7558,38 @@ Fleet `deploycache0908v6` completed with exit **0** on four nodes, pinned runtim
 PRIME passed official clean-checkout/current-main admission. Timed arms replayed publication only after the existing source revision, manifest and every deployed file matched the pinned canonical build on all four nodes; the replay cannot admit a new revision. All arms used identical runtime environment/image, `PREFILL_WARMUP=0` for the separate background prefill benchmark, graph-profile skip **0**, and retained required model/MM profiling, actual graph capture and kernel warmup. Nested head timers: model **134.75 -> 79.30 s**, memory profile **103.85 -> 36.15 s**. Do not sum nested phase timers.
 
 Every boot passed first text/image/video responses and Korean onepass **6/6**, corruption **0/4**. Every timed boot had four rank hits, **976 FP8 hits / zero misses/errors**, and **258 W4 hits per rank** under CTA4. All five boot logs contain exactly seven loopback POST completions and no external or pre-health POST completions. Swap usage did not increase. The supervisor accepted handoff to the next fleet holder at **10:23:42 KST**. This establishes startup savings; it does not establish general throughput or bit-exact generation equivalence. [Report and reproducible raw evidence](measurements/glm53_overlay_deploy_20260908/README.md).
+
+
+## GLM53 C=1 MoE 타일 묶음과 FP4 주소 수정 (2026-09-08, PR #461)
+
+M16 패딩, FC1 N128/K256, FC2 N256을 하나의 `t,r` 후보로 묶었다.
+기존 `t`의 가중치 저장 형식·128열 BF16 반올림 경계와 M>8 폴백은 유지했다.
+첫 M2/U8 수치 실패(3.5 / 한계 0.1875)는 nibble 주소에 byte swizzle을 적용한
+오류였다. 바이트 변환 후 swizzle하도록 고치고 소비 주소와 전체 1,024바이트를
+대조한다. 수정 후 13개 형상·130회 수치/그래프 비교 PASS, racecheck 0 hazards.
+memcheck의 커널 컴파일 전 CUDA 함수 조회 오류 34건은 원문과 종료 코드 77을
+보존했고, 다른 메모리 오류는 없었다. CPU 검사기는 다른 API·메모리 오류를 거부한다.
+
+실측 소스 `1f265b1`, TP4·C=1·SPEC_K=5·CTA=4 양팔 동일.
+`MOERFA1(t,r)` → `MOERFB1(t)` 한 번의 A-B, 팔당 고정 2K 출력 3회.
+
+| 지표 | B (`t`) | A (`t,r`) | 관측 변화 |
+|---|---:|---:|---:|
+| 고정 창 합산 step/s | 21.727898 | 22.076208 | +1.603% |
+| 합산 ms/step | 46.023779 | 45.297634 | -0.726145 ms |
+| 창 중앙값 step/s | 21.825397 | 21.850820 | +0.116% |
+| 고정 2K 출력 tok/s | 70.612170 | 72.787236 | +3.080% |
+| 전체 요청 수용률 | 45.0904% | 46.7101% | +1.6197 pp |
+| 품질 / 한국어 손상 | 18/18 / 0/8 | 18/18 / 0/8 | 통과 |
+
+2K warm / 32K / 128K 프리필 tok/s는 B 2486.73 / 2409.55 / 2816.04,
+A 2506.92 / 2977.30 / 3065.92. 긴 프리필은 부팅당 단일 요청이며 M>8 코드는
+같으므로 후보에 귀속되는 프리필 개선으로 판정하지 않는다.
+
+세 요청의 합산 step/s 방향은 모두 A 우세지만 같은 부팅의 표본이다. 중앙값을
+쓰는 표준 judge는 +0.1%, baseline floor 미확보로 기록했다. **한 팔당 한 부팅이므로
+대폭·안정적 성능 이득이나 기각을 확정하지 않는다.**
+후속 운영자 지시로 기본값을 `t,r`로 승격한다(PR #461, 2026-09-08).
+롤백은 `t`. 승격은 추가 GPU 실측을 뜻하지 않으며 위 단일 A-B 한계는 유지한다.
+같은 소스/이미지·4-rank 활성 M6 레인·CTA 제어·요청 해시·출력 길이를 검증했다.
+[전체 증거와 재현 경로](measurements/glm53_decode_reform_20260908/README.md).
