@@ -87,6 +87,47 @@ pathlib.Path(sys.argv[sys.argv.index('--out')+1]).write_text(json.dumps(dict(pas
         (fleet / 'holder').write_text('fixture|123|0|boot\n')
         os.environ.update(FLEET_DIR=str(fleet), FLEET_SESSION='fixture')
 
+    def test_admission_does_not_run_release_gates_or_scan_ml_dependencies(self):
+        import fleet_admission
+        def admission(repo, profile, env, **options):
+            spec = dict(command=[sys.executable, 'bench/cpu_checks.py'], env={}, inputs=[],
+                        context=dict(gate='overlay-admission', version=1, profile=profile), timeout_s=30)
+            return self.evidence(repo, spec, env), spec
+        with mock.patch.object(fleet_admission, 'identity', side_effect=admission), \
+             mock.patch.object(validation.cpu_evidence, 'identity', side_effect=AssertionError('full dependency scan')), \
+             mock.patch.object(validation, 'execute', wraps=validation.execute) as execute:
+            first = self.validate(level='admission')
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(execute.call_args.kwargs['timeout'], 30)
+            self.hold()
+            self.assertTrue(self.validate(level='admission')['reused'])
+            self.assertEqual(execute.call_count, 1)
+        with self.assertRaisesRegex(ValueError, 'exact source/environment'):
+            self.validate(require_receipt=first['receipt'], level='release')
+        self.assertEqual(self.runs(), 1)
+
+    def test_only_new_managed_holders_default_to_admission(self):
+        self.assertEqual(validation.deployment_level(), 'release')
+        os.environ.update(FLEET_VALIDATION_LEVEL='admission', FLEET_VALIDATION_REQUIRED='1',
+                          FLEET_RESTORE_MANAGED='1')
+        self.assertEqual(validation.deployment_level(), 'release')
+        self.hold()
+        self.assertEqual(validation.deployment_level(), 'admission')
+        self.assertEqual(validation.deployment_level('release'), 'release')
+        os.environ.pop('FLEET_VALIDATION_LEVEL')
+        self.assertEqual(validation.deployment_level(), 'release')
+
+    def test_recovery_cannot_certify_candidate_profile_or_runtime(self):
+        validation.recovery_selection('glm53')
+        for options in (dict(profile='dsv4'), dict(profile='glm53', image='candidate'),
+                        dict(profile='glm53', model='/candidate'), dict(profile='glm53', level='admission')):
+            with self.assertRaisesRegex(ValueError, 'profile defaults'):
+                validation.recovery_selection(**options)
+        for key in ('IMAGE', 'MODEL_HOST_PATH'):
+            with mock.patch.dict(os.environ, {key:''}):
+                with self.assertRaisesRegex(ValueError, 'profile defaults'):
+                    validation.recovery_selection('glm53')
+
     def test_identical_source_and_sanitized_environment_reuse(self):
         first = self.validate()
         os.environ.update(VLLM_EXPERIMENT='1', ONEPASS_UNKNOWN='2', PYTHONPATH='/nonexistent',
