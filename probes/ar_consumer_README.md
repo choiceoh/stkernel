@@ -41,7 +41,9 @@ ready; the consumer wait remains mandatory. See NVIDIA's
 `python3 probes/run_ar_consumer_cpu.py --out /absolute/fresh/path` compiles the
 production CUDA and delayed producer in the exact serving image without GPU
 access. It caps host memory and retains the generated objects for inspection.
-Run the repository's CPU contracts before GPU admission.
+Add `--checks-only` with a separate fresh output directory to run the core and
+megakernel CPU regressions, including vector layout and graph-cache lifetime.
+This uses the same device-free image; run those gates before GPU admission.
 
 On srv2, from a committed clean checkout based on current main, use the
 canonical supervisor:
