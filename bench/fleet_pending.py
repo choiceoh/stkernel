@@ -21,6 +21,34 @@ HISTORY_LIMIT = 1000
 INDEX_BYTES = 256 * 1024
 
 
+def parked_index(directory):
+    filename = directory / 'pending' / 'parked-index.json'
+    try:
+        with filename.open('rb') as stream:
+            content = stream.read(INDEX_BYTES + 1)
+    except FileNotFoundError:
+        return []
+    if len(content) > INDEX_BYTES:
+        raise ValueError('parked reservation index exceeds its size limit')
+    value = json.loads(content)
+    sessions = value.get('sessions') if isinstance(value, dict) else None
+    if (not isinstance(sessions, list) or len(sessions) > HISTORY_LIMIT or
+            any(not isinstance(s, str) or not s or len(s) > 128 for s in sessions)):
+        raise ValueError('parked reservation index is invalid')
+    return list(dict.fromkeys(sessions))
+
+
+def parked_row(value):
+    """Return a validated original queue row; never invent a replacement ticket."""
+    row = value.get('parked_row') if value else None
+    if (not isinstance(row, list) or len(row) != 7 or
+            not all(isinstance(v, str) and not any(c in v for c in '|\n\r\0') for v in row) or
+            row[0] != value.get('ticket') or row[1] != value.get('session') or
+            row[2] != str(value.get('enqueued_at')) or row[6] != str(value.get('pid'))):
+        return None
+    return list(row)
+
+
 @contextmanager
 def lock(directory):
     with (directory / '.lock').open('a') as stream:
@@ -111,8 +139,24 @@ def _archive(directory, value):
 
 def save_record(directory, value):
     """Caller owns .lock. Commit the authoritative current record last."""
+    if parked_row(value):
+        value['parked_row'][3:5] = [str(value['estimate_min']), value['note']]
+    indexed = parked_index(directory)
+    parked = value.get('state') == 'paused' and value.get('pause_protocol') == 1 and parked_row(value) is not None
+    if parked and value['session'] not in indexed:
+        if len(indexed) >= HISTORY_LIMIT:
+            raise ValueError('too many parked reservations')
+        (directory / 'pending').mkdir(mode=0o700, exist_ok=True)
+        if (directory / 'pending').is_symlink():
+            raise OSError('parked reservations require a real private directory')
+        # Advisory discovery is prepared first; readers still require the
+        # canonical current record, so an interrupted write cannot invent pause.
+        handoff.write(directory / 'pending' / 'parked-index.json', dict(sessions=indexed + [value['session']]))
     _archive(directory, value)
     handoff.write(path(directory, value['session']), value)
+    if not parked and value['session'] in indexed:
+        handoff.write(directory / 'pending' / 'parked-index.json',
+                      dict(sessions=[s for s in indexed if s != value['session']]))
 
 
 def queued(directory, session):
@@ -137,12 +181,13 @@ def register(directory, session, command, fleet, kind):
         _archive(directory, previous)
     value = dict(session=session, ticket=row[0], enqueued_at=row[2], pid=pid,
                  start=handoff.identity(pid), host=socket.gethostname(), protocol=handoff.PROTOCOL,
-                 state='queued', revision=1, command=list(command), cwd=os.getcwd(),
+                 state='queued', revision=1, pause_protocol=1, command=list(command), cwd=os.getcwd(),
                  estimate_min=int(row[3]), note=row[4], kind=kind, fleet=fleet,
-                 repo=os.environ['REPO'], validation_env={k:os.environ[k] for k in ('LOGD', 'PATH', 'HEAD_URL') if k in os.environ},
+                 repo=os.environ['REPO'], validation_env={k:os.environ[k] for k in ('LOGD', 'PATH', 'HEAD_URL', 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_RECOVERY_RECEIPT', 'PROFILE', 'IMAGE', 'MODEL_HOST_PATH') if k in os.environ},
                  experiment=os.environ.get('FLEET_EXPERIMENT_ID'),
                  launch_id=os.environ.get('FLEET_LAUNCH_ID'),
                  prepare_manifest=os.environ.get('FLEET_PREPARE_MANIFEST'),
+                 prepare_receipt_required=bool(os.environ.get('FLEET_PREPARE_MANIFEST')),
                  history=[])
     save_record(directory, value)
     if os.environ.get('FLEET_LAUNCH_ID'):
@@ -152,14 +197,68 @@ def register(directory, session, command, fleet, kind):
 
 
 def inspect(directory, session):
-    rows, index, row = queued(directory, session)
     value = read_record(directory, session)
+    if (value and value.get('state') in ('paused', 'queued') and value.get('pause_protocol') == 1
+            and parked_row(value) and handoff.live(value)):
+        if (directory / 'holder').exists() and (directory / 'holder').read_text().split('|')[0] == session:
+            raise ValueError('reservation already admitted; edits are closed')
+        rows = handoff.rows(directory)
+        physical = [r for r in rows if r[1] == session]
+        identity = lambda row: [row[i] for i in (0, 1, 2, 5, 6)]
+        if len(physical) > 1 or physical and identity(physical[0]) != identity(parked_row(value)):
+            raise ValueError('parked reservation conflicts with another queued identity')
+        if value['state'] == 'paused' or not physical:
+            return value, rows, None
+    rows, index, row = queued(directory, session)
     if not value or value.get('ticket') != row[0] or str(value.get('pid')) != row[6]:
         raise ValueError('this waiter predates editable reservations or uses request/wait; '
                          'command editing requires a new fleet.sh run reservation')
-    if value['state'] != 'queued' or not handoff.live(value):
+    if value['state'] not in ('queued', 'paused') or not handoff.live(value):
         raise ValueError('reservation has started or its supervisor is no longer alive')
     return value, rows, index
+
+
+def supervisor_environment(value, directory):
+    """Read the same live supervisor's environment without retaining its values."""
+    if not handoff.live(value):
+        raise ValueError('cannot revalidate the original supervisor environment: owner is no longer alive')
+    if value['pid'] == os.getpid():
+        environment = dict(os.environ)
+    else:
+        try:
+            with Path(f"/proc/{value['pid']}/environ").open('rb') as stream:
+                content = stream.read(2 * 1024 * 1024 + 1)
+        except OSError as exc:
+            raise ValueError('cannot read the original supervisor environment; reservation retained') from exc
+        if len(content) > 2 * 1024 * 1024:
+            raise ValueError('original supervisor environment exceeds the supported size; reservation retained')
+        environment = {}
+        for entry in content.split(b'\0'):
+            if not entry:
+                continue
+            name, separator, data = entry.partition(b'=')
+            if not separator or not name:
+                raise ValueError('original supervisor environment is malformed; reservation retained')
+            environment[os.fsdecode(name)] = os.fsdecode(data)
+    if not handoff.live(value):
+        raise ValueError('original supervisor changed while reading its environment; reservation retained')
+    environment.update(value.get('validation_env', {}))
+    environment.update(REPO=value['repo'], FLEET_DIR=str(directory), FLEET_SESSION=value['session'])
+    return environment
+
+
+@contextmanager
+def owner_environment(value, directory):
+    """Use the owner's environment only while preparing its accepted workload."""
+    environment = supervisor_environment(value, directory)
+    previous = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(environment)
+        yield environment
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
 
 
 def validate(value, directory):
@@ -168,8 +267,7 @@ def validate(value, directory):
         raise ValueError('replacement requires a nonempty argv command')
     if not Path(cwd).is_dir():
         raise ValueError('working directory does not exist')
-    env = dict(os.environ, **value['validation_env'])
-    env.update(REPO=value['repo'], FLEET_DIR=str(directory))
+    env = supervisor_environment(value, directory)
     executable = command[0]
     if '/' in executable:
         executable = str(Path(cwd) / executable)
@@ -185,7 +283,7 @@ def validate(value, directory):
         raise ValueError('replacement preflight failed; original reservation retained\n' + result.stdout)
 
 
-def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None, expected=None):
+def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None, expected=None, prepared_manifest=None):
     # Slow checks never hold the fleet lock. Admission and other editors can
     # proceed, so compare the original revision again before committing.
     with lock(directory):
@@ -208,15 +306,33 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
         if any(c in note for c in ('|', '\n', '\r', '\0')):
             raise ValueError('note cannot contain queue separators or newlines')
         updated['note'] = note
-    if updated == original and command is None and cwd is None:
+    if updated == original and command is None and cwd is None and prepared_manifest is None:
         return dict(original, changed=False)
-    if command is not None or cwd is not None:
-        validate(updated, directory)
-        if original.get('prepare_manifest'):
-            import fleet_prepare
-            prepared = json.loads(Path(original['prepare_manifest']).read_text())
-            updated['prepare_manifest'] = str(fleet_prepare.prepare(directory, session,
-                updated['command'], updated['cwd'], spec_path=prepared.get('spec_path'), fleet=updated['fleet']))
+    if command is not None or cwd is not None or prepared_manifest is not None:
+        with owner_environment(updated, directory):
+            validate(updated, directory)
+            if original.get('prepare_manifest') or prepared_manifest:
+                import fleet_prepare
+                import fleet_prepared
+                old_path = original.get('prepare_manifest')
+                old = (fleet_prepared.read(directory,old_path) if original.get('prepare_receipt_required')
+                       else json.loads(Path(old_path).read_text()) if old_path else {})
+                args = dict(spec_path=old.get('spec_path'), fleet=updated['fleet'])
+                if prepared_manifest:
+                    path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
+                                                  prepared=prepared_manifest,**args)
+                else:
+                    try:
+                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
+                                                      prepared=old_path,**args)
+                    except ValueError:
+                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],**args)
+                updated['prepare_manifest'] = str(path)
+                updated['prepare_receipt_required'] = True
+                if updated.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1' and updated['kind'] == 'boot':
+                    # Preparation owns the signed deployment target identities;
+                    # the controller's REPO is not necessarily the candidate.
+                    fleet_prepare.validate_targets(directory, path)
     with lock(directory):
         current, rows, index = inspect(directory, session)
         if current != original:
@@ -224,6 +340,12 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
         updated['revision'] += 1
         updated['history'].append(dict(revision=original['revision'], at=time.time(),
                                        **{k:original[k] for k in ('command', 'cwd', 'estimate_min', 'note')}))
+        if index is None:
+            updated['parked_row'][3:5] = [str(updated['estimate_min']), updated['note']]
+            save_record(directory, updated)
+            from fleet_pause import reconcile
+            reconcile(directory, session, updated['pid'])
+            return dict(updated, changed=True, position=None, queue_projection_pending=False)
         # The command record is authoritative. Admission reads its metadata too,
         # so interruption between these atomic writes cannot execute a stale edit.
         save_record(directory, updated)
@@ -256,7 +378,8 @@ def transition(directory, session, state, **details):
     if not value or value['pid'] != os.getpid() or value['start'] != handoff.identity(os.getpid()):
         raise ValueError('queued command ownership changed')
     value.update(details)
-    value['state'] = state
+    if state is not None:
+        value['state'] = state
     save_record(directory, value)
     return value
 
@@ -272,12 +395,13 @@ def main(argv=None):
     ap.add_argument('--est', type=int)
     ap.add_argument('--note')
     ap.add_argument('--cwd')
+    ap.add_argument('--prepared')
     ap.add_argument('--expect-revision', type=int)
     args = ap.parse_args(argv)
     directory = Path(os.environ['FLEET_DIR'])
     try:
         value = edit(directory, args.session, command=command, cwd=args.cwd,
-                     estimate=args.est, note=args.note, expected=args.expect_revision)
+                     estimate=args.est, note=args.note, expected=args.expect_revision, prepared_manifest=args.prepared)
         print(json.dumps({k:v for k,v in value.items() if k not in ('validation_env', 'repo', 'fleet', 'start', 'host', 'protocol')}, ensure_ascii=False))
     except (ValueError, OSError) as exc:
         print(f'edit refused: {exc}', file=sys.stderr)

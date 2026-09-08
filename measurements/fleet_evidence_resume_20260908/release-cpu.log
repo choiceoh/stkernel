@@ -1,0 +1,166 @@
+/tmp/fleet-evidence-prime.CYhpvW/repo/build/dsv4  (23 overlays from 18 modules)
+/tmp/fleet-evidence-prime.CYhpvW/repo/build/glm53  (59 overlays from 9 modules)
+/tmp/fleet-evidence-prime.CYhpvW/repo/build/qwen38  (2 overlays from 1 modules)
+self-test: PASS
+CPU logic: /home/choiceoh/vllm-env/bin/python tests/test_logic.py
+ders (149) ... OK
+  bf16-release guards ........... OK
+  DSpark speed-path guards ...... OK
+  acceptance lever guards ....... OK
+  ngram-ceiling sim math ........ OK
+  UE8M0 scale repair ............. OK
+  EP stock top-k chunks .......... OK
+  EP fixed/stock output init ..... OK
+  b12x zero-weight micro ......... OK
+  GLM53 b12x tuning controls ..... OK
+  b12x static v2 controls ........ OK
+  EP micro chunk width .......... OK
+  EP tail fixed shape ........... OK
+  EP compact shape align ........ OK
+  EP compact warmup ladder ...... OK
+  *_once args hashable .......... OK
+  dflash2 selector check ........ OK
+  dflash2 selector score precision  OK
+  overlay logger defined ........ OK
+  osar MAXEL rank agreement ..... OK
+  bench served-model resolve .... OK
+  extra-env comma guard ......... OK
+  torch imports guarded ......... OK
+  dflash2 conv mask buffer ....... OK
+  dflash AOT guard stays removed  OK
+  hot-path env latches ........... OK
+  launcher load-format gate ..... OK
+  launcher reject-method gate ... OK
+  dflash2 prefix-cache fail-closed  OK
+  accept profile arithmetic ..... OK
+  DSV4 launcher adoptions ....... OK
+  launcher nofile limit ......... OK
+  prefill ladder probe .......... OK
+  fp8 acceptance contracts ....... OK
+  glm53 V2/deploy contracts ...... OK
+  launcher head guard .......... OK
+  preflight applies GMU ......... OK
+  no hardcoded image paths ...... OK
+  b12x EP routing ................ OK
+  b12x EP preflight .............. OK
+  b12x EP launcher ............... OK
+  deploy refusal exits non-zero .. OK
+  fp8-dense nvfp4 scheme contract .. OK
+  benches ask the server for the model .. OK
+  korean gate notation vs damage .. OK
+  every module is mounted or explained .. OK
+  profile knobs are all readable .. OK
+  fp8-dense bf16 release contract .. OK
+  mhc probe contracts ............ OK
+  mhc bigfuse knob ............... OK
+  census KDA group ............... OK
+  census owner axis .............. OK
+  census streaming reader ....... OK
+  trace step tail cut ........... OK
+  profiles README module table .. OK
+  dflash warmup buckets .......... OK
+  DSV4 spec warmup contract ...... OK
+  DSV4 UE8M0 host guard ......... OK
+  GLM53 kpool packed scratch ...... OK
+  GLM53 KDA prefill regimes ....... OK
+  GLM53 KDA prefill direct out ... OK
+  GLM53 upstream prefill batch ..... OK
+  one-shot SM121 grid contract .... OK
+  cuda builds keep the sm_121a-specific target .. OK
+  self-built kernels persist their caches .. OK
+  boot stamps measure without changing the boot .. OK
+  cudagraph mem profiling off keeps kv size .. OK
+  kv cache is pinned in tokens ... OK
+  earlyoom fireable on UMA ...... OK
+  fp8-dense drafter patterns + opaque op .. OK
+  spec_k compile factor .. OK
+  dev lab contracts .. OK
+  mk head lane contracts .......... OK
+  ab runner measures both ....... OK
+  osar wait is split by message size .. OK
+  osar prefetch hints contract .. OK
+  glm53_dflash_early_fc contracts .. OK
+  glm53_drafter_prep contracts .... OK
+  indexer decode fused contracts .. OK
+  drafter ctx-KV W4 contracts ..... OK
+  trace step nodes tool ........... OK
+  micro-fusion bundle 2 contracts .. OK
+  glm53 megakernel contracts .. OK
+  prefill warmup contracts ... OK
+  w4 layout roundtrip ...... OK
+  megakernel core is shared ..... OK
+  glm53 prep fused contracts .. OK
+  launcher continued-string assignments carry no comments .. OK
+  launcher restores PREFILL_WARMUP from caller env .. OK
+  decode-first scheduler contracts .. OK
+  profile keys not via EXTRA_ENV .. OK
+  glm53 IndexCache layer rule ... OK
+  glm53 indexer gate split-K contracts .. OK
+  bracket runner contracts .. OK
+  trace composition analyze .. OK
+  drafter fc probe contracts .. OK
+  fp8-dense build peak .......... OK
+  hy4 entry point parity ........ OK
+  common tp4 library ............ OK
+  worker envv not re-parsed ..... OK
+  supervisor relaunch pacing .... OK
+Ran 274 tests in 2 isolated shards: OK
+all OK (71115 checks; 38 megakernel regressions; 274 fleet regressions)
+
+CPU individual: /home/choiceoh/vllm-env/bin/python bench/cpu_unittest.py tests/test_glm53_overlay_sync.py /home/choiceoh/glm53-logs/fleet/validation/receipts/4413677270e52b1656f678a4673dd62583c860dec97e4e4fc5521ffffa3ce202.report-individual-1.counts.json
+test_canonical_sha256_verification_accepts_identical_sources (test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_accepts_identical_sources) ... ok
+test_canonical_sha256_verification_rejects_stale_or_missing_destination (test_glm53_overlay_sync.OverlaySyncTests.test_canonical_sha256_verification_rejects_stale_or_missing_destination) ... ok
+test_identical_bytes_keep_inode_and_mtime_despite_new_source_time (test_glm53_overlay_sync.OverlaySyncTests.test_identical_bytes_keep_inode_and_mtime_despite_new_source_time) ... ok
+test_manifest_revision_changes_without_touching_identical_kernel (test_glm53_overlay_sync.OverlaySyncTests.test_manifest_revision_changes_without_touching_identical_kernel) ... ok
+test_permissions_are_normalized_and_missing_input_fails (test_glm53_overlay_sync.OverlaySyncTests.test_permissions_are_normalized_and_missing_input_fails) ... ok
+test_same_size_edit_with_older_source_timestamp_updates_content_and_time (test_glm53_overlay_sync.OverlaySyncTests.test_same_size_edit_with_older_source_timestamp_updates_content_and_time) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.567s
+
+OK
+
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 2.496s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+OK
+INFO 09-08 11:13:57 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-08 11:13:57 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+W0908 11:13:57.964000 110 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+INFO 09-08 11:13:59 [parser_manager.py:37] "auto" tool choice has been enabled.
+PASS prefilled_think
+PASS explicit_think
+PASS empty_reason
+PASS unfinished
+PASS compat_off
+INFO 09-08 11:13:59 [hf.py:551] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+PASS two_tools
+PASS tool_ends_reasoning
+PASS off_tools
+PASS none_literal_True
+PASS none_fenced_True
+PASS none_partial_True
+PASS surrounding_True
+PASS between_True
+PASS literal_think_True
+PASS whitespace_True
+PASS none_literal_False
+PASS none_fenced_False
+PASS none_partial_False
+PASS surrounding_False
+PASS between_False
+PASS literal_think_False
+PASS whitespace_False
+PASS required
+PASS named
+PASS none_implicit_end
+PASS none_no_tools
+PASS request_reuse
+{"vllm": "0.1.dev20051+g487ecf187", "tokenizer": "/models/glm", "cases": 26, "replays": 3765, "reuse_requests": 3, "sha256": {"/usr/local/lib/python3.12/dist-packages/vllm/parser/glm47_moe.py": "d339da08f143f8316f1cda96e0628c2e5438b9510039c2d262c37d058f8f401d", "/checks/launchers/chat_template_mm_v2.jinja": "0b76cfb35dfd15db1109043c77e99b807bf95024b5b71ca8b435e1c3a844fb42"}}

@@ -18,6 +18,7 @@ import time
 
 import fleet_handoff as handoff
 import fleet_pending as pending
+from fleet_prepared import payload_environment
 
 
 class Supervisor:
@@ -26,7 +27,7 @@ class Supervisor:
         self.directory = Path(os.environ['FLEET_DIR'])
         self.kind = os.environ.get('FLEET_RUN_KIND', 'boot')
         self.repo = Path(__file__).resolve().parent.parent
-        self.env = dict(os.environ, FLEET_PID=str(os.getpid()), FLEET_SESSION=session,
+        self.env = dict(payload_environment(os.environ), FLEET_PID=str(os.getpid()), FLEET_SESSION=session,
                         FLEET_RESTORE_MANAGED='1' if self.kind == 'boot' else '0', FLEET_RUNNER_REPO=str(self.repo),
                         FLEET=fleet, FLEET_NO_RESTORE_CHECK='1')
         self.child = None
@@ -66,7 +67,7 @@ class Supervisor:
             if not stat.S_ISREG(os.fstat(self.log_fd).st_mode):
                 raise OSError('output log must be a regular file')
             os.fchmod(self.log_fd, 0o600)
-            self.mark_pending('queued', phase='waiting', log_path=str(path.resolve()))
+            self.mark_pending(None, log_path=str(path.resolve()))
         except OSError as exc:
             self.log_error = f'output capture unavailable: {exc}'
             if self.log_fd is not None:
@@ -273,9 +274,10 @@ class Supervisor:
             with self.lock():
                 debt = handoff.read(self.directory / 'restore-debt.json')
             if not debt or debt['owner']['session'] != self.session:
-                self.event('handoff-accepted', successor=target['session'])
+                self.event('handoff-accepted', successor=debt['owner']['session'] if debt else target['session'])
                 return 0
-            if not handoff.live(target) or not any(r[1] == target['session'] for r in handoff.rows(self.directory)):
+            from fleet_pause import paused
+            if paused(self.directory, target['session']) or not handoff.live(target) or not any(r[1] == target['session'] for r in handoff.rows(self.directory)):
                 break
             time.sleep(.2)
         # No receiver: reclaim responsibility through the same queue/legacy
@@ -342,7 +344,16 @@ class Supervisor:
                 if self.kind == 'boot' and self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
                 elif not self.stopping:
-                    rc = self.execute(accepted['command'], self.env, accepted['cwd'])
+                    from fleet_prepare import command_environment
+                    payload, payload_env = command_environment(accepted['command'], self.env)
+                    # A literal env -i/-u may select payload settings, but the
+                    # owning supervisor still supplies fleet and recovery context.
+                    for key in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_PID', 'FLEET_RUNNER_REPO',
+                                'FLEET_RESTORE_MANAGED', 'FLEET_NO_RESTORE_CHECK', 'FLEET',
+                                'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_RECOVERY_RECEIPT'):
+                        if key in self.env:
+                            payload_env[key] = self.env[key]
+                    rc = self.execute(payload, payload_environment(payload_env), accepted['cwd'])
                     self.mark_pending('running', phase='payload', payload_returncode=rc,
                                       payload_finished_at=time.time())
                 self.event('payload-finished', rc=rc)
