@@ -1,0 +1,34 @@
+{
+  "completion.json": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/completion.json",
+    "sha256": "1ad9186512be79d3f4052c956e6b0d21bda670c69076998ad7d6ad86ed93dcd0"
+  },
+  "memory.jsonl": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/EPONEPASS1B1.memory.jsonl",
+    "sha256": "7a17e2b81f3fa99f0d1d1aaa7a421d0b19f182624034e19272ed15aead5da391"
+  },
+  "client.log": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/EPONEPASS1B1.client.log",
+    "sha256": "545803e77f701e77574128335145d16b9fd5e9f9781f0b2226a6cc1ac9400738"
+  },
+  "chain.log": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/chain.log",
+    "sha256": "438011ca89e32f5b77359eb22add4d1430b370d42fcb9ab0fc09fded2ee8b131"
+  },
+  "deploy.log": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/deploy.log",
+    "sha256": "2427b506854fdf28804d4e8b43b346446bb6866ec841f94fd1fe3b7f367c3495"
+  },
+  "controls.json": {
+    "path": "/tmp/glm53-ep-onepass-0909-1/capture/controls.json",
+    "sha256": "8368a90946e89d7feefe1275f827f8a30579811352b87b7755397ad4199ae17e"
+  },
+  "run.log": {
+    "path": "/home/choiceoh/glm53-logs/fleet/run-logs/a9ff1ea045510a5fad0f1237ab345c5b2b2d73108d6e3d232aeafb5de3c5c9a2.log",
+    "sha256": "366c3b90960c319b14cc65bf6c3da705d38831992a3b1c5f70175851e64e82d4"
+  },
+  "boot-B1.log": {
+    "path": "/home/choiceoh/glm53-logs/boot-EPONEPASS1B1.log",
+    "sha256": "76a73edc16faf2e72a4b0debee2f079b004981113d64ff21ce853ca12a461c5d"
+  }
+}

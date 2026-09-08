@@ -1,0 +1,5 @@
+540dfb7 merge: include current serving lifecycle for queued onepass
+61 overlays + manifest deployed and SHA-256 verified on head + 3 workers.
+restart to apply: launchers/start-glm53-nvfp4-tp4.sh   (expect a long
+recompile warmup on the first boot after an overlay-source change)
+deployed build 1bb94f0d362e = 540dfb7 (registry: /home/choiceoh/glm53-logs/fleet/builds.tsv)

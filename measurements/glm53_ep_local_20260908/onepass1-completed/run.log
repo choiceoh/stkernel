@@ -1,0 +1,76 @@
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs) 2026-09-09_01:07:05
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:07:24
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs) 2026-09-09_01:12:04
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 0 reqs) 2026-09-09_01:12:31
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 1 reqs) 2026-09-09_01:12:32
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 0 reqs) 2026-09-09_01:12:38
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 1 reqs) 2026-09-09_01:12:39
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 0 reqs) 2026-09-09_01:12:50
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 1 reqs) 2026-09-09_01:12:53
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 0 reqs) 2026-09-09_01:13:14
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (3 procs, 1 reqs) 2026-09-09_01:13:16
+waiting: pos 2/2, held by validate0909b [boot] (pid 787000@srv2, since 00:55, est 75m, 40차 PR #477 도입분 한방 검증(2차): 기본값 + KDA_STRIDED + ROUTER_CUBLAS + fly, 팔마다 onepass), legacy busy (2 procs, 0 reqs) 2026-09-09_01:14:04
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)) 2026-09-09_01:14:05
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:14:06
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:14:07
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (4 procs, 0 reqs) 2026-09-09_01:14:09
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:14:10
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_01:14:13
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:14:16
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:14:23
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs) 2026-09-09_01:15:22
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:16:22
+paused: eplocalonepass0909v1; edit and resume to retain this ticket
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:22:57
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:23:28
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:23:31
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:24:05
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:24:07
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:24:41
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:24:43
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:25:17
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:25:19
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:25:52
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:25:53
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (4 procs, 0 reqs) 2026-09-09_01:25:55
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:25:57
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs, booting) 2026-09-09_01:26:00
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (3 procs, 0 reqs) 2026-09-09_01:26:03
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs) 2026-09-09_01:26:09
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:26:10
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs) 2026-09-09_01:27:08
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs, booting) 2026-09-09_01:28:08
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (2 procs, 0 reqs) 2026-09-09_01:29:17
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:29:44
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:29:48
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:30:23
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:30:25
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:30:59
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:31:02
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 3 reqs) 2026-09-09_01:31:31
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 2 reqs) 2026-09-09_01:31:33
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:31:39
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 3 reqs) 2026-09-09_01:31:40
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:31:50
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 2 reqs) 2026-09-09_01:31:58
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:33:10
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 3 reqs) 2026-09-09_01:33:11
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:33:13
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 3 reqs) 2026-09-09_01:33:16
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 2 reqs) 2026-09-09_01:33:46
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 0 reqs) 2026-09-09_01:33:51
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 2 reqs) 2026-09-09_01:33:52
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)), legacy busy (1 procs, 1 reqs) 2026-09-09_01:33:54
+waiting: pos 1/1, held by apc6912-0909 [boot] (pid 897261@srv2, since 01:14, est 40m, 40차: 긴 프리필 엔진 사망이 APC 를 따라가는가 — PREFIX_CACHE=0 vs 기본값, 각 부팅에서 128K 프리필 6회 반복(레그 없음, 배포 없음)) 2026-09-09_01:34:29
+GO eplocalonepass0909v1 2026-09-09_01:34:31
+  node 10.10.10.1: gpu=ok stray=4 ram=15G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=2 ram=11G path=ok 
+  node 10.10.10.4: gpu=ok stray=16 ram=15G path=ok 
+queued: eplocalonepass0909v1 [boot] at position 2 of 2
+baseline: MB9216BASE on build 7c91dfcb3753 -- 22.81 step/s, 3.55 tok/step, 51.0% acc, 2026-09-09 00:54:26 -- skip a defaults arm and compare against it
+eplocalonepass0909v1 -> position 1
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting) 2026-09-09_01:43:05
+waiting: pos 1/1, legacy busy (0 procs, 0 reqs, booting) 2026-09-09_01:45:28
+GO eplocalonepass0909v1 2026-09-09_01:46:56
+{"boot_id": "787c7e69-f038-482d-9383-9dfc7c574948", "deferred": true, "generation": "2c3bef03bbe643a4a98b74ecc452b8a0", "phase": "waiting", "reason": "legacy session restore deferred", "since": 388409.332246482, "updated_at": 1788886016.3951595, "version": 1}
