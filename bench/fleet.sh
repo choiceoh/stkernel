@@ -125,7 +125,8 @@ preflight() {  # [--probe] session [-- cmd...] -> 0 PASS, 1 FAIL
     if grep -qF 'if [[ $touched == 1 ]]; then' "$chain" && grep -q 'RESTORE' "$chain"; then
       echo "  FAIL legacy unconditional restore: guard cleanup with FLEET_RESTORE_MANAGED and use bench/fleet_entry.py idle (see probes/run_gemm_input_cta.sh)"; ok=0
     fi
-    knobs=$(grep -oE "VLLM_[A-Z0-9_]+=[^ \"'\\]*" "$chain" | sort -u)
+    # Header examples describe the runner; only executable lines can set knobs.
+    knobs=$(grep -vE '^[[:space:]]*#' "$chain" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"'\\]*" | sort -u)
   fi
   [ $# -gt 0 ] && knobs="$knobs $(printf '%s ' "$@" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"']*" | sort -u)"
   # The declared-knob rule is about the LAUNCHER: it forwards only the keys
