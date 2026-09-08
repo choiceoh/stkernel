@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Pass deployment CPU gates before queueing, and verify their exact evidence.
+"""Separate quick experiment admission from complete CPU release evidence.
 
 Only the fixed deployment gates are cacheable. A GPU holder consumes existing
 receipts; it never starts a missing CPU gate. Recovery uses an approved main
@@ -261,8 +261,14 @@ def gate_spec(repo, profile, env, **options):
                 inputs=[], timeout_s=TIMEOUT)
 
 
-def identity(repo, profile, env, **options):
+def identity(repo, profile, env, *, level='release', **options):
     source(repo)
+    if level == 'admission':
+        import fleet_admission
+        return fleet_admission.identity(repo, profile, env,
+                validator_sha=cpu_evidence.sha(Path(__file__).resolve()))
+    if level != 'release':
+        raise ValueError('unknown CPU validation level: ' + str(level))
     spec = gate_spec(repo, profile, env, **options)
     value = cpu_evidence.identity(repo, spec, env)
     if not value:
@@ -302,14 +308,14 @@ def read_receipt(path, key, spec):
         return None
 
 
-def execute(argv, repo, env, output):
+def execute(argv, repo, env, output, *, timeout=TIMEOUT):
     import shutil
     if shutil.which('nice', path=env['PATH']):
         argv = ['nice', '-n', '19', *argv]
     process = subprocess.Popen(argv, cwd=repo, env=env, stdout=output, stderr=subprocess.STDOUT,
                                start_new_session=True)
     try:
-        rc = process.wait(timeout=TIMEOUT)
+        rc = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         os.killpg(process.pid, signal.SIGTERM)
         try:
@@ -323,12 +329,12 @@ def execute(argv, repo, env, output):
 
 
 def validate(repo, store, profile='glm53', *, require_receipt=None, verify_only=False,
-             image=None, model=None, use_profile_defaults=False):
+             image=None, model=None, use_profile_defaults=False, level='release'):
     repo = Path(repo).resolve()
     store = private_directory(store)
     receipts = private_directory(store / 'receipts')
     env = environment()
-    options = dict(image=image, model=model, use_profile_defaults=use_profile_defaults)
+    options = dict(image=image, model=model, use_profile_defaults=use_profile_defaults, level=level)
     ident, spec = identity(repo, profile, env, **options)
     key = ident['key']
     path = receipts / (key + '.json')
@@ -352,17 +358,19 @@ def validate(repo, store, profile='glm53', *, require_receipt=None, verify_only=
         started = time.time()
         try:
             with log.open('w') as output:
-                execute(['bash', '-n', 'launchers/deploy-overlays.sh'], repo, env, output)
-                # Logic checks inspect generated profile snapshots. Fresh
-                # recovery worktrees have none, and old ignored builds may be
-                # stale; derive every snapshot from the pinned module sources.
-                for profile_path in sorted((repo / 'profiles').glob('*.env')):
-                    execute(['bash', 'launchers/compose-overlays.sh', profile_path.stem], repo, env, output)
-                execute([sys.executable, 'launchers/audit-runtime-guards.py', '--self-test'], repo, env, output)
-                execute([*spec['command'], '--out', str(report)], repo, env, output)
-                chat = spec['context']['chat_release']
-                if chat:
-                    execute(['bash', 'launchers/check-glm53-chat.sh', chat['model'], chat['image']], repo, env, output)
+                if level == 'admission':
+                    execute([*spec['command'], '--out', str(report)], repo, env, output,
+                            timeout=spec['timeout_s'])
+                else:
+                    execute(['bash', '-n', 'launchers/deploy-overlays.sh'], repo, env, output)
+                    # Full release checks inspect all generated profile snapshots.
+                    for profile_path in sorted((repo / 'profiles').glob('*.env')):
+                        execute(['bash', 'launchers/compose-overlays.sh', profile_path.stem], repo, env, output)
+                    execute([sys.executable, 'launchers/audit-runtime-guards.py', '--self-test'], repo, env, output)
+                    execute([*spec['command'], '--out', str(report)], repo, env, output)
+                    chat = spec['context']['chat_release']
+                    if chat:
+                        execute(['bash', 'launchers/check-glm53-chat.sh', chat['model'], chat['image']], repo, env, output)
         except ValueError as exc:
             raise ValueError(str(exc) + '; log: ' + str(log)) from exc
         # Both source and environment are checked after execution. Concurrent
@@ -387,39 +395,9 @@ def validate(repo, store, profile='glm53', *, require_receipt=None, verify_only=
         return dict(value, receipt=str(path), reused=False)
 
 
-def prepare_recovery(repo, store):
-    if held():
-        raise ValueError('prepare approved recovery before GPU reservation')
-    repo, store = Path(repo).resolve(), private_directory(store)
-    # Pin approval under a repository-specific lock, then validate outside that
-    # lock so independent versions can prepare concurrently.
-    repo_key = hashlib.sha256(str(repo).encode()).hexdigest()
-    with lock(store / ('recovery-' + repo_key + '.lock')):
-        run(['git', 'fetch', '--quiet', 'origin', 'main'], repo)
-        commit = run(['git', 'rev-parse', '--verify', 'origin/main^{commit}'], repo)
-        checkouts = private_directory(store / 'recovery')
-        checkout = checkouts / (repo_key[:16] + '-' + commit)
-        if not checkout.exists():
-            run(['git', 'worktree', 'add', '--quiet', '--detach', str(checkout), commit], repo)
-        if source(checkout) != commit:
-            raise ValueError('approved recovery checkout changed; refuse to reset it: ' + str(checkout))
-    value = validate(checkout, store, 'glm53', use_profile_defaults=True)
-    if source(checkout) != commit:
-        raise ValueError('approved recovery checkout changed during CPU validation')
-    descriptor = dict(version=VERSION, repo=str(checkout), source=commit,
-                      validation_receipt=value['receipt'], store=str(store))
-    digest = hashlib.sha256(json.dumps(descriptor, sort_keys=True).encode()).hexdigest()
-    directory = private_directory(store / 'recovery-receipts')
-    path = directory / (digest + '.json')
-    with lock(directory / (digest + '.lock')):
-        if path.exists() and json.loads(path.read_text()) != descriptor:
-            raise ValueError('pinned recovery receipt changed: ' + str(path))
-        if not path.exists():
-            temporary = path.with_suffix('.tmp')
-            temporary.write_text(json.dumps(descriptor, sort_keys=True, indent=2) + '\n')
-            temporary.chmod(0o600)
-            temporary.replace(path)
-    return dict(descriptor, receipt=str(path), reused=value['reused'])
+def prepare_recovery(repo, store, *, refresh=False):
+    from fleet_recovery import prepare
+    return prepare(sys.modules[__name__], repo, store, refresh=refresh)
 
 
 def recovery_info(receipt):
@@ -438,18 +416,28 @@ def recovery_info(receipt):
 
 
 def verify_recovery(receipt, repo=None):
-    value = recovery_info(receipt)
-    if repo is not None and Path(repo).resolve() != Path(value['repo']).resolve():
-        raise ValueError('deployment source is not the pinned recovery checkout')
-    repo, commit = Path(value['repo']), value['source']
-    if source(repo) != commit:
-        raise ValueError('pinned approved recovery source changed')
-    # No fetch, checkout switch or CPU test execution is allowed in recovery.
-    # A later approved main remains compatible; a rewritten approval rejects.
-    run(['git', 'merge-base', '--is-ancestor', commit, 'origin/main'], repo)
-    validate(repo, value['store'], 'glm53', require_receipt=value['validation_receipt'], verify_only=True,
-             use_profile_defaults=True)
-    return value
+    from fleet_recovery import verify
+    return verify(sys.modules[__name__], receipt, repo)
+
+
+def deployment_level(requested=None):
+    """Old pinned controllers keep release semantics; new holders use admission."""
+    if requested is not None:
+        return requested
+    if (os.environ.get('FLEET_VALIDATION_LEVEL') == 'admission'
+            and os.environ.get('FLEET_VALIDATION_REQUIRED') == '1'
+            and os.environ.get('FLEET_RESTORE_MANAGED') == '1' and held()):
+        return 'admission'
+    return 'release'
+
+
+def recovery_selection(profile, image=None, model=None, level=None):
+    # Recovery evidence is for the approved GLM profile defaults only. A
+    # candidate override cannot borrow that receipt for another deployment.
+    if profile != 'glm53' or level not in (None, 'release') or any(
+            value is not None for value in (image, model)) or any(
+            name in os.environ for name in ('IMAGE', 'MODEL_HOST_PATH')):
+        raise ValueError('recovery requires the glm53 release profile defaults without candidate overrides')
 
 
 def main():
@@ -458,6 +446,10 @@ def main():
     parser.add_argument('--repo', type=Path)
     parser.add_argument('--store', type=Path, default=default_store())
     parser.add_argument('--profile', default='glm53')
+    parser.add_argument('--level', choices=['admission', 'release'],
+                        help='quick experiment admission or complete release (default)')
+    parser.add_argument('--refresh-recovery', action='store_true',
+                        help='explicitly release-validate latest main and replace the stable recovery pin')
     parser.add_argument('--image', help='explicit candidate serving image (otherwise IMAGE/profile)')
     parser.add_argument('--model', help='explicit candidate tokenizer directory (otherwise MODEL_HOST_PATH/profile)')
     parser.add_argument('--receipt')
@@ -474,16 +466,30 @@ def main():
         if args.action == 'prepare-recovery':
             if not args.repo:
                 parser.error('prepare-recovery requires --repo')
-            value = prepare_recovery(args.repo, args.store)
+            value = prepare_recovery(args.repo, args.store, refresh=args.refresh_recovery)
         elif args.action == 'verify-recovery':
             if not args.receipt:
                 parser.error('verify-recovery requires --receipt')
+            recovery_selection(args.profile, args.image, args.model, args.level)
             value = verify_recovery(args.receipt, args.repo)
         else:
             if not args.repo:
                 parser.error('validate requires --repo')
-            value = validate(args.repo, args.store, args.profile, require_receipt=args.receipt,
-                             verify_only=args.verify_only, image=args.image, model=args.model)
+            recovery = os.environ.get('FLEET_DEPLOY_RECOVERY_RECEIPT')
+            if recovery:
+                # Also supports old source-side deploy scripts under a new
+                # pinned controller. Their generic validate call must consume
+                # the original release receipt, not re-identify it as admission.
+                recovery_selection(args.profile, args.image, args.model, args.level)
+                approved = verify_recovery(recovery, args.repo)
+                if args.receipt and Path(args.receipt).absolute() != Path(approved['validation_receipt']):
+                    raise ValueError('requested receipt is not the pinned recovery release receipt')
+                value = dict(json.loads(Path(approved['validation_receipt']).read_text()),
+                             receipt=approved['validation_receipt'], reused=True)
+            else:
+                value = validate(args.repo, args.store, args.profile, require_receipt=args.receipt,
+                                 verify_only=args.verify_only, image=args.image, model=args.model,
+                                 level=deployment_level(args.level))
         if args.format == 'shell':
             if args.action == 'validate':
                 parser.error('shell format is only valid for recovery')
