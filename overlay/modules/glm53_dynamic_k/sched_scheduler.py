@@ -58,7 +58,10 @@ from vllm.v1.metrics.perf import ModelMetrics, PerfStats
 from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
 from vllm.v1.outputs import DraftTokenIds, KVConnectorOutput, ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus, StreamingUpdate
-from vllm.v1.spec_decode.dynamic.utils import build_dynamic_sd_schedule_lookup
+from vllm.v1.spec_decode.dynamic.utils import (
+    build_dynamic_sd_schedule_lookup,
+    validate_and_normalize_dynamic_sd_schedule,
+)
 from vllm.v1.spec_decode.metrics import SpecDecodingStats
 from vllm.v1.structured_output import StructuredOutputGrammar, StructuredOutputManager
 from vllm.v1.utils import record_function_or_nullcontext
@@ -257,8 +260,16 @@ class Scheduler(SchedulerInterface):
                     vllm_num_speculative_tokens=self.num_spec_tokens,
                 )
             if speculative_config.num_speculative_tokens_per_seq_len:
+                # deneb fork (vLLM #54801): upstream assigned this raw, so the
+                # only validator in the module never saw it -- [[0,1]] survived
+                # config and raised "not enough values to unpack" on the first
+                # decode step that reached the loop below. Same checks as the
+                # batch-size schedule, minus its start-at-1 rule.
                 self.dynamic_sd_seq_len_lookup = (
-                    speculative_config.num_speculative_tokens_per_seq_len
+                    validate_and_normalize_dynamic_sd_schedule(
+                        speculative_config.num_speculative_tokens_per_seq_len,
+                        first_range_start=0,
+                    )
                 )
             self.use_eagle = speculative_config.use_eagle()
 

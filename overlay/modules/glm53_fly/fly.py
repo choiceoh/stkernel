@@ -23,7 +23,15 @@ from vllm.triton_utils import tl, triton
 # profile-declared VLLM_* key. Latched at import, not read per call: this
 # repo hoists hot-path env lookups to init time, and compute_fly_entropy runs
 # once per decode step.
-_ENTROPY_TOP_K = int(os.getenv("VLLM_FLY_ENTROPY_TOP_K", "3"))
+# Total on purpose: spec_decode/rejection_sampler_utils.py imports this module
+# unconditionally, on every boot, whatever REJECT_METHOD is -- so a malformed
+# value must not raise here and kill an engine that never arms FLy. The knob is
+# validated in the launcher, where an abort is cheap; the <= 0 check below still
+# catches a latched 0 or -1 at first use.
+try:
+    _ENTROPY_TOP_K = int(os.getenv("VLLM_FLY_ENTROPY_TOP_K", "3"))
+except ValueError:
+    _ENTROPY_TOP_K = 3
 
 
 def compute_fly_entropy(

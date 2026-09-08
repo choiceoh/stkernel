@@ -6,6 +6,8 @@ DynamicSDSchedule = list[tuple[int, int, int]]
 
 def validate_and_normalize_dynamic_sd_schedule(
     schedule: object,
+    *,
+    first_range_start: int = 1,
 ) -> DynamicSDSchedule:
     """Validate and normalize a Dynamic SD schedule (batch-size or sequence-length).
 
@@ -59,11 +61,13 @@ def validate_and_normalize_dynamic_sd_schedule(
             raise ValueError("Batch-size ranges must be non-overlapping and sorted.")
         previous_end = range_end
 
-    first_range_start = parsed_schedule[0][0]
-    if first_range_start != 1:
+    # deneb fork (vLLM #54801): the batch-size schedule must start at 1 so every
+    # runtime batch size is covered. A sequence-length schedule starts at 0 and
+    # is allowed to leave the tail undefined -- an uncovered length simply keeps
+    # the static K -- so its caller passes first_range_start=0.
+    if parsed_schedule[0][0] != first_range_start:
         raise ValueError(
-            "The first batch-size range must start at 1 so every runtime "
-            "batch size has a defined schedule."
+            f"The first range must start at {first_range_start}."
         )
 
     return parsed_schedule

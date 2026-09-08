@@ -6173,6 +6173,11 @@ def test_launcher_reject_method_gate() -> None:
     check("NON-EMPTY list of [start,end,k] triples" in text,
           "an empty SPEC_K_SEQLEN schedule must abort, not silently disable "
           "decode graph capture")
+    # FLY_WINDOW/FLY_ENTROPY land inside SPECCFG_VAL, which the worker lane
+    # splices into an unquoted ssh string the remote shell re-parses.
+    for _k in ("FLY_WINDOW", "FLY_ENTROPY"):
+        check(f"ABORT: {_k} must be" in text,
+              f"{_k} must be validated before it reaches the config JSON")
     names = _launcher_caller_passthrough(text)
     check({"DRAFT_SAMPLE", "REJECT_METHOD"} <= names,
           "both drafter knobs must be in the caller passthrough list -- a "

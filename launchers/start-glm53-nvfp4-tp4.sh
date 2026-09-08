@@ -597,6 +597,13 @@ for entry in schedule:
     start, end, k = entry
     if start < 0 or end < start or k < 0:
         raise SystemExit(f"entry {entry!r} wants 0 <= start <= end and k >= 0")
+if schedule[0][0] != 0:
+    raise SystemExit("the first range must start at 0")
+previous_end = -1
+for start, end, _ in schedule:
+    if start <= previous_end:
+        raise SystemExit("ranges must be sorted and non-overlapping")
+    previous_end = end
 ' "$SPEC_K_SEQLEN" 2>&1); then
       echo "ABORT: SPEC_K_SEQLEN is not a valid schedule ($_seqlen_err): $SPEC_K_SEQLEN"; exit 1
     fi
@@ -608,9 +615,22 @@ for entry in schedule:
       _spec_extra="$_spec_extra,\"rejection_sample_method\":\"$REJECT_METHOD\""
       # FLy's two dials, both optional: window (default min(6, K-1)) and the
       # entropy threshold above which a rejection is treated as ambiguous
-      # (default 0.3). Bracket surface, not a default change.
-      [ -n "${FLY_WINDOW:-}" ] && _spec_extra="$_spec_extra,\"fly_window_size\":$FLY_WINDOW"
-      [ -n "${FLY_ENTROPY:-}" ] && _spec_extra="$_spec_extra,\"fly_entropy_threshold\":$FLY_ENTROPY"
+      # (default 0.3). Validated, not interpolated raw: these land inside
+      # SPECCFG_VAL, which the worker lane splices into an unquoted ssh string
+      # the remote shell re-parses, so an unchecked value is both an invalid-JSON
+      # death after a 4-node run and a way for head and workers to disagree.
+      if [ -n "${FLY_WINDOW:-}" ]; then
+        case "$FLY_WINDOW" in
+          ""|*[!0-9]* ) echo "ABORT: FLY_WINDOW must be a non-negative integer, got '$FLY_WINDOW'"; exit 1 ;;
+        esac
+        _spec_extra="$_spec_extra,\"fly_window_size\":$FLY_WINDOW"
+      fi
+      if [ -n "${FLY_ENTROPY:-}" ]; then
+        case "$FLY_ENTROPY" in
+          *[!0-9.]*|*.*.*|.|"" ) echo "ABORT: FLY_ENTROPY must be a non-negative decimal, got '$FLY_ENTROPY'"; exit 1 ;;
+        esac
+        _spec_extra="$_spec_extra,\"fly_entropy_threshold\":$FLY_ENTROPY"
+      fi
       : ;;
     * ) echo "ABORT: REJECT_METHOD must be standard, block or fly, got '$REJECT_METHOD'"; exit 1 ;;
   esac
