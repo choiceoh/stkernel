@@ -197,6 +197,82 @@ def old_quantizer_inputs(selected):
     return ([selected[0]] * len(selected) if equal else selected), int(equal)
 
 
+class GuardedWeights:
+    """Reading an invalid route's weight fails before any float conversion."""
+    def __init__(self, ids, bits):
+        self.ids, self.bits, self.reads = ids, bits, []
+
+    def __getitem__(self, index):
+        if not 0 <= self.ids[index] < 72:
+            raise AssertionError('poisoned remote weight was read')
+        self.reads.append(index)
+        return FloatBits(self.bits[index])
+
+
+class RouteWeightReadTests(unittest.TestCase):
+    def test_actual_histogram_and_producer_skip_poison_and_preserve_valid_weight_bits(self):
+        tree = ast.parse(KERNEL.read_text())
+        method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                      and node.name == 'initialize_route_q0_and_publish')
+        histogram = next(node for node in ast.walk(method) if isinstance(node, ast.While)
+                         and ast.unparse(node.test) == 'hist_idx < total_pairs')
+        histogram_code = compile(ast.Module(body=[histogram], type_ignores=[]), str(KERNEL), 'exec')
+        # Include both integer boundaries, the E72 sentinel, duplicate local
+        # IDs, signed zeros, subnormals, infinities and raw NaN payloads.
+        fixtures = (
+            ([-1, 72, -(1 << 31), (1 << 31)-1, 73, -2, 72, -1], [0x7FA12345]*8),
+            ([0, 0, 71, 71, 1, 1, 2, 2],
+             [0, 0x80000000, 0x7FC12345, 0x7FA00001, 1, 0x80000001, 0x7F800000, 0xFF800000]),
+            ([72, 71, -1, 71, 0, 72, 0, 1],
+             [0x7FA12345, 0x3F800000, 0x7FC12345, 0xBF800000, 0x80000000, 0, 0x7FCABCDE, 0]),
+        )
+        for ids, bits in fixtures:
+            with self.subTest(ids=ids):
+                # Reference selection reads only ordinary test-side values,
+                # independent of the actual source's control-flow nesting.
+                selected = [i for i, expert in enumerate(ids)
+                            if 0 <= expert < 72 and FloatBits(bits[i]).number() != 0.0]
+                valid = [i for i, expert in enumerate(ids) if 0 <= expert < 72]
+                expected_counts = [sum(ids[i] == expert for i in selected) for expert in range(72)]
+                counts = [0]*72
+                weights = GuardedWeights(ids, bits)
+                def increment(address, value):
+                    self.assertTrue(0 <= address < 72*4 and address % 4 == 0)
+                    self.assertEqual(value, 1)
+                    counts[address//4] += value
+                # Non-unit cooperative stride proves no route is skipped or
+                # visited twice when validity varies across histogram lanes.
+                for start in range(3):
+                    namespace = dict(Int32=int, cutlass=SimpleNamespace(Float32=f32),
+                                     hist_idx=start, flat_stride=3, total_pairs=8, num_experts=72,
+                                     topk_ids=[ExpertId(expert) for expert in ids], topk_weights=weights,
+                                     route_hist_addr=0, atomic_add_shared_i32=increment)
+                    exec(histogram_code, namespace)
+                self.assertEqual(sorted(weights.reads), valid)
+                self.assertEqual(counts, expected_counts)
+
+                cache = SourceCache()
+                scale_bits = [0x3F800000+expert for expert in range(72)]
+                cache.experts(scale_bits)
+                weights = GuardedWeights(ids, bits)
+                namespace = dict(cache.base, lane_id=0, token_idx=0, route_slot_base=0,
+                                 topk_ids=[ExpertId(expert) for expert in ids], topk_weights=weights)
+                exec(cache.produce, namespace)
+                self.assertEqual(weights.reads, valid)
+                self.assertEqual(cache.row_counts, expected_counts)
+                prior = [0]*72
+                expected_writes = []
+                for index in selected:
+                    expert = ids[index]
+                    row = (expert*64 + prior[expert]//128)*128 + prior[expert]%128
+                    prior[expert] += 1
+                    expected_writes += [(('tokens', row), 0), (('weights', row), bits[index])]
+                self.assertEqual(cache.global_writes, expected_writes)
+                self.assertEqual(cache.state(0) & 15, len(selected))
+                self.assertEqual(cache.consume(0),
+                                 old_quantizer_inputs([scale_bits[ids[index]] for index in selected]))
+
+
 class RouteScaleCacheTests(unittest.TestCase):
     def test_selected_raw_bits_match_previous_quantizer_inputs(self):
         rng = random.Random(478)

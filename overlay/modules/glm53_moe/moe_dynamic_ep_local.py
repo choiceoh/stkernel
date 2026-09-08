@@ -23,7 +23,7 @@ from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz,
     quantize_block_fp4, quantize_block_fp4_fast, get_ptr_as_int64,
     ld_shared_i32_relaxed, st_global_f32, st_global_i32,
-    st_shared_i32, st_shared_f32, st_global_v4_u32,
+    st_shared_i32, st_shared_f32, st_global_v4_u32, st_global_u64,
 )
 from ._moe_dynamic import gated as _stock
 from ._moe_dynamic.gated import (
@@ -31,7 +31,7 @@ from ._moe_dynamic.gated import (
     blockscaled_utils, utils, cuda,
     _ld_shared_i32, _st_shared_i32, _threadfence, atomic_add_shared_i32,
     q0_bulk_barrier_init, q0_cp_async_bulk, q0_bulk_arrive_expect_tx, q0_bulk_try_wait,
-    load_shared_bf16x16_to_f32x16, st_global_u64_adaptive_l2,
+    load_shared_bf16x16_to_f32x16,
 )
 
 STOCK_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
@@ -203,9 +203,12 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
         hist_idx = flat_tid
         while hist_idx < total_pairs:
             expert_id = topk_ids[hist_idx].to(Int32)
-            weight = topk_weights[hist_idx].to(cutlass.Float32)
-            if expert_id >= Int32(0) and expert_id < num_experts and weight != cutlass.Float32(0.0):
-                atomic_add_shared_i32(route_hist_addr + expert_id * Int32(4), Int32(1))
+            # Remote/sentinel routes have no histogram contribution, even
+            # when their unused weight storage contains NaNs or other bits.
+            if expert_id >= Int32(0) and expert_id < num_experts:
+                weight = topk_weights[hist_idx].to(cutlass.Float32)
+                if weight != cutlass.Float32(0.0):
+                    atomic_add_shared_i32(route_hist_addr + expert_id * Int32(4), Int32(1))
             hist_idx += flat_stride
         cute.arch.sync_threads()
 
@@ -348,51 +351,52 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                         while topk_slot < num_topk:
                             pair_idx = token_idx * num_topk + topk_slot
                             expert_id = topk_ids[pair_idx].to(Int32)
-                            weight = topk_weights[pair_idx].to(cutlass.Float32)
-                            if expert_id >= Int32(0) and expert_id < num_experts and weight != cutlass.Float32(0.0):
-                                row = atomic_add_global_i32(
-                                    get_ptr_as_int64(expert_write_rows, expert_id),
-                                    Int32(1),
-                                )
-                                # The tile quotient and remainder recombine
-                                # into row; avoid signed division in the route
-                                # allocator without changing its physical row.
-                                phys_row = expert_tile_base[expert_id] * Int32(
-                                    self.tile_shape_mnk[0]
-                                ) + row
-                                st_global_i32(
-                                    get_ptr_as_int64(token_map, phys_row), token_idx
-                                )
-                                st_global_f32(
-                                    get_ptr_as_int64(token_weights, phys_row), weight
-                                )
+                            if expert_id >= Int32(0) and expert_id < num_experts:
+                                weight = topk_weights[pair_idx].to(cutlass.Float32)
+                                if weight != cutlass.Float32(0.0):
+                                    row = atomic_add_global_i32(
+                                        get_ptr_as_int64(expert_write_rows, expert_id),
+                                        Int32(1),
+                                    )
+                                    # The tile quotient and remainder recombine
+                                    # into row; avoid signed division in the route
+                                    # allocator without changing its physical row.
+                                    phys_row = expert_tile_base[expert_id] * Int32(
+                                        self.tile_shape_mnk[0]
+                                    ) + row
+                                    st_global_i32(
+                                        get_ptr_as_int64(token_map, phys_row), token_idx
+                                    )
+                                    st_global_f32(
+                                        get_ptr_as_int64(token_weights, phys_row), weight
+                                    )
 
-                                route_slot = route_slot_base + local_topk
-                                _st_shared_i32(
-                                    route_phys_rows_addr + route_slot * Int32(4),
-                                    phys_row,
-                                )
-                                selected_scale_bits = _ld_shared_i32(
-                                    expert_scales_addr + expert_id * Int32(4)
-                                )
-                                _st_shared_i32(
-                                    route_scales_addr + route_slot * Int32(4),
-                                    selected_scale_bits,
-                                )
-                                # Reuse this already-loaded word while the
-                                # input copy is in flight. Compare Float32,
-                                # preserving signed-zero equality and the
-                                # single-NaN case (never compare the first
-                                # selected scale with itself).
-                                selected_gs = Uint32(selected_scale_bits).bitcast(
-                                    cutlass.Float32
-                                )
-                                if local_topk == Int32(0):
-                                    producer_first_gs = selected_gs
-                                elif selected_gs != producer_first_gs:
-                                    producer_scales_equal = Int32(0)
+                                    route_slot = route_slot_base + local_topk
+                                    _st_shared_i32(
+                                        route_phys_rows_addr + route_slot * Int32(4),
+                                        phys_row,
+                                    )
+                                    selected_scale_bits = _ld_shared_i32(
+                                        expert_scales_addr + expert_id * Int32(4)
+                                    )
+                                    _st_shared_i32(
+                                        route_scales_addr + route_slot * Int32(4),
+                                        selected_scale_bits,
+                                    )
+                                    # Reuse this already-loaded word while the
+                                    # input copy is in flight. Compare Float32,
+                                    # preserving signed-zero equality and the
+                                    # single-NaN case (never compare the first
+                                    # selected scale with itself).
+                                    selected_gs = Uint32(selected_scale_bits).bitcast(
+                                        cutlass.Float32
+                                    )
+                                    if local_topk == Int32(0):
+                                        producer_first_gs = selected_gs
+                                    elif selected_gs != producer_first_gs:
+                                        producer_scales_equal = Int32(0)
 
-                                local_topk += Int32(1)
+                                    local_topk += Int32(1)
                             topk_slot += Int32(1)
                         # Only this Q0 producer/consumer uses slot 31. Top8
                         # leaves bit 4 free above the four-bit route count;
@@ -463,8 +467,9 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         phys_row * output_bytes_per_row
                                         + sf_idx * Int32(8)
                                     )
-                                    st_global_u64_adaptive_l2(
-                                        num_tokens,
+                                    # This EP entry admits T>=4096, so the
+                                    # stock T<=2048 L2-retention arm is dead.
+                                    st_global_u64(
                                         get_ptr_as_int64(
                                             packed_a_storage, output_offset
                                         ),
@@ -515,8 +520,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                                         phys_row * output_bytes_per_row
                                         + sf_idx * Int32(8)
                                     )
-                                    st_global_u64_adaptive_l2(
-                                        num_tokens,
+                                    st_global_u64(
                                         get_ptr_as_int64(
                                             packed_a_storage, output_offset
                                         ),

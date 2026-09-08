@@ -236,6 +236,48 @@ class ScaleOffsetAddressTests(unittest.TestCase):
                 self.assertEqual(addresses, set(range(start, start + 128 * 256)))
 
 
+class Q0StorePolicyTests(unittest.TestCase):
+    def test_actual_dispatch_admission_excludes_the_stock_retention_range(self):
+        path = ROOT/'overlay/modules/glm53_moe/moe_dispatch.py'
+        tree = ast.parse(path.read_text())
+        method = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                      and node.name == '_ep_local_prefill_kernel')
+        guard = method.body[0]
+        self.assertIsInstance(guard, ast.If)
+        self.assertEqual(ast.unparse(guard.body[0]), 'return None')
+        expression = compile(ast.Expression(guard.test), str(path), 'eval')
+        for tokens in range(16386):
+            declined = eval(expression, dict(_GLM53_EP_PREFILL_LOCAL=True, m=tokens))
+            self.assertEqual(declined, not 4096 <= tokens <= 16384)
+            if not declined:
+                self.assertGreater(tokens, 2048)
+        self.assertTrue(eval(expression, dict(_GLM53_EP_PREFILL_LOCAL=False, m=8192)))
+
+    def test_both_actual_q0_stores_keep_exact_addresses_and_payload_bits(self):
+        tree = ast.parse(KERNEL.read_text())
+        imported = [alias.name for node in tree.body if isinstance(node, ast.ImportFrom)
+                    and node.module == 'flashinfer.cute_dsl.fp4_common' for alias in node.names]
+        self.assertIn('st_global_u64', imported)
+        method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                      and node.name == 'initialize_route_q0_and_publish')
+        stores = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Name) and node.func.id.startswith('st_global_u64')]
+        self.assertEqual([node.func.id for node in stores], ['st_global_u64', 'st_global_u64'])
+        for store in stores:
+            expression = compile(ast.Expression(store), str(KERNEL), 'eval')
+            for offset in (0, 8, 2040, (16384*8+72*127-1)*2048+2040):
+                for word in (0, 1, 0x8000000000000000, 0xFEDCBA9876543210, (1 << 64)-1):
+                    actual = []
+                    def write(address, value):
+                        actual.append((address, value.to_bytes(8, 'little')))
+                    base = 0x100000000
+                    namespace = dict(st_global_u64=write, output_offset=offset, packed64=word,
+                                     packed_a_storage=base, num_tokens=object(),
+                                     get_ptr_as_int64=lambda pointer, index: pointer+index)
+                    eval(expression, namespace)
+                    self.assertEqual(actual, [(base+offset, word.to_bytes(8, 'little'))])
+
+
 class TaskPublicationTests(unittest.TestCase):
     def test_all_valid_rows_and_experts_match_scalar_words(self):
         memory, reference = {}, {}

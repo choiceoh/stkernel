@@ -179,8 +179,7 @@ consumer namespaces for all four active warps and 32 lanes. It covers counts
 0–8, raw NaN and signed-zero bits, invalid/remote/zero-weight holes, stale
 state transitions and unchanged surrounding slots. REG168/STACK112/SHARED1024
 remain unchanged; CuTe PTX/cubin sizes change from 942077/300864 to
-941539/298456 bytes. All 24 remap PTX hashes match CPU12. The current offline
-runner selects CPU13; GPU numerics, sanitizer and performance remain pending.
+941539/298456 bytes. All 24 remap PTX hashes match CPU12. That revision selected CPU13; GPU numerics, sanitizer and performance remained pending.
 
 The receipt-bound [scale-state PTX inspection](../measurements/glm53_ep_local_20260908/cpu13/scale-state-inspection.md)
 confirms consumer selected-scale load sites fall from seven to one, while
@@ -346,6 +345,18 @@ The [v6 pair](../measurements/glm53_ep_local_20260908/binding_gpu_submission/v6q
 then entered the normal queue at 20:52:34 using frozen `63f56a54` and the exact
 CPU2 capsule. That receipt is queue admission, not a clean GPU result.
 
+The subsequent CPU14 candidate removes the Q0 store helper's short-request
+L2-retention predicate from both store paths: this dispatcher only admits
+4096–16384 rows, so the existing plain `st.global.u64` behavior applies across
+its entire domain. Histogram and lane-0 route allocation now reject non-local
+expert IDs before loading their unused weights. Valid weights retain the
+same Float32 comparison, NaN/zero behavior, route order and atomics. Focused
+actual-source oracles pass 8 route-cache and 10 publication tests, including
+poisoned invalid-route weight storage and exact store addresses/payloads.
+The current full offline runner requires a matching CPU14 receipt before GPU
+execution; queued binding v6 retains its independent frozen CPU13 kernel.
+Compiler and runtime savings for these changes require separate evidence.
+
 Compute Sanitizer 2025.3.1.0's executable SHA-256 and its actual head/image
 no-device launch are recorded in [cpu7](../measurements/glm53_ep_local_20260908/cpu7/README.md).
 The v4 CPU proof, mounted sources, raw logs, recovery and release records are
@@ -392,7 +403,7 @@ or failures. At that revision the 13 mounted MoE sources matched CPU9; six
 runner/test contract files had changed. Its output and hashes remain in
 serving_metadata. CPU10 subsequently supplied fresh pinned evidence for that
 lifecycle. CPU11 covers the earlier row-address kernel; CPU12 covers Q0
-scale addressing. CPU13 covers the current packed scale-state producer and
+scale addressing. CPU13 covers the packed scale-state producer and
 all 18 probe contract files without skips.
 GPU correctness and sanitizer checks must
 compare full-token output with the existing E72 compact path using identical
