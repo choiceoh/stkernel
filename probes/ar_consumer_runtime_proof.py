@@ -26,7 +26,7 @@ log = Path('/home/choiceoh/glm53-logs/glm53.log').read_text(errors='replace')
 required = ['[megakernel] input-reuse CAPTURED M=6 N=6416 K=4096 split=8']
 candidate = ['[osar] consumer PDL self-test PASS', '[osar] consumer PDL CAPTURED',
              '[megakernel] AR consumer MHC self-test PASS',
-             '[megakernel] AR consumer MHC CAPTURED T=6 bf16=True']
+             '[megakernel] AR consumer MHC CAPTURED T=6 bf16=True vec4=True']
 if args.mode == '1':
     required += candidate
 report = dict(host=socket.gethostname(), image=obj['Image'],

@@ -41,7 +41,21 @@ cleanup() {
   exit "$rc"
 }
 trap cleanup EXIT
-python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$AR_CONSUMER_OUT/before-metrics.txt"
+# A donor's last request/metrics update can still be draining at handoff.
+# Keep the same strict idle gate, but give it a bounded interval to pass;
+# a missing or nonzero counter never authorizes stopping that serving.
+idle_ready=0
+for attempt in {1..60}; do
+  if python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle \
+       "$AR_CONSUMER_OUT/before-metrics.txt" \
+       > "$AR_CONSUMER_OUT/idle-$attempt.log" 2>&1; then
+    idle_ready=1
+    break
+  fi
+  echo "Waiting for idle serving ($attempt/60): $(tail -1 "$AR_CONSUMER_OUT/idle-$attempt.log")"
+  sleep 5
+done
+[[ $idle_ready == 1 ]] || { echo 'ABORT: serving did not become idle'; exit 2; }
 # The fleet supervisor owns recovery, including early exits and queue handoff.
 touched=1
 stop_serving > "$AR_CONSUMER_OUT/stop-before-probe.log" 2>&1

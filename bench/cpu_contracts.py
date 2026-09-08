@@ -13,10 +13,10 @@ from pathlib import Path
 import subprocess
 import __future__
 
-# Re-audited against 306511a: only OSAR/MHC signature, PDL release,
-# actual consumer weight note and occupancy expectations differ from upstream.
+# Re-audited against 306511a: only the actual consumer weight note,
+# PDL release count and occupancy expectation differ from upstream.
 # The three audited helper tests and access graphs are unchanged.
-LOGIC_AUDIT = '5ea930a18dd4ea2855271bb9cf086650f44748e7bdc000780d21cd03fff2378a'
+LOGIC_AUDIT = 'c22d38d06f153f2577809702f2f9213aadd55b8a46b1ee423de12d69819a30d0'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),

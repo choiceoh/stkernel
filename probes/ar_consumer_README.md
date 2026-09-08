@@ -19,11 +19,17 @@ takes precedence over those optional hints for these small collectives.
    CTA publishes the transmit sequence through the unchanged counter protocol.
 3. Each AR CTA releases dependent launch before waiting for peer arrivals.
    All CTAs must reach their release points before CUDA can launch a consumer.
-4. MHC reads only immutable `fn` weights before its dependency wait. Activation,
+4. MHC reads only immutable `fn` weights before its dependency wait. The BF16
+   consumer caches `[output, hidden, stream]` coefficients so four values use
+   one aligned 64-bit load (24 vector loads instead of 96 scalar loads).
+   Activation,
    workspace and counter accesses remain after the wait, including inactive
    CTAs that later obtain a tail ticket.
-5. MHC arithmetic, BF16 storage, projection reduction order and GEMM packs are
-   unchanged. New MHC instantiations use their own occupancy queries.
+5. MHC arithmetic, BF16 bit patterns, projection reduction order and GEMM packs
+   are unchanged. Scalar and vector layouts retain their own storage under one
+   versioned cache entry; capture cannot allocate a missing pack. New MHC
+   instantiations use their own occupancy queries. Distinct AllReduce entry
+   points compile away the mode branch and preserve the ordinary kernel ABI.
 
 CUDA may serialize these kernels. Correctness never depends on overlap or on
 a successor making progress. Early release does not mean that AR output is

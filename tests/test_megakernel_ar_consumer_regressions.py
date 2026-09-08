@@ -18,6 +18,13 @@ def shim():
     return module
 
 
+def driver():
+    spec = importlib.util.spec_from_file_location('ar_consumer_test_driver', MK / 'glm53_megakernel.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ConsumerTests(unittest.TestCase):
     def test_exact_environment_gate(self):
         for flag, pdl, expected in [('1', '1', True), ('0', '1', False),
@@ -60,7 +67,7 @@ class ConsumerTests(unittest.TestCase):
 
     def test_protocol_wait_and_publication_order(self):
         source = (OSAR / 'dsv4_oneshot_ar.cu').read_text()
-        kernel = source.split('__global__ void k_oneshot(', 1)[1].split('// ----------------', 1)[0]
+        kernel = source.split('__device__ __forceinline__ void k_oneshot_impl(', 1)[1].split('// ----------------', 1)[0]
         wait = kernel.index('griddepcontrol.wait;')
         self.assertLess(wait, kernel.index('c->tx_seq'))
         release = kernel.index('griddepcontrol.launch_dependents;')
@@ -68,6 +75,65 @@ class ConsumerTests(unittest.TestCase):
         self.assertLess(release, kernel.index('while (left)'))
         self.assertIn('done_ctr, 1ULL) %\n               ARGRID == ARGRID - 1', kernel)
         self.assertIn('cfg.gridDim = dim3(ARGRID);', source)
+
+    def test_bf16_layout_preserves_every_bit_pattern(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('requires Torch CPU tensors in the serving image')
+        m = driver()
+        # Include all BF16 encodings, signed zeros and NaN payloads. Packing
+        # is a byte-preserving permutation, independent of the finite gate.
+        bits = torch.arange(-32768, 32768, dtype=torch.int32).to(torch.int16).repeat(6)
+        original = bits.view(torch.bfloat16).view(24, 16384)
+        packed = m._mhc_bf16_vec4(original)
+        self.assertEqual(tuple(packed.shape), (24, 4096, 4))
+        self.assertTrue(packed.is_contiguous())
+        flat = packed.view(torch.int16).flatten()
+        # The CUDA uint2 at m * HIDDEN + h must contain streams 0,1,2,3.
+        for output in (0, 7, 23):
+            for h in (0, 31, 32, 255, 256, 4095):
+                address = (output * 4096 + h) * 4
+                expected = [int(bits[output * 16384 + j * 4096 + h]) for j in range(4)]
+                self.assertEqual(flat[address:address + 4].tolist(), expected)
+        restored = packed.transpose(1, 2).contiguous().view(torch.int16).flatten()
+        self.assertTrue(torch.equal(restored, bits))
+
+    def test_layout_cache_preserves_graph_storage_and_versions(self):
+        m = driver()
+        capture = [False]
+        class Pack:
+            def float(self): return self
+            def view(self, *_): return self
+        fn = SimpleNamespace(dtype='fp32', is_cuda=True, shape=(24, 16384),
+                             is_contiguous=lambda: True, _version=0, device='cuda:0',
+                             data_ptr=lambda: 1234, to=lambda _: Pack(), view=lambda _: None)
+        fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', int32='int32',
+            cuda=SimpleNamespace(is_current_stream_capturing=lambda: capture[0]),
+            isfinite=lambda _: SimpleNamespace(all=lambda: True), equal=lambda *_: True)
+        m._mhc_bf16_vec4 = lambda _: Pack()
+        with patch.dict(sys.modules, {'torch': fake_torch}):
+            scalar = m._mhc_bf16_weight(fn)
+            capture[0] = True
+            self.assertIsNone(m._mhc_bf16_weight(fn, ar_consumer=True))
+            self.assertIs(m._mhc_bf16_weight(fn), scalar)
+            capture[0] = False
+            vector = m._mhc_bf16_weight(fn, ar_consumer=True)
+            self.assertIsNot(vector, scalar)
+            self.assertEqual(len(m._MHC_BF16_CACHE), 1)
+            capture[0] = True
+            self.assertIs(m._mhc_bf16_weight(fn, ar_consumer=True), vector)
+            self.assertIs(m._mhc_bf16_weight(fn), scalar)
+            capture[0] = False
+            fn._version += 1
+            changed = m._mhc_bf16_weight(fn, ar_consumer=True)
+            self.assertIsNot(changed, vector)
+            retained = list(m._MHC_BF16_CACHE.values())[0]
+            self.assertIs(retained[1], scalar)
+            self.assertIs(retained[2], vector)
+            m._MHC_BF16_CACHE_LIMIT = 2
+            fn._version += 1
+            self.assertIsNone(m._mhc_bf16_weight(fn, ar_consumer=True))
 
     def test_mhc_weight_only_before_wait(self):
         source = (MK / 'glm53_megakernel.cu').read_text()

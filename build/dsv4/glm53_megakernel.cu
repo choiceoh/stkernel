@@ -1736,15 +1736,31 @@ __device__ void mk_mhc_p1_impl(const MKMhcArgs& a, int bid) {
     if constexpr (!AR_CONSUMER)
       if (g < a.num_tokens) load_tok(g, h, xv, res, pm, cm);
     float fnr[NOUT][HC];
+    if constexpr (BF16_FN && AR_CONSUMER) {
+      // Candidate packs [output, hidden, stream]. Four exact BF16 values
+      // for one h share an aligned 64-bit load; adjacent lanes remain
+      // contiguous. This cuts 96 scalar loads to 24 vector loads without
+      // changing the FP32 conversion or subsequent accumulation order.
 #pragma unroll
-    for (int m = 0; m < NOUT; ++m)
+      for (int m = 0; m < NOUT; ++m) {
+        union { uint2 words; __nv_bfloat162 pairs[2]; } bits;
+        bits.words = __ldg(&((const uint2*)a.fn)[(size_t)m * HIDDEN + h]);
+        const float2 lo = __bfloat1622float2(bits.pairs[0]);
+        const float2 hi = __bfloat1622float2(bits.pairs[1]);
+        fnr[m][0] = lo.x; fnr[m][1] = lo.y;
+        fnr[m][2] = hi.x; fnr[m][3] = hi.y;
+      }
+    } else {
 #pragma unroll
-      for (int j = 0; j < HC; ++j)
-        if constexpr (BF16_FN)
-          fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
-              (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
-        else
-          fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+      for (int m = 0; m < NOUT; ++m)
+#pragma unroll
+        for (int j = 0; j < HC; ++j)
+          if constexpr (BF16_FN)
+            fnr[m][j] = __bfloat162float(((const __nv_bfloat16*)a.fn)[
+                (size_t)m * HC * HIDDEN + j * HIDDEN + h]);
+          else
+            fnr[m][j] = a.fn[(size_t)m * HC * HIDDEN + j * HIDDEN + h];
+    }
     if constexpr (AR_CONSUMER) {
       // Only immutable model weights were read above. Keep the exact same
       // projection values in registers while the upstream RDMA collective
@@ -3097,6 +3113,10 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // reads, so a short vector was already out of bounds before it fired.
   TORCH_CHECK(ptrs.size() == 18 && ints.size() == 2 && scalars.size() == 5,
               "run_mhc arg contract");
+  // A BF16 consumer pointer has the vector layout. Never silently send it
+  // to the scalar-layout fallback when an internal caller breaks the gate.
+  TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 8),
+              "AR consumer requires PDL and 1..8 tokens");
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];

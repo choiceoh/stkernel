@@ -7593,7 +7593,7 @@ def test_osar_prefetch_hints_contract() -> None:
     cu = open(os.path.join(REPO, "overlay/modules/tp_oneshot_ar/"
                                  "dsv4_oneshot_ar.cu"), encoding="utf-8").read()
     check("#define OSAR_MAXHINT 8" in cu and "struct HintArgs {" in cu
-          and "int nbytes, const HintArgs h, bool consumer_pdl) {" in cu,
+          and "int nbytes, const HintArgs h) {" in cu,
           "k_oneshot takes up to 8 (ptr, bytes) hints by value")
     check(cu.count('asm volatile("prefetch.global.L2 [%0];"') == 1
           and cu.index('asm volatile("prefetch.global.L2')
@@ -7610,7 +7610,7 @@ def test_osar_prefetch_hints_contract() -> None:
           "owning blocks release their prefetch warps the moment the peers "
           "land")
     check("k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,"
-          in cu and "(int)(n * 2), h, false);" in cu,
+          in cu and "(int)(n * 2), h);" in cu,
           "the fixed-geometry launch carries the hints")
     check('m.def("oneshot_ar_hint", &py_oneshot_hint);' in cu
           and 'm.def("phase_counters", &py_phase_counters);' in cu

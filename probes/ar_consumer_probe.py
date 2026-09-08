@@ -89,6 +89,9 @@ def main():
     torch.cuda.synchronize()
     fn = (torch.randn(24, 16384, device='cuda') * .02).bfloat16().float()
     assert mk._mhc_bf16_weight(fn) is not None
+    vector_fn = mk._mhc_bf16_weight(fn, ar_consumer=True)
+    assert vector_fn is not None and tuple(vector_fn.shape) == (24, 4096, 4)
+    receipt['mhc_consumer_layout'] = 'output-hidden-stream-vec4'
     fixed = (fn, torch.tensor([.6, .9, .3], device='cuda'),
              torch.randn(24, device='cuda') * .1,
              torch.randn(4096, device='cuda', dtype=torch.bfloat16))

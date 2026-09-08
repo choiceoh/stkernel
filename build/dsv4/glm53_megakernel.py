@@ -1752,7 +1752,7 @@ def _selftest_smlp2() -> bool:
 # MK_SEG_MHC
 # ---------------------------------------------------------------------------
 # Strong references keep both source storage and every captured pack alive.
-# Versioned entries are retained, never replaced under an existing graph.
+# Versioned source and layout storage are retained under existing graphs.
 # Weight updates require graph recapture, as with the other packed weights.
 _MHC_BF16_CACHE = {}
 _MHC_BF16_CACHE_LIMIT = 256
@@ -1762,7 +1762,13 @@ _AR_CONSUMER_OK = False
 _AR_CONSUMER_CAPTURED = set()
 
 
-def _mhc_bf16_weight(fn):
+def _mhc_bf16_vec4(packed):
+    # [output, stream, hidden] -> [output, hidden, stream]: one aligned
+    # uint2 contains the four BF16 coefficients used by one CUDA thread.
+    return packed.view(NOUT, HC, HIDDEN).transpose(1, 2).contiguous()
+
+
+def _mhc_bf16_weight(fn, *, ar_consumer=False):
     import torch
 
     if (fn.dtype != torch.float32 or not fn.is_cuda
@@ -1776,18 +1782,27 @@ def _mhc_bf16_weight(fn):
         return None
     key = (fn.device, fn.data_ptr(), version)
     entry = _MHC_BF16_CACHE.get(key)
-    if entry is not None:
+    if entry is None:
+        if (torch.cuda.is_current_stream_capturing()
+                or len(_MHC_BF16_CACHE) >= _MHC_BF16_CACHE_LIMIT):
+            return None
+        packed = fn.to(torch.bfloat16)
+        restored = packed.float()
+        if (not bool(torch.isfinite(fn).all())
+                or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
+            packed = None
+        entry = (fn, packed, None)
+        _MHC_BF16_CACHE[key] = entry
+    if not ar_consumer or entry[1] is None:
         return entry[1]
-    if (torch.cuda.is_current_stream_capturing()
-            or len(_MHC_BF16_CACHE) >= _MHC_BF16_CACHE_LIMIT):
-        return None
-    packed = fn.to(torch.bfloat16)
-    restored = packed.float()
-    if (not bool(torch.isfinite(fn).all())
-            or not torch.equal(fn.view(torch.int32), restored.view(torch.int32))):
-        packed = None
-    _MHC_BF16_CACHE[key] = (fn, packed)
-    return packed
+    if entry[2] is None:
+        if torch.cuda.is_current_stream_capturing():
+            return None
+        # Keep the old scalar pack alive for larger shapes and captured
+        # graphs. Both layouts share one versioned entry/cache-limit slot.
+        entry = (entry[0], entry[1], _mhc_bf16_vec4(entry[1]))
+        _MHC_BF16_CACHE[key] = entry
+    return entry[2]
 
 
 def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
@@ -1805,19 +1820,19 @@ def _mhc_call(x_flat, residual_flat, pm_flat, cm_flat, fn, hc_scale,
     layer_input_cur = torch.empty(num_tokens, hidden, dtype=torch.bfloat16,
                                   device=x_flat.device)
     ws = _ensure_workspace(x_flat.device)
-    packed = (_mhc_bf16_weight(fn) if ENABLE_MHC_BF16 and _MHC_BF16_OK
+    early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
+             else bool(_ar_consumer)) and 0 < num_tokens <= 8
+    packed = (_mhc_bf16_weight(fn, ar_consumer=early) if ENABLE_MHC_BF16 and _MHC_BF16_OK
               and not _fp32_fn else None)
     weight = fn if packed is None else packed
     _ar_note(weight)
-    early = ((ENABLE_AR_CONSUMER and _AR_CONSUMER_OK) if _ar_consumer is None
-             else bool(_ar_consumer)) and 0 < num_tokens <= 8
     # Explicit overrides belong to the self-test/probe, not serving evidence.
     if (early and _ar_consumer is None and _ARMED["mhc"]
             and num_tokens not in _AR_CONSUMER_CAPTURED
             and torch.cuda.is_current_stream_capturing()):
         _AR_CONSUMER_CAPTURED.add(num_tokens)
-        logger.warning("[megakernel] AR consumer MHC CAPTURED T=%d bf16=%s",
-                       num_tokens, packed is not None)
+        logger.warning("[megakernel] AR consumer MHC CAPTURED T=%d bf16=%s vec4=%s",
+                       num_tokens, packed is not None, packed is not None)
     if (packed is not None and _ARMED["mhc"]
             and num_tokens not in _MHC_BF16_CAPTURED
             and torch.cuda.is_current_stream_capturing()):
@@ -2080,6 +2095,8 @@ def _selftest_ar_consumer() -> bool:
     for t in (1, 2, 6, 8, 16):
         with torch.inference_mode(False):
             fn = (torch.randn(NOUT, HC * HIDDEN, device="cuda") * .02).bfloat16().float()
+        if ENABLE_MHC_BF16:
+            assert _mhc_bf16_weight(fn, ar_consumer=t <= 8) is not None
         values = (torch.randn(t, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
                   torch.randn(t, HC, HIDDEN, device="cuda", dtype=torch.bfloat16) * .1,
                   torch.rand(t, HC, device="cuda"), torch.rand(t, HC * HC, device="cuda"),
