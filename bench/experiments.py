@@ -212,6 +212,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS subscribers (
                 job TEXT NOT NULL, session TEXT NOT NULL, attached REAL NOT NULL,
                 PRIMARY KEY(job, session));
+            CREATE INDEX IF NOT EXISTS subscriber_sessions ON subscribers(session, job);
             CREATE TABLE IF NOT EXISTS events (
                 cursor INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT NOT NULL,
                 at REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
@@ -257,6 +258,24 @@ class Store:
         result["result"] = json.loads(result["result"]) if result["result"] else None
         result["log"] = str(self.root / job / "run.log")
         return result
+
+    def list_jobs(self, session=None, active=False, limit=100):
+        if not 1 <= limit <= 1000:
+            raise ValueError('jobs limit must be 1..1000')
+        query = 'SELECT j.id,j.state,j.created,j.started,j.finished FROM jobs j'
+        conditions, parameters = [], []
+        if session is not None:
+            query += ' JOIN subscribers s ON s.job=j.id'
+            conditions += ['s.session=?', 'NOT EXISTS (SELECT 1 FROM withdrawals w '
+                           'WHERE w.job=s.job AND w.session=s.session)']
+            parameters.append(session)
+        if active:
+            conditions.append('j.state NOT IN (' + ','.join('?' for _ in TERMINAL) + ')')
+            parameters.extend(sorted(TERMINAL))
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+        query += ' ORDER BY j.created DESC LIMIT ?'
+        return [dict(row) for row in self.db.execute(query, [*parameters, limit])]
 
     @contextmanager
     def transaction(self):
@@ -910,11 +929,14 @@ def main():
     collector = sub.add_parser('collect')
     collector.add_argument('session')
     collector.add_argument('path', type=Path)
-    sub.add_parser("jobs")
+    jobs = sub.add_parser("jobs")
+    jobs.add_argument('--session', help='show only your subscribed requests, excluding withdrawn demand')
+    jobs.add_argument('--active', action='store_true', help='exclude completed, failed, and retired requests')
+    jobs.add_argument('--limit', type=int, default=100, help='maximum results, 1..1000 (default: 100)')
     sub.add_parser("stats")
     args = ap.parse_args()
     store = Store(args.root)
-    if hasattr(args, 'session') and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
+    if getattr(args, 'session', None) is not None and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
         raise ValueError('session must be a short alphanumeric name')
     if args.action == "submit":
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", args.session):
@@ -984,8 +1006,7 @@ def main():
     elif args.action == "stats":
         answer = stats(store)
     else:
-        answer = [dict(r) for r in store.db.execute(
-            "SELECT id,state,created,started,finished FROM jobs ORDER BY created DESC LIMIT 100")]
+        answer = store.list_jobs(args.session, args.active, args.limit)
     print(encoded(answer))
     return 2 if args.action == "plan" and "error" in answer else 0
 

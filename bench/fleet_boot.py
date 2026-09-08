@@ -7,24 +7,153 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import queue
+import select
 import signal
+import stat
 import subprocess
 import sys
+import threading
 import time
 
 import fleet_handoff as handoff
+import fleet_pending as pending
 
 
 class Supervisor:
     def __init__(self, fleet, session, estimate, note, command):
         self.fleet, self.session, self.estimate, self.note, self.command = fleet, session, estimate, note, command
         self.directory = Path(os.environ['FLEET_DIR'])
+        self.kind = os.environ.get('FLEET_RUN_KIND', 'boot')
         self.repo = Path(__file__).resolve().parent.parent
         self.env = dict(os.environ, FLEET_PID=str(os.getpid()), FLEET_SESSION=session,
-                        FLEET_RESTORE_MANAGED='1', FLEET_RUNNER_REPO=str(self.repo),
+                        FLEET_RESTORE_MANAGED='1' if self.kind == 'boot' else '0', FLEET_RUNNER_REPO=str(self.repo),
                         FLEET=fleet, FLEET_NO_RESTORE_CHECK='1')
         self.child = None
+        self.child_interruptible = True
         self.stopping = 0
+        self.log_fd = None
+        self.log_error = None
+
+    def warning(self, message):
+        try:
+            fd = sys.stderr.fileno()
+        except (AttributeError, OSError, ValueError):
+            try:
+                print(message, file=sys.stderr)
+            except (OSError, ValueError):
+                pass
+        else:
+            def emit():
+                try:
+                    os.write(fd, (message + '\n').encode(errors='replace'))
+                except OSError:
+                    pass
+            # A full caller pipe must not block recovery or a log reader.
+            threading.Thread(target=emit, daemon=True).start()
+
+    def open_log(self, reservation):
+        """Keep each ticket's output, independently of its caller's terminal."""
+        try:
+            directory = self.directory / 'run-logs'
+            directory.mkdir(mode=0o700, exist_ok=True)
+            if directory.is_symlink():
+                raise OSError('run-logs must be a real directory')
+            directory.chmod(0o700)
+            digest = hashlib.sha256((self.session + '\0' + reservation['ticket']).encode()).hexdigest()
+            path = directory / (digest + '.log')
+            self.log_fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+            if not stat.S_ISREG(os.fstat(self.log_fd).st_mode):
+                raise OSError('output log must be a regular file')
+            os.fchmod(self.log_fd, 0o600)
+            self.mark_pending('queued', phase='waiting', log_path=str(path.resolve()))
+        except OSError as exc:
+            self.log_error = f'output capture unavailable: {exc}'
+            if self.log_fd is not None:
+                os.close(self.log_fd)
+                self.log_fd = None
+            self.warning(f'output capture unavailable: {exc}')
+
+    def capture(self, stream, stopped):
+        # A slow/disconnected caller must not stall the payload or recovery.
+        # Keep durable output first; live forwarding has a bounded queue.
+        live = queue.Queue(maxsize=128)
+        complete = threading.Event()
+        def forward():
+            try:
+                output_fd = sys.stdout.fileno()
+            except (AttributeError, OSError, ValueError):
+                output_fd = None
+            while True:
+                try:
+                    chunk = live.get(timeout=.1)
+                except queue.Empty:
+                    if complete.is_set():
+                        return
+                    continue
+                try:
+                    if output_fd is not None:
+                        # Never own Python's buffered stdout lock in a daemon:
+                        # a blocked caller must not hang interpreter shutdown.
+                        remaining = memoryview(chunk)
+                        while remaining:
+                            written = os.write(output_fd, remaining)
+                            if not written:
+                                return
+                            remaining = remaining[written:]
+                    else:
+                        target = getattr(sys.stdout, 'buffer', sys.stdout)
+                        target.write(chunk if hasattr(sys.stdout, 'buffer') else chunk.decode(errors='replace'))
+                        target.flush()
+                except (OSError, ValueError):
+                    return
+        forwarding = threading.Thread(target=forward, daemon=True)
+        forwarding.start()
+        drain_deadline = None
+        try:
+            while True:
+                if stopped.is_set():
+                    if drain_deadline is None:
+                        drain_deadline = time.monotonic() + .2
+                    elif time.monotonic() >= drain_deadline:
+                        self.log_error = 'output capture stopped: descendants retained the completed command output pipe'
+                        break
+                readable, _, _ = select.select([stream], [], [], .1)
+                if not readable:
+                    if stopped.is_set():
+                        break
+                    continue
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    break
+                if self.log_fd is not None:
+                    try:
+                        remaining = memoryview(chunk)
+                        while remaining:
+                            written = os.write(self.log_fd, remaining)
+                            if not written:
+                                raise OSError('output log write made no progress')
+                            remaining = remaining[written:]
+                    except OSError as exc:
+                        self.log_error = f'output capture failed: {exc}'
+                        self.warning(f'output capture failed: {exc}')
+                        failed_fd = self.log_fd
+                        self.log_fd = None
+                        try:
+                            os.close(failed_fd)
+                        except OSError:
+                            pass
+                try:
+                    live.put_nowait(chunk)
+                except queue.Full:
+                    pass
+        except (OSError, ValueError) as exc:
+            self.log_error = f'output reader failed: {exc}'
+            self.warning(f'output reader failed: {exc}')
+        finally:
+            stream.close()
+            complete.set()
+            forwarding.join(timeout=.2)
 
     @contextmanager
     def lock(self):
@@ -33,13 +162,18 @@ class Supervisor:
             yield
 
     def event(self, event, **details):
-        with self.lock():
-            with (self.directory / 'lifecycle.jsonl').open('a') as stream:
-                stream.write(json.dumps(dict(t=time.time(), session=self.session, event=event,
-                                             runner=str(self.repo), **details)) + '\n')
+        try:
+            with self.lock():
+                with (self.directory / 'lifecycle.jsonl').open('a') as stream:
+                    stream.write(json.dumps(dict(t=time.time(), session=self.session, event=event,
+                                                 runner=str(self.repo), **details)) + '\n')
+        except OSError as exc:
+            self.warning(f'lifecycle record {event}: {exc}')
 
     def call(self, *args):
-        return subprocess.call(['bash', self.fleet, *args], env=self.env)
+        # Control/recovery calls must drain output too, but a cancellation of
+        # the payload must not interrupt release, admission or recovery work.
+        return self.execute(['bash', self.fleet, *args], self.env, interruptible=False)
 
     def held(self):
         try:
@@ -49,14 +183,19 @@ class Supervisor:
 
     def signal(self, signum, _frame):
         self.stopping = 128 + signum
-        if self.child and self.child.poll() is None:
+        if self.child and self.child_interruptible and self.child.poll() is None:
             os.killpg(self.child.pid, signum)
 
-    def execute(self, command, env):
-        self.child = subprocess.Popen(command, env=env, start_new_session=True)
+    def execute(self, command, env, cwd=None, *, interruptible=True):
+        self.child_interruptible = interruptible
+        self.child = subprocess.Popen(command, env=env, cwd=cwd, start_new_session=True,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        stopped = threading.Event()
+        reader = threading.Thread(target=self.capture, args=(self.child.stdout, stopped), daemon=True)
+        reader.start()
         deadline = None
         while self.child.poll() is None:
-            if self.stopping:
+            if self.stopping and interruptible:
                 if deadline is None:
                     os.killpg(self.child.pid, signal.SIGTERM)
                     deadline = time.monotonic() + 20
@@ -69,10 +208,15 @@ class Supervisor:
             (self.directory / ('hb.' + self.session)).touch()
         rc = self.child.returncode
         self.child = None
+        self.child_interruptible = True
+        stopped.set()
+        # Descendants may retain the pipe; never wait for them to close it.
+        reader.join(timeout=.5)
         return rc if rc >= 0 else 128 - rc
 
     def restore(self):
         start = time.monotonic()
+        self.mark_pending('finishing', phase='restore', recovery_started_at=time.time())
         self.event('restore-start')
         # Cancellation stops the experiment, never the final recovery command.
         old = self.stopping
@@ -85,6 +229,8 @@ class Supervisor:
             for sig, handler in zip((signal.SIGINT, signal.SIGTERM), handlers):
                 signal.signal(sig, handler)
         self.event('restore-finished', rc=rc, seconds=time.monotonic() - start)
+        self.mark_pending('finishing', phase='restore', recovery_returncode=rc,
+                          recovery_finished_at=time.time())
         if rc == 0:
             with self.lock():
                 handoff.clear(self.directory, self.session)
@@ -117,6 +263,7 @@ class Supervisor:
             target = handoff.offer(self.directory, self.session)
         if not target:
             return self.restore()
+        self.mark_pending('finishing', phase='handoff', successor=target['session'])
         self.event('handoff-offered', successor=target['session'])
         if self.call('release', self.session):
             return self.restore()
@@ -147,27 +294,51 @@ class Supervisor:
             return 1
         return self.restore()
 
+    def mark_pending(self, state, **details):
+        # A damaged edit record must not bypass the final GPU recovery path.
+        try:
+            with self.lock():
+                pending.transition(self.directory, self.session, state, **details)
+            return 0
+        except (OSError, ValueError) as exc:
+            self.warning(f'pending record {state}: {exc}')
+            return 1
+
     def run(self):
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, self.signal)
         with self.lock():
-            handoff.ready(self.directory, self.session, os.getpid())
-        self.event('ready', protocol=handoff.PROTOCOL, source_sha256={name:hashlib.sha256((self.repo/'bench'/name).read_bytes()).hexdigest()
-                   for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py')})
+            reservation = pending.register(self.directory, self.session, self.command, self.fleet, self.kind)
+            if self.kind == 'boot':
+                handoff.ready(self.directory, self.session, os.getpid())
         rc = 1
         try:
+            self.open_log(reservation)
+            self.event('ready', protocol=handoff.PROTOCOL, source_sha256={name:hashlib.sha256((self.repo/'bench'/name).read_bytes()).hexdigest()
+                       for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py')})
             # Wait is interruptible and its parent identity is this supervisor.
             rc = self.execute(['bash', self.fleet, 'wait', self.session,
                                os.environ.get('FLEET_TIMEOUT_MIN', '720')], self.env)
             if not rc and not self.stopping:
-                self.event('accepted')
-                if self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
+                with self.lock():
+                    accepted = pending.transition(self.directory, self.session, 'running',
+                                                  phase='payload', started_at=time.time())
+                self.event('accepted', revision=accepted['revision'])
+                if self.kind == 'boot' and self.call('nodes') and os.environ.get('FLEET_NODES') == 'strict':
                     rc = 4
                 elif not self.stopping:
-                    rc = self.execute(self.command, self.env)
+                    rc = self.execute(accepted['command'], self.env, accepted['cwd'])
+                    self.mark_pending('running', phase='payload', payload_returncode=rc,
+                                      payload_finished_at=time.time())
                 self.event('payload-finished', rc=rc)
+        except Exception as exc:
+            rc = rc or 1
+            self.warning(f'fleet execution failed: {exc}')
+            self.mark_pending('finishing', phase='finishing', error=str(exc))
         finally:
-            if self.held():
+            if self.mark_pending('finishing', phase='finishing'):
+                rc = rc or 1
+            if self.held() and self.kind == 'boot':
                 try:
                     if self.cleanup_observation():
                         raise RuntimeError('observation cleanup lost fleet ownership')
@@ -177,12 +348,21 @@ class Supervisor:
                     self.event('finish-error', reason=str(exc))
                     rc = rc or 1
                     self.restore()
-                if self.held():
-                    self.call('release', self.session)
+            if self.held():
+                self.call('release', self.session)
             with self.lock():
                 handoff.receipt(self.directory, self.session).unlink(missing_ok=True)
             # Remove a cancelled waiter's row without signalling ourselves.
             self.call('withdraw', self.session)
+            result = self.stopping or rc
+            if self.mark_pending('cancelled' if self.stopping else 'finished', phase='finished',
+                                 finished_at=time.time(), returncode=result,
+                                 outcome='cancelled' if self.stopping else 'failed' if result else 'succeeded',
+                                 **({'log_error':self.log_error} if self.log_error else {})):
+                rc = rc or 1
+            if self.log_fd is not None:
+                os.close(self.log_fd)
+                self.log_fd = None
         return self.stopping or rc
 
 
