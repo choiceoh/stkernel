@@ -42,6 +42,7 @@ from ._moe_dynamic.gated import (
     _ld_shared_i32, _st_shared_i32,
 )
 from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
+from .moe_static_common import _sf6_unpack_u8x4
 
 STOCK_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
 SF6_STAGE_BYTES = 1552
@@ -105,13 +106,11 @@ def _sf6_expand_dynamic_tile(stage_addr: Int64, destination: Int32,
     for word in cutlass.range_constexpr(2):
         highs[word] = _sf6_ld_global_u32(stage_addr + Int64(1024) + Int64(decoded // Int32(4) + Int32(word * 4)))
     base = _sf6_ld_global_u32(stage_addr + Int64(1536)) & Int32(255)
+    base_word = base * Int32(0x01010101)
     for word in cutlass.range_constexpr(8):
-        value = Int32(0)
-        for byte in cutlass.range_constexpr(4):
-            index = word * 4 + byte
-            low = (lows[index // 8] >> Int32((index % 8) * 4)) & Int32(15)
-            high = (highs[index // 16] >> Int32((index % 16) * 2)) & Int32(3)
-            value = value | ((base + low + (high << Int32(4))) << Int32(byte * 8))
+        low4 = lows[word // 2] >> Int32((word % 2) * 16)
+        high4 = highs[word // 4] >> Int32((word % 4) * 8)
+        value = _sf6_unpack_u8x4(low4, high4, base_word)
         _st_shared_i32(destination + first + Int32(word * 4), value)
 
 

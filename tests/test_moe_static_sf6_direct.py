@@ -21,6 +21,72 @@ sys.modules[spec.name] = sf6
 spec.loader.exec_module(sf6)
 
 
+def common_helper(name):
+    source = MODULE / "moe_static_common.py"
+    node = copy.deepcopy(next(n for n in ast.parse(source.read_text()).body
+                             if isinstance(n, ast.FunctionDef) and n.name == name))
+    node.decorator_list = []
+    module = ast.Module(body=[ast.ImportFrom(module="__future__",
+        names=[ast.alias(name="annotations")], level=0), node], type_ignores=[])
+    ast.fix_missing_locations(module)
+    env = dict(Int32=int)
+    exec(compile(module, str(source), "exec"), env)
+    return env[name]
+
+
+unpack_u8x4 = common_helper("_sf6_unpack_u8x4")
+
+
+def signed32(value):
+    value &= 0xFFFFFFFF
+    return value - 0x100000000 if value & 0x80000000 else value
+
+
+class FourByteUnpack(unittest.TestCase):
+    def test_every_low_and_high_plane_pattern_uses_independent_byte_positions(self):
+        # Exhaust each plane separately against a scalar byte oracle. This
+        # catches every bit's destination and all intra-plane combinations.
+        for low in range(1 << 16):
+            expected = sum(((low >> (4 * lane)) & 15) << (8 * lane)
+                           for lane in range(4))
+            self.assertEqual(unpack_u8x4(low, 0, 0), expected)
+        for high in range(1 << 8):
+            expected = sum((((high >> (2 * lane)) & 3) << 4) << (8 * lane)
+                           for lane in range(4))
+            self.assertEqual(unpack_u8x4(0, high, 0), expected)
+
+    def test_every_valid_base_code_and_lane_with_signed_inputs_and_output(self):
+        for base in range(256):
+            limit = min(63, 255 - base)
+            base_word = signed32(base * 0x01010101)
+            for code in range(limit + 1):
+                for lane in range(4):
+                    codes = [limit] * 4
+                    codes[lane] = code
+                    low = sum((v & 15) << (4 * i) for i, v in enumerate(codes))
+                    high = sum((v >> 4) << (2 * i) for i, v in enumerate(codes))
+                    # Unrelated upper bits may survive signed shared loads
+                    # and shifts; only the requested low 16/8 bits matter.
+                    actual = unpack_u8x4(signed32(low | 0xA5A50000),
+                                         signed32(high | 0xA5A5A500), base_word)
+                    expected = int.from_bytes(bytes(base + v for v in codes), "little")
+                    self.assertEqual(signed32(actual), signed32(expected),
+                                     (base, code, lane))
+
+    def test_mixed_codes_at_nibble_pair_byte_and_signed_boundaries(self):
+        rng = random.Random(6404)
+        boundaries = (0, 1, 15, 16, 31, 32, 47, 48, 62, 63)
+        for base in (0, 1, 63, 64, 127, 128, 191, 192, 193, 254, 255):
+            allowed = [v for v in boundaries if v + base <= 255]
+            for _ in range(256):
+                codes = [rng.choice(allowed) for _ in range(4)]
+                low = sum((v & 15) << (4 * i) for i, v in enumerate(codes))
+                high = sum((v >> 4) << (2 * i) for i, v in enumerate(codes))
+                expected = bytes(base + v for v in codes)
+                actual = unpack_u8x4(low, high, signed32(base * 0x01010101))
+                self.assertEqual((actual & 0xFFFFFFFF).to_bytes(4, "little"), expected)
+
+
 class BarrierYields(ast.NodeTransformer):
     """Run the production method as 128 coroutines with real phase barriers."""
     def visit_Expr(self, node):
@@ -65,7 +131,8 @@ class SharedMachine:
         self.gmem = b""
         self.loads, self.stores, self.copies = [], [], []
         env = dict(Int32=int, Int64=int, _ld_shared_i32_volatile=self.load,
-                   _st_shared_i32=self.store, _bulk_g2s=self.bulk)
+                   _st_shared_i32=self.store, _bulk_g2s=self.bulk,
+                   _sf6_unpack_u8x4=unpack_u8x4)
         self.expand = method("_sf_expand_stage", env, barriers=True)
         self.copy_half = method("_sf6_copy_fc2_half", env)
 

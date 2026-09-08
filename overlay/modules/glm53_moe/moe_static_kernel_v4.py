@@ -66,6 +66,7 @@ from .moe_static_common import (
     _ld_shared_f32,
     _ld_shared_i32,
     _ld_shared_i32_volatile,
+    _sf6_unpack_u8x4,
     _spin_wait_global_eq_i32,
     _st_global_i64,
     _st_global_release_i32,
@@ -350,15 +351,12 @@ class MoEStaticKernelV4:
                     stage_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
                     + Int32(4 * w)))
         base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset)) & Int32(0xFF)
+        base_word = base * Int32(0x01010101)
         self.sf_expand_barrier.arrive_and_wait()
         for j in range(per_thread // 4):
-            word = Int32(0)
-            for m in range(4):
-                i = 4 * j + m
-                nib = (a[i >> 3] >> Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & Int32(0xF)
-                hi = (b[i >> 4] >> Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & Int32(0x3)
-                val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
-                word = word | (val << Int32(8 * m))
+            low4 = a[j >> 1] >> Int32(16 * (j & 1))
+            high4 = b[j >> 2] >> Int32(8 * (j & 3))
+            word = _sf6_unpack_u8x4(low4, high4, base_word)
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
 

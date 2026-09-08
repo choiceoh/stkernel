@@ -77,6 +77,23 @@ STAMP_SLOTS = STAMP_BARRIER1 + 1
 
 
 @cute.jit
+def _sf6_unpack_u8x4(low4: Int32, high4: Int32, base_word: Int32) -> Int32:
+    """Expand four SF6 codes into one word without changing their byte order.
+
+    low4 holds four nibbles and high4 four two-bit codes in their low bits.
+    The lossless packer guarantees code + base <= 255 in every byte, so
+    adding the broadcast base cannot carry into a neighboring byte.
+    """
+    lo = low4 & Int32(0xFFFF)
+    lo = (lo | (lo << Int32(8))) & Int32(0x00FF00FF)
+    lo = (lo | (lo << Int32(4))) & Int32(0x0F0F0F0F)
+    hi = high4 & Int32(0xFF)
+    hi = (hi | (hi << Int32(12))) & Int32(0x000F000F)
+    hi = (hi | (hi << Int32(6))) & Int32(0x03030303)
+    return (lo | (hi << Int32(4))) + base_word
+
+
+@cute.jit
 def _compact_static_get_work_tile(
     row_counts: cute.Tensor,
     active_expert_count: cute.Tensor,
