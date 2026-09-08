@@ -1,0 +1,7 @@
+{
+  "startup_boots": 0,
+  "startup_runner": 0,
+  "initial_fleet_supervisor": 1,
+  "recovery_supervisor": 0,
+  "reason": "The five-boot payload completed. The initial supervisor timed out reclaiming an unaccepted loopback handoff; a separate managed fleet restore completed and handed off successfully."
+}

@@ -11,6 +11,7 @@ SESSION=${FLEET_SESSION:?run through fleet.sh run --gpu}
 EVIDENCE=${STARTUP_CACHE_EVIDENCE:-$LOGD/startup-cache-$(date +%Y%m%d-%H%M%S)}
 PREFIX=${STARTUP_CACHE_PREFIX:-STARTCACHE}
 MODE=${STARTUP_CACHE_MODE:-artifacts}
+HEALTH_URL="http://${HEAD:-10.10.10.2}:${GLM53_API_PORT:-8000}/health"
 case "$MODE" in
   artifacts) stages=(BASE COLD WARM); restore_knobs='VLLM_GLM53_FP8_CACHE=0 VLLM_GLM53_RANK_CACHE=0' ;;
   pack-io) stages=(PRIME FAST1 BASE1 BASE2 FAST2); restore_knobs='VLLM_GLM53_MK_PACK_FAST_IO=0' ;;
@@ -18,6 +19,7 @@ case "$MODE" in
   renderer-warmup) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_EARLY_MM_WARMUP=0' ;;
   graph-profile) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
   overlay-deploy) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0' ;;
+  rank-pipeline) stages=(PRIME BASE1 FAST1 FAST2 BASE2); restore_knobs='VLLM_GLM53_RANK_CACHE_PIPELINE=0' ;;
   campaign) stages=(); restore_knobs='' ;;
   *) echo "unknown startup mode: $MODE"; exit 2 ;;
 esac
@@ -43,14 +45,14 @@ snapshot() {
   if [ "$MODE" = renderer-warmup ]; then
     docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py /usr/local/lib/python3.12/dist-packages/vllm/renderers/glm53_renderer_warmup.py >> "$EVIDENCE/$arm-srv2.sha256" 2>&1 || true
   fi
-  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy || "$MODE" = rank-pipeline ]]; then
     docker exec glm53 sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py /usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py >> "$EVIDENCE/$arm-srv2.sha256"
   fi
   for ip in 1 3 4; do
     scp -q -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip:glm53-logs/glm53.log" "$EVIDENCE/$arm-srv$ip.log" || true
     ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker inspect --format "{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.Image}}" glm53-worker; df -B1 /home/choiceoh/glm53-cache | tail -1; grep -E "MemFree:|MemAvailable:" /proc/meminfo; docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_startup_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_rank_cache.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/glm53_megakernel.py' > "$EVIDENCE/$arm-srv$ip.state" 2>&1 || true
   done
-  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy || "$MODE" = rank-pipeline ]]; then
     for ip in 1 3 4; do
       ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@10.10.10.$ip" 'docker exec glm53-worker sha256sum /usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu_worker.py /usr/local/lib/python3.12/dist-packages/deneb_boot_stamps.py' >> "$EVIDENCE/$arm-srv$ip.state"
     done
@@ -100,6 +102,10 @@ for stage in "${stages[@]}"; do
     knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=1'
     [[ "$stage" != BASE* ]] || knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
   fi
+  if [ "$MODE" = rank-pipeline ]; then
+    knobs='VLLM_GLM53_RANK_CACHE_PIPELINE=0 VLLM_GLM53_RANK_CACHE_CPU_VOTE=0 VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
+    [[ "$stage" != FAST* ]] || knobs='VLLM_GLM53_RANK_CACHE_PIPELINE=1 VLLM_GLM53_RANK_CACHE_CPU_VOTE=0 VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
+  fi
   if [ "$MODE" = overlay-deploy ]; then
     knobs='VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE=0'
     python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-before-deploy.json"
@@ -134,12 +140,15 @@ print("all-rank same-content deployment path verified")
 DEPLOY_GATE
   fi
   [ "$MODE" != campaign ] || knobs=${campaign_knobs[$stage]}
+  if [ "$MODE" = rank-pipeline ]; then
+    python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-before-boot.json"
+  fi
   start=$(date +%s)
   previous=$(docker inspect --format '{{.Id}}' glm53 2>/dev/null || true)
   (
     while (( $(date +%s) - start < 1800 )); do
       current=$(docker inspect --format '{{.Id}}' glm53 2>/dev/null || true)
-      if [ -n "$current" ] && [ "$current" != "$previous" ] && [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' http://10.10.10.2:8000/health)" = 200 ]; then
+      if [ -n "$current" ] && [ "$current" != "$previous" ] && [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "$HEALTH_URL")" = 200 ]; then
         printf '%s\t%s\n' "$current_arm" "$(( $(date +%s) - start ))" >> "$EVIDENCE/health-wall-seconds.tsv"
         exit 0
       fi
@@ -165,7 +174,7 @@ for node in (1, 2, 3, 4):
     rows = re.findall(r"\[fp8-cache\].*?enabled=True hit=(\d+) miss=(\d+) errors=(\d+)", text)
     assert len(rows) >= 2, f"srv{node}: target/drafter FP8 cache receipts missing"
     assert all(int(e) == 0 for h, m, e in rows), f"srv{node}: FP8 cache errors: {rows}"
-    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile", "overlay-deploy", "campaign") and stage != "PRIME"):
+    if stage == "WARM" or (mode in ("pack-io", "pack-key", "renderer-warmup", "graph-profile", "overlay-deploy", "rank-pipeline", "campaign") and stage != "PRIME"):
         assert re.search(r"\[rank-cache\] hit rank=", text), f"srv{node}: rank cache missed"
         assert all(int(h) > 0 and int(m) == 0 for h, m, e in rows), f"srv{node}: FP8 warm misses: {rows}"
     if mode == "campaign":
@@ -206,7 +215,7 @@ for node in (1, 2, 3, 4):
         assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
                                     for r, g, e, h in packs), f"srv{node}: unexpected repack: {packs}"
         assert not re.search(r"pack cache .*?unreadable|pack cache key failed|MK W4 pack build FAILED", text), f"srv{node}: pack restore failure"
-    if mode in ("renderer-warmup", "graph-profile", "overlay-deploy"):
+    if mode in ("renderer-warmup", "graph-profile", "overlay-deploy", "rank-pipeline"):
         packs = re.findall(r"packs: rtn=(\d+) gptq=(\d+) gptq_failed=(\d+) cached=(\d+)", text)
         assert len(packs) >= 2 and all(int(r) == int(g) == int(e) == 0 and int(h) > 0
                                     for r, g, e, h in packs), f"srv{node}: unexpected repack"
@@ -222,17 +231,26 @@ for node in (1, 2, 3, 4):
             else:
                 assert "[early-mm-warmup]" not in text
             assert "multi-modal warmup failed" not in text.lower()
-    if mode in ("graph-profile", "overlay-deploy"):
+    if mode in ("graph-profile", "overlay-deploy", "rank-pipeline"):
         fast = mode == "graph-profile" and (stage == "PRIME" or stage.startswith("FAST"))
         assert ("[glm53-graph-profile] skipped unused estimate" in text) == fast, f"srv{node}: wrong graph profile path"
         assert ("[boot-stamp] cudagraph-memory-profile took" in text) != fast, f"srv{node}: wrong dry capture path"
         for phase in ("encoder-profile", "profile-run", "cudagraph-capture", "compile+warmup"):
             assert f"[boot-stamp] {phase} took" in text, f"srv{node}: missing {phase}"
         assert "Traceback (most recent call last)" not in text, f"srv{node}: startup traceback"
+    if mode == "rank-pipeline" and stage != "PRIME":
+        import json
+        io = [json.loads(row) for row in re.findall(r"\[rank-cache-io\] (\{[^\n]+\})", text)]
+        assert len(io) == 1 and io[0]["ok"] and io[0]["chunks"] > 0, (node, io)
+        expected = "pipeline" if stage.startswith("FAST") else "serial"
+        assert io[0]["mode"] == expected, (node, io)
+        assert io[0]["pinned_bytes"] == (2 if expected == "pipeline" else 1)*64*1024*1024
+        stages = [json.loads(row) for row in re.findall(r"\[rank-cache-stage\] (\{[^\n]+\})", text)]
+        assert len(stages) == 1 and stages[0]["kind"] == "hit", (node, stages)
 print("all four nodes have the required cache receipts")
 PY
   fi
-  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy ]]; then
+  if [[ "$MODE" = graph-profile || "$MODE" = overlay-deploy || "$MODE" = rank-pipeline ]]; then
     python3 bench/startup_first_requests.py --out "$EVIDENCE/$current_arm-first-requests.json" > "$EVIDENCE/$current_arm-first-requests.out" 2>&1
   fi
   STARTUP_CACHE_RESPONSES="$EVIDENCE/$current_arm-responses.jsonl" \
@@ -240,6 +258,20 @@ PY
   tail -1 "$EVIDENCE/onepass.jsonl" >> "$LOGD/bracket-onepass.jsonl"
   cat "$EVIDENCE/$current_arm-onepass.out"
   snapshot "$current_arm"
+  if [ "$MODE" = rank-pipeline ]; then
+    python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-boot.json"
+    python3 - "$EVIDENCE" "$current_arm" "$stage" <<'RANK_NINJA'
+import json, sys
+from pathlib import Path
+root, arm, stage = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+a = json.loads((root/f"{arm}-before-boot.json").read_text())
+b = json.loads((root/f"{arm}-after-boot.json").read_text())
+for node in a:
+    assert a[node]["files"] == b[node]["files"], (node, "source identity changed")
+    if stage != "PRIME":
+        assert a[node]["ninja"] == b[node]["ninja"], (node, "unexpected warm recompilation")
+RANK_NINJA
+  fi
   if [ "$MODE" = overlay-deploy ]; then
     python3 bench/startup_deploy_receipts.py "$EVIDENCE/$current_arm-after-boot.json"
     python3 - "$EVIDENCE" "$current_arm" "$stage" <<'NINJA_GATE'

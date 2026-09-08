@@ -1,0 +1,3 @@
+exit=2
+export HEAD_URL=http://127.0.0.1:8000 before fleet.sh run so its supervisor can observe loopback health
+Refused before holder inspection or any service action.

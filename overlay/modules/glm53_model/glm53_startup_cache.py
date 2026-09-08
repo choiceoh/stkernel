@@ -66,7 +66,7 @@ class HostStaging:
             digest.update(memoryview(chunk.numpy()))
         return digest.hexdigest()
 
-    def copy_from_cpu(self, target, raw):
+    def copy_from_cpu(self, target, raw, stats=None):
         buffer = self._get() if target.device.type == "cuda" else None
         if buffer is None:
             target.copy_(raw)
@@ -74,9 +74,16 @@ class HostStaging:
         for start in range(0, raw.numel(), TRANSFER_BYTES):
             chunk = raw[start:start + TRANSFER_BYTES]
             cpu = buffer[:chunk.numel()]
+            t0 = time.perf_counter()
             cpu.copy_(chunk)
+            t1 = time.perf_counter()
             target[start:start + chunk.numel()].copy_(cpu, non_blocking=True)
+            t2 = time.perf_counter()
             torch.cuda.current_stream(target.device).synchronize()
+            if stats is not None:
+                stats["host_copy_s"] += t1 - t0
+                stats["submit_s"] += t2 - t1
+                stats["copy_wait_s"] += time.perf_counter() - t2
 
 
 def cache_directory(value):
@@ -116,6 +123,7 @@ def environment_identity():
               # Keep rank/FP8 artifacts usable across their matched boot brackets.
               and k not in ("VLLM_GLM53_RANK_CACHE", "VLLM_GLM53_FP8_CACHE",
                             "VLLM_GLM53_RANK_CACHE_CPU_VOTE",
+                            "VLLM_GLM53_RANK_CACHE_PIPELINE",
                             "VLLM_GLM53_MK_PACK_FAST_IO", "VLLM_GLM53_MK_PACK_SHA256",
                             "VLLM_GLM53_EARLY_MM_WARMUP",
                             "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE")
