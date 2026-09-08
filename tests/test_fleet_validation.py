@@ -90,12 +90,42 @@ pathlib.Path(sys.argv[sys.argv.index('--out')+1]).write_text(json.dumps(dict(pas
     def test_identical_source_and_sanitized_environment_reuse(self):
         first = self.validate()
         os.environ.update(VLLM_EXPERIMENT='1', ONEPASS_UNKNOWN='2', PYTHONPATH='/nonexistent',
-                          BASH_ENV='/nonexistent', FLEET_POLL='different')
+                          PYTHONHOME='/nonexistent', PYTHONUSERBASE='/nonexistent',
+                          PYTHONNOUSERSITE='1', BASH_ENV='/nonexistent', FLEET_POLL='different')
         second = self.validate()
         self.assertFalse(first['reused'])
         self.assertTrue(second['reused'])
         self.assertEqual(first['receipt'], second['receipt'])
         self.assertEqual(self.runs(), 1)
+
+    def test_sanitized_runtime_keeps_user_site_dependencies_and_binds_customization(self):
+        # A deliberately isolated base interpreter tests user-site policy;
+        # production venvs may correctly have ENABLE_USER_SITE=False.
+        base_python = getattr(sys, '_base_executable', sys.executable)
+        user = mock.Mock(pw_dir=str(self.root / 'user-home'), pw_name='fixture')
+        with mock.patch.object(validation.pwd, 'getpwuid', return_value=user):
+            env = validation.environment()
+        for key in ('PYTHONPATH', 'PYTHONHOME', 'PYTHONUSERBASE', 'PYTHONNOUSERSITE', 'BASH_ENV'):
+            self.assertNotIn(key, env)
+        directory = Path(subprocess.check_output([base_python, '-c',
+            'import site; print(site.getusersitepackages())'], env=env, text=True).strip())
+        directory.mkdir(parents=True)
+        (directory / 'fixture_cpu_dependency.py').write_text('VALUE = 71\n')
+        customization = directory / 'usercustomize.py'
+        customization.write_text('FIXTURE = "first"\n')
+        (directory / 'fixture.pth').write_text('# fixture startup configuration\n')
+        result = subprocess.check_output([base_python, '-c',
+            'import fixture_cpu_dependency; print(fixture_cpu_dependency.VALUE)'], env=env, text=True)
+        self.assertEqual(result.strip(), '71')
+        with mock.patch.object(validation.sys, 'executable', base_python):
+            first = validation.python_startup_inputs(self.repo, env)
+        self.assertTrue(first['user_site_enabled'])
+        self.assertIn(str(customization.resolve()), first['files'])
+        self.assertIn(str((directory / 'fixture.pth').resolve()), first['files'])
+        customization.write_text('FIXTURE = "second"\n')
+        with mock.patch.object(validation.sys, 'executable', base_python):
+            second = validation.python_startup_inputs(self.repo, env)
+        self.assertNotEqual(first, second)
 
     def test_changed_tests_never_silently_reuse(self):
         first = self.validate()
@@ -425,6 +455,59 @@ print(pathlib.Path(IMAGE_FILE).read_text())
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, str(old / 'bench/fleet_validation.py'))
+
+    def configured_cli(self, *args):
+        entry = self.root / 'validation-cli.py'
+        entry.write_text('import sys\nsys.path.insert(0, ' + repr(str(Path(validation.__file__).parent)) + ')\n'
+                         'import fleet_validation as v\n'
+                         'v.validate = lambda *a, **k: {"receipt": sys.executable}\n'
+                         'v.verify_recovery = lambda *a, **k: {"receipt": sys.executable}\n'
+                         'raise SystemExit(v.main())\n')
+        return subprocess.run([sys.executable, str(entry), *args], capture_output=True,
+                              text=True, env=dict(os.environ))
+
+    def test_cli_selects_configured_interpreter_and_recovery_descriptor_store(self):
+        self.store.mkdir(mode=0o700)
+        venv = self.root.resolve() / 'fixture-venv'
+        subprocess.check_call([sys.executable, '-m', 'venv', '--without-pip', str(venv)])
+        selected = venv / 'bin/python'
+        (self.store / 'python').write_text(str(selected) + '\n')
+        args = ['validate', '--repo', str(self.repo), '--store', str(self.store), '--format', 'receipt']
+        result = self.configured_cli(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), str(selected))
+        self.assertNotIn('FLEET_VALIDATION_BOOTSTRAP', os.environ)
+        value = dict(version=validation.VERSION, repo=str(self.repo), source=self.git('rev-parse', 'HEAD'),
+                     validation_receipt='/fixture/evidence', store=str(self.store.resolve()))
+        digest = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+        receipts = self.store / 'recovery-receipts'
+        receipts.mkdir()
+        receipt = receipts / (digest + '.json')
+        receipt.write_text(json.dumps(value))
+        other = self.root / 'wrong-store'
+        other.mkdir()
+        (other / 'python').write_text('/missing/interpreter\n')
+        result = self.configured_cli('verify-recovery', '--receipt', str(receipt.resolve()),
+                                     '--store', str(other), '--format', 'receipt')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), str(selected))
+
+    def test_cli_rejects_invalid_missing_and_symlink_interpreter_configuration(self):
+        self.store.mkdir(mode=0o700)
+        configuration = self.store / 'python'
+        args = ['validate', '--repo', str(self.repo), '--store', str(self.store)]
+        for value, expected in [('python3\n', 'absolute interpreter path'),
+                                ('/missing/python\n', 'missing or not executable')]:
+            configuration.write_text(value)
+            result = self.configured_cli(*args)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn(expected, result.stderr)
+        configuration.unlink()
+        target = self.root / 'config-target'
+        target.write_text(sys.executable + '\n')
+        configuration.symlink_to(target)
+        result = self.configured_cli(*args)
+        self.assertEqual(result.returncode, 2, result.stderr)
 
 
 if __name__ == '__main__':

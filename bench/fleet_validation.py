@@ -17,6 +17,7 @@ import pwd
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -49,13 +50,36 @@ def run(argv, repo, *, env=None, timeout=30):
 
 
 def environment():
-    """CPU gates cannot inherit candidate knobs, shell startup files or Python hooks."""
+    """Strip candidate overrides while retaining the interpreter's installed deps."""
     user = pwd.getpwuid(os.getuid())
     return dict(PATH=os.environ.get('PATH', os.defpath), HOME=user.pw_dir,
                 USER=user.pw_name, LOGNAME=user.pw_name, LANG='C', LC_ALL='C',
-                TMPDIR=tempfile.gettempdir(), PYTHONNOUSERSITE='1',
+                TMPDIR=tempfile.gettempdir(),
                 PYTHONDONTWRITEBYTECODE='1', PYTHONHASHSEED='0',
                 CUDA_VISIBLE_DEVICES='', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1')
+
+
+def python_startup_inputs(repo, env):
+    # User-site packages are part of the real host runtime (including torch on
+    # srv2), and cpu_evidence fingerprints their installed distribution files.
+    # Also bind startup customization not necessarily owned by a distribution.
+    code = '''import hashlib, json, pathlib, site, sys
+directories=set(site.getsitepackages())
+user=site.getusersitepackages()
+directories.update(user if isinstance(user,list) else [user])
+files={}
+for directory in sorted(directories):
+ for path in sorted(pathlib.Path(directory).glob('*.pth')):
+  files[str(path.resolve())]=hashlib.sha256(path.read_bytes()).hexdigest()
+for name in ('sitecustomize','usercustomize'):
+ module=sys.modules.get(name)
+ filename=getattr(module,'__file__',None)
+ if filename:
+  path=pathlib.Path(filename)
+  files[str(path.resolve())]=hashlib.sha256(path.read_bytes()).hexdigest()
+print(json.dumps(dict(user_site_enabled=site.ENABLE_USER_SITE,
+ paths=[p for p in sys.path if p], files=files),sort_keys=True))'''
+    return json.loads(run([sys.executable, '-c', code], repo, env=env))
 
 
 def default_store():
@@ -71,6 +95,49 @@ def private_directory(path):
         raise ValueError('validation store must be an owned real directory: ' + str(path))
     path.chmod(0o700)
     return path.resolve()
+
+
+def bootstrap_python(store):
+    """CLI-only interpreter selection; direct Python APIs use their own runtime.
+
+    An owned store/python file contains one absolute executable path. Keep the
+    venv's symlink spelling: resolving bin/python can silently select the system
+    installation instead. All production validation/recovery entrypoints use
+    this CLI, including deployment from an older pinned supervisor.
+    """
+    store = private_directory(store)
+    configuration = store / 'python'
+    marker = os.environ.get('FLEET_VALIDATION_BOOTSTRAP')
+    try:
+        fd = os.open(configuration, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        if marker:
+            raise ValueError('validation interpreter configuration changed during bootstrap')
+        return
+    with os.fdopen(fd) as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            raise ValueError('store/python must be an owned regular file without group/other write access')
+        if info.st_size > 4096:
+            raise ValueError('store/python must contain one absolute interpreter path')
+        selected = stream.read().strip()
+    if not selected or '\n' in selected or '\r' in selected or '\0' in selected or not Path(selected).is_absolute():
+        raise ValueError('store/python must contain one absolute interpreter path')
+    if not Path(selected).is_file() or not os.access(selected, os.X_OK):
+        raise ValueError('configured validation interpreter is missing or not executable: ' + selected)
+    if marker and marker != selected:
+        raise ValueError('validation interpreter configuration changed during bootstrap')
+    if os.path.abspath(sys.executable) == os.path.abspath(selected):
+        return
+    if marker:
+        raise ValueError('configured validation interpreter did not select itself; refusing an exec loop')
+    # The parent shell's environment is unchanged. This marker is stripped by
+    # environment() before any CPU gate runs and cannot disable a validation.
+    child_env = dict(os.environ, FLEET_VALIDATION_BOOTSTRAP=selected)
+    for key in ('PYTHONPATH', 'PYTHONHOME', 'PYTHONUSERBASE', 'PYTHONNOUSERSITE',
+                'PYTHONSTARTUP', 'BASH_ENV', 'ENV'):
+        child_env.pop(key, None)
+    os.execve(selected, [selected, *sys.argv], child_env)
 
 
 @contextmanager
@@ -206,7 +273,7 @@ def identity(repo, profile, env, **options):
     for name in ('rsync', 'nice'):
         binary = shutil.which(name, path=env['PATH'])
         extras[name] = [binary, cpu_evidence.sha(binary)] if binary else None
-    extra = [value['key'], extras]
+    extra = [value['key'], extras, python_startup_inputs(repo, env)]
     value['key'] = hashlib.sha256(json.dumps(extra, sort_keys=True).encode()).hexdigest()
     return value, spec
 
@@ -398,6 +465,12 @@ def main():
     parser.add_argument('--format', choices=['json', 'shell', 'receipt'], default='json')
     args = parser.parse_args()
     try:
+        selection_store = args.store
+        if args.action == 'verify-recovery':
+            if not args.receipt:
+                parser.error('verify-recovery requires --receipt')
+            selection_store = recovery_info(args.receipt)['store']
+        bootstrap_python(selection_store)
         if args.action == 'prepare-recovery':
             if not args.repo:
                 parser.error('prepare-recovery requires --repo')

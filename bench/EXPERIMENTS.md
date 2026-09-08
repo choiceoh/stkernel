@@ -924,6 +924,12 @@ environment, single-thread math libraries and low scheduling priority. Passing
 receipts bind tested source, tools/packages, immutable image, tokenizer/config
 files and the fixed checkpoint config consumed by logic checks.
 
+The fleet host may select an existing complete CPU Python environment with a
+private `FLEET_VALIDATION_STORE/python` file containing its absolute interpreter
+path. Validation and recovery CLI calls use that same interpreter and bind its
+packages and Python startup files to the receipt. Missing dependencies or skipped
+checks cannot produce a passing receipt; the helper does not install packages.
+
 The deployer consumes matching receipts. A cache miss during a GPU hold refuses
 without starting another CPU suite. Recovery uses the approved source and receipt
 pinned before admission, so a later main commit cannot add untested recovery work
