@@ -299,8 +299,11 @@ def main() -> int:
         values = sorted(values)
         return values[len(values) // 2] if values else 0.0
 
-    print("\n== per (chunk, ctx): median of reps ==")
-    print(f"{'chunk':>6} {'ctx':>8} {'tok/s':>8} {'step ms':>9} {'us/token':>9}")
+    if not rows:
+        print("no sweep rows (--chunks empty): capture only")
+    if rows:
+        print("\n== per (chunk, ctx): median of reps ==")
+        print(f"{'chunk':>6} {'ctx':>8} {'tok/s':>8} {'step ms':>9} {'us/token':>9}")
     best: dict[int, float] = {}
     for ctx in ctxs:
         for chunk in chunks:
@@ -323,7 +326,7 @@ def main() -> int:
 
     # One (a, b) per context. Their spread IS the context sensitivity: a real
     # prefix-proportional term would push `a` up with ctx.
-    fits = {ctx: fit([r for r in rows if r["ctx"] == ctx]) for ctx in ctxs}
+    fits = {ctx: fit([r for r in rows if r["ctx"] == ctx]) for ctx in ctxs} if rows else {}
     fits = {ctx: f for ctx, f in fits.items() if f}
     if fits:
         print("\n== fit T_step = a + b*C, one per context ==")
