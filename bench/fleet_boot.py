@@ -304,6 +304,21 @@ class Supervisor:
             self.warning(f'pending record {state}: {exc}')
             return 1
 
+    def cleanup_reservation(self):
+        # A failed/cancelled waiter can finish after its session name is reused.
+        # Only its own receipt and queue row belong to this cleanup operation.
+        pid = os.getpid()
+        try:
+            with self.lock():
+                receipt = handoff.receipt(self.directory, self.session)
+                value = handoff.read(receipt)
+                if (isinstance(value, dict) and value.get('session') == self.session
+                        and value.get('pid') == pid and handoff.live(value)):
+                    receipt.unlink(missing_ok=True)
+        except (OSError, ValueError) as exc:
+            self.warning(f'ready receipt cleanup: {exc}')
+        return self.call('withdraw', self.session, '--pid', str(pid))
+
     def run(self):
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, self.signal)
@@ -350,10 +365,7 @@ class Supervisor:
                     self.restore()
             if self.held():
                 self.call('release', self.session)
-            with self.lock():
-                handoff.receipt(self.directory, self.session).unlink(missing_ok=True)
-            # Remove a cancelled waiter's row without signalling ourselves.
-            self.call('withdraw', self.session)
+            self.cleanup_reservation()
             result = self.stopping or rc
             if self.mark_pending('cancelled' if self.stopping else 'finished', phase='finished',
                                  finished_at=time.time(), returncode=result,
