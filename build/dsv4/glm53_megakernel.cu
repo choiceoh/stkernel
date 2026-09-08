@@ -1693,9 +1693,8 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
   // current multiply: ordinary conversions are loop-invariant and nvcc
   // hoists all 96 floats, defeating the packed register representation.
   uint32_t low, high;
-  asm volatile("shl.b32 %0, %2, 16;\n\t"
-               "and.b32 %1, %2, 0xffff0000;"
-               : "=&r"(low), "=r"(high) : "r"(packed));
+  asm volatile("shl.b32 %0, %1, 16;" : "=r"(low) : "r"(packed));
+  asm volatile("and.b32 %0, %1, 0xffff0000;" : "=r"(high) : "r"(packed));
   return make_float2(__uint_as_float(low), __uint_as_float(high));
 }
 
