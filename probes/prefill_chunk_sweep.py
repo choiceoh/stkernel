@@ -173,10 +173,24 @@ def fit(rows: list[dict]) -> dict:
         return {}
     a = (swn * stt - swt * snt) / det
     b = (snn * swt - snt * swn) / det
-    worst = max(abs(r["wall"] - (a * r["steps"] + b * r["prompt_tokens"])) / r["wall"] for r in rows)
+    resid = [r["wall"] - (a * r["steps"] + b * r["prompt_tokens"]) for r in rows]
+    worst = max(abs(x) / r["wall"] for x, r in zip(resid, rows))
+    # Standard errors, because a small residual does NOT mean the split between
+    # a and b is real. Sweep one chunk size only and `steps` is nearly a
+    # multiple of `tokens`: a 200-draw synthetic with +-1% noise then put `a`
+    # anywhere from -400 ms to +848 ms (truth 211) while the worst residual
+    # stayed under 1%. The design has to say how well it separated them.
+    dof = len(rows) - 2
+    se_a = se_b = float("nan")
+    if dof > 0:
+        s2 = sum(x * x for x in resid) / dof
+        se_a = math.sqrt(s2 * stt / det)
+        se_b = math.sqrt(s2 * snn / det)
     return {"a_s": a, "b_s_per_tok": b, "n": len(rows),
             "ceiling_tok_s": (1.0 / b) if b > 0 else float("inf"),
-            "worst_residual_pct": 100 * worst}
+            "worst_residual_pct": 100 * worst,
+            "se_a_s": se_a, "se_b_s_per_tok": se_b,
+            "distinct_chunks": len({r["chunk"] for r in rows})}
 
 
 def main() -> int:
@@ -207,7 +221,8 @@ def main() -> int:
     rng = random.Random(20260908)
     print(f"model={model} chunk-file={args.chunk_file} reps={args.reps}")
     if not histogram(metrics(), "iteration_tokens_total")[0]:
-        print("note: vllm:iteration_tokens_total not exported; falling back to ceil(tokens/chunk) for the step count")
+        print("note: vllm:iteration_tokens_total is not exported yet; the cross-check stays quiet "
+              "(the step count is ceil(tokens/chunk) either way)")
 
     rows: list[dict] = []
     try:
@@ -272,9 +287,15 @@ def main() -> int:
     if fits:
         print("\n== fit T_step = a + b*C, one per context ==")
         for ctx, f in fits.items():
-            print(f"  ctx {ctx:>7}: a = {f['a_s'] * 1000:7.1f} ms/step   "
-                  f"b = {f['b_s_per_tok'] * 1e6:6.2f} us/token (ceiling {f['ceiling_tok_s']:,.0f} tok/s)   "
+            pm_a = "" if f["se_a_s"] != f["se_a_s"] else f" +-{1.96 * f['se_a_s'] * 1000:.0f}"
+            pm_b = "" if f["se_b_s_per_tok"] != f["se_b_s_per_tok"] else f" +-{1.96 * f['se_b_s_per_tok'] * 1e6:.1f}"
+            print(f"  ctx {ctx:>7}: a = {f['a_s'] * 1000:7.1f}{pm_a} ms/step   "
+                  f"b = {f['b_s_per_tok'] * 1e6:6.2f}{pm_b} us/token (ceiling {f['ceiling_tok_s']:,.0f} tok/s)   "
                   f"n={f['n']} worst residual {f['worst_residual_pct']:.1f}%")
+            if f["distinct_chunks"] < 2:
+                print("    !! one chunk size: a and b are NOT separable here, whatever the residual says")
+            elif f["se_a_s"] == f["se_a_s"] and f["se_a_s"] > 0.2 * abs(f["a_s"]):
+                print("    !! a is not resolved (95% interval wider than +-40%): sweep more chunk sizes")
         avals = [f["a_s"] for f in fits.values()]
         if len(avals) > 1:
             spread = 100 * (max(avals) - min(avals)) / (sum(avals) / len(avals))
@@ -289,14 +310,19 @@ def main() -> int:
         fits = {str(k): v for k, v in fits.items()}
 
     traces = {}
-    for chunk in [int(v) for v in args.trace_chunks.split(",") if v.strip()]:
-        set_chunk(args.chunk_file, chunk)
-        path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
-        traces[chunk] = {"trace": path, "prompt_tokens": ptok, "wall": wall}
-        print(f"trace chunk {chunk}: {path or '(none found)'}  tok {ptok}  wall {wall:.1f}s")
-        print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr-{chunk}.json")
-    if traces:
-        set_chunk(args.chunk_file, 0)
+    trace_chunks = [int(v) for v in args.trace_chunks.split(",") if v.strip()]
+    try:
+        for chunk in trace_chunks:
+            set_chunk(args.chunk_file, chunk)
+            path, ptok, wall = profile_capture(model, args.trace_ctx, rng, args.trace_dir)
+            traces[chunk] = {"trace": path, "prompt_tokens": ptok, "wall": wall}
+            print(f"trace chunk {chunk}: {path or '(none found)'}  tok {ptok}  wall {wall:.1f}s")
+            print(f"  python3 tools/trace_prefill_attribution.py {path} --out attr-{chunk}.json")
+    finally:
+        # The sweep loop above already had this; this one did not, so a capture
+        # that raised left the override pinned for whatever booted next.
+        if trace_chunks:
+            set_chunk(args.chunk_file, 0)
 
     if args.json:
         with open(args.json, "w") as fh:

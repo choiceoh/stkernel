@@ -606,7 +606,7 @@ SCHED_CLS_FLAG=""
 # EXPANSION (2026-09-04 lost a boot to exactly that with COMPILE_CFG).
 case "${INDEX_CACHE_FREQ:-0}" in
   ""|0) HF_OVERRIDES_FLAG="" ;;
-  *[!0-9]*) echo "ABORT: INDEX_CACHE_FREQ must be a non-negative integer (got $INDEX_CACHE_FREQ)" >&2; exit 2 ;;
+  *[!0-9]*|0*) echo "ABORT: INDEX_CACHE_FREQ must be a non-negative integer without leading zeros (got $INDEX_CACHE_FREQ); 06 would reach vLLM as invalid JSON" >&2; exit 2 ;;
   *) HF_OVERRIDES_FLAG="--hf-overrides '{\"use_index_cache\":true,\"index_topk_freq\":$INDEX_CACHE_FREQ}'"
      echo "  IndexCache ON: index_topk_freq=$INDEX_CACHE_FREQ (indexer layers; ordinal 0 always computes)" ;;
 esac
