@@ -125,8 +125,12 @@ PREIMAGES: dict[str, str] = {
         "3dcd6ad34ee1d1db2875f7f7dd51d90ee0e64041ab282180687770a38b26acb1",
     "v1/attention/backend.py":
         "301c76c90d5f26cdecfedfb385f8f17453154106d2decf763a31cb978f1a5d99",
+    # glm53_spec_state overlays this file (vLLM #51508); the pin follows the
+    # OVERLAID content, because that is what prep-fused's fused path has to
+    # agree with. Its own kernels re-apply the same staleness rule -- see
+    # nacc_stale in the fused kernel and in _glm53_regather_nacc_kernel.
     "v1/attention/backends/gdn_attn.py":
-        "f27f887e71a7d092b79f7de55044a303456cfbd1e5eaf3461b394da9b3f21eba",
+        "d3fb32a2c2f15a70d53f5b7af00c9176d9cfb0595496a5523680f0facbb381c7",
     "v1/attention/backends/utils.py":
         "cb9a34eb45a94847c8c9862952fe9ca5df4e7c7510425a5280afcbb48d941890",
     "v1/attention/backends/mla/compressor_utils.py":
@@ -396,13 +400,23 @@ def _glm53_prep_fused_kernel(
     # caching) walks the columns as the sequence crosses 2304-token blocks.
     soffs = tl.arange(0, NS_P2)
     smask = soffs < NS
-    nacc = tl.load(num_accepted_ptr + rs)
+    # deneb fork (vLLM #51508): a row whose sampled tokens were discarded
+    # reports 0 accepted while its drafts were still scheduled. Every consumer
+    # indexes the request's state slots with num_accepted_tokens - 1, so a 0
+    # becomes -1. This is the fused-path copy of the rule
+    # GDNAttentionMetadataBuilder.build applies on the stock path: null the
+    # row's state slots (NULL_BLOCK_ID == 0) so the kernels skip both the
+    # initial-state read and the final-state write, and clamp the count.
+    nacc_raw = tl.load(num_accepted_ptr + rs)
+    nacc_stale = nacc_raw == 0
+    nacc = tl.maximum(nacc_raw, 1)
     start_col = tl.maximum((seq_len - 1) // mamba_block, 0)
     for k in tl.static_range(N_GDN):
         gm = tl.load(gdn_group_idx_ptr + k)
         dst = _load_ptr(dst_bt_ptrs + gm, tl.int32)
         stride = tl.load(bt_strides + gm)
         st = tl.load(dst + r * stride + start_col + soffs, mask=smask, other=0)
+        st = tl.where(nacc_stale, 0, st)  # NULL_BLOCK_ID
         sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
         ss = tl.load(gdn_state_strides + k)
         tl.store(sp + r * ss + soffs, st, mask=smask)
@@ -464,18 +478,35 @@ def _ptrs(tensors: list[torch.Tensor], device) -> torch.Tensor:
 
 
 @triton.jit(do_not_specialize=["num_reqs"])
-def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs, num_reqs,
+def _glm53_regather_nacc_kernel(idx_mapping_ptr, num_accepted_ptr, gdn_nacc_ptrs,
+                                gdn_state_ptrs, gdn_state_strides, num_reqs,
+                                NS: tl.constexpr, NS_P2: tl.constexpr,
                                 N_GDN: tl.constexpr, BLOCK: tl.constexpr):
     """Mamba 'align' mode: gdn_nacc[k][row] = num_accepted[idx_mapping[row]],
     the gather stock performs in model_state.prepare_attn -- after the align
-    pre-copy kernel may have reset a migrated request's count to 1."""
+    pre-copy kernel may have reset a migrated request's count to 1.
+
+    deneb fork (vLLM #51508): the re-gathered count can be 0 for a row whose
+    sampled tokens were discarded, and the main kernel decided its state slots
+    from the PRE-align count, so the staleness rule has to be re-applied here
+    against the value the recurrent kernels will actually read."""
     offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offs < num_reqs
     slots = tl.load(idx_mapping_ptr + offs, mask=mask, other=0)
-    nacc = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    nacc_raw = tl.load(num_accepted_ptr + slots, mask=mask, other=1)
+    nacc_stale = nacc_raw == 0
+    nacc = tl.maximum(nacc_raw, 1)
+    soffs = tl.arange(0, NS_P2)
+    smask = soffs < NS
     for k in tl.static_range(N_GDN):
         ap = _load_ptr(gdn_nacc_ptrs + k, tl.int32)
         tl.store(ap + offs, nacc, mask=mask)
+        sp = _load_ptr(gdn_state_ptrs + k, tl.int32)
+        ss = tl.load(gdn_state_strides + k)
+        st_ptr = sp + offs[:, None] * ss + soffs[None, :]
+        st_mask = mask[:, None] & smask[None, :]
+        st = tl.load(st_ptr, mask=st_mask, other=0)
+        tl.store(st_ptr, tl.where(nacc_stale[:, None], 0, st), mask=st_mask)
 
 
 @dataclass
@@ -669,8 +700,10 @@ class PrepPlan:
         if n == 0 or num_reqs == 0:
             return
         _glm53_regather_nacc_kernel[(triton.cdiv(num_reqs, 128),)](
-            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"], num_reqs,
-            N_GDN=n, BLOCK=128)
+            idx_mapping, self.num_accepted, self.owned["gdn_nacc_ptrs"],
+            self.owned["gdn_state_ptrs"], self.owned["gdn_state_strides"],
+            num_reqs,
+            NS=self.num_spec + 1, NS_P2=self.ns_p2, N_GDN=n, BLOCK=128)
 
     def launch(self, idx_mapping_np: np.ndarray, num_reqs: int) -> torch.Tensor:
         """Stage idx_mapping, run the kernel, build the deep_gemm schedule.
