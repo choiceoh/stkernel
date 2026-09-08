@@ -1,0 +1,7 @@
+# source	container_target(relative to the profile's TARGET_PREFIX, or absolute)	base_preimage_sha256_or_absent
+# -- glm53_dynamic_k (vLLM #54801): a sequence-length schedule for the draft budget. Inert until num_speculative_tokens_per_seq_len is set (launcher knob SPEC_K_SEQLEN).
+config_vllm.py	vllm/config/vllm.py	2469664631e33ba4b317ca085405aa1b751e405f9c52ff9d3dda61a0cfc6c5a9
+cudagraph_utils.py	vllm/v1/worker/gpu/cudagraph_utils.py	c183937e6eb5b9c28c79d98fb4c64f562e7649d5f6d65743e6640b2f378ecf9f
+dynamic_utils.py	vllm/v1/spec_decode/dynamic/utils.py	7179869a6d8e97634efe8bd3a9b07608c6393cfc50acdbc4cf11594872c087c1
+sched_scheduler.py	vllm/v1/core/sched/scheduler.py	4c38a32c7405eb95eb9dd3b3d04cbfe5d0cb4ebc0b18efbaa4adc68c7a9bca5a
+speculative.py	vllm/config/speculative.py	eaf52a03351398f72d3e85f0d1ce3bf80d1f92e0fddc8f28bdb11738aeab7875

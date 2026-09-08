@@ -29,7 +29,7 @@ ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/glm53
   IMAGE MOE_BACKEND ENABLE_EP EAGER GRAPH_CAP MAX_SEQS MAX_BATCHED MAX_LEN \
   GMU SPEC_K KV_DTYPE KV_BYTES DFLASH2 SPEC ASYNC_SCHED ATTN_BACKEND \
   MODEL_HOST_PATH SERVED_NAME DRAFT_TP DRAFT_KV CUSTOM_OPS_AXIS COMPILE_CFG \
-  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
+  EXTRA_ENV LOAD_FORMAT DRAFT_SAMPLE REJECT_METHOD SPEC_K_SEQLEN PREFIX_CACHE DECODE_FIRST CHAT_TEMPLATE REASONING_PARSER MM_LIMIT \
   PREFILL_WARMUP PREFILL_WARMUP_LENS MAMBA_CACHE_DTYPE INDEX_CACHE_FREQ
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 
@@ -558,6 +558,20 @@ elif [ "$DFLASH2" = 1 ]; then
   # distributions. The kernel only takes that branch when temp > 0 -- our
   # bench runs at 0.95 -- and it reads the cached draft logits, which exist
   # because DRAFT_SAMPLE defaults to probabilistic.
+  # num_speculative_tokens_per_seq_len (vLLM #54801, glm53_dynamic_k): wind the
+  # draft budget down as the context grows -- draft verification cost scales
+  # with L, so a long input can pay more for the draft than the draft saves.
+  # Entries are [range_start, range_end, num_speculative_tokens] over the
+  # batch's longest sequence, e.g.
+  #   SPEC_K_SEQLEN='[[0,131071,5],[131072,1048576,0]]'
+  # Unset = static SPEC_K, which is the default. No whitespace: the value rides
+  # the same unquoted -e mechanism the profile guard exists for.
+  case "${SPEC_K_SEQLEN:-}" in
+    "" ) ;;
+    *[[:space:]]* ) echo "ABORT: SPEC_K_SEQLEN must not contain whitespace"; exit 1 ;;
+    \[*\] ) _spec_extra="$_spec_extra,\"num_speculative_tokens_per_seq_len\":$SPEC_K_SEQLEN" ;;
+    * ) echo "ABORT: SPEC_K_SEQLEN must be a JSON list of [start,end,k] triples, got '$SPEC_K_SEQLEN'"; exit 1 ;;
+  esac
   case "${REJECT_METHOD:-}" in
     "" ) ;;
     standard|block )

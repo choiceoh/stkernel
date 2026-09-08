@@ -111,8 +111,11 @@ PREIMAGES: dict[str, str] = {
         "1dd3dd2826a2cc73005e7baecb71c26de8d56285b35d780716ab11ffe0f8495b",
     "v1/worker/gpu/buffer_utils.py":
         "51d37bde4f2f17d5aa9354faf35269ca1adde0eb16e73ae0d8b9860353ce57b7",
+    # glm53_dynamic_k overlays this file (vLLM #54801): the decode-query-length
+    # union now also reads the sequence-length draft schedule. prep-fused does
+    # not build that union, so the pin just follows the overlaid content.
     "v1/worker/gpu/cudagraph_utils.py":
-        "c183937e6eb5b9c28c79d98fb4c64f562e7649d5f6d65743e6640b2f378ecf9f",
+        "cd7bc832145c168f80c1cc30db227e8f529a569c1f6e3f4ae908414ea97b7d06",
     "v1/worker/gpu/dp_utils.py":
         "3c882f85109ba47e473953351d166c4377ceb995205e91cbf128ca5075775a5d",
     "v1/worker/gpu/states.py":
