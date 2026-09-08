@@ -40,7 +40,7 @@ require_deployable_checkout() {
   git -C "$REPO" fetch --quiet origin main \
     || { echo "ABORT: could not refresh origin/main"; exit 1; }
   git -C "$REPO" merge-base --is-ancestor origin/main HEAD \
-    || python3 "$VALIDATOR_REPO/bench/fleet_source.py" require-base --repo "$REPO" origin/main \
+    || python3 "$VALIDATOR_REPO/bench/fleet_source.py" require-base origin/main --repo "$REPO" \
     || {
       echo "ABORT: HEAD is not based on current origin/main; refusing a stale overlay rollback"
       echo "  HEAD        $(git -C "$REPO" rev-parse --short HEAD)"

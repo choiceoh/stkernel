@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -119,6 +120,25 @@ class SourceTests(SourceFixture):
         result = subprocess.run(command, cwd=self.repo, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)['ok'])
+
+    def test_deploy_source_guard_cli_checks_the_requested_ref(self):
+        # Exercise the actual deployment invocation: placing the optional ref
+        # after --repo used to fail argparse before checking source ancestry.
+        lines = [line for line in (ROOT / 'launchers/deploy-overlays.sh').read_text().splitlines()
+                 if 'fleet_source.py" require-base' in line]
+        self.assertEqual(len(lines), 1)
+        args = shlex.split(lines[0].split('fleet_source.py" ', 1)[1].rstrip(' \\'))
+        command = [sys.executable, str(ROOT / 'bench/fleet_source.py'),
+                   *(str(self.repo) if part == '$REPO' else part for part in args)]
+        self.advance_ref('docs/report.md', 'upstream prose\n')
+        result = subprocess.run(command, cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)['ok'])
+        self.advance_ref('input.py', 'upstream runtime fix\n')
+        result = subprocess.run(command, cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn('unrecognized arguments', result.stderr)
+        self.assertEqual(json.loads(result.stderr.splitlines()[0])['relevant_changes'], ['input.py'])
 
     def test_declared_ignored_input_is_included(self):
         self.write('.gitignore', 'measurements/private/\n')
