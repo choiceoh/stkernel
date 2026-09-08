@@ -10,12 +10,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'bench'))
 import startup_campaign as campaign
 
 PROFILE = 'VLLM_GLM53_RANK_CACHE=1\nVLLM_GLM53_FP8_CACHE=1\nVLLM_A=0\nVLLM_B=0\n'
-SPEC = dict(schema=1, baseline={'VLLM_A':'0','VLLM_B':'0'}, prime={'VLLM_A':'1','VLLM_B':'1'},
+SPEC = dict(schema=1, baseline_policy='confirm', baseline={'VLLM_A':'0','VLLM_B':'0'}, prime={'VLLM_A':'1','VLLM_B':'1'},
             candidates=[dict(name='A',knobs={'VLLM_A':'1','VLLM_B':'0'}),
                         dict(name='B',knobs={'VLLM_A':'0','VLLM_B':'1'})])
 
 
 class CampaignTests(unittest.TestCase):
+    def test_default_plan_has_one_shared_control_and_no_drift_verdict(self):
+        spec = copy.deepcopy(SPEC); del spec['baseline_policy']
+        arms = campaign.plan(spec, PROFILE)
+        self.assertEqual([r['stage'] for r in arms], ['PRIME','BASE1','AR1','BR1','BR2','AR2'])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'campaign.json').write_text(json.dumps(dict(spec=spec,arms=arms)))
+            (root/'campaign-receipts.jsonl').write_text(''.join(json.dumps(dict(stage=r['stage'],name=r['stage']))+'\n' for r in arms))
+            (root/'health-wall-seconds.tsv').write_text(''.join(r['stage']+'\t100\n' for r in arms))
+            result = campaign.summarize(root)
+            self.assertEqual(result['status'], 'exploration-unconfirmed')
+            self.assertIsNone(result['baseline_drift_fraction'])
+            self.assertFalse(result['promotion_ready'])
+            self.assertEqual((result['boots'],result['independent_boots']), (6,8))
+
     def test_two_candidates_share_one_prime_and_two_controls(self):
         arms = campaign.plan(SPEC, PROFILE)
         self.assertEqual([r['stage'] for r in arms], ['PRIME','BASE1','AR1','BR1','BR2','AR2','BASE2'])

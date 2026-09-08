@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""One fixed build, one PRIME, and two shared controls around repeated candidates.
+"""One fixed build, one PRIME, and a shared baseline for repeated candidates.
 
 No cross-build/cross-run baseline reuse. Every timed arm still needs four-node
 warm-cache receipts and the canonical onepass quality workload. This produces
-exploration evidence; drift or missing proof prevents a performance verdict.
+exploration evidence. Explicit confirmation adds a closing drift control.
 """
 import argparse
 import hashlib
@@ -22,8 +22,11 @@ def digest(path):
 
 
 def plan(spec, profile):
-    if not isinstance(spec, dict) or spec.get('schema') != 1 or set(spec) - {'schema', 'baseline', 'prime', 'candidates', 'max_drift_fraction'}:
+    if not isinstance(spec, dict) or spec.get('schema') != 1 or set(spec) - {'schema', 'baseline', 'prime', 'candidates', 'max_drift_fraction', 'baseline_policy'}:
         raise ValueError('campaign schema must be 1 with baseline, prime and candidates')
+    policy = spec.get('baseline_policy', 'minimal')
+    if policy not in ('minimal', 'confirm'):
+        raise ValueError('baseline_policy must be minimal or confirm')
     candidates = spec.get('candidates')
     if not isinstance(candidates, list) or not 1 <= len(candidates) <= 8:
         raise ValueError('campaign needs 1..8 candidates')
@@ -59,10 +62,12 @@ def plan(spec, profile):
     drift = spec.get('max_drift_fraction', .1)
     if type(drift) not in (float, int) or not math.isfinite(drift) or not 0 < drift <= .25:
         raise ValueError('max_drift_fraction must be in (0, .25]')
-    return [dict(stage='PRIME', role='prime', knobs=prime), dict(stage='BASE1', role='baseline', knobs=base)] + [
+    arms = [dict(stage='PRIME', role='prime', knobs=prime), dict(stage='BASE1', role='baseline', knobs=base)] + [
         dict(stage=row['candidate']+'R1', role='candidate', **row) for row in arms] + [
-        dict(stage=row['candidate']+'R2', role='candidate', **row) for row in reversed(arms)] + [
-        dict(stage='BASE2', role='baseline', knobs=base)]
+        dict(stage=row['candidate']+'R2', role='candidate', **row) for row in reversed(arms)]
+    if policy == 'confirm':
+        arms.append(dict(stage='BASE2', role='baseline', knobs=base))
+    return arms
 
 
 def identity(repo):
@@ -132,11 +137,15 @@ def summarize(root):
             raise ValueError('invalid or duplicate health timing')
         times[name] = value
     timings = {r['stage']: times[r['name']] for r in receipts}
-    bases = [timings['BASE1'], timings['BASE2']]
-    drift = abs(bases[1]-bases[0])/statistics.mean(bases)
-    result = dict(status='exploration' if drift <= saved['spec'].get('max_drift_fraction', .1) else 'incomplete-drift',
+    bases = [timings[r['stage']] for r in saved['arms'] if r['role'] == 'baseline']
+    # Read the saved physical plan, so old two-control campaigns still retain
+    # their original drift interpretation when summarized by a newer runner.
+    drift = abs(bases[1]-bases[0])/statistics.mean(bases) if len(bases) == 2 else None
+    status = 'exploration-unconfirmed' if drift is None else (
+        'exploration' if drift <= saved['spec'].get('max_drift_fraction', .1) else 'incomplete-drift')
+    result = dict(status=status, baseline_policy='minimal' if drift is None else 'confirm',
                   promotion_ready=False, baseline_health_seconds=bases, baseline_drift_fraction=drift,
-                  boots=len(receipts), independent_boots=5*len(saved['spec']['candidates']), candidates=[])
+                  boots=len(receipts), independent_boots=(3+len(bases))*len(saved['spec']['candidates']), candidates=[])
     for candidate in saved['spec']['candidates']:
         name = candidate['name']
         values = [timings[name+'R1'], timings[name+'R2']]
@@ -158,7 +167,8 @@ def main():
         spec = json.loads(args.spec.read_text())
         arms = plan(spec, (args.repo/'profiles/glm53.env').read_text())
         if args.action == 'validate':
-            print(json.dumps(dict(boots=len(arms), independent_boots=5*len(spec['candidates']), arms=arms), indent=2))
+            controls = sum(arm['role'] == 'baseline' for arm in arms)
+            print(json.dumps(dict(boots=len(arms), independent_boots=(3+controls)*len(spec['candidates']), arms=arms), indent=2))
             return
         with (args.evidence/'campaign.json').open('x') as stream:
             json.dump(dict(schema=1, spec=spec, arms=arms, identity=identity(args.repo)), stream, indent=2)

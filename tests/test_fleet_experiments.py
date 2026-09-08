@@ -396,15 +396,19 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(self.wait(pair["id"])["state"], "blocked")
         self.assertFalse((self.logs / "arms").exists())
 
-    def test_two_candidates_share_three_independent_baseline_boots(self):
+    def test_default_candidates_share_one_baseline_without_promotion_claim(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
         first = self.submit("first", kind="pair", command=[], knobs={"VLLM_TEST":"1"}, context=context)
         second = self.submit("second", kind="pair", command=[], knobs={"VLLM_TEST":"2"}, context=context)
         self.assertEqual(self.wait(first["id"])["state"], "succeeded")
         self.assertEqual(self.wait(second["id"])["state"], "succeeded")
         arms = (self.logs / "arms").read_text()
-        self.assertEqual(arms.count("-BASE-"), 3, arms)
-        self.assertEqual(arms.count("onepass"), 5, arms)
+        self.assertEqual(arms.count("-BASE-"), 1, arms)
+        self.assertEqual(arms.count("onepass"), 3, arms)
+        result = self.cli('result', second['id'])['result']
+        self.assertTrue(result['comparison_complete'])
+        self.assertFalse(result['promotion_ready'])
+        self.assertEqual(result['verdict']['decision'], 'unresolved')
         store = ex.Store(self.jobs)
         baselines = [json.loads(r[0]) for r in store.db.execute("SELECT payload FROM jobs")
                      if json.loads(r[0])["spec"]["kind"] == "baseline"]
@@ -587,8 +591,10 @@ class SubmissionTests(unittest.TestCase):
         result = self.wait(job["id"])
         self.assertEqual(result["state"], "succeeded", result)
         before = (self.logs / "arms").read_text()
-        self.assertEqual(before.count("onepass"), 4)  # three independent defaults, one candidate
-        self.assertEqual(result["result"]["verdict"]["floor_n"], 3)
+        self.assertEqual(before.count("onepass"), 2)  # one defaults sample and one candidate
+        self.assertEqual(result["result"]["verdict"]["floor_n"], 1)
+        self.assertEqual(result['result']['evidence'], 'gpu-pair-screen')
+        self.assertFalse(result['result']['promotion_ready'])
         result = self.cli("result", job["id"])
         self.assertEqual(result["state"], "succeeded", result)
         self.assertEqual((self.logs / "arms").read_text(), before)
@@ -600,7 +606,65 @@ class SubmissionTests(unittest.TestCase):
         job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST": "1"}, context=context)
         result = self.wait(job["id"])
         self.assertEqual(result["state"], "succeeded", result)
-        self.assertEqual((self.logs / "arms").read_text().count("-BASE-"), 3)
+        self.assertEqual((self.logs / "arms").read_text().count("-BASE-"), 1)
+
+    def test_confirmation_acquires_only_missing_samples_and_later_screen_reuses_them(self):
+        context = self.pair_context()
+        first = self.submit('screen',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
+        self.assertEqual(self.wait(first['id'])['state'], 'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
+        confirm = self.submit('confirm',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context,baseline_policy='confirm')
+        result = self.wait(confirm['id'])
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(result['result']['verdict']['floor_n'], 3)
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
+        third = self.submit('later',kind='pair',command=[],knobs={'VLLM_TEST':'2'},context=context)
+        self.assertEqual(self.wait(third['id'])['state'], 'succeeded')
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
+
+    def test_baseline_policy_rejects_unknown_values_and_non_pair_requests(self):
+        for kind, policy in (('cpu','minimal'),('pair','skip'),('pair',None),('pair',[])):
+            raw = dict(kind=kind, revision=self.sha, hypothesis='test', command=['true'] if kind=='cpu' else [],
+                       knobs={} if kind=='cpu' else {'VLLM_TEST':'1'},context=self.pair_context(),baseline_policy=policy)
+            with self.subTest(kind=kind,policy=policy), self.assertRaises(ValueError):
+                ex.normalize(raw, self.repo)
+
+    def test_minimal_result_reuses_valid_baseline_when_latest_defaults_failed(self):
+        context = self.pair_context()
+        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
+        self.assertEqual(self.wait(job['id'])['state'], 'succeeded')
+        bad = record('FAILED-DEFAULTS',git=self.sha,overlay=self.stamp.read_text()[:12],runtime=context,
+                     quality={'ok':8,'total':9})
+        with (self.logs/'onepass.jsonl').open('a') as stream: stream.write(json.dumps(bad)+'\n')
+        store = ex.Store(self.jobs)
+        self.addCleanup(store.db.close)
+        state, result = ex.pair_result(store.get(job['id'])['payload'], job['id'])
+        self.assertEqual(state, 'succeeded')
+        self.assertNotEqual(result['baseline']['name'], 'FAILED-DEFAULTS')
+        self.assertEqual(result['baseline_samples'], 1)
+        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
+
+    def test_shell_pair_reuses_one_baseline_and_counts_each_boot_once(self):
+        env = dict(self.env, LEVER=str(self.repo/'bench/ab-lever.sh'), FLEET=str(self.repo/'bench/fleet.sh'))
+        env.pop('PAIR_FLOOR_N',None)
+        for name in ('FIRST','SECOND','THIRD'):
+            result = subprocess.run([BASH,str(self.repo/'bench/pair.sh'),name,'VLLM_TEST=1'],
+                                    cwd=self.repo,env=env,text=True,capture_output=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        arms = (self.logs/'arms').read_text()
+        self.assertEqual(arms.count('BASE onepass'),1,arms)
+        ledger = self.logs/'onepass.jsonl'
+        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+        with ledger.open('a') as stream:
+            stream.write(json.dumps(next(row for row in rows if row['name']=='FIRSTBASE'))+'\n')
+        count = subprocess.check_output(['python3',str(self.repo/'bench/baseline.py'),'--count-for','THIRD'],
+                                         cwd=self.repo,env=env,text=True).strip()
+        self.assertEqual(count,'1')
+
+    def test_legacy_saved_requests_keep_the_three_sample_contract(self):
+        from experiment_baselines import required_samples
+        self.assertEqual(required_samples({'kind':'pair'}),3)
+        self.assertEqual(required_samples({'kind':'pair','baseline_policy':'minimal'}),1)
 
     def test_invalid_manifest_and_old_prerequisite_are_rejected(self):
         for change in ({"revision":"main"}, {"env":{"SKIP_BOOT":"1"}}, {"env":{"FLEET_REHEARSE":"1"}},
@@ -644,7 +708,7 @@ class SubmissionTests(unittest.TestCase):
     def pair_context(self):
         return dict(image=self.image, model='fixture', hardware='fixture')
 
-    def test_grouped_objectives_use_four_boots_and_one_final_restore(self):
+    def test_grouped_objectives_use_two_boots_and_one_final_restore(self):
         fleet = self.repo / 'bench/fleet.sh'
         fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
                                           'restore-needed) echo restore-check >> "$LOGD/restore-checks"; exit 0;;'))
@@ -659,9 +723,11 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(result['state'], 'succeeded', (result, Path(result['log']).read_text()))
         self.assertEqual(len(result['result']['evaluations']), 3)
         records = [json.loads(line) for line in (self.logs/'onepass.jsonl').read_text().splitlines()]
-        self.assertEqual(len(records), 8)  # two workloads per boot, quality reuses the first
-        self.assertEqual(len({r['boot_id'] for r in records}), 4)
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 4)
+        self.assertEqual(len(records), 4)  # two workloads per boot, quality reuses the first
+        self.assertEqual(len({r['boot_id'] for r in records}), 2)
+        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 2)
+        self.assertTrue(result['result']['comparison_complete'])
+        self.assertFalse(result['result']['promotion_ready'])
         self.assertEqual((self.logs/'arms').read_text().count('RESTORE none'), 1)
         self.assertEqual((self.logs/'restore-checks').read_text().count('restore-check'), 1)
 
