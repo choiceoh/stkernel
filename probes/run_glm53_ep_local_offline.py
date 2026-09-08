@@ -12,11 +12,12 @@ import subprocess
 import time
 
 import glm53_probe_lifecycle as lifecycle
+import glm53_ep_sanitizer as sanitizer_support
 from glm53_ep_local_evidence import validate_compile_evidence
 
 CASES = ("balanced4096", "balanced6912", "balanced8192", "concentrated6912",
          "remote4096", "duplicate4096", "zeros4097", "balanced16384")
-CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu6/local/result.json")
+CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu7/local/result.json")
 
 
 def resources(require_memory):
@@ -46,6 +47,7 @@ def main():
     result = dict(started=time.time(), source_revision=args.revision,
                   exit_code=1, performance_acceptance=False, cells=[])
     owned = set()
+    sanitizer_receipt = None
 
     def save(name, data):
         (args.out/name).write_text(json.dumps(data, indent=2)+"\n")
@@ -94,10 +96,11 @@ def main():
             filename, target, *_ = line.split("\t")
             if "/flashinfer/" in target or filename == "flashinfer_b12x_moe.py":
                 command += ["-v", f"{root/'build/glm53'/filename}:{target}:ro"]
+        if sanitizer:
+            command += sanitizer_support.mount_args(sanitizer_receipt)
         command += [lifecycle.IMAGE]
         if sanitizer:
-            command += ["/usr/local/cuda/bin/compute-sanitizer", "--tool", sanitizer,
-                        "--error-exitcode=86"]
+            command += sanitizer_support.command(sanitizer)
         probe = ("glm53_ep_route_remap_check.py" if case == "remap" else "glm53_ep_local_check.py")
         command += ["python3", "/repo/probes/"+probe]
         if case != "remap":
@@ -116,6 +119,9 @@ def main():
             entry["exit_code"] = process.returncode
             if process.returncode:
                 raise RuntimeError(f"GPU cell {label} failed with exit {process.returncode}")
+            if sanitizer:
+                entry["sanitizer_summary"] = sanitizer_support.validate_summary(
+                    args.out/(label+".log"), sanitizer)
             evidence = json.loads((args.out/(label+".json")).read_text())
             if evidence.get("verdict") != "PASS" or evidence.get("performance_acceptance") is not False:
                 raise RuntimeError("GPU cell did not produce valid component-only evidence")
@@ -138,6 +144,8 @@ def main():
         lifecycle.pinned(str(root), args.revision)
         # Reject stale evidence before pausing the incoming service.
         validate_compile_evidence(root, root/CPU_EVIDENCE)
+        sanitizer_receipt = sanitizer_support.preflight(
+            lifecycle.IMAGE, args.out/"sanitizer-preflight.json")
         save("resources-before.json", resources(False))
         before = lifecycle.snapshot()
         save("before.json", before)
