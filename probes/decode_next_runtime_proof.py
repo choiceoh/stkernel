@@ -61,9 +61,13 @@ def validate_manifest(expected):
 
 def parse_markers(log):
     prepared = re.findall(
-        r"\[b12x sf6\] prepared FC1\+FC2; raw prefill scales retained; packed bytes=(\d+)", log)
+        r"\[b12x sf6\] prepared FC1\+FC2;(?: raw prefill scales retained;)? packed bytes=(\d+)", log)
     fallback = re.findall(
-        r"\[b12x sf6\] raw fallback: ([^\n]+?); raw prefill scales retained; packed bytes=0", log)
+        r"\[b12x sf6\] raw fallback: ([^\n]+?);(?: raw prefill scales retained;)? packed bytes=0", log)
+    # Packing and releasing the original owners are separate lifecycle events.
+    # Neither legacy retention logs nor the new preparation logs prove release.
+    finalized = re.findall(
+        r"\[b12x sf6\] packed-only owners finalised: layers=(\d+) raw_bytes_released=(\d+)(?:;|\s|$)", log)
     return {
         "common": {marker: marker in log for marker in COMMON_MARKERS},
         "ar_capture_numel": [int(n) for n in re.findall(
@@ -82,6 +86,9 @@ def parse_markers(log):
         "sf6_packed_bytes": sum(map(int, prepared)),
         "sf6_fallback_count": len(fallback),
         "sf6_fallback_reasons": fallback,
+        "sf6_packed_only_finalizations": len(finalized),
+        "sf6_packed_only_layers": sum(int(layers) for layers, _ in finalized),
+        "sf6_raw_bytes_released": sum(int(size) for _, size in finalized),
         "new_marker_present": any(marker in log for marker in (
             "[oneshot] compact AR CAPTURED", "[osar] compact transport self-test",
             "[oneshot] inline proxy serving", "[b12x sf6]", "sf6v1")),

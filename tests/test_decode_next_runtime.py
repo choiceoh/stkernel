@@ -24,6 +24,7 @@ CANDIDATE_LOG = """[osar] compact transport self-test cases=21 graph=3 maxerr=0
 [b12x sf6] raw fallback: fc2 stage spans 75 byte codes (limit 64); raw prefill scales retained; packed bytes=0
 [b12x static v2] lane serving: static2_m6_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=65000 B)
 """
+FINALIZED_LOG = "[b12x sf6] packed-only owners finalised: layers=48 raw_bytes_released=268435456; decode and prefill read immutable packed scales\n"
 
 
 def report(mode="baseline", host="srv1"):
@@ -51,7 +52,43 @@ class RuntimeProofTests(unittest.TestCase):
         self.assertEqual(candidate["markers"]["sf6_prepared_count"], 1)
         self.assertEqual(candidate["markers"]["sf6_fallback_count"], 1)
         self.assertEqual(candidate["markers"]["sf6_packed_bytes"], 123456)
+        self.assertEqual(candidate["markers"]["sf6_fallback_reasons"],
+                         ["fc2 stage spans 75 byte codes (limit 64)"])
+        for field in ("sf6_packed_only_finalizations", "sf6_packed_only_layers",
+                      "sf6_raw_bytes_released"):
+            self.assertEqual(candidate["markers"][field], 0)
         self.assertEqual(proof.validate_report(report(), MANIFEST), [])
+
+    def test_new_sf6_logs_record_release_separately_from_preparation(self):
+        candidate = report("candidate")
+        new_log = COMMON_LOG + CANDIDATE_LOG.replace(" raw prefill scales retained;", "")
+        candidate["markers"] = proof.parse_markers(new_log)
+        self.assertEqual(proof.validate_report(candidate, MANIFEST), [])
+        self.assertEqual(candidate["markers"], report("candidate")["markers"])
+        candidate["markers"] = proof.parse_markers(new_log + FINALIZED_LOG)
+        self.assertEqual(proof.validate_report(candidate, MANIFEST), [])
+        self.assertEqual(candidate["markers"]["sf6_packed_only_finalizations"], 1)
+        self.assertEqual(candidate["markers"]["sf6_packed_only_layers"], 48)
+        self.assertEqual(candidate["markers"]["sf6_raw_bytes_released"], 268435456)
+        mixed = proof.parse_markers(CANDIDATE_LOG + new_log + FINALIZED_LOG + FINALIZED_LOG)
+        self.assertEqual(mixed["sf6_prepared_count"], 2)
+        self.assertEqual(mixed["sf6_fallback_count"], 2)
+        self.assertEqual(mixed["sf6_packed_only_finalizations"], 2)
+        self.assertEqual(mixed["sf6_packed_only_layers"], 96)
+        self.assertEqual(mixed["sf6_raw_bytes_released"], 536870912)
+
+    def test_release_marker_does_not_replace_required_execution_proof(self):
+        for mode in ("baseline", "candidate"):
+            value = report(mode)
+            value["markers"] = proof.parse_markers(COMMON_LOG + FINALIZED_LOG)
+            self.assertTrue(proof.validate_report(value, MANIFEST), mode)
+        for malformed in (FINALIZED_LOG.replace("finalised", "pending"),
+                          FINALIZED_LOG.replace("layers=48", "layers=-1"),
+                          FINALIZED_LOG.replace("268435456;", "268435456.5;")):
+            markers = proof.parse_markers(malformed)
+            self.assertEqual(markers["sf6_packed_only_finalizations"], 0)
+            self.assertEqual(markers["sf6_packed_only_layers"], 0)
+            self.assertEqual(markers["sf6_raw_bytes_released"], 0)
 
     def test_candidate_requires_executed_lanes_not_environment_only(self):
         for field in ("compact_capture_numel", "compact_selftests", "inline_posts",
