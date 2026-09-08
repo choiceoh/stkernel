@@ -12,10 +12,11 @@ import subprocess
 import time
 
 import glm53_probe_lifecycle as lifecycle
+from glm53_ep_local_evidence import validate_compile_evidence
 
 CASES = ("balanced4096", "balanced6912", "balanced8192", "concentrated6912",
          "remote4096", "duplicate4096", "zeros4097", "balanced16384")
-CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu3/local/result.json")
+CPU_EVIDENCE = Path("measurements/glm53_ep_local_20260908/cpu4/local/result.json")
 
 
 def resources(require_memory):
@@ -131,9 +132,8 @@ def main():
     try:
         lifecycle.check_holder()
         lifecycle.pinned(str(root), args.revision)
-        evidence = json.loads((root/CPU_EVIDENCE).read_text())
-        if evidence["arm"] != "local" or evidence["cuda_initialized"] is not False:
-            raise RuntimeError("pinned no-device compile proof required")
+        # Reject stale evidence before pausing the incoming service.
+        validate_compile_evidence(root, root/CPU_EVIDENCE)
         save("resources-before.json", resources(False))
         before = lifecycle.snapshot()
         save("before.json", before)

@@ -15,12 +15,8 @@ import statistics
 import time
 from types import SimpleNamespace
 
-os.environ.update(
-    VLLM_GLM53_EP_PREFILL_LOCAL="1",
-    VLLM_GLM53_B12X_PREFILL_REUSE="0",
-    VLLM_GLM53_B12X_PREFILL_FC1_N128="0",
-    VLLM_GLM53_B12X_STATIC_V2="t,r",
-)
+from glm53_ep_local_evidence import validate_compile_evidence
+
 CASES = {
     "balanced4096": (4096, "balanced"),
     "balanced6912": (6912, "balanced"),
@@ -33,22 +29,43 @@ CASES = {
 }
 
 
+ROW_L2_FLOOR = .02
+ROW_PEAK_FLOOR = .04
+
+
+def row_errors(actual, reference):
+    import torch
+    assert actual.shape == reference.shape and actual.ndim == 2, "output shape mismatch"
+    a, b = actual.float(), reference.float()
+    assert all(bool(torch.isfinite(t).all()) for t in (a, b)), "nonfinite output"
+    delta = a - b
+    return (delta.norm(dim=1) / b.norm(dim=1).clamp_min(1e-6),
+            delta.abs().amax(dim=1) / b.abs().amax(dim=1).clamp_min(1e-6))
+
+
+def check_control(baseline, repeat):
+    """Stock variability itself must stay within the fixed numerical floors."""
+    l2, peak = row_errors(repeat, baseline)
+    bad = (l2 > ROW_L2_FLOOR) | (peak > ROW_PEAK_FLOOR)
+    result = dict(bad_rows=int(bad.sum()), max_row_relative_l2=float(l2.max()),
+                  max_row_relative_abs=float(peak.max()))
+    assert not result["bad_rows"], dict(verdict="UNSTABLE_STOCK_CONTROL", **result)
+    return result
+
+
 def compare(candidate, baseline, repeat):
     import torch
-    a, b, r = (t.float() for t in (candidate, baseline, repeat))
-    assert all(bool(torch.isfinite(t).all()) for t in (a, b, r)), "nonfinite output"
-    norm = b.norm(dim=1).clamp_min(1e-6)
-    error, noise = (a-b).norm(dim=1)/norm, (r-b).norm(dim=1)/norm
-    peak = b.abs().amax(dim=1).clamp_min(1e-6)
-    max_error = (a-b).abs().amax(dim=1)/peak
-    max_noise = (r-b).abs().amax(dim=1)/peak
-    bad = ((error > torch.maximum(3*noise, torch.full_like(noise, .02)))
-           | (max_error > torch.maximum(3*max_noise, torch.full_like(noise, .04))))
+    # A noisy reference must never authorize arbitrarily noisy candidates.
+    check_control(baseline, repeat)
+    error, max_error = row_errors(candidate, baseline)
+    noise, max_noise = row_errors(repeat, baseline)
+    bad = ((error > torch.maximum(3*noise, torch.full_like(noise, ROW_L2_FLOOR)))
+           | (max_error > torch.maximum(3*max_noise, torch.full_like(max_noise, ROW_PEAK_FLOOR))))
     result = dict(bad_rows=int(bad.sum()), max_row_relative_l2=float(error.max()),
                   max_row_relative_abs=float(max_error.max()),
                   stock_max_row_relative_l2=float(noise.max()),
                   stock_max_row_relative_abs=float(max_noise.max()))
-    assert result["bad_rows"] == 0, result
+    assert not result["bad_rows"], dict(verdict="CANDIDATE_NUMERICS_FAIL", **result)
     return result
 
 
@@ -90,21 +107,22 @@ def routing(rows, kind, changed=False):
     return ids, weights
 
 
-def main():
+def parse_args():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--case", choices=CASES, required=True)
     ap.add_argument("--sanitize", action="store_true")
     ap.add_argument("--compile-evidence", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
-    args = ap.parse_args()
+    return ap.parse_args()
+
+
+def run_case(args, result):
     import torch
     from flashinfer.fused_moe.cute_dsl.blackwell_sm12x import moe_dispatch as md
     from vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe import FlashInferB12xExperts
     assert torch.cuda.get_device_capability() == (12, 1)
     assert md._GLM53_EP_PREFILL_LOCAL
-    compiled = json.loads(args.compile_evidence.read_text())
-    assert compiled["arm"] == "local" and compiled["cuda_initialized"] is False
-    assert compiled["cache_key"][-1] == "glm53_ep_prefill_local_v1"
+    compiled = validate_compile_evidence(Path("/repo"), args.compile_evidence)
     for filename, want in compiled["sources"].items():
         assert hashlib.sha256(Path(filename).read_bytes()).hexdigest() == want, filename
     provenance = {}
@@ -149,8 +167,7 @@ def main():
         torch.cuda.synchronize()
         return out.clone()
 
-    result = dict(case=args.case, rows=rows, routing=kind, sanitize=args.sanitize,
-                  legacy_max_num_tokens=wrapper.max_num_tokens,
+    result.update(rows=rows, routing=kind, legacy_max_num_tokens=wrapper.max_num_tokens,
                   provenance=provenance, controls=[], candidate=[], timing={})
     # Initial, changed input/routes at the same addresses, then poisoned-output
     # nondefault-stream replay. Every arm uses the same original tensors.
@@ -159,9 +176,12 @@ def main():
             x.mul_(-.75)
             new_ids, new_weights = routing(rows, kind, changed=True)
             ids.copy_(new_ids); weights.copy_(new_weights)
+        result["phase"] = "changed-control" if changed else "initial-control"
         b, b2, b3 = eager(False), eager(False), eager(False)
-        result["controls"].append(compare(b3, b, b2))
+        result["controls"].append([check_control(b, b2), check_control(b, b3), check_control(b2, b3)])
+        result["phase"] = "changed-candidate" if changed else "initial-candidate"
         result["candidate"].append(compare(eager(True), b, b2))
+        result["phase"] += "-nondefault-stream"
         result["candidate"].append(compare(eager(True, nondefault=True), b, b2))
         if kind == "remote" and not changed:
             assert bool((b == 0).all()), "empty-local control must be exactly zero"
@@ -170,6 +190,7 @@ def main():
     assert any(key[-1] == "glm53_ep_prefill_local_v1" for key in keys), keys
     result["cache_keys"] = keys
     if not args.sanitize and kind in ("balanced", "concentrated"):
+        result["phase"] = "paired-timing"
         wall, device = [[], []], [[], []]
         for iteration in range(8):
             for arm in ((0, 1) if iteration % 2 == 0 else (1, 0)):
@@ -186,13 +207,32 @@ def main():
             wall_ms=dict(compact=wall[0], local=wall[1]),
             device_ms=dict(compact=device[0], local=device[1]),
             wall_speedup_pct=100*(statistics.median(wall[0])/statistics.median(wall[1])-1))
-    result.update(verdict="PASS", device=torch.cuda.get_device_name(),
+    result.update(verdict="PASS", phase="complete", device=torch.cuda.get_device_name(),
                   max_allocated_bytes=torch.cuda.max_memory_allocated(),
                   max_reserved_bytes=torch.cuda.max_memory_reserved(),
                   performance_acceptance=False)
-    args.output.write_text(json.dumps(result, indent=2, default=str)+"\n")
-    print(json.dumps(result, default=str), flush=True)
     print("EP_LOCAL_GPU PASS; full-model TTFT and TP4 remain separate gates", flush=True)
+
+
+def main():
+    args = parse_args()
+    os.environ.update(
+        VLLM_GLM53_EP_PREFILL_LOCAL="1",
+        VLLM_GLM53_B12X_PREFILL_REUSE="0",
+        VLLM_GLM53_B12X_PREFILL_FC1_N128="0",
+        VLLM_GLM53_B12X_STATIC_V2="t,r",
+    )
+
+    result = dict(case=args.case, sanitize=args.sanitize, verdict="RUNNING",
+                  phase="prepare", performance_acceptance=False)
+    try:
+        run_case(args, result)
+    except BaseException as exc:
+        result.update(verdict="FAIL", error=repr(exc))
+        raise
+    finally:
+        args.output.write_text(json.dumps(result, indent=2, default=str)+"\n")
+        print(json.dumps(result, default=str), flush=True)
 
 
 if __name__ == "__main__":

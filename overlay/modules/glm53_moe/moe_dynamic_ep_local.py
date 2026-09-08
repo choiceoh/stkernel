@@ -272,9 +272,8 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             first_copy_bytes + second_copy_bytes,
                         )
 
-                # Each math warp owns one token and handles all of its
-                # routes.  Keep a 16-entry register cache so both the
-                # Qwen topk=8 and topk=10 shapes use this shared-load path.
+                # Each math warp owns one token with at most eight local
+                # routes, as required by the exact top8 dispatcher gate.
                 token_idx = batch_base + warp_idx
                 if warp_idx < producer_batch_tokens and token_idx < num_tokens:
                     route_slot_base = warp_idx * Int32(32)
@@ -328,7 +327,7 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                         # Preserve the baseline's per-lane scale load and
                         # reciprocal work.  Hoist it out of the block loop,
                         # but do not introduce a 32x broadcast optimization.
-                        route_gs = cute.make_rmem_tensor((16,), cutlass.Float32)
+                        route_gs = cute.make_rmem_tensor((8,), cutlass.Float32)
                         cache_slot = Int32(0)
                         while cache_slot < local_topk:
                             route_slot = route_slot_base + cache_slot
@@ -347,6 +346,15 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
                             route_gs[cache_slot] = gs_value
                             cache_slot += Int32(1)
 
+                        # Expert scales are constant across this token's SF
+                        # blocks. Compare once, not once per 16-column block.
+                        route_scales_equal = Int32(1)
+                        scale_idx = Int32(1)
+                        while scale_idx < local_topk:
+                            if route_gs[scale_idx] != route_gs[0]:
+                                route_scales_equal = Int32(0)
+                            scale_idx += Int32(1)
+
                         sf_idx = lane_id
                         while sf_idx < sf_blocks_per_row:
                             block_start = sf_idx * Int32(16)
@@ -364,13 +372,6 @@ class MoEGatedEPLocalKernel(MoEGatedDynamicKernel):
 
                             # Quantized payload is identical only when all
                             # selected experts use the same input global scale.
-                            route_scales_equal = Int32(1)
-                            scale_idx = Int32(1)
-                            while scale_idx < local_topk:
-                                if route_gs[scale_idx] != route_gs[0]:
-                                    route_scales_equal = Int32(0)
-                                scale_idx += Int32(1)
-
                             if route_scales_equal > Int32(0):
                                 gs_value = route_gs[0]
                                 packed64 = Uint64(0)

@@ -13,7 +13,10 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import unittest
 import time
+
+from glm53_ep_local_evidence import CONTRACT_PATHS, CPU_TEST_MODULES, digest, mounted_sources
 
 
 def main():
@@ -71,9 +74,24 @@ def main():
                           "resources": text})
     assert resources, "no compiled cubin resource evidence"
     assert artifacts, "no generated PTX: cached builds are not compile proof"
+    root = Path(__file__).resolve().parents[1]
+    suite = unittest.TestSuite(
+        unittest.defaultTestLoader.discover(str(root / "tests"), pattern=name)
+        for name in CPU_TEST_MODULES)
+    tested = unittest.TextTestRunner(verbosity=2).run(suite)
+    contracts = dict(tests_run=tested.testsRun, failures=len(tested.failures),
+                     errors=len(tested.errors), skips=len(tested.skipped),
+                     files={name: digest(root / name) for name in CONTRACT_PATHS})
+    assert tested.wasSuccessful() and not tested.skipped, contracts
+    assert not torch.cuda.is_initialized(), "CPU contracts created a CUDA context"
+    mounted = {}
+    for target, source in mounted_sources(root).items():
+        assert digest(source) == digest(target), target
+        mounted[target] = digest(target)
     evidence = dict(arm=args.arm, m=args.m,
                     elapsed_s=time.monotonic() - t0, cache_key=keys[0],
                     cuda_initialized=torch.cuda.is_initialized(), artifacts=artifacts, resources=resources,
+                    contracts=contracts, mounted_sources=mounted,
                     sources={str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in map(Path, (*md._kernel_source_files(), str(Path(md.__file__).with_name("moe_dynamic_ep_local.py"))))})
     (args.output / "result.json").write_text(json.dumps(evidence, indent=2, default=str) + "\n")

@@ -21,6 +21,16 @@ def extract(path, names, namespace):
     return namespace
 
 
+def extract_method(name, namespace):
+    tree = ast.parse(WR.read_text())
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+               and n.name == 'FlashInferB12xExperts')
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    future = ast.parse('from __future__ import annotations').body[0]
+    exec(compile(ast.Module(body=[future, method], type_ignores=[]), str(WR), 'exec'), namespace)
+    return namespace[name]
+
+
 class AdmissionTests(unittest.TestCase):
     def test_wide_workspace_covers_concentrated_and_tail_routes(self):
         ns=extract(MD, {'_dynamic_task_geometry'}, dict(
@@ -41,14 +51,57 @@ class AdmissionTests(unittest.TestCase):
 
     def test_wrapper_admits_only_exact_eager_local_geometry(self):
         fn = extract(WR, {'ep_local_prefill_eligible'}, {})['ep_local_prefill_eligible']
+        capture = Mock(return_value=False)
         good=dict(enabled=True,use_ep=True,no_dummy=True,experts=72,hidden=4096,intermediate=2048,
-                  tokens=6912,topk=8,activation='swigluoai_uninterleave',alpha=1.0,beta=0.0,limit=10.0,capturing=False)
+                  tokens=6912,topk=8,activation='swigluoai_uninterleave',alpha=1.0,beta=0.0,limit=10.0,is_capturing=capture)
         self.assertTrue(fn(**good))
+        capture.assert_called_once_with()
+        capture.reset_mock()
         for k,v in dict(enabled=False,use_ep=False,no_dummy=False,experts=288,hidden=2048,intermediate=512,
-                        tokens=4095,topk=1,activation='silu',alpha=1.7,beta=1.0,limit=None,capturing=True).items():
+                        tokens=4095,topk=1,activation='silu',alpha=1.7,beta=1.0,limit=None).items():
             self.assertFalse(fn(**dict(good,**{k:v})),k)
+        capture.assert_not_called()
         for rows in (4096,8192,16384):self.assertTrue(fn(**dict(good,tokens=rows)))
+        capture.reset_mock()
         for rows in (True,4096.0,16385):self.assertFalse(fn(**dict(good,tokens=rows)))
+        capture.assert_not_called()
+        capture.return_value=True
+        self.assertFalse(fn(**good))
+        capture.assert_called_once_with()
+
+    def test_apply_defers_the_capture_query_until_candidate_admission(self):
+        capture = Mock(return_value=False)
+        ns = extract(WR, {'ep_local_prefill_eligible'}, dict(
+            _EP_LOCAL_PREFILL_ENABLED=False,
+            torch=SimpleNamespace(int32='i32', cuda=SimpleNamespace(is_current_stream_capturing=capture)),
+            b12x_ep_zero_weight_micro_chunks=lambda *a, **kw: 0,
+            b12x_ep_stock_topk_micro_chunks=lambda *a, **kw: 0,
+            b12x_ep_should_compact=lambda *a, **kw: True))
+        apply = extract_method('apply', ns)
+        for enabled, rows in ((False, 6912), (True, 8), (True, 6912)):
+            with self.subTest(enabled=enabled, rows=rows):
+                ns['_EP_LOCAL_PREFILL_ENABLED'] = enabled
+                capture.reset_mock()
+                ids = SimpleNamespace(device='cuda', shape=(rows,8), size=lambda i: (rows,8)[i])
+                weights = SimpleNamespace(dtype='f32')
+                alpha = SimpleNamespace(numel=lambda:72)
+                fake = SimpleNamespace(
+                    w1_scale=object(), w2_scale=object(), g1_alphas=alpha, g2_alphas=alpha,
+                    _fc2_input_scale=object(), w1_sf_mma=object(), w2_sf_mma=object(),
+                    _use_ep=True, _kernel_num_experts=72, _ep_no_dummy=True,
+                    hidden_dim=4096, intermediate_size_per_partition=2048,
+                    _activation_str='swigluoai_uninterleave', _swiglu_alpha=1.,
+                    _swiglu_beta=0., _swiglu_limit=10., _ensure_ep_scratch=Mock(),
+                    _remap_ep_tensors=Mock(return_value=(ids,weights)),
+                    _ep_zero_weight_micro=False, _ep_stock_topk_micro=False,
+                    _ep_compact_enabled=True, _apply_ep_local_prefill=Mock(return_value='local'),
+                    _apply_ep_compact=Mock(return_value='compact'))
+                result = apply(fake, object(), SimpleNamespace(shape=(rows,4096)),
+                               SimpleNamespace(size=lambda i:72), object(), weights, ids,
+                               None, 288, None, None, None, None, None, None, False)
+                expected = enabled and rows >= 4096
+                self.assertEqual(result, 'local' if expected else 'compact')
+                self.assertEqual(capture.call_count, int(expected))
 
     def test_dispatch_never_silently_falls_back_with_sentinel_geometry(self):
         ns=extract(MD,{'_ep_local_prefill_kernel'},dict(_GLM53_EP_PREFILL_LOCAL=False,_FORCED_BACKEND=None,_FORCE_MOE_W4A16_ENV="test_force_w4",

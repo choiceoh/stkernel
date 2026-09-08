@@ -52,11 +52,13 @@ _EP_LOCAL_PREFILL_ENABLED = os.environ.get("VLLM_GLM53_EP_PREFILL_LOCAL") == "1"
 
 
 def ep_local_prefill_eligible(*, enabled, use_ep, no_dummy, experts, hidden, intermediate,
-                              tokens, topk, activation, alpha, beta, limit, capturing):
-    return (enabled and use_ep and no_dummy and not capturing
+                              tokens, topk, activation, alpha, beta, limit, is_capturing):
+    """Query capture state only after the opt-in and metadata gates pass."""
+    return (enabled and use_ep and no_dummy
             and (experts, hidden, intermediate, topk) == (72, 4096, 2048, 8)
             and type(tokens) is int and 4096 <= tokens <= 16384
-            and (activation, alpha, beta, limit) == ("swigluoai_uninterleave", 1.0, 0.0, 10.0))
+            and (activation, alpha, beta, limit) == ("swigluoai_uninterleave", 1.0, 0.0, 10.0)
+            and not is_capturing())
 
 
 def b12x_ep_kernel_expert_count(
@@ -2318,7 +2320,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
                 intermediate=self.intermediate_size_per_partition, tokens=hidden_states.shape[0],
                 topk=topk_ids.shape[1], activation=self._activation_str,
                 alpha=self._swiglu_alpha, beta=self._swiglu_beta, limit=self._swiglu_limit,
-                capturing=torch.cuda.is_current_stream_capturing()):
+                is_capturing=torch.cuda.is_current_stream_capturing):
                 return self._apply_ep_local_prefill(
                     output, hidden_states, w1, w2, topk_ids, topk_weights)
             zero_micro_chunks = b12x_ep_zero_weight_micro_chunks(
